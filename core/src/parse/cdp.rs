@@ -82,8 +82,8 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
     })?;
     let mut capture = CdpCapture::default();
     let mut requests: BTreeMap<String, CdpRequest> = BTreeMap::new();
-    let mut request_extra: BTreeMap<String, HeaderView> = BTreeMap::new();
-    let mut response_extra: BTreeMap<String, HeaderView> = BTreeMap::new();
+    let mut request_extra: BTreeMap<String, Vec<(HeaderView, usize)>> = BTreeMap::new();
+    let mut response_extra: BTreeMap<String, Vec<(HeaderView, Option<u16>)>> = BTreeMap::new();
     let mut unhandled: BTreeMap<String, usize> = BTreeMap::new();
 
     for (line_index, line) in text.lines().enumerate() {
@@ -204,8 +204,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         "Network.requestWillBeSent.request.headers",
                     );
                 }
-                if let Some(extra) = request_extra.remove(request_id) {
-                    attempt.request_headers_extra = Some(extra);
+                if !attempt.request_headers.is_empty() {
                     attempt.header_evidence.push(HeaderEvidence {
                         id: format!("{request_id}-req-blink"),
                         role: HeaderRole::Request,
@@ -215,16 +214,11 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         stream_id: None,
                         view: attempt.request_headers.clone(),
                     });
-                } else if !attempt.request_headers.is_empty() {
-                    attempt.header_evidence.push(HeaderEvidence {
-                        id: format!("{request_id}-req-blink"),
-                        role: HeaderRole::Request,
-                        protocol: Protocol::Unknown,
-                        event: "Network.requestWillBeSent.request.headers".to_string(),
-                        source_id: None,
-                        stream_id: None,
-                        view: attempt.request_headers.clone(),
-                    });
+                }
+                if let Some(extras) = request_extra.remove(request_id) {
+                    for (view, blocked) in extras {
+                        apply_request_extra(&mut attempt, view, blocked, request_id);
+                    }
                 }
 
                 attempt.cookie = CookieField::from_header_values(
@@ -270,46 +264,34 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         )
                     })
                     .unwrap_or_default();
-
-                if let Some(request) = requests.get_mut(request_id) {
-                    if let Some(attempt) = request.attempts.last_mut() {
-                        attempt.request_headers_extra = Some(view.clone());
-                        attempt.header_evidence.push(HeaderEvidence {
-                            id: format!("{request_id}-req-extra"),
-                            role: HeaderRole::Request,
-                            protocol: attempt.protocol,
-                            event: "Network.requestWillBeSentExtraInfo.headers".to_string(),
-                            source_id: None,
-                            stream_id: None,
-                            view: view.clone(),
-                        });
-                        if attempt.cookie.raw.is_empty() {
-                            attempt.cookie = CookieField::from_header_values(
-                                &view.cookie_field_values(),
-                                &provenance,
-                            );
-                        }
-                        if let Some(cookies) =
-                            params.get("associatedCookies").and_then(Value::as_array)
-                        {
-                            for cookie in cookies {
-                                let blocked = cookie
+                let blocked = params
+                    .get("associatedCookies")
+                    .and_then(Value::as_array)
+                    .map(|cookies| {
+                        cookies
+                            .iter()
+                            .filter(|cookie| {
+                                cookie
                                     .get("blockedReasons")
                                     .and_then(Value::as_array)
-                                    .is_some_and(|reasons| !reasons.is_empty());
-                                if blocked {
-                                    attempt.cookie.notes.push(
-                                        "cookie associado bloqueado (associatedCookies)"
-                                            .to_string(),
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        request_extra.insert(request_id.to_string(), view);
+                                    .is_some_and(|reasons| !reasons.is_empty())
+                            })
+                            .count()
+                    })
+                    .unwrap_or(0);
+
+                let mut applied = false;
+                if let Some(request) = requests.get_mut(request_id) {
+                    if let Some(attempt) = find_request_extra_attempt(request) {
+                        apply_request_extra(attempt, view.clone(), blocked, request_id);
+                        applied = true;
                     }
-                } else {
-                    request_extra.insert(request_id.to_string(), view);
+                }
+                if !applied {
+                    request_extra
+                        .entry(request_id.to_string())
+                        .or_default()
+                        .push((view, blocked));
                 }
                 capture.events_used += 1;
             }
@@ -420,40 +402,18 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .and_then(Value::as_u64)
                     .map(|status| status as u16);
                 let (view, event) = response_view_from_extra(params, request_id, timestamp, status);
+                let mut applied = false;
                 if let Some(request) = requests.get_mut(request_id) {
-                    if let Some(attempt) = request.attempts.last_mut() {
-                        attempt.status = status.or(attempt.status);
-                        attempt.response_headers_extra = Some(view.clone());
-                        if view.verification() > attempt.response_headers.verification() {
-                            attempt.response_headers = view.clone();
-                        }
-                        attempt.header_evidence.push(HeaderEvidence {
-                            id: format!("{request_id}-resp-extra"),
-                            role: HeaderRole::Response,
-                            protocol: attempt.protocol,
-                            event,
-                            source_id: None,
-                            stream_id: None,
-                            view: view.clone(),
-                        });
-                        if view.verification() >= Verification::Verified {
-                            attempt.set_cookies.clear();
-                            for header in view.get_all("set-cookie") {
-                                for value in split_joined_header(&header.value) {
-                                    attempt.set_cookies.push(
-                                        crate::model::SetCookieRecord::from_raw(
-                                            &value,
-                                            &header.provenance,
-                                        ),
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        response_extra.insert(request_id.to_string(), view);
+                    if let Some(attempt) = find_response_extra_attempt(request, status) {
+                        apply_response_extra(attempt, view.clone(), event, status, request_id);
+                        applied = true;
                     }
-                } else {
-                    response_extra.insert(request_id.to_string(), view);
+                }
+                if !applied {
+                    response_extra
+                        .entry(request_id.to_string())
+                        .or_default()
+                        .push((view, status));
                 }
                 capture.events_used += 1;
             }
@@ -513,43 +473,52 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
         }
     }
 
-    // ExtraInfo que chegou antes do request/response: anexa agora, com aviso.
-    for (request_id, extra) in request_extra {
-        if let Some(request) = requests.get_mut(&request_id) {
-            if let Some(attempt) = request.attempts.last_mut() {
-                attempt.request_headers_extra = Some(extra);
-            }
-        } else {
+    // ExtraInfo que chegou antes/depois do request: distribui por tentativa na
+    // ordem da cadeia (o status discrimina respostas de redirect).
+    for (request_id, extras) in request_extra {
+        let Some(request) = requests.get_mut(&request_id) else {
             capture.warnings.push(Warning::new(
                 "cdp.extra_info_without_request",
                 format!("requestWillBeSentExtraInfo sem requestWillBeSent: {request_id}"),
             ));
+            continue;
+        };
+        for (extra, blocked) in extras {
+            match find_request_extra_attempt(request) {
+                Some(attempt) => {
+                    apply_request_extra(attempt, extra, blocked, &request_id);
+                }
+                None => capture.warnings.push(Warning::new(
+                    "cdp.extra_info_unmatched",
+                    format!("requestWillBeSentExtraInfo sem tentativa disponível: {request_id}"),
+                )),
+            }
         }
     }
-    for (request_id, extra) in response_extra {
-        if let Some(request) = requests.get_mut(&request_id) {
-            if let Some(attempt) = request.attempts.last_mut() {
-                if extra.verification() >= attempt.response_headers.verification() {
-                    attempt.response_headers = extra.clone();
-                    attempt.set_cookies.clear();
-                    for header in extra.get_all("set-cookie") {
-                        for value in split_joined_header(&header.value) {
-                            attempt
-                                .set_cookies
-                                .push(crate::model::SetCookieRecord::from_raw(
-                                    &value,
-                                    &header.provenance,
-                                ));
-                        }
-                    }
-                }
-                attempt.response_headers_extra = Some(extra);
-            }
-        } else {
+    for (request_id, extras) in response_extra {
+        let Some(request) = requests.get_mut(&request_id) else {
             capture.warnings.push(Warning::new(
                 "cdp.response_extra_without_request",
                 format!("responseReceivedExtraInfo sem request: {request_id}"),
             ));
+            continue;
+        };
+        for (extra, status) in extras {
+            match find_response_extra_attempt(request, status) {
+                Some(attempt) => {
+                    apply_response_extra(
+                        attempt,
+                        extra,
+                        "Network.responseReceivedExtraInfo.headers".to_string(),
+                        status,
+                        &request_id,
+                    );
+                }
+                None => capture.warnings.push(Warning::new(
+                    "cdp.response_extra_unmatched",
+                    format!("responseReceivedExtraInfo sem tentativa disponível: {request_id}"),
+                )),
+            }
         }
     }
 
@@ -595,6 +564,100 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
         capture.requests.push(request.clone());
     }
     Ok(capture)
+}
+
+fn find_request_extra_attempt(request: &mut CdpRequest) -> Option<&mut CdpAttempt> {
+    let index = request
+        .attempts
+        .iter()
+        .position(|attempt| attempt.request_headers_extra.is_none())?;
+    request.attempts.get_mut(index)
+}
+
+fn find_response_extra_attempt(
+    request: &mut CdpRequest,
+    status: Option<u16>,
+) -> Option<&mut CdpAttempt> {
+    let index = request
+        .attempts
+        .iter()
+        .position(|attempt| {
+            attempt.response_headers_extra.is_none()
+                && status.map_or(true, |status| attempt.status == Some(status))
+        })
+        .or_else(|| {
+            request
+                .attempts
+                .iter()
+                .position(|attempt| attempt.response_headers_extra.is_none())
+        })?;
+    request.attempts.get_mut(index)
+}
+
+fn apply_request_extra(
+    attempt: &mut CdpAttempt,
+    view: HeaderView,
+    blocked: usize,
+    request_id: &str,
+) {
+    let provenance = view
+        .first("cookie")
+        .map(|entry| entry.provenance.clone())
+        .unwrap_or_default();
+    attempt.request_headers_extra = Some(view.clone());
+    attempt.header_evidence.push(HeaderEvidence {
+        id: format!("{request_id}-req-extra"),
+        role: HeaderRole::Request,
+        protocol: attempt.protocol,
+        event: "Network.requestWillBeSentExtraInfo.headers".to_string(),
+        source_id: None,
+        stream_id: None,
+        view: view.clone(),
+    });
+    if attempt.cookie.raw.is_empty() {
+        attempt.cookie = CookieField::from_header_values(&view.cookie_field_values(), &provenance);
+    }
+    for _ in 0..blocked {
+        attempt
+            .cookie
+            .notes
+            .push("cookie associado bloqueado (associatedCookies)".to_string());
+    }
+}
+
+fn apply_response_extra(
+    attempt: &mut CdpAttempt,
+    view: HeaderView,
+    event: String,
+    status: Option<u16>,
+    request_id: &str,
+) {
+    attempt.status = status.or(attempt.status);
+    attempt.response_headers_extra = Some(view.clone());
+    let replace = view.verification() >= attempt.response_headers.verification();
+    if replace {
+        attempt.response_headers = view.clone();
+        attempt.set_cookies.clear();
+        for header in view.get_all("set-cookie") {
+            for value in split_joined_header(&header.value) {
+                attempt
+                    .set_cookies
+                    .push(crate::model::SetCookieRecord::from_raw(
+                        &value,
+                        &header.provenance,
+                    ));
+            }
+        }
+    }
+    attempt.header_evidence.push(HeaderEvidence {
+        id: format!("{request_id}-resp-extra"),
+        role: HeaderRole::Response,
+        protocol: attempt.protocol,
+        event,
+        source_id: None,
+        stream_id: None,
+        view,
+    });
 }
 
 fn cdp_ref(params: &Map<String, Value>, request_id: &str) -> CdpRef {
@@ -851,6 +914,14 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         logical.provenance = Provenance::new(Source::Cdp, "Network.*", Verification::Unverified)
             .with_source_id(request.request_id.clone())
             .with_note("estrutura vinda do CDP; verificação por informação");
+        if let Some(first) = request.attempts.first() {
+            if let Some(timestamp) = first.timestamp {
+                logical.provenance = logical.provenance.clone().with_timestamp(timestamp);
+            }
+            if let Some(wall_time) = &first.wall_time {
+                logical.provenance = logical.provenance.clone().with_wall_time(wall_time);
+            }
+        }
 
         for (attempt_index, parsed) in request.attempts.iter().enumerate() {
             let attempt_id = format!("{logical_id}-a{}", attempt_index + 1);

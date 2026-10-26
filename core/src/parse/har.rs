@@ -457,10 +457,17 @@ fn parse_entry(
         timings,
         redirect_url,
         connection_id,
-        provenance: Provenance::new(Source::Har, "log.entries", Verification::Unverified)
-            .with_event(format!("log.entries[{index}]"))
-            .with_source_id(index.to_string())
-            .with_note(outcome_note.unwrap_or_else(|| "HAR importado".to_string())),
+        provenance: {
+            let provenance = Provenance::new(Source::Har, "log.entries", Verification::Unverified)
+                .with_event(format!("log.entries[{index}]"))
+                .with_source_id(index.to_string())
+                .with_browser_version(browser.version.clone().unwrap_or_default())
+                .with_note(outcome_note.unwrap_or_else(|| "HAR importado".to_string()));
+            match object.get("startedDateTime").and_then(Value::as_str) {
+                Some(wall_time) => provenance.with_wall_time(wall_time),
+                None => provenance,
+            }
+        },
     })
 }
 

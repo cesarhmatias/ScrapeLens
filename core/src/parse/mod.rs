@@ -142,18 +142,6 @@ pub fn import_capture(
     session.session.completeness.counts.source_events = total_events;
     session.session.completeness.counts.source_events_used = used_events;
     session.session.completeness.counts.source_events_unknown = netlog.events_unknown;
-    if outcome.ambiguous_attempts > 0 {
-        session.session.completeness.add_reason(format!(
-            "{} associação(ões) CDP×NetLog ambígua(s)",
-            outcome.ambiguous_attempts
-        ));
-    }
-    if outcome.unmatched_cdp_attempts > 0 {
-        session.session.completeness.add_reason(format!(
-            "{} tentativa(s) CDP sem correspondência no NetLog",
-            outcome.unmatched_cdp_attempts
-        ));
-    }
     if cdp_report.has_errors() {
         session
             .session

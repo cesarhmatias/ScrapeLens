@@ -69,6 +69,7 @@ struct Candidate<'a> {
     score: u8,
     reasons: Vec<String>,
     explicit: bool,
+    time_delta: Option<f64>,
 }
 
 impl Candidate<'_> {
@@ -194,12 +195,8 @@ pub fn attach_netlog(
         session.warnings.push(warning.clone());
         outcome.warnings.push(warning);
     }
-    if outcome.ambiguous_attempts > 0 {
-        session.session.completeness.add_reason(format!(
-            "{} associação(ões) CDP×NetLog ambígua(s)",
-            outcome.ambiguous_attempts
-        ));
-    }
+    // Ambiguidade é um estado explícito de `match`, não uma falha de captura:
+    // não rebaixa `completeness` (que mede o flush/artefatos da sessão).
     session.recompute_completeness();
     outcome
 }
@@ -246,6 +243,10 @@ fn find_candidates<'a>(
                     score,
                     reasons,
                     explicit: is_explicit,
+                    time_delta: match (attempt.started_at, netlog_attempt.started_at) {
+                        (Some(left), Some(right)) => Some((left - right).abs()),
+                        _ => None,
+                    },
                 });
             } else if is_explicit {
                 // Par explícito vence a heurística, mas ainda exige método e URL
@@ -257,6 +258,10 @@ fn find_candidates<'a>(
                     score: 100,
                     reasons: vec!["chave explícita CDP→NetLog".to_string()],
                     explicit: true,
+                    time_delta: match (attempt.started_at, netlog_attempt.started_at) {
+                        (Some(left), Some(right)) => Some((left - right).abs()),
+                        _ => None,
+                    },
                 });
             }
         }
@@ -266,7 +271,21 @@ fn find_candidates<'a>(
     if candidates.iter().any(|candidate| candidate.explicit) {
         candidates.retain(|candidate| candidate.explicit);
     }
-    candidates.sort_by(|left, right| right.score.cmp(&left.score));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.score));
+    // Um candidato claramente mais próximo no tempo elimina os que estão
+    // segundos depois, mas empates simultâneos continuam ambíguos.
+    if let Some(best_delta) = candidates
+        .first()
+        .and_then(|candidate| candidate.time_delta)
+    {
+        candidates.retain(|candidate| {
+            candidate.explicit
+                || candidate
+                    .time_delta
+                    .map(|delta| delta <= best_delta + 1.0)
+                    .unwrap_or(true)
+        });
+    }
     candidates
 }
 
@@ -447,10 +466,18 @@ fn attach_candidate(
                 push_unique(&mut attempt.netlog.stream_ids, stream_id);
             }
             let evidence_id = format!("corr-{}-{}", attempt.id, attempt.header_evidence.len() + 1);
+            let evidence_protocol = if event.protocol == Protocol::H1
+                && event.event_name == "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"
+                && attempt.protocol != Protocol::Unknown
+            {
+                attempt.protocol
+            } else {
+                event.protocol
+            };
             attempt.header_evidence.push(HeaderEvidence {
                 id: evidence_id,
                 role,
-                protocol: event.protocol,
+                protocol: evidence_protocol,
                 event: event.event_name.clone(),
                 source_id: event.source_id,
                 stream_id: event.stream_id,

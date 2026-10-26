@@ -12,7 +12,7 @@
 //! explícita `HTTP_STREAM_JOB_BOUND_TO_REQUEST` para ligar headers de sessão ao
 //! `URL_REQUEST`; a correlação com CDP fica em [`crate::correlate`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
@@ -98,10 +98,12 @@ enum Atom {
     Redirect {
         location: String,
         time: Option<f64>,
+        index: usize,
     },
     End {
         time: Option<f64>,
         net_error: Option<i32>,
+        index: usize,
     },
 }
 
@@ -193,8 +195,12 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
         ));
     }
 
-    // Cadeia explícita stream job -> URL_REQUEST.
+    // Cadeias explícitas:
+    // - HTTP_STREAM_JOB_BOUND_TO_REQUEST: stream job -> URL_REQUEST (h2);
+    // - HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS: quic_stream_id -> URL_REQUEST
+    //   (h3; o evento de sessão só tem session id + quic_stream_id).
     let mut bound_to_request: BTreeMap<u32, u32> = BTreeMap::new();
+    let mut quic_stream_requests: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
     let mut unknown_counts: BTreeMap<u32, usize> = BTreeMap::new();
 
     for (index, event) in events.iter().enumerate() {
@@ -231,6 +237,19 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
                 dep.and_then(|dep| dep.get("id")).and_then(Value::as_u64),
             ) {
                 bound_to_request.insert(source_id as u32, dep_id as u32);
+            }
+        } else if name == "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS" {
+            if let (Some(request_id), Some(stream_id)) = (
+                source_id(object),
+                object
+                    .get("params")
+                    .and_then(Value::as_object)
+                    .and_then(stream_id_of),
+            ) {
+                quic_stream_requests
+                    .entry(stream_id)
+                    .or_default()
+                    .insert(request_id);
             }
         }
     }
@@ -311,7 +330,11 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
                         builder.net_error = Some(net_error);
                     }
                     builder.ended_at = time;
-                    builder.atoms.push(Atom::End { time, net_error });
+                    builder.atoms.push(Atom::End {
+                        time,
+                        net_error,
+                        index,
+                    });
                     capture.events_used += 1;
                 }
             }
@@ -327,6 +350,7 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
                     builder.atoms.push(Atom::Redirect {
                         location: location.to_string(),
                         time,
+                        index,
                     });
                     capture.events_used += 1;
                 }
@@ -373,10 +397,7 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
                         event_index: index,
                         time,
                         source_id: Some(source_id),
-                        stream_id: params
-                            .and_then(|params| params.get("stream_id"))
-                            .and_then(Value::as_u64)
-                            .map(|value| value as u32),
+                        stream_id: params.and_then(stream_id_of),
                         dependency_id: source_dependency_id(object),
                         protocol,
                         role,
@@ -409,6 +430,17 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
             let linked = event
                 .dependency_id
                 .and_then(|id| bound_to_request.get(&id).copied())
+                .or_else(|| {
+                    event.stream_id.and_then(|stream_id| {
+                        quic_stream_requests.get(&stream_id).and_then(|requests| {
+                            if requests.len() == 1 {
+                                requests.iter().next().copied()
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                })
                 .or_else(|| event.dependency_id.filter(|id| builders.contains_key(id)));
             if let Some(request_id) = linked {
                 *resolution = Some(request_id);
@@ -482,6 +514,14 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
         ));
     }
     Ok(capture)
+}
+
+fn stream_id_of(params: &Map<String, Value>) -> Option<u32> {
+    params
+        .get("stream_id")
+        .or_else(|| params.get("quic_stream_id"))
+        .and_then(Value::as_u64)
+        .map(|value| value as u32)
 }
 
 fn event_type_name(object: &Map<String, Value>, names: &BTreeMap<u32, String>) -> String {
@@ -721,7 +761,11 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
                 }
                 current_has_data = true;
             }
-            Atom::Redirect { location, time } => {
+            Atom::Redirect {
+                location,
+                time,
+                index: _,
+            } => {
                 current.redirect_to = Some(location.clone());
                 current.ended_at = time.or(current.ended_at);
                 flush_attempt(&mut current, &mut attempts);
@@ -738,7 +782,11 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
                 };
                 current_has_data = false;
             }
-            Atom::End { time, net_error } => {
+            Atom::End {
+                time,
+                net_error,
+                index: _,
+            } => {
                 current.ended_at = time.or(current.ended_at);
                 if net_error.is_some() {
                     current.net_error = net_error;
@@ -861,7 +909,7 @@ fn atom_time(atom: &Atom) -> Option<f64> {
 fn atom_index(atom: &Atom) -> usize {
     match atom {
         Atom::Send(event) | Atom::Recv(event) => event.event_index,
-        _ => 0,
+        Atom::Redirect { index, .. } | Atom::End { index, .. } => *index,
     }
 }
 
@@ -1005,6 +1053,9 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
         .with_note("requisição lida apenas do NetLog");
         if let Some(version) = &capture.browser.version {
             logical.provenance = logical.provenance.clone().with_browser_version(version);
+        }
+        if let Some(started_at) = request.started_at {
+            logical.provenance = logical.provenance.clone().with_timestamp(started_at);
         }
 
         if request.attempts.is_empty() {
