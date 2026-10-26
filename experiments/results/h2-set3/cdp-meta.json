@@ -1,0 +1,27 @@
+{
+  "protocolVersion": "1.3",
+  "browser": "Chrome/156.0.8078.48",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/f0317f9d-e6dc-4fdf-bc09-03fdc53dfdb4",
+  "harAvailable": false,
+  "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+  "plan": {
+    "urls": [
+      "https://127.0.0.1:8782/set3"
+    ],
+    "mode": "native",
+    "settleMs": 1200
+  },
+  "navigations": [
+    {
+      "url": "https://127.0.0.1:8782/set3",
+      "navigate": {
+        "frameId": "DDC21E9978541ACE4217A26F9ED889CA",
+        "loaderId": "9FD7D29C16126D7DD56A806FFD8F7C6B",
+        "isDownload": false
+      },
+      "probe": "{\"done\":{},\"result\":null,\"loc\":\"https://127.0.0.1:8782/set3\"}"
+    }
+  ],
+  "events": 24
+}

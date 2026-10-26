@@ -76,6 +76,36 @@ EXPERIMENTS: dict[str, dict] = {
         "mode": "native",
         "settleMs": 3000,
     },
+    "h1-cookieprobe": {
+        "urls": ["http://127.0.0.1:8781/page-longcookies"],
+        "mode": "native",
+        "settleMs": 1200,
+    },
+    "h2-cookieprobe": {
+        "urls": ["https://127.0.0.1:8782/page-longcookies"],
+        "mode": "native",
+        "settleMs": 1200,
+    },
+    "h1-set3": {
+        "urls": ["http://127.0.0.1:8781/set3"],
+        "mode": "native",
+        "settleMs": 1200,
+    },
+    "h2-set3": {
+        "urls": ["https://127.0.0.1:8782/set3"],
+        "mode": "native",
+        "settleMs": 1200,
+    },
+    "h3-set3": {
+        "urls": ["https://127.0.0.1:8783/set3"],
+        "mode": "native",
+        "settleMs": 2500,
+    },
+    "h3-cookieprobe": {
+        "urls": ["https://127.0.0.1:8783/page-longcookies"],
+        "mode": "native",
+        "settleMs": 2500,
+    },
     "h3-ordered": {
         "urls": ["https://127.0.0.1:8783/echo-order?case=ordered"],
         "mode": "ordered",

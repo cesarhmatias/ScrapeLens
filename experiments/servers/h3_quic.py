@@ -37,6 +37,27 @@ window.__done = (async () => {
 </script>
 """
 
+LONGCOOKIE_PAGE = b"""<!doctype html><link rel="icon" href="data:,"><meta charset=utf-8><title>sl longcookie</title>
+<script>
+window.__done = (async () => {
+  document.cookie = 'ck_alpha=alpha-value-long; path=/';
+  document.cookie = 'ck_beta=beta-value-long; path=/';
+  document.cookie = 'ck_gamma=gamma-value-long; path=/';
+  await fetch('/echo-order?from=longcookies', {credentials: 'include'}).then(r => r.json());
+  return 1;
+})();
+</script>
+"""
+
+SET3_PAGE = b"""<!doctype html><link rel="icon" href="data:,"><meta charset=utf-8><title>sl set3</title>
+<script>
+window.__done = (async () => {
+  await fetch('/echo-order?from=set3', {credentials: 'include'}).then(r => r.json());
+  return 1;
+})();
+</script>
+"""
+
 
 class H3Server(QuicConnectionProtocol):
     def __init__(self, *args, recorder: Recorder, **kwargs) -> None:
@@ -77,7 +98,11 @@ class H3Server(QuicConnectionProtocol):
     def _respond(self, stream_id: int, st: dict) -> None:
         assert self._http is not None
         path = dict(st["pseudo"]).get(":path", "/").split("?", 1)[0]
-        if path in ("/page", "/setcookie"):
+        if path == "/set3":
+            body, ctype = SET3_PAGE, "text/html; charset=utf-8"
+        elif path == "/page-longcookies":
+            body, ctype = LONGCOOKIE_PAGE, "text/html; charset=utf-8"
+        elif path in ("/page", "/setcookie"):
             body, ctype = PAGE, "text/html; charset=utf-8"
         else:
             body = body_payload("h3", st["regular"], st["pseudo"])

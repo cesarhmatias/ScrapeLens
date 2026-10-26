@@ -1,0 +1,27 @@
+{
+  "protocolVersion": "1.3",
+  "browser": "Chrome/156.0.8078.48",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/55e88625-c2b3-4f32-bffe-cf37300f100d",
+  "harAvailable": false,
+  "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+  "plan": {
+    "urls": [
+      "https://127.0.0.1:8783/page-longcookies"
+    ],
+    "mode": "native",
+    "settleMs": 2500
+  },
+  "navigations": [
+    {
+      "url": "https://127.0.0.1:8783/page-longcookies",
+      "navigate": {
+        "frameId": "7356A0AE643E0DC99625405B654D23F2",
+        "loaderId": "31E27AA918FC9298832C92EBDE16E339",
+        "isDownload": false
+      },
+      "probe": "{\"done\":{},\"result\":null,\"loc\":\"https://127.0.0.1:8783/page-longcookies\"}"
+    }
+  ],
+  "events": 24
+}

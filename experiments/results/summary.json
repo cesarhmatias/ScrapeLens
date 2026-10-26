@@ -1,43 +1,43 @@
 {
-  "total_requests": 48,
+  "total_requests": 60,
   "by_protocol": {
     "h1": {
-      "requests": 16,
+      "requests": 20,
       "netlog": {
-        "idêntica (nome e caixa)": 16
+        "idêntica (nome e caixa)": 20
       },
       "cdp_extra": {
-        "reordenada (mesmo multiconjunto)": 16
+        "reordenada (mesmo multiconjunto)": 20
       },
       "response_netlog": {
-        "idêntica (nome e caixa)": 16
+        "idêntica (nome e caixa)": 20
       }
     },
     "h2": {
-      "requests": 16,
+      "requests": 20,
       "netlog": {
-        "idêntica (nome e caixa)": 5,
-        "reordenada (mesmo multiconjunto)": 11
+        "idêntica (nome e caixa)": 7,
+        "reordenada (mesmo multiconjunto)": 13
       },
       "cdp_extra": {
-        "reordenada (mesmo multiconjunto)": 16
+        "reordenada (mesmo multiconjunto)": 20
       },
       "response_netlog": {
-        "idêntica (nome e caixa)": 16
+        "idêntica (nome e caixa)": 20
       }
     },
     "h3": {
-      "requests": 16,
+      "requests": 20,
       "netlog": {
-        "idêntica (nome e caixa)": 5,
-        "duplicatas fundidas (mesmo conjunto de nomes)": 11
+        "idêntica (nome e caixa)": 7,
+        "duplicatas fundidas (mesmo conjunto de nomes)": 13
       },
       "cdp_extra": {
-        "reordenada (mesmo multiconjunto)": 5,
-        "duplicatas fundidas (mesmo conjunto de nomes)": 11
+        "reordenada (mesmo multiconjunto)": 7,
+        "duplicatas fundidas (mesmo conjunto de nomes)": 13
       },
       "response_netlog": {
-        "idêntica (nome e caixa)": 16
+        "idêntica (nome e caixa)": 20
       }
     }
   }

@@ -32,7 +32,7 @@ cd experiments
 python3 -m venv .venv
 .venv/bin/pip install h2 aioquic
 .venv/bin/python certs/gen_cert.py
-.venv/bin/python run_experiment.py --all     # 9 experimentos, ~3 min
+.venv/bin/python run_experiment.py --all     # 15 experimentos, ~5 min
 .venv/bin/python compare.py                  # layers.json + report.md + matrix.json
 node har_from_cdp.mjs results/h1-page
 ```
@@ -77,6 +77,8 @@ reproduzido também com um cliente `aioquic`), então a linha h3 vem do mock.
 | `h1-plain` / `h2-plain` / `h3-plain` | navegação GET simples |
 | `h1-page` / `h2-page` / `h3-page` | `/setcookie` (2× Set-Cookie) e `/page`: cada documento dispara 2 GET, 1 POST e 1 fetch com `Headers` da Fetch API, todos com cookies |
 | `h1-ordered` / `h2-ordered` / `h3-ordered` | ordem + duplicatas impostas por `Fetch.continueRequest` |
+| `h1/h2/h3-cookieprobe` | 3 cookies de valor longo via `document.cookie` |
+| `h1/h2/h3-set3` | 3 cookies idênticos aos do contrato (`Set-Cookie` + `SameSite=Lax`) |
 
 ## Achados que a matriz usa
 

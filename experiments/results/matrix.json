@@ -1,4 +1,27 @@
 {
+  "h1-cookieprobe": {
+    "protocol": "h1",
+    "requests": [
+      {
+        "target": "/page-longcookies",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=longcookies",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      }
+    ]
+  },
   "h1-ordered": {
     "protocol": "h1",
     "requests": [
@@ -155,6 +178,52 @@
         "cdp_extra_sorted": true,
         "response_netlog": "idêntica (nome e caixa)",
         "response_nul": false
+      }
+    ]
+  },
+  "h1-set3": {
+    "protocol": "h1",
+    "requests": [
+      {
+        "target": "/set3",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=set3",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      }
+    ]
+  },
+  "h2-cookieprobe": {
+    "protocol": "h2",
+    "requests": [
+      {
+        "target": "/page-longcookies",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=longcookies",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
       }
     ]
   },
@@ -317,6 +386,52 @@
       }
     ]
   },
+  "h2-set3": {
+    "protocol": "h2",
+    "requests": [
+      {
+        "target": "/set3",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=set3",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  },
+  "h3-cookieprobe": {
+    "protocol": "h3",
+    "requests": [
+      {
+        "target": "/page-longcookies",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=longcookies",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  },
   "h3-ordered": {
     "protocol": "h3",
     "requests": [
@@ -470,6 +585,29 @@
         "netlog": "idêntica (nome e caixa)",
         "cdp_rws": "subconjunto (13 nomes ausentes)",
         "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  },
+  "h3-set3": {
+    "protocol": "h3",
+    "requests": [
+      {
+        "target": "/set3",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=set3",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
         "cdp_extra_sorted": true,
         "response_netlog": "idêntica (nome e caixa)",
         "response_nul": true

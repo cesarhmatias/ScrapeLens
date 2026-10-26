@@ -1,0 +1,7 @@
+{
+  "urls": [
+    "http://127.0.0.1:8781/page-longcookies"
+  ],
+  "mode": "native",
+  "settleMs": 1200
+}

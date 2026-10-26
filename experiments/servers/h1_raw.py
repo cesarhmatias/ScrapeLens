@@ -41,6 +41,27 @@ window.__done = (async () => {
 </script>
 """
 
+LONGCOOKIE_PAGE = b"""<!doctype html><link rel="icon" href="data:,"><meta charset=utf-8><title>sl longcookie</title>
+<script>
+window.__done = (async () => {
+  document.cookie = 'ck_alpha=alpha-value-long; path=/';
+  document.cookie = 'ck_beta=beta-value-long; path=/';
+  document.cookie = 'ck_gamma=gamma-value-long; path=/';
+  await fetch('/echo-order?from=longcookies', {credentials: 'include'}).then(r => r.json());
+  return 1;
+})();
+</script>
+"""
+
+SET3_PAGE = b"""<!doctype html><link rel="icon" href="data:,"><meta charset=utf-8><title>sl set3</title>
+<script>
+window.__done = (async () => {
+  await fetch('/echo-order?from=set3', {credentials: 'include'}).then(r => r.json());
+  return 1;
+})();
+</script>
+"""
+
 
 class H1Server:
     def __init__(self, host: str, port: int, recorder: Recorder) -> None:
@@ -104,7 +125,11 @@ class H1Server:
         self, method: str, target: str, pairs: list[tuple[str, str]], body: bytes
     ) -> tuple[list[tuple[str, str]], bytes]:
         path = target.split("?", 1)[0]
-        if path in ("/page", "/setcookie"):
+        if path == "/set3":
+            payload, ctype = SET3_PAGE, "text/html; charset=utf-8"
+        elif path == "/page-longcookies":
+            payload, ctype = LONGCOOKIE_PAGE, "text/html; charset=utf-8"
+        elif path in ("/page", "/setcookie"):
             payload, ctype = PAGE, "text/html; charset=utf-8"
         elif path == "/echo" and method == "POST":
             payload, ctype = body_payload("h1", pairs, request_body=body), "application/json; charset=utf-8"

@@ -1,0 +1,7 @@
+{
+  "urls": [
+    "http://127.0.0.1:8781/set3"
+  ],
+  "mode": "native",
+  "settleMs": 1200
+}

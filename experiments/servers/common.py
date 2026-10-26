@@ -110,6 +110,10 @@ def response_headers(path: str, protocol: str) -> list[tuple[str, str]]:
     headers = list(BASE_RESPONSE_HEADERS)
     # Sem Alt-Svc: o experimento h3 usa --origin-to-force-quic-on para não
     # contaminar os resultados de h2 com tráfego migrado para h3.
+    if path == "/set3":
+        headers.append(("set-cookie", "sc_a=alpha; Path=/; SameSite=Lax"))
+        headers.append(("set-cookie", "sc_b=beta; Path=/; SameSite=Lax"))
+        headers.append(("set-cookie", "sc_dup=two; Path=/; SameSite=Lax"))
     if path.startswith("/setcookie"):
         headers.append(("set-cookie", "sl_a=1; Path=/"))
         headers.append(("set-cookie", "sl_b=2; Path=/"))

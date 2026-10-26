@@ -1,0 +1,487 @@
+{
+  "experiment": "h1-cookieprobe",
+  "protocol": "h1",
+  "browser": "Chrome/156.0.8078.48",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "plan": {
+    "urls": [
+      "http://127.0.0.1:8781/page-longcookies"
+    ],
+    "mode": "native",
+    "settleMs": 1200
+  },
+  "requests": [
+    {
+      "target": "/page-longcookies",
+      "method": "GET",
+      "reference_server": [
+        [
+          "Host",
+          "127.0.0.1:8781"
+        ],
+        [
+          "Connection",
+          "keep-alive"
+        ],
+        [
+          "Pragma",
+          "no-cache"
+        ],
+        [
+          "Cache-Control",
+          "no-cache"
+        ],
+        [
+          "sec-ch-ua",
+          "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\", \"Google Chrome\";v=\"156\""
+        ],
+        [
+          "sec-ch-ua-mobile",
+          "?0"
+        ],
+        [
+          "sec-ch-ua-platform",
+          "\"macOS\""
+        ],
+        [
+          "Upgrade-Insecure-Requests",
+          "1"
+        ],
+        [
+          "User-Agent",
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+        ],
+        [
+          "Accept",
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+        ],
+        [
+          "Sec-Fetch-Site",
+          "none"
+        ],
+        [
+          "Sec-Fetch-Mode",
+          "navigate"
+        ],
+        [
+          "Sec-Fetch-User",
+          "?1"
+        ],
+        [
+          "Sec-Fetch-Dest",
+          "document"
+        ],
+        [
+          "Accept-Encoding",
+          "gzip, deflate, br, zstd"
+        ],
+        [
+          "Accept-Language",
+          "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+        ]
+      ],
+      "reference_names": [
+        "Host",
+        "Connection",
+        "Pragma",
+        "Cache-Control",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+        "Upgrade-Insecure-Requests",
+        "User-Agent",
+        "Accept",
+        "Sec-Fetch-Site",
+        "Sec-Fetch-Mode",
+        "Sec-Fetch-User",
+        "Sec-Fetch-Dest",
+        "Accept-Encoding",
+        "Accept-Language"
+      ],
+      "duplicates": [],
+      "b_netlog": {
+        "event": "HTTP_TRANSACTION_SEND_REQUEST_HEADERS",
+        "order": [
+          "Host",
+          "Connection",
+          "Pragma",
+          "Cache-Control",
+          "sec-ch-ua",
+          "sec-ch-ua-mobile",
+          "sec-ch-ua-platform",
+          "Upgrade-Insecure-Requests",
+          "User-Agent",
+          "Accept",
+          "Sec-Fetch-Site",
+          "Sec-Fetch-Mode",
+          "Sec-Fetch-User",
+          "Sec-Fetch-Dest",
+          "Accept-Encoding",
+          "Accept-Language"
+        ],
+        "verdict": "idêntica (nome e caixa)",
+        "candidates": 1,
+        "ambiguous": false
+      },
+      "b_netlog_pre_session": null,
+      "response": {
+        "server_order": [
+          "content-type",
+          "cache-control",
+          "x-resp-order",
+          "x-resp-order",
+          "content-length",
+          "connection"
+        ],
+        "nul_joined": false,
+        "netlog_session": {
+          "event": "HTTP_TRANSACTION_READ_RESPONSE_HEADERS",
+          "order": [
+            "content-type",
+            "cache-control",
+            "x-resp-order",
+            "x-resp-order",
+            "content-length",
+            "connection"
+          ],
+          "verdict": "idêntica (nome e caixa)",
+          "nul_joined": false,
+          "candidates": 1
+        },
+        "cdp_headersText": {
+          "order": [
+            "content-type",
+            "cache-control",
+            "x-resp-order",
+            "x-resp-order",
+            "content-length",
+            "connection"
+          ],
+          "verdict": "idêntica (nome e caixa)"
+        },
+        "cdp_object": {
+          "order": [
+            "cache-control",
+            "connection",
+            "content-length",
+            "content-type",
+            "x-resp-order"
+          ],
+          "sorted_ascii": true,
+          "joined_values": [
+            [
+              "x-resp-order",
+              "1\n2"
+            ]
+          ],
+          "verdict": "duplicatas fundidas (mesmo conjunto de nomes)"
+        }
+      },
+      "a_cdp": {
+        "requestId": "E7181482FC39E81F27872F92BC014BB8",
+        "rws": {
+          "order": [
+            "Upgrade-Insecure-Requests",
+            "User-Agent",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile",
+            "sec-ch-ua-platform"
+          ],
+          "n": 5,
+          "verdict": "subconjunto (11 nomes ausentes)"
+        },
+        "extra": {
+          "order": [
+            "Accept",
+            "Accept-Encoding",
+            "Accept-Language",
+            "Cache-Control",
+            "Connection",
+            "Host",
+            "Pragma",
+            "Sec-Fetch-Dest",
+            "Sec-Fetch-Mode",
+            "Sec-Fetch-Site",
+            "Sec-Fetch-User",
+            "Upgrade-Insecure-Requests",
+            "User-Agent",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile",
+            "sec-ch-ua-platform"
+          ],
+          "n": 16,
+          "verdict": "reordenada (mesmo multiconjunto)",
+          "sorted_ascii": true,
+          "duplicates_in_reference": 0,
+          "cookies": []
+        },
+        "headersText": true
+      },
+      "cdp_meta": {
+        "protocolVersion": "1.3",
+        "browser": "Chrome/156.0.8078.48",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/c06dbe08-8ab2-436f-978a-0cfe36792509",
+        "harAvailable": false,
+        "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+        "plan": {
+          "urls": [
+            "http://127.0.0.1:8781/page-longcookies"
+          ],
+          "mode": "native",
+          "settleMs": 1200
+        },
+        "navigations": [
+          {
+            "url": "http://127.0.0.1:8781/page-longcookies",
+            "navigate": {
+              "frameId": "80E264FE3E7BA30583CB716EF358D851",
+              "loaderId": "E7181482FC39E81F27872F92BC014BB8",
+              "isDownload": false
+            },
+            "probe": "{\"done\":{},\"result\":null,\"loc\":\"http://127.0.0.1:8781/page-longcookies\"}"
+          }
+        ],
+        "events": 24
+      }
+    },
+    {
+      "target": "/echo-order?from=longcookies",
+      "method": "GET",
+      "reference_server": [
+        [
+          "Host",
+          "127.0.0.1:8781"
+        ],
+        [
+          "Connection",
+          "keep-alive"
+        ],
+        [
+          "Pragma",
+          "no-cache"
+        ],
+        [
+          "Cache-Control",
+          "no-cache"
+        ],
+        [
+          "sec-ch-ua-platform",
+          "\"macOS\""
+        ],
+        [
+          "User-Agent",
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+        ],
+        [
+          "sec-ch-ua",
+          "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\", \"Google Chrome\";v=\"156\""
+        ],
+        [
+          "sec-ch-ua-mobile",
+          "?0"
+        ],
+        [
+          "Accept",
+          "*/*"
+        ],
+        [
+          "Sec-Fetch-Site",
+          "same-origin"
+        ],
+        [
+          "Sec-Fetch-Mode",
+          "cors"
+        ],
+        [
+          "Sec-Fetch-Dest",
+          "empty"
+        ],
+        [
+          "Referer",
+          "http://127.0.0.1:8781/page-longcookies"
+        ],
+        [
+          "Accept-Encoding",
+          "gzip, deflate, br, zstd"
+        ],
+        [
+          "Accept-Language",
+          "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+        ],
+        [
+          "Cookie",
+          "ck_alpha=alpha-value-long; ck_beta=beta-value-long; ck_gamma=gamma-value-long"
+        ]
+      ],
+      "reference_names": [
+        "Host",
+        "Connection",
+        "Pragma",
+        "Cache-Control",
+        "sec-ch-ua-platform",
+        "User-Agent",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "Accept",
+        "Sec-Fetch-Site",
+        "Sec-Fetch-Mode",
+        "Sec-Fetch-Dest",
+        "Referer",
+        "Accept-Encoding",
+        "Accept-Language",
+        "Cookie"
+      ],
+      "duplicates": [],
+      "b_netlog": {
+        "event": "HTTP_TRANSACTION_SEND_REQUEST_HEADERS",
+        "order": [
+          "Host",
+          "Connection",
+          "Pragma",
+          "Cache-Control",
+          "sec-ch-ua-platform",
+          "User-Agent",
+          "sec-ch-ua",
+          "sec-ch-ua-mobile",
+          "Accept",
+          "Sec-Fetch-Site",
+          "Sec-Fetch-Mode",
+          "Sec-Fetch-Dest",
+          "Referer",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Cookie"
+        ],
+        "verdict": "idêntica (nome e caixa)",
+        "candidates": 1,
+        "ambiguous": false
+      },
+      "b_netlog_pre_session": null,
+      "response": {
+        "server_order": [
+          "content-type",
+          "cache-control",
+          "x-resp-order",
+          "x-resp-order",
+          "content-length",
+          "connection"
+        ],
+        "nul_joined": false,
+        "netlog_session": {
+          "event": "HTTP_TRANSACTION_READ_RESPONSE_HEADERS",
+          "order": [
+            "content-type",
+            "cache-control",
+            "x-resp-order",
+            "x-resp-order",
+            "content-length",
+            "connection"
+          ],
+          "verdict": "idêntica (nome e caixa)",
+          "nul_joined": false,
+          "candidates": 1
+        },
+        "cdp_headersText": {
+          "order": [
+            "content-type",
+            "cache-control",
+            "x-resp-order",
+            "x-resp-order",
+            "content-length",
+            "connection"
+          ],
+          "verdict": "idêntica (nome e caixa)"
+        },
+        "cdp_object": {
+          "order": [
+            "cache-control",
+            "connection",
+            "content-length",
+            "content-type",
+            "x-resp-order"
+          ],
+          "sorted_ascii": true,
+          "joined_values": [
+            [
+              "x-resp-order",
+              "1\n2"
+            ]
+          ],
+          "verdict": "duplicatas fundidas (mesmo conjunto de nomes)"
+        }
+      },
+      "a_cdp": {
+        "requestId": "97734.2",
+        "rws": {
+          "order": [
+            "sec-ch-ua-platform",
+            "Referer",
+            "User-Agent",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile"
+          ],
+          "n": 5,
+          "verdict": "subconjunto (11 nomes ausentes)"
+        },
+        "extra": {
+          "order": [
+            "Accept",
+            "Accept-Encoding",
+            "Accept-Language",
+            "Cache-Control",
+            "Connection",
+            "Cookie",
+            "Host",
+            "Pragma",
+            "Referer",
+            "Sec-Fetch-Dest",
+            "Sec-Fetch-Mode",
+            "Sec-Fetch-Site",
+            "User-Agent",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile",
+            "sec-ch-ua-platform"
+          ],
+          "n": 16,
+          "verdict": "reordenada (mesmo multiconjunto)",
+          "sorted_ascii": true,
+          "duplicates_in_reference": 0,
+          "cookies": [
+            "ck_alpha",
+            "ck_beta",
+            "ck_gamma"
+          ]
+        },
+        "headersText": true
+      },
+      "cdp_meta": {
+        "protocolVersion": "1.3",
+        "browser": "Chrome/156.0.8078.48",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/c06dbe08-8ab2-436f-978a-0cfe36792509",
+        "harAvailable": false,
+        "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+        "plan": {
+          "urls": [
+            "http://127.0.0.1:8781/page-longcookies"
+          ],
+          "mode": "native",
+          "settleMs": 1200
+        },
+        "navigations": [
+          {
+            "url": "http://127.0.0.1:8781/page-longcookies",
+            "navigate": {
+              "frameId": "80E264FE3E7BA30583CB716EF358D851",
+              "loaderId": "E7181482FC39E81F27872F92BC014BB8",
+              "isDownload": false
+            },
+            "probe": "{\"done\":{},\"result\":null,\"loc\":\"http://127.0.0.1:8781/page-longcookies\"}"
+          }
+        ],
+        "events": 24
+      }
+    }
+  ]
+}
