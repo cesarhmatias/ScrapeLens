@@ -720,6 +720,11 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                     if view_verification(request["requestHeaders"]) == "verified"]
         if leg.get("protocol") == "h1":
             exp.ok(bool(verified), "h1: ao menos um request com headers verificados (NetLog)")
+        if "h2" in protocols:
+            h2_views = {view_verification(request["requestHeaders"])
+                        for request in requests if request["protocol"] == "h2"}
+            exp.ok(h2_views and h2_views <= {"partial"},
+                   f"h2: headers de requisição permanecem partial (visto: {sorted(h2_views)})")
         exp.ok(any(request.get("status") for request in requests),
                f"{leg['name']}: status HTTP real presente")
         states = [request["responseBody"].get("state") for request in requests]
@@ -745,6 +750,11 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
            f"captura real: {ambiguous} requisição(ões) ambígua(s) nas simultâneas idênticas")
     exp.ok(summary.get("certificateInstalled") is False,
            "nenhum certificado foi instalado no sistema")
+    for common_name in ("ScrapeLens local test server", "ScrapeLens local test CA (synthetic)"):
+        found = subprocess.run(["security", "find-certificate", "-c", common_name],
+                               capture_output=True, text=True)
+        exp.ok(found.returncode != 0,
+               f"chaveiro do usuário não contém o certificado {common_name!r}")
     notes.append("O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` "
                  "com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.")
     evidence.append(

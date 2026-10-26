@@ -1,6 +1,6 @@
 # Relatório de aceite — ScrapeLens MVP
 
-Execução: 2026-10-26T23:26:31Z · binário do core `4e0edc61b02d` (2155344 bytes) · commit `90ccac0`
+Execução: 2026-10-26T23:27:21Z · binário do core `4e0edc61b02d` (2155344 bytes) · commit `48955fe`
 
 Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 
@@ -14,7 +14,7 @@ Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 | 6 | Diff sem perder duplicatas | **aprovado** | 14/14 |
 | 7 | Exportação cURL/Python com caracteres especiais | **aprovado** | 23/23 |
 | 8 | Sanitização incluindo eventos brutos | **aprovado** | 19/19 |
-| 9 | Ciclo real de captura no macOS | **aprovado** | 41/41 |
+| 9 | Ciclo real de captura no macOS | **aprovado** | 44/44 |
 | 10 | Importação grande com tamanho documentado | **aprovado** | 7/7 |
 
 Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/incompletos/desconhecidos, (3) simultâneas idênticas sem associação falsa, (4) redirects/tentativas, (5) corpos explícitos, (6) diff com duplicatas, (7) escaping cURL/Python, (8) sanitização com eventos brutos, (9) ciclo real macOS, (10) importação grande medida.
@@ -27,7 +27,7 @@ Evidência:
 - `scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`
 - asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte
 
-Asserções: 29 passaram, 0 falharam (0.06 s).
+Asserções: 29 passaram, 0 falharam (0.05 s).
 
 ## 2. HAR e NetLog válidos, incompletos e com eventos desconhecidos — aprovado
 
@@ -42,7 +42,7 @@ Evidência:
 
 > Observação: importadores HAR/NetLog isolados não gravam `completeness.counts.sourceEvents*` (fica 0 após reler); a contagem de eventos desconhecidos permanece auditável no aviso e nos eventos brutos.
 
-Asserções: 22 passaram, 0 falharam (0.14 s).
+Asserções: 22 passaram, 0 falharam (0.11 s).
 
 ## 3. Requisições simultâneas idênticas sem associação falsa — aprovado
 
@@ -52,7 +52,7 @@ Evidência:
 
 > A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade.
 
-Asserções: 15 passaram, 0 falharam (0.06 s).
+Asserções: 15 passaram, 0 falharam (0.04 s).
 
 ## 4. Redirects e múltiplas tentativas — aprovado
 
@@ -63,7 +63,7 @@ Evidência:
 
 > O redirect é um elo entre tentativas, não uma requisição separada.
 
-Asserções: 12 passaram, 0 falharam (0.04 s).
+Asserções: 12 passaram, 0 falharam (0.03 s).
 
 ## 5. Corpos ausentes/truncados/descartados explícitos — aprovado
 
@@ -73,7 +73,7 @@ Evidência:
 
 > `empty` só é usado quando a fonte afirma zero bytes; ausência vira `unavailable` com nota.
 
-Asserções: 16 passaram, 0 falharam (0.01 s).
+Asserções: 16 passaram, 0 falharam (0.00 s).
 
 ## 6. Diff sem perder duplicatas — aprovado
 
@@ -107,7 +107,7 @@ Evidência:
 
 > Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso.
 
-Asserções: 19 passaram, 0 falharam (0.03 s).
+Asserções: 19 passaram, 0 falharam (0.04 s).
 
 ## 9. Ciclo real de captura no macOS — aprovado
 
@@ -120,24 +120,24 @@ Evidência:
 
 > O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.
 
-Asserções: 41 passaram, 0 falharam (0.07 s).
+Asserções: 44 passaram, 0 falharam (0.20 s).
 
 ## 10. Importação grande com tamanho documentado — aprovado
 
 Evidência:
 
-- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.02 s, pico 785 MiB RSS
+- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.94 s, pico 783 MiB RSS
 - sessão gravada: session.json 225.8 MiB
-- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.75 s, pico 2376 MiB RSS
+- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.70 s, pico 2390 MiB RSS
 - complementar, 20,000 anexos de 20 B: import 128.05 s, pico 565 MiB, sessão 228.9 MiB
 
 > HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).
 
-> `inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2376 MiB vem da serialização, não do parser.
+> `inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2390 MiB vem da serialização, não do parser.
 
 > Pior caso de anexos: um `fsync` por arquivo em `store::write_file` domina (128.1 s para 20,000 anexos 20 B). O parser gasta <1 s de CPU; é custo de I/O da gravação. Recomendo batching/adiar fsync no core.
 
-Asserções: 7 passaram, 0 falharam (8.50 s).
+Asserções: 7 passaram, 0 falharam (8.63 s).
 
 ## Como reproduzir
 
