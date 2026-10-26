@@ -10,6 +10,10 @@ pub const CDP_EVENTS_FILE: &str = "cdp-events.jsonl";
 pub const NETLOG_FILE: &str = "netlog.json";
 pub const ATTACHMENTS_DIR: &str = "attachments";
 
+/// Sessões pequenas mantêm fsync por anexo (durabilidade); capturas grandes
+/// usam um único fsync de diretório, porque o custo por arquivo domina.
+const ATTACHMENT_SYNC_LIMIT: usize = 256;
+
 /// Nome de anexo aceito: relativo, sem `..`, sem separador de diretório e sem
 /// byte nulo. Bloqueia traversal antes de qualquer leitura/escrita.
 pub fn validate_attachment_name(name: &str) -> Result<()> {
@@ -124,10 +128,12 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
         write_atomic(&dir.join(NETLOG_FILE), bytes, true)?;
     }
 
-    // Um fsync por diretório no fim do lote, não um por anexo.
+    // Lote: em sessões pequenas cada anexo é durável; em capturas grandes o
+    // fsync é único por diretório no fim, não um por arquivo.
+    let sync_each = bundle.attachments.len() <= ATTACHMENT_SYNC_LIMIT;
     for (name, bytes) in &bundle.attachments {
         validate_attachment_name(name)?;
-        write_atomic(&attachments_dir.join(name), bytes, false)?;
+        write_atomic(&attachments_dir.join(name), bytes, sync_each)?;
     }
     if !bundle.attachments.is_empty() {
         sync_dir(&attachments_dir)?;
