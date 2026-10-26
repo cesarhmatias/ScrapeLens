@@ -20,6 +20,17 @@ scraping. Especificação completa:
 
 OpenCode 1.19.4. Sem substituição silenciosa de modelo.
 
+Equipe (seção OpenBot "ScrapeLens"):
+
+| Agente | ID | Modelo |
+|---|---|---|
+| Líder e arquitetura | `agent-88cccd6b…a41` | `opencode-go/glm-5.3` |
+| Captura e protocolos | `agent-05db9236…4c23` | `opencode-go/deepseek-v4.1-flash` (high) |
+| Testes e integração | `agent-e9324ddd…4b1f` | `opencode-go/deepseek-v4.1-flash` (high) |
+| Core e importadores | `agent-d66aa8db…8d71` | `opencode-go/deepseek-v4.1-flash` (high) — standby pós-matriz |
+| App macOS e interface | `agent-466e334c…66b9` | `opencode-go/deepseek-v4.1-flash` (high) — standby pós-matriz |
+| Revisor independente | `agent-ffb4d60c…ad63` | `opencode-go/glm-5.3` (high) — standby pós-matriz |
+
 ## Ondas (máx. 3 executores simultâneos)
 
 - Onda 1 (ativa): Captura/protocolos + Testes/servidores — experimentos de
