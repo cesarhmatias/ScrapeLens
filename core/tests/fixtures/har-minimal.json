@@ -1,0 +1,64 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": { "name": "ScrapeLens synthetic fixture", "version": "0.1" },
+    "browser": { "name": "Chrome", "version": "156.0.8078.48" },
+    "comment": "SYNTHETIC FIXTURE — dados .invalid, sem tráfego real",
+    "entries": [
+      {
+        "startedDateTime": "2026-10-26T20:00:00.000Z",
+        "time": 42.5,
+        "request": {
+          "method": "POST",
+          "url": "https://api.demo.invalid/v1/items?page=2",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            { "name": "Host", "value": "api.demo.invalid" },
+            { "name": "x-rep", "value": "a" },
+            { "name": "X-Rep", "value": "b" },
+            { "name": "Cookie", "value": "sid=abc; theme=dark" },
+            { "name": "Content-Type", "value": "text/plain; charset=utf-8" }
+          ],
+          "cookies": [
+            { "name": "sid", "value": "abc" },
+            { "name": "theme", "value": "dark" }
+          ],
+          "postData": {
+            "mimeType": "text/plain; charset=utf-8",
+            "text": "hello=world"
+          }
+        },
+        "response": {
+          "status": 201,
+          "statusText": "Created",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            { "name": "content-type", "value": "application/json" },
+            { "name": "x-resp-order", "value": "1" },
+            { "name": "x-resp-order", "value": "2" },
+            { "name": "set-cookie", "value": "sc_a=alpha; Path=/; SameSite=Lax" }
+          ],
+          "cookies": [
+            { "name": "sc_a", "value": "alpha" }
+          ],
+          "content": {
+            "size": 6,
+            "mimeType": "application/json",
+            "text": "{\"ok\":1}"
+          }
+        },
+        "timings": {
+          "blocked": 0.5,
+          "dns": 1.5,
+          "connect": 4.0,
+          "send": 0.5,
+          "wait": 30.0,
+          "receive": 6.0,
+          "ssl": 2.0
+        },
+        "serverIPAddress": "192.0.2.10",
+        "connection": "443"
+      }
+    ]
+  }
+}

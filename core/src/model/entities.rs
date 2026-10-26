@@ -135,6 +135,12 @@ pub enum HeaderRole {
     Response,
 }
 
+impl Default for HeaderRole {
+    fn default() -> Self {
+        HeaderRole::Request
+    }
+}
+
 /// Evidência de headers de uma fonte específica. Uma tentativa pode ter várias
 /// (ex.: transação + sessão h2), sem que uma substitua a outra.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -151,7 +157,7 @@ pub struct HeaderEvidence {
     pub view: HeaderView,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AttemptOutcome {
     Completed,
@@ -206,6 +212,8 @@ pub struct Attempt {
     pub request_body: Body,
     #[serde(default)]
     pub response_body: Body,
+    #[serde(default)]
+    pub timings: Timings,
     pub cdp: Option<CdpRef>,
     pub netlog: NetlogRefs,
     /// Estado do casamento desta tentativa com a fonte oposta.
@@ -246,6 +254,7 @@ impl Attempt {
             header_evidence: Vec::new(),
             request_body: Body::default(),
             response_body: Body::default(),
+            timings: Timings::default(),
             cdp: None,
             netlog: NetlogRefs::default(),
             match_state: MatchState::Unmatched,
@@ -433,10 +442,10 @@ impl LogicalRequest {
         self.attempts.first()
     }
 
-    /// Recalcula a visão primária a partir da primeira tentativa, preservando
-    /// as evidências originais.
+    /// Recalcula a visão primária a partir da última tentativa (a que
+    /// completou a cadeia de redirect), preservando as evidências originais.
     pub fn refresh_primary_from_attempt(&mut self) {
-        if let Some(attempt) = self.attempts.first() {
+        if let Some(attempt) = self.attempts.last() {
             self.protocol = attempt.protocol;
             self.status = attempt.status;
             self.request_headers = attempt.request_headers.clone();

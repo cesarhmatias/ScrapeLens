@@ -1,0 +1,134 @@
+{
+  "_comment": "SYNTHETIC FIXTURE — NetLog h2 simplificado, dados .invalid, sem tráfego real",
+  "constants": {
+    "logEventTypes": {
+      "URL_REQUEST_START_JOB": 136,
+      "URL_REQUEST_REDIRECTED": 137,
+      "HTTP_STREAM_JOB_BOUND_TO_REQUEST": 191,
+      "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS": 242,
+      "HTTP_TRANSACTION_READ_RESPONSE_HEADERS": 245,
+      "HTTP2_SESSION_SEND_HEADERS": 264,
+      "HTTP2_SESSION_RECV_HEADERS": 265
+    },
+    "logSourceType": {
+      "NONE": 0,
+      "URL_REQUEST": 1,
+      "HTTP2_SESSION": 11,
+      "HTTP_STREAM_JOB": 17
+    },
+    "clientInfo": {
+      "name": "Google Chrome",
+      "version": "156.0.8078.48",
+      "os_type": "Mac OS X: 26.5.2 (arm64)"
+    },
+    "timeTickOffset": 1787407332877
+  },
+  "events": [
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640473072",
+      "source": { "id": 77, "start_time": "5640473072", "type": 1 },
+      "params": {
+        "url": "https://demo.invalid/x?b=2&a=1",
+        "method": "GET",
+        "request_type": "main frame"
+      }
+    },
+    {
+      "type": 191,
+      "phase": 0,
+      "time": "5640473072",
+      "source": { "id": 84, "start_time": "5640473072", "type": 17 },
+      "params": { "source_dependency": { "id": 77, "type": 1 } }
+    },
+    {
+      "type": 242,
+      "phase": 0,
+      "time": "5640473073",
+      "source": { "id": 77, "start_time": "5640473072", "type": 1 },
+      "params": {
+        "headers": [
+          ":method: GET",
+          ":authority: demo.invalid",
+          ":scheme: https",
+          ":path: /x?b=2&a=1",
+          "x-rep: a",
+          "x-rep: b",
+          "cookie: sl_a=1; sl_b=2",
+          "priority: u=1, i",
+          "linha-sem-separador"
+        ]
+      }
+    },
+    {
+      "type": 264,
+      "phase": 0,
+      "time": "5640473073",
+      "source": { "id": 89, "start_time": "5640473072", "type": 11 },
+      "source_dependency": { "id": 84, "type": 17 },
+      "params": {
+        "stream_id": 1,
+        "exclusive": true,
+        "fin": true,
+        "headers": [
+          ":method: GET",
+          ":authority: demo.invalid",
+          ":scheme: https",
+          ":path: /x?b=2&a=1",
+          "x-rep: a",
+          "x-rep: b",
+          "cookie: sl_a=1; sl_b=2",
+          "priority: u=1, i"
+        ]
+      }
+    },
+    {
+      "type": 245,
+      "phase": 0,
+      "time": "5640473074",
+      "source": { "id": 77, "start_time": "5640473072", "type": 1 },
+      "params": {
+        "headers": [
+          "HTTP/1.1 200",
+          "content-type: application/json",
+          "x-resp-order: 1",
+          "x-resp-order: 2",
+          "set-cookie: sc_a=alpha; Path=/",
+          "set-cookie: sc_b=beta; Path=/",
+          "content-length: 6"
+        ]
+      }
+    },
+    {
+      "type": 265,
+      "phase": 0,
+      "time": "5640473074",
+      "source": { "id": 89, "start_time": "5640473072", "type": 11 },
+      "params": {
+        "stream_id": 1,
+        "headers": [
+          ":status: 200",
+          "content-type: application/json",
+          "x-resp-order: 1\u00002",
+          "set-cookie: sc_a=alpha; Path=/\u0000sc_b=beta; Path=/",
+          "content-length: 6"
+        ]
+      }
+    },
+    {
+      "type": 136,
+      "phase": 2,
+      "time": "5640473075",
+      "source": { "id": 77, "start_time": "5640473072", "type": 1 },
+      "params": { "net_error": 0 }
+    },
+    {
+      "type": 999999,
+      "phase": 0,
+      "time": "5640473076",
+      "source": { "id": 1, "start_time": "5640473072", "type": 1 },
+      "params": { "_note": "evento de tipo desconhecido (fixture)" }
+    }
+  ]
+}
