@@ -1,0 +1,44 @@
+{
+  "total_requests": 48,
+  "by_protocol": {
+    "h1": {
+      "requests": 16,
+      "netlog": {
+        "idêntica (nome e caixa)": 16
+      },
+      "cdp_extra": {
+        "reordenada (mesmo multiconjunto)": 16
+      },
+      "response_netlog": {
+        "idêntica (nome e caixa)": 16
+      }
+    },
+    "h2": {
+      "requests": 16,
+      "netlog": {
+        "idêntica (nome e caixa)": 5,
+        "reordenada (mesmo multiconjunto)": 11
+      },
+      "cdp_extra": {
+        "reordenada (mesmo multiconjunto)": 16
+      },
+      "response_netlog": {
+        "idêntica (nome e caixa)": 16
+      }
+    },
+    "h3": {
+      "requests": 16,
+      "netlog": {
+        "idêntica (nome e caixa)": 5,
+        "duplicatas fundidas (mesmo conjunto de nomes)": 11
+      },
+      "cdp_extra": {
+        "reordenada (mesmo multiconjunto)": 5,
+        "duplicatas fundidas (mesmo conjunto de nomes)": 11
+      },
+      "response_netlog": {
+        "idêntica (nome e caixa)": 16
+      }
+    }
+  }
+}

@@ -36,6 +36,7 @@ def build_args(
     headless: bool = True,
     spki: str | None = None,
     force_quic_origin: str | None = None,
+    ignore_cert_errors: bool = False,
 ) -> list[str]:
     args = [
         CHROME,
@@ -53,6 +54,12 @@ def build_args(
         "--disable-extensions",
         "--metrics-recording-only",
         "--no-service-autorun",
+        "--no-pings",
+        "--disable-breakpad",
+        "--disable-domain-reliability",
+        "--disable-client-side-phishing-detection",
+        "--disable-component-extensions-with-background-pages",
+        "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
         "--password-store=basic",
         "--use-mock-keychain",
         "--disable-search-engine-choice-screen",
@@ -63,6 +70,8 @@ def build_args(
     ]
     if spki:
         args.insert(1, f"--ignore-certificate-errors-spki-list={spki}")
+    if ignore_cert_errors:
+        args.insert(1, "--ignore-certificate-errors")
     if force_quic_origin:
         args.insert(1, f"--origin-to-force-quic-on={force_quic_origin}")
     if headless:
@@ -80,6 +89,7 @@ class ChromeSession:
         headless: bool = True,
         spki: str | None = None,
         force_quic_origin: str | None = None,
+        ignore_cert_errors: bool = False,
     ) -> None:
         self.profile_dir = profile_dir
         self.netlog_path = netlog_path
@@ -91,6 +101,7 @@ class ChromeSession:
             headless=headless,
             spki=spki,
             force_quic_origin=force_quic_origin,
+            ignore_cert_errors=ignore_cert_errors,
         )
         self.proc: subprocess.Popen[bytes] | None = None
 

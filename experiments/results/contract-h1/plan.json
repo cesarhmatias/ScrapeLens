@@ -1,0 +1,9 @@
+{
+  "urls": [
+    "http://127.0.0.1:8781/setcookie",
+    "http://127.0.0.1:8781/page"
+  ],
+  "mode": "native",
+  "settleMs": 3000,
+  "navTimeoutMs": 30000
+}

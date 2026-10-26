@@ -1,0 +1,479 @@
+{
+  "h1-ordered": {
+    "protocol": "h1",
+    "requests": [
+      {
+        "target": "/echo-order?case=ordered",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "divergente",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/favicon.ico",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (10 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      }
+    ]
+  },
+  "h1-page": {
+    "protocol": "h1",
+    "requests": [
+      {
+        "target": "/setcookie",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=afterjs",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=page",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=page2",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (13 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=jsheaders",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/page",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (12 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=afterjs",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=page",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=page2",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (13 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/echo-order?from=jsheaders",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      }
+    ]
+  },
+  "h1-plain": {
+    "protocol": "h1",
+    "requests": [
+      {
+        "target": "/echo-order?case=plain",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (11 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      },
+      {
+        "target": "/favicon.ico",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (10 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": false
+      }
+    ]
+  },
+  "h2-ordered": {
+    "protocol": "h2",
+    "requests": [
+      {
+        "target": "/echo-order?case=ordered",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "divergente",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/favicon.ico",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (13 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  },
+  "h2-page": {
+    "protocol": "h2",
+    "requests": [
+      {
+        "target": "/setcookie",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=afterjs",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=page",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=page2",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (16 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=jsheaders",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/page",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (15 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=afterjs",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=page",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=page2",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (16 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=jsheaders",
+        "netlog": "reordenada (mesmo multiconjunto)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  },
+  "h2-plain": {
+    "protocol": "h2",
+    "requests": [
+      {
+        "target": "/echo-order?case=plain",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/favicon.ico",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (13 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  },
+  "h3-ordered": {
+    "protocol": "h3",
+    "requests": [
+      {
+        "target": "/echo-order?case=ordered",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "divergente",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/favicon.ico",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (13 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  },
+  "h3-page": {
+    "protocol": "h3",
+    "requests": [
+      {
+        "target": "/setcookie",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=afterjs",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=page",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=page2",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (16 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=jsheaders",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/page",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (15 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=afterjs",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=page",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=page2",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (16 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/echo-order?from=jsheaders",
+        "netlog": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "duplicatas fundidas (mesmo conjunto de nomes)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  },
+  "h3-plain": {
+    "protocol": "h3",
+    "requests": [
+      {
+        "target": "/echo-order?case=plain",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (14 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      },
+      {
+        "target": "/favicon.ico",
+        "netlog": "idêntica (nome e caixa)",
+        "cdp_rws": "subconjunto (13 nomes ausentes)",
+        "cdp_extra": "reordenada (mesmo multiconjunto)",
+        "cdp_extra_sorted": true,
+        "response_netlog": "idêntica (nome e caixa)",
+        "response_nul": true
+      }
+    ]
+  }
+}

@@ -20,12 +20,19 @@ from aioquic.quic.events import ConnectionTerminated, ProtocolNegotiated
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from common import Recorder, body_payload, response_headers  # noqa: E402
 
-PAGE = b"""<!doctype html><meta charset=utf-8><title>sl h3</title>
+PAGE = b"""<!doctype html><link rel="icon" href="data:,"><meta charset=utf-8><title>sl h3</title>
 <script>
 window.__done = (async () => {
+  document.cookie = 'sl_c=3; path=/';
+  await fetch('/echo-order?from=afterjs', {credentials: 'include'}).then(r => r.json());
   await fetch('/echo-order?from=page', {credentials: 'include'}).then(r => r.json());
   await fetch('/echo-order?from=page2', {credentials: 'include'}).then(r => r.json());
-  return 2;
+  await fetch('/echo', {method: 'POST', credentials: 'include', body: 'k=v&z=1'}).then(r => r.json());
+  const h = new Headers();
+  h.set('x-zeta', '1'); h.set('x-alpha', '2'); h.set('x-mid', '3');
+  h.append('x-dup', 'a'); h.append('x-dup', 'b');
+  await fetch('/echo-order?from=jsheaders', {headers: h, credentials: 'include'}).then(r => r.json());
+  return 4;
 })();
 </script>
 """
@@ -57,14 +64,7 @@ class H3Server(QuicConnectionProtocol):
                     "alpn": self._quic._network_paths[0].addr if False else "h3",
                     "tls_version": "TLSv1.3",
                 }
-                self._rec.record(
-                    method=dict(pseudo).get(":method", ""),
-                    target=dict(pseudo).get(":path", ""),
-                    headers=regular,
-                    pseudoheaders=pseudo,
-                    conn=self.conn_id,
-                    tls=tls,
-                )
+                st["meta"] = (dict(pseudo).get(":method", ""), dict(pseudo).get(":path", ""), regular, pseudo, tls)
                 if http_event.stream_ended:
                     self._respond(http_event.stream_id, st)
             elif isinstance(http_event, DataReceived):
@@ -77,17 +77,30 @@ class H3Server(QuicConnectionProtocol):
     def _respond(self, stream_id: int, st: dict) -> None:
         assert self._http is not None
         path = dict(st["pseudo"]).get(":path", "/").split("?", 1)[0]
-        if path == "/page":
+        if path in ("/page", "/setcookie"):
             body, ctype = PAGE, "text/html; charset=utf-8"
         else:
             body = body_payload("h3", st["regular"], st["pseudo"])
             ctype = "application/json; charset=utf-8"
+        meta = st.get("meta")
         headers = [(b":status", b"200")]
         for name, value in response_headers(path, "h3"):
             if name == "content-type":
                 value = ctype
             headers.append((name.encode(), value.encode()))
         headers.append((b"content-length", str(len(body)).encode()))
+        if meta:
+            m, t, regular, pseudo, tls = meta
+            self._rec.record(
+                method=m,
+                target=t,
+                headers=regular,
+                pseudoheaders=pseudo,
+                body=st["body"],
+                conn=self.conn_id,
+                tls=tls,
+                response_headers=[[n.decode(), v.decode()] for n, v in headers],
+            )
         self._http.send_headers(stream_id, headers)
         self._http.send_data(stream_id, body, end_stream=True)
         self.transmit()

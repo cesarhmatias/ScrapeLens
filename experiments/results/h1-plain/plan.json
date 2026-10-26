@@ -1,0 +1,7 @@
+{
+  "urls": [
+    "http://127.0.0.1:8781/echo-order?case=plain"
+  ],
+  "mode": "native",
+  "settleMs": 800
+}

@@ -41,6 +41,7 @@ class Recorder:
         conn: str = "",
         note: str = "",
         tls: dict[str, Any] | None = None,
+        response_headers: Sequence[Sequence[str]] = (),
     ) -> dict[str, Any]:
         row: dict[str, Any] = {
             "source": "server",
@@ -58,6 +59,8 @@ class Recorder:
             "body_len": len(body),
             "body": body.decode("utf-8", "replace") if len(body) <= 4096 else "<truncated>",
         }
+        if response_headers:
+            row["response_headers"] = [[str(n), str(v)] for n, v in response_headers]
         if raw_header_block is not None:
             row["raw_header_block"] = raw_header_block
         if tls:
@@ -73,7 +76,12 @@ class Recorder:
         return row
 
 
-def body_payload(protocol: str, headers: Iterable[Sequence[str]], pseudo=()) -> bytes:
+def body_payload(
+    protocol: str,
+    headers: Iterable[Sequence[str]],
+    pseudo=(),
+    request_body: bytes = b"",
+) -> bytes:
     headers = list(headers)
     payload = {
         "protocol": protocol,
@@ -84,6 +92,7 @@ def body_payload(protocol: str, headers: Iterable[Sequence[str]], pseudo=()) -> 
             {n for n, _ in headers if [x for x, _ in headers].count(n) > 1}
         ),
         "request_id": os.urandom(4).hex(),
+        "request_body": request_body.decode("utf-8", "replace"),
     }
     return json.dumps(payload, ensure_ascii=False).encode()
 
@@ -99,8 +108,8 @@ BASE_RESPONSE_HEADERS: list[tuple[str, str]] = [
 
 def response_headers(path: str, protocol: str) -> list[tuple[str, str]]:
     headers = list(BASE_RESPONSE_HEADERS)
-    if protocol == "h2":
-        headers.append(("alt-svc", 'h3=":8783"; ma=86400'))
+    # Sem Alt-Svc: o experimento h3 usa --origin-to-force-quic-on para não
+    # contaminar os resultados de h2 com tráfego migrado para h3.
     if path.startswith("/setcookie"):
         headers.append(("set-cookie", "sl_a=1; Path=/"))
         headers.append(("set-cookie", "sl_b=2; Path=/"))

@@ -1,0 +1,7 @@
+{
+  "experiment": "contract-h2",
+  "chrome": {
+    "Browser": "Chrome/156.0.8078.48"
+  },
+  "source": "testserver"
+}

@@ -20,12 +20,19 @@ import h2.events
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from common import Recorder, body_payload, response_headers  # noqa: E402
 
-PAGE = b"""<!doctype html><meta charset=utf-8><title>sl h2</title>
+PAGE = b"""<!doctype html><link rel="icon" href="data:,"><meta charset=utf-8><title>sl h2</title>
 <script>
 window.__done = (async () => {
+  document.cookie = 'sl_c=3; path=/';
+  await fetch('/echo-order?from=afterjs', {credentials: 'include'}).then(r => r.json());
   await fetch('/echo-order?from=page', {credentials: 'include'}).then(r => r.json());
   await fetch('/echo-order?from=page2', {credentials: 'include'}).then(r => r.json());
-  return 2;
+  await fetch('/echo', {method: 'POST', credentials: 'include', body: 'k=v&z=1'}).then(r => r.json());
+  const h = new Headers();
+  h.set('x-zeta', '1'); h.set('x-alpha', '2'); h.set('x-mid', '3');
+  h.append('x-dup', 'a'); h.append('x-dup', 'b');
+  await fetch('/echo-order?from=jsheaders', {headers: h, credentials: 'include'}).then(r => r.json());
+  return 4;
 })();
 </script>
 """
@@ -53,6 +60,7 @@ class H2Server:
         writer.write(conn.data_to_send())
         await writer.drain()
         streams: dict[int, dict] = {}
+        self._pending_pairs: dict[int, tuple] = {}
         try:
             while True:
                 data = await asyncio.wait_for(reader.read(65536), timeout=60)
@@ -65,14 +73,7 @@ class H2Server:
                         pseudo = [(n, v) for n, v in pairs if n.startswith(":")]
                         regular = [(n, v) for n, v in pairs if not n.startswith(":")]
                         streams[event.stream_id] = {"pairs": pairs, "pseudo": pseudo, "regular": regular, "body": b""}
-                        self.rec.record(
-                            method=dict(pseudo).get(":method", ""),
-                            target=dict(pseudo).get(":path", ""),
-                            headers=regular,
-                            pseudoheaders=pseudo,
-                            conn=conn_id,
-                            tls=tls,
-                        )
+                        self._pending_pairs[event.stream_id] = ((dict(pseudo).get(":method", ""), dict(pseudo).get(":path", ""), regular, pseudo, conn_id, tls))
                     elif isinstance(event, h2.events.DataReceived):
                         st = streams.get(event.stream_id)
                         if st is not None:
@@ -102,8 +103,7 @@ class H2Server:
 
     def respond(self, conn: h2.connection.H2Connection, stream_id: int, st: dict) -> None:
         path = dict(st["pseudo"]).get(":path", "/").split("?", 1)[0]
-        method = dict(st["pseudo"]).get(":method", "GET")
-        if path == "/page":
+        if path in ("/page", "/setcookie"):
             body, ctype = PAGE, "text/html; charset=utf-8"
         else:
             body = body_payload("h2", st["regular"], st["pseudo"])
@@ -114,6 +114,19 @@ class H2Server:
                 value = ctype
             headers.append((name.encode(), value.encode()))
         headers.append((b"content-length", str(len(body)).encode()))
+        meta = self._pending_pairs.get(stream_id)
+        if meta:
+            m, t, regular, pseudo, conn_id, tls = meta
+            self.rec.record(
+                method=m,
+                target=t,
+                headers=regular,
+                pseudoheaders=pseudo,
+                body=st["body"],
+                conn=conn_id,
+                tls=tls,
+                response_headers=[[n.decode(), v.decode()] for n, v in headers],
+            )
         conn.send_headers(stream_id, headers)
         conn.send_data(stream_id, body, end_stream=True)
 

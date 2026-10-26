@@ -1,0 +1,40 @@
+{
+  "protocolVersion": "1.3",
+  "browser": "Chrome/156.0.8078.48",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/1133d8da-05bf-4183-b894-c45def7579d1",
+  "harAvailable": false,
+  "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+  "plan": {
+    "urls": [
+      "https://127.0.0.1:8782/setcookie",
+      "https://127.0.0.1:8782/page"
+    ],
+    "mode": "native",
+    "settleMs": 4000,
+    "navTimeoutMs": 30000
+  },
+  "navigations": [
+    {
+      "url": "https://127.0.0.1:8782/setcookie",
+      "navigate": {
+        "frameId": "9D26CDAACE244D6CE9A094DCF7586202",
+        "loaderId": "8B3D56482DBF9B76EB3E841AE218F250",
+        "errorText": "net::ERR_QUIC_PROTOCOL_ERROR",
+        "isDownload": false
+      },
+      "probe": "{\"done\":null,\"result\":null,\"loc\":\"chrome-error://chromewebdata/\"}"
+    },
+    {
+      "url": "https://127.0.0.1:8782/page",
+      "navigate": {
+        "frameId": "9D26CDAACE244D6CE9A094DCF7586202",
+        "loaderId": "9F4E1932619D272C90386F6D58D74CCA",
+        "errorText": "net::ERR_QUIC_PROTOCOL_ERROR",
+        "isDownload": false
+      },
+      "probe": "{\"done\":null,\"result\":null,\"loc\":\"chrome-error://chromewebdata/\"}"
+    }
+  ],
+  "events": 72
+}

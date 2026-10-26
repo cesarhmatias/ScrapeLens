@@ -1,0 +1,54 @@
+{
+  "protocolVersion": "1.3",
+  "browser": "Chrome/156.0.8078.48",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/a6fc800d-19ad-4640-847a-63ed91a8a603",
+  "harAvailable": false,
+  "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+  "plan": {
+    "urls": [
+      "http://127.0.0.1:8781/echo-order?case=ordered"
+    ],
+    "mode": "ordered",
+    "match": "/echo",
+    "extraHeaders": [
+      [
+        "x-rep",
+        "a"
+      ],
+      [
+        "x-seq",
+        "1"
+      ],
+      [
+        "X-Rep",
+        "b"
+      ],
+      [
+        "x-seq",
+        "2"
+      ],
+      [
+        "x-mixed-Case",
+        "V"
+      ],
+      [
+        "x-rep",
+        "c"
+      ]
+    ],
+    "settleMs": 800
+  },
+  "navigations": [
+    {
+      "url": "http://127.0.0.1:8781/echo-order?case=ordered",
+      "navigate": {
+        "frameId": "5597D30186FC55B052C70E17097932F6",
+        "loaderId": "66A2752BFD1C7C6C8014386214094F70",
+        "isDownload": false
+      },
+      "probe": "{\"done\":null,\"result\":null,\"loc\":\"http://127.0.0.1:8781/echo-order?case=ordered\"}"
+    }
+  ],
+  "events": 27
+}

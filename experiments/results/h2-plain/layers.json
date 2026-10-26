@@ -1,0 +1,561 @@
+{
+  "experiment": "h2-plain",
+  "protocol": "h2",
+  "browser": "Chrome/156.0.8078.48",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "plan": {
+    "urls": [
+      "https://127.0.0.1:8782/echo-order?case=plain"
+    ],
+    "mode": "native",
+    "settleMs": 900
+  },
+  "requests": [
+    {
+      "target": "/echo-order?case=plain",
+      "method": "GET",
+      "reference_server": [
+        [
+          ":method",
+          "GET"
+        ],
+        [
+          ":authority",
+          "127.0.0.1:8782"
+        ],
+        [
+          ":scheme",
+          "https"
+        ],
+        [
+          ":path",
+          "/echo-order?case=plain"
+        ],
+        [
+          "pragma",
+          "no-cache"
+        ],
+        [
+          "cache-control",
+          "no-cache"
+        ],
+        [
+          "sec-ch-ua",
+          "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\", \"Google Chrome\";v=\"156\""
+        ],
+        [
+          "sec-ch-ua-mobile",
+          "?0"
+        ],
+        [
+          "sec-ch-ua-platform",
+          "\"macOS\""
+        ],
+        [
+          "upgrade-insecure-requests",
+          "1"
+        ],
+        [
+          "user-agent",
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+        ],
+        [
+          "accept",
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+        ],
+        [
+          "sec-fetch-site",
+          "none"
+        ],
+        [
+          "sec-fetch-mode",
+          "navigate"
+        ],
+        [
+          "sec-fetch-user",
+          "?1"
+        ],
+        [
+          "sec-fetch-dest",
+          "document"
+        ],
+        [
+          "accept-encoding",
+          "gzip, deflate, br, zstd"
+        ],
+        [
+          "accept-language",
+          "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+        ],
+        [
+          "priority",
+          "u=0, i"
+        ]
+      ],
+      "reference_names": [
+        ":method",
+        ":authority",
+        ":scheme",
+        ":path",
+        "pragma",
+        "cache-control",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+        "upgrade-insecure-requests",
+        "user-agent",
+        "accept",
+        "sec-fetch-site",
+        "sec-fetch-mode",
+        "sec-fetch-user",
+        "sec-fetch-dest",
+        "accept-encoding",
+        "accept-language",
+        "priority"
+      ],
+      "duplicates": [],
+      "b_netlog": {
+        "event": "HTTP2_SESSION_SEND_HEADERS",
+        "order": [
+          ":method",
+          ":authority",
+          ":scheme",
+          ":path",
+          "pragma",
+          "cache-control",
+          "sec-ch-ua",
+          "sec-ch-ua-mobile",
+          "sec-ch-ua-platform",
+          "upgrade-insecure-requests",
+          "user-agent",
+          "accept",
+          "sec-fetch-site",
+          "sec-fetch-mode",
+          "sec-fetch-user",
+          "sec-fetch-dest",
+          "accept-encoding",
+          "accept-language",
+          "priority"
+        ],
+        "verdict": "idêntica (nome e caixa)",
+        "candidates": 2,
+        "ambiguous": false
+      },
+      "b_netlog_pre_session": {
+        "event": "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS",
+        "order": [
+          ":method",
+          ":authority",
+          ":scheme",
+          ":path",
+          "pragma",
+          "cache-control",
+          "sec-ch-ua",
+          "sec-ch-ua-mobile",
+          "sec-ch-ua-platform",
+          "upgrade-insecure-requests",
+          "user-agent",
+          "accept",
+          "sec-fetch-site",
+          "sec-fetch-mode",
+          "sec-fetch-user",
+          "sec-fetch-dest",
+          "accept-encoding",
+          "accept-language",
+          "priority"
+        ],
+        "verdict": "idêntica (nome e caixa)"
+      },
+      "response": {
+        "server_order": [
+          "content-type",
+          "cache-control",
+          "x-resp-order",
+          "x-resp-order",
+          "content-length"
+        ],
+        "nul_joined": false,
+        "netlog_session": {
+          "event": "HTTP2_SESSION_RECV_HEADERS",
+          "order": [
+            "content-type",
+            "cache-control",
+            "x-resp-order",
+            "x-resp-order",
+            "content-length"
+          ],
+          "verdict": "idêntica (nome e caixa)",
+          "nul_joined": true,
+          "candidates": 2
+        },
+        "netlog_other": {
+          "event": "HTTP_TRANSACTION_READ_RESPONSE_HEADERS",
+          "order": [
+            "content-type",
+            "cache-control",
+            "x-resp-order",
+            "x-resp-order",
+            "content-length"
+          ],
+          "verdict": "idêntica (nome e caixa)",
+          "nul_joined": false
+        },
+        "cdp_object": {
+          "order": [
+            "cache-control",
+            "content-length",
+            "content-type",
+            "x-resp-order"
+          ],
+          "sorted_ascii": true,
+          "joined_values": [
+            [
+              "x-resp-order",
+              "1\n2"
+            ]
+          ],
+          "verdict": "duplicatas fundidas (mesmo conjunto de nomes)"
+        }
+      },
+      "a_cdp": {
+        "requestId": "AF69066EBF527D53F4F9DEABBA65CFFA",
+        "rws": {
+          "order": [
+            "Upgrade-Insecure-Requests",
+            "User-Agent",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile",
+            "sec-ch-ua-platform"
+          ],
+          "n": 5,
+          "verdict": "subconjunto (14 nomes ausentes)"
+        },
+        "extra": {
+          "order": [
+            ":authority",
+            ":method",
+            ":path",
+            ":scheme",
+            "accept",
+            "accept-encoding",
+            "accept-language",
+            "cache-control",
+            "pragma",
+            "priority",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile",
+            "sec-ch-ua-platform",
+            "sec-fetch-dest",
+            "sec-fetch-mode",
+            "sec-fetch-site",
+            "sec-fetch-user",
+            "upgrade-insecure-requests",
+            "user-agent"
+          ],
+          "n": 19,
+          "verdict": "reordenada (mesmo multiconjunto)",
+          "sorted_ascii": true,
+          "duplicates_in_reference": 0,
+          "cookies": []
+        },
+        "headersText": false
+      },
+      "cdp_meta": {
+        "protocolVersion": "1.3",
+        "browser": "Chrome/156.0.8078.48",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/a64c4cb1-7b3e-44f1-9cf9-9392ed14731e",
+        "harAvailable": false,
+        "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+        "plan": {
+          "urls": [
+            "https://127.0.0.1:8782/echo-order?case=plain"
+          ],
+          "mode": "native",
+          "settleMs": 900
+        },
+        "navigations": [
+          {
+            "url": "https://127.0.0.1:8782/echo-order?case=plain",
+            "navigate": {
+              "frameId": "87BA19A976CA622AF47A446DD8A8B0F9",
+              "loaderId": "AF69066EBF527D53F4F9DEABBA65CFFA",
+              "isDownload": false
+            },
+            "probe": "{\"done\":null,\"result\":null,\"loc\":\"https://127.0.0.1:8782/echo-order?case=plain\"}"
+          }
+        ],
+        "events": 25
+      }
+    },
+    {
+      "target": "/favicon.ico",
+      "method": "GET",
+      "reference_server": [
+        [
+          ":method",
+          "GET"
+        ],
+        [
+          ":authority",
+          "127.0.0.1:8782"
+        ],
+        [
+          ":scheme",
+          "https"
+        ],
+        [
+          ":path",
+          "/favicon.ico"
+        ],
+        [
+          "pragma",
+          "no-cache"
+        ],
+        [
+          "cache-control",
+          "no-cache"
+        ],
+        [
+          "sec-ch-ua-platform",
+          "\"macOS\""
+        ],
+        [
+          "user-agent",
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+        ],
+        [
+          "sec-ch-ua",
+          "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\", \"Google Chrome\";v=\"156\""
+        ],
+        [
+          "sec-ch-ua-mobile",
+          "?0"
+        ],
+        [
+          "accept",
+          "image/jxl,image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        ],
+        [
+          "sec-fetch-site",
+          "same-origin"
+        ],
+        [
+          "sec-fetch-mode",
+          "no-cors"
+        ],
+        [
+          "sec-fetch-dest",
+          "image"
+        ],
+        [
+          "referer",
+          "https://127.0.0.1:8782/echo-order?case=plain"
+        ],
+        [
+          "accept-encoding",
+          "gzip, deflate, br, zstd"
+        ],
+        [
+          "accept-language",
+          "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+        ],
+        [
+          "priority",
+          "u=1, i"
+        ]
+      ],
+      "reference_names": [
+        ":method",
+        ":authority",
+        ":scheme",
+        ":path",
+        "pragma",
+        "cache-control",
+        "sec-ch-ua-platform",
+        "user-agent",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "accept",
+        "sec-fetch-site",
+        "sec-fetch-mode",
+        "sec-fetch-dest",
+        "referer",
+        "accept-encoding",
+        "accept-language",
+        "priority"
+      ],
+      "duplicates": [],
+      "b_netlog": {
+        "event": "HTTP2_SESSION_SEND_HEADERS",
+        "order": [
+          ":method",
+          ":authority",
+          ":scheme",
+          ":path",
+          "pragma",
+          "cache-control",
+          "sec-ch-ua-platform",
+          "user-agent",
+          "sec-ch-ua",
+          "sec-ch-ua-mobile",
+          "accept",
+          "sec-fetch-site",
+          "sec-fetch-mode",
+          "sec-fetch-dest",
+          "referer",
+          "accept-encoding",
+          "accept-language",
+          "priority"
+        ],
+        "verdict": "idêntica (nome e caixa)",
+        "candidates": 2,
+        "ambiguous": false
+      },
+      "b_netlog_pre_session": {
+        "event": "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS",
+        "order": [
+          ":method",
+          ":authority",
+          ":scheme",
+          ":path",
+          "pragma",
+          "cache-control",
+          "sec-ch-ua-platform",
+          "user-agent",
+          "sec-ch-ua",
+          "sec-ch-ua-mobile",
+          "accept",
+          "sec-fetch-site",
+          "sec-fetch-mode",
+          "sec-fetch-dest",
+          "referer",
+          "accept-encoding",
+          "accept-language",
+          "priority"
+        ],
+        "verdict": "idêntica (nome e caixa)"
+      },
+      "response": {
+        "server_order": [
+          "content-type",
+          "cache-control",
+          "x-resp-order",
+          "x-resp-order",
+          "content-length"
+        ],
+        "nul_joined": false,
+        "netlog_session": {
+          "event": "HTTP2_SESSION_RECV_HEADERS",
+          "order": [
+            "content-type",
+            "cache-control",
+            "x-resp-order",
+            "x-resp-order",
+            "content-length"
+          ],
+          "verdict": "idêntica (nome e caixa)",
+          "nul_joined": true,
+          "candidates": 2
+        },
+        "netlog_other": {
+          "event": "HTTP_TRANSACTION_READ_RESPONSE_HEADERS",
+          "order": [
+            "content-type",
+            "cache-control",
+            "x-resp-order",
+            "x-resp-order",
+            "content-length"
+          ],
+          "verdict": "idêntica (nome e caixa)",
+          "nul_joined": false
+        },
+        "cdp_object": {
+          "order": [
+            "cache-control",
+            "content-length",
+            "content-type",
+            "x-resp-order"
+          ],
+          "sorted_ascii": true,
+          "joined_values": [
+            [
+              "x-resp-order",
+              "1\n2"
+            ]
+          ],
+          "verdict": "duplicatas fundidas (mesmo conjunto de nomes)"
+        }
+      },
+      "a_cdp": {
+        "requestId": "96212.2",
+        "rws": {
+          "order": [
+            "sec-ch-ua-platform",
+            "Referer",
+            "User-Agent",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile"
+          ],
+          "n": 5,
+          "verdict": "subconjunto (13 nomes ausentes)"
+        },
+        "extra": {
+          "order": [
+            ":authority",
+            ":method",
+            ":path",
+            ":scheme",
+            "accept",
+            "accept-encoding",
+            "accept-language",
+            "cache-control",
+            "pragma",
+            "priority",
+            "referer",
+            "sec-ch-ua",
+            "sec-ch-ua-mobile",
+            "sec-ch-ua-platform",
+            "sec-fetch-dest",
+            "sec-fetch-mode",
+            "sec-fetch-site",
+            "user-agent"
+          ],
+          "n": 18,
+          "verdict": "reordenada (mesmo multiconjunto)",
+          "sorted_ascii": true,
+          "duplicates_in_reference": 0,
+          "cookies": []
+        },
+        "headersText": false
+      },
+      "cdp_meta": {
+        "protocolVersion": "1.3",
+        "browser": "Chrome/156.0.8078.48",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/a64c4cb1-7b3e-44f1-9cf9-9392ed14731e",
+        "harAvailable": false,
+        "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+        "plan": {
+          "urls": [
+            "https://127.0.0.1:8782/echo-order?case=plain"
+          ],
+          "mode": "native",
+          "settleMs": 900
+        },
+        "navigations": [
+          {
+            "url": "https://127.0.0.1:8782/echo-order?case=plain",
+            "navigate": {
+              "frameId": "87BA19A976CA622AF47A446DD8A8B0F9",
+              "loaderId": "AF69066EBF527D53F4F9DEABBA65CFFA",
+              "isDownload": false
+            },
+            "probe": "{\"done\":null,\"result\":null,\"loc\":\"https://127.0.0.1:8782/echo-order?case=plain\"}"
+          }
+        ],
+        "events": 25
+      }
+    }
+  ]
+}

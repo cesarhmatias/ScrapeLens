@@ -15,14 +15,26 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from common import Recorder, body_payload, response_headers  # noqa: E402
 
-PAGE = b"""<!doctype html><meta charset=utf-8><title>sl</title>
+PAGE = b"""<!doctype html><link rel="icon" href="data:,"><meta charset=utf-8><title>sl</title>
 <script>
 window.__done = (async () => {
   const out = [];
+  document.cookie = 'sl_c=3; path=/';
+  await fetch('/echo-order?from=afterjs', {credentials: 'include'}).then(r => r.json());
   const r1 = await fetch('/echo-order?from=page', {credentials: 'include'});
   out.push(await r1.json());
   const r2 = await fetch('/echo-order?from=page2', {credentials: 'include'});
   out.push(await r2.json());
+  out.push(await fetch('/echo', {method: 'POST', credentials: 'include', body: 'k=v&z=1'}).then(r => r.json()));
+  // Headers da Fetch API: ordem de insercao proposital e duplicata via append().
+  const h = new Headers();
+  h.set('x-zeta', '1');
+  h.set('x-alpha', '2');
+  h.set('x-mid', '3');
+  h.append('x-dup', 'a');
+  h.append('x-dup', 'b');
+  const r3 = await fetch('/echo-order?from=jsheaders', {headers: h, credentials: 'include'});
+  out.push(await r3.json());
   window.__result = out;
   return out.length;
 })();
@@ -70,6 +82,7 @@ class H1Server:
                 body = b""
                 if length:
                     body = await reader.readexactly(length)
+                out_headers, out_body = self.build(method, target, pairs, body)
                 self.rec.record(
                     method=method,
                     target=target,
@@ -77,8 +90,9 @@ class H1Server:
                     body=body,
                     raw_header_block=raw_block,
                     conn=conn,
+                    response_headers=[list(h) for h in out_headers],
                 )
-                await self.respond(writer, method, target, pairs)
+                await self.write(writer, out_headers, out_body)
         finally:
             try:
                 writer.close()
@@ -86,23 +100,25 @@ class H1Server:
             except Exception:
                 pass
 
-    async def respond(
-        self, writer: asyncio.StreamWriter, method: str, target: str, pairs: list[tuple[str, str]]
-    ) -> None:
+    def build(
+        self, method: str, target: str, pairs: list[tuple[str, str]], body: bytes
+    ) -> tuple[list[tuple[str, str]], bytes]:
         path = target.split("?", 1)[0]
-        if path == "/page":
-            body = PAGE
-            ctype = "text/html; charset=utf-8"
+        if path in ("/page", "/setcookie"):
+            payload, ctype = PAGE, "text/html; charset=utf-8"
         elif path == "/echo" and method == "POST":
-            body = body_payload("h1", pairs)
-            ctype = "application/json; charset=utf-8"
+            payload, ctype = body_payload("h1", pairs, request_body=body), "application/json; charset=utf-8"
         else:
-            body = body_payload("h1", pairs)
-            ctype = "application/json; charset=utf-8"
+            payload, ctype = body_payload("h1", pairs, request_body=body), "application/json; charset=utf-8"
         headers = [("content-type", ctype)] + [h for h in response_headers(path, "h1") if h[0] != "content-type"]
-        headers.append(("content-length", str(len(body))))
+        headers.append(("content-length", str(len(payload))))
         headers.append(("connection", "keep-alive"))
-        chunk = [f"HTTP/1.1 200 OK\r\n"]
+        return headers, payload
+
+    async def write(
+        self, writer: asyncio.StreamWriter, headers: list[tuple[str, str]], body: bytes
+    ) -> None:
+        chunk = ["HTTP/1.1 200 OK\r\n"]
         for name, value in headers:
             chunk.append(f"{name}: {value}\r\n")
         chunk.append("\r\n")

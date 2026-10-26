@@ -1,0 +1,8 @@
+{
+  "urls": [
+    "https://127.0.0.1:8783/setcookie",
+    "https://127.0.0.1:8783/page"
+  ],
+  "mode": "native",
+  "settleMs": 3000
+}

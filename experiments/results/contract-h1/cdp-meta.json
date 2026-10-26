@@ -1,0 +1,38 @@
+{
+  "protocolVersion": "1.3",
+  "browser": "Chrome/156.0.8078.48",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/bb87c84b-80ba-46e5-8975-44f04d11e59f",
+  "harAvailable": false,
+  "harNote": "Network.getHAR indisponível: 'Network.getHAR' wasn't found (\"\")",
+  "plan": {
+    "urls": [
+      "http://127.0.0.1:8781/setcookie",
+      "http://127.0.0.1:8781/page"
+    ],
+    "mode": "native",
+    "settleMs": 3000,
+    "navTimeoutMs": 30000
+  },
+  "navigations": [
+    {
+      "url": "http://127.0.0.1:8781/setcookie",
+      "navigate": {
+        "frameId": "9195BFF7F01A6EB21E82BCFB3166464D",
+        "loaderId": "2CB1CE5F1EA7CE06E857ED0AD3846B88",
+        "isDownload": false
+      },
+      "probe": "{\"done\":null,\"result\":null,\"loc\":\"http://127.0.0.1:8781/setcookie\"}"
+    },
+    {
+      "url": "http://127.0.0.1:8781/page",
+      "navigate": {
+        "frameId": "9195BFF7F01A6EB21E82BCFB3166464D",
+        "loaderId": "16B744F0260A3555CA5F6BDE59D4662D",
+        "isDownload": false
+      },
+      "probe": "{\"done\":null,\"result\":null,\"loc\":\"http://127.0.0.1:8781/page\"}"
+    }
+  ],
+  "events": 102
+}

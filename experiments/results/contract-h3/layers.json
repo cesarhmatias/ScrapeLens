@@ -1,0 +1,16 @@
+{
+  "experiment": "contract-h3",
+  "protocol": "h2",
+  "browser": "Chrome/156.0.8078.48",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "plan": {
+    "urls": [
+      "https://127.0.0.1:8782/setcookie",
+      "https://127.0.0.1:8782/page"
+    ],
+    "mode": "native",
+    "settleMs": 4000,
+    "navTimeoutMs": 30000
+  },
+  "requests": []
+}

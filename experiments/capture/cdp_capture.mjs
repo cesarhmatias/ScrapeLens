@@ -111,8 +111,8 @@ async function main() {
   await S("Network.setBypassServiceWorker", { bypass: true });
   await S("Network.clearBrowserCache");
   await S("Network.clearBrowserCookies");
-  await S("Network.setUserAgentOverride", { userAgent: plan.userAgent || (await S("Runtime.evaluate", { expression: "navigator.userAgent" })).result.value });
-  await S("Emulation.setUserAgentOverride", { userAgent: (await S("Runtime.evaluate", { expression: "navigator.userAgent" })).result.value }).catch(() => {});
+  const uaInitial = (await S("Runtime.evaluate", { expression: "navigator.userAgent" })).result.value;
+  if (plan.userAgent) await S("Network.setUserAgentOverride", { userAgent: plan.userAgent });
 
   // HAR nativo, se esta versão do Chrome expuser Network.getHAR.
   let harNote = null;

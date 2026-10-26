@@ -1,0 +1,34 @@
+{
+  "urls": [
+    "https://127.0.0.1:8782/echo-order?case=ordered"
+  ],
+  "mode": "ordered",
+  "match": "/echo",
+  "extraHeaders": [
+    [
+      "x-rep",
+      "a"
+    ],
+    [
+      "x-seq",
+      "1"
+    ],
+    [
+      "X-Rep",
+      "b"
+    ],
+    [
+      "x-seq",
+      "2"
+    ],
+    [
+      "x-mixed-Case",
+      "V"
+    ],
+    [
+      "x-rep",
+      "c"
+    ]
+  ],
+  "settleMs": 900
+}
