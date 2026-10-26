@@ -195,7 +195,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     None,
                 )
                 .with_source_id(request_id.to_string())
-                .with_timestamp(timestamp.unwrap_or_default())
+                .with_optional_timestamp(timestamp)
                 .with_note("subconjunto; ordem diferente do fio; duplicatas não representáveis");
                 if let Some(headers) = request.and_then(|request| request.get("headers")) {
                     attempt.request_headers = header_object_to_view(
@@ -252,7 +252,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     None,
                 )
                 .with_source_id(request_id.to_string())
-                .with_timestamp(timestamp.unwrap_or_default())
+                .with_optional_timestamp(timestamp)
                 .with_note("ordem ASCII; duplicatas colapsadas antes de expor");
                 let view = params
                     .get("headers")
@@ -726,7 +726,7 @@ fn redirect_view(
         None,
     )
     .with_source_id(request_id.to_string())
-    .with_timestamp(timestamp.unwrap_or_default());
+    .with_optional_timestamp(timestamp);
     if let Some(text) = redirect.get("headersText").and_then(Value::as_str) {
         let (view, _issues) = HeaderView::from_http_block(text, &provenance);
         return view;
@@ -771,7 +771,7 @@ fn response_view(
             None,
         )
         .with_source_id(request_id.to_string())
-        .with_timestamp(timestamp.unwrap_or_default());
+        .with_optional_timestamp(timestamp);
         let (view, _issues) = HeaderView::from_http_block(text, &provenance);
         return (view, format!("{event}.headersText"));
     }
@@ -784,7 +784,7 @@ fn response_view(
         None,
     )
     .with_source_id(request_id.to_string())
-    .with_timestamp(timestamp.unwrap_or_default())
+    .with_optional_timestamp(timestamp)
     .with_note("objeto CDP: ordem ASCII e duplicatas fundidas");
     let view = response
         .and_then(|response| response.get("headers"))
@@ -809,7 +809,7 @@ fn response_view_from_extra(
             None,
         )
         .with_source_id(request_id.to_string())
-        .with_timestamp(timestamp.unwrap_or_default());
+        .with_optional_timestamp(timestamp);
         let (view, _issues) = HeaderView::from_http_block(text, &provenance);
         return (
             view,
@@ -825,7 +825,7 @@ fn response_view_from_extra(
         None,
     )
     .with_source_id(request_id.to_string())
-    .with_timestamp(timestamp.unwrap_or_default())
+    .with_optional_timestamp(timestamp)
     .with_note("objeto CDP ordenado em ASCII; duplicatas fundidas com \\n")
     .with_note(match status {
         Some(status) => format!("statusCode={status}"),
@@ -954,7 +954,7 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
             attempt.provenance =
                 Provenance::new(Source::Cdp, "Network.attempt", Verification::Unverified)
                     .with_source_id(request.request_id.clone())
-                    .with_timestamp(parsed.timestamp.unwrap_or_default());
+                    .with_optional_timestamp(parsed.timestamp);
 
             if let (Some(start), Some(end)) = (parsed.timestamp, parsed.ended_at) {
                 attempt.timings = Timings {

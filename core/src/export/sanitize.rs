@@ -53,7 +53,25 @@ pub struct SanitizedExport {
 
 impl SanitizedExport {
     /// Grava com permissões restritas (0700/0600) e sem os eventos brutos.
+    ///
+    /// Recusa sobrescrever uma sessão existente: reutilizar o diretório poderia
+    /// deixar anexos/eventos brutos antigos ao lado da versão sanitizada.
     pub fn write_to(&self, dir: &std::path::Path) -> Result<()> {
+        if dir.join(store::SESSION_FILE).exists() {
+            return Err(crate::error::CoreError::Export {
+                message: format!(
+                    "destino já contém uma sessão ({}); use um diretório novo para a versão sanitizada",
+                    dir.display()
+                ),
+            });
+        }
+        for name in [store::CDP_EVENTS_FILE, store::NETLOG_FILE] {
+            let path = dir.join(name);
+            if path.exists() {
+                std::fs::remove_file(&path)
+                    .map_err(|error| crate::error::CoreError::io(&path, error))?;
+            }
+        }
         store::write_session_dir(&self.bundle, dir)
     }
 }
@@ -468,6 +486,13 @@ fn sanitize_json(
             }
         }
         Value::String(text) => {
+            if text.contains("://") {
+                let sanitized = sanitize_url_reference(text, options);
+                if sanitized != *text {
+                    *text = sanitized;
+                    *counts.entry("json-url".to_string()).or_default() += 1;
+                }
+            }
             if let Some(redacted) = redact_auth_scheme(text, options) {
                 *text = redacted;
                 *counts.entry("json-auth-scheme".to_string()).or_default() += 1;

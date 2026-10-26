@@ -46,7 +46,8 @@ Decisões do projeto: `../docs/01-decisoes.md`; matriz: `../docs/02-matriz-fidel
 - ordem/duplicatas/pseudoheaders preservados; Cookie bruto + pares + linhas do fio;
 - proveniência e verificação por informação (D2), não por sessão;
 - eventos desconhecidos e linhas inválidas sempre geram `Warning`;
-- correlação real h1 dos experimentos: 12/12 casadas, 0 ambíguas;
+- correlação real h1/h2/h3 dos experimentos: 12/12 casadas, 0 ambíguas;
+- chain de redirect do contrato h1: 3 tentativas e 2 redirects preservados;
 - capturas reais h1/h2 conferem ordem e expansão de NUL;
 - diff não perde duplicatas nem ordena alfabeticamente;
 - cURL/Python escapam dados não confiáveis e recusam injeção de header;

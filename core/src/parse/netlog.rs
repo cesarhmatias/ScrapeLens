@@ -648,7 +648,16 @@ fn parse_headers(
 
     let (mut view, _issues, unparsed) =
         HeaderView::from_header_lines(&expanded, &provenance, OrderState::SourceOrder);
-    view.raw_block = Some(lines.join("\n"));
+    let request_line = params
+        .get("line")
+        .and_then(Value::as_str)
+        .map(|line| line.trim_end_matches(['\r', '\n']).to_string());
+    if let Some(line) = &request_line {
+        view.start_line = Some(line.clone());
+        view.raw_block = Some(format!("{line}\n{}", lines.join("\n")));
+    } else {
+        view.raw_block = Some(lines.join("\n"));
+    }
     if nul_expanded {
         view.notes.push(
             "repetições fundidas por \\x00 no evento de sessão foram expandidas em pares distintos"
@@ -1165,7 +1174,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 attempt.request_headers.verification(),
             )
             .with_source_id(request.source_id.to_string())
-            .with_timestamp(parsed.started_at.unwrap_or_default());
+            .with_optional_timestamp(parsed.started_at);
             if let Some(version) = &capture.browser.version {
                 attempt.provenance = attempt.provenance.clone().with_browser_version(version);
             }

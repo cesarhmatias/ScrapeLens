@@ -51,6 +51,7 @@ pub fn to_python(
     let target = request
         .request_headers
         .first_value(":path")
+        .filter(|path| !path.contains(['\r', '\n', '\0']) && !path.chars().any(char::is_whitespace))
         .map(str::to_string)
         .unwrap_or_else(|| parsed.target());
 
@@ -146,6 +147,7 @@ struct ParsedUrl {
 
 impl ParsedUrl {
     fn parse(url: &str) -> Option<Self> {
+        let url = url.split('#').next().unwrap_or(url);
         let (scheme, rest) = url.split_once("://")?;
         let scheme = scheme.to_ascii_lowercase();
         if scheme != "http" && scheme != "https" {

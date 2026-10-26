@@ -28,4 +28,7 @@ pub use model::{
     ParsedSetCookie, Protocol, Provenance, Redirect, SessionBundle, SessionMeta, SessionV1,
     SetCookieRecord, Source, StreamSession, Verification, Warning, WarningSeverity, SCHEMA_VERSION,
 };
-pub use parse::{import_har, import_netlog, import_session_dir, ImportReport, InputFormat};
+pub use parse::{
+    import_capture, import_har, import_netlog, import_session_dir, ImportReport, ImportedSession,
+    InputFormat,
+};

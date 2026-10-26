@@ -92,6 +92,17 @@ fn sanitized_session_writes_only_sanitized_attachments_and_no_raw_events() {
 }
 
 #[test]
+fn sanitize_refuses_to_overwrite_an_existing_session_dir() {
+    let imported = import_har(&har()).unwrap();
+    let export = sanitize_bundle(&imported.bundle, &SanitizeOptions::default());
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("sanitized");
+    export.write_to(&dir).unwrap();
+    let error = export.write_to(&dir).unwrap_err();
+    assert!(error.to_string().contains("já contém uma sessão"));
+}
+
+#[test]
 fn stored_permissions_are_private_after_sanitize_write() {
     #[cfg(unix)]
     {

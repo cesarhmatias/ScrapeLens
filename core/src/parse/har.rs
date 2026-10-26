@@ -3,11 +3,13 @@ use serde_json::{Map, Value};
 
 use crate::error::{CoreError, Result};
 use crate::model::{
-    Attempt, AttemptOutcome, Body, BodyState, BrowserInfo, Connection, CookieField, HeaderView,
+    Attempt, AttemptOutcome, Body, BrowserInfo, Connection, CookieField, HeaderView,
     LogicalRequest, Protocol, Provenance, Redirect, SessionBundle, SessionMeta, SessionV1, Source,
     Span, Timings, Verification, Warning,
 };
 use crate::parse::{ImportReport, ImportedSession, InputFormat};
+
+const MAX_HAR_BODY_BYTES: usize = 64 * 1024 * 1024;
 
 const ENTRY_KEYS: &[&str] = &[
     "pageref",
@@ -408,7 +410,7 @@ fn parse_entry(
         .and_then(|response| response.get("redirectURL"))
         .and_then(Value::as_str)
         .filter(|url| !url.is_empty())
-        .map(str::to_string);
+        .map(|location| resolve_reference(&url, location));
 
     let connection_id = object
         .get("serverIPAddress")
@@ -516,8 +518,24 @@ fn parse_request_body(
         .map(str::to_string);
     if let Some(text) = post_data.get("text").and_then(Value::as_str) {
         let name = format!("{id}.request.bin");
-        let bytes = text.as_bytes().to_vec();
-        let mut body = Body::captured(&name, bytes.len() as u64, provenance);
+        let mut bytes = text.as_bytes().to_vec();
+        let truncated = bytes.len() > MAX_HAR_BODY_BYTES;
+        if truncated {
+            bytes.truncate(MAX_HAR_BODY_BYTES);
+            report.warn(Warning::new(
+                "har.body_truncated",
+                format!(
+                    "entrada {id}: corpo de requisição excede {} bytes; capturado truncado",
+                    MAX_HAR_BODY_BYTES
+                ),
+            ));
+        }
+        let len = bytes.len() as u64;
+        let mut body = if truncated {
+            Body::truncated(&name, len, MAX_HAR_BODY_BYTES as u64, provenance)
+        } else {
+            Body::captured(&name, len, provenance)
+        };
         body.content_type = mime;
         attachments.insert(name, bytes);
         body
@@ -564,7 +582,15 @@ fn parse_response_body(
         };
     };
 
-    let bytes = match encoding {
+    if encoding == Some("base64") && text.len() > MAX_HAR_BODY_BYTES * 2 {
+        report.warn(Warning::new(
+            "har.body_too_large",
+            format!("entrada {id}: conteúdo base64 excede o limite; não decodificado"),
+        ));
+        return Body::discarded("conteúdo maior que o limite de importação");
+    }
+    let mut truncated = false;
+    let mut bytes = match encoding {
         Some("base64") => match base64::engine::general_purpose::STANDARD.decode(text) {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -587,6 +613,18 @@ fn parse_response_body(
         None => text.as_bytes().to_vec(),
     };
 
+    if bytes.len() > MAX_HAR_BODY_BYTES {
+        bytes.truncate(MAX_HAR_BODY_BYTES);
+        truncated = true;
+        report.warn(Warning::new(
+            "har.body_truncated",
+            format!(
+                "entrada {id}: corpo de resposta excede {} bytes; capturado truncado",
+                MAX_HAR_BODY_BYTES
+            ),
+        ));
+    }
+
     if bytes.is_empty() {
         let mut body = Body::empty(provenance);
         body.content_type = mime;
@@ -594,9 +632,17 @@ fn parse_response_body(
     }
 
     let name = format!("{id}.response.bin");
-    let mut body = Body::captured(&name, bytes.len() as u64, provenance);
+    let mut body = if truncated {
+        Body::truncated(
+            &name,
+            bytes.len() as u64,
+            MAX_HAR_BODY_BYTES as u64,
+            provenance,
+        )
+    } else {
+        Body::captured(&name, bytes.len() as u64, provenance)
+    };
     body.content_type = mime;
-    body.state = BodyState::Captured;
     attachments.insert(name, bytes);
     body
 }
@@ -674,6 +720,35 @@ fn har_browser(log: &Map<String, Value>) -> BrowserInfo {
     }
 }
 
+/// Resolve `Location` relativo contra a URL da requisição (HAR pode trazer
+/// apenas `/path`). Mantém a forma absoluta quando já é absoluta.
+fn resolve_reference(base: &str, location: &str) -> String {
+    if location.starts_with("http://") || location.starts_with("https://") {
+        return location.to_string();
+    }
+    if location.starts_with("//") {
+        return match base.split_once("://") {
+            Some((scheme, _)) => format!("{scheme}:{location}"),
+            None => location.to_string(),
+        };
+    }
+    if location.starts_with('/') {
+        return match base.split_once("://") {
+            Some((scheme, rest)) => {
+                let authority = rest.split('/').next().unwrap_or(rest);
+                format!("{scheme}://{authority}{location}")
+            }
+            None => location.to_string(),
+        };
+    }
+    match base.rfind('/') {
+        Some(index) if index > base.find("://").map_or(0, |scheme| scheme + 2) => {
+            format!("{}{}", &base[..=index], location)
+        }
+        _ => location.to_string(),
+    }
+}
+
 fn host_of(url: &str) -> Option<String> {
     url.split("://")
         .nth(1)
@@ -706,7 +781,7 @@ pub(crate) fn stable_id(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::MatchState;
+    use crate::model::{BodyState, MatchState};
 
     fn fixture() -> Vec<u8> {
         include_bytes!("../../tests/fixtures/har-minimal.json").to_vec()

@@ -132,6 +132,14 @@ impl Provenance {
         self
     }
 
+    /// Só grava timestamp quando a fonte o fornece (nunca inventa 0.0).
+    pub fn with_optional_timestamp(mut self, timestamp: Option<f64>) -> Self {
+        if let Some(timestamp) = timestamp {
+            self.timestamp = Some(timestamp);
+        }
+        self
+    }
+
     pub fn with_wall_time(mut self, wall_time: impl Into<String>) -> Self {
         self.wall_time = Some(wall_time.into());
         self

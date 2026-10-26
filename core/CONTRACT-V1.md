@@ -50,7 +50,8 @@ diretório `0700`, arquivos `0600`, rename atômico.
 ```
 
 - `completeness.state`: `complete | partial`. `partial` significa captura
-  interrompida, artefato ausente/ inválido, associação ambígua ou erro de parse.
+  interrompida, artefato ausente/inválido ou erro de parse. Ambiguidade de
+  correlação é um estado de `match`, não rebaixa `completeness`.
   `reasons` explica cada caso; inferência de completude nunca é silenciosa.
 - `labels`: `synthetic-fixture` em fixtures; `sanitized` em exportação
   sanitizada; `har-import`/`netlog-import` nos importadores correspondentes.
