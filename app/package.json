@@ -1,0 +1,26 @@
+{
+  "name": "scrapelens-ui-slice",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Fatia de interface do ScrapeLens com sessão sintética (demo) — prévia antes do gate de fidelidade",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "shots": "node scripts/shoot.mjs"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "playwright": "^1.64.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  }
+}
