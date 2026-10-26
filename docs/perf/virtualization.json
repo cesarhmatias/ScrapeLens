@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-26T21:55:07.413Z",
+  "generatedAt": "2026-10-26T22:04:34.198Z",
   "synthetic": true,
   "requests": 12000,
-  "loadMs": 241,
+  "loadMs": 213,
   "totalRequests": 12000,
   "renderedRows": 24,
   "firstVisibleId": "api.demo-loja.invalid",
   "domNodes": 437,
-  "statusBar": "12000 de 12000 requisições·24 linhas renderizadas (virtualização)·cdp+netlog·sessão completa⌘O abrir · ⌘F buscar · ⌘C copiar URL",
+  "statusBar": "12000 de 12000 requisições·24 linhas renderizadas (virtualização)·cdp+netlog·sessão completa⌘O abrir · ⌘F buscar · ⌘C copiar · ⌘⇧C URL",
   "scroll": {
     "scrollHeight": 408051,
     "clientHeight": 600
