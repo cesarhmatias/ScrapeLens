@@ -34,25 +34,27 @@ pending      true quando o core/ ainda não executou a etapa
 | `app_info` | pronto | versão, arch, schema v1 |
 | `demo_session` | pronto | fixture v1 sintética embutida |
 | `open_session(path)` | **real** | lê pasta/arquivo `session.json`, valida `schemaVersion`, marca parcial e synthetic; guarda a pasta para anexos |
-| `import_har(path)` | pendente do core | devolve demo rotulada + `pending` e aviso |
-| `import_netlog(path)` | pendente do core | idem |
-| `start_session` | pendente do core | idem; não abre Chrome |
-| `stop_session` | pronto | no-op até existir captura |
+| `import_har(path)` | **real** | core `import_har` + `store::write_session_dir` |
+| `import_netlog(path)` | **real** | core `import_netlog` + persistência |
+| `start_session` | **real** | Chrome externo com perfil dedicado + CDP + NetLog |
+| `stop_session` | **real** | flush do NetLog, correlação no core, sessão v1 |
+| `capture_status` | pronto | eventos, PID do Chrome, URL e erro da captura |
 | `detect_chrome` | pronto | detecta `/Applications` + preferência salva |
 | `set_chrome_path(path)` | pronto | aceita `.app`, `Contents/MacOS` ou binário; persiste em `app_config_dir/preferences.json` |
 | `read_attachment(sessionDir, name)` | pronto | prévia textual ≤ 1 MiB, sem `..`/separadores |
 | `reveal_path(path)` | pronto | Finder (macOS) |
 
-## Pontos de integração com o core/
+## Integração real com o core/
 
-1. Trocar o corpo de `import_har`, `import_netlog` e `start_session` em
-   `src/commands.rs` por chamadas ao core (`import_har`, `import_netlog`,
-   launcher de captura). A assinatura e o envelope não mudam.
-2. O core deve produzir `SessionV1` serializável (camelCase) e gravar
-   `session.json` + `attachments/`; `open_session` já lê esse formato.
-3. Para `read_attachment`, o core deve manter os anexos em
-   `<sessao>/attachments/<nome>`; a UI pede a prévia sob demanda.
-4. Nenhum sidecar: `core` entra como dependência Rust de `src-tauri`.
+1. `scrapelens-core` é dependência Rust (`path = "../core"`); binário único.
+2. `import_har`/`import_netlog` chamam `scrapelens_core::import_har/netlog` e
+   gravam com `store::write_session_dir`.
+3. `capture.rs` implementa o launcher de Chrome e o cliente CDP (o core não
+   trouxe launcher), grava `cdp-events.jsonl` + `netlog.json` e entrega ao
+   `import_capture` do core.
+4. `open_session` lê o `session.json` v1; `read_attachment` lê
+   `<sessao>/attachments/<nome>` com limite de 1 MiB e sem traversal.
+5. Sessões ficam em `app_data_dir()/sessions/<id>` (0700/0600 via core).
 
 ## Atalhos
 

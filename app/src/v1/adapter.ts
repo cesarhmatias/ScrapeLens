@@ -50,6 +50,7 @@ function evidenceOf(p: Provenance) {
     source: sourceLabel(p.source),
     event: p.event ?? p.sourceId ?? "sem nome de evento",
     timestamp: p.wallTime ?? "",
+    sourceTime: p.wallTime ? undefined : p.timestamp,
     method: p.method,
     eventRef: p.sourceId,
     notes: p.notes,
@@ -325,8 +326,8 @@ export function adaptSession(
       status: rawStatus,
       statusText: statusText(rawStatus),
       protocol: protocolLabel(request.protocol),
-      type: RESOURCE_TYPES.has((request.resourceType ?? "") as ResourceType)
-        ? ((request.resourceType ?? "other") as ResourceType)
+      type: RESOURCE_TYPES.has((request.resourceType ?? "").toLowerCase() as ResourceType)
+        ? ((request.resourceType ?? "other").toLowerCase() as ResourceType)
         : "other",
       startedAt: startedAtOf(request, raw),
       durationMs: durationOf(request),
@@ -363,9 +364,18 @@ export function adaptSession(
   }
 
   const browser = raw.session.browser;
+  const labels = raw.session.labels ?? [];
+  const kind = labels.includes("har-import")
+    ? "HAR importado"
+    : labels.includes("netlog-import")
+      ? "NetLog importado"
+      : labels.includes("sanitized")
+        ? "Sessão sanitizada"
+        : "Captura ao vivo";
+  const browserLabel = [browser.name, browser.version].filter(Boolean).join(" ");
   const label = synthetic
     ? "Demonstração — vitrine sintética"
-    : raw.session.capture?.notes?.split("\n")[0] || `Sessão ${raw.session.id}`;
+    : `${kind}${browserLabel ? ` — ${browserLabel}` : ""}`;
 
   return {
     raw,

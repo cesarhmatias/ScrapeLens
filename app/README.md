@@ -14,18 +14,23 @@ v1 via `core/` e via commands Tauri.
   sistema.
 - **Chrome**: detecção automática em `/Applications` e seleção manual por
   diálogo nativo (`Selecionar Chrome…` no menu Arquivo ou no aviso da tela).
-- **Commands prontos** para o core: `start_session`, `stop_session`,
-  `open_session`, `import_har`, `import_netlog`, `demo_session`,
-  `detect_chrome`, `set_chrome_path`, `read_attachment`, `reveal_path`,
-  `app_info`.
-- **Leitura real de sessão v1** (`open_session`): valida `schemaVersion`, lê
-  `session.json`, preserva a pasta para anexos e marca sessão parcial quando a
-  fonte declara `completeness.partial`. Sessões com `synthetic-fixture` nunca
-  aparecem como reais.
-- **Pendências explícitas**: captura ao vivo e importadores HAR/NetLog dependem
-  do `core/`. Até lá os commands devolvem a fixture demo **rotulada**
-  (`synthetic: true`, `pending: true`) e um aviso na tela. Nenhum Chrome é
-  aberto por este app ainda.
+- **Integração real com o core/** (`scrapelens-core` como dependência crate,
+  binário único, sem sidecar):
+  - `start_session` abre o Chrome externo com perfil temporário dedicado,
+    depuração só em `127.0.0.1` (porta efêmera), grava CDP + NetLog e navega
+    para a URL inicial (padrão `about:blank`);
+  - `stop_session` encerra o Chrome, aguarda o flush do NetLog, correlaciona
+    CDP×NetLog no core, grava a sessão v1 e devolve a sessão pronta;
+  - `import_har` e `import_netlog` leem o arquivo real, importam pelo core e
+    gravam a sessão v1 (labels `har-import`/`netlog-import`);
+  - `open_session` lê pasta/arquivo v1, valida `schemaVersion` e preserva a
+    pasta para anexos; `read_attachment` carrega prévia textual.
+- **Captura validada de ponta a ponta** no macOS: Chrome 156 externo, página do
+  testserver local, 11 requisições reais, headers h1 `verified` vindos do NetLog,
+  cookies/`Set-Cookie` preservados, correlação `matched` e `ambiguous` exposta.
+- **Pendências explícitas**: assinatura/notarização e build Intel; captura de
+  corpos CDP ainda não é baixada para anexos (estado `unavailable`), então a
+  prévia de corpo real aparece como indisponível.
 - **Lista virtualizada** (linha de 34 px, overscan): 12.000 requisições
   renderizam 24 linhas e 437 nós de DOM; ver `docs/perf/virtualization.json`.
 
@@ -99,10 +104,13 @@ aviso e mantém a sessão demo rotulada. Ao plugar o core, só o corpo de
 
 ## Limites desta entrega
 
-- Captura ao vivo, importadores HAR/NetLog e o launcher de Chrome pertencem ao
-  `core/` e ainda não estão conectados.
 - Diálogo nativo existe para abrir sessão e escolher Chrome; não há ainda
   “Salvar como”/exportação na UI.
+- O launcher de Chrome e o cliente CDP vivem em `src-tauri/src/capture.rs`
+  (o core não trouxe launcher; os parsers/correlação são dele).
+- `SCRAPELENS_CAPTURE_URL`, `SCRAPELENS_CAPTURE_HEADLESS=1` e
+  `SCRAPELENS_CAPTURE_IGNORE_CERT=1` são ganchos de desenvolvimento/teste;
+  não aparecem na interface.
 - Tema acompanha o sistema na primeira execução; não há sincronização com o
   tema do WebView do macOS além da classe do app.
 - Assinatura/notarização e builds Intel não foram feitos nem testados; a máquina

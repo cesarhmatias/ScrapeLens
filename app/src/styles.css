@@ -1115,3 +1115,34 @@ kbd {
 .cookie-raw { padding: 8px 12px; display: flex; flex-direction: column; gap: 5px; }
 .raw-line { display: flex; gap: 8px; align-items: baseline; overflow-wrap: anywhere; }
 .raw-line .mono { font-size: 10.5px; color: var(--fg-muted); }
+
+/* ---------- captura ao vivo ---------- */
+.tag-recording {
+  color: var(--err);
+  background: var(--err-bg);
+  border-color: color-mix(in srgb, var(--err) 35%, transparent);
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--err);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 18%, transparent);
+  display: inline-block;
+}
+.recording-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 16px;
+  background: color-mix(in srgb, var(--err-bg) 55%, var(--bg-window));
+  border-bottom: 1px solid color-mix(in srgb, var(--err) 25%, var(--border));
+  font-size: 11.5px;
+  color: var(--fg);
+}
+.recording-banner .grow { flex: 1; }
+.recording-banner strong { color: var(--err); }

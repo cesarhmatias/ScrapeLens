@@ -15,6 +15,17 @@ export interface SessionPayload {
   pending?: boolean;
 }
 
+export interface CaptureStatus {
+  recording: boolean;
+  events: number;
+  chromePid?: number;
+  sessionId: string;
+  sessionDir: string;
+  startedAt: string;
+  pageUrl: string;
+  lastError?: string;
+}
+
 export interface ChromeInfo {
   found: boolean;
   path?: string;
@@ -98,9 +109,14 @@ export const bridge = {
     return invoke("start_session");
   },
 
-  async stopSession(): Promise<void> {
-    if (!isTauri()) return;
-    await invoke("stop_session");
+  async stopSession(): Promise<SessionPayload | null> {
+    if (!isTauri()) return null;
+    return invoke("stop_session");
+  },
+
+  async captureStatus(): Promise<CaptureStatus | null> {
+    if (!isTauri()) return null;
+    return invoke("capture_status");
   },
 
   async detectChrome(): Promise<ChromeInfo | null> {

@@ -63,7 +63,10 @@ export interface RedirectHop {
 export interface EvidenceRef {
   source: SourceId;
   event: string;
+  /** Instante absoluto ISO, quando a fonte fornece. */
   timestamp: string;
+  /** Tempo monotônico da fonte (segundos), quando não há relógio de parede. */
+  sourceTime?: number;
   method: string;
   eventRef?: string;
   notes?: string[];

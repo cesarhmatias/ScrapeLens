@@ -369,7 +369,15 @@ function bodyState(body: BodyInfo) {
   return availabilityLabels[body.availability];
 }
 
-function VerificationPanel({ req, onOpenEvent }: { req: RequestRecord; onOpenEvent: () => void }) {
+function VerificationPanel({
+  req,
+  onOpenEvent,
+  session,
+}: {
+  req: RequestRecord;
+  onOpenEvent: () => void;
+  session: SessionRecord;
+}) {
   const keys = Object.keys(verificationLabels) as VerificationKey[];
   return (
     <aside className="side-panel">
@@ -379,7 +387,13 @@ function VerificationPanel({ req, onOpenEvent }: { req: RequestRecord; onOpenEve
           <span className={`src-chip ${req.primarySource === "cdp" ? "src-cdp" : "src-netlog"}`}>
             {sourceLabels[req.primarySource]} · primária
           </span>
-          <span className="src-chip src-muted">{req.primarySource === "cdp" ? "NetLog" : "CDP"} · cruzamento</span>
+          {session.sources.includes("cdp") && session.sources.includes("netlog") ? (
+            <span className="src-chip src-muted">
+              {req.primarySource === "cdp" ? "NetLog" : "CDP"} · cruzamento
+            </span>
+          ) : (
+            <span className="src-chip src-muted">fonte única nesta sessão</span>
+          )}
         </div>
         <dl className="kv">
           <dt>Requisição</dt>
@@ -389,7 +403,10 @@ function VerificationPanel({ req, onOpenEvent }: { req: RequestRecord; onOpenEve
           <dt>Iniciador</dt>
           <dd>{req.initiator ?? "não informado"}</dd>
           <dt>Sessão</dt>
-          <dd>demo-sintetica-01 <span className="tag tag-demo">DEMO</span></dd>
+          <dd>
+            <span className="mono">{session.id}</span>{" "}
+            {session.synthetic ? <span className="tag tag-demo">DEMO</span> : <span className="tag tag-real">real</span>}
+          </dd>
         </dl>
       </div>
 
@@ -454,7 +471,11 @@ function VerificationPanel({ req, onOpenEvent }: { req: RequestRecord; onOpenEve
                       {sourceLabels[v.evidence.source]} · {v.evidence.event}
                     </p>
                     <p className="verif-line">
-                      {fmtTime(v.evidence.timestamp) || "sem horário"} · {v.evidence.method}
+                      {fmtTime(v.evidence.timestamp) ||
+                        (v.evidence.sourceTime !== undefined
+                          ? `t=${v.evidence.sourceTime.toFixed(3)} s (relógio da fonte)`
+                          : "sem horário")}{" "}
+                      · {v.evidence.method}
                     </p>
                     {v.status === "partial" && <p className="verif-reason">Falta: {v.missing}</p>}
                   </>
@@ -548,10 +569,10 @@ function DetailView({
           ← Sessão
         </button>
         <div className="crumbs">
-          <span>demo-sintetica-01</span>
+          <span className="mono">{session.id}</span>
           <span className="sep">/</span>
           <span className="mono">{req.id}</span>
-          <span className="tag tag-demo">DEMO</span>
+          {session.synthetic ? <span className="tag tag-demo">DEMO</span> : <span className="tag tag-real">real</span>}
         </div>
       </div>
 
@@ -937,20 +958,26 @@ function DetailView({
 
           <section className="limits-strip">
             <div className="limits-head">
-              <span className="tag tag-demo">DEMO</span>
+              <span className={session.synthetic ? "tag tag-demo" : "tag tag-real"}>
+                {session.synthetic ? "DEMO" : "SESSÃO REAL"}
+              </span>
               <h3>Limites desta captura</h3>
               <span className="hint">visível em todas as abas</span>
             </div>
             <ul>
               <li>Headers sem evento correspondente aparecem como “não verificada”, nunca como fato.</li>
               <li>Corpo omitido, truncado ou descartado mostra o motivo — nada é reconstruído.</li>
-              <li>HTML capturado nunca é executado como interface; esta fatia usa contrato provisório.</li>
-              <li>Sessão sintética: nenhum byte saiu do computador — sem telemetria, sem rede.</li>
+              <li>HTML capturado nunca é executado como interface; o contrato é o v1 do core.</li>
+              <li>
+                {session.synthetic
+                  ? "Sessão sintética: nenhum byte saiu do computador — sem telemetria, sem rede."
+                  : "Captura local: sem telemetria; os anexos ficam na pasta da sessão."}
+              </li>
             </ul>
           </section>
         </div>
 
-        <VerificationPanel req={req} onOpenEvent={() => setTab("event")} />
+        <VerificationPanel req={req} onOpenEvent={() => setTab("event")} session={session} />
       </div>
     </div>
   );
@@ -963,6 +990,7 @@ function CompareView({
   setB,
   onBack,
   requests,
+  session,
 }: {
   aId: string;
   bId: string;
@@ -970,6 +998,7 @@ function CompareView({
   setB: (id: string) => void;
   onBack: () => void;
   requests: RequestRecord[];
+  session: SessionRecord;
 }) {
   const a = requests.find((r) => r.id === aId) ?? requests[0];
   const b = requests.find((r) => r.id === bId) ?? requests[1];
@@ -1029,10 +1058,10 @@ function CompareView({
           ← Sessão
         </button>
         <div className="crumbs">
-          <span>demo-sintetica-01</span>
+          <span className="mono">{session.id}</span>
           <span className="sep">/</span>
           <span>comparação</span>
-          <span className="tag tag-demo">DEMO</span>
+          {session.synthetic ? <span className="tag tag-demo">DEMO</span> : <span className="tag tag-real">real</span>}
         </div>
       </div>
 
@@ -1202,9 +1231,20 @@ export default function App() {
   const [loaded, setLoaded] = useState<AdaptedSession>(() =>
     adaptSession(demoRaw as unknown as SessionV1, { attachments: demoAttachments as Record<string, string> }),
   );
-  const [notice, setNotice] = useState<{ kind: "info" | "error" | "success"; text: string; detail?: string } | null>(
-    null,
-  );
+  const [notice, setNotice] = useState<{
+    kind: "info" | "error" | "success";
+    text: string;
+    detail?: string;
+    action?: "open" | "chrome" | "start";
+  } | null>(null);
+  const [recording, setRecording] = useState<{
+    sessionId: string;
+    sessionDir: string;
+    startedAt: string;
+    events: number;
+    pageUrl: string;
+    chromePid?: number;
+  } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
@@ -1215,6 +1255,15 @@ export default function App() {
   const requests = session.requests;
   const desktop = isTauri();
   const selected = requests.find((r) => r.id === selectedId) ?? requests[0];
+  const warningTotal =
+    session.warnings.length + requests.reduce((total, request) => total + request.warnings.length, 0);
+  const sessionKind = session.labels.includes("har-import")
+    ? "importada"
+    : session.labels.includes("netlog-import")
+      ? "importada"
+      : session.synthetic
+        ? "demo"
+        : "captura local";
 
   const applyPayload = useCallback((payload: SessionPayload | null) => {
     if (!payload) return;
@@ -1246,7 +1295,7 @@ export default function App() {
     try {
       applyPayload(await bridge.pickAndOpenSession());
     } catch (error) {
-      setNotice({ kind: "error", text: "Não foi possível abrir a sessão.", detail: String(error) });
+      setNotice({ kind: "error", text: "Não foi possível abrir a sessão.", detail: String(error), action: "open" });
     } finally {
       setBusy(null);
     }
@@ -1281,6 +1330,57 @@ export default function App() {
       setNotice({ kind: "error", text: "O caminho escolhido não é um Chrome utilizável.", detail: String(error) });
     }
   }, []);
+
+  const startCapture = useCallback(async () => {
+    if (!desktop) {
+      setNotice({ kind: "info", text: "A captura ao vivo usa o Chrome externo e só existe no app desktop." });
+      return;
+    }
+    setBusy("Abrindo Chrome com perfil dedicado e conectando ao CDP…");
+    try {
+      const payload = await bridge.startSession();
+      if (!payload) return;
+      setRecording({
+        sessionId: payload.session.session.id,
+        sessionDir: payload.sessionDir ?? "",
+        startedAt: payload.session.session.startedAt,
+        events: 0,
+        pageUrl: "",
+      });
+      setNotice({ kind: "info", text: payload.notice ?? "Captura iniciada. Navegue no Chrome e clique em Encerrar." });
+    } catch (error) {
+      const info = await bridge.detectChrome().catch(() => null);
+      if (info) setChrome(info);
+      setNotice({
+        kind: "error",
+        text: "Não foi possível iniciar a captura.",
+        detail: String(error),
+        action: info && !info.found ? "chrome" : "start",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [desktop]);
+
+  const stopCapture = useCallback(async () => {
+    setBusy("Encerrando o Chrome, aguardando o NetLog e importando a sessão…");
+    try {
+      const payload = await bridge.stopSession();
+      setRecording(null);
+      if (payload) applyPayload(payload);
+      else setNotice({ kind: "error", text: "A captura terminou sem sessão.", action: "start" });
+    } catch (error) {
+      setRecording(null);
+      setNotice({
+        kind: "error",
+        text: "Não foi possível encerrar/importar a captura.",
+        detail: String(error),
+        action: "start",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }, [applyPayload]);
 
   const copy = useCallback(async (text: string, label = "Valor copiado") => {
     const ok = await bridge.copyText(text);
@@ -1363,6 +1463,32 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [copy, openSession, selected]);
 
+  useEffect(() => {
+    if (!recording || !desktop) return;
+    const interval = window.setInterval(() => {
+      void bridge
+        .captureStatus()
+        .then((status) => {
+          if (!status) {
+            setRecording(null);
+            return;
+          }
+          setRecording((current) =>
+            current
+              ? {
+                  ...current,
+                  events: status.events,
+                  chromePid: status.chromePid,
+                  pageUrl: status.pageUrl,
+                }
+              : current,
+          );
+        })
+        .catch(() => {});
+    }, 900);
+    return () => window.clearInterval(interval);
+  }, [recording?.sessionId, desktop]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return requests.filter((r) => {
@@ -1440,7 +1566,7 @@ export default function App() {
             {session.synthetic ? (
               <span className="tag tag-demo">DEMO</span>
             ) : (
-              <span className="tag tag-real">captura local</span>
+              <span className="tag tag-real">{sessionKind}</span>
             )}
             <span className="tag tag-synthetic">{desktop ? "Tauri 2" : "modo navegador"}</span>
             <button
@@ -1459,7 +1585,7 @@ export default function App() {
             <p>
               <strong>Sessão sintética (contrato v1).</strong> Nenhum byte foi capturado: domínios{" "}
               <span className="mono">.invalid</span>, corpos inventados e eventos simulados servem para revisar a
-              interface. Controles de captura real seguem desligados até o core entregar.
+              interface. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.
             </p>
             <span className="demo-right mono">sem telemetria</span>
           </div>
@@ -1470,7 +1596,7 @@ export default function App() {
               <strong>{session.label}</strong> · {session.completeness.state === "complete" ? "completa" : "parcial"}
               {session.sourcePath ? <> · <span className="mono">{session.sourcePath}</span></> : null}
             </p>
-            <span className="demo-right mono">{session.warnings.length} aviso(s)</span>
+            <span className="demo-right mono">{warningTotal} aviso(s)</span>
           </div>
         )}
 
@@ -1486,9 +1612,15 @@ export default function App() {
                   ) : (
                     <span className="tag tag-real">real</span>
                   )}
-                  <span className="tag tag-state">
-                    {session.completeness.state === "complete" ? "sessão completa" : "sessão parcial"}
-                  </span>
+                  {recording ? (
+                    <span className="tag tag-recording">
+                      <span className="rec-dot" /> gravando
+                    </span>
+                  ) : (
+                    <span className="tag tag-state">
+                      {session.completeness.state === "complete" ? "sessão completa" : "sessão parcial"}
+                    </span>
+                  )}
                   {isLargeDemo && <span className="tag">estresse 12k</span>}
                 </div>
                 <div className="sid-meta mono">
@@ -1500,18 +1632,28 @@ export default function App() {
               <div className="session-actions">
                 <button
                   className="btn primary"
-                  disabled
-                  title="Captura ao vivo depende do launcher de captura do core/; o command start_session já existe e volta rotulado como demo."
+                  onClick={() => void startCapture()}
+                  disabled={!desktop || !!recording || !!busy}
+                  title={
+                    desktop
+                      ? "Abrir Chrome com perfil dedicado e gravar CDP+NetLog; navegue e clique em Encerrar"
+                      : "Captura ao vivo só no app desktop (Tauri)"
+                  }
                 >
                   Iniciar sessão
                 </button>
-                <button className="btn" disabled title="Nada para encerrar: esta sessão já está fechada.">
+                <button
+                  className="btn"
+                  onClick={() => void stopCapture()}
+                  disabled={!recording || !!busy}
+                  title="Sair do Chrome, aguardar o flush do NetLog, importar com o core e abrir a sessão"
+                >
                   Encerrar
                 </button>
                 <button
                   className="btn"
                   onClick={() => void openSession()}
-                  disabled={!desktop}
+                  disabled={!desktop || !!recording}
                   title={
                     desktop
                       ? "Abrir uma pasta de sessão v1 (session.json) com diálogo nativo — ⌘O"
@@ -1523,6 +1665,23 @@ export default function App() {
               </div>
             </div>
 
+            {recording && (
+              <div className="recording-banner">
+                <span className="rec-dot" />
+                <strong>Gravando com Chrome externo</strong>
+                <span>
+                  sessão <span className="mono">{recording.sessionId}</span> · {recording.events} evento(s) CDP
+                  {recording.pageUrl && recording.pageUrl !== "about:blank" ? (
+                    <span className="mono dim"> · {recording.pageUrl}</span>
+                  ) : null}
+                </span>
+                <span className="grow" />
+                <button className="ghost-btn small" onClick={() => void stopCapture()} disabled={!!busy}>
+                  Encerrar e abrir
+                </button>
+              </div>
+            )}
+
             {notice && (
               <div className={`notice notice-${notice.kind}`}>
                 <span className="notice-icon">{notice.kind === "error" ? "!" : notice.kind === "success" ? "✓" : "i"}</span>
@@ -1530,9 +1689,19 @@ export default function App() {
                   <strong>{notice.text}</strong>
                   {notice.detail && <span className="notice-detail mono"> {notice.detail}</span>}
                 </span>
-                {notice.kind === "error" && desktop && (
+                {notice.action === "chrome" && desktop && (
+                  <button className="ghost-btn small" onClick={() => void chooseChrome()}>
+                    Selecionar Chrome…
+                  </button>
+                )}
+                {notice.action === "open" && desktop && (
                   <button className="ghost-btn small" onClick={() => void openSession()}>
                     Escolher outro…
+                  </button>
+                )}
+                {notice.action === "start" && desktop && (
+                  <button className="ghost-btn small" onClick={() => void startCapture()}>
+                    Tentar de novo
                   </button>
                 )}
                 <button className="icon-btn" onClick={() => setNotice(null)} title="Fechar aviso">
@@ -1607,7 +1776,7 @@ export default function App() {
                 <button
                   className="btn small"
                   onClick={() => void importCapture("har")}
-                  disabled={!desktop}
+                  disabled={!desktop || !!recording}
                   title={desktop ? "Importar HAR (entrega demo até o core/ ser plugado)" : "Importação só no app desktop"}
                 >
                   HAR
@@ -1615,7 +1784,7 @@ export default function App() {
                 <button
                   className="btn small"
                   onClick={() => void importCapture("netlog")}
-                  disabled={!desktop}
+                  disabled={!desktop || !!recording}
                   title={desktop ? "Importar NetLog (entrega demo até o core/ ser plugado)" : "Importação só no app desktop"}
                 >
                   NetLog
@@ -1747,6 +1916,7 @@ export default function App() {
             setB={setBId}
             onBack={() => setView("session")}
             requests={requests}
+            session={session}
           />
         )}
 

@@ -6,6 +6,7 @@
 //! retornam a fixture sintética **rotulada** (`synthetic: true`) e um aviso
 //! explícito. Nada é apresentado como captura real.
 
+pub mod capture;
 pub mod chrome;
 pub mod commands;
 pub mod menu;
@@ -20,6 +21,7 @@ use tauri::Manager;
 pub struct AppState {
     pub chrome_path: Mutex<Option<PathBuf>>,
     pub last_session_dir: Mutex<Option<PathBuf>>,
+    pub capture: Mutex<Option<capture::CaptureSession>>,
 }
 
 pub fn run() {
@@ -43,6 +45,7 @@ pub fn run() {
             commands::import_netlog,
             commands::start_session,
             commands::stop_session,
+            commands::capture_status,
             commands::detect_chrome,
             commands::set_chrome_path,
             commands::read_attachment,

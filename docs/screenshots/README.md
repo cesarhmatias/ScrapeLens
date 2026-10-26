@@ -1,9 +1,10 @@
 # Prints da interface — contrato v1 (sessão sintética, DEMO)
 
-Gerados a partir de `app/` (React 19 + TypeScript + Vite) sobre a fixture v1,
-renderizados em Chromium real via Playwright a 1440 px CSS, escala 2×. A sessão
-inteira é **sintética** (`synthetic-fixture` + rótulos `DEMO` na tela, domínios
-`.invalid`). Nada foi capturado de um site real.
+Prints 01–16: UI sobre a fixture sintética (`synthetic-fixture`, rótulos `DEMO`,
+domínios `.invalid`), renderizados via Playwright ou do app Tauri. Prints 17–21:
+**ciclo real no macOS** — Chrome 156 externo com perfil dedicado contra o
+testserver local em `127.0.0.1:8781`, sessão `capture-*` real, e importações
+reais de HAR/NetLog; nenhum dado sintético é apresentado como captura.
 
 | Arquivo | O que mostra |
 |---|---|
@@ -23,6 +24,11 @@ inteira é **sintética** (`synthetic-fixture` + rótulos `DEMO` na tela, domín
 | `14-lista-12k-virtualizada.png` | Lista virtualizada com 12.000 requisições sintéticas (24 linhas no DOM) |
 | `15-detalhe-tentativas-ambigua.png` | Tentativas + correspondência ambígua com candidatos explícitos |
 | `16-tauri-shell-escuro.png` | Janela real do shell Tauri 2 (build local ad-hoc) com título nativo, janela única e sessão demo |
+| `17-real-captura-principal.png` | Captura real: Chrome 156 externo na página do testserver local (11 requisições, `cdp+netlog`) |
+| `18-real-detalhe-headers.png` | Requisição real `/setcookie`: headers h1 na sequência do NetLog, verificação `verified`, timestamps da fonte |
+| `19-real-cookies.png` | Cookies reais e quatro linhas `Set-Cookie` (incluindo `sc_dup` duplicado) preservadas |
+| `20-real-har-importada.png` | HAR real (10 requisições) importado pelo core e aberto na UI (`har-import`) |
+| `21-real-netlog-importado.png` | NetLog real (24 requisições incluindo tráfego de background) importado pelo core; sessão parcial declarada |
 
 Contrato oficial: `docs/03-contratos.md`. Decisões: `docs/01-decisoes.md`.
 Contrato provisório da onda 1 (histórico): `app/CONTRACT-DRAFT.md`.
