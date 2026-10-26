@@ -2,3 +2,8 @@
 target/
 node_modules/
 dist/
+
+# Aceite: artefatos de execução (as fixtures e evidências pequenas são commitadas)
+tests/.work/
+tests/capture/runs/
+tests/results/capture-latest/profile-*

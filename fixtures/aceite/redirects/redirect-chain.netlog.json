@@ -1,0 +1,130 @@
+{
+ "constants": {
+  "logEventTypes": {
+   "URL_REQUEST_START_JOB": 1000,
+   "HTTP_TRANSACTION_SEND_REQUEST_HEADERS": 1001,
+   "HTTP_TRANSACTION_READ_RESPONSE_HEADERS": 1002,
+   "URL_REQUEST_REDIRECTED": 1003,
+   "HTTP_STREAM_JOB_BOUND_TO_REQUEST": 1004,
+   "HTTP2_SESSION_SEND_HEADERS": 1005,
+   "HTTP2_SESSION_RECV_HEADERS": 1006,
+   "QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS": 1007,
+   "QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS": 1008
+  },
+  "timeTickOffset": 1793046000000,
+  "logCaptureMode": "Everything",
+  "logFormatVersion": 1
+ },
+ "events": [
+  {
+   "time": "4000000",
+   "type": 1000,
+   "source": {
+    "id": 202,
+    "type": 1,
+    "start_time": "3999995"
+   },
+   "phase": 1,
+   "params": {
+    "url": "http://127.0.0.1:9999/a",
+    "method": "GET",
+    "request_type": "main_frame"
+   }
+  },
+  {
+   "time": "4000002",
+   "type": 1001,
+   "source": {
+    "id": 202,
+    "type": 1,
+    "start_time": "3999997"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "Host: 127.0.0.1:9999",
+     "x-step: 1"
+    ],
+    "line": "GET /a HTTP/1.1\r\n"
+   }
+  },
+  {
+   "time": "4000004",
+   "type": 1002,
+   "source": {
+    "id": 202,
+    "type": 1,
+    "start_time": "3999999"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "HTTP/1.1 302 Found",
+     "location: /b",
+     "content-length: 0"
+    ]
+   }
+  },
+  {
+   "time": "4000005",
+   "type": 1003,
+   "source": {
+    "id": 202,
+    "type": 1,
+    "start_time": "4000000"
+   },
+   "phase": 0,
+   "params": {
+    "location": "http://127.0.0.1:9999/b"
+   }
+  },
+  {
+   "time": "4000008",
+   "type": 1001,
+   "source": {
+    "id": 202,
+    "type": 1,
+    "start_time": "4000003"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "Host: 127.0.0.1:9999",
+     "x-step: 2"
+    ],
+    "line": "GET /b HTTP/1.1\r\n"
+   }
+  },
+  {
+   "time": "4000010",
+   "type": 1002,
+   "source": {
+    "id": 202,
+    "type": 1,
+    "start_time": "4000005"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "HTTP/1.1 200 OK",
+     "content-type: text/plain",
+     "content-length: 3"
+    ]
+   }
+  },
+  {
+   "time": "4000012",
+   "type": 1000,
+   "source": {
+    "id": 202,
+    "type": 1,
+    "start_time": "4000007"
+   },
+   "phase": 2,
+   "params": {
+    "net_error": 0
+   }
+  }
+ ],
+ "polledData": {}
+}

@@ -1,0 +1,1 @@
+fixture sintética; contém segredos apenas para o teste de sanitização

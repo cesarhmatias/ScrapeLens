@@ -1,0 +1,6 @@
+{
+ "label": "synthetic-fixture",
+ "origin": "synthetic",
+ "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
+ "purpose": "Sanitização de credenciais, cookies, token em URL, corpos e eventos brutos."
+}

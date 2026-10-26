@@ -1,0 +1,6 @@
+{
+ "label": "synthetic-fixture",
+ "origin": "synthetic",
+ "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
+ "purpose": "Duas requisições simultâneas idênticas: correlação deve ser ambígua com candidatos."
+}

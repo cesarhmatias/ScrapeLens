@@ -1,0 +1,6 @@
+{
+ "label": "synthetic-fixture",
+ "origin": "synthetic",
+ "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
+ "purpose": "Cadeia de redirect e múltiplas tentativas em HAR (3 elos) e NetLog (2 elos)."
+}

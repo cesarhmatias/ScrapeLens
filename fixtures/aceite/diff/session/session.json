@@ -1,0 +1,833 @@
+{
+  "schemaVersion": 1,
+  "session": {
+    "id": "har-5edc0db7ab5bc0f6",
+    "browser": {
+      "name": "scrapelens-aceite",
+      "version": "1"
+    },
+    "startedAt": "2026-10-26T20:00:00.000Z",
+    "completeness": {
+      "state": "complete",
+      "reasons": [],
+      "counts": {
+        "requests": 2,
+        "attempts": 2,
+        "redirects": 0,
+        "connections": 0,
+        "streamSessions": 0,
+        "sourceEvents": 0,
+        "sourceEventsUsed": 0,
+        "sourceEventsUnknown": 0,
+        "warnings": 0
+      }
+    },
+    "capture": {
+      "mode": "har-import",
+      "notes": "ordem e duplicatas de headers em HAR são não verificadas"
+    },
+    "labels": [
+      "har-import"
+    ]
+  },
+  "requests": [
+    {
+      "id": "har-0001",
+      "url": "https://fixture.invalid/diff-a",
+      "method": "GET",
+      "protocol": "h1",
+      "status": 200,
+      "netlog": {},
+      "attempts": [
+        {
+          "id": "har-0001-a1",
+          "logicalId": "har-0001",
+          "index": 0,
+          "url": "https://fixture.invalid/diff-a",
+          "method": "GET",
+          "protocol": "h1",
+          "status": 200,
+          "outcome": "completed",
+          "requestHeaders": {
+            "headers": [
+              {
+                "name": "x-seq",
+                "value": "1",
+                "source": "har",
+                "event": "log.entries[0].request.headers",
+                "sourceId": "0",
+                "wallTime": "2026-10-26T20:00:00.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "X-Rep",
+                "value": "a",
+                "source": "har",
+                "event": "log.entries[0].request.headers",
+                "sourceId": "0",
+                "wallTime": "2026-10-26T20:00:00.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-seq",
+                "value": "2",
+                "source": "har",
+                "event": "log.entries[0].request.headers",
+                "sourceId": "0",
+                "wallTime": "2026-10-26T20:00:00.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-rep",
+                "value": "b",
+                "source": "har",
+                "event": "log.entries[0].request.headers",
+                "sourceId": "0",
+                "wallTime": "2026-10-26T20:00:00.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-dup",
+                "value": "same",
+                "source": "har",
+                "event": "log.entries[0].request.headers",
+                "sourceId": "0",
+                "wallTime": "2026-10-26T20:00:00.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-dup",
+                "value": "same",
+                "source": "har",
+                "event": "log.entries[0].request.headers",
+                "sourceId": "0",
+                "wallTime": "2026-10-26T20:00:00.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-keep",
+                "value": "k",
+                "source": "har",
+                "event": "log.entries[0].request.headers",
+                "sourceId": "0",
+                "wallTime": "2026-10-26T20:00:00.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              }
+            ],
+            "orderState": "sourceOrder"
+          },
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "text/plain",
+                "source": "har",
+                "event": "log.entries[0].response.headers",
+                "sourceId": "0",
+                "wallTime": "2026-10-26T20:00:00.000Z",
+                "browserVersion": "1",
+                "method": "response.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              }
+            ],
+            "orderState": "sourceOrder"
+          },
+          "cookie": {
+            "raw": [],
+            "pairs": [],
+            "wireLines": [],
+            "unparsed": [],
+            "provenance": {
+              "source": "har",
+              "event": "log.entries[0].request.headers",
+              "sourceId": "0",
+              "wallTime": "2026-10-26T20:00:00.000Z",
+              "browserVersion": "1",
+              "method": "request.headers",
+              "verification": "unverified",
+              "notes": [
+                "HAR: ordem e duplicatas não verificadas"
+              ]
+            }
+          },
+          "requestBody": {
+            "state": "unavailable",
+            "note": "HAR não fornece postData",
+            "provenance": {
+              "source": "derived",
+              "method": "unavailable",
+              "verification": "unverified"
+            }
+          },
+          "responseBody": {
+            "state": "captured",
+            "attachment": "har-entry-0000.response.bin",
+            "bytes": 1,
+            "contentType": "application/json",
+            "provenance": {
+              "source": "har",
+              "event": "log.entries[0].response.headers",
+              "sourceId": "0",
+              "wallTime": "2026-10-26T20:00:00.000Z",
+              "browserVersion": "1",
+              "method": "response.headers",
+              "verification": "unverified",
+              "notes": [
+                "HAR: ordem e duplicatas não verificadas"
+              ]
+            }
+          },
+          "timings": {
+            "estimated": false
+          },
+          "cdp": null,
+          "netlog": {},
+          "match": "unmatched",
+          "provenance": {
+            "source": "har",
+            "event": "log.entries[0]",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "log.entries",
+            "verification": "unverified",
+            "notes": [
+              "HAR importado"
+            ]
+          }
+        }
+      ],
+      "requestHeaders": {
+        "headers": [
+          {
+            "name": "x-seq",
+            "value": "1",
+            "source": "har",
+            "event": "log.entries[0].request.headers",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "X-Rep",
+            "value": "a",
+            "source": "har",
+            "event": "log.entries[0].request.headers",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-seq",
+            "value": "2",
+            "source": "har",
+            "event": "log.entries[0].request.headers",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-rep",
+            "value": "b",
+            "source": "har",
+            "event": "log.entries[0].request.headers",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-dup",
+            "value": "same",
+            "source": "har",
+            "event": "log.entries[0].request.headers",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-dup",
+            "value": "same",
+            "source": "har",
+            "event": "log.entries[0].request.headers",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-keep",
+            "value": "k",
+            "source": "har",
+            "event": "log.entries[0].request.headers",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          }
+        ],
+        "orderState": "sourceOrder"
+      },
+      "responseHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "text/plain",
+            "source": "har",
+            "event": "log.entries[0].response.headers",
+            "sourceId": "0",
+            "wallTime": "2026-10-26T20:00:00.000Z",
+            "browserVersion": "1",
+            "method": "response.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          }
+        ],
+        "orderState": "sourceOrder"
+      },
+      "cookie": {
+        "raw": [],
+        "pairs": [],
+        "wireLines": [],
+        "unparsed": [],
+        "provenance": {
+          "source": "har",
+          "event": "log.entries[0].request.headers",
+          "sourceId": "0",
+          "wallTime": "2026-10-26T20:00:00.000Z",
+          "browserVersion": "1",
+          "method": "request.headers",
+          "verification": "unverified",
+          "notes": [
+            "HAR: ordem e duplicatas não verificadas"
+          ]
+        }
+      },
+      "requestBody": {
+        "state": "unavailable",
+        "note": "HAR não fornece postData",
+        "provenance": {
+          "source": "derived",
+          "method": "unavailable",
+          "verification": "unverified"
+        }
+      },
+      "responseBody": {
+        "state": "captured",
+        "attachment": "har-entry-0000.response.bin",
+        "bytes": 1,
+        "contentType": "application/json",
+        "provenance": {
+          "source": "har",
+          "event": "log.entries[0].response.headers",
+          "sourceId": "0",
+          "wallTime": "2026-10-26T20:00:00.000Z",
+          "browserVersion": "1",
+          "method": "response.headers",
+          "verification": "unverified",
+          "notes": [
+            "HAR: ordem e duplicatas não verificadas"
+          ]
+        }
+      },
+      "timings": {
+        "wallTime": "2026-10-26T20:00:00.000Z",
+        "send": {
+          "start": 0.0,
+          "end": 0.0
+        },
+        "wait": {
+          "start": 0.0,
+          "end": 0.01
+        },
+        "receive": {
+          "start": 0.01,
+          "end": 0.012
+        },
+        "totalMs": 12.5,
+        "estimated": false
+      },
+      "match": "unmatched",
+      "provenance": {
+        "source": "har",
+        "browserVersion": "1",
+        "method": "log.entries",
+        "verification": "unverified",
+        "notes": [
+          "HAR: sequência transmitida não comprovada"
+        ]
+      }
+    },
+    {
+      "id": "har-0002",
+      "url": "https://fixture.invalid/diff-b",
+      "method": "GET",
+      "protocol": "h1",
+      "status": 200,
+      "netlog": {},
+      "attempts": [
+        {
+          "id": "har-0002-a1",
+          "logicalId": "har-0002",
+          "index": 0,
+          "url": "https://fixture.invalid/diff-b",
+          "method": "GET",
+          "protocol": "h1",
+          "status": 200,
+          "outcome": "completed",
+          "requestHeaders": {
+            "headers": [
+              {
+                "name": "X-Rep",
+                "value": "a",
+                "source": "har",
+                "event": "log.entries[1].request.headers",
+                "sourceId": "1",
+                "wallTime": "2026-10-26T20:00:01.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-seq",
+                "value": "1",
+                "source": "har",
+                "event": "log.entries[1].request.headers",
+                "sourceId": "1",
+                "wallTime": "2026-10-26T20:00:01.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-seq",
+                "value": "2",
+                "source": "har",
+                "event": "log.entries[1].request.headers",
+                "sourceId": "1",
+                "wallTime": "2026-10-26T20:00:01.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-dup",
+                "value": "same",
+                "source": "har",
+                "event": "log.entries[1].request.headers",
+                "sourceId": "1",
+                "wallTime": "2026-10-26T20:00:01.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-dup",
+                "value": "same",
+                "source": "har",
+                "event": "log.entries[1].request.headers",
+                "sourceId": "1",
+                "wallTime": "2026-10-26T20:00:01.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-keep",
+                "value": "k",
+                "source": "har",
+                "event": "log.entries[1].request.headers",
+                "sourceId": "1",
+                "wallTime": "2026-10-26T20:00:01.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              },
+              {
+                "name": "x-new",
+                "value": "c",
+                "source": "har",
+                "event": "log.entries[1].request.headers",
+                "sourceId": "1",
+                "wallTime": "2026-10-26T20:00:01.000Z",
+                "browserVersion": "1",
+                "method": "request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              }
+            ],
+            "orderState": "sourceOrder"
+          },
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "text/plain",
+                "source": "har",
+                "event": "log.entries[1].response.headers",
+                "sourceId": "1",
+                "wallTime": "2026-10-26T20:00:01.000Z",
+                "browserVersion": "1",
+                "method": "response.headers",
+                "verification": "unverified",
+                "notes": [
+                  "HAR: ordem e duplicatas não verificadas"
+                ]
+              }
+            ],
+            "orderState": "sourceOrder"
+          },
+          "cookie": {
+            "raw": [],
+            "pairs": [],
+            "wireLines": [],
+            "unparsed": [],
+            "provenance": {
+              "source": "har",
+              "event": "log.entries[1].request.headers",
+              "sourceId": "1",
+              "wallTime": "2026-10-26T20:00:01.000Z",
+              "browserVersion": "1",
+              "method": "request.headers",
+              "verification": "unverified",
+              "notes": [
+                "HAR: ordem e duplicatas não verificadas"
+              ]
+            }
+          },
+          "requestBody": {
+            "state": "unavailable",
+            "note": "HAR não fornece postData",
+            "provenance": {
+              "source": "derived",
+              "method": "unavailable",
+              "verification": "unverified"
+            }
+          },
+          "responseBody": {
+            "state": "captured",
+            "attachment": "har-entry-0001.response.bin",
+            "bytes": 1,
+            "contentType": "application/json",
+            "provenance": {
+              "source": "har",
+              "event": "log.entries[1].response.headers",
+              "sourceId": "1",
+              "wallTime": "2026-10-26T20:00:01.000Z",
+              "browserVersion": "1",
+              "method": "response.headers",
+              "verification": "unverified",
+              "notes": [
+                "HAR: ordem e duplicatas não verificadas"
+              ]
+            }
+          },
+          "timings": {
+            "estimated": false
+          },
+          "cdp": null,
+          "netlog": {},
+          "match": "unmatched",
+          "provenance": {
+            "source": "har",
+            "event": "log.entries[1]",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "log.entries",
+            "verification": "unverified",
+            "notes": [
+              "HAR importado"
+            ]
+          }
+        }
+      ],
+      "requestHeaders": {
+        "headers": [
+          {
+            "name": "X-Rep",
+            "value": "a",
+            "source": "har",
+            "event": "log.entries[1].request.headers",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-seq",
+            "value": "1",
+            "source": "har",
+            "event": "log.entries[1].request.headers",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-seq",
+            "value": "2",
+            "source": "har",
+            "event": "log.entries[1].request.headers",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-dup",
+            "value": "same",
+            "source": "har",
+            "event": "log.entries[1].request.headers",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-dup",
+            "value": "same",
+            "source": "har",
+            "event": "log.entries[1].request.headers",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-keep",
+            "value": "k",
+            "source": "har",
+            "event": "log.entries[1].request.headers",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          },
+          {
+            "name": "x-new",
+            "value": "c",
+            "source": "har",
+            "event": "log.entries[1].request.headers",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "request.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          }
+        ],
+        "orderState": "sourceOrder"
+      },
+      "responseHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "text/plain",
+            "source": "har",
+            "event": "log.entries[1].response.headers",
+            "sourceId": "1",
+            "wallTime": "2026-10-26T20:00:01.000Z",
+            "browserVersion": "1",
+            "method": "response.headers",
+            "verification": "unverified",
+            "notes": [
+              "HAR: ordem e duplicatas não verificadas"
+            ]
+          }
+        ],
+        "orderState": "sourceOrder"
+      },
+      "cookie": {
+        "raw": [],
+        "pairs": [],
+        "wireLines": [],
+        "unparsed": [],
+        "provenance": {
+          "source": "har",
+          "event": "log.entries[1].request.headers",
+          "sourceId": "1",
+          "wallTime": "2026-10-26T20:00:01.000Z",
+          "browserVersion": "1",
+          "method": "request.headers",
+          "verification": "unverified",
+          "notes": [
+            "HAR: ordem e duplicatas não verificadas"
+          ]
+        }
+      },
+      "requestBody": {
+        "state": "unavailable",
+        "note": "HAR não fornece postData",
+        "provenance": {
+          "source": "derived",
+          "method": "unavailable",
+          "verification": "unverified"
+        }
+      },
+      "responseBody": {
+        "state": "captured",
+        "attachment": "har-entry-0001.response.bin",
+        "bytes": 1,
+        "contentType": "application/json",
+        "provenance": {
+          "source": "har",
+          "event": "log.entries[1].response.headers",
+          "sourceId": "1",
+          "wallTime": "2026-10-26T20:00:01.000Z",
+          "browserVersion": "1",
+          "method": "response.headers",
+          "verification": "unverified",
+          "notes": [
+            "HAR: ordem e duplicatas não verificadas"
+          ]
+        }
+      },
+      "timings": {
+        "wallTime": "2026-10-26T20:00:01.000Z",
+        "send": {
+          "start": 0.0,
+          "end": 0.0
+        },
+        "wait": {
+          "start": 0.0,
+          "end": 0.01
+        },
+        "receive": {
+          "start": 0.01,
+          "end": 0.012
+        },
+        "totalMs": 13.5,
+        "estimated": false
+      },
+      "match": "unmatched",
+      "provenance": {
+        "source": "har",
+        "browserVersion": "1",
+        "method": "log.entries",
+        "verification": "unverified",
+        "notes": [
+          "HAR: sequência transmitida não comprovada"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+{
+ "constants": {
+  "logEventTypes": {
+   "URL_REQUEST_START_JOB": 1000,
+   "HTTP_TRANSACTION_SEND_REQUEST_HEADERS": 1001,
+   "HTTP_TRANSACTION_READ_RESPONSE_HEADERS": 1002,
+   "URL_REQUEST_REDIRECTED": 1003,
+   "HTTP_STREAM_JOB_BOUND_TO_REQUEST": 1004,
+   "HTTP2_SESSION_SEND_HEADERS": 1005,
+   "HTTP2_SESSION_RECV_HEADERS": 1006,
+   "QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS": 1007,
+   "QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS": 1008
+  },
+  "timeTickOffset": 1793046000000,
+  "logCaptureMode": "Everything",
+  "logFormatVersion": 1
+ },
+ "events": [
+  {
+   "time": "3100000",
+   "type": 1000,
+   "source": {
+    "id": 301,
+    "type": 1,
+    "start_time": "3099995"
+   },
+   "phase": 1,
+   "params": {
+    "url": "http://127.0.0.1:9999/dup?case=headers",
+    "method": "GET",
+    "request_type": "fetch"
+   }
+  },
+  {
+   "time": "3100003",
+   "type": 1001,
+   "source": {
+    "id": 301,
+    "type": 1,
+    "start_time": "3099998"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "Host: 127.0.0.1:9999",
+     "x-rep: a",
+     "x-seq: 1",
+     "X-Rep: b",
+     "x-seq: 2",
+     "x-mixed-Case: V",
+     "x-rep: c",
+     "cookie: sl_a=1; sl_b=2; sc_dup=one; sc_dup=two"
+    ],
+    "line": "GET /dup?case=headers HTTP/1.1\r\n"
+   }
+  },
+  {
+   "time": "3100006",
+   "type": 1002,
+   "source": {
+    "id": 301,
+    "type": 1,
+    "start_time": "3100001"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "HTTP/1.1 200 OK",
+     "content-type: application/json",
+     "x-resp-order: 1",
+     "x-resp-order: 2",
+     "set-cookie: sc_a=1; Path=/; HttpOnly",
+     "set-cookie: sc_b=2; Path=/; Secure; SameSite=Lax",
+     "set-cookie: sc_dup=one; Path=/",
+     "set-cookie: sc_dup=two; Path=/",
+     "content-length: 2"
+    ]
+   }
+  },
+  {
+   "time": "3100010",
+   "type": 1000,
+   "source": {
+    "id": 301,
+    "type": 1,
+    "start_time": "3100005"
+   },
+   "phase": 2,
+   "params": {
+    "net_error": 0
+   }
+  },
+  {
+   "time": "3100020",
+   "type": 999001,
+   "source": {
+    "id": 301,
+    "type": 1
+   },
+   "phase": 0,
+   "params": {
+    "future_field": {
+     "nested": true
+    }
+   }
+  },
+  {
+   "time": "3100021",
+   "type": 999001,
+   "source": {
+    "id": 301,
+    "type": 1
+   },
+   "phase": 0,
+   "params": {}
+  },
+  {
+   "time": "3100022",
+   "type": 999002,
+   "source": {
+    "id": 301,
+    "type": 1
+   },
+   "phase": 0,
+   "params": {}
+  }
+ ],
+ "polledData": {}
+}

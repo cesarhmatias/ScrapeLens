@@ -1,0 +1,54 @@
+{
+ "constants": {
+  "logEventTypes": {
+   "URL_REQUEST_START_JOB": 1000,
+   "HTTP_TRANSACTION_SEND_REQUEST_HEADERS": 1001,
+   "HTTP_TRANSACTION_READ_RESPONSE_HEADERS": 1002,
+   "URL_REQUEST_REDIRECTED": 1003,
+   "HTTP_STREAM_JOB_BOUND_TO_REQUEST": 1004,
+   "HTTP2_SESSION_SEND_HEADERS": 1005,
+   "HTTP2_SESSION_RECV_HEADERS": 1006,
+   "QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS": 1007,
+   "QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS": 1008
+  },
+  "timeTickOffset": 1793046000000,
+  "logCaptureMode": "Everything",
+  "logFormatVersion": 1
+ },
+ "events": [
+  {
+   "time": "5000000",
+   "type": 1000,
+   "source": {
+    "id": 401,
+    "type": 1,
+    "start_time": "4999995"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://fixture.invalid/s?token=SECRET-URL-TOKEN",
+    "method": "GET",
+    "request_type": "fetch"
+   }
+  },
+  {
+   "time": "5000003",
+   "type": 1001,
+   "source": {
+    "id": 401,
+    "type": 1,
+    "start_time": "4999998"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "Host: fixture.invalid",
+     "authorization: Bearer SECRET-AUTH-TOKEN",
+     "cookie: sid=SECRET-COOKIE-VALUE"
+    ],
+    "line": "GET /s HTTP/1.1\r\n"
+   }
+  }
+ ],
+ "polledData": {}
+}

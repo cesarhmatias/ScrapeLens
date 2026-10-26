@@ -1,0 +1,6 @@
+{
+ "label": "synthetic-fixture",
+ "origin": "synthetic",
+ "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
+ "purpose": "HAR e NetLog válidos, incompletos, inválidos e com itens desconhecidos."
+}
