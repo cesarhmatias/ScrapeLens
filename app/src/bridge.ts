@@ -22,7 +22,15 @@ export interface ChromeInfo {
   candidates: string[];
 }
 
-export type MenuAction = "open" | "import-har" | "import-netlog" | "find" | "copy" | "demo";
+export type MenuAction =
+  | "open"
+  | "import-har"
+  | "import-netlog"
+  | "choose-chrome"
+  | "find"
+  | "copy"
+  | "demo"
+  | "theme";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;

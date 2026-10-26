@@ -9,7 +9,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "shots": "node scripts/shoot.mjs"
+    "shots": "node scripts/shoot.mjs",
+    "perf": "node scripts/perf.mjs",
+    "gen:demo": "node scripts/gen-demo-v1.mjs",
+    "desktop:dev": "cd .. && ./app/node_modules/.bin/tauri dev",
+    "desktop:build": "cd .. && ./app/node_modules/.bin/tauri build --bundles app"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

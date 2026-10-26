@@ -54,6 +54,7 @@ const shots = [
   { name: "11-detalhe-verificacao-escuro", query: "view=detail&id=req-0007&tab=headers&theme=dark", w: 1440, h: 1000, fullPage: true },
   { name: "12-principal-busca-claro", query: "view=session&q=produtos&theme=light", w: 1440, h: 620, fullPage: false },
   { name: "13-principal-filtro-erros-escuro", query: "view=session&filter=error&theme=dark", w: 1440, h: 620, fullPage: false },
+  { name: "15-detalhe-tentativas-ambigua", query: "view=detail&id=req-0011&tab=attempts&theme=light", w: 1440, h: 1000, fullPage: true },
 ];
 
 const browser = await chromium.launch({ headless: true });

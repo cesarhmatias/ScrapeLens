@@ -1,5 +1,10 @@
 # Contrato de sessão — RASCUNHO (provisório, não oficial)
 
+> **SUBSTITUÍDO na onda 2.** O contrato oficial é `docs/03-contratos.md`
+> (formato de sessão v1), com decisões em `docs/01-decisoes.md`. A UI consome
+> `src/v1/types.ts` + `src/v1/adapter.ts` desde o commit da onda 2. Este arquivo
+> fica apenas como histórico da onda 1.
+
 Status: **provisório**, escrito pelo dono de `app/` para destravar a fatia de UI.
 Substitui nada: o contrato oficial será `docs/03-contratos.md` (dono: líder).
 Quando o oficial existir, este arquivo é descartado e o adaptador em

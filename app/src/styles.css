@@ -448,6 +448,7 @@ kbd {
 .table-wrap {
   flex: 1;
   overflow: auto;
+  max-height: calc(100vh - 300px);
   padding: 4px 0 0;
 }
 .req-table {

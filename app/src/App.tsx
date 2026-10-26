@@ -212,7 +212,17 @@ function HeaderBlock({
   );
 }
 
-function BodyPanel({ title, body, kind }: { title: string; body: BodyInfo; kind: "payload" | "response" }) {
+function BodyPanel({
+  title,
+  body,
+  kind,
+  onCopy,
+}: {
+  title: string;
+  body: BodyInfo;
+  kind: "payload" | "response";
+  onCopy?: (value: string, label: string) => void;
+}) {
   const flagged =
     body.availability === "truncated" ||
     body.availability === "discarded" ||
@@ -235,6 +245,11 @@ function BodyPanel({ title, body, kind }: { title: string; body: BodyInfo; kind:
           {body.attachment ? <span className="mono"> · {body.attachment}</span> : null}
         </span>
         <span className={`chip ${stateClass}`}>{availabilityLabels[body.availability]}</span>
+        {body.preview && onCopy && (
+          <button className="ghost-btn small" onClick={() => onCopy(body.preview!, title)} title="Copiar corpo como texto">
+            Copiar
+          </button>
+        )}
       </header>
       {flagged && (
         <div className={`body-flag flag-${body.availability}`}>
@@ -354,7 +369,7 @@ function bodyState(body: BodyInfo) {
   return availabilityLabels[body.availability];
 }
 
-function VerificationPanel({ req }: { req: RequestRecord }) {
+function VerificationPanel({ req, onOpenEvent }: { req: RequestRecord; onOpenEvent: () => void }) {
   const keys = Object.keys(verificationLabels) as VerificationKey[];
   return (
     <aside className="side-panel">
@@ -448,8 +463,12 @@ function VerificationPanel({ req }: { req: RequestRecord }) {
             );
           })}
         </ul>
-        <button className="ghost-btn wide" title="Abre o evento bruto que sustenta o primeiro dado verificado">
-          Abrir evento original ↗
+        <button
+          className="ghost-btn wide"
+          title="Ver a tabela de eventos brutos que sustentam estes dados"
+          onClick={onOpenEvent}
+        >
+          Ver eventos originais ↗
         </button>
       </div>
     </aside>
@@ -764,14 +783,14 @@ function DetailView({
 
           {tab === "payload" && (
             <>
-              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" />
+              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} />
               <BodyContext req={req} />
-              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" />
+              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} />
             </>
           )}
           {tab === "response" && (
             <>
-              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" />
+              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} />
               <BodyContext req={req} />
             </>
           )}
@@ -931,7 +950,7 @@ function DetailView({
           </section>
         </div>
 
-        <VerificationPanel req={req} />
+        <VerificationPanel req={req} onOpenEvent={() => setTab("event")} />
       </div>
     </div>
   );
@@ -1300,15 +1319,19 @@ export default function App() {
         if (action === "open") void openSession();
         else if (action === "import-har") void importCapture("har");
         else if (action === "import-netlog") void importCapture("netlog");
-        else if (action === "find") searchRef.current?.focus();
-        else if (action === "copy" && selected) void copy(selected.url, "URL");
+        else if (action === "choose-chrome") void chooseChrome();
+        else if (action === "find") {
+          setView("session");
+          window.setTimeout(() => searchRef.current?.focus(), 60);
+        } else if (action === "copy" && selected) void copy(selected.url, "URL");
         else if (action === "demo") void bridge.demoSession().then(applyPayload);
+        else if (action === "theme") setTheme((current) => (current === "light" ? "dark" : "light"));
       })
       .then((fn) => {
         dispose = fn;
       });
     return () => dispose();
-  }, [applyPayload, copy, importCapture, openSession, selected]);
+  }, [applyPayload, chooseChrome, copy, importCapture, openSession, selected]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1317,8 +1340,11 @@ export default function App() {
       const key = event.key.toLowerCase();
       if (key === "f") {
         event.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
+        setView("session");
+        window.setTimeout(() => {
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        }, 60);
       } else if (key === "o") {
         event.preventDefault();
         void openSession();
@@ -1504,6 +1530,11 @@ export default function App() {
                   <strong>{notice.text}</strong>
                   {notice.detail && <span className="notice-detail mono"> {notice.detail}</span>}
                 </span>
+                {notice.kind === "error" && desktop && (
+                  <button className="ghost-btn small" onClick={() => void openSession()}>
+                    Escolher outro…
+                  </button>
+                )}
                 <button className="icon-btn" onClick={() => setNotice(null)} title="Fechar aviso">
                   ×
                 </button>
