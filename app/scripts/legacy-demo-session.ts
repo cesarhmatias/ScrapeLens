@@ -1,12 +1,5 @@
-import type {
-  BodyInfo,
-  EvidenceRef,
-  HeaderPair,
-  ReceivedCookie,
-  RequestRecord,
-  SessionRecord,
-  Verification,
-} from "../types";
+// @ts-nocheck
+// Fixture demo da onda 1, mantida apenas como entrada de gen-demo-v1.mjs.
 
 // SESSÃO SINTÉTICA DE DEMONSTRAÇÃO.
 // Nenhum dado aqui foi capturado. Domínios usam .invalid (RFC 2606) de propósito.

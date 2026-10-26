@@ -1,22 +1,43 @@
-import { useMemo, useState } from "react";
-import { demoSession } from "./demo/session";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import demoRaw from "./demo/session.v1.json";
+import demoAttachments from "./demo/attachments.json";
+import { bridge, isTauri, loadLargeDemo, type ChromeInfo, type SessionPayload } from "./bridge";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
+import { adaptSession, type AdaptedSession } from "./v1/adapter";
+import type { SessionV1 } from "./v1/types";
 import type {
   BodyInfo,
   HeaderPair,
   Protocol,
   RequestRecord,
+  SessionRecord,
   Verification,
   VerificationKey,
 } from "./types";
 
 type View = "session" | "detail" | "compare";
 type Theme = "light" | "dark";
-type DetailTab = "headers" | "normalized" | "cookies" | "payload" | "response" | "redirects" | "event";
+type DetailTab =
+  | "headers"
+  | "normalized"
+  | "cookies"
+  | "payload"
+  | "response"
+  | "redirects"
+  | "attempts"
+  | "event";
 type TypeFilter = "all" | "fetch" | "document" | "media" | "error";
 
 const params = new URLSearchParams(window.location.search);
-const initialTheme: Theme = params.get("theme") === "dark" ? "dark" : "light";
+const storedTheme = typeof localStorage !== "undefined" ? localStorage.getItem("scrapelens.theme") : null;
+const initialTheme: Theme =
+  params.get("theme") === "dark" || params.get("theme") === "light"
+    ? (params.get("theme") as Theme)
+    : storedTheme === "dark" || storedTheme === "light"
+      ? (storedTheme as Theme)
+      : typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
 const initialView: View =
   params.get("view") === "detail" ? "detail" : params.get("view") === "compare" ? "compare" : "session";
 const initialTab = (params.get("tab") as DetailTab | null) ?? "headers";
@@ -38,6 +59,10 @@ const sourceLabels: Record<string, string> = {
   cdp: "CDP",
   netlog: "NetLog",
   har: "HAR",
+  ownFormat: "Formato próprio",
+  capture: "Captura",
+  derived: "Derivada",
+  manual: "Manual",
   session: "Sessão",
 };
 
@@ -75,6 +100,9 @@ function fmtBytes(n?: number) {
   return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} MiB`;
 }
 
+const fmtStatus = (status: number) => (status === 0 ? "—" : String(status));
+const fmtProtocol = (value: Protocol) => (value === "desconhecido" ? "—" : value);
+
 function statusClass(status: number) {
   if (status >= 500) return "s-err";
   if (status >= 400) return "s-warn";
@@ -86,6 +114,25 @@ function statusClass(status: number) {
 function verifyClass(status: Verification["status"]) {
   return status === "verified" ? "v-ok" : status === "partial" ? "v-partial" : "v-none";
 }
+
+function verificationTitle(verification: Verification) {
+  if (verification.status === "unverified") return verification.reason;
+  const evidence = verification.evidence;
+  const missing = verification.status === "partial" ? ` · falta: ${verification.missing}` : "";
+  return `${sourceLabels[evidence.source] ?? evidence.source} · ${evidence.event} · ${evidence.method}${missing}`;
+}
+
+const matchLabels = {
+  matched: "correspondida",
+  ambiguous: "ambígua",
+  unmatched: "sem par",
+} as const;
+
+const matchClass = {
+  matched: "v-ok",
+  ambiguous: "v-partial",
+  unmatched: "v-none",
+} as const;
 
 const verifyText: Record<Verification["status"], string> = {
   verified: "verificada",
@@ -99,7 +146,19 @@ function dupeNames(pairs: HeaderPair[]) {
   return counts;
 }
 
-function HeaderBlock({ title, pairs, side }: { title: string; pairs: HeaderPair[]; side: string }) {
+function HeaderBlock({
+  title,
+  pairs,
+  side,
+  verification,
+  onCopy,
+}: {
+  title: string;
+  pairs: HeaderPair[];
+  side: string;
+  verification: Verification;
+  onCopy: (value: string, label: string) => void;
+}) {
   const dupes = dupeNames(pairs);
   const regular = pairs.filter((p) => p.kind === "regular").length;
   return (
@@ -109,6 +168,9 @@ function HeaderBlock({ title, pairs, side }: { title: string; pairs: HeaderPair[
         <span className="block-meta">
           {pairs.length} pares · {regular} regulares · {pairs.length - regular}{" "}
           {pairs.length - regular === 1 ? "pseudoheader" : "pseudoheaders"}
+        </span>
+        <span className={`chip ${verifyClass(verification.status)}`} title={verificationTitle(verification)}>
+          {verifyText[verification.status]}
         </span>
       </header>
       {pairs.length === 0 ? (
@@ -129,7 +191,12 @@ function HeaderBlock({ title, pairs, side }: { title: string; pairs: HeaderPair[
                   duplicata ×{dupes.get(p.name)}
                 </span>
               )}
-              <button className="icon-btn copy" title="Copiar valor" aria-label={`Copiar ${p.name}`}>
+              <button
+                className="icon-btn copy"
+                title={`Copiar ${p.name}${p.source ? ` · fonte ${p.source}${p.wallTime ? ` · ${p.wallTime}` : ""}` : ""}`}
+                aria-label={`Copiar ${p.name}`}
+                onClick={() => onCopy(p.value, p.name)}
+              >
                 ⧉
               </button>
             </li>
@@ -146,16 +213,30 @@ function HeaderBlock({ title, pairs, side }: { title: string; pairs: HeaderPair[
 }
 
 function BodyPanel({ title, body, kind }: { title: string; body: BodyInfo; kind: "payload" | "response" }) {
-  const unavailable = body.availability !== "available";
+  const flagged =
+    body.availability === "truncated" ||
+    body.availability === "discarded" ||
+    body.availability === "omitted" ||
+    body.availability === "unavailable";
+  const stateClass =
+    body.availability === "available"
+      ? "v-ok"
+      : body.availability === "truncated"
+        ? "v-partial"
+        : body.availability === "empty"
+          ? "tag"
+          : "v-none";
   return (
     <section className="body-panel">
       <header className="block-head">
         <h3>{title}</h3>
         <span className="block-meta">
           {body.contentType ?? "tipo desconhecido"} · {fmtBytes(body.decodedSize ?? body.encodedSize)}
+          {body.attachment ? <span className="mono"> · {body.attachment}</span> : null}
         </span>
+        <span className={`chip ${stateClass}`}>{availabilityLabels[body.availability]}</span>
       </header>
-      {unavailable && (
+      {flagged && (
         <div className={`body-flag flag-${body.availability}`}>
           <strong>
             {body.availability === "truncated"
@@ -179,34 +260,56 @@ function BodyPanel({ title, body, kind }: { title: string; body: BodyInfo; kind:
             {body.captureRef ? <span className="mono dim"> · {body.captureRef}</span> : null}
           </div>
         </>
-      ) : (
+      ) : body.availability === "empty" ? (
         <div className="empty">
-          {body.availability === "available" ? "Corpo vazio (0 B)." : "Nenhum conteúdo textual disponível para exibir."}
+          <strong>Corpo vazio (0 B).</strong>
+          <br />
+          {body.reason ?? "A fonte informou que não há corpo nesta mensagem."}
         </div>
-      )}
-      {kind === "response" && body.encodedSize !== undefined && body.decodedSize !== undefined && body.encodedSize !== body.decodedSize && (
-        <div className="body-foot">
-          Tamanho na rede {fmtBytes(body.encodedSize)} · decodificado {fmtBytes(body.decodedSize)}
+      ) : body.availability === "available" ? (
+        <div className="empty">
+          <strong>Corpo capturado em anexo.</strong>
+          <br />
+          {body.attachment
+            ? `Arquivo: ${body.attachment}. A prévia textual é carregada sob demanda nesta sessão.`
+            : "A fonte marcou o corpo como capturado, mas não há anexo associado."}
         </div>
+      ) : (
+        <div className="empty">Nenhum conteúdo textual disponível para exibir.</div>
       )}
+      {kind === "response" &&
+        body.encodedSize !== undefined &&
+        body.decodedSize !== undefined &&
+        body.encodedSize !== body.decodedSize && (
+          <div className="body-foot">
+            Tamanho na rede {fmtBytes(body.encodedSize)} · decodificado {fmtBytes(body.decodedSize)}
+          </div>
+        )}
     </section>
   );
 }
 
 function BodyContext({ req }: { req: RequestRecord }) {
-  const reqEncoding = req.requestHeaders.find((h) => h.name === "content-encoding")?.value;
-  const resEncoding = req.responseHeaders.find((h) => h.name === "content-encoding")?.value;
+  const requestContentEncoding = req.requestHeaders.find((h) => h.name.toLowerCase() === "content-encoding")?.value;
+  const responseContentEncoding = req.responseHeaders.find((h) => h.name.toLowerCase() === "content-encoding")?.value;
+  const verification = (key: VerificationKey) => req.verification[key];
   return (
     <div className="meta-grid">
       <section className="meta-card">
         <h3>Metadados de conteúdo</h3>
         <dl className="kv tight">
           <dt>Tipo</dt>
-          <dd>{typeLabels[req.type]} · {req.method} {req.status}</dd>
+          <dd>{typeLabels[req.type]} · {req.method} {fmtStatus(req.status)}</dd>
           <dt>Payload</dt>
-          <dd className="mono">{req.payload.contentType ?? "sem corpo"}{reqEncoding ? ` · ${reqEncoding}` : ""}</dd>
+          <dd className="mono">
+            {req.payload.contentType ?? "sem corpo"}
+            {requestContentEncoding ? ` · ${requestContentEncoding}` : ""}
+          </dd>
           <dt>Resposta</dt>
-          <dd className="mono">{req.responseBody.contentType ?? "tipo não informado"}{resEncoding ? ` · ${resEncoding}` : ""}</dd>
+          <dd className="mono">
+            {req.responseBody.contentType ?? "tipo não informado"}
+            {responseContentEncoding ? ` · ${responseContentEncoding}` : ""}
+          </dd>
           <dt>Tamanho na rede</dt>
           <dd>{fmtBytes(req.payload.encodedSize)} / {fmtBytes(req.responseBody.encodedSize)}</dd>
           <dt>Decodificado</dt>
@@ -216,6 +319,11 @@ function BodyContext({ req }: { req: RequestRecord }) {
             {req.payload.availability === "truncated" || req.responseBody.availability === "truncated"
               ? "parcial (truncada na gravação)"
               : "como registrada pela fonte"}
+          </dd>
+          <dt>Verificação</dt>
+          <dd>
+            <span className={`chip ${verifyClass(verification("payload").status)}`}>payload {verifyText[verification("payload").status]}</span>{" "}
+            <span className={`chip ${verifyClass(verification("responseBody").status)}`}>resposta {verifyText[verification("responseBody").status]}</span>
           </dd>
         </dl>
       </section>
@@ -234,9 +342,10 @@ function BodyContext({ req }: { req: RequestRecord }) {
 
 const availabilityLabels: Record<BodyInfo["availability"], string> = {
   available: "disponível",
+  empty: "vazio",
   truncated: "truncado",
   discarded: "descartado",
-  omitted: "omitido",
+  omitted: "não exibido",
   unavailable: "indisponível",
 };
 
@@ -271,6 +380,45 @@ function VerificationPanel({ req }: { req: RequestRecord }) {
 
       <div className="side-card">
         <div className="side-head">
+          <h3>Correspondência CDP × NetLog</h3>
+          <span className={`chip ${matchClass[req.match.state]}`}>{matchLabels[req.match.state]}</span>
+        </div>
+        {req.match.state === "ambiguous" ? (
+          <>
+            <p className="verif-reason">
+              Mais de um candidato compatível: nenhuma associação silenciosa. Veja a aba Tentativas.
+            </p>
+            <ul className="candidate-list">
+              {req.match.candidates.map((candidate) => (
+                <li key={candidate.entityId} className="mono">
+                  {candidate.entityId} · score {candidate.score}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : req.match.state === "unmatched" ? (
+          <p className="verif-reason">A fonte oposta não registrou esta requisição; nada foi inferido.</p>
+        ) : (
+          <p className="verif-reason">Chaves explícitas da fonte; a tentativa corresponde à contraparte.</p>
+        )}
+      </div>
+
+      {req.warnings.length > 0 && (
+        <div className="side-card">
+          <h3>Avisos desta requisição</h3>
+          <ul className="warning-list">
+            {req.warnings.map((warning) => (
+              <li key={warning.code} className={`warning warning-${warning.severity}`}>
+                <span className="mono">{warning.code}</span>
+                <span>{warning.message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="side-card">
+        <div className="side-head">
           <h3>Estado de verificação</h3>
           <span className="hint">por informação</span>
         </div>
@@ -291,7 +439,7 @@ function VerificationPanel({ req }: { req: RequestRecord }) {
                       {sourceLabels[v.evidence.source]} · {v.evidence.event}
                     </p>
                     <p className="verif-line">
-                      {fmtTime(v.evidence.timestamp)} · {v.evidence.method}
+                      {fmtTime(v.evidence.timestamp) || "sem horário"} · {v.evidence.method}
                     </p>
                     {v.status === "partial" && <p className="verif-reason">Falta: {v.missing}</p>}
                   </>
@@ -312,14 +460,57 @@ function DetailView({
   tab,
   setTab,
   onBack,
+  session,
+  onCopy,
 }: {
   req: RequestRecord;
   tab: DetailTab;
   setTab: (t: DetailTab) => void;
   onBack: () => void;
+  session: SessionRecord;
+  onCopy: (value: string, label: string) => void;
 }) {
   const reqNorm = useMemo(() => normalizeHeaders(req.requestHeaders), [req]);
   const resNorm = useMemo(() => normalizeHeaders(req.responseHeaders), [req]);
+  const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!session.sourcePath) return;
+    const bodies = [req.payload, req.responseBody].filter(
+      (body) => body.attachment && !body.preview && !attachmentPreviews[body.attachment],
+    );
+    if (bodies.length === 0) return;
+    let alive = true;
+    void Promise.all(
+      bodies.map(async (body) => {
+        try {
+          const result = await bridge.readAttachment(session.sourcePath!, body.attachment!);
+          return [body.attachment!, result.kind === "text" ? result.text ?? "" : ""] as const;
+        } catch {
+          return [body.attachment!, ""] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!alive) return;
+      const next = { ...attachmentPreviews };
+      for (const [name, text] of entries) next[name] = text;
+      setAttachmentPreviews(next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [attachmentPreviews, req, session.sourcePath]);
+
+  const effectivePayload: BodyInfo = {
+    ...req.payload,
+    preview: req.payload.preview ?? (req.payload.attachment ? attachmentPreviews[req.payload.attachment] : undefined),
+  };
+  const effectiveResponse: BodyInfo = {
+    ...req.responseBody,
+    preview:
+      req.responseBody.preview ??
+      (req.responseBody.attachment ? attachmentPreviews[req.responseBody.attachment] : undefined),
+  };
   const tabs: { id: DetailTab; label: string; count?: number }[] = [
     { id: "headers", label: "Headers brutos", count: req.requestHeaders.length + req.responseHeaders.length },
     { id: "normalized", label: "Normalizado" },
@@ -327,6 +518,7 @@ function DetailView({
     { id: "payload", label: "Payload" },
     { id: "response", label: "Resposta" },
     { id: "redirects", label: "Redirects", count: req.redirects.length },
+    { id: "attempts", label: "Tentativas", count: req.attempts.length },
     { id: "event", label: "Evento" },
   ];
 
@@ -354,7 +546,9 @@ function DetailView({
         </div>
         <div className="dh-sub">
           <span className="mono url">{req.url}</span>
-          <button className="ghost-btn small" title="Copiar URL completa">Copiar URL</button>
+          <button className="ghost-btn small" title="Copiar URL completa" onClick={() => onCopy(req.url, "URL")}>
+            Copiar URL
+          </button>
           <span className="dot">·</span>
           <span className="mono" title={req.verification.timings.status === "unverified" ? "Tempos não verificados: duração estimada pela UI" : "Duração medida pela fonte"}>
             {fmtDuration(req)}
@@ -391,8 +585,20 @@ function DetailView({
                   <span className="seq-extra">Origem HTTP/1.1: sem pseudoheaders, apenas linhas nominais.</span>
                 )}
               </div>
-              <HeaderBlock title="Headers da requisição" pairs={req.requestHeaders} side="req" />
-              <HeaderBlock title="Headers da resposta" pairs={req.responseHeaders} side="res" />
+              <HeaderBlock
+                title="Headers da requisição"
+                pairs={req.requestHeaders}
+                side="req"
+                verification={req.verification.requestHeaders}
+                onCopy={onCopy}
+              />
+              <HeaderBlock
+                title="Headers da resposta"
+                pairs={req.responseHeaders}
+                side="res"
+                verification={req.verification.responseHeaders}
+                onCopy={onCopy}
+              />
             </>
           )}
 
@@ -469,6 +675,37 @@ function DetailView({
                 </footer>
               </section>
 
+              {(req.cookieRaw.length > 0 || req.cookieWireLines.length > 0) && (
+                <section className="header-block">
+                  <header className="block-head">
+                    <h3>Cookie enviado — campo bruto e linhas do fio</h3>
+                    <span className="block-meta">
+                      {req.cookieRaw.length} campo(s) bruto(s) · {req.cookieWireLines.length} linha(s) no fio
+                    </span>
+                  </header>
+                  <div className="cookie-raw">
+                    {req.cookieRaw.map((line, index) => (
+                      <div key={`raw-${index}`} className="raw-line">
+                        <span className="tag">campo bruto</span>
+                        <span className="mono">{line}</span>
+                      </div>
+                    ))}
+                    {req.cookieWireLines.map((line, index) => (
+                      <div key={`wire-${index}`} className="raw-line">
+                        <span className="tag tag-seq">linha do fio</span>
+                        <span className="mono">{line}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <footer className="block-foot">
+                    {req.cookieWireLines.length > req.cookieRaw.length
+                      ? "O fio mostra mais linhas Cookie que o campo original — divisão preservada, nada fundido."
+                      : "Divisão no fio não observada nesta requisição."}
+                    {req.cookieNotes?.length ? ` ${req.cookieNotes.join(" · ")}` : ""}
+                  </footer>
+                </section>
+              )}
+
               <section className="header-block">
                 <header className="block-head">
                   <h3>Cookies recebidos</h3>
@@ -527,14 +764,14 @@ function DetailView({
 
           {tab === "payload" && (
             <>
-              <BodyPanel title="Payload da requisição" body={req.payload} kind="payload" />
+              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" />
               <BodyContext req={req} />
-              <BodyPanel title="Corpo da resposta (referência)" body={req.responseBody} kind="response" />
+              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" />
             </>
           )}
           {tab === "response" && (
             <>
-              <BodyPanel title="Corpo da resposta" body={req.responseBody} kind="response" />
+              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" />
               <BodyContext req={req} />
             </>
           )}
@@ -566,6 +803,66 @@ function DetailView({
                 </ol>
                 <footer className="block-foot">
                   Salto HTTP/1.1 → HTTP/2 registrado como dois hops; cada hop tem evidência própria.
+                </footer>
+              </section>
+            ))}
+
+          {tab === "attempts" &&
+            (req.attempts.length === 0 ? (
+              <div className="empty big">
+                <strong>Nenhuma tentativa registrada.</strong>
+                <span>O contrato v1 não trouxe Attempts para esta requisição lógica.</span>
+              </div>
+            ) : (
+              <section className="header-block">
+                <header className="block-head">
+                  <h3>Tentativas da requisição lógica</h3>
+                  <span className="block-meta">
+                    {req.attempts.length} tentativa(s) · correlação {matchLabels[req.match.state]}
+                  </span>
+                </header>
+                <table className="norm-table event-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>ID</th>
+                      <th>Status</th>
+                      <th>Protocolo</th>
+                      <th>Resultado</th>
+                      <th>Headers (req/res)</th>
+                      <th>Correspondência</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {req.attempts.map((attempt) => (
+                      <tr key={attempt.id}>
+                        <td className="mono dim">{attempt.index}</td>
+                        <td className="mono">{attempt.id}</td>
+                        <td><span className={`status ${statusClass(attempt.status ?? 0)}`}>{fmtStatus(attempt.status ?? 0)}</span></td>
+                        <td><span className="proto">{fmtProtocol(attempt.protocol)}</span></td>
+                        <td>{attempt.outcome}{attempt.failure ? ` · ${attempt.failure}` : ""}</td>
+                        <td className="mono">{attempt.requestHeaderCount} / {attempt.responseHeaderCount}</td>
+                        <td>
+                          <span className={`chip ${matchClass[attempt.match]}`}>{matchLabels[attempt.match]}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {req.match.state === "ambiguous" && (
+                  <div className="body-flag flag-truncated">
+                    <strong>Correspondência ambígua — nenhuma fonte foi escolhida</strong>
+                    <span>
+                      {req.match.candidates.length} candidato(s):{" "}
+                      {req.match.candidates
+                        .map((candidate) => `${candidate.entityId} (${candidate.score})`)
+                        .join(", ")}
+                      . O ScrapeLens não associa silenciosamente.
+                    </span>
+                  </div>
+                )}
+                <footer className="block-foot">
+                  Cada tentativa mantém seus próprios headers, Cookie, corpos e proveniência.
                 </footer>
               </section>
             ))}
@@ -646,15 +943,17 @@ function CompareView({
   setA,
   setB,
   onBack,
+  requests,
 }: {
   aId: string;
   bId: string;
   setA: (id: string) => void;
   setB: (id: string) => void;
   onBack: () => void;
+  requests: RequestRecord[];
 }) {
-  const a = demoSession.requests.find((r) => r.id === aId) ?? demoSession.requests[0];
-  const b = demoSession.requests.find((r) => r.id === bId) ?? demoSession.requests[1];
+  const a = requests.find((r) => r.id === aId) ?? requests[0];
+  const b = requests.find((r) => r.id === bId) ?? requests[1];
   const headerDiff = useMemo(() => diffHeaders(a.requestHeaders, b.requestHeaders), [a, b]);
   const resDiff = useMemo(() => diffHeaders(a.responseHeaders, b.responseHeaders), [a, b]);
   const cookieDiff = useMemo(() => diffCookies(a.cookiesSent, b.cookiesSent), [a, b]);
@@ -695,7 +994,7 @@ function CompareView({
     <label className="picker">
       <span className="picker-label">{label}</span>
       <select value={value} onChange={(e) => set(e.target.value)}>
-        {demoSession.requests.map((r) => (
+        {requests.map((r) => (
           <option key={r.id} value={r.id}>
             {r.id} · {r.method} {r.path} · {r.status}
           </option>
@@ -881,9 +1180,162 @@ export default function App() {
   const [tab, setTab] = useState<DetailTab>(initialTab);
   const [aId, setAId] = useState(initialA);
   const [bId, setBId] = useState(initialB);
+  const [loaded, setLoaded] = useState<AdaptedSession>(() =>
+    adaptSession(demoRaw as unknown as SessionV1, { attachments: demoAttachments as Record<string, string> }),
+  );
+  const [notice, setNotice] = useState<{ kind: "info" | "error" | "success"; text: string; detail?: string } | null>(
+    null,
+  );
+  const [busy, setBusy] = useState<string | null>(null);
+  const [chrome, setChrome] = useState<ChromeInfo | null>(null);
+  const [isLargeDemo, setIsLargeDemo] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const tableRef = useRef<HTMLDivElement | null>(null);
 
-  const requests = demoSession.requests;
+  const session = loaded.session;
+  const requests = session.requests;
+  const desktop = isTauri();
   const selected = requests.find((r) => r.id === selectedId) ?? requests[0];
+
+  const applyPayload = useCallback((payload: SessionPayload | null) => {
+    if (!payload) return;
+    setLoaded(
+      adaptSession(payload.session, {
+        attachments: payload.synthetic ? (demoAttachments as Record<string, string>) : undefined,
+        sourcePath: payload.sessionDir,
+      }),
+    );
+    setView("session");
+    setQuery("");
+    setTypeFilter("all");
+    setProtocol("all");
+    setSelectedId(payload.session.requests[0]?.id ?? "");
+    setIsLargeDemo(false);
+    if (payload.notice) setNotice({ kind: "info", text: payload.notice });
+  }, []);
+
+  const openSession = useCallback(async () => {
+    if (!desktop) {
+      setNotice({
+        kind: "info",
+        text: "Abrir captura usa o diálogo nativo do macOS e só existe no app desktop.",
+        detail: "Rode `npm run tauri dev` para abrir o shell Tauri.",
+      });
+      return;
+    }
+    setBusy("Abrindo sessão…");
+    try {
+      applyPayload(await bridge.pickAndOpenSession());
+    } catch (error) {
+      setNotice({ kind: "error", text: "Não foi possível abrir a sessão.", detail: String(error) });
+    } finally {
+      setBusy(null);
+    }
+  }, [applyPayload, desktop]);
+
+  const importCapture = useCallback(
+    async (kind: "har" | "netlog") => {
+      if (!desktop) {
+        setNotice({ kind: "info", text: `Importar ${kind.toUpperCase()} só está disponível no app desktop.` });
+        return;
+      }
+      setBusy(kind === "har" ? "Importando HAR…" : "Importando NetLog…");
+      try {
+        applyPayload(kind === "har" ? await bridge.importHar() : await bridge.importNetlog());
+      } catch (error) {
+        setNotice({ kind: "error", text: `A importação de ${kind.toUpperCase()} falhou.`, detail: String(error) });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [applyPayload, desktop],
+  );
+
+  const chooseChrome = useCallback(async () => {
+    try {
+      const info = await bridge.chooseChrome();
+      if (info) {
+        setChrome(info);
+        setNotice({ kind: "success", text: `Chrome configurado: ${info.path ?? "caminho salvo"}` });
+      }
+    } catch (error) {
+      setNotice({ kind: "error", text: "O caminho escolhido não é um Chrome utilizável.", detail: String(error) });
+    }
+  }, []);
+
+  const copy = useCallback(async (text: string, label = "Valor copiado") => {
+    const ok = await bridge.copyText(text);
+    setNotice({
+      kind: ok ? "success" : "error",
+      text: ok ? `${label} para a área de transferência.` : "Não foi possível copiar.",
+    });
+    window.setTimeout(() => setNotice((current) => (current?.kind === "success" ? null : current)), 2400);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("scrapelens.theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    void bridge.detectChrome().then(setChrome).catch(() => setChrome({ found: false, candidates: [] }));
+    void bridge.appInfo().catch(() => null);
+  }, [desktop]);
+
+  useEffect(() => {
+    if (params.get("demo") !== "large") return;
+    void loadLargeDemo()
+      .then((payload) => {
+        setLoaded(adaptSession(payload.session, {}));
+        setIsLargeDemo(true);
+        setNotice({ kind: "info", text: payload.notice ?? "Sessão sintética de estresse." });
+      })
+      .catch((error) => setNotice({ kind: "error", text: "Falha ao gerar a sessão de estresse.", detail: String(error) }));
+  }, []);
+
+  useEffect(() => {
+    let dispose = () => {};
+    void bridge
+      .onMenu((action) => {
+        if (action === "open") void openSession();
+        else if (action === "import-har") void importCapture("har");
+        else if (action === "import-netlog") void importCapture("netlog");
+        else if (action === "find") searchRef.current?.focus();
+        else if (action === "copy" && selected) void copy(selected.url, "URL");
+        else if (action === "demo") void bridge.demoSession().then(applyPayload);
+      })
+      .then((fn) => {
+        dispose = fn;
+      });
+    return () => dispose();
+  }, [applyPayload, copy, importCapture, openSession, selected]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const meta = event.metaKey || event.ctrlKey;
+      if (!meta) return;
+      const key = event.key.toLowerCase();
+      if (key === "f") {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else if (key === "o") {
+        event.preventDefault();
+        void openSession();
+      } else if (key === "c") {
+        const target = event.target as HTMLElement | null;
+        const typing =
+          target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable === true;
+        const hasSelection = (window.getSelection()?.toString() ?? "").length > 0;
+        if (!typing && !hasSelection && selected) {
+          event.preventDefault();
+          void copy(selected.url, "URL da requisição");
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [copy, openSession, selected]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -912,6 +1364,30 @@ export default function App() {
     error: errors,
   };
 
+  const ROW_HEIGHT = 34;
+  const OVERSCAN = 6;
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(720);
+
+  useEffect(() => {
+    const element = tableRef.current;
+    if (!element) return;
+    const update = () => setViewportH(element.clientHeight || 720);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [view]);
+
+  useEffect(() => {
+    setScrollTop(0);
+    if (tableRef.current) tableRef.current.scrollTop = 0;
+  }, [query, typeFilter, protocol]);
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endIndex = Math.min(filtered.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
+  const visibleRows = filtered.slice(startIndex, endIndex);
+
   const openDetail = (id: string) => {
     setSelectedId(id);
     setTab("headers");
@@ -931,31 +1407,46 @@ export default function App() {
             ScrapeLens
             <span className="title-sep">—</span>
             <span className="title-sub">
-              {demoSession.synthetic ? "sessão de demonstração" : demoSession.label}
+              {session.synthetic ? "sessão de demonstração" : session.label}
             </span>
           </div>
           <div className="title-actions">
-            {demoSession.synthetic && <span className="tag tag-demo">DEMO</span>}
-            <span className="tag tag-synthetic">dados sintéticos</span>
+            {session.synthetic ? (
+              <span className="tag tag-demo">DEMO</span>
+            ) : (
+              <span className="tag tag-real">captura local</span>
+            )}
+            <span className="tag tag-synthetic">{desktop ? "Tauri 2" : "modo navegador"}</span>
             <button
               className="icon-btn theme"
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-              title="Alternar tema claro/escuro"
+              title={`Tema ${theme === "light" ? "claro" : "escuro"} — alternar`}
             >
               {theme === "light" ? "◐" : "◑"}
             </button>
           </div>
         </div>
 
-        <div className="demo-banner">
-          <span className="demo-badge">DEMO</span>
-          <p>
-            <strong>Sessão sintética.</strong> Nenhum byte foi capturado: domínios <span className="mono">.invalid</span>,
-            corpos inventados e eventos simulados servem só para revisar a interface. Controles de captura seguem
-            desativados até o gate de fidelidade.
-          </p>
-          <span className="demo-right mono">sem telemetria</span>
-        </div>
+        {session.synthetic ? (
+          <div className="demo-banner">
+            <span className="demo-badge">DEMO</span>
+            <p>
+              <strong>Sessão sintética (contrato v1).</strong> Nenhum byte foi capturado: domínios{" "}
+              <span className="mono">.invalid</span>, corpos inventados e eventos simulados servem para revisar a
+              interface. Controles de captura real seguem desligados até o core entregar.
+            </p>
+            <span className="demo-right mono">sem telemetria</span>
+          </div>
+        ) : (
+          <div className="real-banner">
+            <span className="tag tag-real">SESSÃO REAL</span>
+            <p>
+              <strong>{session.label}</strong> · {session.completeness.state === "complete" ? "completa" : "parcial"}
+              {session.sourcePath ? <> · <span className="mono">{session.sourcePath}</span></> : null}
+            </p>
+            <span className="demo-right mono">{session.warnings.length} aviso(s)</span>
+          </div>
+        )}
 
         {view === "session" && (
           <>
@@ -963,40 +1454,87 @@ export default function App() {
               <div className="session-id">
                 <div className="sid-top">
                   <span className="dot-live" />
-                  <span className="sid-label">{demoSession.label}</span>
-                  <span className="tag tag-demo">DEMO</span>
-                  <span className="tag tag-state">sessão fechada</span>
+                  <span className="sid-label">{session.label}</span>
+                  {session.synthetic ? (
+                    <span className="tag tag-demo">DEMO</span>
+                  ) : (
+                    <span className="tag tag-real">real</span>
+                  )}
+                  <span className="tag tag-state">
+                    {session.completeness.state === "complete" ? "sessão completa" : "sessão parcial"}
+                  </span>
+                  {isLargeDemo && <span className="tag">estresse 12k</span>}
                 </div>
                 <div className="sid-meta mono">
-                  {demoSession.id} · {demoSession.chromeVersion} · criada {fmtTime(demoSession.createdAt)} ·{" "}
-                  {demoSession.capture.cdpEvents} eventos CDP · NetLog {fmtBytes(demoSession.capture.netlogBytes)}
+                  {session.id} · {session.chromeVersion ?? "navegador não informado"} · criada{" "}
+                  {fmtTime(session.createdAt)} · {session.requests.length} requisições ·{" "}
+                  {session.capture.mode ?? "modo não informado"}
                 </div>
               </div>
               <div className="session-actions">
-                <button className="btn primary" disabled title="Captura ao vivo depende do gate de fidelidade">
+                <button
+                  className="btn primary"
+                  disabled
+                  title="Captura ao vivo depende do launcher de captura do core/; o command start_session já existe e volta rotulado como demo."
+                >
                   Iniciar sessão
                 </button>
-                <button className="btn" disabled title="Nada para encerrar nesta fatia">
+                <button className="btn" disabled title="Nada para encerrar: esta sessão já está fechada.">
                   Encerrar
                 </button>
-                <button className="btn" disabled title="Importação HAR/NetLog chega depois dos contratos">
+                <button
+                  className="btn"
+                  onClick={() => void openSession()}
+                  disabled={!desktop}
+                  title={
+                    desktop
+                      ? "Abrir uma pasta de sessão v1 (session.json) com diálogo nativo — ⌘O"
+                      : "Abrir captura usa o diálogo nativo do macOS; disponível no app Tauri."
+                  }
+                >
                   Abrir captura…
                 </button>
               </div>
             </div>
 
-            <div className="notice">
-              <span className="notice-icon">i</span>
-              <span>
-                Controles de sessão desativados nesta fatia de UI. O botão “Abrir captura…” e a captura ao vivo
-                entram depois do contrato oficial e da prova de fidelidade.
-              </span>
-            </div>
+            {notice && (
+              <div className={`notice notice-${notice.kind}`}>
+                <span className="notice-icon">{notice.kind === "error" ? "!" : notice.kind === "success" ? "✓" : "i"}</span>
+                <span>
+                  <strong>{notice.text}</strong>
+                  {notice.detail && <span className="notice-detail mono"> {notice.detail}</span>}
+                </span>
+                <button className="icon-btn" onClick={() => setNotice(null)} title="Fechar aviso">
+                  ×
+                </button>
+              </div>
+            )}
+
+            {busy && (
+              <div className="notice notice-info">
+                <span className="notice-icon">…</span>
+                <span>{busy}</span>
+              </div>
+            )}
+
+            {desktop && chrome && !chrome.found && (
+              <div className="notice notice-warn">
+                <span className="notice-icon">!</span>
+                <span>
+                  <strong>Chrome não encontrado</strong> em /Applications. A captura precisa de um Chrome externo —
+                  selecione manualmente o <span className="mono">Google Chrome.app</span>.
+                </span>
+                <button className="ghost-btn small" onClick={() => void chooseChrome()}>
+                  Selecionar Chrome…
+                </button>
+              </div>
+            )}
 
             <div className="toolbar">
               <div className="search">
                 <span className="search-icon">⌕</span>
                 <input
+                  ref={searchRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Buscar domínio, caminho, id, status…"
@@ -1031,14 +1569,38 @@ export default function App() {
                   <option value="HTTP/1.1">HTTP/1.1</option>
                   <option value="HTTP/2">HTTP/2</option>
                   <option value="HTTP/3">HTTP/3</option>
+                  <option value="desconhecido">desconhecido</option>
                 </select>
               </label>
-              <button className="btn" onClick={() => setView("compare")}>
-                Comparar requisições…
-              </button>
+              <div className="toolbar-actions">
+                <button
+                  className="btn small"
+                  onClick={() => void importCapture("har")}
+                  disabled={!desktop}
+                  title={desktop ? "Importar HAR (entrega demo até o core/ ser plugado)" : "Importação só no app desktop"}
+                >
+                  HAR
+                </button>
+                <button
+                  className="btn small"
+                  onClick={() => void importCapture("netlog")}
+                  disabled={!desktop}
+                  title={desktop ? "Importar NetLog (entrega demo até o core/ ser plugado)" : "Importação só no app desktop"}
+                >
+                  NetLog
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setView("compare")}
+                  disabled={requests.length < 2}
+                  title={requests.length < 2 ? "São necessárias duas requisições" : "Comparar duas requisições"}
+                >
+                  Comparar…
+                </button>
+              </div>
             </div>
 
-            <div className="table-wrap">
+            <div className="table-wrap" ref={tableRef} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
               <table className="req-table">
                 <thead>
                   <tr>
@@ -1053,24 +1615,29 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r, i) => (
+                  {startIndex > 0 && (
+                    <tr className="spacer" aria-hidden="true">
+                      <td colSpan={8} style={{ height: startIndex * ROW_HEIGHT }} />
+                    </tr>
+                  )}
+                  {visibleRows.map((r, i) => (
                     <tr
                       key={r.id}
-                      className={undefined}
+                      className={selected?.id === r.id ? "selected" : undefined}
                       onClick={() => openDetail(r.id)}
                       title="Abrir painel de detalhe"
                     >
-                      <td className="mono dim">{String(i + 1).padStart(2, "0")}</td>
+                      <td className="mono dim">{String(startIndex + i + 1).padStart(2, "0")}</td>
                       <td>
                         <span className={`method ${methodClass[r.method] ?? "m-other"}`}>{r.method}</span>
                       </td>
                       <td className="domain">{r.domain}</td>
                       <td className="mono path">{r.path}</td>
                       <td>
-                        <span className={`status ${statusClass(r.status)}`}>{r.status}</span>
+                        <span className={`status ${statusClass(r.status)}`}>{fmtStatus(r.status)}</span>
                       </td>
                       <td>
-                        <span className="proto">{r.protocol}</span>
+                        <span className="proto">{fmtProtocol(r.protocol)}</span>
                       </td>
                       <td className="type">{typeLabels[r.type]}</td>
                       <td className="num mono time">
@@ -1079,6 +1646,11 @@ export default function App() {
                       </td>
                     </tr>
                   ))}
+                  {endIndex < filtered.length && (
+                    <tr className="spacer" aria-hidden="true">
+                      <td colSpan={8} style={{ height: (filtered.length - endIndex) * ROW_HEIGHT }} />
+                    </tr>
+                  )}
                   {filtered.length === 0 && (
                     <tr>
                       <td colSpan={8}>
@@ -1100,23 +1672,61 @@ export default function App() {
                 {filtered.length} de {requests.length} requisições
               </span>
               <span className="sep">·</span>
-              <span>2 fontes: CDP + NetLog</span>
+              <span>{visibleRows.length} linhas renderizadas (virtualização)</span>
               <span className="sep">·</span>
-              <span>{demoSession.capture.cdpEvents} eventos CDP</span>
+              <span>{session.capture.mode ?? "fonte não informada"}</span>
               <span className="sep">·</span>
-              <span>Sessão sintética — nada foi capturado</span>
+              <span>
+                {session.completeness.state === "complete"
+                  ? "sessão completa"
+                  : `parcial: ${session.completeness.reasons[0] ?? "motivo não informado"}`}
+              </span>
               <span className="grow" />
-              <span className="mono dim">⌘O abrir · ⌘F buscar · ⌘C copiar</span>
+              <span className="mono dim">⌘O abrir · ⌘F buscar · ⌘C copiar URL</span>
             </div>
           </>
         )}
 
-        {view === "detail" && (
-          <DetailView req={selected} tab={tab} setTab={setTab} onBack={() => setView("session")} />
+        {view === "detail" && selected && (
+          <DetailView
+            req={selected}
+            tab={tab}
+            setTab={setTab}
+            onBack={() => setView("session")}
+            session={session}
+            onCopy={copy}
+          />
         )}
 
-        {view === "compare" && (
-          <CompareView aId={aId} bId={bId} setA={setAId} setB={setBId} onBack={() => setView("session")} />
+        {view === "detail" && !selected && (
+          <div className="empty big">
+            <strong>Sessão sem requisições.</strong>
+            <span>O session.json foi lido, mas não há nenhuma LogicalRequest nele.</span>
+            <button className="link" onClick={() => setView("session")}>
+              Voltar
+            </button>
+          </div>
+        )}
+
+        {view === "compare" && requests.length >= 2 && (
+          <CompareView
+            aId={aId}
+            bId={bId}
+            setA={setAId}
+            setB={setBId}
+            onBack={() => setView("session")}
+            requests={requests}
+          />
+        )}
+
+        {view === "compare" && requests.length < 2 && (
+          <div className="empty big">
+            <strong>Comparação precisa de duas requisições.</strong>
+            <span>Esta sessão tem {requests.length}.</span>
+            <button className="link" onClick={() => setView("session")}>
+              Voltar
+            </button>
+          </div>
         )}
       </div>
     </div>

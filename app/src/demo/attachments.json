@@ -1,0 +1,11 @@
+{
+  "req-0001.response.txt": "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>Demo Loja — vitrine sintética</title><meta name=\"description\" content=\"Dados fictícios de demonstração do ScrapeLens.\"><link rel=\"preload\" as=\"style\" href=\"/assets/app.9f3c1a.css\">…</head><body>…",
+  "req-0002.response.txt": ":root{--bg:#101418;--fg:#e6e9ef;--accent:#4c8dff}body{margin:0;font:14px/1.5 -apple-system,system-ui}…",
+  "req-0004.response.txt": "{\n  \"pagina\": 1,\n  \"por_pagina\": 24,\n  \"total\": 137,\n  \"itens\": [\n    { \"sku\": \"DEMO-8812\", \"nome\": \"Produto sintético 8812\", \"preco\": 249.9, \"estoque\": 12 },\n    { \"sku\": \"DEMO-4410\", \"nome\": \"Produto sintético 4410\", \"preco\": 89.5, \"estoque\": 0 }\n  ]\n}",
+  "req-0005.response.txt": "{\n  \"sku\": \"DEMO-8812\",\n  \"nome\": \"Produto sintético 8812\",\n  \"preco\": 249.9,\n  \"descricao\": \"Descrição gerada apenas para demonstração da interface.\",\n  \"atributos\": { \"cor\": \"azul\", \"tamanho\": \"M\" }\n}",
+  "req-0008.request.txt": "{\"sku\":\"DEMO-8812\",\"quantidade\":1}",
+  "req-0008.response.txt": "{ \"item_id\": 44, \"quantidade\": 1, \"subtotal\": 249.9 }",
+  "req-0009.response.txt": "{ \"erro\": \"rate_limited\", \"retry_after_s\": 31 }",
+  "req-0011.response.txt": "<html><head><title>301 Moved Permanently</title></head><body><center><h1>301 Moved Permanently</h1></center><hr><center>nginx/1.27.3</center></body></html>",
+  "req-0012.response.txt": "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>Catálogo — Demo Loja</title></head><body><main data-page=\"catalogo\">…</main></body></html>"
+}
