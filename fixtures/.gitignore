@@ -1,0 +1,3 @@
+# Evidence produced by testserver runs is regenerated on demand and never
+# committed (it may contain browser fingerprint-ish noise from local tests).
+evidence/
