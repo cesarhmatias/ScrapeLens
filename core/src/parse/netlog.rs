@@ -848,6 +848,7 @@ fn flush_attempt(current: &mut NetlogAttempt, attempts: &mut Vec<NetlogAttempt>)
         && current.recv_transaction.is_none()
         && current.recv_session.is_none()
         && current.redirect_to.is_none()
+        && current.net_error.is_none()
     {
         return;
     }
