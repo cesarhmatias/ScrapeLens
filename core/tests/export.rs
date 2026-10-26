@@ -80,6 +80,23 @@ fn curl_marks_unverified_sequence_and_pseudoheaders() {
 }
 
 #[test]
+fn curl_omits_nul_body_instead_of_truncating_it() {
+    let request = request();
+    let output = to_curl(
+        &request,
+        Some(&[0x00, 0x01, 0xff]),
+        &ExportOptions::default(),
+    )
+    .unwrap();
+    assert!(!output.body_included);
+    assert!(!output.text.contains("--data-binary"));
+    assert!(output
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "export.body_nul"));
+}
+
+#[test]
 fn python_uses_http_client_and_preserves_header_duplicates() {
     let mut request = request();
     request.method = "POST".to_string();

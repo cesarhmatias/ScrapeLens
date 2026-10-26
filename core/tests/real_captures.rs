@@ -103,3 +103,80 @@ fn h3_response_session_evidence_expands_nul_duplicates() {
     assert_eq!(evidence.view.get_all("set-cookie").len(), 2);
     assert_eq!(evidence.view.get_all("x-resp-order").len(), 2);
 }
+
+fn contract_h1() -> scrapelens_core::parse::ImportedSession {
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../experiments/results/contract-h1");
+    let cdp = std::fs::read(root.join("cdp-events.jsonl")).unwrap();
+    let netlog = std::fs::read(root.join("chrome-netlog.json")).unwrap();
+    import_capture(&cdp, &netlog, CorrelationOptions::default()).unwrap()
+}
+
+#[test]
+fn contract_h1_redirect_chain_has_three_attempts_and_two_redirects() {
+    let imported = contract_h1();
+    let session = &imported.bundle.session;
+    assert_eq!(session.requests.len(), 12);
+    assert_eq!(
+        session
+            .requests
+            .iter()
+            .map(|request| request.attempts.len())
+            .sum::<usize>(),
+        14
+    );
+    let request = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("/redirect?n=2"))
+        .expect("chain de redirect");
+    assert_eq!(request.attempts.len(), 3);
+    assert_eq!(
+        request
+            .attempts
+            .iter()
+            .map(|attempt| attempt.status)
+            .collect::<Vec<_>>(),
+        vec![Some(302), Some(302), Some(200)]
+    );
+    assert_eq!(request.redirects.len(), 2);
+    assert!(request
+        .attempts
+        .iter()
+        .all(|attempt| attempt.match_state == scrapelens_core::model::MatchState::Matched));
+    // A resposta final não pode herdar os headers 302 do redirect anterior.
+    assert_eq!(
+        request.attempts[2]
+            .response_headers
+            .first_value("content-length"),
+        Some("19")
+    );
+    assert_eq!(
+        request.attempts[2].response_headers.first_value("location"),
+        None
+    );
+}
+
+#[test]
+fn identical_simultaneous_requests_remain_explicitly_ambiguous() {
+    let imported = contract_h1();
+    let ambiguous: Vec<_> = imported
+        .bundle
+        .session
+        .requests
+        .iter()
+        .filter(|request| request.match_state == scrapelens_core::model::MatchState::Ambiguous)
+        .collect();
+    assert_eq!(ambiguous.len(), 2);
+    for request in ambiguous {
+        assert!(request.url.contains("concurrent=1"));
+        for attempt in &request.attempts {
+            assert_eq!(
+                attempt.match_candidates.len(),
+                2,
+                "os dois candidatos idênticos devem ser expostos"
+            );
+            assert!(attempt.netlog.source_ids.is_empty());
+        }
+    }
+}

@@ -80,8 +80,10 @@ original são preservadas. Pseudoheaders ficam em lista separada.
 ```
 
 - `orderState`: `sourceOrder | reconstructed | normalized | unknown`.
-- `rawBlock` é o texto original quando a fonte o fornece (h1 `headersText` ou
-  linhas do NetLog). Visões normalizadas **não** substituem este bloco.
+- `rawBlock` é o texto original quando a fonte o fornece (h1 `headersText` do
+  CDP ou linha de request h1 do NetLog); nos demais eventos os pares ordenados
+  já são o original e não são duplicados. Visões normalizadas **não**
+  substituem este bloco.
 - Cada header carrega `provenance` (campos achatados no próprio objeto):
   `source`, `event?`, `sourceId?`, `timestamp?` (segundos), `wallTime?`,
   `browserVersion?`, `method`, `verification`, `notes?`.
@@ -240,7 +242,8 @@ scrapelens-core diff <sessao> <requestIdA> <requestIdB>
   corpo não acompanha a exportação.
 - Sanitização não detecta tokens embutidos em segmentos de path, HTML/JS livre
   ou texto não estruturado; esses corpos são omitidos com aviso. Nomes e
-  contagem de headers/cookies são preservados para auditoria.
+  contagem de headers/cookies são preservados para auditoria. Notas da sessão
+  e metadados de conexão são preservados; revise-os antes de compartilhar.
 - HAR não comprova ordem/duplicatas; NetLog h3 mostra Cookie fundido, embora o
   fio possa receber N campos.
 - O NetLog isolado não prova cobertura de sessão CDP; a sessão resultante fica

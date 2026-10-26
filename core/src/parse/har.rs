@@ -91,7 +91,7 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
             Some(parsed) => parsed_entries.push(parsed),
             None => {
                 report.source_events_unknown += 1;
-                report.warn(Warning::new(
+                report.warn(Warning::error(
                     "har.entry_skipped",
                     format!("entrada {index} não é objeto HAR válido; ignorada"),
                 ));
@@ -249,13 +249,13 @@ fn parse_entry(
     let request = object.get("request").and_then(Value::as_object);
     let response = object.get("response").and_then(Value::as_object);
     if request.is_none() {
-        report.warn(Warning::new(
+        report.warn(Warning::error(
             "har.missing_request",
             format!("entrada {index} sem objeto request"),
         ));
     }
     if response.is_none() {
-        report.warn(Warning::new(
+        report.warn(Warning::error(
             "har.missing_response",
             format!("entrada {index} sem objeto response; status indisponível"),
         ));
@@ -272,7 +272,7 @@ fn parse_entry(
         .unwrap_or("GET")
         .to_string();
     if url.is_empty() {
-        report.warn(Warning::new(
+        report.warn(Warning::error(
             "har.missing_url",
             format!("entrada {index} sem request.url"),
         ));
@@ -648,7 +648,10 @@ fn parse_response_body(
 }
 
 fn parse_timings(entry: &Map<String, Value>) -> Timings {
-    let time_ms = entry.get("time").and_then(Value::as_f64);
+    let time_ms = entry
+        .get("time")
+        .and_then(Value::as_f64)
+        .filter(|time| *time >= 0.0);
     let started = entry
         .get("startedDateTime")
         .and_then(Value::as_str)

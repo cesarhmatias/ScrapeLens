@@ -24,6 +24,7 @@ use crate::parse::{ImportReport, ImportedSession, InputFormat};
 pub struct CdpCapture {
     pub events_total: usize,
     pub events_used: usize,
+    pub events_invalid: usize,
     pub unhandled_events: usize,
     pub unhandled_samples: Vec<String>,
     pub sessions: Vec<String>,
@@ -121,7 +122,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 let request = params.get("request").and_then(Value::as_object);
                 let timestamp = params.get("timestamp").and_then(Value::as_f64);
                 let wall_time = params.get("wallTime").and_then(Value::as_f64);
-                let cdp = cdp_ref(params, request_id);
+                let cdp = cdp_ref(params, request_id, session);
 
                 if let Some(restart) = requests.get_mut(request_id) {
                     // Redirect: fecha a tentativa anterior com redirectResponse.
@@ -362,8 +363,20 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     }
                 }
 
+                let response_url = response
+                    .and_then(|response| response.get("url"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
                 if let Some(request) = requests.get_mut(request_id) {
-                    if let Some(current) = request.attempts.last_mut() {
+                    let index = response_url
+                        .and_then(|url| {
+                            request
+                                .attempts
+                                .iter()
+                                .position(|attempt| attempt.url == url)
+                        })
+                        .unwrap_or_else(|| request.attempts.len().saturating_sub(1));
+                    if let Some(current) = request.attempts.get_mut(index) {
                         current.protocol = attempt.protocol;
                         current.status = attempt.status;
                         current.response_headers = attempt.response_headers;
@@ -660,11 +673,12 @@ fn apply_response_extra(
     });
 }
 
-fn cdp_ref(params: &Map<String, Value>, request_id: &str) -> CdpRef {
+fn cdp_ref(params: &Map<String, Value>, request_id: &str, session: Option<&str>) -> CdpRef {
     CdpRef {
         session_id: params
             .get("sessionId")
             .and_then(Value::as_str)
+            .or(session)
             .map(str::to_string),
         request_id: Some(request_id.to_string()),
         loader_id: params
@@ -864,7 +878,8 @@ pub fn split_joined_header(value: &str) -> Vec<String> {
 pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
     let mut report = ImportReport::new(InputFormat::Cdp);
     report.source_events = capture.events_total;
-    report.source_events_used = capture.events_used;
+    report.source_events_used = capture.events_total.saturating_sub(capture.events_invalid);
+    report.source_events_unknown = capture.events_invalid;
 
     let started_at = capture
         .requests
@@ -1067,7 +1082,8 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
 
 pub fn import_cdp(json: &[u8]) -> Result<ImportedSession> {
     let capture = parse_cdp_jsonl(json)?;
-    let (session, mut report) = build_cdp_session(&capture);
+    let (mut session, mut report) = build_cdp_session(&capture);
+    session.session.id = format!("cdp-{}", crate::parse::har::stable_id(json));
     report.bytes_read = json.len();
     let bundle = SessionBundle {
         session,

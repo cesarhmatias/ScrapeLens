@@ -180,6 +180,11 @@ impl ParsedUrl {
             Some((path, query)) => (path.to_string(), Some(query.to_string())),
             None => (path_and_query, None),
         };
+        let path = if path.is_empty() {
+            "/".to_string()
+        } else {
+            path
+        };
         Some(Self {
             scheme,
             host,

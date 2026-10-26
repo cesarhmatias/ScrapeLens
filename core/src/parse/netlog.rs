@@ -254,7 +254,7 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
         }
     }
 
-    capture.events_unknown = unknown_counts.values().sum();
+    capture.events_unknown += unknown_counts.values().sum::<usize>();
     for (id, count) in unknown_counts {
         if capture.unknown_event_samples.len() < MAX_UNKNOWN_SAMPLES {
             capture
@@ -494,7 +494,6 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
         });
         let request = build_request(builder);
         if request.url.is_empty() {
-            capture.events_unknown += 1;
             capture.warnings.push(Warning::new(
                 "netlog.request_without_url",
                 format!(
@@ -655,8 +654,11 @@ fn parse_headers(
     if let Some(line) = &request_line {
         view.start_line = Some(line.clone());
         view.raw_block = Some(format!("{line}\n{}", lines.join("\n")));
-    } else {
-        view.raw_block = Some(lines.join("\n"));
+    }
+    // Para eventos de header, os pares ordenados já são o original; não
+    // duplicamos todas as linhas em `rawBlock` (custo alto em capturas grandes).
+    if request_line.is_none() {
+        view.raw_block = None;
     }
     if nul_expanded {
         view.notes.push(
@@ -1014,7 +1016,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport) {
     let mut report = ImportReport::new(InputFormat::NetLog);
     report.source_events = capture.events_total;
-    report.source_events_used = capture.events_used;
+    report.source_events_used = capture.events_total.saturating_sub(capture.events_unknown);
     report.source_events_unknown = capture.events_unknown;
 
     let mut meta = SessionMeta::new(
@@ -1114,6 +1116,12 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                         );
                     }
                 }
+                if attempt.cookie.wire_lines.is_empty() && !attempt.cookie.raw.is_empty() {
+                    attempt.cookie.wire_lines = attempt.cookie.raw.clone();
+                    attempt.cookie.notes.push(
+                        "h1: um único campo Cookie observado na fonte transacional".to_string(),
+                    );
+                }
             }
             if let Some(evidence) = parsed
                 .recv_transaction
@@ -1144,6 +1152,9 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                     let header_id = format!("{attempt_id}-h{}", attempt.header_evidence.len() + 1);
                     if let Some(stream_id) = evidence.stream_id {
                         attempt.netlog.stream_ids.push(stream_id);
+                    }
+                    if let Some(dependency_id) = evidence.dependency_id {
+                        attempt.netlog.dependency_ids.push(dependency_id);
                     }
                     let evidence_protocol = if evidence.protocol == Protocol::H1
                         && evidence.event_name == "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"
@@ -1306,6 +1317,18 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             .last()
             .map(|attempt| attempt.timings.clone())
             .unwrap_or_default();
+        for attempt in &logical.attempts {
+            for stream_id in &attempt.netlog.stream_ids {
+                if !logical.netlog.stream_ids.contains(stream_id) {
+                    logical.netlog.stream_ids.push(*stream_id);
+                }
+            }
+            for dependency_id in &attempt.netlog.dependency_ids {
+                if !logical.netlog.dependency_ids.contains(dependency_id) {
+                    logical.netlog.dependency_ids.push(*dependency_id);
+                }
+            }
+        }
         logical.refresh_primary_from_attempt();
         if logical.protocol == Protocol::H1 {
             for entry in logical
@@ -1349,7 +1372,8 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
 /// Importa NetLog isolado.
 pub fn import_netlog(json: &[u8]) -> Result<ImportedSession> {
     let capture = parse_netlog(json)?;
-    let (session, mut report) = build_netlog_session(&capture);
+    let (mut session, mut report) = build_netlog_session(&capture);
+    session.session.id = format!("netlog-{}", crate::parse::har::stable_id(json));
     report.bytes_read = json.len();
     let bundle = SessionBundle {
         session,

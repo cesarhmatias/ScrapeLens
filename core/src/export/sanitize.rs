@@ -65,6 +65,21 @@ impl SanitizedExport {
                 ),
             });
         }
+        let attachments_dir = dir.join(store::ATTACHMENTS_DIR);
+        if attachments_dir.exists() {
+            let has_entries = std::fs::read_dir(&attachments_dir)
+                .map_err(|error| crate::error::CoreError::io(&attachments_dir, error))?
+                .next()
+                .is_some();
+            if has_entries {
+                return Err(crate::error::CoreError::Export {
+                    message: format!(
+                        "destino já contém anexos ({}); use um diretório novo",
+                        attachments_dir.display()
+                    ),
+                });
+            }
+        }
         for name in [store::CDP_EVENTS_FILE, store::NETLOG_FILE] {
             let path = dir.join(name);
             if path.exists() {
@@ -623,6 +638,11 @@ fn percent_decode(value: &str) -> String {
     let mut out = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
+        if bytes[index] == b'+' {
+            out.push(b' ');
+            index += 1;
+            continue;
+        }
         if bytes[index] == b'%' && index + 2 < bytes.len() {
             if let (Some(high), Some(low)) =
                 (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))

@@ -303,6 +303,9 @@ impl SessionV1 {
             counts.redirects += request.redirects.len();
         }
         self.session.completeness.counts = counts;
+        if !self.session.completeness.reasons.is_empty() {
+            self.session.completeness.state = CompletenessState::Partial;
+        }
 
         if self
             .warnings

@@ -21,7 +21,20 @@ pub fn to_curl(
     let url = export_url(request)?.to_string();
     let mut output = ExportOutput::new(String::new());
     let headers = exportable_headers(request, &mut output);
-    let body = resolve_body(request, body, options, &mut output);
+    let mut body = resolve_body(request, body, options, &mut output);
+    if body.is_some_and(|bytes| bytes.contains(&0)) {
+        // Bash não consegue passar NUL em argv; recusar é melhor que truncar.
+        output.body_included = false;
+        output.body_note = Some(
+            "corpo contém NUL e não pode ser reproduzido por um argumento de shell; omitido"
+                .to_string(),
+        );
+        output.warnings.push(crate::model::Warning::new(
+            "export.body_nul",
+            "corpo binário com NUL omitido do cURL; use a exportação Python ou o anexo original",
+        ));
+        body = None;
+    }
     let headers = drop_content_length_without_body(headers, body.is_some(), &mut output);
 
     let verification = request.request_headers.verification();

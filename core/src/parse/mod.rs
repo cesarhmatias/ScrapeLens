@@ -123,6 +123,20 @@ pub fn import_capture(
     let (session, mut cdp_report) = cdp::build_cdp_session(&cdp);
     let (_netlog_session, netlog_report) = netlog::build_netlog_session(&netlog);
     let mut session = session;
+    // Avisos do arquivo NetLog (tipos desconhecidos, cadeia não resolvida) são
+    // relevantes; avisos por requisição de background não são importados.
+    for warning in &netlog.warnings {
+        if !session
+            .warnings
+            .iter()
+            .any(|existing| existing.code == warning.code && existing.message == warning.message)
+        {
+            session.warnings.push(warning.clone());
+        }
+    }
+    let mut id_seed = cdp_events_jsonl.to_vec();
+    id_seed.extend_from_slice(netlog_json);
+    session.session.id = format!("capture-{}", har::stable_id(&id_seed));
     if session.session.browser.version.is_none() && netlog.browser.version.is_some() {
         session.session.browser = netlog.browser.clone();
     }
@@ -137,11 +151,12 @@ pub fn import_capture(
     }
 
     let total_events = cdp.events_total + netlog.events_total;
-    let used_events = cdp.events_used + netlog.events_used;
+    let unknown_events = netlog.events_unknown + cdp.events_invalid;
+    let used_events = total_events.saturating_sub(unknown_events);
     session.session.completeness = crate::model::Completeness::complete();
     session.session.completeness.counts.source_events = total_events;
     session.session.completeness.counts.source_events_used = used_events;
-    session.session.completeness.counts.source_events_unknown = netlog.events_unknown;
+    session.session.completeness.counts.source_events_unknown = unknown_events;
     if cdp_report.has_errors() {
         session
             .session
@@ -153,7 +168,7 @@ pub fn import_capture(
     report.format = InputFormat::Capture;
     report.source_events = total_events;
     report.source_events_used = used_events;
-    report.source_events_unknown = netlog.events_unknown;
+    report.source_events_unknown = unknown_events;
     let bundle = SessionBundle {
         session,
         cdp_events_jsonl: Some(cdp_events_jsonl.to_vec()),

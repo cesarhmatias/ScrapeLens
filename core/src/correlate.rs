@@ -115,6 +115,12 @@ pub fn attach_netlog(
                     }
                     new_streams.extend(attach_candidate(attempt, candidate, options));
                     push_unique(&mut request.netlog.source_ids, candidate.request.source_id);
+                    for stream_id in &attempt.netlog.stream_ids {
+                        push_unique(&mut request.netlog.stream_ids, *stream_id);
+                    }
+                    for dependency_id in &attempt.netlog.dependency_ids {
+                        push_unique(&mut request.netlog.dependency_ids, *dependency_id);
+                    }
                     used.insert(candidate.id.clone());
                     outcome.matched_attempts += 1;
                 }
@@ -134,7 +140,7 @@ pub fn attach_netlog(
                             candidates.len()
                         ),
                     )
-                    .with_entity(attempt.id.clone())
+                    .with_entity(attempt.logical_id.clone())
                     .with_detail(serde_json::json!({
                         "candidates": candidates.iter().map(|candidate| serde_json::json!({
                             "entityId": candidate.id,
@@ -518,7 +524,11 @@ fn attach_candidate(
     if attempt.status.is_none() {
         attempt.status = netlog_attempt.status;
     }
-    if attempt.outcome == AttemptOutcome::Unknown {
+    if matches!(
+        attempt.outcome,
+        AttemptOutcome::Unknown | AttemptOutcome::Pending
+    ) && netlog_attempt.outcome != AttemptOutcome::Unknown
+    {
         attempt.outcome = netlog_attempt.outcome;
     }
     if attempt.failure.is_none() {
@@ -601,6 +611,12 @@ fn cookie_from_netlog(
             );
         }
     }
+    if cookie.wire_lines.is_empty() && !cookie.raw.is_empty() {
+        cookie.wire_lines = cookie.raw.clone();
+        cookie
+            .notes
+            .push("h1: um único campo Cookie observado na fonte transacional".to_string());
+    }
     cookie
 }
 
@@ -617,11 +633,11 @@ pub fn canonical_url(url: &str) -> String {
 
 /// Garante que a evidência NetLog inclui o bloco de sessão mesmo quando o
 /// chamador só quer inspecionar (usado nos testes).
-pub fn netlog_header_event<'a>(
-    attempt: &'a NetlogAttempt,
+pub fn netlog_header_event(
+    attempt: &NetlogAttempt,
     role: HeaderRole,
     session: bool,
-) -> Option<&'a NetlogHeaderEvent> {
+) -> Option<&NetlogHeaderEvent> {
     match (role, session) {
         (HeaderRole::Request, false) => attempt.send_transaction.as_ref(),
         (HeaderRole::Request, true) => attempt.send_session.as_ref(),

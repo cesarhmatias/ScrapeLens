@@ -88,10 +88,14 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
         let bytes = store::read_file(&netlog_path)?;
         report.bytes_read += bytes.len();
         if serde_json::from_slice::<Value>(&bytes).is_err() {
-            report.warn(Warning::new(
+            report.warn(Warning::error(
                 "session.netlog_invalid",
                 "netlog.json existe, mas não é JSON válido; mantido como artefato bruto",
             ));
+            session
+                .session
+                .completeness
+                .add_reason("netlog.json inválido");
         }
         Some(bytes)
     } else {
@@ -150,6 +154,10 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
             )
             .with_detail(Value::String(name.clone()));
             session.add_warning(warning.clone());
+            session
+                .session
+                .completeness
+                .add_reason(format!("anexo ausente: {name}"));
             report.warn(warning);
             continue;
         }
@@ -163,6 +171,10 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
                     MAX_ATTACHMENT_BYTES
                 ),
             ));
+            session
+                .session
+                .completeness
+                .add_reason(format!("anexo acima do limite: {name}"));
             continue;
         }
         if total_loaded + metadata.len() > MAX_TOTAL_ATTACHMENT_BYTES {
@@ -170,6 +182,10 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
                 "attachment.total_limit",
                 "limite total de anexos atingido; anexos restantes não carregados",
             ));
+            session
+                .session
+                .completeness
+                .add_reason("limite total de anexos atingido");
             break;
         }
         let bytes = store::read_file(&path)?;

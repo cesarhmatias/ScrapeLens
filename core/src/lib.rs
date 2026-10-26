@@ -12,6 +12,8 @@
 //!   [`model::Warning`];
 //! - nenhuma função deste crate abre conexões de rede.
 
+#![forbid(unsafe_code)]
+
 pub mod correlate;
 pub mod diff;
 pub mod error;
