@@ -1,0 +1,203 @@
+{
+ "runId": "20261026T232425Z",
+ "generatedAt": "2026-10-26T23:25:12Z",
+ "chromeVersion": "156.0.8078.48",
+ "ports": 9781,
+ "certificateInstalled": false,
+ "networkPolicy": "Chrome com --host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+ "captures": [
+  {
+   "name": "h1h2",
+   "protocol": "h2",
+   "session": "session-h1h2",
+   "requests": 15,
+   "protocols": [
+    "h1",
+    "h2"
+   ],
+   "matched": 12,
+   "ambiguous": 3,
+   "unmatched": 0,
+   "redirects": 4,
+   "streamSessions": 2,
+   "verifiedRequestViews": 10,
+   "completeness": "complete",
+   "netlogBytes": 1152860,
+   "cdpBytes": 423578,
+   "meta": {
+    "name": "h1h2",
+    "startedAt": "2026-10-26T23:24:25.649Z",
+    "finishedAt": "2026-10-26T23:24:36.758Z",
+    "browser": {
+     "name": "Chrome",
+     "version": "Chrome/156.0.8078.48",
+     "protocol": "1.3"
+    },
+    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h1h2",
+    "chromeArgs": [
+     "--headless=new",
+     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h1h2",
+     "--remote-debugging-port=9881",
+     "--remote-debugging-address=127.0.0.1",
+     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/h1h2.chrome-netlog.json",
+     "--net-log-capture-mode=Everything",
+     "--no-first-run",
+     "--no-default-browser-check",
+     "--disable-background-networking",
+     "--disable-component-update",
+     "--disable-sync",
+     "--disable-default-apps",
+     "--disable-extensions",
+     "--disable-breakpad",
+     "--disable-domain-reliability",
+     "--disable-client-side-phishing-detection",
+     "--disable-features=Translate,MediaRouter,OptimizationHints,InterestFeedContentSuggestions",
+     "--metrics-recording-only",
+     "--no-service-autorun",
+     "--no-pings",
+     "--password-store=basic",
+     "--use-mock-keychain",
+     "--disable-search-engine-choice-screen",
+     "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+     "--ignore-certificate-errors-spki-list=bZVWDrQvkR0ynQKHKqsiga6j0rd2KIqFX6NXGKIjsYw=",
+     "--enable-quic",
+     "--allow-insecure-localhost",
+     "about:blank"
+    ],
+    "urls": [
+     "http://127.0.0.1:9781/setcookie",
+     "http://127.0.0.1:9781/page",
+     "http://127.0.0.1:9781/redirect?n=2",
+     "https://127.0.0.1:9782/echo-order?case=real-h2"
+    ],
+    "navigations": [
+     {
+      "url": "http://127.0.0.1:9781/setcookie",
+      "errorText": null,
+      "probe": "{\"done\":null,\"loc\":\"http://127.0.0.1:9781/setcookie\"}"
+     },
+     {
+      "url": "http://127.0.0.1:9781/page",
+      "errorText": null,
+      "probe": "{\"done\":null,\"loc\":\"http://127.0.0.1:9781/page\"}"
+     },
+     {
+      "url": "http://127.0.0.1:9781/redirect?n=2",
+      "errorText": null,
+      "probe": "{\"done\":null,\"loc\":\"http://127.0.0.1:9781/redirect?n=0\"}"
+     },
+     {
+      "url": "https://127.0.0.1:9782/echo-order?case=real-h2",
+      "errorText": null,
+      "probe": "{\"done\":null,\"loc\":\"https://127.0.0.1:9782/echo-order?case=real-h2\"}"
+     }
+    ],
+    "cdpEvents": 146,
+    "harWritten": false,
+    "harError": "Network.getHAR indisponível: 'Network.getHAR' wasn't found",
+    "netlogBytes": 1152860,
+    "cdpBytes": 423578,
+    "error": null
+   },
+   "sessionSha256": "55821465be7ddc75447c8c27c1cd657878d2f76f9194f636cf26f35b1789b34f"
+  },
+  {
+   "name": "h3",
+   "protocol": "h3",
+   "session": "session-h3",
+   "requests": 12,
+   "protocols": [
+    "h3"
+   ],
+   "matched": 10,
+   "ambiguous": 2,
+   "unmatched": 0,
+   "redirects": 2,
+   "streamSessions": 12,
+   "verifiedRequestViews": 0,
+   "completeness": "complete",
+   "netlogBytes": 1307148,
+   "cdpBytes": 391889,
+   "meta": {
+    "name": "h3",
+    "startedAt": "2026-10-26T23:24:50.431Z",
+    "finishedAt": "2026-10-26T23:24:58.815Z",
+    "browser": {
+     "name": "Chrome",
+     "version": "Chrome/156.0.8078.48",
+     "protocol": "1.3"
+    },
+    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h3",
+    "chromeArgs": [
+     "--headless=new",
+     "--origin-to-force-quic-on=127.0.0.1:9782",
+     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h3",
+     "--remote-debugging-port=9881",
+     "--remote-debugging-address=127.0.0.1",
+     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/h3.chrome-netlog.json",
+     "--net-log-capture-mode=Everything",
+     "--no-first-run",
+     "--no-default-browser-check",
+     "--disable-background-networking",
+     "--disable-component-update",
+     "--disable-sync",
+     "--disable-default-apps",
+     "--disable-extensions",
+     "--disable-breakpad",
+     "--disable-domain-reliability",
+     "--disable-client-side-phishing-detection",
+     "--disable-features=Translate,MediaRouter,OptimizationHints,InterestFeedContentSuggestions",
+     "--metrics-recording-only",
+     "--no-service-autorun",
+     "--no-pings",
+     "--password-store=basic",
+     "--use-mock-keychain",
+     "--disable-search-engine-choice-screen",
+     "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+     "--ignore-certificate-errors-spki-list=bZVWDrQvkR0ynQKHKqsiga6j0rd2KIqFX6NXGKIjsYw=",
+     "--enable-quic",
+     "--allow-insecure-localhost",
+     "about:blank"
+    ],
+    "urls": [
+     "https://127.0.0.1:9782/page",
+     "https://127.0.0.1:9782/echo-order?case=real-h3"
+    ],
+    "navigations": [
+     {
+      "url": "https://127.0.0.1:9782/page",
+      "errorText": null,
+      "probe": "{\"done\":null,\"loc\":\"https://127.0.0.1:9782/page\"}"
+     },
+     {
+      "url": "https://127.0.0.1:9782/echo-order?case=real-h3",
+      "errorText": null,
+      "probe": "{\"done\":null,\"loc\":\"https://127.0.0.1:9782/echo-order?case=real-h3\"}"
+     }
+    ],
+    "cdpEvents": 103,
+    "harWritten": false,
+    "harError": null,
+    "netlogBytes": 1307148,
+    "cdpBytes": 391889,
+    "error": null
+   },
+   "sessionSha256": "2632cc42f899af6ef1e90293df39b0a3ba47101ca27ba7b11f80bf4aa70190a1"
+  }
+ ],
+ "har": null,
+ "requests": 27,
+ "ambiguous": 5,
+ "redirects": 6,
+ "h3StreamSessions": 14,
+ "verifiedViews": 10,
+ "matched": 22,
+ "unmatched": 0,
+ "requestCount": 27,
+ "commands": [
+  "tests/capture/run-cycle.sh",
+  "node tests/capture/capture_cycle.mjs --outdir RUN --name h1h2 ...",
+  "scrapelens-core import-capture RUN/h1h2.cdp-events.jsonl RUN/h1h2.chrome-netlog.json --out RUN/session-h1h2",
+  "scrapelens-core import-capture RUN/h3.cdp-events.jsonl RUN/h3.chrome-netlog.json --out RUN/session-h3"
+ ]
+}

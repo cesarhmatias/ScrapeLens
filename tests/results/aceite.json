@@ -1,0 +1,979 @@
+{
+ "generatedAt": "2026-10-26T23:26:31Z",
+ "coreSha256": "4e0edc61b02d1ebc0f42c5903a5b9b455d0a53b91158c42b8ba674b3901873c4",
+ "coreBytes": 2155344,
+ "gitCommit": "90ccac0",
+ "macos": "26.5.2",
+ "machine": "arm64",
+ "python": "3.14.8",
+ "items": [
+  {
+   "item": 1,
+   "title": "Headers repetidos e cookies preservados nas fixtures",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "fixture identificada como sintética: esperado 'synthetic-fixture', obtido 'synthetic-fixture'"
+    },
+    {
+     "ok": true,
+     "label": "origem sintética declarada: esperado 'synthetic', obtido 'synthetic'"
+    },
+    {
+     "ok": true,
+     "label": "HAR: ordem, caixa e duplicatas da requisição: esperado [('x-rep', 'a'), ('x-seq', '1'), ('X-Rep', 'b'), ('x-seq', '2'), ('x-mixed-Case', 'V'), ('x-rep', 'c')], obtido [('x-rep', 'a'), ('x-seq', '1'), ('X-Rep', 'b'), ('x-seq', '2'), ('x-mixed-Case', 'V'), ('x-rep', 'c')]"
+    },
+    {
+     "ok": true,
+     "label": "HAR: três ocorrências de x-rep preservadas: esperado 3, obtido 3"
+    },
+    {
+     "ok": true,
+     "label": "HAR: orderState=sourceOrder: esperado 'sourceOrder', obtido 'sourceOrder'"
+    },
+    {
+     "ok": true,
+     "label": "HAR: campo Cookie bruto preservado: esperado ['sl_a=1; sl_b=2; sc_dup=one; sc_dup=two'], obtido ['sl_a=1; sl_b=2; sc_dup=one; sc_dup=two']"
+    },
+    {
+     "ok": true,
+     "label": "HAR: pares internos do Cookie, com sc_dup duplicado: esperado [('sl_a', '1'), ('sl_b', '2'), ('sc_dup', 'one'), ('sc_dup', 'two')], obtido [('sl_a', '1'), ('sl_b', '2'), ('sc_dup', 'one'), ('sc_dup', 'two')]"
+    },
+    {
+     "ok": true,
+     "label": "HAR: nome de cookie duplicado não foi colapsado"
+    },
+    {
+     "ok": true,
+     "label": "HAR: linhas Set-Cookie na ordem da fonte: esperado ['sc_a=1; Path=/; HttpOnly', 'sc_b=2; Path=/; Secure; SameSite=Lax', 'sc_dup=one; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT', 'sc_dup=two; Path=/'], obtido ['sc_a=1; Path=/; HttpOnly', 'sc_b=2; Path=/; Secure; SameSite=Lax', 'sc_dup=one; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT', 'sc_dup=two; Path=/']"
+    },
+    {
+     "ok": true,
+     "label": "HAR: Set-Cookie parseado, repetição preservada: esperado ['sc_a', 'sc_b', 'sc_dup', 'sc_dup'], obtido ['sc_a', 'sc_b', 'sc_dup', 'sc_dup']"
+    },
+    {
+     "ok": true,
+     "label": "HAR: HttpOnly de sc_a parseado"
+    },
+    {
+     "ok": true,
+     "label": "HAR: Secure de sc_b parseado"
+    },
+    {
+     "ok": true,
+     "label": "HAR: sequência preservada após gravação e releitura: esperado [('x-rep', 'a'), ('x-seq', '1'), ('X-Rep', 'b'), ('x-seq', '2'), ('x-mixed-Case', 'V'), ('x-rep', 'c')], obtido [('x-rep', 'a'), ('x-seq', '1'), ('X-Rep', 'b'), ('x-seq', '2'), ('x-mixed-Case', 'V'), ('x-rep', 'c')]"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: ordem, caixa e duplicatas da requisição: esperado [('x-rep', 'a'), ('x-seq', '1'), ('X-Rep', 'b'), ('x-seq', '2'), ('x-mixed-Case', 'V'), ('x-rep', 'c')], obtido [('x-rep', 'a'), ('x-seq', '1'), ('X-Rep', 'b'), ('x-seq', '2'), ('x-mixed-Case', 'V'), ('x-rep', 'c')]"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: três ocorrências de x-rep preservadas: esperado 3, obtido 3"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: orderState=sourceOrder: esperado 'sourceOrder', obtido 'sourceOrder'"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: campo Cookie bruto preservado: esperado ['sl_a=1; sl_b=2; sc_dup=one; sc_dup=two'], obtido ['sl_a=1; sl_b=2; sc_dup=one; sc_dup=two']"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: pares internos do Cookie, com sc_dup duplicado: esperado [('sl_a', '1'), ('sl_b', '2'), ('sc_dup', 'one'), ('sc_dup', 'two')], obtido [('sl_a', '1'), ('sl_b', '2'), ('sc_dup', 'one'), ('sc_dup', 'two')]"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: nome de cookie duplicado não foi colapsado"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: linhas Set-Cookie na ordem da fonte: esperado ['sc_a=1; Path=/; HttpOnly', 'sc_b=2; Path=/; Secure; SameSite=Lax', 'sc_dup=one; Path=/', 'sc_dup=two; Path=/'], obtido ['sc_a=1; Path=/; HttpOnly', 'sc_b=2; Path=/; Secure; SameSite=Lax', 'sc_dup=one; Path=/', 'sc_dup=two; Path=/']"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: Set-Cookie parseado, repetição preservada: esperado ['sc_a', 'sc_b', 'sc_dup', 'sc_dup'], obtido ['sc_a', 'sc_b', 'sc_dup', 'sc_dup']"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: HttpOnly de sc_a parseado"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: Secure de sc_b parseado"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: sequência preservada após gravação e releitura: esperado [('x-rep', 'a'), ('x-seq', '1'), ('X-Rep', 'b'), ('x-seq', '2'), ('x-mixed-Case', 'V'), ('x-rep', 'c')], obtido [('x-rep', 'a'), ('x-seq', '1'), ('X-Rep', 'b'), ('x-seq', '2'), ('x-mixed-Case', 'V'), ('x-rep', 'c')]"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: headers de requisição verificados: esperado 'verified', obtido 'verified'"
+    },
+    {
+     "ok": true,
+     "label": "NetLog h1: headers de resposta verificados: esperado 'verified', obtido 'verified'"
+    },
+    {
+     "ok": true,
+     "label": "HAR: ordem permanece não verificada (não inventa selo): esperado 'unverified', obtido 'unverified'"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: duplicata de resposta x-resp-order preservada na ordem"
+    },
+    {
+     "ok": true,
+     "label": "todas as fixtures de aceite rotuladas synthetic-fixture: esperado [], obtido []"
+    }
+   ],
+   "passed": 29,
+   "failed": 0,
+   "evidence": [
+    "`scrapelens-core import-har fixtures/aceite/headers-cookies/headers-cookies.har --out tests/.work/run/item1/har`",
+    "`scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`",
+    "asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte"
+   ],
+   "notes": [],
+   "seconds": 0.06
+  },
+  {
+   "item": 2,
+   "title": "HAR e NetLog válidos, incompletos e com eventos desconhecidos",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "HAR válido: 1 requisição importada: esperado 1, obtido 1"
+    },
+    {
+     "ok": true,
+     "label": "HAR incompleto: entradas válidas preservadas: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "HAR incompleto: completeness=partial: esperado 'partial', obtido 'partial'"
+    },
+    {
+     "ok": true,
+     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' ausente em {'session.netlog_missing', 'session.cdp_missing', 'har.missing_response'}"
+    },
+    {
+     "ok": true,
+     "label": "HAR inválido: falha explícita (não silenciosa)"
+    },
+    {
+     "ok": true,
+     "label": "HAR inválido: mensagem de erro no stderr: 'erro:' ausente em erro: dado obrigatório ausente: log.entries\n"
+    },
+    {
+     "ok": true,
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' ausente em {'session.cdp_missing', 'har.unknown_encoding', 'session.netlog_missing'}"
+    },
+    {
+     "ok": true,
+     "label": "HAR com encoding desconhecido: corpo tratado como texto e medido: esperado 5, obtido 5"
+    },
+    {
+     "ok": true,
+     "label": "NetLog com eventos desconhecidos: requisição preservada: esperado 1, obtido 1"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: aviso persistido com a contagem de desconhecidos"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: 3 eventos desconhecidos contabilizados no aviso"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: amostras dos tipos desconhecidos preservadas no aviso"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' ausente em {'netlog.unknown_event_type', 'session.cdp_missing'}"
+    },
+    {
+     "ok": true,
+     "label": "NetLog com itens desconhecidos: completeness=partial: esperado 'partial', obtido 'partial'"
+    },
+    {
+     "ok": true,
+     "label": "NetLog sem constants: aviso explícito: 'netlog.constants_missing' ausente em {\"netlog.constants_missing\": {\"code\": \"netlog.constants_missing\", \"message\": \"NetLog sem objeto constants; tipos de evento não podem ser decodificados por nome\", \"severity\": \"warning\"}, \"netlog.no_wall_clock\": {\"code\": \"…"
+    },
+    {
+     "ok": true,
+     "label": "NetLog sem constants: aviso de zero requisições: 'netlog.no_requests' ausente em {\"netlog.constants_missing\": {\"code\": \"netlog.constants_missing\", \"message\": \"NetLog sem objeto constants; tipos de evento não podem ser decodificados por nome\", \"severity\": \"warning\"}, \"netlog.no_wall_clock\": {\"code\": \"…"
+    },
+    {
+     "ok": true,
+     "label": "NetLog sem constants: completeness=partial (nunca complete): esperado 'partial', obtido 'partial'"
+    },
+    {
+     "ok": true,
+     "label": "NetLog com linha de header inválida: requisição preservada: esperado 1, obtido 1"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' ausente em {'netlog.header_line_invalid', 'session.cdp_missing'}"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: headers válidos ao redor da linha inválida mantidos: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "NetLog truncado: falha explícita"
+    },
+    {
+     "ok": true,
+     "label": "NetLog truncado: erro no stderr: 'erro:' ausente em erro: JSON inválido em NetLog: EOF while parsing a list at line 1 column 48\n"
+    }
+   ],
+   "passed": 22,
+   "failed": 0,
+   "evidence": [
+    "`scrapelens-core import-har fixtures/aceite/parsers/incomplete.har --out tests/.work/run/item2/incomplete-har`",
+    "`scrapelens-core import-netlog fixtures/aceite/parsers/unknown-events.netlog.json --out tests/.work/run/item2/unknown`",
+    "`scrapelens-core import-netlog fixtures/aceite/parsers/no-constants.netlog.json --out tests/.work/run/item2/no-constants`",
+    "casos inválidos: retorno ≠ 0 com `erro:` no stderr (HAR sem entries, NetLog truncado)"
+   ],
+   "notes": [
+    "HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.",
+    "Observação: importadores HAR/NetLog isolados não gravam `completeness.counts.sourceEvents*` (fica 0 após reler); a contagem de eventos desconhecidos permanece auditável no aviso e nos eventos brutos."
+   ],
+   "seconds": 0.14
+  },
+  {
+   "item": 3,
+   "title": "Requisições simultâneas idênticas sem associação falsa",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "fixture de ambiguidade rotulada sintética: esperado 'synthetic-fixture', obtido 'synthetic-fixture'"
+    },
+    {
+     "ok": true,
+     "label": "duas requisições CDP importadas: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "ambas marcadas match=ambiguous (nenhuma associação silenciosa): esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "cdp-r0001: dois candidatos expostos: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "cdp-r0001: candidatos acima do score mínimo, apenas para exibição"
+    },
+    {
+     "ok": true,
+     "label": "cdp-r0001: candidatos identificáveis (entityId)"
+    },
+    {
+     "ok": true,
+     "label": "cdp-r0001: visão primária não foi promovida a verified na ambiguidade: esperado 'unverified', obtido 'unverified'"
+    },
+    {
+     "ok": true,
+     "label": "cdp-r0002: dois candidatos expostos: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "cdp-r0002: candidatos acima do score mínimo, apenas para exibição"
+    },
+    {
+     "ok": true,
+     "label": "cdp-r0002: candidatos identificáveis (entityId)"
+    },
+    {
+     "ok": true,
+     "label": "cdp-r0002: visão primária não foi promovida a verified na ambiguidade: esperado 'unverified', obtido 'unverified'"
+    },
+    {
+     "ok": true,
+     "label": "as duas requisições veem o mesmo conjunto de candidatos (não houve escolha cruzada): esperado 1, obtido 1"
+    },
+    {
+     "ok": true,
+     "label": "dois avisos correlate.ambiguous persistidos: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "NetLog isolado mantém as duas tentativas: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "NetLog isolado sem CDP: completeness=partial (cobertura não provada): esperado 'partial', obtido 'partial'"
+    }
+   ],
+   "passed": 15,
+   "failed": 0,
+   "evidence": [
+    "`scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl fixtures/aceite/ambiguous/netlog-ambiguous.json --out tests/.work/run/item3/capture`"
+   ],
+   "notes": [
+    "A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade."
+   ],
+   "seconds": 0.06
+  },
+  {
+   "item": 4,
+   "title": "Redirects e múltiplas tentativas",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "NetLog: um LogicalRequest para a cadeia: esperado 1, obtido 1"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: status por tentativa [302, 200]: esperado [302, 200], obtido [302, 200]"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: um Redirect registrado: esperado 1, obtido 1"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: redirect fromUrl: esperado 'http://127.0.0.1:9999/a', obtido 'http://127.0.0.1:9999/a'"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: redirect toUrl: esperado 'http://127.0.0.1:9999/b', obtido 'http://127.0.0.1:9999/b'"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: status do redirect: esperado 302, obtido 302"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: headers da tentativa final com ordem da fonte: esperado [('Host', '127.0.0.1:9999'), ('x-step', '2')], obtido [('Host', '127.0.0.1:9999'), ('x-step', '2')]"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: headers finais verificados: esperado 'verified', obtido 'verified'"
+    },
+    {
+     "ok": true,
+     "label": "HAR: cadeia agrupada em um LogicalRequest: esperado 1, obtido 1"
+    },
+    {
+     "ok": true,
+     "label": "HAR: três tentativas na ordem: esperado [302, 302, 200], obtido [302, 302, 200]"
+    },
+    {
+     "ok": true,
+     "label": "HAR: dois Redirects: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "HAR: corpo da resposta final capturado: esperado 'captured', obtido 'captured'"
+    }
+   ],
+   "passed": 12,
+   "failed": 0,
+   "evidence": [
+    "`scrapelens-core import-netlog fixtures/aceite/redirects/redirect-chain.netlog.json --out tests/.work/run/item4/netlog`",
+    "`scrapelens-core import-har fixtures/aceite/redirects/redirect-chain.har --out tests/.work/run/item4/har`"
+   ],
+   "notes": [
+    "O redirect é um elo entre tentativas, não uma requisição separada."
+   ],
+   "seconds": 0.04
+  },
+  {
+   "item": 5,
+   "title": "Corpos ausentes/truncados/descartados explícitos",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "três requisições de fixture: esperado 3, obtido 3"
+    },
+    {
+     "ok": true,
+     "label": "req 1: corpo descartado explícito: esperado 'discarded', obtido 'discarded'"
+    },
+    {
+     "ok": true,
+     "label": "req 1: nota explica o descarte: 'descartado' ausente em corpo descartado pela política de captura de aceite"
+    },
+    {
+     "ok": true,
+     "label": "req 1: resposta capturada: esperado 'captured', obtido 'captured'"
+    },
+    {
+     "ok": true,
+     "label": "req 1: anexo referenciado"
+    },
+    {
+     "ok": true,
+     "label": "req 1: anexo har-entry-0000.response.bin existe"
+    },
+    {
+     "ok": true,
+     "label": "req 1: bytes do anexo batem com o HAR: esperado b'resposta', obtido b'resposta'"
+    },
+    {
+     "ok": true,
+     "label": "req 2: corpo de requisição vazio (afirmado): esperado 'empty', obtido 'empty'"
+    },
+    {
+     "ok": true,
+     "label": "req 2: resposta truncada explícita: esperado 'truncated', obtido 'truncated'"
+    },
+    {
+     "ok": true,
+     "label": "req 2: truncatedAt registrado: esperado 4, obtido 4"
+    },
+    {
+     "ok": true,
+     "label": "req 2: bytes capturados registrados: esperado 4, obtido 4"
+    },
+    {
+     "ok": true,
+     "label": "req 2: anexo truncado tem exatamente 4 bytes: esperado b'0123', obtido b'0123'"
+    },
+    {
+     "ok": true,
+     "label": "req 3: requisição indisponível (não vazia): esperado 'unavailable', obtido 'unavailable'"
+    },
+    {
+     "ok": true,
+     "label": "req 3: nota explica indisponibilidade: 'não fornece' ausente em fonte não fornece corpo de requisição"
+    },
+    {
+     "ok": true,
+     "label": "req 3: resposta vazia (0 bytes): esperado 'empty', obtido 'empty'"
+    },
+    {
+     "ok": true,
+     "label": "todos os cinco estados aparecem na fixture: esperado {'unavailable', 'discarded', 'captured', 'empty', 'truncated'}, obtido {'unavailable', 'discarded', 'empty', 'captured', 'truncated'}"
+    }
+   ],
+   "passed": 16,
+   "failed": 0,
+   "evidence": [
+    "`scrapelens-core inspect fixtures/aceite/bodies/session`"
+   ],
+   "notes": [
+    "`empty` só é usado quando a fonte afirma zero bytes; ausência vira `unavailable` com nota."
+   ],
+   "seconds": 0.01
+  },
+  {
+   "item": 6,
+   "title": "Diff sem perder duplicatas",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "A: duplicata x-dup:same aparece duas vezes: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "B: duplicata x-dup:same aparece duas vezes: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "diff: apenas x-new adicionado: esperado ['x-new'], obtido ['x-new']"
+    },
+    {
+     "ok": true,
+     "label": "diff: x-rep:b removido (valor não existe em B): esperado [('x-rep', 'b')], obtido [('x-rep', 'b')]"
+    },
+    {
+     "ok": true,
+     "label": "diff: nenhum par alterado: esperado [], obtido []"
+    },
+    {
+     "ok": true,
+     "label": "diff: reordenação de x-seq detectada como reordered"
+    },
+    {
+     "ok": true,
+     "label": "diff: seis ocorrências inalteradas: esperado 6, obtido 6"
+    },
+    {
+     "ok": true,
+     "label": "diff: as duas ocorrências de x-dup não foram colapsadas"
+    },
+    {
+     "ok": true,
+     "label": "diff: índice global da ocorrência adicionada: esperado 6, obtido 6"
+    },
+    {
+     "ok": true,
+     "label": "diff: reordenação usa índices originais (0 → 1), não ordem alfabética"
+    },
+    {
+     "ok": true,
+     "label": "diff: resposta sem adições: esperado [], obtido []"
+    },
+    {
+     "ok": true,
+     "label": "diff: resposta sem remoções: esperado [], obtido []"
+    },
+    {
+     "ok": true,
+     "label": "diff: sem cookies nesta fixture: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "A: ordem original intacta após o diff: esperado [('x-seq', '1'), ('X-Rep', 'a'), ('x-seq', '2'), ('x-rep', 'b')], obtido [('x-seq', '1'), ('X-Rep', 'a'), ('x-seq', '2'), ('x-rep', 'b')]"
+    }
+   ],
+   "passed": 14,
+   "failed": 0,
+   "evidence": [
+    "`scrapelens-core diff fixtures/aceite/diff/session har-0001 har-0002`"
+   ],
+   "notes": [
+    "O diff compara ocorrências; `reordered` usa os índices originais de A e B."
+   ],
+   "seconds": 0.01
+  },
+  {
+   "item": 7,
+   "title": "Exportação cURL/Python com caracteres especiais",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "duas requisições de exportação: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "export-curl retorna 0: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "cURL: header com CR/LF descartado com aviso: 'export.header_injection' ausente em aviso [export.header_injection]: header x-bad descartado: valor contém CR, LF ou NUL e não pode ser reproduzido com segurança\n"
+    },
+    {
+     "ok": true,
+     "label": "cURL: script passa em `bash -n` (): esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "cURL: execução com stub não falha: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "cURL: stub capturou argv"
+    },
+    {
+     "ok": true,
+     "label": "cURL: URL hostil chega intacta ao shell: esperado \"https://fixture.invalid/p?q=o'relly&x=$HOME&y=`id`&z=a&b=100%&u=%C3%A7%C3%A3o&pipe=|&semi=;\", obtido \"https://fixture.invalid/p?q=o'relly&x=$HOME&y=`id`&z=a&b=100%&u=%C3%A7%C3%A3o&pipe=|&semi=;\""
+    },
+    {
+     "ok": true,
+     "label": "cURL: headers, ordem e duplicatas chegam intactos: esperado [('Host', 'fixture.invalid'), ('x-quote', 'it\\'s \"$HOME\" `id` \\\\ backslash'), ('x-dup', 'a'), ('x-dup', 'b'), ('content-length', '15')], obtido [('Host', 'fixture.invalid'), ('x-quote', 'it\\'s \"$HOME\" `id` \\\\ backslash'), ('x-dup', 'a'), ('x-dup', 'b'), ('content-length', '15')]"
+    },
+    {
+     "ok": true,
+     "label": "cURL: corpo incluído"
+    },
+    {
+     "ok": true,
+     "label": "cURL: bytes do corpo (aspas, $, crase, barra, \\n) intactos: esperado b'a\\'b\"$HOME`id`\\\\\\n', obtido b'a\\'b\"$HOME`id`\\\\\\n'"
+    },
+    {
+     "ok": true,
+     "label": "cURL: header x-bad (CR/LF) não é replicado"
+    },
+    {
+     "ok": true,
+     "label": "cURL: exportação com corpo NUL retorna 0: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "cURL: corpo NUL omitido com aviso (não truncado em silêncio): 'export.body_nul' ausente em aviso [export.body_nul]: corpo binário com NUL omitido do cURL; use a exportação Python ou o anexo original\naviso [export.content_length_without_body]: Content-Length original removido: o corpo não acompanha a exportação…"
+    },
+    {
+     "ok": true,
+     "label": "cURL: corpo NUL não vira argumento parcial"
+    },
+    {
+     "ok": true,
+     "label": "export-python retorna 0: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "Python: header com CR/LF descartado com aviso: 'export.header_injection' ausente em aviso [export.header_injection]: header x-bad descartado: valor contém CR, LF ou NUL e não pode ser reproduzido com segurança\n"
+    },
+    {
+     "ok": true,
+     "label": "Python: sintaxe válida (): esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "Python: método e target hostis intactos: esperado ('POST', \"/p?q=o'relly&x=$HOME&y=`id`&z=a&b=100%&u=%C3%A7%C3%A3o&pipe=|&semi=;\"), obtido ('POST', \"/p?q=o'relly&x=$HOME&y=`id`&z=a&b=100%&u=%C3%A7%C3%A3o&pipe=|&semi=;\")"
+    },
+    {
+     "ok": true,
+     "label": "Python: putheader por ocorrência, ordem e duplicatas intactas: esperado [('Host', 'fixture.invalid'), ('x-quote', 'it\\'s \"$HOME\" `id` \\\\ backslash'), ('x-dup', 'a'), ('x-dup', 'b'), ('content-length', '15')], obtido [('Host', 'fixture.invalid'), ('x-quote', 'it\\'s \"$HOME\" `id` \\\\ backslash'), ('x-dup', 'a'), ('x-dup', 'b'), ('content-length', '15')]"
+    },
+    {
+     "ok": true,
+     "label": "Python: bytes do corpo intactos: esperado b'a\\'b\"$HOME`id`\\\\\\n', obtido b'a\\'b\"$HOME`id`\\\\\\n'"
+    },
+    {
+     "ok": true,
+     "label": "Python: header x-bad não é replicado"
+    },
+    {
+     "ok": true,
+     "label": "Python: exportação com NUL compila: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "Python: bytes NUL preservados no corpo: esperado b'bin\\x00ario', obtido b'bin\\x00ario'"
+    }
+   ],
+   "passed": 23,
+   "failed": 0,
+   "evidence": [
+    "`scrapelens-core export-curl fixtures/aceite/export-special/session har-0001` → `bash -n` + execução com stub que registra argv",
+    "`scrapelens-core export-python fixtures/aceite/export-special/session har-0001` → `python3 -m py_compile` + AST com literais",
+    "comandos gerados: tests/.work/run/item7/export.sh, tests/.work/run/item7/export.py"
+   ],
+   "notes": [
+    "Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK)."
+   ],
+   "seconds": 0.17
+  },
+  {
+   "item": 8,
+   "title": "Sanitização incluindo eventos brutos",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "sanitize retorna 0: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "diretório sanitizado criado"
+    },
+    {
+     "ok": true,
+     "label": "diretório sanitizado com permissão 0700: esperado 448, obtido 448"
+    },
+    {
+     "ok": true,
+     "label": "session.json presente"
+    },
+    {
+     "ok": true,
+     "label": "session.json com permissão 0600: esperado 384, obtido 384"
+    },
+    {
+     "ok": true,
+     "label": "evento bruto cdp-events.jsonl não copiado para a exportação"
+    },
+    {
+     "ok": true,
+     "label": "evento bruto netlog.json não copiado para a exportação"
+    },
+    {
+     "ok": true,
+     "label": "relatório contabiliza rawEvents: 'rawEvents' ausente em {\"body:form\": 1, \"body:json\": 2, \"cookie\": 2, \"header:authorization\": 2, \"header:cookie\": 2, \"header:set-cookie\": 2, \"rawEvents\": 1, \"setCookie\": 2}"
+    },
+    {
+     "ok": true,
+     "label": "aviso sanitize.raw_events_removed presente: 'sanitize.raw_events_removed' ausente em {'sanitize.attachment_omitted', 'sanitize.raw_events_removed'}"
+    },
+    {
+     "ok": true,
+     "label": "anexo não sanitizável omitido com aviso: 'sanitize.attachment_omitted' ausente em {'sanitize.attachment_omitted', 'sanitize.raw_events_removed'}"
+    },
+    {
+     "ok": true,
+     "label": "nenhum segredo SECRET-* ou e-mail permanece na árvore sanitizada: esperado [], obtido []"
+    },
+    {
+     "ok": true,
+     "label": "sessão marcada com label sanitized: 'sanitized' ausente em [\"har-import\", \"sanitized\"]"
+    },
+    {
+     "ok": true,
+     "label": "URLs sanitizadas sem token"
+    },
+    {
+     "ok": true,
+     "label": "placeholder [REDACTED] aparece na URL"
+    },
+    {
+     "ok": true,
+     "label": "Cookie sanitizado"
+    },
+    {
+     "ok": true,
+     "label": "Set-Cookie sanitizado"
+    },
+    {
+     "ok": true,
+     "label": "valores substituídos por [REDACTED]: '[REDACTED]' ausente em {\n  \"schemaVersion\": 1,\n  \"session\": {\n    \"id\": \"har-247ad34988fac6c7\",\n    \"browser\": {\n      \"name\": \"scrapelens-aceite\",\n      \"version\": \"1\"\n    },\n    \"startedAt\": \"2026-10-26T20:00:00.000Z\",\n    \"completeness\": {\n…"
+    },
+    {
+     "ok": true,
+     "label": "sanitize recusa sobrescrever destino já existente"
+    },
+    {
+     "ok": true,
+     "label": "mensagem de recusa é acionável: 'já contém' ausente em erro: exportação impossível: destino já contém uma sessão (/Users/cesar/Projects/scrapelens/tests/.work/run/item8/sanitized); use um diretório novo para a versão sanitizada\n"
+    }
+   ],
+   "passed": 19,
+   "failed": 0,
+   "evidence": [
+    "`scrapelens-core sanitize fixtures/aceite/sanitize/session tests/.work/run/item8/sanitized`",
+    "permissões: `0o700` no diretório e `0o600` no session.json",
+    "varredura recursiva por 10 marcadores SECRET-* + e-mail: nenhuma ocorrência"
+   ],
+   "notes": [
+    "Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso."
+   ],
+   "seconds": 0.03
+  },
+  {
+   "item": 9,
+   "title": "Ciclo real de captura no macOS",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "run.json da captura existe"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: QUIC não foi desabilitado"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: --enable-quic presente"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: certificado dispensado por SPKI (nada instalado)"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: não usa bypass global de certificado"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: perfil dedicado explícito"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: perfil dedicado dentro do diretório da execução"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: debug exposto apenas em loopback"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: navegador Chrome identificado"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: versão do Chrome registrada: '.' ausente em Chrome/156.0.8078.48"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: sessão importada existe"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: completeness=complete (flush encerrado): esperado 'complete', obtido 'complete'"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: 15 requisições reais capturadas"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: protocolo h2 presente: 'h2' ausente em {'h1', 'h2'}"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: nenhum protocolo divergente: 'h2' ausente em {'h1', 'h2'}"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: todas as requisições CDP correlacionadas (matched/ambiguous)"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: status HTTP real presente"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: todos os corpos têm estado explícito ['unavailable']"
+    },
+    {
+     "ok": true,
+     "label": "h1h2: corpo indisponível sempre acompanhado de nota"
+    },
+    {
+     "ok": true,
+     "label": "h3: QUIC não foi desabilitado"
+    },
+    {
+     "ok": true,
+     "label": "h3: --enable-quic presente"
+    },
+    {
+     "ok": true,
+     "label": "h3: certificado dispensado por SPKI (nada instalado)"
+    },
+    {
+     "ok": true,
+     "label": "h3: não usa bypass global de certificado"
+    },
+    {
+     "ok": true,
+     "label": "h3: perfil dedicado explícito"
+    },
+    {
+     "ok": true,
+     "label": "h3: perfil dedicado dentro do diretório da execução"
+    },
+    {
+     "ok": true,
+     "label": "h3: debug exposto apenas em loopback"
+    },
+    {
+     "ok": true,
+     "label": "h3: navegador Chrome identificado"
+    },
+    {
+     "ok": true,
+     "label": "h3: versão do Chrome registrada: '.' ausente em Chrome/156.0.8078.48"
+    },
+    {
+     "ok": true,
+     "label": "h3: sessão importada existe"
+    },
+    {
+     "ok": true,
+     "label": "h3: completeness=complete (flush encerrado): esperado 'complete', obtido 'complete'"
+    },
+    {
+     "ok": true,
+     "label": "h3: 12 requisições reais capturadas"
+    },
+    {
+     "ok": true,
+     "label": "h3: protocolo h3 presente: 'h3' ausente em {'h3'}"
+    },
+    {
+     "ok": true,
+     "label": "h3: nenhum protocolo divergente: 'h3' ausente em {'h3'}"
+    },
+    {
+     "ok": true,
+     "label": "h3: todas as requisições CDP correlacionadas (matched/ambiguous)"
+    },
+    {
+     "ok": true,
+     "label": "h3: status HTTP real presente"
+    },
+    {
+     "ok": true,
+     "label": "h3: todos os corpos têm estado explícito ['unavailable']"
+    },
+    {
+     "ok": true,
+     "label": "h3: corpo indisponível sempre acompanhado de nota"
+    },
+    {
+     "ok": true,
+     "label": "h3: QUIC usado de fato (QUIC intacto)"
+    },
+    {
+     "ok": true,
+     "label": "h3: StreamSessions QUIC registradas"
+    },
+    {
+     "ok": true,
+     "label": "captura real: 5 requisição(ões) ambígua(s) nas simultâneas idênticas"
+    },
+    {
+     "ok": true,
+     "label": "nenhum certificado foi instalado no sistema"
+    }
+   ],
+   "passed": 41,
+   "failed": 0,
+   "evidence": [
+    "execução real: `tests/capture/runs/20261026T232425Z` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`",
+    "Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 5 ambíguas; redirects=6"
+   ],
+   "notes": [
+    "A página real `/page` exercitou redirects e POSTs.",
+    "O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo."
+   ],
+   "seconds": 0.07
+  },
+  {
+   "item": 10,
+   "title": "Importação grande com tamanho documentado",
+   "status": "aprovado",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "HAR grande gerado (16.6 MiB)"
+    },
+    {
+     "ok": true,
+     "label": "todas as 20,000 requisições importadas: esperado 20000, obtido 20000"
+    },
+    {
+     "ok": true,
+     "label": "importação grande: completeness=complete: esperado 'complete', obtido 'complete'"
+    },
+    {
+     "ok": true,
+     "label": "import-har abaixo de 60 s (1.02 s)"
+    },
+    {
+     "ok": true,
+     "label": "pico do import abaixo de 1,5 GiB (785 MiB)"
+    },
+    {
+     "ok": true,
+     "label": "inspect abaixo de 60 s (2.75 s)"
+    },
+    {
+     "ok": true,
+     "label": "inspect com pico abaixo de 3,5 GiB (2376 MiB)"
+    }
+   ],
+   "passed": 7,
+   "failed": 0,
+   "evidence": [
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.02 s, pico 785 MiB RSS",
+    "sessão gravada: session.json 225.8 MiB",
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.75 s, pico 2376 MiB RSS",
+    "complementar, 20,000 anexos de 20 B: import 128.05 s, pico 565 MiB, sessão 228.9 MiB"
+   ],
+   "notes": [
+    "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
+    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2376 MiB vem da serialização, não do parser.",
+    "Pior caso de anexos: um `fsync` por arquivo em `store::write_file` domina (128.1 s para 20,000 anexos 20 B). O parser gasta <1 s de CPU; é custo de I/O da gravação. Recomendo batching/adiar fsync no core."
+   ],
+   "seconds": 8.5
+  }
+ ]
+}
