@@ -35,7 +35,6 @@ está bloqueado: ver "Cross-check" abaixo.
 | CDP `responseReceivedExtraInfo.headers` | — | — | — | — | — | — |
 | NetLog `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` | ✓ | ✓ | n/d | n/d | n/d | n/d |
 | NetLog `HTTP2_SESSION_SEND_HEADERS` | n/d | n/d | ~ (1 troca) | ~ (`cookie` pode ser dividido) | n/d | n/d |
-| — nota | | | `cookie`/`priority` trocam de posição no fio h2 | fragmentação de `Cookie` no h2 é condicional (mock: 1 campo; contrato: N) | | |
 | NetLog `QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS` | n/d | n/d | n/d | n/d | ✓ | — (campo `cookie` dividido no fio) |
 | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | NetLog `HTTP2_SESSION_RECV_HEADERS` | n/d | n/d | ✓ | ~ (`\x00`) | n/d | n/d |
@@ -43,6 +42,11 @@ está bloqueado: ver "Cross-check" abaixo.
 | HAR (exportador do DevTools) | não verificada | não verificada | não verificada | não verificada | não verificada | não verificada |
 
 `n/d` = não se aplica ao protocolo. Detalhe e evidência por linha abaixo.
+
+Duas ressalvas que valem para a tabela acima:
+`cookie` e `priority` trocam de posição no fio h2 (o log mostra `cookie` antes);
+e a fragmentação de `Cookie` em vários campos no h2 é **condicional** — 1 campo
+com 2–3 cookies no mock, N campos com 3–4 cookies no contrato.
 
 ## Matriz principal
 
