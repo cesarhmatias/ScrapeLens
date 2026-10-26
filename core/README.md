@@ -52,7 +52,9 @@ Decisões do projeto: `../docs/01-decisoes.md`; matriz: `../docs/02-matriz-fidel
 - diff não perde duplicatas nem ordena alfabeticamente;
 - cURL/Python escapam dados não confiáveis e recusam injeção de header;
 - sanitização redige segredos e omite anexo não sanitizável com aviso;
-- escrita/leitura round-trip com permissões privadas.
+- escrita/leitura round-trip com permissões privadas;
+- anexos gravados em lote (um fsync de diretório, não um por arquivo) e
+  contagens `sourceEvents*` persistidas em HAR/NetLog/CDP.
 
 ## Fixtures
 

@@ -195,6 +195,13 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
         session.session.completeness = crate::model::Completeness::complete();
     }
 
+    report.source_events_used = report
+        .source_events
+        .saturating_sub(report.source_events_unknown);
+    session.session.completeness.counts.source_events = report.source_events;
+    session.session.completeness.counts.source_events_used = report.source_events_used;
+    session.session.completeness.counts.source_events_unknown = report.source_events_unknown;
+
     for warning in &report.warnings {
         session.warnings.push(warning.clone());
     }

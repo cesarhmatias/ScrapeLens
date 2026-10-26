@@ -55,6 +55,8 @@ diretório `0700`, arquivos `0600`, rename atômico.
   `reasons` explica cada caso; inferência de completude nunca é silenciosa.
 - `labels`: `synthetic-fixture` em fixtures; `sanitized` em exportação
   sanitizada; `har-import`/`netlog-import` nos importadores correspondentes.
+- `completeness.counts.sourceEvents*` é persistido por HAR/NetLog/CDP e
+  sobrevive ao fechar e reabrir a sessão; não é apenas um aviso de importação.
 - `warnings`: lista persistida de tudo que foi desconhecido, omitido ou
   truncado. `severity` é `info | warning | error`.
 

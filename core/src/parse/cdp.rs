@@ -1076,6 +1076,9 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
             .completeness
             .add_reason("nenhuma requisição CDP utilizável");
     }
+    session.session.completeness.counts.source_events = report.source_events;
+    session.session.completeness.counts.source_events_used = report.source_events_used;
+    session.session.completeness.counts.source_events_unknown = report.source_events_unknown;
     session.recompute_completeness();
     (session, report)
 }

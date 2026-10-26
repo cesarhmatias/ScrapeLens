@@ -40,6 +40,30 @@ fn session_roundtrip_keeps_original_order_and_attachments() {
         again.bundle.session.requests[0].url,
         "https://api.demo.invalid/v1/items?page=2"
     );
+    let counts = &again.bundle.session.session.completeness.counts;
+    assert_eq!(counts.source_events, 1);
+    assert_eq!(counts.source_events_used, 1);
+    assert_eq!(counts.source_events_unknown, 0);
+}
+
+#[test]
+fn netlog_counts_survive_roundtrip() {
+    let imported =
+        scrapelens_core::import_netlog(include_bytes!("fixtures/netlog-h2.json")).unwrap();
+    let counts = &imported.bundle.session.session.completeness.counts;
+    assert_eq!(counts.source_events, 8);
+    assert_eq!(counts.source_events_used, 7);
+    assert_eq!(counts.source_events_unknown, 1);
+
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("netlog-session");
+    store::write_session_dir(&imported.bundle, &dir).unwrap();
+    let again = scrapelens_core::import_session_dir(&dir).unwrap();
+    let counts = &again.bundle.session.session.completeness.counts;
+    assert_eq!(counts.source_events, 8);
+    assert_eq!(counts.source_events_used, 7);
+    assert_eq!(counts.source_events_unknown, 1);
+    assert_eq!(again.bundle.session.requests.len(), 1);
 }
 
 #[test]

@@ -1356,6 +1356,9 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             session.add_warning(warning.clone());
         }
     }
+    session.session.completeness.counts.source_events = report.source_events;
+    session.session.completeness.counts.source_events_used = report.source_events_used;
+    session.session.completeness.counts.source_events_unknown = report.source_events_unknown;
     session.recompute_completeness();
     for warning in &session.warnings {
         if !report
