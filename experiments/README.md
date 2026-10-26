@@ -51,6 +51,10 @@ Cross-check contra os servidores do contrato (somente leitura em
 .venv/bin/python crosscheck_contract.py --proto all   # h1, h2 e h3
 ```
 
+O binário do `testserver/` é autodetectado (Rust `target/{release,debug}` ou Go
+`bin/`), então a troca de linguagem dos servidores de referência não quebra este
+script. Para apontar outro build: `--bin CAMINHO` ou `SCRAPELENS_TESTSERVER_BIN`.
+
 Resultado: h1 14/14 idêntico; h2 confirma o `cookie` fundido no log; **h3 falha
 no servidor de contrato** (`ERR_QUIC_PROTOCOL_ERROR` / `CERTIFICATE_VERIFY_FAILED`,
 reproduzido também com um cliente `aioquic`), então a linha h3 vem do mock.

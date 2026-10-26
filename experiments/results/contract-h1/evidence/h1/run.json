@@ -18,7 +18,7 @@
   "os": "macos",
   "run_id": "h1",
   "schema": "scrapelens.testserver.run/1",
-  "started_at": "2026-10-26T20:37:32.243Z",
+  "started_at": "2026-10-26T20:54:21.259Z",
   "tls": {
     "cert_pem": "/Users/cesar/Projects/scrapelens/testserver/../fixtures/tls/scrapelens-test-localhost.crt.pem",
     "key_pem": "/Users/cesar/Projects/scrapelens/testserver/../fixtures/tls/scrapelens-test-localhost.key.pem",

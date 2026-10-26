@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -23,10 +24,36 @@ import time
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent
 RESULTS = HERE / "results"
-BIN = REPO / "testserver" / "target" / "debug" / "scrapelens-testserver"
 SPKI_FILE = REPO / "fixtures" / "tls" / "spki-sha256-base64.txt"
 PY = str(HERE / ".venv" / "bin" / "python")
 NODE = shutil.which("node") or "/opt/homebrew/bin/node"
+
+# O testserver pode ser Rust ou Go; o contrato (portas/endpoints/JSONL) é o mesmo.
+BIN_CANDIDATES = [
+    REPO / "testserver" / "target" / "release" / "scrapelens-testserver",
+    REPO / "testserver" / "target" / "debug" / "scrapelens-testserver",
+    REPO / "testserver" / "bin" / "scrapelens-testserver",
+    REPO / "testserver" / "scrapelens-testserver",
+    REPO / "testserver" / "scrapelens-testserver.exe",
+]
+
+
+def discover_bin(explicit: str | None = None) -> pathlib.Path:
+    if explicit:
+        return pathlib.Path(explicit).expanduser().resolve()
+    env = os.environ.get("SCRAPELENS_TESTSERVER_BIN")
+    if env:
+        return pathlib.Path(env).expanduser().resolve()
+    for cand in BIN_CANDIDATES:
+        if cand.exists():
+            return cand
+    found = shutil.which("scrapelens-testserver")
+    if found:
+        return pathlib.Path(found)
+    raise SystemExit(
+        "binário do testserver não encontrado; passe --bin CAMINHO "
+        f"(procurei em: {', '.join(str(c) for c in BIN_CANDIDATES)})"
+    )
 
 PORTS = {"h1": 8781, "h2": 8782, "h3": 8783}
 MINE = {"h1": "http/1.1", "h2": "h2", "h3": "h3"}
@@ -95,7 +122,7 @@ def convert(src: pathlib.Path, dst: pathlib.Path, proto: str) -> int:
     return len(rows)
 
 
-def run_proto(proto: str) -> dict:
+def run_proto(proto: str, bin_path: pathlib.Path) -> dict:
     outdir = RESULTS / f"contract-{proto}"
     if outdir.exists():
         shutil.rmtree(outdir)
@@ -105,7 +132,7 @@ def run_proto(proto: str) -> dict:
     spki = SPKI_FILE.read_text().strip()
 
     srv = subprocess.Popen(
-        [str(BIN), "serve", "--only", ("h2,h3" if proto == "h3" else proto),
+        [str(bin_path), "serve", "--only", ("h2,h3" if proto == "h3" else proto),
          "--evidence", str(outdir / "evidence"), "--run-id", proto],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
     )
@@ -152,11 +179,12 @@ def run_proto(proto: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--proto", default="all", choices=["h1", "h2", "h3", "all"])
+    ap.add_argument("--bin", help="binário do testserver (Rust ou Go); padrão: autodetecção")
     args = ap.parse_args()
-    if not BIN.exists():
-        raise SystemExit(f"binário ausente: {BIN} (rode `cargo build` em testserver/)")
+    bin_path = discover_bin(args.bin)
+    print(f"testserver: {bin_path}")
     protos = ["h1", "h2", "h3"] if args.proto == "all" else [args.proto]
-    out = [run_proto(p) for p in protos]
+    out = [run_proto(p, bin_path) for p in protos]
     sys.path.insert(0, str(HERE))
     import compare  # noqa: PLC0415
 
