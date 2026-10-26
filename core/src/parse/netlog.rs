@@ -12,14 +12,14 @@
 //! explícita `HTTP_STREAM_JOB_BOUND_TO_REQUEST` para ligar headers de sessão ao
 //! `URL_REQUEST`; a correlação com CDP fica em [`crate::correlate`].
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
 use crate::error::{CoreError, Result};
 use crate::model::{
     policy, Attempt, AttemptOutcome, Body, BrowserInfo, Completeness, Connection, CookieField,
-    HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, NetlogRefs, OrderState, Provenance,
+    HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, OrderState, Provenance,
     Protocol, Redirect, SessionBundle, SessionMeta, SessionV1, Source, StreamSession, Timings,
     Verification, Warning,
 };
@@ -564,7 +564,7 @@ fn parse_headers(
     )
     .with_source_id(index.to_string());
 
-    let (mut view, issues, unparsed) =
+    let (mut view, _issues, unparsed) =
         HeaderView::from_header_lines(&expanded, &provenance, OrderState::SourceOrder);
     view.raw_block = Some(lines.join("\n"));
     if nul_expanded {

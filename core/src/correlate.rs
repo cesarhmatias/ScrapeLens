@@ -278,6 +278,11 @@ fn find_candidates<'a>(
             }
         }
     }
+    // Chave explícita vence a heurística: descarta candidatos não explícitos
+    // quando existe pelo menos um par fornecido pela captura.
+    if candidates.iter().any(|candidate| candidate.explicit) {
+        candidates.retain(|candidate| candidate.explicit);
+    }
     candidates.sort_by(|left, right| right.score.cmp(&left.score));
     candidates
 }
@@ -297,10 +302,10 @@ fn score_candidate(
     let mut score: u32 = 0;
     let mut reasons = Vec::new();
     if exact_url {
-        score += 45;
+        score += 40;
         reasons.push("URL exata".to_string());
     } else if cdp_url == netlog_url {
-        score += 35;
+        score += 30;
         reasons.push("URL normalizada igual".to_string());
     } else {
         return None;
@@ -312,39 +317,118 @@ fn score_candidate(
         (Some(cdp_time), Some(netlog_time)) => {
             let delta = (cdp_time - netlog_time).abs();
             if delta <= 0.5 {
-                score += 30;
+                score += 25;
                 reasons.push(format!("tempo Δ={delta:.3}s"));
             } else if delta <= 2.0 {
-                score += 20;
+                score += 15;
                 reasons.push(format!("tempo Δ={delta:.3}s"));
             } else if delta <= options.time_window_s {
-                score += 10;
+                score += 8;
                 reasons.push(format!("tempo Δ={delta:.3}s (janela)"));
             } else {
                 return None;
             }
         }
         _ => {
-            score += 5;
+            score += 3;
             reasons.push("sem timestamp em uma das fontes".to_string());
         }
     }
 
+    // Status e Content-Length distinguem requisições idênticas simultâneas.
     match (cdp.status, netlog_attempt.status) {
         (Some(cdp_status), Some(netlog_status)) if cdp_status == netlog_status => {
             score += 10;
             reasons.push("status igual".to_string());
         }
+        (Some(_), Some(_)) => return None,
+        _ => {}
+    }
+    let cdp_length = cdp.response_headers.first_value("content-length");
+    let netlog_response = primary_response_view(netlog_attempt);
+    let netlog_length = netlog_response.and_then(|view| view.first_value("content-length"));
+    match (cdp_length, netlog_length) {
+        (Some(left), Some(right)) if left.trim() == right.trim() => {
+            score += 8;
+            reasons.push("content-length igual".to_string());
+        }
+        (Some(_), Some(_)) => return None,
+        _ => {}
+    }
+
+    let cdp_set_cookie = cdp.response_headers.contains("set-cookie");
+    let netlog_set_cookie = netlog_response
+        .map(|view| view.contains("set-cookie"))
+        .unwrap_or(false);
+    if cdp_set_cookie == netlog_set_cookie {
+        score += 4;
+        if cdp_set_cookie {
+            reasons.push("presença de set-cookie igual".to_string());
+        }
+    }
+
+    // Conjunto de headers do ExtraInfo (completo, sem ordem) contra o bloco do
+    // NetLog. Só compara quando o CDP tem Host, para não penalizar o
+    // subconjunto do Blink.
+    if cdp.request_headers.contains("host") {
+        if let Some(netlog_request_view) = primary_request_view(netlog_attempt) {
+            match header_set_overlap(&cdp.request_headers, netlog_request_view) {
+                Some(ratio) if ratio >= 0.9 => {
+                    score += 10;
+                    reasons.push(format!("headers coincidem ({ratio:.0}%)"));
+                }
+                Some(ratio) if ratio < 0.5 => {
+                    score = score.saturating_sub(10);
+                    reasons.push(format!("headers divergem ({ratio:.0}%)"));
+                }
+                Some(ratio) => {
+                    reasons.push(format!("headers parcialmente coincidentes ({ratio:.0}%)"));
+                }
+                None => {}
+            }
+        }
+    }
+
+    let netlog_cookie = netlog_attempt_cookie(netlog_attempt);
+    match (cdp.cookie.raw.first(), netlog_cookie.first()) {
+        (Some(cdp_cookie), Some(netlog_cookie)) if cdp_cookie == netlog_cookie => {
+            score += 4;
+            reasons.push("Cookie igual".to_string());
+        }
         (Some(_), Some(_)) => {
-            score = score.saturating_sub(10);
-            reasons.push("status divergente".to_string());
+            score = score.saturating_sub(6);
+            reasons.push("Cookie divergente".to_string());
         }
         _ => {}
     }
+
     if netlog_request.url == cdp.url {
-        score += 2;
+        score += 1;
     }
     Some((score.min(100) as u8, reasons))
+}
+
+fn netlog_attempt_cookie(attempt: &NetlogAttempt) -> Vec<String> {
+    primary_request_view(attempt)
+        .map(|view| view.cookie_field_values())
+        .unwrap_or_default()
+}
+
+/// Proporção de pares (nome, valor) do CDP presentes no bloco do NetLog.
+fn header_set_overlap(cdp: &crate::model::HeaderView, netlog: &crate::model::HeaderView) -> Option<f64> {
+    let cdp_pairs: BTreeSet<(String, String)> = cdp
+        .iter_all()
+        .map(|entry| (entry.name.to_ascii_lowercase(), entry.value.clone()))
+        .collect();
+    if cdp_pairs.len() < 4 {
+        return None;
+    }
+    let netlog_pairs: BTreeSet<(String, String)> = netlog
+        .iter_all()
+        .map(|entry| (entry.name.to_ascii_lowercase(), entry.value.clone()))
+        .collect();
+    let matched = cdp_pairs.intersection(&netlog_pairs).count();
+    Some((matched as f64 / cdp_pairs.len() as f64) * 100.0)
 }
 
 fn attach_candidate(

@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::{CoreError, Result};
-use crate::model::{SessionBundle, SessionV1};
+use crate::model::SessionBundle;
 
 pub const SESSION_FILE: &str = "session.json";
 pub const CDP_EVENTS_FILE: &str = "cdp-events.jsonl";

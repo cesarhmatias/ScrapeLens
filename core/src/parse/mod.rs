@@ -121,7 +121,7 @@ pub fn import_capture(
     let netlog = netlog::parse_netlog(netlog_json)?;
     let mut report = ImportReport::new(InputFormat::Capture);
     let (session, mut cdp_report) = cdp::build_cdp_session(&cdp);
-    let (_netlog_session, mut netlog_report) = netlog::build_netlog_session(&netlog);
+    let (_netlog_session, netlog_report) = netlog::build_netlog_session(&netlog);
     let mut session = session;
     if session.session.browser.version.is_none() && netlog.browser.version.is_some() {
         session.session.browser = netlog.browser.clone();
