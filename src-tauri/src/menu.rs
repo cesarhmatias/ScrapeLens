@@ -47,6 +47,12 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .separator()
         .item(
+            &MenuItemBuilder::with_id("copy", "Copiar URL da requisição")
+                .accelerator("CmdOrCtrl+Shift+C")
+                .build(app)?,
+        )
+        .separator()
+        .item(
             &MenuItemBuilder::with_id("find", "Buscar requisições")
                 .accelerator("CmdOrCtrl+F")
                 .build(app)?,

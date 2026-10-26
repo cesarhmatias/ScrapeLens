@@ -104,3 +104,41 @@ pub fn detect(saved: Option<&Path>) -> ChromeInfo {
         candidates: candidates(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_an_app_bundle_to_its_binary() {
+        let root = std::env::temp_dir().join(format!(
+            "scrapelens-chrome-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let binary = root.join("Google Chrome.app/Contents/MacOS/Google Chrome");
+        std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        std::fs::write(&binary, b"fake").unwrap();
+        let app_bundle = root.join("Google Chrome.app");
+        assert_eq!(normalize_binary_path(&app_bundle), Some(binary));
+        assert!(detect(Some(app_bundle.as_path())).found);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn missing_chrome_is_reported_with_candidates() {
+        let info = detect(Some(Path::new("/caminho/inexistente/Google Chrome")));
+        // Nesta máquina o Chrome existe; o teste aceita ambos os estados e só
+        // exige que a decisão seja coerente com o disco.
+        if let Some(path) = &info.path {
+            assert!(Path::new(path).is_file());
+            assert!(info.found);
+        } else {
+            assert!(!info.found);
+            assert!(!info.candidates.is_empty());
+        }
+    }
+}

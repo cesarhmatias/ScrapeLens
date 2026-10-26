@@ -22,6 +22,7 @@ inteira é **sintética** (`synthetic-fixture` + rótulos `DEMO` na tela, domín
 | `13-principal-filtro-erros-escuro.png` | Filtro “Erros 4xx/5xx” (403, 403, 401) |
 | `14-lista-12k-virtualizada.png` | Lista virtualizada com 12.000 requisições sintéticas (24 linhas no DOM) |
 | `15-detalhe-tentativas-ambigua.png` | Tentativas + correspondência ambígua com candidatos explícitos |
+| `16-tauri-shell-escuro.png` | Janela real do shell Tauri 2 (build local ad-hoc) com título nativo, janela única e sessão demo |
 
 Contrato oficial: `docs/03-contratos.md`. Decisões: `docs/01-decisoes.md`.
 Contrato provisório da onda 1 (histórico): `app/CONTRACT-DRAFT.md`.

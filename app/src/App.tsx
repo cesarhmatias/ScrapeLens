@@ -1713,7 +1713,7 @@ export default function App() {
                   : `parcial: ${session.completeness.reasons[0] ?? "motivo não informado"}`}
               </span>
               <span className="grow" />
-              <span className="mono dim">⌘O abrir · ⌘F buscar · ⌘C copiar URL</span>
+              <span className="mono dim">⌘O abrir · ⌘F buscar · ⌘C copiar · ⌘⇧C URL</span>
             </div>
           </>
         )}
