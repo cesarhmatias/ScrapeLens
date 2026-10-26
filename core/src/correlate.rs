@@ -605,26 +605,7 @@ fn push_unique<T: PartialEq>(values: &mut Vec<T>, value: T) {
 
 /// Normalização usada apenas para casar URL; não altera o original.
 pub fn canonical_url(url: &str) -> String {
-    let mut value = url.split('#').next().unwrap_or(url).to_string();
-    if let Some((scheme, rest)) = value.clone().split_once("://") {
-        let scheme_lower = scheme.to_ascii_lowercase();
-        let mut authority = rest.split('/').next().unwrap_or(rest).to_string();
-        let path_and_query = rest[authority.len()..].to_string();
-        authority = authority.to_ascii_lowercase();
-        if (scheme_lower == "http" && authority.ends_with(":80"))
-            || (scheme_lower == "https" && authority.ends_with(":443"))
-        {
-            authority = authority
-                .rsplit_once(':')
-                .map(|(host, _)| host.to_string())
-                .unwrap_or(authority);
-        }
-        value = format!("{scheme_lower}://{authority}{path_and_query}");
-    }
-    if value.ends_with('/') && value.matches('/').count() == 3 {
-        value.pop();
-    }
-    value
+    crate::normalize::canonical_url(url)
 }
 
 /// Garante que a evidência NetLog inclui o bloco de sessão mesmo quando o
