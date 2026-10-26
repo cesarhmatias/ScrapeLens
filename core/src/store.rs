@@ -52,7 +52,7 @@ pub fn ensure_private_dir(path: &Path) -> Result<()> {
     set_mode(path, 0o700)
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let file_name = path
         .file_name()
@@ -74,8 +74,12 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         .map_err(|error| CoreError::io(&tmp, error))?;
     file.write_all(bytes)
         .map_err(|error| CoreError::io(&tmp, error))?;
-    file.sync_all()
-        .map_err(|error| CoreError::io(&tmp, error))?;
+    if sync_data {
+        file.sync_all()
+            .map_err(|error| CoreError::io(&tmp, error))?;
+    } else {
+        file.flush().map_err(|error| CoreError::io(&tmp, error))?;
+    }
     drop(file);
 
     set_mode(&tmp, 0o600)?;
@@ -86,8 +90,26 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn sync_dir(path: &Path) -> Result<()> {
+    let dir = File::open(path).map_err(|error| CoreError::io(path, error))?;
+    dir.sync_all().map_err(|error| CoreError::io(path, error))
+}
+
+#[cfg(not(unix))]
+fn sync_dir(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
 /// Grava uma sessão completa no layout v1 com permissões restritas:
 /// diretório 0700, `session.json`/anexos 0600, escrita atômica por arquivo.
+///
+/// Anexos não recebem `fsync` individual: cada arquivo é fechado e renomeado
+/// atomicamente, e o diretório é sincronizado uma vez ao final do lote. Em
+/// capturas com dezenas de milhares de corpos pequenos, um `fsync` por anexo
+/// dominava o tempo de importação (128 s para 20 mil anexos no aceite); o
+/// `session.json` continua sendo sincronizado. O lote preserva a ordem
+/// "artefatos/anexos antes do documento" para não deixar referência quebrada.
 pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     ensure_private_dir(dir)?;
     let attachments_dir = dir.join(ATTACHMENTS_DIR);
@@ -96,20 +118,25 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     // Artefatos/anexos primeiro; session.json por último, para nunca deixar um
     // documento apontando para arquivos que ainda não existem.
     if let Some(bytes) = &bundle.cdp_events_jsonl {
-        write_atomic(&dir.join(CDP_EVENTS_FILE), bytes)?;
+        write_atomic(&dir.join(CDP_EVENTS_FILE), bytes, true)?;
     }
     if let Some(bytes) = &bundle.netlog_json {
-        write_atomic(&dir.join(NETLOG_FILE), bytes)?;
+        write_atomic(&dir.join(NETLOG_FILE), bytes, true)?;
     }
 
+    // Um fsync por diretório no fim do lote, não um por anexo.
     for (name, bytes) in &bundle.attachments {
         validate_attachment_name(name)?;
-        write_atomic(&attachments_dir.join(name), bytes)?;
+        write_atomic(&attachments_dir.join(name), bytes, false)?;
+    }
+    if !bundle.attachments.is_empty() {
+        sync_dir(&attachments_dir)?;
     }
 
     let json = serde_json::to_vec_pretty(&bundle.session)
         .map_err(|error| CoreError::json("session.json", error))?;
-    write_atomic(&dir.join(SESSION_FILE), &json)?;
+    write_atomic(&dir.join(SESSION_FILE), &json, true)?;
+    sync_dir(dir)?;
     Ok(())
 }
 
@@ -212,6 +239,66 @@ mod tests {
         assert_eq!(
             fs::read(dir.join(ATTACHMENTS_DIR).join("req-1.request.bin")).unwrap(),
             b"hello"
+        );
+    }
+
+    #[test]
+    fn writes_many_attachments_in_one_batch() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("session");
+        let session = SessionV1::new(SessionMeta::new(
+            "s-many",
+            "2026-10-26T20:00:00Z",
+            BrowserInfo::default(),
+        ));
+        let mut bundle = SessionBundle::new(session);
+        for index in 0..128 {
+            bundle.insert_attachment(format!("a-{index:03}.bin"), vec![b'x'; 20]);
+        }
+        write_session_dir(&bundle, &dir).unwrap();
+        assert_eq!(
+            fs::read_dir(dir.join(ATTACHMENTS_DIR)).unwrap().count(),
+            128
+        );
+        assert_eq!(
+            fs::read(dir.join(ATTACHMENTS_DIR).join("a-127.bin")).unwrap(),
+            vec![b'x'; 20]
+        );
+        let leftovers: Vec<_> = fs::read_dir(dir.join(ATTACHMENTS_DIR))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+            .collect();
+        assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    #[ignore = "benchmark manual: cargo test --release -- --ignored writes_20k_small_attachments"]
+    fn writes_20k_small_attachments_quickly() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("session");
+        let session = SessionV1::new(SessionMeta::new(
+            "s-many",
+            "2026-10-26T20:00:00Z",
+            BrowserInfo::default(),
+        ));
+        let mut bundle = SessionBundle::new(session);
+        for index in 0..20_000 {
+            bundle.insert_attachment(format!("a-{index:05}.bin"), vec![b'x'; 20]);
+        }
+        let started = std::time::Instant::now();
+        write_session_dir(&bundle, &dir).unwrap();
+        let elapsed = started.elapsed();
+        println!("20k anexos: {elapsed:?}");
+        assert_eq!(
+            std::fs::read_dir(dir.join(ATTACHMENTS_DIR))
+                .unwrap()
+                .count(),
+            20_000
+        );
+        assert_eq!(
+            std::fs::read(dir.join(ATTACHMENTS_DIR).join("a-19999.bin")).unwrap(),
+            vec![b'x'; 20]
         );
     }
 
