@@ -1,6 +1,6 @@
 {
- "runId": "20261026T232425Z",
- "generatedAt": "2026-10-26T23:25:12Z",
+ "runId": "20261026T232758Z",
+ "generatedAt": "2026-10-26T23:28:46Z",
  "chromeVersion": "156.0.8078.48",
  "ports": 9781,
  "certificateInstalled": false,
@@ -15,31 +15,31 @@
     "h1",
     "h2"
    ],
-   "matched": 12,
-   "ambiguous": 3,
+   "matched": 13,
+   "ambiguous": 2,
    "unmatched": 0,
    "redirects": 4,
    "streamSessions": 2,
-   "verifiedRequestViews": 10,
+   "verifiedRequestViews": 11,
    "completeness": "complete",
-   "netlogBytes": 1152860,
-   "cdpBytes": 423578,
+   "netlogBytes": 1128054,
+   "cdpBytes": 423585,
    "meta": {
     "name": "h1h2",
-    "startedAt": "2026-10-26T23:24:25.649Z",
-    "finishedAt": "2026-10-26T23:24:36.758Z",
+    "startedAt": "2026-10-26T23:27:59.579Z",
+    "finishedAt": "2026-10-26T23:28:10.524Z",
     "browser": {
      "name": "Chrome",
      "version": "Chrome/156.0.8078.48",
      "protocol": "1.3"
     },
-    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h1h2",
+    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h1h2",
     "chromeArgs": [
      "--headless=new",
-     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h1h2",
+     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h1h2",
      "--remote-debugging-port=9881",
      "--remote-debugging-address=127.0.0.1",
-     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/h1h2.chrome-netlog.json",
+     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/h1h2.chrome-netlog.json",
      "--net-log-capture-mode=Everything",
      "--no-first-run",
      "--no-default-browser-check",
@@ -95,11 +95,11 @@
     "cdpEvents": 146,
     "harWritten": false,
     "harError": "Network.getHAR indisponível: 'Network.getHAR' wasn't found",
-    "netlogBytes": 1152860,
-    "cdpBytes": 423578,
+    "netlogBytes": 1128054,
+    "cdpBytes": 423585,
     "error": null
    },
-   "sessionSha256": "55821465be7ddc75447c8c27c1cd657878d2f76f9194f636cf26f35b1789b34f"
+   "sessionSha256": "2cfe63f426a73d310b5b855440c6e1060fe51f76f811637667fb8c85f00f978c"
   },
   {
    "name": "h3",
@@ -116,25 +116,25 @@
    "streamSessions": 12,
    "verifiedRequestViews": 0,
    "completeness": "complete",
-   "netlogBytes": 1307148,
-   "cdpBytes": 391889,
+   "netlogBytes": 1308640,
+   "cdpBytes": 391882,
    "meta": {
     "name": "h3",
-    "startedAt": "2026-10-26T23:24:50.431Z",
-    "finishedAt": "2026-10-26T23:24:58.815Z",
+    "startedAt": "2026-10-26T23:28:24.368Z",
+    "finishedAt": "2026-10-26T23:28:33.174Z",
     "browser": {
      "name": "Chrome",
      "version": "Chrome/156.0.8078.48",
      "protocol": "1.3"
     },
-    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h3",
+    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h3",
     "chromeArgs": [
      "--headless=new",
      "--origin-to-force-quic-on=127.0.0.1:9782",
-     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h3",
+     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h3",
      "--remote-debugging-port=9881",
      "--remote-debugging-address=127.0.0.1",
-     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/h3.chrome-netlog.json",
+     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/h3.chrome-netlog.json",
      "--net-log-capture-mode=Everything",
      "--no-first-run",
      "--no-default-browser-check",
@@ -178,20 +178,27 @@
     "cdpEvents": 103,
     "harWritten": false,
     "harError": null,
-    "netlogBytes": 1307148,
-    "cdpBytes": 391889,
+    "netlogBytes": 1308640,
+    "cdpBytes": 391882,
     "error": null
    },
-   "sessionSha256": "2632cc42f899af6ef1e90293df39b0a3ba47101ca27ba7b11f80bf4aa70190a1"
+   "sessionSha256": "99324b2944a21bbaa1dc45a4521dfdb776a9af0ceeddfe275da6fb1294d2ade3"
   }
  ],
- "har": null,
+ "har": {
+  "session": "session-har",
+  "requests": 15,
+  "labels": [
+   "har-import"
+  ],
+  "completeness": "complete"
+ },
  "requests": 27,
- "ambiguous": 5,
+ "ambiguous": 4,
  "redirects": 6,
  "h3StreamSessions": 14,
- "verifiedViews": 10,
- "matched": 22,
+ "verifiedViews": 11,
+ "matched": 23,
  "unmatched": 0,
  "requestCount": 27,
  "commands": [

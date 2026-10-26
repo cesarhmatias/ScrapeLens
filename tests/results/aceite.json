@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-26T23:27:21Z",
+ "generatedAt": "2026-10-26T23:29:01Z",
  "coreSha256": "4e0edc61b02d1ebc0f42c5903a5b9b455d0a53b91158c42b8ba674b3901873c4",
  "coreBytes": 2155344,
- "gitCommit": "48955fe",
+ "gitCommit": "7011792",
  "macos": "26.5.2",
  "machine": "arm64",
  "python": "3.14.8",
@@ -158,7 +158,7 @@
     },
     {
      "ok": true,
-     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' ausente em {'har.missing_response', 'session.netlog_missing', 'session.cdp_missing'}"
+     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' ausente em {'session.netlog_missing', 'har.missing_response', 'session.cdp_missing'}"
     },
     {
      "ok": true,
@@ -170,7 +170,7 @@
     },
     {
      "ok": true,
-     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' ausente em {'har.unknown_encoding', 'session.netlog_missing', 'session.cdp_missing'}"
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' ausente em {'session.netlog_missing', 'session.cdp_missing', 'har.unknown_encoding'}"
     },
     {
      "ok": true,
@@ -218,7 +218,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' ausente em {'session.cdp_missing', 'netlog.header_line_invalid'}"
+     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' ausente em {'netlog.header_line_invalid', 'session.cdp_missing'}"
     },
     {
      "ok": true,
@@ -386,7 +386,7 @@
    "notes": [
     "O redirect é um elo entre tentativas, não uma requisição separada."
    ],
-   "seconds": 0.03
+   "seconds": 0.04
   },
   {
    "item": 5,
@@ -455,7 +455,7 @@
     },
     {
      "ok": true,
-     "label": "todos os cinco estados aparecem na fixture: esperado {'truncated', 'discarded', 'empty', 'captured', 'unavailable'}, obtido {'discarded', 'truncated', 'empty', 'captured', 'unavailable'}"
+     "label": "todos os cinco estados aparecem na fixture: esperado {'empty', 'unavailable', 'captured', 'truncated', 'discarded'}, obtido {'empty', 'unavailable', 'captured', 'truncated', 'discarded'}"
     }
    ],
    "passed": 16,
@@ -648,7 +648,7 @@
    "notes": [
     "Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK)."
    ],
-   "seconds": 0.17
+   "seconds": 0.14
   },
   {
    "item": 8,
@@ -742,7 +742,7 @@
    "notes": [
     "Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso."
    ],
-   "seconds": 0.04
+   "seconds": 0.03
   },
   {
    "item": 9,
@@ -911,7 +911,19 @@
     },
     {
      "ok": true,
-     "label": "captura real: 5 requisição(ões) ambígua(s) nas simultâneas idênticas"
+     "label": "HAR reconstruído do CDP real importado sem falha"
+    },
+    {
+     "ok": true,
+     "label": "HAR real: 15 requisições importadas"
+    },
+    {
+     "ok": true,
+     "label": "HAR real: completeness explícito (complete)"
+    },
+    {
+     "ok": true,
+     "label": "captura real: 4 requisição(ões) ambígua(s) nas simultâneas idênticas"
     },
     {
      "ok": true,
@@ -926,17 +938,18 @@
      "label": "chaveiro do usuário não contém o certificado 'ScrapeLens local test CA (synthetic)'"
     }
    ],
-   "passed": 44,
+   "passed": 47,
    "failed": 0,
    "evidence": [
-    "execução real: `tests/capture/runs/20261026T232425Z` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`",
-    "Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 5 ambíguas; redirects=6"
+    "execução real: `tests/capture/runs/20261026T232758Z` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`",
+    "Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 4 ambíguas; redirects=6"
    ],
    "notes": [
     "A página real `/page` exercitou redirects e POSTs.",
+    "O HAR do ciclo é reconstruído do CDP (`experiments/har_from_cdp.mjs`), porque o Chrome 156 não expõe `Network.getHAR`; o creator declara a origem e a ordem não é comprovada (unverified).",
     "O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo."
    ],
-   "seconds": 0.2
+   "seconds": 0.1
   },
   {
    "item": 10,
@@ -957,7 +970,7 @@
     },
     {
      "ok": true,
-     "label": "import-har abaixo de 60 s (0.94 s)"
+     "label": "import-har abaixo de 60 s (0.88 s)"
     },
     {
      "ok": true,
@@ -965,27 +978,27 @@
     },
     {
      "ok": true,
-     "label": "inspect abaixo de 60 s (2.70 s)"
+     "label": "inspect abaixo de 60 s (2.64 s)"
     },
     {
      "ok": true,
-     "label": "inspect com pico abaixo de 3,5 GiB (2390 MiB)"
+     "label": "inspect com pico abaixo de 3,5 GiB (2344 MiB)"
     }
    ],
    "passed": 7,
    "failed": 0,
    "evidence": [
-    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.94 s, pico 783 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.88 s, pico 783 MiB RSS",
     "sessão gravada: session.json 225.8 MiB",
-    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.70 s, pico 2390 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.64 s, pico 2344 MiB RSS",
     "complementar, 20,000 anexos de 20 B: import 128.05 s, pico 565 MiB, sessão 228.9 MiB"
    ],
    "notes": [
     "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
-    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2390 MiB vem da serialização, não do parser.",
+    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2344 MiB vem da serialização, não do parser.",
     "Pior caso de anexos: um `fsync` por arquivo em `store::write_file` domina (128.1 s para 20,000 anexos 20 B). O parser gasta <1 s de CPU; é custo de I/O da gravação. Recomendo batching/adiar fsync no core."
    ],
-   "seconds": 8.63
+   "seconds": 8.11
   }
  ]
 }

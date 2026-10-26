@@ -745,6 +745,15 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         notes.append("A página real `/page` exercitou redirects e POSTs.")
     else:
         exp.ok(False, "captura real exercitou ao menos um redirect")
+    har = summary.get("har")
+    exp.ok(har is not None, "HAR reconstruído do CDP real importado sem falha")
+    if har:
+        exp.ok(har.get("requests", 0) > 0, f"HAR real: {har.get('requests')} requisições importadas")
+        exp.ok(har.get("completeness") in {"complete", "partial"},
+               f"HAR real: completeness explícito ({har.get('completeness')})")
+    notes.append("O HAR do ciclo é reconstruído do CDP (`experiments/har_from_cdp.mjs`), porque o Chrome 156 "
+                 "não expõe `Network.getHAR`; o creator declara a origem e a ordem não é comprovada (unverified).")
+
     ambiguous = summary.get("ambiguous", 0)
     exp.ok(ambiguous >= 1,
            f"captura real: {ambiguous} requisição(ões) ambígua(s) nas simultâneas idênticas")

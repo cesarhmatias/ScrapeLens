@@ -76,8 +76,13 @@ capture h1h2 h2 \
 # h3/QUIC: força QUIC no origin do h2, que também escuta UDP h3.
 capture h3 h3 "https://${H2}/page,https://${H2}/echo-order?case=real-h3" "${H2}"
 
-if [[ -f "${RUN}/h1h2.native-har.json" ]]; then
-  "${CORE}" import-har "${RUN}/h1h2.native-har.json" --out "${RUN}/session-har" >"${RUN}/har.import.json"
+# HAR realista a partir do CDP (o Chrome 156 não expõe Network.getHAR;
+# o script declara a origem no creator e a ordem é a do map CDP, não a do fio).
+if [[ -f "${RUN}/h1h2.cdp-events.jsonl" && -f experiments/har_from_cdp.mjs ]]; then
+  mkdir -p "${RUN}/har-derive"
+  cp "${RUN}/h1h2.cdp-events.jsonl" "${RUN}/har-derive/cdp-events.jsonl"
+  "${NODE}" experiments/har_from_cdp.mjs "${RUN}/har-derive" >/dev/null
+  "${CORE}" import-har "${RUN}/har-derive/har-derived.json" --out "${RUN}/session-har" >"${RUN}/har.import.json"
 fi
 
 kill "${SERVER_PID}" 2>/dev/null || true

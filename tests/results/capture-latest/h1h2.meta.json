@@ -1,19 +1,19 @@
 {
  "name": "h1h2",
- "startedAt": "2026-10-26T23:24:25.649Z",
- "finishedAt": "2026-10-26T23:24:36.758Z",
+ "startedAt": "2026-10-26T23:27:59.579Z",
+ "finishedAt": "2026-10-26T23:28:10.524Z",
  "browser": {
   "name": "Chrome",
   "version": "Chrome/156.0.8078.48",
   "protocol": "1.3"
  },
- "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h1h2",
+ "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h1h2",
  "chromeArgs": [
   "--headless=new",
-  "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/profile-h1h2",
+  "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h1h2",
   "--remote-debugging-port=9881",
   "--remote-debugging-address=127.0.0.1",
-  "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232425Z/h1h2.chrome-netlog.json",
+  "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/h1h2.chrome-netlog.json",
   "--net-log-capture-mode=Everything",
   "--no-first-run",
   "--no-default-browser-check",
@@ -69,7 +69,7 @@
  "cdpEvents": 146,
  "harWritten": false,
  "harError": "Network.getHAR indisponível: 'Network.getHAR' wasn't found",
- "netlogBytes": 1152860,
- "cdpBytes": 423578,
+ "netlogBytes": 1128054,
+ "cdpBytes": 423585,
  "error": null
 }

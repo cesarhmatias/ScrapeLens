@@ -1,3 +1,4 @@
-capturas: 2 · requisições: 27 · ambíguas: 5 · redirects: 6 · h3 streams: 14
-  h1h2  h2  15 req ['h1', 'h2'] completeness=complete ambiguous=3 verified=10
+capturas: 2 · requisições: 27 · ambíguas: 4 · redirects: 6 · h3 streams: 14
+  h1h2  h2  15 req ['h1', 'h2'] completeness=complete ambiguous=2 verified=11
   h3    h3  12 req ['h3'] completeness=complete ambiguous=2 verified=0
+  HAR   importado: 15 requisições (complete)
