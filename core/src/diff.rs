@@ -393,7 +393,7 @@ fn diff_cookies(a: &CookieField, b: &CookieField) -> CookieDiff {
         }) {
             used_b[index] = true;
             unchanged += 1;
-        } else if let Some((index, _other)) = pairs_b.iter().enumerate().find(|(index, other)| {
+        } else if let Some((index, other)) = pairs_b.iter().enumerate().find(|(index, other)| {
             !used_b[*index] && other.name == occurrence.name
         }) {
             used_b[index] = true;

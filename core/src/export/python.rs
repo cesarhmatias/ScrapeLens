@@ -1,0 +1,229 @@
+//! Exportador Python 3 usando apenas a biblioteca padrão.
+//!
+//! Usa `http.client` para preservar ordem e duplicatas de headers (um
+//! `putheader` por ocorrência). Não usa `requests` (que colapsaria headers) e
+//! não desabilita verificação TLS: a reprodução é HTTP, não fingerprint.
+
+use crate::error::{CoreError, Result};
+use crate::model::{LogicalRequest, Verification};
+
+use super::{
+    drop_content_length_without_body, export_url, exportable_headers, resolve_body,
+    ExportOptions, ExportOutput,
+};
+
+pub fn to_python(
+    request: &LogicalRequest,
+    body: Option<&[u8]>,
+    options: &ExportOptions,
+) -> Result<ExportOutput> {
+    let url = export_url(request)?.to_string();
+    let mut output = ExportOutput::new(String::new());
+    let headers = exportable_headers(request, &mut output);
+    let body = resolve_body(request, body, options, &mut output);
+    let headers = drop_content_length_without_body(headers, body.is_some(), &mut output);
+
+    let parsed = ParsedUrl::parse(&url).ok_or_else(|| CoreError::Export {
+        message: format!("URL inválida para exportação Python: {url:?}"),
+    })?;
+
+    let host_header = request.request_headers.first_value("host");
+    let authority = request.request_headers.first_value(":authority");
+    let mut extra_host: Option<String> = None;
+    let skip_host;
+    if host_header.is_some() {
+        skip_host = true;
+    } else if let Some(authority) = authority {
+        // h2/h3 não têm Host; para HTTP/1.1 é necessário sintetizar.
+        extra_host = Some(authority.to_string());
+        skip_host = true;
+    } else {
+        skip_host = false;
+    }
+
+    let target = request
+        .request_headers
+        .first_value(":path")
+        .map(str::to_string)
+        .unwrap_or_else(|| parsed.target());
+
+    let verification = request.request_headers.verification();
+    let mut text = String::new();
+    text.push_str("# -*- coding: utf-8 -*-\n");
+    text.push_str(&format!(
+        "# ScrapeLens — export Python (http.client) da requisição {}\n",
+        request.id
+    ));
+    text.push_str(
+        "# NÃO reproduz TLS nem fingerprint do navegador (JA3/JA4, frames, HPACK); apenas a requisição HTTP.\n",
+    );
+    text.push_str("# Preserva ordem e duplicatas de headers; pseudoheaders HTTP/2 não existem em HTTP/1.1.\n");
+    text.push_str(&format!(
+        "# protocolo capturado: {} · verificação dos headers: {}\n",
+        request.protocol.as_str(),
+        verification.as_str()
+    ));
+    if verification == Verification::Unverified {
+        text.push_str("# ATENÇÃO: sequência de headers NÃO verificada.\n");
+    }
+    if !output.skipped_headers.is_empty() {
+        for skipped in &output.skipped_headers {
+            text.push_str(&format!("# não replicado: {skipped}\n"));
+        }
+    }
+    if let Some(note) = &output.body_note {
+        text.push_str(&format!("# corpo: {note}\n"));
+    }
+    text.push_str("# Contém credenciais/cookies se a sessão não foi sanitizada.\n\n");
+    text.push_str("import http.client\n");
+    if parsed.scheme == "https" {
+        text.push_str("import ssl\n");
+    }
+    text.push_str("\n");
+    if parsed.scheme == "https" {
+        text.push_str(&format!(
+            "conn = http.client.HTTPSConnection({}, {}, timeout=30, context=ssl.create_default_context())\n",
+            python_str(&parsed.host),
+            parsed.port
+        ));
+    } else {
+        text.push_str(&format!(
+            "conn = http.client.HTTPConnection({}, {}, timeout=30)\n",
+            python_str(&parsed.host),
+            parsed.port
+        ));
+    }
+    text.push_str(&format!(
+        "conn.putrequest({}, {}, skip_host={}, skip_accept_encoding=True)\n",
+        python_str(&request.method),
+        python_str(&target),
+        if skip_host { "True" } else { "False" }
+    ));
+
+    if let Some(host) = extra_host {
+        text.push_str(&format!(
+            "conn.putheader({}, {})  # :authority convertido para Host (HTTP/1.1)\n",
+            python_str("Host"),
+            python_str(&host)
+        ));
+    }
+    for header in &headers {
+        text.push_str(&format!(
+            "conn.putheader({}, {})\n",
+            python_str(header.name),
+            python_str(header.value)
+        ));
+    }
+    text.push_str("conn.endheaders()\n");
+    if let Some(body) = body {
+        text.push_str(&format!("conn.send({})\n", python_bytes(body)));
+    }
+    text.push_str("resp = conn.getresponse()\n");
+    text.push_str("print(resp.status, resp.reason)\n");
+    text.push_str("print(resp.read().decode(\"utf-8\", \"replace\"))\n");
+    text.push_str("conn.close()\n");
+
+    output.text = text;
+    Ok(output)
+}
+
+struct ParsedUrl {
+    scheme: String,
+    host: String,
+    port: u16,
+    path: String,
+    query: Option<String>,
+}
+
+impl ParsedUrl {
+    fn parse(url: &str) -> Option<Self> {
+        let (scheme, rest) = url.split_once("://")?;
+        let scheme = scheme.to_ascii_lowercase();
+        if scheme != "http" && scheme != "https" {
+            return None;
+        }
+        let (authority, path_and_query) = match rest.split_once('/') {
+            Some((authority, rest)) => (authority, format!("/{rest}")),
+            None => (rest, "/".to_string()),
+        };
+        let authority = authority.rsplit('@').next().unwrap_or(authority);
+        let (host, port) = if let Some(stripped) = authority.strip_prefix('[') {
+            let (host, remainder) = stripped.split_once(']')?;
+            let port = remainder
+                .strip_prefix(':')
+                .and_then(|port| port.parse().ok())
+                .unwrap_or(if scheme == "https" { 443 } else { 80 });
+            (host.to_string(), port)
+        } else {
+            match authority.rsplit_once(':') {
+                Some((host, port)) if port.chars().all(|ch| ch.is_ascii_digit()) => {
+                    (host.to_string(), port.parse().ok()?)
+                }
+                _ => (
+                    authority.to_string(),
+                    if scheme == "https" { 443 } else { 80 },
+                ),
+            }
+        };
+        let (path, query) = match path_and_query.split_once('?') {
+            Some((path, query)) => (path.to_string(), Some(query.to_string())),
+            None => (path_and_query, None),
+        };
+        Some(Self {
+            scheme,
+            host,
+            port,
+            path,
+            query,
+        })
+    }
+
+    fn target(&self) -> String {
+        match &self.query {
+            Some(query) => format!("{}?{query}", self.path),
+            None => self.path.clone(),
+        }
+    }
+}
+
+/// Literal Python de string com escapes válidos; o arquivo é UTF-8.
+pub fn python_str(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch.is_control() => {
+                if (ch as u32) <= 0xff {
+                    out.push_str(&format!("\\x{:02x}", ch as u32));
+                } else {
+                    out.push_str(&format!("\\u{:04x}", ch as u32));
+                }
+            }
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Literal Python `bytes` seguro para qualquer sequência.
+pub fn python_bytes(bytes: &[u8]) -> String {
+    let mut out = String::from("b\"");
+    for byte in bytes {
+        match byte {
+            b'\\' => out.push_str("\\\\"),
+            b'"' => out.push_str("\\\""),
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            b'\t' => out.push_str("\\t"),
+            0x20..=0x7e => out.push(*byte as char),
+            _ => out.push_str(&format!("\\x{byte:02x}")),
+        }
+    }
+    out.push('"');
+    out
+}
