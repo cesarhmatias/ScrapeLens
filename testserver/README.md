@@ -155,6 +155,15 @@ Headless Chrome 156.0.8078.48, página `/page`, evidência do servidor (sintéti
   o restante é drenado para manter o enquadramento.
 - Dados 100% sintéticos, nada de telemetria, nada sai de `127.0.0.1`.
 
+## Por que Rust (e não Go)
+
+Mantido em Rust: os três servidores já estavam implementados, testados (8 testes
+de integração) e validados com Chrome 156 em h1/h2/h3 — h2 no nível de frames com
+o decoder HPACK exposto e h3 via quiche com `Vec<Header>` na ordem decodificada.
+Go 1.27.3 (`net/http2` + `quic-go`) teria sido viável, mas a troca descartaria um
+caminho já verificado, sem ganho de fidelidade (o ponto de observação seria o
+mesmo); o contrato de portas, endpoints e JSONL não muda com a linguagem.
+
 ## Dependências (lockfile commitado)
 
 Rust 1.98.1 · `httlib-hpack 0.1.3` (HPACK) · `quiche 0.30.0` (QUIC/h3/QPACK,
