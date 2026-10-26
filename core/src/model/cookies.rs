@@ -89,8 +89,9 @@ impl CookieField {
                     });
                 }
                 _ => {
-                    self.notes
-                        .push(format!("par de cookie sem '=' preservado em unparsed: {token:?}"));
+                    self.notes.push(format!(
+                        "par de cookie sem '=' preservado em unparsed: {token:?}"
+                    ));
                     self.unparsed.push(token.to_string());
                 }
             }
@@ -252,9 +253,9 @@ pub fn parse_set_cookie(raw: &str) -> Result<ParsedSetCookie, String> {
             "max-age" => match value.as_deref().and_then(|v| v.trim().parse::<i64>().ok()) {
                 Some(seconds) => parsed.max_age = Some(seconds),
                 None => {
-                    parsed
-                        .notes
-                        .push(format!("Max-Age inválido preservado como extensão: {token:?}"));
+                    parsed.notes.push(format!(
+                        "Max-Age inválido preservado como extensão: {token:?}"
+                    ));
                     parsed
                         .extensions
                         .push((attr.to_string(), value.unwrap_or_default()));
@@ -264,11 +265,9 @@ pub fn parse_set_cookie(raw: &str) -> Result<ParsedSetCookie, String> {
             "httponly" => parsed.http_only = true,
             "samesite" => parsed.same_site = value,
             "partitioned" => parsed.partitioned = true,
-            "priority" => {
-                parsed
-                    .extensions
-                    .push(("Priority".to_string(), value.unwrap_or_default()))
-            }
+            "priority" => parsed
+                .extensions
+                .push(("Priority".to_string(), value.unwrap_or_default())),
             _ => parsed
                 .extensions
                 .push((attr.to_string(), value.unwrap_or_default())),
@@ -304,7 +303,8 @@ mod tests {
 
     #[test]
     fn keeps_fragmented_wire_lines_separate() {
-        let mut field = CookieField::from_header_values(&["sl_a=1; sl_b=2; sl_c=3".to_string()], &prov());
+        let mut field =
+            CookieField::from_header_values(&["sl_a=1; sl_b=2; sl_c=3".to_string()], &prov());
         field.push_wire_line("sl_a=1");
         field.push_wire_line("sl_b=2");
         field.push_wire_line("sl_c=3");
@@ -328,7 +328,10 @@ mod tests {
         let parsed = parse_set_cookie(raw).expect("parse");
         assert_eq!(parsed.name, "sid");
         assert_eq!(parsed.value, "abc");
-        assert_eq!(parsed.expires.as_deref(), Some("Wed, 21 Oct 2015 07:28:00 GMT"));
+        assert_eq!(
+            parsed.expires.as_deref(),
+            Some("Wed, 21 Oct 2015 07:28:00 GMT")
+        );
         assert_eq!(parsed.path.as_deref(), Some("/"));
         assert!(parsed.http_only);
         assert_eq!(parsed.same_site.as_deref(), Some("Lax"));

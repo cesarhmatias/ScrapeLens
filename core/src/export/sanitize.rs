@@ -148,10 +148,7 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
         capture.notes = None;
     }
     let raw_removed = bundle.cdp_events_jsonl.is_some() || bundle.netlog_json.is_some();
-    session
-        .session
-        .labels
-        .push("sanitized".to_string());
+    session.session.labels.push("sanitized".to_string());
     session.session.notes.push(
         "sessão sanitizada: headers/cookies/URLs/corpos sensíveis redigidos; eventos brutos removidos"
             .to_string(),
@@ -236,15 +233,16 @@ fn sanitize_header_view(
             let sanitized = sanitize_path_and_query(&entry.value, options);
             if sanitized != entry.value {
                 entry.value = sanitized;
-                *redactions.entry("pseudoheader:path".to_string()).or_default() += 1;
+                *redactions
+                    .entry("pseudoheader:path".to_string())
+                    .or_default() += 1;
             }
         }
     }
     if view.raw_block.is_some() {
         view.raw_block = None;
-        view.notes.push(
-            "rawBlock removido na sanitização (continha headers originais)".to_string(),
-        );
+        view.notes
+            .push("rawBlock removido na sanitização (continha headers originais)".to_string());
     }
 }
 
@@ -257,7 +255,9 @@ fn sanitize_cookie_field(
         return;
     }
     let raw_count = cookie.raw.len().max(1);
-    cookie.raw = (0..raw_count).map(|_| options.placeholder.clone()).collect();
+    cookie.raw = (0..raw_count)
+        .map(|_| options.placeholder.clone())
+        .collect();
     for pair in &mut cookie.pairs {
         pair.value = options.placeholder.clone();
         pair.raw = format!("{}={}", pair.name, options.placeholder);
@@ -281,6 +281,11 @@ fn sanitize_set_cookie(
     record.raw = options.placeholder.clone();
     if let Some(parsed) = &mut record.parsed {
         parsed.value = options.placeholder.clone();
+        for (name, value) in &mut parsed.extensions {
+            if is_sensitive_key(name) || is_sensitive_header(name) {
+                *value = options.placeholder.clone();
+            }
+        }
     }
     record
         .provenance
@@ -305,6 +310,15 @@ fn sanitize_body(
     let Some(original) = body.attachment.clone() else {
         return Body::discarded("sanitização: corpo capturado sem anexo associado");
     };
+    if let Err(_error) = store::validate_attachment_name(&original) {
+        cache.insert(original.clone(), None);
+        omitted.push(original.clone());
+        warnings.push(Warning::new(
+            "sanitize.attachment_invalid",
+            format!("anexo com nome inválido omitido: {original:?}"),
+        ));
+        return Body::discarded("sanitização: nome de anexo inválido");
+    }
 
     if let Some(cached) = cache.get(&original) {
         return match cached {
@@ -585,7 +599,9 @@ fn percent_decode(value: &str) -> String {
     let mut index = 0;
     while index < bytes.len() {
         if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let (Some(high), Some(low)) = (hex_value(bytes[index + 1]), hex_value(bytes[index + 2])) {
+            if let (Some(high), Some(low)) =
+                (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))
+            {
                 out.push(high * 16 + low);
                 index += 3;
                 continue;
@@ -643,11 +659,14 @@ pub fn is_sensitive_header(name: &str) -> bool {
             | "private-token"
             | "x-amz-security-token"
             | "x-goog-api-key"
+            | "authentication"
     ) {
         return true;
     }
     name.contains("token")
         || name.contains("secret")
+        || name.contains("credential")
+        || name.contains("signature")
         || name.contains("api-key")
         || name.contains("apikey")
         || name.ends_with("-password")
@@ -712,6 +731,8 @@ fn is_sensitive_key(name: &str) -> bool {
         || compact.contains("secret")
         || compact.contains("apikey")
         || compact.contains("signature")
+        || compact.contains("credential")
+        || compact.contains("accesskey")
         || compact.contains("csrf")
         || compact.contains("xsrf")
         || compact.ends_with("sessionid")
@@ -754,32 +775,34 @@ mod tests {
             "https://user:pass@demo.invalid/x?token=secret&page=2#access",
             "POST",
         );
-        request.request_headers.add("Authorization", "Bearer abc", &provenance());
-        request.request_headers.add("cookie", "sid=xyz; theme=dark", &provenance());
+        request
+            .request_headers
+            .add("Authorization", "Bearer abc", &provenance());
+        request
+            .request_headers
+            .add("cookie", "sid=xyz; theme=dark", &provenance());
         request.request_headers.add("x-rep", "a", &provenance());
         request.request_headers.add("x-rep", "b", &provenance());
-        request.request_headers.add("referer", "https://demo.invalid/back?token=zzz", &provenance());
-        request.response_headers.add("set-cookie", "sid=abc; Path=/; HttpOnly", &provenance());
-        request.set_cookies.push(crate::model::SetCookieRecord::from_raw(
-            "sid=abc; Path=/; HttpOnly",
-            &provenance(),
-        ));
-        request.cookie = CookieField::from_header_values(
-            &["sid=xyz; theme=dark".to_string()],
+        request.request_headers.add(
+            "referer",
+            "https://demo.invalid/back?token=zzz",
             &provenance(),
         );
-        request.request_body = Body::captured(
-            "r1.request.bin",
-            32,
-            &provenance(),
-        )
-        .with_content_type("application/json");
-        request.response_body = Body::captured(
-            "r1.response.bin",
-            8,
-            &provenance(),
-        )
-        .with_content_type("application/octet-stream");
+        request
+            .response_headers
+            .add("set-cookie", "sid=abc; Path=/; HttpOnly", &provenance());
+        request
+            .set_cookies
+            .push(crate::model::SetCookieRecord::from_raw(
+                "sid=abc; Path=/; HttpOnly",
+                &provenance(),
+            ));
+        request.cookie =
+            CookieField::from_header_values(&["sid=xyz; theme=dark".to_string()], &provenance());
+        request.request_body = Body::captured("r1.request.bin", 32, &provenance())
+            .with_content_type("application/json");
+        request.response_body = Body::captured("r1.response.bin", 8, &provenance())
+            .with_content_type("application/octet-stream");
         session.requests.push(request.clone());
         let mut bundle = SessionBundle::new(session);
         bundle.insert_attachment(
@@ -799,7 +822,10 @@ mod tests {
             request.request_headers.first_value("authorization"),
             Some("[REDACTED]")
         );
-        assert_eq!(request.request_headers.first_value("cookie"), Some("[REDACTED]"));
+        assert_eq!(
+            request.request_headers.first_value("cookie"),
+            Some("[REDACTED]")
+        );
         assert_eq!(
             request
                 .request_headers
@@ -810,7 +836,11 @@ mod tests {
             vec!["a", "b"]
         );
         assert_eq!(
-            request.request_headers.iter_all().map(|entry| entry.name.as_str()).collect::<Vec<_>>(),
+            request
+                .request_headers
+                .iter_all()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["Authorization", "cookie", "x-rep", "x-rep", "referer"]
         );
         assert!(request.url.contains("token=%5BREDACTED%5D"));
@@ -826,11 +856,7 @@ mod tests {
         assert_eq!(request.cookie.pairs[1].value, "[REDACTED]");
         assert_eq!(request.set_cookies[0].raw, "[REDACTED]");
         assert_eq!(
-            request.set_cookies[0]
-                .parsed
-                .as_ref()
-                .unwrap()
-                .value,
+            request.set_cookies[0].parsed.as_ref().unwrap().value,
             "[REDACTED]"
         );
     }
@@ -860,7 +886,10 @@ mod tests {
         let request = &export.bundle.session.requests[0];
         assert_eq!(request.response_body.state, BodyState::Discarded);
         assert!(request.response_body.attachment.is_none());
-        assert_eq!(export.omitted_attachments, vec!["r1.response.bin".to_string()]);
+        assert_eq!(
+            export.omitted_attachments,
+            vec!["r1.response.bin".to_string()]
+        );
         assert!(export
             .warnings
             .iter()
@@ -914,6 +943,26 @@ mod tests {
             export.bundle.attachments.get(&name).unwrap(),
             b"user=ana&password=[REDACTED]&page=2"
         );
+    }
+
+    #[test]
+    fn invalid_attachment_name_is_omitted_not_written() {
+        let mut bundle = SessionBundle::new(SessionV1::new(SessionMeta::new(
+            "s",
+            "2026-10-26T20:00:00Z",
+            crate::model::BrowserInfo::default(),
+        )));
+        let mut request = LogicalRequest::new("r", "https://a.test/", "POST");
+        request.request_body =
+            Body::captured("../escape.bin", 3, &provenance()).with_content_type("application/json");
+        bundle.session.requests.push(request);
+        bundle.insert_attachment("../escape.bin", b"{}".to_vec());
+        let export = sanitize_bundle(&bundle, &SanitizeOptions::default());
+        assert!(export.bundle.attachments.is_empty());
+        assert!(export
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "sanitize.attachment_invalid"));
     }
 
     #[test]

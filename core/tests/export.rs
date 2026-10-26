@@ -12,7 +12,7 @@ fn provenance() -> Provenance {
 }
 
 fn request() -> LogicalRequest {
-    let mut request = LogicalRequest::new("r1", "https://demo.invalid/a?x=1&y=';echo pwn", "POST");
+    let mut request = LogicalRequest::new("r1", "https://demo.invalid/a?x=1&y=';id", "POST");
     let mut headers = HeaderView::new(OrderState::SourceOrder);
     headers.add("Host", "demo.invalid", &provenance());
     headers.add("x-rep", "a", &provenance());
@@ -30,7 +30,7 @@ fn curl_preserves_order_duplicates_and_escapes_untrusted_data() {
     let output = to_curl(&request, Some(b"hello\nworld"), &ExportOptions::default()).unwrap();
     let text = &output.text;
     assert!(text.contains("--request 'POST'"));
-    assert!(text.contains("--url 'https://demo.invalid/a?x=1&y='\\'';echo pwn'"));
+    assert!(text.contains("--url 'https://demo.invalid/a?x=1&y='\\'';id'"));
     assert!(text.contains("--header 'x-rep: a'"));
     assert!(text.contains("--header 'X-Rep: b'"));
     assert!(text.contains("--header 'x-quote: a'\\''b\\c'"));
@@ -51,7 +51,10 @@ fn curl_refuses_header_injection_and_omits_unsafe_header() {
         .warnings
         .iter()
         .any(|warning| warning.code == "export.header_injection"));
-    assert!(output.skipped_headers.iter().any(|header| header.contains("x-bad")));
+    assert!(output
+        .skipped_headers
+        .iter()
+        .any(|header| header.contains("x-bad")));
 }
 
 #[test]
@@ -70,9 +73,7 @@ fn curl_drops_content_length_when_body_is_not_exported() {
 fn curl_marks_unverified_sequence_and_pseudoheaders() {
     let mut request = request();
     let provenance = Provenance::new(Source::Cdp, "test", Verification::Unverified);
-    request
-        .request_headers
-        .add(":method", "POST", &provenance);
+    request.request_headers.add(":method", "POST", &provenance);
     let output = to_curl(&request, None, &ExportOptions::default()).unwrap();
     assert!(output.text.contains("NÃO verificada"));
     assert!(output.text.contains(":method: pseudoheader não replicável"));
@@ -93,7 +94,7 @@ fn python_uses_http_client_and_preserves_header_duplicates() {
     let second = text.find("conn.putheader(\"X-Rep\", \"b\")").unwrap();
     assert!(first < second);
     assert!(text.contains("conn.send(b\"hello\\nworld\")"));
-    assert!(text.contains("putrequest(\"POST\", \"/a?x=1&y=';echo pwn\", skip_host=True"));
+    assert!(text.contains("putrequest(\"POST\", \"/a?x=1&y=';id\", skip_host=True"));
     assert!(text.contains("NÃO reproduz TLS"));
 }
 
@@ -107,9 +108,7 @@ fn python_maps_authority_to_host_for_http11() {
     request
         .request_headers
         .add(":path", "/path?q=1", &provenance());
-    request
-        .request_headers
-        .add("x-rep", "a", &provenance());
+    request.request_headers.add("x-rep", "a", &provenance());
     let output = to_python(&request, None, &ExportOptions::default()).unwrap();
     assert!(output
         .text
@@ -122,5 +121,8 @@ fn python_maps_authority_to_host_for_http11() {
 fn python_string_and_bytes_escaping() {
     use scrapelens_core::export::python::{python_bytes, python_str};
     assert_eq!(python_str("a\"b\\c\n"), "\"a\\\"b\\\\c\\n\"");
-    assert_eq!(python_bytes(&[0, 1, b'a', b'\n', b'"']), "b\"\\x00\\x01a\\n\\\"\"");
+    assert_eq!(
+        python_bytes(&[0, 1, b'a', b'\n', b'"']),
+        "b\"\\x00\\x01a\\n\\\"\""
+    );
 }

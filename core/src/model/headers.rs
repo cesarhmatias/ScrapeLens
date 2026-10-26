@@ -168,6 +168,9 @@ impl HeaderView {
     /// Estado de verificação mais fraco do bloco. Um bloco inteiro só é
     /// `verified` se todas as informações que o compõem forem `verified`.
     pub fn verification(&self) -> Verification {
+        if self.is_empty() {
+            return Verification::Unverified;
+        }
         self.iter_all()
             .map(|entry| entry.provenance.verification)
             .fold(Verification::Verified, Verification::weakest)
@@ -198,15 +201,19 @@ impl HeaderView {
             match split_header_line(line) {
                 Some((name, value)) => view.add(name, value, provenance),
                 None => {
-                    issues.push(format!("linha sem separador ':' na posição {index}: {line:?}"));
+                    issues.push(format!(
+                        "linha sem separador ':' na posição {index}: {line:?}"
+                    ));
                     unparsed.push(line.to_string());
                 }
             }
         }
 
         if !unparsed.is_empty() {
-            view.notes
-                .push(format!("{} linha(s) não parseada(s) preservada(s) em issues", unparsed.len()));
+            view.notes.push(format!(
+                "{} linha(s) não parseada(s) preservada(s) em issues",
+                unparsed.len()
+            ));
         }
         (view, issues, unparsed)
     }
@@ -214,7 +221,8 @@ impl HeaderView {
     /// Parse de um bloco HTTP/1 bruto (`HTTP/1.1 200 OK\r\nName: value...`).
     pub fn from_http_block(block: &str, provenance: &Provenance) -> (Self, Vec<String>) {
         let lines: Vec<String> = block.lines().map(|line| line.to_string()).collect();
-        let (view, issues, _) = Self::from_header_lines(&lines, provenance, OrderState::SourceOrder);
+        let (view, issues, _) =
+            Self::from_header_lines(&lines, provenance, OrderState::SourceOrder);
         let mut view = view;
         view.raw_block = Some(block.to_string());
         (view, issues)
@@ -268,7 +276,12 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            vec![("x-rep", "a"), ("X-Rep", "b"), ("x-seq", "1"), ("x-rep", "c")]
+            vec![
+                ("x-rep", "a"),
+                ("X-Rep", "b"),
+                ("x-seq", "1"),
+                ("x-rep", "c")
+            ]
         );
         assert_eq!(view.get_all("X-REP").len(), 3);
     }
@@ -291,7 +304,10 @@ mod tests {
         let (view, issues) = HeaderView::from_http_block(block, &provenance());
         assert!(issues.is_empty());
         assert_eq!(view.start_line.as_deref(), Some("HTTP/1.1 200 OK"));
-        assert_eq!(view.first_value("content-type"), Some("text/plain: charset=utf-8"));
+        assert_eq!(
+            view.first_value("content-type"),
+            Some("text/plain: charset=utf-8")
+        );
         assert_eq!(view.get_all("set-cookie").len(), 2);
         assert_eq!(view.raw_block.as_deref(), Some(block));
     }
@@ -306,6 +322,12 @@ mod tests {
             split_header_line(":status: 200"),
             Some((":status".to_string(), "200".to_string()))
         );
+    }
+
+    #[test]
+    fn empty_view_is_unverified_not_verified() {
+        let view = HeaderView::default();
+        assert_eq!(view.verification(), Verification::Unverified);
     }
 
     #[test]

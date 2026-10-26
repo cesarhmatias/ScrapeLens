@@ -21,7 +21,10 @@ fn parses_h2_session_with_explicit_stream_job_link() {
         .iter()
         .any(|warning| warning.code == "netlog.header_line_invalid"));
     assert_eq!(capture.browser.version.as_deref(), Some("156.0.8078.48"));
-    assert_eq!(capture.started_at.as_deref(), Some("2026-10-26T20:50:05.949Z"));
+    assert_eq!(
+        capture.started_at.as_deref(),
+        Some("2026-10-26T20:50:05.949Z")
+    );
 
     let (session, report) = build_netlog_session(&capture);
     assert_eq!(report.format, scrapelens_core::parse::InputFormat::NetLog);
@@ -88,6 +91,7 @@ fn parses_h2_session_with_explicit_stream_job_link() {
             evidence.role == HeaderRole::Response && evidence.event == "HTTP2_SESSION_RECV_HEADERS"
         })
         .expect("evidência de sessão recv");
+    assert_eq!(session_recv.protocol, Protocol::H2);
     assert_eq!(session_recv.view.get_all("set-cookie").len(), 2);
     assert_eq!(session_recv.view.get_all("x-resp-order").len(), 2);
     assert!(session_recv
@@ -140,7 +144,10 @@ fn redirect_creates_two_attempts_and_a_redirect_entity() {
     assert_eq!(request.attempts[1].url, "http://demo.invalid/b");
     assert_eq!(request.attempts[1].status, Some(200));
     assert_eq!(request.redirects.len(), 1);
-    assert_eq!(request.redirects[0].location.as_deref(), Some("http://demo.invalid/b"));
+    assert_eq!(
+        request.redirects[0].location.as_deref(),
+        Some("http://demo.invalid/b")
+    );
     assert_eq!(
         request.redirects[0].to_attempt_id.as_deref(),
         Some(request.attempts[1].id.as_str())
@@ -169,6 +176,11 @@ fn real_h1_capture_preserves_wire_order_and_duplicates() {
     let attempt = &request.attempts[0];
     assert_eq!(request.method, "GET");
     assert_eq!(attempt.protocol, Protocol::H1);
+    assert_eq!(
+        attempt.outcome,
+        scrapelens_core::model::AttemptOutcome::Completed,
+        "net_error 0 (net::OK) não pode virar falha"
+    );
     let send = attempt.send_transaction.as_ref().expect("send h1");
     assert_eq!(send.view.verification(), Verification::Verified);
     assert_eq!(send.view.first_value("x-dup"), Some("a, b"));

@@ -75,7 +75,10 @@ fn real_h1_correlation_matches_and_prefers_netlog_sequence() {
     assert_eq!(request.match_state, MatchState::Matched);
     let attempt = &request.attempts[0];
     assert_eq!(attempt.match_state, MatchState::Matched);
-    assert_eq!(attempt.request_headers.verification(), Verification::Verified);
+    assert_eq!(
+        attempt.request_headers.verification(),
+        Verification::Verified
+    );
     assert_eq!(attempt.request_headers.first_value("x-dup"), Some("a, b"));
     let index = |name: &str| {
         attempt

@@ -8,8 +8,8 @@ use crate::error::{CoreError, Result};
 use crate::model::{LogicalRequest, Verification};
 
 use super::{
-    drop_content_length_without_body, export_url, exportable_headers, resolve_body,
-    ExportOptions, ExportOutput,
+    drop_content_length_without_body, export_url, exportable_headers, is_header_token,
+    is_safe_header_value, resolve_body, ExportOptions, ExportOutput,
 };
 
 pub fn to_python(
@@ -27,8 +27,15 @@ pub fn to_python(
         message: format!("URL inválida para exportação Python: {url:?}"),
     })?;
 
-    let host_header = request.request_headers.first_value("host");
-    let authority = request.request_headers.first_value(":authority");
+    let host_header = request
+        .request_headers
+        .first("host")
+        .filter(|entry| is_header_token(&entry.name) && is_safe_header_value(&entry.value))
+        .map(|entry| entry.value.as_str());
+    let authority = request
+        .request_headers
+        .first_value(":authority")
+        .filter(|value| is_safe_header_value(value));
     let mut extra_host: Option<String> = None;
     let skip_host;
     if host_header.is_some() {
@@ -57,7 +64,9 @@ pub fn to_python(
     text.push_str(
         "# NÃO reproduz TLS nem fingerprint do navegador (JA3/JA4, frames, HPACK); apenas a requisição HTTP.\n",
     );
-    text.push_str("# Preserva ordem e duplicatas de headers; pseudoheaders HTTP/2 não existem em HTTP/1.1.\n");
+    text.push_str(
+        "# Preserva ordem e duplicatas de headers; pseudoheaders HTTP/2 não existem em HTTP/1.1.\n",
+    );
     text.push_str(&format!(
         "# protocolo capturado: {} · verificação dos headers: {}\n",
         request.protocol.as_str(),
@@ -79,7 +88,7 @@ pub fn to_python(
     if parsed.scheme == "https" {
         text.push_str("import ssl\n");
     }
-    text.push_str("\n");
+    text.push('\n');
     if parsed.scheme == "https" {
         text.push_str(&format!(
             "conn = http.client.HTTPSConnection({}, {}, timeout=30, context=ssl.create_default_context())\n",

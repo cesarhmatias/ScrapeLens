@@ -74,7 +74,8 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         .map_err(|error| CoreError::io(&tmp, error))?;
     file.write_all(bytes)
         .map_err(|error| CoreError::io(&tmp, error))?;
-    file.sync_all().map_err(|error| CoreError::io(&tmp, error))?;
+    file.sync_all()
+        .map_err(|error| CoreError::io(&tmp, error))?;
     drop(file);
 
     set_mode(&tmp, 0o600)?;
@@ -92,10 +93,8 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     let attachments_dir = dir.join(ATTACHMENTS_DIR);
     ensure_private_dir(&attachments_dir)?;
 
-    let json = serde_json::to_vec_pretty(&bundle.session)
-        .map_err(|error| CoreError::json("session.json", error))?;
-    write_atomic(&dir.join(SESSION_FILE), &json)?;
-
+    // Artefatos/anexos primeiro; session.json por último, para nunca deixar um
+    // documento apontando para arquivos que ainda não existem.
     if let Some(bytes) = &bundle.cdp_events_jsonl {
         write_atomic(&dir.join(CDP_EVENTS_FILE), bytes)?;
     }
@@ -107,6 +106,10 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
         validate_attachment_name(name)?;
         write_atomic(&attachments_dir.join(name), bytes)?;
     }
+
+    let json = serde_json::to_vec_pretty(&bundle.session)
+        .map_err(|error| CoreError::json("session.json", error))?;
+    write_atomic(&dir.join(SESSION_FILE), &json)?;
     Ok(())
 }
 
@@ -116,7 +119,8 @@ pub fn read_file(path: &Path) -> Result<Vec<u8>> {
 
 pub fn read_json(path: &Path) -> Result<serde_json::Value> {
     let bytes = read_file(path)?;
-    serde_json::from_slice(&bytes).map_err(|error| CoreError::json(path.display().to_string(), error))
+    serde_json::from_slice(&bytes)
+        .map_err(|error| CoreError::json(path.display().to_string(), error))
 }
 
 /// Verificação de permissões para avisar (não corrigir) sessões importadas

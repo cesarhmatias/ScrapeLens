@@ -2,14 +2,19 @@
 
 use scrapelens_core::correlate::{attach_netlog, CorrelationOptions, ExplicitPair};
 use scrapelens_core::model::{
-    HeaderRole, HeaderView, MatchState, OrderState, Provenance, Protocol, Source, Verification,
+    HeaderRole, HeaderView, MatchState, OrderState, Protocol, Provenance, Source, Verification,
 };
 use scrapelens_core::parse::cdp::{build_cdp_session, CdpAttempt, CdpCapture, CdpRequest};
 use scrapelens_core::parse::netlog::{
     NetlogAttempt, NetlogCapture, NetlogHeaderEvent, NetlogUrlRequest,
 };
 
-fn cdp_session(request_id: &str, url: &str, method: &str, timestamp: f64) -> scrapelens_core::model::SessionV1 {
+fn cdp_session(
+    request_id: &str,
+    url: &str,
+    method: &str,
+    timestamp: f64,
+) -> scrapelens_core::model::SessionV1 {
     let request_provenance = Provenance::new(Source::Cdp, "test.cdp", Verification::Unverified);
     let mut request_headers = HeaderView::new(OrderState::Reconstructed);
     request_headers.add("accept", "*/*", &request_provenance);
@@ -29,15 +34,17 @@ fn cdp_session(request_id: &str, url: &str, method: &str, timestamp: f64) -> scr
         ..Default::default()
     };
     attempt.cdp.request_id = Some(request_id.to_string());
-    attempt.header_evidence.push(scrapelens_core::model::HeaderEvidence {
-        id: "test-cdp-request".to_string(),
-        role: HeaderRole::Request,
-        protocol: Protocol::H1,
-        event: "Network.requestWillBeSent.request.headers".to_string(),
-        source_id: None,
-        stream_id: None,
-        view: attempt.request_headers.clone(),
-    });
+    attempt
+        .header_evidence
+        .push(scrapelens_core::model::HeaderEvidence {
+            id: "test-cdp-request".to_string(),
+            role: HeaderRole::Request,
+            protocol: Protocol::H1,
+            event: "Network.requestWillBeSent.request.headers".to_string(),
+            source_id: None,
+            stream_id: None,
+            view: attempt.request_headers.clone(),
+        });
     let capture = CdpCapture {
         events_total: 1,
         events_used: 1,
@@ -52,11 +59,7 @@ fn cdp_session(request_id: &str, url: &str, method: &str, timestamp: f64) -> scr
     session
 }
 
-fn netlog_header_event(
-    name: &str,
-    role: HeaderRole,
-    time: f64,
-) -> NetlogHeaderEvent {
+fn netlog_header_event(name: &str, role: HeaderRole, time: f64) -> NetlogHeaderEvent {
     let provenance = Provenance::new(Source::NetLog, "test.netlog", Verification::Verified);
     let mut view = HeaderView::new(OrderState::SourceOrder);
     if role == HeaderRole::Request {
@@ -144,23 +147,23 @@ fn unique_match_uses_netlog_as_primary_and_keeps_cdp_evidence() {
             .collect::<Vec<_>>(),
         vec!["a", "b"]
     );
-    assert_eq!(attempt.request_headers.verification(), Verification::Verified);
-    assert!(attempt
-        .request_headers
-        .get_all("x-cdp-only")
-        .is_empty());
+    assert_eq!(
+        attempt.request_headers.verification(),
+        Verification::Verified
+    );
+    assert!(attempt.request_headers.get_all("x-cdp-only").is_empty());
     // O original CDP continua acessível como evidência.
     assert!(attempt.header_evidence.iter().any(|evidence| {
         evidence.role == HeaderRole::Request
             && evidence.event.contains("requestWillBeSent")
             && evidence.view.first_value("x-cdp-only") == Some("keep-me")
     }));
-    assert!(attempt
-        .netlog
-        .source_ids
-        .contains(&31));
+    assert!(attempt.netlog.source_ids.contains(&31));
     assert_eq!(request.netlog.source_ids, vec![31]);
-    assert_eq!(request.response_headers.verification(), Verification::Verified);
+    assert_eq!(
+        request.response_headers.verification(),
+        Verification::Verified
+    );
 }
 
 #[test]
@@ -220,10 +223,10 @@ fn explicit_pair_resolves_ambiguity() {
     let attempt = &session.requests[0].attempts[0];
     assert_eq!(attempt.match_state, MatchState::Matched);
     assert_eq!(attempt.netlog.source_ids, vec![32]);
-    assert!(attempt
-        .match_candidates
+    assert!(attempt.match_candidates.iter().any(|candidate| candidate
+        .reasons
         .iter()
-        .any(|candidate| candidate.reasons.iter().any(|reason| reason.contains("explícita"))));
+        .any(|reason| reason.contains("explícita"))));
 }
 
 #[test]
@@ -250,7 +253,11 @@ fn netlog_only_attempts_are_counted_not_silently_ignored() {
         url: "https://background.invalid/ping".to_string(),
         method: "GET".to_string(),
         started_at: Some(900.0),
-        attempts: vec![netlog_attempt("https://background.invalid/ping", "GET", 900.0)],
+        attempts: vec![netlog_attempt(
+            "https://background.invalid/ping",
+            "GET",
+            900.0,
+        )],
         ..Default::default()
     });
     let outcome = attach_netlog(&mut session, &netlog, &CorrelationOptions::default());

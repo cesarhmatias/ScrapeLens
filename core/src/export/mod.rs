@@ -147,9 +147,9 @@ pub fn drop_content_length_without_body<'a>(
         .into_iter()
         .filter(|header| {
             if header.name.eq_ignore_ascii_case("content-length") {
-                output.skipped_headers.push(
-                    "content-length: removido porque o corpo não foi exportado".to_string(),
-                );
+                output
+                    .skipped_headers
+                    .push("content-length: removido porque o corpo não foi exportado".to_string());
                 output.warnings.push(Warning::new(
                     "export.content_length_without_body",
                     "Content-Length original removido: o corpo não acompanha a exportação",
@@ -193,7 +193,9 @@ pub fn resolve_body<'a>(
                 crate::model::BodyState::Truncated => {
                     "corpo truncado na captura; exportado apenas o trecho disponível".to_string()
                 }
-                crate::model::BodyState::Captured => "corpo capturado exportado como bytes".to_string(),
+                crate::model::BodyState::Captured => {
+                    "corpo capturado exportado como bytes".to_string()
+                }
                 _ => format!(
                     "corpo exportado a partir dos bytes fornecidos (estado {:?})",
                     request.request_body.state
@@ -224,9 +226,9 @@ pub fn export_url(request: &LogicalRequest) -> Result<&str> {
             message: format!("requisição {} sem URL", request.id),
         });
     }
-    if request.url.contains(['\r', '\n', '\0']) {
+    if request.url.contains(['\r', '\n', '\0']) || request.url.chars().any(char::is_whitespace) {
         return Err(CoreError::Export {
-            message: "URL contém CR/LF/NUL; recusando gerar comando".to_string(),
+            message: "URL contém espaço/CR/LF/NUL; recusando gerar comando".to_string(),
         });
     }
     Ok(&request.url)

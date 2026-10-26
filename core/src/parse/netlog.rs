@@ -19,11 +19,11 @@ use serde_json::{Map, Value};
 use crate::error::{CoreError, Result};
 use crate::model::{
     policy, Attempt, AttemptOutcome, Body, BrowserInfo, Completeness, Connection, CookieField,
-    HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, OrderState, Provenance,
-    Protocol, Redirect, SessionBundle, SessionMeta, SessionV1, Source, StreamSession, Timings,
-    Verification, Warning,
+    HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, OrderState, Protocol, Provenance,
+    Redirect, SessionBundle, SessionMeta, SessionV1, Source, StreamSession, Timings, Verification,
+    Warning,
 };
-use crate::parse::{ImportedSession, ImportReport, InputFormat};
+use crate::parse::{ImportReport, ImportedSession, InputFormat};
 
 const MAX_UNKNOWN_SAMPLES: usize = 8;
 
@@ -95,8 +95,14 @@ pub struct NetlogRedirect {
 enum Atom {
     Send(NetlogHeaderEvent),
     Recv(NetlogHeaderEvent),
-    Redirect { location: String, time: Option<f64> },
-    End { time: Option<f64>, net_error: Option<i32> },
+    Redirect {
+        location: String,
+        time: Option<f64>,
+    },
+    End {
+        time: Option<f64>,
+        net_error: Option<i32>,
+    },
 }
 
 #[derive(Debug)]
@@ -137,7 +143,10 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
                 .ok_or_else(|| CoreError::MissingField {
                     field: "events".to_string(),
                 })?;
-            (object.get("constants").and_then(Value::as_object), events.as_slice())
+            (
+                object.get("constants").and_then(Value::as_object),
+                events.as_slice(),
+            )
         }
         Value::Array(events) => {
             // NetLog sem envelope: tolerado, mas explicitamente incompleto.
@@ -216,7 +225,9 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
                 .and_then(|params| params.get("source_dependency"))
                 .and_then(Value::as_object);
             if let (Some(source_id), Some(dep_id)) = (
-                source.and_then(|source| source.get("id")).and_then(Value::as_u64),
+                source
+                    .and_then(|source| source.get("id"))
+                    .and_then(Value::as_u64),
                 dep.and_then(|dep| dep.get("id")).and_then(Value::as_u64),
             ) {
                 bound_to_request.insert(source_id as u32, dep_id as u32);
@@ -251,7 +262,9 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
     let mut pending_session: Vec<(NetlogHeaderEvent, Option<u32>)> = Vec::new();
 
     for (index, event) in events.iter().enumerate() {
-        let Some(object) = event.as_object() else { continue };
+        let Some(object) = event.as_object() else {
+            continue;
+        };
         let name = event_type_name(object, &event_names);
         let source_id = source_id(object);
         // NetLog grava `time` em milissegundos; o modelo usa segundos.
@@ -263,7 +276,9 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
             "URL_REQUEST_START_JOB" => {
                 let Some(source_id) = source_id else { continue };
                 if phase == 1 {
-                    let builder = builders.entry(source_id).or_insert_with(|| Builder::new(source_id));
+                    let builder = builders
+                        .entry(source_id)
+                        .or_insert_with(|| Builder::new(source_id));
                     if let Some(params) = params {
                         if let Some(url) = params.get("url").and_then(Value::as_str) {
                             if builder.url.is_empty() {
@@ -276,17 +291,22 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
                         if let Some(method) = params.get("method").and_then(Value::as_str) {
                             builder.method = method.to_string();
                         }
-                        if let Some(request_type) = params.get("request_type").and_then(Value::as_str) {
+                        if let Some(request_type) =
+                            params.get("request_type").and_then(Value::as_str)
+                        {
                             builder.request_type = Some(request_type.to_string());
                         }
                     }
                     capture.events_used += 1;
                 } else if phase == 2 {
-                    let builder = builders.entry(source_id).or_insert_with(|| Builder::new(source_id));
+                    let builder = builders
+                        .entry(source_id)
+                        .or_insert_with(|| Builder::new(source_id));
                     let net_error = params
                         .and_then(|params| params.get("net_error"))
                         .and_then(Value::as_i64)
-                        .map(|value| value as i32);
+                        .map(|value| value as i32)
+                        .filter(|value| *value != 0);
                     if let Some(net_error) = net_error {
                         builder.net_error = Some(net_error);
                     }
@@ -297,7 +317,9 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
             }
             "URL_REQUEST_REDIRECTED" => {
                 let Some(source_id) = source_id else { continue };
-                let builder = builders.entry(source_id).or_insert_with(|| Builder::new(source_id));
+                let builder = builders
+                    .entry(source_id)
+                    .or_insert_with(|| Builder::new(source_id));
                 if let Some(location) = params
                     .and_then(|params| params.get("location"))
                     .and_then(Value::as_str)
@@ -318,14 +340,21 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
                         HeaderRole::Response
                     };
                     let protocol = protocol_for_event(&name);
-                    let (view, nul_expanded, issues) =
-                        match parse_headers(params, &name, index, role, protocol) {
-                            Ok(parsed) => parsed,
-                            Err(warning) => {
-                                capture.warnings.push(warning);
-                                continue;
-                            }
-                        };
+                    let (view, nul_expanded, issues) = match parse_headers(
+                        params,
+                        &name,
+                        index,
+                        role,
+                        protocol,
+                        capture.browser.version.as_deref(),
+                        time,
+                    ) {
+                        Ok(parsed) => parsed,
+                        Err(warning) => {
+                            capture.warnings.push(warning);
+                            continue;
+                        }
+                    };
                     if !issues.is_empty() {
                         capture.warnings.push(
                             Warning::new(
@@ -384,9 +413,12 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
             if let Some(request_id) = linked {
                 *resolution = Some(request_id);
                 if let Some(stream_id) = event.stream_id {
-                    session_resolution.insert((event.source_id.unwrap_or(0), stream_id), request_id);
+                    session_resolution
+                        .insert((event.source_id.unwrap_or(0), stream_id), request_id);
                 }
-                let builder = builders.entry(request_id).or_insert_with(|| Builder::new(request_id));
+                let builder = builders
+                    .entry(request_id)
+                    .or_insert_with(|| Builder::new(request_id));
                 builder.atoms.push(Atom::Send(event.clone()));
             } else {
                 capture.unlinked_session_events += 1;
@@ -395,14 +427,16 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
     }
     for (event, resolution) in &mut pending_session {
         if event.role == HeaderRole::Response {
-            let linked = event
-                .stream_id
-                .and_then(|stream_id| {
-                    session_resolution.get(&(event.source_id.unwrap_or(0), stream_id)).copied()
-                });
+            let linked = event.stream_id.and_then(|stream_id| {
+                session_resolution
+                    .get(&(event.source_id.unwrap_or(0), stream_id))
+                    .copied()
+            });
             if let Some(request_id) = linked {
                 *resolution = Some(request_id);
-                let builder = builders.entry(request_id).or_insert_with(|| Builder::new(request_id));
+                let builder = builders
+                    .entry(request_id)
+                    .or_insert_with(|| Builder::new(request_id));
                 builder.atoms.push(Atom::Recv(event.clone()));
             } else {
                 capture.unlinked_session_events += 1;
@@ -485,13 +519,15 @@ fn is_transaction_event(name: &str) -> bool {
 
 fn protocol_for_event(name: &str) -> Protocol {
     match name {
-        "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS" | "HTTP2_SESSION_SEND_HEADERS" | "HTTP2_SESSION_RECV_HEADERS" => {
-            Protocol::H2
-        }
+        "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"
+        | "HTTP2_SESSION_SEND_HEADERS"
+        | "HTTP2_SESSION_RECV_HEADERS" => Protocol::H2,
         "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"
         | "QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS"
         | "QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS" => Protocol::H3,
-        "HTTP_TRANSACTION_SEND_REQUEST_HEADERS" | "HTTP_TRANSACTION_READ_RESPONSE_HEADERS" => Protocol::H1,
+        "HTTP_TRANSACTION_SEND_REQUEST_HEADERS" | "HTTP_TRANSACTION_READ_RESPONSE_HEADERS" => {
+            Protocol::H1
+        }
         _ => Protocol::Unknown,
     }
 }
@@ -502,6 +538,8 @@ fn parse_headers(
     index: usize,
     role: HeaderRole,
     protocol: Protocol,
+    browser_version: Option<&str>,
+    timestamp: Option<f64>,
 ) -> std::result::Result<(HeaderView, bool, Vec<String>), Warning> {
     let params = params.ok_or_else(|| {
         Warning::new(
@@ -560,9 +598,13 @@ fn parse_headers(
         } else {
             "netlog.session.headers"
         },
-        None,
+        browser_version,
     )
     .with_source_id(index.to_string());
+    let provenance = match timestamp {
+        Some(timestamp) => provenance.with_timestamp(timestamp),
+        None => provenance,
+    };
 
     let (mut view, _issues, unparsed) =
         HeaderView::from_header_lines(&expanded, &provenance, OrderState::SourceOrder);
@@ -572,7 +614,11 @@ fn parse_headers(
             "repetições fundidas por \\x00 no evento de sessão foram expandidas em pares distintos"
                 .to_string(),
         );
-        for entry in view.pseudo_headers.iter_mut().chain(view.headers.iter_mut()) {
+        for entry in view
+            .pseudo_headers
+            .iter_mut()
+            .chain(view.headers.iter_mut())
+        {
             entry.provenance.notes.push("expandido de NUL".to_string());
         }
     }
@@ -713,7 +759,6 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
         }
     }
 
-    let mut attempts = attempts;
     for attempt in &mut attempts {
         if attempt.outcome == AttemptOutcome::Unknown {
             attempt.outcome = if attempt.net_error.is_some() {
@@ -752,7 +797,12 @@ fn flush_attempt(current: &mut NetlogAttempt, attempts: &mut Vec<NetlogAttempt>)
             .recv_session
             .as_ref()
             .and_then(|event| event.time)
-            .or_else(|| current.recv_transaction.as_ref().and_then(|event| event.time));
+            .or_else(|| {
+                current
+                    .recv_transaction
+                    .as_ref()
+                    .and_then(|event| event.time)
+            });
     }
     if current.protocol == Protocol::Unknown {
         current.protocol = current
@@ -886,9 +936,7 @@ pub fn epoch_ms_to_iso(ms: i64) -> String {
     let minute = (rem % 3_600_000) / 60_000;
     let second = (rem % 60_000) / 1000;
     let millis = rem % 1000;
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z"
-    )
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z")
 }
 
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
@@ -955,6 +1003,9 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
         )
         .with_source_id(request.source_id.to_string())
         .with_note("requisição lida apenas do NetLog");
+        if let Some(version) = &capture.browser.version {
+            logical.provenance = logical.provenance.clone().with_browser_version(version);
+        }
 
         if request.attempts.is_empty() {
             session.add_warning(Warning::new(
@@ -988,7 +1039,8 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 attempt.request_headers = evidence.view.clone();
                 attempt.cookie = CookieField::from_header_values(
                     &evidence.view.cookie_field_values(),
-                    &evidence.view
+                    &evidence
+                        .view
                         .first("cookie")
                         .map(|entry| entry.provenance.clone())
                         .unwrap_or_default(),
@@ -1003,13 +1055,19 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                     }
                 }
             }
-            if let Some(evidence) = parsed.recv_transaction.as_ref().or(parsed.recv_session.as_ref()) {
+            if let Some(evidence) = parsed
+                .recv_transaction
+                .as_ref()
+                .or(parsed.recv_session.as_ref())
+            {
                 attempt.response_headers = evidence.view.clone();
                 for header in evidence.view.get_all("set-cookie") {
-                    attempt.set_cookies.push(crate::model::SetCookieRecord::from_raw(
-                        &header.value,
-                        &header.provenance,
-                    ));
+                    attempt
+                        .set_cookies
+                        .push(crate::model::SetCookieRecord::from_raw(
+                            &header.value,
+                            &header.provenance,
+                        ));
                 }
             }
             attempt.request_body = Body::unavailable("NetLog não contém corpo de requisição");
@@ -1027,10 +1085,18 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                     if let Some(stream_id) = evidence.stream_id {
                         attempt.netlog.stream_ids.push(stream_id);
                     }
+                    let evidence_protocol = if evidence.protocol == Protocol::H1
+                        && evidence.event_name == "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"
+                        && parsed.protocol != Protocol::Unknown
+                    {
+                        parsed.protocol
+                    } else {
+                        evidence.protocol
+                    };
                     attempt.header_evidence.push(HeaderEvidence {
                         id: header_id,
                         role,
-                        protocol: evidence.protocol,
+                        protocol: evidence_protocol,
                         event: evidence.event_name.clone(),
                         source_id: evidence.source_id,
                         stream_id: evidence.stream_id,
@@ -1049,6 +1115,9 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             )
             .with_source_id(request.source_id.to_string())
             .with_timestamp(parsed.started_at.unwrap_or_default());
+            if let Some(version) = &capture.browser.version {
+                attempt.provenance = attempt.provenance.clone().with_browser_version(version);
+            }
 
             let total = match (parsed.started_at, parsed.ended_at) {
                 (Some(start), Some(end)) => Some(((end - start).max(0.0)) * 1000.0),
@@ -1095,10 +1164,18 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             }
 
             // StreamSession: só quando há evento de sessão h2/h3 com stream id.
-            if let Some(session_event) = parsed.send_session.as_ref().or(parsed.recv_session.as_ref()) {
+            if let Some(session_event) = parsed
+                .send_session
+                .as_ref()
+                .or(parsed.recv_session.as_ref())
+            {
                 if let Some(stream_id) = session_event.stream_id {
                     let stream_id_str = format!("{logical_id}-s{}", stream_id);
-                    if !session.stream_sessions.iter().any(|stream| stream.id == stream_id_str) {
+                    if !session
+                        .stream_sessions
+                        .iter()
+                        .any(|stream| stream.id == stream_id_str)
+                    {
                         session.stream_sessions.push(StreamSession {
                             id: stream_id_str.clone(),
                             connection_id: attempt.connection_id.clone(),
@@ -1130,7 +1207,10 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 .get(index)
                 .map(|attempt| attempt.id.clone())
                 .unwrap_or_else(|| format!("{logical_id}-a{}", index + 1));
-            let to_attempt = logical.attempts.get(index + 1).map(|attempt| attempt.id.clone());
+            let to_attempt = logical
+                .attempts
+                .get(index + 1)
+                .map(|attempt| attempt.id.clone());
             if to_attempt.is_none() {
                 session.add_warning(Warning::new(
                     "netlog.redirect_without_attempt",
@@ -1184,13 +1264,21 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
     }
 
     for warning in &capture.warnings {
-        if !session.warnings.iter().any(|existing| existing.code == warning.code) {
+        if !session
+            .warnings
+            .iter()
+            .any(|existing| existing.code == warning.code)
+        {
             session.add_warning(warning.clone());
         }
     }
     session.recompute_completeness();
     for warning in &session.warnings {
-        if !report.warnings.iter().any(|existing| existing.code == warning.code) {
+        if !report
+            .warnings
+            .iter()
+            .any(|existing| existing.code == warning.code)
+        {
             report.warn(warning.clone());
         }
     }
@@ -1237,9 +1325,7 @@ fn host_port(url: &str) -> Option<(String, u16)> {
         return Some((host.to_string(), port));
     }
     match authority.rsplit_once(':') {
-        Some((host, port)) if !host.is_empty() => {
-            Some((host.to_string(), port.parse().ok()?))
-        }
+        Some((host, port)) if !host.is_empty() => Some((host.to_string(), port.parse().ok()?)),
         _ => Some((authority.to_string(), default_port)),
     }
 }

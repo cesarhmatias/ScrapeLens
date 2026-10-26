@@ -112,7 +112,7 @@ pub struct CompletenessCounts {
 #[serde(rename_all = "camelCase")]
 pub struct Completeness {
     pub state: CompletenessState,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub reasons: Vec<String>,
     #[serde(default)]
     pub counts: CompletenessCounts,
@@ -209,18 +209,14 @@ pub struct SessionMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capture: Option<CaptureMeta>,
     /// Rótulos livres; fixtures usam `synthetic-fixture`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub labels: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
 
 impl SessionMeta {
-    pub fn new(
-        id: impl Into<String>,
-        started_at: impl Into<String>,
-        browser: BrowserInfo,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, started_at: impl Into<String>, browser: BrowserInfo) -> Self {
         Self {
             id: id.into(),
             browser,
@@ -291,11 +287,15 @@ impl SessionV1 {
     /// O estado só melhora para `Complete` se nenhuma fonte declarou parcial e
     /// não há avisos de erro.
     pub fn recompute_completeness(&mut self) {
+        let previous = self.session.completeness.counts.clone();
         let mut counts = CompletenessCounts {
             requests: self.requests.len(),
             connections: self.connections.len(),
             stream_sessions: self.stream_sessions.len(),
             warnings: self.warnings.len(),
+            source_events: previous.source_events,
+            source_events_used: previous.source_events_used,
+            source_events_unknown: previous.source_events_unknown,
             ..CompletenessCounts::default()
         };
         for request in &self.requests {
@@ -320,6 +320,9 @@ impl SessionV1 {
     /// A UI nunca deve exibir um selo "verificado" por sessão quando uma
     /// informação é parcial; use proveniência por informação.
     pub fn weakest_verification(&self) -> super::provenance::Verification {
+        if self.requests.is_empty() {
+            return super::provenance::Verification::Unverified;
+        }
         self.requests
             .iter()
             .map(|request| request.request_headers.verification())
@@ -362,6 +365,72 @@ impl SessionBundle {
 /// confunda com captura real.
 pub const LABEL_SYNTHETIC: &str = "synthetic-fixture";
 
+/// Preenche `browserVersion` em toda proveniência que ainda não o tem. Usado
+/// quando a captura combinada descobre a versão no NetLog (o CDP não a traz).
+pub fn backfill_browser_version(session: &mut SessionV1, version: &str) {
+    fn fill(provenance: &mut super::provenance::Provenance, version: &str) {
+        if provenance.browser_version.is_none() {
+            provenance.browser_version = Some(version.to_string());
+        }
+    }
+    fn fill_view(view: &mut super::headers::HeaderView, version: &str) {
+        for entry in view
+            .pseudo_headers
+            .iter_mut()
+            .chain(view.headers.iter_mut())
+        {
+            fill(&mut entry.provenance, version);
+        }
+    }
+    fn fill_cookie(cookie: &mut super::cookies::CookieField, version: &str) {
+        fill(&mut cookie.provenance, version);
+        for pair in &mut cookie.pairs {
+            fill(&mut pair.provenance, version);
+        }
+    }
+    fn fill_body(body: &mut super::body::Body, version: &str) {
+        fill(&mut body.provenance, version);
+    }
+    fn fill_request(request: &mut super::entities::LogicalRequest, version: &str) {
+        fill(&mut request.provenance, version);
+        fill_view(&mut request.request_headers, version);
+        fill_view(&mut request.response_headers, version);
+        fill_cookie(&mut request.cookie, version);
+        for record in &mut request.set_cookies {
+            fill(&mut record.provenance, version);
+        }
+        fill_body(&mut request.request_body, version);
+        fill_body(&mut request.response_body, version);
+        for redirect in &mut request.redirects {
+            fill(&mut redirect.provenance, version);
+        }
+        for attempt in &mut request.attempts {
+            fill(&mut attempt.provenance, version);
+            fill_view(&mut attempt.request_headers, version);
+            fill_view(&mut attempt.response_headers, version);
+            fill_cookie(&mut attempt.cookie, version);
+            for record in &mut attempt.set_cookies {
+                fill(&mut record.provenance, version);
+            }
+            for evidence in &mut attempt.header_evidence {
+                fill_view(&mut evidence.view, version);
+            }
+            fill_body(&mut attempt.request_body, version);
+            fill_body(&mut attempt.response_body, version);
+        }
+    }
+
+    for request in &mut session.requests {
+        fill_request(request, version);
+    }
+    for connection in &mut session.connections {
+        fill(&mut connection.provenance, version);
+    }
+    for stream in &mut session.stream_sessions {
+        fill(&mut stream.provenance, version);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,7 +466,8 @@ mod tests {
     #[test]
     fn recompute_counts() {
         let mut s = session();
-        s.requests.push(LogicalRequest::new("r1", "https://a.test/", "GET"));
+        s.requests
+            .push(LogicalRequest::new("r1", "https://a.test/", "GET"));
         s.recompute_completeness();
         assert_eq!(s.session.completeness.counts.requests, 1);
         assert_eq!(s.session.completeness.counts.attempts, 0);

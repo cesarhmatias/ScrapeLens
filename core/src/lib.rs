@@ -23,10 +23,9 @@ pub mod store;
 
 pub use error::{CoreError, Result};
 pub use model::{
-    Attempt, AttemptOutcome, Body, BodyState, BrowserInfo, CdpRef, Completeness,
-    CompletenessState, Connection, CookieField, CookiePairEntry, HeaderEntry, HeaderView,
-    LogicalRequest, MatchState, ParsedSetCookie, Protocol, Provenance, Redirect,
-    SessionBundle, SessionMeta, SessionV1, SetCookieRecord, Source, StreamSession,
-    Verification, Warning, WarningSeverity, SCHEMA_VERSION,
+    Attempt, AttemptOutcome, Body, BodyState, BrowserInfo, CdpRef, Completeness, CompletenessState,
+    Connection, CookieField, CookiePairEntry, HeaderEntry, HeaderView, LogicalRequest, MatchState,
+    ParsedSetCookie, Protocol, Provenance, Redirect, SessionBundle, SessionMeta, SessionV1,
+    SetCookieRecord, Source, StreamSession, Verification, Warning, WarningSeverity, SCHEMA_VERSION,
 };
 pub use parse::{import_har, import_netlog, import_session_dir, ImportReport, InputFormat};

@@ -409,11 +409,7 @@ pub struct LogicalRequest {
 }
 
 impl LogicalRequest {
-    pub fn new(
-        id: impl Into<String>,
-        url: impl Into<String>,
-        method: impl Into<String>,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, url: impl Into<String>, method: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             url: url.into(),

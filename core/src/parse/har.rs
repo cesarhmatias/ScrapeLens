@@ -4,10 +4,10 @@ use serde_json::{Map, Value};
 use crate::error::{CoreError, Result};
 use crate::model::{
     Attempt, AttemptOutcome, Body, BodyState, BrowserInfo, Connection, CookieField, HeaderView,
-    LogicalRequest, Provenance, Protocol, Redirect, SessionBundle, SessionMeta, SessionV1, Source,
+    LogicalRequest, Protocol, Provenance, Redirect, SessionBundle, SessionMeta, SessionV1, Source,
     Span, Timings, Verification, Warning,
 };
-use crate::parse::{ImportedSession, ImportReport, InputFormat};
+use crate::parse::{ImportReport, ImportedSession, InputFormat};
 
 const ENTRY_KEYS: &[&str] = &[
     "pageref",
@@ -25,14 +25,14 @@ const ENTRY_KEYS: &[&str] = &[
 /// HAR 1.2: importa com proveniência `har` e verificação **unverified** para
 /// sequência/duplicatas (a matriz não comprovou a ordem do exportador HAR).
 pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
-    let root: Value = serde_json::from_slice(json)
-        .map_err(|error| CoreError::json("HAR", error))?;
-    let log = root
-        .get("log")
-        .and_then(Value::as_object)
-        .ok_or_else(|| CoreError::MissingField {
-            field: "log".to_string(),
-        })?;
+    let root: Value =
+        serde_json::from_slice(json).map_err(|error| CoreError::json("HAR", error))?;
+    let log =
+        root.get("log")
+            .and_then(Value::as_object)
+            .ok_or_else(|| CoreError::MissingField {
+                field: "log".to_string(),
+            })?;
 
     let mut report = ImportReport::new(InputFormat::Har);
     report.bytes_read = json.len();
@@ -104,10 +104,7 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     while cursor < parsed_entries.len() {
         logical_number += 1;
         let mut chain: Vec<ParsedEntry> = vec![parsed_entries[cursor].clone()];
-        while let Some(redirect_url) = chain
-            .last()
-            .and_then(|entry| entry.redirect_url.clone())
-        {
+        while let Some(redirect_url) = chain.last().and_then(|entry| entry.redirect_url.clone()) {
             let next = parsed_entries.get(cursor + chain.len());
             match next {
                 Some(next) if next.url == redirect_url => chain.push(next.clone()),
@@ -118,16 +115,13 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
 
         let logical_id = format!("har-{logical_number:04}");
         let first = &chain[0];
-        let mut logical = LogicalRequest::new(logical_id.clone(), first.url.clone(), first.method.clone());
+        let mut logical =
+            LogicalRequest::new(logical_id.clone(), first.url.clone(), first.method.clone());
         logical.protocol = first.protocol;
         logical.status = chain.last().and_then(|entry| entry.status);
-        logical.provenance = Provenance::new(
-            Source::Har,
-            "log.entries",
-            Verification::Unverified,
-        )
-        .with_note("HAR: sequência transmitida não comprovada")
-        .with_browser_version(browser.version.clone().unwrap_or_default());
+        logical.provenance = Provenance::new(Source::Har, "log.entries", Verification::Unverified)
+            .with_note("HAR: sequência transmitida não comprovada")
+            .with_browser_version(browser.version.clone().unwrap_or_default());
 
         for (attempt_index, parsed) in chain.iter().enumerate() {
             let attempt_id = format!("{logical_id}-a{}", attempt_index + 1);
@@ -186,9 +180,15 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     }
 
     if logical_number == 0 {
-        session.session.completeness.add_reason("HAR sem entradas utilizáveis");
+        session
+            .session
+            .completeness
+            .add_reason("HAR sem entradas utilizáveis");
     } else if report.has_errors() {
-        session.session.completeness.add_reason("HAR com entradas incompletas ou inválidas");
+        session
+            .session
+            .completeness
+            .add_reason("HAR com entradas incompletas ou inválidas");
     } else {
         session.session.completeness = crate::model::Completeness::complete();
     }
@@ -236,10 +236,7 @@ fn parse_entry(
     let object = entry.as_object()?;
 
     for key in object.keys() {
-        if !ENTRY_KEYS.contains(&key.as_str())
-            && !key.starts_with('_')
-            && key != "comment"
-        {
+        if !ENTRY_KEYS.contains(&key.as_str()) && !key.starts_with('_') && key != "comment" {
             report.warn(Warning::new(
                 "har.unknown_entry_field",
                 format!("campo desconhecido na entrada {index}: {key}"),
@@ -285,11 +282,20 @@ fn parse_entry(
             .and_then(Value::as_str),
     );
 
-    let request_provenance = Provenance::new(Source::Har, "request.headers", Verification::Unverified)
-        .with_event(format!("log.entries[{index}].request.headers"))
-        .with_source_id(index.to_string())
-        .with_browser_version(browser.version.clone().unwrap_or_default())
-        .with_note("HAR: ordem e duplicatas não verificadas");
+    let wall_time = object
+        .get("startedDateTime")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let request_provenance =
+        Provenance::new(Source::Har, "request.headers", Verification::Unverified)
+            .with_event(format!("log.entries[{index}].request.headers"))
+            .with_source_id(index.to_string())
+            .with_browser_version(browser.version.clone().unwrap_or_default())
+            .with_note("HAR: ordem e duplicatas não verificadas");
+    let request_provenance = match &wall_time {
+        Some(wall_time) => request_provenance.with_wall_time(wall_time),
+        None => request_provenance,
+    };
 
     let response_provenance =
         Provenance::new(Source::Har, "response.headers", Verification::Unverified)
@@ -297,14 +303,30 @@ fn parse_entry(
             .with_source_id(index.to_string())
             .with_browser_version(browser.version.clone().unwrap_or_default())
             .with_note("HAR: ordem e duplicatas não verificadas");
+    let response_provenance = match &wall_time {
+        Some(wall_time) => response_provenance.with_wall_time(wall_time),
+        None => response_provenance,
+    };
 
     let mut request_headers = HeaderView::new(crate::model::OrderState::SourceOrder);
     if let Some(headers) = request.and_then(|request| request.get("headers")) {
-        parse_har_headers(headers, &request_provenance, &mut request_headers, "request", report);
+        parse_har_headers(
+            headers,
+            &request_provenance,
+            &mut request_headers,
+            "request",
+            report,
+        );
     }
     let mut response_headers = HeaderView::new(crate::model::OrderState::SourceOrder);
     if let Some(headers) = response.and_then(|response| response.get("headers")) {
-        parse_har_headers(headers, &response_provenance, &mut response_headers, "response", report);
+        parse_har_headers(
+            headers,
+            &response_provenance,
+            &mut response_headers,
+            "response",
+            report,
+        );
     }
 
     let mut cookie = CookieField::from_header_values(
@@ -315,26 +337,22 @@ fn parse_entry(
         if let Some(cookies) = request.and_then(|request| request.get("cookies")) {
             if let Some(cookies) = cookies.as_array() {
                 if !cookies.is_empty() {
-                    let fallback = Provenance::new(
-                        Source::Har,
-                        "request.cookies",
-                        Verification::Unverified,
-                    )
-                    .with_note("Cookie reconstruído de request.cookies (sem campo bruto no HAR)");
+                    let fallback =
+                        Provenance::new(Source::Har, "request.cookies", Verification::Unverified)
+                            .with_note(
+                                "Cookie reconstruído de request.cookies (sem campo bruto no HAR)",
+                            );
                     for cookie_value in cookies {
                         if let (Some(name), Some(value)) = (
                             cookie_value.get("name").and_then(Value::as_str),
                             cookie_value.get("value").and_then(Value::as_str),
                         ) {
-                            cookie.add_pairs_from_header(
-                                &format!("{name}={value}"),
-                                &fallback,
-                            );
+                            cookie.add_pairs_from_header(&format!("{name}={value}"), &fallback);
                         }
                     }
-                    cookie
-                        .notes
-                        .push("pares vieram de request.cookies; nenhum campo Cookie bruto".to_string());
+                    cookie.notes.push(
+                        "pares vieram de request.cookies; nenhum campo Cookie bruto".to_string(),
+                    );
                 }
             }
         }
@@ -349,7 +367,10 @@ fn parse_entry(
     }
     if set_cookies.is_empty() {
         if let Some(cookies) = response.and_then(|response| response.get("cookies")) {
-            if cookies.as_array().is_some_and(|cookies| !cookies.is_empty()) {
+            if cookies
+                .as_array()
+                .is_some_and(|cookies| !cookies.is_empty())
+            {
                 report.warn(Warning::new(
                     "har.set_cookie_without_header",
                     format!(
@@ -550,7 +571,9 @@ fn parse_response_body(
         Some(other) => {
             report.warn(Warning::new(
                 "har.unknown_encoding",
-                format!("entrada {id}: encoding de conteúdo desconhecido {other:?}; tratado como texto"),
+                format!(
+                    "entrada {id}: encoding de conteúdo desconhecido {other:?}; tratado como texto"
+                ),
             ));
             text.as_bytes().to_vec()
         }
@@ -701,14 +724,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["a", "b"]
         );
-        assert_eq!(request.request_headers.verification(), Verification::Unverified);
+        assert_eq!(
+            request.request_headers.verification(),
+            Verification::Unverified
+        );
         assert_eq!(request.match_state, MatchState::Unmatched);
         assert_eq!(request.cookie.pairs.len(), 2);
         assert_eq!(request.set_cookies.len(), 1);
-        assert_eq!(
-            request.request_body.state,
-            BodyState::Captured
-        );
+        assert_eq!(request.request_body.state, BodyState::Captured);
         assert_eq!(
             imported
                 .bundle
@@ -760,8 +783,14 @@ mod tests {
         assert_eq!(s.requests.len(), 1);
         assert_eq!(s.requests[0].attempts.len(), 2);
         assert_eq!(s.requests[0].redirects.len(), 1);
-        assert_eq!(s.requests[0].redirects[0].location.as_deref(), Some("https://a.test/2"));
-        assert_eq!(s.requests[0].redirects[0].to_attempt_id.as_deref(), Some("har-0001-a2"));
+        assert_eq!(
+            s.requests[0].redirects[0].location.as_deref(),
+            Some("https://a.test/2")
+        );
+        assert_eq!(
+            s.requests[0].redirects[0].to_attempt_id.as_deref(),
+            Some("har-0001-a2")
+        );
     }
 
     #[test]
@@ -773,7 +802,10 @@ mod tests {
         ]}}"#;
         let imported = import_har(json).unwrap();
         assert_eq!(
-            imported.bundle.attachment("har-entry-0000.response.bin").unwrap(),
+            imported
+                .bundle
+                .attachment("har-entry-0000.response.bin")
+                .unwrap(),
             &[0, 1, 2]
         );
     }

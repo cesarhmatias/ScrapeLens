@@ -8,9 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{
-    CookieField, HeaderView, LogicalRequest, SetCookieRecord, Verification,
-};
+use crate::model::{CookieField, HeaderView, LogicalRequest, SetCookieRecord, Verification};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -181,7 +179,8 @@ pub fn normalize_headers(view: &HeaderView) -> NormalizedHeaders {
             Some(existing) => {
                 existing.values.push(entry.value.clone());
                 existing.occurrences += 1;
-                existing.verification = existing.verification.weakest(entry.provenance.verification);
+                existing.verification =
+                    existing.verification.weakest(entry.provenance.verification);
             }
             None => bucket.push(NormalizedHeader {
                 name,
@@ -199,9 +198,9 @@ pub fn normalize_headers(view: &HeaderView) -> NormalizedHeaders {
         notes: view.notes.clone(),
     };
     if view.order_state == crate::model::OrderState::SourceOrder {
-        headers.notes.push(
-            "original preserva a ordem da fonte; esta visão agrupa por nome".to_string(),
-        );
+        headers
+            .notes
+            .push("original preserva a ordem da fonte; esta visão agrupa por nome".to_string());
     }
     headers
 }
@@ -272,7 +271,13 @@ fn normalize_set_cookie(record: &SetCookieRecord) -> NormalizedSetCookie {
             same_site: parsed.same_site.clone(),
         },
         None => NormalizedSetCookie {
-            name: record.raw.split('=').next().unwrap_or("").trim().to_string(),
+            name: record
+                .raw
+                .split('=')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string(),
             domain: None,
             path: None,
             secure: false,
@@ -320,11 +325,9 @@ fn split_authority(authority: &str) -> (Option<String>, Option<u16>, Option<Stri
         }
     }
     match host_port.rsplit_once(':') {
-        Some((host, port)) if port.chars().all(|ch| ch.is_ascii_digit()) => (
-            Some(host.to_ascii_lowercase()),
-            port.parse().ok(),
-            userinfo,
-        ),
+        Some((host, port)) if port.chars().all(|ch| ch.is_ascii_digit()) => {
+            (Some(host.to_ascii_lowercase()), port.parse().ok(), userinfo)
+        }
         _ => (
             if host_port.is_empty() {
                 None
@@ -359,7 +362,7 @@ fn parse_query(query: &str) -> Vec<NormalizedQueryPair> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{HeaderView, OrderState, Provenance, Source, Verification};
+    use crate::model::{HeaderView, Provenance, Source, Verification};
 
     fn provenance(verification: Verification) -> Provenance {
         Provenance::new(Source::NetLog, "test", verification)

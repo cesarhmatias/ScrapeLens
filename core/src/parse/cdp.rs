@@ -13,12 +13,12 @@ use serde_json::{Map, Value};
 use crate::error::{CoreError, Result};
 use crate::model::{
     policy, Attempt, AttemptOutcome, Body, BrowserInfo, CdpRef, Completeness, Connection,
-    CookieField, HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, OrderState, Provenance,
-    Protocol, Redirect, SessionBundle, SessionMeta, SessionV1, Source, Timings, Verification,
+    CookieField, HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, OrderState, Protocol,
+    Provenance, Redirect, SessionBundle, SessionMeta, SessionV1, Source, Timings, Verification,
     Warning,
 };
 use crate::parse::netlog::epoch_ms_to_iso;
-use crate::parse::{ImportedSession, ImportReport, InputFormat};
+use crate::parse::{ImportReport, ImportedSession, InputFormat};
 
 #[derive(Debug, Clone, Default)]
 pub struct CdpCapture {
@@ -96,7 +96,10 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
             Err(error) => {
                 capture.warnings.push(Warning::new(
                     "cdp.line_invalid",
-                    format!("linha {} de cdp-events.jsonl inválida: {error}", line_index + 1),
+                    format!(
+                        "linha {} de cdp-events.jsonl inválida: {error}",
+                        line_index + 1
+                    ),
                 ));
                 continue;
             }
@@ -122,7 +125,9 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
 
                 if let Some(restart) = requests.get_mut(request_id) {
                     // Redirect: fecha a tentativa anterior com redirectResponse.
-                    if let Some(redirect) = params.get("redirectResponse").and_then(Value::as_object) {
+                    if let Some(redirect) =
+                        params.get("redirectResponse").and_then(Value::as_object)
+                    {
                         let status = redirect
                             .get("status")
                             .and_then(Value::as_u64)
@@ -136,10 +141,11 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                             last.ended_at = timestamp;
                             if last.set_cookies.is_empty() {
                                 for header in last.response_headers.get_all("set-cookie") {
-                                    last.set_cookies.push(crate::model::SetCookieRecord::from_raw(
-                                        &header.value,
-                                        &header.provenance,
-                                    ));
+                                    last.set_cookies
+                                        .push(crate::model::SetCookieRecord::from_raw(
+                                            &header.value,
+                                            &header.provenance,
+                                        ));
                                 }
                             }
                         }
@@ -283,17 +289,19 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                                 &provenance,
                             );
                         }
-                        if let Some(cookies) = params.get("associatedCookies").and_then(Value::as_array) {
+                        if let Some(cookies) =
+                            params.get("associatedCookies").and_then(Value::as_array)
+                        {
                             for cookie in cookies {
                                 let blocked = cookie
                                     .get("blockedReasons")
                                     .and_then(Value::as_array)
                                     .is_some_and(|reasons| !reasons.is_empty());
                                 if blocked {
-                                    attempt
-                                        .cookie
-                                        .notes
-                                        .push("cookie associado bloqueado (associatedCookies)".to_string());
+                                    attempt.cookie.notes.push(
+                                        "cookie associado bloqueado (associatedCookies)"
+                                            .to_string(),
+                                    );
                                 }
                             }
                         }
@@ -363,10 +371,12 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 });
                 for header in attempt.response_headers.get_all("set-cookie") {
                     for value in split_joined_header(&header.value) {
-                        attempt.set_cookies.push(crate::model::SetCookieRecord::from_raw(
-                            &value,
-                            &header.provenance,
-                        ));
+                        attempt
+                            .set_cookies
+                            .push(crate::model::SetCookieRecord::from_raw(
+                                &value,
+                                &header.provenance,
+                            ));
                     }
                 }
 
@@ -383,7 +393,11 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         current.set_cookies = attempt.set_cookies;
                         current.header_evidence.extend(attempt.header_evidence);
                     } else {
-                        requests.entry(request_id.to_string()).or_default().attempts.push(attempt);
+                        requests
+                            .entry(request_id.to_string())
+                            .or_default()
+                            .attempts
+                            .push(attempt);
                     }
                 } else {
                     let mut entry = CdpRequest {
@@ -405,12 +419,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .get("statusCode")
                     .and_then(Value::as_u64)
                     .map(|status| status as u16);
-                let (view, event) = response_view_from_extra(
-                    params,
-                    request_id,
-                    timestamp,
-                    status,
-                );
+                let (view, event) = response_view_from_extra(params, request_id, timestamp, status);
                 if let Some(request) = requests.get_mut(request_id) {
                     if let Some(attempt) = request.attempts.last_mut() {
                         attempt.status = status.or(attempt.status);
@@ -431,10 +440,12 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                             attempt.set_cookies.clear();
                             for header in view.get_all("set-cookie") {
                                 for value in split_joined_header(&header.value) {
-                                    attempt.set_cookies.push(crate::model::SetCookieRecord::from_raw(
-                                        &value,
-                                        &header.provenance,
-                                    ));
+                                    attempt.set_cookies.push(
+                                        crate::model::SetCookieRecord::from_raw(
+                                            &value,
+                                            &header.provenance,
+                                        ),
+                                    );
                                 }
                             }
                         }
@@ -472,7 +483,10 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .get("errorText")
                     .and_then(Value::as_str)
                     .unwrap_or("loadingFailed");
-                let canceled = params.get("canceled").and_then(Value::as_bool).unwrap_or(false);
+                let canceled = params
+                    .get("canceled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 let failure = format!("{error}{}", if canceled { " (cancelado)" } else { "" });
                 if let Some(request) = requests.get_mut(request_id) {
                     request.failure = Some(failure.clone());
@@ -489,7 +503,11 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 capture.events_used += 1;
             }
             other => {
-                let key = if other.is_empty() { "<sem method>" } else { other };
+                let key = if other.is_empty() {
+                    "<sem method>"
+                } else {
+                    other
+                };
                 *unhandled.entry(key.to_string()).or_default() += 1;
             }
         }
@@ -511,6 +529,20 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
     for (request_id, extra) in response_extra {
         if let Some(request) = requests.get_mut(&request_id) {
             if let Some(attempt) = request.attempts.last_mut() {
+                if extra.verification() >= attempt.response_headers.verification() {
+                    attempt.response_headers = extra.clone();
+                    attempt.set_cookies.clear();
+                    for header in extra.get_all("set-cookie") {
+                        for value in split_joined_header(&header.value) {
+                            attempt
+                                .set_cookies
+                                .push(crate::model::SetCookieRecord::from_raw(
+                                    &value,
+                                    &header.provenance,
+                                ));
+                        }
+                    }
+                }
                 attempt.response_headers_extra = Some(extra);
             }
         } else {
@@ -524,28 +556,39 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
     capture.unhandled_events = unhandled.values().sum();
     for (method, count) in &unhandled {
         if capture.unhandled_samples.len() < 10 {
-            capture.unhandled_samples.push(format!("{method} × {count}"));
+            capture
+                .unhandled_samples
+                .push(format!("{method} × {count}"));
         }
     }
     if capture.unhandled_events > 0 {
-        capture.warnings.push(Warning::new(
-            "cdp.unhandled_events",
-            format!(
-                "{} evento(s) CDP de métodos não tratados (contados, não descartados)",
-                capture.unhandled_events
-            ),
-        ).with_detail(serde_json::json!({ "samples": capture.unhandled_samples })));
+        capture.warnings.push(
+            Warning::new(
+                "cdp.unhandled_events",
+                format!(
+                    "{} evento(s) CDP de métodos não tratados (contados, não descartados)",
+                    capture.unhandled_events
+                ),
+            )
+            .with_detail(serde_json::json!({ "samples": capture.unhandled_samples })),
+        );
     }
 
     // Ordena tentativas por timestamp (eventos podem chegar intercalados).
     for request in requests.values_mut() {
-        request
-            .attempts
-            .sort_by(|a, b| a.timestamp.unwrap_or(0.0).partial_cmp(&b.timestamp.unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
+        request.attempts.sort_by(|a, b| {
+            a.timestamp
+                .unwrap_or(0.0)
+                .partial_cmp(&b.timestamp.unwrap_or(0.0))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         if request.attempts.is_empty() {
             capture.warnings.push(Warning::new(
                 "cdp.request_without_attempt",
-                format!("requestId {} sem requestWillBeSent utilizável", request.request_id),
+                format!(
+                    "requestId {} sem requestWillBeSent utilizável",
+                    request.request_id
+                ),
             ));
             continue;
         }
@@ -556,10 +599,19 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
 
 fn cdp_ref(params: &Map<String, Value>, request_id: &str) -> CdpRef {
     CdpRef {
-        session_id: params.get("sessionId").and_then(Value::as_str).map(str::to_string),
+        session_id: params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         request_id: Some(request_id.to_string()),
-        loader_id: params.get("loaderId").and_then(Value::as_str).map(str::to_string),
-        frame_id: params.get("frameId").and_then(Value::as_str).map(str::to_string),
+        loader_id: params
+            .get("loaderId")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        frame_id: params
+            .get("frameId")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     }
 }
 
@@ -583,8 +635,9 @@ fn header_object_to_view(headers: &Value, provenance: &Provenance, event: &str) 
             }
         }
     }
-    view.notes
-        .push(format!("{event}: objeto não preserva sequência transmitida"));
+    view.notes.push(format!(
+        "{event}: objeto não preserva sequência transmitida"
+    ));
     view
 }
 
@@ -695,7 +748,10 @@ fn response_view_from_extra(
         .with_source_id(request_id.to_string())
         .with_timestamp(timestamp.unwrap_or_default());
         let (view, _issues) = HeaderView::from_http_block(text, &provenance);
-        return (view, "Network.responseReceivedExtraInfo.headersText".to_string());
+        return (
+            view,
+            "Network.responseReceivedExtraInfo.headersText".to_string(),
+        );
     }
     let provenance = policy::provenance_for(
         Source::Cdp,
@@ -722,7 +778,10 @@ fn response_view_from_extra(
             )
         })
         .unwrap_or_default();
-    (view, "Network.responseReceivedExtraInfo.headers".to_string())
+    (
+        view,
+        "Network.responseReceivedExtraInfo.headers".to_string(),
+    )
 }
 
 /// O objeto CDP funde `Set-Cookie` repetidos com `\n`. Reconstrói as linhas
@@ -778,7 +837,9 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         let mut logical = LogicalRequest::new(
             &logical_id,
             first.map(|attempt| attempt.url.clone()).unwrap_or_default(),
-            first.map(|attempt| attempt.method.clone()).unwrap_or_default(),
+            first
+                .map(|attempt| attempt.method.clone())
+                .unwrap_or_default(),
         );
         logical.resource_type = request.resource_type.clone();
         logical.cdp = Some(CdpRef {
@@ -815,19 +876,14 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
             attempt.cookie = parsed.cookie.clone();
             attempt.set_cookies = parsed.set_cookies.clone();
             attempt.header_evidence = parsed.header_evidence.clone();
-            attempt.request_body = Body::unavailable(
-                "corpo CDP não carregado; captura deve fornecer anexo separado",
-            );
-            attempt.response_body = Body::unavailable(
-                "corpo CDP não carregado; captura deve fornecer anexo separado",
-            );
-            attempt.provenance = Provenance::new(
-                Source::Cdp,
-                "Network.attempt",
-                Verification::Unverified,
-            )
-            .with_source_id(request.request_id.clone())
-            .with_timestamp(parsed.timestamp.unwrap_or_default());
+            attempt.request_body =
+                Body::unavailable("corpo CDP não carregado; captura deve fornecer anexo separado");
+            attempt.response_body =
+                Body::unavailable("corpo CDP não carregado; captura deve fornecer anexo separado");
+            attempt.provenance =
+                Provenance::new(Source::Cdp, "Network.attempt", Verification::Unverified)
+                    .with_source_id(request.request_id.clone())
+                    .with_timestamp(parsed.timestamp.unwrap_or_default());
 
             if let (Some(start), Some(end)) = (parsed.timestamp, parsed.ended_at) {
                 attempt.timings = Timings {
@@ -858,10 +914,8 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
                 let connection_id = connections
                     .entry(key.clone())
                     .or_insert_with(|| {
-                        let id = format!(
-                            "cdp-conn-{}",
-                            crate::parse::har::stable_id(key.as_bytes())
-                        );
+                        let id =
+                            format!("cdp-conn-{}", crate::parse::har::stable_id(key.as_bytes()));
                         session.connections.push(Connection {
                             id: id.clone(),
                             netlog_id: None,

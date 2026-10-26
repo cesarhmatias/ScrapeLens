@@ -22,7 +22,7 @@ pub enum InputFormat {
     Har,
     NetLog,
     Cdp,
-        /// CDP + NetLog combinados (captura do produto).
+    /// CDP + NetLog combinados (captura do produto).
     Capture,
 }
 
@@ -126,17 +126,45 @@ pub fn import_capture(
     if session.session.browser.version.is_none() && netlog.browser.version.is_some() {
         session.session.browser = netlog.browser.clone();
     }
+    if let Some(version) = session.session.browser.version.clone() {
+        crate::model::backfill_browser_version(&mut session, &version);
+    }
     let outcome = crate::correlate::attach_netlog(&mut session, &netlog, &options);
     cdp_report.merge(netlog_report);
     // `attach_netlog` já registra os avisos na sessão; o relatório recebe cópia.
     for warning in outcome.warnings {
         cdp_report.warn(warning);
     }
+
+    let total_events = cdp.events_total + netlog.events_total;
+    let used_events = cdp.events_used + netlog.events_used;
+    session.session.completeness = crate::model::Completeness::complete();
+    session.session.completeness.counts.source_events = total_events;
+    session.session.completeness.counts.source_events_used = used_events;
+    session.session.completeness.counts.source_events_unknown = netlog.events_unknown;
+    if outcome.ambiguous_attempts > 0 {
+        session.session.completeness.add_reason(format!(
+            "{} associação(ões) CDP×NetLog ambígua(s)",
+            outcome.ambiguous_attempts
+        ));
+    }
+    if outcome.unmatched_cdp_attempts > 0 {
+        session.session.completeness.add_reason(format!(
+            "{} tentativa(s) CDP sem correspondência no NetLog",
+            outcome.unmatched_cdp_attempts
+        ));
+    }
+    if cdp_report.has_errors() {
+        session
+            .session
+            .completeness
+            .add_reason("captura com avisos de erro");
+    }
     session.recompute_completeness();
     report.merge(cdp_report);
     report.format = InputFormat::Capture;
-    report.source_events = cdp.events_total + netlog.events_total;
-    report.source_events_used = cdp.events_used + netlog.events_used;
+    report.source_events = total_events;
+    report.source_events_used = used_events;
     report.source_events_unknown = netlog.events_unknown;
     let bundle = SessionBundle {
         session,

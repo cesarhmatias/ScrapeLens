@@ -93,21 +93,13 @@ pub fn attach_netlog(
         .sum();
 
     for request in &mut session.requests {
-        let cdp_request_id = request
-            .cdp
-            .as_ref()
-            .and_then(|cdp| cdp.request_id.clone());
+        let cdp_request_id = request.cdp.as_ref().and_then(|cdp| cdp.request_id.clone());
         let mut request_has_ambiguous = false;
         let mut request_all_matched = !request.attempts.is_empty();
 
         for attempt in &mut request.attempts {
-            let candidates = find_candidates(
-                attempt,
-                cdp_request_id.as_deref(),
-                netlog,
-                options,
-                &used,
-            );
+            let candidates =
+                find_candidates(attempt, cdp_request_id.as_deref(), netlog, options, &used);
 
             match candidates.len() {
                 0 => {
@@ -129,10 +121,8 @@ pub fn attach_netlog(
                     request_has_ambiguous = true;
                     request_all_matched = false;
                     attempt.match_state = MatchState::Ambiguous;
-                    attempt.match_candidates = candidates
-                        .iter()
-                        .map(Candidate::match_candidate)
-                        .collect();
+                    attempt.match_candidates =
+                        candidates.iter().map(Candidate::match_candidate).collect();
                     outcome.ambiguous_attempts += 1;
                     let ids: Vec<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
                     let warning = Warning::new(
@@ -232,23 +222,16 @@ fn find_candidates<'a>(
     let mut candidates = Vec::new();
     for (request_index, request) in netlog.requests.iter().enumerate() {
         for (attempt_index, netlog_attempt) in request.attempts.iter().enumerate() {
-            let id = format!(
-                "netlog-r{:04}-a{}",
-                request_index + 1,
-                attempt_index + 1
-            );
+            let id = format!("netlog-r{:04}-a{}", request_index + 1, attempt_index + 1);
             if used.contains(&id) {
                 continue;
             }
             let is_explicit = explicit_source
                 .map(|source_id| source_id == request.source_id)
                 .unwrap_or(false);
-            if let Some((mut score, mut reasons)) = score_candidate(
-                attempt,
-                request,
-                netlog_attempt,
-                options,
-            ) {
+            if let Some((mut score, mut reasons)) =
+                score_candidate(attempt, request, netlog_attempt, options)
+            {
                 if is_explicit {
                     score = 100;
                     reasons.push("chave explícita CDP→NetLog fornecida pela captura".to_string());
@@ -415,7 +398,10 @@ fn netlog_attempt_cookie(attempt: &NetlogAttempt) -> Vec<String> {
 }
 
 /// Proporção de pares (nome, valor) do CDP presentes no bloco do NetLog.
-fn header_set_overlap(cdp: &crate::model::HeaderView, netlog: &crate::model::HeaderView) -> Option<f64> {
+fn header_set_overlap(
+    cdp: &crate::model::HeaderView,
+    netlog: &crate::model::HeaderView,
+) -> Option<f64> {
     let cdp_pairs: BTreeSet<(String, String)> = cdp
         .iter_all()
         .map(|entry| (entry.name.to_ascii_lowercase(), entry.value.clone()))
@@ -445,20 +431,22 @@ fn attach_candidate(
     let netlog_attempt = candidate.attempt;
 
     for (role, event) in [
-        (HeaderRole::Request, netlog_attempt.send_transaction.as_ref()),
+        (
+            HeaderRole::Request,
+            netlog_attempt.send_transaction.as_ref(),
+        ),
         (HeaderRole::Request, netlog_attempt.send_session.as_ref()),
-        (HeaderRole::Response, netlog_attempt.recv_transaction.as_ref()),
+        (
+            HeaderRole::Response,
+            netlog_attempt.recv_transaction.as_ref(),
+        ),
         (HeaderRole::Response, netlog_attempt.recv_session.as_ref()),
     ] {
         if let Some(event) = event {
             if let Some(stream_id) = event.stream_id {
                 push_unique(&mut attempt.netlog.stream_ids, stream_id);
             }
-            let evidence_id = format!(
-                "corr-{}-{}",
-                attempt.id,
-                attempt.header_evidence.len() + 1
-            );
+            let evidence_id = format!("corr-{}-{}", attempt.id, attempt.header_evidence.len() + 1);
             attempt.header_evidence.push(HeaderEvidence {
                 id: evidence_id,
                 role,
@@ -476,24 +464,22 @@ fn attach_candidate(
 
     if options.prefer_netlog_headers {
         if let Some(view) = netlog_request_view {
-            if view.verification() >= attempt.request_headers.verification()
-                && !view.is_empty()
-            {
+            if view.verification() >= attempt.request_headers.verification() && !view.is_empty() {
                 attempt.request_headers = view.clone();
                 attempt.cookie = cookie_from_netlog(netlog_attempt, view);
             }
         }
         if let Some(view) = netlog_response_view {
-            if view.verification() >= attempt.response_headers.verification()
-                && !view.is_empty()
-            {
+            if view.verification() >= attempt.response_headers.verification() && !view.is_empty() {
                 attempt.response_headers = view.clone();
                 attempt.set_cookies.clear();
                 for header in view.get_all("set-cookie") {
-                    attempt.set_cookies.push(crate::model::SetCookieRecord::from_raw(
-                        &header.value,
-                        &header.provenance,
-                    ));
+                    attempt
+                        .set_cookies
+                        .push(crate::model::SetCookieRecord::from_raw(
+                            &header.value,
+                            &header.provenance,
+                        ));
                 }
             }
         }
@@ -577,15 +563,9 @@ fn cookie_from_netlog(
         .first("cookie")
         .map(|entry| entry.provenance.clone())
         .unwrap_or_default();
-    let mut cookie = crate::model::CookieField::from_header_values(
-        &view.cookie_field_values(),
-        &provenance,
-    );
-    if let Some(session_view) = attempt
-        .send_session
-        .as_ref()
-        .map(|event| &event.view)
-    {
+    let mut cookie =
+        crate::model::CookieField::from_header_values(&view.cookie_field_values(), &provenance);
+    if let Some(session_view) = attempt.send_session.as_ref().map(|event| &event.view) {
         let wire = session_view.cookie_field_values();
         if !wire.is_empty() {
             cookie.wire_lines = wire;

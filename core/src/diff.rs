@@ -11,9 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{
-    Body, BodyState, CookieField, HeaderView, LogicalRequest, Protocol,
-};
+use crate::model::{Body, BodyState, CookieField, HeaderView, LogicalRequest, Protocol};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -154,11 +152,7 @@ pub struct RequestDiff {
     pub notes: Vec<String>,
 }
 
-pub fn diff_requests(
-    a: &LogicalRequest,
-    b: &LogicalRequest,
-    options: &DiffOptions,
-) -> RequestDiff {
+pub fn diff_requests(a: &LogicalRequest, b: &LogicalRequest, options: &DiffOptions) -> RequestDiff {
     let request_headers = diff_header_views(&a.request_headers, &b.request_headers, options);
     let response_headers = diff_header_views(&a.response_headers, &b.response_headers, options);
     let set_cookies = diff_set_cookies(&a.set_cookies, &b.set_cookies);
@@ -172,7 +166,9 @@ pub fn diff_requests(
         ));
     }
     if a.protocol != b.protocol {
-        notes.push("protocolos diferentes: o diff de headers não compara semântica de fio".to_string());
+        notes.push(
+            "protocolos diferentes: o diff de headers não compara semântica de fio".to_string(),
+        );
     }
 
     RequestDiff {
@@ -393,9 +389,11 @@ fn diff_cookies(a: &CookieField, b: &CookieField) -> CookieDiff {
         }) {
             used_b[index] = true;
             unchanged += 1;
-        } else if let Some((index, other)) = pairs_b.iter().enumerate().find(|(index, other)| {
-            !used_b[*index] && other.name == occurrence.name
-        }) {
+        } else if let Some((index, other)) = pairs_b
+            .iter()
+            .enumerate()
+            .find(|(index, other)| !used_b[*index] && other.name == occurrence.name)
+        {
             used_b[index] = true;
             changed.push((occurrence.clone(), other.clone()));
         } else {
@@ -449,9 +447,10 @@ fn diff_set_cookies(
 
 fn diff_bodies(a: &Body, b: &Body) -> BodyDiff {
     let mut notes = Vec::new();
-    if a.attachment.as_deref().is_some_and(|name| {
-        b.attachment.as_deref().is_some_and(|other| other != name)
-    }) {
+    if a.attachment
+        .as_deref()
+        .is_some_and(|name| b.attachment.as_deref().is_some_and(|other| other != name))
+    {
         notes.push("anexos diferentes; o conteúdo dos bytes não é comparado aqui".to_string());
     }
     BodyDiff {
@@ -467,7 +466,7 @@ fn diff_bodies(a: &Body, b: &Body) -> BodyDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{HeaderView, OrderState, Provenance, Source, Verification};
+    use crate::model::{HeaderView, Provenance, Source, Verification};
 
     fn provenance() -> Provenance {
         Provenance::new(Source::NetLog, "test", Verification::Verified)

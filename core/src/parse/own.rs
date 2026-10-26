@@ -4,10 +4,8 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::error::{CoreError, Result};
-use crate::model::{
-    BodyState, SessionBundle, SessionV1, Warning, SCHEMA_VERSION,
-};
-use crate::parse::{ImportedSession, ImportReport, InputFormat};
+use crate::model::{BodyState, SessionBundle, SessionV1, Warning, SCHEMA_VERSION};
+use crate::parse::{ImportReport, ImportedSession, InputFormat};
 use crate::store;
 
 pub const MAX_ATTACHMENT_BYTES: u64 = 64 * 1024 * 1024;
@@ -212,6 +210,9 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
             session.warnings.push(warning.clone());
         }
     }
+    if let Some(version) = session.session.browser.version.clone() {
+        crate::model::backfill_browser_version(&mut session, &version);
+    }
     session.recompute_completeness();
     session.session.completeness.counts.warnings = session.warnings.len();
 
@@ -227,10 +228,7 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
 fn collect_attachment_refs(session: &SessionV1) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for request in &session.requests {
-        for body in [
-            &request.request_body,
-            &request.response_body,
-        ] {
+        for body in [&request.request_body, &request.response_body] {
             if matches!(body.state, BodyState::Captured | BodyState::Truncated) {
                 if let Some(name) = &body.attachment {
                     names.insert(name.clone());
@@ -261,7 +259,10 @@ fn validate_jsonl(bytes: &[u8], report: &mut ImportReport) {
             report.source_events_unknown += 1;
             report.warn(Warning::new(
                 "cdp.jsonl_line_invalid",
-                format!("linha {} de cdp-events.jsonl não é JSON válido: {error}", index + 1),
+                format!(
+                    "linha {} de cdp-events.jsonl não é JSON válido: {error}",
+                    index + 1
+                ),
             ));
         } else {
             report.source_events_used += 1;
@@ -272,9 +273,7 @@ fn validate_jsonl(bytes: &[u8], report: &mut ImportReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{
-        BrowserInfo, SessionMeta, SessionV1,
-    };
+    use crate::model::{BrowserInfo, SessionMeta, SessionV1};
     use crate::store::write_session_dir;
 
     fn write_session(root: &Path, session: SessionV1) -> std::path::PathBuf {
@@ -300,14 +299,16 @@ mod tests {
     fn imports_valid_directory() {
         let root = tempfile::tempdir().unwrap();
         let mut s = session();
-        s.session.labels.push(crate::model::LABEL_SYNTHETIC.to_string());
+        s.session
+            .labels
+            .push(crate::model::LABEL_SYNTHETIC.to_string());
         s.recompute_completeness();
         let dir = write_session(root.path(), s);
         let imported = import_session_dir(&dir).unwrap();
         assert_eq!(imported.bundle.session.schema_version, 1);
         assert_eq!(imported.bundle.session.session.id, "s-1");
         assert_eq!(imported.report.format, InputFormat::OwnV1);
-        assert!(imported.report.has_errors() == false);
+        assert!(!imported.report.has_errors());
     }
 
     #[test]
@@ -330,7 +331,10 @@ mod tests {
         let error = import_session_dir(&dir).unwrap_err();
         assert!(matches!(
             error,
-            CoreError::UnsupportedSchema { found: 2, expected: 1 }
+            CoreError::UnsupportedSchema {
+                found: 2,
+                expected: 1
+            }
         ));
     }
 
@@ -357,11 +361,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let mut s = session();
         let mut request = crate::model::LogicalRequest::new("r1", "https://a.test/", "GET");
-        request.response_body = crate::model::Body::captured(
-            "missing.bin",
-            3,
-            &crate::model::Provenance::default(),
-        );
+        request.response_body =
+            crate::model::Body::captured("missing.bin", 3, &crate::model::Provenance::default());
         s.requests.push(request);
         let dir = write_session(root.path(), s);
         let imported = import_session_dir(&dir).unwrap();
@@ -378,11 +379,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let mut s = session();
         let mut request = crate::model::LogicalRequest::new("r1", "https://a.test/", "GET");
-        request.response_body = crate::model::Body::captured(
-            "../escape.bin",
-            3,
-            &crate::model::Provenance::default(),
-        );
+        request.response_body =
+            crate::model::Body::captured("../escape.bin", 3, &crate::model::Provenance::default());
         s.requests.push(request);
         let dir = write_session(root.path(), s);
         let error = import_session_dir(&dir).unwrap_err();

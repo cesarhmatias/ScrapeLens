@@ -39,7 +39,9 @@ pub fn to_curl(
         verification.as_str()
     ));
     if verification == Verification::Unverified {
-        text.push_str("# ATENÇÃO: sequência de headers NÃO verificada; trate como não confiável.\n");
+        text.push_str(
+            "# ATENÇÃO: sequência de headers NÃO verificada; trate como não confiável.\n",
+        );
     }
     if !output.skipped_headers.is_empty() {
         text.push_str(&format!(
@@ -56,7 +58,10 @@ pub fn to_curl(
     text.push_str("# Contém credenciais/cookies se a sessão não foi sanitizada.\n");
 
     text.push_str("curl \\\n");
-    text.push_str(&format!("  --request {} \\\n", shell_quote(&request.method)));
+    text.push_str(&format!(
+        "  --request {} \\\n",
+        shell_quote(&request.method)
+    ));
     text.push_str(&format!("  --url {} \\\n", shell_quote(&url)));
     for header in &headers {
         text.push_str(&format!(
@@ -65,10 +70,7 @@ pub fn to_curl(
         ));
     }
     if let Some(body) = body {
-        text.push_str(&format!(
-            "  --data-binary {} \\\n",
-            shell_quote_bytes(body)
-        ));
+        text.push_str(&format!("  --data-binary {} \\\n", shell_quote_bytes(body)));
     }
     // Remove a continuação final e adiciona quebra de linha.
     while text.ends_with(" \\\n") {
@@ -84,11 +86,7 @@ pub fn to_curl(
 /// Aspas simples POSIX; `'` vira `'\''`. Controla NUL? NUL não é aceito em
 /// argumento; quem chama já removeu. Para bytes de controle usa `$'...'`.
 pub fn shell_quote(value: &str) -> String {
-    if value
-        .chars()
-        .any(|ch| ch.is_control() && ch != '\t')
-        || value.contains('\t')
-    {
+    if value.chars().any(|ch| ch.is_control() && ch != '\t') || value.contains('\t') {
         return shell_quote_ansi(value.as_bytes());
     }
     format!("'{}'", value.replace('\'', "'\\''"))

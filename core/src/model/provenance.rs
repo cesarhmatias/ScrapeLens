@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub enum Source {
     Cdp,
+    #[serde(rename = "netlog")]
     NetLog,
     Har,
     OwnFormat,
@@ -241,9 +242,7 @@ pub mod policy {
             (Har, _) => Verification::Unverified,
 
             // Formato próprio carrega o estado gravado na captura.
-            (OwnFormat, _) | (Capture, _) | (Derived, _) | (Manual, _) => {
-                Verification::Unverified
-            }
+            (OwnFormat, _) | (Capture, _) | (Derived, _) | (Manual, _) => Verification::Unverified,
         }
     }
 

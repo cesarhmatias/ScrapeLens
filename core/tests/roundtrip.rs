@@ -1,7 +1,7 @@
 //! Round-trip do formato v1 e exportação sanitizada em disco.
 
 use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
-use scrapelens_core::model::{Body, SessionBundle};
+use scrapelens_core::model::Body;
 use scrapelens_core::parse::import_har;
 use scrapelens_core::store;
 
@@ -36,7 +36,10 @@ fn session_roundtrip_keeps_original_order_and_attachments() {
         b"hello=world"
     );
     assert_eq!(again.bundle.session.schema_version, 1);
-    assert_eq!(again.bundle.session.requests[0].url, "https://api.demo.invalid/v1/items?page=2");
+    assert_eq!(
+        again.bundle.session.requests[0].url,
+        "https://api.demo.invalid/v1/items?page=2"
+    );
 }
 
 #[test]
@@ -51,12 +54,8 @@ fn sanitized_session_writes_only_sanitized_attachments_and_no_raw_events() {
         .request_headers
         .add("Authorization", "Bearer top-secret", &provenance);
     request.url = "https://api.demo.invalid/v1/items?page=2&token=secret".to_string();
-    request.request_body = Body::captured(
-        "har-entry-0000.request.bin",
-        11,
-        &provenance,
-    )
-    .with_content_type("text/plain");
+    request.request_body = Body::captured("har-entry-0000.request.bin", 11, &provenance)
+        .with_content_type("text/plain");
 
     let export = sanitize_bundle(&imported.bundle, &SanitizeOptions::default());
     let root = tempfile::tempdir().unwrap();
@@ -75,7 +74,11 @@ fn sanitized_session_writes_only_sanitized_attachments_and_no_raw_events() {
     assert!(!session.requests[0].url.contains("secret"));
     assert!(reimported.bundle.cdp_events_jsonl.is_none());
     assert!(reimported.bundle.netlog_json.is_none());
-    assert!(session.session.labels.iter().any(|label| label == "sanitized"));
+    assert!(session
+        .session
+        .labels
+        .iter()
+        .any(|label| label == "sanitized"));
     // Nenhum anexo original é copiado; corpo text/plain não estruturado é omitido.
     assert!(!reimported
         .bundle
