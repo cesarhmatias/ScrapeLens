@@ -28,6 +28,8 @@ v1 via `core/` e via commands Tauri.
 - **Captura validada de ponta a ponta** no macOS: Chrome 156 externo, página do
   testserver local, 11 requisições reais, headers h1 `verified` vindos do NetLog,
   cookies/`Set-Cookie` preservados, correlação `matched` e `ambiguous` exposta.
+  Evidência detalhada em `src-tauri/REAL-CYCLE.md`; prints 17–21 em
+  `docs/screenshots/`.
 - **Pendências explícitas**: assinatura/notarização e build Intel; captura de
   corpos CDP ainda não é baixada para anexos (estado `unavailable`), então a
   prévia de corpo real aparece como indisponível.
