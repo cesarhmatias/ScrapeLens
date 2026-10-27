@@ -1,0 +1,269 @@
+{
+ "schema": "scrapelens.fixture.case/1",
+ "id": "detran-pb",
+ "label": "sanitized-shape-real-case",
+ "origin": "shape of a real case; synthetic values",
+ "note": "Forma do fluxo DETRAN-PB (docs/05-caso-referencia-detran.md). SESSIONID, cookies, STAMP, delta, timestamps e placas são sintéticos; nenhum byte do HAR original foi copiado.",
+ "files": {
+  "har": "detran-pb-sanitized.har",
+  "har_blocked": "detran-pb-blocked.har",
+  "cdp": "detran-pb.cdp.jsonl",
+  "netlog": "detran-pb.netlog.json"
+ },
+ "values": {
+  "session_id": "CSAN00000_000000000001",
+  "process_id": "100000000001",
+  "plates": [
+   "TST0T00",
+   "TST0T01"
+  ],
+  "cookie_ts": "TS01a1b2c3",
+  "cookie_session": "JSESSIONID",
+  "delta_initial": "inittini",
+  "server_ip": "198.51.100.10 (TEST-NET-2, sintético)"
+ },
+ "counts": {
+  "entries": 13,
+  "blocked_entries": 3,
+  "cdp_events": 47,
+  "netlog_events": 52
+ },
+ "flow": [
+  {
+   "index": 0,
+   "offset_ms": 110,
+   "method": "GET",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37",
+   "event": "",
+   "purpose": "entrada: m_currentSessionId, m_currentProcessId, pageInitParam"
+  },
+  {
+   "index": 1,
+   "offset_ms": 220,
+   "method": "GET",
+   "url": "https://wsdetran.pb.gov.br/TSPD/?type=18",
+   "event": "",
+   "purpose": "ruído de proteção (TS*)"
+  },
+  {
+   "index": 2,
+   "offset_ms": 330,
+   "method": "GET",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html",
+   "event": "",
+   "purpose": "página de logon com modelo"
+  },
+  {
+   "index": 3,
+   "offset_ms": 440,
+   "method": "POST",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+   "event": "init",
+   "purpose": "init NatLogon"
+  },
+  {
+   "index": 4,
+   "offset_ms": 550,
+   "method": "GET",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+   "event": "",
+   "purpose": "abrir serviços"
+  },
+  {
+   "index": 5,
+   "offset_ms": 660,
+   "method": "POST",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+   "event": "init",
+   "purpose": "init SIM1000X"
+  },
+  {
+   "index": 6,
+   "offset_ms": 770,
+   "method": "POST",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+   "event": "on_interceptor",
+   "purpose": "on_interceptor S37"
+  },
+  {
+   "index": 7,
+   "offset_ms": 880,
+   "method": "GET",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+   "event": "",
+   "purpose": "abrir consulta de pátio"
+  },
+  {
+   "index": 8,
+   "offset_ms": 990,
+   "method": "POST",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+   "event": "init",
+   "purpose": "init VES0009X"
+  },
+  {
+   "index": 9,
+   "offset_ms": 1100,
+   "method": "POST",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+   "event": "cmd_filtro",
+   "purpose": "selecionar filtro"
+  },
+  {
+   "index": 10,
+   "offset_ms": 1210,
+   "method": "POST",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+   "event": "cmd_consultar_placa",
+   "purpose": "consultar placa (corpo completo)"
+  },
+  {
+   "index": 11,
+   "offset_ms": 1320,
+   "method": "POST",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+   "event": "cmd_nova",
+   "purpose": "limpar resultado"
+  },
+  {
+   "index": 12,
+   "offset_ms": 1430,
+   "method": "POST",
+   "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+   "event": "cmd_consultar_placa",
+   "purpose": "consultar placa (resposta delta sem v_situacao_atual)"
+  }
+ ],
+ "netlog": {
+  "time_units": "microseconds (process ticks)",
+  "time_tick_offset_units": "milliseconds (epoch)",
+  "wall_clock_formula": "timeTickOffset + time/1000 (ms)",
+  "note": "importadores precisam normalizar; comparar time cru com wallTime do CDP não correlaciona"
+ },
+ "protocol": {
+  "form_fields": [
+   "SESSIONID",
+   "PAGEINITPARAM",
+   "XML",
+   "STAMP",
+   "ERRORMESSAGE"
+  ],
+  "encoding": "x-www-form-urlencoded; XML value is a compact Natural for Ajax stream",
+  "length_unit": "UTF-16 code units (JavaScript String.length)",
+  "request_ops": [
+   "i",
+   "v",
+   "p",
+   "x"
+  ],
+  "response_ops": [
+   "l",
+   "p",
+   "q",
+   "w",
+   "z",
+   "b",
+   "c",
+   "s",
+   "k",
+   "x"
+  ],
+  "stamp_flow": [
+   "INIT",
+   "2001",
+   "INIT",
+   "2002",
+   "2003",
+   "INIT",
+   "2004",
+   "2005",
+   "2006",
+   "2007",
+   "2008"
+  ]
+ },
+ "search_cases": [
+  {
+   "query": "cmd_consultar_placa",
+   "where": "body",
+   "expect_entries": [
+    10,
+    12
+   ]
+  },
+  {
+   "query": "cmd_nova",
+   "where": "body",
+   "expect_entries": [
+    11
+   ]
+  },
+  {
+   "query": "on_interceptor",
+   "where": "body",
+   "expect_entries": [
+    6
+   ]
+  },
+  {
+   "query": "/TSPD/",
+   "where": "url",
+   "expect_entries": [
+    1
+   ]
+  },
+  {
+   "query": "v_placa",
+   "where": "body",
+   "expect_entries": [
+    10,
+    12
+   ]
+  }
+ ],
+ "correlation": {
+  "expect_ambiguity": {
+   "entries": [
+    10,
+    12
+   ],
+   "reason": "mesmo método e URL (POST /servlet/Connector); só o corpo e o STAMP distinguem as duas consultas"
+  },
+  "cdp_vs_netlog": "requestId do CDP não equivale ao source id do NetLog; correlacionar por URL+método+horário e marcar ambiguidade"
+ },
+ "dynamic_fields": [
+  "SESSIONID",
+  "STAMP",
+  "XML timestamps",
+  "delta",
+  "pageInitParam (entrada)",
+  "cookies TS*/JSESSIONID"
+ ],
+ "static_fields": [
+  "endpoints",
+  "nomes de página e adapter",
+  "eventos cmd_*",
+  "nomes de campos do formulário",
+  "gramática do protocolo"
+ ],
+ "sanitization": {
+  "synthetic": [
+   "SESSIONID",
+   "process id",
+   "TS01 cookie",
+   "JSESSIONID",
+   "STAMP",
+   "delta",
+   "timestamps",
+   "placas",
+   "IP do servidor"
+  ],
+  "absent": [
+   "dados pessoais",
+   "placas reais",
+   "tokens reais",
+   "conteúdo HTML original"
+  ],
+  "rule": "nenhum byte dos HARs de origem entra no repositório"
+ }
+}
