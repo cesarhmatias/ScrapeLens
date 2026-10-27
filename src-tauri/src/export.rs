@@ -125,7 +125,10 @@ fn load(dir: &Path) -> Result<SessionBundle, String> {
         .map_err(|error| format!("não foi possível ler a sessão: {error}"))
 }
 
-fn find_request<'a>(bundle: &'a SessionBundle, request_id: &str) -> Result<&'a LogicalRequest, String> {
+fn find_request<'a>(
+    bundle: &'a SessionBundle,
+    request_id: &str,
+) -> Result<&'a LogicalRequest, String> {
     bundle
         .session
         .requests
@@ -156,7 +159,11 @@ fn body_bytes<'a>(
     }
 }
 
-fn generate(request: &LogicalRequest, body: Option<&[u8]>, format: Format) -> Result<ExportOutput, String> {
+fn generate(
+    request: &LogicalRequest,
+    body: Option<&[u8]>,
+    format: Format,
+) -> Result<ExportOutput, String> {
     let options = ExportOptions::default();
     let output = match format {
         Format::Curl => to_curl(request, body, &options),
@@ -192,7 +199,9 @@ pub fn preview(dir: &Path, request_id: &str, format: &str) -> Result<ExportPrevi
 fn reject_symlink(path: &Path, label: &str) -> Result<(), String> {
     if let Ok(metadata) = fs::symlink_metadata(path) {
         if metadata.file_type().is_symlink() {
-            return Err(format!("{label} é um link simbólico; escolha um caminho real"));
+            return Err(format!(
+                "{label} é um link simbólico; escolha um caminho real"
+            ));
         }
     }
     Ok(())
@@ -205,7 +214,10 @@ pub fn write_text_file(path: &Path, text: &str) -> Result<SavedFile, String> {
         .ok_or_else(|| format!("destino sem pasta: {}", path.display()))?;
     reject_symlink(parent, "a pasta de destino")?;
     if !parent.is_dir() {
-        return Err(format!("a pasta de destino não existe: {}", parent.display()));
+        return Err(format!(
+            "a pasta de destino não existe: {}",
+            parent.display()
+        ));
     }
     if path.file_name().is_none() {
         return Err("o destino precisa de um nome de arquivo".to_string());
@@ -445,7 +457,11 @@ mod tests {
         let dir = fixture("curl");
         let preview = preview(&dir, "req-body", "curl").unwrap();
         assert!(preview.body_included, "{:?}", preview.body_note);
-        assert!(preview.text.contains("--data-binary 'a=1&b=2'"), "{}", preview.text);
+        assert!(
+            preview.text.contains("--data-binary 'a=1&b=2'"),
+            "{}",
+            preview.text
+        );
         // Aspas simples no valor não podem quebrar o comando: o shell recebe
         // `a'\''b` dentro do argumento delimitado por aspas simples.
         assert!(preview.text.contains("a'\\''b"), "{}", preview.text);
@@ -520,12 +536,20 @@ mod tests {
     #[test]
     fn sanitize_preview_reports_counts_without_writing() {
         let dir = fixture("preview");
-        let before: Vec<_> = fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        let before: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
         let preview = sanitize_preview(&dir).unwrap();
         assert_eq!(preview.requests, 2);
         assert!(preview.total_redactions >= 1, "{:?}", preview.redactions);
         assert!(!preview.suggested_destination.is_empty());
-        let after: Vec<_> = fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        let after: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
         assert_eq!(before, after, "prévia não pode escrever na origem");
         fs::remove_dir_all(&dir).ok();
     }
