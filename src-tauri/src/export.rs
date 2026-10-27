@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 
@@ -385,6 +385,8 @@ pub fn sanitize_to(src: &Path, destination: &Path) -> Result<SanitizeSaved, Stri
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
