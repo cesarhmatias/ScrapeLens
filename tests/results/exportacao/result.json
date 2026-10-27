@@ -1,0 +1,27 @@
+{
+  "testedAt": "2026-10-27T21:54:36.835727+00:00",
+  "sourceCommit": "2c6765eff03ff5565306f5ee963b0e0055f33b3b",
+  "bundleExecutableSha256": "a58db574771fcd6058bc63a8080e0ba2f9bdf1aeb671bf9c56d4bf221fab26cf",
+  "bundleExecutableBytes": 13969728,
+  "codesignVerifyExit": 0,
+  "independentTests": {
+    "passed": 14,
+    "failed": 2,
+    "embeddedProductionTests": 9,
+    "newIndependentTests": 7
+  },
+  "tauri": {
+    "passed": 15,
+    "ignored": 1
+  },
+  "core": {
+    "passed": 91,
+    "ignored": 1
+  },
+  "nativeSaveDialog": "not tested; previous known blocker not retried",
+  "clipboard": "not tested independently in native bundle; simulated in App harness",
+  "preexistingModifiedFile": {
+    "path": "tests/results/app-latest/testserver/app-20261027/h1.jsonl",
+    "sha256": "9e383c2161252fa76fc807551e2f6028fa669788101c580971bd54dfe6474eed"
+  }
+}

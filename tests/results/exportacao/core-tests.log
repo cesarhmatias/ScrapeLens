@@ -1,0 +1,159 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (core/target/debug/deps/scrapelens_core-69706d1cb5e6252c)
+
+running 56 tests
+test diff::tests::body_state_is_compared_without_claiming_bytes ... ok
+test correlate::tests::canonical_url_removes_default_port_and_fragment ... ok
+test export::sanitize::tests::header_and_query_detection ... ok
+test correlate::tests::score_requires_method_and_url ... ok
+test diff::tests::changed_value_at_same_name_is_changed_not_add_remove ... ok
+test diff::tests::pseudoheaders_are_compared_and_can_be_excluded ... ok
+test diff::tests::duplicate_occurrences_are_not_collapsed ... ok
+test diff::tests::cookie_duplicates_and_fragmentation_are_visible ... ok
+test diff::tests::added_and_removed_are_kept_in_original_order ... ok
+test diff::tests::case_insensitive_names_by_default ... ok
+test diff::tests::reordered_pair_is_reported_and_original_order_untouched ... ok
+test model::body::tests::captured_body_points_to_attachment ... ok
+test model::body::tests::default_body_is_unavailable_not_empty ... ok
+test model::body::tests::truncated_keeps_limit ... ok
+test model::cookies::tests::invalid_set_cookie_keeps_raw_and_error ... ok
+test model::cookies::tests::keeps_fragmented_wire_lines_separate ... ok
+test export::sanitize::tests::invalid_attachment_name_is_omitted_not_written ... ok
+test model::cookies::tests::max_age_parsed_and_invalid_preserved ... ok
+test model::cookies::tests::parses_pairs_and_keeps_raw_values ... ok
+test export::sanitize::tests::form_body_redacts_sensitive_keys_and_keeps_others ... ok
+test model::headers::tests::empty_view_is_unverified_not_verified ... ok
+test model::cookies::tests::unparsed_token_is_preserved ... ok
+test model::cookies::tests::parses_set_cookie_with_expires_comma ... ok
+test model::headers::tests::keeps_pseudoheaders_separate ... ok
+test model::headers::tests::malformed_line_is_reported_not_dropped_silently ... ok
+test model::headers::tests::parses_status_line_and_values_with_colons ... ok
+test model::headers::tests::preserves_order_duplicates_and_case ... ok
+test model::headers::tests::pseudoheader_line_parses_name_with_colon ... ok
+test model::session::tests::error_warning_marks_session_partial ... ok
+test model::session::tests::recompute_counts ... ok
+test normalize::tests::merges_duplicates_without_losing_values_or_sorting_names ... ok
+test model::session::tests::schema_version_is_one ... ok
+test normalize::tests::normalizes_url_query_and_keeps_duplicates ... ok
+test parse::har::tests::invalid_har_is_an_error_not_empty_session ... ok
+test parse::har::tests::reports_incomplete_entry_without_failing ... ok
+test parse::har::tests::redirect_chain_gets_attempts_and_redirect ... ok
+test parse::har::tests::imports_har_with_order_and_duplicates ... ok
+test parse::har::tests::base64_response_is_decoded ... ok
+test export::sanitize::tests::binary_body_is_omitted_with_warning ... ok
+test export::sanitize::tests::structured_json_body_is_sanitized_and_written_as_attachment ... ok
+test export::sanitize::tests::redacts_headers_and_url_but_preserves_order_and_duplicates ... ok
+test export::sanitize::tests::raw_events_are_removed_by_default ... ok
+test export::sanitize::tests::original_bundle_is_not_mutated ... ok
+test store::tests::rejects_path_traversal ... ok
+test store::tests::writes_20k_small_attachments_quickly ... ignored, benchmark manual: cargo test --release -- --ignored writes_20k_small_attachments
+test export::sanitize::tests::redacts_bearer_value_in_unlisted_header_by_prefix ... ok
+test export::sanitize::tests::redacts_sid_jsessionid_and_phpsessid_in_url ... ok
+test parse::own::tests::missing_directory_is_explicit ... ok
+test parse::own::tests::rejects_unsupported_schema ... ok
+test parse::own::tests::refuses_attachment_path_traversal ... ok
+test parse::own::tests::imports_valid_directory ... ok
+test parse::own::tests::referenced_missing_attachment_is_reported ... ok
+test store::tests::write_is_atomic_over_existing_file ... ok
+test parse::own::tests::missing_artifacts_and_corrupt_jsonl_are_reported ... ok
+test store::tests::writes_private_permissions_and_reads_back ... ok
+test store::tests::writes_many_attachments_in_one_batch ... ok
+
+test result: ok. 55 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running unittests src/bin/scrapelens-core.rs (core/target/debug/deps/scrapelens_core-92625ad3989c60f7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cdp.rs (core/target/debug/deps/cdp-08c0aa77313ccde4)
+
+running 2 tests
+test request_object_is_subset_and_response_headers_text_is_verified ... ok
+test real_h1_correlation_matches_and_prefers_netlog_sequence ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/cli.rs (core/target/debug/deps/cli-0ce353f47ad79690)
+
+running 3 tests
+test cli_reports_errors_without_panicking ... ok
+test cli_uses_help_for_usage ... ok
+test cli_import_inspect_export_diff_sanitize ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+
+     Running tests/correlate.rs (core/target/debug/deps/correlate-94e95a532f9f5601)
+
+running 5 tests
+test method_mismatch_is_unmatched_with_warning ... ok
+test unique_match_uses_netlog_as_primary_and_keeps_cdp_evidence ... ok
+test netlog_only_attempts_are_counted_not_silently_ignored ... ok
+test explicit_pair_resolves_ambiguity ... ok
+test two_candidates_are_ambiguous_and_none_is_chosen ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/detran_fixtures.rs (core/target/debug/deps/detran_fixtures-21dcf6d6f4077856)
+
+running 2 tests
+test detran_netlog_without_cdp_warns_about_assumed_unit ... ok
+test detran_fixtures_correlate_all_13_without_false_ambiguity ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/export.rs (core/target/debug/deps/export-c3dbac78abb35a7e)
+
+running 8 tests
+test python_string_and_bytes_escaping ... ok
+test python_maps_authority_to_host_for_http11 ... ok
+test curl_refuses_header_injection_and_omits_unsafe_header ... ok
+test curl_drops_content_length_when_body_is_not_exported ... ok
+test curl_marks_unverified_sequence_and_pseudoheaders ... ok
+test curl_preserves_order_duplicates_and_escapes_untrusted_data ... ok
+test curl_omits_nul_body_instead_of_truncating_it ... ok
+test python_uses_http_client_and_preserves_header_duplicates ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/netlog.rs (core/target/debug/deps/netlog-69a547fe6a869a23)
+
+running 6 tests
+test redirect_creates_two_attempts_and_a_redirect_entity ... ok
+test parses_h2_session_with_explicit_stream_job_link ... ok
+test time_unit_is_calibrated_by_wall_clock_reference ... ok
+test missing_url_request_is_reported_not_silent ... ok
+test real_h1_capture_preserves_wire_order_and_duplicates ... ok
+test real_h2_capture_marks_request_order_partial_and_expands_nul_response ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/real_captures.rs (core/target/debug/deps/real_captures-faa02138f57fb55a)
+
+running 5 tests
+test h2_real_capture_matches_and_preserves_stream_evidence ... ok
+test h3_real_capture_matches_and_preserves_quic_stream_evidence ... ok
+test h3_response_session_evidence_expands_nul_duplicates ... ok
+test identical_simultaneous_requests_remain_explicitly_ambiguous ... ok
+test contract_h1_redirect_chain_has_three_attempts_and_two_redirects ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/roundtrip.rs (core/target/debug/deps/roundtrip-505dcbb4a9fc0b4d)
+
+running 5 tests
+test netlog_counts_survive_roundtrip ... ok
+test sanitize_refuses_to_overwrite_an_existing_session_dir ... ok
+test sanitized_session_writes_only_sanitized_attachments_and_no_raw_events ... ok
+test stored_permissions_are_private_after_sanitize_write ... ok
+test session_roundtrip_keeps_original_order_and_attachments ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+   Doc-tests scrapelens_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
