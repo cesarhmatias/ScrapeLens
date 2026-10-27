@@ -1,0 +1,55 @@
+{
+ "generatedAt": "2026-10-27T07:08:05Z",
+ "coreSha256": "10f3b76b637ba9fff374edcf6ed0079d1e67bbfe591a72e97cb71b2da1026999",
+ "coreBytes": 2176608,
+ "gitCommit": "453d717",
+ "macos": "26.5.2",
+ "machine": "arm64",
+ "python": "3.14.8",
+ "items": [
+  {
+   "item": 3,
+   "title": "Requisições simultâneas idênticas sem associação falsa",
+   "status": "falhou",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "fixture de ambiguidade rotulada sintética: esperado 'synthetic-fixture', obtido 'synthetic-fixture'"
+    },
+    {
+     "ok": true,
+     "label": "duas requisições CDP importadas: esperado 2, obtido 2"
+    },
+    {
+     "ok": false,
+     "label": "ambas marcadas match=ambiguous (nenhuma associação silenciosa): esperado 2, obtido 0"
+    },
+    {
+     "ok": false,
+     "label": "as duas requisições veem o mesmo conjunto de candidatos (não houve escolha cruzada): esperado 1, obtido 0"
+    },
+    {
+     "ok": false,
+     "label": "dois avisos correlate.ambiguous persistidos: esperado 2, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "NetLog isolado mantém as duas tentativas: esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "NetLog isolado sem CDP: completeness=partial (cobertura não provada): esperado 'partial', obtido 'partial'"
+    }
+   ],
+   "passed": 4,
+   "failed": 3,
+   "evidence": [
+    "`scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl fixtures/aceite/ambiguous/netlog-ambiguous.json --out tests/.work/run/item3/capture`"
+   ],
+   "notes": [
+    "A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade."
+   ],
+   "seconds": 0.06
+  }
+ ]
+}

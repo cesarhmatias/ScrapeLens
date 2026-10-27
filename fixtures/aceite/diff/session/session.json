@@ -16,8 +16,8 @@
         "redirects": 0,
         "connections": 0,
         "streamSessions": 0,
-        "sourceEvents": 0,
-        "sourceEventsUsed": 0,
+        "sourceEvents": 2,
+        "sourceEventsUsed": 2,
         "sourceEventsUnknown": 0,
         "warnings": 0
       }

@@ -330,6 +330,20 @@ def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     session_dir = ctx["run"] / "item3" / "capture"
     meta = fixture_meta(folder)
     exp.eq(meta.get("label"), "synthetic-fixture", "fixture de ambiguidade rotulada sintética")
+    # A fixture precisa ser coerente com o Chrome real: o `wallTime` do CDP é
+    # `timeTickOffset/1000 + timestamp`. Se essa equação quebrar, a calibração de
+    # unidade do core (f6c6bdd) escolhe microssegundos e a correlação zera —
+    # falha da fixture, não do core.
+    cdp_events = [json.loads(line) for line in
+                  (folder / "cdp-ambiguous.jsonl").read_text(encoding="utf-8").splitlines()
+                  if line.strip()]
+    offset_ms = json.loads((folder / "netlog-ambiguous.json").read_text(encoding="utf-8")
+                           )["constants"]["timeTickOffset"]
+    exp.ok(all(abs(event["params"]["wallTime"]
+                   - (offset_ms / 1000.0 + event["params"]["timestamp"])) < 1e-6
+               for event in cdp_events
+               if event["method"] == "Network.requestWillBeSent"),
+           "relógio da fixture coerente (wallTime = timeTickOffset/1000 + timestamp)")
 
     fresh(session_dir)
     core_ok("import-capture", str(folder / "cdp-ambiguous.jsonl"),
@@ -343,6 +357,11 @@ def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
 
     requests = session["requests"]
     exp.eq(len(requests), 2, "duas requisições CDP importadas")
+    unit_warning = next((warning for warning in session["warnings"]
+                         if warning["code"] == "netlog.time_unit_detected"), None)
+    exp.ok(unit_warning is not None, "unidade de `time` calibrada pelo relógio do CDP")
+    exp.eq((unit_warning or {}).get("detail", {}).get("unit"), "milliseconds",
+           "unidade calibrada como milliseconds (a mesma do Chrome real)")
     ambiguous = [request for request in requests if request.get("match") == "ambiguous"]
     exp.eq(len(ambiguous), 2, "ambas marcadas match=ambiguous (nenhuma associação silenciosa)")
     for request in ambiguous:

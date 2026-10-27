@@ -101,6 +101,13 @@ def har(entries: list[dict], creator: str = "scrapelens-aceite") -> dict:
 
 # ------------------------------------------------------------- NetLog helper
 
+# O `time` do NetLog é em milissegundos de ticks do processo e `timeTickOffset`
+# é a época (ms) no tick zero. Uma captura coerente satisfaz, para o mesmo
+# evento, `wallTime = timeTickOffset/1000 + timestamp` (nas capturas reais do
+# Chrome deste projeto a diferença é < 2 ms). Fixtures de correlação declaram
+# CDP e NetLog por essa mesma equação; sem isso o core calibra a unidade errada.
+TICK_OFFSET_MS = 1793046000000
+
 NETLOG_TYPES = [
     "URL_REQUEST_START_JOB",
     "HTTP_TRANSACTION_SEND_REQUEST_HEADERS",
@@ -132,7 +139,7 @@ def netlog(events: list[dict], *, constants: bool = True) -> dict:
     return {
         "constants": {
             "logEventTypes": NETLOG_IDS,
-            "timeTickOffset": 1793046000000,
+            "timeTickOffset": TICK_OFFSET_MS,
             "logCaptureMode": "Everything",
             "logFormatVersion": 1,
         },
@@ -300,9 +307,11 @@ def build() -> None:
             "headers": {"Accept": "*/*", "User-Agent": "ScrapelensAceite/1"},
         }
         timestamp = 2000.0 + index * 0.02
+        # wallTime na mesma equação do NetLog (`timeTickOffset/1000 + timestamp`),
+        # igual às capturas reais: os dois relógios concordam em epoch e monotônico.
         lines.append(cdp_event("Network.requestWillBeSent", {
             "requestId": request_id, "loaderId": "L" + request_id, "frameId": "F1",
-            "timestamp": timestamp, "wallTime": 1793046000.0 + index * 0.02,
+            "timestamp": timestamp, "wallTime": TICK_OFFSET_MS / 1000.0 + timestamp,
             "type": "Fetch", "request": base,
         }))
         lines.append(cdp_event("Network.responseReceived", {
