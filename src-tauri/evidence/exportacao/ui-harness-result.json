@@ -1,0 +1,16 @@
+{
+  "curl_len": 1317,
+  "python_len": 1745,
+  "copied_matches_python": true,
+  "saved_matches_python": true,
+  "saved_path": "/Users/cesar/Projects/scrapelens/src-tauri/evidence/exportacao/saved-har-0002.sh",
+  "sanitized_arg": {
+    "sessionDir": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2",
+    "destination": "/Users/cesar/Projects/scrapelens/src-tauri/evidence/exportacao/sanitized-har-synthetic"
+  },
+  "errors": [
+    "TypeError: Cannot read properties of undefined (reading 'unregisterListener')",
+    "TypeError: Cannot read properties of undefined (reading 'unregisterListener')",
+    "TypeError: Cannot read properties of undefined (reading 'unregisterListener')"
+  ]
+}

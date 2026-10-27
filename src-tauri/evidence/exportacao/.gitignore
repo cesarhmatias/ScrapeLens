@@ -1,0 +1,5 @@
+# Artefatos grandes derivados de sessões reais: recriados por prepare-payloads.py
+# e pelo utilitário `cargo run --example export_dump`.
+orig-payload.json
+sanitized-payload.json
+sanitized-har-synthetic/

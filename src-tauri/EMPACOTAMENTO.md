@@ -9,24 +9,25 @@ mesmas condições.
 | Item | Valor |
 |---|---|
 | Repositório | `/Users/cesar/Projects/scrapelens` |
-| Commit do app no momento do build | `1581376` (`docs(ux): review ScrapeLens and add isolated interactive proposal`) |
-| Commit mais recente do core incorporado | `b5846be` (`test(detran): espera unidade milliseconds após fixtures eac41da`) |
-| Correções do core incluídas | `98293e2` (sanitização sid/jsessionid/phpsessid + Bearer por valor) e `f6c6bdd` (calibração da unidade de `time` do NetLog) |
-| Data do build | 2026-10-27 04:00 (UTC−03) |
-| Working tree | limpo no início do build (apenas `CONTRIBUTING.md` alterado depois) |
+| Commit do app no momento do build | `3a3c676` (`fix(exportacao): evita repetir o estado do corpo na prévia`) |
+| Commits de exportação incluídos | `eaf5471` (shell Tauri), `0a6e696` (UI), `0446f18`/`12457cd` (formatação), `3a3c676` (ajuste da prévia) |
+| Contrato da rodada | `4c97bc9` (`docs/07-exportacao-ui.md`) |
+| Core | inalterado nesta rodada; entra como dependência de crate (`scrapelens-core = { path = "../core" }`) |
+| Data do build | 2026-10-27 ~17:20 (UTC−03) |
+| Working tree | limpo, exceto `tests/results/app-latest/testserver/app-20261027/h1.jsonl` (artefato pré-existente de teste, preservado e não commitado) |
 
-O core entra como dependência de crate (`scrapelens-core = { path = "../core" }`);
-não há sidecar, processo auxiliar nem runtime Node/Python no produto.
+Não há sidecar, processo auxiliar nem runtime Node/Python no produto.
 
 ## Comandos executados
 
 ```sh
 # na raiz do repositório
 cd app && npm install                     # uma vez
-cd ../app && npx tsc --noEmit             # typecheck do frontend
-cd ../app && npm run build                # bundle Vite
-cd ../core && cargo test --offline        # 88 passam, 1 ignorado (benchmark manual)
-cd ../src-tauri && cargo test             # 6 passam, 1 ignorado (captura ao vivo)
+cd ../app && npx tsc --noEmit             # typecheck do frontend — sem saída
+cd ../app && npm run build                # bundle Vite — 516 kB (gzip 102 kB)
+cd ../core && cargo test                  # 55 passam, 1 ignorado
+cd ../src-tauri && cargo test             # 15 passam, 1 ignorado (captura ao vivo)
+cd ../src-tauri && cargo clippy --all-targets
 cd .. && ./app/node_modules/.bin/tauri build --bundles app
 
 # assinatura ad-hoc do bundle (o linker já deixa o binário ad-hoc; este passo
@@ -45,9 +46,9 @@ Ferramentas usadas: rustc 1.98.1, Node 26.8.1, macOS 26.5.2 (arm64).
 | Bundle | `src-tauri/target/release/bundle/macos/ScrapeLens.app` |
 | Executável | `ScrapeLens.app/Contents/MacOS/scrapelens` |
 | Arquitetura | `Mach-O 64-bit executable arm64`, thin (sem universal binary) |
-| Tamanho do bundle | 13.548 KiB (~13,2 MiB, `du -sk`) |
-| Tamanho do executável | 13.119.296 bytes |
-| SHA-256 do executável | `a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0` |
+| Tamanho do bundle | 14.380 KiB (~14,1 MiB, `du -sk`) |
+| Tamanho do executável | 13.969.728 bytes |
+| SHA-256 do executável | `a58db574771fcd6058bc63a8080e0ba2f9bdf1aeb671bf9c56d4bf221fab26cf` |
 | Identificador | `app.scrapelens.desktop` |
 | Assinatura | ad-hoc (`flags=0x2(adhoc)`, `TeamIdentifier=not set`) |
 | `codesign --verify --deep --strict` | exit 0 (valid on disk, satisfaz o Designated Requirement) |
@@ -55,27 +56,70 @@ Ferramentas usadas: rustc 1.98.1, Node 26.8.1, macOS 26.5.2 (arm64).
 
 O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
 produz um binário byte-diferente (o linker assina antes do bundle), por isso o
-hash identifica este artefato, não a saída de qualquer build.
+hash identifica este artefato, não a saída de qualquer build. O build anterior
+desta mesma rodada, sem o ajuste `3a3c676`, tinha
+`ee127a56fa51a1403616dc4cb3796afd3bb5ec4d595c6da699c0cac1a16d9344`; ele foi
+substituído por este.
 
 ## Validação de execução
 
-- `open ScrapeLens.app` (build cru, antes do re-sign) → processo sobe e janela
-  renderiza.
-- Após o re-sign: app iniciado pelo drive de automação (bundle
-  `app.scrapelens.desktop`), janela única 1440×920, sessão real aberta pelo
-  diálogo nativo (`⌘O`) — `capture-1793058850184`, 11 requisições, `completa`,
-  fonte `cdp+netlog`, 2 requisições ambíguas, sem rótulo DEMO.
-- Navegação lista → detalhe: headers em sequência da fonte, badges `verificada`
-  por informação e correspondência CDP×NetLog `correspondida`.
-- Zero telemetria: nenhuma requisição de saída além do WebSocket CDP em
-  `127.0.0.1` durante a sessão de captura.
+- Bundle iniciado pelo drive de automação (`app.scrapelens.desktop`), janela
+  única 1440×920, sem telemetria.
+- `cargo test` no `src-tauri` cobre a ponte de exportação: prévia cURL/Python,
+  escaping de aspas, corpo `captured` vs `unavailable`, recusa de sobrescrita,
+  recusa de link simbólico e origem intacta após sanitizar.
+- `cargo test` no `core` cobre os exportadores e a sanitização usados aqui; não
+  houve alteração no core nesta rodada.
+
+## Evidência da exportação/sanitização
+
+Pasta: `src-tauri/evidence/exportacao/`.
+
+| Arquivo | Conteúdo |
+|---|---|
+| `command-output.txt` | saída real de `cargo run --example export_dump`: prévias cURL/Python, prévia da sanitização e resultado gravado |
+| `preview-curl.json`, `preview-python.json` | respostas literais de `export::preview` (1317 e 1745 bytes de texto) |
+| `sanitize-preview.json`, `sanitize-saved.json` | 24 requisições, 152 redações (`cookie`, `header:cookie`, `header:set-cookie`, `setCookie`), destino sugerido e resultado |
+| `05`–`14-*.png` | telas do app: demo, sessão aberta, detalhe, diálogo cURL, diálogo Python, cancelamento, arquivo salvo, sanitização, resultado e sessão sanitizada aberta |
+| `ui-harness.mjs` | harness Playwright que exercita os componentes React |
+| `ui-harness-result.json` | resumo: cópia e arquivo salvos idênticos à prévia Python (`copied_matches_python`, `saved_matches_python`) |
+| `saved-har-0002.sh` | texto exato que o diálogo de salvamento entregou ao command |
+| `prepare-payloads.py` | recria os payloads grandes usados pelo harness |
+
+Sessão usada: `~/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2`
+(24 requisições, importada de HAR sintético de `127.0.0.1:8781`). A pasta
+sanitizada de referência (0700/0600, `session.json` com 872.082 bytes) foi
+gerada em `evidence/exportacao/sanitized-har-synthetic/` e conferida por busca
+de marcadores: `fromjs`, `sc_a=alpha` e `sc_b=beta` não aparecem em nenhum
+arquivo sanitizado. Ela é derivada e por isso não entra no git — recriável com:
+
+```sh
+cd src-tauri
+cargo run --quiet --example export_dump -- \
+  "$HOME/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2" \
+  har-0002 evidence/exportacao/sanitized-har-synthetic
+```
+
+**O que o harness prova e o que não prova.** O harness serve o `dist/` real do
+frontend, injeta um stub de `__TAURI_INTERNALS__` e usa as respostas **reais**
+gravadas pelo Rust; apenas os diálogos nativos, o clipboard e o file picker são
+simulados. Ele prova o comportamento dos componentes React (alternância
+cURL/Python, texto copiado/salvo igual à prévia, cancelamento sem gravação,
+abertura da sessão sanitizada). Ele **não** prova o diálogo nativo do macOS nem
+a gravação real do arquivo pelo usuário; esses caminhos são cobertos pelos
+testes Rust (`write_text_file`, `sanitize_to`) e pelo bundle, mas a passagem
+manual pelo `NSSavePanel` não foi automatizada nesta rodada.
 
 ## Prints
 
 | Arquivo | Conteúdo |
 |---|---|
-| `docs/screenshots/22-final-app.png` | lista da sessão real aberta no bundle final (11 requisições, `cdp+netlog`) |
-| `docs/screenshots/23-final-detalhe-verificado.png` | detalhe de `/echo` com headers na ordem da fonte e estado de verificação por informação |
+| `src-tauri/evidence/exportacao/08-dialog-curl.png` | prévia cURL com estado do corpo, avisos e aviso de não execução |
+| `src-tauri/evidence/exportacao/09-dialog-python.png` | mesma requisição em Python (`http.client`) |
+| `src-tauri/evidence/exportacao/10-dialog-cancel.png` | cancelamento do diálogo nativo: nada gravado |
+| `src-tauri/evidence/exportacao/11-dialog-saved.png` | arquivo salvo com caminho e bytes |
+| `src-tauri/evidence/exportacao/12-dialog-sanitize.png` | prévia de sanitização com redações por origem |
+| `src-tauri/evidence/exportacao/14-sanitized-session.png` | sessão sanitizada aberta no app |
 
 ## Limitações que este pacote mantém
 
@@ -84,6 +128,14 @@ hash identifica este artefato, não a saída de qualquer build.
 - Apenas arm64 compilado e testado; Intel não validado.
 - Captura cobre um target/página por sessão.
 - Corpos vindos do CDP ficam `unavailable` (não são baixados); a UI mostra o
-  motivo em vez de inventar conteúdo.
+  motivo em vez de inventar conteúdo. Nenhuma sessão capturada nesta máquina
+  tem corpo; só o teste unitário cobre o caso `captured`.
 - `--remote-allow-origins=*` no endpoint CDP (ver `src-tauri/src/capture.rs`);
   risco limitado a loopback, porta efêmera e à janela da captura.
+- O fluxo manual de salvar pelo `NSSavePanel` dentro do bundle não foi
+  automatizado: o painel nativo do macOS não expõe AX para o driver
+  (`off_space_or_ax_unresolved`) e a tentativa em foreground atingiu outro app.
+  Roteiro para validar em 2 minutos: abrir `ScrapeLens.app`, `Abrir captura…` →
+  `har-3dbc391c02a985c5-2`, abrir a requisição `/setcookie`, `Exportar…`,
+  `Salvar…`, escolher pasta nova e conferir o arquivo 0600; depois `Sanitizar…`
+  e `Abrir sessão sanitizada`.
