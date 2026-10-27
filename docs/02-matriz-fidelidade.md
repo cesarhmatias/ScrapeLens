@@ -181,6 +181,38 @@ vem ordenada em ASCII e com duplicatas já colapsadas.
 fixture ao importador (`results/h1-page/har-derived.json`). Não use esse arquivo
 como prova de ordem.
 
+## A ordem que o DevTools mostra é a transmitida?
+
+**Não, e não dá para assumir que seja.** O painel de rede do DevTools e o
+exportador HAR são construídos sobre os mesmos eventos CDP medidos aqui
+(`requestWillBeSent` + `requestWillBeSentExtraInfo`). Nesses eventos a ordem é a
+de um mapa ordenado por byte (ASCII) e as duplicatas já chegaram colapsadas no
+`net::HttpRequestHeaders` — ou seja, a lista que aparece na tela **não é** a
+lista entregue ao codificador nem a decodificada no servidor (linhas h1/h2/h3
+acima, 60 requisições).
+
+Para o caso de referência (ordem do WebInspector do Chromium 141, reproduzida
+manualmente com `curl_cffi`):
+
+- Replicar a ordem do DevTools e a chamada funcionar **não prova** que a ordem
+  foi transmitida: a maioria dos servidores ignora a ordem dos campos, e o
+  próprio caso documenta que o que quebrava era valor dinâmico (SESSIONID/
+  STAMP/delta), não ordem de header.
+- Em h1 a prova existe e é barata: `HTTP_TRANSACTION_SEND_REQUEST_HEADERS`
+  (NetLog) traz a ordem, a caixa e as duplicatas exatas; em h2/h3 o evento de
+  sessão traz a lista entregue ao HPACK/QPACK.
+- Sem esses eventos, o estado correto na interface e na exportação é
+  **"ordem transmitida: não verificada"** — nunca "ordem preservada".
+- Medido nesta matriz em Chrome **156**; o caso usou **141**. O mecanismo
+  (mapa ordenado no `HttpRequestHeaders`) é o mesmo tipo de estrutura, mas 141
+  não foi medido aqui — se for preciso afirmar algo sobre 141, rode este mesmo
+  harness com aquela build.
+
+Checagem de 2 minutos para o caso real, quando houver atribuição: abrir a
+captura com NetLog, pegar a requisição da aplicação (POST Connector) e comparar
+`HTTP_TRANSACTION_SEND_REQUEST_HEADERS` com a ordem que o HAR/DevTools mostra.
+Divergência de ordem no HAR é esperada; o que importa é o que o NetLog diz.
+
 ## Limites
 
 - Tudo em `headless=new`. Comportamento de headers do Chrome é o mesmo em headed
