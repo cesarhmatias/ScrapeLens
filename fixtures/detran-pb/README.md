@@ -77,9 +77,8 @@ marcador real aparecer (`CASA`, `NUPP`, `082b79`, nomes dos HARs etc.).
 - **Campos dinâmicos**: `SESSIONID`, `STAMP`, `delta`, timestamps do stream e
   `pageInitParam` mudam entre sessões; endpoints, eventos e nomes de campo não.
 - **Correlação**: `requestId` do CDP ≠ `source.id` do NetLog; `time` do NetLog é
-  em **microssegundos de ticks** e o relógio de parede é
-  `timeTickOffset + time/1000` (ms) — comparar `time` cru com `wallTime` do CDP
-  não correlaciona. As duas consultas
+  em **milissegundos de ticks** (convenção do Chrome 156 nesta máquina) e o
+  relógio de parede é `timeTickOffset + time`. As duas consultas
   têm a mesma URL, então a associação precisa de corpo/horário e deve poder
   declarar ambiguidade. `headersText` do `requestWillBeSentExtraInfo` preserva a
   ordem dos headers; o objeto `headers` do CDP não.

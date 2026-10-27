@@ -135,10 +135,10 @@
   }
  ],
  "netlog": {
-  "time_units": "microseconds (process ticks)",
+  "time_units": "milliseconds (process ticks), like Chrome 156 on this machine",
   "time_tick_offset_units": "milliseconds (epoch)",
-  "wall_clock_formula": "timeTickOffset + time/1000 (ms)",
-  "note": "importadores precisam normalizar; comparar time cru com wallTime do CDP não correlaciona"
+  "wall_clock_formula": "timeTickOffset + time (ms)",
+  "expected_detection": "unit=milliseconds, deviation 0s against the CDP wall clock"
  },
  "protocol": {
   "form_fields": [

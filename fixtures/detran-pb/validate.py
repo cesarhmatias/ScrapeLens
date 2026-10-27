@@ -162,8 +162,10 @@ def main() -> int:
 
     # --- NetLog ----------------------------------------------------------
     offset = netlog["constants"]["timeTickOffset"]
+    first_tick = int(netlog["events"][0]["time"])
+    check(first_tick < 10_000_000_000, "NetLog time must be in milliseconds (ticks are small)")
     for i, event in enumerate(netlog["events"][::4]):
-        wall = (offset + int(event["time"]) / 1000) / 1000
+        wall = (offset + int(event["time"])) / 1000
         cdp_wall = [e["params"]["wallTime"] for e in cdp if e["method"] == "Network.requestWillBeSent"][i]
         check(abs(wall - cdp_wall) < 0.002,
               f"netlog[{i}] wall clock {wall} != cdp wallTime {cdp_wall}")

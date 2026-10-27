@@ -41,10 +41,12 @@ MODEL_SIM = "SA90002_CSAN00000"
 MODEL_VES = "SA90003_CSAN00000"
 
 T0_MS = 1_793_046_000_000  # 2026-10-26T23:00:00.000Z, fixed
-TICKS_BASE_US = 5_640_000_000  # plausible process uptime, like real Chrome NetLog ticks
-# Offset chosen so that timeTickOffset(ms) + time(µs)/1000 == wall clock used by
-# the CDP fixture. Real NetLog uses the same relationship with the real epoch.
-TICK_OFFSET_MS = T0_MS - TICKS_BASE_US // 1000
+# Chrome 156 on this machine writes NetLog `time` in MILLISECONDS of process
+# ticks (see core/src/parse/netlog.rs and experiments/results real captures).
+TICKS_BASE_MS = 5_640_000  # plausible process uptime
+# Offset chosen so that timeTickOffset(ms) + time(ms) == wall clock used by the
+# CDP fixture. Real NetLog uses the same relationship with the real epoch.
+TICK_OFFSET_MS = T0_MS - TICKS_BASE_MS
 
 HEADERS_COMMON = [
     ("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"),
@@ -336,9 +338,9 @@ def netlog_events() -> dict:
         if step.get("no_har"):
             continue
         src += 1
-        # Real Chrome NetLog: `time` is microseconds of process ticks; the wall
-        # clock is timeTickOffset(ms) + time/1000. Keep both fields faithful.
-        t = TICKS_BASE_US + step["offset_ms"] * 1000
+        # Real Chrome 156 NetLog: `time` is milliseconds of process ticks; the
+        # wall clock is timeTickOffset(ms) + time(ms). Keep both fields faithful.
+        t = TICKS_BASE_MS + step["offset_ms"]
         req = step["request"]
         events.append({
             "time": str(t),
@@ -624,10 +626,10 @@ def build() -> None:
             for i, s in enumerate(steps)
         ],
         "netlog": {
-            "time_units": "microseconds (process ticks)",
+            "time_units": "milliseconds (process ticks), like Chrome 156 on this machine",
             "time_tick_offset_units": "milliseconds (epoch)",
-            "wall_clock_formula": "timeTickOffset + time/1000 (ms)",
-            "note": "importadores precisam normalizar; comparar time cru com wallTime do CDP não correlaciona",
+            "wall_clock_formula": "timeTickOffset + time (ms)",
+            "expected_detection": "unit=milliseconds, deviation 0s against the CDP wall clock",
         },
         "protocol": {
             "form_fields": ["SESSIONID", "PAGEINITPARAM", "XML", "STAMP", "ERRORMESSAGE"],
