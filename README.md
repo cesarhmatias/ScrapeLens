@@ -79,10 +79,10 @@ promete reproduzir TLS, fingerprint ou transporte do Chrome.
   explícito; sessões com eventos parciais são preservadas como parciais.
 - Busca em payload, análise de priming/campos dinâmicos e comparação entre
   sessões do caso DETRAN ainda não estão implementadas na UI.
-- Bateria: 10/10, 260 asserções. Inclui captura nova no bundle final; a
-  importação pela UI usa evidência histórica, pois a repetição foi bloqueada
-  pelo seletor nativo inacessível à automação, mesmo após a permissão concedida.
-  [Estado atual](docs/06-entrega.md) e [bateria](docs/05-aceite.md).
+- Bateria: 10/10, 282 asserções. Captura nova e importações HAR/NetLog
+  verificadas no bundle final; arquivos selecionados manualmente pelo usuário
+  no seletor nativo. [Relatório final](docs/06-entrega.md) e
+  [bateria](docs/05-aceite.md).
 
 ## Desenvolvimento e build
 

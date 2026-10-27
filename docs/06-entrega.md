@@ -4,11 +4,12 @@
 
 Empacotamento local concluído. Bundle arm64 recompilado com o core atual,
 assinatura ad-hoc válida, abertura e nova captura pela UI comprovadas.
-Bateria automatizada: 10/10 critérios e 260/260 asserções, sem SKIP.
-A validação manual de novas importações HAR/NetLog pela UI permanece parcial:
-o usuário concedeu a permissão macOS, mas o seletor nativo continua
-inacessível à automação (AX vazio e teclas sem efeito). A evidência pela UI é histórica,
-feita no bundle anterior; as importações novas foram verificadas pelo CLI.
+Bateria automatizada: 10/10 critérios e 282/282 asserções, sem SKIP.
+Novas importações HAR/NetLog pela UI do mesmo bundle também confirmadas:
+seleção manual do usuário no painel nativo, seguida de verificação independente
+por Testes dos arquivos persistidos, origem, contagens, permissões e releitura.
+O bloqueio de automação do seletor ficou registrado como limitação do ambiente;
+não há verificação de importação pendente nesta entrega.
 
 Isso encerra a recuperação do pacote e registra o estado real. Não equivale
 à conclusão integral de todos os requisitos de produto da especificação:
@@ -59,10 +60,10 @@ O hash identifica este artefato, não garante build byte a byte reproduzível.
 | TypeScript e Vite | App: typecheck e build passam |
 | Build Tauri | App: exit 0, core recompilado como dependência crate |
 | Assinatura/hash/arquitetura | App + líder: codesign válido, SHA-256 acima, arm64 |
-| Bateria de aceite | Testes: 260/260, 10/10, commit 364bddb; promovida a docs/05-aceite.md |
+| Bateria de aceite | Testes: 282/282, 10/10, commit 77c32a7; promovida a docs/05-aceite.md |
 | Nova captura no bundle final | Testes: Iniciar/Encerrar pela UI, sessão capture-1793085113332 |
-| HAR/NetLog novos | CLI aprovado; repetição pela UI requer seleção humana no painel nativo |
-| Inspeção visual | App: prints 22/23; líder inspecionou print 23; Testes gravou screenshot-app-live.png |
+| HAR/NetLog novos | UI do bundle final: HAR 24 e NetLog 32 requisições, fontes conferidas |
+| Inspeção visual | App: prints 22/23; líder inspecionou print 23; Testes gravou screenshot-app-live.png e screenshot-app-imports.png |
 
 Sessão nova: 11 requisições, complete, cdp+netlog, 154 entradas de headers
 verificadas via NetLog h1, 9 matched, 2 ambíguas (2 candidatos cada), zero
@@ -89,38 +90,42 @@ ambíguos. Exportação cURL/Python e sanitização funcionam no core/CLI.
 
 ## Limitações e prioridades restantes
 
-1. Repetir importações frescas HAR/NetLog pela UI do bundle final quando o
-   usuário selecionar os arquivos no painel nativo. Permissão macOS já concedida;
-   a automação continua sem acesso ao seletor. Isso não altera a aprovação histórica
-   das importações, mas falta evidência atual desse caminho no pacote final.
-2. Conectar exportação/sanitização à UI. Busca no corpo, cadeia de priming,
+1. Conectar exportação/sanitização à UI. Busca no corpo, cadeia de priming,
    campos dinâmicos e comparação entre sessões do caso DETRAN seguem pendentes;
    fixtures e correlação 13/13 não comprovam essas funções da interface.
-3. Completar avisos/licenças transitivas para redistribuição. Código próprio
+2. Completar avisos/licenças transitivas para redistribuição. Código próprio
    MIT e lockfiles presentes; inventário completo não auditado.
-4. Captura só um target; não baixa corpos CDP; zero eventos gera erro em vez
+3. Captura só um target; não baixa corpos CDP; zero eventos gera erro em vez
    de sessão vazia; Origin CDP aberto por --remote-allow-origins=* durante a
    sessão local. Sanitização continua heurística, com omissão de anexos/eventos
    não sanitizáveis; exportação não garante fingerprint/transporte.
-5. Assinatura Developer ID/notarização e teste Intel antes de distribuição
+4. Assinatura Developer ID/notarização e teste Intel antes de distribuição
    ampla. Nada publicado, nenhum push/release nesta tarefa.
 
-O painel de importação foi deixado para seleção manual do usuário.
-A pasta `~/Projects/scrapelens-import-tmp/` foi preservada; nenhuma exclusão
-foi realizada. Instruções de uso/build estão no README da raiz.
+A pasta `~/Projects/scrapelens-import-tmp/` e as sessões duplicadas foram
+preservadas; nenhuma exclusão foi realizada. Instruções de uso/build no README.
 
-## Atualização do bloqueio após a permissão
+## Fechamento das importações manuais
 
-Testes tentou novamente após a resposta do usuário “Concedi a permissão; continue”.
-Em 2026-10-27T09:58Z, o OpenAndSavePanelService retornou zero elementos
-(`ax_window_unresolved`). Teclas em background e foreground não alteraram a
-captura. Nenhum clique absoluto foi realizado sobre a janela do usuário.
-Nenhuma nova sessão foi importada. Registro em
-`docs/validation/import-picker-blocker.json`; a bateria anterior permanece
-260/260 com o escopo histórico explicitado. Não se deve repetir a mesma
-automação nem contornar o bloqueio.
+A permissão macOS foi concedida pelo usuário. O seletor continuou inacessível
+à automação (AX vazio e teclas sem efeito); registro histórico em
+`docs/validation/import-picker-blocker.json`. Nenhuma permissão foi contornada.
+Após uma tentativa com JSON sem a estrutura HAR, Testes confirmou que o arquivo
+preparado era válido. O usuário selecionou os dois caminhos exatos e confirmou
+a importação. Testes verificou as novas sessões antes de aprovar (77c32a7):
 
-Para liberar a verificação restante, no painel Importar HAR use ⌘⇧G e selecione
-`~/Projects/scrapelens-import-tmp/har-derived.json`. Depois importe NetLog com
-`~/Projects/scrapelens-import-tmp/h1h2h3.chrome-netlog.json`. Ao confirmar as duas
-importações, Testes pode validar as sessões geradas e atualizar a evidência.
+- HAR `har-3dbc391c02a985c5-2`: 24 requisições h1/h2, complete, 24 sourceEvents,
+  sem DEMO e zero headers classificados como verificados. Sequência método/URL
+  idêntica às 24 entradas do HAR preparado.
+- NetLog `netlog-1704043c442dcbd1-2`: 32 requisições h1/h2/h3, 36 tentativas,
+  9 conexões, 4 redirects, 15 StreamSessions e 5.354 sourceEvents. Partial com
+  motivo explícito pela ausência de CDP; aviso de unidade temporal assumida.
+  Artefato NetLog persistido byte a byte idêntico à fonte preparada.
+- Diretórios 0700 e arquivos 0600; inspect relê 24/32 requisições sem modificar
+  session.json. Cópias duplicadas preservadas.
+- Print `tests/results/app-latest/screenshot-app-imports.png`: sessão NetLog
+  importada, 32 requisições e linhas h1/h2/h3. Metadados e verificação em
+  `tests/results/app-latest/run.json`.
+
+Bateria consolidada reexecutada: 282/282 (critério 9: 118/118). Captura e build
+não foram repetidos nessa última passada. O hash do bundle permaneceu o mesmo.

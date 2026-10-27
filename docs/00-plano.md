@@ -7,10 +7,9 @@ scraping. Especificação completa:
 ## Estado
 
 - Fase: 9 — pacote local arm64 recompilado e validado; documentação final.
-- Aceite automatizado: 10/10 critérios, 260/260 asserções (364bddb).
-- Captura nova pelo bundle final validada; repetição de importação HAR/NetLog
-  pela UI depende de seleção humana no painel nativo; permissão já concedida.
-  Evidência histórica separada.
+- Aceite automatizado: 10/10 critérios, 282/282 asserções (77c32a7).
+- Captura nova e importações HAR/NetLog pela UI do bundle final validadas.
+  Seleção manual do usuário e conferência independente dos arquivos persistidos.
 - Relatório de fechamento: `docs/06-entrega.md`; nada publicado.
 - Repositório criado em `/Users/cesar/Projects/scrapelens`.
 
