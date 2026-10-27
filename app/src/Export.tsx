@@ -9,11 +9,11 @@ import { bridge, type ExportPreview, type SanitizePreview, type SanitizeSaved, t
 import type { RequestRecord, SessionRecord } from "./types";
 
 const bodyStateLabel: Record<string, string> = {
-  captured: "corpo capturado",
-  truncated: "corpo truncado na captura",
-  unavailable: "corpo indisponível",
-  empty: "sem corpo",
-  discarded: "corpo descartado",
+  captured: "capturado",
+  truncated: "truncado na captura",
+  unavailable: "indisponível",
+  empty: "vazio",
+  discarded: "descartado",
 };
 
 const verificationLabel: Record<string, string> = {
@@ -178,13 +178,15 @@ export function ExportDialog({
     }
   }, [preview, request.id]);
 
-  const bodyNote = useMemo(() => {
+  // O estado vem da sessão; a nota abaixo é a explicação literal do core
+  // (ex.: "corpo não incluído: estado Unavailable"). Não reescrevemos o texto
+  // do core nem duplicamos a conclusão dele.
+  const bodyState = useMemo(() => {
     if (!preview) return null;
-    const label = bodyStateLabel[preview.bodyState] ?? preview.bodyState;
-    if (preview.bodyIncluded) {
-      return `${label} · incluído na exportação${preview.bodyNote ? ` — ${preview.bodyNote}` : ""}`;
-    }
-    return `${label} · não incluído${preview.bodyNote ? ` — ${preview.bodyNote}` : ""}`;
+    return {
+      label: bodyStateLabel[preview.bodyState] ?? preview.bodyState,
+      note: preview.bodyNote?.trim() ?? null,
+    };
   }, [preview]);
 
   return (
@@ -240,7 +242,12 @@ export function ExportDialog({
 
       {preview && (
         <>
-          {bodyNote && <p className="export-body-state">{bodyNote}</p>}
+          {bodyState && (
+            <div className="export-body-state">
+              <span className="export-body-label">Corpo: {bodyState.label}</span>
+              {bodyState.note && <span className="export-body-note">{bodyState.note}</span>}
+            </div>
+          )}
           <pre className="export-code" aria-label="Prévia da exportação">
             {preview.text}
           </pre>
