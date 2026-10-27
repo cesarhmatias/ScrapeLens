@@ -75,7 +75,10 @@ class Expect:
         return self.ok(got == expected, f"{label}: esperado {expected!r}, obtido {got!r}")
 
     def contains(self, haystack, needle, label: str) -> bool:
-        return self.ok(needle in haystack, f"{label}: {needle!r} ausente em {short(haystack)}")
+        present = needle in haystack
+        return self.ok(present, f"{label}: {needle!r} "
+                               + ("presente" if present else "ausente")
+                               + f" em {short(haystack)}")
 
     @property
     def failures(self) -> list[dict]:
@@ -875,9 +878,27 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
             exp.contains(har_import.get("labels", []), "har-import", "app: HAR com label har-import")
             exp.eq(har_import.get("mode"), "har-import", "app: HAR em modo har-import")
             exp.eq(har_import.get("completeness"), "complete", "app: HAR completo")
-            exp.ok(har_import.get("requests", 0) >= 10,
-                   f"app: HAR com {har_import.get('requests')} requisições")
+            exp.eq(har_import.get("requests"), 24,
+                   "app: HAR importado pela UI tem as 24 requisições do arquivo preparado")
+            exp.ok({"h1", "h2"} <= set(har_import.get("protocols", [])),
+                   f"app: HAR cobre h1 e h2 ({har_import.get('protocols')})")
+            har_counts = har_import.get("counts") or {}
+            exp.eq(har_counts.get("sourceEvents"), 24, "app: HAR com 24 sourceEvents persistidos")
+            exp.eq(har_counts.get("sourceEventsUsed"), 24, "app: HAR usa os 24 sourceEvents")
+            exp.eq(har_counts.get("sourceEventsUnknown"), 0, "app: HAR sem eventos-fonte desconhecidos")
+            exp.ok((har_import.get("source") or {}).get("matchesSourceSequence") is True,
+                   "app: HAR gravado reproduz a sequência método/URL de har-derived.json")
+            exp.eq(har_import.get("verifiedHeaderEntries"), 0,
+                   "app: HAR não alega ordem verificada (0 headers verified)")
+            exp.eq(har_import.get("headerSources"), ["har"],
+                   "app: headers do HAR importado têm fonte har")
             exp.eq(har_import.get("hasDemoLabel"), False, "app: HAR real sem rótulo demo")
+            exp.eq(har_import.get("dirMode"), "0o700", "app: diretório do HAR importado 0700")
+            exp.eq((har_import.get("rawArtifacts", {}).get("session.json") or {}).get("mode"), "0o600",
+                   "app: session.json do HAR importado 0600")
+            exp.ok((har_import.get("reload") or {}).get("unchangedAfterInspect") is True
+                   and (har_import.get("reload") or {}).get("requestsFromInspect") == 24,
+                   "app: HAR importado relê do disco com 24 requisições, sem alterar o arquivo")
         netlog_import = imports.get("netlog") or {}
         exp.ok(bool(netlog_import), "app: sessão NetLog real importada pelo app")
         if netlog_import:
@@ -888,29 +909,65 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                    "app: NetLog isolado partial com motivo")
             exp.ok(bool(netlog_import.get("completenessReasons")),
                    "app: motivo da parcialidade declarado")
-            exp.ok(netlog_import.get("requests", 0) >= 20,
-                   f"app: NetLog com {netlog_import.get('requests')} requisições")
+            exp.eq(netlog_import.get("requests"), 32,
+                   "app: NetLog importado pela UI tem as 32 requisições do arquivo preparado")
             exp.ok({"h1", "h2", "h3"} <= set(netlog_import.get("protocols", [])),
                    f"app: NetLog cobre h1/h2/h3 ({netlog_import.get('protocols')})")
-            exp.ok(netlog_import.get("streamSessions", 0) > 0,
-                   f"app: {netlog_import.get('streamSessions')} StreamSessions no NetLog")
+            netlog_counts = netlog_import.get("counts") or {}
+            exp.eq(netlog_counts.get("sourceEvents"), 5354,
+                   "app: NetLog com 5354 sourceEvents persistidos")
+            exp.eq(netlog_counts.get("sourceEventsUsed"), 5354, "app: NetLog usa os 5354 sourceEvents")
+            exp.eq(netlog_counts.get("sourceEventsUnknown"), 0,
+                   "app: NetLog sem eventos-fonte desconhecidos")
+            exp.eq(netlog_import.get("streamSessions"), 15,
+                   "app: 15 StreamSessions h3 persistidas no NetLog")
+            exp.ok((netlog_import.get("source") or {}).get("matchesSourceBytes") is True,
+                   "app: netlog.json persistido é byte-idêntico ao h1h2h3.chrome-netlog.json preparado")
+            exp.ok(netlog_import.get("verifiedHeaderEntries", 0) > 0
+                   and netlog_import.get("verifiedSources") == ["netlog"],
+                   f"app: {netlog_import.get('verifiedHeaderEntries')} headers verificados com fonte netlog")
+            exp.eq(netlog_import.get("headerSources"), ["netlog"],
+                   "app: headers do NetLog importado têm fonte netlog")
+            exp.eq(netlog_import.get("hasDemoLabel"), False, "app: NetLog real sem rótulo demo")
+            exp.eq(netlog_import.get("dirMode"), "0o700", "app: diretório do NetLog importado 0700")
+            exp.eq((netlog_import.get("rawArtifacts", {}).get("session.json") or {}).get("mode"), "0o600",
+                   "app: session.json do NetLog importado 0600")
+            exp.eq((netlog_import.get("rawArtifacts", {}).get("netlog.json") or {}).get("mode"), "0o600",
+                   "app: netlog.json copiado para a sessão com 0600")
+            exp.ok((netlog_import.get("reload") or {}).get("unchangedAfterInspect") is True
+                   and (netlog_import.get("reload") or {}).get("requestsFromInspect") == 32,
+                   "app: NetLog importado relê do disco com 32 requisições, sem alterar o arquivo")
+        exp.ok(app.get("gui", {}).get("importsScreenshotExists") is True,
+               "app: print da sessão importada pela UI capturado")
         evidence.append(
             f"app empacotado: `ScrapeLens.app` {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB, "
             f"arm64, ad-hoc, binário único, executável `{bundle.get('executableSha256')}`; "
             f"captura ao vivo {live.get('id')} "
             f"({live.get('requests')} req, {live.get('verifiedHeaderEntries')} headers verificados, "
-            f"{len(ambiguous)} ambíguas); HAR {har_import.get('requests')} req; "
-            f"NetLog {netlog_import.get('requests')} req ({netlog_import.get('protocols')}).")
+            f"{len(ambiguous)} ambíguas); importação HAR pela UI `{har_import.get('id')}` "
+            f"({har_import.get('requests')} req, {har_import.get('protocols')}, "
+            f"{har_import.get('counts', {}).get('sourceEvents')} sourceEvents); "
+            f"importação NetLog pela UI `{netlog_import.get('id')}` "
+            f"({netlog_import.get('requests')} req, {netlog_import.get('protocols')}, "
+            f"{netlog_import.get('streamSessions')} StreamSessions, "
+            f"{netlog_import.get('counts', {}).get('sourceEvents')} sourceEvents).")
         evidence.append(f"sessões reais do app: `{rel(pathlib.Path(app.get('appSessionsDir', '')))}` "
-                        f"· print `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}`")
+                        f"· prints `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}` e "
+                        f"`{rel(pathlib.Path(app.get('gui', {}).get('importsScreenshot') or ''))}`")
         notes.append("Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final "
                      f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em 2026-10-27 04:00 UTC−03 com o core até "
                      "`b5846be`, incluindo `f6c6bdd`); a sessão ao vivo acima é nova, não reaproveitada.")
-        notes.append("As importações HAR/NetLog do app são da rodada anterior (bundle anterior): o painel "
-                     "nativo de arquivos exige permissão do macOS que só o usuário concede, e o clique "
-                     "sintético foi recusado pelo TCC. Os arquivos HAR/NetLog frescos desta rodada "
-                     "(h1/h2/h3, 24 e 32 requisições) foram validados pela CLI do core e ficam em "
-                     "`tests/.work/app-import/`; a importação pela UI fica pendente dessa permissão.")
+        notes.append("As importações HAR e NetLog também foram refeitas no bundle final "
+                     f"(`{har_import.get('id')}` e `{netlog_import.get('id')}`), agora pela UI: o usuário "
+                     "selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável "
+                     "por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). "
+                     "A verificação é independente da confirmação do usuário: o HAR gravado reproduz a "
+                     "sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é "
+                     "byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo "
+                     "duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em "
+                     "`har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog "
+                     "isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog "
+                     "não pode ser calibrada — a limitação fica explícita na sessão.")
     else:
         exp.ok(False, "app: resumo do ciclo pelo .app ausente (rode tests/capture/app_validate.py)")
     evidence.append(
@@ -1151,10 +1208,10 @@ def evidence_scope(capture: str | None, app_run: str | None) -> list[str]:
                      f"pelo bundle final (`{str(app.get('bundle', {}).get('executableSha256'))[:12]}`).")
         historical = [f"{name} `{data.get('id')}`" for name, data in imports.items() if data]
         if historical:
-            lines.append("Histórico reaproveitado: importações pela UI " + ", ".join(historical)
-                         + " (bundle anterior). As importações frescas desta rodada foram validadas pela "
-                           "CLI do core, não pela UI: o painel nativo de arquivos exige permissão do macOS "
-                           "que só o usuário concede.")
+            lines.append("Novo nesta rodada: importações HAR/NetLog pela UI do bundle final ("
+                         + ", ".join(historical)
+                         + "), com seleção manual do usuário e verificação por SHA-256/sequência contra "
+                           "os arquivos preparados em `~/Projects/scrapelens-import-tmp`.")
     return lines
 
 

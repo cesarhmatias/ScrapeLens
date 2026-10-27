@@ -8,10 +8,15 @@ confere estrutura, permissões, fidelidade e ausência de rótulos demo, e grava
 
 Uso:
   python3 tests/capture/app_validate.py \
-    --run-dir tests/capture/runs/app-20261026T235232Z \
+    --run-dir tests/results/app-latest \
     --capture-id capture-1793058850184 \
-    --har-id har-ae8b55ad56e338af --netlog-id netlog-b3f04ac555a0d2fe \
-    --screenshot tests/results/app-latest/screenshot-app-live.png
+    --har-id har-3dbc391c02a985c5-2 --netlog-id netlog-1704043c442dcbd1-2 \
+    --screenshot tests/results/app-latest/screenshot-app-live.png \
+    --imports-screenshot tests/results/app-latest/screenshot-app-imports.png
+
+As importações HAR/NetLog comparam a sessão gravada com os arquivos preparados em
+`~/Projects/scrapelens-import-tmp` (`--import-sources`): o HAR pela sequência
+método/URL dos `log.entries` e o NetLog pelo SHA-256 do `netlog.json` persistido.
 """
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 CORE = ROOT / "core" / "target" / "release" / "scrapelens-core"
 DEFAULT_SESSIONS = pathlib.Path.home() / "Library" / "Application Support" / "app.scrapelens.desktop" / "sessions"
 DEFAULT_BUNDLE = ROOT / "src-tauri" / "target" / "release" / "bundle" / "macos" / "ScrapeLens.app"
+DEFAULT_IMPORT_SOURCES = pathlib.Path.home() / "Projects" / "scrapelens-import-tmp"
 
 
 def run(*args: str) -> subprocess.CompletedProcess:
@@ -80,7 +86,10 @@ def bundle_facts(bundle: pathlib.Path) -> dict:
 
 
 def session_facts(session_dir: pathlib.Path) -> dict:
+    sha_before = sha256(session_dir / "session.json")
     session = inspect(session_dir)
+    sha_after = sha256(session_dir / "session.json")
+    on_disk = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
     meta = session["session"]
     requests = session["requests"]
     verified = [header for request in requests
@@ -92,6 +101,11 @@ def session_facts(session_dir: pathlib.Path) -> dict:
                  for request in requests if request.get("match") == "ambiguous"]
     cookie_names = sorted({pair["name"] for request in requests
                            for pair in request.get("cookie", {}).get("pairs", [])})
+    header_sources = sorted({header.get("source")
+                             for request in requests
+                             for header in (request["requestHeaders"].get("headers", [])
+                                            + request["responseHeaders"].get("headers", []))
+                             if header.get("source")})
     set_cookie_lines = [record["raw"] for request in requests for record in request.get("setCookies", [])]
     raw = {}
     for name in ("session.json", "cdp-events.jsonl", "netlog.json"):
@@ -122,6 +136,7 @@ def session_facts(session_dir: pathlib.Path) -> dict:
         "verifiedHeaderEntries": len(verified),
         "verifiedSources": sorted({header.get("source") for header in verified}),
         "verifiedEvents": sorted({header.get("event") for header in verified}),
+        "headerSources": header_sources,
         "cookieNames": cookie_names,
         "setCookieLines": len(set_cookie_lines),
         "setCookieDuplicates": len(set_cookie_lines) - len(set(set_cookie_lines)),
@@ -134,8 +149,61 @@ def session_facts(session_dir: pathlib.Path) -> dict:
                             for label in meta.get("labels", [])),
         "dirMode": mode(session_dir),
         "rawArtifacts": raw,
+        "reload": {
+            "requestsOnDisk": len(on_disk.get("requests", [])),
+            "requestsFromInspect": len(requests),
+            "sha256BeforeInspect": sha_before,
+            "sha256AfterInspect": sha_after,
+            "unchangedAfterInspect": sha_before == sha_after,
+        },
         "attachments": sorted(path.name for path in attachments.iterdir()) if attachments.exists() else [],
     }
+
+
+def import_source_check(kind: str, session_dir: pathlib.Path, source_dir: pathlib.Path) -> dict:
+    """Confere se a sessão importada veio do arquivo preparado para a UI."""
+    if kind == "har":
+        source = source_dir / "har-derived.json"
+        if not source.exists():
+            return {"path": str(source), "exists": False}
+        data = json.loads(source.read_text(encoding="utf-8"))
+        entries = (data.get("log") or {}).get("entries") or []
+        expected = [(entry.get("request", {}).get("method"), entry.get("request", {}).get("url"))
+                    for entry in entries]
+        session = inspect(session_dir)
+        actual = [(request.get("method"), request.get("url")) for request in session["requests"]]
+        return {
+            "path": str(source),
+            "exists": True,
+            "sha256": sha256(source),
+            "entries": len(expected),
+            "matchesSourceSequence": expected == actual,
+        }
+    source = source_dir / "h1h2h3.chrome-netlog.json"
+    persisted = session_dir / "netlog.json"
+    if not source.exists() or not persisted.exists():
+        return {"path": str(source), "exists": False}
+    source_sha = sha256(source)
+    return {
+        "path": str(source),
+        "exists": True,
+        "sha256": source_sha,
+        "persistedSha256": sha256(persisted),
+        "matchesSourceBytes": source_sha == sha256(persisted),
+    }
+
+
+def duplicate_imports(sessions: pathlib.Path, kind: str, session_dir: pathlib.Path) -> list[str]:
+    """Lista outras sessões do mesmo tipo com session.json idêntico (repetição da importação)."""
+    target = sha256(session_dir / "session.json")
+    duplicates: list[str] = []
+    for candidate in sorted(sessions.glob(kind + "-*")):
+        other = candidate / "session.json"
+        if candidate.name == session_dir.name or not other.exists():
+            continue
+        if sha256(other) == target:
+            duplicates.append(candidate.name)
+    return duplicates
 
 
 def main() -> int:
@@ -147,6 +215,8 @@ def main() -> int:
     parser.add_argument("--har-id")
     parser.add_argument("--netlog-id")
     parser.add_argument("--screenshot")
+    parser.add_argument("--imports-screenshot")
+    parser.add_argument("--import-sources", default=str(DEFAULT_IMPORT_SOURCES))
     parser.add_argument("--testserver-dir")
     parser.add_argument("--start-url", default="http://127.0.0.1:8781/page")
     args = parser.parse_args()
@@ -188,6 +258,16 @@ def main() -> int:
             "netlog": session_facts(netlog) if netlog and netlog.exists() else None,
         },
     }
+    source_dir = pathlib.Path(args.import_sources).expanduser()
+    for key, session_dir in (("har", har), ("netlog", netlog)):
+        data = facts["imports"][key]
+        if data and session_dir and session_dir.exists():
+            data["source"] = import_source_check(key, session_dir, source_dir)
+            data["duplicateSessions"] = duplicate_imports(sessions, key, session_dir)
+    if args.imports_screenshot:
+        imports_shot = pathlib.Path(args.imports_screenshot).resolve()
+        facts["gui"]["importsScreenshot"] = str(imports_shot)
+        facts["gui"]["importsScreenshotExists"] = imports_shot.exists()
     if args.testserver_dir:
         evidence = pathlib.Path(args.testserver_dir)
         h1 = evidence / "h1.jsonl"

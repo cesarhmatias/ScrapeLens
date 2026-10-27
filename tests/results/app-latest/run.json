@@ -1,13 +1,15 @@
 {
  "runId": "app-latest",
- "generatedAt": "2026-10-27T07:18:34Z",
+ "generatedAt": "2026-10-27T13:59:32Z",
  "gui": {
   "startedFrom": "ScrapeLens.app (release, pid capturado pela janela)",
   "startButton": "Iniciar sessão",
   "stopButton": "Encerrar",
   "startUrl": "http://127.0.0.1:8781/page",
   "screenshot": "/Users/cesar/Projects/scrapelens/tests/results/app-latest/screenshot-app-live.png",
-  "screenshotExists": true
+  "screenshotExists": true,
+  "importsScreenshot": "/Users/cesar/Projects/scrapelens/tests/results/app-latest/screenshot-app-imports.png",
+  "importsScreenshotExists": true
  },
  "bundle": {
   "path": "/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app",
@@ -83,6 +85,10 @@
   "verifiedEvents": [
    "HTTP_TRANSACTION_SEND_REQUEST_HEADERS"
   ],
+  "headerSources": [
+   "cdp",
+   "netlog"
+  ],
   "cookieNames": [
    "sc_a",
    "sc_b",
@@ -121,13 +127,20 @@
     "mode": "0o600"
    }
   },
+  "reload": {
+   "requestsOnDisk": 11,
+   "requestsFromInspect": 11,
+   "sha256BeforeInspect": "7eb23bc924ac6dd645af9f8fb944dfcbfb19507315143818c4612c3f86021a86",
+   "sha256AfterInspect": "7eb23bc924ac6dd645af9f8fb944dfcbfb19507315143818c4612c3f86021a86",
+   "unchangedAfterInspect": true
+  },
   "attachments": []
  },
  "imports": {
   "har": {
-   "id": "har-ae8b55ad56e338af",
-   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-ae8b55ad56e338af",
-   "sha256": "4e5fbb384736e530b3d076e46a462712eab93aa4498d5db86b764d684becc93a",
+   "id": "har-3dbc391c02a985c5-2",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2",
+   "sha256": "0813929f7bf1958994a2a6f8cee50eb2a5174c734065769a4544a32ce0aeb367",
    "mode": "har-import",
    "labels": [
     "har-import"
@@ -135,43 +148,48 @@
    "completeness": "complete",
    "completenessReasons": [],
    "counts": {
-    "requests": 10,
-    "attempts": 12,
-    "redirects": 2,
-    "connections": 1,
+    "requests": 24,
+    "attempts": 24,
+    "redirects": 0,
+    "connections": 0,
     "streamSessions": 0,
-    "sourceEvents": 0,
-    "sourceEventsUsed": 0,
+    "sourceEvents": 24,
+    "sourceEventsUsed": 24,
     "sourceEventsUnknown": 0,
     "warnings": 2
    },
-   "requests": 10,
-   "attempts": 12,
+   "requests": 24,
+   "attempts": 24,
    "protocols": [
-    "h1"
+    "h1",
+    "h2"
    ],
    "statuses": [
-    200
+    200,
+    404
    ],
    "matched": 0,
    "ambiguous": [],
    "ambiguousCandidates": 0,
-   "unmatched": 10,
-   "redirects": 2,
+   "unmatched": 24,
+   "redirects": 0,
    "streamSessions": 0,
    "verifiedHeaderEntries": 0,
    "verifiedSources": [],
    "verifiedEvents": [],
+   "headerSources": [
+    "har"
+   ],
    "cookieNames": [
     "sc_a",
     "sc_b",
     "sc_dup",
     "sc_page"
    ],
-   "setCookieLines": 8,
-   "setCookieDuplicates": 4,
+   "setCookieLines": 16,
+   "setCookieDuplicates": 12,
    "responseBodyStates": [
-    "captured"
+    "unavailable"
    ],
    "unavailableWithNote": true,
    "warnings": [
@@ -183,7 +201,7 @@
    "rawArtifacts": {
     "session.json": {
      "exists": true,
-     "bytes": 375213,
+     "bytes": 854342,
      "mode": "0o600"
     },
     "cdp-events.jsonl": {
@@ -197,25 +215,29 @@
      "mode": null
     }
    },
-   "attachments": [
-    "har-entry-0000.response.bin",
-    "har-entry-0001.response.bin",
-    "har-entry-0002.response.bin",
-    "har-entry-0003.response.bin",
-    "har-entry-0004.response.bin",
-    "har-entry-0005.response.bin",
-    "har-entry-0006.response.bin",
-    "har-entry-0009.response.bin",
-    "har-entry-0010.request.bin",
-    "har-entry-0010.response.bin",
-    "har-entry-0011.request.bin",
-    "har-entry-0011.response.bin"
+   "reload": {
+    "requestsOnDisk": 24,
+    "requestsFromInspect": 24,
+    "sha256BeforeInspect": "0813929f7bf1958994a2a6f8cee50eb2a5174c734065769a4544a32ce0aeb367",
+    "sha256AfterInspect": "0813929f7bf1958994a2a6f8cee50eb2a5174c734065769a4544a32ce0aeb367",
+    "unchangedAfterInspect": true
+   },
+   "attachments": [],
+   "source": {
+    "path": "/Users/cesar/Projects/scrapelens-import-tmp/har-derived.json",
+    "exists": true,
+    "sha256": "049e566c099f20f2628b2c50efaf8666b3c65cdf8f8d362229a5eb38de16e254",
+    "entries": 24,
+    "matchesSourceSequence": true
+   },
+   "duplicateSessions": [
+    "har-3dbc391c02a985c5"
    ]
   },
   "netlog": {
-   "id": "netlog-b3f04ac555a0d2fe",
-   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-b3f04ac555a0d2fe",
-   "sha256": "5bc1dd028a1b976d896c12677eaed2119edd6c4019cafdefcbd15c6a38065dc5",
+   "id": "netlog-1704043c442dcbd1-2",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-1704043c442dcbd1-2",
+   "sha256": "49253b2a971711f4ff64a033255ef96c957008f846ad839ef826b7b4bf0a9b0a",
    "mode": "netlog-import",
    "labels": [
     "netlog-import"
@@ -225,22 +247,23 @@
     "NetLog não declara captura CDP; cobertura de requisições não confirmada"
    ],
    "counts": {
-    "requests": 24,
-    "attempts": 26,
-    "redirects": 2,
-    "connections": 8,
-    "streamSessions": 11,
-    "sourceEvents": 0,
-    "sourceEventsUsed": 0,
+    "requests": 32,
+    "attempts": 36,
+    "redirects": 4,
+    "connections": 9,
+    "streamSessions": 15,
+    "sourceEvents": 5354,
+    "sourceEventsUsed": 5354,
     "sourceEventsUnknown": 0,
-    "warnings": 1
+    "warnings": 2
    },
-   "requests": 24,
-   "attempts": 26,
+   "requests": 32,
+   "attempts": 36,
    "protocols": [
     "h1",
     "h2",
-    "h3"
+    "h3",
+    "unknown"
    ],
    "statuses": [
     200,
@@ -249,15 +272,18 @@
    "matched": 0,
    "ambiguous": [],
    "ambiguousCandidates": 0,
-   "unmatched": 24,
-   "redirects": 2,
-   "streamSessions": 11,
-   "verifiedHeaderEntries": 196,
+   "unmatched": 32,
+   "redirects": 4,
+   "streamSessions": 15,
+   "verifiedHeaderEntries": 186,
    "verifiedSources": [
     "netlog"
    ],
    "verifiedEvents": [
     "HTTP_TRANSACTION_SEND_REQUEST_HEADERS"
+   ],
+   "headerSources": [
+    "netlog"
    ],
    "cookieNames": [
     "sc_a",
@@ -265,13 +291,14 @@
     "sc_dup",
     "sc_page"
    ],
-   "setCookieLines": 8,
-   "setCookieDuplicates": 4,
+   "setCookieLines": 16,
+   "setCookieDuplicates": 12,
    "responseBodyStates": [
     "unavailable"
    ],
    "unavailableWithNote": true,
    "warnings": [
+    "netlog.time_unit_assumed",
     "session.cdp_missing"
    ],
    "hasDemoLabel": false,
@@ -279,7 +306,7 @@
    "rawArtifacts": {
     "session.json": {
      "exists": true,
-     "bytes": 1292224,
+     "bytes": 1506736,
      "mode": "0o600"
     },
     "cdp-events.jsonl": {
@@ -289,11 +316,28 @@
     },
     "netlog.json": {
      "exists": true,
-     "bytes": 2186896,
+     "bytes": 2137244,
      "mode": "0o600"
     }
    },
-   "attachments": []
+   "reload": {
+    "requestsOnDisk": 32,
+    "requestsFromInspect": 32,
+    "sha256BeforeInspect": "49253b2a971711f4ff64a033255ef96c957008f846ad839ef826b7b4bf0a9b0a",
+    "sha256AfterInspect": "49253b2a971711f4ff64a033255ef96c957008f846ad839ef826b7b4bf0a9b0a",
+    "unchangedAfterInspect": true
+   },
+   "attachments": [],
+   "source": {
+    "path": "/Users/cesar/Projects/scrapelens-import-tmp/h1h2h3.chrome-netlog.json",
+    "exists": true,
+    "sha256": "de960e97fc6099aa53c356c5a8dc4f15f314f77bce8c9c0246db0c58f0ef746a",
+    "persistedSha256": "de960e97fc6099aa53c356c5a8dc4f15f314f77bce8c9c0246db0c58f0ef746a",
+    "matchesSourceBytes": true
+   },
+   "duplicateSessions": [
+    "netlog-1704043c442dcbd1"
+   ]
   }
  },
  "testserver": {

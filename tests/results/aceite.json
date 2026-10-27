@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-27T07:20:24Z",
+ "generatedAt": "2026-10-27T14:00:22Z",
  "coreSha256": "10f3b76b637ba9fff374edcf6ed0079d1e67bbfe591a72e97cb71b2da1026999",
  "coreBytes": 2176608,
- "gitCommit": "87d7b61",
+ "gitCommit": "da0ac52",
  "macos": "26.5.2",
  "machine": "arm64",
  "python": "3.14.8",
@@ -137,7 +137,7 @@
     "asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte"
    ],
    "notes": [],
-   "seconds": 0.07
+   "seconds": 0.19
   },
   {
    "item": 2,
@@ -158,7 +158,7 @@
     },
     {
      "ok": true,
-     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' ausente em {'har.missing_response', 'session.netlog_missing', 'session.cdp_missing'}"
+     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'session.cdp_missing', 'session.netlog_missing', 'har.missing_response'}"
     },
     {
      "ok": true,
@@ -174,11 +174,11 @@
     },
     {
      "ok": true,
-     "label": "HAR inválido: mensagem de erro no stderr: 'erro:' ausente em erro: dado obrigatório ausente: log.entries\n"
+     "label": "HAR inválido: mensagem de erro no stderr: 'erro:' presente em erro: dado obrigatório ausente: log.entries\n"
     },
     {
      "ok": true,
-     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' ausente em {'session.netlog_missing', 'session.cdp_missing', 'har.unknown_encoding'}"
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'session.cdp_missing', 'har.unknown_encoding', 'session.netlog_missing'}"
     },
     {
      "ok": true,
@@ -202,7 +202,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' ausente em {'netlog.time_unit_assumed', 'session.cdp_missing', 'netlog.unknown_event_type'}"
+     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'netlog.time_unit_assumed', 'netlog.unknown_event_type', 'session.cdp_missing'}"
     },
     {
      "ok": true,
@@ -218,11 +218,11 @@
     },
     {
      "ok": true,
-     "label": "NetLog sem constants: aviso explícito: 'netlog.constants_missing' ausente em {\"netlog.constants_missing\": {\"code\": \"netlog.constants_missing\", \"message\": \"NetLog sem objeto constants; tipos de evento não podem ser decodificados por nome\", \"severity\": \"warning\"}, \"netlog.time_unit_assumed\": {\"code…"
+     "label": "NetLog sem constants: aviso explícito: 'netlog.constants_missing' presente em {\"netlog.constants_missing\": {\"code\": \"netlog.constants_missing\", \"message\": \"NetLog sem objeto constants; tipos de evento não podem ser decodificados por nome\", \"severity\": \"warning\"}, \"netlog.time_unit_assumed\": {\"code…"
     },
     {
      "ok": true,
-     "label": "NetLog sem constants: aviso de zero requisições: 'netlog.no_requests' ausente em {\"netlog.constants_missing\": {\"code\": \"netlog.constants_missing\", \"message\": \"NetLog sem objeto constants; tipos de evento não podem ser decodificados por nome\", \"severity\": \"warning\"}, \"netlog.time_unit_assumed\": {\"code…"
+     "label": "NetLog sem constants: aviso de zero requisições: 'netlog.no_requests' presente em {\"netlog.constants_missing\": {\"code\": \"netlog.constants_missing\", \"message\": \"NetLog sem objeto constants; tipos de evento não podem ser decodificados por nome\", \"severity\": \"warning\"}, \"netlog.time_unit_assumed\": {\"code…"
     },
     {
      "ok": true,
@@ -234,7 +234,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' ausente em {'netlog.time_unit_assumed', 'netlog.header_line_invalid', 'session.cdp_missing'}"
+     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'netlog.time_unit_assumed', 'netlog.header_line_invalid', 'session.cdp_missing'}"
     },
     {
      "ok": true,
@@ -246,7 +246,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog truncado: erro no stderr: 'erro:' ausente em erro: JSON inválido em NetLog: EOF while parsing a list at line 1 column 48\n"
+     "label": "NetLog truncado: erro no stderr: 'erro:' presente em erro: JSON inválido em NetLog: EOF while parsing a list at line 1 column 48\n"
     }
    ],
    "passed": 26,
@@ -261,7 +261,7 @@
     "HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.",
     "Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos."
    ],
-   "seconds": 0.15
+   "seconds": 0.27
   },
   {
    "item": 3,
@@ -351,7 +351,7 @@
     "Diagnóstico da falha do líder: a fixture declarava `wallTime` sem o `timestamp` monotônico (`1793046000.0`), e o core de `f6c6bdd` calibrava `time` como microssegundos; o NetLog ficava 2 s à frente e as duas requisições viravam `unmatched`. O Chrome real satisfaz `wallTime = timeTickOffset/1000 + timestamp` (desvio medido < 1 ms), equação agora usada na fixture. Era defeito da fixture, não do core; a falha original está preservada em `tests/results/aceite-criterio3-falha-lider.json` e `RELATORIO-criterio3-falha-lider.md`.",
     "Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`."
    ],
-   "seconds": 0.05
+   "seconds": 0.09
   },
   {
    "item": 4,
@@ -416,7 +416,7 @@
    "notes": [
     "O redirect é um elo entre tentativas, não uma requisição separada."
    ],
-   "seconds": 0.05
+   "seconds": 0.06
   },
   {
    "item": 5,
@@ -433,7 +433,7 @@
     },
     {
      "ok": true,
-     "label": "req 1: nota explica o descarte: 'descartado' ausente em corpo descartado pela política de captura de aceite"
+     "label": "req 1: nota explica o descarte: 'descartado' presente em corpo descartado pela política de captura de aceite"
     },
     {
      "ok": true,
@@ -477,7 +477,7 @@
     },
     {
      "ok": true,
-     "label": "req 3: nota explica indisponibilidade: 'não fornece' ausente em fonte não fornece corpo de requisição"
+     "label": "req 3: nota explica indisponibilidade: 'não fornece' presente em fonte não fornece corpo de requisição"
     },
     {
      "ok": true,
@@ -485,7 +485,7 @@
     },
     {
      "ok": true,
-     "label": "todos os cinco estados aparecem na fixture: esperado {'truncated', 'captured', 'empty', 'discarded', 'unavailable'}, obtido {'truncated', 'captured', 'empty', 'discarded', 'unavailable'}"
+     "label": "todos os cinco estados aparecem na fixture: esperado {'unavailable', 'captured', 'empty', 'truncated', 'discarded'}, obtido {'unavailable', 'captured', 'empty', 'truncated', 'discarded'}"
     }
    ],
    "passed": 16,
@@ -585,7 +585,7 @@
     },
     {
      "ok": true,
-     "label": "cURL: header com CR/LF descartado com aviso: 'export.header_injection' ausente em aviso [export.header_injection]: header x-bad descartado: valor contém CR, LF ou NUL e não pode ser reproduzido com segurança\n"
+     "label": "cURL: header com CR/LF descartado com aviso: 'export.header_injection' presente em aviso [export.header_injection]: header x-bad descartado: valor contém CR, LF ou NUL e não pode ser reproduzido com segurança\n"
     },
     {
      "ok": true,
@@ -625,7 +625,7 @@
     },
     {
      "ok": true,
-     "label": "cURL: corpo NUL omitido com aviso (não truncado em silêncio): 'export.body_nul' ausente em aviso [export.body_nul]: corpo binário com NUL omitido do cURL; use a exportação Python ou o anexo original\naviso [export.content_length_without_body]: Content-Length original removido: o corpo não acompanha a exportação…"
+     "label": "cURL: corpo NUL omitido com aviso (não truncado em silêncio): 'export.body_nul' presente em aviso [export.body_nul]: corpo binário com NUL omitido do cURL; use a exportação Python ou o anexo original\naviso [export.content_length_without_body]: Content-Length original removido: o corpo não acompanha a exportação…"
     },
     {
      "ok": true,
@@ -637,7 +637,7 @@
     },
     {
      "ok": true,
-     "label": "Python: header com CR/LF descartado com aviso: 'export.header_injection' ausente em aviso [export.header_injection]: header x-bad descartado: valor contém CR, LF ou NUL e não pode ser reproduzido com segurança\n"
+     "label": "Python: header com CR/LF descartado com aviso: 'export.header_injection' presente em aviso [export.header_injection]: header x-bad descartado: valor contém CR, LF ou NUL e não pode ser reproduzido com segurança\n"
     },
     {
      "ok": true,
@@ -678,7 +678,7 @@
    "notes": [
     "Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK)."
    ],
-   "seconds": 0.14
+   "seconds": 0.13
   },
   {
    "item": 8,
@@ -715,15 +715,15 @@
     },
     {
      "ok": true,
-     "label": "relatório contabiliza rawEvents: 'rawEvents' ausente em {\"body:form\": 1, \"body:json\": 2, \"cookie\": 2, \"header:authorization\": 2, \"header:cookie\": 2, \"header:set-cookie\": 2, \"rawEvents\": 1, \"setCookie\": 2}"
+     "label": "relatório contabiliza rawEvents: 'rawEvents' presente em {\"body:form\": 1, \"body:json\": 2, \"cookie\": 2, \"header:authorization\": 2, \"header:cookie\": 2, \"header:set-cookie\": 2, \"rawEvents\": 1, \"setCookie\": 2}"
     },
     {
      "ok": true,
-     "label": "aviso sanitize.raw_events_removed presente: 'sanitize.raw_events_removed' ausente em {'sanitize.attachment_omitted', 'sanitize.raw_events_removed'}"
+     "label": "aviso sanitize.raw_events_removed presente: 'sanitize.raw_events_removed' presente em {'sanitize.raw_events_removed', 'sanitize.attachment_omitted'}"
     },
     {
      "ok": true,
-     "label": "anexo não sanitizável omitido com aviso: 'sanitize.attachment_omitted' ausente em {'sanitize.attachment_omitted', 'sanitize.raw_events_removed'}"
+     "label": "anexo não sanitizável omitido com aviso: 'sanitize.attachment_omitted' presente em {'sanitize.raw_events_removed', 'sanitize.attachment_omitted'}"
     },
     {
      "ok": true,
@@ -731,7 +731,7 @@
     },
     {
      "ok": true,
-     "label": "sessão marcada com label sanitized: 'sanitized' ausente em [\"har-import\", \"sanitized\"]"
+     "label": "sessão marcada com label sanitized: 'sanitized' presente em [\"har-import\", \"sanitized\"]"
     },
     {
      "ok": true,
@@ -751,7 +751,7 @@
     },
     {
      "ok": true,
-     "label": "valores substituídos por [REDACTED]: '[REDACTED]' ausente em {\n  \"schemaVersion\": 1,\n  \"session\": {\n    \"id\": \"har-247ad34988fac6c7\",\n    \"browser\": {\n      \"name\": \"scrapelens-aceite\",\n      \"version\": \"1\"\n    },\n    \"startedAt\": \"2026-10-26T20:00:00.000Z\",\n    \"completeness\": {\n…"
+     "label": "valores substituídos por [REDACTED]: '[REDACTED]' presente em {\n  \"schemaVersion\": 1,\n  \"session\": {\n    \"id\": \"har-247ad34988fac6c7\",\n    \"browser\": {\n      \"name\": \"scrapelens-aceite\",\n      \"version\": \"1\"\n    },\n    \"startedAt\": \"2026-10-26T20:00:00.000Z\",\n    \"completeness\": {\n…"
     },
     {
      "ok": true,
@@ -759,7 +759,7 @@
     },
     {
      "ok": true,
-     "label": "mensagem de recusa é acionável: 'já contém' ausente em erro: exportação impossível: destino já contém uma sessão (/Users/cesar/Projects/scrapelens/tests/.work/run/item8/sanitized); use um diretório novo para a versão sanitizada\n"
+     "label": "mensagem de recusa é acionável: 'já contém' presente em erro: exportação impossível: destino já contém uma sessão (/Users/cesar/Projects/scrapelens/tests/.work/run/item8/sanitized); use um diretório novo para a versão sanitizada\n"
     }
    ],
    "passed": 19,
@@ -772,7 +772,7 @@
    "notes": [
     "Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso."
    ],
-   "seconds": 0.04
+   "seconds": 0.05
   },
   {
    "item": 9,
@@ -817,7 +817,7 @@
     },
     {
      "ok": true,
-     "label": "h1h2: versão do Chrome registrada: '.' ausente em Chrome/156.0.8078.48"
+     "label": "h1h2: versão do Chrome registrada: '.' presente em Chrome/156.0.8078.48"
     },
     {
      "ok": true,
@@ -833,11 +833,11 @@
     },
     {
      "ok": true,
-     "label": "h1h2: protocolo h2 presente: 'h2' ausente em {'h2', 'h1'}"
+     "label": "h1h2: protocolo h2 presente: 'h2' presente em {'h1', 'h2'}"
     },
     {
      "ok": true,
-     "label": "h1h2: nenhum protocolo divergente: 'h2' ausente em {'h2', 'h1'}"
+     "label": "h1h2: nenhum protocolo divergente: 'h2' presente em {'h1', 'h2'}"
     },
     {
      "ok": true,
@@ -893,7 +893,7 @@
     },
     {
      "ok": true,
-     "label": "h3: versão do Chrome registrada: '.' ausente em Chrome/156.0.8078.48"
+     "label": "h3: versão do Chrome registrada: '.' presente em Chrome/156.0.8078.48"
     },
     {
      "ok": true,
@@ -909,11 +909,11 @@
     },
     {
      "ok": true,
-     "label": "h3: protocolo h3 presente: 'h3' ausente em {'h3'}"
+     "label": "h3: protocolo h3 presente: 'h3' presente em {'h3'}"
     },
     {
      "ok": true,
-     "label": "h3: nenhum protocolo divergente: 'h3' ausente em {'h3'}"
+     "label": "h3: nenhum protocolo divergente: 'h3' presente em {'h3'}"
     },
     {
      "ok": true,
@@ -1045,7 +1045,7 @@
     },
     {
      "ok": true,
-     "label": "app: cookie com nome duplicado preservado: 'sc_dup' ausente em [\"sc_a\", \"sc_b\", \"sc_dup\", \"sc_page\"]"
+     "label": "app: cookie com nome duplicado preservado: 'sc_dup' presente em [\"sc_a\", \"sc_b\", \"sc_dup\", \"sc_page\"]"
     },
     {
      "ok": true,
@@ -1093,7 +1093,7 @@
     },
     {
      "ok": true,
-     "label": "app: aviso correlate.ambiguous persistido: 'correlate.ambiguous' ausente em [\"cdp.unhandled_events\", \"netlog.time_unit_detected\", \"correlate.ambiguous\", \"correlate.ambiguous\", \"correlate.netlog_unmatched\"]"
+     "label": "app: aviso correlate.ambiguous persistido: 'correlate.ambiguous' presente em [\"cdp.unhandled_events\", \"netlog.time_unit_detected\", \"correlate.ambiguous\", \"correlate.ambiguous\", \"correlate.netlog_unmatched\"]"
     },
     {
      "ok": true,
@@ -1113,7 +1113,7 @@
     },
     {
      "ok": true,
-     "label": "app: HAR com label har-import: 'har-import' ausente em [\"har-import\"]"
+     "label": "app: HAR com label har-import: 'har-import' presente em [\"har-import\"]"
     },
     {
      "ok": true,
@@ -1125,7 +1125,35 @@
     },
     {
      "ok": true,
-     "label": "app: HAR com 10 requisições"
+     "label": "app: HAR importado pela UI tem as 24 requisições do arquivo preparado: esperado 24, obtido 24"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR cobre h1 e h2 (['h1', 'h2'])"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR com 24 sourceEvents persistidos: esperado 24, obtido 24"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR usa os 24 sourceEvents: esperado 24, obtido 24"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR sem eventos-fonte desconhecidos: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR gravado reproduz a sequência método/URL de har-derived.json"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR não alega ordem verificada (0 headers verified): esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "app: headers do HAR importado têm fonte har: esperado ['har'], obtido ['har']"
     },
     {
      "ok": true,
@@ -1133,11 +1161,23 @@
     },
     {
      "ok": true,
+     "label": "app: diretório do HAR importado 0700: esperado '0o700', obtido '0o700'"
+    },
+    {
+     "ok": true,
+     "label": "app: session.json do HAR importado 0600: esperado '0o600', obtido '0o600'"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR importado relê do disco com 24 requisições, sem alterar o arquivo"
+    },
+    {
+     "ok": true,
      "label": "app: sessão NetLog real importada pelo app"
     },
     {
      "ok": true,
-     "label": "app: NetLog com label netlog-import: 'netlog-import' ausente em [\"netlog-import\"]"
+     "label": "app: NetLog com label netlog-import: 'netlog-import' presente em [\"netlog-import\"]"
     },
     {
      "ok": true,
@@ -1153,23 +1193,71 @@
     },
     {
      "ok": true,
-     "label": "app: NetLog com 24 requisições"
+     "label": "app: NetLog importado pela UI tem as 32 requisições do arquivo preparado: esperado 32, obtido 32"
     },
     {
      "ok": true,
-     "label": "app: NetLog cobre h1/h2/h3 (['h1', 'h2', 'h3'])"
+     "label": "app: NetLog cobre h1/h2/h3 (['h1', 'h2', 'h3', 'unknown'])"
     },
     {
      "ok": true,
-     "label": "app: 11 StreamSessions no NetLog"
+     "label": "app: NetLog com 5354 sourceEvents persistidos: esperado 5354, obtido 5354"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog usa os 5354 sourceEvents: esperado 5354, obtido 5354"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog sem eventos-fonte desconhecidos: esperado 0, obtido 0"
+    },
+    {
+     "ok": true,
+     "label": "app: 15 StreamSessions h3 persistidas no NetLog: esperado 15, obtido 15"
+    },
+    {
+     "ok": true,
+     "label": "app: netlog.json persistido é byte-idêntico ao h1h2h3.chrome-netlog.json preparado"
+    },
+    {
+     "ok": true,
+     "label": "app: 186 headers verificados com fonte netlog"
+    },
+    {
+     "ok": true,
+     "label": "app: headers do NetLog importado têm fonte netlog: esperado ['netlog'], obtido ['netlog']"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog real sem rótulo demo: esperado False, obtido False"
+    },
+    {
+     "ok": true,
+     "label": "app: diretório do NetLog importado 0700: esperado '0o700', obtido '0o700'"
+    },
+    {
+     "ok": true,
+     "label": "app: session.json do NetLog importado 0600: esperado '0o600', obtido '0o600'"
+    },
+    {
+     "ok": true,
+     "label": "app: netlog.json copiado para a sessão com 0600: esperado '0o600', obtido '0o600'"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog importado relê do disco com 32 requisições, sem alterar o arquivo"
+    },
+    {
+     "ok": true,
+     "label": "app: print da sessão importada pela UI capturado"
     }
    ],
-   "passed": 96,
+   "passed": 118,
    "failed": 0,
    "evidence": [
     "execução real: `tests/capture/runs/20261027T0730Z` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`",
-    "app empacotado: `ScrapeLens.app` 13.23 MiB, arm64, ad-hoc, binário único, executável `a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0`; captura ao vivo capture-1793085113332 (11 req, 154 headers verificados, 2 ambíguas); HAR 10 req; NetLog 24 req (['h1', 'h2', 'h3']).",
-    "sessões reais do app: `/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions` · print `tests/results/app-latest/screenshot-app-live.png`",
+    "app empacotado: `ScrapeLens.app` 13.23 MiB, arm64, ad-hoc, binário único, executável `a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0`; captura ao vivo capture-1793085113332 (11 req, 154 headers verificados, 2 ambíguas); importação HAR pela UI `har-3dbc391c02a985c5-2` (24 req, ['h1', 'h2'], 24 sourceEvents); importação NetLog pela UI `netlog-1704043c442dcbd1-2` (32 req, ['h1', 'h2', 'h3', 'unknown'], 15 StreamSessions, 5354 sourceEvents).",
+    "sessões reais do app: `/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions` · prints `tests/results/app-latest/screenshot-app-live.png` e `tests/results/app-latest/screenshot-app-imports.png`",
     "CLI: Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 2 ambíguas; redirects=6"
    ],
    "notes": [
@@ -1177,7 +1265,7 @@
     "O HAR do ciclo é reconstruído do CDP (`experiments/har_from_cdp.mjs`), porque o Chrome 156 não expõe `Network.getHAR`; o creator declara a origem e a ordem não é comprovada (unverified).",
     "O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.",
     "Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`a7004d4e95e8`, compilado em 2026-10-27 04:00 UTC−03 com o core até `b5846be`, incluindo `f6c6bdd`); a sessão ao vivo acima é nova, não reaproveitada.",
-    "As importações HAR/NetLog do app são da rodada anterior (bundle anterior): o painel nativo de arquivos exige permissão do macOS que só o usuário concede, e o clique sintético foi recusado pelo TCC. Os arquivos HAR/NetLog frescos desta rodada (h1/h2/h3, 24 e 32 requisições) foram validados pela CLI do core e ficam em `tests/.work/app-import/`; a importação pela UI fica pendente dessa permissão."
+    "As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-2` e `netlog-1704043c442dcbd1-2`), agora pela UI: o usuário selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão."
    ],
    "seconds": 0.1
   },
@@ -1200,7 +1288,7 @@
     },
     {
      "ok": true,
-     "label": "import-har abaixo de 60 s (0.96 s)"
+     "label": "import-har abaixo de 60 s (0.97 s)"
     },
     {
      "ok": true,
@@ -1208,32 +1296,32 @@
     },
     {
      "ok": true,
-     "label": "inspect abaixo de 60 s (2.91 s)"
+     "label": "inspect abaixo de 60 s (2.64 s)"
     },
     {
      "ok": true,
-     "label": "inspect com pico abaixo de 3,5 GiB (2415 MiB)"
+     "label": "inspect com pico abaixo de 3,5 GiB (2822 MiB)"
     }
    ],
    "passed": 7,
    "failed": 0,
    "evidence": [
-    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.96 s, pico 783 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.97 s, pico 783 MiB RSS",
     "sessão gravada: session.json 225.8 MiB",
-    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.91 s, pico 2415 MiB RSS",
-    "complementar, 20,000 anexos de 20 B: import 3.30 s, pico 794 MiB, sessão 228.9 MiB"
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.64 s, pico 2822 MiB RSS",
+    "complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB"
    ],
    "notes": [
     "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
-    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2415 MiB vem da serialização, não do parser.",
-    "Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.30 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo."
+    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2822 MiB vem da serialização, não do parser.",
+    "Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo."
    ],
-   "seconds": 14.64
+   "seconds": 13.91
   }
  ],
  "scope": [
   "Novo nesta rodada: captura CLI `tests/capture/runs/20261027T0730Z` (2026-10-27T07:11:07Z), com os dois legs (h1h2 e h3) e o HAR derivado do CDP.",
   "Novo nesta rodada: sessão ao vivo `capture-1793085113332` iniciada e encerrada pelo bundle final (`a7004d4e95e8`).",
-  "Histórico reaproveitado: importações pela UI har `har-ae8b55ad56e338af`, netlog `netlog-b3f04ac555a0d2fe` (bundle anterior). As importações frescas desta rodada foram validadas pela CLI do core, não pela UI: o painel nativo de arquivos exige permissão do macOS que só o usuário concede."
+  "Novo nesta rodada: importações HAR/NetLog pela UI do bundle final (har `har-3dbc391c02a985c5-2`, netlog `netlog-1704043c442dcbd1-2`), com seleção manual do usuário e verificação por SHA-256/sequência contra os arquivos preparados em `~/Projects/scrapelens-import-tmp`."
  ]
 }
