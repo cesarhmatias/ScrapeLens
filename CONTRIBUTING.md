@@ -28,13 +28,24 @@ core Rust) para inspecionar a sequência real de headers de sessões HTTP.
 
 ## Comandos
 
+Todos os comandos abaixo partem da raiz do repositório e são independentes:
+cada linha indica o diretório em que deve ser executada.
+
 ```sh
-# na raiz do repositório
+# dependências da UI (uma vez)
 cd app && npm install
-cd ../core && cargo test --offline
-cd ../src-tauri && cargo test
-cd .. && ./app/node_modules/.bin/tauri dev
-cd .. && ./app/node_modules/.bin/tauri build --bundles app
+
+# testes do core
+cd core && cargo test --offline
+
+# testes do shell Tauri
+cd src-tauri && cargo test
+
+# app em modo desenvolvimento (a partir da raiz)
+./app/node_modules/.bin/tauri dev
+
+# bundle .app (a partir da raiz; sai em src-tauri/target/release/bundle/macos/)
+./app/node_modules/.bin/tauri build --bundles app
 ```
 
 - UI apenas no navegador (sem commands Tauri): `cd app && npm run dev`.
@@ -45,11 +56,18 @@ cd .. && ./app/node_modules/.bin/tauri build --bundles app
 - Captura real de teste (Chrome externo contra o testserver local):
 
 ```sh
+# 1. compila e sobe o servidor h1 local (fica em segundo plano)
 cd testserver && cargo build
 ./target/debug/scrapelens-testserver serve --only h1 --h1 127.0.0.1:8781 &
+
+# 2. de volta à raiz, inicia o app apontando para a página de teste
+cd .. 
 SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page \
   ./app/node_modules/.bin/tauri dev
 ```
+
+Encerre o testserver com `kill %1` (ou `pkill -f scrapelens-testserver`) ao
+terminar.
 
 `SCRAPELENS_CAPTURE_HEADLESS=1` e `SCRAPELENS_CAPTURE_IGNORE_CERT=1` são ganchos
 de desenvolvimento/teste; não fazem parte da interface.
