@@ -2,9 +2,8 @@
 //!
 //! Fixtures sintéticas com a forma do caso real: 13 requisições, 8 POSTs no
 //! Connector, duas consultas com mesma URL/método diferenciadas só pelo corpo.
-//! O `time` do NetLog nelas está em microssegundos (declarado no manifest), ao
-//! contrário do Chrome real, que grava milissegundos — a unidade é calibrada
-//! pelo relógio do CDP.
+//! O `time` do NetLog nelas está em milissegundos, como no Chrome real; a
+//! unidade é calibrada pelo relógio do CDP.
 
 use std::path::PathBuf;
 
@@ -57,7 +56,7 @@ fn detran_fixtures_correlate_all_13_without_false_ambiguity() {
         .iter()
         .all(|request| request.match_candidates.is_empty()));
 
-    // O relógio foi calibrado pelas fixtures em microssegundos.
+    // O relógio foi calibrado pelas fixtures em milissegundos (como o Chrome).
     assert!(session.warnings.iter().any(|warning| {
         warning.code == "netlog.time_unit_detected"
             && warning
@@ -65,7 +64,7 @@ fn detran_fixtures_correlate_all_13_without_false_ambiguity() {
                 .as_ref()
                 .and_then(|detail| detail.get("unit"))
                 .and_then(|unit| unit.as_str())
-                == Some("microseconds")
+                == Some("milliseconds")
     }));
 
     // As duas consultas `cmd_consultar_placa` têm URL/método iguais; cada uma
