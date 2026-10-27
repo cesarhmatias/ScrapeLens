@@ -6,6 +6,12 @@
 //! - encerra somente o processo que este módulo iniciou;
 //! - o NetLog é gravado no diretório da sessão e importado pelo core;
 //! - nenhuma rede além da depuração local; nenhum certificado é instalado.
+//!
+//! Limitação conhecida: `--remote-allow-origins=*` é necessário para o
+//! WebSocket do CDP; durante a captura, o endpoint em
+//! `127.0.0.1:<porta efêmera>` aceita qualquer Origin. O risco fica limitado à
+//! janela da captura e ao loopback, mas a sessão do Chrome inspecionado não deve
+//! ser usada para navegar em páginas não confiáveis enquanto grava.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};

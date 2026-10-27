@@ -119,4 +119,7 @@ aviso e mantém a sessão demo rotulada. Ao plugar o core, só o corpo de
   é Apple Silicon (arm64). Arquiteturas compiladas ≠ testadas.
 - A prévia de corpo de sessões reais é carregada por `read_attachment` (limite
   de 1 MiB); binários não são convertidos em texto.
+- `--remote-allow-origins=*` no CDP: o endpoint local aceita qualquer Origin
+  durante a captura (loopback + porta efêmera + janela da sessão); não navegue em
+  páginas não confiáveis no Chrome inspecionado enquanto grava.
 - Nenhuma telemetria, nenhuma rede em runtime.

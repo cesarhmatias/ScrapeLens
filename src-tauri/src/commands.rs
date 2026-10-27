@@ -1,9 +1,9 @@
 //! Commands da ponte UI ↔ shell. Contrato v1: docs/03-contratos.md.
 //!
-//! Nota de integração: `start_session`, `import_har` e `import_netlog` ainda
-//! devolvem a fixture sintética com `pending: true`; quando o core/ expuser
-//! captura e parsers, só o corpo destes três commands muda — a assinatura
-//! usada pela UI é estável.
+//! Nota de integração: `start_session`, `import_har` e `import_netlog` chamam o
+//! `scrapelens-core` (dependência crate, sem sidecar) e operam dados reais. A
+//! captura abre o Chrome externo em `capture.rs`; o envelope `SessionPayload`
+//! permanece estável para a UI.
 
 use std::fs;
 use std::path::{Path, PathBuf};

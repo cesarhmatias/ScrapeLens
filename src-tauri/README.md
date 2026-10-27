@@ -56,6 +56,20 @@ pending      true quando o core/ ainda não executou a etapa
    `<sessao>/attachments/<nome>` com limite de 1 MiB e sem traversal.
 5. Sessões ficam em `app_data_dir()/sessions/<id>` (0700/0600 via core).
 
+## Limitações conhecidas
+
+- `--remote-allow-origins=*` no launcher: o endpoint CDP em
+  `127.0.0.1:<porta efêmera>` aceita qualquer Origin durante a captura. O risco
+  é limitado ao loopback, à porta aleatória e à janela da sessão; ainda assim,
+  não navegue em páginas não confiáveis no Chrome inspecionado enquanto grava.
+- Corpos CDP não são baixados para anexos nesta versão; aparecem como
+  `unavailable` com nota, nunca inventados.
+- A captura acompanha um target/página; abas abertas manualmente depois do
+  início não entram na mesma sessão.
+- Sem assinatura Apple/notarização; arm64 compilado e testado, Intel não.
+- Captura com zero eventos CDP falha com erro explícito em vez de gravar uma
+  sessão vazia; sessões com eventos parciais são preservadas como `partial`.
+
 ## Atalhos
 
 Menu nativo: ⌘O abrir, ⌘F buscar, ⌘⇧C copiar URL da requisição selecionada,
