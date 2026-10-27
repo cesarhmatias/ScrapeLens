@@ -38,6 +38,11 @@ WORK = ROOT / "tests" / ".work"
 RESULTS = ROOT / "tests" / "results"
 REPORT = ROOT / "tests" / "RELATORIO.md"
 
+# SHA-256 do executável do bundle final aceito nesta rodada, documentado em
+# `src-tauri/EMPACOTAMENTO.md`. Um rebuild legítimo muda o hash: atualize os dois
+# lugares juntos, para que a bateria nunca aprove um artefato não documentado.
+EXPECTED_APP_SHA256 = "a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0"
+
 SECRETS = [
     "SECRET-AUTH-TOKEN",
     "SECRET-COOKIE-VALUE",
@@ -386,6 +391,15 @@ def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
            "NetLog isolado sem CDP: completeness=partial (cobertura não provada)")
 
     notes.append("A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade.")
+    notes.append("Diagnóstico da falha do líder: a fixture declarava `wallTime` sem o `timestamp` monotônico "
+                 "(`1793046000.0`), e o core de `f6c6bdd` calibrava `time` como microssegundos; o NetLog ficava "
+                 "2 s à frente e as duas requisições viravam `unmatched`. O Chrome real satisfaz "
+                 "`wallTime = timeTickOffset/1000 + timestamp` (desvio medido < 1 ms), equação agora usada na "
+                 "fixture. Era defeito da fixture, não do core; a falha original está preservada em "
+                 "`tests/results/aceite-criterio3-falha-lider.json` e `RELATORIO-criterio3-falha-lider.md`.")
+    notes.append("Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade "
+                 "calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms "
+                 "continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`.")
     return exp.rows, evidence, notes
 
 
@@ -805,6 +819,10 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         exp.eq(bundle.get("signature"), "adhoc", "app: assinatura ad-hoc declarada (sem certificado Apple)")
         exp.ok((bundle.get("sizeBytes") or 0) > 10 * 1024 * 1024,
                f"app: bundle com {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB")
+        exp.eq(bundle.get("executableSha256"), EXPECTED_APP_SHA256,
+               "app: executável é o bundle final documentado (SHA-256)")
+        exp.ok((bundle.get("executableBytes") or 0) > 0,
+               f"app: executável com {bundle.get('executableBytes')} bytes")
 
         exp.eq(live.get("mode"), "cdp+netlog", "app: sessão ao vivo em modo cdp+netlog")
         exp.eq(live.get("completeness"), "complete", "app: sessão ao vivo complete")
@@ -878,17 +896,21 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                    f"app: {netlog_import.get('streamSessions')} StreamSessions no NetLog")
         evidence.append(
             f"app empacotado: `ScrapeLens.app` {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB, "
-            f"arm64, ad-hoc, binário único; captura ao vivo {live.get('id')} "
+            f"arm64, ad-hoc, binário único, executável `{bundle.get('executableSha256')}`; "
+            f"captura ao vivo {live.get('id')} "
             f"({live.get('requests')} req, {live.get('verifiedHeaderEntries')} headers verificados, "
             f"{len(ambiguous)} ambíguas); HAR {har_import.get('requests')} req; "
             f"NetLog {netlog_import.get('requests')} req ({netlog_import.get('protocols')}).")
         evidence.append(f"sessões reais do app: `{rel(pathlib.Path(app.get('appSessionsDir', '')))}` "
                         f"· print `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}`")
-        notes.append("Critério 9 agora cobre o app empacotado: Iniciar/Encerrar pelo .app, sessão gravada "
-                     "pelo app e importações HAR/NetLog reais produzidas por ele.")
-        notes.append("O bundle validado foi compilado às 20:41, antes das correções de fsync/contagens no core "
-                     "(commits 857cb8c–bacaed1, 20:54–20:55). O ciclo do app não depende delas, mas recompile "
-                     "o .app antes do empacotamento final para incorporar o core atualizado.")
+        notes.append("Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final "
+                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em 2026-10-27 04:00 UTC−03 com o core até "
+                     "`b5846be`, incluindo `f6c6bdd`); a sessão ao vivo acima é nova, não reaproveitada.")
+        notes.append("As importações HAR/NetLog do app são da rodada anterior (bundle anterior): o painel "
+                     "nativo de arquivos exige permissão do macOS que só o usuário concede, e o clique "
+                     "sintético foi recusado pelo TCC. Os arquivos HAR/NetLog frescos desta rodada "
+                     "(h1/h2/h3, 24 e 32 requisições) foram validados pela CLI do core e ficam em "
+                     "`tests/.work/app-import/`; a importação pela UI fica pendente dessa permissão.")
     else:
         exp.ok(False, "app: resumo do ciclo pelo .app ausente (rode tests/capture/app_validate.py)")
     evidence.append(
@@ -1109,6 +1131,33 @@ def run_item(number: int, title: str, fn, ctx: dict) -> dict:
     }
 
 
+def evidence_scope(capture: str | None, app_run: str | None) -> list[str]:
+    """Separa o que foi produzido nesta rodada do que é evidência histórica."""
+    lines: list[str] = []
+    if capture and pathlib.Path(capture).exists():
+        summary = pathlib.Path(capture) / "run.json"
+        stamp = ""
+        if summary.exists():
+            data = json.loads(summary.read_text(encoding="utf-8"))
+            stamp = data.get("generatedAt") or data.get("startedAt") or ""
+        lines.append(f"Novo nesta rodada: captura CLI `{rel(pathlib.Path(capture))}`"
+                     + (f" ({stamp})" if stamp else "")
+                     + ", com os dois legs (h1h2 e h3) e o HAR derivado do CDP.")
+    if app_run and pathlib.Path(app_run).exists():
+        app = json.loads(pathlib.Path(app_run).read_text(encoding="utf-8"))
+        live = app.get("capture", {})
+        imports = app.get("imports") or {}
+        lines.append(f"Novo nesta rodada: sessão ao vivo `{live.get('id')}` iniciada e encerrada "
+                     f"pelo bundle final (`{str(app.get('bundle', {}).get('executableSha256'))[:12]}`).")
+        historical = [f"{name} `{data.get('id')}`" for name, data in imports.items() if data]
+        if historical:
+            lines.append("Histórico reaproveitado: importações pela UI " + ", ".join(historical)
+                         + " (bundle anterior). As importações frescas desta rodada foram validadas pela "
+                           "CLI do core, não pela UI: o painel nativo de arquivos exige permissão do macOS "
+                           "que só o usuário concede.")
+    return lines
+
+
 def render(report: dict) -> str:
     lines: list[str] = []
     lines.append("# Relatório de aceite — ScrapeLens MVP")
@@ -1125,11 +1174,23 @@ def render(report: dict) -> str:
                       if entry["assertions"] else "—")
         lines.append(f"| {entry['item']} | {entry['title']} | **{entry['status']}** | {assertions} |")
     lines.append("")
+    approved = sum(1 for entry in report["items"] if entry["status"] == "aprovado")
+    passed = sum(entry["passed"] for entry in report["items"])
+    failed = sum(entry["failed"] for entry in report["items"])
+    lines.append(f"Resumo: {approved}/{len(report['items'])} critérios aprovados; "
+                 f"{passed}/{passed + failed} asserções passaram.")
+    lines.append("")
     lines.append("Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/incompletos/desconhecidos, "
                  "(3) simultâneas idênticas sem associação falsa, (4) redirects/tentativas, (5) corpos explícitos, "
                  "(6) diff com duplicatas, (7) escaping cURL/Python, (8) sanitização com eventos brutos, "
                  "(9) ciclo real macOS, (10) importação grande medida.")
     lines.append("")
+    if report.get("scope"):
+        lines.append("Escopo das evidências:")
+        lines.append("")
+        for item in report["scope"]:
+            lines.append(f"- {item}")
+        lines.append("")
     for entry in report["items"]:
         lines.append(f"## {entry['item']}. {entry['title']} — {entry['status']}")
         lines.append("")
@@ -1219,6 +1280,7 @@ def main() -> int:
         "python": platform.python_version(),
         "items": results,
     }
+    report["scope"] = evidence_scope(capture, app_run)
     RESULTS.mkdir(parents=True, exist_ok=True)
     (RESULTS / "aceite.json").write_text(json.dumps(report, indent=1, ensure_ascii=False) + "\n",
                                          encoding="utf-8")

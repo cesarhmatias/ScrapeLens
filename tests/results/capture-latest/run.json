@@ -1,6 +1,6 @@
 {
- "runId": "20261026T232758Z",
- "generatedAt": "2026-10-26T23:28:46Z",
+ "runId": "20261027T0730Z",
+ "generatedAt": "2026-10-27T07:11:07Z",
  "chromeVersion": "156.0.8078.48",
  "ports": 9781,
  "certificateInstalled": false,
@@ -22,24 +22,24 @@
    "streamSessions": 2,
    "verifiedRequestViews": 11,
    "completeness": "complete",
-   "netlogBytes": 1128054,
-   "cdpBytes": 423585,
+   "netlogBytes": 1127728,
+   "cdpBytes": 423503,
    "meta": {
     "name": "h1h2",
-    "startedAt": "2026-10-26T23:27:59.579Z",
-    "finishedAt": "2026-10-26T23:28:10.524Z",
+    "startedAt": "2026-10-27T07:10:19.330Z",
+    "finishedAt": "2026-10-27T07:10:30.223Z",
     "browser": {
      "name": "Chrome",
      "version": "Chrome/156.0.8078.48",
      "protocol": "1.3"
     },
-    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h1h2",
+    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/profile-h1h2",
     "chromeArgs": [
      "--headless=new",
-     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h1h2",
+     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/profile-h1h2",
      "--remote-debugging-port=9881",
      "--remote-debugging-address=127.0.0.1",
-     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/h1h2.chrome-netlog.json",
+     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/h1h2.chrome-netlog.json",
      "--net-log-capture-mode=Everything",
      "--no-first-run",
      "--no-default-browser-check",
@@ -95,11 +95,11 @@
     "cdpEvents": 146,
     "harWritten": false,
     "harError": "Network.getHAR indisponível: 'Network.getHAR' wasn't found",
-    "netlogBytes": 1128054,
-    "cdpBytes": 423585,
+    "netlogBytes": 1127728,
+    "cdpBytes": 423503,
     "error": null
    },
-   "sessionSha256": "2cfe63f426a73d310b5b855440c6e1060fe51f76f811637667fb8c85f00f978c"
+   "sessionSha256": "ba2fccd1704ccc6d8e63bf71e4d2f2fbfd784e1a4c913f32e88a31ceb7f241b7"
   },
   {
    "name": "h3",
@@ -116,25 +116,25 @@
    "streamSessions": 12,
    "verifiedRequestViews": 0,
    "completeness": "complete",
-   "netlogBytes": 1308640,
-   "cdpBytes": 391882,
+   "netlogBytes": 1321057,
+   "cdpBytes": 391811,
    "meta": {
     "name": "h3",
-    "startedAt": "2026-10-26T23:28:24.368Z",
-    "finishedAt": "2026-10-26T23:28:33.174Z",
+    "startedAt": "2026-10-27T07:10:44.047Z",
+    "finishedAt": "2026-10-27T07:10:54.238Z",
     "browser": {
      "name": "Chrome",
      "version": "Chrome/156.0.8078.48",
      "protocol": "1.3"
     },
-    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h3",
+    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/profile-h3",
     "chromeArgs": [
      "--headless=new",
      "--origin-to-force-quic-on=127.0.0.1:9782",
-     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/profile-h3",
+     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/profile-h3",
      "--remote-debugging-port=9881",
      "--remote-debugging-address=127.0.0.1",
-     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261026T232758Z/h3.chrome-netlog.json",
+     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/h3.chrome-netlog.json",
      "--net-log-capture-mode=Everything",
      "--no-first-run",
      "--no-default-browser-check",
@@ -178,11 +178,11 @@
     "cdpEvents": 103,
     "harWritten": false,
     "harError": null,
-    "netlogBytes": 1308640,
-    "cdpBytes": 391882,
+    "netlogBytes": 1321057,
+    "cdpBytes": 391811,
     "error": null
    },
-   "sessionSha256": "99324b2944a21bbaa1dc45a4521dfdb776a9af0ceeddfe275da6fb1294d2ade3"
+   "sessionSha256": "5b8b0139d0f8b719916b9dd17b1a185b3383a0d8a846dd777a204471ed96411e"
   }
  ],
  "har": {

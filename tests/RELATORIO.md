@@ -1,6 +1,6 @@
 # Relatório de aceite — ScrapeLens MVP
 
-Execução: 2026-10-27T00:04:05Z · binário do core `53020ee8bf47` (2155488 bytes) · commit `bacaed1`
+Execução: 2026-10-27T07:20:24Z · binário do core `10f3b76b637b` (2176608 bytes) · commit `87d7b61`
 
 Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 
@@ -8,16 +8,24 @@ Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 |---|---|---|---|
 | 1 | Headers repetidos e cookies preservados nas fixtures | **aprovado** | 29/29 |
 | 2 | HAR e NetLog válidos, incompletos e com eventos desconhecidos | **aprovado** | 26/26 |
-| 3 | Requisições simultâneas idênticas sem associação falsa | **aprovado** | 15/15 |
+| 3 | Requisições simultâneas idênticas sem associação falsa | **aprovado** | 18/18 |
 | 4 | Redirects e múltiplas tentativas | **aprovado** | 12/12 |
 | 5 | Corpos ausentes/truncados/descartados explícitos | **aprovado** | 16/16 |
 | 6 | Diff sem perder duplicatas | **aprovado** | 14/14 |
 | 7 | Exportação cURL/Python com caracteres especiais | **aprovado** | 23/23 |
 | 8 | Sanitização incluindo eventos brutos | **aprovado** | 19/19 |
-| 9 | Ciclo real de captura no macOS | **aprovado** | 94/94 |
+| 9 | Ciclo real de captura no macOS | **aprovado** | 96/96 |
 | 10 | Importação grande com tamanho documentado | **aprovado** | 7/7 |
 
+Resumo: 10/10 critérios aprovados; 260/260 asserções passaram.
+
 Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/incompletos/desconhecidos, (3) simultâneas idênticas sem associação falsa, (4) redirects/tentativas, (5) corpos explícitos, (6) diff com duplicatas, (7) escaping cURL/Python, (8) sanitização com eventos brutos, (9) ciclo real macOS, (10) importação grande medida.
+
+Escopo das evidências:
+
+- Novo nesta rodada: captura CLI `tests/capture/runs/20261027T0730Z` (2026-10-27T07:11:07Z), com os dois legs (h1h2 e h3) e o HAR derivado do CDP.
+- Novo nesta rodada: sessão ao vivo `capture-1793085113332` iniciada e encerrada pelo bundle final (`a7004d4e95e8`).
+- Histórico reaproveitado: importações pela UI har `har-ae8b55ad56e338af`, netlog `netlog-b3f04ac555a0d2fe` (bundle anterior). As importações frescas desta rodada foram validadas pela CLI do core, não pela UI: o painel nativo de arquivos exige permissão do macOS que só o usuário concede.
 
 ## 1. Headers repetidos e cookies preservados nas fixtures — aprovado
 
@@ -52,7 +60,11 @@ Evidência:
 
 > A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade.
 
-Asserções: 15 passaram, 0 falharam (0.05 s).
+> Diagnóstico da falha do líder: a fixture declarava `wallTime` sem o `timestamp` monotônico (`1793046000.0`), e o core de `f6c6bdd` calibrava `time` como microssegundos; o NetLog ficava 2 s à frente e as duas requisições viravam `unmatched`. O Chrome real satisfaz `wallTime = timeTickOffset/1000 + timestamp` (desvio medido < 1 ms), equação agora usada na fixture. Era defeito da fixture, não do core; a falha original está preservada em `tests/results/aceite-criterio3-falha-lider.json` e `RELATORIO-criterio3-falha-lider.md`.
+
+> Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`.
+
+Asserções: 18 passaram, 0 falharam (0.05 s).
 
 ## 4. Redirects e múltiplas tentativas — aprovado
 
@@ -113,8 +125,8 @@ Asserções: 19 passaram, 0 falharam (0.04 s).
 
 Evidência:
 
-- execução real: `tests/capture/runs/20261026T232758Z` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`
-- app empacotado: `ScrapeLens.app` 13.26 MiB, arm64, ad-hoc, binário único; captura ao vivo capture-1793058850184 (11 req, 154 headers verificados, 2 ambíguas); HAR 10 req; NetLog 24 req (['h1', 'h2', 'h3']).
+- execução real: `tests/capture/runs/20261027T0730Z` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`
+- app empacotado: `ScrapeLens.app` 13.23 MiB, arm64, ad-hoc, binário único, executável `a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0`; captura ao vivo capture-1793085113332 (11 req, 154 headers verificados, 2 ambíguas); HAR 10 req; NetLog 24 req (['h1', 'h2', 'h3']).
 - sessões reais do app: `/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions` · print `tests/results/app-latest/screenshot-app-live.png`
 - CLI: Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 2 ambíguas; redirects=6
 
@@ -124,28 +136,28 @@ Evidência:
 
 > O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.
 
-> Critério 9 agora cobre o app empacotado: Iniciar/Encerrar pelo .app, sessão gravada pelo app e importações HAR/NetLog reais produzidas por ele.
+> Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`a7004d4e95e8`, compilado em 2026-10-27 04:00 UTC−03 com o core até `b5846be`, incluindo `f6c6bdd`); a sessão ao vivo acima é nova, não reaproveitada.
 
-> O bundle validado foi compilado às 20:41, antes das correções de fsync/contagens no core (commits 857cb8c–bacaed1, 20:54–20:55). O ciclo do app não depende delas, mas recompile o .app antes do empacotamento final para incorporar o core atualizado.
+> As importações HAR/NetLog do app são da rodada anterior (bundle anterior): o painel nativo de arquivos exige permissão do macOS que só o usuário concede, e o clique sintético foi recusado pelo TCC. Os arquivos HAR/NetLog frescos desta rodada (h1/h2/h3, 24 e 32 requisições) foram validados pela CLI do core e ficam em `tests/.work/app-import/`; a importação pela UI fica pendente dessa permissão.
 
-Asserções: 94 passaram, 0 falharam (0.10 s).
+Asserções: 96 passaram, 0 falharam (0.10 s).
 
 ## 10. Importação grande com tamanho documentado — aprovado
 
 Evidência:
 
-- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.89 s, pico 785 MiB RSS
+- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.96 s, pico 783 MiB RSS
 - sessão gravada: session.json 225.8 MiB
-- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.63 s, pico 2301 MiB RSS
-- complementar, 20,000 anexos de 20 B: import 3.29 s, pico 794 MiB, sessão 228.9 MiB
+- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.91 s, pico 2415 MiB RSS
+- complementar, 20,000 anexos de 20 B: import 3.30 s, pico 794 MiB, sessão 228.9 MiB
 
 > HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).
 
-> `inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2301 MiB vem da serialização, não do parser.
+> `inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2415 MiB vem da serialização, não do parser.
 
-> Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.29 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.
+> Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.30 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.
 
-Asserções: 7 passaram, 0 falharam (8.09 s).
+Asserções: 7 passaram, 0 falharam (14.64 s).
 
 ## Como reproduzir
 

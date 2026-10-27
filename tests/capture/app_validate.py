@@ -67,6 +67,8 @@ def bundle_facts(bundle: pathlib.Path) -> dict:
         "path": str(bundle),
         "exists": bundle.exists(),
         "sizeBytes": size,
+        "executableSha256": sha256(executable) if executable.exists() else None,
+        "executableBytes": executable.stat().st_size if executable.exists() else 0,
         "binaries": binaries,
         "singleBinary": binaries == ["scrapelens"],
         "machO": file_info,
@@ -203,7 +205,8 @@ def main() -> int:
     print(f"bundle: {facts['bundle']['sizeBytes'] / (1024 * 1024):.2f} MiB · "
           f"{'arm64' if facts['bundle']['arm64'] else 'arquitetura desconhecida'} · "
           f"{'binário único' if facts['bundle']['singleBinary'] else 'binários: ' + str(facts['bundle']['binaries'])} · "
-          f"{facts['bundle']['signature']}")
+          f"{facts['bundle']['signature']} · executável {facts['bundle']['executableSha256']} "
+          f"({facts['bundle']['executableBytes']} bytes)")
     print(f"captura pelo app: {capture_facts['id']} · {capture_facts['requests']} requisições · "
           f"{capture_facts['completeness']} · {capture_facts['protocols']} · "
           f"{capture_facts['ambiguous'].__len__()} ambíguas · {capture_facts['verifiedHeaderEntries']} headers verificados")
