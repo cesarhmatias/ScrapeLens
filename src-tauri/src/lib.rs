@@ -1,14 +1,14 @@
 //! ScrapeLens — shell Tauri 2.
 //!
-//! A UI React (app/) consome o contrato v1 (`docs/03-contratos.md`). Este
-//! processo expõe os commands que o core/ Rust vai preencher; enquanto o core
-//! não entrega a captura e os importadores, os commands que dependem dele
-//! retornam a fixture sintética **rotulada** (`synthetic: true`) e um aviso
-//! explícito. Nada é apresentado como captura real.
+//! A UI React (app/) consome o contrato v1 (`docs/03-contratos.md`). Os commands
+//! de captura, importação e abertura operam dados reais via `scrapelens-core`
+//! (dependência crate, sem sidecar); a fixture sintética existe apenas para o
+//! modo demo do navegador e chega rotulada como `synthetic: true`.
 
 pub mod capture;
 pub mod chrome;
 pub mod commands;
+pub mod export;
 pub mod menu;
 pub mod prefs;
 
@@ -49,6 +49,10 @@ pub fn run() {
             commands::detect_chrome,
             commands::set_chrome_path,
             commands::read_attachment,
+            commands::export_request,
+            commands::save_export_file,
+            commands::preview_sanitized,
+            commands::save_sanitized,
             commands::reveal_path,
         ])
         .run(tauri::generate_context!())

@@ -489,6 +489,54 @@ pub fn read_attachment(session_dir: String, name: String) -> Result<AttachmentPa
     }
 }
 
+/// Gera a exportação cURL/Python de uma requisição da sessão persistida.
+///
+/// Roda fora da thread da UI: ler anexos e gerar texto pode ser pesado em
+/// sessões grandes. O texto devolvido é a fonte da prévia, da cópia e do
+/// arquivo salvo.
+#[tauri::command]
+pub async fn export_request(
+    session_dir: String,
+    request_id: String,
+    format: String,
+) -> Result<crate::export::ExportPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::export::preview(Path::new(&session_dir), &request_id, &format)
+    })
+    .await
+    .map_err(|error| format!("a geração da exportação falhou: {error}"))?
+}
+
+/// Grava o texto exportado em um arquivo novo (0600), recusando sobrescrita e
+/// links simbólicos. O caminho vem do diálogo nativo de salvamento.
+#[tauri::command]
+pub async fn save_export_file(path: String, text: String) -> Result<crate::export::SavedFile, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::export::write_text_file(Path::new(&path), &text))
+        .await
+        .map_err(|error| format!("o salvamento falhou: {error}"))?
+}
+
+/// Contagens e avisos da sanitização, sem gravar nada.
+#[tauri::command]
+pub async fn preview_sanitized(session_dir: String) -> Result<crate::export::SanitizePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::export::sanitize_preview(Path::new(&session_dir)))
+        .await
+        .map_err(|error| format!("a prévia da sanitização falhou: {error}"))?
+}
+
+/// Grava a sessão sanitizada em uma pasta nova escolhida pelo usuário.
+#[tauri::command]
+pub async fn save_sanitized(
+    session_dir: String,
+    destination: String,
+) -> Result<crate::export::SanitizeSaved, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::export::sanitize_to(Path::new(&session_dir), Path::new(&destination))
+    })
+    .await
+    .map_err(|error| format!("a sanitização falhou: {error}"))?
+}
+
 #[tauri::command]
 pub fn reveal_path(path: String) -> Result<(), String> {
     let target = PathBuf::from(&path);
