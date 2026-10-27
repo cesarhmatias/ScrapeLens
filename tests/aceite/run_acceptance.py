@@ -258,6 +258,9 @@ def item_2(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
            "HAR incompleto: completeness=partial")
     codes = {warning["code"] for warning in incomplete["warnings"]}
     exp.contains(codes, "har.missing_response", "HAR incompleto: aviso explícito har.missing_response")
+    har_counts = incomplete["session"]["completeness"]["counts"]
+    exp.eq(har_counts.get("sourceEvents"), 2, "HAR: sourceEvents persistido (2 entradas)")
+    exp.eq(har_counts.get("sourceEventsUsed"), 2, "HAR: sourceEventsUsed persistido (2)")
 
     invalid_har = core("import-har", str(parsers / "invalid.har"), "--out", str(base / "invalid-har"))
     exp.ok(invalid_har.returncode != 0, "HAR inválido: falha explícita (não silenciosa)")
@@ -284,6 +287,9 @@ def item_2(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     exp.contains(codes, "netlog.unknown_event_type", "NetLog: aviso netlog.unknown_event_type")
     exp.eq(unknown["session"]["completeness"]["state"], "partial",
            "NetLog com itens desconhecidos: completeness=partial")
+    unknown_counts = unknown["session"]["completeness"]["counts"]
+    exp.eq(unknown_counts.get("sourceEvents"), 7, "NetLog: sourceEvents persistido (7)")
+    exp.eq(unknown_counts.get("sourceEventsUnknown"), 3, "NetLog: sourceEventsUnknown persistido (3)")
 
     no_constants = import_to("import-netlog", parsers / "no-constants.netlog.json", base / "no-constants")
     codes = {warning["code"]: warning for warning in no_constants["warnings"]}
@@ -310,8 +316,8 @@ def item_2(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         "casos inválidos: retorno ≠ 0 com `erro:` no stderr (HAR sem entries, NetLog truncado)",
     ]
     notes.append("HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.")
-    notes.append("Observação: importadores HAR/NetLog isolados não gravam `completeness.counts.sourceEvents*` "
-                 "(fica 0 após reler); a contagem de eventos desconhecidos permanece auditável no aviso e nos eventos brutos.")
+    notes.append("Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura "
+                 "(correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos.")
     return exp.rows, evidence, notes
 
 
@@ -766,10 +772,111 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                f"chaveiro do usuário não contém o certificado {common_name!r}")
     notes.append("O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` "
                  "com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.")
+
+    app_path = ctx.get("app")
+    if app_path and pathlib.Path(app_path).exists():
+        app = json.loads(pathlib.Path(app_path).read_text(encoding="utf-8"))
+        bundle = app.get("bundle", {})
+        live = app.get("capture", {})
+        imports = app.get("imports", {})
+        exp.ok(bundle.get("exists") is True, "app: bundle .app existe")
+        exp.ok(bundle.get("arm64") is True, f"app: Mach-O arm64 ({bundle.get('machO', '')})")
+        exp.ok(bundle.get("singleBinary") is True,
+               f"app: binário único sem sidecar ({bundle.get('binaries')})")
+        exp.eq(bundle.get("signature"), "adhoc", "app: assinatura ad-hoc declarada (sem certificado Apple)")
+        exp.ok((bundle.get("sizeBytes") or 0) > 10 * 1024 * 1024,
+               f"app: bundle com {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB")
+
+        exp.eq(live.get("mode"), "cdp+netlog", "app: sessão ao vivo em modo cdp+netlog")
+        exp.eq(live.get("completeness"), "complete", "app: sessão ao vivo complete")
+        exp.ok(live.get("requests", 0) >= 10, f"app: {live.get('requests')} requisições reais na sessão")
+        exp.ok("h1" in live.get("protocols", []), f"app: protocolos reais {live.get('protocols')}")
+        exp.ok(live.get("verifiedHeaderEntries", 0) > 0,
+               f"app: {live.get('verifiedHeaderEntries')} headers verificados")
+        exp.eq(live.get("verifiedSources"), ["netlog"],
+               "app: headers verificados vêm do NetLog (fonte correta)")
+        exp.ok(all("HTTP_TRANSACTION_SEND_REQUEST_HEADERS" in event
+                   for event in live.get("verifiedEvents", [])),
+               "app: verificação h1 ancorada em HTTP_TRANSACTION_SEND_REQUEST_HEADERS")
+        exp.ok(live.get("unmatched", 0) == 0,
+               "app: nenhuma requisição CDP ficou sem correspondência")
+        ambiguous = live.get("ambiguous", [])
+        exp.ok(len(ambiguous) >= 1, f"app: {len(ambiguous)} requisições ambíguas")
+        exp.ok(all(len(item.get("candidates", [])) >= 2 for item in ambiguous),
+               "app: ambiguidade sempre expõe >=2 candidatos")
+        exp.ok(all(item.get("candidates") and len(set(item["candidates"])) == len(item["candidates"])
+                   for item in ambiguous), "app: candidatos distintos, sem escolha silenciosa")
+        exp.eq(live.get("hasDemoLabel"), False, "app: sessão real sem rótulo demo/sintético")
+        exp.contains(live.get("cookieNames", []), "sc_dup", "app: cookie com nome duplicado preservado")
+        exp.ok(live.get("setCookieLines", 0) >= 4,
+               f"app: {live.get('setCookieLines')} linhas Set-Cookie reais")
+        exp.ok(live.get("redirects", 0) >= 1, f"app: {live.get('redirects')} redirects reais")
+        exp.ok(set(live.get("responseBodyStates", [])) <= {"captured", "empty", "truncated",
+                                                          "unavailable", "discarded"},
+               "app: estados de corpo válidos na captura real")
+        exp.ok(live.get("unavailableWithNote") is True,
+               "app: corpo unavailable sempre com nota (sem corpo inventado)")
+        exp.eq(live.get("dirMode"), "0o700", "app: diretório da sessão 0700")
+        for name in ("session.json", "cdp-events.jsonl", "netlog.json"):
+            artifact = live.get("rawArtifacts", {}).get(name, {})
+            exp.ok(artifact.get("exists") is True and artifact.get("bytes", 0) > 0,
+                   f"app: artefato bruto {name} presente")
+            exp.eq(artifact.get("mode"), "0o600", f"app: {name} com permissão 0600")
+        exp.contains(live.get("warnings", []), "correlate.ambiguous",
+                     "app: aviso correlate.ambiguous persistido")
+        exp.ok(app.get("gui", {}).get("screenshotExists") is True,
+               "app: print do ciclo real capturado")
+        exp.ok(app.get("gui", {}).get("startUrl") == "http://127.0.0.1:8781/page",
+               "app: ciclo iniciado na página local do testserver")
+        server = app.get("testserver", {})
+        exp.ok(server.get("h1Lines", 0) >= 10,
+               f"app: testserver registrou {server.get('h1Lines')} requisições do Chrome")
+
+        har_import = imports.get("har") or {}
+        exp.ok(bool(har_import), "app: sessão HAR real importada pelo app")
+        if har_import:
+            exp.contains(har_import.get("labels", []), "har-import", "app: HAR com label har-import")
+            exp.eq(har_import.get("mode"), "har-import", "app: HAR em modo har-import")
+            exp.eq(har_import.get("completeness"), "complete", "app: HAR completo")
+            exp.ok(har_import.get("requests", 0) >= 10,
+                   f"app: HAR com {har_import.get('requests')} requisições")
+            exp.eq(har_import.get("hasDemoLabel"), False, "app: HAR real sem rótulo demo")
+        netlog_import = imports.get("netlog") or {}
+        exp.ok(bool(netlog_import), "app: sessão NetLog real importada pelo app")
+        if netlog_import:
+            exp.contains(netlog_import.get("labels", []), "netlog-import",
+                         "app: NetLog com label netlog-import")
+            exp.eq(netlog_import.get("mode"), "netlog-import", "app: NetLog em modo netlog-import")
+            exp.eq(netlog_import.get("completeness"), "partial",
+                   "app: NetLog isolado partial com motivo")
+            exp.ok(bool(netlog_import.get("completenessReasons")),
+                   "app: motivo da parcialidade declarado")
+            exp.ok(netlog_import.get("requests", 0) >= 20,
+                   f"app: NetLog com {netlog_import.get('requests')} requisições")
+            exp.ok({"h1", "h2", "h3"} <= set(netlog_import.get("protocols", [])),
+                   f"app: NetLog cobre h1/h2/h3 ({netlog_import.get('protocols')})")
+            exp.ok(netlog_import.get("streamSessions", 0) > 0,
+                   f"app: {netlog_import.get('streamSessions')} StreamSessions no NetLog")
+        evidence.append(
+            f"app empacotado: `ScrapeLens.app` {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB, "
+            f"arm64, ad-hoc, binário único; captura ao vivo {live.get('id')} "
+            f"({live.get('requests')} req, {live.get('verifiedHeaderEntries')} headers verificados, "
+            f"{len(ambiguous)} ambíguas); HAR {har_import.get('requests')} req; "
+            f"NetLog {netlog_import.get('requests')} req ({netlog_import.get('protocols')}).")
+        evidence.append(f"sessões reais do app: `{rel(pathlib.Path(app.get('appSessionsDir', '')))}` "
+                        f"· print `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}`")
+        notes.append("Critério 9 agora cobre o app empacotado: Iniciar/Encerrar pelo .app, sessão gravada "
+                     "pelo app e importações HAR/NetLog reais produzidas por ele.")
+        notes.append("O bundle validado foi compilado às 20:41, antes das correções de fsync/contagens no core "
+                     "(commits 857cb8c–bacaed1, 20:54–20:55). O ciclo do app não depende delas, mas recompile "
+                     "o .app antes do empacotamento final para incorporar o core atualizado.")
+    else:
+        exp.ok(False, "app: resumo do ciclo pelo .app ausente (rode tests/capture/app_validate.py)")
     evidence.append(
-        f"Chrome {summary.get('chromeVersion', '?')}; {summary.get('requestCount', '?')} requisições; "
+        f"CLI: Chrome {summary.get('chromeVersion', '?')}; {summary.get('requestCount', '?')} requisições; "
         f"{summary.get('h3StreamSessions', 0)} StreamSessions h3; "
-        f"{ambiguous} ambíguas; redirects={summary.get('redirects', 0)}")
+        f"{len(ambiguous) if isinstance(ambiguous, list) else ambiguous} ambíguas; "
+        f"redirects={summary.get('redirects', 0)}")
     return exp.rows, evidence, notes
 
 
@@ -876,9 +983,9 @@ def item_10(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         evidence.append(
             f"complementar, {bodies['requests']:,} anexos de 20 B: import {bodies['seconds']:.2f} s, "
             f"pico {bodies['peakMiB']} MiB, sessão {bodies['sessionMiB']} MiB")
-        notes.append("Pior caso de anexos: um `fsync` por arquivo em `store::write_file` domina "
-                     f"({bodies['seconds']:.1f} s para {bodies['attachments']:,} anexos 20 B). "
-                     "O parser gasta <1 s de CPU; é custo de I/O da gravação. Recomendo batching/adiar fsync no core.")
+        notes.append("Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por "
+                     f"diretório — {bodies['attachments']:,} anexos de 20 B importam em {bodies['seconds']:.2f} s "
+                     "(eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.")
     else:
         notes.append("Medição complementar com 20 mil anexos não executada nesta rodada "
                      "(`--large-bodies`); o caminho principal está medido acima.")
@@ -1047,6 +1154,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", help="lista de itens, ex.: 1,3,6")
     parser.add_argument("--capture", help="diretório de execução real de tests/capture/run-cycle.sh")
+    parser.add_argument("--app-run", help="run.json do ciclo pelo app empacotado "
+                                         "(padrão: tests/results/app-latest/run.json)")
     parser.add_argument("--build-fixtures", action="store_true", help="regenera fixtures/aceite antes de rodar")
     parser.add_argument("--large-bodies", action="store_true",
                         help="mede também o pior caso de 20 mil anexos (lento, ~100 s)")
@@ -1071,7 +1180,10 @@ def main() -> int:
 
     selected = {int(part) for part in args.only.split(",")} if args.only else {item[0] for item in ITEMS}
     run_root = fresh(WORK / "run")
-    ctx = {"run": run_root, "capture": capture, "large_bodies": args.large_bodies}
+    app_run = args.app_run
+    if app_run is None and (RESULTS / "app-latest" / "run.json").exists():
+        app_run = str(RESULTS / "app-latest" / "run.json")
+    ctx = {"run": run_root, "capture": capture, "large_bodies": args.large_bodies, "app": app_run}
 
     results = [run_item(number, title, fn, ctx)
                for number, title, fn in ITEMS if number in selected]

@@ -1,20 +1,20 @@
 # Relatório de aceite — ScrapeLens MVP
 
-Execução: 2026-10-26T23:29:01Z · binário do core `4e0edc61b02d` (2155344 bytes) · commit `7011792`
+Execução: 2026-10-27T00:04:05Z · binário do core `53020ee8bf47` (2155488 bytes) · commit `bacaed1`
 
 Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 
 | # | Critério da spec | Status | Asserções |
 |---|---|---|---|
 | 1 | Headers repetidos e cookies preservados nas fixtures | **aprovado** | 29/29 |
-| 2 | HAR e NetLog válidos, incompletos e com eventos desconhecidos | **aprovado** | 22/22 |
+| 2 | HAR e NetLog válidos, incompletos e com eventos desconhecidos | **aprovado** | 26/26 |
 | 3 | Requisições simultâneas idênticas sem associação falsa | **aprovado** | 15/15 |
 | 4 | Redirects e múltiplas tentativas | **aprovado** | 12/12 |
 | 5 | Corpos ausentes/truncados/descartados explícitos | **aprovado** | 16/16 |
 | 6 | Diff sem perder duplicatas | **aprovado** | 14/14 |
 | 7 | Exportação cURL/Python com caracteres especiais | **aprovado** | 23/23 |
 | 8 | Sanitização incluindo eventos brutos | **aprovado** | 19/19 |
-| 9 | Ciclo real de captura no macOS | **aprovado** | 47/47 |
+| 9 | Ciclo real de captura no macOS | **aprovado** | 94/94 |
 | 10 | Importação grande com tamanho documentado | **aprovado** | 7/7 |
 
 Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/incompletos/desconhecidos, (3) simultâneas idênticas sem associação falsa, (4) redirects/tentativas, (5) corpos explícitos, (6) diff com duplicatas, (7) escaping cURL/Python, (8) sanitização com eventos brutos, (9) ciclo real macOS, (10) importação grande medida.
@@ -27,7 +27,7 @@ Evidência:
 - `scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`
 - asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte
 
-Asserções: 29 passaram, 0 falharam (0.05 s).
+Asserções: 29 passaram, 0 falharam (0.07 s).
 
 ## 2. HAR e NetLog válidos, incompletos e com eventos desconhecidos — aprovado
 
@@ -40,9 +40,9 @@ Evidência:
 
 > HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.
 
-> Observação: importadores HAR/NetLog isolados não gravam `completeness.counts.sourceEvents*` (fica 0 após reler); a contagem de eventos desconhecidos permanece auditável no aviso e nos eventos brutos.
+> Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos.
 
-Asserções: 22 passaram, 0 falharam (0.11 s).
+Asserções: 26 passaram, 0 falharam (0.15 s).
 
 ## 3. Requisições simultâneas idênticas sem associação falsa — aprovado
 
@@ -52,7 +52,7 @@ Evidência:
 
 > A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade.
 
-Asserções: 15 passaram, 0 falharam (0.04 s).
+Asserções: 15 passaram, 0 falharam (0.05 s).
 
 ## 4. Redirects e múltiplas tentativas — aprovado
 
@@ -63,7 +63,7 @@ Evidência:
 
 > O redirect é um elo entre tentativas, não uma requisição separada.
 
-Asserções: 12 passaram, 0 falharam (0.04 s).
+Asserções: 12 passaram, 0 falharam (0.05 s).
 
 ## 5. Corpos ausentes/truncados/descartados explícitos — aprovado
 
@@ -73,7 +73,7 @@ Evidência:
 
 > `empty` só é usado quando a fonte afirma zero bytes; ausência vira `unavailable` com nota.
 
-Asserções: 16 passaram, 0 falharam (0.00 s).
+Asserções: 16 passaram, 0 falharam (0.01 s).
 
 ## 6. Diff sem perder duplicatas — aprovado
 
@@ -107,14 +107,16 @@ Evidência:
 
 > Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso.
 
-Asserções: 19 passaram, 0 falharam (0.03 s).
+Asserções: 19 passaram, 0 falharam (0.04 s).
 
 ## 9. Ciclo real de captura no macOS — aprovado
 
 Evidência:
 
 - execução real: `tests/capture/runs/20261026T232758Z` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`
-- Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 4 ambíguas; redirects=6
+- app empacotado: `ScrapeLens.app` 13.26 MiB, arm64, ad-hoc, binário único; captura ao vivo capture-1793058850184 (11 req, 154 headers verificados, 2 ambíguas); HAR 10 req; NetLog 24 req (['h1', 'h2', 'h3']).
+- sessões reais do app: `/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions` · print `tests/results/app-latest/screenshot-app-live.png`
+- CLI: Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 2 ambíguas; redirects=6
 
 > A página real `/page` exercitou redirects e POSTs.
 
@@ -122,24 +124,28 @@ Evidência:
 
 > O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.
 
-Asserções: 47 passaram, 0 falharam (0.10 s).
+> Critério 9 agora cobre o app empacotado: Iniciar/Encerrar pelo .app, sessão gravada pelo app e importações HAR/NetLog reais produzidas por ele.
+
+> O bundle validado foi compilado às 20:41, antes das correções de fsync/contagens no core (commits 857cb8c–bacaed1, 20:54–20:55). O ciclo do app não depende delas, mas recompile o .app antes do empacotamento final para incorporar o core atualizado.
+
+Asserções: 94 passaram, 0 falharam (0.10 s).
 
 ## 10. Importação grande com tamanho documentado — aprovado
 
 Evidência:
 
-- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.88 s, pico 783 MiB RSS
+- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.89 s, pico 785 MiB RSS
 - sessão gravada: session.json 225.8 MiB
-- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.64 s, pico 2344 MiB RSS
-- complementar, 20,000 anexos de 20 B: import 128.05 s, pico 565 MiB, sessão 228.9 MiB
+- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.63 s, pico 2301 MiB RSS
+- complementar, 20,000 anexos de 20 B: import 3.29 s, pico 794 MiB, sessão 228.9 MiB
 
 > HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).
 
-> `inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2344 MiB vem da serialização, não do parser.
+> `inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2301 MiB vem da serialização, não do parser.
 
-> Pior caso de anexos: um `fsync` por arquivo em `store::write_file` domina (128.1 s para 20,000 anexos 20 B). O parser gasta <1 s de CPU; é custo de I/O da gravação. Recomendo batching/adiar fsync no core.
+> Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.29 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.
 
-Asserções: 7 passaram, 0 falharam (8.11 s).
+Asserções: 7 passaram, 0 falharam (8.09 s).
 
 ## Como reproduzir
 

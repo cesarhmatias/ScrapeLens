@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-26T23:29:01Z",
- "coreSha256": "4e0edc61b02d1ebc0f42c5903a5b9b455d0a53b91158c42b8ba674b3901873c4",
- "coreBytes": 2155344,
- "gitCommit": "7011792",
+ "generatedAt": "2026-10-27T00:04:05Z",
+ "coreSha256": "53020ee8bf475e07bff64af48b235d7dd17cac483db24d82b8cd6238d3e88d45",
+ "coreBytes": 2155488,
+ "gitCommit": "bacaed1",
  "macos": "26.5.2",
  "machine": "arm64",
  "python": "3.14.8",
@@ -137,7 +137,7 @@
     "asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte"
    ],
    "notes": [],
-   "seconds": 0.05
+   "seconds": 0.07
   },
   {
    "item": 2,
@@ -158,7 +158,15 @@
     },
     {
      "ok": true,
-     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' ausente em {'session.netlog_missing', 'har.missing_response', 'session.cdp_missing'}"
+     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' ausente em {'session.cdp_missing', 'har.missing_response', 'session.netlog_missing'}"
+    },
+    {
+     "ok": true,
+     "label": "HAR: sourceEvents persistido (2 entradas): esperado 2, obtido 2"
+    },
+    {
+     "ok": true,
+     "label": "HAR: sourceEventsUsed persistido (2): esperado 2, obtido 2"
     },
     {
      "ok": true,
@@ -170,7 +178,7 @@
     },
     {
      "ok": true,
-     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' ausente em {'session.netlog_missing', 'session.cdp_missing', 'har.unknown_encoding'}"
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' ausente em {'har.unknown_encoding', 'session.cdp_missing', 'session.netlog_missing'}"
     },
     {
      "ok": true,
@@ -194,11 +202,19 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' ausente em {'netlog.unknown_event_type', 'session.cdp_missing'}"
+     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' ausente em {'session.cdp_missing', 'netlog.unknown_event_type'}"
     },
     {
      "ok": true,
      "label": "NetLog com itens desconhecidos: completeness=partial: esperado 'partial', obtido 'partial'"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: sourceEvents persistido (7): esperado 7, obtido 7"
+    },
+    {
+     "ok": true,
+     "label": "NetLog: sourceEventsUnknown persistido (3): esperado 3, obtido 3"
     },
     {
      "ok": true,
@@ -233,7 +249,7 @@
      "label": "NetLog truncado: erro no stderr: 'erro:' ausente em erro: JSON inválido em NetLog: EOF while parsing a list at line 1 column 48\n"
     }
    ],
-   "passed": 22,
+   "passed": 26,
    "failed": 0,
    "evidence": [
     "`scrapelens-core import-har fixtures/aceite/parsers/incomplete.har --out tests/.work/run/item2/incomplete-har`",
@@ -243,9 +259,9 @@
    ],
    "notes": [
     "HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.",
-    "Observação: importadores HAR/NetLog isolados não gravam `completeness.counts.sourceEvents*` (fica 0 após reler); a contagem de eventos desconhecidos permanece auditável no aviso e nos eventos brutos."
+    "Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos."
    ],
-   "seconds": 0.11
+   "seconds": 0.15
   },
   {
    "item": 3,
@@ -321,7 +337,7 @@
    "notes": [
     "A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade."
    ],
-   "seconds": 0.04
+   "seconds": 0.05
   },
   {
    "item": 4,
@@ -386,7 +402,7 @@
    "notes": [
     "O redirect é um elo entre tentativas, não uma requisição separada."
    ],
-   "seconds": 0.04
+   "seconds": 0.05
   },
   {
    "item": 5,
@@ -455,7 +471,7 @@
     },
     {
      "ok": true,
-     "label": "todos os cinco estados aparecem na fixture: esperado {'empty', 'unavailable', 'captured', 'truncated', 'discarded'}, obtido {'empty', 'unavailable', 'captured', 'truncated', 'discarded'}"
+     "label": "todos os cinco estados aparecem na fixture: esperado {'discarded', 'unavailable', 'captured', 'truncated', 'empty'}, obtido {'discarded', 'unavailable', 'captured', 'truncated', 'empty'}"
     }
    ],
    "passed": 16,
@@ -466,7 +482,7 @@
    "notes": [
     "`empty` só é usado quando a fonte afirma zero bytes; ausência vira `unavailable` com nota."
    ],
-   "seconds": 0.0
+   "seconds": 0.01
   },
   {
    "item": 6,
@@ -742,7 +758,7 @@
    "notes": [
     "Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso."
    ],
-   "seconds": 0.03
+   "seconds": 0.04
   },
   {
    "item": 9,
@@ -936,18 +952,210 @@
     {
      "ok": true,
      "label": "chaveiro do usuário não contém o certificado 'ScrapeLens local test CA (synthetic)'"
+    },
+    {
+     "ok": true,
+     "label": "app: bundle .app existe"
+    },
+    {
+     "ok": true,
+     "label": "app: Mach-O arm64 (/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens: Mach-O 64-bit executable arm64)"
+    },
+    {
+     "ok": true,
+     "label": "app: binário único sem sidecar (['scrapelens'])"
+    },
+    {
+     "ok": true,
+     "label": "app: assinatura ad-hoc declarada (sem certificado Apple): esperado 'adhoc', obtido 'adhoc'"
+    },
+    {
+     "ok": true,
+     "label": "app: bundle com 13.26 MiB"
+    },
+    {
+     "ok": true,
+     "label": "app: sessão ao vivo em modo cdp+netlog: esperado 'cdp+netlog', obtido 'cdp+netlog'"
+    },
+    {
+     "ok": true,
+     "label": "app: sessão ao vivo complete: esperado 'complete', obtido 'complete'"
+    },
+    {
+     "ok": true,
+     "label": "app: 11 requisições reais na sessão"
+    },
+    {
+     "ok": true,
+     "label": "app: protocolos reais ['h1']"
+    },
+    {
+     "ok": true,
+     "label": "app: 154 headers verificados"
+    },
+    {
+     "ok": true,
+     "label": "app: headers verificados vêm do NetLog (fonte correta): esperado ['netlog'], obtido ['netlog']"
+    },
+    {
+     "ok": true,
+     "label": "app: verificação h1 ancorada em HTTP_TRANSACTION_SEND_REQUEST_HEADERS"
+    },
+    {
+     "ok": true,
+     "label": "app: nenhuma requisição CDP ficou sem correspondência"
+    },
+    {
+     "ok": true,
+     "label": "app: 2 requisições ambíguas"
+    },
+    {
+     "ok": true,
+     "label": "app: ambiguidade sempre expõe >=2 candidatos"
+    },
+    {
+     "ok": true,
+     "label": "app: candidatos distintos, sem escolha silenciosa"
+    },
+    {
+     "ok": true,
+     "label": "app: sessão real sem rótulo demo/sintético: esperado False, obtido False"
+    },
+    {
+     "ok": true,
+     "label": "app: cookie com nome duplicado preservado: 'sc_dup' ausente em [\"sc_a\", \"sc_b\", \"sc_dup\", \"sc_page\"]"
+    },
+    {
+     "ok": true,
+     "label": "app: 8 linhas Set-Cookie reais"
+    },
+    {
+     "ok": true,
+     "label": "app: 2 redirects reais"
+    },
+    {
+     "ok": true,
+     "label": "app: estados de corpo válidos na captura real"
+    },
+    {
+     "ok": true,
+     "label": "app: corpo unavailable sempre com nota (sem corpo inventado)"
+    },
+    {
+     "ok": true,
+     "label": "app: diretório da sessão 0700: esperado '0o700', obtido '0o700'"
+    },
+    {
+     "ok": true,
+     "label": "app: artefato bruto session.json presente"
+    },
+    {
+     "ok": true,
+     "label": "app: session.json com permissão 0600: esperado '0o600', obtido '0o600'"
+    },
+    {
+     "ok": true,
+     "label": "app: artefato bruto cdp-events.jsonl presente"
+    },
+    {
+     "ok": true,
+     "label": "app: cdp-events.jsonl com permissão 0600: esperado '0o600', obtido '0o600'"
+    },
+    {
+     "ok": true,
+     "label": "app: artefato bruto netlog.json presente"
+    },
+    {
+     "ok": true,
+     "label": "app: netlog.json com permissão 0600: esperado '0o600', obtido '0o600'"
+    },
+    {
+     "ok": true,
+     "label": "app: aviso correlate.ambiguous persistido: 'correlate.ambiguous' ausente em [\"cdp.unhandled_events\", \"netlog.session_headers_unlinked\", \"correlate.ambiguous\", \"correlate.ambiguous\", \"correlate.netlog_unmatched\"]"
+    },
+    {
+     "ok": true,
+     "label": "app: print do ciclo real capturado"
+    },
+    {
+     "ok": true,
+     "label": "app: ciclo iniciado na página local do testserver"
+    },
+    {
+     "ok": true,
+     "label": "app: testserver registrou 14 requisições do Chrome"
+    },
+    {
+     "ok": true,
+     "label": "app: sessão HAR real importada pelo app"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR com label har-import: 'har-import' ausente em [\"har-import\"]"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR em modo har-import: esperado 'har-import', obtido 'har-import'"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR completo: esperado 'complete', obtido 'complete'"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR com 10 requisições"
+    },
+    {
+     "ok": true,
+     "label": "app: HAR real sem rótulo demo: esperado False, obtido False"
+    },
+    {
+     "ok": true,
+     "label": "app: sessão NetLog real importada pelo app"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog com label netlog-import: 'netlog-import' ausente em [\"netlog-import\"]"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog em modo netlog-import: esperado 'netlog-import', obtido 'netlog-import'"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog isolado partial com motivo: esperado 'partial', obtido 'partial'"
+    },
+    {
+     "ok": true,
+     "label": "app: motivo da parcialidade declarado"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog com 24 requisições"
+    },
+    {
+     "ok": true,
+     "label": "app: NetLog cobre h1/h2/h3 (['h1', 'h2', 'h3'])"
+    },
+    {
+     "ok": true,
+     "label": "app: 11 StreamSessions no NetLog"
     }
    ],
-   "passed": 47,
+   "passed": 94,
    "failed": 0,
    "evidence": [
     "execução real: `tests/capture/runs/20261026T232758Z` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`",
-    "Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 4 ambíguas; redirects=6"
+    "app empacotado: `ScrapeLens.app` 13.26 MiB, arm64, ad-hoc, binário único; captura ao vivo capture-1793058850184 (11 req, 154 headers verificados, 2 ambíguas); HAR 10 req; NetLog 24 req (['h1', 'h2', 'h3']).",
+    "sessões reais do app: `/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions` · print `tests/results/app-latest/screenshot-app-live.png`",
+    "CLI: Chrome 156.0.8078.48; 27 requisições; 14 StreamSessions h3; 2 ambíguas; redirects=6"
    ],
    "notes": [
     "A página real `/page` exercitou redirects e POSTs.",
     "O HAR do ciclo é reconstruído do CDP (`experiments/har_from_cdp.mjs`), porque o Chrome 156 não expõe `Network.getHAR`; o creator declara a origem e a ordem não é comprovada (unverified).",
-    "O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo."
+    "O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.",
+    "Critério 9 agora cobre o app empacotado: Iniciar/Encerrar pelo .app, sessão gravada pelo app e importações HAR/NetLog reais produzidas por ele.",
+    "O bundle validado foi compilado às 20:41, antes das correções de fsync/contagens no core (commits 857cb8c–bacaed1, 20:54–20:55). O ciclo do app não depende delas, mas recompile o .app antes do empacotamento final para incorporar o core atualizado."
    ],
    "seconds": 0.1
   },
@@ -970,35 +1178,35 @@
     },
     {
      "ok": true,
-     "label": "import-har abaixo de 60 s (0.88 s)"
+     "label": "import-har abaixo de 60 s (0.89 s)"
     },
     {
      "ok": true,
-     "label": "pico do import abaixo de 1,5 GiB (783 MiB)"
+     "label": "pico do import abaixo de 1,5 GiB (785 MiB)"
     },
     {
      "ok": true,
-     "label": "inspect abaixo de 60 s (2.64 s)"
+     "label": "inspect abaixo de 60 s (2.63 s)"
     },
     {
      "ok": true,
-     "label": "inspect com pico abaixo de 3,5 GiB (2344 MiB)"
+     "label": "inspect com pico abaixo de 3,5 GiB (2301 MiB)"
     }
    ],
    "passed": 7,
    "failed": 0,
    "evidence": [
-    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.88 s, pico 783 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.89 s, pico 785 MiB RSS",
     "sessão gravada: session.json 225.8 MiB",
-    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.64 s, pico 2344 MiB RSS",
-    "complementar, 20,000 anexos de 20 B: import 128.05 s, pico 565 MiB, sessão 228.9 MiB"
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.63 s, pico 2301 MiB RSS",
+    "complementar, 20,000 anexos de 20 B: import 3.29 s, pico 794 MiB, sessão 228.9 MiB"
    ],
    "notes": [
     "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
-    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2344 MiB vem da serialização, não do parser.",
-    "Pior caso de anexos: um `fsync` por arquivo em `store::write_file` domina (128.1 s para 20,000 anexos 20 B). O parser gasta <1 s de CPU; é custo de I/O da gravação. Recomendo batching/adiar fsync no core."
+    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2301 MiB vem da serialização, não do parser.",
+    "Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.29 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo."
    ],
-   "seconds": 8.11
+   "seconds": 8.09
   }
  ]
 }

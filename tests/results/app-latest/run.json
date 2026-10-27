@@ -1,0 +1,303 @@
+{
+ "runId": "app-20261026T235232Z",
+ "generatedAt": "2026-10-27T00:01:29Z",
+ "gui": {
+  "startedFrom": "ScrapeLens.app (release, pid capturado pela janela)",
+  "startButton": "Iniciar sessão",
+  "stopButton": "Encerrar",
+  "startUrl": "http://127.0.0.1:8781/page",
+  "screenshot": "/Users/cesar/Projects/scrapelens/tests/results/app-latest/screenshot-app-live.png",
+  "screenshotExists": true
+ },
+ "bundle": {
+  "path": "/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app",
+  "exists": true,
+  "sizeBytes": 13905266,
+  "binaries": [
+   "scrapelens"
+  ],
+  "singleBinary": true,
+  "machO": "/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens: Mach-O 64-bit executable arm64",
+  "arm64": true,
+  "signature": "adhoc",
+  "identifier": "scrapelens-393e55338e7c02b8"
+ },
+ "appSessionsDir": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions",
+ "capture": {
+  "id": "capture-1793058850184",
+  "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793058850184",
+  "sha256": "09564fa87e49489a52d04c4241bd481548831c346eb5f2486cf1d78da7697ea4",
+  "mode": "cdp+netlog",
+  "labels": [],
+  "completeness": "complete",
+  "completenessReasons": [],
+  "counts": {
+   "requests": 11,
+   "attempts": 13,
+   "redirects": 2,
+   "connections": 1,
+   "streamSessions": 0,
+   "sourceEvents": 6159,
+   "sourceEventsUsed": 6159,
+   "sourceEventsUnknown": 0,
+   "warnings": 5
+  },
+  "requests": 11,
+  "attempts": 13,
+  "protocols": [
+   "h1"
+  ],
+  "statuses": [
+   200,
+   404
+  ],
+  "matched": 9,
+  "ambiguous": [
+   {
+    "id": "cdp-r0008",
+    "candidates": [
+     "netlog-r0011-a1",
+     "netlog-r0012-a1"
+    ],
+    "candidateCount": 2
+   },
+   {
+    "id": "cdp-r0009",
+    "candidates": [
+     "netlog-r0011-a1",
+     "netlog-r0012-a1"
+    ],
+    "candidateCount": 2
+   }
+  ],
+  "ambiguousCandidates": 4,
+  "unmatched": 0,
+  "redirects": 2,
+  "streamSessions": 0,
+  "verifiedHeaderEntries": 154,
+  "verifiedSources": [
+   "netlog"
+  ],
+  "verifiedEvents": [
+   "HTTP_TRANSACTION_SEND_REQUEST_HEADERS"
+  ],
+  "cookieNames": [
+   "sc_a",
+   "sc_b",
+   "sc_dup",
+   "sc_page"
+  ],
+  "setCookieLines": 8,
+  "setCookieDuplicates": 4,
+  "responseBodyStates": [
+   "unavailable"
+  ],
+  "unavailableWithNote": true,
+  "warnings": [
+   "cdp.unhandled_events",
+   "netlog.session_headers_unlinked",
+   "correlate.ambiguous",
+   "correlate.ambiguous",
+   "correlate.netlog_unmatched"
+  ],
+  "hasDemoLabel": false,
+  "dirMode": "0o700",
+  "rawArtifacts": {
+   "session.json": {
+    "exists": true,
+    "bytes": 852906,
+    "mode": "0o600"
+   },
+   "cdp-events.jsonl": {
+    "exists": true,
+    "bytes": 379700,
+    "mode": "0o600"
+   },
+   "netlog.json": {
+    "exists": true,
+    "bytes": 2385812,
+    "mode": "0o600"
+   }
+  },
+  "attachments": []
+ },
+ "imports": {
+  "har": {
+   "id": "har-ae8b55ad56e338af",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-ae8b55ad56e338af",
+   "sha256": "4e5fbb384736e530b3d076e46a462712eab93aa4498d5db86b764d684becc93a",
+   "mode": "har-import",
+   "labels": [
+    "har-import"
+   ],
+   "completeness": "complete",
+   "completenessReasons": [],
+   "counts": {
+    "requests": 10,
+    "attempts": 12,
+    "redirects": 2,
+    "connections": 1,
+    "streamSessions": 0,
+    "sourceEvents": 0,
+    "sourceEventsUsed": 0,
+    "sourceEventsUnknown": 0,
+    "warnings": 2
+   },
+   "requests": 10,
+   "attempts": 12,
+   "protocols": [
+    "h1"
+   ],
+   "statuses": [
+    200
+   ],
+   "matched": 0,
+   "ambiguous": [],
+   "ambiguousCandidates": 0,
+   "unmatched": 10,
+   "redirects": 2,
+   "streamSessions": 0,
+   "verifiedHeaderEntries": 0,
+   "verifiedSources": [],
+   "verifiedEvents": [],
+   "cookieNames": [
+    "sc_a",
+    "sc_b",
+    "sc_dup",
+    "sc_page"
+   ],
+   "setCookieLines": 8,
+   "setCookieDuplicates": 4,
+   "responseBodyStates": [
+    "captured"
+   ],
+   "unavailableWithNote": true,
+   "warnings": [
+    "session.cdp_missing",
+    "session.netlog_missing"
+   ],
+   "hasDemoLabel": false,
+   "dirMode": "0o700",
+   "rawArtifacts": {
+    "session.json": {
+     "exists": true,
+     "bytes": 375213,
+     "mode": "0o600"
+    },
+    "cdp-events.jsonl": {
+     "exists": false,
+     "bytes": 0,
+     "mode": null
+    },
+    "netlog.json": {
+     "exists": false,
+     "bytes": 0,
+     "mode": null
+    }
+   },
+   "attachments": [
+    "har-entry-0000.response.bin",
+    "har-entry-0001.response.bin",
+    "har-entry-0002.response.bin",
+    "har-entry-0003.response.bin",
+    "har-entry-0004.response.bin",
+    "har-entry-0005.response.bin",
+    "har-entry-0006.response.bin",
+    "har-entry-0009.response.bin",
+    "har-entry-0010.request.bin",
+    "har-entry-0010.response.bin",
+    "har-entry-0011.request.bin",
+    "har-entry-0011.response.bin"
+   ]
+  },
+  "netlog": {
+   "id": "netlog-b3f04ac555a0d2fe",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-b3f04ac555a0d2fe",
+   "sha256": "5bc1dd028a1b976d896c12677eaed2119edd6c4019cafdefcbd15c6a38065dc5",
+   "mode": "netlog-import",
+   "labels": [
+    "netlog-import"
+   ],
+   "completeness": "partial",
+   "completenessReasons": [
+    "NetLog não declara captura CDP; cobertura de requisições não confirmada"
+   ],
+   "counts": {
+    "requests": 24,
+    "attempts": 26,
+    "redirects": 2,
+    "connections": 8,
+    "streamSessions": 11,
+    "sourceEvents": 0,
+    "sourceEventsUsed": 0,
+    "sourceEventsUnknown": 0,
+    "warnings": 1
+   },
+   "requests": 24,
+   "attempts": 26,
+   "protocols": [
+    "h1",
+    "h2",
+    "h3"
+   ],
+   "statuses": [
+    200,
+    404
+   ],
+   "matched": 0,
+   "ambiguous": [],
+   "ambiguousCandidates": 0,
+   "unmatched": 24,
+   "redirects": 2,
+   "streamSessions": 11,
+   "verifiedHeaderEntries": 196,
+   "verifiedSources": [
+    "netlog"
+   ],
+   "verifiedEvents": [
+    "HTTP_TRANSACTION_SEND_REQUEST_HEADERS"
+   ],
+   "cookieNames": [
+    "sc_a",
+    "sc_b",
+    "sc_dup",
+    "sc_page"
+   ],
+   "setCookieLines": 8,
+   "setCookieDuplicates": 4,
+   "responseBodyStates": [
+    "unavailable"
+   ],
+   "unavailableWithNote": true,
+   "warnings": [
+    "session.cdp_missing"
+   ],
+   "hasDemoLabel": false,
+   "dirMode": "0o700",
+   "rawArtifacts": {
+    "session.json": {
+     "exists": true,
+     "bytes": 1292224,
+     "mode": "0o600"
+    },
+    "cdp-events.jsonl": {
+     "exists": false,
+     "bytes": 0,
+     "mode": null
+    },
+    "netlog.json": {
+     "exists": true,
+     "bytes": 2186896,
+     "mode": "0o600"
+    }
+   },
+   "attachments": []
+  }
+ },
+ "testserver": {
+  "dir": "tests/capture/runs/app-20261026T235232Z/server/app-live",
+  "h1Lines": 14
+ },
+ "certificateInstalled": false,
+ "telemetry": false
+}

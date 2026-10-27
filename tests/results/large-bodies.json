@@ -1,8 +1,8 @@
 {
  "requests": 20000,
  "harMiB": 17.5,
- "seconds": 128.05,
- "peakMiB": 565,
+ "seconds": 3.29,
+ "peakMiB": 794,
  "sessionMiB": 228.9,
  "attachments": 20000
 }
