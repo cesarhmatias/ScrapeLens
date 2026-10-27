@@ -183,7 +183,7 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
     let raw_removed = bundle.cdp_events_jsonl.is_some() || bundle.netlog_json.is_some();
     session.session.labels.push("sanitized".to_string());
     session.session.notes.push(
-        "sessão sanitizada: headers/cookies/URLs/corpos sensíveis redigidos; eventos brutos removidos"
+        "sessão sanitizada: headers/cookies/URLs/corpos sensíveis redigidos; eventos brutos removidos. Detecção heurística por nomes de parâmetros/headers, prefixos de autenticação e estrutura do corpo; revise o resultado antes de compartilhar."
             .to_string(),
     );
 
@@ -253,6 +253,18 @@ fn sanitize_header_view(
                 .notes
                 .push("valor redigido na exportação sanitizada".to_string());
             *redactions.entry(format!("header:{lower}")).or_default() += 1;
+            continue;
+        }
+        // Heurística por valor: nomes fora da lista também podem carregar
+        // `Bearer ...`, `Basic ...` etc. Redige o esquema + credencial.
+        if let Some(redacted) = redact_auth_scheme(&entry.value, options) {
+            entry.value = redacted;
+            entry.provenance.notes.push(
+                "valor com esquema de autenticação redigido (heurística por prefixo)".to_string(),
+            );
+            *redactions
+                .entry("header:auth-scheme".to_string())
+                .or_default() += 1;
             continue;
         }
         if is_url_header(&lower) {
@@ -753,6 +765,9 @@ fn is_sensitive_key(name: &str) -> bool {
         "session",
         "sessionid",
         "session_id",
+        "sid",
+        "jsessionid",
+        "phpsessid",
         "csrf",
         "xsrf",
         "cookie",
@@ -781,6 +796,9 @@ fn is_sensitive_key(name: &str) -> bool {
         || compact.contains("csrf")
         || compact.contains("xsrf")
         || compact.ends_with("sessionid")
+        || compact == "sid"
+        || compact == "jsessionid"
+        || compact == "phpsessid"
         || compact == "authorization"
         || compact.contains("email")
         || compact == "phone"
@@ -1011,6 +1029,52 @@ mod tests {
     }
 
     #[test]
+    fn redacts_sid_jsessionid_and_phpsessid_in_url() {
+        let (mut bundle, _) = bundle_with_body();
+        bundle.session.requests[0].url =
+            "https://demo.invalid/x?sid=ZZURLTOKEN-42&jsessionid=ZZJSESSION-1&phpsessid=ZZPHPSESS-2&page=2"
+                .to_string();
+        let export = sanitize_bundle(&bundle, &SanitizeOptions::default());
+        let raw = serde_json::to_string(&export.bundle.session).unwrap();
+        assert!(!raw.contains("ZZURLTOKEN-42"), "sid não pode vazar");
+        assert!(!raw.contains("ZZJSESSION-1"), "jsessionid não pode vazar");
+        assert!(!raw.contains("ZZPHPSESS-2"), "phpsessid não pode vazar");
+        assert!(raw.contains("page=2"), "parâmetro não sensível preservado");
+        assert!(raw.contains("sid=%5BREDACTED%5D"));
+        assert!(raw.contains("jsessionid=%5BREDACTED%5D"));
+        assert!(raw.contains("phpsessid=%5BREDACTED%5D"));
+    }
+
+    #[test]
+    fn redacts_bearer_value_in_unlisted_header_by_prefix() {
+        let (mut bundle, _) = bundle_with_body();
+        let provenance = bundle.session.requests[0].request_headers.headers[0]
+            .provenance
+            .clone();
+        bundle.session.requests[0].request_headers.add(
+            "X-Extra-Auth",
+            "Bearer ZZAUTH-987654321",
+            &provenance,
+        );
+        let export = sanitize_bundle(&bundle, &SanitizeOptions::default());
+        let request = &export.bundle.session.requests[0];
+        assert_eq!(
+            request.request_headers.first_value("x-extra-auth"),
+            Some("Bearer [REDACTED]")
+        );
+        let raw = serde_json::to_string(&export.bundle.session).unwrap();
+        assert!(!raw.contains("ZZAUTH-987654321"), "Bearer não pode vazar");
+        assert!(export
+            .bundle
+            .session
+            .session
+            .notes
+            .iter()
+            .any(|note| note.contains("heurística")));
+        assert!(export.redactions.contains_key("header:auth-scheme"));
+    }
+
+    #[test]
     fn header_and_query_detection() {
         assert!(is_sensitive_header("Authorization"));
         assert!(is_sensitive_header("X-Goog-Api-Key"));
@@ -1018,6 +1082,9 @@ mod tests {
         assert!(!is_sensitive_header("Content-Type"));
         assert!(is_sensitive_key("access_token"));
         assert!(is_sensitive_key("API_KEY"));
+        assert!(is_sensitive_key("sid"));
+        assert!(is_sensitive_key("JSESSIONID"));
+        assert!(is_sensitive_key("PHPSESSID"));
         assert!(is_sensitive_key("user[email]"));
         assert!(!is_sensitive_key("page"));
         assert!(!is_sensitive_key("monkey"));

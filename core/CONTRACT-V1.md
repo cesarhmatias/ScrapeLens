@@ -242,10 +242,13 @@ scrapelens-core diff <sessao> <requestIdA> <requestIdB>
 - cURL usa quoting bash/POSIX (`$'...'` para bytes de controle). Headers com
   CR/LF/NUL são descartados com aviso; `Content-Length` é removido quando o
   corpo não acompanha a exportação.
-- Sanitização não detecta tokens embutidos em segmentos de path, HTML/JS livre
-  ou texto não estruturado; esses corpos são omitidos com aviso. Nomes e
-  contagem de headers/cookies são preservados para auditoria. Notas da sessão
-  e metadados de conexão são preservados; revise-os antes de compartilhar.
+- Sanitização é **heurística**: cobre nomes de parâmetros/headers conhecidos
+  (`token`, `sid`, `jsessionid`, `phpsessid`, ...), prefixos de autenticação
+  (`Bearer`, `Basic`, `Digest`, `Token`) e corpos estruturados. Não detecta
+  tokens embutidos em segmentos de path, HTML/JS livre ou texto não
+  estruturado; esses corpos são omitidos com aviso. Nomes e contagem de
+  headers/cookies são preservados para auditoria. Notas da sessão e metadados
+  de conexão são preservados; revise-os antes de compartilhar.
 - HAR não comprova ordem/duplicatas; NetLog h3 mostra Cookie fundido, embora o
   fio possa receber N campos.
 - O NetLog isolado não prova cobertura de sessão CDP; a sessão resultante fica
