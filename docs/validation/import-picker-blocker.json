@@ -1,0 +1,14 @@
+{
+ "blockedAt": "2026-10-27T09:58Z",
+ "bundleSha256": "a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0",
+ "appPid": 2855,
+ "appWindow": 257818,
+ "panelHostWindow": 257608,
+ "panelServicePid": 3152,
+ "panelServiceWindow": 257836,
+ "tccPermission": "granted by user before this attempt",
+ "axElementsForPanel": 0,
+ "axReason": "ax_window_unresolved: the macOS 26 OpenAndSavePanelService window reports no AXWindow; the tree is empty on purpose",
+ "keyDelivery": "cmd+shift+g and esc via background and foreground produced byte-identical window captures (sha256 28980054f418...)",
+ "conclusion": "Native file picker is not reachable by synthetic input in this environment; import cannot be driven without a real user selection. No permission check was bypassed."
+}

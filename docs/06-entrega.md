@@ -6,8 +6,8 @@ Empacotamento local concluído. Bundle arm64 recompilado com o core atual,
 assinatura ad-hoc válida, abertura e nova captura pela UI comprovadas.
 Bateria automatizada: 10/10 critérios e 260/260 asserções, sem SKIP.
 A validação manual de novas importações HAR/NetLog pela UI permanece parcial:
-o macOS solicita permissão ao OpenBot para acessar dados de outros apps.
-Só o usuário pode concedê-la. A evidência de importação pela UI é histórica,
+o usuário concedeu a permissão macOS, mas o seletor nativo continua
+inacessível à automação (AX vazio e teclas sem efeito). A evidência pela UI é histórica,
 feita no bundle anterior; as importações novas foram verificadas pelo CLI.
 
 Isso encerra a recuperação do pacote e registra o estado real. Não equivale
@@ -61,7 +61,7 @@ O hash identifica este artefato, não garante build byte a byte reproduzível.
 | Assinatura/hash/arquitetura | App + líder: codesign válido, SHA-256 acima, arm64 |
 | Bateria de aceite | Testes: 260/260, 10/10, commit 364bddb; promovida a docs/05-aceite.md |
 | Nova captura no bundle final | Testes: Iniciar/Encerrar pela UI, sessão capture-1793085113332 |
-| HAR/NetLog novos | CLI aprovado; repetição pela UI bloqueada por permissão macOS |
+| HAR/NetLog novos | CLI aprovado; repetição pela UI requer seleção humana no painel nativo |
 | Inspeção visual | App: prints 22/23; líder inspecionou print 23; Testes gravou screenshot-app-live.png |
 
 Sessão nova: 11 requisições, complete, cdp+netlog, 154 entradas de headers
@@ -90,7 +90,8 @@ ambíguos. Exportação cURL/Python e sanitização funcionam no core/CLI.
 ## Limitações e prioridades restantes
 
 1. Repetir importações frescas HAR/NetLog pela UI do bundle final quando o
-   usuário responder ao prompt macOS. Isso não altera a aprovação histórica
+   usuário selecionar os arquivos no painel nativo. Permissão macOS já concedida;
+   a automação continua sem acesso ao seletor. Isso não altera a aprovação histórica
    das importações, mas falta evidência atual desse caminho no pacote final.
 2. Conectar exportação/sanitização à UI. Busca no corpo, cadeia de priming,
    campos dinâmicos e comparação entre sessões do caso DETRAN seguem pendentes;
@@ -104,6 +105,22 @@ ambíguos. Exportação cURL/Python e sanitização funcionam no core/CLI.
 5. Assinatura Developer ID/notarização e teste Intel antes de distribuição
    ampla. Nada publicado, nenhum push/release nesta tarefa.
 
-O prompt e o painel de importação foram deixados para decisão do usuário.
+O painel de importação foi deixado para seleção manual do usuário.
 A pasta `~/Projects/scrapelens-import-tmp/` foi preservada; nenhuma exclusão
 foi realizada. Instruções de uso/build estão no README da raiz.
+
+## Atualização do bloqueio após a permissão
+
+Testes tentou novamente após a resposta do usuário “Concedi a permissão; continue”.
+Em 2026-10-27T09:58Z, o OpenAndSavePanelService retornou zero elementos
+(`ax_window_unresolved`). Teclas em background e foreground não alteraram a
+captura. Nenhum clique absoluto foi realizado sobre a janela do usuário.
+Nenhuma nova sessão foi importada. Registro em
+`docs/validation/import-picker-blocker.json`; a bateria anterior permanece
+260/260 com o escopo histórico explicitado. Não se deve repetir a mesma
+automação nem contornar o bloqueio.
+
+Para liberar a verificação restante, no painel Importar HAR use ⌘⇧G e selecione
+`~/Projects/scrapelens-import-tmp/har-derived.json`. Depois importe NetLog com
+`~/Projects/scrapelens-import-tmp/h1h2h3.chrome-netlog.json`. Ao confirmar as duas
+importações, Testes pode validar as sessões geradas e atualizar a evidência.

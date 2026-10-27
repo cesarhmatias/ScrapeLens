@@ -81,7 +81,8 @@ promete reproduzir TLS, fingerprint ou transporte do Chrome.
   sessões do caso DETRAN ainda não estão implementadas na UI.
 - Bateria: 10/10, 260 asserções. Inclui captura nova no bundle final; a
   importação pela UI usa evidência histórica, pois a repetição foi bloqueada
-  por permissão macOS pendente. [Escopo completo](docs/05-aceite.md).
+  pelo seletor nativo inacessível à automação, mesmo após a permissão concedida.
+  [Estado atual](docs/06-entrega.md) e [bateria](docs/05-aceite.md).
 
 ## Desenvolvimento e build
 
