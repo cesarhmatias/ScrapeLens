@@ -232,9 +232,13 @@ fn find_candidates<'a>(
             let is_explicit = explicit_source
                 .map(|source_id| source_id == request.source_id)
                 .unwrap_or(false);
-            if let Some((mut score, mut reasons)) =
-                score_candidate(attempt, request, netlog_attempt, options)
-            {
+            if let Some((mut score, mut reasons)) = score_candidate(
+                attempt,
+                request,
+                netlog_attempt,
+                options,
+                netlog.time_tick_offset_ms,
+            ) {
                 if is_explicit {
                     score = 100;
                     reasons.push("chave explícita CDP→NetLog fornecida pela captura".to_string());
@@ -249,10 +253,11 @@ fn find_candidates<'a>(
                     score,
                     reasons,
                     explicit: is_explicit,
-                    time_delta: match (attempt.started_at, netlog_attempt.started_at) {
-                        (Some(left), Some(right)) => Some((left - right).abs()),
-                        _ => None,
-                    },
+                    time_delta: time_delta_between(
+                        attempt,
+                        netlog_attempt,
+                        netlog.time_tick_offset_ms,
+                    ),
                 });
             } else if is_explicit {
                 // Par explícito vence a heurística, mas ainda exige método e URL
@@ -264,10 +269,11 @@ fn find_candidates<'a>(
                     score: 100,
                     reasons: vec!["chave explícita CDP→NetLog".to_string()],
                     explicit: true,
-                    time_delta: match (attempt.started_at, netlog_attempt.started_at) {
-                        (Some(left), Some(right)) => Some((left - right).abs()),
-                        _ => None,
-                    },
+                    time_delta: time_delta_between(
+                        attempt,
+                        netlog_attempt,
+                        netlog.time_tick_offset_ms,
+                    ),
                 });
             }
         }
@@ -277,13 +283,32 @@ fn find_candidates<'a>(
     if candidates.iter().any(|candidate| candidate.explicit) {
         candidates.retain(|candidate| candidate.explicit);
     }
-    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.score));
-    // Um candidato claramente mais próximo no tempo elimina os que estão
-    // segundos depois, mas empates simultâneos continuam ambíguos.
+    // Precisão do relógio entre CDP e NetLog no mesmo processo é sub-milissegundo
+    // (medido nas capturas reais). Um candidato dentro dessa margem cujo
+    // concorrente mais próximo está a ≥ 100 ms é o único compatível: 100 ms
+    // separa requisições sequenciais, ao contrário de simultâneas.
+    const CLOCK_TOLERANCE_S: f64 = 0.010;
+    const CLOCK_SEPARATION_S: f64 = 0.100;
+    candidates.sort_by(|left, right| {
+        left.time_delta
+            .partial_cmp(&right.time_delta)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| right.score.cmp(&left.score))
+    });
     if let Some(best_delta) = candidates
         .first()
         .and_then(|candidate| candidate.time_delta)
     {
+        let runner_up = candidates.get(1).and_then(|candidate| candidate.time_delta);
+        let clearly_closest = best_delta <= CLOCK_TOLERANCE_S
+            && runner_up
+                .map(|delta| delta >= CLOCK_SEPARATION_S)
+                .unwrap_or(true);
+        if clearly_closest {
+            candidates.truncate(1);
+            return candidates;
+        }
+        // Sem separação clara: mantém a janela antiga e a ambiguidade explícita.
         candidates.retain(|candidate| {
             candidate.explicit
                 || candidate
@@ -292,7 +317,42 @@ fn find_candidates<'a>(
                     .unwrap_or(true)
         });
     }
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.score));
     candidates
+}
+
+/// Diferença de tempo entre CDP e NetLog no relógio em que as duas fontes
+/// concordam.
+///
+/// O CDP guarda `timestamp` monotônico (segundos de ticks), enquanto o NetLog é
+/// normalizado para epoch. Como `timeTickOffset` é constante na captura, a
+/// leitura monotônica do NetLog é `started_at - offset`. Comparar os dois
+/// desvios é calibração de relógio, não escolha de requisição: o motivo do
+/// candidato registra qual referencial foi usado.
+fn time_delta_with_clock(
+    cdp: &Attempt,
+    netlog_attempt: &NetlogAttempt,
+    tick_offset_ms: Option<f64>,
+) -> Option<(f64, &'static str)> {
+    let cdp_time = cdp.started_at?;
+    let netlog_time = netlog_attempt.started_at?;
+    let mut best = ((cdp_time - netlog_time).abs(), "epoch");
+    if let Some(offset_ms) = tick_offset_ms {
+        let monotonic = netlog_time - offset_ms / 1000.0;
+        let delta = (cdp_time - monotonic).abs();
+        if delta < best.0 {
+            best = (delta, "relógio monotônico");
+        }
+    }
+    Some(best)
+}
+
+fn time_delta_between(
+    cdp: &Attempt,
+    netlog_attempt: &NetlogAttempt,
+    tick_offset_ms: Option<f64>,
+) -> Option<f64> {
+    time_delta_with_clock(cdp, netlog_attempt, tick_offset_ms).map(|(delta, _)| delta)
 }
 
 fn score_candidate(
@@ -300,6 +360,7 @@ fn score_candidate(
     netlog_request: &NetlogUrlRequest,
     netlog_attempt: &NetlogAttempt,
     options: &CorrelationOptions,
+    tick_offset_ms: Option<f64>,
 ) -> Option<(u8, Vec<String>)> {
     if !cdp.method.eq_ignore_ascii_case(&netlog_attempt.method) {
         return None;
@@ -322,17 +383,17 @@ fn score_candidate(
     reasons.push("método igual".to_string());
 
     match (cdp.started_at, netlog_attempt.started_at) {
-        (Some(cdp_time), Some(netlog_time)) => {
-            let delta = (cdp_time - netlog_time).abs();
+        (Some(_), Some(_)) => {
+            let (delta, clock) = time_delta_with_clock(cdp, netlog_attempt, tick_offset_ms)?;
             if delta <= 0.5 {
                 score += 25;
-                reasons.push(format!("tempo Δ={delta:.3}s"));
+                reasons.push(format!("tempo Δ={delta:.3}s ({clock})"));
             } else if delta <= 2.0 {
                 score += 15;
-                reasons.push(format!("tempo Δ={delta:.3}s"));
+                reasons.push(format!("tempo Δ={delta:.3}s ({clock})"));
             } else if delta <= options.time_window_s {
                 score += 8;
-                reasons.push(format!("tempo Δ={delta:.3}s (janela)"));
+                reasons.push(format!("tempo Δ={delta:.3}s ({clock}, janela)"));
             } else {
                 return None;
             }
@@ -683,12 +744,12 @@ mod tests {
         };
         cdp.status = Some(200);
         let options = CorrelationOptions::default();
-        let (score, reasons) = score_candidate(&cdp, &request, &netlog, &options).unwrap();
+        let (score, reasons) = score_candidate(&cdp, &request, &netlog, &options, None).unwrap();
         assert!(score >= 90, "{score} {reasons:?}");
         netlog.method = "POST".to_string();
-        assert!(score_candidate(&cdp, &request, &netlog, &options).is_none());
+        assert!(score_candidate(&cdp, &request, &netlog, &options, None).is_none());
         netlog.method = "GET".to_string();
         netlog.url = "https://a.test/other".to_string();
-        assert!(score_candidate(&cdp, &request, &netlog, &options).is_none());
+        assert!(score_candidate(&cdp, &request, &netlog, &options, None).is_none());
     }
 }

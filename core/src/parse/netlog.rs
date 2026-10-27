@@ -27,10 +27,47 @@ use crate::parse::{ImportReport, ImportedSession, InputFormat};
 
 const MAX_UNKNOWN_SAMPLES: usize = 8;
 
+/// Unidade do campo `time` do NetLog.
+///
+/// O Chrome real observado neste projeto (capturas em `experiments/results/`)
+/// grava `time` em **milissegundos** de ticks: `timeTickOffset` (ms) + `time`
+/// cai no relógio de parede. As fixtures sintéticas `detran-pb` usam
+/// microssegundos. A unidade é decidida uma vez por captura em
+/// [`detect_time_unit`] e aplicada por [`ticks_to_epoch_seconds`]; nenhum outro
+/// ponto do parser converte tempo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NetlogTimeUnit {
+    /// `time` em microssegundos de ticks do processo.
+    Microseconds,
+    /// `time` em milissegundos de ticks do processo (Chrome real).
+    #[default]
+    Milliseconds,
+}
+
+impl NetlogTimeUnit {
+    /// Divisor que leva `time` a milissegundos.
+    fn per_millisecond(self) -> f64 {
+        match self {
+            NetlogTimeUnit::Microseconds => 1_000.0,
+            NetlogTimeUnit::Milliseconds => 1.0,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NetlogTimeUnit::Microseconds => "microseconds",
+            NetlogTimeUnit::Milliseconds => "milliseconds",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct NetlogCapture {
     pub browser: BrowserInfo,
     pub started_at: Option<String>,
+    /// Unidade usada para converter `time` nesta captura.
+    pub time_unit: NetlogTimeUnit,
+    pub time_tick_offset_ms: Option<f64>,
     pub events_total: usize,
     pub events_used: usize,
     pub events_unknown: usize,
@@ -134,7 +171,21 @@ impl Builder {
     }
 }
 
+/// Importa NetLog sem referência de relógio de parede.
+///
+/// Sem referência (CDP), a unidade é assumida como milissegundos — o que o
+/// Chrome real grava — e a captura recebe o aviso `netlog.time_unit_assumed`.
 pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
+    parse_netlog_with_wall_clock(json, None)
+}
+
+/// Importa NetLog usando um relógio de parede de referência (epoch em segundos,
+/// normalmente a mediana dos `wallTime` do CDP da mesma captura) para decidir a
+/// unidade de `time`. Não associa requisições: só calibra o relógio.
+pub fn parse_netlog_with_wall_clock(
+    json: &[u8],
+    wall_clock_s: Option<f64>,
+) -> Result<NetlogCapture> {
     let root: Value =
         serde_json::from_slice(json).map_err(|error| CoreError::json("NetLog", error))?;
     let (constants, events) = match &root {
@@ -173,6 +224,7 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
     }
 
     let mut event_names: BTreeMap<u32, String> = BTreeMap::new();
+    let mut tick_offset_ms: Option<f64> = None;
     if let Some(constants) = constants {
         if let Some(types) = constants.get("logEventTypes").and_then(Value::as_object) {
             for (name, id) in types {
@@ -182,10 +234,31 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
             }
         }
         capture.browser = browser_from_constants(constants);
-        if let Some(offset) = constants.get("timeTickOffset").and_then(as_f64) {
-            capture.started_at =
-                first_time(events).map(|time_ms| epoch_ms_to_iso(offset as i64 + time_ms as i64));
+        tick_offset_ms = constants.get("timeTickOffset").and_then(as_f64);
+    }
+
+    // O relógio é decidido uma vez por captura; todo evento usa a mesma base.
+    let first_ticks = first_time(events);
+    let time_unit = match (first_ticks, tick_offset_ms) {
+        (Some(ticks), Some(offset)) => {
+            detect_time_unit(ticks, offset, wall_clock_s, &mut capture.warnings)
         }
+        _ => {
+            if tick_offset_ms.is_none() {
+                capture.warnings.push(Warning::new(
+                    "netlog.time_unit_assumed",
+                    "NetLog sem timeTickOffset; unidade de `time` assumida como milissegundos e relógio relativo",
+                ));
+            }
+            NetlogTimeUnit::default()
+        }
+    };
+    capture.time_unit = time_unit;
+    capture.time_tick_offset_ms = tick_offset_ms;
+
+    if let (Some(ticks), Some(offset)) = (first_ticks, tick_offset_ms) {
+        let first_ms = offset + ticks / time_unit.per_millisecond();
+        capture.started_at = Some(epoch_ms_to_iso(first_ms as i64));
     }
     if capture.started_at.is_none() {
         capture.started_at = Some("1970-01-01T00:00:00Z".to_string());
@@ -286,8 +359,11 @@ pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
         };
         let name = event_type_name(object, &event_names);
         let source_id = source_id(object);
-        // NetLog grava `time` em milissegundos; o modelo usa segundos.
-        let time = object.get("time").and_then(as_f64).map(|ms| ms / 1000.0);
+        // Uma única conversão para toda a captura (ver `ticks_to_epoch_seconds`).
+        let time = object
+            .get("time")
+            .and_then(as_f64)
+            .map(|ticks| ticks_to_epoch_seconds(ticks, tick_offset_ms, time_unit));
         let phase = object.get("phase").and_then(Value::as_i64).unwrap_or(0);
         let params = object.get("params").and_then(Value::as_object);
 
@@ -985,6 +1061,81 @@ fn first_time(events: &[Value]) -> Option<f64> {
         .fold(None, |acc: Option<f64>, time| {
             Some(acc.map_or(time, |acc| acc.min(time)))
         })
+}
+
+/// Converte `time` do NetLog (ticks do processo) para segundos Unix.
+///
+/// Fórmula única do módulo: `ms = timeTickOffset + time / fator`, onde `fator`
+/// é 1 para milissegundos e 1000 para microssegundos. Sem `timeTickOffset`, o
+/// resultado é relativo ao início dos ticks (e o chamador registra o aviso).
+pub fn ticks_to_epoch_seconds(
+    ticks: f64,
+    tick_offset_ms: Option<f64>,
+    unit: NetlogTimeUnit,
+) -> f64 {
+    let millis = ticks / unit.per_millisecond();
+    match tick_offset_ms {
+        Some(offset) => (offset + millis) / 1000.0,
+        None => millis / 1000.0,
+    }
+}
+
+/// Decide a unidade de `time` comparando as duas leituras possíveis com um
+/// relógio de parede de referência (mediana dos `wallTime` do CDP da mesma
+/// captura). Sem referência, mantém milissegundos — o comportamento do Chrome
+/// real — e registra que a unidade foi assumida.
+///
+/// As leituras diferem por ~1000× na parte de ticks, então a que cai perto da
+/// referência vence sem heurística de URL/método. A decisão é registrada como
+/// aviso informativo, com o desvio das duas hipóteses.
+fn detect_time_unit(
+    first_ticks: f64,
+    tick_offset_ms: f64,
+    wall_clock_s: Option<f64>,
+    warnings: &mut Vec<Warning>,
+) -> NetlogTimeUnit {
+    let Some(reference) = wall_clock_s else {
+        warnings.push(Warning::new(
+            "netlog.time_unit_assumed",
+            "sem relógio de parede de referência (CDP); unidade de `time` assumida como milissegundos",
+        ));
+        return NetlogTimeUnit::default();
+    };
+    let as_ms = ticks_to_epoch_seconds(
+        first_ticks,
+        Some(tick_offset_ms),
+        NetlogTimeUnit::Milliseconds,
+    );
+    let as_us = ticks_to_epoch_seconds(
+        first_ticks,
+        Some(tick_offset_ms),
+        NetlogTimeUnit::Microseconds,
+    );
+    let error_ms = (as_ms - reference).abs();
+    let error_us = (as_us - reference).abs();
+    let (unit, error) = if error_us < error_ms {
+        (NetlogTimeUnit::Microseconds, error_us)
+    } else {
+        (NetlogTimeUnit::Milliseconds, error_ms)
+    };
+    warnings.push(
+        Warning::info(
+            "netlog.time_unit_detected",
+            format!(
+                "unidade de `time` calibrada como {} pelo relógio do CDP (desvio {:.3}s)",
+                unit.as_str(),
+                error
+            ),
+        )
+        .with_detail(serde_json::json!({
+            "unit": unit.as_str(),
+            "referenceWallClock": reference,
+            "firstTickAsMilliseconds": as_ms,
+            "firstTickAsMicroseconds": as_us,
+            "errorSeconds": error,
+        })),
+    );
+    unit
 }
 
 /// Converte milissegundos Unix para RFC 3339 UTC sem dependência de data.

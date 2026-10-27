@@ -58,6 +58,8 @@ pub struct CdpAttempt {
     pub header_evidence: Vec<HeaderEvidence>,
     pub timestamp: Option<f64>,
     pub wall_time: Option<String>,
+    /// `wallTime` numérico em segundos Unix (referência de relógio, não identidade).
+    pub wall_time_s: Option<f64>,
     pub ended_at: Option<f64>,
     pub connection_id: Option<String>,
     pub remote_ip: Option<String>,
@@ -182,6 +184,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         .to_string(),
                     timestamp,
                     wall_time: wall_time.map(|value| epoch_ms_to_iso((value * 1000.0) as i64)),
+                    wall_time_s: wall_time,
                     cdp: cdp.clone(),
                     outcome: AttemptOutcome::Pending,
                     ..Default::default()

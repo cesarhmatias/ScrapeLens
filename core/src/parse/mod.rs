@@ -118,7 +118,10 @@ pub fn import_capture(
     options: crate::correlate::CorrelationOptions,
 ) -> Result<ImportedSession> {
     let cdp = cdp::parse_cdp_jsonl(cdp_events_jsonl)?;
-    let netlog = netlog::parse_netlog(netlog_json)?;
+    // Calibra o relógio do NetLog pela mediana dos `wallTime` do CDP da mesma
+    // captura. Isso não associa requisições: só escolhe a unidade de `time`.
+    let wall_clock = median_wall_clock(&cdp);
+    let netlog = netlog::parse_netlog_with_wall_clock(netlog_json, wall_clock)?;
     let mut report = ImportReport::new(InputFormat::Capture);
     let (session, mut cdp_report) = cdp::build_cdp_session(&cdp);
     let (_netlog_session, netlog_report) = netlog::build_netlog_session(&netlog);
@@ -176,4 +179,24 @@ pub fn import_capture(
         attachments: Default::default(),
     };
     Ok(ImportedSession::new(bundle, report))
+}
+
+/// Mediana dos `wallTime` (epoch em segundos) dos eventos CDP da captura.
+fn median_wall_clock(cdp: &cdp::CdpCapture) -> Option<f64> {
+    let mut values: Vec<f64> = cdp
+        .requests
+        .iter()
+        .flat_map(|request| request.attempts.iter())
+        .filter_map(|attempt| attempt.wall_time_s)
+        .collect();
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+    let middle = values.len() / 2;
+    Some(if values.len() % 2 == 0 {
+        (values[middle - 1] + values[middle]) / 2.0
+    } else {
+        values[middle]
+    })
 }

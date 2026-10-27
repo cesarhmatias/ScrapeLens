@@ -227,3 +227,64 @@ fn real_h2_capture_marks_request_order_partial_and_expands_nul_response() {
     assert_eq!(recv.view.get_all("set-cookie").len(), 2);
     assert_eq!(recv.view.get_all("x-resp-order").len(), 2);
 }
+
+#[test]
+fn time_unit_is_calibrated_by_wall_clock_reference() {
+    use scrapelens_core::parse::netlog::NetlogTimeUnit;
+    use scrapelens_core::parse::netlog::{parse_netlog_with_wall_clock, ticks_to_epoch_seconds};
+
+    // Fixture real (Chrome): `time` em milissegundos. Com referência de parede
+    // do CDP, a unidade é confirmada e nada muda no started_at.
+    let reference = 1_793_047_805.949_f64;
+    let capture = parse_netlog_with_wall_clock(&fixture(), Some(reference)).unwrap();
+    assert_eq!(capture.time_unit, NetlogTimeUnit::Milliseconds);
+    assert_eq!(
+        capture.started_at.as_deref(),
+        Some("2026-10-26T20:50:05.949Z")
+    );
+    assert!(capture
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "netlog.time_unit_detected"));
+
+    // Captura sintética em microssegundos: mesma forma, unidade diferente.
+    let json = br#"{
+      "constants":{"timeTickOffset":1793040360000,"logEventTypes":{
+        "URL_REQUEST_START_JOB":1000,"HTTP_TRANSACTION_SEND_REQUEST_HEADERS":1001}},
+      "events":[
+        {"type":1000,"phase":1,"time":"5640110000","source":{"id":9,"type":1},
+         "params":{"url":"https://demo.invalid/x","method":"GET"}},
+        {"type":1001,"phase":0,"time":"5640110900","source":{"id":9,"type":1},
+         "params":{"headers":["Host: demo.invalid"]}}
+      ]}"#;
+    let micros = parse_netlog_with_wall_clock(json, Some(1_793_046_000.11)).unwrap();
+    assert_eq!(micros.time_unit, NetlogTimeUnit::Microseconds);
+    assert_eq!(
+        micros.started_at.as_deref(),
+        Some("2026-10-26T20:20:00.110Z")
+    );
+    assert_eq!(
+        micros.requests[0].attempts[0].started_at,
+        Some(1_793_046_000.110)
+    );
+
+    // Uma única fórmula: ms = offset + ticks/fator; s = ms/1000.
+    assert!(
+        (ticks_to_epoch_seconds(
+            5640110000.0,
+            Some(1793040360000.0),
+            NetlogTimeUnit::Microseconds
+        ) - 1_793_046_000.11)
+            .abs()
+            < 1e-6
+    );
+    assert!(
+        (ticks_to_epoch_seconds(
+            5_640_110.0,
+            Some(1793040360000.0),
+            NetlogTimeUnit::Milliseconds
+        ) - 1_793_046_000.11)
+            .abs()
+            < 1e-6
+    );
+}
