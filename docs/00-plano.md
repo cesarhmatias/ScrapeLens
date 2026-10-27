@@ -6,8 +6,11 @@ scraping. Especificação completa:
 
 ## Estado
 
-- Fase: 3 — Prova de captura e fidelidade ( marco gate ; nada de interface
-  antes do veredito).
+- Fase: 9 — pacote local arm64 recompilado e validado; documentação final.
+- Aceite automatizado: 10/10 critérios, 260/260 asserções (364bddb).
+- Captura nova pelo bundle final validada; repetição de importação HAR/NetLog
+  pela UI depende de permissão macOS do usuário. Evidência histórica separada.
+- Relatório de fechamento: `docs/06-entrega.md`; nada publicado.
 - Repositório criado em `/Users/cesar/Projects/scrapelens`.
 
 ## Modelos resolvidos (assinatura OpenCode Go, provedor `opencode-go`)
@@ -34,11 +37,11 @@ Equipe (seção OpenBot "ScrapeLens"):
 
 ## Ondas (máx. 3 executores simultâneos)
 
-- Onda 1 (ativa): Captura/protocolos + Testes/servidores — experimentos de
+- Onda 1 (concluída): Captura/protocolos + Testes/servidores — experimentos de
   fidelidade HTTP/1.1, h2, h3; matriz `docs/02-matriz-fidelidade.md`.
-- Onda 2 (após matriz): contratos consolidados → Core/importadores +
+- Onda 2 (concluída): contratos consolidados → Core/importadores +
   App/interface + Testes (fatia completa: launch Chrome → captura → UI).
-- Onda 3: comparação, exportação, sanitização; revisão independente;
+- Onda 3 (implementação/revisão concluídas; ressalvas no relatório final): comparação, exportação, sanitização; revisão independente;
   empacotamento e documentação.
 
 ## Critérios de aceite
