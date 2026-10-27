@@ -70,10 +70,6 @@ de diretórios: não foram exercitadas.
    Não repetir automação já bloqueada do NSSavePanel; solicitar seleção humana
    se não houver rota acessível. Ainda não há prova desse ciclo nesta validação.
 
-O App cita `cargo run --example export_dump` em EMPACOTAMENTO.md, mas o exemplo
-foi removido: o comando de regeneração precisa de atualização. Isso é uma
-lacuna documental menor, separada das duas falhas reproduzidas.
-
 ## Preservação
 
 O arquivo pré-existente modificado
