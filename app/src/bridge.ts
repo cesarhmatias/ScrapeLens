@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { SessionV1 } from "./v1/types";
 
 export interface SessionPayload {
@@ -31,6 +31,64 @@ export interface ChromeInfo {
   path?: string;
   source?: "detected" | "manual" | "none";
   candidates: string[];
+}
+
+export interface WarningDto {
+  code: string;
+  message: string;
+  severity?: "info" | "warning" | "error";
+  entity?: string;
+}
+
+/** Prévia gerada no Rust; `text` é a fonte da cópia e do arquivo salvo. */
+export interface ExportPreview {
+  sessionId: string;
+  requestId: string;
+  requestMethod: string;
+  requestUrl: string;
+  protocol: string;
+  headerVerification: "verified" | "partial" | "unverified";
+  format: "curl" | "python";
+  text: string;
+  warnings: WarningDto[];
+  skippedHeaders: string[];
+  bodyIncluded: boolean;
+  bodyNote?: string;
+  bodyState: string;
+}
+
+export interface SavedFile {
+  path: string;
+  bytes: number;
+}
+
+export interface RedactionCount {
+  key: string;
+  count: number;
+}
+
+export interface SanitizePreview {
+  sessionId: string;
+  originalDir: string;
+  suggestedDestination: string;
+  requests: number;
+  redactions: RedactionCount[];
+  totalRedactions: number;
+  warnings: WarningDto[];
+  omittedAttachments: string[];
+  attachmentsKept: number;
+  rawArtifactsDropped: string[];
+}
+
+export interface SanitizeSaved {
+  path: string;
+  sessionId: string;
+  requests: number;
+  totalRedactions: number;
+  omittedAttachments: string[];
+  attachmentsKept: number;
+  rawArtifactsDropped: string[];
+  sessionBytes: number;
 }
 
 export type MenuAction =
@@ -144,6 +202,51 @@ export const bridge = {
 
   async readAttachment(sessionDir: string, name: string): Promise<{ kind: "text" | "binary"; text?: string; bytes: number }> {
     return invoke("read_attachment", { sessionDir, name });
+  },
+
+  /** Abre uma pasta de sessão já conhecida, sem diálogo. */
+  async openSessionAt(path: string): Promise<SessionPayload> {
+    return invoke("open_session", { path });
+  },
+
+  /**
+   * Gera a exportação no Rust a partir da sessão persistida. O texto devolvido
+   * é exatamente o que a UI mostra, copia e salva — nada é executado.
+   */
+  async exportRequest(sessionDir: string, requestId: string, format: "curl" | "python"): Promise<ExportPreview> {
+    return invoke("export_request", { sessionDir, requestId, format });
+  },
+
+  /** Diálogo nativo de salvamento + gravação 0600 sem sobrescrever. */
+  async saveExport(defaultName: string, text: string): Promise<SavedFile | null> {
+    if (!isTauri()) return null;
+    const picked = await saveDialog({
+      title: "Salvar exportação",
+      defaultPath: defaultName,
+      filters: [{ name: defaultName.endsWith(".py") ? "Python" : "Shell", extensions: [defaultName.endsWith(".py") ? "py" : "sh"] }],
+    });
+    if (!picked) return null;
+    return invoke("save_export_file", { path: picked, text });
+  },
+
+  /** Contagens/avisos da sanitização; não grava nada. */
+  async previewSanitized(sessionDir: string): Promise<SanitizePreview> {
+    return invoke("preview_sanitized", { sessionDir });
+  },
+
+  /**
+   * Diálogo nativo escolhendo uma pasta nova e gravação da sessão sanitizada.
+   * Cancelar o diálogo devolve `null` sem tocar na origem.
+   */
+  async saveSanitized(sessionDir: string, suggestedDestination: string): Promise<SanitizeSaved | null> {
+    if (!isTauri()) return null;
+    const picked = await saveDialog({
+      title: "Escolher pasta nova para a sessão sanitizada",
+      defaultPath: suggestedDestination,
+      canCreateDirectories: true,
+    });
+    if (!picked) return null;
+    return invoke("save_sanitized", { sessionDir, destination: picked });
   },
 
   async copyText(text: string): Promise<boolean> {

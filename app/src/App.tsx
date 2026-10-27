@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import demoRaw from "./demo/session.v1.json";
 import demoAttachments from "./demo/attachments.json";
 import { bridge, isTauri, loadLargeDemo, type ChromeInfo, type SessionPayload } from "./bridge";
+import { ExportDialog, SanitizeDialog } from "./Export";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
@@ -502,6 +503,7 @@ function DetailView({
   onBack,
   session,
   onCopy,
+  onExport,
 }: {
   req: RequestRecord;
   tab: DetailTab;
@@ -509,6 +511,7 @@ function DetailView({
   onBack: () => void;
   session: SessionRecord;
   onCopy: (value: string, label: string) => void;
+  onExport: () => void;
 }) {
   const reqNorm = useMemo(() => normalizeHeaders(req.requestHeaders), [req]);
   const resNorm = useMemo(() => normalizeHeaders(req.responseHeaders), [req]);
@@ -588,6 +591,18 @@ function DetailView({
           <span className="mono url">{req.url}</span>
           <button className="ghost-btn small" title="Copiar URL completa" onClick={() => onCopy(req.url, "URL")}>
             Copiar URL
+          </button>
+          <button
+            className="ghost-btn small"
+            onClick={onExport}
+            disabled={!session.sourcePath}
+            title={
+              session.sourcePath
+                ? "Prévia cURL/Python gerada no Rust; copie ou salve sem executar nada"
+                : "Exportação indisponível: esta sessão não tem pasta persistida (demo ou modo navegador)"
+            }
+          >
+            Exportar…
           </button>
           <span className="dot">·</span>
           <span className="mono" title={req.verification.timings.status === "unverified" ? "Tempos não verificados: duração estimada pela UI" : "Duração medida pela fonte"}>
@@ -1246,6 +1261,8 @@ export default function App() {
     chromePid?: number;
   } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [exportTarget, setExportTarget] = useState<RequestRecord | null>(null);
+  const [sanitizeOpen, setSanitizeOpen] = useState(false);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -1662,6 +1679,20 @@ export default function App() {
                 >
                   Abrir captura…
                 </button>
+                <button
+                  className="btn"
+                  onClick={() => setSanitizeOpen(true)}
+                  disabled={!desktop || !session.sourcePath || !!recording || !!busy}
+                  title={
+                    !desktop
+                      ? "Sanitização usa o diálogo nativo do macOS e só existe no app desktop."
+                      : !session.sourcePath
+                        ? "Sanitização indisponível: esta sessão não tem pasta persistida (demo ou modo navegador)."
+                        : "Redigir credenciais da sessão inteira e gravar em uma pasta nova; a origem não é alterada"
+                  }
+                >
+                  Sanitizar…
+                </button>
               </div>
             </div>
 
@@ -1895,6 +1926,7 @@ export default function App() {
             onBack={() => setView("session")}
             session={session}
             onCopy={copy}
+            onExport={() => setExportTarget(selected)}
           />
         )}
 
@@ -1928,6 +1960,25 @@ export default function App() {
               Voltar
             </button>
           </div>
+        )}
+
+        {exportTarget && (
+          <ExportDialog
+            session={session}
+            request={exportTarget}
+            onClose={() => setExportTarget(null)}
+          />
+        )}
+
+        {sanitizeOpen && (
+          <SanitizeDialog
+            session={session}
+            onClose={() => setSanitizeOpen(false)}
+            onOpened={(payload) => {
+              applyPayload(payload);
+              setSanitizeOpen(false);
+            }}
+          />
         )}
       </div>
     </div>
