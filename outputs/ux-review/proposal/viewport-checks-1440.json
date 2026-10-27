@@ -1,0 +1,46 @@
+[
+  {
+    "view": "01-entrada",
+    "document": [
+      1440,
+      900
+    ],
+    "viewport": [
+      1440,
+      900
+    ]
+  },
+  {
+    "view": "02-sessao",
+    "document": [
+      1440,
+      900
+    ],
+    "viewport": [
+      1440,
+      900
+    ]
+  },
+  {
+    "view": "03-detalhe",
+    "document": [
+      1440,
+      900
+    ],
+    "viewport": [
+      1440,
+      900
+    ]
+  },
+  {
+    "view": "04-comparacao",
+    "document": [
+      1440,
+      900
+    ],
+    "viewport": [
+      1440,
+      900
+    ]
+  }
+]

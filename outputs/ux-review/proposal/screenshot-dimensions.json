@@ -1,0 +1,72 @@
+[
+  {
+    "file": "01-entrada-1280.jpg",
+    "width": 1280,
+    "height": 800
+  },
+  {
+    "file": "01-entrada-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "02-sessao-1280.jpg",
+    "width": 1280,
+    "height": 800
+  },
+  {
+    "file": "02-sessao-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "03-detalhe-1280.jpg",
+    "width": 1280,
+    "height": 800
+  },
+  {
+    "file": "03-detalhe-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "04-comparacao-1280.jpg",
+    "width": 1280,
+    "height": 800
+  },
+  {
+    "file": "04-comparacao-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "05-cookies-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "06-filtro-api-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "07-evidencia-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "08-codigo-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "09-sem-resultados-1440.jpg",
+    "width": 1440,
+    "height": 900
+  },
+  {
+    "file": "10-captura-simulada-1440.jpg",
+    "width": 1440,
+    "height": 900
+  }
+]

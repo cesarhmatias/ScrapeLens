@@ -1,0 +1,1806 @@
+{
+  "name": "Catálogo · outono 2026",
+  "synthetic": true,
+  "requests": [
+    {
+      "id": 1,
+      "url": "https://loja.invalid/catalogo/outono",
+      "method": "GET",
+      "type": "document",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 41,
+      "size": "3.3 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 2,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-02.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 44,
+      "size": "4.6 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 3,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-03.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 47,
+      "size": "5.9 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 4,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-04.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 50,
+      "size": "7.2 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 5,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-05.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 53,
+      "size": "8.5 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 6,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-06.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 56,
+      "size": "9.8 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 7,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-07.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 59,
+      "size": "11.1 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 8,
+      "url": "https://api.loja.invalid/api/v1/filtros?colecao=outono",
+      "method": "GET",
+      "type": "fetch",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 62,
+      "size": "12.4 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/json"
+        ]
+      ],
+      "payload": null,
+      "response": {
+        "ok": true
+      },
+      "evidence": "source"
+    },
+    {
+      "id": 9,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-09.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 65,
+      "size": "13.7 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 10,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-10.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 68,
+      "size": "15.0 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 11,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-11.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 71,
+      "size": "16.3 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 12,
+      "url": "https://api.loja.invalid/api/v1/colecoes/outono",
+      "method": "GET",
+      "type": "fetch",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 74,
+      "size": "17.6 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/json"
+        ]
+      ],
+      "payload": null,
+      "response": {
+        "ok": true
+      },
+      "evidence": "source"
+    },
+    {
+      "id": 13,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-13.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 77,
+      "size": "18.9 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 14,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-14.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 80,
+      "size": "20.2 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 15,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-15.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 83,
+      "size": "21.5 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 16,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-16.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 86,
+      "size": "22.8 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 17,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-17.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 89,
+      "size": "24.1 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 18,
+      "url": "https://api.loja.invalid/api/v1/produtos/busca?colecao=outono-2026&canal=web&expand=precos,estoque,variantes",
+      "method": "POST",
+      "type": "fetch",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 214,
+      "size": "18.4 kB",
+      "source": "NetLog + CDP",
+      "headers": [
+        [
+          ":method",
+          "POST"
+        ],
+        [
+          ":scheme",
+          "https"
+        ],
+        [
+          ":authority",
+          "api.loja.invalid"
+        ],
+        [
+          ":path",
+          "/api/v1/produtos/busca?colecao=outono-2026&canal=web&expand=precos,estoque,variantes"
+        ],
+        [
+          "accept",
+          "application/json"
+        ],
+        [
+          "accept",
+          "text/plain;q=0.8"
+        ],
+        [
+          "accept-language",
+          "pt-BR,pt;q=0.9,en;q=0.8"
+        ],
+        [
+          "user-agent",
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/156.0.0.0 Safari/537.36"
+        ],
+        [
+          "content-type",
+          "application/json"
+        ],
+        [
+          "cookie",
+          "session=demo_browser_a7f91c; locale=pt-BR"
+        ],
+        [
+          "referer",
+          "https://loja.invalid/catalogo/outono?origem=colecao&campanha=casacos-impermeaveis-2026"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          ":status",
+          "200"
+        ],
+        [
+          "content-type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "cache-control",
+          "no-store"
+        ],
+        [
+          "set-cookie",
+          "session=demo_browser_a7f91c; Path=/; Secure; HttpOnly; SameSite=Lax"
+        ],
+        [
+          "set-cookie",
+          "experiment=outono_b; Path=/; Max-Age=3600; Secure; SameSite=Lax"
+        ],
+        [
+          "alt-svc",
+          "h3=\":443\"; ma=86400"
+        ]
+      ],
+      "payload": {
+        "busca": "jaqueta impermeável",
+        "pagina": 1,
+        "limite": 24,
+        "filtros": {
+          "cor": [
+            "azul"
+          ],
+          "disponivel": true
+        }
+      },
+      "response": {
+        "total": 148,
+        "pagina": 1,
+        "produtos": [
+          {
+            "sku": "JKT-8812",
+            "nome": "Jaqueta Storm Azul",
+            "preco": 349.9,
+            "estoque": 12
+          }
+        ]
+      },
+      "evidence": "source"
+    },
+    {
+      "id": 19,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-19.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 95,
+      "size": "26.7 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 20,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-20.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 98,
+      "size": "28.0 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 21,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-21.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 101,
+      "size": "29.3 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 22,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-22.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 104,
+      "size": "30.6 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 23,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-23.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 107,
+      "size": "31.9 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 24,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-24.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 110,
+      "size": "33.2 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 25,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-25.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 113,
+      "size": "34.5 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 26,
+      "url": "https://api.loja.invalid/api/v1/estoque?sku=JKT-8812",
+      "method": "GET",
+      "type": "fetch",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 116,
+      "size": "35.8 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/json"
+        ]
+      ],
+      "payload": null,
+      "response": {
+        "ok": true
+      },
+      "evidence": "source"
+    },
+    {
+      "id": 27,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-27.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 119,
+      "size": "37.1 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 28,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-28.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 122,
+      "size": "38.4 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 29,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-29.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 125,
+      "size": "39.7 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 30,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-30.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 128,
+      "size": "41.0 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 31,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-31.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 131,
+      "size": "42.3 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 32,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-32.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 134,
+      "size": "43.6 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 33,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-33.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 137,
+      "size": "44.9 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 34,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-34.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 140,
+      "size": "46.2 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 35,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-35.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 143,
+      "size": "47.5 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 36,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-36.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 146,
+      "size": "48.8 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 37,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-37.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 149,
+      "size": "50.1 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 38,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-38.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 152,
+      "size": "51.4 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 39,
+      "url": "https://api.loja.invalid/api/v1/precos?sku=JKT-8812&moeda=BRL",
+      "method": "GET",
+      "type": "fetch",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 155,
+      "size": "52.7 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/json"
+        ]
+      ],
+      "payload": null,
+      "response": {
+        "ok": true
+      },
+      "evidence": "source"
+    },
+    {
+      "id": 40,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-40.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 158,
+      "size": "54.0 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 41,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-41.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 161,
+      "size": "55.3 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 42,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-42.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 164,
+      "size": "56.6 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 43,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-43.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 167,
+      "size": "57.9 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 44,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-44.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 170,
+      "size": "59.2 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 45,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-45.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 173,
+      "size": "60.5 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 46,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-46.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 176,
+      "size": "61.8 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 47,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-47.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 179,
+      "size": "63.1 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 48,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-48.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 182,
+      "size": "64.4 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 49,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-49.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 185,
+      "size": "65.7 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 50,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-50.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 188,
+      "size": "67.0 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 51,
+      "url": "https://api.loja.invalid/api/v1/sugestoes?q=jaqueta",
+      "method": "GET",
+      "type": "fetch",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 191,
+      "size": "68.3 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/json"
+        ]
+      ],
+      "payload": null,
+      "response": {
+        "ok": true
+      },
+      "evidence": "source"
+    },
+    {
+      "id": 52,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-52.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 194,
+      "size": "69.6 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 53,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-53.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 197,
+      "size": "70.9 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 54,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-54.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 200,
+      "size": "72.2 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 55,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-55.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 203,
+      "size": "73.5 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 56,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-56.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 206,
+      "size": "74.8 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 57,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-57.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 209,
+      "size": "76.1 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 58,
+      "url": "https://cdn.loja.invalid/assets/font/catalogo-outono-58.v9c412.woff2",
+      "method": "GET",
+      "type": "font",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 212,
+      "size": "77.4 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 59,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-59.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 215,
+      "size": "78.7 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 60,
+      "url": "https://cdn.loja.invalid/assets/script/catalogo-outono-60.v9c412.js",
+      "method": "GET",
+      "type": "script",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 218,
+      "size": "80.0 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 61,
+      "url": "https://cdn.loja.invalid/assets/image/catalogo-outono-61.v9c412.webp",
+      "method": "GET",
+      "type": "image",
+      "protocol": "HTTP/3",
+      "status": 200,
+      "duration": 221,
+      "size": "81.3 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 62,
+      "url": "https://cdn.loja.invalid/assets/stylesheet/catalogo-outono-62.v9c412.css",
+      "method": "GET",
+      "type": "stylesheet",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 224,
+      "size": "82.6 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/octet-stream"
+        ]
+      ],
+      "payload": null,
+      "response": null,
+      "evidence": "source"
+    },
+    {
+      "id": 63,
+      "url": "https://api.loja.invalid/api/v1/frete?regiao=sul",
+      "method": "GET",
+      "type": "fetch",
+      "protocol": "HTTP/2",
+      "status": 200,
+      "duration": 227,
+      "size": "83.9 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "accept",
+          "*/*"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/json"
+        ]
+      ],
+      "payload": null,
+      "response": {
+        "ok": true
+      },
+      "evidence": "source"
+    },
+    {
+      "id": 64,
+      "url": "https://api.loja.invalid/api/v1/produtos/busca?colecao=outono-2026&canal=web&expand=precos,estoque,variantes",
+      "method": "POST",
+      "type": "fetch",
+      "protocol": "HTTP/1.1",
+      "status": 403,
+      "duration": 87,
+      "size": "0.1 kB",
+      "source": "HAR",
+      "headers": [
+        [
+          "host",
+          "api.loja.invalid"
+        ],
+        [
+          "accept-language",
+          "pt-BR,pt;q=0.9,en;q=0.8"
+        ],
+        [
+          "accept",
+          "application/json"
+        ],
+        [
+          "user-agent",
+          "python-requests/2.32.5"
+        ],
+        [
+          "content-type",
+          "application/json"
+        ],
+        [
+          "cookie",
+          "locale=pt-BR"
+        ],
+        [
+          "x-client",
+          "scraper-local"
+        ]
+      ],
+      "responseHeaders": [
+        [
+          "content-type",
+          "application/json"
+        ],
+        [
+          "cache-control",
+          "no-store"
+        ]
+      ],
+      "payload": {
+        "busca": "jaqueta impermeável",
+        "pagina": 2,
+        "limite": 24,
+        "filtros": {
+          "cor": [
+            "azul"
+          ],
+          "disponivel": true
+        }
+      },
+      "response": {
+        "erro": "session_required",
+        "mensagem": "Cookie de sessão ausente"
+      },
+      "evidence": "unverified"
+    }
+  ],
+  "browserId": 18,
+  "scraperId": 64
+}
