@@ -196,12 +196,32 @@ pub fn preview(dir: &Path, request_id: &str, format: &str) -> Result<ExportPrevi
     })
 }
 
+/// Aliases de nível raiz do macOS (`/var`, `/tmp`, `/etc` → `/private/...`).
+const SYSTEM_ALIASES: [&str; 3] = ["/var", "/tmp", "/etc"];
+
+fn is_system_alias(path: &Path) -> bool {
+    SYSTEM_ALIASES.iter().any(|alias| path == Path::new(alias))
+        && fs::read_link(path)
+            .map(|target| target.starts_with("private") || target.starts_with("/private"))
+            .unwrap_or(false)
+}
+
+/// Recusa o caminho se ele ou QUALQUER ancestral existente for link simbólico.
+/// Política: a única exceção são os aliases de sistema do macOS de nível raiz
+/// (`/var`, `/tmp`, `/etc`) que apontam para `/private/...`; qualquer outro
+/// link, em qualquer posição, é recusado. Componentes inexistentes são ignorados.
 fn reject_symlink(path: &Path, label: &str) -> Result<(), String> {
-    if let Ok(metadata) = fs::symlink_metadata(path) {
-        if metadata.file_type().is_symlink() {
-            return Err(format!(
-                "{label} é um link simbólico; escolha um caminho real"
-            ));
+    for ancestor in path.ancestors() {
+        if ancestor.as_os_str().is_empty() {
+            continue;
+        }
+        if let Ok(metadata) = fs::symlink_metadata(ancestor) {
+            if metadata.file_type().is_symlink() && !is_system_alias(ancestor) {
+                return Err(format!(
+                    "{label} passa por um link simbólico ({}); escolha um caminho real",
+                    ancestor.display()
+                ));
+            }
         }
     }
     Ok(())

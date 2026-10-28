@@ -48,13 +48,13 @@ Ferramentas usadas: rustc 1.98.1, Node 26.8.1, macOS 26.5.2 (arm64).
 | Arquitetura | `Mach-O 64-bit executable arm64`, thin (sem universal binary) |
 | Tamanho do bundle | 14.380 KiB (~14,1 MiB, `du -sk`) |
 | Tamanho do executável | 13.969.728 bytes |
-| SHA-256 do executável | `a58db574771fcd6058bc63a8080e0ba2f9bdf1aeb671bf9c56d4bf221fab26cf` |
+| SHA-256 do executável | `5934556ce0f1cda5e425d11fc5c6504952b86168827d2e4f0a297138029eaad2` |
 | Identificador | `app.scrapelens.desktop` |
 | Assinatura | ad-hoc (`flags=0x2(adhoc)`, `TeamIdentifier=not set`) |
 | `codesign --verify --deep --strict` | exit 0 (valid on disk, satisfaz o Designated Requirement) |
 | `spctl -a` | rejeitado — esperado: sem Developer ID e sem notarização |
 
-O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
+Rebuild com validação de todos os ancestrais do destino (F1/F2): o hash acima é deste build. O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
 produz um binário byte-diferente (o linker assina antes do bundle), por isso o
 hash identifica este artefato, não a saída de qualquer build. O build anterior
 desta mesma rodada, sem o ajuste `3a3c676`, tinha
@@ -77,7 +77,7 @@ Pasta: `src-tauri/evidence/exportacao/`.
 
 | Arquivo | Conteúdo |
 |---|---|
-| `command-output.txt` | saída real de `cargo run --example export_dump`: prévias cURL/Python, prévia da sanitização e resultado gravado |
+| `command-output.txt` | saída real (gerada por exemplo `export_dump`, já removido do repositório): prévias cURL/Python, prévia da sanitização e resultado gravado |
 | `preview-curl.json`, `preview-python.json` | respostas literais de `export::preview` (1317 e 1745 bytes de texto) |
 | `sanitize-preview.json`, `sanitize-saved.json` | 24 requisições, 152 redações (`cookie`, `header:cookie`, `header:set-cookie`, `setCookie`), destino sugerido e resultado |
 | `05`–`14-*.png` | telas do app: demo, sessão aberta, detalhe, diálogo cURL, diálogo Python, cancelamento, arquivo salvo, sanitização, resultado e sessão sanitizada aberta |
@@ -91,14 +91,7 @@ Sessão usada: `~/Library/Application Support/app.scrapelens.desktop/sessions/ha
 sanitizada de referência (0700/0600, `session.json` com 872.082 bytes) foi
 gerada em `evidence/exportacao/sanitized-har-synthetic/` e conferida por busca
 de marcadores: `fromjs`, `sc_a=alpha` e `sc_b=beta` não aparecem em nenhum
-arquivo sanitizado. Ela é derivada e por isso não entra no git — recriável com:
-
-```sh
-cd src-tauri
-cargo run --quiet --example export_dump -- \
-  "$HOME/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2" \
-  har-0002 evidence/exportacao/sanitized-har-synthetic
-```
+arquivo sanitizado. Ela é derivada e por isso não entra no git; o exemplo `export_dump` que a gerava foi removido — recrie-a pelo comando de sanitização do app.
 
 **O que o harness prova e o que não prova.** O harness serve o `dist/` real do
 frontend, injeta um stub de `__TAURI_INTERNALS__` e usa as respostas **reais**
