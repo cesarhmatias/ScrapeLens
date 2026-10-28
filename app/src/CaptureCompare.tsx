@@ -5,6 +5,7 @@ import {
   DYNAMIC_ONLY_THRESHOLD,
   dynamicSummary,
   fieldClassLabel,
+  roundHeader,
   visibleFields,
   type CompareSummary,
   type FieldDiff,
@@ -148,20 +149,45 @@ function PairBlock({ handle, pair, onlyDynamic }: { handle: number; pair: PairSu
 }
 
 export function CaptureCompareView({
-  summary,
+  summary: initial,
+  dirA,
+  dirB,
   labelA,
   labelB,
   onBack,
 }: {
   summary: CompareSummary;
+  dirA: string;
+  dirB: string;
   labelA: string;
   labelB: string;
   onBack: () => void;
 }) {
-  const [onlyDynamic, setOnlyDynamic] = useState(summary.pairs > DYNAMIC_ONLY_THRESHOLD);
+  const [summary, setSummary] = useState(initial);
+  const [includeAll, setIncludeAll] = useState(initial.includeAll ?? false);
+  const [aRange, setARange] = useState("");
+  const [bRange, setBRange] = useState("");
+  const [recomputing, setRecomputing] = useState(false);
+  const [optionError, setOptionError] = useState<string | null>(null);
+  const [onlyDynamic, setOnlyDynamic] = useState(initial.pairs > DYNAMIC_ONLY_THRESHOLD);
   const [offset, setOffset] = useState(0);
   const [page, setPage] = useState<{ total: number; items: PairSummary[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const recompare = async () => {
+    setRecomputing(true);
+    setOptionError(null);
+    try {
+      const next = await bridge.compareOpen(dirA, dirB, { includeAll, aRange, bRange });
+      setSummary(next);
+      setOffset(0);
+      setOnlyDynamic(next.pairs > DYNAMIC_ONLY_THRESHOLD);
+    } catch (reason) {
+      setOptionError(String(reason));
+    } finally {
+      setRecomputing(false);
+    }
+  };
 
   useEffect(() => {
     setPage(null);
@@ -178,6 +204,7 @@ export function CaptureCompareView({
 
   const c = summary.counts;
   const total = page?.total ?? 0;
+  const rounds = summary.rounds ?? [];
   return (
     <div className="detail">
       <div className="detail-top">
@@ -208,10 +235,32 @@ export function CaptureCompareView({
             só dinâmicos ({summary.dynamicPairs} de {summary.pairs} pares)
           </label>
         </header>
+        <div className="cmp-options" role="group" aria-label="Opções da comparação">
+          <label className="annotate-opt">
+            <input type="checkbox" checked={includeAll} onChange={(e) => setIncludeAll(e.target.checked)} /> incluir tudo (proteção e recursos estáticos no alinhamento)
+          </label>
+          <label className="annotate-opt">
+            faixa A <input className="range-input mono" value={aRange} onChange={(e) => setARange(e.target.value)} placeholder="de:ate (ex.: 10:50)" aria-label="Faixa A" />
+          </label>
+          <label className="annotate-opt">
+            faixa B <input className="range-input mono" value={bRange} onChange={(e) => setBRange(e.target.value)} placeholder="de:ate" aria-label="Faixa B" />
+          </label>
+          <button className="btn small" disabled={recomputing} onClick={() => void recompare()}>
+            {recomputing ? "Comparando…" : "Recomparar"}
+          </button>
+          {optionError && <span className="err">{optionError}</span>}
+        </div>
         <div className="body-foot">
           “Obter em runtime” = a origem em B é uma resposta anterior de B (evidência indicada; value-match é só coincidência). Campos repetidos seguem a ordem da fonte. Os campos de cada par carregam ao expandir.
           {summary.pairs > DYNAMIC_ONLY_THRESHOLD && " Comparação grande: “só dinâmicos” começou ligado."}
+          {summary.includeAll ? " Alinhamento com tudo incluído." : " Por padrão só a aplicação é alinhada; proteção e estáticos ficam nos grupos abaixo."}
         </div>
+        {summary.entryRequest && (
+          <div className="body-foot">
+            Rodadas segmentadas pela requisição de entrada: <span className="mono">{summary.entryRequest}</span>. {rounds.length} rodada(s) pareada(s)
+            {(summary.unpairedRounds?.length ?? 0) > 0 ? `, ${summary.unpairedRounds!.length} sem par` : ""}.
+          </div>
+        )}
         {summary.ambiguities.length > 0 && (
           <div className="body-flag flag-truncated">
             <strong>Ambiguidades no alinhamento ({summary.ambiguities.length})</strong>
@@ -230,6 +279,45 @@ export function CaptureCompareView({
           </div>
         ))}
       </section>
+      {(summary.unpairedRounds?.length ?? 0) > 0 && (
+        <section className="body-panel">
+          <header className="block-head">
+            <h3>
+              Rodadas sem par <span className="count">{summary.unpairedRounds!.length}</span>
+            </h3>
+          </header>
+          <ul className="chain-list" style={{ padding: "0 13px" }}>
+            {summary.unpairedRounds!.map((round, index) => (
+              <li key={index}>
+                <strong>
+                  Rodada {round.round + 1} de {round.side}
+                </strong>{" "}
+                · {round.requests} requisição(ões): <span className="mono">{round.first.requestId}</span> → <span className="mono">{round.last.requestId}</span>
+                <div className="why">Sem rodada parecida do outro lado; não entra em “só em A/B”.</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {(summary.groups ?? []).map((group) => (
+        <details className="body-panel cmp-group" key={group.kind}>
+          <summary>
+            {group.kind === "protection" ? "Proteção (/TSPD/ etc.)" : group.kind === "static" ? "Recursos estáticos" : group.kind} — fora do alinhamento · A {group.aTotal} · B {group.bTotal}
+          </summary>
+          <div className="cmp-group-cols">
+            {([["A", group.a, group.aTotal], ["B", group.b, group.bTotal]] as const).map(([side, items, count]) => (
+              <ul className="chain-list" key={side}>
+                {items.map((r) => (
+                  <li key={r.requestId}>
+                    <span className="chip tag">{side}</span> <span className="mono">{r.method}</span> <span className="mono">{r.requestId}</span> <span className="mono dim">{r.url}</span>
+                  </li>
+                ))}
+                {count > items.length && <li className="dim">+{count - items.length} não listados</li>}
+              </ul>
+            ))}
+          </div>
+        </details>
+      ))}
       <OnlyList side="A" title="Só em A" items={summary.onlyInA} total={summary.onlyInATotal} counterpart={new Map((summary.reordered ?? []).map((pair) => [pair.a.requestId, pair.b.requestId]))} />
       <OnlyList side="B" title="Só em B" items={summary.onlyInB} total={summary.onlyInBTotal} counterpart={new Map((summary.reordered ?? []).map((pair) => [pair.b.requestId, pair.a.requestId]))} />
       {(summary.reorderedTotal ?? 0) > 0 && (
@@ -250,9 +338,15 @@ export function CaptureCompareView({
       </div>
       {error && <div className="empty">{error}</div>}
       {!page && !error && <div className="empty">Carregando pares…</div>}
-      {page?.items.map((pair) => (
-        <PairBlock key={`${summary.handle}-${pair.index}-${onlyDynamic}`} handle={summary.handle} pair={pair} onlyDynamic={onlyDynamic} />
-      ))}
+      {page?.items.map((pair, index) => {
+        const header = roundHeader(pair.round, index === 0 && offset === 0 ? undefined : page.items[index - 1]?.round ?? undefined, rounds);
+        return (
+          <div key={`${summary.handle}-${pair.index}-${onlyDynamic}`}>
+            {header && <h4 className="cmp-round">{header}</h4>}
+            <PairBlock handle={summary.handle} pair={pair} onlyDynamic={onlyDynamic} />
+          </div>
+        );
+      })}
       {page && page.items.length === 0 && <div className="empty">Nenhum par para exibir com este filtro.</div>}
     </div>
   );

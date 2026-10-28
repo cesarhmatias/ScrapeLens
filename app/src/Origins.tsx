@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { bridge } from "./bridge";
 import {
+  CONTEXT_LABEL,
   evidenceLabels,
+  highlightedWarnings,
+  isCookiesAbsent,
+  partialCompositionText,
+  producerKindLabel,
   groupOrigins,
   originConfidence,
   stepConfidence,
@@ -39,6 +44,7 @@ function EvidenceItem({ ev, onOpen, oldest }: { ev: Evidence; onOpen: (id: strin
       <span className={`chip ${ev.strength === "strong" ? "v-ok" : "v-partial"}`} title={evidenceLabels[ev.kind] ?? ev.kind}>
         {ev.kind} · {strengthLabels[ev.strength] ?? ev.strength}
       </span>{" "}
+      {producerKindLabel(ev) && <span className="chip tag">{producerKindLabel(ev)}</span>}{" "}
       <span className="dim">
         {ev.role === "produced" ? "produziu" : ev.role === "reissued" ? "reapareceu" : ev.role}
         {ev.field ? ` em ${ev.scope}:${ev.field}` : ` em ${ev.scope}`}
@@ -86,10 +92,30 @@ function OriginRow({ value, part, onOpen }: { value: ValueOrigin; part?: boolean
             ))}
           </div>
         )}
+        {partialCompositionText(value) && <div className="dim">{partialCompositionText(value)}</div>}
+        {value.context && value.context.length > 0 && (
+          <div className="dim" title="Neutro: não é produtor nem passo da cadeia">
+            {CONTEXT_LABEL} ({value.context.map((c) => `${c.requestId}${c.field ? `:${c.field}` : ""}`).join(", ")})
+          </div>
+        )}
         {value.unobservable && value.unobservable.length > 0 && (
           <div className="dim">
             não observável (resposta anterior sem corpo):{" "}
-            {value.unobservable.map((item) => `${item.requestId} (${item.state}${item.reason ? `: ${item.reason}` : ""})`).join("; ")}
+            {value.unobservable.map((item, index) => (
+              <span key={index}>
+                {index > 0 ? "; " : ""}
+                {item.requestId} ({item.state}
+                {item.reason ? `: ${item.reason}` : ""})
+                {item.suggestion ? (
+                  <>
+                    {" · "}
+                    <button className="link-req mono" onClick={() => onOpen(item.suggestion!)} title="Abrir a ocorrência equivalente com corpo observável">
+                      ocorrência equivalente com corpo ({item.suggestion})
+                    </button>
+                  </>
+                ) : null}
+              </span>
+            ))}
           </div>
         )}
       </td>
@@ -107,7 +133,7 @@ function StepItem({ step, index, onOpen }: { step: ChainStep; index?: number; on
     <li className={step.class === "protection" ? "chain-protection" : undefined}>
       {index !== undefined && <strong>{index + 1}. </strong>}
       <span className="mono">{step.method}</span> <ReqLink id={step.requestId} onOpen={onOpen} />{" "}
-      {step.class !== "protection" && (
+      {step.class === "application" && (
         <span className={`chip ${stepConfidence(step) === "strong" ? "strong" : "possible"}`}>
           {stepConfidence(step) === "strong" ? "confiança forte" : "possível"}
         </span>
@@ -143,6 +169,16 @@ export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id
         ))}
         {chain.steps.length === 0 && <li>Nenhuma requisição anterior fornece valores a esta.</li>}
       </ol>
+      {chain.pages && chain.pages.length > 0 && (
+        <div style={{ padding: "0 13px" }}>
+          <h4>Páginas de contexto (carregaram a página de onde os passos foram emitidos; não produzem valores)</h4>
+          <ol className="chain-list">
+            {chain.pages.map((step) => (
+              <StepItem key={step.requestId} step={step} onOpen={onOpen} />
+            ))}
+          </ol>
+        </div>
+      )}
       {chain.protection.length > 0 && (
         <div style={{ padding: "0 13px" }}>
           <h4>Proteção (não é lógica da aplicação)</h4>
@@ -171,12 +207,22 @@ export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id
       {chain.redactedValues > 0 && (
         <div className="body-foot">{chain.redactedValues} valor(es) redigido(s) não podem ser rastreados.</div>
       )}
-      {chain.warnings.map((warning, index) => (
-        <div className="body-foot" key={index}>
-          {warning}
-        </div>
-      ))}
     </section>
+  );
+}
+
+function WarningStrip({ warnings }: { warnings: string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className="body-flag flag-truncated" role="alert">
+      <strong>Avisos da análise ({warnings.length})</strong>
+      {warnings.map((warning, index) => (
+        <span key={index}>
+          {isCookiesAbsent(warning) ? "⚠ " : ""}
+          {warning}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -230,6 +276,7 @@ export function OriginsTab({
 
   return (
     <>
+      <WarningStrip warnings={highlightedWarnings(origins.warnings, chain?.warnings)} />
       <section className="body-panel">
         <header className="block-head">
           <h3>Origem dos valores</h3>
@@ -261,11 +308,6 @@ export function OriginsTab({
         {origins.ties.length > 0 && (
           <div className="body-foot">Tentativas com o mesmo instante de início, excluídas como produtoras: {origins.ties.join(", ")}.</div>
         )}
-        {origins.warnings.map((warning, index) => (
-          <div className="body-foot" key={index}>
-            {warning}
-          </div>
-        ))}
       </section>
       {chain ? <ChainPanel chain={chain} onOpen={onOpen} /> : <div className="empty">Calculando cadeia…</div>}
     </>

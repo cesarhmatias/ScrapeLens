@@ -17,12 +17,30 @@ export interface Evidence {
   producerOffset: number | null;
   consumedOffset: number | null;
   consumedLength: number | null;
+  /** O produtor é um controle de formulário HTML (input/textarea/select). */
+  htmlControl?: boolean;
 }
 
 export interface Unobservable {
   requestId: string;
   state: string;
   reason?: string;
+  /** Ocorrência equivalente (mesmo modelo) mais adiante com corpo observável. */
+  suggestion?: string | null;
+}
+
+export interface ContextNote {
+  requestId: string;
+  field: string | null;
+  note: string;
+}
+
+/** Valor de um produtor à borda do campo; o resto não tem fonte observada. */
+export interface PartialComposition {
+  producerRequestId: string;
+  field?: string | null;
+  start: number;
+  length: number;
 }
 
 export interface ValueOrigin {
@@ -44,6 +62,10 @@ export interface ValueOrigin {
   unobservable?: Unobservable[];
   parent: string | null;
   note: string | null;
+  /** Valor também presente em recurso estático: provável constante do protocolo. */
+  context?: ContextNote[];
+  /** Composição parcial (core ≥ 6b): parte com fonte + parte sem fonte. */
+  partialComposition?: PartialComposition[] | string | null;
 }
 
 export interface ValueOrigins {
@@ -89,6 +111,8 @@ export interface PrimingChain {
   requestId: string;
   steps: ChainStep[];
   protection: ChainStep[];
+  /** Páginas de contexto (Referer): nunca produtoras. */
+  pages?: ChainStep[];
   unresolved: UnresolvedValue[];
   redactedValues: number;
   warnings: string[];
@@ -155,7 +179,32 @@ export interface PartsCounts {
   noOrigin: number;
 }
 
+export interface RoundInfo {
+  aRound: number;
+  bRound: number;
+  score: number;
+  aRequests: number;
+  bRequests: number;
+}
+
+export interface UnpairedRound {
+  side: "A" | "B" | string;
+  round: number;
+  requests: number;
+  first: RequestRef;
+  last: RequestRef;
+}
+
+export interface GroupSummary {
+  kind: "protection" | "static" | string;
+  a: RequestRef[];
+  aTotal: number;
+  b: RequestRef[];
+  bTotal: number;
+}
+
 export interface PairComparison {
+  round?: number;
   partsCounts?: PartsCounts;
   a: RequestRef;
   b: RequestRef;
@@ -255,6 +304,11 @@ export interface ReorderedPair {
 }
 
 export interface CompareSummary {
+  rounds?: RoundInfo[];
+  unpairedRounds?: UnpairedRound[];
+  entryRequest?: string | null;
+  groups?: GroupSummary[];
+  includeAll?: boolean;
   reordered?: ReorderedPair[];
   reorderedTotal?: number;
   handle: number;
@@ -273,6 +327,8 @@ export interface CompareSummary {
 
 export interface PairSummary {
   index: number;
+  /** Índice em `rounds`. */
+  round?: number;
   a: RequestRef;
   b: RequestRef;
   alignedBy: string;
@@ -318,4 +374,43 @@ export function originConfidence(value: ValueOrigin): OriginConfidence {
 export function stepConfidence(step: ChainStep): "strong" | "possible" {
   if (step.confidence === "strong" || step.confidence === "possible") return step.confidence;
   return step.reasons.some((reason) => reason.strength === "strong") ? "strong" : step.reasons.length === 0 ? "strong" : "possible";
+}
+
+// ---- Rodada 6: controles HTML, contexto estático, sugestão, composição parcial ----
+
+/** Rótulo do produtor: controle de formulário HTML, quando aplicável. */
+export function producerKindLabel(ev: Evidence): string | null {
+  return ev.htmlControl ? `controle de formulário HTML (${ev.field ?? "?"})` : null;
+}
+
+export const CONTEXT_LABEL = "também presente em recurso estático: provável constante do protocolo";
+
+export function partialCompositionText(value: ValueOrigin): string | null {
+  const pc = value.partialComposition;
+  if (!pc || (Array.isArray(pc) && pc.length === 0)) return null;
+  if (typeof pc === "string") return pc;
+  // O core já escreve o rótulo ("sem origem observada; contém o valor de <campo> de <produtor> …").
+  if (value.label.includes("composição")) return value.label;
+  const first = pc[0];
+  return `sem origem observada; contém ${first.field ?? "um campo"} de ${first.producerRequestId} + parte sem fonte — provável composição no cliente`;
+}
+
+/** Avisos que merecem destaque (cookies ausentes no HAR etc.), sem repetir. */
+export function highlightedWarnings(...lists: (string[] | undefined)[]): string[] {
+  const seen = new Set<string>();
+  for (const list of lists) for (const text of list ?? []) seen.add(text);
+  return [...seen].sort((a, b) => Number(isCookiesAbsent(b)) - Number(isCookiesAbsent(a)));
+}
+
+export function isCookiesAbsent(text: string): boolean {
+  return text.includes("har.cookies_absent") || text.includes("não contém cookies");
+}
+
+/** Agrupa pares de uma página por rodada: cabeçalho quando a rodada muda. */
+export function roundHeader(round: number | undefined, previous: number | undefined, rounds?: RoundInfo[]): string | null {
+  if (round === undefined || round === previous) return null;
+  const info = rounds?.[round];
+  return info
+    ? `Rodada ${round + 1}: A#${info.aRound + 1} ↔ B#${info.bRound + 1} · ${info.aRequests} × ${info.bRequests} requisições · ${info.score} modelo(s) em comum`
+    : `Rodada ${round + 1}`;
 }

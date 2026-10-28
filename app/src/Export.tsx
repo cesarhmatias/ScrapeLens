@@ -445,6 +445,17 @@ export function SanitizeDialog({
           </div>
 
           <div className="export-block">
+            {preview.warnings.some((w) => w.code === "sanitize.business_field_unmatched") && (
+              <div className="body-flag flag-truncated" role="alert">
+                <strong>Campo de negócio sem valor no formato esperado</strong>
+                {preview.warnings
+                  .filter((w) => w.code === "sanitize.business_field_unmatched")
+                  .map((w, index) => (
+                    <span key={index}>{w.message}</span>
+                  ))}
+                <span>Esses valores NÃO foram redigidos em silêncio: confira antes de compartilhar.</span>
+              </div>
+            )}
             <h3>Redações por origem</h3>
             {preview.redactions.length === 0 ? (
               <p className="export-hint">
@@ -456,6 +467,9 @@ export function SanitizeDialog({
                 {preview.redactions.map((item) => (
                   <li key={item.key}>
                     <span className="mono">{item.key}</span>
+                    {item.key.startsWith("business:") && (
+                      <span className="dim"> campo de negócio ({item.key.slice("business:".length)}), valor não exibido</span>
+                    )}
                     <span className="count">{item.count}</span>
                   </li>
                 ))}

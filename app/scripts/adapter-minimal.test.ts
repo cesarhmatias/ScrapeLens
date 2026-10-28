@@ -145,4 +145,26 @@ assert.equal(visibleFields([fd({ field: "s" }), fd({ field: "d", class: "dynamic
 assert.equal(DYNAMIC_ONLY_THRESHOLD, 500);
 assert.equal(originStatusLabel(vo({ status: "origin", confidence: "possible", label: "possível origem (value-match)", evidences: [ev("a")] })), "possível origem (value-match)");
 assert.equal(originStatusLabel(vo({ status: "origin", confidence: "strong", label: "origem observada", evidences: [strongEv] })), "origem observada");
+import { CONTEXT_LABEL, highlightedWarnings, isCookiesAbsent, partialCompositionText, producerKindLabel, roundHeader } from "../src/flow";
+assert.equal(producerKindLabel({ ...ev("p"), htmlControl: true, field: "STAMP" } as any), "controle de formulário HTML (STAMP)");
+assert.equal(producerKindLabel(ev("p") as any), null);
+assert.equal(CONTEXT_LABEL, "também presente em recurso estático: provável constante do protocolo");
+assert.equal(partialCompositionText(vo({})), null);
+assert.equal(partialCompositionText(vo({ partialComposition: [] })), null);
+assert.equal(
+  partialCompositionText(vo({ label: "sem origem observada; contém o valor de SESSIONID de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente", partialComposition: [{ producerRequestId: "har-0001", field: "SESSIONID", start: 0, length: 9 }] })),
+  "sem origem observada; contém o valor de SESSIONID de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente",
+);
+assert.match(partialCompositionText(vo({ label: "x", partialComposition: [{ producerRequestId: "har-0001", field: "SESSIONID", start: 0, length: 9 }] }))!, /^sem origem observada; contém SESSIONID de har-0001 \+ parte sem fonte — provável composição no cliente$/);
+assert.equal(partialCompositionText(vo({ partialComposition: "texto do core" })), "texto do core");
+const warns = highlightedWarnings(["a", "o HAR não contém cookies (exportação...)"], ["a", "b"]);
+assert.deepEqual(warns, ["o HAR não contém cookies (exportação...)", "a", "b"]);
+assert.equal(isCookiesAbsent("har.cookies_absent"), true);
+const rounds = [{ aRound: 0, bRound: 1, score: 9, aRequests: 12, bRequests: 11 }];
+assert.equal(roundHeader(0, undefined, rounds), "Rodada 1: A#1 ↔ B#2 · 12 × 11 requisições · 9 modelo(s) em comum");
+assert.equal(roundHeader(0, 0, rounds), null);
+assert.equal(roundHeader(undefined, undefined, rounds), null);
+// origem com unobservable.suggestion: o campo é preservado pelo adapter de tipos
+const sug = vo({ unobservable: [{ requestId: "har-0003", state: "unavailable", suggestion: "har-0030" }] }) as any;
+assert.equal(sug.unobservable[0].suggestion, "har-0030");
 console.log("adapter-minimal: ok");

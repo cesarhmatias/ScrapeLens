@@ -1,0 +1,46 @@
+{
+  "cookieWarning": [
+    "HAR sem cookies — origem de cookies não avaliável\no HAR não contém cookies (exportação do DevTools os remove); origem de cookies não avaliável — use captura ao vivo (CDP/NetLog) Para avaliar cookies, use Iniciar sessão (captura ao vivo CDP/NetLog)."
+  ],
+  "firstPlaca": "har-0019",
+  "htmlControlMatches": 1,
+  "searchStatus": "2 achado(s) em 2 requisição(ões)",
+  "matchBox": "Achados da busca 1\ncorpo resp. XML · tentativa 1 · byte 9836controle HTMLvisão decodificada\nlp1200003v_filtro_sel2.0k05v_tmpx08DLTC0005\nTrecho acima é a visão decodificada do campo (derivada); o corpo bruto, exibido na aba Payload/Resposta, é o dado primário.",
+  "htmlControlChip": 1,
+  "warnings": [
+    "Avisos da análise (2)\n⚠ o HAR não contém cookies (exportação do DevTools os remove); origem de cookies não avaliável — use captura ao vivo (CDP/NetLog)\ninitiator do CDP não é preservado no modelo: evidência `initiator` indisponível"
+  ],
+  "originSummary": [
+    "header x-requested-with\tXMLHttpRequest\tsem origem observada (já circulava)",
+    "corpo SESSIONID\tCSAN00011_700000000011\tsem origem observada (já circulava)",
+    "corpo PAGEINITPARAM\t(vazio)\tsem origem observada",
+    "\tv2232001705027000195\tsem origem observada",
+    "\tCSAN00011\tpossível origem (value-match)\t",
+    "\t_700000000011\tsem origem observada",
+    "\tSYNTHPID000000000000000000000011\tpossível origem (value-match)\t",
+    "\tSA90003_CSAN00000\tpossível origem (value-match)\t"
+  ],
+  "stampRow": "corpo STAMP\t4105\torigem observada\t\nhar-0017 same-field · forte controle de formulário HTML (STAMP) produziu em responseBody:STAMP · byte 9968",
+  "pagesGroup": 1,
+  "protectionGroup": 1,
+  "compositeRows": [
+    "corpo token\tALPHA0001_987654321012\tcomposto (ver trechos)\t",
+    "↳ corpo token[1]",
+    "↳ corpo token[0]"
+  ],
+  "compareHeader": "12 par(es) · 25 estático(s) · 48 dinâmico(s), sendo 35 em trechos de campos compostos (28 obter em runtime, 20 sem origem) · só em A 0 · só em B 0",
+  "roundHeaders": [
+    "Rodada 1: A#1 ↔ B#1 · 12 × 12 requisições · 12 modelo(s) em comum"
+  ],
+  "unpaired": 1,
+  "groups": [
+    "Proteção (/TSPD/ etc.) — fora do alinhamento · A 9 · B 18",
+    "Recursos estáticos — fora do alinhamento · A 2 · B 4"
+  ],
+  "ambiguities": [],
+  "afterOptions": "12 par(es) · 14 estático(s) · 15 dinâmico(s), sendo 11 em trechos de campos compostos (9 obter em runtime, 6 sem origem) · só em A 0 · só em B 11",
+  "groupsAfter": 0,
+  "redactions": "body:form\n8\nbusiness:cpf\ncampo de negócio (cpf), valor não exibido\n2\nbusiness:placa\ncampo de negócio (placa), valor não exibido\n2\npropagated:bodyForm\n8",
+  "businessWarning": 1,
+  "pageErrors": []
+}

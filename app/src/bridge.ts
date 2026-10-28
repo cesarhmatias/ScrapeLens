@@ -102,6 +102,8 @@ export interface SearchMatch {
   byteOffset: number | null;
   /** Comprimento em bytes UTF-8 do trecho original (core ≥ rodada 4b-fix). */
   byteLength?: number;
+  /** O achado está num controle de formulário HTML (input/textarea/select). */
+  htmlControl?: boolean;
   /** true: o intervalo é literal no original; false: achado só na visão decodificada. */
   exact?: boolean;
   snippet: string;
@@ -293,8 +295,18 @@ export const bridge = {
   },
 
   /** Compara A × B no Rust e devolve só o resumo; pares e campos vêm por página. */
-  async compareOpen(dirA: string, dirB: string): Promise<CompareSummary> {
-    return invoke("compare_open", { dirA, dirB });
+  async compareOpen(
+    dirA: string,
+    dirB: string,
+    options: { includeAll?: boolean; aRange?: string; bRange?: string } = {},
+  ): Promise<CompareSummary> {
+    return invoke("compare_open", {
+      dirA,
+      dirB,
+      includeAll: options.includeAll ?? false,
+      aRange: options.aRange || null,
+      bRange: options.bRange || null,
+    });
   },
 
   async comparePage(handle: number, offset: number, limit: number, onlyDynamic: boolean): Promise<ComparePage> {

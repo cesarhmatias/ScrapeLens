@@ -728,6 +728,7 @@ function DetailView({
                   {m.field ? <span className="mono"> {m.field}</span> : null}
                   <span className="dim"> · tentativa {attemptIndex >= 0 ? attemptIndex + 1 : m.attemptId}</span>
                   {m.byteOffset !== null ? <span className="dim"> · byte {m.byteOffset}</span> : null}
+                  {m.htmlControl && <span className="chip tag" title="O achado está num controle de formulário HTML (input/textarea/select) da resposta">controle HTML</span>}
                   {m.decoded && <span className="chip v-partial" title="Achado após decodificar form-urlencoded/JSON; o byte bruto pode diferir">visão decodificada</span>}
                   <div className="mono snippet">{m.snippet}</div>
                   {m.decoded && (
@@ -1397,7 +1398,7 @@ export default function App() {
   const [sanitizeOpen, setSanitizeOpen] = useState(false);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
-  const [captureCmp, setCaptureCmp] = useState<{ summary: CompareSummary; labelA: string; labelB: string } | null>(null);
+  const [captureCmp, setCaptureCmp] = useState<{ summary: CompareSummary; dirA: string; dirB: string; labelA: string; labelB: string } | null>(null);
   const [scopes, setScopes] = useState<SearchScope[]>(ALL_SCOPES);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [searchState, setSearchState] = useState<{
@@ -1422,7 +1423,7 @@ export default function App() {
       if (!dirB) return;
       setBusy("Comparando capturas…");
       const summary = await bridge.compareOpen(session.sourcePath, dirB);
-      setCaptureCmp({ summary, labelA: session.label, labelB: dirB.split("/").filter(Boolean).pop() ?? dirB });
+      setCaptureCmp({ summary, dirA: session.sourcePath, dirB, labelA: session.label, labelB: dirB.split("/").filter(Boolean).pop() ?? dirB });
       setView("capture-compare");
     } catch (error) {
       setNotice({ kind: "error", text: "Não foi possível comparar as capturas.", detail: String(error) });
@@ -1815,6 +1816,16 @@ export default function App() {
 
         {view === "session" && (
           <>
+            {session.warnings
+              .filter((warning) => warning.code === "har.cookies_absent")
+              .map((warning) => (
+                <div className="body-flag flag-truncated warn-strip" role="alert" key={warning.code}>
+                  <strong>HAR sem cookies — origem de cookies não avaliável</strong>
+                  <span>
+                    {warning.message} Para avaliar cookies, use <strong>Iniciar sessão</strong> (captura ao vivo CDP/NetLog).
+                  </span>
+                </div>
+              ))}
             <div className="session-bar">
               <div className="session-id">
                 <div className="sid-top">
@@ -2203,6 +2214,8 @@ export default function App() {
         {view === "capture-compare" && captureCmp && (
           <CaptureCompareView
             summary={captureCmp.summary}
+            dirA={captureCmp.dirA}
+            dirB={captureCmp.dirB}
             labelA={captureCmp.labelA}
             labelB={captureCmp.labelB}
             onBack={() => setView("session")}

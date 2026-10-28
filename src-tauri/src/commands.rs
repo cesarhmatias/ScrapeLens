@@ -722,12 +722,31 @@ pub struct CompareSummary {
     /// Sobras de mesmo modelo nos dois lados (provável reordenação), limitadas.
     pub reordered: Vec<scrapelens_core::compare::ReorderedPair>,
     pub reordered_total: usize,
+    /// Rodadas pareadas, rodadas sem par e requisição de entrada (docs/10 L6).
+    pub rounds: Vec<scrapelens_core::compare::RoundInfo>,
+    pub unpaired_rounds: Vec<scrapelens_core::compare::UnpairedRound>,
+    pub entry_request: Option<String>,
+    /// Proteção/estáticos fora do alinhamento: tipo + totais, com listas limitadas.
+    pub groups: Vec<GroupSummary>,
+    pub include_all: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupSummary {
+    pub kind: String,
+    pub a: Vec<scrapelens_core::compare::RequestRef>,
+    pub a_total: usize,
+    pub b: Vec<scrapelens_core::compare::RequestRef>,
+    pub b_total: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairSummary {
     pub index: usize,
+    /// Índice em `rounds`.
+    pub round: usize,
     pub a: scrapelens_core::compare::RequestRef,
     pub b: scrapelens_core::compare::RequestRef,
     pub aligned_by: String,
@@ -752,8 +771,17 @@ fn pair_is_dynamic(pair: &scrapelens_core::compare::PairComparison) -> bool {
 
 /// Compara a sessão aberta (A) com outra pasta (B), fora da thread da UI.
 #[tauri::command]
-pub async fn compare_open(dir_a: String, dir_b: String) -> Result<CompareSummary, String> {
-    tauri::async_runtime::spawn_blocking(move || open_comparison(&dir_a, &dir_b))
+pub async fn compare_open(
+    dir_a: String,
+    dir_b: String,
+    include_all: Option<bool>,
+    a_range: Option<String>,
+    b_range: Option<String>,
+) -> Result<CompareSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let options = compare_options(include_all.unwrap_or(false), a_range.as_deref(), b_range.as_deref())?;
+        open_comparison_with(&dir_a, &dir_b, options)
+    })
         .await
         .map_err(|error| format!("a comparação foi interrompida: {error}"))?
 }
@@ -801,6 +829,7 @@ fn comparison_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool)
         if total >= offset && items.len() < limit {
             items.push(PairSummary {
                 index,
+                round: pair.round,
                 a: pair.a.clone(),
                 b: pair.b.clone(),
                 aligned_by: pair.aligned_by.clone(),
@@ -817,7 +846,38 @@ fn comparison_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool)
 
 /// Caminhos canonicalizados (resolve `./s`, `s` e symlinks): a mesma sessão por
 /// dois caminhos é recusada.
+fn compare_options(
+    include_all: bool,
+    a_range: Option<&str>,
+    b_range: Option<&str>,
+) -> Result<scrapelens_core::compare::CompareOptions, String> {
+    use scrapelens_core::compare::RequestRange;
+    let range = |label: &str, text: Option<&str>| -> Result<Option<RequestRange>, String> {
+        match text.map(str::trim).filter(|t| !t.is_empty()) {
+            None => Ok(None),
+            Some(text) => RequestRange::parse(text)
+                .map(Some)
+                .ok_or_else(|| format!("faixa {label} inválida ({text}); use de:ate, por exemplo 10:50 ou har-0010:har-0050")),
+        }
+    };
+    Ok(scrapelens_core::compare::CompareOptions {
+        include_all,
+        a_range: range("A", a_range)?,
+        b_range: range("B", b_range)?,
+        ..Default::default()
+    })
+}
+
+#[cfg(test)]
 fn open_comparison(dir_a: &str, dir_b: &str) -> Result<CompareSummary, String> {
+    open_comparison_with(dir_a, dir_b, scrapelens_core::compare::CompareOptions::default())
+}
+
+fn open_comparison_with(
+    dir_a: &str,
+    dir_b: &str,
+    options: scrapelens_core::compare::CompareOptions,
+) -> Result<CompareSummary, String> {
     let canon = |label: &str, dir: &str| {
         fs::canonicalize(dir).map_err(|error| format!("sessão {label} inacessível ({dir}): {error}"))
     };
@@ -836,7 +896,7 @@ fn open_comparison(dir_a: &str, dir_b: &str) -> Result<CompareSummary, String> {
         &scrapelens_core::search::LazyBodies(&a),
         &b.session,
         &scrapelens_core::search::LazyBodies(&b),
-        &scrapelens_core::compare::CompareOptions::default(),
+        &options,
     );
     let id = COMPARISON_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let summary = CompareSummary {
@@ -854,6 +914,21 @@ fn open_comparison(dir_a: &str, dir_b: &str) -> Result<CompareSummary, String> {
         only_in_b_total: result.only_in_b.len(),
         reordered: result.reordered.iter().take(ONLY_LIST_CAP).cloned().collect(),
         reordered_total: result.reordered.len(),
+        rounds: result.rounds.clone(),
+        unpaired_rounds: result.unpaired_rounds.clone(),
+        entry_request: result.entry_request.clone(),
+        groups: result
+            .groups
+            .iter()
+            .map(|group| GroupSummary {
+                kind: group.kind.clone(),
+                a: group.a.iter().take(ONLY_LIST_CAP).cloned().collect(),
+                a_total: group.a.len(),
+                b: group.b.iter().take(ONLY_LIST_CAP).cloned().collect(),
+                b_total: group.b.len(),
+            })
+            .collect(),
+        include_all: options.include_all,
     };
     *COMPARISON.lock().map_err(|_| "comparação corrompida".to_string())? =
         Some(StoredComparison { id, result: Arc::new(result) });
@@ -1274,5 +1349,51 @@ mod tests {
         assert!(summary.only_in_b.iter().any(|r| r.request_id == "cdp-r0004"));
         fs::remove_dir_all(a).ok();
         fs::remove_dir_all(b).ok();
+    }
+
+    #[test]
+    fn compare_options_parse_ranges_and_reject_garbage() {
+        let ok = compare_options(true, Some("2:9"), Some(" ")).unwrap();
+        assert!(ok.include_all && ok.a_range.is_some() && ok.b_range.is_none());
+        assert!(compare_options(false, Some("semfaixa"), None).is_err());
+    }
+
+    #[test]
+    fn real_shape_compare_reports_rounds_and_groups() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let har = |name: &str| {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/detran-pb-real-shape").join(name);
+            let imported = scrapelens_core::import_har(&fs::read(path).unwrap()).unwrap();
+            let dir = temp_session_dir(&format!("rs-{name}"));
+            fs::remove_dir_all(&dir).ok();
+            store::write_session_dir(&imported.bundle, &dir).unwrap();
+            dir
+        };
+        let a = har("real-shape-1round.har");
+        let b = har("real-shape-2rounds.har");
+        let summary = open_comparison(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
+        assert!(!summary.rounds.is_empty());
+        assert!(!summary.unpaired_rounds.is_empty(), "a 2ª rodada de B fica sem par");
+        assert!(summary.groups.iter().any(|g| g.kind == "protection"));
+        let all = open_comparison_with(
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            compare_options(true, None, None).unwrap(),
+        )
+        .unwrap();
+        assert!(all.include_all && all.groups.is_empty());
+        fs::remove_dir_all(a).ok();
+        fs::remove_dir_all(b).ok();
+    }
+
+    /// Prévia real da sanitização para o harness de UI:
+    /// `SL_SESSION=<pasta> SL_DUMP=<arquivo.json> cargo test -- --ignored dump_sanitize_preview`.
+    #[test]
+    #[ignore]
+    fn dump_sanitize_preview() {
+        let dir = std::env::var("SL_SESSION").expect("SL_SESSION");
+        let out = std::env::var("SL_DUMP").expect("SL_DUMP");
+        let preview = crate::export::sanitize_preview(Path::new(&dir)).unwrap();
+        fs::write(out, serde_json::to_string_pretty(&preview).unwrap()).unwrap();
     }
 }

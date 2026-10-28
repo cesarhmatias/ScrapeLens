@@ -1340,3 +1340,10 @@ kbd {
 .cmp-field .chip { white-space: normal; overflow-wrap: anywhere; max-width: 100%; height: auto; line-height: 1.35; display: inline-block; }
 .cmp-pair { overflow: hidden; }
 .cmp-pair > header { min-width: 0; overflow-wrap: anywhere; }
+.cmp-options { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px 13px; font-size: 11px; }
+.cmp-options .err { color: var(--err); }
+.range-input { width: 130px; font-size: 11px; padding: 2px 5px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg); color: inherit; }
+.cmp-group > summary { cursor: pointer; padding: 7px 13px; font-size: 11.5px; }
+.cmp-group-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 13px 8px; }
+.cmp-round { margin: 12px 14px 0; font-size: 11.5px; color: var(--fg-muted); }
+.warn-strip { margin: 8px 14px; }
