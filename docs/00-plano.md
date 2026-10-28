@@ -7,33 +7,34 @@ scraping. Especificação completa:
 ## Estado
 
 - Fase: 9 — pacote local arm64 recompilado e validado; documentação final.
+- Rodada de exportação na UI (docs/07): F1/F2 (links em ancestrais) corrigidos
+  em 16015a1, bridge 16/16; revalidação independente em curso. Diálogo nativo
+  Salvar/Cancelar segue dependente de seleção humana (NSSavePanel sem AX).
 - Aceite automatizado: 10/10 critérios, 282/282 asserções (77c32a7).
 - Captura nova e importações HAR/NetLog pela UI do bundle final validadas.
   Seleção manual do usuário e conferência independente dos arquivos persistidos.
 - Relatório de fechamento: `docs/06-entrega.md`; nada publicado.
 - Repositório criado em `/Users/cesar/Projects/scrapelens`.
 
-## Modelos resolvidos (assinatura OpenCode Go, provedor `opencode-go`)
+## Modelos em uso
 
-| Papel | Modelo | ID |
-|---|---|---|
-| Líder/arquiteto | GLM-5.3 | `opencode-go/glm-5.3` |
-| Executores (código) | DeepSeek V4.1 Flash | `opencode-go/deepseek-v4.1-flash` |
-| Revisor independente | GLM-5.3 | `opencode-go/glm-5.3` |
-
-OpenCode 1.19.4. Sem substituição silenciosa de modelo.
+Em 2026-10-28, por decisão do usuário, todos os agentes do canal, exceto o
+líder, usam Claude Sonnet 5.5 (`claude-sonnet-5-5`, esforço low), com reserva
+automática `opencode/deepseek-v4.1-flash-free` se a cota acabar. Histórico:
+GLM-5.3/DeepSeek V4.1 Flash (OpenCode Go) → gpt-6.1-sol (líder/revisor/docs) →
+Sonnet 5.5 low. Sem substituição silenciosa de modelo.
 
 Equipe (seção OpenBot "ScrapeLens"):
 
-| Agente | ID | Modelo |
-|---|---|---|
-| Líder e arquitetura | `agent-88cccd6b…a41` | `gpt-6.1-sol` (codex, medium) — trocado de GLM-5.3 em 2026-10-27 por decisão do usuário |
-| Captura e protocolos | `agent-05db9236…4c23` | `opencode-go/deepseek-v4.1-flash` (high) |
-| Testes e integração | `agent-e9324ddd…4b1f` | `opencode-go/deepseek-v4.1-flash` (high) |
-| Core e importadores | `agent-d66aa8db…8d71` | `opencode-go/deepseek-v4.1-flash` (high) — standby pós-matriz |
-| App macOS e interface | `agent-466e334c…66b9` | `opencode-go/deepseek-v4.1-flash` (high) — standby pós-matriz |
-| Revisor independente | `agent-ffb4d60c…ad63` | `gpt-6.1-sol` (codex, medium) — trocado de GLM-5.3 em 2026-10-27 |
-| Documentação Obsidian | `agent-636cf76c…cde3` | `gpt-6.1-sol` (codex, medium); rotina diária 09:00 (America/Sao_Paulo) |
+| Agente | ID |
+|---|---|
+| Líder e arquitetura | `agent-88cccd6b…a41` |
+| Captura e protocolos | `agent-05db9236…4c23` |
+| Testes e integração | `agent-e9324ddd…4b1f` |
+| Core e importadores | `agent-d66aa8db…8d71` |
+| App macOS e interface | `agent-466e334c…66b9` |
+| Revisor independente | `agent-ffb4d60c…ad63` |
+| Documentação Obsidian | `agent-636cf76c…cde3` (rotina diária 09:00, America/Sao_Paulo) |
 
 ## Ondas (máx. 3 executores simultâneos)
 
