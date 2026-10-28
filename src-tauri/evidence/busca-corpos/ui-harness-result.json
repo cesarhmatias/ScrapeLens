@@ -33,7 +33,9 @@
   "redirectWarning": [
     "Atenção: URL da 1ª tentativa difere da final\nA exportação usa http://127.0.0.1:8781/redirect307 (1ª tentativa) com o corpo e os headers da tentativa final, que foi enviada a http://127.0.0.1:8781/sink após o redirect 307. Equivale a um replay que segue o redirect; confira a URL antes de reutilizar."
   ],
+  "transformCharset": "Corpo da resposta\ntext/plain · 64 B · cdp-r0005-a1.response.body\ndisponível\nCopiar corpo\nNão idêntico aos bytes trafegados\nTransformações: chrome-decoded, charset:iso-8859-1->utf-8\nsynthetic gzip body for ScrapeLens: cmd_consultar_placa TST0T00\n\nTexto UTF-8 exibido sem interpretação. · cdp-r0005-a1.response.body",
+  "transformChromeOnly": "Corpo da resposta\napplication/json · 42 B · cdp-r0003-a1.response.body\ndisponível\nCopiar corpo\n{\"schema\": \"scrapelens.testserver.sink/1\"}\nTexto decodificado pelo Chrome. Texto UTF-8 exibido sem interpretação. · cdp-r0003-a1.response.body",
   "pageErrors": [],
-  "ignoredStubErrors": 9,
-  "rpcCalls": 16
+  "ignoredStubErrors": 12,
+  "rpcCalls": 19
 }

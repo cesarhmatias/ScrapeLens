@@ -15,6 +15,7 @@ import {
 } from "./bridge";
 import { ExportDialog, SanitizeDialog } from "./Export";
 import { matchRanges } from "./highlight";
+import { classifyTransforms } from "./transforms";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
@@ -240,7 +241,7 @@ const COPY_LIMIT = 16 * 1024 * 1024;
 const MAX_HIGHLIGHTS = 300;
 
 /** Nós React com os trechos dos achados do core realçados (texto escapado). */
-function highlightMatches(text: string, matches: SearchMatch[], needle?: string, caseSensitive = false): { nodes: (string | ReactElement)[] | string; shown: number; beyond: number } {
+function highlightMatches(text: string, matches: SearchMatch[], needle?: string, caseSensitive = false): { nodes: (string | ReactElement)[] | string; shown: number; beyond: number; dashed: number } {
   const { ranges, beyond } = matchRanges(text, matches, needle, caseSensitive);
   const nodes: (string | ReactElement)[] = [];
   let from = 0;
@@ -255,7 +256,8 @@ function highlightMatches(text: string, matches: SearchMatch[], needle?: string,
     from = range.end;
   }
   nodes.push(text.slice(from));
-  return { nodes: nodes.length === 1 ? text : nodes, shown: ranges.length, beyond };
+  const used = ranges.slice(0, MAX_HIGHLIGHTS);
+  return { nodes: nodes.length === 1 ? text : nodes, shown: ranges.length, beyond, dashed: used.filter((range) => range.decoded).length };
 }
 
 function OriginTag({ session, long }: { session: SessionRecord; long?: boolean }) {
@@ -303,9 +305,10 @@ function BodyPanel({
     };
   }, [sessionDir, body.attachment, body.preview]);
 
+  const transforms = classifyTransforms(body.transformed);
   const text = body.preview ?? (data?.kind === "text" ? data.text : undefined);
   const lit = useMemo(
-    () => (text !== undefined && matches?.length ? highlightMatches(text, matches, highlightNeedle?.text, highlightNeedle?.caseSensitive) : { nodes: text ?? "", shown: 0, beyond: 0 }),
+    () => (text !== undefined && matches?.length ? highlightMatches(text, matches, highlightNeedle?.text, highlightNeedle?.caseSensitive) : { nodes: text ?? "", shown: 0, beyond: 0, dashed: 0 }),
     [text, matches, highlightNeedle?.text, highlightNeedle?.caseSensitive],
   );
   const copyBody = async () => {
@@ -347,10 +350,10 @@ function BodyPanel({
           </button>
         )}
       </header>
-      {body.transformed && body.transformed.length > 0 && (
+      {transforms.warn.length > 0 && (
         <div className="body-flag flag-truncated">
           <strong>Não idêntico aos bytes trafegados</strong>
-          <span>Transformações: {body.transformed.join(", ")}</span>
+          <span>Transformações: {[...(transforms.chromeDecoded ? ["chrome-decoded"] : []), ...transforms.warn].join(", ")}</span>
         </div>
       )}
       {flagged && (
@@ -371,7 +374,8 @@ function BodyPanel({
         <>
           <pre className="code">{lit.nodes}</pre>
           <div className="body-foot">
-            {lit.shown > 0 && lit.nodes !== text ? `${lit.shown} achado(s) da busca realçado(s)${matches?.some((m) => m.decoded || m.exact === false) ? "; realce tracejado = trecho derivado/decodificado, diferente do texto buscado" : ""}. ` : ""}
+            {lit.shown > 0 && lit.nodes !== text ? `${lit.shown} achado(s) da busca realçado(s)${lit.dashed > 0 ? "; realce tracejado = trecho derivado/decodificado, diferente do texto buscado" : ""}. ` : ""}
+            {transforms.chromeDecoded && transforms.warn.length === 0 ? "Texto decodificado pelo Chrome. " : ""}
             {lit.beyond > 0 ? `${lit.beyond} achado(s) além da parte exibida. ` : ""}
             {data?.cut ? `Exibindo os primeiros ${fmtBytes(data.shownBytes)} de ${fmtBytes(data.bytes)}; “Copiar corpo” entrega até ${fmtBytes(COPY_LIMIT)}. ` : ""}
             {body.contentType?.includes("html")

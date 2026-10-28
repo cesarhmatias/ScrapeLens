@@ -109,7 +109,7 @@ await shot("01-detran-lista.png");
 // Busca no payload: só os 2 POSTs com o comando, nenhum pela URL.
 const search = page.getByLabel("Buscar requisições");
 await search.fill("cmd_consultar_placa");
-await page.waitForSelector(".search-status .chip", { timeout: 8000 }).catch(async () => { await shot("debug.png"); throw new Error("sem chips: " + (await page.locator(".search-status").allInnerTexts())); });
+await page.waitForSelector(".search-status .chip", { timeout: 8000 }).catch(async () => { await page.screenshot({ path: "/tmp/sl-harness-debug.png" }); throw new Error("sem chips: " + (await page.locator(".search-status").allInnerTexts())); });
 await page.waitForTimeout(400);
 results.searchRows = await rows();
 results.searchStatus = await page.locator(".search-status").innerText();
@@ -178,6 +178,23 @@ await page.waitForTimeout(600);
 results.redirectWarning = await page.locator("[role=alert]").allInnerTexts();
 await shot("10-export-aviso-307.png");
 
+// Painel de transformações (sessão sintética rotulada, `transformed` editado à mão no session.json).
+if (process.argv[6]) {
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Sessão/ }).first().click().catch(() => {});
+  await openSession(process.argv[6]);
+  await page.getByLabel("Buscar requisições").fill("");
+  await page.locator("tbody tr:not(.spacer)").nth(4).click();
+  await page.getByRole("tab", { name: /Resposta/ }).click();
+  await page.waitForTimeout(400);
+  results.transformCharset = await page.locator(".body-panel").first().innerText();
+  await shot("11-corpo-charset.png");
+  await page.getByRole("button", { name: /Sessão/ }).first().click();
+  await page.locator("tbody tr:not(.spacer)").nth(2).click();
+  await page.getByRole("tab", { name: /Resposta/ }).click();
+  await page.waitForTimeout(300);
+  results.transformChromeOnly = await page.locator(".body-panel").first().innerText();
+}
 results.pageErrors = errors.filter((e) => !e.includes("unregisterListener"));
 results.ignoredStubErrors = errors.length - results.pageErrors.length;
 results.rpcCalls = rpcLog.length;

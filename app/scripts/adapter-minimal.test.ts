@@ -86,4 +86,9 @@ assert.equal(matchRanges(lit, [{ byteOffset: o1, byteLength: 19, decoded: true, 
 const pct = matchRanges(lit, [{ byteOffset: lit.indexOf("a%20b"), byteLength: 5, decoded: true, exact: true }], "a b");
 assert.equal(pct.ranges[0].decoded, true);
 assert.equal(matchRanges(lit, [{ byteOffset: o1, byteLength: 19, decoded: false, exact: false }], "cmd_consultar_placa").ranges[0].decoded, true);
+import { classifyTransforms } from "../src/transforms";
+assert.deepEqual(classifyTransforms(["chrome-decoded"]), { warn: [], chromeDecoded: true });
+assert.deepEqual(classifyTransforms(["chrome-decoded", "charset:iso-8859-1->utf-8"]), { warn: ["charset:iso-8859-1->utf-8"], chromeDecoded: true });
+assert.deepEqual(classifyTransforms(["lossy-postData"]).warn, ["lossy-postData"]);
+assert.deepEqual(classifyTransforms(undefined), { warn: [], chromeDecoded: false });
 console.log("adapter-minimal: ok");
