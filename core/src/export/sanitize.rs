@@ -255,7 +255,10 @@ fn sanitize_header_view(
         .chain(view.headers.iter_mut())
     {
         let lower = entry.name.to_ascii_lowercase();
-        if is_sensitive_header(&lower) {
+        let by_name_only = !is_listed_sensitive_header(&lower) && is_sensitive_header(&lower);
+        if is_sensitive_header(&lower)
+            && !(by_name_only && redact_auth_scheme(&entry.value, options).is_some())
+        {
             entry.value = options.placeholder.clone();
             entry
                 .provenance
@@ -386,6 +389,7 @@ fn sanitize_body(
                     content_type: body.content_type.clone(),
                     content_encoding: body.content_encoding.clone(),
                     note: Some("corpo sanitizado".to_string()),
+                    transformed: body.transformed.clone(),
                     provenance: sanitized_provenance(),
                 }
             }
@@ -431,6 +435,7 @@ fn sanitize_body(
                 content_type: body.content_type.clone(),
                 content_encoding: body.content_encoding.clone(),
                 note: Some(format!("corpo sanitizado ({kind})")),
+                transformed: body.transformed.clone(),
                 provenance: sanitized_provenance(),
             }
         }
@@ -707,7 +712,7 @@ fn sanitized_provenance() -> Provenance {
         .with_note("conteúdo derivado; original não incluído".to_string())
 }
 
-pub fn is_sensitive_header(name: &str) -> bool {
+fn is_listed_sensitive_header(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     if matches!(
         name.as_str(),
@@ -737,6 +742,24 @@ pub fn is_sensitive_header(name: &str) -> bool {
         || name.contains("apikey")
         || name.ends_with("-password")
         || name == "x-session-id"
+}
+
+/// Header sensível: lista conhecida ou nome de credencial (`X-Auth`,
+/// `X-Jwt-Thing`, `X-Session-Foo`...). `:authority`/`Author` não contam.
+pub fn is_sensitive_header(name: &str) -> bool {
+    if is_listed_sensitive_header(name) {
+        return true;
+    }
+    let name = name.to_ascii_lowercase();
+    let compact: String = name
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
+    !name.starts_with(':')
+        && (has_secret_word(&compact)
+            || compact.contains("jwt")
+            || compact.contains("session")
+            || compact.contains("passwd"))
 }
 
 fn is_url_header(name: &str) -> bool {
@@ -833,16 +856,60 @@ fn is_url_key(name: &str) -> bool {
 
 /// Tamanho mínimo (bytes) de um valor sensível para ser propagado.
 const PROPAGATION_MIN_LEN: usize = 8;
+/// Valores só de dígitos (CPF, telefone) propagam a partir deste tamanho.
+const PROPAGATION_MIN_DIGITS: usize = 10;
 
 struct SensitiveValue {
     origin: &'static str,
     value: String,
 }
 
+/// Uma forma de escrita do valor. `pct` casa os dígitos hex de `%XX` sem
+/// diferenciar maiúsculas e minúsculas e usa o placeholder percent-encoded.
+struct Variant {
+    text: String,
+    pct: bool,
+}
+
 struct Needle {
     origin: &'static str,
-    /// (texto a procurar, usa placeholder percent-encoded)
-    variants: Vec<(String, bool)>,
+    variants: Vec<Variant>,
+}
+
+/// Chaves de alta confiança: só elas (e headers de autenticação e cookies)
+/// geram propagação. Chaves genéricas (`key`, `code`, `state`...) são
+/// redigidas no lugar, sem propagar.
+fn is_propagating_key(name: &str) -> bool {
+    if !is_sensitive_key(name) {
+        return false;
+    }
+    let compact: String = name
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
+    compact == "sid"
+        || has_secret_word(&compact)
+        || compact.contains("jwt")
+        || compact.contains("cpf")
+        || compact.contains("session")
+}
+
+/// Palavras de credencial em um nome compactado (sem separadores).
+fn has_secret_word(compact: &str) -> bool {
+    let without_author = compact.replace("authority", "").replace("author", "");
+    [
+        "token",
+        "password",
+        "passwd",
+        "secret",
+        "apikey",
+        "credential",
+        "signature",
+    ]
+    .iter()
+    .any(|word| compact.contains(word))
+        || without_author.contains("auth")
 }
 
 fn is_trivial_value(value: &str, options: &SanitizeOptions) -> bool {
@@ -853,7 +920,7 @@ fn is_trivial_value(value: &str, options: &SanitizeOptions) -> bool {
     if matches!(lower.as_str(), "true" | "false" | "null" | "undefined") {
         return true;
     }
-    if value.bytes().all(|byte| byte.is_ascii_digit()) && value.len() < 12 {
+    if value.bytes().all(|byte| byte.is_ascii_digit()) && value.len() < PROPAGATION_MIN_DIGITS {
         return true;
     }
     let first = value.as_bytes()[0];
@@ -863,13 +930,14 @@ fn is_trivial_value(value: &str, options: &SanitizeOptions) -> bool {
     options.placeholder.contains(value) || value.contains(&options.placeholder)
 }
 
-fn percent_encode_with(value: &str, keep: &str, lower: bool) -> String {
+/// Percent-encoding em maiúsculas; `plus` escreve espaço como `+`.
+fn percent_encode_with(value: &str, keep: &str, plus: bool) -> String {
     let mut out = String::new();
     for byte in value.bytes() {
         if byte.is_ascii_alphanumeric() || keep.as_bytes().contains(&byte) {
             out.push(byte as char);
-        } else if lower {
-            out.push_str(&format!("%{byte:02x}"));
+        } else if plus && byte == b' ' {
+            out.push('+');
         } else {
             out.push_str(&format!("%{byte:02X}"));
         }
@@ -877,19 +945,26 @@ fn percent_encode_with(value: &str, keep: &str, lower: bool) -> String {
     out
 }
 
-fn variants_of(value: &str) -> Vec<(String, bool)> {
-    let mut variants: Vec<(String, bool)> = vec![(value.to_string(), false)];
+fn variants_of(value: &str) -> Vec<Variant> {
+    let mut variants = vec![Variant {
+        text: value.to_string(),
+        pct: false,
+    }];
     let json = serde_json::to_string(value).unwrap_or_default();
     let json = json.trim_matches('"').to_string();
-    for (candidate, url_style) in [
-        (json, false),
-        (percent_encode_with(value, "-._~", false), true),
-        (percent_encode_with(value, "-._~", true), true),
-        (percent_encode_with(value, "-._~!'()*", false), true),
-        (percent_encode_with(value, "-._~!'()*", true), true),
-    ] {
-        if !candidate.is_empty() && !variants.iter().any(|(text, _)| *text == candidate) {
-            variants.push((candidate, url_style));
+    let mut candidates = vec![(json, false)];
+    for keep in ["-._~", "-._~!'()*"] {
+        candidates.push((percent_encode_with(value, keep, false), true));
+        if value.contains(' ') {
+            candidates.push((percent_encode_with(value, keep, true), true));
+        }
+    }
+    for (candidate, pct) in candidates {
+        if !candidate.is_empty() && !variants.iter().any(|known| known.text == candidate) {
+            variants.push(Variant {
+                text: candidate,
+                pct,
+            });
         }
     }
     variants
@@ -898,7 +973,7 @@ fn variants_of(value: &str) -> Vec<(String, bool)> {
 fn collect_query(query: &str, out: &mut Vec<SensitiveValue>) {
     for pair in query.split('#').next().unwrap_or("").split('&') {
         if let Some((name, value)) = pair.split_once('=') {
-            if is_sensitive_key(&percent_decode(name)) {
+            if is_propagating_key(&percent_decode(name)) {
                 out.push(SensitiveValue {
                     origin: "urlQuery",
                     value: percent_decode(value),
@@ -919,10 +994,11 @@ fn collect_json(value: &Value, out: &mut Vec<SensitiveValue>) {
         Value::Object(object) => {
             for (key, value) in object {
                 match value {
-                    Value::String(text) if is_sensitive_key(key) => out.push(SensitiveValue {
+                    Value::String(text) if is_propagating_key(key) => out.push(SensitiveValue {
                         origin: "bodyJson",
                         value: text.clone(),
                     }),
+                    Value::String(_) => {}
                     other => collect_json(other, out),
                 }
             }
@@ -947,7 +1023,7 @@ fn collect_body_bytes(bytes: &[u8], content_type: Option<&str>, out: &mut Vec<Se
     if media.contains("x-www-form-urlencoded") || (media.is_empty() && text.contains('=')) {
         for pair in text.split('&') {
             if let Some((name, value)) = pair.split_once('=') {
-                if is_sensitive_key(&percent_decode(name)) {
+                if is_propagating_key(&percent_decode(name)) {
                     out.push(SensitiveValue {
                         origin: "bodyForm",
                         value: percent_decode(value),
@@ -960,15 +1036,6 @@ fn collect_body_bytes(bytes: &[u8], content_type: Option<&str>, out: &mut Vec<Se
 
 fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
     let mut out = Vec::new();
-    let views = |request: &crate::model::LogicalRequest, out: &mut Vec<SensitiveValue>| {
-        collect_url(&request.url, out);
-        for redirect in &request.redirects {
-            collect_url(&redirect.from_url, out);
-            if let Some(to) = &redirect.to_url {
-                collect_url(to, out);
-            }
-        }
-    };
     let collect_headers = |view: &HeaderView, out: &mut Vec<SensitiveValue>| {
         for entry in view.pseudo_headers.iter().chain(view.headers.iter()) {
             let lower = entry.name.to_ascii_lowercase();
@@ -976,13 +1043,13 @@ fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
                 continue; // cobertos pelos pares/registros de cookie
             }
             if is_sensitive_header(&lower) {
-                let token = entry
-                    .value
-                    .split_once(' ')
-                    .map_or(entry.value.as_str(), |(_, rest)| rest);
+                let value = ["Bearer ", "Basic ", "Digest ", "Token "]
+                    .iter()
+                    .find_map(|scheme| entry.value.strip_prefix(scheme))
+                    .unwrap_or(&entry.value);
                 out.push(SensitiveValue {
                     origin: "header",
-                    value: token.to_string(),
+                    value: value.to_string(),
                 });
             } else if is_url_header(&lower) || entry.name == ":path" {
                 collect_url(&entry.value, out);
@@ -1016,7 +1083,13 @@ fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
         }
     };
     for request in &bundle.session.requests {
-        views(request, &mut out);
+        collect_url(&request.url, &mut out);
+        for redirect in &request.redirects {
+            collect_url(&redirect.from_url, &mut out);
+            if let Some(to) = &redirect.to_url {
+                collect_url(to, &mut out);
+            }
+        }
         collect_headers(&request.request_headers, &mut out);
         collect_headers(&request.response_headers, &mut out);
         collect_cookies(&request.cookie, &request.set_cookies, &mut out);
@@ -1034,64 +1107,136 @@ fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
     out
 }
 
-fn replace_in(
-    text: &str,
-    needles: &[Needle],
-    options: &SanitizeOptions,
-    counts: &mut BTreeMap<&'static str, usize>,
-) -> Option<String> {
-    let mut current: Option<String> = None;
-    let url_mark = url_placeholder(options);
-    for needle in needles {
-        for (variant, url_style) in &needle.variants {
-            let hay = current.as_deref().unwrap_or(text);
-            let found = hay.matches(variant.as_str()).count();
-            if found == 0 {
+fn matches_at(hay: &[u8], needle: &[u8], pct: bool) -> bool {
+    if hay.len() < needle.len() {
+        return false;
+    }
+    if !pct {
+        return hay == needle;
+    }
+    let mut index = 0;
+    while index < needle.len() {
+        if needle[index] == b'%' && index + 3 <= needle.len() {
+            if hay[index..index + 3].eq_ignore_ascii_case(&needle[index..index + 3]) {
+                index += 3;
                 continue;
             }
-            let mark = if *url_style {
-                &url_mark
-            } else {
-                &options.placeholder
-            };
-            current = Some(hay.replace(variant.as_str(), mark));
-            *counts.entry(needle.origin).or_default() += found;
+            return false;
         }
+        if hay[index] != needle[index] {
+            return false;
+        }
+        index += 1;
     }
-    current
+    true
 }
 
-fn replace_in_json(
-    value: &mut Value,
-    needles: &[Needle],
-    options: &SanitizeOptions,
-    counts: &mut BTreeMap<&'static str, usize>,
-) {
-    match value {
-        Value::String(text) => {
-            if let Some(replaced) = replace_in(text, needles, options, counts) {
-                *text = replaced;
+/// Substitui todas as ocorrências de `variant`; devolve (texto, quantidade).
+fn replace_variant(hay: &str, variant: &Variant, mark: &str) -> (String, usize) {
+    let (hay_bytes, needle) = (hay.as_bytes(), variant.text.as_bytes());
+    let mut out = String::with_capacity(hay.len());
+    let (mut index, mut copied, mut count) = (0, 0, 0);
+    while index + needle.len() <= hay_bytes.len() {
+        if hay_bytes[index] == needle[0]
+            && matches_at(&hay_bytes[index..index + needle.len()], needle, variant.pct)
+        {
+            out.push_str(&hay[copied..index]);
+            out.push_str(mark);
+            index += needle.len();
+            copied = index;
+            count += 1;
+        } else {
+            index += 1;
+        }
+    }
+    out.push_str(&hay[copied..]);
+    (out, count)
+}
+
+struct Propagator<'a> {
+    needles: Vec<Needle>,
+    options: &'a SanitizeOptions,
+    url_mark: String,
+    counts: BTreeMap<&'static str, usize>,
+}
+
+impl Propagator<'_> {
+    /// Redige in-place; só chamado em campos de valor.
+    fn apply(&mut self, text: &mut String) {
+        let mut current: Option<String> = None;
+        for needle in &self.needles {
+            for variant in &needle.variants {
+                let hay = current.as_deref().unwrap_or(text);
+                if !hay.contains(&variant.text) && !variant.pct {
+                    continue;
+                }
+                let mark = if variant.pct {
+                    &self.url_mark
+                } else {
+                    &self.options.placeholder
+                };
+                let (replaced, found) = replace_variant(hay, variant, mark);
+                if found > 0 {
+                    *self.counts.entry(needle.origin).or_default() += found;
+                    current = Some(replaced);
+                }
             }
         }
-        Value::Array(items) => {
-            for item in items {
-                replace_in_json(item, needles, options, counts);
+        if let Some(replaced) = current {
+            *text = replaced;
+        }
+    }
+
+    fn view(&mut self, view: &mut HeaderView) {
+        for entry in view
+            .pseudo_headers
+            .iter_mut()
+            .chain(view.headers.iter_mut())
+        {
+            self.apply(&mut entry.value);
+        }
+    }
+
+    fn cookies(&mut self, cookie: &mut CookieField, set_cookies: &mut [SetCookieRecord]) {
+        for raw in &mut cookie.raw {
+            self.apply(raw);
+        }
+        for pair in &mut cookie.pairs {
+            self.apply(&mut pair.value);
+            self.apply(&mut pair.raw);
+        }
+        for line in cookie
+            .wire_lines
+            .iter_mut()
+            .chain(cookie.unparsed.iter_mut())
+        {
+            self.apply(line);
+        }
+        for record in set_cookies {
+            self.apply(&mut record.raw);
+            if let Some(parsed) = &mut record.parsed {
+                self.apply(&mut parsed.value);
+                for (_, value) in &mut parsed.extensions {
+                    self.apply(value);
+                }
             }
         }
-        Value::Object(object) => {
-            for (_, item) in object.iter_mut() {
-                replace_in_json(item, needles, options, counts);
-            }
+    }
+
+    fn body(&mut self, body: &mut Body) {
+        if let Some(note) = &mut body.note {
+            self.apply(note);
         }
-        _ => {}
     }
 }
 
-/// Redige, em toda a sessão sanitizada, cada valor que a política já tratou
-/// como sensível (header, cookie, parâmetro de URL ou chave de corpo), nas
-/// formas literal, percent-encoded e JSON-escaped. Valores curtos ou triviais
-/// não são propagados. Anexos que não são texto UTF-8 não são varridos e isso
-/// é declarado no relatório.
+/// Redige, nos campos de valor da sessão sanitizada (URLs, valores de header,
+/// cookies, notas e anexos de texto), cada valor que a política já tratou como
+/// sensível com alta confiança, nas formas literal, percent-encoded (hex sem
+/// diferenciar caixa, `+` como espaço) e JSON-escaped. Enums, IDs e nomes de
+/// anexo nunca são tocados: a passagem percorre o modelo tipado, sem
+/// serializar a sessão. Nenhum passo é falível; anexos que não são texto UTF-8
+/// não são varridos e isso é declarado.
 fn propagate_sensitive_values(
     original: &SessionBundle,
     session: &mut crate::model::SessionV1,
@@ -1115,32 +1260,67 @@ fn propagate_sensitive_values(
     if values.is_empty() {
         return;
     }
-    let needles: Vec<Needle> = values
-        .iter()
-        .map(|item| Needle {
-            origin: item.origin,
-            variants: variants_of(&item.value),
-        })
-        .collect();
-    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut propagator = Propagator {
+        needles: values
+            .iter()
+            .map(|item| Needle {
+                origin: item.origin,
+                variants: variants_of(&item.value),
+            })
+            .collect(),
+        options,
+        url_mark: url_placeholder(options),
+        counts: BTreeMap::new(),
+    };
 
-    if let Ok(mut tree) = serde_json::to_value(&*session) {
-        replace_in_json(&mut tree, &needles, options, &mut counts);
-        if let Ok(updated) = serde_json::from_value(tree) {
-            *session = updated;
+    for request in &mut session.requests {
+        propagator.apply(&mut request.url);
+        for redirect in &mut request.redirects {
+            propagator.apply(&mut redirect.from_url);
+            if let Some(to) = &mut redirect.to_url {
+                propagator.apply(to);
+            }
+            if let Some(location) = &mut redirect.location {
+                propagator.apply(location);
+            }
+        }
+        propagator.view(&mut request.request_headers);
+        propagator.view(&mut request.response_headers);
+        propagator.cookies(&mut request.cookie, &mut request.set_cookies);
+        propagator.body(&mut request.request_body);
+        propagator.body(&mut request.response_body);
+        for attempt in &mut request.attempts {
+            propagator.apply(&mut attempt.url);
+            if let Some(failure) = &mut attempt.failure {
+                propagator.apply(failure);
+            }
+            propagator.view(&mut attempt.request_headers);
+            propagator.view(&mut attempt.response_headers);
+            propagator.cookies(&mut attempt.cookie, &mut attempt.set_cookies);
+            for evidence in &mut attempt.header_evidence {
+                propagator.view(&mut evidence.view);
+            }
+            propagator.body(&mut attempt.request_body);
+            propagator.body(&mut attempt.response_body);
         }
     }
+    for warning in &mut session.warnings {
+        propagator.apply(&mut warning.message);
+    }
+
     let mut not_scanned = 0usize;
     let mut changed: Vec<String> = Vec::new();
     for (name, bytes) in generated.iter_mut() {
-        match std::str::from_utf8(bytes) {
-            Ok(text) => {
-                if let Some(replaced) = replace_in(text, &needles, options, &mut counts) {
-                    *bytes = replaced.into_bytes();
-                    changed.push(name.clone());
-                }
-            }
-            Err(_) => not_scanned += 1,
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            not_scanned += 1;
+            continue;
+        };
+        let mut text = text.to_string();
+        let before = text.clone();
+        propagator.apply(&mut text);
+        if text != before {
+            *bytes = text.into_bytes();
+            changed.push(name.clone());
         }
     }
     for request in &mut session.requests {
@@ -1160,6 +1340,7 @@ fn propagate_sensitive_values(
         }
     }
 
+    let counts = std::mem::take(&mut propagator.counts);
     let total: usize = counts.values().sum();
     for (origin, count) in counts {
         *redactions
@@ -1170,7 +1351,7 @@ fn propagate_sensitive_values(
         warnings.push(Warning::new(
             "sanitize.value_propagation",
             format!(
-                "{total} ocorrência(s) de {} valor(es) sensível(is) já identificado(s) foram redigidas em outros campos (URLs, headers, corpos), em formas literal, percent-encoded e JSON-escaped; valores com menos de {PROPAGATION_MIN_LEN} bytes ou triviais não são propagados e podem permanecer",
+                "{total} ocorrência(s) de {} valor(es) sensível(is) já identificado(s) foram redigidas em outros campos (URLs, headers, corpos), em formas literal, percent-encoded e JSON-escaped; valores com menos de {PROPAGATION_MIN_LEN} bytes (ou {PROPAGATION_MIN_DIGITS} dígitos) ou triviais não são propagados e podem permanecer",
                 values.len()
             ),
         ));

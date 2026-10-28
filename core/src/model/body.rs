@@ -53,6 +53,11 @@ pub struct Body {
     pub content_encoding: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Transformações aplicadas antes de chegar aqui (ex.: `chrome-decoded`,
+    /// `charset:iso-8859-1->utf-8`, `lossy-postData`). Não vazio = os bytes não
+    /// são idênticos aos do fio.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transformed: Vec<String>,
     #[serde(default)]
     pub provenance: Provenance,
 }
@@ -152,6 +157,7 @@ impl Body {
             content_type: None,
             content_encoding: None,
             note: None,
+            transformed: Vec::new(),
             provenance: Provenance::default(),
         }
     }

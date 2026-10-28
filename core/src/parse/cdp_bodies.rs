@@ -42,6 +42,8 @@ struct BodyLine {
     reason: Option<String>,
     #[serde(default)]
     timestamp: Option<f64>,
+    #[serde(default)]
+    transformed: Vec<String>,
 }
 
 /// Resultado de aplicar o arquivo de corpos.
@@ -81,6 +83,18 @@ pub fn apply_cdp_bodies(
     session: &mut SessionV1,
     attachments: &mut BTreeMap<String, Vec<u8>>,
     jsonl: &[u8],
+) -> BodiesOutcome {
+    apply_cdp_bodies_with_capture(session, attachments, jsonl, None)
+}
+
+/// Como [`apply_cdp_bodies`]. Com a captura CDP original, uma requisição
+/// GET/HEAD sem linha de corpo e sem `hasPostData` vira `empty` ("CDP:
+/// requisição sem corpo") em vez de ficar `unavailable`.
+pub fn apply_cdp_bodies_with_capture(
+    session: &mut SessionV1,
+    attachments: &mut BTreeMap<String, Vec<u8>>,
+    jsonl: &[u8],
+    capture: Option<&super::cdp::CdpCapture>,
 ) -> BodiesOutcome {
     let mut outcome = BodiesOutcome::default();
     // (índice lógico, índice da tentativa, kind) -> linha escolhida.
@@ -195,6 +209,15 @@ pub fn apply_cdp_bodies(
         let suffix = if is_request { "request" } else { "response" };
         let name = format!("{}.{suffix}.body", attempt.id);
         let mut body = build_body(&line, &name, attachments, &mut outcome.warnings);
+        if !line.transformed.is_empty() && body.has_bytes() {
+            body.transformed = line.transformed.clone();
+            body.provenance.verification =
+                body.provenance.verification.weakest(Verification::Partial);
+            body.provenance.notes.push(format!(
+                "não idêntico ao fio: {}",
+                line.transformed.join(", ")
+            ));
+        }
         if body.has_bytes() {
             if let Some(content_type) = content_type {
                 body = body.with_content_type(content_type);
@@ -206,6 +229,9 @@ pub fn apply_cdp_bodies(
             attempt.response_body = body;
         }
         outcome.applied += 1;
+    }
+    if let Some(capture) = capture {
+        mark_bodyless_requests(session, capture);
     }
     // O corpo "principal" do pedido lógico acompanha a última tentativa, como
     // os demais campos derivados em `refresh_primary_from_attempt`.
@@ -317,5 +343,40 @@ fn build_body(
             body
         }
         other => invalid(format!("state {other:?}"), warnings),
+    }
+}
+
+/// GET/HEAD sem `hasPostData` e sem linha de corpo: `empty` com evidência.
+fn mark_bodyless_requests(session: &mut SessionV1, capture: &super::cdp::CdpCapture) {
+    for request in &mut session.requests {
+        let Some(cdp_id) = request.cdp.as_ref().and_then(|cdp| cdp.request_id.clone()) else {
+            continue;
+        };
+        let Some(source) = capture.requests.iter().find(|r| r.request_id == cdp_id) else {
+            continue;
+        };
+        for attempt in &mut request.attempts {
+            let Some(parsed) = source.attempts.get(attempt.index as usize) else {
+                continue;
+            };
+            let bodyless_method =
+                matches!(parsed.method.to_ascii_uppercase().as_str(), "GET" | "HEAD");
+            if attempt.request_body.state == BodyState::Unavailable
+                && attempt.request_body.provenance.source == Source::Derived
+                && bodyless_method
+                && !parsed.has_post_data
+            {
+                let provenance = Provenance::new(
+                    Source::Cdp,
+                    "requestWillBeSent.hasPostData",
+                    Verification::Unverified,
+                )
+                .with_event("Network.requestWillBeSent")
+                .with_source_id(cdp_id.clone());
+                let mut body = Body::empty(&provenance);
+                body.note = Some("CDP: requisição sem corpo".to_string());
+                attempt.request_body = body;
+            }
+        }
     }
 }

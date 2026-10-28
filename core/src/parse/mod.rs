@@ -164,7 +164,12 @@ pub fn import_capture_with_bodies(
     let mut attachments = std::collections::BTreeMap::new();
     match cdp_bodies_jsonl {
         Some(bodies) => {
-            let applied = cdp_bodies::apply_cdp_bodies(&mut session, &mut attachments, bodies);
+            let applied = cdp_bodies::apply_cdp_bodies_with_capture(
+                &mut session,
+                &mut attachments,
+                bodies,
+                Some(&cdp),
+            );
             for warning in applied.warnings {
                 session.add_warning(warning.clone());
                 cdp_report.warn(warning);

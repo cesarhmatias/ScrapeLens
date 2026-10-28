@@ -180,6 +180,25 @@ pub fn request_body_bytes<'a>(
         .and_then(|name| bundle.attachment(name))
 }
 
+/// Aviso quando a URL exportada (1ª tentativa) difere da URL final após um
+/// redirect 307/308, que preserva método e corpo.
+pub fn redirect_url_note(request: &LogicalRequest) -> Option<String> {
+    let first = request.attempts.first()?;
+    let last = request.attempts.last()?;
+    let preserved = request
+        .attempts
+        .iter()
+        .rev()
+        .skip(1)
+        .any(|attempt| matches!(attempt.status, Some(307 | 308)));
+    (preserved && first.url != last.url).then(|| {
+        format!(
+            "a URL exportada é a da 1ª tentativa ({:?}); após redirect 307/308 a requisição final foi para {:?}",
+            first.url, last.url
+        )
+    })
+}
+
 /// Resolve o corpo a exportar. Retorna `None` quando o estado não permite ou
 /// os bytes não foram carregados, sempre com aviso.
 pub fn resolve_body<'a>(

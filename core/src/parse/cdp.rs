@@ -45,6 +45,8 @@ pub struct CdpRequest {
 
 #[derive(Debug, Clone, Default)]
 pub struct CdpAttempt {
+    /// `request.hasPostData` verdadeiro ou `postData` presente no evento.
+    pub has_post_data: bool,
     pub url: String,
     pub method: String,
     pub protocol: Protocol,
@@ -182,6 +184,13 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         .and_then(Value::as_str)
                         .unwrap_or("GET")
                         .to_string(),
+                    has_post_data: request.is_some_and(|request| {
+                        request.get("hasPostData").and_then(Value::as_bool) == Some(true)
+                            || request.get("postData").is_some_and(|data| !data.is_null())
+                            || request
+                                .get("postDataEntries")
+                                .is_some_and(|data| !data.is_null())
+                    }),
                     timestamp,
                     wall_time: wall_time.map(|value| epoch_ms_to_iso((value * 1000.0) as i64)),
                     wall_time_s: wall_time,

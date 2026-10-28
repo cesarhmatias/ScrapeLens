@@ -68,6 +68,9 @@ pub fn to_curl(
     if let Some(note) = &output.body_note {
         text.push_str(&format!("# corpo: {note}\n"));
     }
+    if let Some(note) = super::redirect_url_note(request) {
+        text.push_str(&format!("# ATENÇÃO: {note}\n"));
+    }
     text.push_str("# Contém credenciais/cookies se a sessão não foi sanitizada.\n");
 
     text.push_str("curl \\\n");

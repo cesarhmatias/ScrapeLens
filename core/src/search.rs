@@ -186,6 +186,27 @@ impl Ctx<'_> {
         });
     }
 
+    /// URL: busca no texto original e, se houver `%XX`, também na visão
+    /// percent-decoded (`decoded=true`), sem duplicar trechos já achados.
+    fn scan_url(&mut self, url: &str) {
+        let raw: Vec<usize> = self.matcher.find_all(url.as_bytes());
+        let needle_len = self.matcher.needle.len();
+        for &at in &raw {
+            self.push(Scope::Url, None, at, url, at, false);
+        }
+        let (text, map) = percent_decode_map(url, 0);
+        if text == url {
+            return;
+        }
+        for at in self.matcher.find_all(text.as_bytes()) {
+            let (from, to) = (map[at], map[(at + needle_len).min(text.len())]);
+            if raw.iter().any(|&r| from < r + needle_len && r < to) {
+                continue;
+            }
+            self.push(Scope::Url, None, from, &text, at, true);
+        }
+    }
+
     /// Busca em texto simples (URL, header, nome/valor de cookie).
     fn scan_text(&mut self, scope: Scope, field: Option<&str>, text: &str) {
         for at in self.matcher.find_all(text.as_bytes()) {
@@ -253,7 +274,7 @@ pub fn search(bundle: &SessionBundle, query: &SearchQuery) -> SearchResult {
 
 fn search_logical(ctx: &mut Ctx<'_>, bundle: &SessionBundle, request: &LogicalRequest) {
     if ctx.query.wants(Scope::Url) {
-        ctx.scan_text(Scope::Url, None, &request.url);
+        ctx.scan_url(&request.url);
     }
     search_headers(ctx, Scope::RequestHeaders, &request.request_headers);
     search_headers(ctx, Scope::ResponseHeaders, &request.response_headers);
@@ -276,7 +297,7 @@ fn search_logical(ctx: &mut Ctx<'_>, bundle: &SessionBundle, request: &LogicalRe
 
 fn search_attempt(ctx: &mut Ctx<'_>, bundle: &SessionBundle, attempt: &Attempt) {
     if ctx.query.wants(Scope::Url) {
-        ctx.scan_text(Scope::Url, None, &attempt.url);
+        ctx.scan_url(&attempt.url);
     }
     search_headers(ctx, Scope::RequestHeaders, &attempt.request_headers);
     search_headers(ctx, Scope::ResponseHeaders, &attempt.response_headers);
@@ -410,52 +431,76 @@ fn search_body(
     }
 }
 
-/// Unidade estruturada: texto decodificado de uma chave/valor e onde ela fica no
-/// original.
+/// Unidade estruturada: texto decodificado de uma chave/valor e o mapa de cada
+/// byte decodificado para o byte correspondente do original.
 struct Unit {
     field: String,
     text: String,
     /// Intervalo do trecho original que gerou `text`.
     start: usize,
     end: usize,
-    /// O texto decodificado é idêntico ao original (posições mapeiam 1:1).
-    identical: bool,
+    /// `map[i]` = offset original do byte decodificado `i`; `map[text.len()]` =
+    /// `end`.
+    map: Vec<usize>,
 }
 
 impl Unit {
     /// Offset e intervalo original de uma ocorrência em `text`.
     fn original_span(&self, at: usize, len: usize) -> (usize, (usize, usize)) {
-        if self.identical {
-            (self.start + at, (self.start + at, self.start + at + len))
-        } else {
-            (self.start, (self.start, self.end))
-        }
+        let from = self.map[at];
+        (from, (from, self.map[(at + len).min(self.text.len())]))
     }
 }
 
-fn percent_decode(raw: &str) -> String {
+/// Percent-decoding (`+` = espaço) com mapa de offsets. Se o resultado não for
+/// UTF-8 válido, devolve o texto cru com mapa identidade.
+fn percent_decode_map(raw: &str, base: usize) -> (String, Vec<usize>) {
     let bytes = raw.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
+    let mut map = Vec::with_capacity(bytes.len() + 1);
     let mut index = 0;
     while index < bytes.len() {
         match bytes[index] {
-            b'+' => out.push(b' '),
+            b'+' => {
+                out.push(b' ');
+                map.push(base + index);
+                index += 1;
+            }
             b'%' if index + 2 < bytes.len()
                 && hex(bytes[index + 1]).is_some()
                 && hex(bytes[index + 2]).is_some() =>
             {
                 out.push(hex(bytes[index + 1]).unwrap() << 4 | hex(bytes[index + 2]).unwrap());
-                index += 2;
+                map.push(base + index);
+                index += 3;
             }
-            byte => out.push(byte),
+            byte => {
+                out.push(byte);
+                map.push(base + index);
+                index += 1;
+            }
         }
-        index += 1;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    map.push(base + bytes.len());
+    match String::from_utf8(out) {
+        Ok(text) => (text, map),
+        Err(_) => (raw.to_string(), (0..=raw.len()).map(|i| base + i).collect()),
+    }
 }
 
 fn hex(byte: u8) -> Option<u8> {
     (byte as char).to_digit(16).map(|d| d as u8)
+}
+
+fn unit_from(field: String, raw: &str, start: usize) -> Unit {
+    let (text, map) = percent_decode_map(raw, start);
+    Unit {
+        field,
+        text,
+        start,
+        end: start + raw.len(),
+        map,
+    }
 }
 
 fn form_units(text: &str) -> Vec<Unit> {
@@ -466,27 +511,97 @@ fn form_units(text: &str) -> Vec<Unit> {
             Some(eq) => (&segment[..eq], &segment[eq + 1..], offset + eq + 1),
             None => (segment, "", offset + segment.len()),
         };
-        let key = percent_decode(raw_key);
-        let value = percent_decode(raw_value);
+        let key = unit_from(String::new(), raw_key, offset);
+        let field = key.text.clone();
         units.push(Unit {
-            field: key.clone(),
-            identical: key == raw_key,
-            text: key,
-            start: offset,
-            end: offset + raw_key.len(),
+            field: field.clone(),
+            ..key
         });
         if !raw_value.is_empty() {
-            units.push(Unit {
-                field: units.last().map(|u| u.field.clone()).unwrap_or_default(),
-                identical: value == raw_value,
-                text: value,
-                start: value_start,
-                end: value_start + raw_value.len(),
-            });
+            units.push(unit_from(field, raw_value, value_start));
         }
         offset += segment.len() + 1;
     }
     units
+}
+
+/// Desfaz escapes JSON de uma string (conteúdo sem as aspas) com mapa de
+/// offsets. Escape inválido é mantido literalmente.
+fn json_unescape_map(raw: &str, base: usize) -> (String, Vec<usize>) {
+    let bytes = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len());
+    let mut map = Vec::with_capacity(raw.len() + 1);
+    let push = |out: &mut String, map: &mut Vec<usize>, ch: char, at: usize| {
+        let mut buffer = [0u8; 4];
+        for _ in 0..ch.encode_utf8(&mut buffer).len() {
+            map.push(base + at);
+        }
+        out.push(ch);
+    };
+    let hex4 = |at: usize| -> Option<u32> {
+        let digits = raw.get(at..at + 4)?;
+        u32::from_str_radix(digits, 16).ok()
+    };
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'\\' || index + 1 >= bytes.len() {
+            let ch = raw[index..].chars().next().unwrap();
+            push(&mut out, &mut map, ch, index);
+            index += ch.len_utf8();
+            continue;
+        }
+        let simple = match bytes[index + 1] {
+            b'"' => Some('"'),
+            b'\\' => Some('\\'),
+            b'/' => Some('/'),
+            b'b' => Some('\u{8}'),
+            b'f' => Some('\u{c}'),
+            b'n' => Some('\n'),
+            b'r' => Some('\r'),
+            b't' => Some('\t'),
+            _ => None,
+        };
+        if let Some(ch) = simple {
+            push(&mut out, &mut map, ch, index);
+            index += 2;
+        } else if bytes[index + 1] == b'u' {
+            match hex4(index + 2) {
+                Some(high @ 0xD800..=0xDBFF) if raw.get(index + 6..index + 8) == Some("\\u") => {
+                    match hex4(index + 8) {
+                        Some(low @ 0xDC00..=0xDFFF) => {
+                            let ch =
+                                char::from_u32(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+                                    .unwrap_or('\u{FFFD}');
+                            push(&mut out, &mut map, ch, index);
+                            index += 12;
+                        }
+                        _ => {
+                            push(&mut out, &mut map, '\u{FFFD}', index);
+                            index += 6;
+                        }
+                    }
+                }
+                Some(code) => {
+                    push(
+                        &mut out,
+                        &mut map,
+                        char::from_u32(code).unwrap_or('\u{FFFD}'),
+                        index,
+                    );
+                    index += 6;
+                }
+                None => {
+                    push(&mut out, &mut map, '\\', index);
+                    index += 1;
+                }
+            }
+        } else {
+            push(&mut out, &mut map, '\\', index);
+            index += 1;
+        }
+    }
+    map.push(base + bytes.len());
+    (out, map)
 }
 
 fn looks_like_json(text: &str) -> bool {
@@ -554,16 +669,14 @@ impl JsonScan<'_> {
         None
     }
 
-    fn add(&mut self, path: &str, start: usize, end: usize, escaped: bool) {
-        if escaped {
-            return;
-        }
+    fn add(&mut self, path: &str, start: usize, end: usize, _escaped: bool) {
+        let (text, map) = json_unescape_map(&self.text[start..end], start);
         self.units.push(Unit {
             field: path.to_string(),
-            text: self.text[start..end].to_string(),
+            text,
             start,
             end,
-            identical: true,
+            map,
         });
     }
 
@@ -588,7 +701,7 @@ impl JsonScan<'_> {
                 loop {
                     self.skip_ws();
                     let (start, end, escaped) = self.string()?;
-                    let key = self.text[start..end].to_string();
+                    let key = json_unescape_map(&self.text[start..end], start).0;
                     let child = if path.is_empty() {
                         key.clone()
                     } else {

@@ -1,0 +1,478 @@
+//! Regressões da revisão independente da onda 4a (docs/08 → "Revisão da onda 4a").
+
+use scrapelens_core::export::sanitize::{is_sensitive_header, sanitize_bundle, SanitizeOptions};
+use scrapelens_core::export::{curl, python, ExportOptions};
+use scrapelens_core::model::{AttemptOutcome, BodyState, SessionBundle, Verification};
+use scrapelens_core::parse::cdp::{build_cdp_session, parse_cdp_jsonl};
+use scrapelens_core::parse::cdp_bodies::apply_cdp_bodies_with_capture;
+use scrapelens_core::search::{search, Scope, SearchQuery};
+use serde_json::{json, Value};
+
+const FORM: &str = "application/x-www-form-urlencoded";
+
+fn req(
+    id: &str,
+    url: &str,
+    method: &str,
+    headers: Value,
+    post: Option<&str>,
+    redirect: Option<u16>,
+    ts: f64,
+) -> Value {
+    let mut params = json!({
+        "requestId": id, "loaderId": "L", "timestamp": ts, "wallTime": 1793046000.0 + ts,
+        "request": {"url": url, "method": method, "headers": headers, "postData": post, "hasPostData": post.is_some()},
+        "type": "XHR", "frameId": "F"});
+    if let Some(status) = redirect {
+        params["redirectResponse"] = json!({"url": "https://example.test/old", "status": status, "headers": {"location": url}});
+    }
+    json!({"method": "Network.requestWillBeSent", "params": params})
+}
+
+fn finish(id: &str, url: &str, ts: f64) -> Vec<Value> {
+    vec![
+        json!({"method": "Network.responseReceived", "params": {"requestId": id, "loaderId": "L", "timestamp": ts, "type": "XHR",
+            "response": {"url": url, "status": 200, "statusText": "", "headers": {"content-type": "text/plain"}, "protocol": "http/1.1"}}}),
+        json!({"method": "Network.loadingFinished", "params": {"requestId": id, "timestamp": ts + 0.01, "encodedDataLength": 1}}),
+    ]
+}
+
+fn line(id: &str, attempt: u32, kind: &str, data: &str) -> Value {
+    json!({"v":1,"requestId":id,"attemptIndex":attempt,"kind":kind,"state":"captured","encoding":"utf8",
+        "data":data,"originalSize":data.len(),"capturedSize":data.len(),"source":"x","reason":null,"timestamp":1.0})
+}
+
+fn jsonl(values: &[Value]) -> Vec<u8> {
+    values
+        .iter()
+        .map(|v| format!("{v}\n"))
+        .collect::<String>()
+        .into_bytes()
+}
+
+fn bundle(events: &[Value], bodies: &[Value]) -> SessionBundle {
+    let capture = parse_cdp_jsonl(&jsonl(events)).unwrap();
+    let (mut session, _) = build_cdp_session(&capture);
+    let mut attachments = Default::default();
+    apply_cdp_bodies_with_capture(
+        &mut session,
+        &mut attachments,
+        &jsonl(bodies),
+        Some(&capture),
+    );
+    let mut bundle = SessionBundle::new(session);
+    bundle.attachments = attachments;
+    bundle
+}
+
+fn everything(bundle: &SessionBundle) -> String {
+    let mut text = serde_json::to_string(&bundle.session).unwrap();
+    for bytes in bundle.attachments.values() {
+        text.push_str(&String::from_utf8_lossy(bytes));
+    }
+    text
+}
+
+fn sanitized(b: &SessionBundle) -> SessionBundle {
+    sanitize_bundle(b, &SanitizeOptions::default()).bundle
+}
+
+// ---- 1 -------------------------------------------------------------------
+
+#[test]
+fn item1_propagation_never_touches_enums_and_never_fails_open() {
+    let url = "https://example.test/u?ref=SessAbcdef123456";
+    let mut events = vec![
+        req(
+            "1.1",
+            "https://example.test/login",
+            "POST",
+            json!({"content-type": FORM, "x-note": "seen Pa55w0rd-secret-9", "cookie": "sid=SessAbcdef123456"}),
+            Some("state=completed&password=Pa55w0rd-secret-9"),
+            None,
+            1.0,
+        ),
+        req("1.2", url, "GET", json!({}), None, None, 2.0),
+    ];
+    events.extend(finish("1.1", "https://example.test/login", 1.1));
+    events.extend(finish("1.2", url, 2.1));
+    let b = bundle(
+        &events,
+        &[line(
+            "1.1",
+            0,
+            "request",
+            "state=completed&password=Pa55w0rd-secret-9",
+        )],
+    );
+    assert_eq!(
+        b.session.requests[0].attempts[0].outcome,
+        AttemptOutcome::Completed
+    );
+    let s = sanitized(&b);
+    let all = everything(&s);
+    assert!(!all.contains("Pa55w0rd-secret-9"), "senha vazou");
+    assert!(!all.contains("SessAbcdef123456"), "cookie vazou");
+    assert_eq!(
+        s.session.requests[0].attempts[0].outcome,
+        AttemptOutcome::Completed
+    );
+    // a sessão sanitizada continua desserializável
+    let round: scrapelens_core::SessionV1 =
+        serde_json::from_value(serde_json::to_value(&s.session).unwrap()).unwrap();
+    assert_eq!(round.requests.len(), 2);
+}
+
+// ---- 2 -------------------------------------------------------------------
+
+#[test]
+fn item2_percent_hex_case_insensitive_and_plus_for_space() {
+    let events = vec![
+        req(
+            "2.1",
+            "https://example.test/a",
+            "POST",
+            json!({"content-type": "application/json"}),
+            Some("{}"),
+            None,
+            1.0,
+        ),
+        req(
+            "2.2",
+            "https://example.test/b?x=a%2fb%3Dc%2bd%26e%3ff&y=my+secret+value+ok",
+            "GET",
+            json!({}),
+            None,
+            None,
+            2.0,
+        ),
+    ];
+    let b = bundle(
+        &events,
+        &[line(
+            "2.1",
+            0,
+            "request",
+            r#"{"token":"a/b=c+d&e?f","password":"my secret value ok"}"#,
+        )],
+    );
+    let all = everything(&sanitized(&b));
+    assert!(!all.contains("a%2fb"), "{all}");
+    assert!(!all.contains("%3D"));
+    assert!(!all.contains("my+secret"), "{all}");
+}
+
+// ---- 3 -------------------------------------------------------------------
+
+#[test]
+fn item3_custom_headers_classified_by_name_and_propagate() {
+    for name in [
+        "X-Auth",
+        "X-Jwt-Thing",
+        "X-Session-Foo",
+        "X-Api-Key",
+        "X-User-Password",
+        "X-Signature-V2",
+        "X-Credential",
+    ] {
+        assert!(is_sensitive_header(name), "{name}");
+    }
+    for name in [":authority", "Accept", "X-Author", "User-Agent"] {
+        assert!(!is_sensitive_header(name), "{name}");
+    }
+    let events = vec![
+        req(
+            "3.1",
+            "https://example.test/a",
+            "GET",
+            json!({"x-auth": "authvalue-12345", "x-jwt-thing": "eyJhbGciOi.payload.sig"}),
+            None,
+            None,
+            1.0,
+        ),
+        req(
+            "3.2",
+            "https://example.test/b?echo=authvalue-12345&j=eyJhbGciOi.payload.sig",
+            "GET",
+            json!({}),
+            None,
+            None,
+            2.0,
+        ),
+    ];
+    let all = everything(&sanitized(&bundle(&events, &[])));
+    assert!(!all.contains("authvalue-12345"));
+    assert!(!all.contains("eyJhbGciOi.payload.sig"));
+}
+
+// ---- 4 -------------------------------------------------------------------
+
+#[test]
+fn item4_generic_keys_redacted_in_place_without_propagating() {
+    let events = vec![
+        req(
+            "4.1",
+            "https://example.test/a",
+            "POST",
+            json!({"content-type": "application/json"}),
+            Some("{}"),
+            None,
+            1.0,
+        ),
+        req(
+            "4.2",
+            "https://example.test/cmd_consultar_placa/list",
+            "GET",
+            json!({}),
+            None,
+            None,
+            2.0,
+        ),
+        req(
+            "4.3",
+            "https://example.test/c",
+            "POST",
+            json!({"content-type": FORM}),
+            Some("x"),
+            None,
+            3.0,
+        ),
+    ];
+    let b = bundle(
+        &events,
+        &[
+            line(
+                "4.1",
+                0,
+                "request",
+                r#"{"key":"cmd_consultar_placa","code":"codevalue-123"}"#,
+            ),
+            line(
+                "4.3",
+                0,
+                "request",
+                "cpf=12345678901&cpfecho=12345678901&n=1234567",
+            ),
+        ],
+    );
+    let s = sanitized(&b);
+    let body = |id: &str| {
+        let r = s
+            .session
+            .requests
+            .iter()
+            .find(|r| r.cdp.as_ref().unwrap().request_id.as_deref() == Some(id))
+            .unwrap();
+        String::from_utf8(s.attachments[r.request_body.attachment.as_ref().unwrap()].clone())
+            .unwrap()
+    };
+    let json_body = body("4.1");
+    assert!(
+        !json_body.contains("cmd_consultar_placa"),
+        "chave genérica redigida no lugar: {json_body}"
+    );
+    assert!(
+        s.session.requests[1].url.contains("cmd_consultar_placa"),
+        "não propagou"
+    );
+    let form = body("4.3");
+    assert!(!form.contains("12345678901"), "{form}");
+    assert!(
+        form.contains("n=1234567"),
+        "dígitos curtos permanecem: {form}"
+    );
+}
+
+// ---- 5 -------------------------------------------------------------------
+
+#[test]
+fn item5_search_decodes_json_escapes_url_percent_and_maps_offsets() {
+    let events = vec![
+        req(
+            "5.1",
+            "https://example.test/x?q=Cmd%5FConsultar",
+            "POST",
+            json!({"content-type": "application/json"}),
+            Some("{}"),
+            None,
+            1.0,
+        ),
+        req(
+            "5.2",
+            "https://example.test/y",
+            "POST",
+            json!({"content-type": FORM}),
+            Some("x"),
+            None,
+            2.0,
+        ),
+    ];
+    let b = bundle(
+        &events,
+        &[
+            line(
+                "5.1",
+                0,
+                "request",
+                r#"{"city":"São Paulo","q":"diz \"oi\""}"#,
+            ),
+            line("5.2", 0, "request", "XML=%3Ccmd_abc&x=1"),
+        ],
+    );
+    let r = search(&b, &SearchQuery::new("São Paulo"));
+    assert_eq!(r.matches.len(), 1);
+    assert!(r.matches[0].decoded);
+    assert_eq!(r.matches[0].field.as_deref(), Some("city"));
+    assert_eq!(r.matches[0].byte_offset, Some(9));
+    let r = search(&b, &SearchQuery::new("diz \"oi\""));
+    assert_eq!(r.matches[0].field.as_deref(), Some("q"));
+    let mut q = SearchQuery::new("Cmd_Consultar");
+    q.scopes = vec![Scope::Url];
+    let r = search(&b, &q);
+    assert_eq!(r.matches.len(), 1);
+    assert!(r.matches[0].decoded);
+    // raw continua achando o original
+    let mut q = SearchQuery::new("Cmd%5F");
+    q.scopes = vec![Scope::Url];
+    assert!(!search(&b, &q).matches[0].decoded);
+    let r = search(&b, &SearchQuery::new("cmd_"));
+    let m = r
+        .matches
+        .iter()
+        .find(|m| m.scope == Scope::RequestBody)
+        .unwrap();
+    assert_eq!(m.field.as_deref(), Some("XML"));
+    assert_eq!(m.byte_offset, Some(7), "aponta o 'c' de cmd_ no original");
+}
+
+// ---- 6 -------------------------------------------------------------------
+
+#[test]
+fn item6_transformed_marks_body_as_not_identical_to_wire() {
+    let events = vec![req(
+        "6.1",
+        "https://example.test/a",
+        "POST",
+        json!({"content-type": FORM}),
+        Some("a=1"),
+        None,
+        1.0,
+    )];
+    let mut transformed = line("6.1", 0, "request", "a=1");
+    transformed["transformed"] = json!(["chrome-decoded", "charset:iso-8859-1->utf-8"]);
+    let b = bundle(&events, &[transformed]);
+    let body = &b.session.requests[0].request_body;
+    assert_eq!(
+        body.transformed,
+        vec!["chrome-decoded", "charset:iso-8859-1->utf-8"]
+    );
+    assert!(body.provenance.verification <= Verification::Partial);
+    assert!(body
+        .provenance
+        .notes
+        .iter()
+        .any(|n| n.contains("não idêntico ao fio")));
+    let json = serde_json::to_value(body).unwrap();
+    assert!(json.get("transformed").is_some());
+    // sem o campo: nada serializado e verificação inalterada
+    let plain = bundle(&events, &[line("6.1", 0, "request", "a=1")]);
+    let body = &plain.session.requests[0].request_body;
+    assert!(body.transformed.is_empty());
+    assert!(serde_json::to_value(body)
+        .unwrap()
+        .get("transformed")
+        .is_none());
+    assert_eq!(body.provenance.verification, Verification::Unverified);
+    // preservado pela sanitização
+    let s = sanitized(&b);
+    assert_eq!(s.session.requests[0].request_body.transformed.len(), 2);
+}
+
+// ---- 7 -------------------------------------------------------------------
+
+#[test]
+fn item7_bodyless_get_is_empty_with_evidence_not_misleading_message() {
+    let events = vec![
+        req(
+            "7.1",
+            "https://example.test/a",
+            "GET",
+            json!({}),
+            None,
+            None,
+            1.0,
+        ),
+        req(
+            "7.2",
+            "https://example.test/b",
+            "POST",
+            json!({"content-type": FORM}),
+            Some("x"),
+            None,
+            2.0,
+        ),
+    ];
+    let b = bundle(&events, &[line("7.2", 1, "request", "órfão")]);
+    let get = &b.session.requests[0].request_body;
+    assert_eq!(get.state, BodyState::Empty);
+    assert_eq!(get.note.as_deref(), Some("CDP: requisição sem corpo"));
+    // POST com hasPostData e sem linha continua unavailable, nunca empty
+    let post = &b.session.requests[1].request_body;
+    assert_eq!(post.state, BodyState::Unavailable);
+    // sem arquivo de corpos (apply não chamado) a mensagem antiga permanece
+    let capture = parse_cdp_jsonl(&jsonl(&events)).unwrap();
+    let (session, _) = build_cdp_session(&capture);
+    assert_eq!(
+        session.requests[0].request_body.state,
+        BodyState::Unavailable
+    );
+}
+
+// ---- 8 -------------------------------------------------------------------
+
+#[test]
+fn item8_export_flags_307_url_mismatch() {
+    let events = vec![
+        req(
+            "8.1",
+            "https://example.test/old",
+            "POST",
+            json!({"content-type": FORM}),
+            Some("a=1"),
+            None,
+            1.0,
+        ),
+        req(
+            "8.1",
+            "https://example.test/new",
+            "POST",
+            json!({"content-type": FORM}),
+            Some("a=1"),
+            Some(307),
+            1.1,
+        ),
+        req(
+            "8.2",
+            "https://example.test/same",
+            "GET",
+            json!({}),
+            None,
+            None,
+            2.0,
+        ),
+    ];
+    let b = bundle(&events, &[]);
+    let r = &b.session.requests[0];
+    let options = ExportOptions::default();
+    for text in [
+        curl::to_curl(r, None, &options).unwrap().text,
+        python::to_python(r, None, &options).unwrap().text,
+    ] {
+        assert!(text.contains("1ª tentativa"), "{text}");
+        assert!(text.contains("https://example.test/new"));
+    }
+    let plain = curl::to_curl(&b.session.requests[1], None, &options)
+        .unwrap()
+        .text;
+    assert!(!plain.contains("1ª tentativa"));
+}
