@@ -9,6 +9,24 @@
 //!                      request_id: &str, options: &FlowOptions) -> Result<PrimingChain>
 //! ```
 //!
+//! Esquema JSON (camelCase; `origins`, `chain` e `compare` no CLI):
+//!
+//! ```text
+//! origins: { requestId, attemptId, values: [ValueOrigin], redactedValues, ties, warnings }
+//! ValueOrigin: { scope: query|header|cookie|body, field, occurrence, value, length,
+//!   status: origin|ambiguous|repeated|none|composite|redacted, label (PT-BR),
+//!   offset (trechos), oldest (índice em evidences), parent (campo opaco do trecho),
+//!   repeatedFrom[], note, evidences: [ { kind: cookie-jar|same-field|value-match|initiator,
+//!     strength: strong|medium|complement, role: produced|reissued, producerRequestId,
+//!     producerAttemptId, scope: setCookie|responseHeader|location|responseBody, field,
+//!     producerOffset, consumedOffset, consumedLength } ] }
+//! chain: { requestId, steps: [ChainStep], protection: [ChainStep], unresolved[], warnings }
+//! ChainStep: { requestId, attemptId, method, url, startedAt, class: application|protection,
+//!   reason, reasons: [ { provides, field, kind, strength, consumedBy } ] }
+//! ```
+//!
+//! O esquema de `compare` está em [`crate::compare`].
+//!
 //! Regras:
 //! - só entram produtores observados ANTES da tentativa alvo (tempo de início da
 //!   tentativa; sem tempo em algum dos lados, a ordem da sessão). Empate de

@@ -6,6 +6,14 @@
 //!                         options: &CompareOptions) -> SessionComparison
 //! ```
 //!
+//! Esquema JSON (camelCase): `{ pairs: [ { a, b: {requestId, method, url}, alignedBy: model|path,
+//! outOfOrder, counts, fields: [ { scope, field, occurrence, class: static|dynamic|onlyA|onlyB|redacted,
+//! label (estático|dinâmico|só em A|só em B|redigido), dynamicKind: runtime|noOrigin|repeated|composite,
+//! originLabel ("obter em runtime (origem: cdp-rNNNN)" | "dinâmico sem origem"), a, b,
+//! origin: {kind, requestId, scope, field, ambiguous}, parts: [ { class: static|dynamic, label, aOffset,
+//! bOffset, a, b, dynamicKind, originLabel, origin } ] } ] } ], onlyInA[], onlyInB[], ambiguities[],
+//! counts, redactedFields, warnings[] }`.
+//!
 //! - Alinhamento A↔B por modelo (método + host + caminho normalizado +
 //!   nomes de query + nomes de campos do corpo); requisições do mesmo modelo
 //!   são pareadas em ordem. Sobras ficam `onlyInA`/`onlyInB`; as que só
