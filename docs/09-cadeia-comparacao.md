@@ -164,3 +164,19 @@ Veredito: reprovado até corrigir 2 falhas altas.
 - App: o compare usa paginação/virtualização, e "só dinâmicos" vem ligado em
   comparações grandes. Os caminhos são canonicalizados, e comparar a mesma
   sessão consigo é recusado ou avisado.
+
+## Fechamento (2026-10-28)
+
+Re-revisão independente: APROVADA (core 7ed4329, testes 9902d4a, app 0377e5b e
+a2e9069; bundle ac7213b2…). Injeção fechada: `export::comment` é a porta
+única, e as sondas de header, URL de 307, `transformed`, bidi, zero-width,
+NUL e nomes de 5000 caracteres não escapam do comentário. Causalidade por fim
+da resposta, inclusive em redirect de 2 níveis e empates. Confiança: forte só
+com cookie-jar ou same-field não genérico. Compare monotônico, com paginação
+no app coerente com o CLI. Bateria verde.
+
+Acabamento (baixo), delegado: L1 prefixo comum de 8 caracteres em campo
+nomeado vira trecho possível; L2 requisições únicas reordenadas sem a dica
+`outOfOrder`; L3 chip longo cortado no print 15. Validação no caso real
+(HARs locais do usuário, sem copiar dados para o repositório) delegada ao
+agente de Testes.

@@ -18,8 +18,11 @@ scraping. Especificação completa:
   decodificada e intervalo exato; sanitização por propagação de valor
   (fail-closed); rótulos de origem; NetLog truncado reparado; busca com
   anexos sob demanda (pico 1,75 GB → 257 MB). Acabamento não bloqueante em
-  curso. Próxima rodada: cadeia de priming e comparação entre capturas (caso
-  DETRAN, docs/05-caso-referencia-detran.md).
+  curso.
+- Rodada 5 (docs/09), origem dos valores, cadeia de priming e comparação entre
+  capturas: concluída e aprovada na re-revisão (bundle ac7213b2…). Próximo:
+  validação no caso real DETRAN (HARs locais, sem dados no repositório) e
+  rodada 6 (script de priming e sucesso da aplicação × HTTP).
 - Aceite automatizado: 10/10 critérios (283 checks em 229b623).
 - Captura nova e importações HAR/NetLog pela UI do bundle final validadas.
   Seleção manual do usuário e conferência independente dos arquivos persistidos.
