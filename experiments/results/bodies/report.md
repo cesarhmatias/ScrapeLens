@@ -18,3 +18,5 @@
 | zero | ✓ | response:empty | |
 | refused | ✓ | response:unavailable | |
 | invariants | ✓ |  | |
+| session_bodies | ✓ |  | |
+| session_search | ✓ |  | |

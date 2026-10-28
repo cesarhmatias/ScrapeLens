@@ -321,10 +321,50 @@
       "rows": 27,
       "byState": {
         "captured": 19,
-        "empty": 2,
         "truncated": 3,
-        "unavailable": 3
+        "unavailable": 3,
+        "empty": 2
       }
+    },
+    {
+      "case": "session_bodies",
+      "ok": true,
+      "attachments": 22,
+      "attachmentModes": [
+        "0o600"
+      ],
+      "states": {
+        "form.req": "captured",
+        "gzip.resp": "captured",
+        "big_get.resp": "truncated",
+        "r302.a0.resp": "unavailable",
+        "zero": "empty",
+        "204": "empty",
+        "refused": "unavailable"
+      },
+      "bodiesFileAbsentWarning": false
+    },
+    {
+      "case": "session_search",
+      "ok": true,
+      "matchCases": [
+        "form",
+        "json",
+        "r307"
+      ],
+      "matchCount": 4,
+      "urlScopeMatches": 0,
+      "first": [
+        {
+          "requestId": "cdp-r0010",
+          "attemptId": "cdp-r0010-a1",
+          "scope": "requestBody",
+          "field": "cmd_consultar_placa",
+          "byteOffset": 0,
+          "snippet": "cmd_consultar_placa",
+          "decoded": true
+        }
+      ]
     }
   ]
 }

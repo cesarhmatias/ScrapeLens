@@ -159,7 +159,44 @@ def verify(out, session, base):
     # invariantes gerais
     bad = [r for r in rows if r["state"] in ("captured", "truncated") and r["data"] is None]
     add("invariants", not bad and mode == "0o600", {"mode": mode, "rows": len(rows), "byState": {s: sum(1 for r in rows if r["state"] == s) for s in {r["state"] for r in rows}}})
+    add_session_checks(session, add, by_case)
     return {"chrome": subprocess.run(["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "--version"], capture_output=True, text=True).stdout.strip(), "cases": cases}
+
+
+CORE = ROOT / "core/target/debug/scrapelens-core"
+
+
+def add_session_checks(session, add, by_case):
+    """Sessão FINAL (session.json + attachments/) tem os corpos e a busca os acha."""
+    doc = json.load(open(session / "session.json"))
+    att = session / "attachments"
+    modes = {oct(p.stat().st_mode & 0o777) for p in att.iterdir()}
+    by_url = {r["url"].split("case=")[-1].split("&")[0]: r for r in doc["requests"] if "case=" in r["url"]}
+    def body(case, attempt, side):
+        r = by_url[case]; return r["attempts"][attempt].get(side)
+    def data(b): return (att / b["attachment"]).read_bytes()
+    form = body("form", 0, "requestBody"); gz = body("gzip", 0, "responseBody")
+    bb = body("binary_get", 0, "responseBody"); big = body("big_get", 0, "responseBody")
+    r302 = by_url["r302"]["attempts"]; r307 = by_url["r307"]["attempts"]
+    z = body("zero", 0, "responseBody"); e = body("empty204", 0, "responseBody"); rf = body("refused", 0, "responseBody")
+    add("session_bodies", form["state"] == "captured" and data(form).startswith(b"cmd_consultar_placa=1")
+        and gz["state"] == "captured" and data(gz) == GZIP_TEXT.encode() and bb["state"] == "captured" and len(data(bb)) == 4099
+        and big["state"] == "truncated" and big.get("bytes") == 6 * 1024 * 1024 and big.get("truncatedAt") == MAX and len(data(big)) == MAX
+        and r302[0]["responseBody"]["state"] == "unavailable" and r302[-1]["responseBody"]["state"] == "captured"
+        and all(a["requestBody"]["state"] == "captured" for a in r307[:2])
+        and z["state"] == "empty" and e["state"] == "empty" and rf["state"] == "unavailable" and modes == {"0o600"},
+        {"attachments": len(list(att.iterdir())), "attachmentModes": sorted(modes),
+         "states": {"form.req": form["state"], "gzip.resp": gz["state"], "big_get.resp": big["state"], "r302.a0.resp": r302[0]["responseBody"]["state"],
+                    "zero": z["state"], "204": e["state"], "refused": rf["state"]},
+         "bodiesFileAbsentWarning": any(w["code"] == "cdp.bodies_file_absent" for w in doc["warnings"])})
+    out = subprocess.run([str(CORE), "search", str(session), "cmd_consultar_placa", "--scope", "requestBody"], capture_output=True, text=True)
+    matches = json.loads(out.stdout)["matches"] if out.returncode == 0 else []
+    url_of = {m["requestId"]: next(r["url"] for r in doc["requests"] if r["id"] == m["requestId"]) for m in matches}
+    cases = {u.split("case=")[-1].split("&")[0] for u in url_of.values()}
+    url_scope = subprocess.run([str(CORE), "search", str(session), "cmd_consultar_placa", "--scope", "url"], capture_output=True, text=True)
+    add("session_search", {"form", "json", "r307"} <= cases and all(m["scope"] == "requestBody" for m in matches) and not json.loads(url_scope.stdout)["matches"],
+        {"matchCases": sorted(cases), "matchCount": len(matches), "urlScopeMatches": len(json.loads(url_scope.stdout)["matches"]),
+         "first": matches[:1]})
 
 
 def write_md(out, report):
