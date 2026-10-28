@@ -118,3 +118,14 @@ Regras:
 
 Commits Conventional Commits por dono, sem push nem publicação, sem executar
 código exportado e sem rede externa.
+
+## Decisões durante a rodada
+
+- 2026-10-28: `Match.requestId` é o ID lógico da sessão (`cdp-rNNNN`). O ID
+  do CDP fica na proveniência (`source_id`). A API recebe `SessionBundle`,
+  porque os corpos vivem em anexos, e devolve `SearchResult { matches,
+  skipped_binary, partial, partial_attempts, limit_reached }` (core 0c924a8).
+- Risco conhecido, não bloqueante: `LogicalRequest.url` é a URL da 1ª
+  tentativa e corpo/headers são da última. Num 307, a exportação combina a URL
+  inicial com o corpo final. Isso equivale a um replay que segue o redirect,
+  mas a exportação deve sinalizá-lo; fica para revisão na 4b.
