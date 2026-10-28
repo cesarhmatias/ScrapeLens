@@ -1,0 +1,360 @@
+{
+ "schema": "scrapelens.fixture.case/1",
+ "id": "detran-pb-real-shape",
+ "label": "sanitized-shape-real-case",
+ "origin": "FORMA dos HARs reais do DETRAN-PB (estrutura, nunca valores); valores 100% fictícios",
+ "files": {
+  "har_1round": "real-shape-1round.har",
+  "har_2rounds": "real-shape-2rounds.har"
+ },
+ "shape": {
+  "connector_response": "HTML ~10 KB: script fictício + <textarea name=XML> (com entidades) + <textarea name=ERRORMESSAGE> + <input hidden STAMP>",
+  "har": "WebInspector; sem Cookie/Set-Cookie/cookies[]",
+  "rounds": {
+   "1round": [
+    "a1"
+   ],
+   "2rounds": [
+    "b1",
+    "b2"
+   ]
+  },
+  "static_noise": "jquery-ui/cis* com constantes do protocolo (modelos, nextPage, focusProject)",
+  "business_values": "placa, CPF e RENAVAM fictícios dentro do XML; v_renavam=12 é fora de formato",
+  "get_without_postdata": "todos os GETs"
+ },
+ "counts": {
+  "1round": 23,
+  "2rounds": 46,
+  "connector_posts_per_round": 8
+ },
+ "rounds": {
+  "a1": {
+   "ids": {
+    "easynat": "har-0001",
+    "static_jquery": "har-0003",
+    "static_cis": "har-0004",
+    "page_logon": "har-0005",
+    "init_logon": "har-0007",
+    "page_sim": "har-0009",
+    "init_sim": "har-0010",
+    "on_interceptor": "har-0012",
+    "page_ves": "har-0014",
+    "init_ves": "har-0015",
+    "cmd_filtro": "har-0017",
+    "consultar1": "har-0019",
+    "cmd_nova": "har-0021",
+    "consultar2": "har-0023",
+    "tspd:a11": "har-0002",
+    "tspd:a12": "har-0006",
+    "tspd:a13": "har-0008",
+    "tspd:a14": "har-0011",
+    "tspd:a15": "har-0013",
+    "tspd:a16": "har-0016",
+    "tspd:a17": "har-0018",
+    "tspd:a18": "har-0020",
+    "tspd:a19": "har-0022"
+   },
+   "tspd": [
+    "har-0002",
+    "har-0006",
+    "har-0008",
+    "har-0011",
+    "har-0013",
+    "har-0016",
+    "har-0018",
+    "har-0020",
+    "har-0022"
+   ]
+  },
+  "b1": {
+   "ids": {
+    "easynat": "har-0001",
+    "static_jquery": "har-0003",
+    "static_cis": "har-0004",
+    "page_logon": "har-0005",
+    "init_logon": "har-0007",
+    "page_sim": "har-0009",
+    "init_sim": "har-0010",
+    "on_interceptor": "har-0012",
+    "page_ves": "har-0014",
+    "init_ves": "har-0015",
+    "cmd_filtro": "har-0017",
+    "consultar1": "har-0019",
+    "cmd_nova": "har-0021",
+    "consultar2": "har-0023",
+    "tspd:b11": "har-0002",
+    "tspd:b12": "har-0006",
+    "tspd:b13": "har-0008",
+    "tspd:b14": "har-0011",
+    "tspd:b15": "har-0013",
+    "tspd:b16": "har-0016",
+    "tspd:b17": "har-0018",
+    "tspd:b18": "har-0020",
+    "tspd:b19": "har-0022"
+   },
+   "tspd": [
+    "har-0002",
+    "har-0006",
+    "har-0008",
+    "har-0011",
+    "har-0013",
+    "har-0016",
+    "har-0018",
+    "har-0020",
+    "har-0022"
+   ]
+  },
+  "b2": {
+   "ids": {
+    "easynat": "har-0024",
+    "static_jquery": "har-0026",
+    "static_cis": "har-0027",
+    "page_logon": "har-0028",
+    "init_logon": "har-0030",
+    "page_sim": "har-0032",
+    "init_sim": "har-0033",
+    "on_interceptor": "har-0035",
+    "page_ves": "har-0037",
+    "init_ves": "har-0038",
+    "cmd_filtro": "har-0040",
+    "consultar1": "har-0042",
+    "cmd_nova": "har-0044",
+    "consultar2": "har-0046",
+    "tspd:b21": "har-0025",
+    "tspd:b22": "har-0029",
+    "tspd:b23": "har-0031",
+    "tspd:b24": "har-0034",
+    "tspd:b25": "har-0036",
+    "tspd:b26": "har-0039",
+    "tspd:b27": "har-0041",
+    "tspd:b28": "har-0043",
+    "tspd:b29": "har-0045"
+   },
+   "tspd": [
+    "har-0025",
+    "har-0029",
+    "har-0031",
+    "har-0034",
+    "har-0036",
+    "har-0039",
+    "har-0041",
+    "har-0043",
+    "har-0045"
+   ]
+  }
+ },
+ "values": {
+  "a1": {
+   "sessionid": "CSAN00000_000000000011",
+   "plates": [
+    "TST0T10",
+    "TST0T11"
+   ],
+   "cpfs": [
+    "00000000191",
+    "00000000272"
+   ],
+   "stamp_base": 4100,
+   "delta_prefix": "DLTC",
+   "unmatched_business": {
+    "v_renavam": "12"
+   }
+  },
+  "b1": {
+   "sessionid": "CSAN00000_000000000021",
+   "plates": [
+    "TST0T12",
+    "TST0T13"
+   ],
+   "cpfs": [
+    "00000000353",
+    "00000000434"
+   ],
+   "stamp_base": 5100,
+   "delta_prefix": "DLTD",
+   "unmatched_business": {
+    "v_renavam": "12"
+   }
+  },
+  "b2": {
+   "sessionid": "CSAN00000_000000000022",
+   "plates": [
+    "TST0T14",
+    "TST0T15"
+   ],
+   "cpfs": [
+    "00000000515",
+    "00000000606"
+   ],
+   "stamp_base": 6100,
+   "delta_prefix": "DLTE",
+   "unmatched_business": {
+    "v_renavam": "12"
+   }
+  }
+ },
+ "expectations": {
+  "import": {
+   "warning_code": "har.cookies_absent",
+   "get_request_body": {
+    "state": "empty",
+    "reason_contains": "não aplicável"
+   },
+   "label_set": [
+    "har-import",
+    "synthetic-fixture"
+   ]
+  },
+  "aceite_1_origins_chain": {
+   "A": {
+    "target": "har-0019",
+    "origins": {
+     "STAMP": {
+      "status": "origin",
+      "label": "origem observada",
+      "kind": "same-field",
+      "strength": "strong",
+      "producer": "har-0017",
+      "note": "<input type=hidden name=STAMP> da resposta HTML anterior"
+     },
+     "delta": {
+      "parent": "XML",
+      "value_prefix": "DLTC",
+      "kind": "value-match",
+      "producer": "har-0017",
+      "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"
+     },
+     "SESSIONID": {
+      "label": "possível origem (value-match)",
+      "producer": "har-0001"
+     },
+     "v_placa": {
+      "status": "none",
+      "plate": "TST0T10"
+     }
+    },
+    "chain": {
+     "steps_include": [
+      "har-0001",
+      "har-0007",
+      "har-0010",
+      "har-0012",
+      "har-0015",
+      "har-0017"
+     ],
+     "pages_include": [
+      "har-0005",
+      "har-0009",
+      "har-0014"
+     ],
+     "protection_include": [
+      "har-0002",
+      "har-0006",
+      "har-0008",
+      "har-0011",
+      "har-0013",
+      "har-0016",
+      "har-0018"
+     ],
+     "never_steps": [
+      "har-0003",
+      "har-0004",
+      "har-0019",
+      "har-0021",
+      "har-0023"
+     ],
+     "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`"
+    }
+   },
+   "B_round2": {
+    "target": "har-0042",
+    "origins": {
+     "STAMP": {
+      "status": "origin",
+      "label": "origem observada",
+      "kind": "same-field",
+      "strength": "strong",
+      "producer": "har-0040",
+      "note": "<input type=hidden name=STAMP> da resposta HTML anterior"
+     },
+     "delta": {
+      "parent": "XML",
+      "value_prefix": "DLTE",
+      "kind": "value-match",
+      "producer": "har-0040",
+      "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"
+     },
+     "SESSIONID": {
+      "label": "possível origem (value-match)",
+      "producer": "har-0024"
+     },
+     "v_placa": {
+      "status": "none",
+      "plate": "TST0T14"
+     }
+    },
+    "chain": {
+     "steps_include": [
+      "har-0024",
+      "har-0030",
+      "har-0033",
+      "har-0035",
+      "har-0038",
+      "har-0040"
+     ],
+     "pages_include": [
+      "har-0028",
+      "har-0032",
+      "har-0037"
+     ],
+     "protection_include": [
+      "har-0025",
+      "har-0029",
+      "har-0031",
+      "har-0034",
+      "har-0036",
+      "har-0039",
+      "har-0041"
+     ],
+     "never_steps": [
+      "har-0026",
+      "har-0027",
+      "har-0042",
+      "har-0044",
+      "har-0046"
+     ],
+     "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`"
+    }
+   }
+  },
+  "aceite_2_sanitize": {
+   "must_vanish_everywhere": "todas as placas, CPFs e SESSIONIDs fictícios (cru, url-encoded e entidades)",
+   "warning_code": "sanitize.business_field_unmatched",
+   "for": "v_renavam=12 (fora de formato; não redigido em silêncio)"
+  },
+  "aceite_3_compare": {
+   "a": "1round",
+   "b": "2rounds",
+   "a_round_pairs_with_one_b_round": true,
+   "unpaired_b_rounds": 1,
+   "max_ambiguities": 5,
+   "dynamic_fields": [
+    "SESSIONID",
+    "STAMP"
+   ],
+   "static_fields": [
+    "PAGEINITPARAM",
+    "ERRORMESSAGE"
+   ]
+  },
+  "aceite_4_cookies": {
+   "warning_code": "har.cookies_absent",
+   "origins_and_chain_repeat_warning": true
+  }
+ },
+ "sanitization": {
+  "synthetic": "tudo fictício; nenhum byte dos HARs reais",
+  "rule": "HAR bruto nunca entra no repositório"
+ }
+}
