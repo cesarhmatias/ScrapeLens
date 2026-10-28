@@ -487,40 +487,10 @@ pub fn read_attachment(session_dir: String, name: String) -> Result<AttachmentPa
     }
 }
 
-/// Abre um anexo só se for arquivo regular dentro de `attachments/`: recusa
-/// link simbólico (no anexo ou na pasta) e confere, depois de aberto, que o
-/// arquivo é o mesmo inode inspecionado e regular. O tamanho vem do arquivo aberto.
+/// Abre um anexo regular de `attachments/` (recusa symlink e confere o inode
+/// após abrir); a verificação vive em `store::open_regular_attachment`.
 fn open_attachment(session_dir: &str, name: &str) -> Result<(fs::File, u64), String> {
-    if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
-        return Err("nome de anexo inválido".to_string());
-    }
-    let root = PathBuf::from(session_dir).join("attachments");
-    let root_meta =
-        fs::symlink_metadata(&root).map_err(|error| format!("anexo indisponível: {error}"))?;
-    if root_meta.file_type().is_symlink() {
-        return Err("a pasta de anexos é um link simbólico; recusado".to_string());
-    }
-    let target = root.join(name);
-    let before =
-        fs::symlink_metadata(&target).map_err(|error| format!("anexo indisponível: {error}"))?;
-    if before.file_type().is_symlink() {
-        return Err(format!("o anexo {name} é um link simbólico; recusado"));
-    }
-    let file = fs::File::open(&target).map_err(|error| format!("falha ao abrir anexo: {error}"))?;
-    let opened = file
-        .metadata()
-        .map_err(|error| format!("falha ao ler anexo: {error}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if opened.ino() != before.ino() || opened.dev() != before.dev() {
-            return Err(format!("o anexo {name} mudou durante a abertura; recusado"));
-        }
-    }
-    if !opened.is_file() {
-        return Err(format!("o anexo {name} não é um arquivo regular"));
-    }
-    Ok((file, opened.len()))
+    store::open_regular_attachment(Path::new(session_dir), name).map_err(|error| error.to_string())
 }
 
 /// Busca no payload via `scrapelens_core::search`, fora da thread da UI.
@@ -540,18 +510,17 @@ pub async fn search_session(
     .map_err(|error| format!("a busca foi interrompida: {error}"))?
 }
 
-/// Bundle da última sessão pesquisada. Chave: pasta + (tamanho, mtime) de
+/// Sessão preguiçosa da última sessão pesquisada (anexos lidos um a um). Chave: pasta + (tamanho, mtime) de
 /// `session.json` + mtime de `attachments/`; mudou, recarrega. Guarda uma só
-/// sessão (abrir outra substitui) e descarta os brutos CDP/NetLog, que a busca
-/// não usa.
-struct CachedBundle {
+/// sessão (abrir outra substitui) e não retém corpos nem os brutos CDP/NetLog.
+struct CachedSession {
     dir: PathBuf,
     fingerprint: Vec<Option<(u64, SystemTime)>>,
-    bundle: Arc<scrapelens_core::SessionBundle>,
+    lazy: Arc<scrapelens_core::lazy::LazySession>,
 }
 
-static BUNDLE_CACHE: Mutex<Option<CachedBundle>> = Mutex::new(None);
-static BUNDLE_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static SESSION_CACHE: Mutex<Option<CachedSession>> = Mutex::new(None);
+static SESSION_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn session_fingerprint(dir: &Path) -> Vec<Option<(u64, SystemTime)>> {
     ["session.json", "attachments"]
@@ -564,24 +533,21 @@ fn session_fingerprint(dir: &Path) -> Vec<Option<(u64, SystemTime)>> {
         .collect()
 }
 
-fn cached_bundle(dir: &Path) -> Result<Arc<scrapelens_core::SessionBundle>, String> {
-    let mut guard = BUNDLE_CACHE.lock().map_err(|_| "cache de busca corrompido".to_string())?;
+fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::LazySession>, String> {
+    let mut guard = SESSION_CACHE.lock().map_err(|_| "cache de busca corrompido".to_string())?;
     let fingerprint = session_fingerprint(dir);
     if let Some(cached) = guard.as_ref() {
         if cached.dir == dir && cached.fingerprint == fingerprint {
-            return Ok(cached.bundle.clone());
+            return Ok(cached.lazy.clone());
         }
     }
     *guard = None; // libera a sessão anterior antes de carregar a nova
-    BUNDLE_LOADS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let mut bundle = scrapelens_core::import_session_dir(dir)
-        .map_err(|error| format!("não foi possível ler a sessão: {error}"))?
-        .bundle;
-    bundle.cdp_events_jsonl = None;
-    bundle.netlog_json = None;
-    let bundle = Arc::new(bundle);
-    *guard = Some(CachedBundle { dir: dir.to_path_buf(), fingerprint, bundle: bundle.clone() });
-    Ok(bundle)
+    SESSION_LOADS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let (lazy, _report) = scrapelens_core::open_session_dir_lazy(dir)
+        .map_err(|error| format!("não foi possível ler a sessão: {error}"))?;
+    let lazy = Arc::new(lazy);
+    *guard = Some(CachedSession { dir: dir.to_path_buf(), fingerprint, lazy: lazy.clone() });
+    Ok(lazy)
 }
 
 fn run_search(
@@ -591,7 +557,7 @@ fn run_search(
     case_sensitive: bool,
     max_matches: Option<usize>,
 ) -> Result<scrapelens_core::search::SearchResult, String> {
-    use scrapelens_core::search::{search, Scope, SearchQuery};
+    use scrapelens_core::search::{Scope, SearchQuery};
     if text.is_empty() {
         return Err("digite um texto para buscar".to_string());
     }
@@ -599,12 +565,12 @@ fn run_search(
     for scope in scopes {
         parsed.push(Scope::parse(scope).ok_or_else(|| format!("escopo desconhecido: {scope}"))?);
     }
-    let bundle = cached_bundle(Path::new(session_dir))?;
+    let lazy = cached_session(Path::new(session_dir))?;
     let mut query = SearchQuery::new(text);
     query.scopes = parsed;
     query.case_sensitive = case_sensitive;
     query.max_matches = max_matches.unwrap_or(2000).clamp(1, 20_000);
-    Ok(search(&bundle, &query))
+    Ok(scrapelens_core::search::search_lazy(&lazy, &query))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -880,20 +846,19 @@ mod tests {
     fn bundle_cache_reuses_and_invalidates() {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = detran_session("cache");
-        let first = cached_bundle(&dir).unwrap();
-        let second = cached_bundle(&dir).unwrap();
+        let first = cached_session(&dir).unwrap();
+        let second = cached_session(&dir).unwrap();
         assert!(Arc::ptr_eq(&first, &second), "segunda busca deve reutilizar o bundle");
-        assert!(first.cdp_events_jsonl.is_none() && first.netlog_json.is_none());
         // arquivo mudou (tamanho/mtime) → recarrega
         let session_file = dir.join("session.json");
         let mut text = fs::read_to_string(&session_file).unwrap();
         text.push('\n');
         fs::write(&session_file, text).unwrap();
-        let third = cached_bundle(&dir).unwrap();
+        let third = cached_session(&dir).unwrap();
         assert!(!Arc::ptr_eq(&first, &third));
         // outra sessão substitui a anterior
         let other = detran_session("cache-other");
-        let fourth = cached_bundle(&other).unwrap();
+        let fourth = cached_session(&other).unwrap();
         assert!(!Arc::ptr_eq(&third, &fourth));
         fs::remove_dir_all(dir).ok();
         fs::remove_dir_all(other).ok();
@@ -933,7 +898,7 @@ mod tests {
         for round in 1..=3 {
             let start = std::time::Instant::now();
             let found = run_search(&dir, "zzzz", &[], false, None).unwrap();
-            eprintln!("busca {round}: {:?}, {} achados, loads={}, rss_atual={}", start.elapsed(), found.matches.len(), BUNDLE_LOADS.load(std::sync::atomic::Ordering::SeqCst), String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout).trim());
+            eprintln!("busca {round}: {:?}, {} achados, loads={}, rss_atual={}", start.elapsed(), found.matches.len(), SESSION_LOADS.load(std::sync::atomic::Ordering::SeqCst), String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout).trim());
         }
     }
 }

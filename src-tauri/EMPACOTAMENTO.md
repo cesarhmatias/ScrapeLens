@@ -46,15 +46,15 @@ Ferramentas usadas: rustc 1.98.1, Node 26.8.1, macOS 26.5.2 (arm64).
 | Bundle | `src-tauri/target/release/bundle/macos/ScrapeLens.app` |
 | Executável | `ScrapeLens.app/Contents/MacOS/scrapelens` |
 | Arquitetura | `Mach-O 64-bit executable arm64`, thin (sem universal binary) |
-| Tamanho do bundle | 14.740 KiB (~14,4 MiB, `du -sk`) |
-| Tamanho do executável | 14.339.360 bytes |
-| SHA-256 do executável | `f9c0acecbd4385b63b8e27b407eed1763d06eea7eebcb7ca0119dec264235b98` |
+| Tamanho do bundle | 14.736 KiB (~14,4 MiB, `du -sk`) |
+| Tamanho do executável | 14.332.656 bytes |
+| SHA-256 do executável | `0e2754f4fbd8d9ce459dfae29cd0844de91223e876547b901d377f3eccd3c73f` |
 | Identificador | `app.scrapelens.desktop` |
 | Assinatura | ad-hoc (`flags=0x2(adhoc)`, `TeamIdentifier=not set`) |
 | `codesign --verify --deep --strict` | exit 0 (valid on disk, satisfaz o Designated Requirement) |
 | `spctl -a` | rejeitado — esperado: sem Developer ID e sem notarização |
 
-Rebuild das correções da revisão 4b (rótulos de origem, realce pelo intervalo do core, cache do bundle de busca, recusa de symlink em anexos, `transformed`; hash anterior `56ee754b…`). Antes: rebuild da onda 4b (busca no payload e painel de corpos: commands `search_session` e `read_body`, UI; 28+2 ignorados em src-tauri, 16/16 em tests/exportacao, `npm run test:adapter` ok; evidência em `evidence/busca-corpos/`). Hash anterior `9c04b98b…` substituído. Histórico: rebuild de 0d4dbab (`fix(app)`: adapter tolera campos omitidos que o core aceita via serde default; teste `npm run test:adapter` com a fixture mínima; 15+1 ignorado Tauri, 16/16 regressões tests/exportacao). Hash anterior `5934556c…` (16015a1) substituído. Antes: rebuild com validação de todos os ancestrais do destino (F1/F2): o hash acima é deste build. O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
+Rebuild com busca preguiçosa do core (LazySession + search_lazy), realce sólido/tracejado e texto da fixture sintética; hash anterior `f9c0acec…`. Antes: rebuild das correções da revisão 4b (rótulos de origem, realce pelo intervalo do core, cache do bundle de busca, recusa de symlink em anexos, `transformed`; hash anterior `56ee754b…`). Antes: rebuild da onda 4b (busca no payload e painel de corpos: commands `search_session` e `read_body`, UI; 28+2 ignorados em src-tauri, 16/16 em tests/exportacao, `npm run test:adapter` ok; evidência em `evidence/busca-corpos/`). Hash anterior `9c04b98b…` substituído. Histórico: rebuild de 0d4dbab (`fix(app)`: adapter tolera campos omitidos que o core aceita via serde default; teste `npm run test:adapter` com a fixture mínima; 15+1 ignorado Tauri, 16/16 regressões tests/exportacao). Hash anterior `5934556c…` (16015a1) substituído. Antes: rebuild com validação de todos os ancestrais do destino (F1/F2): o hash acima é deste build. O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
 produz um binário byte-diferente (o linker assina antes do bundle), por isso o
 hash identifica este artefato, não a saída de qualquer build. O build anterior
 desta mesma rodada, sem o ajuste `3a3c676`, tinha

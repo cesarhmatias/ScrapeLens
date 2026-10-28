@@ -1,5 +1,5 @@
 {
-  "originBanner": "DEMO\n\nSessão sintética (contrato v1). Nenhum byte foi capturado: domínios .invalid, corpos inventados e eventos simulados servem para revisar a interface. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.\n\nsem telemetria",
+  "originBanner": "DEMO\n\nFixture sintética: valores inventados com a forma de um caso real; nada foi capturado. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.\n\nsem telemetria",
   "originTags": [
     "DEMO",
     "Tauri 2",
@@ -17,6 +17,8 @@
   "markText": [
     "cmd_consultar_placa"
   ],
+  "markDashed": 0,
+  "syntheticBanner": "Fixture sintética: valores inventados com a forma de um caso real; nada foi capturado. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.",
   "copyBody": null,
   "copiedPayloadHasCmd": true,
   "iframes": 0,

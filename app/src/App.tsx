@@ -240,8 +240,8 @@ const COPY_LIMIT = 16 * 1024 * 1024;
 const MAX_HIGHLIGHTS = 300;
 
 /** Nós React com os trechos dos achados do core realçados (texto escapado). */
-function highlightMatches(text: string, matches: SearchMatch[]): { nodes: (string | ReactElement)[] | string; shown: number; beyond: number } {
-  const { ranges, beyond } = matchRanges(text, matches);
+function highlightMatches(text: string, matches: SearchMatch[], needle?: string, caseSensitive = false): { nodes: (string | ReactElement)[] | string; shown: number; beyond: number } {
+  const { ranges, beyond } = matchRanges(text, matches, needle, caseSensitive);
   const nodes: (string | ReactElement)[] = [];
   let from = 0;
   for (const range of ranges.slice(0, MAX_HIGHLIGHTS)) {
@@ -276,6 +276,7 @@ function BodyPanel({
   onCopy,
   sessionDir,
   matches,
+  highlightNeedle,
 }: {
   title: string;
   body: BodyInfo;
@@ -284,6 +285,7 @@ function BodyPanel({
   sessionDir?: string;
   /** Achados do core para este corpo (mesmo escopo e tentativa). */
   matches?: SearchMatch[];
+  highlightNeedle?: { text: string; caseSensitive: boolean };
 }) {
   const [data, setData] = useState<BodyData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -303,8 +305,8 @@ function BodyPanel({
 
   const text = body.preview ?? (data?.kind === "text" ? data.text : undefined);
   const lit = useMemo(
-    () => (text !== undefined && matches?.length ? highlightMatches(text, matches) : { nodes: text ?? "", shown: 0, beyond: 0 }),
-    [text, matches],
+    () => (text !== undefined && matches?.length ? highlightMatches(text, matches, highlightNeedle?.text, highlightNeedle?.caseSensitive) : { nodes: text ?? "", shown: 0, beyond: 0 }),
+    [text, matches, highlightNeedle?.text, highlightNeedle?.caseSensitive],
   );
   const copyBody = async () => {
     if (body.preview !== undefined) return onCopy?.(body.preview, title);
@@ -369,7 +371,7 @@ function BodyPanel({
         <>
           <pre className="code">{lit.nodes}</pre>
           <div className="body-foot">
-            {lit.shown > 0 && lit.nodes !== text ? `${lit.shown} achado(s) da busca realçado(s)${matches?.some((m) => m.decoded || m.exact === false) ? "; realce tracejado = achado na visão decodificada" : ""}. ` : ""}
+            {lit.shown > 0 && lit.nodes !== text ? `${lit.shown} achado(s) da busca realçado(s)${matches?.some((m) => m.decoded || m.exact === false) ? "; realce tracejado = trecho derivado/decodificado, diferente do texto buscado" : ""}. ` : ""}
             {lit.beyond > 0 ? `${lit.beyond} achado(s) além da parte exibida. ` : ""}
             {data?.cut ? `Exibindo os primeiros ${fmtBytes(data.shownBytes)} de ${fmtBytes(data.bytes)}; “Copiar corpo” entrega até ${fmtBytes(COPY_LIMIT)}. ` : ""}
             {body.contentType?.includes("html")
@@ -624,8 +626,10 @@ function DetailView({
   onCopy,
   onExport,
   matches,
+  needle,
 }: {
   matches: SearchMatch[];
+  needle?: { text: string; caseSensitive: boolean };
   req: RequestRecord;
   tab: DetailTab;
   setTab: (t: DetailTab) => void;
@@ -934,14 +938,14 @@ function DetailView({
 
           {tab === "payload" && (
             <>
-              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("requestBody", effectivePayload)} />
+              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("requestBody", effectivePayload)} highlightNeedle={needle} />
               <BodyContext req={req} />
-              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} />
+              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
             </>
           )}
           {tab === "response" && (
             <>
-              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} />
+              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
               <BodyContext req={req} />
             </>
           )}
@@ -1751,9 +1755,18 @@ export default function App() {
           <div className="demo-banner">
             <span className="demo-badge">DEMO</span>
             <p>
-              <strong>Sessão sintética (contrato v1).</strong> Nenhum byte foi capturado: domínios{" "}
-              <span className="mono">.invalid</span>, corpos inventados e eventos simulados servem para revisar a
-              interface. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.
+              {session.sourcePath ? (
+                <>
+                  <strong>Fixture sintética:</strong> valores inventados com a forma de um caso real; nada foi
+                  capturado. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.
+                </>
+              ) : (
+                <>
+                  <strong>Sessão sintética (contrato v1).</strong> Nenhum byte foi capturado: domínios{" "}
+                  <span className="mono">.invalid</span>, corpos inventados e eventos simulados servem para revisar a
+                  interface. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.
+                </>
+              )}
             </p>
             <span className="demo-right mono">sem telemetria</span>
           </div>
@@ -2130,6 +2143,7 @@ export default function App() {
             onCopy={copy}
             onExport={() => setExportTarget(selected)}
             matches={matchesById.get(selected.id) ?? []}
+            needle={payloadSearch ? { text: searchText, caseSensitive } : undefined}
           />
         )}
 

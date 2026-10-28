@@ -135,6 +135,8 @@ await page.getByRole("tab", { name: /Payload/ }).click();
 await page.waitForSelector(".body-panel pre.code");
 results.highlightMarks = await page.locator(".body-panel pre.code mark").count();
 results.markText = await page.locator(".body-panel pre.code mark").allInnerTexts();
+results.markDashed = await page.locator(".body-panel pre.code mark.decoded").count();
+results.syntheticBanner = await page.locator(".demo-banner p").first().innerText().catch(() => null);
 await shot("04-detalhe-match.png");
 results.copyBody = null;
 await page.getByRole("button", { name: "Copiar corpo" }).first().click();

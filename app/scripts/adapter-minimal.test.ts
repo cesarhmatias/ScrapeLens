@@ -77,4 +77,13 @@ assert.deepEqual(got.ranges, [{ start: 8, end: 12, decoded: true }]);
 assert.equal(txt.slice(got.ranges[0].start, got.ranges[0].end), "ação");
 assert.equal(matchRanges(txt, [{ byteOffset: 0, decoded: false }]).ranges.length, 0);
 assert.equal(matchRanges(txt, [{ byteOffset: 0, byteLength: 9999, decoded: false }]).beyond, 1);
+// Realce sólido (exact + trecho literal) × tracejado (exact=false ou trecho diferente).
+const lit = "x=cmd_consultar_placa&y=a%20b";
+const o1 = enc.encode("x=").length;
+const solid = matchRanges(lit, [{ byteOffset: o1, byteLength: 19, decoded: true, exact: true }], "cmd_consultar_placa");
+assert.equal(solid.ranges[0].decoded, false);
+assert.equal(matchRanges(lit, [{ byteOffset: o1, byteLength: 19, decoded: true, exact: true }], "CMD_CONSULTAR_PLACA", true).ranges[0].decoded, true);
+const pct = matchRanges(lit, [{ byteOffset: lit.indexOf("a%20b"), byteLength: 5, decoded: true, exact: true }], "a b");
+assert.equal(pct.ranges[0].decoded, true);
+assert.equal(matchRanges(lit, [{ byteOffset: o1, byteLength: 19, decoded: false, exact: false }], "cmd_consultar_placa").ranges[0].decoded, true);
 console.log("adapter-minimal: ok");
