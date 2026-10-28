@@ -18,5 +18,5 @@ pub use provenance::{policy, Provenance, Source, Verification};
 pub use session::{
     backfill_browser_version, BrowserInfo, CaptureMeta, Completeness, CompletenessCounts,
     CompletenessState, SessionBundle, SessionMeta, SessionV1, Warning, WarningSeverity,
-    LABEL_SYNTHETIC, SCHEMA_VERSION,
+    LABEL_CAPTURE_IMPORT, LABEL_LIVE_CAPTURE, LABEL_SYNTHETIC, SCHEMA_VERSION,
 };

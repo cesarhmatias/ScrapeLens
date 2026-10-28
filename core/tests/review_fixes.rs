@@ -476,3 +476,136 @@ fn item8_export_flags_307_url_mismatch() {
         .text;
     assert!(!plain.contains("1ª tentativa"));
 }
+
+// ---- 9 -------------------------------------------------------------------
+
+#[test]
+fn item9_origin_labels_for_capture_imports() {
+    use scrapelens_core::correlate::CorrelationOptions;
+    use scrapelens_core::import_capture_labeled;
+    let events = jsonl(&[req(
+        "9.1",
+        "https://example.test/a",
+        "GET",
+        json!({}),
+        None,
+        None,
+        1.0,
+    )]);
+    let netlog = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/netlog-h2.json"
+    ))
+    .unwrap();
+    let labels = |extra: &[&str]| {
+        let extra: Vec<String> = extra.iter().map(|s| s.to_string()).collect();
+        import_capture_labeled(
+            &events,
+            &netlog,
+            None,
+            &extra,
+            CorrelationOptions::default(),
+        )
+        .unwrap()
+        .bundle
+        .session
+        .session
+        .labels
+    };
+    assert_eq!(labels(&[]), vec!["capture-import"]);
+    assert_eq!(labels(&["live-capture"]), vec!["live-capture"]);
+    assert_eq!(
+        labels(&["synthetic-fixture"]),
+        vec!["capture-import", "synthetic-fixture"]
+    );
+    assert_eq!(
+        labels(&["synthetic-fixture", "synthetic-fixture"]),
+        vec!["capture-import", "synthetic-fixture"]
+    );
+}
+
+#[test]
+fn item9_cli_label_flag_is_repeatable() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("s");
+    let har = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/har-minimal.json"
+    );
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_scrapelens-core"))
+        .args(["import-har", har, "--out"])
+        .arg(&out)
+        .args(["--label", "synthetic-fixture", "--label", "outro"])
+        .output()
+        .unwrap();
+    assert!(
+        status.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    let session: Value =
+        serde_json::from_slice(&std::fs::read(out.join("session.json")).unwrap()).unwrap();
+    let labels: Vec<&str> = session["session"]["labels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        labels.contains(&"har-import")
+            && labels.contains(&"synthetic-fixture")
+            && labels.contains(&"outro"),
+        "{labels:?}"
+    );
+}
+
+// ---- 10 ------------------------------------------------------------------
+
+#[test]
+fn item10_match_has_exact_length_and_flags_inexact_mapping() {
+    let events = vec![
+        req(
+            "10.1",
+            "https://example.test/a",
+            "POST",
+            json!({"content-type": FORM}),
+            Some("x"),
+            None,
+            1.0,
+        ),
+        req(
+            "10.2",
+            "https://example.test/b",
+            "POST",
+            json!({"content-type": "application/json"}),
+            Some("x"),
+            None,
+            2.0,
+        ),
+    ];
+    let b = bundle(
+        &events,
+        &[
+            line("10.1", 0, "request", "XML=%3Ccmd_abc&x=1"),
+            line("10.2", 0, "request", r#"{"a":"x\ud800cmd_y"}"#),
+        ],
+    );
+    let r = search(&b, &SearchQuery::new("cmd_"));
+    let form = r
+        .matches
+        .iter()
+        .find(|m| m.field.as_deref() == Some("XML"))
+        .unwrap();
+    assert_eq!(
+        (form.byte_offset, form.byte_length, form.exact),
+        (Some(7), Some(4), true)
+    );
+    let json_match = r
+        .matches
+        .iter()
+        .find(|m| m.field.as_deref() == Some("a"))
+        .unwrap();
+    assert!(!json_match.exact);
+    assert_eq!(json_match.byte_offset, Some(6));
+    assert_eq!(json_match.byte_length, Some(12), "cobre o valor inteiro");
+}

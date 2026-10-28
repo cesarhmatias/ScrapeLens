@@ -130,6 +130,27 @@ pub fn import_capture_with_bodies(
     cdp_bodies_jsonl: Option<&[u8]>,
     options: crate::correlate::CorrelationOptions,
 ) -> Result<ImportedSession> {
+    import_capture_labeled(
+        cdp_events_jsonl,
+        netlog_json,
+        cdp_bodies_jsonl,
+        &[],
+        options,
+    )
+}
+
+/// Como [`import_capture_with_bodies`], com rótulos de origem declarados por
+/// quem chama. Sem `live-capture` em `labels`, a sessão recebe o rótulo
+/// `capture-import` (importação de arquivos); com ele, quem captura declara o
+/// ciclo ao vivo e `capture-import` não é gravado. Demais rótulos (ex.:
+/// `synthetic-fixture`) são acrescentados sem duplicar.
+pub fn import_capture_labeled(
+    cdp_events_jsonl: &[u8],
+    netlog_json: &[u8],
+    cdp_bodies_jsonl: Option<&[u8]>,
+    labels: &[String],
+    options: crate::correlate::CorrelationOptions,
+) -> Result<ImportedSession> {
     let cdp = cdp::parse_cdp_jsonl(cdp_events_jsonl)?;
     // Calibra o relógio do NetLog pela mediana dos `wallTime` do CDP da mesma
     // captura. Isso não associa requisições: só escolhe a unidade de `time`.
@@ -153,6 +174,20 @@ pub fn import_capture_with_bodies(
     let mut id_seed = cdp_events_jsonl.to_vec();
     id_seed.extend_from_slice(netlog_json);
     session.session.id = format!("capture-{}", har::stable_id(&id_seed));
+    if !labels
+        .iter()
+        .any(|label| label == crate::model::LABEL_LIVE_CAPTURE)
+    {
+        session
+            .session
+            .labels
+            .push(crate::model::LABEL_CAPTURE_IMPORT.to_string());
+    }
+    for label in labels {
+        if !session.session.labels.contains(label) {
+            session.session.labels.push(label.clone());
+        }
+    }
     if session.session.browser.version.is_none() && netlog.browser.version.is_some() {
         session.session.browser = netlog.browser.clone();
     }

@@ -32,6 +32,6 @@ pub use model::{
     SetCookieRecord, Source, StreamSession, Verification, Warning, WarningSeverity, SCHEMA_VERSION,
 };
 pub use parse::{
-    import_capture, import_capture_with_bodies, import_har, import_netlog, import_session_dir,
-    ImportReport, ImportedSession, InputFormat,
+    import_capture, import_capture_labeled, import_capture_with_bodies, import_har, import_netlog,
+    import_session_dir, ImportReport, ImportedSession, InputFormat,
 };

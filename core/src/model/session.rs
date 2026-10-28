@@ -367,6 +367,10 @@ impl SessionBundle {
 /// Fixtures e exports sintéticos são marcados aqui para que a UI nunca os
 /// confunda com captura real.
 pub const LABEL_SYNTHETIC: &str = "synthetic-fixture";
+/// Sessão importada de arquivos CDP+NetLog (origem padrão de `import_capture`).
+pub const LABEL_CAPTURE_IMPORT: &str = "capture-import";
+/// Captura ao vivo feita pelo produto; só quem captura deve declarar.
+pub const LABEL_LIVE_CAPTURE: &str = "live-capture";
 
 /// Preenche `browserVersion` em toda proveniência que ainda não o tem. Usado
 /// quando a captura combinada descobre a versão no NetLog (o CDP não a traz).

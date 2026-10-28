@@ -7,7 +7,8 @@
 //! SearchResult { matches: Vec<Match>, skipped_binary: usize,
 //!                partial: bool, partial_attempts: Vec<String>, limit_reached: bool }
 //! Match { request_id, attempt_id, scope, field: Option<String>,
-//!         byte_offset: Option<u64>, snippet, decoded }
+//!         byte_offset: Option<u64>, byte_length: Option<u64>, exact: bool,
+//!         snippet, decoded }
 //! ```
 //!
 //! Recebe o [`SessionBundle`] (e não só a sessão) porque os corpos vivem em
@@ -105,6 +106,11 @@ pub struct Match {
     pub scope: Scope,
     pub field: Option<String>,
     pub byte_offset: Option<u64>,
+    /// Comprimento em bytes do trecho no original (`None` se sem offset).
+    pub byte_length: Option<u64>,
+    /// `false` quando o mapeamento através do decoding não pôde ser exato: o
+    /// intervalo (`byte_offset`, `byte_length`) cobre então o valor inteiro.
+    pub exact: bool,
     pub snippet: String,
     pub decoded: bool,
 }
@@ -166,11 +172,12 @@ impl Ctx<'_> {
         &mut self,
         scope: Scope,
         field: Option<&str>,
-        offset: usize,
+        span: (usize, usize, bool),
         text: &str,
         at: usize,
         decoded: bool,
     ) {
+        let (offset, length, exact) = span;
         if self.result.matches.len() >= self.query.max_matches {
             self.result.limit_reached = true;
             return;
@@ -181,6 +188,8 @@ impl Ctx<'_> {
             scope,
             field: field.map(str::to_string),
             byte_offset: Some(offset as u64),
+            byte_length: Some(length as u64),
+            exact,
             snippet: snippet(text, at, self.matcher.needle.len()),
             decoded,
         });
@@ -192,7 +201,7 @@ impl Ctx<'_> {
         let raw: Vec<usize> = self.matcher.find_all(url.as_bytes());
         let needle_len = self.matcher.needle.len();
         for &at in &raw {
-            self.push(Scope::Url, None, at, url, at, false);
+            self.push(Scope::Url, None, (at, needle_len, true), url, at, false);
         }
         let (text, map) = percent_decode_map(url, 0);
         if text == url {
@@ -203,14 +212,15 @@ impl Ctx<'_> {
             if raw.iter().any(|&r| from < r + needle_len && r < to) {
                 continue;
             }
-            self.push(Scope::Url, None, from, &text, at, true);
+            self.push(Scope::Url, None, (from, to - from, true), &text, at, true);
         }
     }
 
     /// Busca em texto simples (URL, header, nome/valor de cookie).
     fn scan_text(&mut self, scope: Scope, field: Option<&str>, text: &str) {
         for at in self.matcher.find_all(text.as_bytes()) {
-            self.push(scope, field, at, text, at, false);
+            let length = self.matcher.needle.len();
+            self.push(scope, field, (at, length, true), text, at, false);
         }
     }
 }
@@ -410,9 +420,9 @@ fn search_body(
     if let Some(units) = &units {
         for unit in units {
             for at in ctx.matcher.find_all(unit.text.as_bytes()) {
-                let (offset, span) = unit.original_span(at, ctx.matcher.needle.len());
-                covered.push(span);
-                ctx.push(scope, Some(&unit.field), offset, &unit.text, at, true);
+                let span = unit.original_span(at, ctx.matcher.needle.len());
+                covered.push((span.0, span.0 + span.1));
+                ctx.push(scope, Some(&unit.field), span, &unit.text, at, true);
             }
         }
     }
@@ -427,7 +437,8 @@ fn search_body(
                 .find(|unit| unit.start <= at && at < unit.end)
                 .map(|unit| unit.field.clone())
         });
-        ctx.push(scope, field.as_deref(), at, text, at, false);
+        let length = ctx.matcher.needle.len();
+        ctx.push(scope, field.as_deref(), (at, length, true), text, at, false);
     }
 }
 
@@ -442,13 +453,20 @@ struct Unit {
     /// `map[i]` = offset original do byte decodificado `i`; `map[text.len()]` =
     /// `end`.
     map: Vec<usize>,
+    /// A decodificação trocou algo por U+FFFD: o mapa não é exato.
+    lossy: bool,
 }
 
 impl Unit {
-    /// Offset e intervalo original de uma ocorrência em `text`.
-    fn original_span(&self, at: usize, len: usize) -> (usize, (usize, usize)) {
+    /// (offset, comprimento, exato) de uma ocorrência no original. Se a
+    /// decodificação foi com perda, cobre o valor inteiro (`exact=false`).
+    fn original_span(&self, at: usize, len: usize) -> (usize, usize, bool) {
+        if self.lossy {
+            return (self.start, self.end - self.start, false);
+        }
         let from = self.map[at];
-        (from, (from, self.map[(at + len).min(self.text.len())]))
+        let to = self.map[(at + len).min(self.text.len())];
+        (from, to - from, true)
     }
 }
 
@@ -500,6 +518,7 @@ fn unit_from(field: String, raw: &str, start: usize) -> Unit {
         start,
         end: start + raw.len(),
         map,
+        lossy: false,
     }
 }
 
@@ -527,7 +546,8 @@ fn form_units(text: &str) -> Vec<Unit> {
 
 /// Desfaz escapes JSON de uma string (conteúdo sem as aspas) com mapa de
 /// offsets. Escape inválido é mantido literalmente.
-fn json_unescape_map(raw: &str, base: usize) -> (String, Vec<usize>) {
+fn json_unescape_map(raw: &str, base: usize) -> (String, Vec<usize>, bool) {
+    let mut lossy = false;
     let bytes = raw.as_bytes();
     let mut out = String::with_capacity(raw.len());
     let mut map = Vec::with_capacity(raw.len() + 1);
@@ -576,12 +596,14 @@ fn json_unescape_map(raw: &str, base: usize) -> (String, Vec<usize>) {
                             index += 12;
                         }
                         _ => {
+                            lossy = true;
                             push(&mut out, &mut map, '\u{FFFD}', index);
                             index += 6;
                         }
                     }
                 }
                 Some(code) => {
+                    lossy |= char::from_u32(code).is_none();
                     push(
                         &mut out,
                         &mut map,
@@ -601,7 +623,7 @@ fn json_unescape_map(raw: &str, base: usize) -> (String, Vec<usize>) {
         }
     }
     map.push(base + bytes.len());
-    (out, map)
+    (out, map, lossy)
 }
 
 fn looks_like_json(text: &str) -> bool {
@@ -670,13 +692,14 @@ impl JsonScan<'_> {
     }
 
     fn add(&mut self, path: &str, start: usize, end: usize, _escaped: bool) {
-        let (text, map) = json_unescape_map(&self.text[start..end], start);
+        let (text, map, lossy) = json_unescape_map(&self.text[start..end], start);
         self.units.push(Unit {
             field: path.to_string(),
             text,
             start,
             end,
             map,
+            lossy,
         });
     }
 

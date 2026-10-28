@@ -2,9 +2,9 @@
 //!
 //! Uso:
 //!   scrapelens-core inspect <sessao>
-//!   scrapelens-core import-har <har> --out <sessao>
-//!   scrapelens-core import-netlog <netlog> --out <sessao>
-//!   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>]
+//!   scrapelens-core import-har <har> --out <sessao> [--label <rótulo>]...
+//!   scrapelens-core import-netlog <netlog> --out <sessao> [--label <rótulo>]...
+//!   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>] [--label <rótulo>]...
 //!   scrapelens-core search <sessao> <texto> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo]
@@ -17,9 +17,7 @@ use std::process::ExitCode;
 use scrapelens_core::correlate::CorrelationOptions;
 use scrapelens_core::diff::{diff_requests, DiffOptions};
 use scrapelens_core::export::{curl, python, sanitize};
-use scrapelens_core::parse::{
-    import_capture_with_bodies, import_har, import_netlog, ImportedSession,
-};
+use scrapelens_core::parse::{import_capture_labeled, import_har, import_netlog, ImportedSession};
 use scrapelens_core::store;
 
 fn main() -> ExitCode {
@@ -49,13 +47,15 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "import-har" => {
             let (path, out) = input_and_out(&args)?;
             let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let imported = import_har(&bytes).map_err(|e| e.to_string())?;
+            let mut imported = import_har(&bytes).map_err(|e| e.to_string())?;
+            add_labels(&mut imported, &cli_labels(&args)?);
             write_imported(&imported, &out)
         }
         "import-netlog" => {
             let (path, out) = input_and_out(&args)?;
             let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let imported = import_netlog(&bytes).map_err(|e| e.to_string())?;
+            let mut imported = import_netlog(&bytes).map_err(|e| e.to_string())?;
+            add_labels(&mut imported, &cli_labels(&args)?);
             write_imported(&imported, &out)
         }
         "import-capture" => {
@@ -89,10 +89,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 }
                 None => None,
             };
-            let imported = import_capture_with_bodies(
+            let imported = import_capture_labeled(
                 &cdp,
                 &netlog,
                 bodies.as_deref(),
+                &cli_labels(&args)?,
                 CorrelationOptions::default(),
             )
             .map_err(|e| e.to_string())?;
@@ -210,6 +211,31 @@ fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {
     }
 }
 
+/// Rótulos de `--label <rótulo>` (repetível).
+fn cli_labels(args: &[String]) -> Result<Vec<String>, String> {
+    let mut labels = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "--label" {
+            let value = args
+                .get(index + 1)
+                .ok_or_else(|| "--label exige um valor".to_string())?;
+            labels.push(value.clone());
+            index += 1;
+        }
+        index += 1;
+    }
+    Ok(labels)
+}
+
+fn add_labels(imported: &mut ImportedSession, labels: &[String]) {
+    for label in labels {
+        if !imported.bundle.session.session.labels.contains(label) {
+            imported.bundle.session.session.labels.push(label.clone());
+        }
+    }
+}
+
 fn write_imported(imported: &ImportedSession, out: &std::path::Path) -> Result<(), String> {
     store::write_session_dir(&imported.bundle, out).map_err(|e| e.to_string())?;
     print_json(&serde_json::json!({
@@ -247,9 +273,9 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
 fn usage() -> String {
     "uso:
   scrapelens-core inspect <sessao>
-  scrapelens-core import-har <har> --out <sessao>
-  scrapelens-core import-netlog <netlog> --out <sessao>
-  scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>]
+  scrapelens-core import-har <har> --out <sessao> [--label <rótulo>]...
+  scrapelens-core import-netlog <netlog> --out <sessao> [--label <rótulo>]...
+  scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>] [--label <rótulo>]...
   scrapelens-core search <sessao> <texto> [--scope <escopo>]... [--case-sensitive]
   scrapelens-core export-curl <sessao> <requestId> [--out arquivo]
   scrapelens-core export-python <sessao> <requestId> [--out arquivo]
