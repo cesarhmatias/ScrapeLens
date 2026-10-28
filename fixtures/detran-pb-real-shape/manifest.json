@@ -226,8 +226,11 @@
       "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"
      },
      "SESSIONID": {
+      "status": "origin",
       "label": "possível origem (value-match)",
-      "producer": "har-0001"
+      "producer": "har-0001",
+      "reissued_by": [],
+      "justification": "regra canônica (docs/09 R5): 'reissued' só se o valor circulou numa requisição entre o 1º produtor e o seguinte; 'ambiguous' + oldest se há 2+ produtores. Nos HARs reais só o easynat-app contém o valor (as páginas NatLogon/SIM1000X/VES0009X não) e nenhuma requisição entre a resposta do easynat-app e a da NatLogon o leva (nem na URL, nem no Referer): produtor único => origin, sem reissued. A fixture reflete isso."
      },
      "v_placa": {
       "status": "none",
@@ -286,8 +289,11 @@
       "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"
      },
      "SESSIONID": {
+      "status": "origin",
       "label": "possível origem (value-match)",
-      "producer": "har-0024"
+      "producer": "har-0024",
+      "reissued_by": [],
+      "justification": "regra canônica (docs/09 R5): 'reissued' só se o valor circulou numa requisição entre o 1º produtor e o seguinte; 'ambiguous' + oldest se há 2+ produtores. Nos HARs reais só o easynat-app contém o valor (as páginas NatLogon/SIM1000X/VES0009X não) e nenhuma requisição entre a resposta do easynat-app e a da NatLogon o leva (nem na URL, nem no Referer): produtor único => origin, sem reissued. A fixture reflete isso."
      },
      "v_placa": {
       "status": "none",

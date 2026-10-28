@@ -55,10 +55,19 @@ def connector_html(seed: int, xml: str, stamp: str) -> str:
             "</form>\n</body>\n</html>\n")
 
 
-def page_html(title: str, model: str, sid: str, pid: str, init_param: str = "") -> str:
-    return (f'<!doctype html>\n<html><head><meta charset="utf-8"><title>{title}</title></head>\n<body>\n<script>\n'
-            f'var m_currentSessionId = "{sid}";\nvar m_currentProcessId = "{pid}";\nvar pageInitParam = "{init_param}";\n'
-            f'C.initWithModelIdAndSessionIdAndProcessId("{model}", m_currentSessionId, m_currentProcessId);\n</script>\n</body></html>\n')
+def page_html(title: str, model: str, sid: str | None, pid: str | None, init_param: str = "") -> str:
+    """Só a página de entrada (easynat-app) define m_currentSessionId/m_currentProcessId.
+
+    Nos HARs reais (conferido só pela estrutura) NatLogon/SIM1000X/VES0009X NÃO contêm o SESSIONID nem o
+    processId, e nenhuma requisição entre a resposta do easynat-app e a da NatLogon leva o valor: o SESSIONID
+    tem um único produtor. As demais páginas só carregam o modelo (constante do protocolo)."""
+    ids = ""
+    if sid is not None:
+        ids = f'var m_currentSessionId = "{sid}";\nvar m_currentProcessId = "{pid}";\nvar pageInitParam = "{init_param}";\n'
+        call = f'C.initWithModelIdAndSessionIdAndProcessId("{model}", m_currentSessionId, m_currentProcessId);\n'
+    else:
+        call = f'C.initWithModelId("{model}");\n'
+    return f'<!doctype html>\n<html><head><meta charset="utf-8"><title>{title}</title></head>\n<body>\n<script>\n{ids}{call}</script>\n</body></html>\n'
 
 
 def static_js(name: str) -> str:
@@ -154,13 +163,13 @@ def round_flow(h: Har, r: dict, seed: int) -> dict:
     tspd(h, f"{k}1", f"{APP}/servlet/easynat-app?op=S37", 18)
     h.add(f"{k}:static_jquery", "GET", f"{APP}/cisnatural/jquery-ui.min.js", 200, "application/javascript", static_js("jquery-ui"), "script", f"{APP}/servlet/easynat-app?op=S37")
     h.add(f"{k}:static_cis", "GET", f"{APP}/ciscentral/CIS_V1_SYNTH.js", 200, "application/javascript", static_js("cis"), "script", f"{APP}/servlet/easynat-app?op=S37")
-    h.add(f"{k}:page_logon", "GET", logon_url, 200, "text/html;charset=UTF-8", page_html("NatLogon", MODELS["logon"], sid, pid), "document", f"{APP}/servlet/easynat-app?op=S37")
+    h.add(f"{k}:page_logon", "GET", logon_url, 200, "text/html;charset=UTF-8", page_html("NatLogon", MODELS["logon"], None, None), "document", f"{APP}/servlet/easynat-app?op=S37")
     tspd(h, f"{k}2", logon_url)
     post("init_logon", logon_url, "/cisnatural/NatLogon.html", MODELS["logon"], "",
          {"pageInitParam": "op=S37", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"},
          [("nextPage", "/UIC-SERVICOS/SIM1000X.html")], init=True)
     tspd(h, f"{k}3", logon_url, 17)
-    h.add(f"{k}:page_sim", "GET", sim_url, 200, "text/html;charset=UTF-8", page_html("SIM1000X", MODELS["sim"], sid, pid), "document", logon_url)
+    h.add(f"{k}:page_sim", "GET", sim_url, 200, "text/html;charset=UTF-8", page_html("SIM1000X", MODELS["sim"], None, None), "document", logon_url)
     post("init_sim", sim_url, "/UIC-SERVICOS/SIM1000X.html", MODELS["sim"], "",
          {"pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"},
          [("nextPage", "/UIC-SERVICOS/SIM1000X.html")], init=True)
@@ -170,7 +179,7 @@ def round_flow(h: Har, r: dict, seed: int) -> dict:
     post("on_interceptor", sim_url, "/UIC-SERVICOS/SIM1000X.html", MODELS["sim"], "on_interceptor", props,
          [("nextPage", "/UIC-SERVICOS/VES0009X.html")])
     tspd(h, f"{k}5", sim_url)
-    h.add(f"{k}:page_ves", "GET", ves_url, 200, "text/html;charset=UTF-8", page_html("VES0009X", MODELS["ves"], sid, pid), "document", sim_url)
+    h.add(f"{k}:page_ves", "GET", ves_url, 200, "text/html;charset=UTF-8", page_html("VES0009X", MODELS["ves"], None, None), "document", sim_url)
     post("init_ves", ves_url, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "",
          {"pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"},
          [("nextPage", "/UIC-SERVICOS/VES0009X.html")], init=True)
@@ -220,7 +229,9 @@ def build():
                           "producer": ids["cmd_filtro"], "note": "<input type=hidden name=STAMP> da resposta HTML anterior"},
                 "delta": {"parent": "XML", "value_prefix": r["delta_prefix"], "kind": "value-match", "producer": ids["cmd_filtro"],
                           "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"},
-                "SESSIONID": {"label": "possível origem (value-match)", "producer": ids["easynat"]},
+                "SESSIONID": {"status": "origin", "label": "possível origem (value-match)", "producer": ids["easynat"],
+                              "reissued_by": [],
+                              "justification": "regra canônica (docs/09 R5): 'reissued' só se o valor circulou numa requisição entre o 1º produtor e o seguinte; 'ambiguous' + oldest se há 2+ produtores. Nos HARs reais só o easynat-app contém o valor (as páginas NatLogon/SIM1000X/VES0009X não) e nenhuma requisição entre a resposta do easynat-app e a da NatLogon o leva (nem na URL, nem no Referer): produtor único => origin, sem reissued. A fixture reflete isso."},
                 "v_placa": {"status": "none", "plate": r["plates"][0]},
             },
             "chain": {

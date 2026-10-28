@@ -98,6 +98,24 @@ def main():
     check(all("/TSPD/" in har_a[num(i)]["request"]["url"] for i in man["rounds"]["a1"]["tspd"]), "manifest: tspd")
     xml = urllib.parse.parse_qs(har_a[num(ids["consultar1"])]["request"]["postData"]["text"])["XML"][0]
     check("cmd_consultar_placa" in xml and man["values"]["a1"]["plates"][0] in xml, "manifest: consultar1")
+    # só o easynat-app contém SESSIONID/processId (conferido nos HARs reais)
+    for fname in ("real-shape-1round.har", "real-shape-2rounds.har"):
+        for e in json.loads((HERE / fname).read_text())["log"]["entries"]:
+            body = e["response"]["content"]["text"]
+            is_entry = "easynat-app" in e["request"]["url"]
+            has = "m_currentSessionId" in body
+            check(has == is_entry, f"{fname}: m_currentSessionId só no easynat-app ({e['request']['url'].split('/')[-1]})")
+            if not is_entry and e["request"]["method"] == "GET":
+                sids = [r["sid"] for r in []]
+            hdr = " ".join(h["value"] for h in e["request"]["headers"]) + e["request"]["url"]
+            check("CSAN00000_" not in hdr, f"{fname}: SESSIONID não circula em URL/headers")
+    # só o easynat-app contém m_currentSessionId (conferido nos HARs reais); o SESSIONID não circula em URL/headers
+    for fname in ("real-shape-1round.har", "real-shape-2rounds.har"):
+        for e in json.loads((HERE / fname).read_text())["log"]["entries"]:
+            is_entry = "easynat-app" in e["request"]["url"]
+            check(("m_currentSessionId" in e["response"]["content"]["text"]) == is_entry, f"{fname}: m_currentSessionId só no easynat-app")
+            hdr = " ".join(h["value"] for h in e["request"]["headers"]) + e["request"]["url"]
+            check("CSAN00000_" not in hdr, f"{fname}: SESSIONID não circula em URL/headers")
     blob = "\\n".join((HERE / n).read_text() for n in ("real-shape-1round.har", "real-shape-2rounds.har", "manifest.json", "build_real_shape.py"))
     for bad in ("082b79", "CASA", "NUPP", "sem_captcha", "Downloads/", "APM_DO_NOT_TOUCH", "wsdetran.pb.gov.br.har"):
         check(bad not in blob, f"marcador proibido: {bad}")
