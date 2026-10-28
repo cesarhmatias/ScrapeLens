@@ -7,9 +7,11 @@ scraping. Especificação completa:
 ## Estado
 
 - Fase: 9 — pacote local arm64 recompilado e validado; documentação final.
-- Rodada de exportação na UI (docs/07): F1/F2 (links em ancestrais) corrigidos
-  em 16015a1, bridge 16/16; revalidação independente em curso. Diálogo nativo
-  Salvar/Cancelar segue dependente de seleção humana (NSSavePanel sem AX).
+- Rodada de exportação na UI (docs/07) concluída: F1/F2 (links em ancestrais)
+  corrigidos em 16015a1, adapter tolerante em 0d4dbab, bridge 16/16. Prova
+  nativa no bundle 9c04b98b (salvar/cancelar, cópia, sanitizar e reabrir)
+  feita pelo líder com diálogos em primeiro plano e verificada por Testes
+  (adc56ab). Próxima rodada: corpos CDP e busca no payload.
 - Aceite automatizado: 10/10 critérios, 282/282 asserções (77c32a7).
 - Captura nova e importações HAR/NetLog pela UI do bundle final validadas.
   Seleção manual do usuário e conferência independente dos arquivos persistidos.
