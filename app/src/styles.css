@@ -1317,3 +1317,19 @@ kbd {
 .code mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inherit; border-radius: 2px; }
 .code.hex { white-space: pre-wrap; overflow-wrap: anywhere; }
 .code mark.decoded { background: transparent; outline: 1px dashed var(--warn); }
+.annotate-opt { font-size: 11px; color: var(--fg-muted); display: inline-flex; gap: 5px; align-items: center; margin-left: 10px; cursor: pointer; }
+.origin-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.origin-table th, .origin-table td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.origin-table td.val { font-family: var(--mono, monospace); overflow-wrap: anywhere; max-width: 320px; }
+.origin-table tr.part td:first-child { padding-left: 22px; }
+.origin-table .cand { margin: 2px 0; }
+.link-req { background: none; border: none; color: var(--accent, #2563eb); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+.chain-list { list-style: none; counter-reset: step; margin: 0; padding: 0; }
+.chain-list li { border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; margin: 6px 0; font-size: 11px; }
+.chain-list .why { color: var(--fg-muted); margin-top: 3px; overflow-wrap: anywhere; }
+.chain-protection { border-style: dashed; }
+.cmp-field { display: grid; grid-template-columns: 170px 1fr 1fr 220px; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 11px; }
+.cmp-field .mono { overflow-wrap: anywhere; }
+.cmp-dynamic { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.cmp-pair { border: 1px solid var(--border); border-radius: 6px; margin: 8px 14px; }
+.cmp-pair > header { display: flex; gap: 8px; padding: 6px 10px; background: var(--bg-subtle); align-items: center; flex-wrap: wrap; }

@@ -510,7 +510,7 @@ pub async fn search_session(
     .map_err(|error| format!("a busca foi interrompida: {error}"))?
 }
 
-/// Sessão preguiçosa da última sessão pesquisada (anexos lidos um a um). Chave: pasta + (tamanho, mtime) de
+/// Sessões preguiçosas (até duas) usadas por busca, origens, cadeia e comparação (anexos lidos um a um). Chave: pasta + (tamanho, mtime) de
 /// `session.json` + mtime de `attachments/`; mudou, recarrega. Guarda uma só
 /// sessão (abrir outra substitui) e não retém corpos nem os brutos CDP/NetLog.
 struct CachedSession {
@@ -519,7 +519,8 @@ struct CachedSession {
     lazy: Arc<scrapelens_core::lazy::LazySession>,
 }
 
-static SESSION_CACHE: Mutex<Option<CachedSession>> = Mutex::new(None);
+/// Duas sessões em cache (a aberta e a comparada); a mais antiga sai primeiro.
+static SESSION_CACHE: Mutex<Vec<CachedSession>> = Mutex::new(Vec::new());
 static SESSION_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn session_fingerprint(dir: &Path) -> Vec<Option<(u64, SystemTime)>> {
@@ -533,20 +534,26 @@ fn session_fingerprint(dir: &Path) -> Vec<Option<(u64, SystemTime)>> {
         .collect()
 }
 
-fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::LazySession>, String> {
+pub(crate) fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::LazySession>, String> {
     let mut guard = SESSION_CACHE.lock().map_err(|_| "cache de busca corrompido".to_string())?;
     let fingerprint = session_fingerprint(dir);
-    if let Some(cached) = guard.as_ref() {
-        if cached.dir == dir && cached.fingerprint == fingerprint {
-            return Ok(cached.lazy.clone());
+    if let Some(index) = guard.iter().position(|cached| cached.dir == dir) {
+        if guard[index].fingerprint == fingerprint {
+            let hit = guard.remove(index);
+            let lazy = hit.lazy.clone();
+            guard.push(hit); // mais recente por último
+            return Ok(lazy);
         }
+        guard.remove(index); // arquivo mudou: recarrega
     }
-    *guard = None; // libera a sessão anterior antes de carregar a nova
+    while guard.len() >= 2 {
+        guard.remove(0); // libera a mais antiga antes de carregar outra
+    }
     SESSION_LOADS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let (lazy, _report) = scrapelens_core::open_session_dir_lazy(dir)
         .map_err(|error| format!("não foi possível ler a sessão: {error}"))?;
     let lazy = Arc::new(lazy);
-    *guard = Some(CachedSession { dir: dir.to_path_buf(), fingerprint, lazy: lazy.clone() });
+    guard.push(CachedSession { dir: dir.to_path_buf(), fingerprint, lazy: lazy.clone() });
     Ok(lazy)
 }
 
@@ -642,6 +649,93 @@ fn read_body_blocking(session_dir: &str, name: &str, limit: u64) -> Result<BodyP
     })
 }
 
+/// Origem dos valores de uma requisição (`flow::value_origins`), fora da thread da UI.
+#[tauri::command]
+pub async fn request_origins(
+    session_dir: String,
+    request_id: String,
+) -> Result<scrapelens_core::flow::ValueOrigins, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lazy = cached_session(Path::new(&session_dir))?;
+        scrapelens_core::flow::value_origins(
+            &lazy.session,
+            &scrapelens_core::search::LazyBodies(&lazy),
+            &request_id,
+            &scrapelens_core::flow::FlowOptions::default(),
+        )
+        .map_err(|error| format!("não foi possível calcular as origens: {error}"))
+    })
+    .await
+    .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
+}
+
+/// Cadeia de priming de uma requisição (`flow::priming_chain`).
+#[tauri::command]
+pub async fn request_chain(
+    session_dir: String,
+    request_id: String,
+) -> Result<scrapelens_core::flow::PrimingChain, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lazy = cached_session(Path::new(&session_dir))?;
+        scrapelens_core::flow::priming_chain(
+            &lazy.session,
+            &scrapelens_core::search::LazyBodies(&lazy),
+            &request_id,
+            &scrapelens_core::flow::FlowOptions::default(),
+        )
+        .map_err(|error| format!("não foi possível calcular a cadeia: {error}"))
+    })
+    .await
+    .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
+}
+
+/// Compara a sessão aberta (A) com outra pasta escolhida pelo usuário (B).
+#[tauri::command]
+pub async fn compare_session_dirs(
+    dir_a: String,
+    dir_b: String,
+) -> Result<scrapelens_core::compare::SessionComparison, String> {
+    tauri::async_runtime::spawn_blocking(move || run_compare(&dir_a, &dir_b))
+        .await
+        .map_err(|error| format!("a comparação foi interrompida: {error}"))?
+}
+
+fn run_compare(dir_a: &str, dir_b: &str) -> Result<scrapelens_core::compare::SessionComparison, String> {
+    if Path::new(dir_a) == Path::new(dir_b) {
+        return Err("escolha uma sessão diferente da aberta para comparar".to_string());
+    }
+    let a = cached_session(Path::new(dir_a))?;
+    let b = cached_session(Path::new(dir_b)).map_err(|error| format!("sessão B: {error}"))?;
+    Ok(scrapelens_core::compare::compare_sessions(
+        &a.session,
+        &scrapelens_core::search::LazyBodies(&a),
+        &b.session,
+        &scrapelens_core::search::LazyBodies(&b),
+        &scrapelens_core::compare::CompareOptions::default(),
+    ))
+}
+
+/// Prévia de exportação; com `annotate` calcula as origens (cache LazySession).
+fn export_preview(
+    dir: &Path,
+    request_id: &str,
+    format: &str,
+    annotate: bool,
+) -> Result<crate::export::ExportPreview, String> {
+    let origins = annotate.then(|| {
+        cached_session(dir).and_then(|lazy| {
+            scrapelens_core::flow::value_origins(
+                &lazy.session,
+                &scrapelens_core::search::LazyBodies(&lazy),
+                request_id,
+                &scrapelens_core::flow::FlowOptions::default(),
+            )
+            .map_err(|error| error.to_string())
+        })
+    });
+    crate::export::preview_with(dir, request_id, format, origins)
+}
+
 /// Gera a exportação cURL/Python de uma requisição da sessão persistida.
 ///
 /// Roda fora da thread da UI: ler anexos e gerar texto pode ser pesado em
@@ -652,9 +746,10 @@ pub async fn export_request(
     session_dir: String,
     request_id: String,
     format: String,
+    annotate_origins: Option<bool>,
 ) -> Result<crate::export::ExportPreview, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        crate::export::preview(Path::new(&session_dir), &request_id, &format)
+        export_preview(Path::new(&session_dir), &request_id, &format, annotate_origins.unwrap_or(false))
     })
     .await
     .map_err(|error| format!("a geração da exportação falhou: {error}"))?
@@ -788,13 +883,17 @@ mod tests {
     }
 
     fn detran_session(name: &str) -> PathBuf {
+        fixture_session(name, "detran-pb", "detran-pb")
+    }
+
+    fn fixture_session(name: &str, folder: &str, stem: &str) -> PathBuf {
         use scrapelens_core::correlate::CorrelationOptions;
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/detran-pb");
-        let read = |file: &str| fs::read(fixtures.join(file)).unwrap();
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures").join(folder);
+        let read = |file: String| fs::read(fixtures.join(file)).unwrap();
         let imported = scrapelens_core::parse::import_capture_with_bodies(
-            &read("detran-pb.cdp.jsonl"),
-            &read("detran-pb.netlog.json"),
-            Some(&read("detran-pb.cdp-bodies.jsonl")),
+            &read(format!("{stem}.cdp.jsonl")),
+            &read(format!("{stem}.netlog.json")),
+            Some(&read(format!("{stem}.cdp-bodies.jsonl"))),
             CorrelationOptions::default(),
         )
         .unwrap();
@@ -900,5 +999,59 @@ mod tests {
             let found = run_search(&dir, "zzzz", &[], false, None).unwrap();
             eprintln!("busca {round}: {:?}, {} achados, loads={}, rss_atual={}", start.elapsed(), found.matches.len(), SESSION_LOADS.load(std::sync::atomic::Ordering::SeqCst), String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout).trim());
         }
+    }
+
+    #[test]
+    fn origins_chain_and_compare_on_detran_fixtures() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let a = detran_session("flow-a");
+        let b = fixture_session("flow-b", "detran-pb-b", "detran-pb-b");
+        let lazy = cached_session(&a).unwrap();
+        let source = scrapelens_core::search::LazyBodies(&lazy);
+        let options = scrapelens_core::flow::FlowOptions::default();
+        let origins = scrapelens_core::flow::value_origins(&lazy.session, &source, "cdp-r0011", &options).unwrap();
+        assert!(origins.values.iter().any(|v| v.field == "JSESSIONID"));
+        let chain = scrapelens_core::flow::priming_chain(&lazy.session, &source, "cdp-r0011", &options).unwrap();
+        assert!(!chain.steps.is_empty() && !chain.protection.is_empty());
+        let cmp = run_compare(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
+        assert!(cmp.counts.dynamic > 0);
+        assert!(run_compare(a.to_str().unwrap(), a.to_str().unwrap()).is_err());
+        // as duas sessões ficam em cache ao mesmo tempo
+        let again = cached_session(&a).unwrap();
+        assert!(Arc::ptr_eq(&lazy, &again));
+        fs::remove_dir_all(a).ok();
+        fs::remove_dir_all(b).ok();
+    }
+
+    #[test]
+    fn annotated_export_adds_only_comments_on_detran() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = detran_session("annot");
+        let d = Path::new(&dir);
+        let plain = export_preview(d, "cdp-r0011", "curl", false).unwrap();
+        let noted = export_preview(d, "cdp-r0011", "curl", true).unwrap();
+        let strip = |text: &str| text.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n");
+        assert_eq!(strip(&plain.text), strip(&noted.text));
+        assert!(noted.text.len() > plain.text.len(), "deve haver comentários de origem");
+        assert!(noted.warnings.iter().all(|w| w.code != "export.origins_unavailable"));
+        fs::remove_dir_all(dir).ok();
+    }
+
+    /// Gera as prévias reais (com e sem origens) para o harness de UI:
+    /// `SL_SESSION=<pasta> SL_REQUEST=<id> SL_DUMP=<arquivo.json> cargo test -- --ignored dump_export_previews`.
+    #[test]
+    #[ignore]
+    fn dump_export_previews() {
+        let dir = std::env::var("SL_SESSION").expect("SL_SESSION");
+        let request = std::env::var("SL_REQUEST").expect("SL_REQUEST");
+        let out = std::env::var("SL_DUMP").expect("SL_DUMP");
+        let mut all = serde_json::Map::new();
+        for format in ["curl", "python"] {
+            for annotate in [false, true] {
+                let preview = export_preview(Path::new(&dir), &request, format, annotate).unwrap();
+                all.insert(format!("{format}-{annotate}"), serde_json::to_value(&preview).unwrap());
+            }
+        }
+        fs::write(out, serde_json::to_string_pretty(&all).unwrap()).unwrap();
     }
 }

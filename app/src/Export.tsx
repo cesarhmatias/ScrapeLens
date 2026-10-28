@@ -122,6 +122,7 @@ export function ExportDialog({
 }) {
   const sessionDir = session.sourcePath;
   const [format, setFormat] = useState<"curl" | "python">("curl");
+  const [annotate, setAnnotate] = useState(false);
   const [preview, setPreview] = useState<ExportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -142,7 +143,7 @@ export function ExportDialog({
     setSaved(null);
     setPreview(null);
     bridge
-      .exportRequest(sessionDir, request.id, format)
+      .exportRequest(sessionDir, request.id, format, annotate)
       .then((result) => {
         if (!alive) return;
         if (result.requestId !== request.id) {
@@ -160,7 +161,7 @@ export function ExportDialog({
     return () => {
       alive = false;
     };
-  }, [format, request.id, sessionDir]);
+  }, [format, annotate, request.id, sessionDir]);
 
   const copy = useCallback(async () => {
     if (!preview) return;
@@ -238,6 +239,9 @@ export function ExportDialog({
             {id === "curl" ? "cURL" : "Python"}
           </button>
         ))}
+        <label className="annotate-opt" title="Comentários com a origem observada de cada valor; o comando gerado não muda">
+          <input type="checkbox" checked={annotate} onChange={(e) => setAnnotate(e.target.checked)} /> anotar origens
+        </label>
         <span className="grow" />
         {preview && (
           <span className={`tag ${preview.headerVerification === "verified" ? "tag-real" : "tag-demo"}`}>

@@ -16,6 +16,9 @@ import {
 import { ExportDialog, SanitizeDialog } from "./Export";
 import { matchRanges } from "./highlight";
 import { classifyTransforms } from "./transforms";
+import { OriginsTab } from "./Origins";
+import { CaptureCompareView } from "./CaptureCompare";
+import type { SessionComparison } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
@@ -29,7 +32,7 @@ import type {
   VerificationKey,
 } from "./types";
 
-type View = "session" | "detail" | "compare";
+type View = "session" | "detail" | "compare" | "capture-compare";
 type Theme = "light" | "dark";
 type DetailTab =
   | "headers"
@@ -37,6 +40,7 @@ type DetailTab =
   | "cookies"
   | "payload"
   | "response"
+  | "origins"
   | "redirects"
   | "attempts"
   | "event";
@@ -629,9 +633,11 @@ function DetailView({
   session,
   onCopy,
   onExport,
+  onOpenRequest,
   matches,
   needle,
 }: {
+  onOpenRequest: (id: string) => void;
   matches: SearchMatch[];
   needle?: { text: string; caseSensitive: boolean };
   req: RequestRecord;
@@ -656,6 +662,7 @@ function DetailView({
     { id: "response", label: "Resposta" },
     { id: "redirects", label: "Redirects", count: req.redirects.length },
     { id: "attempts", label: "Tentativas", count: req.attempts.length },
+    { id: "origins", label: "Origem" },
     { id: "event", label: "Evento" },
   ];
 
@@ -1045,6 +1052,10 @@ function DetailView({
               </section>
             ))}
 
+          {tab === "origins" && (
+            <OriginsTab sessionDir={session.sourcePath} requestId={req.id} onOpen={onOpenRequest} />
+          )}
+
           {tab === "event" && (
             <section className="header-block">
               <header className="block-head">
@@ -1386,6 +1397,7 @@ export default function App() {
   const [sanitizeOpen, setSanitizeOpen] = useState(false);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
+  const [captureCmp, setCaptureCmp] = useState<{ result: SessionComparison; labelA: string; labelB: string } | null>(null);
   const [scopes, setScopes] = useState<SearchScope[]>(ALL_SCOPES);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [searchState, setSearchState] = useState<{
@@ -1403,6 +1415,22 @@ export default function App() {
   const selected = requests.find((r) => r.id === selectedId) ?? requests[0];
   const warningTotal =
     session.warnings.length + requests.reduce((total, request) => total + request.warnings.length, 0);
+  const compareCaptures = async () => {
+    if (!session.sourcePath) return;
+    try {
+      const dirB = await bridge.pickCompareSession();
+      if (!dirB) return;
+      setBusy("Comparando capturas…");
+      const result = await bridge.compareSessions(session.sourcePath, dirB);
+      setCaptureCmp({ result, labelA: session.label, labelB: dirB.split("/").filter(Boolean).pop() ?? dirB });
+      setView("capture-compare");
+    } catch (error) {
+      setNotice({ kind: "error", text: "Não foi possível comparar as capturas.", detail: String(error) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const applyPayload = useCallback((payload: SessionPayload | null) => {
     if (!payload) return;
     setLoaded(
@@ -2018,6 +2046,14 @@ export default function App() {
                 >
                   Comparar…
                 </button>
+                <button
+                  className="btn"
+                  onClick={() => void compareCaptures()}
+                  disabled={!desktop || !session.sourcePath || !!recording}
+                  title={session.sourcePath ? "Comparar esta captura com outra sessão (pasta)" : "Exige uma sessão com pasta persistida"}
+                >
+                  Comparar capturas…
+                </button>
               </div>
             </div>
 
@@ -2146,6 +2182,9 @@ export default function App() {
             session={session}
             onCopy={copy}
             onExport={() => setExportTarget(selected)}
+            onOpenRequest={(id) => {
+              if (requests.some((r) => r.id === id)) setSelectedId(id);
+            }}
             matches={matchesById.get(selected.id) ?? []}
             needle={payloadSearch ? { text: searchText, caseSensitive } : undefined}
           />
@@ -2159,6 +2198,15 @@ export default function App() {
               Voltar
             </button>
           </div>
+        )}
+
+        {view === "capture-compare" && captureCmp && (
+          <CaptureCompareView
+            result={captureCmp.result}
+            labelA={captureCmp.labelA}
+            labelB={captureCmp.labelB}
+            onBack={() => setView("session")}
+          />
         )}
 
         {view === "compare" && requests.length >= 2 && (

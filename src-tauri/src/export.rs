@@ -15,8 +15,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use scrapelens_core::export::curl::to_curl;
-use scrapelens_core::export::python::to_python;
+use scrapelens_core::export::curl::to_curl_with_origins;
+use scrapelens_core::export::python::to_python_with_origins;
 use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions, SanitizedExport};
 use scrapelens_core::export::{ExportOptions, ExportOutput};
 use scrapelens_core::model::{BodyState, LogicalRequest, SessionBundle, Warning};
@@ -163,21 +163,48 @@ fn generate(
     request: &LogicalRequest,
     body: Option<&[u8]>,
     format: Format,
+    origins: Option<&scrapelens_core::flow::ValueOrigins>,
 ) -> Result<ExportOutput, String> {
     let options = ExportOptions::default();
     let output = match format {
-        Format::Curl => to_curl(request, body, &options),
-        Format::Python => to_python(request, body, &options),
+        Format::Curl => to_curl_with_origins(request, body, &options, origins),
+        Format::Python => to_python_with_origins(request, body, &options, origins),
     };
     output.map_err(|error| format!("não foi possível gerar a exportação: {error}"))
 }
 
 pub fn preview(dir: &Path, request_id: &str, format: &str) -> Result<ExportPreview, String> {
+    preview_with(dir, request_id, format, None)
+}
+
+/// Como [`preview`]; `origins` é `None` (sem anotação), `Some(Ok(..))` (anota no
+/// comentário os campos com origem observada) ou `Some(Err(..))` (origens
+/// indisponíveis: exporta sem anotar e avisa). O comando gerado não muda.
+/// O cálculo das origens fica com o chamador, para este módulo não depender
+/// de `commands`.
+pub fn preview_with(
+    dir: &Path,
+    request_id: &str,
+    format: &str,
+    origins: Option<Result<scrapelens_core::flow::ValueOrigins, String>>,
+) -> Result<ExportPreview, String> {
     let format = Format::parse(format)?;
     let bundle = load(dir)?;
     let request = find_request(&bundle, request_id)?;
     let body = body_bytes(request, &bundle.attachments);
-    let output = generate(request, body, format)?;
+    let (origins, origins_error) = match origins {
+        None => (None, None),
+        Some(Ok(found)) => (Some(found), None),
+        Some(Err(error)) => (None, Some(error)),
+    };
+    let mut output = generate(request, body, format, origins.as_ref())?;
+    if let Some(error) = origins_error {
+        // A exportação segue sem anotações; a prévia diz por quê.
+        output.warnings.push(Warning::new(
+            "export.origins_unavailable",
+            format!("origens não anotadas: {error}"),
+        ));
+    }
 
     Ok(ExportPreview {
         session_id: bundle.session.session.id.clone(),
@@ -649,5 +676,14 @@ mod tests {
         let error = write_text_file(&dir.join("ausente/arq.sh"), "x").unwrap_err();
         assert!(error.contains("não existe"), "{error}");
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn annotated_preview_without_origins_warns_and_keeps_text() {
+        let dir = fixture("export-annotate");
+        let plain = preview(&dir, "req-body", "curl").unwrap();
+        let noted = preview_with(&dir, "req-body", "curl", Some(Err("sem tentativas".to_string()))).unwrap();
+        assert_eq!(plain.text, noted.text);
+        assert!(noted.warnings.iter().any(|w| w.code == "export.origins_unavailable"));
     }
 }

@@ -91,4 +91,27 @@ assert.deepEqual(classifyTransforms(["chrome-decoded"]), { warn: [], chromeDecod
 assert.deepEqual(classifyTransforms(["chrome-decoded", "charset:iso-8859-1->utf-8"]), { warn: ["charset:iso-8859-1->utf-8"], chromeDecoded: true });
 assert.deepEqual(classifyTransforms(["lossy-postData"]).warn, ["lossy-postData"]);
 assert.deepEqual(classifyTransforms(undefined), { warn: [], chromeDecoded: false });
+import { dynamicOnly, fieldClassLabel, groupOrigins, oldestEvidence, originStatusLabel } from "../src/flow";
+const vo = (over: any) => ({ scope: "body", field: "f", occurrence: 0, value: "v", length: 1, status: "none", label: "", offset: null, oldest: null, evidences: [], repeatedFrom: [], parent: null, note: null, ...over });
+const grouped = groupOrigins([vo({ field: "XML", status: "composite" }), vo({ field: "XML", parent: "XML", offset: 0 }), vo({ field: "XML", parent: "XML", offset: 20 }), vo({ field: "OTHER" })]);
+assert.equal(grouped.length, 2);
+assert.equal(grouped[0].parts.length, 2);
+assert.equal(originStatusLabel(vo({ status: "none" })), "sem origem observada");
+assert.equal(originStatusLabel(vo({ status: "ambiguous" })), "ambíguo");
+const ev = (id: string) => ({ kind: "value-match", strength: "medium", role: "produced", producerRequestId: id, producerAttemptId: id, scope: "responseBody", field: null, producerOffset: null, consumedOffset: null, consumedLength: null });
+assert.equal(oldestEvidence(vo({ evidences: [ev("a"), ev("b")], oldest: 1 }))?.producerRequestId, "b");
+assert.equal(oldestEvidence(vo({ evidences: [ev("a")], oldest: null })), undefined);
+const fd = (over: any) => ({ scope: "body", field: "f", occurrence: 0, class: "static", label: "", dynamicKind: null, originLabel: null, a: "1", b: "1", origin: null, parts: [], ...over });
+const counts = { static: 0, dynamic: 0, runtime: 0, noOrigin: 0, onlyA: 0, onlyB: 0, redacted: 0 };
+const pairs = [
+  { a: { requestId: "a1", method: "GET", url: "u" }, b: { requestId: "b1", method: "GET", url: "u" }, alignedBy: "model", outOfOrder: false, counts, fields: [fd({ field: "z" }), fd({ field: "a", class: "dynamic", dynamicKind: "runtime", originLabel: "obter em runtime (origem: cdp-r0001)" })] },
+  { a: { requestId: "a2", method: "GET", url: "u" }, b: { requestId: "b2", method: "GET", url: "u" }, alignedBy: "model", outOfOrder: false, counts, fields: [fd({})] },
+] as any;
+const dyn = dynamicOnly(pairs);
+assert.equal(dyn.length, 1);
+assert.equal(dyn[0].fields[0].field, "a");
+assert.deepEqual(pairs[0].fields.map((f: any) => f.field), ["z", "a"]); // ordem da fonte, sem ordenar
+assert.equal(fieldClassLabel(pairs[0].fields[1]), "obter em runtime (origem: cdp-r0001)");
+assert.equal(fieldClassLabel(fd({ class: "dynamic", dynamicKind: "noOrigin" })), "dinâmico sem origem");
+assert.equal(fieldClassLabel(fd({})), "estático");
 console.log("adapter-minimal: ok");
