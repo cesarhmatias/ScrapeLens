@@ -44,6 +44,8 @@ export interface Body {
   contentType?: string;
   contentEncoding?: string;
   note?: string;
+  /** Transformações aplicadas ao corpo (ex.: chrome-decoded); vazio = bytes do fio. */
+  transformed?: string[];
   provenance: Provenance;
 }
 

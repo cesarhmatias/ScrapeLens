@@ -50,6 +50,7 @@ export interface BodyInfo {
   reason?: string;
   captureRef?: string;
   attachment?: string;
+  transformed?: string[];
 }
 
 export interface RedirectHop {
@@ -148,7 +149,18 @@ export interface RequestRecord {
   verification: Record<VerificationKey, Verification>;
 }
 
+export interface SessionOrigin {
+  kind: "synthetic" | "live" | "capture-import" | "har-import" | "netlog-import" | "unknown";
+  /** Rótulo humano da origem; nunca "ao vivo"/"real" sem rótulo explícito do core. */
+  label: string;
+  /** Selo "real": só captura ao vivo ou arquivo do usuário importado. */
+  real: boolean;
+  /** Texto curto para tags. */
+  tag: string;
+}
+
 export interface SessionRecord {
+  origin: SessionOrigin;
   id: string;
   label: string;
   synthetic: boolean;

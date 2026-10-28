@@ -43,4 +43,38 @@ try {
 } catch (e: any) {
   if (e.code !== "ENOENT") throw e;
 }
+// Rótulos de origem: nunca "real"/"ao vivo" sem rótulo explícito do core.
+const origin = (labels: string[]) => {
+  const raw = structuredClone(minimal) as any;
+  raw.session.labels = labels;
+  return adaptSession(raw).session;
+};
+assert.deepEqual(
+  [origin([]).origin.kind, origin([]).origin.real, origin([]).origin.label],
+  ["unknown", false, "origem não informada"],
+);
+assert.equal(origin(["live-capture"]).origin.label, "Captura ao vivo");
+assert.equal(origin(["live-capture"]).origin.real, true);
+assert.equal(origin(["capture-import"]).origin.label, "Captura importada (CDP/NetLog)");
+assert.equal(origin(["capture-import"]).origin.real, true);
+assert.equal(origin(["har-import"]).origin.label, "HAR importado");
+assert.equal(origin(["netlog-import"]).origin.label, "NetLog importado");
+assert.equal(origin(["synthetic-fixture", "capture-import"]).origin.kind, "synthetic");
+assert.equal(origin(["synthetic-fixture"]).origin.real, false);
+assert.equal(origin(["sanitized"]).origin.real, false);
+assert.match(origin(["sanitized"]).origin.label, /origem não informada/);
+assert.match(origin(["sanitized", "live-capture"]).label, /Captura ao vivo \(sanitizada\)/);
+const tr = structuredClone(minimal) as any;
+tr.requests[0].responseBody = { state: "captured", attachment: "a.body", bytes: 3, transformed: ["chrome-decoded"], provenance: { source: "cdp", method: "m", verification: "verified" } };
+assert.deepEqual(adaptSession(tr).session.requests[0].responseBody.transformed, ["chrome-decoded"]);
+// Realce: bytes UTF-8 → índices JS; sem byteLength nada é realçado.
+import { matchRanges } from "../src/highlight";
+const txt = "á=é&cmd=ação";
+const enc = new TextEncoder();
+const off = enc.encode("á=é&cmd=").length;
+const got = matchRanges(txt, [{ byteOffset: off, byteLength: enc.encode("ação").length, decoded: true, exact: false }]);
+assert.deepEqual(got.ranges, [{ start: 8, end: 12, decoded: true }]);
+assert.equal(txt.slice(got.ranges[0].start, got.ranges[0].end), "ação");
+assert.equal(matchRanges(txt, [{ byteOffset: 0, decoded: false }]).ranges.length, 0);
+assert.equal(matchRanges(txt, [{ byteOffset: 0, byteLength: 9999, decoded: false }]).beyond, 1);
 console.log("adapter-minimal: ok");

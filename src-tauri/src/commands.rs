@@ -460,33 +460,67 @@ pub fn set_chrome_path(
 /// Lê uma prévia textual de anexo da sessão (limite rígido, sem sair da pasta).
 #[tauri::command]
 pub fn read_attachment(session_dir: String, name: String) -> Result<AttachmentPayload, String> {
-    if name.contains("..") || name.contains('/') || name.contains('\\') {
-        return Err("nome de anexo inválido".to_string());
-    }
-    let root = PathBuf::from(&session_dir).join("attachments");
-    let target = root.join(&name);
-    let metadata =
-        fs::metadata(&target).map_err(|error| format!("anexo indisponível: {error}"))?;
-    if metadata.len() > 1024 * 1024 {
+    use std::io::Read;
+    let (file, total) = open_attachment(&session_dir, &name)?;
+    if total > 1024 * 1024 {
         return Ok(AttachmentPayload {
             kind: "binary".to_string(),
             text: None,
-            bytes: metadata.len(),
+            bytes: total,
         });
     }
-    let bytes = fs::read(&target).map_err(|error| format!("falha ao ler anexo: {error}"))?;
+    let mut bytes = Vec::new();
+    file.take(1024 * 1024)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("falha ao ler anexo: {error}"))?;
     match String::from_utf8(bytes) {
         Ok(text) => Ok(AttachmentPayload {
             kind: "text".to_string(),
             text: Some(text),
-            bytes: metadata.len(),
+            bytes: total,
         }),
         Err(_) => Ok(AttachmentPayload {
             kind: "binary".to_string(),
             text: None,
-            bytes: metadata.len(),
+            bytes: total,
         }),
     }
+}
+
+/// Abre um anexo só se for arquivo regular dentro de `attachments/`: recusa
+/// link simbólico (no anexo ou na pasta) e confere, depois de aberto, que o
+/// arquivo é o mesmo inode inspecionado e regular. O tamanho vem do arquivo aberto.
+fn open_attachment(session_dir: &str, name: &str) -> Result<(fs::File, u64), String> {
+    if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err("nome de anexo inválido".to_string());
+    }
+    let root = PathBuf::from(session_dir).join("attachments");
+    let root_meta =
+        fs::symlink_metadata(&root).map_err(|error| format!("anexo indisponível: {error}"))?;
+    if root_meta.file_type().is_symlink() {
+        return Err("a pasta de anexos é um link simbólico; recusado".to_string());
+    }
+    let target = root.join(name);
+    let before =
+        fs::symlink_metadata(&target).map_err(|error| format!("anexo indisponível: {error}"))?;
+    if before.file_type().is_symlink() {
+        return Err(format!("o anexo {name} é um link simbólico; recusado"));
+    }
+    let file = fs::File::open(&target).map_err(|error| format!("falha ao abrir anexo: {error}"))?;
+    let opened = file
+        .metadata()
+        .map_err(|error| format!("falha ao ler anexo: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if opened.ino() != before.ino() || opened.dev() != before.dev() {
+            return Err(format!("o anexo {name} mudou durante a abertura; recusado"));
+        }
+    }
+    if !opened.is_file() {
+        return Err(format!("o anexo {name} não é um arquivo regular"));
+    }
+    Ok((file, opened.len()))
 }
 
 /// Busca no payload via `scrapelens_core::search`, fora da thread da UI.
@@ -506,6 +540,50 @@ pub async fn search_session(
     .map_err(|error| format!("a busca foi interrompida: {error}"))?
 }
 
+/// Bundle da última sessão pesquisada. Chave: pasta + (tamanho, mtime) de
+/// `session.json` + mtime de `attachments/`; mudou, recarrega. Guarda uma só
+/// sessão (abrir outra substitui) e descarta os brutos CDP/NetLog, que a busca
+/// não usa.
+struct CachedBundle {
+    dir: PathBuf,
+    fingerprint: Vec<Option<(u64, SystemTime)>>,
+    bundle: Arc<scrapelens_core::SessionBundle>,
+}
+
+static BUNDLE_CACHE: Mutex<Option<CachedBundle>> = Mutex::new(None);
+static BUNDLE_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn session_fingerprint(dir: &Path) -> Vec<Option<(u64, SystemTime)>> {
+    ["session.json", "attachments"]
+        .iter()
+        .map(|name| {
+            fs::metadata(dir.join(name))
+                .ok()
+                .and_then(|meta| Some((meta.len(), meta.modified().ok()?)))
+        })
+        .collect()
+}
+
+fn cached_bundle(dir: &Path) -> Result<Arc<scrapelens_core::SessionBundle>, String> {
+    let mut guard = BUNDLE_CACHE.lock().map_err(|_| "cache de busca corrompido".to_string())?;
+    let fingerprint = session_fingerprint(dir);
+    if let Some(cached) = guard.as_ref() {
+        if cached.dir == dir && cached.fingerprint == fingerprint {
+            return Ok(cached.bundle.clone());
+        }
+    }
+    *guard = None; // libera a sessão anterior antes de carregar a nova
+    BUNDLE_LOADS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let mut bundle = scrapelens_core::import_session_dir(dir)
+        .map_err(|error| format!("não foi possível ler a sessão: {error}"))?
+        .bundle;
+    bundle.cdp_events_jsonl = None;
+    bundle.netlog_json = None;
+    let bundle = Arc::new(bundle);
+    *guard = Some(CachedBundle { dir: dir.to_path_buf(), fingerprint, bundle: bundle.clone() });
+    Ok(bundle)
+}
+
 fn run_search(
     session_dir: &str,
     text: &str,
@@ -521,13 +599,12 @@ fn run_search(
     for scope in scopes {
         parsed.push(Scope::parse(scope).ok_or_else(|| format!("escopo desconhecido: {scope}"))?);
     }
-    let imported = scrapelens_core::import_session_dir(Path::new(session_dir))
-        .map_err(|error| format!("não foi possível ler a sessão: {error}"))?;
+    let bundle = cached_bundle(Path::new(session_dir))?;
     let mut query = SearchQuery::new(text);
     query.scopes = parsed;
     query.case_sensitive = case_sensitive;
     query.max_matches = max_matches.unwrap_or(2000).clamp(1, 20_000);
-    Ok(search(&imported.bundle, &query))
+    Ok(search(&bundle, &query))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -559,17 +636,9 @@ pub async fn read_body(session_dir: String, name: String, limit: Option<u64>) ->
 
 fn read_body_blocking(session_dir: &str, name: &str, limit: u64) -> Result<BodyPayload, String> {
     use std::io::Read;
-    if name.contains("..") || name.contains('/') || name.contains('\\') || name.is_empty() {
-        return Err("nome de anexo inválido".to_string());
-    }
-    let target = PathBuf::from(session_dir).join("attachments").join(name);
-    let total = fs::symlink_metadata(&target)
-        .map_err(|error| format!("anexo indisponível: {error}"))?
-        .len();
+    let (file, total) = open_attachment(session_dir, name)?;
     let mut buf = Vec::new();
-    fs::File::open(&target)
-        .map_err(|error| format!("falha ao abrir anexo: {error}"))?
-        .take(limit.min(16 * 1024 * 1024))
+    file.take(limit.min(16 * 1024 * 1024))
         .read_to_end(&mut buf)
         .map_err(|error| format!("falha ao ler anexo: {error}"))?;
     let cut = (buf.len() as u64) < total;
@@ -684,6 +753,8 @@ pub fn reveal_path(path: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    static CACHE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     fn temp_session_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "scrapelens-test-{name}-{}-{}",
@@ -769,6 +840,7 @@ mod tests {
 
     #[test]
     fn search_session_finds_body_only_and_reports_partial() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = detran_session("search");
         let found = run_search(dir.to_str().unwrap(), "cmd_consultar_placa", &[], false, None).unwrap();
         assert_eq!(found.matches.len(), 2);
@@ -802,5 +874,66 @@ mod tests {
         assert!(bin.text.is_none());
         assert!(read_body_blocking(d, "../x", 10).is_err());
         fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn bundle_cache_reuses_and_invalidates() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = detran_session("cache");
+        let first = cached_bundle(&dir).unwrap();
+        let second = cached_bundle(&dir).unwrap();
+        assert!(Arc::ptr_eq(&first, &second), "segunda busca deve reutilizar o bundle");
+        assert!(first.cdp_events_jsonl.is_none() && first.netlog_json.is_none());
+        // arquivo mudou (tamanho/mtime) → recarrega
+        let session_file = dir.join("session.json");
+        let mut text = fs::read_to_string(&session_file).unwrap();
+        text.push('\n');
+        fs::write(&session_file, text).unwrap();
+        let third = cached_bundle(&dir).unwrap();
+        assert!(!Arc::ptr_eq(&first, &third));
+        // outra sessão substitui a anterior
+        let other = detran_session("cache-other");
+        let fourth = cached_bundle(&other).unwrap();
+        assert!(!Arc::ptr_eq(&third, &fourth));
+        fs::remove_dir_all(dir).ok();
+        fs::remove_dir_all(other).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn attachments_refuse_symlinks() {
+        let dir = temp_session_dir("symlink");
+        let outside = temp_session_dir("symlink-outside");
+        fs::write(outside.join("secret.txt"), "segredo").unwrap();
+        let att = dir.join("attachments");
+        std::os::unix::fs::symlink(outside.join("secret.txt"), att.join("link.bin")).unwrap();
+        fs::write(att.join("ok.bin"), "ok").unwrap();
+        let d = dir.to_str().unwrap();
+        assert!(read_body_blocking(d, "link.bin", 100).unwrap_err().contains("link simbólico"));
+        assert!(read_attachment(d.to_string(), "link.bin".to_string()).unwrap_err().contains("link simbólico"));
+        assert_eq!(read_body_blocking(d, "ok.bin", 100).unwrap().kind, "text");
+        // pasta attachments/ como link
+        let dir2 = temp_session_dir("symlink2");
+        fs::remove_dir_all(dir2.join("attachments")).unwrap();
+        std::os::unix::fs::symlink(&att, dir2.join("attachments")).unwrap();
+        assert!(read_body_blocking(dir2.to_str().unwrap(), "ok.bin", 100).unwrap_err().contains("link simbólico"));
+        // diretório no lugar de arquivo
+        fs::create_dir(att.join("sub")).unwrap();
+        assert!(read_body_blocking(d, "sub", 100).is_err());
+        for d in [dir, dir2, outside] {
+            fs::remove_dir_all(d).ok();
+        }
+    }
+
+    /// Medição manual: `SL_LARGE_DIR=<sessão> cargo test --release -- --ignored large_search --nocapture`.
+    #[test]
+    #[ignore]
+    fn large_search_timing() {
+        let dir = std::env::var("SL_LARGE_DIR").expect("defina SL_LARGE_DIR");
+        for round in 1..=3 {
+            let start = std::time::Instant::now();
+            let found = run_search(&dir, "zzzz", &[], false, None).unwrap();
+            eprintln!("busca {round}: {:?}, {} achados, loads={}, rss_atual={}", start.elapsed(), found.matches.len(), BUNDLE_LOADS.load(std::sync::atomic::Ordering::SeqCst), String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout).trim());
+        }
     }
 }

@@ -99,6 +99,10 @@ export interface SearchMatch {
   scope: SearchScope;
   field: string | null;
   byteOffset: number | null;
+  /** Comprimento em bytes UTF-8 do trecho original (core ≥ rodada 4b-fix). */
+  byteLength?: number;
+  /** true: o intervalo é literal no original; false: achado só na visão decodificada. */
+  exact?: boolean;
   snippet: string;
   decoded: boolean;
 }

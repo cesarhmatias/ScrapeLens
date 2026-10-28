@@ -1316,3 +1316,4 @@ kbd {
 .match-box .snippet { color: var(--fg-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .code mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inherit; border-radius: 2px; }
 .code.hex { white-space: pre-wrap; overflow-wrap: anywhere; }
+.code mark.decoded { background: transparent; outline: 1px dashed var(--warn); }

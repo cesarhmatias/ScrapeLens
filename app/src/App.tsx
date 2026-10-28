@@ -14,6 +14,7 @@ import {
   type SessionPayload,
 } from "./bridge";
 import { ExportDialog, SanitizeDialog } from "./Export";
+import { matchRanges } from "./highlight";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
@@ -238,25 +239,34 @@ const PREVIEW_LIMIT = 262_144;
 const COPY_LIMIT = 16 * 1024 * 1024;
 const MAX_HIGHLIGHTS = 300;
 
-/** Realça ocorrências de `needle` em `text` como nós React (texto escapado, nunca HTML). */
-function highlightText(text: string, needle: string, caseSensitive: boolean) {
-  if (!needle) return text;
-  const hay = caseSensitive ? text : text.toLowerCase();
-  const target = caseSensitive ? needle : needle.toLowerCase();
-  if (hay.length !== text.length) return text; // dobra de caixa mudou índices: não arrisca
-  const parts: (string | ReactElement)[] = [];
+/** Nós React com os trechos dos achados do core realçados (texto escapado). */
+function highlightMatches(text: string, matches: SearchMatch[]): { nodes: (string | ReactElement)[] | string; shown: number; beyond: number } {
+  const { ranges, beyond } = matchRanges(text, matches);
+  const nodes: (string | ReactElement)[] = [];
   let from = 0;
-  let found = 0;
-  while (found < MAX_HIGHLIGHTS) {
-    const at = hay.indexOf(target, from);
-    if (at < 0) break;
-    if (at > from) parts.push(text.slice(from, at));
-    parts.push(<mark key={at}>{text.slice(at, at + target.length)}</mark>);
-    from = at + target.length;
-    found += 1;
+  for (const range of ranges.slice(0, MAX_HIGHLIGHTS)) {
+    if (range.start < from || range.end <= range.start) continue; // sobreposto: o anterior já cobre
+    if (range.start > from) nodes.push(text.slice(from, range.start));
+    nodes.push(
+      <mark key={range.start} className={range.decoded ? "decoded" : undefined} title={range.decoded ? "achado na visão decodificada" : "achado da busca"}>
+        {text.slice(range.start, range.end)}
+      </mark>,
+    );
+    from = range.end;
   }
-  parts.push(text.slice(from));
-  return parts;
+  nodes.push(text.slice(from));
+  return { nodes: nodes.length === 1 ? text : nodes, shown: ranges.length, beyond };
+}
+
+function OriginTag({ session, long }: { session: SessionRecord; long?: boolean }) {
+  const { origin } = session;
+  if (origin.kind === "synthetic") return <span className="tag tag-demo">DEMO</span>;
+  if (!origin.real) return <span className="tag tag-synthetic" title={origin.label}>{origin.tag}</span>;
+  return (
+    <span className="tag tag-real" title={origin.label}>
+      {long ? `SESSÃO REAL · ${origin.label}` : origin.tag}
+    </span>
+  );
 }
 
 function BodyPanel({
@@ -265,14 +275,15 @@ function BodyPanel({
   kind,
   onCopy,
   sessionDir,
-  highlight,
+  matches,
 }: {
   title: string;
   body: BodyInfo;
   kind: "payload" | "response";
   onCopy?: (value: string, label: string) => void;
   sessionDir?: string;
-  highlight?: { text: string; caseSensitive: boolean } | null;
+  /** Achados do core para este corpo (mesmo escopo e tentativa). */
+  matches?: SearchMatch[];
 }) {
   const [data, setData] = useState<BodyData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -291,6 +302,10 @@ function BodyPanel({
   }, [sessionDir, body.attachment, body.preview]);
 
   const text = body.preview ?? (data?.kind === "text" ? data.text : undefined);
+  const lit = useMemo(
+    () => (text !== undefined && matches?.length ? highlightMatches(text, matches) : { nodes: text ?? "", shown: 0, beyond: 0 }),
+    [text, matches],
+  );
   const copyBody = async () => {
     if (body.preview !== undefined) return onCopy?.(body.preview, title);
     if (!sessionDir || !body.attachment) return;
@@ -330,6 +345,12 @@ function BodyPanel({
           </button>
         )}
       </header>
+      {body.transformed && body.transformed.length > 0 && (
+        <div className="body-flag flag-truncated">
+          <strong>Não idêntico aos bytes trafegados</strong>
+          <span>Transformações: {body.transformed.join(", ")}</span>
+        </div>
+      )}
       {flagged && (
         <div className={`body-flag flag-${body.availability}`}>
           <strong>
@@ -346,8 +367,10 @@ function BodyPanel({
       )}
       {text !== undefined ? (
         <>
-          <pre className="code">{highlight ? highlightText(text, highlight.text, highlight.caseSensitive) : text}</pre>
+          <pre className="code">{lit.nodes}</pre>
           <div className="body-foot">
+            {lit.shown > 0 && lit.nodes !== text ? `${lit.shown} achado(s) da busca realçado(s)${matches?.some((m) => m.decoded || m.exact === false) ? "; realce tracejado = achado na visão decodificada" : ""}. ` : ""}
+            {lit.beyond > 0 ? `${lit.beyond} achado(s) além da parte exibida. ` : ""}
             {data?.cut ? `Exibindo os primeiros ${fmtBytes(data.shownBytes)} de ${fmtBytes(data.bytes)}; “Copiar corpo” entrega até ${fmtBytes(COPY_LIMIT)}. ` : ""}
             {body.contentType?.includes("html")
               ? "HTML exibido como texto — nunca renderizado como interface."
@@ -502,7 +525,7 @@ function VerificationPanel({
           <dt>Sessão</dt>
           <dd>
             <span className="mono">{session.id}</span>{" "}
-            {session.synthetic ? <span className="tag tag-demo">DEMO</span> : <span className="tag tag-real">real</span>}
+            <OriginTag session={session} />
           </dd>
         </dl>
       </div>
@@ -601,10 +624,8 @@ function DetailView({
   onCopy,
   onExport,
   matches,
-  search,
 }: {
   matches: SearchMatch[];
-  search: { text: string; caseSensitive: boolean } | null;
   req: RequestRecord;
   tab: DetailTab;
   setTab: (t: DetailTab) => void;
@@ -617,8 +638,8 @@ function DetailView({
   const resNorm = useMemo(() => normalizeHeaders(req.responseHeaders), [req]);
   const effectivePayload = req.payload;
   const effectiveResponse = req.responseBody;
-  const bodyHighlight = (scope: SearchScope) =>
-    search && matches.some((m) => m.scope === scope) ? search : null;
+  const bodyMatches = (scope: SearchScope, body: BodyInfo) =>
+    matches.filter((m) => m.scope === scope && body.attachment?.startsWith(`${m.attemptId}.`));
   const tabs: { id: DetailTab; label: string; count?: number }[] = [
     { id: "headers", label: "Headers brutos", count: req.requestHeaders.length + req.responseHeaders.length },
     { id: "normalized", label: "Normalizado" },
@@ -640,7 +661,7 @@ function DetailView({
           <span className="mono">{session.id}</span>
           <span className="sep">/</span>
           <span className="mono">{req.id}</span>
-          {session.synthetic ? <span className="tag tag-demo">DEMO</span> : <span className="tag tag-real">real</span>}
+          <OriginTag session={session} />
         </div>
       </div>
 
@@ -694,6 +715,11 @@ function DetailView({
                   {m.byteOffset !== null ? <span className="dim"> · byte {m.byteOffset}</span> : null}
                   {m.decoded && <span className="chip v-partial" title="Achado após decodificar form-urlencoded/JSON; o byte bruto pode diferir">visão decodificada</span>}
                   <div className="mono snippet">{m.snippet}</div>
+                  {m.decoded && (
+                    <div className="dim">
+                      Trecho acima é a visão decodificada do campo (derivada); o corpo bruto, exibido na aba Payload/Resposta, é o dado primário.
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -908,14 +934,14 @@ function DetailView({
 
           {tab === "payload" && (
             <>
-              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} highlight={bodyHighlight("requestBody")} />
+              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("requestBody", effectivePayload)} />
               <BodyContext req={req} />
-              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} highlight={bodyHighlight("responseBody")} />
+              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} />
             </>
           )}
           {tab === "response" && (
             <>
-              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} highlight={bodyHighlight("responseBody")} />
+              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} />
               <BodyContext req={req} />
             </>
           )}
@@ -1062,9 +1088,7 @@ function DetailView({
 
           <section className="limits-strip">
             <div className="limits-head">
-              <span className={session.synthetic ? "tag tag-demo" : "tag tag-real"}>
-                {session.synthetic ? "DEMO" : "SESSÃO REAL"}
-              </span>
+              <OriginTag session={session} long />
               <h3>Limites desta captura</h3>
               <span className="hint">visível em todas as abas</span>
             </div>
@@ -1165,7 +1189,7 @@ function CompareView({
           <span className="mono">{session.id}</span>
           <span className="sep">/</span>
           <span>comparação</span>
-          {session.synthetic ? <span className="tag tag-demo">DEMO</span> : <span className="tag tag-real">real</span>}
+          <OriginTag session={session} />
         </div>
       </div>
 
@@ -1371,14 +1395,6 @@ export default function App() {
   const selected = requests.find((r) => r.id === selectedId) ?? requests[0];
   const warningTotal =
     session.warnings.length + requests.reduce((total, request) => total + request.warnings.length, 0);
-  const sessionKind = session.labels.includes("har-import")
-    ? "importada"
-    : session.labels.includes("netlog-import")
-      ? "importada"
-      : session.synthetic
-        ? "demo"
-        : "captura local";
-
   const applyPayload = useCallback((payload: SessionPayload | null) => {
     if (!payload) return;
     setLoaded(
@@ -1603,7 +1619,7 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, [recording?.sessionId, desktop]);
 
-  const searchDir = desktop && !session.synthetic ? session.sourcePath : undefined;
+  const searchDir = desktop ? session.sourcePath : undefined;
   const searchText = query.trim();
   const searchKey = searchDir && searchText ? JSON.stringify([searchDir, searchText, scopes, caseSensitive]) : "";
   useEffect(() => {
@@ -1719,11 +1735,7 @@ export default function App() {
             </span>
           </div>
           <div className="title-actions">
-            {session.synthetic ? (
-              <span className="tag tag-demo">DEMO</span>
-            ) : (
-              <span className="tag tag-real">{sessionKind}</span>
-            )}
+            <OriginTag session={session} />
             <span className="tag tag-synthetic">{desktop ? "Tauri 2" : "modo navegador"}</span>
             <button
               className="icon-btn theme"
@@ -1747,7 +1759,7 @@ export default function App() {
           </div>
         ) : (
           <div className="real-banner">
-            <span className="tag tag-real">SESSÃO REAL</span>
+            <OriginTag session={session} long />
             <p>
               <strong>{session.label}</strong> · {session.completeness.state === "complete" ? "completa" : "parcial"}
               {session.sourcePath ? <> · <span className="mono">{session.sourcePath}</span></> : null}
@@ -1763,11 +1775,7 @@ export default function App() {
                 <div className="sid-top">
                   <span className="dot-live" />
                   <span className="sid-label">{session.label}</span>
-                  {session.synthetic ? (
-                    <span className="tag tag-demo">DEMO</span>
-                  ) : (
-                    <span className="tag tag-real">real</span>
-                  )}
+                  <OriginTag session={session} />
                   {recording ? (
                     <span className="tag tag-recording">
                       <span className="rec-dot" /> gravando
@@ -2122,7 +2130,6 @@ export default function App() {
             onCopy={copy}
             onExport={() => setExportTarget(selected)}
             matches={matchesById.get(selected.id) ?? []}
-            search={payloadSearch ? { text: searchText, caseSensitive } : null}
           />
         )}
 

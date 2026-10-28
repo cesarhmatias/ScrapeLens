@@ -101,6 +101,8 @@ async function openSession(dir) {
 
 await page.goto(url, { waitUntil: "networkidle" });
 await openSession(detranDir);
+results.originBanner = await page.locator(".real-banner, .demo-banner").first().innerText();
+results.originTags = await page.locator(".tag").allInnerTexts();
 results.detranRows = await rows();
 await shot("01-detran-lista.png");
 
@@ -132,6 +134,7 @@ results.matchBox = await page.locator(".match-box").innerText();
 await page.getByRole("tab", { name: /Payload/ }).click();
 await page.waitForSelector(".body-panel pre.code");
 results.highlightMarks = await page.locator(".body-panel pre.code mark").count();
+results.markText = await page.locator(".body-panel pre.code mark").allInnerTexts();
 await shot("04-detalhe-match.png");
 results.copyBody = null;
 await page.getByRole("button", { name: "Copiar corpo" }).first().click();

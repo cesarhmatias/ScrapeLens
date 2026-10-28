@@ -12,6 +12,7 @@ import type {
   RequestRecord,
   ResourceType,
   SessionRecord,
+  SessionOrigin,
   SourceId,
   Verification,
   VerificationKey,
@@ -128,6 +129,7 @@ function mapBody(body: Body | undefined, attachments?: Record<string, string>): 
     truncatedAt: body.truncatedAt,
     reason: body.note,
     captureRef: body.attachment,
+    transformed: body.transformed,
     attachment: body.attachment,
   };
 }
@@ -363,6 +365,26 @@ export interface AdaptedSession {
   sourcePath?: string;
 }
 
+/** Origem pelos rótulos do core; sem rótulo conhecido nunca é "real" nem "ao vivo". */
+export function sessionOrigin(labels: string[]): SessionOrigin {
+  if (labels.includes("synthetic-fixture"))
+    return { kind: "synthetic", label: "Demonstração — vitrine sintética", real: false, tag: "DEMO" };
+  if (labels.includes("live-capture"))
+    return { kind: "live", label: "Captura ao vivo", real: true, tag: "captura ao vivo" };
+  if (labels.includes("capture-import"))
+    return { kind: "capture-import", label: "Captura importada (CDP/NetLog)", real: true, tag: "importada" };
+  if (labels.includes("har-import"))
+    return { kind: "har-import", label: "HAR importado", real: true, tag: "importada" };
+  if (labels.includes("netlog-import"))
+    return { kind: "netlog-import", label: "NetLog importado", real: true, tag: "importada" };
+  return {
+    kind: "unknown",
+    label: labels.includes("sanitized") ? "Sessão sanitizada (origem não informada)" : "origem não informada",
+    real: false,
+    tag: "origem não informada",
+  };
+}
+
 export function adaptSession(
   input: SessionV1,
   options: { attachments?: Record<string, string>; sourcePath?: string } = {},
@@ -464,13 +486,8 @@ export function adaptSession(
 
   const browser = raw.session.browser;
   const labels = raw.session.labels ?? [];
-  const kind = labels.includes("har-import")
-    ? "HAR importado"
-    : labels.includes("netlog-import")
-      ? "NetLog importado"
-      : labels.includes("sanitized")
-        ? "Sessão sanitizada"
-        : "Captura ao vivo";
+  const origin = sessionOrigin(labels);
+  const kind = labels.includes("sanitized") && origin.kind !== "unknown" ? `${origin.label} (sanitizada)` : origin.label;
   const browserLabel = [browser.name, browser.version].filter(Boolean).join(" ");
   const label = synthetic
     ? "Demonstração — vitrine sintética"
@@ -480,6 +497,7 @@ export function adaptSession(
     raw,
     sourcePath: options.sourcePath,
     session: {
+      origin,
       id: raw.session.id,
       label,
       synthetic,
