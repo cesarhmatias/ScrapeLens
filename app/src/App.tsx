@@ -18,7 +18,7 @@ import { matchRanges } from "./highlight";
 import { classifyTransforms } from "./transforms";
 import { OriginsTab } from "./Origins";
 import { CaptureCompareView } from "./CaptureCompare";
-import type { SessionComparison } from "./flow";
+import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
@@ -1397,7 +1397,7 @@ export default function App() {
   const [sanitizeOpen, setSanitizeOpen] = useState(false);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
-  const [captureCmp, setCaptureCmp] = useState<{ result: SessionComparison; labelA: string; labelB: string } | null>(null);
+  const [captureCmp, setCaptureCmp] = useState<{ summary: CompareSummary; labelA: string; labelB: string } | null>(null);
   const [scopes, setScopes] = useState<SearchScope[]>(ALL_SCOPES);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [searchState, setSearchState] = useState<{
@@ -1421,8 +1421,8 @@ export default function App() {
       const dirB = await bridge.pickCompareSession();
       if (!dirB) return;
       setBusy("Comparando capturas…");
-      const result = await bridge.compareSessions(session.sourcePath, dirB);
-      setCaptureCmp({ result, labelA: session.label, labelB: dirB.split("/").filter(Boolean).pop() ?? dirB });
+      const summary = await bridge.compareOpen(session.sourcePath, dirB);
+      setCaptureCmp({ summary, labelA: session.label, labelB: dirB.split("/").filter(Boolean).pop() ?? dirB });
       setView("capture-compare");
     } catch (error) {
       setNotice({ kind: "error", text: "Não foi possível comparar as capturas.", detail: String(error) });
@@ -2202,7 +2202,7 @@ export default function App() {
 
         {view === "capture-compare" && captureCmp && (
           <CaptureCompareView
-            result={captureCmp.result}
+            summary={captureCmp.summary}
             labelA={captureCmp.labelA}
             labelB={captureCmp.labelB}
             onBack={() => setView("session")}

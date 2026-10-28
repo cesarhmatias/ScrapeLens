@@ -33,6 +33,8 @@ export interface ValueOrigin {
   length: number;
   /** origin | ambiguous | repeated | none | composite | redacted ... */
   status: string;
+  /** `strong` | `possible` | null (core ≥ revisão 5); ausente em esquemas antigos. */
+  confidence?: "strong" | "possible" | string | null;
   label: string;
   offset: number | null;
   /** Índice, em `evidences`, do produtor mais antigo (se houver). */
@@ -62,6 +64,8 @@ export interface StepReason {
 }
 
 export interface ChainStep {
+  /** `strong` | `possible` (core ≥ revisão 5); ausente em esquemas antigos. */
+  confidence?: "strong" | "possible" | string;
   requestId: string;
   attemptId: string;
   method: string;
@@ -141,7 +145,15 @@ export interface PairCounts {
   redacted: number;
 }
 
+export interface PartsCounts {
+  static: number;
+  dynamic: number;
+  runtime: number;
+  noOrigin: number;
+}
+
 export interface PairComparison {
+  partsCounts?: PartsCounts;
   a: RequestRef;
   b: RequestRef;
   alignedBy: string;
@@ -151,6 +163,7 @@ export interface PairComparison {
 }
 
 export interface SessionComparison {
+  partsCounts?: PartsCounts;
   pairs: PairComparison[];
   onlyInA: RequestRef[];
   onlyInB: RequestRef[];
@@ -171,20 +184,24 @@ export const strengthLabels: Record<string, string> = { strong: "forte", medium:
 
 /** Rótulo de status em português; "sem origem observada" é neutro, nunca erro. */
 export function originStatusLabel(value: ValueOrigin): string {
+  const confidence = originConfidence(value);
+  const kind = (oldestEvidence(value) ?? value.evidences[0])?.kind;
   switch (value.status) {
-    case "origin":
-      return "origem observada";
-    case "ambiguous":
-      return "ambíguo";
     case "repeated":
       return "sem origem observada (já circulava)";
     case "composite":
       return "composto (ver trechos)";
     case "redacted":
       return "redigido (não rastreável)";
-    default:
+    case "none":
       return "sem origem observada";
+    default:
+      break;
   }
+  if (value.status === "ambiguous") return confidence === "possible" ? "ambíguo (possível origem)" : "ambíguo";
+  if (confidence === "possible") return `possível origem (${kind ?? "evidência média"})`;
+  if (confidence === "strong") return "origem observada";
+  return "sem origem observada";
 }
 
 /** Evidência do produtor mais antigo, quando `oldest` aponta para uma. */
@@ -222,4 +239,70 @@ export function fieldClassLabel(field: FieldDiff): string {
   if (field.dynamicKind === "repeated") return "dinâmico (já circulava, sem produtor observado)";
   if (field.dynamicKind === "composite") return "dinâmico composto (ver trechos)";
   return field.label;
+}
+
+// ---- Comparação paginada (commands compare_open / compare_page / compare_fields) ----
+
+export interface CompareSummary {
+  handle: number;
+  pairs: number;
+  dynamicPairs: number;
+  counts: PairCounts;
+  partsCounts?: PartsCounts;
+  redactedFields: number;
+  ambiguities: string[];
+  warnings: string[];
+  onlyInA: RequestRef[];
+  onlyInATotal: number;
+  onlyInB: RequestRef[];
+  onlyInBTotal: number;
+}
+
+export interface PairSummary {
+  index: number;
+  a: RequestRef;
+  b: RequestRef;
+  alignedBy: string;
+  outOfOrder: boolean;
+  counts: PairCounts;
+  partsCounts?: PartsCounts;
+  fieldCount: number;
+}
+
+export interface ComparePage {
+  total: number;
+  items: PairSummary[];
+}
+
+/** Acima deste número de pares, "só dinâmicos" começa ligado. */
+export const DYNAMIC_ONLY_THRESHOLD = 500;
+
+export function visibleFields(fields: FieldDiff[], onlyDynamic: boolean): FieldDiff[] {
+  return onlyDynamic ? fields.filter((field) => field.class !== "static") : fields;
+}
+
+/** "N dinâmicos, sendo M em trechos de campos compostos" (só com partsCounts). */
+export function dynamicSummary(counts: PairCounts, parts?: PartsCounts): string {
+  const base = `${counts.dynamic} dinâmico(s)`;
+  return parts ? `${base}, sendo ${parts.dynamic} em trechos de campos compostos` : base;
+}
+
+// ---- Confiança da origem ("possível origem" × "origem observada") ----
+
+export type OriginConfidence = "strong" | "possible" | "none";
+
+/** "Origem observada" exige evidência forte; só média = "possível origem". */
+export function originConfidence(value: ValueOrigin): OriginConfidence {
+  if (value.confidence === "strong" || value.confidence === "possible") return value.confidence;
+  if (value.status.startsWith("possible")) return "possible";
+  if (value.status === "origin" || value.status === "ambiguous") {
+    if (value.evidences.length === 0) return value.status === "origin" ? "strong" : "none";
+    return value.evidences.some((ev) => ev.strength === "strong") ? "strong" : "possible";
+  }
+  return "none";
+}
+
+export function stepConfidence(step: ChainStep): "strong" | "possible" {
+  if (step.confidence === "strong" || step.confidence === "possible") return step.confidence;
+  return step.reasons.some((reason) => reason.strength === "strong") ? "strong" : step.reasons.length === 0 ? "strong" : "possible";
 }

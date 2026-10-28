@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { SessionV1 } from "./v1/types";
-import type { PrimingChain, SessionComparison, ValueOrigins } from "./flow";
+import type { ComparePage, CompareSummary, FieldDiff, PrimingChain, ValueOrigins } from "./flow";
 
 export interface SessionPayload {
   session: SessionV1;
@@ -292,9 +292,19 @@ export const bridge = {
     return typeof picked === "string" ? picked : null;
   },
 
-  async compareSessions(dirA: string, dirB: string): Promise<SessionComparison> {
-    return invoke("compare_session_dirs", { dirA, dirB });
+  /** Compara A × B no Rust e devolve só o resumo; pares e campos vêm por página. */
+  async compareOpen(dirA: string, dirB: string): Promise<CompareSummary> {
+    return invoke("compare_open", { dirA, dirB });
   },
+
+  async comparePage(handle: number, offset: number, limit: number, onlyDynamic: boolean): Promise<ComparePage> {
+    return invoke("compare_page", { handle, offset, limit, onlyDynamic });
+  },
+
+  async compareFields(handle: number, index: number): Promise<FieldDiff[]> {
+    return invoke("compare_fields", { handle, index });
+  },
+
 
   /** Diálogo nativo de salvamento + gravação 0600 sem sobrescrever. */
   async saveExport(defaultName: string, text: string): Promise<SavedFile | null> {

@@ -114,4 +114,33 @@ assert.deepEqual(pairs[0].fields.map((f: any) => f.field), ["z", "a"]); // ordem
 assert.equal(fieldClassLabel(pairs[0].fields[1]), "obter em runtime (origem: cdp-r0001)");
 assert.equal(fieldClassLabel(fd({ class: "dynamic", dynamicKind: "noOrigin" })), "dinâmico sem origem");
 assert.equal(fieldClassLabel(fd({})), "estático");
+import { DYNAMIC_ONLY_THRESHOLD, dynamicSummary, originConfidence, stepConfidence, visibleFields } from "../src/flow";
+const strongEv = { ...ev("p"), kind: "cookie-jar", strength: "strong" };
+// esquema antigo: status "origin" decide pela força da evidência
+assert.equal(originConfidence(vo({ status: "origin", evidences: [ev("a")] })), "possible");
+assert.equal(originStatusLabel(vo({ status: "origin", evidences: [ev("a")], oldest: 0 })), "possível origem (value-match)");
+assert.equal(originConfidence(vo({ status: "origin", evidences: [strongEv] })), "strong");
+assert.equal(originStatusLabel(vo({ status: "origin", evidences: [strongEv], oldest: 0 })), "origem observada");
+assert.equal(originConfidence(vo({ status: "origin", evidences: [ev("a"), strongEv] })), "strong");
+// esquema novo: campo `confidence` do core decide (mesmo contra a força das evidências)
+assert.equal(originConfidence(vo({ status: "origin", confidence: "possible", evidences: [strongEv] })), "possible");
+assert.equal(originConfidence(vo({ status: "origin", confidence: "strong", evidences: [ev("a")] })), "strong");
+assert.equal(originConfidence(vo({ status: "origin", confidence: null, evidences: [ev("a")] })), "possible");
+// status "possible-origin" hipotético
+assert.equal(originConfidence(vo({ status: "possible-origin", evidences: [ev("a")] })), "possible");
+assert.match(originStatusLabel(vo({ status: "possible-origin", evidences: [ev("a")], oldest: 0 })), /^possível origem/);
+assert.equal(originStatusLabel(vo({ status: "ambiguous", evidences: [ev("a"), ev("b")] })), "ambíguo (possível origem)");
+assert.equal(originConfidence(vo({ status: "none" })), "none");
+const reason = (strength: string) => ({ provides: "x", field: "f", kind: "k", strength, consumedBy: "r" });
+const step = (over: any) => ({ requestId: "r", attemptId: "a", method: "GET", url: "u", startedAt: 0, class: "application", reason: "", reasons: [], ...over });
+assert.equal(stepConfidence(step({ confidence: "possible", reasons: [reason("strong")] })), "possible");
+assert.equal(stepConfidence(step({ reasons: [reason("medium")] })), "possible");
+assert.equal(stepConfidence(step({ reasons: [reason("medium"), reason("strong")] })), "strong");
+assert.equal(stepConfidence(step({ confidence: "strong" })), "strong");
+const pc = { static: 5, dynamic: 12, runtime: 12, noOrigin: 0 };
+assert.equal(dynamicSummary({ ...counts, dynamic: 44 }, pc), "44 dinâmico(s), sendo 12 em trechos de campos compostos");
+assert.equal(dynamicSummary({ ...counts, dynamic: 44 }), "44 dinâmico(s)");
+assert.equal(visibleFields([fd({ field: "s" }), fd({ field: "d", class: "dynamic" })], true).length, 1);
+assert.equal(visibleFields([fd({ field: "s" }), fd({ field: "d", class: "dynamic" })], false).length, 2);
+assert.equal(DYNAMIC_ONLY_THRESHOLD, 500);
 console.log("adapter-minimal: ok");

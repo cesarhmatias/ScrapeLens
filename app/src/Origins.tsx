@@ -5,6 +5,8 @@ import { bridge } from "./bridge";
 import {
   evidenceLabels,
   groupOrigins,
+  originConfidence,
+  stepConfidence,
   oldestEvidence,
   originStatusLabel,
   strengthLabels,
@@ -49,6 +51,7 @@ function EvidenceItem({ ev, onOpen, oldest }: { ev: Evidence; onOpen: (id: strin
 
 function OriginRow({ value, part, onOpen }: { value: ValueOrigin; part?: boolean; onOpen: (id: string) => void }) {
   const oldest = oldestEvidence(value);
+  const confidence = originConfidence(value);
   const ambiguous = value.status === "ambiguous";
   return (
     <tr className={part ? "part" : undefined}>
@@ -60,7 +63,15 @@ function OriginRow({ value, part, onOpen }: { value: ValueOrigin; part?: boolean
       </td>
       <td className="val">{value.value === "" ? <span className="dim">(vazio)</span> : value.value}</td>
       <td>
-        {originStatusLabel(value)}
+        {confidence === "possible" ? (
+          <span className="chip possible" title="Só evidência média (value-match ou same-field genérico): coincidência de valor, não prova de origem">
+            {originStatusLabel(value)}
+          </span>
+        ) : confidence === "strong" ? (
+          <span className="chip strong">{originStatusLabel(value)}</span>
+        ) : (
+          originStatusLabel(value)
+        )}
         {ambiguous && <div className="chip v-partial">ambíguo: {value.evidences.length} candidatos</div>}
         {value.status === "none" || value.status === "repeated" ? (
           <div className="dim">neutro: pode ser constante, entrada do usuário ou valor gerado no cliente</div>
@@ -96,6 +107,11 @@ function StepItem({ step, index, onOpen }: { step: ChainStep; index?: number; on
     <li className={step.class === "protection" ? "chain-protection" : undefined}>
       {index !== undefined && <strong>{index + 1}. </strong>}
       <span className="mono">{step.method}</span> <ReqLink id={step.requestId} onOpen={onOpen} />{" "}
+      {step.class !== "protection" && (
+        <span className={`chip ${stepConfidence(step) === "strong" ? "strong" : "possible"}`}>
+          {stepConfidence(step) === "strong" ? "confiança forte" : "possível"}
+        </span>
+      )}{" "}
       <span className="mono dim">{step.url}</span>
       <div className="why">
         {step.reasons.length === 0
@@ -117,7 +133,10 @@ export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id
           requisições mínimas, na ordem do fluxo, que antecedem {chain.requestId}
         </span>
       </header>
-      <div className="body-foot">Derivada de evidências do core (não prova causalidade); não é um script executável.</div>
+      <div className="body-foot">
+        Derivada de evidências do core (não prova causalidade); não é um script executável. <strong>confiança forte</strong> = há evidência forte
+        (cookie-jar / same-field não genérico); <strong>possível</strong> = só coincidência de valor (value-match).
+      </div>
       <ol className="chain-list" style={{ padding: "0 13px" }}>
         {chain.steps.map((step, index) => (
           <StepItem key={step.requestId} step={step} index={index} onOpen={onOpen} />

@@ -23,6 +23,7 @@ await new Promise((r) => server.listen(0, r));
 const url = `http://127.0.0.1:${server.address().port}/`;
 
 let pick = dirA;
+let cmp = null;
 const core = (...a) => JSON.parse(execFileSync(coreBin, a, { maxBuffer: 1 << 28 }).toString());
 async function rpc(cmd, args) {
   switch (cmd) {
@@ -32,7 +33,18 @@ async function rpc(cmd, args) {
     }
     case "request_origins": return core("origins", args.sessionDir, args.requestId);
     case "request_chain": return core("chain", args.sessionDir, args.requestId);
-    case "compare_session_dirs": return core("compare", args.dirA, args.dirB);
+    case "compare_open": {
+      // Mesma lógica de resumo/página/campos do Rust (commands.rs), sobre o JSON real do core.
+      cmp = core("compare", args.dirA, args.dirB);
+      const dyn = (p) => p.counts.dynamic + p.counts.onlyA + p.counts.onlyB + p.counts.redacted > 0;
+      return { handle: 1, pairs: cmp.pairs.length, dynamicPairs: cmp.pairs.filter(dyn).length, counts: cmp.counts, partsCounts: cmp.partsCounts, redactedFields: cmp.redactedFields, ambiguities: cmp.ambiguities, warnings: cmp.warnings, onlyInA: cmp.onlyInA.slice(0, 200), onlyInATotal: cmp.onlyInA.length, onlyInB: cmp.onlyInB.slice(0, 200), onlyInBTotal: cmp.onlyInB.length };
+    }
+    case "compare_page": {
+      const dyn = (p) => p.counts.dynamic + p.counts.onlyA + p.counts.onlyB + p.counts.redacted > 0;
+      const idx = cmp.pairs.map((p, index) => ({ p, index })).filter(({ p }) => !args.onlyDynamic || dyn(p));
+      return { total: idx.length, items: idx.slice(args.offset, args.offset + args.limit).map(({ p, index }) => ({ index, a: p.a, b: p.b, alignedBy: p.alignedBy, outOfOrder: p.outOfOrder, counts: p.counts, partsCounts: p.partsCounts, fieldCount: p.fields.length })) };
+    }
+    case "compare_fields": return cmp.pairs[args.index].fields;
     case "read_body": {
       const buf = fs.readFileSync(path.join(args.sessionDir, "attachments", args.name));
       return { kind: "text", text: buf.toString("utf8"), bytes: buf.length, shownBytes: buf.length, cut: false };
@@ -113,9 +125,13 @@ await page.getByLabel("Buscar requisições").fill("");
 await page.getByRole("button", { name: "Comparar capturas…" }).click();
 await page.waitForSelector(".cmp-pair");
 results.pairs = await page.locator(".cmp-pair").count();
+await page.locator(".cmp-pair").nth(3).getByRole("button", { name: /campos/ }).click();
+await page.waitForSelector(".cmp-field");
 results.compareHeader = await page.locator(".body-panel .block-meta").first().innerText();
 await shot("15-comparacao-ab.png");
-await page.getByLabel("só dinâmicos").check();
+await page.getByLabel(/só dinâmicos/).check();
+await page.locator(".cmp-pair").nth(2).getByRole("button", { name: /campos/ }).click();
+await page.waitForSelector(".cmp-field");
 await page.waitForTimeout(300);
 results.dynamicOnlyFields = await page.locator(".cmp-field").count();
 results.staticLeft = await page.locator(".cmp-field:not(.cmp-dynamic)").count();

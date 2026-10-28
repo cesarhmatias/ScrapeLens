@@ -535,6 +535,9 @@ fn session_fingerprint(dir: &Path) -> Vec<Option<(u64, SystemTime)>> {
 }
 
 pub(crate) fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::LazySession>, String> {
+    // Chave canônica: `./s`, `s` e symlinks para a mesma pasta compartilham a entrada.
+    let canonical = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let dir = canonical.as_path();
     let mut guard = SESSION_CACHE.lock().map_err(|_| "cache de busca corrompido".to_string())?;
     let fingerprint = session_fingerprint(dir);
     if let Some(index) = guard.iter().position(|cached| cached.dir == dir) {
@@ -689,30 +692,167 @@ pub async fn request_chain(
     .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
 }
 
-/// Compara a sessão aberta (A) com outra pasta escolhida pelo usuário (B).
+/// Comparação mantida no Rust: a UI recebe só o resumo e pede páginas de pares
+/// e os campos de um par sob demanda (evita dezenas de MB de JSON no IPC).
+struct StoredComparison {
+    id: u64,
+    result: Arc<scrapelens_core::compare::SessionComparison>,
+}
+
+static COMPARISON: Mutex<Option<StoredComparison>> = Mutex::new(None);
+static COMPARISON_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+const ONLY_LIST_CAP: usize = 200;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompareSummary {
+    pub handle: u64,
+    pub pairs: usize,
+    /// Pares com algum campo que não é estático (candidatos ao filtro "só dinâmicos").
+    pub dynamic_pairs: usize,
+    pub counts: scrapelens_core::compare::PairCounts,
+    pub parts_counts: scrapelens_core::compare::PartsCounts,
+    pub redacted_fields: usize,
+    pub ambiguities: Vec<String>,
+    pub warnings: Vec<String>,
+    pub only_in_a: Vec<scrapelens_core::compare::RequestRef>,
+    pub only_in_a_total: usize,
+    pub only_in_b: Vec<scrapelens_core::compare::RequestRef>,
+    pub only_in_b_total: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairSummary {
+    pub index: usize,
+    pub a: scrapelens_core::compare::RequestRef,
+    pub b: scrapelens_core::compare::RequestRef,
+    pub aligned_by: String,
+    pub out_of_order: bool,
+    pub counts: scrapelens_core::compare::PairCounts,
+    pub parts_counts: scrapelens_core::compare::PartsCounts,
+    pub field_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComparePage {
+    /// Pares que passam no filtro (não só os desta página).
+    pub total: usize,
+    pub items: Vec<PairSummary>,
+}
+
+fn pair_is_dynamic(pair: &scrapelens_core::compare::PairComparison) -> bool {
+    let c = &pair.counts;
+    c.dynamic + c.only_a + c.only_b + c.redacted > 0
+}
+
+/// Compara a sessão aberta (A) com outra pasta (B), fora da thread da UI.
 #[tauri::command]
-pub async fn compare_session_dirs(
-    dir_a: String,
-    dir_b: String,
-) -> Result<scrapelens_core::compare::SessionComparison, String> {
-    tauri::async_runtime::spawn_blocking(move || run_compare(&dir_a, &dir_b))
+pub async fn compare_open(dir_a: String, dir_b: String) -> Result<CompareSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || open_comparison(&dir_a, &dir_b))
         .await
         .map_err(|error| format!("a comparação foi interrompida: {error}"))?
 }
 
-fn run_compare(dir_a: &str, dir_b: &str) -> Result<scrapelens_core::compare::SessionComparison, String> {
-    if Path::new(dir_a) == Path::new(dir_b) {
-        return Err("escolha uma sessão diferente da aberta para comparar".to_string());
+/// Página de pares (resumos, sem campos).
+#[tauri::command]
+pub async fn compare_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool) -> Result<ComparePage, String> {
+    tauri::async_runtime::spawn_blocking(move || comparison_page(handle, offset, limit, only_dynamic))
+        .await
+        .map_err(|error| format!("a leitura foi interrompida: {error}"))?
+}
+
+/// Campos de um par (na ordem da fonte), carregados ao expandir.
+#[tauri::command]
+pub async fn compare_fields(handle: u64, index: usize) -> Result<Vec<scrapelens_core::compare::FieldDiff>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = stored_comparison(handle)?;
+        result
+            .pairs
+            .get(index)
+            .map(|pair| pair.fields.clone())
+            .ok_or_else(|| format!("par {index} inexistente"))
+    })
+    .await
+    .map_err(|error| format!("a leitura foi interrompida: {error}"))?
+}
+
+fn stored_comparison(handle: u64) -> Result<Arc<scrapelens_core::compare::SessionComparison>, String> {
+    let guard = COMPARISON.lock().map_err(|_| "comparação corrompida".to_string())?;
+    match guard.as_ref() {
+        Some(stored) if stored.id == handle => Ok(stored.result.clone()),
+        _ => Err("esta comparação foi substituída por outra; compare de novo".to_string()),
     }
-    let a = cached_session(Path::new(dir_a))?;
-    let b = cached_session(Path::new(dir_b)).map_err(|error| format!("sessão B: {error}"))?;
-    Ok(scrapelens_core::compare::compare_sessions(
+}
+
+fn comparison_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool) -> Result<ComparePage, String> {
+    let result = stored_comparison(handle)?;
+    let limit = limit.clamp(1, 500);
+    let mut total = 0usize;
+    let mut items = Vec::new();
+    for (index, pair) in result.pairs.iter().enumerate() {
+        if only_dynamic && !pair_is_dynamic(pair) {
+            continue;
+        }
+        if total >= offset && items.len() < limit {
+            items.push(PairSummary {
+                index,
+                a: pair.a.clone(),
+                b: pair.b.clone(),
+                aligned_by: pair.aligned_by.clone(),
+                out_of_order: pair.out_of_order,
+                counts: pair.counts.clone(),
+                parts_counts: pair.parts_counts.clone(),
+                field_count: pair.fields.len(),
+            });
+        }
+        total += 1;
+    }
+    Ok(ComparePage { total, items })
+}
+
+/// Caminhos canonicalizados (resolve `./s`, `s` e symlinks): a mesma sessão por
+/// dois caminhos é recusada.
+fn open_comparison(dir_a: &str, dir_b: &str) -> Result<CompareSummary, String> {
+    let canon = |label: &str, dir: &str| {
+        fs::canonicalize(dir).map_err(|error| format!("sessão {label} inacessível ({dir}): {error}"))
+    };
+    let a_path = canon("A", dir_a)?;
+    let b_path = canon("B", dir_b)?;
+    if a_path == b_path {
+        return Err(format!(
+            "A e B são a mesma sessão ({}); escolha outra pasta para comparar",
+            a_path.display()
+        ));
+    }
+    let a = cached_session(&a_path)?;
+    let b = cached_session(&b_path).map_err(|error| format!("sessão B: {error}"))?;
+    let result = scrapelens_core::compare::compare_sessions(
         &a.session,
         &scrapelens_core::search::LazyBodies(&a),
         &b.session,
         &scrapelens_core::search::LazyBodies(&b),
         &scrapelens_core::compare::CompareOptions::default(),
-    ))
+    );
+    let id = COMPARISON_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let summary = CompareSummary {
+        handle: id,
+        pairs: result.pairs.len(),
+        dynamic_pairs: result.pairs.iter().filter(|pair| pair_is_dynamic(pair)).count(),
+        counts: result.counts.clone(),
+        parts_counts: result.parts_counts.clone(),
+        redacted_fields: result.redacted_fields,
+        ambiguities: result.ambiguities.iter().take(ONLY_LIST_CAP).cloned().collect(),
+        warnings: result.warnings.clone(),
+        only_in_a: result.only_in_a.iter().take(ONLY_LIST_CAP).cloned().collect(),
+        only_in_a_total: result.only_in_a.len(),
+        only_in_b: result.only_in_b.iter().take(ONLY_LIST_CAP).cloned().collect(),
+        only_in_b_total: result.only_in_b.len(),
+    };
+    *COMPARISON.lock().map_err(|_| "comparação corrompida".to_string())? =
+        Some(StoredComparison { id, result: Arc::new(result) });
+    Ok(summary)
 }
 
 /// Prévia de exportação; com `annotate` calcula as origens (cache LazySession).
@@ -1013,9 +1153,22 @@ mod tests {
         assert!(origins.values.iter().any(|v| v.field == "JSESSIONID"));
         let chain = scrapelens_core::flow::priming_chain(&lazy.session, &source, "cdp-r0011", &options).unwrap();
         assert!(!chain.steps.is_empty() && !chain.protection.is_empty());
-        let cmp = run_compare(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
-        assert!(cmp.counts.dynamic > 0);
-        assert!(run_compare(a.to_str().unwrap(), a.to_str().unwrap()).is_err());
+        let cmp = open_comparison(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
+        assert!(cmp.counts.dynamic > 0 && cmp.pairs > 0);
+        let page = comparison_page(cmp.handle, 0, 5, true).unwrap();
+        assert!(page.total <= cmp.pairs && page.items.len() <= 5 && !page.items.is_empty());
+        let all = comparison_page(cmp.handle, 0, 500, false).unwrap();
+        assert_eq!(all.total, cmp.pairs);
+        let fields = stored_comparison(cmp.handle).unwrap().pairs[page.items[0].index].fields.len();
+        assert_eq!(fields, page.items[0].field_count);
+        assert!(comparison_page(cmp.handle + 99, 0, 5, false).is_err());
+        // a mesma sessão por caminhos diferentes (./, symlink) é recusada
+        let same = a.to_str().unwrap().to_string();
+        assert!(open_comparison(&same, &format!("{same}/../{}", a.file_name().unwrap().to_str().unwrap())).unwrap_err().contains("mesma sessão"));
+        let link = std::env::temp_dir().join(format!("sl-link-{}", std::process::id()));
+        std::os::unix::fs::symlink(&a, &link).unwrap();
+        assert!(open_comparison(&same, link.to_str().unwrap()).unwrap_err().contains("mesma sessão"));
+        fs::remove_file(&link).ok();
         // as duas sessões ficam em cache ao mesmo tempo
         let again = cached_session(&a).unwrap();
         assert!(Arc::ptr_eq(&lazy, &again));
@@ -1053,5 +1206,47 @@ mod tests {
             }
         }
         fs::write(out, serde_json::to_string_pretty(&all).unwrap()).unwrap();
+    }
+
+    /// Medição manual: `SL_LARGE_A=<sessão> SL_LARGE_B=<cópia> cargo test --release -- --ignored large_compare --nocapture`.
+    #[test]
+    #[ignore]
+    fn large_compare_timing() {
+        let rss = || {
+            String::from_utf8_lossy(
+                &std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout,
+            )
+            .trim()
+            .to_string()
+        };
+        let a = std::env::var("SL_LARGE_A").expect("SL_LARGE_A");
+        let b = std::env::var("SL_LARGE_B").expect("SL_LARGE_B");
+        let start = std::time::Instant::now();
+        let summary = open_comparison(&a, &b).unwrap();
+        let opened = start.elapsed();
+        let filtered = comparison_page(summary.handle, 0, 50, summary.pairs > 500).unwrap();
+        let first = start.elapsed();
+        eprintln!("1a página com o filtro padrão (só dinâmicos se >500 pares): {} item(ns) de {}", filtered.items.len(), filtered.total);
+        let page = comparison_page(summary.handle, 0, 50, false).unwrap();
+        let fields = stored_comparison(summary.handle).unwrap().pairs[page.items[0].index].fields.len();
+        eprintln!(
+            "pares={} dinamicos={} resumo_json={}B pagina50_json={}B campos_do_1o_par={} abrir={:?} 1a_pagina={:?} rss_kb={}",
+            summary.pairs,
+            summary.dynamic_pairs,
+            serde_json::to_string(&summary).unwrap().len(),
+            serde_json::to_string(&page).unwrap().len(),
+            fields,
+            opened,
+            first,
+            rss()
+        );
+        let full = scrapelens_core::compare::compare_sessions(
+            &cached_session(Path::new(&a)).unwrap().session,
+            &scrapelens_core::search::LazyBodies(&cached_session(Path::new(&a)).unwrap()),
+            &cached_session(Path::new(&b)).unwrap().session,
+            &scrapelens_core::search::LazyBodies(&cached_session(Path::new(&b)).unwrap()),
+            &scrapelens_core::compare::CompareOptions::default(),
+        );
+        eprintln!("json_completo_antigo={}B", serde_json::to_string(&full).unwrap().len());
     }
 }
