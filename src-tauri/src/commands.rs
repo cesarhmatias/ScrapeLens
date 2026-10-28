@@ -489,6 +489,124 @@ pub fn read_attachment(session_dir: String, name: String) -> Result<AttachmentPa
     }
 }
 
+/// Busca no payload via `scrapelens_core::search`, fora da thread da UI.
+/// `max_matches` limita o resultado; o frontend não reimplementa a busca.
+#[tauri::command]
+pub async fn search_session(
+    session_dir: String,
+    text: String,
+    scopes: Vec<String>,
+    case_sensitive: bool,
+    max_matches: Option<usize>,
+) -> Result<scrapelens_core::search::SearchResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_search(&session_dir, &text, &scopes, case_sensitive, max_matches)
+    })
+    .await
+    .map_err(|error| format!("a busca foi interrompida: {error}"))?
+}
+
+fn run_search(
+    session_dir: &str,
+    text: &str,
+    scopes: &[String],
+    case_sensitive: bool,
+    max_matches: Option<usize>,
+) -> Result<scrapelens_core::search::SearchResult, String> {
+    use scrapelens_core::search::{search, Scope, SearchQuery};
+    if text.is_empty() {
+        return Err("digite um texto para buscar".to_string());
+    }
+    let mut parsed = Vec::new();
+    for scope in scopes {
+        parsed.push(Scope::parse(scope).ok_or_else(|| format!("escopo desconhecido: {scope}"))?);
+    }
+    let imported = scrapelens_core::import_session_dir(Path::new(session_dir))
+        .map_err(|error| format!("não foi possível ler a sessão: {error}"))?;
+    let mut query = SearchQuery::new(text);
+    query.scopes = parsed;
+    query.case_sensitive = case_sensitive;
+    query.max_matches = max_matches.unwrap_or(2000).clamp(1, 20_000);
+    Ok(search(&imported.bundle, &query))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BodyPayload {
+    /// `text` (UTF-8 válido), `binary` (nunca renderizado; só prévia hex).
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Primeiros bytes em hexadecimal (limitado), só para `binary`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hex: Option<String>,
+    pub bytes: u64,
+    /// Bytes efetivamente devolvidos em `text`; menor que `bytes` se cortado.
+    pub shown_bytes: u64,
+    pub cut: bool,
+}
+
+const HEX_PREVIEW_BYTES: usize = 256;
+
+/// Lê um corpo anexado até `limit` bytes. Texto vira `String` (o frontend o
+/// exibe em `<pre>`); o resto vira só tamanho e prévia hexadecimal.
+#[tauri::command]
+pub async fn read_body(session_dir: String, name: String, limit: Option<u64>) -> Result<BodyPayload, String> {
+    tauri::async_runtime::spawn_blocking(move || read_body_blocking(&session_dir, &name, limit.unwrap_or(262_144)))
+        .await
+        .map_err(|error| format!("a leitura foi interrompida: {error}"))?
+}
+
+fn read_body_blocking(session_dir: &str, name: &str, limit: u64) -> Result<BodyPayload, String> {
+    use std::io::Read;
+    if name.contains("..") || name.contains('/') || name.contains('\\') || name.is_empty() {
+        return Err("nome de anexo inválido".to_string());
+    }
+    let target = PathBuf::from(session_dir).join("attachments").join(name);
+    let total = fs::symlink_metadata(&target)
+        .map_err(|error| format!("anexo indisponível: {error}"))?
+        .len();
+    let mut buf = Vec::new();
+    fs::File::open(&target)
+        .map_err(|error| format!("falha ao abrir anexo: {error}"))?
+        .take(limit.min(16 * 1024 * 1024))
+        .read_to_end(&mut buf)
+        .map_err(|error| format!("falha ao ler anexo: {error}"))?;
+    let cut = (buf.len() as u64) < total;
+    // Corte no limite pode partir um caractere: aceita prefixo UTF-8 válido.
+    let text = match std::str::from_utf8(&buf) {
+        Ok(text) => Some(text.to_string()),
+        Err(error) if cut && error.error_len().is_none() => {
+            Some(String::from_utf8_lossy(&buf[..error.valid_up_to()]).into_owned())
+        }
+        Err(_) => None,
+    };
+    Ok(match text {
+        Some(text) => BodyPayload {
+            kind: "text".into(),
+            shown_bytes: text.len() as u64,
+            text: Some(text),
+            hex: None,
+            bytes: total,
+            cut,
+        },
+        None => BodyPayload {
+            kind: "binary".into(),
+            text: None,
+            hex: Some(
+                buf.iter()
+                    .take(HEX_PREVIEW_BYTES)
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ),
+            bytes: total,
+            shown_bytes: buf.len().min(HEX_PREVIEW_BYTES) as u64,
+            cut: total > HEX_PREVIEW_BYTES as u64,
+        },
+    })
+}
+
 /// Gera a exportação cURL/Python de uma requisição da sessão persistida.
 ///
 /// Roda fora da thread da UI: ler anexos e gerar texto pode ser pesado em
@@ -629,6 +747,60 @@ mod tests {
         assert_eq!(payload.kind, "text");
         assert_eq!(payload.text.as_deref(), Some("hello"));
         assert!(read_attachment(dir.to_str().unwrap().to_string(), "../escape".to_string()).is_err());
+        fs::remove_dir_all(dir).ok();
+    }
+
+    fn detran_session(name: &str) -> PathBuf {
+        use scrapelens_core::correlate::CorrelationOptions;
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/detran-pb");
+        let read = |file: &str| fs::read(fixtures.join(file)).unwrap();
+        let imported = scrapelens_core::parse::import_capture_with_bodies(
+            &read("detran-pb.cdp.jsonl"),
+            &read("detran-pb.netlog.json"),
+            Some(&read("detran-pb.cdp-bodies.jsonl")),
+            CorrelationOptions::default(),
+        )
+        .unwrap();
+        let dir = temp_session_dir(name);
+        fs::remove_dir_all(&dir).ok();
+        store::write_session_dir(&imported.bundle, &dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn search_session_finds_body_only_and_reports_partial() {
+        let dir = detran_session("search");
+        let found = run_search(dir.to_str().unwrap(), "cmd_consultar_placa", &[], false, None).unwrap();
+        assert_eq!(found.matches.len(), 2);
+        assert!(found.matches.iter().all(|m| m.decoded && m.scope == scrapelens_core::search::Scope::RequestBody));
+        assert!(found.partial && !found.partial_attempts.is_empty());
+        let url_only = run_search(dir.to_str().unwrap(), "cmd_consultar_placa", &["url".into()], false, None).unwrap();
+        assert!(url_only.matches.is_empty());
+        let capped = run_search(dir.to_str().unwrap(), "cmd_consultar_placa", &[], false, Some(1)).unwrap();
+        assert_eq!(capped.matches.len(), 1);
+        assert!(capped.limit_reached);
+        assert!(run_search(dir.to_str().unwrap(), "x", &["nope".into()], false, None).is_err());
+        assert!(run_search(dir.to_str().unwrap(), "", &[], false, None).is_err());
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn read_body_text_binary_and_cut() {
+        let dir = temp_session_dir("body");
+        let att = dir.join("attachments");
+        fs::write(att.join("t.bin"), "áéíóú".repeat(100)).unwrap();
+        fs::write(att.join("b.bin"), [0u8, 159, 146, 150, 255]).unwrap();
+        let d = dir.to_str().unwrap();
+        let text = read_body_blocking(d, "t.bin", 1000).unwrap();
+        assert_eq!(text.kind, "text");
+        assert!(!text.cut);
+        let cut = read_body_blocking(d, "t.bin", 101).unwrap();
+        assert!(cut.cut && cut.kind == "text" && cut.shown_bytes < 101);
+        let bin = read_body_blocking(d, "b.bin", 1000).unwrap();
+        assert_eq!(bin.kind, "binary");
+        assert_eq!(bin.hex.as_deref(), Some("00 9f 92 96 ff"));
+        assert!(bin.text.is_none());
+        assert!(read_body_blocking(d, "../x", 10).is_err());
         fs::remove_dir_all(dir).ok();
     }
 }

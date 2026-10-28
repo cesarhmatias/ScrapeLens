@@ -49,6 +49,8 @@ pub fn run() {
             commands::detect_chrome,
             commands::set_chrome_path,
             commands::read_attachment,
+            commands::search_session,
+            commands::read_body,
             commands::export_request,
             commands::save_export_file,
             commands::preview_sanitized,

@@ -96,6 +96,21 @@ function WarningList({ warnings }: { warnings: { code: string; message: string }
   );
 }
 
+/**
+ * Risco registrado em docs/08: `LogicalRequest.url` é a da 1ª tentativa, mas
+ * corpo e headers são os da última. Num 307/308 a exportação soma a URL inicial
+ * ao corpo final — equivale a um replay que segue o redirect.
+ */
+export function replayRedirectWarning(request: RequestRecord): string | null {
+  const attempts = request.attempts;
+  if (attempts.length < 2) return null;
+  const first = attempts[0];
+  const last = attempts[attempts.length - 1];
+  const preserving = attempts.slice(0, -1).some((attempt) => attempt.status === 307 || attempt.status === 308);
+  if (!preserving || first.url === last.url) return null;
+  return `A exportação usa ${first.url} (1ª tentativa) com o corpo e os headers da tentativa final, que foi enviada a ${last.url} após o redirect ${attempts.find((a) => a.status === 307 || a.status === 308)?.status}. Equivale a um replay que segue o redirect; confira a URL antes de reutilizar.`;
+}
+
 export function ExportDialog({
   session,
   request,
@@ -113,6 +128,7 @@ export function ExportDialog({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<SavedFile | null>(null);
+  const redirectWarning = replayRedirectWarning(request);
 
   useEffect(() => {
     if (!sessionDir) {
@@ -270,6 +286,12 @@ export function ExportDialog({
             </div>
           )}
           <WarningList warnings={preview.warnings} />
+          {redirectWarning && (
+            <div className="body-flag flag-truncated" role="alert">
+              <strong>Atenção: URL da 1ª tentativa difere da final</strong>
+              <span>{redirectWarning}</span>
+            </div>
+          )}
           {saved && (
             <p className="export-saved mono" title={saved.path}>
               {saved.path}

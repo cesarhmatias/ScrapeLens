@@ -1303,3 +1303,16 @@ kbd {
 }
 .redaction-list li:last-child { border-bottom: none; }
 .redaction-list .count { color: var(--fg-strong); font-variant-numeric: tabular-nums; }
+
+.search-opts { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.search-opts input { position: absolute; opacity: 0; pointer-events: none; width: 0; }
+.search-opts label { cursor: pointer; }
+.search-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 14px; font-size: 11px; color: var(--fg-muted); border-bottom: 1px solid var(--border); }
+.search-status .err { color: var(--err); }
+.match-box { margin: 8px 14px 0; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-subtle); font-size: 11px; }
+.match-box h3 { margin: 0 0 4px; font-size: 11.5px; }
+.match-box ul { list-style: none; margin: 0; padding: 0; max-height: 160px; overflow: auto; }
+.match-box li { padding: 3px 0; }
+.match-box .snippet { color: var(--fg-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.code mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inherit; border-radius: 2px; }
+.code.hex { white-space: pre-wrap; overflow-wrap: anywhere; }

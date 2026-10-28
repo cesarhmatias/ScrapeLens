@@ -1,7 +1,18 @@
+import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import demoRaw from "./demo/session.v1.json";
 import demoAttachments from "./demo/attachments.json";
-import { bridge, isTauri, loadLargeDemo, type ChromeInfo, type SessionPayload } from "./bridge";
+import {
+  bridge,
+  isTauri,
+  loadLargeDemo,
+  type BodyData,
+  type ChromeInfo,
+  type SearchMatch,
+  type SearchResultDto,
+  type SearchScope,
+  type SessionPayload,
+} from "./bridge";
 import { ExportDialog, SanitizeDialog } from "./Export";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
@@ -213,17 +224,84 @@ function HeaderBlock({
   );
 }
 
+const scopeLabels: Record<SearchScope, string> = {
+  url: "URL",
+  requestHeaders: "header (env.)",
+  responseHeaders: "header (rec.)",
+  cookies: "cookies",
+  requestBody: "corpo req.",
+  responseBody: "corpo resp.",
+};
+const ALL_SCOPES = Object.keys(scopeLabels) as SearchScope[];
+
+const PREVIEW_LIMIT = 262_144;
+const COPY_LIMIT = 16 * 1024 * 1024;
+const MAX_HIGHLIGHTS = 300;
+
+/** Realça ocorrências de `needle` em `text` como nós React (texto escapado, nunca HTML). */
+function highlightText(text: string, needle: string, caseSensitive: boolean) {
+  if (!needle) return text;
+  const hay = caseSensitive ? text : text.toLowerCase();
+  const target = caseSensitive ? needle : needle.toLowerCase();
+  if (hay.length !== text.length) return text; // dobra de caixa mudou índices: não arrisca
+  const parts: (string | ReactElement)[] = [];
+  let from = 0;
+  let found = 0;
+  while (found < MAX_HIGHLIGHTS) {
+    const at = hay.indexOf(target, from);
+    if (at < 0) break;
+    if (at > from) parts.push(text.slice(from, at));
+    parts.push(<mark key={at}>{text.slice(at, at + target.length)}</mark>);
+    from = at + target.length;
+    found += 1;
+  }
+  parts.push(text.slice(from));
+  return parts;
+}
+
 function BodyPanel({
   title,
   body,
   kind,
   onCopy,
+  sessionDir,
+  highlight,
 }: {
   title: string;
   body: BodyInfo;
   kind: "payload" | "response";
   onCopy?: (value: string, label: string) => void;
+  sessionDir?: string;
+  highlight?: { text: string; caseSensitive: boolean } | null;
 }) {
+  const [data, setData] = useState<BodyData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  useEffect(() => {
+    setData(null);
+    setLoadError(null);
+    if (!sessionDir || !body.attachment || body.preview) return;
+    let alive = true;
+    bridge
+      .readBody(sessionDir, body.attachment, PREVIEW_LIMIT)
+      .then((result) => alive && setData(result))
+      .catch((error) => alive && setLoadError(String(error)));
+    return () => {
+      alive = false;
+    };
+  }, [sessionDir, body.attachment, body.preview]);
+
+  const text = body.preview ?? (data?.kind === "text" ? data.text : undefined);
+  const copyBody = async () => {
+    if (body.preview !== undefined) return onCopy?.(body.preview, title);
+    if (!sessionDir || !body.attachment) return;
+    try {
+      const full = await bridge.readBody(sessionDir, body.attachment, COPY_LIMIT);
+      if (full.kind !== "text" || full.text === undefined) return;
+      onCopy?.(full.text, full.cut ? `${title} (primeiros ${fmtBytes(full.shownBytes)})` : title);
+    } catch (error) {
+      onCopy?.("", `${title}: ${String(error)}`);
+    }
+  };
   const flagged =
     body.availability === "truncated" ||
     body.availability === "discarded" ||
@@ -246,9 +324,9 @@ function BodyPanel({
           {body.attachment ? <span className="mono"> · {body.attachment}</span> : null}
         </span>
         <span className={`chip ${stateClass}`}>{availabilityLabels[body.availability]}</span>
-        {body.preview && onCopy && (
-          <button className="ghost-btn small" onClick={() => onCopy(body.preview!, title)} title="Copiar corpo como texto">
-            Copiar
+        {text !== undefined && onCopy && (
+          <button className="ghost-btn small" onClick={() => void copyBody()} title="Copiar corpo como texto">
+            Copiar corpo
           </button>
         )}
       </header>
@@ -256,7 +334,7 @@ function BodyPanel({
         <div className={`body-flag flag-${body.availability}`}>
           <strong>
             {body.availability === "truncated"
-              ? `Prévia truncada em ${fmtBytes(body.truncatedAt)}`
+              ? `Corpo truncado na captura: ${fmtBytes(body.truncatedAt)} capturados de ${fmtBytes(body.encodedSize)} (originalSize)`
               : body.availability === "discarded"
                 ? "Corpo descartado — não recuperável"
                 : body.availability === "omitted"
@@ -266,16 +344,34 @@ function BodyPanel({
           <span>{body.reason ?? "sem motivo registrado pela fonte"}</span>
         </div>
       )}
-      {body.preview ? (
+      {text !== undefined ? (
         <>
-          <pre className="code">{body.preview}</pre>
+          <pre className="code">{highlight ? highlightText(text, highlight.text, highlight.caseSensitive) : text}</pre>
           <div className="body-foot">
+            {data?.cut ? `Exibindo os primeiros ${fmtBytes(data.shownBytes)} de ${fmtBytes(data.bytes)}; “Copiar corpo” entrega até ${fmtBytes(COPY_LIMIT)}. ` : ""}
             {body.contentType?.includes("html")
               ? "HTML exibido como texto — nunca renderizado como interface."
-              : "Prévia em texto, sem interpretação."}
+              : "Texto UTF-8 exibido sem interpretação."}
             {body.captureRef ? <span className="mono dim"> · {body.captureRef}</span> : null}
           </div>
         </>
+      ) : data?.kind === "binary" ? (
+        <>
+          <div className="empty">
+            <strong>Conteúdo binário ({fmtBytes(data.bytes)}) — não renderizado.</strong>
+            <br />
+            Primeiros {data.shownBytes} bytes em hexadecimal:
+          </div>
+          <pre className="code small hex">{data.hex}</pre>
+        </>
+      ) : loadError ? (
+        <div className="empty">
+          <strong>Não foi possível ler o anexo.</strong>
+          <br />
+          {loadError}
+        </div>
+      ) : body.attachment && sessionDir && !data ? (
+        <div className="empty">Carregando corpo…</div>
       ) : body.availability === "empty" ? (
         <div className="empty">
           <strong>Corpo vazio (0 B).</strong>
@@ -504,7 +600,11 @@ function DetailView({
   session,
   onCopy,
   onExport,
+  matches,
+  search,
 }: {
+  matches: SearchMatch[];
+  search: { text: string; caseSensitive: boolean } | null;
   req: RequestRecord;
   tab: DetailTab;
   setTab: (t: DetailTab) => void;
@@ -515,45 +615,10 @@ function DetailView({
 }) {
   const reqNorm = useMemo(() => normalizeHeaders(req.requestHeaders), [req]);
   const resNorm = useMemo(() => normalizeHeaders(req.responseHeaders), [req]);
-  const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!session.sourcePath) return;
-    const bodies = [req.payload, req.responseBody].filter(
-      (body) => body.attachment && !body.preview && !attachmentPreviews[body.attachment],
-    );
-    if (bodies.length === 0) return;
-    let alive = true;
-    void Promise.all(
-      bodies.map(async (body) => {
-        try {
-          const result = await bridge.readAttachment(session.sourcePath!, body.attachment!);
-          return [body.attachment!, result.kind === "text" ? result.text ?? "" : ""] as const;
-        } catch {
-          return [body.attachment!, ""] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (!alive) return;
-      const next = { ...attachmentPreviews };
-      for (const [name, text] of entries) next[name] = text;
-      setAttachmentPreviews(next);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [attachmentPreviews, req, session.sourcePath]);
-
-  const effectivePayload: BodyInfo = {
-    ...req.payload,
-    preview: req.payload.preview ?? (req.payload.attachment ? attachmentPreviews[req.payload.attachment] : undefined),
-  };
-  const effectiveResponse: BodyInfo = {
-    ...req.responseBody,
-    preview:
-      req.responseBody.preview ??
-      (req.responseBody.attachment ? attachmentPreviews[req.responseBody.attachment] : undefined),
-  };
+  const effectivePayload = req.payload;
+  const effectiveResponse = req.responseBody;
+  const bodyHighlight = (scope: SearchScope) =>
+    search && matches.some((m) => m.scope === scope) ? search : null;
   const tabs: { id: DetailTab; label: string; count?: number }[] = [
     { id: "headers", label: "Headers brutos", count: req.requestHeaders.length + req.responseHeaders.length },
     { id: "normalized", label: "Normalizado" },
@@ -612,6 +677,30 @@ function DetailView({
           <span>{req.domain}</span>
         </div>
       </header>
+
+      {matches.length > 0 && (
+        <section className="match-box" aria-label="Achados da busca">
+          <h3>
+            Achados da busca <span className="count">{matches.length}</span>
+          </h3>
+          <ul>
+            {matches.slice(0, 50).map((m, index) => {
+              const attemptIndex = req.attempts.findIndex((attempt) => attempt.id === m.attemptId);
+              return (
+                <li key={index}>
+                  <span className="chip mono">{scopeLabels[m.scope]}</span>
+                  {m.field ? <span className="mono"> {m.field}</span> : null}
+                  <span className="dim"> · tentativa {attemptIndex >= 0 ? attemptIndex + 1 : m.attemptId}</span>
+                  {m.byteOffset !== null ? <span className="dim"> · byte {m.byteOffset}</span> : null}
+                  {m.decoded && <span className="chip v-partial" title="Achado após decodificar form-urlencoded/JSON; o byte bruto pode diferir">visão decodificada</span>}
+                  <div className="mono snippet">{m.snippet}</div>
+                </li>
+              );
+            })}
+          </ul>
+          {matches.length > 50 && <p className="dim">+{matches.length - 50} achados não listados aqui.</p>}
+        </section>
+      )}
 
       <nav className="tabs" role="tablist">
         {tabs.map((t) => (
@@ -819,14 +908,14 @@ function DetailView({
 
           {tab === "payload" && (
             <>
-              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} />
+              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} highlight={bodyHighlight("requestBody")} />
               <BodyContext req={req} />
-              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} />
+              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} highlight={bodyHighlight("responseBody")} />
             </>
           )}
           {tab === "response" && (
             <>
-              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} />
+              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} highlight={bodyHighlight("responseBody")} />
               <BodyContext req={req} />
             </>
           )}
@@ -1265,6 +1354,14 @@ export default function App() {
   const [sanitizeOpen, setSanitizeOpen] = useState(false);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
+  const [scopes, setScopes] = useState<SearchScope[]>(ALL_SCOPES);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [searchState, setSearchState] = useState<{
+    key: string;
+    loading: boolean;
+    result?: SearchResultDto;
+    error?: string;
+  } | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const tableRef = useRef<HTMLDivElement | null>(null);
 
@@ -1506,6 +1603,39 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, [recording?.sessionId, desktop]);
 
+  const searchDir = desktop && !session.synthetic ? session.sourcePath : undefined;
+  const searchText = query.trim();
+  const searchKey = searchDir && searchText ? JSON.stringify([searchDir, searchText, scopes, caseSensitive]) : "";
+  useEffect(() => {
+    if (!searchKey || !searchDir) {
+      setSearchState(null);
+      return;
+    }
+    setSearchState({ key: searchKey, loading: true });
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      bridge
+        .searchSession(searchDir, searchText, scopes, caseSensitive)
+        .then((result) => alive && setSearchState({ key: searchKey, loading: false, result }))
+        .catch((error) => alive && setSearchState({ key: searchKey, loading: false, error: String(error) }));
+    }, 250);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [searchKey, searchDir, searchText, scopes, caseSensitive]);
+  const searchResult = searchState?.key === searchKey ? searchState.result : undefined;
+  const matchesById = useMemo(() => {
+    const map = new Map<string, SearchMatch[]>();
+    for (const match of searchResult?.matches ?? []) {
+      const list = map.get(match.requestId);
+      if (list) list.push(match);
+      else map.set(match.requestId, [match]);
+    }
+    return map;
+  }, [searchResult]);
+  const payloadSearch = Boolean(searchKey);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return requests.filter((r) => {
@@ -1515,6 +1645,15 @@ export default function App() {
       if (typeFilter === "error" && r.status < 400) return false;
       if (protocol !== "all" && r.protocol !== protocol) return false;
       if (!q) return true;
+      if (payloadSearch) {
+        // Busca do core: só as requisições com achado (id/método/status continuam valendo).
+        return (
+          matchesById.has(r.id) ||
+          r.id.includes(q) ||
+          r.method.toLowerCase() === q ||
+          String(r.status).includes(q)
+        );
+      }
       return (
         r.url.toLowerCase().includes(q) ||
         r.id.includes(q) ||
@@ -1522,7 +1661,7 @@ export default function App() {
         String(r.status).includes(q)
       );
     });
-  }, [requests, query, typeFilter, protocol]);
+  }, [requests, query, typeFilter, protocol, payloadSearch, matchesById]);
 
   const errors = requests.filter((r) => r.status >= 400).length;
   const counts = {
@@ -1773,6 +1912,32 @@ export default function App() {
                 />
                 <kbd>⌘F</kbd>
               </div>
+              {searchDir && (
+                <div className="search-opts" role="group" aria-label="Escopos da busca">
+                  {ALL_SCOPES.map((scope) => (
+                    <label key={scope} className={scopes.includes(scope) ? "chip-filter active" : "chip-filter"}>
+                      <input
+                        type="checkbox"
+                        checked={scopes.includes(scope)}
+                        onChange={(e) =>
+                          setScopes((current) =>
+                            e.target.checked
+                              ? [...current, scope]
+                              : current.length > 1
+                                ? current.filter((item) => item !== scope)
+                                : current,
+                          )
+                        }
+                      />
+                      {scopeLabels[scope]}
+                    </label>
+                  ))}
+                  <label className={caseSensitive ? "chip-filter active" : "chip-filter"}>
+                    <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} />
+                    Aa
+                  </label>
+                </div>
+              )}
               <div className="filters">
                 {(
                   [
@@ -1830,6 +1995,35 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {searchText && (
+              <div className="search-status" role="status">
+                {!searchDir ? (
+                  <span>Busca só em metadados (URL, id, status): a busca no payload exige uma sessão real aberta no app.</span>
+                ) : !searchResult && !searchState?.error ? (
+                  <span>Buscando no payload…</span>
+                ) : searchState?.error ? (
+                  <span className="err">Busca falhou: {searchState.error}</span>
+                ) : searchResult ? (
+                  <>
+                    <span>
+                      {searchResult.matches.length} achado(s) em {matchesById.size} requisição(ões)
+                    </span>
+                    {searchResult.limitReached && (
+                      <span className="chip v-partial">limite atingido: há mais achados não listados</span>
+                    )}
+                    {searchResult.partial && (
+                      <span className="chip v-partial" title={searchResult.partialAttempts.join(", ")}>
+                        busca parcial: {searchResult.partialAttempts.length} corpo(s) truncado(s)
+                      </span>
+                    )}
+                    {searchResult.skippedBinary > 0 && (
+                      <span className="chip tag">{searchResult.skippedBinary} corpo(s) binário(s) não pesquisado(s)</span>
+                    )}
+                  </>
+                ) : null}
+              </div>
+            )}
 
             <div className="table-wrap" ref={tableRef} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
               <table className="req-table">
@@ -1927,6 +2121,8 @@ export default function App() {
             session={session}
             onCopy={copy}
             onExport={() => setExportTarget(selected)}
+            matches={matchesById.get(selected.id) ?? []}
+            search={payloadSearch ? { text: searchText, caseSensitive } : null}
           />
         )}
 

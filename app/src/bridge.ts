@@ -91,6 +91,36 @@ export interface SanitizeSaved {
   sessionBytes: number;
 }
 
+export type SearchScope = "url" | "requestHeaders" | "responseHeaders" | "cookies" | "requestBody" | "responseBody";
+
+export interface SearchMatch {
+  requestId: string;
+  attemptId: string;
+  scope: SearchScope;
+  field: string | null;
+  byteOffset: number | null;
+  snippet: string;
+  decoded: boolean;
+}
+
+/** Resultado de `scrapelens_core::search`; a UI não refaz a busca. */
+export interface SearchResultDto {
+  matches: SearchMatch[];
+  skippedBinary: number;
+  partial: boolean;
+  partialAttempts: string[];
+  limitReached: boolean;
+}
+
+export interface BodyData {
+  kind: "text" | "binary";
+  text?: string;
+  hex?: string;
+  bytes: number;
+  shownBytes: number;
+  cut: boolean;
+}
+
 export type MenuAction =
   | "open"
   | "import-har"
@@ -202,6 +232,21 @@ export const bridge = {
 
   async readAttachment(sessionDir: string, name: string): Promise<{ kind: "text" | "binary"; text?: string; bytes: number }> {
     return invoke("read_attachment", { sessionDir, name });
+  },
+
+  async searchSession(
+    sessionDir: string,
+    text: string,
+    scopes: SearchScope[],
+    caseSensitive: boolean,
+    maxMatches = 2000,
+  ): Promise<SearchResultDto> {
+    return invoke("search_session", { sessionDir, text, scopes, caseSensitive, maxMatches });
+  },
+
+  /** Lê um corpo anexado (texto, ou tamanho + prévia hex se binário). */
+  async readBody(sessionDir: string, name: string, limit?: number): Promise<BodyData> {
+    return invoke("read_body", { sessionDir, name, limit });
   },
 
   /** Abre uma pasta de sessão já conhecida, sem diálogo. */
