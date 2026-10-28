@@ -12,7 +12,9 @@
 //! originLabel ("obter em runtime (origem: cdp-rNNNN)" | "dinâmico sem origem"), a, b,
 //! origin: {kind, requestId, scope, field, ambiguous}, parts: [ { class: static|dynamic, label, aOffset,
 //! bOffset, a, b, dynamicKind, originLabel, origin } ] } ] } ], onlyInA[], onlyInB[], ambiguities[],
-//! counts, redactedFields, warnings[] }`.
+//! counts, partsCounts, redactedFields, warnings[] }`. `counts` soma campos escalares e os trechos
+//! dinâmicos de campos compostos (`dynamic == runtime + noOrigin`); `partsCounts` mostra só a parte dos trechos
+//! (e os estáticos).
 //!
 //! - Alinhamento A↔B por modelo (método + host + caminho normalizado +
 //!   nomes de query + nomes de campos do corpo); requisições do mesmo modelo
@@ -131,6 +133,18 @@ pub struct PairCounts {
     pub redacted: usize,
 }
 
+/// Trechos de campos compostos (opacos). Os dinâmicos já estão somados em
+/// `PairCounts` (`dynamic == runtime + noOrigin`); aqui eles aparecem separados
+/// e os trechos estáticos só existem aqui.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartsCounts {
+    pub r#static: usize,
+    pub dynamic: usize,
+    pub runtime: usize,
+    pub no_origin: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairComparison {
@@ -141,7 +155,10 @@ pub struct PairComparison {
     /// B não preserva a ordem relativa de A neste par.
     pub out_of_order: bool,
     pub fields: Vec<FieldDiff>,
+    /// Campos escalares + trechos dinâmicos de campos compostos (um campo
+    /// composto não conta por si; contam os trechos).
     pub counts: PairCounts,
+    pub parts_counts: PartsCounts,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +169,7 @@ pub struct SessionComparison {
     pub only_in_b: Vec<RequestRef>,
     pub ambiguities: Vec<String>,
     pub counts: PairCounts,
+    pub parts_counts: PartsCounts,
     pub redacted_fields: usize,
     pub warnings: Vec<String>,
 }
@@ -337,49 +355,6 @@ fn diff_regions(a: &[u8], b: &[u8], cap: usize) -> Vec<(usize, usize, usize, usi
         .collect()
 }
 
-/// Trecho alterado com contexto à esquerda até ter >= 12 bytes (campos opacos
-/// concatenados não têm separadores confiáveis).
-fn window_around(text: &str, start: usize, end: usize) -> String {
-    let mut s = start.min(text.len());
-    let e = end.min(text.len());
-    while s > 0 && e - s < 16 {
-        s -= 1;
-    }
-    while !text.is_char_boundary(s) {
-        s -= 1;
-    }
-    let mut e = e;
-    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
-    while e < text.len() && word(text.as_bytes()[e]) && e - end.min(text.len()) < 8 {
-        e += 1;
-    }
-    while !text.is_char_boundary(e) {
-        e += 1;
-    }
-    text[s..e].to_string()
-}
-
-#[allow(dead_code)]
-fn token_around(text: &str, start: usize, end: usize) -> (usize, String) {
-    let bytes = text.as_bytes();
-    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
-    let mut s = start.min(bytes.len());
-    let mut e = end.min(bytes.len());
-    while s > 0 && word(bytes[s - 1]) && end - s.min(end) < 64 {
-        s -= 1;
-    }
-    while e < bytes.len() && word(bytes[e]) && e - s < 64 {
-        e += 1;
-    }
-    while !text.is_char_boundary(s) {
-        s -= 1;
-    }
-    while !text.is_char_boundary(e) {
-        e += 1;
-    }
-    (s, text[s..e].to_string())
-}
-
 pub fn compare_sessions(
     a: &SessionV1,
     a_source: &dyn BodySource,
@@ -397,6 +372,7 @@ pub fn compare_sessions(
         only_in_b: Vec::new(),
         ambiguities: Vec::new(),
         counts: PairCounts::default(),
+        parts_counts: PartsCounts::default(),
         redacted_fields: 0,
         warnings: Vec::new(),
     };
@@ -470,6 +446,10 @@ pub fn compare_sessions(
         max_b_seen = Some(max_b_seen.map_or(eb[j].index, |m| m.max(eb[j].index)));
         let pair = compare_pair(&ctx_a, &ctx_b, &ea[i], &eb[j], how, out_of_order);
         add_counts(&mut result.counts, &pair.counts);
+        result.parts_counts.r#static += pair.parts_counts.r#static;
+        result.parts_counts.dynamic += pair.parts_counts.dynamic;
+        result.parts_counts.runtime += pair.parts_counts.runtime;
+        result.parts_counts.no_origin += pair.parts_counts.no_origin;
         result.pairs.push(pair);
     }
     result.redacted_fields = result.counts.redacted;
@@ -581,6 +561,7 @@ fn compare_pair(
     // Origens de B, só se houver campo dinâmico.
     if fields.iter().any(|f| f.class == FieldClass::Dynamic) {
         let origins: Option<ValueOrigins> = origins_in(ctx_b, &eb.id).ok();
+        let origins_a: Option<ValueOrigins> = origins_in(ctx_a, &ea.id).ok();
         for diff in fields.iter_mut().filter(|f| f.class == FieldClass::Dynamic) {
             let a_value = ca
                 .iter()
@@ -615,48 +596,23 @@ fn compare_pair(
                 });
             if opaque {
                 diff.dynamic_kind = Some(DynamicKind::Composite);
-                let subs: Vec<&ValueOrigin> = origins
-                    .as_ref()
-                    .map(|o| {
-                        o.values
-                            .iter()
-                            .filter(|v| {
-                                v.parent.as_deref() == Some(diff.field.as_str())
-                                    && v.occurrence == diff.occurrence
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                for (a0, a1, b0, b1) in
-                    diff_regions(a_value.as_bytes(), b_value.as_bytes(), options_cap(ctx_b))
-                {
-                    let covering = subs.iter().find(|v| {
-                        !v.evidences.is_empty()
-                            && v.offset.is_some_and(|offset| {
-                                let (s, l) = (offset as usize, v.length);
-                                s < b1.max(b0 + 1) && b0 < s + l
-                            })
-                    });
-                    let b_token = match covering {
-                        Some(v) => v.value.clone(),
-                        None => window_around(&b_value, b0, b1),
-                    };
-                    let a_token = window_around(&a_value, a0, a1);
-                    diff.parts.push(PartDiff {
-                        class: FieldClass::Dynamic,
-                        label: "dinâmico".to_string(),
-                        a_offset: a0 as u64,
-                        b_offset: b0 as u64,
-                        a: a_token,
-                        b: b_token,
-                        dynamic_kind: covering.map_or(DynamicKind::NoOrigin, |v| kind_of(v)),
-                        origin_label: String::new(),
-                        origin: covering.and_then(|v| summary(v)),
-                    });
-                }
-                diff.parts
-                    .extend(static_runs(&a_value, &b_value, options_cap(ctx_b)));
-                diff.parts.sort_by_key(|p| p.b_offset);
+                let subs_of = |o: &Option<ValueOrigins>| -> Vec<ValueOrigin> {
+                    o.as_ref()
+                        .map(|o| {
+                            o.values
+                                .iter()
+                                .filter(|v| {
+                                    v.parent.as_deref() == Some(diff.field.as_str())
+                                        && v.occurrence == diff.occurrence
+                                        && !v.evidences.is_empty()
+                                })
+                                .cloned()
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                let (subs_a, subs_b) = (subs_of(&origins_a), subs_of(&origins));
+                diff.parts = opaque_parts(&a_value, &b_value, &subs_a, &subs_b, options_cap(ctx_b));
                 if !diff.parts.iter().any(|p| p.class == FieldClass::Dynamic) {
                     diff.dynamic_kind = Some(DynamicKind::NoOrigin);
                 }
@@ -687,24 +643,41 @@ fn compare_pair(
         }
     }
     let mut counts = PairCounts::default();
+    let mut parts_counts = PartsCounts::default();
     for f in &fields {
         match f.class {
             FieldClass::Static => counts.r#static += 1,
             FieldClass::Dynamic => {
-                counts.dynamic += 1;
-                let runtime = match f.dynamic_kind {
-                    Some(DynamicKind::Runtime) => true,
-                    Some(DynamicKind::Composite) => f
-                        .parts
-                        .iter()
-                        .any(|p| p.dynamic_kind == DynamicKind::Runtime),
-                    _ => false,
-                };
-                if runtime {
-                    counts.runtime += 1;
+                let dynamic_parts: Vec<&PartDiff> = f
+                    .parts
+                    .iter()
+                    .filter(|p| p.class == FieldClass::Dynamic)
+                    .collect();
+                if f.dynamic_kind == Some(DynamicKind::Composite) && !dynamic_parts.is_empty() {
+                    for part in dynamic_parts {
+                        counts.dynamic += 1;
+                        parts_counts.dynamic += 1;
+                        if part.dynamic_kind == DynamicKind::Runtime {
+                            counts.runtime += 1;
+                            parts_counts.runtime += 1;
+                        } else {
+                            counts.no_origin += 1;
+                            parts_counts.no_origin += 1;
+                        }
+                    }
                 } else {
-                    counts.no_origin += 1;
+                    counts.dynamic += 1;
+                    if f.dynamic_kind == Some(DynamicKind::Runtime) {
+                        counts.runtime += 1;
+                    } else {
+                        counts.no_origin += 1;
+                    }
                 }
+                parts_counts.r#static += f
+                    .parts
+                    .iter()
+                    .filter(|p| p.class == FieldClass::Static)
+                    .count();
             }
             FieldClass::OnlyA => counts.only_a += 1,
             FieldClass::OnlyB => counts.only_b += 1,
@@ -718,41 +691,204 @@ fn compare_pair(
         out_of_order,
         fields,
         counts,
+        parts_counts,
     }
 }
 
-/// Trechos comuns (>= 8 bytes) entre as duas versões do campo opaco.
-fn static_runs(a: &str, b: &str, cap: usize) -> Vec<PartDiff> {
-    let regions = diff_regions(a.as_bytes(), b.as_bytes(), cap);
-    let (mut ca, mut cb) = (0usize, 0usize);
-    let mut spans: Vec<(usize, usize, usize)> = Vec::new(); // (a0, b0, len)
-    for (a0, a1, b0, b1) in &regions {
-        if a0 - ca == b0 - cb && a0 - ca >= 8 {
-            spans.push((ca, cb, a0 - ca));
+fn expand_class(text: &str, start: usize, end: usize) -> (usize, usize) {
+    let bytes = text.as_bytes();
+    let region = &bytes[start.min(bytes.len())..end.min(bytes.len())];
+    let upper = |b: u8| b.is_ascii_uppercase() || b.is_ascii_digit();
+    let lower = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    let class: fn(u8) -> bool = if !region.is_empty() && region.iter().all(|b| upper(*b)) {
+        |b| b.is_ascii_uppercase() || b.is_ascii_digit()
+    } else if !region.is_empty() && region.iter().all(|b| lower(*b)) {
+        |b| b.is_ascii_lowercase() || b.is_ascii_digit()
+    } else {
+        return (start, end);
+    };
+    let (mut s, mut e) = (start, end);
+    while s > 0 && class(bytes[s - 1]) {
+        s -= 1;
+    }
+    while e < bytes.len() && class(bytes[e]) {
+        e += 1;
+    }
+    (s, e)
+}
+
+fn sub_key(v: &ValueOrigin) -> Option<(String, ProducerScope, Option<String>, Option<u64>)> {
+    let e = v.evidences.get(v.oldest?)?;
+    Some((
+        e.request_id.clone(),
+        e.scope,
+        e.field.clone(),
+        e.producer_offset,
+    ))
+}
+
+/// Trechos de um campo opaco: âncoras = valores conhecidos (com origem) que
+/// existem nos dois lados, pareados pelo mesmo produtor; os gaps entre as
+/// mesmas âncoras se correspondem e só neles se calcula a diferença. Assim uma
+/// âncora nunca corta um valor conhecido e cada trecho dinâmico cobre o valor
+/// inteiro (SESSIONID, processId, delta…).
+fn opaque_parts(
+    a: &str,
+    b: &str,
+    subs_a: &[ValueOrigin],
+    subs_b: &[ValueOrigin],
+    cap: usize,
+) -> Vec<PartDiff> {
+    // pares (sub A, sub B) com a mesma chave de produtor, na ordem
+    let mut used_b = vec![false; subs_b.len()];
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    for (i, va) in subs_a.iter().enumerate() {
+        let Some(key) = sub_key(va) else { continue };
+        if let Some(j) = subs_b
+            .iter()
+            .enumerate()
+            .position(|(j, vb)| !used_b[j] && sub_key(vb).as_ref() == Some(&key))
+        {
+            used_b[j] = true;
+            pairs.push((i, j));
         }
-        ca = *a1;
-        cb = *b1;
     }
-    if a.len() - ca == b.len() - cb && a.len() - ca >= 8 {
-        spans.push((ca, cb, a.len() - ca));
+    pairs.sort_by_key(|(i, _)| subs_a[*i].offset);
+    // mantém só pares monotônicos nos dois lados e sem sobreposição
+    let mut anchors: Vec<(usize, usize, usize, usize, usize)> = Vec::new(); // a0,a1,b0,b1,j
+    for (i, j) in pairs {
+        let (Some(ao), Some(bo)) = (subs_a[i].offset, subs_b[j].offset) else {
+            continue;
+        };
+        let (a0, b0) = (ao as usize, bo as usize);
+        let (a1, b1) = (a0 + subs_a[i].length, b0 + subs_b[j].length);
+        if a1 > a.len() || b1 > b.len() {
+            continue;
+        }
+        if anchors.last().map_or(true, |l| a0 >= l.1 && b0 >= l.3) {
+            anchors.push((a0, a1, b0, b1, j));
+        }
     }
-    spans
-        .into_iter()
-        .filter_map(|(a0, b0, len)| {
-            let text = a.get(a0..a0 + len)?.to_string();
-            Some(PartDiff {
-                class: FieldClass::Static,
-                label: "estático".to_string(),
+    let mut parts: Vec<PartDiff> = Vec::new();
+    let (mut ca, mut cb) = (0usize, 0usize);
+    let unpaired_b: Vec<&ValueOrigin> = subs_b
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| !anchors.iter().any(|x| x.4 == *j))
+        .map(|(_, v)| v)
+        .collect();
+    for (a0, a1, b0, b1, j) in anchors {
+        gap_parts(a, b, (ca, a0), (cb, b0), &unpaired_b, cap, &mut parts);
+        let (ta, tb) = (&a[a0..a1], &b[b0..b1]);
+        let sub = &subs_b[j];
+        if ta == tb {
+            parts.push(static_part(a0, b0, ta));
+        } else {
+            parts.push(PartDiff {
+                class: FieldClass::Dynamic,
+                label: "dinâmico".to_string(),
                 a_offset: a0 as u64,
                 b_offset: b0 as u64,
-                a: text.clone(),
-                b: text,
-                dynamic_kind: DynamicKind::NoOrigin,
+                a: ta.to_string(),
+                b: tb.to_string(),
+                dynamic_kind: kind_of(sub),
                 origin_label: String::new(),
-                origin: None,
+                origin: summary(sub),
+            });
+        }
+        ca = a1;
+        cb = b1;
+    }
+    gap_parts(
+        a,
+        b,
+        (ca, a.len()),
+        (cb, b.len()),
+        &unpaired_b,
+        cap,
+        &mut parts,
+    );
+    parts.sort_by_key(|p| p.b_offset);
+    parts
+}
+
+fn static_part(a_off: usize, b_off: usize, text: &str) -> PartDiff {
+    PartDiff {
+        class: FieldClass::Static,
+        label: "estático".to_string(),
+        a_offset: a_off as u64,
+        b_offset: b_off as u64,
+        a: text.to_string(),
+        b: text.to_string(),
+        dynamic_kind: DynamicKind::NoOrigin,
+        origin_label: String::new(),
+        origin: None,
+    }
+}
+
+/// Diferença dentro de um par de gaps correspondentes.
+fn gap_parts(
+    a: &str,
+    b: &str,
+    (a_start, a_end): (usize, usize),
+    (b_start, b_end): (usize, usize),
+    unpaired_b: &[&ValueOrigin],
+    cap: usize,
+    parts: &mut Vec<PartDiff>,
+) {
+    let (ga, gb) = (&a[a_start..a_end], &b[b_start..b_end]);
+    if ga.is_empty() && gb.is_empty() {
+        return;
+    }
+    if ga == gb {
+        if ga.len() >= 8 {
+            parts.push(static_part(a_start, b_start, ga));
+        }
+        return;
+    }
+    // regiões que diferem, expandidas para o "token" e unidas se sobrepostas
+    let mut regions: Vec<(usize, usize, usize, usize)> = Vec::new();
+    for (a0, a1, b0, b1) in diff_regions(ga.as_bytes(), gb.as_bytes(), cap) {
+        let (ea0, ea1) = expand_class(ga, a0, a1);
+        let (eb0, eb1) = expand_class(gb, b0, b1);
+        match regions.last_mut() {
+            Some(last) if ea0 <= last.1 || eb0 <= last.3 => {
+                last.1 = last.1.max(ea1);
+                last.3 = last.3.max(eb1);
+            }
+            _ => regions.push((ea0, ea1, eb0, eb1)),
+        }
+    }
+    let (mut ca, mut cb) = (0usize, 0usize);
+    let emit_static = |ca: usize, cb: usize, na: usize, nb: usize, parts: &mut Vec<PartDiff>| {
+        if na - ca == nb - cb && na - ca >= 8 {
+            parts.push(static_part(a_start + ca, b_start + cb, &ga[ca..na]));
+        }
+    };
+    for (a0, a1, b0, b1) in regions {
+        emit_static(ca, cb, a0, b0, parts);
+        let abs_b = (b_start + b0, b_start + b1);
+        let covering = unpaired_b.iter().find(|v| {
+            v.offset.is_some_and(|o| {
+                let (s, l) = (o as usize, v.length);
+                s < abs_b.1.max(abs_b.0 + 1) && abs_b.0 < s + l
             })
-        })
-        .collect()
+        });
+        parts.push(PartDiff {
+            class: FieldClass::Dynamic,
+            label: "dinâmico".to_string(),
+            a_offset: (a_start + a0) as u64,
+            b_offset: (b_start + b0) as u64,
+            a: ga[a0..a1].to_string(),
+            b: covering.map_or_else(|| gb[b0..b1].to_string(), |v| v.value.clone()),
+            dynamic_kind: covering.map_or(DynamicKind::NoOrigin, |v| kind_of(v)),
+            origin_label: String::new(),
+            origin: covering.and_then(|v| summary(v)),
+        });
+        ca = a1;
+        cb = b1;
+    }
+    emit_static(ca, cb, ga.len(), gb.len(), parts);
 }
 
 fn origin_label(kind: Option<DynamicKind>, origin: Option<&OriginSummary>) -> Option<String> {

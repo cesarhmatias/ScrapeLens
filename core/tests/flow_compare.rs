@@ -576,3 +576,147 @@ fn unobservable_previous_responses_are_reported_for_values_without_origin() {
     let ok = value_origins(&b.session, &b, &logical(&b, "2.1"), &FlowOptions::default()).unwrap();
     assert!(ok.values.iter().all(|v| v.unobservable.is_empty()));
 }
+
+fn opaque_flow(sid: &str, pid: &str, delta: &str, plate: &str) -> SessionBundle {
+    let mut f = Flow::default();
+    let html = format!(
+        "<script>\nvar m_currentSessionId = \"{sid}\";\nvar m_currentProcessId = \"{pid}\";\n</script>"
+    );
+    f.step(
+        "GET",
+        "https://x.test/app/entry",
+        json!({}),
+        None,
+        json!({}),
+        Some(&html),
+        1.0,
+    );
+    f.step(
+        "POST",
+        "https://x.test/app/Connector",
+        json!({}),
+        Some("XML=lp08nextPage"),
+        json!({}),
+        Some(&format!("XML=lp0800027nextPagek05v_tmpx08{delta}&STAMP=1")),
+        2.0,
+    );
+    let xml = format!("i2212001705025000005{sid}{pid}SA90001_dummycmd_consultar_placafalsep1400000v_placa{plate}p1300003#f12_selected2.0x08{delta}");
+    f.step(
+        "POST",
+        "https://x.test/app/Connector",
+        json!({}),
+        Some(&format!("XML={xml}")),
+        json!({}),
+        Some("XML=ok"),
+        3.0,
+    );
+    f.bundle()
+}
+
+#[test]
+fn opaque_parts_align_between_the_same_anchors_and_snap_to_known_values() {
+    // IDs com prefixo comum longo: só o último dígito difere
+    let a = opaque_flow(
+        "CSAN00000_000000000001",
+        "100000000001",
+        "DLTA0005",
+        "TST0T00",
+    );
+    let b = opaque_flow(
+        "CSAN00000_000000000002",
+        "100000000002",
+        "DLTB0005",
+        "TST0T02",
+    );
+    let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
+    let pair = r
+        .pairs
+        .iter()
+        .find(|p| p.a.request_id == logical(&a, "3.1"))
+        .unwrap();
+    let xml = pair.fields.iter().find(|f| f.field == "XML").unwrap();
+    let dynamic: Vec<_> = xml
+        .parts
+        .iter()
+        .filter(|p| p.class == FieldClass::Dynamic)
+        .collect();
+    let texts: Vec<(&str, &str)> = dynamic
+        .iter()
+        .map(|p| (p.a.as_str(), p.b.as_str()))
+        .collect();
+    assert_eq!(
+        texts,
+        vec![
+            ("CSAN00000_000000000001", "CSAN00000_000000000002"),
+            ("100000000001", "100000000002"),
+            ("TST0T00", "TST0T02"),
+            ("x08DLTA0005", "x08DLTB0005"),
+        ],
+        "{:?}",
+        xml.parts
+    );
+    // SESSIONID e processId: runtime com origem na página; delta: resposta anterior; placa: sem origem
+    assert_eq!(dynamic[0].dynamic_kind, DynamicKind::Runtime);
+    assert_eq!(
+        dynamic[0].origin.as_ref().unwrap().request_id,
+        logical(&b, "1.1")
+    );
+    assert_eq!(
+        dynamic[1].origin.as_ref().unwrap().request_id,
+        logical(&b, "1.1")
+    );
+    assert_eq!(dynamic[2].dynamic_kind, DynamicKind::NoOrigin);
+    assert_eq!(dynamic[2].origin_label, "dinâmico sem origem");
+    assert_eq!(
+        dynamic[3].origin.as_ref().unwrap().request_id,
+        logical(&b, "2.1")
+    );
+    // âncoras estáticas nunca contêm pedaço de um valor dinâmico
+    for p in xml.parts.iter().filter(|p| p.class == FieldClass::Static) {
+        for token in ["CSAN00000_00000000000", "TST0T0", "DLT"] {
+            assert!(
+                !p.a.contains(token),
+                "âncora cortou valor conhecido: {}",
+                p.a
+            );
+        }
+    }
+    // mesmo dado nos dois lados: tudo estático
+    let same = compare_sessions(&a.session, &a, &a.session, &a, &CompareOptions::default());
+    assert_eq!(same.counts.dynamic, 0);
+}
+
+#[test]
+fn counts_include_the_dynamic_parts_of_composite_fields() {
+    let a = opaque_flow(
+        "CSAN00000_000000000001",
+        "100000000001",
+        "DLTA0005",
+        "TST0T00",
+    );
+    let b = opaque_flow(
+        "CSAN00000_000000000002",
+        "100000000002",
+        "DLTB0005",
+        "TST0T02",
+    );
+    let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
+    let pair = r
+        .pairs
+        .iter()
+        .find(|p| p.a.request_id == logical(&a, "3.1"))
+        .unwrap();
+    // 4 trechos dinâmicos no XML (3 runtime + 1 sem origem), STAMP/outros fora
+    assert_eq!(pair.parts_counts.dynamic, 4);
+    assert_eq!(pair.parts_counts.runtime, 3);
+    assert_eq!(pair.parts_counts.no_origin, 1);
+    assert!(
+        pair.counts.no_origin >= 1,
+        "a placa aparece em counts: {:?}",
+        pair.counts
+    );
+    for c in [&pair.counts, &r.counts] {
+        assert_eq!(c.dynamic, c.runtime + c.no_origin, "total coerente");
+    }
+    assert_eq!(r.parts_counts.no_origin, 1);
+}
