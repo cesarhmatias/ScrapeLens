@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-28T04:17:28Z",
- "coreSha256": "7d5dc9e413529f291f4e2369ab006c42683000ba028a74010f72d3c260258b6d",
- "coreBytes": 2663056,
- "gitCommit": "af477f0",
+ "generatedAt": "2026-10-28T04:45:23Z",
+ "coreSha256": "4c9bc48dafb5ea84118f4644cca64726acce31ec074d63363597f2c0169ad50c",
+ "coreBytes": 2703408,
+ "gitCommit": "7ed4329",
  "macos": "26.5.2",
  "machine": "arm64",
  "python": "3.14.8",
@@ -137,7 +137,7 @@
     "asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte"
    ],
    "notes": [],
-   "seconds": 0.08
+   "seconds": 0.35
   },
   {
    "item": 2,
@@ -158,7 +158,7 @@
     },
     {
      "ok": true,
-     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'session.netlog_missing', 'session.cdp_missing', 'har.missing_response'}"
+     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'har.missing_response', 'session.cdp_missing', 'session.netlog_missing'}"
     },
     {
      "ok": true,
@@ -178,7 +178,7 @@
     },
     {
      "ok": true,
-     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'session.netlog_missing', 'session.cdp_missing', 'har.unknown_encoding'}"
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'session.cdp_missing', 'har.unknown_encoding', 'session.netlog_missing'}"
     },
     {
      "ok": true,
@@ -261,7 +261,7 @@
     "HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.",
     "Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos."
    ],
-   "seconds": 0.18
+   "seconds": 0.26
   },
   {
    "item": 3,
@@ -355,7 +355,7 @@
     "Diagnóstico da falha do líder: a fixture declarava `wallTime` sem o `timestamp` monotônico (`1793046000.0`), e o core de `f6c6bdd` calibrava `time` como microssegundos; o NetLog ficava 2 s à frente e as duas requisições viravam `unmatched`. O Chrome real satisfaz `wallTime = timeTickOffset/1000 + timestamp` (desvio medido < 1 ms), equação agora usada na fixture. Era defeito da fixture, não do core; a falha original está preservada em `tests/results/aceite-criterio3-falha-lider.json` e `RELATORIO-criterio3-falha-lider.md`.",
     "Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`."
    ],
-   "seconds": 0.06
+   "seconds": 0.08
   },
   {
    "item": 4,
@@ -420,7 +420,7 @@
    "notes": [
     "O redirect é um elo entre tentativas, não uma requisição separada."
    ],
-   "seconds": 0.06
+   "seconds": 0.08
   },
   {
    "item": 5,
@@ -489,7 +489,7 @@
     },
     {
      "ok": true,
-     "label": "todos os cinco estados aparecem na fixture: esperado {'empty', 'discarded', 'unavailable', 'truncated', 'captured'}, obtido {'empty', 'discarded', 'unavailable', 'truncated', 'captured'}"
+     "label": "todos os cinco estados aparecem na fixture: esperado {'captured', 'truncated', 'empty', 'discarded', 'unavailable'}, obtido {'captured', 'truncated', 'empty', 'discarded', 'unavailable'}"
     }
    ],
    "passed": 16,
@@ -572,7 +572,7 @@
    "notes": [
     "O diff compara ocorrências; `reordered` usa os índices originais de A e B."
    ],
-   "seconds": 0.01
+   "seconds": 0.02
   },
   {
    "item": 7,
@@ -682,7 +682,7 @@
    "notes": [
     "Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK)."
    ],
-   "seconds": 0.18
+   "seconds": 0.36
   },
   {
    "item": 8,
@@ -776,7 +776,7 @@
    "notes": [
     "Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso."
    ],
-   "seconds": 0.04
+   "seconds": 0.05
   },
   {
    "item": 9,
@@ -1271,7 +1271,7 @@
     "Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`a7004d4e95e8`, compilado em 2026-10-27 04:00 UTC−03 com o core até `b5846be`, incluindo `f6c6bdd`); a sessão ao vivo acima é nova, não reaproveitada.",
     "As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-2` e `netlog-1704043c442dcbd1-2`), agora pela UI: o usuário selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão."
    ],
-   "seconds": 0.11
+   "seconds": 0.22
   },
   {
    "item": 10,
@@ -1292,35 +1292,35 @@
     },
     {
      "ok": true,
-     "label": "import-har abaixo de 60 s (0.96 s)"
+     "label": "import-har abaixo de 60 s (2.87 s)"
     },
     {
      "ok": true,
-     "label": "pico do import abaixo de 1,5 GiB (784 MiB)"
+     "label": "pico do import abaixo de 1,5 GiB (600 MiB)"
     },
     {
      "ok": true,
-     "label": "inspect abaixo de 60 s (3.14 s)"
+     "label": "inspect abaixo de 60 s (5.96 s)"
     },
     {
      "ok": true,
-     "label": "inspect com pico abaixo de 3,5 GiB (1524 MiB)"
+     "label": "inspect com pico abaixo de 3,5 GiB (1464 MiB)"
     }
    ],
    "passed": 7,
    "failed": 0,
    "evidence": [
-    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.96 s, pico 784 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 2.87 s, pico 600 MiB RSS",
     "sessão gravada: session.json 225.8 MiB",
-    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.14 s, pico 1524 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 5.96 s, pico 1464 MiB RSS",
     "complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB"
    ],
    "notes": [
     "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
-    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 1524 MiB vem da serialização, não do parser.",
+    "`inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 1464 MiB vem da serialização, não do parser.",
     "Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo."
    ],
-   "seconds": 9.66
+   "seconds": 19.66
   }
  ],
  "scope": [

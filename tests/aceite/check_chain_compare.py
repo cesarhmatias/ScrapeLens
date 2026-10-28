@@ -103,6 +103,10 @@ def check_origins(core, a, ex, ids):
             continue
         kinds = {e["kind"] for e in v["evidences"]}
         check(v["status"] in ("origin", "ambiguous") and f["evidence"] in kinds, f"origins {name}: esperado {f['evidence']}, obtido status={v['status']} kinds={kinds}")
+        check(v["label"] == f["status_label"], f"origins {name}: rótulo esperado {f['status_label']!r}, obtido {v['label']!r}")
+        strengths = {e["strength"] for e in v["evidences"] if e["role"] == "produced"}
+        want_strength = "strong" if f["confidence"] == "strong" else "medium"
+        check(strengths == {want_strength}, f"origins {name}: força do produtor esperada {want_strength}, obtida {strengths}")
         want = ids[f["producer"]]
         check(produced_by(v) == [want], f"origins {name}: produtor esperado {want} ({f['producer']}), obtido {produced_by(v)}")
         if f.get("reissued_by"):
@@ -131,6 +135,10 @@ def check_chain(core, a, ex, ids):
     check(set(app) - set(want_app) <= allowed, f"chain: passos extras não permitidos {set(app) - set(want_app) - allowed}")
     check(app == sorted(app), f"chain: ordem do fluxo violada {app}")
     check(prot == [ids[x] for x in c["protection"]], f"chain: proteção esperada {[ids[x] for x in c['protection']]}, obtida {prot}")
+    got_conf = {s["requestId"]: s.get("confidence") for s in doc["steps"]}
+    want_conf = {ids[k]: v for k, v in c["confidence"].items()}
+    check({k: v for k, v in got_conf.items() if k in want_conf} == want_conf, f"chain: confidence esperada {want_conf}, obtida {got_conf}")
+    check(all(s.get("confidence") == "strong" for s in doc["protection"]), "chain: proteção (cookie-jar) deve ser strong")
     check(all(s.get("class") == "protection" for s in doc["protection"]) and all(s.get("class") == "application" for s in doc["steps"]),
           "chain: classes application/protection")
     for x in c["must_exclude"]:
@@ -183,7 +191,7 @@ def check_compare_fields(c, fields, xml_parts, ida, idb):
             continue
         check(e["label"] == f["class"], f"compare {f['field']}: esperado {f['class']}, obtido {e['label']}")
         if f.get("runtime"):
-            want = f"obter em runtime (origem: {idb[f['origin']]}"
+            want = f"obter em runtime (origem{' possível' if f.get('possible') else ''}: {idb[f['origin']]}"
             check((e["originLabel"] or "").startswith(want), f"compare {f['field']}: esperado '{want}…', obtido {e['originLabel']!r}")
         if f.get("value") is not None:
             check(e["a"] == f["value"] and e["b"] == f["value"], f"compare {f['field']}: valor estático {f['value']!r}, obtido {e['a']!r}/{e['b']!r}")
@@ -193,13 +201,41 @@ def check_compare_fields(c, fields, xml_parts, ida, idb):
         token = f["field"].split(":", 1)[1]
         if token == "delta":
             pp = part_with(xml_parts, "DLTA0005", "DLTB0005")
-            check(len(pp) == 1 and pp[0]["label"] == "dinâmico" and (pp[0]["originLabel"] or "").startswith(f"obter em runtime (origem: {idb[f['origin']]}"),
+            want = f"obter em runtime (origem{' possível' if f.get('possible') else ''}: {idb[f['origin']]}"
+            check(len(pp) == 1 and pp[0]["label"] == "dinâmico" and (pp[0]["originLabel"] or "").startswith(want),
                   f"compare XML:delta: obtido {[(q['label'], q['originLabel']) for q in pp]}")
         elif token == "v_placa":
             continue  # verificado por par, acima
         else:
             pp = [q for q in xml_parts if token in q["a"] and token in q["b"]]
             check(bool(pp) and all(q["label"] == f["class"] for q in pp), f"compare XML:{token}: esperado {f['class']}, obtido {[(q['label']) for q in pp]}")
+
+
+def check_edge_regressions(core, ex, tmp):
+    """Revisão da rodada 5: produtor lento sobreposto não é origem; controle sequencial é."""
+    e = ex["edge_regressions"]
+    sess = cb.import_fixture(core, e["session"], tmp)
+    ids = cb.cdp_to_logical(sess)
+    for key, strong in (("slow_overlapping_producer", False), ("sequential_control", True)):
+        c = e[key]
+        doc, _ = run(core, "origins", sess, ids[c["consumer"]])
+        if doc is None:
+            continue
+        found = vals(doc, scope="body", field=c["field"])
+        check(len(found) == 1, f"edge {key}: campo {c['field']} ausente")
+        if not found:
+            continue
+        v = found[0]
+        if strong:
+            check(v["status"] == "origin" and v["label"] == "origem observada" and produced_by(v) == [ids[c["producer"]]] and v["evidences"][0]["kind"] == "same-field",
+                  f"edge {key}: esperado origem forte de {c['producer']}, obtido {v['status']} {v['label']} {produced_by(v)}")
+        else:
+            check(v["status"] == "none" and not v["evidences"] and ids[c["producer"]] not in text_of(v),
+                  f"edge {key}: produtor lento não pode ser origem, obtido {v['status']} {v['label']} {v['evidences']}")
+
+
+def text_of(v):
+    return json.dumps(v["evidences"], ensure_ascii=False)
 
 
 def check_sanitized(core, a, ex, ids, tmp):
@@ -235,10 +271,11 @@ def main():
     check_origins(core, sa, ex, ida)
     check_chain(core, sa, ex, ida)
     check_compare(core, sa, sb, ex, ida, idb)
+    check_edge_regressions(core, ex, tmp)
     check_sanitized(core, sa, ex, ida, tmp)
     if FAILS:
         print(f"FAIL ({len(FAILS)}):"); [print(" -", f) for f in FAILS]; return 1
-    print("OK: origens §4.1, cadeia, comparação §4.2, negativo §4.3 e sanitizada §4.4"); return 0
+    print("OK: origens §4.1, cadeia, comparação §4.2, negativo §4.3, regressões edge (causalidade) e sanitizada §4.4"); return 0
 
 
 if __name__ == "__main__":

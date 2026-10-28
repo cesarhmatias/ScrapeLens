@@ -133,3 +133,16 @@ asseveram isso a cada importação.
 - Expectativas: `manifest.json` → `chain_compare` (origens §4.1, cadeia, comparação §4.2, sanitizada
   §4.4). Aceite: `python3 tests/aceite/check_chain_compare.py` (falha até o Core entregar
   `origins|chain|compare`; o adaptador de formato JSON é tolerante e deve ser ajustado ao contrato final).
+
+## Revisão da rodada 5 (tempos, confiança e causalidade)
+
+- **Tempos sequenciais**: cada passo começa 250 ms depois do anterior e cada resposta termina em
+  start+100 ms (CDP `loadingFinished`, NetLog em ms e HAR coerentes), então um produtor sempre termina
+  antes do consumidor. O NetLog antes tinha offsets herdados dos microssegundos (`+90000`); agora
+  `+1/+2/+90` ms.
+- **Expectativas por regra**: cookie-jar e same-field (STAMP) = `origem observada`/strong; SESSIONID e delta
+  (value-match) = `possível origem (value-match)`/medium; no compare `obter em runtime (origem possível: …)`;
+  confiança do passo da cadeia = strong se algum motivo é forte (r0001 strong pelo JSESSIONID).
+- **Regressão de causalidade** (`detran-pb-edge`, manifest `chain_compare.edge_regressions`): `2008.8`
+  (produtor lento, termina após o início de `2009.9`) → `slow_token` sem origem; `2010.10`→`2011.11`
+  (sequencial) → origem forte same-field.

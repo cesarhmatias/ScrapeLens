@@ -255,11 +255,11 @@ def entry_har(method: str, url: str, status: int, mime: str, body: str,
     }
     return {
         "startedDateTime": "",
-        "time": 120.0,
+        "time": 100.0,
         "request": request,
         "response": response,
         "cache": {},
-        "timings": {"blocked": 1.0, "dns": -1, "connect": -1, "ssl": -1, "send": 0.4, "wait": 90.0, "receive": 20.0},
+        "timings": {"blocked": 1.0, "dns": -1, "connect": -1, "ssl": -1, "send": 0.4, "wait": 80.0, "receive": 10.0},
         "serverIPAddress": ip,
         "connection": "412",
         "pageref": "page_1",
@@ -337,7 +337,7 @@ def cdp_events() -> list[dict]:
             "method": "Network.loadingFinished",
             "params": {
                 "requestId": rid,
-                "timestamp": round(ts + 0.12, 3),
+                "timestamp": round(ts + 0.10, 3),
                 "encodedDataLength": resp["bodySize"],
             },
         })
@@ -374,14 +374,14 @@ def netlog_events() -> dict:
             },
         })
         events.append({
-            "time": str(t + 900),
+            "time": str(t + 1),
             "type": types["HTTP_STREAM_JOB_BOUND_TO_REQUEST"],
-            "source": {"id": 900, "type": 2, "start_time": str(t - 9000)},
+            "source": {"id": 900, "type": 2, "start_time": str(t - 90)},
             "phase": 0,
             "params": {"request": src},
         })
         events.append({
-            "time": str(t + 1200),
+            "time": str(t + 2),
             "type": types["HTTP_TRANSACTION_SEND_REQUEST_HEADERS"],
             "source": {"id": src, "type": 1, "start_time": str(t - 5)},
             "phase": 0,
@@ -392,7 +392,7 @@ def netlog_events() -> dict:
             },
         })
         events.append({
-            "time": str(t + 90000),
+            "time": str(t + 90),
             "type": types["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"],
             "source": {"id": src, "type": 1, "start_time": str(t - 5)},
             "phase": 0,
@@ -447,7 +447,7 @@ def detran_bodies() -> list[dict]:
         if post is not None:
             rows.append(body_line(rid, 0, "request", "captured", post, "requestWillBeSent.postData", ts=ts))
         text = step["response"]["content"]["text"]
-        rts = ts + 0.12
+        rts = ts + 0.10
         src = "Network.getResponseBody"
         if i == 1:      # TSPD noise: non-UTF-8 payload -> base64
             rows.append(body_line(rid, 0, "response", "captured", TSPD_BINARY, src, ts=rts))
@@ -528,6 +528,25 @@ def edge_cdp_and_bodies() -> tuple[list[dict], list[dict]]:
     r = "2007.7"
     req(r, f"{H}/empty", ts=t + 6); done(r, f"{H}/empty", 204, "text/plain", t + 6.03)
     bodies.append(body_line(r, 0, "response", "empty", "", "Network.getResponseBody", reason="HTTP 204", original=0, ts=t + 6.04))
+    # E8/E9: produtor LENTO sobreposto. A resposta de E8 só termina depois que E9 (consumidor) começou:
+    # causalidade (docs/09, revisão da rodada 5): não é origem.
+    slow_tok = "SLOWTOKEN-0123456789"
+    r = "2008.8"
+    req(r, f"{H}/json", ts=t + 7); done(r, f"{H}/json", 200, "application/json", t + 8.5)
+    bodies.append(body_line(r, 0, "response", "captured", json.dumps({"slow_token": slow_tok}), "Network.getResponseBody", ts=t + 8.52))
+    r = "2009.9"
+    req(r, f"{H}/sink", "POST", json.dumps({"slow_token": slow_tok}), ts=t + 8.0); done(r, f"{H}/sink", 200, "application/json", t + 8.1)
+    bodies.append(body_line(r, 0, "request", "captured", json.dumps({"slow_token": slow_tok}), "requestWillBeSent.postData", ts=t + 8.0))
+    bodies.append(body_line(r, 0, "response", "captured", '{"schema": "scrapelens.testserver.sink/1"}', "Network.getResponseBody", ts=t + 8.12))
+    # E10/E11: controle sequencial (a resposta termina antes do consumidor): é origem forte (same-field).
+    ctl_tok = "CONTROLTOKEN-ABCDEF"
+    r = "2010.10"
+    req(r, f"{H}/json", ts=t + 9); done(r, f"{H}/json", 200, "application/json", t + 9.03)
+    bodies.append(body_line(r, 0, "response", "captured", json.dumps({"ctl_token": ctl_tok}), "Network.getResponseBody", ts=t + 9.04))
+    r = "2011.11"
+    req(r, f"{H}/sink", "POST", json.dumps({"ctl_token": ctl_tok}), ts=t + 9.5); done(r, f"{H}/sink", 200, "application/json", t + 9.6)
+    bodies.append(body_line(r, 0, "request", "captured", json.dumps({"ctl_token": ctl_tok}), "requestWillBeSent.postData", ts=t + 9.5))
+    bodies.append(body_line(r, 0, "response", "captured", '{"schema": "scrapelens.testserver.sink/1"}', "Network.getResponseBody", ts=t + 9.62))
     return ev, bodies
 
 
@@ -542,13 +561,13 @@ def chain_compare_expectations() -> dict:
         "origins_4_1": {
             "note": "producer = requestId CDP; o Core devolve o id lógico (cdp-rNNNN) ao qual este requestId pertence",
             "fields": [
-                o("SESSIONID", "value-match", r(0), literal="m_currentSessionId", role="produced",
+                o("SESSIONID", "value-match", r(0), literal="m_currentSessionId", role="produced", status_label="possível origem (value-match)", confidence="possible",
                   reissued_by=[r(4), r(7)], ambiguous=False,
                   why="a página easynat-app define m_currentSessionId (produz); as páginas SIM1000X e VES0009X reemitem o literal (role reissued); NatLogon (truncada) não é observável"),
-                o("STAMP", "same-field", r(9), value=str(2005 - 2000 + STAMP_BASE), why="STAMP da resposta do POST anterior (cmd_filtro)"),
-                o("XML:delta", "value-match", r(9), value=f"{DELTA_PREFIX}0005", why="delta na resposta do POST anterior, dentro do campo opaco XML"),
-                o("cookie:JSESSIONID", "cookie-jar", r(0), why="Set-Cookie da resposta do easynat-app"),
-                o(f"cookie:{TS_COOKIE}", "cookie-jar", r(1), protection=True, why="Set-Cookie de /TSPD/ (proteção)"),
+                o("STAMP", "same-field", r(9), status_label="origem observada", confidence="strong", value=str(2005 - 2000 + STAMP_BASE), why="STAMP da resposta do POST anterior (cmd_filtro)"),
+                o("XML:delta", "value-match", r(9), status_label="possível origem (value-match)", confidence="possible", value=f"{DELTA_PREFIX}0005", why="delta na resposta do POST anterior, dentro do campo opaco XML"),
+                o("cookie:JSESSIONID", "cookie-jar", r(0), status_label="origem observada", confidence="strong", why="Set-Cookie da resposta do easynat-app"),
+                o(f"cookie:{TS_COOKIE}", "cookie-jar", r(1), protection=True, status_label="origem observada", confidence="strong", why="Set-Cookie de /TSPD/ (proteção)"),
                 o("XML:v_placa", "sem origem observada", None, value=PLATE_A, why="entrada do usuário"),
             ],
             "negative_4_3": {
@@ -561,6 +580,8 @@ def chain_compare_expectations() -> dict:
             "application_in_flow_order": [r(0), r(3), r(5), r(6), r(8), r(9)],
             "allowed_extra_application": [r(2), r(4), r(7)],
             "protection": [r(1)],
+            "confidence": {r(0): "strong", r(3): "possible", r(4): "possible", r(5): "strong", r(6): "possible", r(7): "possible", r(8): "strong", r(9): "strong"},
+            "confidence_rule": "strong se algum motivo do passo é forte (cookie-jar, same-field); r(0) é strong pelo JSESSIONID mesmo com o SESSIONID possible",
             "must_exclude": [target, r(11), r(12)],
             "reasons": {
                 r(0): "fornece SESSIONID (m_currentSessionId) e Set-Cookie JSESSIONID",
@@ -577,9 +598,9 @@ def chain_compare_expectations() -> dict:
             "pairs": "13 pares em ordem (índice i de A com o índice i de B); só em A/B: nenhum",
             "consultas_pair_by_order": [[r(10), r(10)], [r(12), r(12)]],
             "fields": [
-                {"field": "SESSIONID", "class": "dinâmico", "runtime": True, "origin": r(0)},
+                {"field": "SESSIONID", "class": "dinâmico", "runtime": True, "origin": r(0), "possible": True},
                 {"field": "STAMP", "class": "dinâmico", "runtime": True, "origin": r(9)},
-                {"field": "XML:delta", "class": "dinâmico", "runtime": True, "origin": r(9)},
+                {"field": "XML:delta", "class": "dinâmico", "runtime": True, "origin": r(9), "possible": True},
                 {"field": "cookie:JSESSIONID", "class": "dinâmico", "runtime": True, "origin": r(0)},
                 {"field": f"cookie:{TS_COOKIE}", "class": "dinâmico", "runtime": True, "origin": r(1), "protection": True},
                 {"field": "XML:v_placa", "class": "dinâmico", "runtime": False, "origin": None, "label": "dinâmico sem origem"},
@@ -590,6 +611,13 @@ def chain_compare_expectations() -> dict:
                 {"field": "header:x-page-seq", "class": "estático", "value": "3"},
             ],
             "plates": {"A": [PLATE_A, PLATE_B], "B": ["TST0T02", "TST0T03"]},
+        },
+        "edge_regressions": {
+            "session": "detran-pb-edge",
+            "slow_overlapping_producer": {"consumer": "2009.9", "producer": "2008.8", "field": "slow_token",
+                                          "expect": "sem origem (a resposta de 2008.8 termina depois do início de 2009.9)"},
+            "sequential_control": {"consumer": "2011.11", "producer": "2010.10", "field": "ctl_token",
+                                   "expect": "origem forte (same-field) com produtor 2010.10"},
         },
         "sanitized_4_4": {
             "session": "A sanitizada (scrapelens-core sanitize)",
@@ -635,7 +663,7 @@ def build() -> None:
     def add(method, url, status, mime, body, fields=None, kind="page", extra=None,
             purpose="", event="", referer=f"{APP}/UIC-SERVICOS/VES0009X.html"):
         nonlocal t
-        t += 110
+        t += 250  # sequencial: cada resposta (100 ms) termina antes da próxima requisição
         idx = len(steps)
         entry = entry_har(method, url, status, mime, body, fields, kind, extra, referer,
                           cookie_mode={0: "none", 1: "js"}.get(idx, "both"),
@@ -762,11 +790,11 @@ def build() -> None:
     for step in steps:
         har["log"]["entries"].append({
             "startedDateTime": f"2026-10-26T23:00:{step['offset_ms'] // 1000:02d}.{step['offset_ms'] % 1000:03d}Z",
-            "time": 120.0,
+            "time": 100.0,
             "request": step["request"],
             "response": step["response"],
             "cache": {},
-            "timings": {"blocked": 1.0, "dns": -1, "connect": -1, "ssl": -1, "send": 0.4, "wait": 90.0, "receive": 20.0},
+            "timings": {"blocked": 1.0, "dns": -1, "connect": -1, "ssl": -1, "send": 0.4, "wait": 80.0, "receive": 10.0},
             "serverIPAddress": "198.51.100.10",
             "connection": "412",
             "pageref": "page_1",

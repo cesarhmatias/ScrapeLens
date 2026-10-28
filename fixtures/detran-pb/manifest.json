@@ -35,7 +35,7 @@
  "flow": [
   {
    "index": 0,
-   "offset_ms": 110,
+   "offset_ms": 250,
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37",
    "event": "",
@@ -43,7 +43,7 @@
   },
   {
    "index": 1,
-   "offset_ms": 220,
+   "offset_ms": 500,
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/TSPD/?type=18",
    "event": "",
@@ -51,7 +51,7 @@
   },
   {
    "index": 2,
-   "offset_ms": 330,
+   "offset_ms": 750,
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html",
    "event": "",
@@ -59,7 +59,7 @@
   },
   {
    "index": 3,
-   "offset_ms": 440,
+   "offset_ms": 1000,
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "init",
@@ -67,7 +67,7 @@
   },
   {
    "index": 4,
-   "offset_ms": 550,
+   "offset_ms": 1250,
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
    "event": "",
@@ -75,7 +75,7 @@
   },
   {
    "index": 5,
-   "offset_ms": 660,
+   "offset_ms": 1500,
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "init",
@@ -83,7 +83,7 @@
   },
   {
    "index": 6,
-   "offset_ms": 770,
+   "offset_ms": 1750,
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "on_interceptor",
@@ -91,7 +91,7 @@
   },
   {
    "index": 7,
-   "offset_ms": 880,
+   "offset_ms": 2000,
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
    "event": "",
@@ -99,7 +99,7 @@
   },
   {
    "index": 8,
-   "offset_ms": 990,
+   "offset_ms": 2250,
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "init",
@@ -107,7 +107,7 @@
   },
   {
    "index": 9,
-   "offset_ms": 1100,
+   "offset_ms": 2500,
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "cmd_filtro",
@@ -115,7 +115,7 @@
   },
   {
    "index": 10,
-   "offset_ms": 1210,
+   "offset_ms": 2750,
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "cmd_consultar_placa",
@@ -123,7 +123,7 @@
   },
   {
    "index": 11,
-   "offset_ms": 1320,
+   "offset_ms": 3000,
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "cmd_nova",
@@ -131,7 +131,7 @@
   },
   {
    "index": 12,
-   "offset_ms": 1430,
+   "offset_ms": 3250,
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "cmd_consultar_placa",
@@ -394,6 +394,8 @@
      "producer": "1001.1",
      "literal": "m_currentSessionId",
      "role": "produced",
+     "status_label": "possível origem (value-match)",
+     "confidence": "possible",
      "reissued_by": [
       "1005.5",
       "1008.8"
@@ -405,6 +407,8 @@
      "field": "STAMP",
      "evidence": "same-field",
      "producer": "1010.10",
+     "status_label": "origem observada",
+     "confidence": "strong",
      "value": "2005",
      "why": "STAMP da resposta do POST anterior (cmd_filtro)"
     },
@@ -412,6 +416,8 @@
      "field": "XML:delta",
      "evidence": "value-match",
      "producer": "1010.10",
+     "status_label": "possível origem (value-match)",
+     "confidence": "possible",
      "value": "DLTA0005",
      "why": "delta na resposta do POST anterior, dentro do campo opaco XML"
     },
@@ -419,6 +425,8 @@
      "field": "cookie:JSESSIONID",
      "evidence": "cookie-jar",
      "producer": "1001.1",
+     "status_label": "origem observada",
+     "confidence": "strong",
      "why": "Set-Cookie da resposta do easynat-app"
     },
     {
@@ -426,6 +434,8 @@
      "evidence": "cookie-jar",
      "producer": "1002.2",
      "protection": true,
+     "status_label": "origem observada",
+     "confidence": "strong",
      "why": "Set-Cookie de /TSPD/ (proteção)"
     },
     {
@@ -469,6 +479,17 @@
    "protection": [
     "1002.2"
    ],
+   "confidence": {
+    "1001.1": "strong",
+    "1004.4": "possible",
+    "1005.5": "possible",
+    "1006.6": "strong",
+    "1007.7": "possible",
+    "1008.8": "possible",
+    "1009.9": "strong",
+    "1010.10": "strong"
+   },
+   "confidence_rule": "strong se algum motivo do passo é forte (cookie-jar, same-field); r(0) é strong pelo JSESSIONID mesmo com o SESSIONID possible",
    "must_exclude": [
     "1011.11",
     "1012.12",
@@ -503,7 +524,8 @@
      "field": "SESSIONID",
      "class": "dinâmico",
      "runtime": true,
-     "origin": "1001.1"
+     "origin": "1001.1",
+     "possible": true
     },
     {
      "field": "STAMP",
@@ -515,7 +537,8 @@
      "field": "XML:delta",
      "class": "dinâmico",
      "runtime": true,
-     "origin": "1010.10"
+     "origin": "1010.10",
+     "possible": true
     },
     {
      "field": "cookie:JSESSIONID",
@@ -571,6 +594,21 @@
      "TST0T02",
      "TST0T03"
     ]
+   }
+  },
+  "edge_regressions": {
+   "session": "detran-pb-edge",
+   "slow_overlapping_producer": {
+    "consumer": "2009.9",
+    "producer": "2008.8",
+    "field": "slow_token",
+    "expect": "sem origem (a resposta de 2008.8 termina depois do início de 2009.9)"
+   },
+   "sequential_control": {
+    "consumer": "2011.11",
+    "producer": "2010.10",
+    "field": "ctl_token",
+    "expect": "origem forte (same-field) com produtor 2010.10"
    }
   },
   "sanitized_4_4": {
