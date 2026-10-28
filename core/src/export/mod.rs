@@ -238,6 +238,25 @@ pub fn resolve_body<'a>(
                     request.request_body.state
                 ),
             });
+            if !request.request_body.transformed.is_empty() {
+                let list = request.request_body.transformed.join(", ");
+                let mut note = format!(
+                    "ATENÇÃO: corpo transformado ({list}); os bytes exportados não são idênticos aos do fio"
+                );
+                if request
+                    .request_body
+                    .transformed
+                    .iter()
+                    .any(|item| item == "lossy-postData")
+                {
+                    note.push_str("; lossy-postData: os bytes podem diferir dos enviados");
+                }
+                output
+                    .warnings
+                    .push(Warning::new("export.body_transformed", note.clone()));
+                let base = output.body_note.take().unwrap_or_default();
+                output.body_note = Some(format!("{base}. {note}"));
+            }
             Some(bytes)
         }
         None => {

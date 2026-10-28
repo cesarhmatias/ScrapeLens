@@ -609,3 +609,100 @@ fn item10_match_has_exact_length_and_flags_inexact_mapping() {
     assert_eq!(json_match.byte_offset, Some(6));
     assert_eq!(json_match.byte_length, Some(12), "cobre o valor inteiro");
 }
+
+// ---- acabamento da rodada 4 -----------------------------------------------
+
+#[test]
+fn a1_export_warns_when_body_is_transformed() {
+    let events = vec![req(
+        "11.1",
+        "https://example.test/a",
+        "POST",
+        json!({"content-type": FORM}),
+        Some("a=1"),
+        None,
+        1.0,
+    )];
+    let mut l = line("11.1", 0, "request", "a=1");
+    l["transformed"] = json!(["lossy-postData", "chrome-decoded"]);
+    let b = bundle(&events, &[l]);
+    let r = &b.session.requests[0];
+    let bytes = scrapelens_core::export::request_body_bytes(&b, r).unwrap();
+    let options = ExportOptions::default();
+    let c = curl::to_curl(r, Some(bytes), &options).unwrap();
+    let p = python::to_python(r, Some(bytes), &options).unwrap();
+    for out in [&c, &p] {
+        assert!(
+            out.text
+                .contains("ATENÇÃO: corpo transformado (lossy-postData, chrome-decoded)"),
+            "{}",
+            out.text
+        );
+        assert!(out.text.contains("podem diferir dos enviados"));
+        assert!(out
+            .warnings
+            .iter()
+            .any(|w| w.code == "export.body_transformed"));
+    }
+    let plain = bundle(&events, &[line("11.1", 0, "request", "a=1")]);
+    let r = &plain.session.requests[0];
+    let bytes = scrapelens_core::export::request_body_bytes(&plain, r).unwrap();
+    assert!(!curl::to_curl(r, Some(bytes), &options)
+        .unwrap()
+        .text
+        .contains("transformado"));
+}
+
+#[test]
+fn a2_double_percent_encoding_is_redacted() {
+    let events = vec![
+        req(
+            "12.1",
+            "https://example.test/a",
+            "GET",
+            json!({"cookie": "sid=a/b=c+d&e?f"}),
+            None,
+            None,
+            1.0,
+        ),
+        req(
+            "12.2",
+            "https://example.test/b",
+            "POST",
+            json!({"content-type": FORM}),
+            Some("x"),
+            None,
+            2.0,
+        ),
+    ];
+    let b = bundle(
+        &events,
+        &[line(
+            "12.2",
+            0,
+            "request",
+            "dbl=a%252Fb%253Dc%252Bd%2526e%253Ff&low=a%252fb%253dc%252bd%2526e%253ff",
+        )],
+    );
+    let all = everything(&sanitized(&b));
+    assert!(!all.contains("%252F") && !all.contains("%252f"), "{all}");
+    assert!(!all.contains("%253D") && !all.contains("%253d"), "{all}");
+}
+
+#[test]
+fn a4_empty_get_provenance_is_honest() {
+    let events = vec![req(
+        "13.1",
+        "https://example.test/a",
+        "GET",
+        json!({}),
+        None,
+        None,
+        1.0,
+    )];
+    let b = bundle(&events, &[]);
+    let body = &b.session.requests[0].request_body;
+    assert_eq!(body.state, BodyState::Empty);
+    assert_eq!(body.provenance.method, "requestWillBeSent");
+    assert!(body.provenance.notes.iter().any(|n| n.contains("inferido")));
+}

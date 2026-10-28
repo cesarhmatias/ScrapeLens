@@ -366,13 +366,11 @@ fn mark_bodyless_requests(session: &mut SessionV1, capture: &super::cdp::CdpCapt
                 && bodyless_method
                 && !parsed.has_post_data
             {
-                let provenance = Provenance::new(
-                    Source::Cdp,
-                    "requestWillBeSent.hasPostData",
-                    Verification::Unverified,
-                )
-                .with_event("Network.requestWillBeSent")
-                .with_source_id(cdp_id.clone());
+                let provenance =
+                    Provenance::new(Source::Cdp, "requestWillBeSent", Verification::Unverified)
+                        .with_note("inferido: método sem corpo e hasPostData ausente no evento")
+                        .with_event("Network.requestWillBeSent")
+                        .with_source_id(cdp_id.clone());
                 let mut body = Body::empty(&provenance);
                 body.note = Some("CDP: requisição sem corpo".to_string());
                 attempt.request_body = body;

@@ -869,6 +869,8 @@ struct SensitiveValue {
 struct Variant {
     text: String,
     pct: bool,
+    /// Compara tudo sem diferenciar maiúsculas (formas duplamente codificadas).
+    fold: bool,
 }
 
 struct Needle {
@@ -949,6 +951,7 @@ fn variants_of(value: &str) -> Vec<Variant> {
     let mut variants = vec![Variant {
         text: value.to_string(),
         pct: false,
+        fold: false,
     }];
     let json = serde_json::to_string(value).unwrap_or_default();
     let json = json.trim_matches('"').to_string();
@@ -959,11 +962,19 @@ fn variants_of(value: &str) -> Vec<Variant> {
             candidates.push((percent_encode_with(value, keep, true), true));
         }
     }
-    for (candidate, pct) in candidates {
+    // Percent-encoding duplo (`%252F`): codifica de novo cada forma percent.
+    let doubled: Vec<(String, bool)> = candidates
+        .iter()
+        .filter(|(_, pct)| *pct)
+        .map(|(text, _)| (percent_encode_with(text, "-._~", false), true))
+        .collect();
+    for (candidate, pct) in candidates.into_iter().chain(doubled.clone()) {
+        let fold = doubled.iter().any(|(text, _)| *text == candidate);
         if !candidate.is_empty() && !variants.iter().any(|known| known.text == candidate) {
             variants.push(Variant {
                 text: candidate,
                 pct,
+                fold,
             });
         }
     }
@@ -1107,9 +1118,12 @@ fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
     out
 }
 
-fn matches_at(hay: &[u8], needle: &[u8], pct: bool) -> bool {
+fn matches_at(hay: &[u8], needle: &[u8], pct: bool, fold: bool) -> bool {
     if hay.len() < needle.len() {
         return false;
+    }
+    if fold {
+        return hay.eq_ignore_ascii_case(needle);
     }
     if !pct {
         return hay == needle;
@@ -1138,7 +1152,12 @@ fn replace_variant(hay: &str, variant: &Variant, mark: &str) -> (String, usize) 
     let (mut index, mut copied, mut count) = (0, 0, 0);
     while index + needle.len() <= hay_bytes.len() {
         if hay_bytes[index] == needle[0]
-            && matches_at(&hay_bytes[index..index + needle.len()], needle, variant.pct)
+            && matches_at(
+                &hay_bytes[index..index + needle.len()],
+                needle,
+                variant.pct,
+                variant.fold,
+            )
         {
             out.push_str(&hay[copied..index]);
             out.push_str(mark);
