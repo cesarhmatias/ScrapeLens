@@ -159,7 +159,7 @@ def round_flow(h: Har, r: dict, seed: int) -> dict:
         return new_stamp, new_delta
 
     h.add(f"{k}:easynat", "GET", f"{APP}/servlet/easynat-app?op=S37", 200, "text/html;charset=UTF-8",
-          page_html("DETRAN-PB", MODELS["logon"], sid, pid, "op=S37&xciParameters.natsession=acesso"), "document", None)
+          page_html("DETRAN-PB", MODELS["logon"], r["head"], pid, "op=S37&xciParameters.natsession=acesso"), "document", None)
     tspd(h, f"{k}1", f"{APP}/servlet/easynat-app?op=S37", 18)
     h.add(f"{k}:static_jquery", "GET", f"{APP}/cisnatural/jquery-ui.min.js", 200, "application/javascript", static_js("jquery-ui"), "script", f"{APP}/servlet/easynat-app?op=S37")
     h.add(f"{k}:static_cis", "GET", f"{APP}/ciscentral/CIS_V1_SYNTH.js", 200, "application/javascript", static_js("cis"), "script", f"{APP}/servlet/easynat-app?op=S37")
@@ -203,14 +203,32 @@ def round_flow(h: Har, r: dict, seed: int) -> dict:
     return out
 
 
+# SESSIONID real = literal m_currentSessionId (9 chars, do easynat-app) + "_" + sufixo de 12 dígitos SEM fonte observada
+# (conferido nos HARs reais, só pela estrutura: o sufixo não aparece em nenhuma resposta/requisição anterior ao
+# 1º POST; o processId do corpo é o literal m_currentProcessId, de 32 chars). Valores fictícios, mesma composição.
+def mk(tag, head, tail, pidn, base, dp, plates, cpfs):
+    return dict(tag=tag, head=head, tail=tail, sid=f"{head}_{tail}", pid="SYNTHPID" + f"{pidn:024d}",
+                stamp_base=base, delta_prefix=dp, plates=plates, cpfs=cpfs)
+
+
 ROUNDS = {
-    "a1": dict(tag="a1", sid="CSAN00000_000000000011", pid="100000000011", stamp_base=4100, delta_prefix="DLTC",
-               plates=["TST0T10", "TST0T11"], cpfs=["00000000191", "00000000272"]),
-    "b1": dict(tag="b1", sid="CSAN00000_000000000021", pid="100000000021", stamp_base=5100, delta_prefix="DLTD",
-               plates=["TST0T12", "TST0T13"], cpfs=["00000000353", "00000000434"]),
-    "b2": dict(tag="b2", sid="CSAN00000_000000000022", pid="100000000022", stamp_base=6100, delta_prefix="DLTE",
-               plates=["TST0T14", "TST0T15"], cpfs=["00000000515", "00000000606"]),
+    "a1": mk("a1", "CSAN00011", "700000000011", 11, 4100, "DLTC", ["TST0T10", "TST0T11"], ["00000000191", "00000000272"]),
+    "b1": mk("b1", "CSAN00021", "700000000021", 21, 5100, "DLTD", ["TST0T12", "TST0T13"], ["00000000353", "00000000434"]),
+    "b2": mk("b2", "CSAN00022", "700000000022", 22, 6100, "DLTE", ["TST0T14", "TST0T15"], ["00000000515", "00000000606"]),
 }
+
+
+def build_composite():
+    """Regra do valor composto (campo nomeado < 40 B): só ganha origem por decomposição se coberto POR INTEIRO
+    por >= 2 valores de produtores + separadores; prefixo parcial não vale."""
+    h = Har()
+    h.add("part_a", "GET", f"{APP}/compose/a", 200, "text/html;charset=UTF-8",
+          '<html><script>var part_a = "ALPHA0001";</script></html>\n', "document", None)
+    h.add("part_b", "GET", f"{APP}/compose/b", 200, "application/json", '{"part_b":"987654321012"}', "xhr", f"{APP}/compose/a")
+    h.add("use_full", "POST", f"{APP}/compose/use", 200, "text/plain", "ok\n", "xhr", f"{APP}/compose/a", post=[("token", "ALPHA0001_987654321012")])
+    h.add("use_partial", "POST", f"{APP}/compose/use", 200, "text/plain", "ok\n", "xhr", f"{APP}/compose/a", post=[("token2", "ALPHA0001_555555555555")])
+    (HERE / "real-shape-composite.har").write_text(json.dumps(h.doc(), indent=1, ensure_ascii=False) + "\n")
+    return h.ids
 
 
 def build():
@@ -218,6 +236,7 @@ def build():
     ids_a = round_flow(a, ROUNDS["a1"], 11)
     ids_b1 = round_flow(b, ROUNDS["b1"], 21)
     ids_b2 = round_flow(b, ROUNDS["b2"], 31)
+    cids = build_composite()
     (HERE / "real-shape-1round.har").write_text(json.dumps(a.doc(), indent=1, ensure_ascii=False) + "\n")
     (HERE / "real-shape-2rounds.har").write_text(json.dumps(b.doc(), indent=1, ensure_ascii=False) + "\n")
 
@@ -229,8 +248,9 @@ def build():
                           "producer": ids["cmd_filtro"], "note": "<input type=hidden name=STAMP> da resposta HTML anterior"},
                 "delta": {"parent": "XML", "value_prefix": r["delta_prefix"], "kind": "value-match", "producer": ids["cmd_filtro"],
                           "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"},
-                "SESSIONID": {"status": "origin", "label": "possível origem (value-match)", "producer": ids["easynat"],
-                              "reissued_by": [],
+                "SESSIONID": {"status": ["none", "repeated"], "label": "sem origem observada",
+                              "composition": {"head_len": 9, "separator": "_", "tail_len": 12, "head_source": ids["easynat"] + " (literal m_currentSessionId)", "tail_source": None},
+                              "justification_composite": "regra do valor composto: campo nomeado < 40 B só ganha origem por decomposição se coberto POR INTEIRO por >= 2 valores de produtores + separadores (_ - . : |); prefixo parcial não vale. No real o SESSIONID = literal de 9 chars do easynat-app + '_' + 12 dígitos sem fonte observada: cobertura parcial => 'sem origem observada' (o prefixo de 9 chars não vale como origem do campo).",
                               "justification": "regra canônica (docs/09 R5): 'reissued' só se o valor circulou numa requisição entre o 1º produtor e o seguinte; 'ambiguous' + oldest se há 2+ produtores. Nos HARs reais só o easynat-app contém o valor (as páginas NatLogon/SIM1000X/VES0009X não) e nenhuma requisição entre a resposta do easynat-app e a da NatLogon o leva (nem na URL, nem no Referer): produtor único => origin, sem reissued. A fixture reflete isso."},
                 "v_placa": {"status": "none", "plate": r["plates"][0]},
             },
@@ -249,7 +269,7 @@ def build():
         "schema": "scrapelens.fixture.case/1", "id": "detran-pb-real-shape",
         "label": "sanitized-shape-real-case",
         "origin": "FORMA dos HARs reais do DETRAN-PB (estrutura, nunca valores); valores 100% fictícios",
-        "files": {"har_1round": "real-shape-1round.har", "har_2rounds": "real-shape-2rounds.har"},
+        "files": {"har_1round": "real-shape-1round.har", "har_2rounds": "real-shape-2rounds.har", "har_composite": "real-shape-composite.har"},
         "shape": {
             "connector_response": "HTML ~10 KB: script fictício + <textarea name=XML> (com entidades) + <textarea name=ERRORMESSAGE> + <input hidden STAMP>",
             "har": "WebInspector; sem Cookie/Set-Cookie/cookies[]",
@@ -279,6 +299,13 @@ def build():
                 "a": "1round", "b": "2rounds",
                 "a_round_pairs_with_one_b_round": True, "unpaired_b_rounds": 1, "max_ambiguities": 5,
                 "dynamic_fields": ["SESSIONID", "STAMP"], "static_fields": ["PAGEINITPARAM", "ERRORMESSAGE"],
+            },
+            "composite_rule": {
+                "har": "real-shape-composite.har",
+                "full_cover": {"request": cids["use_full"], "field": "token", "status": "composite", "confidence": "possible",
+                               "producers": [cids["part_a"], cids["part_b"]], "why": "token = ALPHA0001 (literal de part_a) + '_' + 987654321012 (folha JSON de part_b): coberto por inteiro por 2 produtores"},
+                "partial_cover": {"request": cids["use_partial"], "field": "token2", "status": ["none", "repeated"], "label": "sem origem observada",
+                                  "why": "só o prefixo ALPHA0001 tem produtor; o sufixo de 12 dígitos não tem fonte observada: cobertura parcial não vale"},
             },
             "aceite_4_cookies": {"warning_code": "har.cookies_absent", "origins_and_chain_repeat_warning": True},
         },

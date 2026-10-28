@@ -89,6 +89,27 @@ def main():
         check(sum(1 for e in es if e["request"]["url"].endswith(("jquery-ui.min.js", "CIS_V1_SYNTH.js"))) == 2 * len(rounds), f"{fname}: estáticos")
         ren = [groups(urllib.parse.parse_qs(e["request"]["postData"]["text"])["XML"][0])[1].get("v_renavam") for e in posts]
         check([r for r in ren if r] == ["12"] * len(rounds), f"{fname}: v_renavam fora de formato (1 por rodada)")
+    # composição real do SESSIONID: literal de 9 chars (easynat-app) + "_" + 12 dígitos sem fonte; processId = literal de 32 chars
+    for fname in ("real-shape-1round.har", "real-shape-2rounds.har"):
+        es = json.loads((HERE / fname).read_text())["log"]["entries"]
+        head = pidlit = None
+        resp_blob = "\n".join(e["response"]["content"]["text"] for e in es)
+        for e in es:
+            if "easynat-app" in e["request"]["url"]:
+                t = e["response"]["content"]["text"]
+                head = re.search(r'm_currentSessionId = "([^"]*)"', t).group(1)
+                pidlit = re.search(r'm_currentProcessId = "([^"]*)"', t).group(1)
+                check(len(head) == 9 and len(pidlit) == 32, f"{fname}: literais 9/32 chars")
+            elif e["request"]["method"] == "POST":
+                f = urllib.parse.parse_qs(e["request"]["postData"]["text"], keep_blank_values=True)
+                h, sep, tail = f["SESSIONID"][0].partition("_")
+                check((h, sep) == (head, "_") and re.fullmatch(r"\d{12}", tail), f"{fname}: SESSIONID = literal(9) + '_' + 12 dígitos")
+                check(tail not in resp_blob and not any(tail in json.dumps(x["request"]) and x["request"]["method"] == "GET" for x in es), f"{fname}: sufixo do SESSIONID não pode ter fonte observada")
+                check(groups(f["XML"][0])[0][1] == pidlit, f"{fname}: processId do XML = literal m_currentProcessId")
+    comp = json.loads((HERE / "real-shape-composite.har").read_text())["log"]["entries"]
+    check(len(comp) == 4 and "ALPHA0001" in comp[0]["response"]["content"]["text"] and "987654321012" in comp[1]["response"]["content"]["text"], "composite: produtores")
+    check("ALPHA0001_987654321012" in comp[2]["request"]["postData"]["text"] and "ALPHA0001_555555555555" in comp[3]["request"]["postData"]["text"]
+          and "555555555555" not in comp[0]["response"]["content"]["text"] + comp[1]["response"]["content"]["text"], "composite: cobertura total/parcial")
     # manifest: ids apontam para o que dizem
     har_a = json.loads((HERE / "real-shape-1round.har").read_text())["log"]["entries"]
     ids = man["rounds"]["a1"]["ids"]
@@ -108,14 +129,14 @@ def main():
             if not is_entry and e["request"]["method"] == "GET":
                 sids = [r["sid"] for r in []]
             hdr = " ".join(h["value"] for h in e["request"]["headers"]) + e["request"]["url"]
-            check("CSAN00000_" not in hdr, f"{fname}: SESSIONID não circula em URL/headers")
+            check(not re.search(r"CSAN000\d\d_", hdr), f"{fname}: SESSIONID não circula em URL/headers")
     # só o easynat-app contém m_currentSessionId (conferido nos HARs reais); o SESSIONID não circula em URL/headers
     for fname in ("real-shape-1round.har", "real-shape-2rounds.har"):
         for e in json.loads((HERE / fname).read_text())["log"]["entries"]:
             is_entry = "easynat-app" in e["request"]["url"]
             check(("m_currentSessionId" in e["response"]["content"]["text"]) == is_entry, f"{fname}: m_currentSessionId só no easynat-app")
             hdr = " ".join(h["value"] for h in e["request"]["headers"]) + e["request"]["url"]
-            check("CSAN00000_" not in hdr, f"{fname}: SESSIONID não circula em URL/headers")
+            check(not re.search(r"CSAN000\d\d_", hdr), f"{fname}: SESSIONID não circula em URL/headers")
     blob = "\\n".join((HERE / n).read_text() for n in ("real-shape-1round.har", "real-shape-2rounds.har", "manifest.json", "build_real_shape.py"))
     for bad in ("082b79", "CASA", "NUPP", "sem_captcha", "Downloads/", "APM_DO_NOT_TOUCH", "wsdetran.pb.gov.br.har"):
         check(bad not in blob, f"marcador proibido: {bad}")

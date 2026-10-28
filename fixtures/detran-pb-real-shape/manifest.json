@@ -5,7 +5,8 @@
  "origin": "FORMA dos HARs reais do DETRAN-PB (estrutura, nunca valores); valores 100% fictícios",
  "files": {
   "har_1round": "real-shape-1round.har",
-  "har_2rounds": "real-shape-2rounds.har"
+  "har_2rounds": "real-shape-2rounds.har",
+  "har_composite": "real-shape-composite.har"
  },
  "shape": {
   "connector_response": "HTML ~10 KB: script fictício + <textarea name=XML> (com entidades) + <textarea name=ERRORMESSAGE> + <input hidden STAMP>",
@@ -146,7 +147,7 @@
  },
  "values": {
   "a1": {
-   "sessionid": "CSAN00000_000000000011",
+   "sessionid": "CSAN00011_700000000011",
    "plates": [
     "TST0T10",
     "TST0T11"
@@ -162,7 +163,7 @@
    }
   },
   "b1": {
-   "sessionid": "CSAN00000_000000000021",
+   "sessionid": "CSAN00021_700000000021",
    "plates": [
     "TST0T12",
     "TST0T13"
@@ -178,7 +179,7 @@
    }
   },
   "b2": {
-   "sessionid": "CSAN00000_000000000022",
+   "sessionid": "CSAN00022_700000000022",
    "plates": [
     "TST0T14",
     "TST0T15"
@@ -226,10 +227,19 @@
       "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"
      },
      "SESSIONID": {
-      "status": "origin",
-      "label": "possível origem (value-match)",
-      "producer": "har-0001",
-      "reissued_by": [],
+      "status": [
+       "none",
+       "repeated"
+      ],
+      "label": "sem origem observada",
+      "composition": {
+       "head_len": 9,
+       "separator": "_",
+       "tail_len": 12,
+       "head_source": "har-0001 (literal m_currentSessionId)",
+       "tail_source": null
+      },
+      "justification_composite": "regra do valor composto: campo nomeado < 40 B só ganha origem por decomposição se coberto POR INTEIRO por >= 2 valores de produtores + separadores (_ - . : |); prefixo parcial não vale. No real o SESSIONID = literal de 9 chars do easynat-app + '_' + 12 dígitos sem fonte observada: cobertura parcial => 'sem origem observada' (o prefixo de 9 chars não vale como origem do campo).",
       "justification": "regra canônica (docs/09 R5): 'reissued' só se o valor circulou numa requisição entre o 1º produtor e o seguinte; 'ambiguous' + oldest se há 2+ produtores. Nos HARs reais só o easynat-app contém o valor (as páginas NatLogon/SIM1000X/VES0009X não) e nenhuma requisição entre a resposta do easynat-app e a da NatLogon o leva (nem na URL, nem no Referer): produtor único => origin, sem reissued. A fixture reflete isso."
      },
      "v_placa": {
@@ -289,10 +299,19 @@
       "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"
      },
      "SESSIONID": {
-      "status": "origin",
-      "label": "possível origem (value-match)",
-      "producer": "har-0024",
-      "reissued_by": [],
+      "status": [
+       "none",
+       "repeated"
+      ],
+      "label": "sem origem observada",
+      "composition": {
+       "head_len": 9,
+       "separator": "_",
+       "tail_len": 12,
+       "head_source": "har-0024 (literal m_currentSessionId)",
+       "tail_source": null
+      },
+      "justification_composite": "regra do valor composto: campo nomeado < 40 B só ganha origem por decomposição se coberto POR INTEIRO por >= 2 valores de produtores + separadores (_ - . : |); prefixo parcial não vale. No real o SESSIONID = literal de 9 chars do easynat-app + '_' + 12 dígitos sem fonte observada: cobertura parcial => 'sem origem observada' (o prefixo de 9 chars não vale como origem do campo).",
       "justification": "regra canônica (docs/09 R5): 'reissued' só se o valor circulou numa requisição entre o 1º produtor e o seguinte; 'ambiguous' + oldest se há 2+ produtores. Nos HARs reais só o easynat-app contém o valor (as páginas NatLogon/SIM1000X/VES0009X não) e nenhuma requisição entre a resposta do easynat-app e a da NatLogon o leva (nem na URL, nem no Referer): produtor único => origin, sem reissued. A fixture reflete isso."
      },
      "v_placa": {
@@ -353,6 +372,30 @@
     "PAGEINITPARAM",
     "ERRORMESSAGE"
    ]
+  },
+  "composite_rule": {
+   "har": "real-shape-composite.har",
+   "full_cover": {
+    "request": "har-0003",
+    "field": "token",
+    "status": "composite",
+    "confidence": "possible",
+    "producers": [
+     "har-0001",
+     "har-0002"
+    ],
+    "why": "token = ALPHA0001 (literal de part_a) + '_' + 987654321012 (folha JSON de part_b): coberto por inteiro por 2 produtores"
+   },
+   "partial_cover": {
+    "request": "har-0004",
+    "field": "token2",
+    "status": [
+     "none",
+     "repeated"
+    ],
+    "label": "sem origem observada",
+    "why": "só o prefixo ALPHA0001 tem produtor; o sufixo de 12 dígitos não tem fonte observada: cobertura parcial não vale"
+   }
   },
   "aceite_4_cookies": {
    "warning_code": "har.cookies_absent",

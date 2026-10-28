@@ -97,8 +97,9 @@ def check_origins_chain(core, session, label, e, cookies_warning):
         check(v["status"] in ("origin", "ambiguous") and produced(v)[:1] == [og["delta"]["producer"]] and any(x["kind"] == "value-match" for x in v["evidences"]),
               f"{label} delta: esperado value-match de {og['delta']['producer']}; obtido {v['status']} {[(x['kind'], x['producerRequestId']) for x in v['evidences']]}")
     sid = vals(o, scope="body", field="SESSIONID", parent=None)
-    check(bool(sid) and sid[0]["label"].startswith(og["SESSIONID"]["label"]) and sid[0]["status"] == "origin" and produced(sid[0]) == [og["SESSIONID"]["producer"]],
-          f"{label} SESSIONID: esperado {og['SESSIONID']['label']} de {og['SESSIONID']['producer']}; obtido {[(v['status'], v['label'][:50], produced(v)) for v in sid]}")
+    sx = og["SESSIONID"]
+    check(len(sid) == 1 and sid[0]["status"] in sx["status"] and sid[0]["label"].startswith(sx["label"]) and not sid[0]["evidences"],
+          f"{label} SESSIONID (9 chars do easynat-app + '_' + 12 dígitos sem fonte): cobertura parcial => {sx['label']}; obtido {[(v['status'], v['label'][:50], produced(v)) for v in sid]}")
     pl = vals(o, scope="body", field="XML", parent="XML", contains=og["v_placa"]["plate"])
     check(all(v["status"] == "none" for v in pl), f"{label} placa: sem origem esperado, obtido {[v['status'] for v in pl]}")
     ch = e["chain"]
@@ -139,6 +140,28 @@ def check_sanitize(core, session, label, values, expect, tmp):
     check(expect["warning_code"] in warns, f"{label} sanitize: aviso {expect['warning_code']} ausente")
 
 
+def check_composite(core, e):
+    """Regra do valor composto (campo nomeado < 40 B): cobertura total por >= 2 produtores => composite; parcial => none."""
+    sess = import_har(core, e["har"], Path(tempfile.mkdtemp(prefix="sl-composite-")) / "s")
+    for key in ("full_cover", "partial_cover"):
+        c = e[key]
+        o = run_json(core, "origins", sess, c["request"])
+        if o is None:
+            continue
+        found = [v for v in o["values"] if v["scope"] == "body" and v["field"] == c["field"]]
+        check(len(found) == 1, f"composto {key}: campo {c['field']} ausente")
+        if not found:
+            continue
+        v = found[0]
+        if key == "full_cover":
+            ids = set(__import__("re").findall(r"har-\d{4}", json.dumps([v] + [x for x in o["values"] if x.get("parent") == c["field"]])))
+            check(v["status"] == "composite" and set(c["producers"]) <= ids and "possible" in json.dumps(v).lower() + v["label"].lower().replace("possível", "possible"),
+                  f"composto full_cover: esperado composite (possible) com produtores {c['producers']}; obtido {v['status']} {v['label'][:60]} {sorted(ids)}")
+        else:
+            check(v["status"] in c["status"] and v["label"].startswith(c["label"]) and not v["evidences"],
+                  f"composto partial_cover: esperado {c['label']} (prefixo parcial não vale); obtido {v['status']} {v['label'][:60]} {[(e['kind'], e['producerRequestId']) for e in v['evidences']]}")
+
+
 def check_compare(core, a, b, e):
     m = run_json(core, "compare", a, b)
     if m is None:
@@ -170,6 +193,7 @@ def main():
     check_sanitize(core, sa, "A", vals_a, ex["aceite_2_sanitize"], tmp)
     check_sanitize(core, sb, "B", vals_b, ex["aceite_2_sanitize"], tmp)
     check_compare(core, sa, sb, ex["aceite_3_compare"])
+    check_composite(core, ex["composite_rule"])
     if FAILS:
         print(f"FAIL ({len(FAILS)}):"); [print(" -", f) for f in FAILS]; return 1
     print("OK: forma real — origens/cadeia, sanitize, compare por rodadas, cookies ausentes, GET sem corpo"); return 0
