@@ -1,0 +1,30 @@
+ScrapeLens reference test servers
+  evidence run: /Users/cesar/Projects/scrapelens/experiments/results/bodies/server/bodies
+  cert: /Users/cesar/Projects/scrapelens/testserver/../fixtures/tls/scrapelens-test-localhost.crt.pem
+  chrome pin: --ignore-certificate-errors-spki-list=bZVWDrQvkR0ynQKHKqsiga6j0rd2KIqFX6NXGKIjsYw=
+
+Endpoints: /echo-order /setcookie /echo /page /redirect /healthz
+Press Ctrl+C to stop. Evidence is flushed per request.
+[scrapelens-testserver h1 03:05:28.487] listening on http://127.0.0.1:9781 (raw socket order) evidence=/Users/cesar/Projects/scrapelens/experiments/results/bodies/server/bodies/h1.jsonl
+[scrapelens-testserver h1 03:05:28.489] c1 #1 GET /healthz -> 200 (4 headers, 0 body bytes, peer 127.0.0.1:57701)
+[scrapelens-testserver h1 03:05:31.290] c2 #1 GET /healthz -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:57724)
+[scrapelens-testserver h1 03:05:31.380] c2 #2 GET /favicon.ico -> 404 (15 headers, 0 body bytes, peer 127.0.0.1:57724)
+[scrapelens-testserver h1 03:05:31.547] c2 #3 POST /sink?case=form -> 200 (18 headers, 63 body bytes, peer 127.0.0.1:57724)
+[scrapelens-testserver h1 03:05:31.555] c2 #4 POST /sink?case=json -> 200 (18 headers, 68 body bytes, peer 127.0.0.1:57724)
+[scrapelens-testserver h1 03:05:31.557] c2 #5 POST /sink?case=binary -> 200 (18 headers, 4099 body bytes, peer 127.0.0.1:57724)
+[scrapelens-testserver h1 03:05:31.558] c2 #6 POST /echo?case=echo_binary -> 200 (18 headers, 4099 body bytes, peer 127.0.0.1:57724)
+[scrapelens-testserver h1 03:05:31.886] c2 #7 POST /sink?case=big_post -> 200 (18 headers, 5242880 body bytes, peer 127.0.0.1:57724)
+[scrapelens-testserver h1 03:05:32.223] c3 #1 POST /sink?case=big_binary_post -> 200 (18 headers, 5242880 body bytes, peer 127.0.0.1:57726)
+[scrapelens-testserver h1 03:05:32.227] c4 #1 POST /redirect307?case=r307 -> 307 (18 headers, 63 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.229] c4 #2 POST /sink -> 200 (18 headers, 63 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.230] c4 #3 GET /redirect302?case=r302 -> 302 (15 headers, 0 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.231] c4 #4 GET /json -> 200 (15 headers, 0 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.232] c4 #5 GET /gzip?case=gzip -> 200 (15 headers, 0 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.234] c4 #6 GET /binary?case=binary_get -> 200 (15 headers, 0 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.239] c4 #7 GET /big?mib=6&case=big_get -> 200 (15 headers, 0 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.304] c4 #8 GET /json?case=json_get -> 200 (15 headers, 0 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.306] c4 #9 GET /empty?case=empty204 -> 204 (15 headers, 0 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:32.307] c4 #10 GET /zero?case=zero -> 200 (15 headers, 0 body bytes, peer 127.0.0.1:57730)
+[scrapelens-testserver h1 03:05:36.008] c5 #1 GET /binary -> 200 (4 headers, 0 body bytes, peer 127.0.0.1:57834)
+[scrapelens-testserver h1 03:05:36.009] c6 #1 GET /json -> 200 (4 headers, 0 body bytes, peer 127.0.0.1:57835)
+[scrapelens-testserver h1 03:05:36.010] c7 #1 GET /gzip -> 200 (4 headers, 0 body bytes, peer 127.0.0.1:57836)

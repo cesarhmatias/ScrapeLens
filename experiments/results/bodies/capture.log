@@ -1,0 +1,15 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.77s
+     Running unittests src/lib.rs (target/debug/deps/scrapelens_lib-f5a556b33c09cf7d)
+
+running 1 test
+live bodies: notice=Some("Sessão capturada e importada: 6895 evento(s) CDP+NetLog usados, 4 aviso(s).")
+test capture::tests::live_bodies_cycle ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 6.59s
+
+     Running unittests src/main.rs (target/debug/deps/scrapelens-77975daab09b576d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

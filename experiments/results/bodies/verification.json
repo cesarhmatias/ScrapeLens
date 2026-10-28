@@ -1,0 +1,330 @@
+{
+  "chrome": "Google Chrome 156.0.8078.73",
+  "cases": [
+    {
+      "case": "form",
+      "ok": true,
+      "request": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 63,
+        "capturedSize": 63,
+        "source": "requestWillBeSent.postDataEntries",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "bytes": 63,
+      "cdpSha": "6a8911e942cf4fd4b05ecb3e0dcea20c1f4ef8658624a16bc8073db0faf95d55",
+      "pageSentSha": "6a8911e942cf4fd4b05ecb3e0dcea20c1f4ef8658624a16bc8073db0faf95d55",
+      "serverSha": "6a8911e942cf4fd4b05ecb3e0dcea20c1f4ef8658624a16bc8073db0faf95d55",
+      "response": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 357,
+        "capturedSize": 357,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 0
+      }
+    },
+    {
+      "case": "json",
+      "ok": true,
+      "request": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 68,
+        "capturedSize": 68,
+        "source": "requestWillBeSent.postDataEntries",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "bytes": 68,
+      "cdpSha": "f759ee63c41823b9039ad443856ef8680d8d12fac98379ade0bff13c31e2f8c0",
+      "pageSentSha": "f759ee63c41823b9039ad443856ef8680d8d12fac98379ade0bff13c31e2f8c0",
+      "serverSha": "f759ee63c41823b9039ad443856ef8680d8d12fac98379ade0bff13c31e2f8c0",
+      "response": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 340,
+        "capturedSize": 340,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 0
+      }
+    },
+    {
+      "case": "binary",
+      "ok": true,
+      "request": {
+        "state": "captured",
+        "encoding": "base64",
+        "originalSize": 4099,
+        "capturedSize": 4099,
+        "source": "requestWillBeSent.postDataEntries",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "bytes": 4099,
+      "cdpSha": "9053dcce78b72fff7e076770b5fdd34ce3bd0675bcae8d2adbde0f4ddaa39dfc",
+      "pageSentSha": "9053dcce78b72fff7e076770b5fdd34ce3bd0675bcae8d2adbde0f4ddaa39dfc",
+      "serverSha": "9053dcce78b72fff7e076770b5fdd34ce3bd0675bcae8d2adbde0f4ddaa39dfc",
+      "response": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 350,
+        "capturedSize": 350,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 0
+      }
+    },
+    {
+      "case": "echo_binary",
+      "ok": true,
+      "request": {
+        "state": "captured",
+        "encoding": "base64",
+        "originalSize": 4099,
+        "capturedSize": 4099,
+        "source": "requestWillBeSent.postDataEntries",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "response": {
+        "state": "captured",
+        "encoding": "base64",
+        "originalSize": 4099,
+        "capturedSize": 4099,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "responseSha": "9053dcce78b72fff7e076770b5fdd34ce3bd0675bcae8d2adbde0f4ddaa39dfc"
+    },
+    {
+      "case": "big_post",
+      "ok": true,
+      "request": {
+        "state": "truncated",
+        "encoding": "utf8",
+        "originalSize": 6291456,
+        "capturedSize": 5242880,
+        "source": "Network.getRequestPostData",
+        "reason": "corpo acima do limite de 5242880 bytes; gravado só o prefixo",
+        "attemptIndex": 0
+      },
+      "prefixEqualsSent": true,
+      "serverReport": {
+        "len": 5242880,
+        "truncated": true,
+        "sha256": "c92a4cd065d39d433e6f3cb650dbe9bae5bf2674c02e68aafcdb2260a18c42cd"
+      }
+    },
+    {
+      "case": "big_binary_post",
+      "ok": true,
+      "request": {
+        "state": "truncated",
+        "encoding": "base64",
+        "originalSize": 6291456,
+        "capturedSize": 5242880,
+        "source": "Network.getRequestPostData",
+        "reason": "corpo acima do limite de 5242880 bytes; gravado só o prefixo",
+        "attemptIndex": 0
+      },
+      "prefixEqualsSent": true,
+      "cdpPrefixLen": 5242880,
+      "nota": "se falhar: getRequestPostData devolve string convertida (U+FFFD) e não os bytes exatos"
+    },
+    {
+      "case": "big_get",
+      "ok": true,
+      "response": {
+        "state": "truncated",
+        "encoding": "utf8",
+        "originalSize": 6291456,
+        "capturedSize": 5242880,
+        "source": "Network.getResponseBody",
+        "reason": "corpo acima do limite de 5242880 bytes; gravado só o prefixo",
+        "attemptIndex": 0
+      },
+      "prefixEqualsServed": true
+    },
+    {
+      "case": "gzip",
+      "ok": true,
+      "response": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 64,
+        "capturedSize": 64,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "servedSha": "06f61f9a11193212c0e5fdb3ba70534977894657cf6826e54a772a4815a11bc1",
+      "cdpSha": "06f61f9a11193212c0e5fdb3ba70534977894657cf6826e54a772a4815a11bc1",
+      "wireGzipBytes": 87,
+      "decodedBytes": 64
+    },
+    {
+      "case": "binary_get",
+      "ok": true,
+      "response": {
+        "state": "captured",
+        "encoding": "base64",
+        "originalSize": 4099,
+        "capturedSize": 4099,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "servedSha": "9053dcce78b72fff7e076770b5fdd34ce3bd0675bcae8d2adbde0f4ddaa39dfc",
+      "cdpSha": "9053dcce78b72fff7e076770b5fdd34ce3bd0675bcae8d2adbde0f4ddaa39dfc"
+    },
+    {
+      "case": "json_get",
+      "ok": true,
+      "response": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 140,
+        "capturedSize": 140,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "servedSha": "56167b2e70c5da236d21f066d25f2e1dd98698326ee350de14b2a95551412919",
+      "cdpSha": "56167b2e70c5da236d21f066d25f2e1dd98698326ee350de14b2a95551412919"
+    },
+    {
+      "case": "r302",
+      "ok": true,
+      "attempt0": {
+        "state": "unavailable",
+        "encoding": null,
+        "originalSize": null,
+        "capturedSize": 0,
+        "source": "Network.getResponseBody",
+        "reason": "resposta de redirect: CDP não fornece corpo",
+        "attemptIndex": 0
+      },
+      "attempt1": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 140,
+        "capturedSize": 140,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 1
+      },
+      "chain": [
+        [
+          "http://127.0.0.1:9781/redirect302?case=r302",
+          "GET",
+          false
+        ],
+        [
+          "http://127.0.0.1:9781/json",
+          "GET",
+          true
+        ]
+      ]
+    },
+    {
+      "case": "r307",
+      "ok": true,
+      "request0": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 63,
+        "capturedSize": 63,
+        "source": "requestWillBeSent.postDataEntries",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "request1": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 63,
+        "capturedSize": 63,
+        "source": "requestWillBeSent.postDataEntries",
+        "reason": null,
+        "attemptIndex": 1
+      },
+      "response0": {
+        "state": "unavailable",
+        "encoding": null,
+        "originalSize": null,
+        "capturedSize": 0,
+        "source": "Network.getResponseBody",
+        "reason": "resposta de redirect: CDP não fornece corpo",
+        "attemptIndex": 0
+      },
+      "response1": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 357,
+        "capturedSize": 357,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 1
+      },
+      "pageSentSha": "6a8911e942cf4fd4b05ecb3e0dcea20c1f4ef8658624a16bc8073db0faf95d55",
+      "cdpSha": "6a8911e942cf4fd4b05ecb3e0dcea20c1f4ef8658624a16bc8073db0faf95d55"
+    },
+    {
+      "case": "empty204",
+      "ok": true,
+      "response": {
+        "state": "empty",
+        "encoding": null,
+        "originalSize": 0,
+        "capturedSize": 0,
+        "source": "Network.getResponseBody",
+        "reason": "status 204 não tem corpo",
+        "attemptIndex": 0
+      }
+    },
+    {
+      "case": "zero",
+      "ok": true,
+      "response": {
+        "state": "empty",
+        "encoding": null,
+        "originalSize": 0,
+        "capturedSize": 0,
+        "source": "Network.getResponseBody",
+        "reason": "Content-Length: 0",
+        "attemptIndex": 0
+      },
+      "nota": "Content-Length: 0 vem de responseReceived.response.headers; se o CDP omitir o header, vira unavailable (nunca vazio sem evidência)"
+    },
+    {
+      "case": "refused",
+      "ok": true,
+      "response": {
+        "state": "unavailable",
+        "encoding": null,
+        "originalSize": null,
+        "capturedSize": 0,
+        "source": "Network.getResponseBody",
+        "reason": "loadingFailed: net::ERR_CONNECTION_REFUSED",
+        "attemptIndex": 0
+      }
+    },
+    {
+      "case": "invariants",
+      "ok": true,
+      "mode": "0o600",
+      "rows": 27,
+      "byState": {
+        "captured": 19,
+        "empty": 2,
+        "truncated": 3,
+        "unavailable": 3
+      }
+    }
+  ]
+}
