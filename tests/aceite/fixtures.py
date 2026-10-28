@@ -206,7 +206,7 @@ def run_core(*args: str, expect: int = 0) -> str:
 def import_fixture(kind: str, source: pathlib.Path, target: pathlib.Path) -> pathlib.Path:
     if target.exists():
         shutil.rmtree(target)
-    run_core(kind, str(source), "--out", str(target))
+    run_core(kind, str(source), "--out", str(target), "--label", "synthetic-fixture")
     return target
 
 

@@ -107,3 +107,12 @@ Marcadas como **sanitizadas de caso real** (forma real, valores sintéticos):
   `truncated` com `originalSize` 6291456, 204 `empty` com evidência).
 - Casos de busca esperados: `manifest.json` → `bodies_search_cases` e `bodies`.
   Aceite automático: `python3 tests/aceite/check_bodies_search.py <sessão>`.
+
+## Rótulos de origem (Core d9aba1c)
+
+Toda importação destas fixtures passa `--label synthetic-fixture`, para o app
+não mostrá-las como sessão real. Rótulos esperados em `session.labels`:
+`import-capture` → `["capture-import","synthetic-fixture"]`; `import-har` →
+`["har-import","synthetic-fixture"]`; `import-netlog` → `["netlog-import","synthetic-fixture"]`.
+`tests/aceite/check_bodies_search.py --import-fixture` e `run_acceptance.py`
+asseveram isso a cada importação.

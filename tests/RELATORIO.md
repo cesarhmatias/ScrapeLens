@@ -1,6 +1,6 @@
 # Relatório de aceite — ScrapeLens MVP
 
-Execução: 2026-10-27T14:00:22Z · binário do core `10f3b76b637b` (2176608 bytes) · commit `da0ac52`
+Execução: 2026-10-28T03:35:49Z · binário do core `0cb3d8394374` (2309504 bytes) · commit `d9aba1c`
 
 Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 
@@ -8,7 +8,7 @@ Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 |---|---|---|---|
 | 1 | Headers repetidos e cookies preservados nas fixtures | **aprovado** | 29/29 |
 | 2 | HAR e NetLog válidos, incompletos e com eventos desconhecidos | **aprovado** | 26/26 |
-| 3 | Requisições simultâneas idênticas sem associação falsa | **aprovado** | 18/18 |
+| 3 | Requisições simultâneas idênticas sem associação falsa | **aprovado** | 19/19 |
 | 4 | Redirects e múltiplas tentativas | **aprovado** | 12/12 |
 | 5 | Corpos ausentes/truncados/descartados explícitos | **aprovado** | 16/16 |
 | 6 | Diff sem perder duplicatas | **aprovado** | 14/14 |
@@ -17,7 +17,7 @@ Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 | 9 | Ciclo real de captura no macOS | **aprovado** | 118/118 |
 | 10 | Importação grande com tamanho documentado | **aprovado** | 7/7 |
 
-Resumo: 10/10 critérios aprovados; 282/282 asserções passaram.
+Resumo: 10/10 critérios aprovados; 283/283 asserções passaram.
 
 Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/incompletos/desconhecidos, (3) simultâneas idênticas sem associação falsa, (4) redirects/tentativas, (5) corpos explícitos, (6) diff com duplicatas, (7) escaping cURL/Python, (8) sanitização com eventos brutos, (9) ciclo real macOS, (10) importação grande medida.
 
@@ -35,7 +35,7 @@ Evidência:
 - `scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`
 - asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte
 
-Asserções: 29 passaram, 0 falharam (0.19 s).
+Asserções: 29 passaram, 0 falharam (0.10 s).
 
 ## 2. HAR e NetLog válidos, incompletos e com eventos desconhecidos — aprovado
 
@@ -50,7 +50,7 @@ Evidência:
 
 > Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos.
 
-Asserções: 26 passaram, 0 falharam (0.27 s).
+Asserções: 26 passaram, 0 falharam (0.17 s).
 
 ## 3. Requisições simultâneas idênticas sem associação falsa — aprovado
 
@@ -64,7 +64,7 @@ Evidência:
 
 > Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`.
 
-Asserções: 18 passaram, 0 falharam (0.09 s).
+Asserções: 19 passaram, 0 falharam (0.05 s).
 
 ## 4. Redirects e múltiplas tentativas — aprovado
 
@@ -75,7 +75,7 @@ Evidência:
 
 > O redirect é um elo entre tentativas, não uma requisição separada.
 
-Asserções: 12 passaram, 0 falharam (0.06 s).
+Asserções: 12 passaram, 0 falharam (0.05 s).
 
 ## 5. Corpos ausentes/truncados/descartados explícitos — aprovado
 
@@ -107,7 +107,7 @@ Evidência:
 
 > Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK).
 
-Asserções: 23 passaram, 0 falharam (0.13 s).
+Asserções: 23 passaram, 0 falharam (0.17 s).
 
 ## 8. Sanitização incluindo eventos brutos — aprovado
 
@@ -119,7 +119,7 @@ Evidência:
 
 > Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso.
 
-Asserções: 19 passaram, 0 falharam (0.05 s).
+Asserções: 19 passaram, 0 falharam (0.04 s).
 
 ## 9. Ciclo real de captura no macOS — aprovado
 
@@ -140,24 +140,24 @@ Evidência:
 
 > As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-2` e `netlog-1704043c442dcbd1-2`), agora pela UI: o usuário selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão.
 
-Asserções: 118 passaram, 0 falharam (0.10 s).
+Asserções: 118 passaram, 0 falharam (0.11 s).
 
 ## 10. Importação grande com tamanho documentado — aprovado
 
 Evidência:
 
-- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.97 s, pico 783 MiB RSS
+- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.08 s, pico 786 MiB RSS
 - sessão gravada: session.json 225.8 MiB
-- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.64 s, pico 2822 MiB RSS
+- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 4.05 s, pico 2158 MiB RSS
 - complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB
 
 > HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).
 
-> `inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2822 MiB vem da serialização, não do parser.
+> `inspect` materializa o JSON pretty da sessão inteira (225.8 MiB); o pico de 2158 MiB vem da serialização, não do parser.
 
 > Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.
 
-Asserções: 7 passaram, 0 falharam (13.91 s).
+Asserções: 7 passaram, 0 falharam (10.83 s).
 
 ## Como reproduzir
 

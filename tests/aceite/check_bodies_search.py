@@ -45,6 +45,28 @@ def cdp_to_logical(session):
     return {r["cdp"]["requestId"]: r["id"] for r in d["requests"] if r.get("cdp", {}).get("requestId")}
 
 
+def exact_slice_failures(session, matches, query):
+    """exact=true: o trecho [byteOffset, +byteLength) do anexo original é o texto buscado."""
+    d = json.loads((Path(session) / "session.json").read_text())
+    att = {a["id"]: a for r in d["requests"] for a in r["attempts"]}
+    bad = []
+    for m in matches:
+        if not m.get("exact"):
+            continue
+        key = "requestBody" if m["scope"] == "requestBody" else "responseBody"
+        name = att[m["attemptId"]][key]["attachment"]
+        raw = (Path(session) / "attachments" / name).read_bytes()
+        piece = raw[m["byteOffset"]:m["byteOffset"] + m["byteLength"]]
+        # busca sem --case-sensitive: compara sem diferenciar maiúsculas, nos bytes
+        if piece.lower() != query.encode().lower():
+            bad.append(f"{m['requestId']} {m['scope']}: anexo[{m['byteOffset']}:+{m['byteLength']}]={piece!r} != {query!r}")
+    return bad
+
+
+def rid_of_11():
+    return "1011.11"
+
+
 def import_fixture(core, name, tmp):
     cdp, bodies = FIX / f"{name}.cdp.jsonl", FIX / f"{name}.cdp-bodies.jsonl"
     netlog = FIX / f"{name}.netlog.json"
@@ -52,10 +74,14 @@ def import_fixture(core, name, tmp):
         netlog = Path(tmp) / "empty.netlog.json"
         netlog.write_text(json.dumps({"constants": {"logEventTypes": {}, "timeTickOffset": 0}, "events": []}))
     out = Path(tmp) / "session"
-    p = subprocess.run([core, "import-capture", str(cdp), str(netlog), "--out", str(out), "--bodies", str(bodies)],
+    p = subprocess.run([core, "import-capture", str(cdp), str(netlog), "--out", str(out), "--bodies", str(bodies),
+                        "--label", "synthetic-fixture"],
                        capture_output=True, text=True)
     if p.returncode != 0:
         sys.exit(f"FAIL import {name}: {p.stderr.strip()[:300]}")
+    labels = sorted(json.loads((out / "session.json").read_text())["session"].get("labels", []))
+    if labels != ["capture-import", "synthetic-fixture"]:
+        sys.exit(f"FAIL rótulos da sessão importada: {labels} != ['capture-import', 'synthetic-fixture']")
     return str(out)
 
 
@@ -117,6 +143,14 @@ def main():
             got_set = sorted({(m["requestId"], None, None) for m in got})
         if got_set != sorted(set(expect)):
             fails.append(f"{query!r}/{scope}: esperado {sorted(set(expect))}, obtido {got_set}")
+        if scope in ("requestBody", "responseBody"):
+            fails += exact_slice_failures(session, got, query)
+        if a.fixture == "detran" and query == "cmd_consultar_placa" and scope == "requestBody":
+            want = (ids[rid_of_11()], "XML", 159, 19, True, True)
+            row = [(m["requestId"], m.get("field"), m.get("byteOffset"), m.get("byteLength"), m.get("exact"), m.get("decoded"))
+                   for m in got if m["requestId"] == want[0]]
+            if row != [want]:
+                fails.append(f"cdp-r0011 XML: esperado {want}, obtido {row}")
         if scope == "url" and got:
             fails.append(f"{query!r}: busca por URL não deve achar corpo")
     return report(fails, f"{len(cases)} casos de busca")

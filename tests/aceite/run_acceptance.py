@@ -127,10 +127,19 @@ def inspect(session: pathlib.Path) -> dict:
     return json.loads(core_ok("inspect", str(session)))["session"]
 
 
+SYNTHETIC_LABELS = ["capture-import", "synthetic-fixture"]  # import-capture
+# Rótulo de origem por tipo de importação (core: har.rs, netlog.rs, session.rs).
+ORIGIN_LABEL = {"import-har": "har-import", "import-netlog": "netlog-import", "import-capture": "capture-import"}
+
+
 def import_to(kind: str, source: pathlib.Path, target: pathlib.Path) -> dict:
     fresh(target)
-    core_ok(kind, str(source), "--out", str(target))
-    return inspect(target)
+    core_ok(kind, str(source), "--out", str(target), "--label", "synthetic-fixture")
+    session = inspect(target)
+    expected = sorted([ORIGIN_LABEL[kind], "synthetic-fixture"])
+    if sorted(session["session"].get("labels", [])) != expected:
+        raise SystemExit(f"rótulos da sessão importada {target.name}: {session['session'].get('labels')} != {expected}")
+    return session
 
 
 def view_verification(view: dict) -> str:
@@ -355,8 +364,10 @@ def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
 
     fresh(session_dir)
     core_ok("import-capture", str(folder / "cdp-ambiguous.jsonl"),
-            str(folder / "netlog-ambiguous.json"), "--out", str(session_dir))
+            str(folder / "netlog-ambiguous.json"), "--out", str(session_dir),
+            "--label", "synthetic-fixture")
     session = inspect(session_dir)
+    exp.eq(sorted(session["session"].get("labels", [])), SYNTHETIC_LABELS, "sessão importada rotulada como fixture sintética")
     evidence.append(
         "`scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl "
         "fixtures/aceite/ambiguous/netlog-ambiguous.json --out "
@@ -1034,7 +1045,7 @@ def item_10(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     session_dir = large / "session"
     if session_dir.exists():
         shutil.rmtree(session_dir)
-    elapsed, rss = measure(["import-har", str(har_path), "--out", str(session_dir)])
+    elapsed, rss = measure(["import-har", str(har_path), "--out", str(session_dir), "--label", "synthetic-fixture"])
     session_mb = (session_dir / "session.json").stat().st_size / (1024 * 1024)
     evidence.append(
         f"`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` "
