@@ -73,6 +73,7 @@ const expression = `(async () => {
     ['binary_get', 'GET', '/binary?case=binary_get'],
     ['big_get', 'GET', '/big?mib=6&case=big_get'],
     ['json_get', 'GET', '/json?case=json_get'],
+    ['latin1', 'GET', 'http://127.0.0.1:' + (Number(location.port) + 1) + '/latin1?case=latin1'],
     ['empty204', 'GET', '/empty?case=empty204'],
     ['zero', 'GET', '/zero?case=zero'],
   ];

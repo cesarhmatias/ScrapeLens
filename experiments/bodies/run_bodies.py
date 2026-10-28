@@ -4,6 +4,7 @@
 uso: python3 run_bodies.py [--port 9781] [--out results/bodies]
 Não usa rede externa. Servidor, Chrome e perfil são temporários.
 """
+import http.server, threading, shutil
 import argparse, base64, gzip, hashlib, json, os, pathlib, signal, subprocess, sys, time, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -30,9 +31,25 @@ def row_bytes(row):
     return base64.b64decode(row["data"]) if row["encoding"] == "base64" else row["data"].encode()
 
 
+LATIN1 = bytes([0x53, 0xE3, 0x6F])  # "São" em ISO-8859-1 no fio
+
+
+class Latin1(http.server.BaseHTTPRequestHandler):
+    """Rota própria do experimento (o testserver/ não é editado)."""
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=iso-8859-1")
+        self.send_header("Content-Length", str(len(LATIN1)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers(); self.wfile.write(LATIN1)
+    def log_message(self, *a): pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=9781)
+    ap.add_argument("--keep", action="store_true", help="não apagar session/, server/ e tmp/ (centenas de MB)")
     ap.add_argument("--out", default=str(HERE.parent / "results" / "bodies"))
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
@@ -41,6 +58,8 @@ def main():
         subprocess.run(["rm", "-rf", str(d)])
     tmp.mkdir(); stop = out / "stop"; stop.unlink(missing_ok=True)
     base = f"http://127.0.0.1:{a.port}"
+    latin = http.server.ThreadingHTTPServer(("127.0.0.1", a.port + 1), Latin1)
+    threading.Thread(target=latin.serve_forever, daemon=True).start()
     server = subprocess.Popen(
         [str(ROOT / "testserver/target/debug/scrapelens-testserver"), "serve", "--only", "h1",
          "--h1", f"127.0.0.1:{a.port}", "--evidence", str(srv), "--run-id", "bodies"],
@@ -60,14 +79,40 @@ def main():
         if test.wait(timeout=120): sys.exit("captura falhou; veja capture.log")
         report = verify(out, session, base)
     finally:
+        latin.shutdown()
         server.send_signal(signal.SIGINT)
         try: server.wait(timeout=5)
         except Exception: server.kill()
+    write_sample(session, out)
+    scrub_paths(out)
+    if not a.keep:
+        for d in ("session", "server", "tmp"): shutil.rmtree(out / d, ignore_errors=True)
+        stop.unlink(missing_ok=True)
     (out / "verification.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
     write_md(out, report)
     ok = all(c["ok"] for c in report["cases"])
     print(json.dumps({"ok": ok, "cases": [(c["case"], c["ok"]) for c in report["cases"]]}, ensure_ascii=False))
     sys.exit(0 if ok else 1)
+
+
+def write_sample(session, out):
+    """Amostra pequena e sintética das linhas (dados longos encurtados)."""
+    lines = []
+    for l in open(session / "cdp-bodies.jsonl"):
+        r = json.loads(l)
+        if r["data"] and len(r["data"]) > 160:
+            r["data"] = r["data"][:96] + f"…<{len(r['data'])} chars omitidos>"
+        lines.append(json.dumps(r, ensure_ascii=False))
+    (out / "sample-lines.jsonl").write_text("\n".join(lines) + "\n")
+
+
+def scrub_paths(out):
+    """Nada de caminhos da máquina (nome de usuário) nos artefatos versionados."""
+    home = str(pathlib.Path.home())
+    for name in ("sample-lines.jsonl", "capture.log", "server.log", "page.json"):
+        f = out / name
+        if f.exists():
+            f.write_text(f.read_text().replace(str(ROOT), "<repo>").replace(home, "~"))
 
 
 def verify(out, session, base):
@@ -153,6 +198,12 @@ def verify(out, session, base):
     add("empty204", e and e[0]["state"] == "empty" and e[0]["data"] is None, {"response": summary(e[0]) if e else None})
     add("zero", z and z[0]["state"] in ("empty", "unavailable"), {"response": summary(z[0]) if z else None,
         "nota": "Content-Length: 0 vem de responseReceived.response.headers; se o CDP omitir o header, vira unavailable (nunca vazio sem evidência)"})
+    # ISO-8859-1: bytes do fio 53 e3 6f; o CDP entrega texto já decodificado
+    l = pick("latin1", "response")
+    add("latin1", l and l[0]["state"] == "captured" and l[0]["data"].encode() == "São".encode() and l[0]["data"].encode() != LATIN1
+        and l[0].get("transformed") == ["chrome-decoded", "charset:iso-8859-1->utf-8"] and page["latin1"]["recvLen"] == 3,
+        {"response": summary(l[0]) if l else None, "transformed": l[0].get("transformed") if l else None,
+         "wireBytesHex": LATIN1.hex(), "cdpBytesHex": l[0]["data"].encode().hex() if l else None})
     # falha
     f = pick("refused", "response")
     add("refused", f and f[0]["state"] == "unavailable" and "ERR_" in f[0]["reason"], {"response": summary(f[0]) if f else None})

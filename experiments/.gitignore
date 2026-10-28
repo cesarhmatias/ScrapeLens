@@ -4,3 +4,9 @@ certs/spki.txt
 results/**/chrome-profile/
 __pycache__/
 *.pyc
+
+# run_bodies.py --keep (centenas de MB)
+results/bodies/session/
+results/bodies/server/
+results/bodies/tmp/
+results/bodies/stop

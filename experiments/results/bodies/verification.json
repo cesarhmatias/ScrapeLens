@@ -302,6 +302,25 @@
       "nota": "Content-Length: 0 vem de responseReceived.response.headers; se o CDP omitir o header, vira unavailable (nunca vazio sem evidência)"
     },
     {
+      "case": "latin1",
+      "ok": true,
+      "response": {
+        "state": "captured",
+        "encoding": "utf8",
+        "originalSize": 4,
+        "capturedSize": 4,
+        "source": "Network.getResponseBody",
+        "reason": null,
+        "attemptIndex": 0
+      },
+      "transformed": [
+        "chrome-decoded",
+        "charset:iso-8859-1->utf-8"
+      ],
+      "wireBytesHex": "53e36f",
+      "cdpBytesHex": "53c3a36f"
+    },
+    {
       "case": "refused",
       "ok": true,
       "response": {
@@ -318,9 +337,9 @@
       "case": "invariants",
       "ok": true,
       "mode": "0o600",
-      "rows": 27,
+      "rows": 28,
       "byState": {
-        "captured": 19,
+        "captured": 20,
         "truncated": 3,
         "unavailable": 3,
         "empty": 2
@@ -329,7 +348,7 @@
     {
       "case": "session_bodies",
       "ok": true,
-      "attachments": 22,
+      "attachments": 23,
       "attachmentModes": [
         "0o600"
       ],
@@ -356,8 +375,8 @@
       "urlScopeMatches": 0,
       "first": [
         {
-          "requestId": "cdp-r0010",
-          "attemptId": "cdp-r0010-a1",
+          "requestId": "cdp-r0011",
+          "attemptId": "cdp-r0011-a1",
           "scope": "requestBody",
           "field": "cmd_consultar_placa",
           "byteOffset": 0,

@@ -734,12 +734,17 @@ pub(crate) enum BodyTag {
         request_id: String,
         attempt: u32,
         timestamp: f64,
+        /// `postData` lossy do evento, guardado quando `postDataEntries` veio
+        /// incompleto: só é gravado (marcado) se `getRequestPostData` falhar.
+        fallback_post_data: Option<String>,
+        entries_incomplete: bool,
     },
     Response {
         request_id: String,
         attempt: u32,
         timestamp: f64,
         empty_evidence: Option<String>,
+        charset: Option<String>,
     },
 }
 
@@ -758,6 +763,8 @@ struct RequestState {
     status: Option<u64>,
     content_length_zero: bool,
     method: String,
+    /// charset declarado pela resposta (Content-Type ou `response.charset`).
+    charset: Option<String>,
 }
 
 #[derive(Default)]
@@ -773,6 +780,15 @@ struct Row<'a> {
     kind: &'a str,
     source: &'a str,
     timestamp: f64,
+    /// Transformações entre o fio e `data` (campo opcional `transformed`).
+    transformed: Vec<String>,
+}
+
+impl<'a> Row<'a> {
+    fn marked(mut self, marks: Vec<String>) -> Self {
+        self.transformed = marks;
+        self
+    }
 }
 
 impl BodyCollector {
@@ -789,7 +805,7 @@ impl BodyCollector {
         sizes: (Option<usize>, usize),
         reason: Option<String>,
     ) {
-        let line = json!({
+        let mut line = json!({
             "v": 1,
             "requestId": row.request_id,
             "attemptIndex": row.attempt,
@@ -803,6 +819,9 @@ impl BodyCollector {
             "reason": reason,
             "timestamp": row.timestamp,
         });
+        if !row.transformed.is_empty() {
+            line["transformed"] = json!(row.transformed);
+        }
         self.lines.push(line.to_string());
     }
 
@@ -907,6 +926,7 @@ impl BodyCollector {
             kind: "request",
             source,
             timestamp,
+            transformed: Vec::new(),
         }
     }
 
@@ -917,6 +937,7 @@ impl BodyCollector {
             kind: "response",
             source: "Network.getResponseBody",
             timestamp,
+            transformed: Vec::new(),
         }
     }
 
@@ -975,6 +996,7 @@ impl BodyCollector {
                 state.response_resolved = false;
                 state.status = None;
                 state.content_length_zero = false;
+                state.charset = None;
                 state.method = http_method.clone();
                 let request_cl_zero = header_is_zero(request.get("headers"));
                 self.request_body(
@@ -997,6 +1019,7 @@ impl BodyCollector {
                 if let Some(state) = self.requests.get_mut(request_id) {
                     state.status = response.get("status").and_then(Value::as_u64);
                     state.content_length_zero = header_is_zero(response.get("headers"));
+                    state.charset = declared_charset(response);
                 }
                 if kind == "EventSource" || mime.eq_ignore_ascii_case("text/event-stream") {
                     self.resolve_response_unavailable(
@@ -1026,6 +1049,7 @@ impl BodyCollector {
                 }
                 state.response_resolved = true;
                 let attempt = state.attempts - 1;
+                let charset = state.charset.clone();
                 let evidence = match state.status {
                     Some(status @ (204 | 205 | 304)) => {
                         Some(format!("status {status} não tem corpo"))
@@ -1044,6 +1068,7 @@ impl BodyCollector {
                         attempt,
                         timestamp,
                         empty_evidence: evidence,
+                        charset,
                     },
                 });
             }
@@ -1084,6 +1109,7 @@ impl BodyCollector {
         // `postDataEntries` primeiro: são os bytes exatos. `postData` é uma
         // string já convertida pelo Chrome (bytes inválidos viram U+FFFD).
         let cl_zero = content_length_zero.then_some("Content-Length: 0");
+        let mut entries_incomplete = false;
         if let Some(entries) = request.get("postDataEntries").and_then(Value::as_array) {
             let mut bytes = Vec::new();
             let mut complete = !entries.is_empty();
@@ -1109,23 +1135,36 @@ impl BodyCollector {
                     Err(error) => self.emit_body(row, &b64_encode(error.as_bytes()), true, cl_zero),
                 };
             }
+            entries_incomplete = true;
         }
-        if let Some(text) = request.get("postData").and_then(Value::as_str) {
-            let row =
-                Self::request_row(request_id, attempt, "requestWillBeSent.postData", timestamp);
-            return self.emit_body(row, text, false, cl_zero);
-        }
+        let post_data = request.get("postData").and_then(Value::as_str);
         if has_post_data {
-            commands.push(BodyCommand {
-                method: "Network.getRequestPostData",
-                params: json!({ "requestId": request_id }),
-                tag: BodyTag::Request {
-                    request_id: request_id.to_string(),
-                    attempt,
-                    timestamp,
-                },
-            });
-            return;
+            // Entradas incompletas: o postData do evento é lossy; tenta os
+            // bytes via CDP antes de aceitá-lo (marcado).
+            if post_data.is_none() || entries_incomplete {
+                commands.push(BodyCommand {
+                    method: "Network.getRequestPostData",
+                    params: json!({ "requestId": request_id }),
+                    tag: BodyTag::Request {
+                        request_id: request_id.to_string(),
+                        attempt,
+                        timestamp,
+                        fallback_post_data: entries_incomplete
+                            .then(|| post_data.map(str::to_string))
+                            .flatten(),
+                        entries_incomplete,
+                    },
+                });
+                return;
+            }
+        }
+        if let Some(text) = post_data {
+            let mut row =
+                Self::request_row(request_id, attempt, "requestWillBeSent.postData", timestamp);
+            if entries_incomplete {
+                row = row.marked(vec!["lossy-postData".to_string()]);
+            }
+            return self.emit_body(row, text, false, cl_zero);
         }
         if matches!(http_method.to_ascii_uppercase().as_str(), "GET" | "HEAD") {
             return;
@@ -1154,6 +1193,8 @@ impl BodyCollector {
                 request_id,
                 attempt,
                 timestamp,
+                fallback_post_data,
+                entries_incomplete,
             } => {
                 let row = Self::request_row(
                     &request_id,
@@ -1161,20 +1202,41 @@ impl BodyCollector {
                     "Network.getRequestPostData",
                     timestamp,
                 );
-                match outcome {
-                    Ok(result) => match result.get("postData").and_then(Value::as_str) {
-                        Some(text) => {
-                            let b64 = result
-                                .get("base64Encoded")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(false);
-                            self.emit_body(row, text, b64, None);
-                        }
-                        None => self
+                let fetched = match &outcome {
+                    Ok(result) => result.get("postData").and_then(Value::as_str).map(|text| {
+                        let b64 = result
+                            .get("base64Encoded")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false);
+                        (text.to_string(), b64)
+                    }),
+                    Err(_) => None,
+                };
+                if let Some((text, b64)) = fetched {
+                    // Entradas incompletas + string não-base64: não há prova
+                    // de que a string preserve os bytes.
+                    let row = if entries_incomplete && !b64 {
+                        row.marked(vec!["lossy-postData".to_string()])
+                    } else {
+                        row
+                    };
+                    self.emit_body(row, &text, b64, None);
+                } else if let Some(text) = fallback_post_data {
+                    let row = Self::request_row(
+                        &request_id,
+                        attempt,
+                        "requestWillBeSent.postData",
+                        timestamp,
+                    )
+                    .marked(vec!["lossy-postData".to_string()]);
+                    self.emit_body(row, &text, false, None);
+                } else {
+                    match outcome {
+                        Ok(_) => self
                             .unavailable(row, "Network.getRequestPostData não devolveu postData"),
-                    },
-                    Err(message) => {
-                        self.unavailable(row, format!("Network.getRequestPostData: {message}"))
+                        Err(message) => {
+                            self.unavailable(row, format!("Network.getRequestPostData: {message}"))
+                        }
                     }
                 }
             }
@@ -1183,6 +1245,7 @@ impl BodyCollector {
                 attempt,
                 timestamp,
                 empty_evidence,
+                charset,
             } => {
                 let row = Self::response_row(&request_id, attempt, timestamp);
                 match outcome {
@@ -1192,6 +1255,13 @@ impl BodyCollector {
                                 .get("base64Encoded")
                                 .and_then(Value::as_bool)
                                 .unwrap_or(false);
+                            // getResponseBody entrega texto já decodificado pelo
+                            // Chrome; os bytes do fio não são recuperáveis.
+                            let row = if b64 {
+                                row
+                            } else {
+                                row.marked(response_transforms(charset.as_deref()))
+                            };
                             self.emit_body(row, text, b64, empty_evidence.as_deref());
                         }
                         None => self.unavailable(row, "Network.getResponseBody não devolveu body"),
@@ -1221,6 +1291,44 @@ impl BodyCollector {
             );
         }
     }
+}
+
+/// charset declarado pela resposta (Content-Type; senão `response.charset`).
+fn declared_charset(response: &Value) -> Option<String> {
+    let from_header = response
+        .get("headers")
+        .and_then(Value::as_object)
+        .and_then(|map| {
+            map.iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+        })
+        .and_then(|(_, value)| value.as_str())
+        .and_then(|value| {
+            value.split(';').skip(1).find_map(|part| {
+                let (key, val) = part.split_once('=')?;
+                key.trim()
+                    .eq_ignore_ascii_case("charset")
+                    .then(|| val.trim().trim_matches('"').to_ascii_lowercase())
+            })
+        });
+    from_header
+        .or_else(|| {
+            response
+                .get("charset")
+                .and_then(Value::as_str)
+                .map(str::to_ascii_lowercase)
+        })
+        .filter(|charset| !charset.is_empty())
+}
+
+fn response_transforms(charset: Option<&str>) -> Vec<String> {
+    let mut marks = vec!["chrome-decoded".to_string()];
+    if let Some(charset) = charset {
+        if !matches!(charset, "utf-8" | "utf8") {
+            marks.push(format!("charset:{charset}->utf-8"));
+        }
+    }
+    marks
 }
 
 fn header_is_zero(headers: Option<&Value>) -> bool {
@@ -1584,6 +1692,99 @@ mod tests {
         assert!(rows.iter().all(|row| row["state"] == "unavailable"));
         c.finish();
         assert!(lines(&mut c).is_empty(), "finish é idempotente");
+    }
+
+    #[test]
+    fn response_text_is_marked_transformed_and_charset_is_named() {
+        let mut c = BodyCollector::default();
+        for (id, headers, body_b64) in [
+            ("t.1", json!({}), false),
+            (
+                "t.2",
+                json!({"Content-Type": "text/html; charset=ISO-8859-1"}),
+                false,
+            ),
+            (
+                "t.3",
+                json!({"content-type": "text/plain; charset=\"utf-8\""}),
+                false,
+            ),
+            (
+                "t.4",
+                json!({"Content-Type": "application/octet-stream"}),
+                true,
+            ),
+        ] {
+            c.on_event(
+                "Network.requestWillBeSent",
+                &will_be_sent(id, "GET", json!({}), false),
+            );
+            c.on_event(
+                "Network.responseReceived",
+                &json!({"requestId": id, "type": "Fetch", "response": {"status": 200, "headers": headers}}),
+            );
+            let cmds = c.on_event("Network.loadingFinished", &finish_event(id));
+            let body = if body_b64 {
+                b64_encode(&[0xFF, 1])
+            } else {
+                "São".to_string()
+            };
+            c.on_result(
+                cmds[0].tag.clone(),
+                Ok(json!({"body": body, "base64Encoded": body_b64})),
+            );
+        }
+        let rows = lines(&mut c);
+        assert_eq!(rows[0]["transformed"], json!(["chrome-decoded"]));
+        assert_eq!(
+            rows[1]["transformed"],
+            json!(["chrome-decoded", "charset:iso-8859-1->utf-8"])
+        );
+        assert_eq!(rows[2]["transformed"], json!(["chrome-decoded"]));
+        assert!(rows[3].get("transformed").is_none());
+    }
+
+    #[test]
+    fn incomplete_entries_try_cdp_then_mark_lossy_fallback() {
+        let incomplete = json!({
+            "hasPostData": true,
+            "postData": "a=\u{FFFD}",
+            "postDataEntries": [{"type": "blob"}]
+        });
+        let mut c = BodyCollector::default();
+        let cmds = c.on_event(
+            "Network.requestWillBeSent",
+            &will_be_sent("l.1", "POST", incomplete.clone(), false),
+        );
+        assert_eq!(cmds.len(), 1);
+        assert!(lines(&mut c).is_empty());
+        c.on_result(cmds[0].tag.clone(), Err("boom".into()));
+        let rows = lines(&mut c);
+        assert_eq!(rows[0]["state"], "captured");
+        assert_eq!(rows[0]["transformed"], json!(["lossy-postData"]));
+        assert_eq!(rows[0]["source"], "requestWillBeSent.postData");
+
+        let cmds = c.on_event(
+            "Network.requestWillBeSent",
+            &will_be_sent("l.2", "POST", incomplete.clone(), false),
+        );
+        c.on_result(
+            cmds[0].tag.clone(),
+            Ok(json!({"postData": b64_encode(&[0xFF, 0]), "base64Encoded": true})),
+        );
+        let rows = lines(&mut c);
+        assert_eq!(rows[0]["encoding"], "base64");
+        assert!(rows[0].get("transformed").is_none());
+
+        // Sem hasPostData, o postData lossy é gravado marcado, sem comando.
+        let no_flag = json!({"postData": "x", "postDataEntries": [{"type": "blob"}]});
+        assert!(c
+            .on_event(
+                "Network.requestWillBeSent",
+                &will_be_sent("l.3", "POST", no_flag, false)
+            )
+            .is_empty());
+        assert_eq!(lines(&mut c)[0]["transformed"], json!(["lossy-postData"]));
     }
 
     #[cfg(unix)]

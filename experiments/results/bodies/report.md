@@ -16,6 +16,7 @@
 | r307 | ✓ | request0:captured, request1:captured, response0:unavailable, response1:captured | |
 | empty204 | ✓ | response:empty | |
 | zero | ✓ | response:empty | |
+| latin1 | ✓ | response:captured | |
 | refused | ✓ | response:unavailable | |
 | invariants | ✓ |  | |
 | session_bodies | ✓ |  | |

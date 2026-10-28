@@ -12,8 +12,8 @@ cd experiments/bodies && python3 run_bodies.py        # porta 9781; ~15 s
 (`drive.mjs`) e compara três fontes independentes: o que a página enviou/recebeu
 (sha256), o que o servidor registrou (`/sink`) ou serve (bytes regenerados no
 verificador) e `cdp-bodies.jsonl`. Saída em `../results/bodies/`
-(`verification.json`, `report.md`, `sample-lines.jsonl`; sessão e NetLog,
-~50 MB, são apagados após a verificação).
+(`verification.json`, `report.md`, `sample-lines.jsonl`; com `--keep` a sessão e o NetLog,
+centenas de MB, ficam em `session/` e `server/`, ignorados pelo git; sem `--keep` são apagados ao fim).
 
 ## Resultado (Chrome 156.0.8078.73, h1)
 
@@ -45,3 +45,21 @@ verificador) e `cdp-bodies.jsonl`. Saída em `../results/bodies/`
 - Não exercitado ao vivo (o testserver não tem o endpoint): SSE, WebSocket,
   corpos `Blob`/stream de requisição, h2 e h3. SSE/WebSocket, orçamento de
   256 MiB e falhas de comando têm teste unitário (`cargo test capture::`).
+
+## Campo `transformed` (revisão 4a)
+
+- Corpo de resposta que não vem em base64 → `"transformed":["chrome-decoded"]`: o
+  `getResponseBody` entrega texto já decodificado pelo Chrome. Com charset
+  declarado diferente de UTF-8 soma `"charset:<x>->utf-8"`. Caso ao vivo
+  `latin1`: fio `53 e3 6f` ("São", ISO-8859-1) → CDP `53 c3 a3 6f`, marcado.
+  Os bytes do fio não são reconstruídos.
+- `postDataEntries` incompleto → tenta `Network.getRequestPostData`; se só restar
+  o `postData` do evento, grava marcado `"lossy-postData"` (teste unitário; o
+  Chrome 156 não produziu entradas incompletas nos casos ao vivo).
+- Os bytes idênticos ao fio valem só para linhas sem `transformed`.
+
+## Observação de estabilidade
+
+Em 1 de ~6 execuções o ciclo ao vivo falhou na importação: "JSON inválido em
+NetLog … line 3661" (NetLog não finalizado ao encerrar o Chrome). Não
+reproduzido nas 5 execuções seguintes; não corrigido aqui.
