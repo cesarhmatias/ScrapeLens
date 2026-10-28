@@ -16,7 +16,7 @@
 //! ValueOrigin: { scope: query|header|cookie|body, field, occurrence, value, length,
 //!   status: origin|ambiguous|repeated|none|composite|redacted, label (PT-BR),
 //!   offset (trechos), oldest (índice em evidences), parent (campo opaco do trecho),
-//!   repeatedFrom[], note, evidences: [ { kind: cookie-jar|same-field|value-match|initiator,
+//!   repeatedFrom[], unobservable: [{requestId, state, reason}], note, evidences: [ { kind: cookie-jar|same-field|value-match|initiator,
 //!     strength: strong|medium|complement, role: produced|reissued, producerRequestId,
 //!     producerAttemptId, scope: setCookie|responseHeader|location|responseBody, field,
 //!     producerOffset, consumedOffset, consumedLength } ] }
@@ -154,6 +154,15 @@ pub struct Evidence {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Unobservable {
+    pub request_id: String,
+    /// `unavailable`, `discarded` ou `truncated`.
+    pub state: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ValueOrigin {
     pub scope: ConsumedScope,
     pub field: String,
@@ -172,6 +181,9 @@ pub struct ValueOrigin {
     pub evidences: Vec<Evidence>,
     /// Requisições anteriores que já carregavam o valor (`repeated`).
     pub repeated_from: Vec<String>,
+    /// Respostas anteriores sem corpo observável (unavailable/discarded/
+    /// truncated): a origem pode estar nelas (até 20; o total vai no rótulo).
+    pub unobservable: Vec<Unobservable>,
     /// Campo opaco de que este trecho faz parte (`composite`).
     pub parent: Option<String>,
     pub note: Option<String>,
@@ -817,6 +829,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 oldest: None,
                 evidences: Vec::new(),
                 repeated_from: Vec::new(),
+                unobservable: Vec::new(),
                 parent: None,
                 note: Some("valor redigido: não rastreável".to_string()),
             });
@@ -918,6 +931,33 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
             result.values.push(part);
         }
     }
+    let hidden: Vec<Unobservable> = earlier
+        .iter()
+        .filter_map(|pos| {
+            let body = &ctx.attempt(*pos).response_body;
+            matches!(
+                body.state,
+                BodyState::Unavailable | BodyState::Discarded | BodyState::Truncated
+            )
+            .then(|| Unobservable {
+                request_id: ctx.request_id(*pos).to_string(),
+                state: body.state.as_str().to_string(),
+                reason: body.note.clone(),
+            })
+        })
+        .collect();
+    if !hidden.is_empty() {
+        for entry in result.values.iter_mut().filter(|v| {
+            v.length > 0 && matches!(v.status, OriginStatus::None | OriginStatus::Repeated)
+        }) {
+            entry.unobservable = hidden.iter().take(20).cloned().collect();
+            entry.label = format!(
+                "{}; {} resposta(s) anterior(es) sem corpo observável",
+                entry.label,
+                hidden.len()
+            );
+        }
+    }
     if result.redacted_values > 0 {
         result.warnings.push(format!(
             "{} valor(es) redigido(s) ([REDACTED]) não podem ser rastreados",
@@ -1006,6 +1046,7 @@ fn finish_entry(
         oldest,
         evidences,
         repeated_from: Vec::new(),
+        unobservable: Vec::new(),
         parent: None,
         note,
     }
@@ -1182,6 +1223,7 @@ fn partial_entries(
                 oldest: None,
                 evidences: Vec::new(),
                 repeated_from: Vec::new(),
+                unobservable: Vec::new(),
                 parent: Some(value.field.clone()),
                 note: None,
             };
@@ -1288,6 +1330,8 @@ pub struct PrimingChain {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnresolvedValue {
+    pub label: String,
+    pub unobservable: Vec<Unobservable>,
     pub request_id: String,
     pub scope: ConsumedScope,
     pub field: String,
@@ -1343,6 +1387,8 @@ pub fn priming_chain(
             ) {
                 if value.parent.is_none() && value.length > 0 {
                     chain.unresolved.push(UnresolvedValue {
+                        label: value.label.clone(),
+                        unobservable: value.unobservable.clone(),
                         request_id: current.clone(),
                         scope: value.scope,
                         field: value.field.clone(),
@@ -1353,6 +1399,8 @@ pub fn priming_chain(
             }
             if value.status == OriginStatus::Ambiguous && value.parent.is_none() {
                 chain.unresolved.push(UnresolvedValue {
+                    label: value.label.clone(),
+                    unobservable: value.unobservable.clone(),
                     request_id: current.clone(),
                     scope: value.scope,
                     field: value.field.clone(),

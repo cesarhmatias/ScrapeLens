@@ -504,3 +504,75 @@ fn export_annotates_runtime_origins_without_changing_the_command() {
     };
     assert_eq!(strip(&annotated), strip(&plain), "o comando não muda");
 }
+
+#[test]
+fn unobservable_previous_responses_are_reported_for_values_without_origin() {
+    let mut f = Flow::default();
+    f.step(
+        "GET",
+        "https://x.test/page",
+        json!({}),
+        None,
+        json!({}),
+        Some("<p>nada</p>"),
+        1.0,
+    );
+    // o corpo da resposta de 2.1 não foi capturado
+    f.step(
+        "POST",
+        "https://x.test/filtro",
+        json!({}),
+        Some("cmd=filtro&STAMP=2004"),
+        json!({}),
+        None,
+        2.0,
+    );
+    f.step(
+        "POST",
+        "https://x.test/consulta",
+        json!({}),
+        Some("cmd=consulta&STAMP=2005"),
+        json!({}),
+        None,
+        3.0,
+    );
+    let mut b = f.bundle();
+    // simula `unavailable` na resposta de 2.1 (CDP: recurso despejado)
+    let id = logical(&b, "2.1");
+    for r in &mut b.session.requests {
+        if r.id == id {
+            let body =
+                scrapelens_core::Body::unavailable("No resource with given identifier found");
+            r.attempts[0].response_body = body.clone();
+            r.response_body = body;
+        }
+    }
+    let target = logical(&b, "3.1");
+    let o = value_origins(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    let stamp = find(&o, ConsumedScope::Body, "STAMP");
+    assert_eq!(stamp.status, OriginStatus::None);
+    assert_eq!(stamp.unobservable.len(), 1);
+    assert_eq!(stamp.unobservable[0].request_id, id);
+    assert_eq!(stamp.unobservable[0].state, "unavailable");
+    assert!(stamp.unobservable[0]
+        .reason
+        .as_deref()
+        .unwrap()
+        .contains("No resource"));
+    assert_eq!(
+        stamp.label,
+        "sem origem observada; 1 resposta(s) anterior(es) sem corpo observável"
+    );
+    // cadeia: pendência também aponta a resposta sem corpo
+    let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    let pending = chain
+        .unresolved
+        .iter()
+        .find(|u| u.field == "STAMP")
+        .unwrap();
+    assert_eq!(pending.unobservable[0].request_id, id);
+    assert!(pending.label.contains("sem corpo observável"));
+    // valores com origem não ganham a marca
+    let ok = value_origins(&b.session, &b, &logical(&b, "2.1"), &FlowOptions::default()).unwrap();
+    assert!(ok.values.iter().all(|v| v.unobservable.is_empty()));
+}
