@@ -35,10 +35,11 @@ Em 2026-10-28, por decisão do usuário, todos os agentes do canal, exceto o
 líder, usam Claude Sonnet 5.5 (`claude-sonnet-5-5`, esforço low), com reserva
 automática `opencode/deepseek-v4.1-flash-free` se a cota acabar. Histórico:
 GLM-5.3/DeepSeek V4.1 Flash (OpenCode Go) → gpt-6.1-sol (líder/revisor/docs) →
-Sonnet 5.5 low. Em 2026-10-28, Documentação e Captura passaram para Claude
-Haiku 5.5 (`claude-haiku-5-5`, esforço medium). Testes passou para
-`opencode/deepseek-v4.1-flash-free` (esforço high); App passa ao mesmo modelo
-ao terminar a tarefa em curso. Core e Revisor seguem em Sonnet 5.5 low. Sem substituição silenciosa de modelo.
+Sonnet 5.5 low. Em 2026-10-28, por decisão do usuário, todos os agentes não decisores
+(Documentação, Captura, Core, Testes e App) passaram para
+`opencode-go/deepseek-v4.1-flash` (OpenCode Go, esforço high), com reserva
+automática `opencode/deepseek-v4.1-flash-free` quando a cota acabar. Os
+decisores (Líder e Revisor independente) não mudaram de modelo. Sem substituição silenciosa de modelo.
 
 Equipe (seção OpenBot "ScrapeLens"):
 
