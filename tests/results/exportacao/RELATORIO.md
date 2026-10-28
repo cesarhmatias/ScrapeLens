@@ -114,3 +114,32 @@ em vez do id da sessão.
 
 Limites: exportação não executa/reproduz requisições; clipboard e diálogos
 dependem de operação em primeiro plano; sem notarização/Intel.
+
+## Rodada 3 — revalidação independente em HEAD 387d799
+
+**Testado (reexecutado por Testes, offline):**
+
+| Verificação | Resultado |
+|---|---|
+| Ponte (`tests/exportacao`) | **18/18** (16 anteriores + 2 novas de política de aliases) |
+| src-tauri | 15 ok, 1 ignorado |
+| core | 91 ok, 1 ignorado |
+| typecheck (`tsc --noEmit`) | passa |
+| Bundle `…/macos/ScrapeLens.app` | executável SHA-256 `9c04b98b…bdbe5` (o mesmo da prova nativa final; o `5934556c…` citado pelo líder é anterior à `0d4dbab`); `codesign --verify --deep --strict` exit 0 |
+
+Novas regressões: `symlink_policy_final_file_dangling_and_relative_aliases` (link no próprio
+arquivo de destino para alvo existente e pendente, link para arquivo como pasta pai, link pendente
+como destino de sanitização, ancestral relativo `../rel/`, controle `../real/` aceito) e
+`symlink_policy_macos_system_aliases_only_at_root` (`/private/var/tmp` e `/var/tmp` reais aceitos;
+link criado pelo usuário dentro de `/var/tmp` recusado). Todas passam: **nenhum bug novo** na
+política de `16015a1`. Link em `/Users/...` coberto pela regressão de ancestral existente
+(mesmo mecanismo: qualquer ancestral que não seja `/var`,`/tmp`,`/etc`).
+
+**Não testado nesta rodada:**
+- GUI/clipboard via computer_use: abrir a fixture depende do NSOpenPanel (`bridge.ts` `openDialog`),
+  então a parte foi interrompida conforme instruído; clipboard não lido. Prova nativa do clipboard
+  permanece a do adendo (operada pelo líder, `pbpaste` UTF-8 idêntico).
+- Salvar/Cancelar nativo: registrado como **pendente de seleção humana** nesta rodada (já aprovado
+  na prova do líder no adendo); não bloqueia o fechamento automatizado.
+- Corridas de troca de diretório (TOCTOU) entre a checagem e a gravação: não exercitadas; a
+  validação é por checagem prévia, não por `openat`/`O_NOFOLLOW` em toda a cadeia.

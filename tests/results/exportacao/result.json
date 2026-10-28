@@ -31,5 +31,27 @@
     "failed": 0
   },
   "sanitizedReopen": "approved",
-  "verifyManual": "approved ignoring only .DS_Store"
+  "verifyManual": "approved ignoring only .DS_Store",
+  "round3": {
+    "head": "387d799",
+    "appFix": "16015a1",
+    "bundleExecutableSha256": "9c04b98b30b3d6451ee53fa5eee589aaba0cd4e5d3185894e39facb0335bdbe5",
+    "codesignVerifyExit": 0,
+    "bridge": {
+      "passed": 18,
+      "failed": 0
+    },
+    "tauri": {
+      "passed": 15,
+      "ignored": 1
+    },
+    "core": {
+      "passed": 91,
+      "ignored": 1
+    },
+    "typecheck": "pass",
+    "guiClipboard": "not tested: opening fixture requires NSOpenPanel",
+    "nativeSaveCancel": "pending human selection (approved earlier by leader proof)",
+    "newFindings": []
+  }
 }

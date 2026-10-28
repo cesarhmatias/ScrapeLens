@@ -1,27 +1,27 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.73s
-     Running unittests src/lib.rs (src-tauri/target/debug/deps/scrapelens_lib-f5a556b33c09cf7d)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+     Running unittests src/lib.rs (target/debug/deps/scrapelens_lib-f5a556b33c09cf7d)
 
 running 16 tests
 test capture::tests::live_capture_cycle ... ignored
 test commands::tests::rejects_missing_session_file ... ok
 test chrome::tests::missing_chrome_is_reported_with_candidates ... ok
 test export::tests::saving_into_missing_parent_is_refused ... ok
-test commands::tests::attachment_preview_is_text_inside_attachments ... ok
-test chrome::tests::normalizes_an_app_bundle_to_its_binary ... ok
-test commands::tests::rejects_unknown_schema_version ... ok
 test commands::tests::opens_a_v1_session_directory_and_flags_synthetic ... ok
-test export::tests::save_refuses_overwrite_and_symlink_with_0600 ... ok
-test export::tests::sanitize_refuses_origin_inside_origin_and_occupied_destination ... ok
-test export::tests::unknown_request_and_missing_dir_are_actionable_errors ... ok
-test export::tests::unavailable_body_is_reported_not_invented ... ok
 test export::tests::curl_includes_body_and_escapes_quotes ... ok
-test export::tests::python_preview_uses_same_source_without_executing ... ok
+test commands::tests::rejects_unknown_schema_version ... ok
 test export::tests::sanitize_preview_reports_counts_without_writing ... ok
+test chrome::tests::normalizes_an_app_bundle_to_its_binary ... ok
+test commands::tests::attachment_preview_is_text_inside_attachments ... ok
+test export::tests::python_preview_uses_same_source_without_executing ... ok
+test export::tests::unavailable_body_is_reported_not_invented ... ok
+test export::tests::save_refuses_overwrite_and_symlink_with_0600 ... ok
+test export::tests::unknown_request_and_missing_dir_are_actionable_errors ... ok
+test export::tests::sanitize_refuses_origin_inside_origin_and_occupied_destination ... ok
 test export::tests::sanitize_writes_new_private_dir_and_keeps_origin ... ok
 
-test result: ok. 15 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 15 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
-     Running unittests src/main.rs (src-tauri/target/debug/deps/scrapelens-77975daab09b576d)
+     Running unittests src/main.rs (target/debug/deps/scrapelens-77975daab09b576d)
 
 running 0 tests
 

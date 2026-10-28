@@ -1,72 +1,26 @@
-     Locking 32 packages to latest compatible versions
-   Compiling proc-macro2 v1.0.107
-   Compiling quote v1.0.47
-   Compiling unicode-ident v1.0.27
-   Compiling libc v0.2.191
-   Compiling serde_core v1.0.229
-   Compiling zmij v1.0.23
-   Compiling hashbrown v0.17.1
-   Compiling thiserror v2.0.21
-   Compiling serde v1.0.229
-   Compiling equivalent v1.0.3
-   Compiling rustix v1.1.5
-   Compiling serde_json v1.0.154
-   Compiling getrandom v0.4.3
-   Compiling bitflags v2.13.2
-   Compiling memchr v2.8.3
-   Compiling indexmap v2.14.2
-   Compiling cfg-if v1.0.5
-   Compiling itoa v1.0.18
-   Compiling foldhash v0.2.0
-   Compiling base64 v0.22.1
-   Compiling once_cell v1.21.4
-   Compiling fastrand v2.5.0
-   Compiling syn v3.0.9
-   Compiling thiserror-impl v2.0.21
-   Compiling serde_derive v1.0.229
-   Compiling errno v0.3.14
-   Compiling tempfile v3.27.0
-   Compiling scrapelens-core v0.1.0 (/Users/cesar/Projects/scrapelens/core)
    Compiling scrapelens-export-validation v0.1.0 (/Users/cesar/Projects/scrapelens/tests/exportacao)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.92s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.39s
      Running tests/bridge.rs (tests/exportacao/target/debug/deps/bridge-ab4fb2f9a5e94e59)
 
-running 16 tests
+running 18 tests
 test bridge::tests::saving_into_missing_parent_is_refused ... ok
-test bridge::tests::save_refuses_overwrite_and_symlink_with_0600 ... ok
-test bridge::tests::curl_includes_body_and_escapes_quotes ... ok
-test bridge::tests::unknown_request_and_missing_dir_are_actionable_errors ... ok
-test export_rejects_symlink_in_ancestor ... FAILED
-test bridge::tests::python_preview_uses_same_source_without_executing ... ok
-test bridge::tests::sanitize_preview_reports_counts_without_writing ... ok
+test export_rejects_symlink_in_ancestor ... ok
 test bridge::tests::unavailable_body_is_reported_not_invented ... ok
-test invalid_request_format_and_source_fail_without_writes ... ok
+test bridge::tests::python_preview_uses_same_source_without_executing ... ok
+test bridge::tests::curl_includes_body_and_escapes_quotes ... ok
+test bridge::tests::sanitize_preview_reports_counts_without_writing ... ok
+test bridge::tests::unknown_request_and_missing_dir_are_actionable_errors ... ok
+test bridge::tests::save_refuses_overwrite_and_symlink_with_0600 ... ok
 test bridge::tests::sanitize_refuses_origin_inside_origin_and_occupied_destination ... ok
+test invalid_request_format_and_source_fail_without_writes ... ok
+test bridge::tests::sanitize_writes_new_private_dir_and_keeps_origin ... ok
 test occupied_source_descendant_and_direct_symlinks_are_refused ... ok
+test symlink_policy_macos_system_aliases_only_at_root ... ok
 test states_are_explicit_and_do_not_export_stale_attachment ... ok
 test preview_matches_core_and_saved_file_for_both_formats ... ok
-test bridge::tests::sanitize_writes_new_private_dir_and_keeps_origin ... ok
-test sanitization_rejects_symlink_in_ancestor ... FAILED
+test sanitization_rejects_symlink_in_ancestor ... ok
+test symlink_policy_final_file_dangling_and_relative_aliases ... ok
 test sanitized_output_removes_markers_raw_events_and_preserves_original ... ok
 
-failures:
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
----- export_rejects_symlink_in_ancestor stdout ----
-
-thread 'export_rejects_symlink_in_ancestor' (242077886) panicked at tests/bridge.rs:89:5:
-FINDING: gravação aceita link em ancestral alias/sub/out.sh
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
----- sanitization_rejects_symlink_in_ancestor stdout ----
-
-thread 'sanitization_rejects_symlink_in_ancestor' (242077890) panicked at tests/bridge.rs:97:5:
-FINDING: sanitização aceita link em ancestral alias/sub/output
-
-
-failures:
-    export_rejects_symlink_in_ancestor
-    sanitization_rejects_symlink_in_ancestor
-
-test result: FAILED. 14 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
-
-error: test failed, to rerun pass `--test bridge`

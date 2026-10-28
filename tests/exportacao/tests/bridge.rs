@@ -97,3 +97,42 @@ fn sanitization_rejects_symlink_in_ancestor() {
     assert!(result.is_err(),"FINDING: sanitização aceita link em ancestral alias/sub/output");
     assert!(!real.join("sub/output").exists());
 }
+
+// Política de aliases (rodada 3, sobre 16015a1).
+#[test]
+fn symlink_policy_final_file_dangling_and_relative_aliases() {
+    let temp=tempfile::tempdir().unwrap();let src=fixture(temp.path());
+    let dir=temp.path().join("d");fs::create_dir(&dir).unwrap();
+    // link no próprio arquivo de destino: apontando para alvo existente e pendente
+    let victim=temp.path().join("victim");fs::write(&victim,b"KEEP").unwrap();
+    std::os::unix::fs::symlink(&victim,dir.join("out.sh")).unwrap();
+    assert!(bridge::write_text_file(&dir.join("out.sh"),"X").is_err());assert_eq!(fs::read(&victim).unwrap(),b"KEEP");
+    std::os::unix::fs::symlink(temp.path().join("nowhere"),dir.join("dangling.sh")).unwrap();
+    assert!(bridge::write_text_file(&dir.join("dangling.sh"),"X").is_err());assert!(!temp.path().join("nowhere").exists());
+    // link para arquivo no lugar de pasta pai
+    std::os::unix::fs::symlink(&victim,temp.path().join("filelink")).unwrap();
+    assert!(bridge::write_text_file(&temp.path().join("filelink/out.sh"),"X").is_err());
+    // link pendente como destino da sanitização
+    std::os::unix::fs::symlink(temp.path().join("nowhere2"),temp.path().join("dangling-dir")).unwrap();
+    assert!(bridge::sanitize_to(&src,&temp.path().join("dangling-dir")).is_err());assert!(!temp.path().join("nowhere2").exists());
+    // ancestral relativo: ../alias/... a partir de um diretório real
+    let real=temp.path().join("real");fs::create_dir(&real).unwrap();
+    std::os::unix::fs::symlink("real",temp.path().join("rel")).unwrap();
+    assert!(bridge::write_text_file(&dir.join("../rel/out.sh"),"X").is_err());assert!(!real.join("out.sh").exists());
+    // controle: caminho real e com ".." sem link continua aceito
+    assert!(bridge::write_text_file(&dir.join("../real/ok.sh"),"X").is_ok());
+}
+#[test]
+fn symlink_policy_macos_system_aliases_only_at_root() {
+    if !Path::new("/var").is_symlink() {return;}
+    // /private/var direto e via /var, ambos reais: aceitos (alias de sistema permitido)
+    for base in ["/private/var/tmp","/var/tmp"] {
+        let dir=tempfile::tempdir_in(base).unwrap();
+        let out=dir.path().join("out.sh");
+        assert!(bridge::write_text_file(&out,"SYNTHETIC").is_ok(),"{base}");assert_eq!(fs::read(&out).unwrap(),b"SYNTHETIC");
+    }
+    // link criado pelo usuário dentro de /var/tmp continua recusado
+    let dir=tempfile::tempdir_in("/var/tmp").unwrap();let real=dir.path().join("real");fs::create_dir(&real).unwrap();
+    let alias=dir.path().join("alias");std::os::unix::fs::symlink(&real,&alias).unwrap();
+    assert!(bridge::write_text_file(&alias.join("o.sh"),"X").is_err());assert!(!real.join("o.sh").exists());
+}
