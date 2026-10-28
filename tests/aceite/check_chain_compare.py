@@ -5,9 +5,8 @@ Importa as fixtures sintéticas A (fixtures/detran-pb) e B (fixtures/detran-pb-b
 `--label synthetic-fixture`, roda `scrapelens-core origins|chain|compare` e confere
 `manifest.json` → `chain_compare` (§4.1, §4.2, §4.3) e a A sanitizada (§4.4).
 
-O formato JSON do Core é lido por um adaptador tolerante (funções `entries_of`,
-`pick`): campos esperados `requestId`, `field`, `evidence`/`kind`, `producer`/`origin`,
-`class`/`classification`. Divergência de nome é reportada, nunca assumida como OK.
+O formato JSON é o real do core (docs/09 e2c4da0+): origins.values[] com status/label/
+evidences[]; chain.steps/protection/unresolved; compare.pairs[].fields[] com label/originLabel/parts.
 Expectativas não são afrouxadas: qualquer desvio falha (exit 1).
 
   python3 tests/aceite/check_chain_compare.py [--core BIN]
@@ -53,60 +52,30 @@ def import_capture(core, folder, name, tmp, label="synthetic-fixture"):
     return out
 
 
-# ---- adaptador do formato do Core -------------------------------------------
-def walk(node):
-    if isinstance(node, dict):
-        yield node
-        for v in node.values():
-            yield from walk(v)
-    elif isinstance(node, list):
-        for v in node:
-            yield from walk(v)
-
-
-def pick(d, *names):
-    for n in names:
-        if isinstance(d, dict) and d.get(n) is not None:
-            return d[n]
-    return None
-
-
-def text(d):
-    return json.dumps(d, ensure_ascii=False)
-
-
-def find_entry(doc, base, value=None):
-    """Entradas cujo `field` contém `base` (ou, para tokens opacos, cujo valor contém `value`)."""
+# ---- verificações (esquema real do core: docs/09, origins/chain/compare) --------------
+def vals(doc, scope=None, field=None, parent=None, contains=None):
     out = []
-    for d in walk(doc):
-        field = str(pick(d, "field", "name") or "")
-        if not field:
+    for v in doc["values"]:
+        if scope and v["scope"] != scope:
             continue
-        if base.lower() in field.lower() and (value is None or value in text(d)):
-            out.append(d)
+        if field and v["field"] != field:
+            continue
+        if parent is not None and v.get("parent") != parent:
+            continue
+        if contains and contains not in v["value"]:
+            continue
+        out.append(v)
     return out
 
 
-def evidence_of(e):
-    o = pick(e, "origin", "origins") or e
-    if isinstance(o, list):
-        o = o[0] if o else {}
-    ev = pick(o, "evidence", "kind", "type") or pick(e, "evidence", "kind")
-    return str(ev) if ev is not None else None
+def produced_by(v):
+    return [e["producerRequestId"] for e in v["evidences"] if e["role"] == "produced"]
 
 
-def producers_of(e):
-    ids = []
-    for d in walk(e):
-        p = pick(d, "producer", "producerRequestId", "producerId", "fromRequestId")
-        if isinstance(p, dict):
-            p = pick(p, "requestId", "id")
-        if isinstance(p, str):
-            ids.append(p)
-    return ids
+def reissued_by(v):
+    return sorted({e["producerRequestId"] for e in v["evidences"] if e["role"] == "reissued"})
 
 
-# ---- verificações -------------------------------------------------------------
 def check_origins(core, a, ex, ids):
     target = ids[ex["target"]["requestId"]]
     doc, _ = run(core, "origins", a, target)
@@ -115,26 +84,37 @@ def check_origins(core, a, ex, ids):
     for f in ex["origins_4_1"]["fields"]:
         name = f["field"]
         base, _, token = name.partition(":")
-        value = f.get("value") if base == "XML" else None
-        entries = find_entry(doc, "XML" if base == "XML" else (name if base != "cookie" else token), value)
-        if base == "XML" and f["evidence"] == "sem origem observada":
-            entries = [e for e in find_entry(doc, "XML", f["value"])]
-        check(bool(entries), f"origins {name}: campo ausente na saída")
-        if not entries:
-            continue
-        evs = {evidence_of(e) for e in entries}
-        check(f["evidence"] in evs or any(f["evidence"] in text(e) for e in entries), f"origins {name}: esperado {f['evidence']}, obtido {evs}")
-        if f["producer"]:
-            want = ids[f["producer"]]
-            got = [p for e in entries for p in producers_of(e)]
-            check(want in got, f"origins {name}: produtor esperado {want} ({f['producer']}), obtido {got}")
+        if base == "SESSIONID" or name == "STAMP":
+            found = vals(doc, scope="body", field=name, parent=None)
+        elif base == "cookie":
+            found = vals(doc, scope="cookie", field=token)
+        elif base == "XML":
+            needle = f["value"]
+            found = vals(doc, scope="body", field="XML", parent="XML", contains=needle)
         else:
-            check(not [p for e in entries for p in producers_of(e)], f"origins {name}: não deve ter produtor")
+            found = []
+        check(len(found) >= 1, f"origins {name}: campo ausente na saída")
+        if not found:
+            continue
+        v = found[0]
+        if f["evidence"] == "sem origem observada":
+            check(v["status"] == "none" and not v["evidences"] and v["label"].startswith("sem origem observada"),
+                  f"origins {name}: esperado sem origem observada, obtido {v['status']} {v['label'][:60]}")
+            continue
+        kinds = {e["kind"] for e in v["evidences"]}
+        check(v["status"] in ("origin", "ambiguous") and f["evidence"] in kinds, f"origins {name}: esperado {f['evidence']}, obtido status={v['status']} kinds={kinds}")
+        want = ids[f["producer"]]
+        check(produced_by(v) == [want], f"origins {name}: produtor esperado {want} ({f['producer']}), obtido {produced_by(v)}")
+        if f.get("reissued_by"):
+            check(reissued_by(v) == sorted(ids[x] for x in f["reissued_by"]), f"origins {name}: reemitido por {reissued_by(v)}")
+        if f.get("literal"):
+            check(any(e["field"] == f["literal"] for e in v["evidences"]), f"origins {name}: literal {f['literal']} ausente")
     neg = ex["origins_4_1"]["negative_4_3"]
-    es = find_entry(doc, "x-page-seq")
-    check(bool(es), "4.3: x-page-seq ausente da saída (deveria constar como sem origem observada)")
+    es = vals(doc, scope="header", field="x-page-seq")
+    check(len(es) == 1, "4.3: x-page-seq ausente")
     for e in es:
-        check("sem origem" in text(e).lower() and not producers_of(e), f"4.3: x-page-seq virou origem: {text(e)[:200]}")
+        check(e["status"] in neg["status"] and not e["evidences"] and e["label"].startswith("sem origem observada"),
+              f"4.3: x-page-seq virou origem: {e['status']} {e['label'][:80]} {e['evidences']}")
 
 
 def check_chain(core, a, ex, ids):
@@ -143,20 +123,27 @@ def check_chain(core, a, ex, ids):
     if doc is None:
         return
     c = ex["chain_4_1"]
-    steps = [d for d in walk(doc) if pick(d, "requestId") and ("reason" in d or "motivo" in d or "class" in d or "kind" in d)]
-    order = [d["requestId"] for d in steps]
-    prot = [d["requestId"] for d in steps if "prote" in text(d).lower() and "class" in d or d.get("protection") is True]
-    app = [x for x in order if x not in prot]
+    app = [s["requestId"] for s in doc["steps"]]
+    prot = [s["requestId"] for s in doc["protection"]]
     want_app = [ids[x] for x in c["application_in_flow_order"]]
     allowed = {ids[x] for x in c["allowed_extra_application"]}
     check([x for x in app if x not in allowed] == want_app, f"chain: aplicação esperada {want_app}, obtida {app}")
+    check(set(app) - set(want_app) <= allowed, f"chain: passos extras não permitidos {set(app) - set(want_app) - allowed}")
     check(app == sorted(app), f"chain: ordem do fluxo violada {app}")
     check(prot == [ids[x] for x in c["protection"]], f"chain: proteção esperada {[ids[x] for x in c['protection']]}, obtida {prot}")
+    check(all(s.get("class") == "protection" for s in doc["protection"]) and all(s.get("class") == "application" for s in doc["steps"]),
+          "chain: classes application/protection")
     for x in c["must_exclude"]:
-        check(ids[x] not in order, f"chain: {x} não deve constar")
+        check(ids[x] not in app + prot, f"chain: {x} não deve constar")
+    by = {s["requestId"]: s for s in doc["steps"] + doc["protection"]}
     for rid, why in c["reasons"].items():
-        s = [d for d in steps if d["requestId"] == ids[rid]]
-        check(bool(s and (pick(s[0], "reason", "motivo"))), f"chain: {rid} sem motivo ({why})")
+        s = by.get(ids[rid])
+        check(bool(s and s.get("reason") and s.get("reasons")), f"chain: {rid} sem motivo ({why})")
+    check(not any(u.get("status") == "origin" for u in doc["unresolved"]), "chain: unresolved não pode conter origens resolvidas")
+
+
+def part_with(parts, a_has=None, b_has=None):
+    return [p for p in parts if (a_has is None or a_has in p["a"]) and (b_has is None or b_has in p["b"])]
 
 
 def check_compare(core, a, b, ex, ida, idb):
@@ -164,30 +151,55 @@ def check_compare(core, a, b, ex, ida, idb):
     if doc is None:
         return
     c = ex["compare_4_2"]
-    pairs = [d for d in walk(doc) if pick(d, "a", "aRequestId") and pick(d, "b", "bRequestId")]
-    pmap = {str(pick(p, "a", "aRequestId") if not isinstance(pick(p, "a", "aRequestId"), dict) else pick(p["a"], "requestId")):
-            p for p in pairs}
-    check(len(pairs) >= 13, f"compare: {len(pairs)} pares (esperado 13)")
-    for ra, rb in c["consultas_pair_by_order"]:
-        p = pmap.get(ida[ra])
-        check(p is not None and idb[rb] in text(p), f"compare: consulta {ra} deve parear com {rb} (sem cruzar)")
-    p = pmap.get(ida[c["consultas_pair_by_order"][0][0]])
-    if p is None:
-        return
+    check(len(doc["pairs"]) == 13, f"compare: {len(doc['pairs'])} pares (esperado 13)")
+    check(not doc["onlyInA"] and not doc["onlyInB"], f"compare: só em A/B inesperado {doc['onlyInA']} {doc['onlyInB']}")
+    check(not doc["ambiguities"], f"compare: ambiguidades {doc['ambiguities']}")
+    check(not any(p["outOfOrder"] for p in doc["pairs"]), "compare: par fora de ordem")
+    for i, (ra, rb) in enumerate(c["consultas_pair_by_order"]):
+        pr = [p for p in doc["pairs"] if p["a"]["requestId"] == ida[ra]]
+        check(len(pr) == 1 and pr[0]["b"]["requestId"] == idb[rb], f"compare: consulta {ra} deve parear com {rb}, obtido {[p['b']['requestId'] for p in pr]}")
+        if len(pr) != 1:
+            continue
+        p = pr[0]
+        fields = {(f["scope"], f["field"]): f for f in p["fields"]}
+        plate_a, plate_b = c["plates"]["A"][i], c["plates"]["B"][i]
+        xml_parts = fields[("body", "XML")]["parts"]
+        pp = part_with(xml_parts, plate_a, plate_b)
+        check(len(pp) == 1 and pp[0]["label"] == "dinâmico" and pp[0]["originLabel"] == "dinâmico sem origem",
+              f"compare par {i} XML:v_placa: esperado 'dinâmico sem origem', obtido {[(q['label'], q['originLabel']) for q in pp]}")
+        if i == 0:
+            check_compare_fields(c, fields, xml_parts, ida, idb)
+
+
+def check_compare_fields(c, fields, xml_parts, ida, idb):
     for f in c["fields"]:
         base, _, token = f["field"].partition(":")
-        es = find_entry(p, token if base == "cookie" else (base if base != "XML" else "XML"),
-                        None if base != "XML" else (token if token not in ("cmd_consultar_placa", "#f12_selected") else token))
-        check(bool(es), f"compare {f['field']}: ausente")
-        if not es:
+        if base == "XML":
             continue
-        blob = " ".join(text(e).lower() for e in es)
-        check(f["class"] in blob, f"compare {f['field']}: esperado {f['class']}")
+        key = ("cookie", token) if base == "cookie" else ("header", token) if base == "header" else ("body", base)
+        e = fields.get(key)
+        check(e is not None, f"compare {f['field']}: ausente")
+        if e is None:
+            continue
+        check(e["label"] == f["class"], f"compare {f['field']}: esperado {f['class']}, obtido {e['label']}")
         if f.get("runtime"):
-            check("runtime" in blob and ida[f["origin"]].lower() in blob or idb[f["origin"]].lower() in blob,
-                  f"compare {f['field']}: esperado 'obter em runtime' com origem {f['origin']}")
-        if f.get("label"):
-            check(f["label"] in blob, f"compare {f['field']}: esperado '{f['label']}'")
+            want = f"obter em runtime (origem: {idb[f['origin']]}"
+            check((e["originLabel"] or "").startswith(want), f"compare {f['field']}: esperado '{want}…', obtido {e['originLabel']!r}")
+        if f.get("value") is not None:
+            check(e["a"] == f["value"] and e["b"] == f["value"], f"compare {f['field']}: valor estático {f['value']!r}, obtido {e['a']!r}/{e['b']!r}")
+    for f in c["fields"]:
+        if not f["field"].startswith("XML:"):
+            continue
+        token = f["field"].split(":", 1)[1]
+        if token == "delta":
+            pp = part_with(xml_parts, "DLTA0005", "DLTB0005")
+            check(len(pp) == 1 and pp[0]["label"] == "dinâmico" and (pp[0]["originLabel"] or "").startswith(f"obter em runtime (origem: {idb[f['origin']]}"),
+                  f"compare XML:delta: obtido {[(q['label'], q['originLabel']) for q in pp]}")
+        elif token == "v_placa":
+            continue  # verificado por par, acima
+        else:
+            pp = [q for q in xml_parts if token in q["a"] and token in q["b"]]
+            check(bool(pp) and all(q["label"] == f["class"] for q in pp), f"compare XML:{token}: esperado {f['class']}, obtido {[(q['label']) for q in pp]}")
 
 
 def check_sanitized(core, a, ex, ids, tmp):
@@ -204,7 +216,11 @@ def check_sanitized(core, a, ex, ids, tmp):
             continue
         for leak in s["must_not_leak"]:
             check(leak not in raw, f"4.4 {cmd}: vazou {leak}")
-        check("redig" in raw.lower() or "redact" in raw.lower(), f"4.4 {cmd}: deve declarar que valores redigidos não são rastreáveis")
+        check(doc["redactedValues"] > 0 and any("não podem ser rastreados" in w for w in doc["warnings"]),
+              f"4.4 {cmd}: deve declarar que valores redigidos não são rastreáveis")
+        if cmd == "origins":
+            red = {(v["scope"], v["field"]) for v in doc["values"] if v["status"] == "redacted"}
+            check({("body", "SESSIONID"), ("cookie", "JSESSIONID")} <= red, f"4.4 origins: SESSIONID/JSESSIONID devem estar 'redacted', obtido {red}")
 
 
 def main():

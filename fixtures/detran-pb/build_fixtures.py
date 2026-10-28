@@ -456,7 +456,7 @@ def detran_bodies() -> list[dict]:
             rows.append(body_line(rid, 0, "response", "truncated", raw[:96].decode("utf-8", "ignore"), src,
                                   reason="corpo acima do limite por corpo (limite sintético 96 B)",
                                   original=len(raw), ts=rts))
-        elif i == 9:    # evicted resource
+        elif i == 12:   # evicted resource (last query: produces nothing used later)
             rows.append(body_line(rid, 0, "response", "unavailable", None, src,
                                   reason="No resource with given identifier found", ts=rts))
         else:
@@ -542,9 +542,9 @@ def chain_compare_expectations() -> dict:
         "origins_4_1": {
             "note": "producer = requestId CDP; o Core devolve o id lógico (cdp-rNNNN) ao qual este requestId pertence",
             "fields": [
-                o("SESSIONID", "value-match", r(0), literal="m_currentSessionId", earliest_of_candidates=True,
-                  also_in=[r(2), r(4), r(7)], ambiguous=True,
-                  why="a página easynat-app define m_currentSessionId; as páginas seguintes repetem o literal, então há candidatos ambíguos e o mais antigo é o produtor"),
+                o("SESSIONID", "value-match", r(0), literal="m_currentSessionId", role="produced",
+                  reissued_by=[r(4), r(7)], ambiguous=False,
+                  why="a página easynat-app define m_currentSessionId (produz); as páginas SIM1000X e VES0009X reemitem o literal (role reissued); NatLogon (truncada) não é observável"),
                 o("STAMP", "same-field", r(9), value=str(2005 - 2000 + STAMP_BASE), why="STAMP da resposta do POST anterior (cmd_filtro)"),
                 o("XML:delta", "value-match", r(9), value=f"{DELTA_PREFIX}0005", why="delta na resposta do POST anterior, dentro do campo opaco XML"),
                 o("cookie:JSESSIONID", "cookie-jar", r(0), why="Set-Cookie da resposta do easynat-app"),
@@ -554,7 +554,7 @@ def chain_compare_expectations() -> dict:
             "negative_4_3": {
                 "field": "header:x-page-seq", "value": "3", "evidence": "sem origem observada",
                 "coincidence": {"requestId": r(9), "header": "x-seq-hint", "value": "3"},
-                "why": "valor curto (<8) igual por acaso a x-seq-hint, mas com outro nome: não é origem",
+                "status": ["repeated", "none"], "why": "valor curto (<8) igual por acaso a x-seq-hint, mas com outro nome: não é origem (o core pode marcar 'repeated' por circular em POSTs anteriores, nunca produzido por r(9))",
             },
         },
         "chain_4_1": {
@@ -872,7 +872,7 @@ def build() -> None:
         "bodies": {
             "main": {"file": "detran-pb.cdp-bodies.jsonl",
                      "request_captured": 8, "response_captured": 11, "truncated": [rid_of(2)],
-                     "unavailable": [rid_of(9)], "base64_binary": [rid_of(1)]},
+                     "unavailable": [rid_of(12)], "base64_binary": [rid_of(1)]},
             "edge": {"cdp": "detran-pb-edge.cdp.jsonl", "file": "detran-pb-edge.cdp-bodies.jsonl",
                      "redirect_unavailable": ["2001.1:0", "2002.2:0"], "redirect_307_body_in_each_attempt": "2002.2",
                      "truncated_original_size": {"2006.6": 6291456}, "empty_with_evidence": {"2007.7": "HTTP 204"},

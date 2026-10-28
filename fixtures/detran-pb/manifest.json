@@ -291,7 +291,7 @@
     "1003.3"
    ],
    "unavailable": [
-    "1010.10"
+    "1013.13"
    ],
    "base64_binary": [
     "1002.2"
@@ -393,14 +393,13 @@
      "evidence": "value-match",
      "producer": "1001.1",
      "literal": "m_currentSessionId",
-     "earliest_of_candidates": true,
-     "also_in": [
-      "1003.3",
+     "role": "produced",
+     "reissued_by": [
       "1005.5",
       "1008.8"
      ],
-     "ambiguous": true,
-     "why": "a página easynat-app define m_currentSessionId; as páginas seguintes repetem o literal, então há candidatos ambíguos e o mais antigo é o produtor"
+     "ambiguous": false,
+     "why": "a página easynat-app define m_currentSessionId (produz); as páginas SIM1000X e VES0009X reemitem o literal (role reissued); NatLogon (truncada) não é observável"
     },
     {
      "field": "STAMP",
@@ -446,7 +445,11 @@
      "header": "x-seq-hint",
      "value": "3"
     },
-    "why": "valor curto (<8) igual por acaso a x-seq-hint, mas com outro nome: não é origem"
+    "status": [
+     "repeated",
+     "none"
+    ],
+    "why": "valor curto (<8) igual por acaso a x-seq-hint, mas com outro nome: não é origem (o core pode marcar 'repeated' por circular em POSTs anteriores, nunca produzido por r(9))"
    }
   },
   "chain_4_1": {

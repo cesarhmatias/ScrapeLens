@@ -99,7 +99,7 @@ Marcadas como **sanitizadas de caso real** (forma real, valores sintéticos):
 - `detran-pb.cdp-bodies.jsonl` (formato §1): os 8 corpos form-urlencoded dos
   POSTs, 13 respostas — 11 `captured` (uma em `base64` binário: TSPD, entrada 1),
   1 `truncated` (NatLogon, entrada 2, `originalSize` 415) e 1 `unavailable`
-  (entrada 9, "No resource with given identifier found"). `requestId` =
+  (entrada 12, última consulta; não produz valor usado depois; "No resource with given identifier found"). `requestId` =
   `1001.1`…`1013.13` (índice+1), `attemptIndex` 0 (sem redirects neste fluxo).
 - `detran-pb-edge.cdp.jsonl` + `detran-pb-edge.cdp-bodies.jsonl`: cenários
   no formato do `testserver/` (302 com tentativa 0 `unavailable`, 307 com corpo
