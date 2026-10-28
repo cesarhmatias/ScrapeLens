@@ -100,6 +100,12 @@ def check_origins_chain(core, session, label, e, cookies_warning):
     sx = og["SESSIONID"]
     check(len(sid) == 1 and sid[0]["status"] in sx["status"] and sid[0]["label"].startswith(sx["label"]) and not sid[0]["evidences"],
           f"{label} SESSIONID (9 chars do easynat-app + '_' + 12 dígitos sem fonte): cobertura parcial => {sx['label']}; obtido {[(v['status'], v['label'][:50], produced(v)) for v in sid]}")
+    # dica de composição parcial (core 127c405): aponta o literal m_currentSessionId do easynat-app no início do valor
+    pc = sid[0].get("partialComposition") if sid else None
+    want = sx["composition"]
+    check(bool(pc) and any(h["producerRequestId"] == e["chain"]["steps_include"][0] and h["field"] == "m_currentSessionId"
+                           and h["start"] == 0 and h["length"] == want["head_len"] for h in pc),
+          f"{label} SESSIONID: partialComposition deveria apontar {e['chain']['steps_include'][0]}/m_currentSessionId start 0 length {want['head_len']}; obtido {pc!r}")
     pl = vals(o, scope="body", field="XML", parent="XML", contains=og["v_placa"]["plate"])
     check(all(v["status"] == "none" for v in pl), f"{label} placa: sem origem esperado, obtido {[v['status'] for v in pl]}")
     ch = e["chain"]
@@ -113,6 +119,8 @@ def check_origins_chain(core, session, label, e, cookies_warning):
     check(not set(ch["never_steps"]) & set(steps), f"{label} chain: não pode ser passo {sorted(set(ch['never_steps']) & set(steps))}")
     check(not set(ch["never_steps"][:2]) & set(pages), f"{label} chain: scripts estáticos não são páginas")
     check(not set(prot) & set(steps), f"{label} chain: proteção dentro de steps")
+    check(not [r for st in c["steps"] for r in st.get("reasons", []) if r.get("field") == "SESSIONID"],
+          f"{label} chain: nenhum passo pode existir por causa do SESSIONID (cobertura parcial não é origem)")
     check(steps == sorted(steps), f"{label} chain: passos fora da ordem do fluxo")
     if cookies_warning:
         for name, doc in (("origins", o), ("chain", c)):

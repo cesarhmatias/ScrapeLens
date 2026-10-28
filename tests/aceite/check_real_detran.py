@@ -108,7 +108,8 @@ def analyse(core, har, tmp, idx):
                 ("protection-like" if "/TSPD/" in u or re.fullmatch(r"[0-9a-f]{20,}", base or "") else "other")
             cat[key] = cat.get(key, 0) + 1
         out["chain"]["pages_by_kind"] = cat
-        out["chain"]["partial_composition_hint"] = any("partialComposition" in json.dumps(v) for v in run(core, "origins", sess, first_consulta)["values"])
+        sid_vals = [v for v in run(core, "origins", sess, first_consulta)["values"] if v["scope"] == "body" and v["field"] == "SESSIONID" and v.get("parent") is None]
+        out["sessionid_composition_hint"] = "sim" if any(v.get("partialComposition") for v in sid_vals) else "não"
         out["chain_has_connector_posts"] = out["chain"]["connector_steps"] >= 3
         out["cookies_warning"] = any("cookie" in w.lower() for w in c["warnings"])
     san = str(Path(tmp) / f"san{idx}")
@@ -133,6 +134,7 @@ def main():
             sess, o = analyse(core, har, tmp, i)
             sessions.append(sess)
             print(f"HAR #{i + 1}: {json.dumps(o, ensure_ascii=False)}")
+            print(f"HAR #{i + 1}: SESSIONID com dica de composição: {o.get('sessionid_composition_hint', 'n/a')}")
             if o["stamp_pct"] is None or o["stamp_pct"] < 95 or o["delta_pct"] < 95:
                 fails.append(f"HAR #{i + 1}: STAMP {o['stamp_pct']}% / delta {o['delta_pct']}% (mín. 95%)")
             if not o.get("chain_has_connector_posts"):

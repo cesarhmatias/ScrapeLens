@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-28T05:27:00Z",
- "coreSha256": "b496c4309269371e649075bd31fc4f38d5ad157eb151d79e12c509aed0f86421",
- "coreBytes": 2894064,
- "gitCommit": "fc4aa29",
+ "generatedAt": "2026-10-28T05:31:13Z",
+ "coreSha256": "9282be4194804eb5bd30461664b4f81673f534515930338fde8a90141206c9c8",
+ "coreBytes": 2914864,
+ "gitCommit": "127c405",
  "macos": "26.5.2",
  "machine": "arm64",
  "python": "3.14.8",
@@ -137,7 +137,7 @@
     "asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte"
    ],
    "notes": [],
-   "seconds": 0.07
+   "seconds": 0.1
   },
   {
    "item": 2,
@@ -178,7 +178,7 @@
     },
     {
      "ok": true,
-     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'session.netlog_missing', 'session.cdp_missing', 'har.unknown_encoding', 'har.cookies_absent'}"
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'har.unknown_encoding', 'session.netlog_missing', 'session.cdp_missing', 'har.cookies_absent'}"
     },
     {
      "ok": true,
@@ -202,7 +202,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'session.cdp_missing', 'netlog.unknown_event_type', 'netlog.time_unit_assumed'}"
+     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'netlog.time_unit_assumed', 'session.cdp_missing', 'netlog.unknown_event_type'}"
     },
     {
      "ok": true,
@@ -234,7 +234,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'netlog.header_line_invalid', 'session.cdp_missing', 'netlog.time_unit_assumed'}"
+     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'netlog.time_unit_assumed', 'netlog.header_line_invalid', 'session.cdp_missing'}"
     },
     {
      "ok": true,
@@ -261,7 +261,7 @@
     "HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.",
     "Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos."
    ],
-   "seconds": 0.15
+   "seconds": 0.33
   },
   {
    "item": 3,
@@ -355,7 +355,7 @@
     "Diagnóstico da falha do líder: a fixture declarava `wallTime` sem o `timestamp` monotônico (`1793046000.0`), e o core de `f6c6bdd` calibrava `time` como microssegundos; o NetLog ficava 2 s à frente e as duas requisições viravam `unmatched`. O Chrome real satisfaz `wallTime = timeTickOffset/1000 + timestamp` (desvio medido < 1 ms), equação agora usada na fixture. Era defeito da fixture, não do core; a falha original está preservada em `tests/results/aceite-criterio3-falha-lider.json` e `RELATORIO-criterio3-falha-lider.md`.",
     "Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`."
    ],
-   "seconds": 0.05
+   "seconds": 0.11
   },
   {
    "item": 4,
@@ -420,7 +420,7 @@
    "notes": [
     "O redirect é um elo entre tentativas, não uma requisição separada."
    ],
-   "seconds": 0.05
+   "seconds": 0.11
   },
   {
    "item": 5,
@@ -489,7 +489,7 @@
     },
     {
      "ok": true,
-     "label": "todos os cinco estados aparecem na fixture: esperado {'captured', 'truncated', 'unavailable', 'discarded', 'empty'}, obtido {'captured', 'truncated', 'unavailable', 'discarded', 'empty'}"
+     "label": "todos os cinco estados aparecem na fixture: esperado {'empty', 'unavailable', 'discarded', 'truncated', 'captured'}, obtido {'empty', 'unavailable', 'discarded', 'truncated', 'captured'}"
     }
    ],
    "passed": 16,
@@ -572,7 +572,7 @@
    "notes": [
     "O diff compara ocorrências; `reordered` usa os índices originais de A e B."
    ],
-   "seconds": 0.01
+   "seconds": 0.03
   },
   {
    "item": 7,
@@ -682,7 +682,7 @@
    "notes": [
     "Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK)."
    ],
-   "seconds": 0.15
+   "seconds": 0.29
   },
   {
    "item": 8,
@@ -776,7 +776,7 @@
    "notes": [
     "Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso."
    ],
-   "seconds": 0.04
+   "seconds": 0.07
   },
   {
    "item": 9,
@@ -837,11 +837,11 @@
     },
     {
      "ok": true,
-     "label": "h1h2: protocolo h2 presente: 'h2' presente em {'h1', 'h2'}"
+     "label": "h1h2: protocolo h2 presente: 'h2' presente em {'h2', 'h1'}"
     },
     {
      "ok": true,
-     "label": "h1h2: nenhum protocolo divergente: 'h2' presente em {'h1', 'h2'}"
+     "label": "h1h2: nenhum protocolo divergente: 'h2' presente em {'h2', 'h1'}"
     },
     {
      "ok": true,
@@ -1271,7 +1271,7 @@
     "Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`a7004d4e95e8`, compilado em 2026-10-27 04:00 UTC−03 com o core até `b5846be`, incluindo `f6c6bdd`); a sessão ao vivo acima é nova, não reaproveitada.",
     "As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-2` e `netlog-1704043c442dcbd1-2`), agora pela UI: o usuário selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão."
    ],
-   "seconds": 0.11
+   "seconds": 0.29
   },
   {
    "item": 10,
@@ -1292,35 +1292,35 @@
     },
     {
      "ok": true,
-     "label": "import-har abaixo de 60 s (1.12 s)"
+     "label": "import-har abaixo de 60 s (2.15 s)"
     },
     {
      "ok": true,
-     "label": "pico do import abaixo de 1,5 GiB (806 MiB)"
+     "label": "pico do import abaixo de 1,5 GiB (807 MiB)"
     },
     {
      "ok": true,
-     "label": "inspect abaixo de 60 s (4.84 s)"
+     "label": "inspect abaixo de 60 s (14.23 s)"
     },
     {
      "ok": true,
-     "label": "inspect com pico abaixo de 3,5 GiB (1554 MiB)"
+     "label": "inspect com pico abaixo de 3,5 GiB (1503 MiB)"
     }
    ],
    "passed": 7,
    "failed": 0,
    "evidence": [
-    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.12 s, pico 806 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 2.15 s, pico 807 MiB RSS",
     "sessão gravada: session.json 236.3 MiB",
-    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 4.84 s, pico 1554 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 14.23 s, pico 1503 MiB RSS",
     "complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB"
    ],
    "notes": [
     "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
-    "`inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1554 MiB vem da serialização, não do parser.",
+    "`inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1503 MiB vem da serialização, não do parser.",
     "Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo."
    ],
-   "seconds": 14.77
+   "seconds": 25.19
   }
  ],
  "scope": [
