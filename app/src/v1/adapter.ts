@@ -258,6 +258,104 @@ function matchOf(request: LogicalRequest) {
   };
 }
 
+
+// Espelha os #[serde(default)] do core (core/src/model): o contrato v1 permite
+// omitir estes campos. Preenche apenas o vazio equivalente ao default do core —
+// "sem tentativas", "sem cookies", "corpo não fornecido" — nunca dados inventados.
+const defaultProvenance = (): Provenance => ({
+  source: "ownFormat",
+  method: "unspecified",
+  verification: "unverified",
+});
+
+const defaultHeaderView = (): HeaderView => ({ headers: [] }) as unknown as HeaderView;
+
+const defaultBody = (): Body =>
+  ({
+    state: "unavailable",
+    note: "corpo não fornecido pela fonte",
+    provenance: defaultProvenance(),
+  }) as unknown as Body;
+
+const defaultCookie = (): LogicalRequest["cookie"] => ({
+  raw: [],
+  pairs: [],
+  wireLines: [],
+  unparsed: [],
+  provenance: defaultProvenance(),
+});
+
+function normalizeHeaderView(view: HeaderView | undefined): HeaderView {
+  const base = view ?? defaultHeaderView();
+  return { ...base, headers: base.headers ?? [], pseudoHeaders: base.pseudoHeaders ?? [] };
+}
+
+function normalizeCookie(cookie: LogicalRequest["cookie"] | undefined): LogicalRequest["cookie"] {
+  const base = cookie ?? defaultCookie();
+  return {
+    ...base,
+    raw: base.raw ?? [],
+    pairs: base.pairs ?? [],
+    wireLines: base.wireLines ?? [],
+    unparsed: base.unparsed ?? [],
+    provenance: base.provenance ?? defaultProvenance(),
+  };
+}
+
+function normalizeBody(body: Body | undefined): Body {
+  if (!body) return defaultBody();
+  return { ...body, provenance: body.provenance ?? defaultProvenance() };
+}
+
+function normalizeAttempt(attempt: LogicalRequest["attempts"][number]): LogicalRequest["attempts"][number] {
+  return {
+    ...attempt,
+    outcome: attempt.outcome ?? "unknown",
+    requestHeaders: normalizeHeaderView(attempt.requestHeaders),
+    responseHeaders: normalizeHeaderView(attempt.responseHeaders),
+    cookie: normalizeCookie(attempt.cookie),
+    requestBody: normalizeBody(attempt.requestBody),
+    responseBody: normalizeBody(attempt.responseBody),
+    match: attempt.match ?? "unmatched",
+    provenance: attempt.provenance ?? defaultProvenance(),
+  };
+}
+
+function normalizeRequest(request: LogicalRequest): LogicalRequest {
+  return {
+    ...request,
+    attempts: (request.attempts ?? []).map(normalizeAttempt),
+    redirects: request.redirects ?? [],
+    requestHeaders: normalizeHeaderView(request.requestHeaders),
+    responseHeaders: normalizeHeaderView(request.responseHeaders),
+    cookie: normalizeCookie(request.cookie),
+    setCookies: request.setCookies ?? [],
+    requestBody: normalizeBody(request.requestBody),
+    responseBody: normalizeBody(request.responseBody),
+    timings: request.timings ?? {},
+    match: request.match ?? "unmatched",
+    matchCandidates: request.matchCandidates ?? [],
+    provenance: request.provenance ?? defaultProvenance(),
+  } as LogicalRequest;
+}
+
+export function normalizeSession(raw: SessionV1): SessionV1 {
+  const meta = raw.session;
+  return {
+    ...raw,
+    session: {
+      ...meta,
+      browser: meta.browser ?? { name: "unknown" },
+      labels: meta.labels ?? [],
+      completeness: meta.completeness ?? {
+        state: "partial",
+        reasons: ["completeness não informada pela fonte"],
+      },
+    },
+    requests: (raw.requests ?? []).map(normalizeRequest),
+  };
+}
+
 export interface AdaptedSession {
   session: SessionRecord;
   /** Versão v1 para exportações e para o diff sem perda. */
@@ -266,9 +364,10 @@ export interface AdaptedSession {
 }
 
 export function adaptSession(
-  raw: SessionV1,
+  input: SessionV1,
   options: { attachments?: Record<string, string>; sourcePath?: string } = {},
 ): AdaptedSession {
+  const raw = normalizeSession(input);
   const synthetic = raw.session.labels?.includes("synthetic-fixture") ?? false;
   const warnings = (raw.warnings ?? []).map(warningView);
   const sessionWarnings = warnings.filter((w) => !w.entity);
