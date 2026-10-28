@@ -10,6 +10,23 @@
   "annotatedHasOriginComment": true,
   "pairs": 13,
   "compareHeader": "13 par(es) · 34 estático(s) · 61 dinâmico(s), sendo 25 em trechos de campos compostos (59 obter em runtime, 2 sem origem) · só em A 0 · só em B 0",
+  "overflow": {
+    "1024": {
+      "clientWidth": 1024,
+      "scrollWidth": 1024,
+      "elementsPastEdge": 0
+    },
+    "1280": {
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "elementsPastEdge": 0
+    },
+    "1440": {
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "elementsPastEdge": 0
+    }
+  },
   "dynamicOnlyFields": 2,
   "staticLeft": 0,
   "pageErrors": []

@@ -95,6 +95,9 @@ export interface PrimingChain {
 }
 
 export interface RequestRef {
+  /** Marca opcional do core: requisição única reordenada (nome ainda não fixado). */
+  reordered?: boolean;
+  outOfOrder?: boolean;
   requestId: string;
   method: string;
   url: string;

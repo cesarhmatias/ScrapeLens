@@ -24,7 +24,7 @@ function FieldRow({ field }: { field: FieldDiff }) {
         <div className="mono">{field.a ?? <span className="dim">—</span>}</div>
         <div className="mono">{field.b ?? <span className="dim">—</span>}</div>
         <div>
-          <span className={`chip ${field.originLabel?.includes("possível") ? "possible" : dynamic ? "v-partial" : "tag"}`}>{fieldClassLabel(field)}</span>
+          <span title={fieldClassLabel(field)} className={`chip ${field.originLabel?.includes("possível") ? "possible" : dynamic ? "v-partial" : "tag"}`}>{fieldClassLabel(field)}</span>
           {field.origin && (
             <div className="dim">
               {field.origin.kind}
@@ -62,6 +62,11 @@ function OnlyList({ title, items, total }: { title: string; items: RequestRef[];
         {items.map((r) => (
           <li key={r.requestId}>
             <span className="mono">{r.method}</span> <span className="mono">{r.requestId}</span> <span className="mono dim">{r.url}</span>
+            {(r.reordered || r.outOfOrder) && (
+              <span className="chip possible" title="Marca do core: requisição única reordenada entre as capturas">
+                possivelmente a mesma requisição, em outra ordem
+              </span>
+            )}
           </li>
         ))}
       </ul>

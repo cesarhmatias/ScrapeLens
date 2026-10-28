@@ -1328,7 +1328,7 @@ kbd {
 .chain-list li { border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; margin: 6px 0; font-size: 11px; }
 .chain-list .why { color: var(--fg-muted); margin-top: 3px; overflow-wrap: anywhere; }
 .chain-protection { border-style: dashed; }
-.cmp-field { display: grid; grid-template-columns: 170px 1fr 1fr 220px; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 11px; }
+.cmp-field { display: grid; grid-template-columns: minmax(110px, 170px) minmax(0, 1fr) minmax(0, 1fr) minmax(150px, 240px); gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 11px; }
 .cmp-field .mono { overflow-wrap: anywhere; }
 .cmp-dynamic { background: color-mix(in srgb, var(--warn) 10%, transparent); }
 .cmp-pair { border: 1px solid var(--border); border-radius: 6px; margin: 8px 14px; }
@@ -1336,3 +1336,7 @@ kbd {
 .cmp-pager { display: flex; gap: 10px; align-items: center; margin: 8px 14px; font-size: 11px; }
 .chip.possible { border: 1px dashed var(--warn); background: transparent; color: var(--warn); }
 .chip.strong { border: 1px solid var(--ok, #16a34a); }
+.cmp-field > div { min-width: 0; }
+.cmp-field .chip { white-space: normal; overflow-wrap: anywhere; max-width: 100%; height: auto; line-height: 1.35; display: inline-block; }
+.cmp-pair { overflow: hidden; }
+.cmp-pair > header { min-width: 0; overflow-wrap: anywhere; }

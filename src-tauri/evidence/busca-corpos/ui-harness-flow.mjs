@@ -129,6 +129,19 @@ await page.locator(".cmp-pair").nth(3).getByRole("button", { name: /campos/ }).c
 await page.waitForSelector(".cmp-field");
 results.compareHeader = await page.locator(".body-panel .block-meta").first().innerText();
 await shot("15-comparacao-ab.png");
+// Larguras 1024–1440: nenhum chip/coluna do compare pode ultrapassar a janela.
+results.overflow = {};
+for (const width of [1024, 1280, 1440]) {
+  await page.setViewportSize({ width, height: 1000 });
+  await page.waitForTimeout(200);
+  results.overflow[width] = await page.evaluate(() => {
+    const w = document.documentElement.clientWidth;
+    const bad = [...document.querySelectorAll(".cmp-field .chip, .cmp-field, .cmp-pair")].filter((el) => el.getBoundingClientRect().right > w + 1).length;
+    return { clientWidth: w, scrollWidth: document.documentElement.scrollWidth, elementsPastEdge: bad };
+  });
+  if (width === 1024) await shot("15b-comparacao-ab-1024.png");
+}
+await page.setViewportSize({ width: 1440, height: 1000 });
 await page.getByLabel(/só dinâmicos/).check();
 await page.locator(".cmp-pair").nth(2).getByRole("button", { name: /campos/ }).click();
 await page.waitForSelector(".cmp-field");
