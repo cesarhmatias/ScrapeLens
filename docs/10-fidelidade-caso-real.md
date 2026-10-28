@@ -95,3 +95,36 @@ L8 — Quando a origem de um valor depende de uma resposta `unavailable`, o
    origem na resposta anterior do Connector em ≥ 95% dos POSTs com resposta
    disponível; cadeia com os POSTs do Connector; placas 0 após sanitize.
 6. Bateria sem regressão.
+
+## Revisão da rodada 6 (2026-10-28) — decisões
+
+Veredito: parcial. A fidelidade no caso real foi comprovada (3 HARs,
+agregado); há 1 falha alta.
+- Tokenizador HTML com custo linear: aspas sem fechamento não podem varrer o
+  documento a cada `<`. Comentários seguem o HTML5: `<!-->`/`<!--->` fecham
+  na hora; `<![CDATA[`, `<!x` e `<?` são comentários bogus até o 1º `>`.
+  Entidades numéricas estritas (sem `+`). Regressão: `<a b="` × 50 mil em
+  < 1 s.
+- Evidências duplicadas da mesma resposta (controle HTML + literal
+  `value="…"`, controle + context) são deduplicadas por (tentativa, intervalo
+  de bytes sobreposto) antes de contar produtores. Um produtor nunca gera
+  `ambiguous` sozinho.
+- Controles: os tipos submit/button/image/reset não são produtores.
+  `hidden` com nome não genérico pode dar same-field forte. Os demais
+  controles pré-preenchidos (text, password, email, select etc.) dão no
+  máximo evidência média.
+- Campos de negócio: o nome casa exatamente ou como sufixo depois de
+  separador (`_ - .`). `template`, `kevin` e similares ficam de fora. Em
+  campos opacos, depois do nome, aceitar também as variantes formatadas
+  (placa com hífen, CPF com pontos/hífen, CNPJ formatado) e redigi-las. Um
+  nome reconhecido sem valor no formato gera o aviso; entidades HTML no nome
+  são decodificadas antes de casar.
+- Recursos "estáticos": scripts com query string, Cache-Control
+  no-store/no-cache ou corpo JSON/JSONP podem ser produtores dinâmicos. Rótulo
+  do context: "também presente em recurso estático (pode ser constante do
+  protocolo)". Literais de objeto em JS (`{"k":"v"}`) entram como candidatos.
+- Compare: faixa invertida ou fora dos limites gera erro/aviso explícito.
+  Uma entrada repetida sem passo de aplicação entre as ocorrências (reload) não
+  abre rodada nova.
+- O aviso "initiator não preservado" sai quando a tentativa tem initiator.
+  `pages` usa Referer OU initiator.url.
