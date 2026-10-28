@@ -869,3 +869,150 @@ fn compare_pairing_is_monotonic_and_keeps_ambiguities() {
     assert_eq!(r.only_in_a.len(), 1);
     assert_eq!(r.only_in_b.len(), 1);
 }
+
+// ---- acabamento da rodada 5 -----------------------------------------------------------
+
+#[test]
+fn l1_common_prefix_of_a_named_field_is_not_an_origin() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "http://h.test/a",
+        "GET",
+        R {
+            resp: Some("tok=TIEVALUE12345678"),
+            rct: Some("text/plain"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "http://h.test/b",
+        "POST",
+        R {
+            body: Some("tok=TIEVALUE87654321"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let o = origins(&b, "1.2");
+    assert_eq!(
+        o.values.iter().filter(|v| v.field == "tok").count(),
+        1,
+        "sem trechos"
+    );
+    let v = entry(&o, "tok");
+    assert_eq!(v.status, OriginStatus::None);
+    assert!(v.evidences.is_empty());
+    let chain = priming_chain(&b.session, &b, &lid(&b, "1.2"), &FlowOptions::default()).unwrap();
+    assert!(chain.steps.is_empty(), "{:?}", chain.steps);
+    // valor idêntico continua sendo origem (valor inteiro)
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "http://h.test/a",
+        "GET",
+        R {
+            resp: Some("tok=TIEVALUE12345678"),
+            rct: Some("text/plain"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "http://h.test/b",
+        "POST",
+        R {
+            body: Some("tok=TIEVALUE12345678"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        entry(&origins(&s.build(), "1.2"), "tok").status,
+        OriginStatus::Origin
+    );
+}
+
+#[test]
+fn l2_swapped_unique_requests_are_flagged_as_reordered() {
+    let mut sa = S::default();
+    sa.req(
+        "1.1",
+        1.0,
+        "http://h.test/p",
+        "GET",
+        R {
+            resp: Some("p"),
+            ..Default::default()
+        },
+    );
+    sa.req(
+        "1.2",
+        2.0,
+        "http://h.test/r",
+        "GET",
+        R {
+            resp: Some("r"),
+            ..Default::default()
+        },
+    );
+    let mut sb = S::default();
+    sb.req(
+        "2.1",
+        1.0,
+        "http://h.test/r",
+        "GET",
+        R {
+            resp: Some("r"),
+            ..Default::default()
+        },
+    );
+    sb.req(
+        "2.2",
+        2.0,
+        "http://h.test/p",
+        "GET",
+        R {
+            resp: Some("p"),
+            ..Default::default()
+        },
+    );
+    let (a, b) = (sa.build(), sb.build());
+    let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
+    assert!(
+        r.pairs.iter().all(|p| !p.out_of_order),
+        "pareamento segue monotônico"
+    );
+    assert_eq!(r.pairs.len(), 1);
+    assert_eq!(r.only_in_a.len(), 1);
+    assert_eq!(r.only_in_b.len(), 1);
+    assert_eq!(r.reordered.len(), 1);
+    assert_eq!(r.reordered[0].a.request_id, r.only_in_a[0].request_id);
+    assert_eq!(r.reordered[0].b.request_id, r.only_in_b[0].request_id);
+    assert!(r.reordered[0]
+        .a
+        .url
+        .ends_with(&r.reordered[0].b.url[r.reordered[0].b.url.len() - 2..]));
+    assert!(r.ambiguities.iter().any(|m| m.contains("reordenadas")));
+    // sobras de modelos diferentes não são "reordenadas"
+    let mut sc = S::default();
+    sc.req(
+        "3.1",
+        1.0,
+        "http://h.test/x",
+        "GET",
+        R {
+            resp: Some("x"),
+            ..Default::default()
+        },
+    );
+    let c = sc.build();
+    let r = compare_sessions(&a.session, &a, &c.session, &c, &CompareOptions::default());
+    assert!(r.reordered.is_empty());
+}

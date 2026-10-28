@@ -11,7 +11,7 @@
 //! label (estático|dinâmico|só em A|só em B|redigido), dynamicKind: runtime|noOrigin|repeated|composite,
 //! originLabel ("obter em runtime (origem: cdp-rNNNN)" | "dinâmico sem origem"), a, b,
 //! origin: {kind, requestId, scope, field, ambiguous}, parts: [ { class: static|dynamic, label, aOffset,
-//! bOffset, a, b, dynamicKind, originLabel, origin } ] } ] } ], onlyInA[], onlyInB[], ambiguities[],
+//! bOffset, a, b, dynamicKind, originLabel, origin } ] } ] } ], onlyInA[], onlyInB[], reordered: [{a, b}] (sobras de mesmo modelo nos dois lados), ambiguities[],
 //! counts, partsCounts, redactedFields, warnings[] }`. `counts` soma campos escalares e os trechos
 //! dinâmicos de campos compostos (`dynamic == runtime + noOrigin`); `partsCounts` mostra só a parte dos trechos
 //! (e os estáticos).
@@ -25,7 +25,7 @@
 //!   `onlyB`, `redacted`. Campos repetidos são pareados por ocorrência, na
 //!   ordem da fonte (sem ordenação alfabética).
 //! - Dinâmico + origem observada em B (resposta anterior de B) =
-//!   `runtime`; dinâmico sem origem = `noOrigin`; campos opacos (>= 16
+//!   `runtime`; dinâmico sem origem = `noOrigin`; campos opacos (>= 40
 //!   caracteres) são comparados por valor inteiro e por trechos que diferem
 //!   (`parts`), cada um com a própria origem.
 
@@ -163,9 +163,19 @@ pub struct PairComparison {
     pub parts_counts: PartsCounts,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderedPair {
+    pub a: RequestRef,
+    pub b: RequestRef,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionComparison {
+    /// Sobras dos dois lados com o MESMO modelo: provavelmente as mesmas
+    /// requisições em outra ordem (o pareamento continua monotônico).
+    pub reordered: Vec<ReorderedPair>,
     pub pairs: Vec<PairComparison>,
     pub only_in_a: Vec<RequestRef>,
     pub only_in_b: Vec<RequestRef>,
@@ -176,7 +186,7 @@ pub struct SessionComparison {
     pub warnings: Vec<String>,
 }
 
-const OPAQUE_MIN: usize = 16;
+const OPAQUE_MIN: usize = crate::flow::OPAQUE_CONSUMER_MIN;
 
 fn is_redacted(value: &str) -> bool {
     value.contains("REDACTED")
@@ -370,6 +380,7 @@ pub fn compare_sessions(
     let ea = entries(&ctx_a);
     let eb = entries(&ctx_b);
     let mut result = SessionComparison {
+        reordered: Vec::new(),
         pairs: Vec::new(),
         only_in_a: Vec::new(),
         only_in_b: Vec::new(),
@@ -418,6 +429,24 @@ pub fn compare_sessions(
             let label = model.split('|').take(3).collect::<Vec<_>>().join(" ");
             result.ambiguities.push(format!(
                 "{label}: A tem {na} e B tem {nb} requisição(ões) do mesmo modelo; as sobras são posicionais"
+            ));
+        }
+    }
+    let mut taken_b = vec![false; left_b.len()];
+    for &i in &still_a {
+        if let Some(k) = left_b
+            .iter()
+            .enumerate()
+            .position(|(k, &j)| !taken_b[k] && eb[j].model == ea[i].model)
+        {
+            taken_b[k] = true;
+            result.reordered.push(ReorderedPair {
+                a: request_ref(&ea[i]),
+                b: request_ref(&eb[left_b[k]]),
+            });
+            result.ambiguities.push(format!(
+                "{} ↔ {}: mesmo modelo nas sobras dos dois lados; provavelmente reordenadas",
+                ea[i].id, eb[left_b[k]].id
             ));
         }
     }

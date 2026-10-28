@@ -28,6 +28,9 @@
 //!
 //! O esquema de `compare` está em [`crate::compare`].
 //!
+//! Trechos: só valores consumidos com >= 40 bytes (campos opacos, como o XML do
+//! Natural) são procurados por trechos; nos demais vale o valor inteiro.
+//!
 //! Regras:
 //! - só entram produtores cuja RESPOSTA terminou (`ended_at`) até o início da
 //!   tentativa alvo; resposta que termina depois não é produtora. Sem tempos, a
@@ -262,7 +265,12 @@ pub(crate) struct Consumed {
 }
 
 const REDACTED_MARK: &str = "REDACTED";
+/// Produtor: campo de resposta guardado para comparação por trechos.
 const OPAQUE_MIN: usize = 16;
+/// Consumidor: só valores longos (>= 40 bytes, com estrutura interna como o XML
+/// do Natural) são procurados por trechos. Em campos comuns (form/JSON/query/
+/// header) vale o valor inteiro: prefixo comum não é origem.
+pub(crate) const OPAQUE_CONSUMER_MIN: usize = 40;
 
 fn is_redacted(value: &str) -> bool {
     value.contains(REDACTED_MARK)
@@ -968,6 +976,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
         let bytes = value.value.as_bytes();
         let mut found: FoundMap = HashMap::new();
         if bytes.len() >= min {
+            let partial_ok = bytes.len() >= OPAQUE_CONSUMER_MIN;
             let strong_from: BTreeSet<Pos> = evidences.iter().map(|(r, _)| earlier[*r]).collect();
             for start in 0..=bytes.len() - 8 {
                 let mut key = [0u8; 8];
@@ -1000,7 +1009,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                                 None,
                             ),
                         ));
-                    } else {
+                    } else if partial_ok {
                         found.entry((start, item.value.len())).or_default().push((
                             *pos,
                             item.scope,
@@ -1010,7 +1019,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                     }
                 }
             }
-            if value.scope == ConsumedScope::Body && bytes.len() >= OPAQUE_MIN {
+            if value.scope == ConsumedScope::Body && partial_ok {
                 opaque_candidates(ctx, value, &earlier, &mut found);
             }
         }
