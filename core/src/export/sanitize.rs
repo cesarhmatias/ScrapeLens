@@ -208,6 +208,15 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
         }
     }
 
+    propagate_sensitive_values(
+        bundle,
+        &mut session,
+        &mut generated,
+        options,
+        &mut redactions,
+        &mut warnings,
+    );
+
     let mut sanitized_bundle = SessionBundle {
         session,
         cdp_events_jsonl: if options.keep_raw_events {
@@ -816,6 +825,367 @@ fn is_url_key(name: &str) -> bool {
         name.as_str(),
         "url" | "href" | "redirect" | "redirect_url" | "location" | "referer" | "callback"
     )
+}
+
+// ---------------------------------------------------------------------------
+// Propagação por valor
+// ---------------------------------------------------------------------------
+
+/// Tamanho mínimo (bytes) de um valor sensível para ser propagado.
+const PROPAGATION_MIN_LEN: usize = 8;
+
+struct SensitiveValue {
+    origin: &'static str,
+    value: String,
+}
+
+struct Needle {
+    origin: &'static str,
+    /// (texto a procurar, usa placeholder percent-encoded)
+    variants: Vec<(String, bool)>,
+}
+
+fn is_trivial_value(value: &str, options: &SanitizeOptions) -> bool {
+    if value.len() < PROPAGATION_MIN_LEN {
+        return true;
+    }
+    let lower = value.to_ascii_lowercase();
+    if matches!(lower.as_str(), "true" | "false" | "null" | "undefined") {
+        return true;
+    }
+    if value.bytes().all(|byte| byte.is_ascii_digit()) && value.len() < 12 {
+        return true;
+    }
+    let first = value.as_bytes()[0];
+    if value.bytes().all(|byte| byte == first) {
+        return true;
+    }
+    options.placeholder.contains(value) || value.contains(&options.placeholder)
+}
+
+fn percent_encode_with(value: &str, keep: &str, lower: bool) -> String {
+    let mut out = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || keep.as_bytes().contains(&byte) {
+            out.push(byte as char);
+        } else if lower {
+            out.push_str(&format!("%{byte:02x}"));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+fn variants_of(value: &str) -> Vec<(String, bool)> {
+    let mut variants: Vec<(String, bool)> = vec![(value.to_string(), false)];
+    let json = serde_json::to_string(value).unwrap_or_default();
+    let json = json.trim_matches('"').to_string();
+    for (candidate, url_style) in [
+        (json, false),
+        (percent_encode_with(value, "-._~", false), true),
+        (percent_encode_with(value, "-._~", true), true),
+        (percent_encode_with(value, "-._~!'()*", false), true),
+        (percent_encode_with(value, "-._~!'()*", true), true),
+    ] {
+        if !candidate.is_empty() && !variants.iter().any(|(text, _)| *text == candidate) {
+            variants.push((candidate, url_style));
+        }
+    }
+    variants
+}
+
+fn collect_query(query: &str, out: &mut Vec<SensitiveValue>) {
+    for pair in query.split('#').next().unwrap_or("").split('&') {
+        if let Some((name, value)) = pair.split_once('=') {
+            if is_sensitive_key(&percent_decode(name)) {
+                out.push(SensitiveValue {
+                    origin: "urlQuery",
+                    value: percent_decode(value),
+                });
+            }
+        }
+    }
+}
+
+fn collect_url(url: &str, out: &mut Vec<SensitiveValue>) {
+    if let Some((_, query)) = url.split_once('?') {
+        collect_query(query, out);
+    }
+}
+
+fn collect_json(value: &Value, out: &mut Vec<SensitiveValue>) {
+    match value {
+        Value::Object(object) => {
+            for (key, value) in object {
+                match value {
+                    Value::String(text) if is_sensitive_key(key) => out.push(SensitiveValue {
+                        origin: "bodyJson",
+                        value: text.clone(),
+                    }),
+                    other => collect_json(other, out),
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| collect_json(item, out)),
+        _ => {}
+    }
+}
+
+fn collect_body_bytes(bytes: &[u8], content_type: Option<&str>, out: &mut Vec<SensitiveValue>) {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return;
+    };
+    let media = content_type.unwrap_or("").to_ascii_lowercase();
+    let looks_json = matches!(text.trim_start().as_bytes().first(), Some(b'{' | b'['));
+    if media.contains("json") || looks_json {
+        if let Ok(value) = serde_json::from_str::<Value>(text) {
+            collect_json(&value, out);
+        }
+        return;
+    }
+    if media.contains("x-www-form-urlencoded") || (media.is_empty() && text.contains('=')) {
+        for pair in text.split('&') {
+            if let Some((name, value)) = pair.split_once('=') {
+                if is_sensitive_key(&percent_decode(name)) {
+                    out.push(SensitiveValue {
+                        origin: "bodyForm",
+                        value: percent_decode(value),
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
+    let mut out = Vec::new();
+    let views = |request: &crate::model::LogicalRequest, out: &mut Vec<SensitiveValue>| {
+        collect_url(&request.url, out);
+        for redirect in &request.redirects {
+            collect_url(&redirect.from_url, out);
+            if let Some(to) = &redirect.to_url {
+                collect_url(to, out);
+            }
+        }
+    };
+    let collect_headers = |view: &HeaderView, out: &mut Vec<SensitiveValue>| {
+        for entry in view.pseudo_headers.iter().chain(view.headers.iter()) {
+            let lower = entry.name.to_ascii_lowercase();
+            if matches!(lower.as_str(), "cookie" | "set-cookie") {
+                continue; // cobertos pelos pares/registros de cookie
+            }
+            if is_sensitive_header(&lower) {
+                let token = entry
+                    .value
+                    .split_once(' ')
+                    .map_or(entry.value.as_str(), |(_, rest)| rest);
+                out.push(SensitiveValue {
+                    origin: "header",
+                    value: token.to_string(),
+                });
+            } else if is_url_header(&lower) || entry.name == ":path" {
+                collect_url(&entry.value, out);
+            }
+        }
+    };
+    let collect_cookies =
+        |cookie: &CookieField, set: &[SetCookieRecord], out: &mut Vec<SensitiveValue>| {
+            for pair in &cookie.pairs {
+                out.push(SensitiveValue {
+                    origin: "cookie",
+                    value: pair.value.trim_matches('"').to_string(),
+                });
+            }
+            for record in set {
+                if let Some(parsed) = &record.parsed {
+                    out.push(SensitiveValue {
+                        origin: "setCookie",
+                        value: parsed.value.trim_matches('"').to_string(),
+                    });
+                }
+            }
+        };
+    let bodies = |body: &Body, out: &mut Vec<SensitiveValue>| {
+        if let Some(bytes) = body
+            .attachment
+            .as_deref()
+            .and_then(|name| bundle.attachments.get(name))
+        {
+            collect_body_bytes(bytes, body.content_type.as_deref(), out);
+        }
+    };
+    for request in &bundle.session.requests {
+        views(request, &mut out);
+        collect_headers(&request.request_headers, &mut out);
+        collect_headers(&request.response_headers, &mut out);
+        collect_cookies(&request.cookie, &request.set_cookies, &mut out);
+        bodies(&request.request_body, &mut out);
+        bodies(&request.response_body, &mut out);
+        for attempt in &request.attempts {
+            collect_url(&attempt.url, &mut out);
+            collect_headers(&attempt.request_headers, &mut out);
+            collect_headers(&attempt.response_headers, &mut out);
+            collect_cookies(&attempt.cookie, &attempt.set_cookies, &mut out);
+            bodies(&attempt.request_body, &mut out);
+            bodies(&attempt.response_body, &mut out);
+        }
+    }
+    out
+}
+
+fn replace_in(
+    text: &str,
+    needles: &[Needle],
+    options: &SanitizeOptions,
+    counts: &mut BTreeMap<&'static str, usize>,
+) -> Option<String> {
+    let mut current: Option<String> = None;
+    let url_mark = url_placeholder(options);
+    for needle in needles {
+        for (variant, url_style) in &needle.variants {
+            let hay = current.as_deref().unwrap_or(text);
+            let found = hay.matches(variant.as_str()).count();
+            if found == 0 {
+                continue;
+            }
+            let mark = if *url_style {
+                &url_mark
+            } else {
+                &options.placeholder
+            };
+            current = Some(hay.replace(variant.as_str(), mark));
+            *counts.entry(needle.origin).or_default() += found;
+        }
+    }
+    current
+}
+
+fn replace_in_json(
+    value: &mut Value,
+    needles: &[Needle],
+    options: &SanitizeOptions,
+    counts: &mut BTreeMap<&'static str, usize>,
+) {
+    match value {
+        Value::String(text) => {
+            if let Some(replaced) = replace_in(text, needles, options, counts) {
+                *text = replaced;
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                replace_in_json(item, needles, options, counts);
+            }
+        }
+        Value::Object(object) => {
+            for (_, item) in object.iter_mut() {
+                replace_in_json(item, needles, options, counts);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Redige, em toda a sessão sanitizada, cada valor que a política já tratou
+/// como sensível (header, cookie, parâmetro de URL ou chave de corpo), nas
+/// formas literal, percent-encoded e JSON-escaped. Valores curtos ou triviais
+/// não são propagados. Anexos que não são texto UTF-8 não são varridos e isso
+/// é declarado no relatório.
+fn propagate_sensitive_values(
+    original: &SessionBundle,
+    session: &mut crate::model::SessionV1,
+    generated: &mut BTreeMap<String, Vec<u8>>,
+    options: &SanitizeOptions,
+    redactions: &mut BTreeMap<String, usize>,
+    warnings: &mut Vec<Warning>,
+) {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut values: Vec<SensitiveValue> = collect_sensitive_values(original)
+        .into_iter()
+        .filter(|item| !is_trivial_value(&item.value, options))
+        .filter(|item| seen.insert(item.value.clone()))
+        .collect();
+    values.sort_by(|a, b| {
+        b.value
+            .len()
+            .cmp(&a.value.len())
+            .then(a.value.cmp(&b.value))
+    });
+    if values.is_empty() {
+        return;
+    }
+    let needles: Vec<Needle> = values
+        .iter()
+        .map(|item| Needle {
+            origin: item.origin,
+            variants: variants_of(&item.value),
+        })
+        .collect();
+    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+
+    if let Ok(mut tree) = serde_json::to_value(&*session) {
+        replace_in_json(&mut tree, &needles, options, &mut counts);
+        if let Ok(updated) = serde_json::from_value(tree) {
+            *session = updated;
+        }
+    }
+    let mut not_scanned = 0usize;
+    let mut changed: Vec<String> = Vec::new();
+    for (name, bytes) in generated.iter_mut() {
+        match std::str::from_utf8(bytes) {
+            Ok(text) => {
+                if let Some(replaced) = replace_in(text, &needles, options, &mut counts) {
+                    *bytes = replaced.into_bytes();
+                    changed.push(name.clone());
+                }
+            }
+            Err(_) => not_scanned += 1,
+        }
+    }
+    for request in &mut session.requests {
+        let attempts = request
+            .attempts
+            .iter_mut()
+            .flat_map(|a| [&mut a.request_body, &mut a.response_body]);
+        for body in [&mut request.request_body, &mut request.response_body]
+            .into_iter()
+            .chain(attempts)
+        {
+            if let Some(name) = &body.attachment {
+                if changed.contains(name) {
+                    body.bytes = generated.get(name).map(|b| b.len() as u64);
+                }
+            }
+        }
+    }
+
+    let total: usize = counts.values().sum();
+    for (origin, count) in counts {
+        *redactions
+            .entry(format!("propagated:{origin}"))
+            .or_default() += count;
+    }
+    if total > 0 {
+        warnings.push(Warning::new(
+            "sanitize.value_propagation",
+            format!(
+                "{total} ocorrência(s) de {} valor(es) sensível(is) já identificado(s) foram redigidas em outros campos (URLs, headers, corpos), em formas literal, percent-encoded e JSON-escaped; valores com menos de {PROPAGATION_MIN_LEN} bytes ou triviais não são propagados e podem permanecer",
+                values.len()
+            ),
+        ));
+    }
+    if not_scanned > 0 {
+        *redactions
+            .entry("propagated:notScanned".to_string())
+            .or_default() += not_scanned;
+        warnings.push(Warning::new(
+            "sanitize.value_propagation_not_scanned",
+            format!(
+                "{not_scanned} anexo(s) binário(s)/não UTF-8 não foram varridos pela propagação por valor"
+            ),
+        ));
+    }
 }
 
 #[cfg(test)]
