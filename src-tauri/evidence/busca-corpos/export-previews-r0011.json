@@ -1,6 +1,6 @@
 {
   "curl-false": {
-    "sessionId": "capture-ac729d31ffe62bea",
+    "sessionId": "capture-5b040bdce11c653c",
     "requestId": "cdp-r0011",
     "requestMethod": "POST",
     "requestUrl": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
@@ -15,7 +15,7 @@
     "bodyState": "captured"
   },
   "curl-true": {
-    "sessionId": "capture-ac729d31ffe62bea",
+    "sessionId": "capture-5b040bdce11c653c",
     "requestId": "cdp-r0011",
     "requestMethod": "POST",
     "requestUrl": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
@@ -30,7 +30,7 @@
     "bodyState": "captured"
   },
   "python-false": {
-    "sessionId": "capture-ac729d31ffe62bea",
+    "sessionId": "capture-5b040bdce11c653c",
     "requestId": "cdp-r0011",
     "requestMethod": "POST",
     "requestUrl": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
@@ -45,7 +45,7 @@
     "bodyState": "captured"
   },
   "python-true": {
-    "sessionId": "capture-ac729d31ffe62bea",
+    "sessionId": "capture-5b040bdce11c653c",
     "requestId": "cdp-r0011",
     "requestMethod": "POST",
     "requestUrl": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",

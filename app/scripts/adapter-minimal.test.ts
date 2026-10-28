@@ -143,4 +143,6 @@ assert.equal(dynamicSummary({ ...counts, dynamic: 44 }), "44 dinâmico(s)");
 assert.equal(visibleFields([fd({ field: "s" }), fd({ field: "d", class: "dynamic" })], true).length, 1);
 assert.equal(visibleFields([fd({ field: "s" }), fd({ field: "d", class: "dynamic" })], false).length, 2);
 assert.equal(DYNAMIC_ONLY_THRESHOLD, 500);
+assert.equal(originStatusLabel(vo({ status: "origin", confidence: "possible", label: "possível origem (value-match)", evidences: [ev("a")] })), "possível origem (value-match)");
+assert.equal(originStatusLabel(vo({ status: "origin", confidence: "strong", label: "origem observada", evidences: [strongEv] })), "origem observada");
 console.log("adapter-minimal: ok");

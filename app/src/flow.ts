@@ -185,6 +185,8 @@ export const strengthLabels: Record<string, string> = { strong: "forte", medium:
 /** Rótulo de status em português; "sem origem observada" é neutro, nunca erro. */
 export function originStatusLabel(value: ValueOrigin): string {
   const confidence = originConfidence(value);
+  // Rótulo do core, quando informa a confiança (garante os mesmos textos do core).
+  if ((value.status === "origin" || value.status === "ambiguous") && value.confidence && value.label) return value.label;
   const kind = (oldestEvidence(value) ?? value.evidences[0])?.kind;
   switch (value.status) {
     case "repeated":
