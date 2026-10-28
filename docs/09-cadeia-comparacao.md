@@ -136,3 +136,31 @@ externa. Preservar `tests/results/app-latest/testserver/app-20261027/h1.jsonl`.
   corpo observável (core af477f0).
 - O caso `unavailable` da fixture A passou da resposta de 1010.10 (produtora de
   STAMP e delta) para a de 1013.13 (Testes 3747e02).
+
+## Revisão da rodada 5 (2026-10-28) — decisões
+
+Veredito: reprovado até corrigir 2 falhas altas.
+- Comentários gerados (exportação anotada e qualquer outro comentário de
+  cURL/Python) usam uma única função de escape: remove CR, LF, U+2028/U+2029 e
+  os demais controles, e prefixa cada linha com `# `. Conteúdo capturado nunca
+  sai de um comentário. O teste de regressão é um nome de campo com newline
+  que tenta executar comando.
+- Causalidade temporal: um produtor só vale se a resposta dele foi recebida
+  (responseReceived/fim) até o início da tentativa alvo. Uma resposta que
+  termina depois do início do alvo não é produtora. Os empates seguem como
+  hoje.
+- `reissued` só quando o valor circulou numa requisição entre o 1º produtor e
+  o seguinte. Sem uso entre eles, os produtores são concorrentes: `ambiguous`.
+- `same-field` forte exige nome não genérico e valor ≥ 4 caracteres. Nomes
+  genéricos (id, value, data, page, type, lang, name, key, code, state, status,
+  action, op, mode, format, limit, offset, q, query, v, t, ts) ou valores
+  curtos rebaixam para média.
+- Rótulo: com só evidência média, o status é "possível origem (<tipo>)" no
+  core e na UI. "Origem observada" exige uma evidência forte. A cadeia marca a
+  confiança de cada passo (`strong` | `possible`).
+- `unresolved` não inclui os valores consumidos só por passos de proteção. Os
+  campos não aparecem duplicados como entrada e como trecho. O pareamento do
+  compare dentro do mesmo modelo é monotônico, sem cruzar a ordem.
+- App: o compare usa paginação/virtualização, e "só dinâmicos" vem ligado em
+  comparações grandes. Os caminhos são canonicalizados, e comparar a mesma
+  sessão consigo é recusado ou avisado.
