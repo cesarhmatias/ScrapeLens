@@ -1226,6 +1226,16 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
             }
         }
         if matches!(entry.status, OriginStatus::None | OriginStatus::Repeated) {
+            // Repetido: só valem os produtores anteriores à 1ª ocorrência do valor.
+            if let Some(first) = entry.repeated_from.first().and_then(|id| ctx.find(id)) {
+                if let Some(limit) = rank.get(&first).copied() {
+                    partial_hints.retain(|h| {
+                        ctx.find(&h.producer_request_id)
+                            .and_then(|pos| rank.get(&pos).copied())
+                            .is_some_and(|r| r < limit)
+                    });
+                }
+            }
             entry.partial_composition = partial_hints;
         }
         relabel(&mut entry);
@@ -1881,6 +1891,7 @@ pub struct PrimingChain {
 #[serde(rename_all = "camelCase")]
 pub struct UnresolvedValue {
     pub label: String,
+    pub partial_composition: Vec<PartialComposition>,
     pub unobservable: Vec<Unobservable>,
     pub request_id: String,
     pub scope: ConsumedScope,
@@ -1943,6 +1954,7 @@ pub fn priming_chain(
                 if value.parent.is_none() && value.length > 0 && !current_protection {
                     chain.unresolved.push(UnresolvedValue {
                         label: value.label.clone(),
+                        partial_composition: value.partial_composition.clone(),
                         unobservable: value.unobservable.clone(),
                         request_id: current.clone(),
                         scope: value.scope,
@@ -1958,6 +1970,7 @@ pub fn priming_chain(
             {
                 chain.unresolved.push(UnresolvedValue {
                     label: value.label.clone(),
+                    partial_composition: value.partial_composition.clone(),
                     unobservable: value.unobservable.clone(),
                     request_id: current.clone(),
                     scope: value.scope,

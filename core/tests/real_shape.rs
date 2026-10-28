@@ -998,3 +998,63 @@ fn init_stamp_is_defined_by_a_page_and_compares_as_static() {
         "estático não vira 'obter em runtime'"
     );
 }
+
+#[test]
+fn partial_composition_hint_also_on_repeated_values_and_in_unresolved() {
+    // o valor já circulou em requisições anteriores (repeated); a dica usa só
+    // produtores anteriores à 1ª ocorrência
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/easynat",
+        "GET",
+        R {
+            resp: Some("<script>var m_currentSessionId = \"CSAN00011\";</script>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "https://x.test/c",
+        "POST",
+        R {
+            body: Some("SESSIONID=CSAN00011_700000000011"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.3",
+        3.0,
+        "https://x.test/c",
+        "POST",
+        R {
+            body: Some("SESSIONID=CSAN00011_700000000011"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let o = origins(&b, "1.3");
+    let v = entry(&o, "SESSIONID");
+    assert_eq!(v.status, OriginStatus::Repeated);
+    assert_eq!(v.partial_composition.len(), 1);
+    assert_eq!(v.partial_composition[0].producer_request_id, lid(&b, "1.1"));
+    assert!(
+        v.label.contains("provável composição no cliente")
+            && v.label.contains("valor já circulava em"),
+        "{}",
+        v.label
+    );
+    let chain = priming_chain(&b.session, &b, &lid(&b, "1.3"), &FlowOptions::default()).unwrap();
+    assert!(chain.steps.is_empty());
+    let u = chain
+        .unresolved
+        .iter()
+        .find(|u| u.field == "SESSIONID")
+        .expect("pendência");
+    assert_eq!(u.partial_composition.len(), 1);
+    assert!(u.label.contains("provável composição no cliente"));
+}
