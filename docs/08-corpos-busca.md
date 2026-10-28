@@ -136,3 +136,31 @@ código exportado e sem rede externa.
   Ajax). Há um comprimento mínimo e valores triviais não são propagados. Corpos
   binários não são varridos e isso é declarado. Delta (`DLTA…`) e `STAMP` são
   estado do protocolo, não credenciais, e ficam visíveis.
+
+## Revisão da onda 4a (2026-10-28) — decisões
+
+Revisor: parcial, com 1 falha alta. Correções:
+- Propagação por valor: aplicar só a campos de valor (URLs, valores de
+  header/cookie/Set-Cookie, corpos e anexos, notas), nunca a enums, IDs ou
+  nomes de anexo. Qualquer erro na propagação faz a sanitização falhar
+  fechada; nunca devolver sucesso parcial.
+- Variantes: hex percent-encoded sem diferenciar maiúsculas e minúsculas, e
+  `+` como espaço em form-urlencoded.
+- Headers customizados: classificar pelo nome (auth, token, jwt, secret,
+  session, signature, api-key, password, credential). Eles propagam.
+- Origem da propagação: só classes de alta confiança (headers de
+  autenticação, cookies, chaves session/token/password/secret/jwt/auth/cpf).
+  Chaves genéricas (`key`, `code`, `state`) são redigidas no lugar, sem
+  propagar. Valores só de dígitos vindos de chave sensível propagam a partir
+  de 10 dígitos (CPF e telefone).
+- Busca: a visão decodificada desfaz o escape JSON (`\uXXXX`, `\"`) e o
+  percent-encoding da URL. `byteOffset` aponta o trecho exato no original.
+- Corpos transformados: o formato v1 ganha o campo opcional
+  `"transformed": [..]`, por exemplo `"chrome-decoded"`,
+  `"charset:iso-8859-1->utf-8"` ou `"lossy-postData"`. O core expõe a
+  marcação como corpo não idêntico ao fio, e a UI a exibe. O critério de bytes
+  idênticos vale só para corpos sem `transformed`.
+- GET/HEAD sem linha de corpo e sem `hasPostData`: `empty` com o motivo
+  "CDP: requisição sem corpo". A mensagem enganosa atual é removida.
+- A exportação cURL/Python sinaliza no próprio código quando a URL inicial de
+  um 307/308 difere da final.
