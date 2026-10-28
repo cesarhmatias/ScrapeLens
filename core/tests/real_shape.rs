@@ -26,6 +26,7 @@ struct R<'a> {
     headers: Option<Value>,
     body: Option<&'a str>,
     resp: Option<&'a str>,
+    initiator: Option<Value>,
 }
 
 impl S {
@@ -34,10 +35,15 @@ impl S {
         if r.body.is_some() {
             h["content-type"] = json!(FORM);
         }
-        self.ev.push(json!({"method": "Network.requestWillBeSent", "params": {
+        let mut params = json!({
             "requestId": id, "loaderId": "L", "timestamp": t, "wallTime": 1793000000.0 + t,
             "request": {"url": url, "method": method, "headers": h, "hasPostData": r.body.is_some()},
-            "type": "XHR", "frameId": "F"}}));
+            "type": "XHR", "frameId": "F"});
+        if let Some(initiator) = &r.initiator {
+            params["initiator"] = initiator.clone();
+        }
+        self.ev
+            .push(json!({"method": "Network.requestWillBeSent", "params": params}));
         if let Some(body) = r.body {
             self.bd.push(line(id, "request", body, t));
         }
@@ -298,6 +304,7 @@ fn l4_context_pages_by_referer_are_not_producers_or_steps() {
             headers: Some(json!({"referer": "https://x.test/app/Page.html"})),
             body: Some("XML=init0&STAMP=2004"),
             resp: Some(&connector_html("2005", "DLTA0005")),
+            ..Default::default()
         },
     );
     s.req(
@@ -309,6 +316,7 @@ fn l4_context_pages_by_referer_are_not_producers_or_steps() {
             headers: Some(json!({"referer": "https://x.test/app/Page.html#frag"})),
             body: Some("STAMP=2005&XML=cmd"),
             resp: Some("<html></html>"),
+            ..Default::default()
         },
     );
     let b = s.build();
@@ -809,4 +817,184 @@ fn delta_at_the_end_survives_a_one_byte_overlap_with_a_longer_constant() {
         .evidences
         .iter()
         .any(|e| e.request_id == lid(&b, "1.1") && e.html_control));
+}
+
+// ---- L4b: páginas só dos passos da aplicação; frames auxiliares recolhidos ---------------------
+
+#[test]
+fn l4b_pages_come_only_from_application_steps_and_aux_frames_are_collapsed() {
+    let mut s = S::default();
+    let base = "https://x.test/app";
+    s.req(
+        "1.1",
+        1.0,
+        &format!("{base}/entry"),
+        "GET",
+        R {
+            resp: Some("<html>entrada</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        1.1,
+        &format!("{base}/Main.html"),
+        "GET",
+        R {
+            headers: Some(json!({"referer": format!("{base}/entry")})),
+            resp: Some("<html>principal</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.3",
+        1.2,
+        &format!("{base}/Main_JLIBS.html"),
+        "GET",
+        R {
+            headers: Some(json!({"referer": format!("{base}/Main.html")})),
+            resp: Some("<html>frame</html>"),
+            initiator: Some(json!({"type": "parser", "url": "https://x.test/app/Main.html"})),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.4",
+        1.3,
+        &format!("{base}/cscform.html"),
+        "GET",
+        R {
+            headers: Some(json!({"referer": format!("{base}/Main_JLIBS.html")})),
+            resp: Some("<html><input type=hidden name=STAMP value=INIT></html>"),
+            initiator: Some(json!({"type": "parser", "url": "https://x.test/app/Main_JLIBS.html"})),
+            ..Default::default()
+        },
+    );
+    // proteção cujo Referer é um frame auxiliar que só serve a ela
+    s.req(
+        "1.5",
+        1.4,
+        &format!("{base}/aboutBlank.html"),
+        "GET",
+        R {
+            headers: Some(json!({"referer": format!("{base}/entry")})),
+            resp: Some("<html></html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.6",
+        1.5,
+        "https://x.test/TSPD/?type=18",
+        "GET",
+        R {
+            headers: Some(json!({"referer": format!("{base}/aboutBlank.html")})),
+            resp: Some("js"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.7",
+        2.0,
+        &format!("{base}/Connector"),
+        "POST",
+        R {
+            headers: Some(json!({"referer": format!("{base}/cscform.html")})),
+            body: Some("XML=init&STAMP=INIT"),
+            resp: Some(&connector_html("2005", "DLTA0005")),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.8",
+        3.0,
+        &format!("{base}/Connector"),
+        "POST",
+        R {
+            headers: Some(json!({"referer": format!("{base}/cscform.html")})),
+            body: Some("XML=consulta&STAMP=2005"),
+            resp: Some("<html></html>"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let chain = priming_chain(&b.session, &b, &lid(&b, "1.8"), &FlowOptions::default()).unwrap();
+    let ids = |v: &Vec<scrapelens_core::flow::ChainStep>| {
+        v.iter().map(|p| p.request_id.clone()).collect::<Vec<_>>()
+    };
+    assert_eq!(
+        ids(&chain.pages),
+        vec![lid(&b, "1.1"), lid(&b, "1.2")],
+        "raiz + documento logo abaixo"
+    );
+    assert_eq!(
+        ids(&chain.auxiliary_pages),
+        vec![lid(&b, "1.3"), lid(&b, "1.4")]
+    );
+    for gone in ["1.5", "1.6"] {
+        assert!(
+            !ids(&chain.pages).contains(&lid(&b, gone))
+                && !ids(&chain.auxiliary_pages).contains(&lid(&b, gone)),
+            "{gone}"
+        );
+    }
+    assert!(chain
+        .pages
+        .iter()
+        .chain(&chain.auxiliary_pages)
+        .all(|p| p.class == StepClass::Page));
+}
+
+// ---- STAMP=INIT: a página define o valor; o compare o vê como estático --------------------------
+
+#[test]
+fn init_stamp_is_defined_by_a_page_and_compares_as_static() {
+    let build = |stamp2: &str| {
+        let mut s = S::default();
+        s.req(
+            "1.1",
+            1.0,
+            "https://x.test/app/cscform.html",
+            "GET",
+            R {
+                resp: Some("<html><input type=hidden name=STAMP value=INIT></html>"),
+                ..Default::default()
+            },
+        );
+        s.req(
+            "1.2",
+            2.0,
+            "https://x.test/app/Connector",
+            "POST",
+            R {
+                body: Some("XML=init0&STAMP=INIT"),
+                resp: Some(&connector_html(stamp2, "DLTA0005")),
+                ..Default::default()
+            },
+        );
+        s.build()
+    };
+    let (a, b) = (build("2005"), build("3005"));
+    let o = origins(&a, "1.2");
+    let st = entry(&o, "STAMP");
+    assert_eq!(st.status, OriginStatus::Origin);
+    assert_eq!(st.evidences[0].kind, EvidenceKind::SameField);
+    assert!(st.evidences[0].html_control);
+    assert_eq!(
+        st.evidences[0].request_id,
+        lid(&a, "1.1"),
+        "quem define INIT é a página"
+    );
+    let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
+    let f = r
+        .pairs
+        .iter()
+        .flat_map(|p| p.fields.iter())
+        .find(|f| f.field == "STAMP")
+        .unwrap();
+    assert_eq!(f.class, scrapelens_core::compare::FieldClass::Static);
+    assert!(
+        f.origin_label.is_none(),
+        "estático não vira 'obter em runtime'"
+    );
 }

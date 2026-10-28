@@ -86,6 +86,16 @@ impl MatchCandidate {
     }
 }
 
+/// Iniciador de uma requisição: tipo da fonte (`parser`, `script`, `other`…) e
+/// URL do iniciador, quando houver.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Initiator {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
 /// Referência a um evento CDP; IDs não são equivalentes aos do NetLog.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -215,6 +225,10 @@ pub struct Attempt {
     #[serde(default)]
     pub timings: Timings,
     pub cdp: Option<CdpRef>,
+    /// Quem iniciou a requisição (CDP `initiator`, HAR `_initiator`), quando a
+    /// fonte informa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initiator: Option<Initiator>,
     pub netlog: NetlogRefs,
     /// Estado do casamento desta tentativa com a fonte oposta.
     #[serde(rename = "match", default)]
@@ -256,6 +270,7 @@ impl Attempt {
             response_body: Body::default(),
             timings: Timings::default(),
             cdp: None,
+            initiator: None,
             netlog: NetlogRefs::default(),
             match_state: MatchState::Unmatched,
             match_candidates: Vec::new(),

@@ -149,6 +149,7 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
             attempt.request_body = parsed.request_body.clone();
             attempt.response_body = parsed.response_body.clone();
             attempt.connection_id = parsed.connection_id.clone();
+            attempt.initiator = parsed.initiator.clone();
             attempt.provenance = parsed.provenance.clone();
 
             if let Some(redirect_url) = &parsed.redirect_url {
@@ -237,6 +238,7 @@ struct ParsedEntry {
     timings: Timings,
     redirect_url: Option<String>,
     connection_id: Option<String>,
+    initiator: Option<crate::model::Initiator>,
     provenance: Provenance,
 }
 
@@ -473,6 +475,15 @@ fn parse_entry(
         timings,
         redirect_url,
         connection_id,
+        initiator: object
+            .get("_initiator")
+            .and_then(Value::as_object)
+            .and_then(|init| {
+                Some(crate::model::Initiator {
+                    kind: init.get("type")?.as_str()?.to_string(),
+                    url: init.get("url").and_then(Value::as_str).map(str::to_string),
+                })
+            }),
         provenance: {
             let provenance = Provenance::new(Source::Har, "log.entries", Verification::Unverified)
                 .with_event(format!("log.entries[{index}]"))

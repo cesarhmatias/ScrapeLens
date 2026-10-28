@@ -45,6 +45,7 @@ pub struct CdpRequest {
 
 #[derive(Debug, Clone, Default)]
 pub struct CdpAttempt {
+    pub initiator: Option<crate::model::Initiator>,
     /// `request.hasPostData` verdadeiro ou `postData` presente no evento.
     pub has_post_data: bool,
     pub url: String,
@@ -173,7 +174,18 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     }
                 }
 
+                let initiator =
+                    params
+                        .get("initiator")
+                        .and_then(Value::as_object)
+                        .and_then(|init| {
+                            Some(crate::model::Initiator {
+                                kind: init.get("type")?.as_str()?.to_string(),
+                                url: init.get("url").and_then(Value::as_str).map(str::to_string),
+                            })
+                        });
                 let mut attempt = CdpAttempt {
+                    initiator,
                     url: request
                         .and_then(|request| request.get("url"))
                         .and_then(Value::as_str)
@@ -966,6 +978,7 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
             attempt.ended_at = parsed.ended_at;
             attempt.failure = parsed.failure.clone();
             attempt.cdp = Some(parsed.cdp.clone());
+            attempt.initiator = parsed.initiator.clone();
             attempt.request_headers = parsed
                 .request_headers_extra
                 .clone()

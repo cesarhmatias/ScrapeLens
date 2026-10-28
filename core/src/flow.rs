@@ -40,6 +40,8 @@
 //!   é origem e não cria passo;
 //! - `unobservable[].suggestion`: ocorrência equivalente (mesmo modelo) mais
 //!   adiante com corpo observável;
+//! - `chain.auxiliaryPages[]`: frames (documentos com `initiator.kind == parser`, fonte CDP
+//!   `initiator` ou HAR `_initiator`) no caminho de Referer, fora de `pages`;
 //! - `chain.pages[]` (`class: page`): documentos que carregaram a página de onde
 //!   cada passo foi emitido (Referer); "página de contexto", nunca produtoras;
 //! - avisos de HAR sem cookies (`har.cookies_absent`) repetidos em `warnings`.
@@ -1223,7 +1225,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 entry.status = OriginStatus::Repeated;
             }
         }
-        if entry.status == OriginStatus::None {
+        if matches!(entry.status, OriginStatus::None | OriginStatus::Repeated) {
             entry.partial_composition = partial_hints;
         }
         relabel(&mut entry);
@@ -1451,6 +1453,16 @@ fn equivalent_later(ctx: &FlowContext<'_>, pos: Pos) -> Option<String> {
     None
 }
 
+fn composition_label(entry: &ValueOrigin) -> String {
+    let h = &entry.partial_composition[0];
+    format!(
+        "sem origem observada; contém o valor de {} de {} ({}) e parte sem fonte observada — provável composição no cliente",
+        h.field.as_deref().unwrap_or("?"),
+        h.producer_request_id,
+        if h.start == 0 { "prefixo" } else { "trecho" }
+    )
+}
+
 fn relabel(entry: &mut ValueOrigin) {
     entry.label = match entry.status {
         OriginStatus::Origin | OriginStatus::Ambiguous => {
@@ -1469,19 +1481,16 @@ fn relabel(entry: &mut ValueOrigin) {
                 _ => format!("possível origem ({kind}), ambíguo (mais antigo: {id})"),
             }
         }
+        OriginStatus::Repeated if !entry.partial_composition.is_empty() => format!(
+            "{} (valor já circulava em {})",
+            composition_label(entry),
+            entry.repeated_from.join(", ")
+        ),
         OriginStatus::Repeated => format!(
             "sem origem observada (valor já circulava em {})",
             entry.repeated_from.join(", ")
         ),
-        OriginStatus::None if !entry.partial_composition.is_empty() => {
-            let h = &entry.partial_composition[0];
-            format!(
-                "sem origem observada; contém o valor de {} de {} ({}) e parte sem fonte observada — provável composição no cliente",
-                h.field.as_deref().unwrap_or("?"),
-                h.producer_request_id,
-                if h.start == 0 { "prefixo" } else { "trecho" }
-            )
-        }
+        OriginStatus::None if !entry.partial_composition.is_empty() => composition_label(entry),
         OriginStatus::None if !entry.context.is_empty() => {
             "sem origem observada; valor também presente em recurso estático (provável constante do protocolo)".to_string()
         }
@@ -1859,6 +1868,9 @@ pub struct PrimingChain {
     /// Páginas de contexto (Referer): documentos que carregaram a página de onde
     /// cada passo foi emitido. Não produzem valores.
     pub pages: Vec<ChainStep>,
+    /// Frames auxiliares no caminho de Referer (`*_JLIBS.html`, `cscform.html`…):
+    /// recolhidos fora de `pages`.
+    pub auxiliary_pages: Vec<ChainStep>,
     /// Valores sem origem observada, ambíguos ou redigidos (não resolvidos).
     pub unresolved: Vec<UnresolvedValue>,
     pub redacted_values: usize,
@@ -1898,6 +1910,7 @@ pub fn priming_chain(
         steps: Vec::new(),
         protection: Vec::new(),
         pages: Vec::new(),
+        auxiliary_pages: Vec::new(),
         unresolved: Vec::new(),
         redacted_values: 0,
         warnings: Vec::new(),
@@ -2053,64 +2066,105 @@ pub fn priming_chain(
         };
         key(a).cmp(&key(b))
     });
-    // Páginas de contexto: documento anterior cuja URL é o Referer de um passo
-    // (ou do alvo); fora dos passos e da proteção.
+    // Páginas de contexto, só a partir do alvo e dos passos da aplicação (nunca de
+    // proteção ou estáticos). Sobe a cadeia de Referer entre documentos: a raiz
+    // (entrada) e o documento logo abaixo dela são as páginas; os frames
+    // intermediários (ex.: `*_JLIBS.html`, `cscform.html`) são `auxiliaryPages`.
     {
         let emitters: Vec<(String, Pos)> = std::iter::once(request_id.to_string())
-            .chain(all.iter().map(|s| s.request_id.clone()))
+            .chain(
+                all.iter()
+                    .filter(|s| s.class == StepClass::Application)
+                    .map(|s| s.request_id.clone()),
+            )
             .filter_map(|id| ctx.find(&id).map(|pos| (id, pos)))
             .collect();
-        let mut pages: Vec<ChainStep> = Vec::new();
-        for (emitter, pos) in emitters {
+        let referer_page = |pos: Pos| -> Option<Pos> {
             let attempt = ctx.attempt_ref(pos);
-            let Some(referer) = attempt.request_headers.first_value("referer") else {
-                continue;
-            };
+            let referer = attempt.request_headers.first_value("referer")?;
             let referer = referer.split('#').next().unwrap_or(referer);
-            let found = ctx
-                .positions()
+            ctx.positions()
                 .filter(|cand| {
                     let a = ctx.attempt_ref(*cand);
-                    ctx.request_id(*cand) != emitter
+                    *cand != pos
                         && ctx.rel(*cand, pos) == Rel::Before
                         && a.url.split('#').next() == Some(referer)
                         && a.method.eq_ignore_ascii_case("GET")
                         && !ctx.is_static(*cand)
                         && !is_protection_path(&a.url)
                 })
-                .max_by_key(|cand| ctx.seq[cand]);
-            let Some(cand) = found else { continue };
-            let id = ctx.request_id(cand);
-            if id == request_id || pages.iter().any(|p| p.request_id == id) {
-                continue;
-            }
+                .max_by_key(|cand| ctx.seq[cand])
+        };
+        let make = |cand: Pos, emitter: &str, aux: bool| {
             let a = ctx.attempt_ref(cand);
-            pages.push(ChainStep {
-                request_id: id.to_string(),
+            ChainStep {
+                request_id: ctx.request_id(cand).to_string(),
                 attempt_id: a.id.clone(),
                 method: a.method.clone(),
                 url: a.url.clone(),
                 started_at: a.started_at,
                 class: StepClass::Page,
                 confidence: Confidence::Possible,
-                reason: format!(
-                    "página de contexto: carregou a página de onde {emitter} foi emitido (Referer)"
-                ),
+                reason: if aux {
+                    format!("página auxiliar (frame) no caminho de {emitter}")
+                } else {
+                    format!(
+                        "página de contexto: carregou a página de onde {emitter} foi emitido (Referer)"
+                    )
+                },
                 reasons: vec![StepReason {
-                    provides: "página de contexto".to_string(),
+                    provides: if aux {
+                        "página auxiliar".to_string()
+                    } else {
+                        "página de contexto".to_string()
+                    },
                     field: String::new(),
                     kind: EvidenceKind::Initiator,
                     strength: Strength::Complement,
-                    consumed_by: emitter.clone(),
+                    consumed_by: emitter.to_string(),
                 }],
-            });
+            }
+        };
+        let mut pages: Vec<ChainStep> = Vec::new();
+        let mut auxiliary: Vec<ChainStep> = Vec::new();
+        for (emitter, pos) in emitters {
+            let mut ancestors: Vec<Pos> = Vec::new();
+            let mut cur = pos;
+            while let Some(parent) = referer_page(cur) {
+                if ancestors.contains(&parent) || ancestors.len() >= 12 {
+                    break;
+                }
+                ancestors.push(parent);
+                cur = parent;
+            }
+            // Frame auxiliar = documento iniciado pelo parser (iframe/frame); sem
+            // iniciador na fonte, todo documento do caminho é página.
+            for cand in ancestors {
+                let id = ctx.request_id(cand);
+                if id == request_id {
+                    continue;
+                }
+                let aux = ctx
+                    .attempt_ref(cand)
+                    .initiator
+                    .as_ref()
+                    .is_some_and(|i| i.kind.eq_ignore_ascii_case("parser"));
+                let list = if aux { &mut auxiliary } else { &mut pages };
+                if !list.iter().any(|p| p.request_id == id) {
+                    list.push(make(cand, &emitter, aux));
+                }
+            }
         }
-        pages.sort_by(|a, b| {
+        auxiliary.retain(|a| !pages.iter().any(|p| p.request_id == a.request_id));
+        let by_time = |a: &ChainStep, b: &ChainStep| {
             a.started_at
                 .partial_cmp(&b.started_at)
                 .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        };
+        pages.sort_by(by_time);
+        auxiliary.sort_by(by_time);
         chain.pages = pages;
+        chain.auxiliary_pages = auxiliary;
     }
     for step in all {
         match step.class {
