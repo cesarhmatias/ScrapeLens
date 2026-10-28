@@ -91,3 +91,19 @@ marcador real aparecer (`CASA`, `NUPP`, `082b79`, nomes dos HARs etc.).
 - Os caminhos e nomes de evento são os do caso; qualquer semelhança de valor é
   coincidência dos formatos (placa, STAMP), não dado real.
 - Fixture estática: não execute os endpoints nem navegue para o domínio real.
+
+## Corpos CDP (rodada 4, docs/08-corpos-busca.md)
+
+Marcadas como **sanitizadas de caso real** (forma real, valores sintéticos):
+
+- `detran-pb.cdp-bodies.jsonl` (formato §1): os 8 corpos form-urlencoded dos
+  POSTs, 13 respostas — 11 `captured` (uma em `base64` binário: TSPD, entrada 1),
+  1 `truncated` (NatLogon, entrada 2, `originalSize` 415) e 1 `unavailable`
+  (entrada 9, "No resource with given identifier found"). `requestId` =
+  `1001.1`…`1013.13` (índice+1), `attemptIndex` 0 (sem redirects neste fluxo).
+- `detran-pb-edge.cdp.jsonl` + `detran-pb-edge.cdp-bodies.jsonl`: cenários
+  no formato do `testserver/` (302 com tentativa 0 `unavailable`, 307 com corpo
+  nas duas tentativas, JSON, binário base64, gzip já decodificado, 6 MiB
+  `truncated` com `originalSize` 6291456, 204 `empty` com evidência).
+- Casos de busca esperados: `manifest.json` → `bodies_search_cases` e `bodies`.
+  Aceite automático: `python3 tests/aceite/check_bodies_search.py <sessão>`.

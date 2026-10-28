@@ -171,3 +171,22 @@ BoringSSL via cmake) · `rustls 0.23` + `rustls-pemfile` · `rcgen 0.14` ·
 `serde`/`serde_json` · `base64` · `chrono` · `sha2`.
 O build do quiche exige `cmake` (instalado via Homebrew) e rede apenas na
 primeira compilação do BoringSSL embutido.
+
+## Rotas para captura de corpos (rodada 4, docs/08-corpos-busca.md §3.2–3.3)
+
+Iguais em h1/h2/h3. `serve` grava os corpos recebidos por `/sink` em `<evidence>/<run>/bodies/sink-NNNN-<sha256[..12]>.bin`
+(além do `body_b64` completo já presente na evidência JSONL) para comparar byte a byte com `cdp-bodies.jsonl`.
+
+| Rota | Resposta |
+|---|---|
+| `POST /sink` | grava o corpo; JSON `{len, truncated, sha256, file, content_type}` (limite de leitura 5 MiB, `truncated` se excedido) |
+| `GET /json` | `application/json` fixo |
+| `GET /binary` | 4099 bytes não-UTF-8 (`octet-stream`) |
+| `GET /big[?mib=N]` | N MiB (padrão 6) de texto determinístico |
+| `GET /gzip` | texto fixo com `Content-Encoding: gzip` (decodificado: `endpoints::GZIP_TEXT`) |
+| `GET /redirect302` | 302 → `/json` |
+| `POST /redirect307` | 307 → `/sink` (Chrome reenvia método e corpo) |
+| `GET /empty` | 204 sem corpo (evidência para `empty`) |
+| `GET /zero` | 200 com `Content-Length: 0` |
+
+Teste: `cargo test h1_body_routes` (binário/6 MiB/gzip/302/307/204/sink).

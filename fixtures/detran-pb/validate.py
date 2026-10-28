@@ -178,10 +178,63 @@ def main() -> int:
         if by_type[e["type"]] == "HTTP_TRANSACTION_SEND_REQUEST_HEADERS":
             check(any(h.startswith("cookie:") for h in e["params"]["headers"]), "NetLog request headers must include cookie")
 
+    # --- bodies (docs/08-corpos-busca.md §1) -------------------------------
+    import base64
+    STATES = {"captured", "truncated", "empty", "unavailable", "discarded"}
+    SOURCES = {"requestWillBeSent.postData", "requestWillBeSent.postDataEntries",
+               "Network.getRequestPostData", "Network.getResponseBody"}
+    for fname, cdpname in (("detran-pb.cdp-bodies.jsonl", "detran-pb.cdp.jsonl"),
+                           ("detran-pb-edge.cdp-bodies.jsonl", "detran-pb-edge.cdp.jsonl")):
+        events = [json.loads(l) for l in (HERE / cdpname).read_text().splitlines() if l]
+        known = {e["params"]["requestId"] for e in events if e["method"] == "Network.requestWillBeSent"}
+        attempts: dict[str, int] = {}
+        for e in events:
+            if e["method"] == "Network.requestWillBeSent":
+                rid = e["params"]["requestId"]
+                attempts[rid] = attempts.get(rid, -1) + 1
+        rows = [json.loads(l) for l in (HERE / fname).read_text().splitlines() if l]
+        seen = set()
+        for r in rows:
+            where = f"{fname}:{r['requestId']}/{r['attemptIndex']}/{r['kind']}"
+            check(r["v"] == 1 and r["state"] in STATES and r["source"] in SOURCES, f"{where}: bad v/state/source")
+            check(r["requestId"] in known, f"{where}: orphan requestId")
+            check(r["attemptIndex"] <= attempts.get(r["requestId"], -1), f"{where}: attemptIndex beyond attempts")
+            check((where) not in seen, f"{where}: duplicate row"); seen.add(where)
+            if r["state"] in ("unavailable", "discarded"):
+                check(r["data"] is None and r["reason"], f"{where}: missing body needs reason and null data")
+            if r["state"] == "empty":
+                check(r["data"] == "" and r["reason"], f"{where}: empty needs evidence reason")
+            if r["state"] == "truncated":
+                check(r["originalSize"] and r["originalSize"] > r["capturedSize"], f"{where}: truncated needs originalSize > capturedSize")
+            if r["encoding"] == "base64":
+                raw = base64.b64decode(r["data"])
+                check(len(raw) == r["capturedSize"], f"{where}: capturedSize mismatch")
+                try:
+                    raw.decode("utf-8"); check(False, f"{where}: base64 body must be non-UTF-8")
+                except UnicodeDecodeError:
+                    pass
+            elif r["encoding"] == "utf8":
+                check(len(r["data"].encode()) == r["capturedSize"], f"{where}: capturedSize mismatch")
+    main_rows = [json.loads(l) for l in (HERE / "detran-pb.cdp-bodies.jsonl").read_text().splitlines() if l]
+    check(len([r for r in main_rows if r["kind"] == "request"]) == 8, "main: 8 request bodies (POSTs) expected")
+    check({r["state"] for r in main_rows} >= {"captured", "truncated", "unavailable"}, "main: needs captured/truncated/unavailable")
+    check(any(r["encoding"] == "base64" for r in main_rows), "main: needs a base64 binary body")
+    consultas = [r for r in main_rows if r["kind"] == "request" and "cmd_consultar_placa" in
+                 urllib.parse.parse_qs(r["data"])["XML"][0]]
+    check([r["requestId"] for r in consultas] == ["1011.11", "1013.13"], "two consultas distinguished by request body")
+    check(len({r["data"] for r in consultas}) == 2, "the two consultas must differ in body")
+    check("TST0T00" in urllib.parse.parse_qs(consultas[0]["data"])["XML"][0]
+          and "TST0T01" in urllib.parse.parse_qs(consultas[1]["data"])["XML"][0], "plates per consulta")
+    edge = [json.loads(l) for l in (HERE / "detran-pb-edge.cdp-bodies.jsonl").read_text().splitlines() if l]
+    check(sum(1 for r in edge if r["state"] == "unavailable" and "redirect" in (r["reason"] or "")) == 2, "edge: 2 redirect unavailable")
+    check(len([r for r in edge if r["requestId"] == "2002.2" and r["kind"] == "request"]) == 2, "edge: 307 body in each attempt")
+    check(any(r["state"] == "empty" for r in edge) and any(r["state"] == "truncated" for r in edge), "edge: empty+truncated")
+
     # --- sanitization ----------------------------------------------------
     blob = "\n".join(
         (HERE / name).read_text()
-        for name in ("detran-pb-sanitized.har", "detran-pb-blocked.har", "detran-pb.cdp.jsonl", "detran-pb.netlog.json", "build_fixtures.py")
+        for name in ("detran-pb-sanitized.har", "detran-pb-blocked.har", "detran-pb.cdp.jsonl", "detran-pb.netlog.json", "build_fixtures.py",
+                     "detran-pb.cdp-bodies.jsonl", "detran-pb-edge.cdp.jsonl", "detran-pb-edge.cdp-bodies.jsonl")
     )
     for marker in ("CASA", "NUPP", "082b79", "sem_captcha", "wsdetran.pb.gov.br.har", "Downloads/", "Authorization"):
         check(marker not in blob, f"forbidden marker present: {marker}")
@@ -198,7 +251,7 @@ def main() -> int:
         return 1
     print(
         f"OK: {len(entries)} HAR entries, {len(connector)} Connector posts, "
-        f"{len(cdp)} CDP events, {len(netlog['events'])} NetLog events; "
+        f"{len(cdp)} CDP events, {len(netlog['events'])} NetLog events, {len(main_rows)}+{len(edge)} body rows; "
         "synthetic values only, flow shape preserved."
     )
     return 0

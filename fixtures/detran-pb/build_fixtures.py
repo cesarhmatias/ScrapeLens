@@ -393,6 +393,124 @@ def netlog_events() -> dict:
     }
 
 
+
+# --- CDP bodies (docs/08-corpos-busca.md §1) --------------------------------
+def rid_of(index: int) -> str:
+    return f"{1000 + index + 1}.{index + 1}"
+
+
+def body_line(rid, attempt, kind, state, data, source, reason=None, original=None, ts=0.0, binary=None):
+    """One cdp-bodies.jsonl row. `data` is str (utf8) or bytes (base64)."""
+    import base64
+    if state in ("unavailable", "discarded") or data is None:
+        enc, payload, cap = None, None, 0
+    elif isinstance(data, bytes):
+        enc, payload, cap = "base64", base64.b64encode(data).decode(), len(data)
+    else:
+        enc, payload, cap = "utf8", data, len(data.encode())
+    if original is None:
+        original = cap if state in ("captured", "empty") else None
+    return {"v": 1, "requestId": rid, "attemptIndex": attempt, "kind": kind, "state": state,
+            "encoding": enc, "data": payload, "originalSize": original, "capturedSize": cap,
+            "source": source, "reason": reason, "timestamp": round(ts, 3)}
+
+
+TSPD_BINARY = bytes([0x1F, 0xFF, 0xFE, 0x00, 0x80, 0xC0, 0xAF]) + b"SYNTH-BIN" + bytes(range(200, 216))
+
+
+def detran_bodies() -> list[dict]:
+    rows = []
+    for i, step in enumerate(STEPS):
+        rid = rid_of(i)
+        ts = (T0_MS + step["offset_ms"]) / 1000.0
+        post = (step["request"].get("postData") or {}).get("text")
+        if post is not None:
+            rows.append(body_line(rid, 0, "request", "captured", post, "requestWillBeSent.postData", ts=ts))
+        text = step["response"]["content"]["text"]
+        rts = ts + 0.12
+        src = "Network.getResponseBody"
+        if i == 1:      # TSPD noise: non-UTF-8 payload -> base64
+            rows.append(body_line(rid, 0, "response", "captured", TSPD_BINARY, src, ts=rts))
+        elif i == 2:    # NatLogon page cut by a (reduced) per-body limit
+            raw = text.encode()
+            rows.append(body_line(rid, 0, "response", "truncated", raw[:96].decode("utf-8", "ignore"), src,
+                                  reason="corpo acima do limite por corpo (limite sintético 96 B)",
+                                  original=len(raw), ts=rts))
+        elif i == 9:    # evicted resource
+            rows.append(body_line(rid, 0, "response", "unavailable", None, src,
+                                  reason="No resource with given identifier found", ts=rts))
+        else:
+            rows.append(body_line(rid, 0, "response", "captured", text, src, ts=rts))
+    return rows
+
+
+def edge_cdp_and_bodies() -> tuple[list[dict], list[dict]]:
+    """Local-testserver shaped scenarios: 302, 307+body, JSON, binary, gzip, big, 204."""
+    H = "http://127.0.0.1:8781"
+    ev, bodies = [], []
+    t = T0_MS / 1000.0 + 60
+
+    def req(rid, url, method="GET", post=None, redirect_from=None, ts=0.0):
+        r = {"url": url, "method": method, "headers": {"accept": "*/*"}, "hasPostData": post is not None,
+             "mixedContentType": "none", "initialPriority": "High", "referrerPolicy": "no-referrer"}
+        if post is not None:
+            r["postData"] = post
+        p = {"requestId": rid, "loaderId": "L-EDGE", "documentURL": f"{H}/page", "request": r,
+             "timestamp": round(ts, 3), "wallTime": round(ts, 3), "initiator": {"type": "script"}, "type": "Fetch"}
+        if redirect_from:
+            p["redirectResponse"] = {"url": redirect_from[0], "status": redirect_from[1], "statusText": "redirect",
+                                     "headers": {"location": url}, "mimeType": "text/plain", "protocol": "http/1.1"}
+        ev.append({"method": "Network.requestWillBeSent", "params": p})
+
+    def done(rid, url, status, mime, ts):
+        ev.append({"method": "Network.responseReceived", "params": {
+            "requestId": rid, "loaderId": "L-EDGE", "timestamp": round(ts, 3), "type": "Fetch",
+            "response": {"url": url, "status": status, "statusText": "", "headers": {"content-type": mime},
+                         "mimeType": mime, "protocol": "http/1.1"}}})
+        ev.append({"method": "Network.loadingFinished", "params": {"requestId": rid, "timestamp": round(ts + 0.01, 3), "encodedDataLength": 0}})
+
+    redirect_reason = "resposta de redirect: CDP não fornece corpo"
+    # E1: 302 -> /json (attempt 0 redirect, attempt 1 final JSON)
+    r = "2001.1"
+    req(r, f"{H}/redirect302", ts=t); req(r, f"{H}/json", redirect_from=(f"{H}/redirect302", 302), ts=t + .01)
+    done(r, f"{H}/json", 200, "application/json", t + .03)
+    bodies.append(body_line(r, 0, "response", "unavailable", None, "Network.getResponseBody", reason=redirect_reason, ts=t + .02))
+    bodies.append(body_line(r, 1, "response", "captured", '{"schema": "scrapelens.testserver.json/1", "plate": "TST0T00"}', "Network.getResponseBody", ts=t + .04))
+    # E2: 307 with body, resent to /sink
+    r = "2002.2"; payload = "k1=v%201&XML=cmd_nova%26x&plate=TST0T01"
+    req(r, f"{H}/redirect307", "POST", payload, ts=t + 1)
+    req(r, f"{H}/sink", "POST", payload, redirect_from=(f"{H}/redirect307", 307), ts=t + 1.01)
+    done(r, f"{H}/sink", 200, "application/json", t + 1.03)
+    bodies.append(body_line(r, 0, "request", "captured", payload, "requestWillBeSent.postData", ts=t + 1))
+    bodies.append(body_line(r, 0, "response", "unavailable", None, "Network.getResponseBody", reason=redirect_reason, ts=t + 1.02))
+    bodies.append(body_line(r, 1, "request", "captured", payload, "requestWillBeSent.postData", ts=t + 1.01))
+    bodies.append(body_line(r, 1, "response", "captured", '{"schema": "scrapelens.testserver.sink/1", "len": 40}', "Network.getResponseBody", ts=t + 1.04))
+    # E3: JSON POST
+    r = "2003.3"
+    req(r, f"{H}/sink", "POST", '{"query": "cmd_consultar_placa", "plate": "TST0T00"}', ts=t + 2); done(r, f"{H}/sink", 200, "application/json", t + 2.03)
+    bodies.append(body_line(r, 0, "request", "captured", '{"query": "cmd_consultar_placa", "plate": "TST0T00"}', "requestWillBeSent.postData", ts=t + 2))
+    bodies.append(body_line(r, 0, "response", "captured", '{"schema": "scrapelens.testserver.sink/1"}', "Network.getResponseBody", ts=t + 2.04))
+    # E4: binary POST + binary response (base64)
+    r = "2004.4"
+    req(r, f"{H}/sink", "POST", "<binary>", ts=t + 3); done(r, f"{H}/binary", 200, "application/octet-stream", t + 3.03)
+    bodies.append(body_line(r, 0, "request", "captured", bytes(range(256)) + b"\xff\x00", "Network.getRequestPostData", ts=t + 3))
+    bodies.append(body_line(r, 0, "response", "captured", TSPD_BINARY, "Network.getResponseBody", ts=t + 3.04))
+    # E5: gzip response, already decoded by Chrome (CDP gives decoded text)
+    r = "2005.5"
+    req(r, f"{H}/gzip", ts=t + 4); done(r, f"{H}/gzip", 200, "text/plain", t + 4.03)
+    bodies.append(body_line(r, 0, "response", "captured", "synthetic gzip body for ScrapeLens: cmd_consultar_placa TST0T00\n", "Network.getResponseBody", ts=t + 4.04))
+    # E6: 6 MiB response, truncated at the 5 MiB limit (prefix only, reduced here)
+    r = "2006.6"
+    req(r, f"{H}/big", ts=t + 5); done(r, f"{H}/big", 200, "text/plain", t + 5.03)
+    bodies.append(body_line(r, 0, "response", "truncated", "scrapelens-big-body 0123456789abcdef synthetic line\n" * 2, "Network.getResponseBody",
+                            reason="corpo acima do limite (5242880 B); prefixo sintético reduzido", original=6291456, ts=t + 5.04))
+    # E7: 204 -> empty with evidence
+    r = "2007.7"
+    req(r, f"{H}/empty", ts=t + 6); done(r, f"{H}/empty", 204, "text/plain", t + 6.03)
+    bodies.append(body_line(r, 0, "response", "empty", "", "Network.getResponseBody", reason="HTTP 204", original=0, ts=t + 6.04))
+    return ev, bodies
+
+
 # --- the flow -------------------------------------------------------------
 def page_html(title: str, model: str, init_param: str = "") -> str:
     return f"""<!doctype html>
@@ -603,6 +721,9 @@ def build() -> None:
             "har_blocked": "detran-pb-blocked.har",
             "cdp": "detran-pb.cdp.jsonl",
             "netlog": "detran-pb.netlog.json",
+            "cdp_bodies": "detran-pb.cdp-bodies.jsonl",
+            "cdp_edge": "detran-pb-edge.cdp.jsonl",
+            "cdp_edge_bodies": "detran-pb-edge.cdp-bodies.jsonl",
         },
         "values": {
             "session_id": SID,
@@ -646,6 +767,27 @@ def build() -> None:
             {"query": "/TSPD/", "where": "url", "expect_entries": [1]},
             {"query": "v_placa", "where": "body", "expect_entries": [10, 12]},
         ],
+        "bodies_search_cases": [
+            {"query": "cmd_consultar_placa", "scope": "requestBody", "expect": [
+                {"requestId": rid_of(10), "field": "XML", "decoded": True},
+                {"requestId": rid_of(12), "field": "XML", "decoded": True}],
+             "also": "scope url não acha nada; responseBody não acha"},
+            {"query": PLATE_A, "scope": "requestBody", "expect": [{"requestId": rid_of(10), "field": "XML", "decoded": True}]},
+            {"query": PLATE_B, "scope": "requestBody", "expect": [{"requestId": rid_of(12), "field": "XML", "decoded": True}]},
+            {"query": "cmd_nova", "scope": "requestBody", "expect": [{"requestId": rid_of(11), "field": "XML", "decoded": True}]},
+            {"query": "cmd_consultar_placa", "scope": "url", "expect": []},
+        ],
+        "bodies": {
+            "main": {"file": "detran-pb.cdp-bodies.jsonl",
+                     "request_captured": 8, "response_captured": 11, "truncated": [rid_of(2)],
+                     "unavailable": [rid_of(9)], "base64_binary": [rid_of(1)]},
+            "edge": {"cdp": "detran-pb-edge.cdp.jsonl", "file": "detran-pb-edge.cdp-bodies.jsonl",
+                     "redirect_unavailable": ["2001.1:0", "2002.2:0"], "redirect_307_body_in_each_attempt": "2002.2",
+                     "truncated_original_size": {"2006.6": 6291456}, "empty_with_evidence": {"2007.7": "HTTP 204"},
+                     "base64": ["2004.4", "2004.4"], "search": [
+                         {"query": "cmd_consultar_placa", "scope": "requestBody", "expect": ["2003.3"]},
+                         {"query": "cmd_consultar_placa", "scope": "responseBody", "expect": ["2005.5"]}]},
+        },
         "correlation": {
             "expect_ambiguity": {
                 "entries": [10, 12],
@@ -670,6 +812,11 @@ def build() -> None:
     (OUT / "detran-pb.netlog.json").write_text(
         json.dumps(netlog_events(), indent=1, ensure_ascii=False) + "\n"
     )
+    (OUT / "detran-pb.cdp-bodies.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in detran_bodies()) + "\n")
+    edge_ev, edge_bodies = edge_cdp_and_bodies()
+    (OUT / "detran-pb-edge.cdp.jsonl").write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in edge_ev) + "\n")
+    (OUT / "detran-pb-edge.cdp-bodies.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in edge_bodies) + "\n")
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
 
 

@@ -130,6 +130,7 @@ impl Resp {
             200 => "OK",
             204 => "No Content",
             302 => "Found",
+            307 => "Temporary Redirect",
             400 => "Bad Request",
             404 => "Not Found",
             405 => "Method Not Allowed",

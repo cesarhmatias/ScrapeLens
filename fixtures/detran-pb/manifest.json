@@ -8,7 +8,10 @@
   "har": "detran-pb-sanitized.har",
   "har_blocked": "detran-pb-blocked.har",
   "cdp": "detran-pb.cdp.jsonl",
-  "netlog": "detran-pb.netlog.json"
+  "netlog": "detran-pb.netlog.json",
+  "cdp_bodies": "detran-pb.cdp-bodies.jsonl",
+  "cdp_edge": "detran-pb-edge.cdp.jsonl",
+  "cdp_edge_bodies": "detran-pb-edge.cdp-bodies.jsonl"
  },
  "values": {
   "session_id": "CSAN00000_000000000001",
@@ -221,6 +224,114 @@
    ]
   }
  ],
+ "bodies_search_cases": [
+  {
+   "query": "cmd_consultar_placa",
+   "scope": "requestBody",
+   "expect": [
+    {
+     "requestId": "1011.11",
+     "field": "XML",
+     "decoded": true
+    },
+    {
+     "requestId": "1013.13",
+     "field": "XML",
+     "decoded": true
+    }
+   ],
+   "also": "scope url não acha nada; responseBody não acha"
+  },
+  {
+   "query": "TST0T00",
+   "scope": "requestBody",
+   "expect": [
+    {
+     "requestId": "1011.11",
+     "field": "XML",
+     "decoded": true
+    }
+   ]
+  },
+  {
+   "query": "TST0T01",
+   "scope": "requestBody",
+   "expect": [
+    {
+     "requestId": "1013.13",
+     "field": "XML",
+     "decoded": true
+    }
+   ]
+  },
+  {
+   "query": "cmd_nova",
+   "scope": "requestBody",
+   "expect": [
+    {
+     "requestId": "1012.12",
+     "field": "XML",
+     "decoded": true
+    }
+   ]
+  },
+  {
+   "query": "cmd_consultar_placa",
+   "scope": "url",
+   "expect": []
+  }
+ ],
+ "bodies": {
+  "main": {
+   "file": "detran-pb.cdp-bodies.jsonl",
+   "request_captured": 8,
+   "response_captured": 11,
+   "truncated": [
+    "1003.3"
+   ],
+   "unavailable": [
+    "1010.10"
+   ],
+   "base64_binary": [
+    "1002.2"
+   ]
+  },
+  "edge": {
+   "cdp": "detran-pb-edge.cdp.jsonl",
+   "file": "detran-pb-edge.cdp-bodies.jsonl",
+   "redirect_unavailable": [
+    "2001.1:0",
+    "2002.2:0"
+   ],
+   "redirect_307_body_in_each_attempt": "2002.2",
+   "truncated_original_size": {
+    "2006.6": 6291456
+   },
+   "empty_with_evidence": {
+    "2007.7": "HTTP 204"
+   },
+   "base64": [
+    "2004.4",
+    "2004.4"
+   ],
+   "search": [
+    {
+     "query": "cmd_consultar_placa",
+     "scope": "requestBody",
+     "expect": [
+      "2003.3"
+     ]
+    },
+    {
+     "query": "cmd_consultar_placa",
+     "scope": "responseBody",
+     "expect": [
+      "2005.5"
+     ]
+    }
+   ]
+  }
+ },
  "correlation": {
   "expect_ambiguity": {
    "entries": [

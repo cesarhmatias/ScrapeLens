@@ -425,3 +425,34 @@ fn evidence_lines_are_versioned_and_complete() {
         assert_eq!(pair.as_array().unwrap().len(), 2);
     }
 }
+
+#[test]
+fn h1_body_routes_serve_expected_bytes_and_sink_writes_file() {
+    let dir = std::env::temp_dir().join(format!("sl-bodies-{}", std::process::id()));
+    scrapelens_testserver::endpoints::set_body_dir(dir.clone());
+    let (addr, _ev) = start_h1("h1-bodies");
+    thread::sleep(Duration::from_millis(100));
+    let get = |path: &str| h1_request(addr, format!("GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").as_bytes());
+
+    assert_eq!(get("/binary").body, scrapelens_testserver::endpoints::binary_bytes());
+    assert!(std::str::from_utf8(&get("/binary").body).is_err());
+    assert_eq!(get("/big").body.len(), 6 * 1024 * 1024);
+    assert_eq!(get("/json").status, 200);
+    assert_eq!(get("/redirect302").status, 302);
+    assert_eq!(get("/empty").status, 204);
+    let gz = get("/gzip");
+    assert_eq!(&gz.body[..2], &[0x1f, 0x8b]);
+    assert!(gz.headers.iter().any(|(n, v)| n.eq_ignore_ascii_case("content-encoding") && v == "gzip"));
+    assert_eq!(&gz.body[gz.body.len() - 4..], &(scrapelens_testserver::endpoints::GZIP_TEXT.len() as u32).to_le_bytes());
+
+    let payload: Vec<u8> = (0..=255u8).chain([0xFF, 0x00]).collect();
+    let mut raw = format!("POST /redirect307 HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", payload.len()).into_bytes();
+    raw.extend_from_slice(&payload);
+    assert_eq!(h1_request(addr, &raw).status, 307);
+    let mut raw = format!("POST /sink HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", payload.len()).into_bytes();
+    raw.extend_from_slice(&payload);
+    let r = h1_request(addr, &raw);
+    let v: Value = serde_json::from_slice(&r.body).unwrap();
+    let file = v["file"].as_str().expect("sink file");
+    assert_eq!(std::fs::read(file).unwrap(), payload);
+}

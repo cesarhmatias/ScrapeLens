@@ -182,6 +182,7 @@ fn serve(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let tls = cert::ensure(&tls_dir, false)?;
     let run_dir = evidence_root.join(&run_id);
     std::fs::create_dir_all(&run_dir)?;
+    scrapelens_testserver::endpoints::set_body_dir(run_dir.join("bodies"));
 
     let want = |name: &str| only.iter().any(|s| s == name);
 
