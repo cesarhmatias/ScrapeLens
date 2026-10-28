@@ -45,9 +45,22 @@ permissões 0700/0600. O perfil pessoal do Chrome não é utilizado.
 
 ## Exportação e sanitização
 
-Disponíveis no CLI do core; ainda não conectadas a ações da interface desktop.
-O CLI é uma ferramenta separada de desenvolvimento, não é embarcado no `.app`.
-Na raiz, compile e use uma pasta de sessão e IDs reais obtidos por `inspect`:
+Com uma captura persistida aberta, o detalhe de cada requisição oferece
+**Exportar…**: o cURL/Python é gerado no Rust a partir dos arquivos da sessão
+(corpo incluído só quando foi capturado), com prévia em texto, avisos do core,
+headers omitidos e estado do corpo. O texto pode ser copiado ou salvo em arquivo
+novo com permissão `0600`; o app recusa sobrescrita e destinos que passem por
+link simbólico, e nunca executa a requisição nem faz replay de rede.
+
+A barra da sessão oferece **Sanitizar…**: prévia das redações e omissões, depois
+gravação em uma pasta nova `0700/0600` fora da origem, com a política
+conservadora do core (eventos brutos não são copiados). A sessão original nunca
+é alterada, e a sanitizada pode ser aberta em seguida. A demonstração embutida,
+sem pasta de origem, mantém essas ações desabilitadas e mostra o motivo.
+
+O mesmo fluxo existe no CLI do core, ferramenta separada de desenvolvimento
+que não é embarcada no `.app`. Na raiz, compile e use uma pasta de sessão e IDs
+reais obtidos por `inspect`:
 
 ```sh
 cargo build --manifest-path core/Cargo.toml --release --offline

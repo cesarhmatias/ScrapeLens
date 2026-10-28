@@ -58,3 +58,32 @@ em tests/results/app-latest/testserver/app-20261027/h1.jsonl no início desta
 rodada: preservar, não incluir em commit de exportação sem entender a origem.
 A proposta outputs/ux-review continua isolada. Conventional Commits para cada
 entrega concluída, sem push/release/publicação.
+
+## Resultado da rodada — 2026-10-27
+
+Concluída. Bundle arm64 ad-hoc, SHA-256 do executável
+`9c04b98b30b3d6451ee53fa5eee589aaba0cd4e5d3185894e39facb0335bdbe5`
+(fonte e assinatura em `src-tauri/EMPACOTAMENTO.md`).
+
+- Implementação (App): `eaf5471`…`2c6765e`; sem alterações no core.
+- Validação independente (Testes, `a83d985`/`ffc7fc1`): 14/16 na primeira
+  passada. Falharam F1/F2: destino que passava por link simbólico em pasta
+  ancestral era aceito. Corrigido em `16015a1`: qualquer link na cadeia do
+  destino é recusado, exceto os aliases de sistema `/var`, `/tmp` e `/etc`
+  quando apontam para `/private/...`. Regressões: 16/16.
+- A prova nativa revelou que sessões v1 mínimas, aceitas pelo core, travavam a
+  UI (`s.attempts.map`). Corrigido em `0d4dbab`: o adapter aplica os mesmos
+  defaults do core, com teste próprio.
+- Prova nativa no bundle `9c04b98b…` (líder, a pedido do usuário; diálogos
+  nativos operados em primeiro plano), com verificação de arquivos por Testes
+  (`adc56ab`): abrir sessão, salvar cURL e Python (0600, idênticos à prévia),
+  cancelar sem gravar, cópia idêntica à prévia, sanitizar em pasta nova
+  0700/0600 sem eventos brutos nem marcadores, reabrir a sanitizada com URL
+  redigida, origem byte-idêntica. Relatório: `tests/results/exportacao/RELATORIO.md`;
+  print `docs/screenshots/24-exportacao-sanitizada-aberta.png`.
+
+Pendências e limitações: corridas de diretório não testadas; sanitização segue
+heurística; exportação não replica TLS/JA3/JA4/HPACK; sessões rotuladas
+`synthetic-fixture` mostram o título da demonstração em vez do id (cosmético).
+Próximas rodadas do roadmap: corpos CDP e busca no payload, caso DETRAN ponta a
+ponta, distribuição (licenças, notarização, Intel).

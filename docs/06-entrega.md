@@ -86,11 +86,13 @@ importadores HAR/NetLog, lista com filtros e busca, detalhe e comparação de
 requisições com duplicatas. Headers na sequência da fonte; proveniência e
 verificação por informação. HAR/objetos CDP não comprovam ordem transmitida;
 NetLog e headersText h1 fornecem evidências específicas. Empates ficam
-ambíguos. Exportação cURL/Python e sanitização funcionam no core/CLI.
+ambíguos. Exportação cURL/Python e sanitização funcionam no core/CLI e, desde
+a rodada seguinte, também pela interface (resultado em `docs/07-exportacao-ui.md`).
 
 ## Limitações e prioridades restantes
 
-1. Conectar exportação/sanitização à UI. Busca no corpo, cadeia de priming,
+1. Exportação/sanitização na UI: concluída na rodada seguinte (`docs/07`).
+   Busca no corpo, cadeia de priming,
    campos dinâmicos e comparação entre sessões do caso DETRAN seguem pendentes;
    fixtures e correlação 13/13 não comprovam essas funções da interface.
 2. Completar avisos/licenças transitivas para redistribuição. Código próprio
