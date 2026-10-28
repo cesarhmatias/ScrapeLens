@@ -27,11 +27,36 @@ FIX = ROOT / "fixtures" / "detran-pb"
 def core_bin(arg):
     if arg:
         return arg
-    for p in ("release", "debug"):
-        c = ROOT / "core" / "target" / p / "scrapelens-core"
-        if c.exists():
-            return str(c)
-    sys.exit("scrapelens-core não encontrado; use --core")
+    # O binário mais recente por mtime; recusa se for mais antigo que o código-fonte.
+    cands = [ROOT / "core" / "target" / p / "scrapelens-core" for p in ("release", "debug")]
+    cands = [c for c in cands if c.exists()]
+    if not cands:
+        sys.exit("scrapelens-core não encontrado; rode `cargo build` em core/ ou use --core")
+    best = max(cands, key=lambda c: c.stat().st_mtime)
+    newest_src = max((f.stat().st_mtime for f in (ROOT / "core" / "src").rglob("*.rs")), default=0)
+    if best.stat().st_mtime < newest_src:
+        sys.exit(f"{best} é mais antigo que core/src; rode `cargo build` em core/ ou use --core")
+    return str(best)
+
+
+def cdp_to_logical(session):
+    """requestId do CDP -> id lógico da sessão, pela proveniência em session.json."""
+    d = json.loads((Path(session) / "session.json").read_text())
+    return {r["cdp"]["requestId"]: r["id"] for r in d["requests"] if r.get("cdp", {}).get("requestId")}
+
+
+def import_fixture(core, name, tmp):
+    cdp, bodies = FIX / f"{name}.cdp.jsonl", FIX / f"{name}.cdp-bodies.jsonl"
+    netlog = FIX / f"{name}.netlog.json"
+    if not netlog.exists():  # edge não tem NetLog: NetLog vazio e válido
+        netlog = Path(tmp) / "empty.netlog.json"
+        netlog.write_text(json.dumps({"constants": {"logEventTypes": {}, "timeTickOffset": 0}, "events": []}))
+    out = Path(tmp) / "session"
+    p = subprocess.run([core, "import-capture", str(cdp), str(netlog), "--out", str(out), "--bodies", str(bodies)],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        sys.exit(f"FAIL import {name}: {p.stderr.strip()[:300]}")
+    return str(out)
 
 
 def search(core, session, text, scope=None):
@@ -57,11 +82,8 @@ def main():
     manifest = json.loads((FIX / "manifest.json").read_text())
     session = a.session
     if a.import_fixture:
-        session = str(Path(tempfile.mkdtemp(prefix="sl-bodies-")) / "session")
-        p = subprocess.run([core, "import-capture", str(FIX / "detran-pb.cdp.jsonl"), str(FIX / "detran-pb.netlog.json"),
-                            "--out", session, "--bodies", str(FIX / "detran-pb.cdp-bodies.jsonl")], capture_output=True, text=True)
-        if p.returncode != 0:
-            print("FAIL import:", p.stderr.strip()[:300]); return 1
+        name = "detran-pb" if a.fixture == "detran" else "detran-pb-edge"
+        session = import_fixture(core, name, tempfile.mkdtemp(prefix=f"sl-bodies-{a.fixture}-"))
     if not session:
         ap.error("informe a pasta da sessão ou --import-fixture")
 
@@ -79,14 +101,19 @@ def main():
     else:
         cases = manifest["bodies"]["edge"]["search"]
         norm = lambda c: (c["query"], c["scope"], [(r, None, None) for r in c["expect"]])
+    ids = cdp_to_logical(session)
     for c in cases:
         query, scope, expect = norm(c)
+        try:
+            expect = [(ids[r], f, d) for r, f, d in expect]
+        except KeyError as e:
+            fails.append(f"{c['query']!r}: requestId CDP {e} sem requisição na sessão"); continue
         try:
             got = search(core, session, query, scope)
         except Exception as e:  # noqa: BLE001
             fails.append(f"{query!r}/{scope}: {e}"); continue
         got_set = sorted({(m["requestId"], m.get("field"), m.get("decoded")) for m in got})
-        if a.fixture == "edge":
+        if a.fixture == "edge":  # edge confere só os ids; field/decoded não fazem parte do contrato do manifest
             got_set = sorted({(m["requestId"], None, None) for m in got})
         if got_set != sorted(set(expect)):
             fails.append(f"{query!r}/{scope}: esperado {sorted(set(expect))}, obtido {got_set}")
