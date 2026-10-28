@@ -20,4 +20,5 @@
 | refused | ✓ | response:unavailable | |
 | invariants | ✓ |  | |
 | session_bodies | ✓ |  | |
+| session_label | ✓ |  | |
 | session_search | ✓ |  | |

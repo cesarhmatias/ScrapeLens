@@ -339,10 +339,10 @@
       "mode": "0o600",
       "rows": 28,
       "byState": {
-        "captured": 20,
         "truncated": 3,
+        "empty": 2,
         "unavailable": 3,
-        "empty": 2
+        "captured": 20
       }
     },
     {
@@ -364,6 +364,13 @@
       "bodiesFileAbsentWarning": false
     },
     {
+      "case": "session_label",
+      "ok": true,
+      "labels": [
+        "live-capture"
+      ]
+    },
+    {
       "case": "session_search",
       "ok": true,
       "matchCases": [
@@ -375,8 +382,8 @@
       "urlScopeMatches": 0,
       "first": [
         {
-          "requestId": "cdp-r0011",
-          "attemptId": "cdp-r0011-a1",
+          "requestId": "cdp-r0012",
+          "attemptId": "cdp-r0012-a1",
           "scope": "requestBody",
           "field": "cmd_consultar_placa",
           "byteOffset": 0,

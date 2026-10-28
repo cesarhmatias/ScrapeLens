@@ -217,6 +217,11 @@ fn run_inner(
     .map_err(|error| format!("O core não conseguiu importar a captura: {error}"))?;
     // Metadados da captura são do pipeline, não do parser: o core monta o
     // documento a partir do CDP e não sabe que este fluxo também gravou NetLog.
+    // Origem: distingue a sessão ao vivo de imports de arquivo.
+    let labels = &mut imported.bundle.session.session.labels;
+    if !labels.iter().any(|label| label == "live-capture") {
+        labels.push("live-capture".to_string());
+    }
     match imported.bundle.session.session.capture.as_mut() {
         Some(capture) => {
             capture.mode = Some("cdp+netlog".to_string());

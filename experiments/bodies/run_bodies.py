@@ -240,6 +240,7 @@ def add_session_checks(session, add, by_case):
          "states": {"form.req": form["state"], "gzip.resp": gz["state"], "big_get.resp": big["state"], "r302.a0.resp": r302[0]["responseBody"]["state"],
                     "zero": z["state"], "204": e["state"], "refused": rf["state"]},
          "bodiesFileAbsentWarning": any(w["code"] == "cdp.bodies_file_absent" for w in doc["warnings"])})
+    add("session_label", "live-capture" in doc["session"].get("labels", []), {"labels": doc["session"].get("labels")})
     out = subprocess.run([str(CORE), "search", str(session), "cmd_consultar_placa", "--scope", "requestBody"], capture_output=True, text=True)
     matches = json.loads(out.stdout)["matches"] if out.returncode == 0 else []
     url_of = {m["requestId"]: next(r["url"] for r in doc["requests"] if r["id"] == m["requestId"]) for m in matches}
