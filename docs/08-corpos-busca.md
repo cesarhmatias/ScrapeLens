@@ -129,3 +129,10 @@ código exportado e sem rede externa.
   tentativa e corpo/headers são da última. Num 307, a exportação combina a URL
   inicial com o corpo final. Isso equivale a um replay que segue o redirect,
   mas a exportação deve sinalizá-lo; fica para revisão na 4b.
+- Sanitização por propagação de valor: um valor que a política já classifica
+  como sensível (chave, header ou cookie sensível) é redigido em todas as
+  ocorrências da sessão sanitizada, nas formas literal, percent-encoded e
+  JSON-escaped, inclusive dentro de campos opacos (ex.: `XML` do Natural for
+  Ajax). Há um comprimento mínimo e valores triviais não são propagados. Corpos
+  binários não são varridos e isso é declarado. Delta (`DLTA…`) e `STAMP` são
+  estado do protocolo, não credenciais, e ficam visíveis.
