@@ -29,5 +29,10 @@
   },
   "dynamicOnlyFields": 2,
   "staticLeft": 0,
+  "reorderedHints": [
+    "possivelmente a mesma requisição, em outra ordem (\nB cdp-r0004\n)",
+    "possivelmente a mesma requisição, em outra ordem (\nA cdp-r0004\n)"
+  ],
+  "navigatedTo": true,
   "pageErrors": []
 }

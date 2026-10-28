@@ -49,7 +49,20 @@ function FieldRow({ field }: { field: FieldDiff }) {
 
 const PAGE_SIZE = 50;
 
-function OnlyList({ title, items, total }: { title: string; items: RequestRef[]; total: number }) {
+function OnlyList({
+  side,
+  title,
+  items,
+  total,
+  counterpart,
+}: {
+  title: string;
+  items: RequestRef[];
+  total: number;
+  /** requestId deste lado → requisição do outro lado de mesmo modelo (reordenação). */
+  counterpart: Map<string, string>;
+  side: "A" | "B";
+}) {
   if (total === 0) return null;
   return (
     <section className="body-panel">
@@ -60,11 +73,29 @@ function OnlyList({ title, items, total }: { title: string; items: RequestRef[];
       </header>
       <ul className="chain-list" style={{ padding: "0 13px" }}>
         {items.map((r) => (
-          <li key={r.requestId}>
+          <li key={r.requestId} id={`only-${side}-${r.requestId}`}>
             <span className="mono">{r.method}</span> <span className="mono">{r.requestId}</span> <span className="mono dim">{r.url}</span>
-            {(r.reordered || r.outOfOrder) && (
-              <span className="chip possible" title="Marca do core: requisição única reordenada entre as capturas">
+            {(counterpart.has(r.requestId) || r.reordered || r.outOfOrder) && (
+              <span className="chip possible" title="Sobra de mesmo modelo nos dois lados (marca do core)">
                 possivelmente a mesma requisição, em outra ordem
+                {counterpart.has(r.requestId) && (
+                  <>
+                    {" "}
+                    (
+                    <button
+                      className="link-req mono"
+                      title="Ir para a requisição correspondente do outro lado"
+                      onClick={() =>
+                        document
+                          .getElementById(`only-${side === "A" ? "B" : "A"}-${counterpart.get(r.requestId)}`)
+                          ?.scrollIntoView({ block: "center", behavior: "smooth" })
+                      }
+                    >
+                      {side === "A" ? "B" : "A"} {counterpart.get(r.requestId)}
+                    </button>
+                    )
+                  </>
+                )}
               </span>
             )}
           </li>
@@ -199,8 +230,13 @@ export function CaptureCompareView({
           </div>
         ))}
       </section>
-      <OnlyList title="Só em A" items={summary.onlyInA} total={summary.onlyInATotal} />
-      <OnlyList title="Só em B" items={summary.onlyInB} total={summary.onlyInBTotal} />
+      <OnlyList side="A" title="Só em A" items={summary.onlyInA} total={summary.onlyInATotal} counterpart={new Map((summary.reordered ?? []).map((pair) => [pair.a.requestId, pair.b.requestId]))} />
+      <OnlyList side="B" title="Só em B" items={summary.onlyInB} total={summary.onlyInBTotal} counterpart={new Map((summary.reordered ?? []).map((pair) => [pair.b.requestId, pair.a.requestId]))} />
+      {(summary.reorderedTotal ?? 0) > 0 && (
+        <div className="body-foot" style={{ margin: "0 14px" }}>
+          {summary.reorderedTotal} sobra(s) de mesmo modelo nos dois lados: possivelmente as mesmas requisições em outra ordem (o pareamento segue monotônico).
+        </div>
+      )}
       <div className="cmp-pager">
         <button className="btn small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
           ← Anteriores

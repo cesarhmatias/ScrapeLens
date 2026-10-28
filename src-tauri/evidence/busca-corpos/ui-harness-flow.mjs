@@ -37,7 +37,7 @@ async function rpc(cmd, args) {
       // Mesma lógica de resumo/página/campos do Rust (commands.rs), sobre o JSON real do core.
       cmp = core("compare", args.dirA, args.dirB);
       const dyn = (p) => p.counts.dynamic + p.counts.onlyA + p.counts.onlyB + p.counts.redacted > 0;
-      return { handle: 1, pairs: cmp.pairs.length, dynamicPairs: cmp.pairs.filter(dyn).length, counts: cmp.counts, partsCounts: cmp.partsCounts, redactedFields: cmp.redactedFields, ambiguities: cmp.ambiguities, warnings: cmp.warnings, onlyInA: cmp.onlyInA.slice(0, 200), onlyInATotal: cmp.onlyInA.length, onlyInB: cmp.onlyInB.slice(0, 200), onlyInBTotal: cmp.onlyInB.length };
+      return { handle: 1, pairs: cmp.pairs.length, dynamicPairs: cmp.pairs.filter(dyn).length, counts: cmp.counts, partsCounts: cmp.partsCounts, redactedFields: cmp.redactedFields, ambiguities: cmp.ambiguities, warnings: cmp.warnings, onlyInA: cmp.onlyInA.slice(0, 200), onlyInATotal: cmp.onlyInA.length, onlyInB: cmp.onlyInB.slice(0, 200), onlyInBTotal: cmp.onlyInB.length, reordered: (cmp.reordered ?? []).slice(0, 200), reorderedTotal: (cmp.reordered ?? []).length };
     }
     case "compare_page": {
       const dyn = (p) => p.counts.dynamic + p.counts.onlyA + p.counts.onlyB + p.counts.redacted > 0;
@@ -150,6 +150,18 @@ results.dynamicOnlyFields = await page.locator(".cmp-field").count();
 results.staticLeft = await page.locator(".cmp-field:not(.cmp-dynamic)").count();
 await shot("16-comparacao-so-dinamicos.png");
 
+// Reordenação: B2 = B com cdp-r0004 movido para o fim (derivada de B, editada à mão).
+if (process.argv[7]) {
+  await page.getByRole("button", { name: /Sessão/ }).first().click();
+  pick = process.argv[7];
+  await page.getByRole("button", { name: "Comparar capturas…" }).click();
+  await page.waitForSelector(".cmp-pair");
+  results.reorderedHints = await page.locator(".chip.possible", { hasText: "outra ordem" }).allInnerTexts();
+  await page.locator(".link-req", { hasText: "cdp-r0004" }).first().click();
+  await page.waitForTimeout(600);
+  results.navigatedTo = await page.evaluate(() => document.getElementById("only-B-cdp-r0004") !== null);
+  await shot("17-comparacao-reordenada.png");
+}
 results.pageErrors = errors.filter((e) => !e.includes("unregisterListener"));
 fs.writeFileSync(path.join(outDir, "ui-harness-flow-result.json"), JSON.stringify(results, null, 2));
 console.log(JSON.stringify(results, null, 2));

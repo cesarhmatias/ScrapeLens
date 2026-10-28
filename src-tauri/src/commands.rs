@@ -719,6 +719,9 @@ pub struct CompareSummary {
     pub only_in_a_total: usize,
     pub only_in_b: Vec<scrapelens_core::compare::RequestRef>,
     pub only_in_b_total: usize,
+    /// Sobras de mesmo modelo nos dois lados (provável reordenação), limitadas.
+    pub reordered: Vec<scrapelens_core::compare::ReorderedPair>,
+    pub reordered_total: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -849,6 +852,8 @@ fn open_comparison(dir_a: &str, dir_b: &str) -> Result<CompareSummary, String> {
         only_in_a_total: result.only_in_a.len(),
         only_in_b: result.only_in_b.iter().take(ONLY_LIST_CAP).cloned().collect(),
         only_in_b_total: result.only_in_b.len(),
+        reordered: result.reordered.iter().take(ONLY_LIST_CAP).cloned().collect(),
+        reordered_total: result.reordered.len(),
     };
     *COMPARISON.lock().map_err(|_| "comparação corrompida".to_string())? =
         Some(StoredComparison { id, result: Arc::new(result) });
@@ -1248,5 +1253,26 @@ mod tests {
             &scrapelens_core::compare::CompareOptions::default(),
         );
         eprintln!("json_completo_antigo={}B", serde_json::to_string(&full).unwrap().len());
+    }
+
+    #[test]
+    fn compare_summary_carries_reordered_leftovers() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let a = detran_session("reorder-a");
+        let b = fixture_session("reorder-b", "detran-pb-b", "detran-pb-b");
+        // B com a 4ª requisição movida para o fim: sobra de mesmo modelo nos dois lados.
+        let file = b.join("session.json");
+        let mut doc: serde_json::Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+        let requests = doc["requests"].as_array_mut().unwrap();
+        let moved = requests.remove(3);
+        requests.push(moved);
+        fs::write(&file, serde_json::to_vec(&doc).unwrap()).unwrap();
+        let summary = open_comparison(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
+        assert_eq!(summary.reordered_total, 1);
+        assert_eq!(summary.reordered[0].a.request_id, "cdp-r0004");
+        assert!(summary.only_in_a.iter().any(|r| r.request_id == "cdp-r0004"));
+        assert!(summary.only_in_b.iter().any(|r| r.request_id == "cdp-r0004"));
+        fs::remove_dir_all(a).ok();
+        fs::remove_dir_all(b).ok();
     }
 }

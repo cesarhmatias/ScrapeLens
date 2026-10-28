@@ -166,6 +166,7 @@ export interface PairComparison {
 }
 
 export interface SessionComparison {
+  reordered?: ReorderedPair[];
   partsCounts?: PartsCounts;
   pairs: PairComparison[];
   onlyInA: RequestRef[];
@@ -248,7 +249,14 @@ export function fieldClassLabel(field: FieldDiff): string {
 
 // ---- Comparação paginada (commands compare_open / compare_page / compare_fields) ----
 
+export interface ReorderedPair {
+  a: RequestRef;
+  b: RequestRef;
+}
+
 export interface CompareSummary {
+  reordered?: ReorderedPair[];
+  reorderedTotal?: number;
   handle: number;
   pairs: number;
   dynamicPairs: number;
