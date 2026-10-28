@@ -4,6 +4,7 @@
 //! desconhecidos ou descartados aparecem como [`Warning`], nunca em silêncio.
 
 pub mod cdp;
+pub mod cdp_bodies;
 pub mod har;
 pub mod netlog;
 pub mod own;
@@ -117,6 +118,18 @@ pub fn import_capture(
     netlog_json: &[u8],
     options: crate::correlate::CorrelationOptions,
 ) -> Result<ImportedSession> {
+    import_capture_with_bodies(cdp_events_jsonl, netlog_json, None, options)
+}
+
+/// Como [`import_capture`], com o conteúdo opcional de `cdp-bodies.jsonl`
+/// (`docs/08-corpos-busca.md` §1). Sem ele, os corpos seguem `unavailable` e a
+/// sessão recebe um único aviso `cdp.bodies_file_absent`.
+pub fn import_capture_with_bodies(
+    cdp_events_jsonl: &[u8],
+    netlog_json: &[u8],
+    cdp_bodies_jsonl: Option<&[u8]>,
+    options: crate::correlate::CorrelationOptions,
+) -> Result<ImportedSession> {
     let cdp = cdp::parse_cdp_jsonl(cdp_events_jsonl)?;
     // Calibra o relógio do NetLog pela mediana dos `wallTime` do CDP da mesma
     // captura. Isso não associa requisições: só escolhe a unidade de `time`.
@@ -148,6 +161,24 @@ pub fn import_capture(
     }
     let outcome = crate::correlate::attach_netlog(&mut session, &netlog, &options);
     cdp_report.merge(netlog_report);
+    let mut attachments = std::collections::BTreeMap::new();
+    match cdp_bodies_jsonl {
+        Some(bodies) => {
+            let applied = cdp_bodies::apply_cdp_bodies(&mut session, &mut attachments, bodies);
+            for warning in applied.warnings {
+                session.add_warning(warning.clone());
+                cdp_report.warn(warning);
+            }
+        }
+        None => {
+            let warning = Warning::new(
+                "cdp.bodies_file_absent",
+                "cdp-bodies.jsonl ausente: corpos CDP não importados (unavailable)",
+            );
+            session.add_warning(warning.clone());
+            cdp_report.warn(warning);
+        }
+    }
     // `attach_netlog` já registra os avisos na sessão; o relatório recebe cópia.
     for warning in outcome.warnings {
         cdp_report.warn(warning);
@@ -176,7 +207,7 @@ pub fn import_capture(
         session,
         cdp_events_jsonl: Some(cdp_events_jsonl.to_vec()),
         netlog_json: Some(netlog_json.to_vec()),
-        attachments: Default::default(),
+        attachments,
     };
     Ok(ImportedSession::new(bundle, report))
 }

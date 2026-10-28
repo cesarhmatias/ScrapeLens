@@ -162,6 +162,24 @@ pub fn drop_content_length_without_body<'a>(
         .collect()
 }
 
+/// Bytes do corpo de requisição a exportar. `request.request_body` acompanha a
+/// última tentativa (a mesma de onde vêm os headers exportados); só
+/// `captured`/`truncated` têm bytes, o resto devolve `None` e `resolve_body`
+/// explica o estado.
+pub fn request_body_bytes<'a>(
+    bundle: &'a crate::model::SessionBundle,
+    request: &LogicalRequest,
+) -> Option<&'a [u8]> {
+    if !request.request_body.has_bytes() {
+        return None;
+    }
+    request
+        .request_body
+        .attachment
+        .as_deref()
+        .and_then(|name| bundle.attachment(name))
+}
+
 /// Resolve o corpo a exportar. Retorna `None` quando o estado não permite ou
 /// os bytes não foram carregados, sempre com aviso.
 pub fn resolve_body<'a>(

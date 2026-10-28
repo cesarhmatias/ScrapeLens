@@ -4,7 +4,8 @@
 //!   scrapelens-core inspect <sessao>
 //!   scrapelens-core import-har <har> --out <sessao>
 //!   scrapelens-core import-netlog <netlog> --out <sessao>
-//!   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao>
+//!   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>]
+//!   scrapelens-core search <sessao> <texto> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo]
 //!   scrapelens-core sanitize <sessao> <saida>
@@ -16,7 +17,9 @@ use std::process::ExitCode;
 use scrapelens_core::correlate::CorrelationOptions;
 use scrapelens_core::diff::{diff_requests, DiffOptions};
 use scrapelens_core::export::{curl, python, sanitize};
-use scrapelens_core::parse::{import_capture, import_har, import_netlog, ImportedSession};
+use scrapelens_core::parse::{
+    import_capture_with_bodies, import_har, import_netlog, ImportedSession,
+};
 use scrapelens_core::store;
 
 fn main() -> ExitCode {
@@ -71,10 +74,31 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 std::fs::read(&cdp_path).map_err(|e| format!("{}: {e}", cdp_path.display()))?;
             let netlog = std::fs::read(&netlog_path)
                 .map_err(|e| format!("{}: {e}", netlog_path.display()))?;
-            let imported = import_capture(&cdp, &netlog, CorrelationOptions::default())
-                .map_err(|e| e.to_string())?;
+            let bodies_path = match args.iter().position(|arg| arg == "--bodies") {
+                Some(index) => Some(PathBuf::from(
+                    args.get(index + 1)
+                        .ok_or_else(|| "--bodies exige um caminho".to_string())?,
+                )),
+                None => scrapelens_core::parse::cdp_bodies::sibling_candidates(&cdp_path)
+                    .into_iter()
+                    .find(|candidate| candidate.is_file()),
+            };
+            let bodies = match &bodies_path {
+                Some(path) => {
+                    Some(std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
+                }
+                None => None,
+            };
+            let imported = import_capture_with_bodies(
+                &cdp,
+                &netlog,
+                bodies.as_deref(),
+                CorrelationOptions::default(),
+            )
+            .map_err(|e| e.to_string())?;
             write_imported(&imported, &out)
         }
+        "search" => search_command(&args),
         "export-curl" => export_request(&args, true),
         "export-python" => export_request(&args, false),
         "sanitize" => {
@@ -122,6 +146,32 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
     }
 }
 
+fn search_command(args: &[String]) -> Result<(), String> {
+    use scrapelens_core::search::{search, Scope, SearchQuery};
+    if args.len() < 2 {
+        return Err(usage());
+    }
+    let imported =
+        scrapelens_core::import_session_dir(&PathBuf::from(&args[0])).map_err(|e| e.to_string())?;
+    let mut query = SearchQuery::new(args[1].clone());
+    let mut rest = args[2..].iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--case-sensitive" => query.case_sensitive = true,
+            "--scope" => {
+                let value = rest
+                    .next()
+                    .ok_or_else(|| "--scope exige um valor".to_string())?;
+                query.scopes.push(
+                    Scope::parse(value).ok_or_else(|| format!("escopo desconhecido: {value}"))?,
+                );
+            }
+            other => return Err(format!("argumento desconhecido: {other}\n\n{}", usage())),
+        }
+    }
+    print_json(&search(&imported.bundle, &query))
+}
+
 fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {
     if args.len() < 2 {
         return Err(usage());
@@ -134,11 +184,7 @@ fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {
         .session
         .find_request(request_id)
         .ok_or_else(|| format!("requisição {request_id} não encontrada"))?;
-    let body = request
-        .request_body
-        .attachment
-        .as_deref()
-        .and_then(|name| imported.bundle.attachment(name));
+    let body = scrapelens_core::export::request_body_bytes(&imported.bundle, request);
     let options = scrapelens_core::export::ExportOptions::default();
     let output = if is_curl {
         curl::to_curl(request, body, &options).map_err(|e| e.to_string())?
@@ -203,7 +249,8 @@ fn usage() -> String {
   scrapelens-core inspect <sessao>
   scrapelens-core import-har <har> --out <sessao>
   scrapelens-core import-netlog <netlog> --out <sessao>
-  scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao>
+  scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>]
+  scrapelens-core search <sessao> <texto> [--scope <escopo>]... [--case-sensitive]
   scrapelens-core export-curl <sessao> <requestId> [--out arquivo]
   scrapelens-core export-python <sessao> <requestId> [--out arquivo]
   scrapelens-core sanitize <sessao> <saida>
