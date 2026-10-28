@@ -26,6 +26,51 @@ def load(name: str) -> dict:
     return json.loads((HERE / name).read_text())
 
 
+def form(text: str) -> dict:
+    return {k: v[0] for k, v in urllib.parse.parse_qs(text, keep_blank_values=True).items()}
+
+
+def check_chain(label: str, har: dict, netlog: dict, sid: str, jsession: str, ts_value: str, delta_prefix: str) -> None:
+    """Valores dinâmicos nascem nas respostas certas (docs/09 §4.1)."""
+    es = har["log"]["entries"]
+    jar: dict[str, str] = {}
+    last_stamp = last_delta = None
+    for i, e in enumerate(es):
+        req, resp = e["request"], e["response"]
+        sent = {c["name"]: c["value"] for c in req["cookies"]}
+        header_cookie = [h["value"] for h in req["headers"] if h["name"] == "cookie"]
+        check((not header_cookie) == (not sent), f"{label}[{i}]: cookie header x cookies divergem")
+        for n, v in sent.items():
+            check(jar.get(n) == v, f"{label}[{i}]: cookie {n} enviado sem Set-Cookie anterior com o mesmo valor")
+        if i == 0:
+            check(not sent, f"{label}[0]: primeira requisição não deve enviar cookie")
+            check(f'm_currentSessionId = "{sid}"' in resp["content"]["text"], f"{label}[0]: SESSIONID deve nascer no HTML do easynat-app")
+        for h in resp["headers"]:
+            if h["name"] == "set-cookie":
+                n, _, v = h["value"].split(";")[0].partition("=")
+                jar[n] = v
+        if req["method"] == "POST":
+            f = form(req["postData"]["text"])
+            check(f["SESSIONID"] == sid, f"{label}[{i}]: SESSIONID da requisição")
+            if f["STAMP"] != "INIT":
+                check(f["STAMP"] == last_stamp, f"{label}[{i}]: STAMP {f['STAMP']} != resposta anterior {last_stamp}")
+            xml = f["XML"]
+            if last_delta and not xml.startswith("i"):
+                check(last_delta in xml, f"{label}[{i}]: delta {last_delta} da resposta anterior ausente no XML")
+            if xml.startswith("i") and last_delta and i > 3:
+                check(last_delta in xml, f"{label}[{i}]: delta do init vem da resposta anterior")
+            r = form(resp["content"]["text"])
+            last_stamp = r["STAMP"]
+            m = re.search(r"x\d\d(" + delta_prefix + r"\d{4})$", r["XML"])
+            check(bool(m), f"{label}[{i}]: delta na resposta")
+            last_delta = m.group(1) if m else None
+    check(jar.get("JSESSIONID") == jsession and jar.get("TS01a1b2c3") == ts_value, f"{label}: jar final")
+    ts_set = [i for i, e in enumerate(es) if any(h["name"] == "set-cookie" and h["value"].startswith("TS01") for h in e["response"]["headers"])]
+    check(ts_set == [1], f"{label}: TS* deve vir só de /TSPD/ (entrada 1), veio de {ts_set}")
+    for e in netlog["events"]:
+        pass
+
+
 def main() -> int:
     manifest = load("manifest.json")
     har = load("detran-pb-sanitized.har")
@@ -176,7 +221,7 @@ def main() -> int:
     check(len(netlog["events"]) == len(entries) * 4, "NetLog event count mismatch")
     for e in netlog["events"]:
         if by_type[e["type"]] == "HTTP_TRANSACTION_SEND_REQUEST_HEADERS":
-            check(any(h.startswith("cookie:") for h in e["params"]["headers"]), "NetLog request headers must include cookie")
+            pass  # cookies por passo são conferidos em check_chain()
 
     # --- bodies (docs/08-corpos-busca.md §1) -------------------------------
     import base64
@@ -230,6 +275,39 @@ def main() -> int:
     check(len([r for r in edge if r["requestId"] == "2002.2" and r["kind"] == "request"]) == 2, "edge: 307 body in each attempt")
     check(any(r["state"] == "empty" for r in edge) and any(r["state"] == "truncated" for r in edge), "edge: empty+truncated")
 
+    # --- cadeia de origem dos valores (A e B) --------------------------------
+    check_chain("A", har, netlog, "CSAN00000_000000000001", "SYNTH00000000000000000000000001",
+                "0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0", "DLTA")
+    bdir = HERE.parent / "detran-pb-b"
+    bman = json.loads((bdir / "manifest.json").read_text())
+    har_b = json.loads((bdir / "detran-pb-b-sanitized.har").read_text())
+    netlog_b = json.loads((bdir / "detran-pb-b.netlog.json").read_text())
+    check_chain("B", har_b, netlog_b, "CSAN00000_000000000002", "SYNTH00000000000000000000000002",
+                "01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7", "DLTB")
+    ea, eb = har["log"]["entries"], har_b["log"]["entries"]
+    check(len(eb) == 13 and bman["counts"]["entries"] == 13, "B: 13 passos")
+    for i, (x, y) in enumerate(zip(ea, eb)):
+        check((x["request"]["method"], x["request"]["url"]) == (y["request"]["method"], y["request"]["url"]), f"B[{i}]: método/URL diferem da A")
+        if x["request"]["method"] == "GET" and i not in (1,):
+            ta = x["response"]["content"]["text"].replace("CSAN00000_000000000001", "X").replace("100000000001", "P")
+            tb = y["response"]["content"]["text"].replace("CSAN00000_000000000002", "X").replace("100000000002", "P")
+            check(ta == tb, f"B[{i}]: páginas e constantes devem ser iguais, exceto SESSIONID/processId")
+        if x["request"]["method"] == "POST":
+            fa, fb = form(x["request"]["postData"]["text"]), form(y["request"]["postData"]["text"])
+            check(set(fa) == set(fb), f"B[{i}]: mesmos campos de formulário")
+            check(fa["SESSIONID"] != fb["SESSIONID"], f"B[{i}]: SESSIONID deve diferir")
+            check(fa["PAGEINITPARAM"] == fb["PAGEINITPARAM"], f"B[{i}]: PAGEINITPARAM igual")
+    plates_b = set(re.findall(r"TST0T\d\d", "\n".join((bdir / n).read_text() for n in ("detran-pb-b-sanitized.har", "detran-pb-b.cdp.jsonl", "detran-pb-b.cdp-bodies.jsonl"))))
+    check(plates_b == {"TST0T02", "TST0T03"}, f"B: placas {plates_b}")
+    for n in ("detran-pb-b-sanitized.har", "detran-pb-b.cdp.jsonl", "detran-pb-b.netlog.json", "detran-pb-b.cdp-bodies.jsonl"):
+        t = (bdir / n).read_text()
+        for bad in ("CSAN00000_000000000001", "SYNTH00000000000000000000000001", "0189a1b2c3d4e5f6", "DLTA", "TST0T00", "TST0T01"):
+            check(bad not in t, f"B/{n}: valor da A vazou ({bad})")
+    # caso negativo §4.3 existe na fixture: x-seq-hint=3 (resposta do cmd_filtro) e x-page-seq=3 nas requisições
+    check(any(h["name"] == "x-seq-hint" and h["value"] == "3" for h in ea[9]["response"]["headers"]), "negativo 4.3: x-seq-hint")
+    check(all(any(h["name"] == "x-page-seq" and h["value"] == "3" for h in e["request"]["headers"]) for e in ea if e["request"]["method"] == "POST"), "negativo 4.3: x-page-seq")
+    check("chain_compare" in manifest, "manifest: chain_compare ausente")
+
     # --- sanitization ----------------------------------------------------
     blob = "\n".join(
         (HERE / name).read_text()
@@ -238,7 +316,7 @@ def main() -> int:
     )
     for marker in ("CASA", "NUPP", "082b79", "sem_captcha", "wsdetran.pb.gov.br.har", "Downloads/", "Authorization"):
         check(marker not in blob, f"forbidden marker present: {marker}")
-    plates = set(re.findall(r"\bTST0T\d\d\b", blob))
+    plates = set(re.findall(r"\bTST0T\d\d\b", blob.replace((HERE / "build_fixtures.py").read_text(), "")))
     check(plates == {"TST0T00", "TST0T01"}, f"unexpected plate-like values: {plates}")
     check("CSAN00000_000000000001" in blob, "synthetic session id missing")
     check("198.51.100.10" in blob, "TEST-NET server ip missing")

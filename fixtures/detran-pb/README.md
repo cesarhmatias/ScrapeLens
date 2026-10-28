@@ -116,3 +116,20 @@ não mostrá-las como sessão real. Rótulos esperados em `session.labels`:
 `["har-import","synthetic-fixture"]`; `import-netlog` → `["netlog-import","synthetic-fixture"]`.
 `tests/aceite/check_bodies_search.py --import-fixture` e `run_acceptance.py`
 asseveram isso a cada importação.
+
+## 2ª captura (B) e cadeia de origem (rodada 5, docs/09-cadeia-comparacao.md)
+
+- `fixtures/detran-pb-b/` (`python3 fixtures/detran-pb/build_fixtures.py b`): mesmo fluxo de 13
+  passos, mesmas páginas, modelos e constantes; **diferem** SESSIONID (`…0002`), processId, cookies
+  TS*/JSESSIONID, STAMP (3001…3008), delta (`DLTB…`), horário (+1 h) e placas `TST0T02`/`TST0T03`.
+- Cadeia de valores (A e B, conferida por `validate.py`): SESSIONID nasce no HTML do easynat-app
+  (`m_currentSessionId`); STAMP e delta vêm da resposta do POST anterior; o JSESSIONID vem do
+  Set-Cookie do easynat-app (a 1ª requisição não envia cookie) e o cookie TS* só do Set-Cookie de
+  `/TSPD/` (proteção). A fixture A foi ajustada para isso (antes todas as respostas repetiam os dois
+  Set-Cookie e todas as requisições enviavam cookie); contagens (13/8/47/52) e testes do core
+  continuam iguais.
+- Caso negativo §4.3: header `x-page-seq: 3` nos POSTs coincide por acaso com `x-seq-hint: 3` da
+  resposta do `cmd_filtro` (valor <8, nome diferente: não é origem).
+- Expectativas: `manifest.json` → `chain_compare` (origens §4.1, cadeia, comparação §4.2, sanitizada
+  §4.4). Aceite: `python3 tests/aceite/check_chain_compare.py` (falha até o Core entregar
+  `origins|chain|compare`; o adaptador de formato JSON é tolerante e deve ser ajustado ao contrato final).

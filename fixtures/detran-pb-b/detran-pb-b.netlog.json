@@ -1,0 +1,1029 @@
+{
+ "constants": {
+  "logEventTypes": {
+   "URL_REQUEST_START_JOB": 1000,
+   "HTTP_TRANSACTION_SEND_REQUEST_HEADERS": 1001,
+   "HTTP_TRANSACTION_READ_RESPONSE_HEADERS": 1002,
+   "HTTP_STREAM_JOB_BOUND_TO_REQUEST": 1004,
+   "SOCKET_CONNECT": 1009
+  },
+  "timeTickOffset": 1793043960000,
+  "logCaptureMode": "Everything",
+  "logFormatVersion": 1
+ },
+ "events": [
+  {
+   "time": "5640110",
+   "type": 1000,
+   "source": {
+    "id": 301,
+    "type": 1,
+    "start_time": "5640105"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37",
+    "method": "GET",
+    "request_type": "main_frame"
+   }
+  },
+  {
+   "time": "5641010",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631110"
+   },
+   "phase": 0,
+   "params": {
+    "request": 301
+   }
+  },
+  {
+   "time": "5641310",
+   "type": 1001,
+   "source": {
+    "id": 301,
+    "type": 1,
+    "start_time": "5640105"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "pragma: no-cache",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "sec-fetch-dest: document",
+     "sec-fetch-mode: navigate",
+     "sec-fetch-site: none",
+     "upgrade-insecure-requests: 1"
+    ]
+   }
+  },
+  {
+   "time": "5730110",
+   "type": 1002,
+   "source": {
+    "id": 301,
+    "type": 1,
+    "start_time": "5640105"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "set-cookie: JSESSIONID=SYNTH00000000000000000000000002; Path=/detran-portal-servicos; Secure; HttpOnly",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5640220",
+   "type": 1000,
+   "source": {
+    "id": 302,
+    "type": 1,
+    "start_time": "5640215"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/TSPD/?type=18",
+    "method": "GET",
+    "request_type": "main_frame"
+   }
+  },
+  {
+   "time": "5641120",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631220"
+   },
+   "phase": 0,
+   "params": {
+    "request": 302
+   }
+  },
+  {
+   "time": "5641420",
+   "type": 1001,
+   "source": {
+    "id": 302,
+    "type": 1,
+    "start_time": "5640215"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "pragma: no-cache",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "cookie: JSESSIONID=SYNTH00000000000000000000000002",
+     "sec-fetch-dest: document",
+     "sec-fetch-mode: navigate",
+     "sec-fetch-site: same-origin",
+     "upgrade-insecure-requests: 1"
+    ]
+   }
+  },
+  {
+   "time": "5730220",
+   "type": 1002,
+   "source": {
+    "id": 302,
+    "type": 1,
+    "start_time": "5640215"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "set-cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; Path=/; Secure; HttpOnly",
+     "x-frame-options: SAMEORIGIN",
+     "content-type: text/javascript"
+    ]
+   }
+  },
+  {
+   "time": "5640330",
+   "type": 1000,
+   "source": {
+    "id": 303,
+    "type": 1,
+    "start_time": "5640325"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html",
+    "method": "GET",
+    "request_type": "main_frame"
+   }
+  },
+  {
+   "time": "5641230",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631330"
+   },
+   "phase": 0,
+   "params": {
+    "request": 303
+   }
+  },
+  {
+   "time": "5641530",
+   "type": 1001,
+   "source": {
+    "id": 303,
+    "type": 1,
+    "start_time": "5640325"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "pragma: no-cache",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "sec-fetch-dest: document",
+     "sec-fetch-mode: navigate",
+     "sec-fetch-site: same-origin",
+     "upgrade-insecure-requests: 1"
+    ]
+   }
+  },
+  {
+   "time": "5730330",
+   "type": 1002,
+   "source": {
+    "id": 303,
+    "type": 1,
+    "start_time": "5640325"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5640440",
+   "type": 1000,
+   "source": {
+    "id": 304,
+    "type": 1,
+    "start_time": "5640435"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "method": "POST",
+    "request_type": "xhr"
+   }
+  },
+  {
+   "time": "5641340",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631440"
+   },
+   "phase": 0,
+   "params": {
+    "request": 304
+   }
+  },
+  {
+   "time": "5641640",
+   "type": 1001,
+   "source": {
+    "id": 304,
+    "type": 1,
+    "start_time": "5640435"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html, */*; q=0.01",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "content-type: application/x-www-form-urlencoded; charset=UTF-8",
+     "origin: https://wsdetran.pb.gov.br/detran-portal-servicos",
+     "pragma: no-cache",
+     "referer: https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "sec-fetch-dest: empty",
+     "sec-fetch-mode: cors",
+     "sec-fetch-site: same-origin",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "content-length: 450",
+     "connection: keep-alive"
+    ]
+   }
+  },
+  {
+   "time": "5730440",
+   "type": 1002,
+   "source": {
+    "id": 304,
+    "type": 1,
+    "start_time": "5640435"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5640550",
+   "type": 1000,
+   "source": {
+    "id": 305,
+    "type": 1,
+    "start_time": "5640545"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "method": "GET",
+    "request_type": "main_frame"
+   }
+  },
+  {
+   "time": "5641450",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631550"
+   },
+   "phase": 0,
+   "params": {
+    "request": 305
+   }
+  },
+  {
+   "time": "5641750",
+   "type": 1001,
+   "source": {
+    "id": 305,
+    "type": 1,
+    "start_time": "5640545"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "pragma: no-cache",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "sec-fetch-dest: document",
+     "sec-fetch-mode: navigate",
+     "sec-fetch-site: same-origin",
+     "upgrade-insecure-requests: 1"
+    ]
+   }
+  },
+  {
+   "time": "5730550",
+   "type": 1002,
+   "source": {
+    "id": 305,
+    "type": 1,
+    "start_time": "5640545"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5640660",
+   "type": 1000,
+   "source": {
+    "id": 306,
+    "type": 1,
+    "start_time": "5640655"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "method": "POST",
+    "request_type": "xhr"
+   }
+  },
+  {
+   "time": "5641560",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631660"
+   },
+   "phase": 0,
+   "params": {
+    "request": 306
+   }
+  },
+  {
+   "time": "5641860",
+   "type": 1001,
+   "source": {
+    "id": 306,
+    "type": 1,
+    "start_time": "5640655"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html, */*; q=0.01",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "content-type: application/x-www-form-urlencoded; charset=UTF-8",
+     "origin: https://wsdetran.pb.gov.br/detran-portal-servicos",
+     "pragma: no-cache",
+     "referer: https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "sec-fetch-dest: empty",
+     "sec-fetch-mode: cors",
+     "sec-fetch-site: same-origin",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "content-length: 280",
+     "connection: keep-alive"
+    ]
+   }
+  },
+  {
+   "time": "5730660",
+   "type": 1002,
+   "source": {
+    "id": 306,
+    "type": 1,
+    "start_time": "5640655"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5640770",
+   "type": 1000,
+   "source": {
+    "id": 307,
+    "type": 1,
+    "start_time": "5640765"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "method": "POST",
+    "request_type": "xhr"
+   }
+  },
+  {
+   "time": "5641670",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631770"
+   },
+   "phase": 0,
+   "params": {
+    "request": 307
+   }
+  },
+  {
+   "time": "5641970",
+   "type": 1001,
+   "source": {
+    "id": 307,
+    "type": 1,
+    "start_time": "5640765"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html, */*; q=0.01",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "content-type: application/x-www-form-urlencoded; charset=UTF-8",
+     "origin: https://wsdetran.pb.gov.br/detran-portal-servicos",
+     "pragma: no-cache",
+     "referer: https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "sec-fetch-dest: empty",
+     "sec-fetch-mode: cors",
+     "sec-fetch-site: same-origin",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "content-length: 681",
+     "connection: keep-alive"
+    ]
+   }
+  },
+  {
+   "time": "5730770",
+   "type": 1002,
+   "source": {
+    "id": 307,
+    "type": 1,
+    "start_time": "5640765"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5640880",
+   "type": 1000,
+   "source": {
+    "id": 308,
+    "type": 1,
+    "start_time": "5640875"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "method": "GET",
+    "request_type": "main_frame"
+   }
+  },
+  {
+   "time": "5641780",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631880"
+   },
+   "phase": 0,
+   "params": {
+    "request": 308
+   }
+  },
+  {
+   "time": "5642080",
+   "type": 1001,
+   "source": {
+    "id": 308,
+    "type": 1,
+    "start_time": "5640875"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "pragma: no-cache",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "sec-fetch-dest: document",
+     "sec-fetch-mode: navigate",
+     "sec-fetch-site: same-origin",
+     "upgrade-insecure-requests: 1"
+    ]
+   }
+  },
+  {
+   "time": "5730880",
+   "type": 1002,
+   "source": {
+    "id": 308,
+    "type": 1,
+    "start_time": "5640875"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5640990",
+   "type": 1000,
+   "source": {
+    "id": 309,
+    "type": 1,
+    "start_time": "5640985"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "method": "POST",
+    "request_type": "xhr"
+   }
+  },
+  {
+   "time": "5641890",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5631990"
+   },
+   "phase": 0,
+   "params": {
+    "request": 309
+   }
+  },
+  {
+   "time": "5642190",
+   "type": 1001,
+   "source": {
+    "id": 309,
+    "type": 1,
+    "start_time": "5640985"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html, */*; q=0.01",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "content-type: application/x-www-form-urlencoded; charset=UTF-8",
+     "origin: https://wsdetran.pb.gov.br/detran-portal-servicos",
+     "pragma: no-cache",
+     "referer: https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "sec-fetch-dest: empty",
+     "sec-fetch-mode: cors",
+     "sec-fetch-site: same-origin",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "content-length: 280",
+     "connection: keep-alive"
+    ]
+   }
+  },
+  {
+   "time": "5730990",
+   "type": 1002,
+   "source": {
+    "id": 309,
+    "type": 1,
+    "start_time": "5640985"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5641100",
+   "type": 1000,
+   "source": {
+    "id": 310,
+    "type": 1,
+    "start_time": "5641095"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "method": "POST",
+    "request_type": "xhr"
+   }
+  },
+  {
+   "time": "5642000",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5632100"
+   },
+   "phase": 0,
+   "params": {
+    "request": 310
+   }
+  },
+  {
+   "time": "5642300",
+   "type": 1001,
+   "source": {
+    "id": 310,
+    "type": 1,
+    "start_time": "5641095"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html, */*; q=0.01",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "content-type: application/x-www-form-urlencoded; charset=UTF-8",
+     "origin: https://wsdetran.pb.gov.br/detran-portal-servicos",
+     "pragma: no-cache",
+     "referer: https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "sec-fetch-dest: empty",
+     "sec-fetch-mode: cors",
+     "sec-fetch-site: same-origin",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "content-length: 347",
+     "connection: keep-alive"
+    ]
+   }
+  },
+  {
+   "time": "5731100",
+   "type": 1002,
+   "source": {
+    "id": 310,
+    "type": 1,
+    "start_time": "5641095"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN",
+     "x-seq-hint: 3"
+    ]
+   }
+  },
+  {
+   "time": "5641210",
+   "type": 1000,
+   "source": {
+    "id": 311,
+    "type": 1,
+    "start_time": "5641205"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "method": "POST",
+    "request_type": "xhr"
+   }
+  },
+  {
+   "time": "5642110",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5632210"
+   },
+   "phase": 0,
+   "params": {
+    "request": 311
+   }
+  },
+  {
+   "time": "5642410",
+   "type": 1001,
+   "source": {
+    "id": 311,
+    "type": 1,
+    "start_time": "5641205"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html, */*; q=0.01",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "content-type: application/x-www-form-urlencoded; charset=UTF-8",
+     "origin: https://wsdetran.pb.gov.br/detran-portal-servicos",
+     "pragma: no-cache",
+     "referer: https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "sec-fetch-dest: empty",
+     "sec-fetch-mode: cors",
+     "sec-fetch-site: same-origin",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "content-length: 377",
+     "connection: keep-alive"
+    ]
+   }
+  },
+  {
+   "time": "5731210",
+   "type": 1002,
+   "source": {
+    "id": 311,
+    "type": 1,
+    "start_time": "5641205"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5641320",
+   "type": 1000,
+   "source": {
+    "id": 312,
+    "type": 1,
+    "start_time": "5641315"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "method": "POST",
+    "request_type": "xhr"
+   }
+  },
+  {
+   "time": "5642220",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5632320"
+   },
+   "phase": 0,
+   "params": {
+    "request": 312
+   }
+  },
+  {
+   "time": "5642520",
+   "type": 1001,
+   "source": {
+    "id": 312,
+    "type": 1,
+    "start_time": "5641315"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html, */*; q=0.01",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "content-type: application/x-www-form-urlencoded; charset=UTF-8",
+     "origin: https://wsdetran.pb.gov.br/detran-portal-servicos",
+     "pragma: no-cache",
+     "referer: https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "sec-fetch-dest: empty",
+     "sec-fetch-mode: cors",
+     "sec-fetch-site: same-origin",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "content-length: 322",
+     "connection: keep-alive"
+    ]
+   }
+  },
+  {
+   "time": "5731320",
+   "type": 1002,
+   "source": {
+    "id": 312,
+    "type": 1,
+    "start_time": "5641315"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  },
+  {
+   "time": "5641430",
+   "type": 1000,
+   "source": {
+    "id": 313,
+    "type": 1,
+    "start_time": "5641425"
+   },
+   "phase": 1,
+   "params": {
+    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "method": "POST",
+    "request_type": "xhr"
+   }
+  },
+  {
+   "time": "5642330",
+   "type": 1004,
+   "source": {
+    "id": 900,
+    "type": 2,
+    "start_time": "5632430"
+   },
+   "phase": 0,
+   "params": {
+    "request": 313
+   }
+  },
+  {
+   "time": "5642630",
+   "type": 1001,
+   "source": {
+    "id": 313,
+    "type": 1,
+    "start_time": "5641425"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "accept: text/html, */*; q=0.01",
+     "accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+     "cache-control: no-cache",
+     "content-type: application/x-www-form-urlencoded; charset=UTF-8",
+     "origin: https://wsdetran.pb.gov.br/detran-portal-servicos",
+     "pragma: no-cache",
+     "referer: https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+     "sec-ch-ua: \"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"",
+     "sec-ch-ua-mobile: ?0",
+     "sec-ch-ua-platform: \"macOS\"",
+     "sec-fetch-dest: empty",
+     "sec-fetch-mode: cors",
+     "sec-fetch-site: same-origin",
+     "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+     "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
+     "cookie: TS01a1b2c3=01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7; JSESSIONID=SYNTH00000000000000000000000002",
+     "content-length: 377",
+     "connection: keep-alive"
+    ]
+   }
+  },
+  {
+   "time": "5731430",
+   "type": 1002,
+   "source": {
+    "id": 313,
+    "type": 1,
+    "start_time": "5641425"
+   },
+   "phase": 0,
+   "params": {
+    "headers": [
+     "cache-control: no-cache, no-store, must-revalidate",
+     "content-type: text/html; charset=UTF-8",
+     "expires: Thu, 01 Jan 1970 00:00:00 GMT",
+     "pragma: no-cache",
+     "x-frame-options: SAMEORIGIN"
+    ]
+   }
+  }
+ ]
+}

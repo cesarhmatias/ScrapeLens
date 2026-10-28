@@ -20,27 +20,35 @@ Run:  python3 fixtures/detran-pb/build_fixtures.py
 from __future__ import annotations
 
 import json
+import sys
 import urllib.parse
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent
+VARIANT = "b" if "b" in sys.argv[1:] else "a"
+HERE = Path(__file__).resolve().parent
+OUT = HERE if VARIANT == "a" else HERE.parent / "detran-pb-b"
+PREFIX = "detran-pb" if VARIANT == "a" else "detran-pb-b"
 BASE = "https://wsdetran.pb.gov.br"
 APP = f"{BASE}/detran-portal-servicos"
 HOST = "wsdetran.pb.gov.br"
 
 # --- synthetic identities -------------------------------------------------
-SID = "CSAN00000_000000000001"                    # 22 chars, same shape as real
-PID = "100000000001"                              # 12 digits
-PLATE_A = "TST0T00"                               # synthetic Mercosul-format plate
-PLATE_B = "TST0T01"
+SID = "CSAN00000_00000000000" + ("1" if VARIANT == "a" else "2")                    # 22 chars, same shape as real
+PID = "10000000000" + ("1" if VARIANT == "a" else "2")                              # 12 digits
+PLATE_A = "TST0T00" if VARIANT == "a" else "TST0T02"                               # synthetic Mercosul-format plate
+PLATE_B = "TST0T01" if VARIANT == "a" else "TST0T03"
 TS_COOKIE = "TS01a1b2c3"
-TS_VALUE = "0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0"
-JSESSION = "JSESSIONID=SYNTH00000000000000000000000001"
+TS_VALUE = ("0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0" if VARIANT == "a"
+            else "01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7")
+JSESSION_VALUE = "SYNTH" + "0" * 24 + ("01" if VARIANT == "a" else "02")
+STAMP_BASE = 2000 if VARIANT == "a" else 3000
+DELTA_PREFIX = "DLTA" if VARIANT == "a" else "DLTB"
+JSESSION = f"JSESSIONID={JSESSION_VALUE}"
 MODEL_LOGON = "SA90001_CSAN00000"
 MODEL_SIM = "SA90002_CSAN00000"
 MODEL_VES = "SA90003_CSAN00000"
 
-T0_MS = 1_793_046_000_000  # 2026-10-26T23:00:00.000Z, fixed
+T0_MS = 1_793_046_000_000 + (0 if VARIANT == "a" else 3_600_000)  # A: 2026-10-26T23:00Z; B: +1 h
 # Chrome 156 on this machine writes NetLog `time` in MILLISECONDS of process
 # ticks (see core/src/parse/netlog.rs and experiments/results real captures).
 TICKS_BASE_MS = 5_640_000  # plausible process uptime
@@ -75,6 +83,7 @@ HEADERS_XHR = [
     ("sec-fetch-site", "same-origin"),
     ("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"),
     ("x-requested-with", "XMLHttpRequest"),
+    ("x-page-seq", "3"),  # constante curta; coincide por acaso com x-seq-hint de uma resposta (caso negativo §4.3)
 ]
 
 COOKIE_REQUEST = f"{TS_COOKIE}={TS_VALUE}; {JSESSION}"
@@ -142,17 +151,24 @@ def form_body(fields: dict[str, str] | list[tuple[str, str]]) -> str:
     )
 
 
-def request_headers(kind: str, referer: str | None = None) -> list[dict[str, str]]:
+def cookie_header(mode: str) -> str | None:
+    """none: first request (jar empty); js: only JSESSIONID (set by step 0); both: + TS* set by /TSPD/."""
+    return {"none": None, "js": JSESSION, "both": COOKIE_REQUEST}[mode]
+
+
+def request_headers(kind: str, referer: str | None = None, cookie_mode: str = "both") -> list[dict[str, str]]:
     if kind == "xhr":
         headers = [(n, v) for n, v in HEADERS_XHR]
         if referer:
             headers = [(n, referer if n == "referer" else v) for n, v in headers]
-        headers.append(("cookie", COOKIE_REQUEST))
+        if cookie_header(cookie_mode):
+            headers.append(("cookie", cookie_header(cookie_mode)))
         headers.append(("content-length", "0"))  # replaced per request
         headers.append(("connection", "keep-alive"))
     else:
         headers = list(HEADERS_COMMON)
-        headers.append(("cookie", COOKIE_REQUEST))
+        if cookie_header(cookie_mode):
+            headers.append(("cookie", cookie_header(cookie_mode)))
         headers.append(("sec-fetch-dest", "document"))
         headers.append(("sec-fetch-mode", "navigate"))
         headers.append(("sec-fetch-site", "same-origin" if kind != "entry" else "none"))
@@ -160,17 +176,19 @@ def request_headers(kind: str, referer: str | None = None) -> list[dict[str, str
     return [{"name": n, "value": v} for n, v in headers]
 
 
-def response_headers(extra: list[tuple[str, str]] | None = None) -> list[dict[str, str]]:
+SET_COOKIE_LINES = {
+    "ts": ("set-cookie", f"{TS_COOKIE}={TS_VALUE}; Path=/; Secure; HttpOnly"),
+    "js": ("set-cookie", f"{JSESSION}; Path=/detran-portal-servicos; Secure; HttpOnly"),
+}
+
+
+def response_headers(extra: list[tuple[str, str]] | None = None, set_cookies: tuple[str, ...] = ()) -> list[dict[str, str]]:
     headers = [
         ("cache-control", "no-cache, no-store, must-revalidate"),
         ("content-type", "text/html; charset=UTF-8"),
         ("expires", "Thu, 01 Jan 1970 00:00:00 GMT"),
         ("pragma", "no-cache"),
-        (
-            "set-cookie",
-            f"TS01a1b2c3={TS_VALUE}; Path=/; Secure; HttpOnly",
-        ),
-        ("set-cookie", f"{JSESSION}; Path=/detran-portal-servicos; Secure; HttpOnly"),
+        *[SET_COOKIE_LINES[k] for k in set_cookies],
         ("x-frame-options", "SAMEORIGIN"),
     ]
     if extra:
@@ -181,11 +199,13 @@ def response_headers(extra: list[tuple[str, str]] | None = None) -> list[dict[st
 def entry_har(method: str, url: str, status: int, mime: str, body: str,
               post_fields: list[tuple[str, str]] | None = None, kind: str = "page",
               extra_resp: list[tuple[str, str]] | None = None,
-              referer: str | None = None) -> dict:
+              referer: str | None = None, cookie_mode: str = "both",
+              set_cookies: tuple[str, ...] = ()) -> dict:
     ip = "198.51.100.10"  # TEST-NET-2, never a real address
     headers = request_headers(
         "xhr" if post_fields is not None else ("entry" if kind == "entry" else "page"),
         referer,
+        cookie_mode,
     )
     if post_fields is not None:
         body_text = form_body(post_fields)
@@ -205,10 +225,10 @@ def entry_har(method: str, url: str, status: int, mime: str, body: str,
         "httpVersion": "http/1.1",
         "headers": headers,
         "queryString": [{"name": k, "value": v} for k, v in urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query)],
-        "cookies": [
-            {"name": TS_COOKIE, "value": TS_VALUE},
-            {"name": "JSESSIONID", "value": "SYNTH00000000000000000000000001"},
-        ],
+        "cookies": [c for c in (
+            {"name": TS_COOKIE, "value": TS_VALUE} if cookie_mode == "both" else None,
+            {"name": "JSESSIONID", "value": JSESSION_VALUE} if cookie_mode in ("js", "both") else None,
+        ) if c],
         "headersSize": 900,
         "bodySize": len(body_text.encode()),
     }
@@ -222,11 +242,11 @@ def entry_har(method: str, url: str, status: int, mime: str, body: str,
         "status": status,
         "statusText": "OK" if status == 200 else "Forbidden",
         "httpVersion": "http/1.1",
-        "headers": response_headers(extra_resp),
-        "cookies": [
-            {"name": TS_COOKIE, "value": TS_VALUE, "path": "/", "secure": True, "httpOnly": True},
-            {"name": "JSESSIONID", "value": "SYNTH00000000000000000000000001", "path": "/detran-portal-servicos", "secure": True, "httpOnly": True},
-        ],
+        "headers": response_headers(extra_resp, set_cookies),
+        "cookies": [c for c in (
+            {"name": TS_COOKIE, "value": TS_VALUE, "path": "/", "secure": True, "httpOnly": True} if "ts" in set_cookies else None,
+            {"name": "JSESSIONID", "value": JSESSION_VALUE, "path": "/detran-portal-servicos", "secure": True, "httpOnly": True} if "js" in set_cookies else None,
+        ) if c],
         "content": {"size": len(body.encode()), "mimeType": mime, "text": body},
         "redirectURL": "",
         "headersSize": 600,
@@ -511,6 +531,75 @@ def edge_cdp_and_bodies() -> tuple[list[dict], list[dict]]:
     return ev, bodies
 
 
+def chain_compare_expectations() -> dict:
+    """Expectativas de docs/09-cadeia-comparacao.md §4 (A = esta captura; B = ../detran-pb-b)."""
+    r = rid_of
+    target = r(10)
+    o = lambda field, kind, producer, **kw: {"field": field, "evidence": kind, "producer": producer, **kw}
+    return {
+        "contract": "docs/09-cadeia-comparacao.md §4",
+        "target": {"requestId": target, "event": "cmd_consultar_placa", "plate": PLATE_A},
+        "origins_4_1": {
+            "note": "producer = requestId CDP; o Core devolve o id lógico (cdp-rNNNN) ao qual este requestId pertence",
+            "fields": [
+                o("SESSIONID", "value-match", r(0), literal="m_currentSessionId", earliest_of_candidates=True,
+                  also_in=[r(2), r(4), r(7)], ambiguous=True,
+                  why="a página easynat-app define m_currentSessionId; as páginas seguintes repetem o literal, então há candidatos ambíguos e o mais antigo é o produtor"),
+                o("STAMP", "same-field", r(9), value=str(2005 - 2000 + STAMP_BASE), why="STAMP da resposta do POST anterior (cmd_filtro)"),
+                o("XML:delta", "value-match", r(9), value=f"{DELTA_PREFIX}0005", why="delta na resposta do POST anterior, dentro do campo opaco XML"),
+                o("cookie:JSESSIONID", "cookie-jar", r(0), why="Set-Cookie da resposta do easynat-app"),
+                o(f"cookie:{TS_COOKIE}", "cookie-jar", r(1), protection=True, why="Set-Cookie de /TSPD/ (proteção)"),
+                o("XML:v_placa", "sem origem observada", None, value=PLATE_A, why="entrada do usuário"),
+            ],
+            "negative_4_3": {
+                "field": "header:x-page-seq", "value": "3", "evidence": "sem origem observada",
+                "coincidence": {"requestId": r(9), "header": "x-seq-hint", "value": "3"},
+                "why": "valor curto (<8) igual por acaso a x-seq-hint, mas com outro nome: não é origem",
+            },
+        },
+        "chain_4_1": {
+            "application_in_flow_order": [r(0), r(3), r(5), r(6), r(8), r(9)],
+            "allowed_extra_application": [r(2), r(4), r(7)],
+            "protection": [r(1)],
+            "must_exclude": [target, r(11), r(12)],
+            "reasons": {
+                r(0): "fornece SESSIONID (m_currentSessionId) e Set-Cookie JSESSIONID",
+                r(1): "proteção: /TSPD/ define o cookie TS01a1b2c3",
+                r(3): "init NatLogon: STAMP/delta iniciais da cadeia (resp. 2001/DLTA0001)",
+                r(5): "init SIM1000X: recebe STAMP/delta da r(3) e produz os da on_interceptor",
+                r(6): "on_interceptor: produz STAMP/delta consumidos pelo init VES0009X",
+                r(8): "init VES0009X: produz STAMP/delta do cmd_filtro",
+                r(9): "cmd_filtro: produz STAMP/delta da 1ª consulta (origem direta)",
+            },
+        },
+        "compare_4_2": {
+            "a": "detran-pb", "b": "detran-pb-b",
+            "pairs": "13 pares em ordem (índice i de A com o índice i de B); só em A/B: nenhum",
+            "consultas_pair_by_order": [[r(10), r(10)], [r(12), r(12)]],
+            "fields": [
+                {"field": "SESSIONID", "class": "dinâmico", "runtime": True, "origin": r(0)},
+                {"field": "STAMP", "class": "dinâmico", "runtime": True, "origin": r(9)},
+                {"field": "XML:delta", "class": "dinâmico", "runtime": True, "origin": r(9)},
+                {"field": "cookie:JSESSIONID", "class": "dinâmico", "runtime": True, "origin": r(0)},
+                {"field": f"cookie:{TS_COOKIE}", "class": "dinâmico", "runtime": True, "origin": r(1), "protection": True},
+                {"field": "XML:v_placa", "class": "dinâmico", "runtime": False, "origin": None, "label": "dinâmico sem origem"},
+                {"field": "XML:cmd_consultar_placa", "class": "estático"},
+                {"field": "PAGEINITPARAM", "class": "estático", "value": ""},
+                {"field": "ERRORMESSAGE", "class": "estático", "value": ""},
+                {"field": "XML:#f12_selected", "class": "estático", "value": "2.0"},
+                {"field": "header:x-page-seq", "class": "estático", "value": "3"},
+            ],
+            "plates": {"A": [PLATE_A, PLATE_B], "B": ["TST0T02", "TST0T03"]},
+        },
+        "sanitized_4_4": {
+            "session": "A sanitizada (scrapelens-core sanitize)",
+            "must_not_leak": [SID, JSESSION_VALUE, TS_VALUE],
+            "must_declare": "valores redigidos não podem ser rastreados (aviso na saída de origins/chain)",
+            "delta_and_stamp_remain_visible": True,
+        },
+    }
+
+
 # --- the flow -------------------------------------------------------------
 def page_html(title: str, model: str, init_param: str = "") -> str:
     return f"""<!doctype html>
@@ -547,7 +636,10 @@ def build() -> None:
             purpose="", event="", referer=f"{APP}/UIC-SERVICOS/VES0009X.html"):
         nonlocal t
         t += 110
-        entry = entry_har(method, url, status, mime, body, fields, kind, extra, referer)
+        idx = len(steps)
+        entry = entry_har(method, url, status, mime, body, fields, kind, extra, referer,
+                          cookie_mode={0: "none", 1: "js"}.get(idx, "both"),
+                          set_cookies={0: ("js",), 1: ("ts",)}.get(idx, ()))
         steps.append({
             "offset_ms": t,
             "request": entry["request"],
@@ -573,7 +665,7 @@ def build() -> None:
                   "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"}
     body = serialize(SID, PID, MODEL_LOGON, "/cisnatural/NatLogon.html", "", init_props, "inittini", init=True)
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
-        connector_response([("nextPage", "/UIC-SERVICOS/SIM1000X.html")], "2001", "DLTA0001"),
+        connector_response([("nextPage", "/UIC-SERVICOS/SIM1000X.html")], str(2001 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0001"),
         [("SESSIONID", SID), ("PAGEINITPARAM", init_props["pageInitParam"]), ("XML", body), ("STAMP", "INIT")],
         kind="page", purpose="init NatLogon", event="init")
     # 5 SIM page
@@ -581,42 +673,42 @@ def build() -> None:
         page_html("SIM1000X", MODEL_SIM), purpose="abrir serviços")
     # 6 init SIM1000X
     body = serialize(SID, PID, MODEL_SIM, "/UIC-SERVICOS/SIM1000X.html", "", {
-        "pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"}, "DLTA0001", init=True)
+        "pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"}, f"{DELTA_PREFIX}0001", init=True)
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
-        connector_response([("nextPage", "/UIC-SERVICOS/SIM1000X.html")], "2002", "DLTA0002"),
+        connector_response([("nextPage", "/UIC-SERVICOS/SIM1000X.html")], str(2002 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0002"),
         [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("STAMP", "INIT")],
         purpose="init SIM1000X", event="init", referer=f"{APP}/UIC-SERVICOS/SIM1000X.html")
     # 7 on_interceptor
     props = {"interceptor_is_active": "false"}
     props.update({f"interceptor_params.items[{i}].interceptor_value": "S37" if i == 1 else "" for i in range(6)})
     props.update({"cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""})
-    body = serialize(SID, PID, MODEL_SIM, "/UIC-SERVICOS/SIM1000X.html", "on_interceptor", props, "DLTA0002")
+    body = serialize(SID, PID, MODEL_SIM, "/UIC-SERVICOS/SIM1000X.html", "on_interceptor", props, f"{DELTA_PREFIX}0002")
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
-        connector_response([("nextPage", "/UIC-SERVICOS/VES0009X.html")], "2003", "DLTA0003"),
-        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", "2002")],
+        connector_response([("nextPage", "/UIC-SERVICOS/VES0009X.html")], str(2003 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0003"),
+        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2002 - 2000 + STAMP_BASE))],
         purpose="on_interceptor S37", event="on_interceptor", referer=f"{APP}/UIC-SERVICOS/SIM1000X.html")
     # 8 VES page
     add("GET", f"{APP}/UIC-SERVICOS/VES0009X.html", 200, "text/html",
         page_html("VES0009X", MODEL_VES), purpose="abrir consulta de pátio")
     # 9 init VES0009X
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "", {
-        "pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"}, "DLTA0003", init=True)
+        "pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"}, f"{DELTA_PREFIX}0003", init=True)
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
-        connector_response([("nextPage", "/UIC-SERVICOS/VES0009X.html")], "2004", "DLTA0004"),
+        connector_response([("nextPage", "/UIC-SERVICOS/VES0009X.html")], str(2004 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0004"),
         [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("STAMP", "INIT")],
         purpose="init VES0009X", event="init")
     # 10 cmd_filtro
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_filtro", {
         "v_filtro_sel": "2.0", "#f12_selected": "2.0",
-        "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, "DLTA0004")
+        "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, f"{DELTA_PREFIX}0004")
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
-        connector_response([("v_filtro_sel", "2.0")], "2005", "DLTA0005"),
-        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", "2004")],
-        purpose="selecionar filtro", event="cmd_filtro")
+        connector_response([("v_filtro_sel", "2.0")], str(2005 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0005"),
+        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2004 - 2000 + STAMP_BASE))],
+        extra=[("x-seq-hint", "3")], purpose="selecionar filtro", event="cmd_filtro")
     # 11 consultar (full body, with v_situacao_atual)
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_consultar_placa", {
         "v_filtro_error": "", "v_placa": PLATE_A, "#f12_selected": "2.0",
-        "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, "DLTA0005")
+        "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, f"{DELTA_PREFIX}0005")
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
         connector_response([
             ("v_placa", PLATE_A),
@@ -626,21 +718,21 @@ def build() -> None:
             ("situacao_rows.items[0].situacao_col1", "Apreendido"),
             ("situacao_rows.items[1].situacao_col1", "Liberado"),
             ("v_tmp", "x"),
-        ], "2006", "DLTA0006"),
-        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", "2005")],
+        ], str(2006 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0006"),
+        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2005 - 2000 + STAMP_BASE))],
         purpose="consultar placa (corpo completo)", event="cmd_consultar_placa")
     # 12 cmd_nova
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_nova", {
         "#f12_selected": "2.0",
-        "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, "DLTA0006")
+        "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, f"{DELTA_PREFIX}0006")
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
-        connector_response([("v_situacao_atual", "")], "2007", "DLTA0007"),
-        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", "2006")],
+        connector_response([("v_situacao_atual", "")], str(2007 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0007"),
+        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2006 - 2000 + STAMP_BASE))],
         purpose="limpar resultado", event="cmd_nova")
     # 13 segunda consulta: resposta delta omite v_situacao_atual
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_consultar_placa", {
         "v_filtro_error": "", "v_placa": PLATE_B, "#f12_selected": "2.0",
-        "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, "DLTA0007")
+        "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, f"{DELTA_PREFIX}0007")
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
         connector_response([
             ("v_placa", PLATE_B),
@@ -648,8 +740,8 @@ def build() -> None:
             ("vp_situacao_atual", "true"),
             ("situacao_rows.items[0].situacao_col1", "Apreendido"),
             ("v_tmp", "y"),
-        ], "2008", "DLTA0008"),
-        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", "2007")],
+        ], str(2008 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0008"),
+        [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2007 - 2000 + STAMP_BASE))],
         purpose="consultar placa (resposta delta sem v_situacao_atual)",
         event="cmd_consultar_placa")
 
@@ -758,7 +850,7 @@ def build() -> None:
             "length_unit": "UTF-16 code units (JavaScript String.length)",
             "request_ops": ["i", "v", "p", "x"],
             "response_ops": ["l", "p", "q", "w", "z", "b", "c", "s", "k", "x"],
-            "stamp_flow": ["INIT", "2001", "INIT", "2002", "2003", "INIT", "2004", "2005", "2006", "2007", "2008"],
+            "stamp_flow": ["INIT", str(2001 - 2000 + STAMP_BASE), "INIT", str(2002 - 2000 + STAMP_BASE), str(2003 - 2000 + STAMP_BASE), "INIT", str(2004 - 2000 + STAMP_BASE), str(2005 - 2000 + STAMP_BASE), str(2006 - 2000 + STAMP_BASE), str(2007 - 2000 + STAMP_BASE), str(2008 - 2000 + STAMP_BASE)],
         },
         "search_cases": [
             {"query": "cmd_consultar_placa", "where": "body", "expect_entries": [10, 12]},
@@ -804,19 +896,31 @@ def build() -> None:
         },
     }
 
-    (OUT / "detran-pb-sanitized.har").write_text(json.dumps(har, indent=1, ensure_ascii=False) + "\n")
-    (OUT / "detran-pb-blocked.har").write_text(json.dumps(blocked, indent=1, ensure_ascii=False) + "\n")
-    (OUT / "detran-pb.cdp.jsonl").write_text(
-        "\n".join(json.dumps(e, ensure_ascii=False) for e in cdp_events()) + "\n"
-    )
-    (OUT / "detran-pb.netlog.json").write_text(
-        json.dumps(netlog_events(), indent=1, ensure_ascii=False) + "\n"
-    )
-    (OUT / "detran-pb.cdp-bodies.jsonl").write_text(
-        "\n".join(json.dumps(r, ensure_ascii=False) for r in detran_bodies()) + "\n")
-    edge_ev, edge_bodies = edge_cdp_and_bodies()
-    (OUT / "detran-pb-edge.cdp.jsonl").write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in edge_ev) + "\n")
-    (OUT / "detran-pb-edge.cdp-bodies.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in edge_bodies) + "\n")
+    if VARIANT == "a":
+        manifest["chain_compare"] = chain_compare_expectations()
+        manifest["files"]["capture_b"] = "../detran-pb-b/manifest.json"
+        (OUT / "detran-pb-blocked.har").write_text(json.dumps(blocked, indent=1, ensure_ascii=False) + "\n")
+        edge_ev, edge_bodies = edge_cdp_and_bodies()
+        (OUT / "detran-pb-edge.cdp.jsonl").write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in edge_ev) + "\n")
+        (OUT / "detran-pb-edge.cdp-bodies.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in edge_bodies) + "\n")
+    else:
+        OUT.mkdir(exist_ok=True)
+        manifest = {
+            "schema": "scrapelens.fixture.case/1", "id": "detran-pb-b",
+            "label": "sanitized-shape-real-case",
+            "origin": "2ª captura sintética do mesmo fluxo de 13 passos (par da detran-pb); valores 100% sintéticos",
+            "files": {"har": f"{PREFIX}-sanitized.har", "cdp": f"{PREFIX}.cdp.jsonl",
+                      "netlog": f"{PREFIX}.netlog.json", "cdp_bodies": f"{PREFIX}.cdp-bodies.jsonl"},
+            "values": {"session_id": SID, "process_id": PID, "plates": [PLATE_A, PLATE_B], "cookie_ts": TS_COOKIE,
+                       "jsessionid": JSESSION_VALUE, "stamp_base": STAMP_BASE, "delta_prefix": DELTA_PREFIX},
+            "counts": {"entries": len(steps), "cdp_events": len(cdp_events()), "netlog_events": len(netlog_events()["events"])},
+            "pair_of": "../detran-pb/manifest.json (chain_compare)",
+            "note": "Mesmas páginas, modelos e constantes da A; SESSIONID, processId, cookies TS*/JSESSIONID, STAMP, delta e placas diferentes.",
+        }
+    (OUT / f"{PREFIX}-sanitized.har").write_text(json.dumps(har, indent=1, ensure_ascii=False) + "\n")
+    (OUT / f"{PREFIX}.cdp.jsonl").write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in cdp_events()) + "\n")
+    (OUT / f"{PREFIX}.netlog.json").write_text(json.dumps(netlog_events(), indent=1, ensure_ascii=False) + "\n")
+    (OUT / f"{PREFIX}.cdp-bodies.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in detran_bodies()) + "\n")
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
 
 

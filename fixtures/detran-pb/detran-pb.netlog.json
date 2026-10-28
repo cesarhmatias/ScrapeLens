@@ -59,7 +59,6 @@
      "sec-ch-ua-mobile: ?0",
      "sec-ch-ua-platform: \"macOS\"",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-     "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "sec-fetch-dest: document",
      "sec-fetch-mode: navigate",
      "sec-fetch-site: none",
@@ -82,7 +81,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
      "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
@@ -135,7 +133,7 @@
      "sec-ch-ua-mobile: ?0",
      "sec-ch-ua-platform: \"macOS\"",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-     "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
+     "cookie: JSESSIONID=SYNTH00000000000000000000000001",
      "sec-fetch-dest: document",
      "sec-fetch-mode: navigate",
      "sec-fetch-site: same-origin",
@@ -159,7 +157,6 @@
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
      "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN",
      "content-type: text/javascript"
     ]
@@ -235,8 +232,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -295,6 +290,7 @@
      "sec-fetch-site: same-origin",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
      "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
      "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "content-length: 450",
      "connection: keep-alive"
@@ -316,8 +312,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -392,8 +386,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -452,6 +444,7 @@
      "sec-fetch-site: same-origin",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
      "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
      "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "content-length: 280",
      "connection: keep-alive"
@@ -473,8 +466,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -533,6 +524,7 @@
      "sec-fetch-site: same-origin",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
      "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
      "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "content-length: 681",
      "connection: keep-alive"
@@ -554,8 +546,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -630,8 +620,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -690,6 +678,7 @@
      "sec-fetch-site: same-origin",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
      "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
      "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "content-length: 280",
      "connection: keep-alive"
@@ -711,8 +700,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -771,6 +758,7 @@
      "sec-fetch-site: same-origin",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
      "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
      "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "content-length: 347",
      "connection: keep-alive"
@@ -792,9 +780,8 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
-     "x-frame-options: SAMEORIGIN"
+     "x-frame-options: SAMEORIGIN",
+     "x-seq-hint: 3"
     ]
    }
   },
@@ -852,6 +839,7 @@
      "sec-fetch-site: same-origin",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
      "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
      "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "content-length: 377",
      "connection: keep-alive"
@@ -873,8 +861,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -933,6 +919,7 @@
      "sec-fetch-site: same-origin",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
      "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
      "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "content-length: 322",
      "connection: keep-alive"
@@ -954,8 +941,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }
@@ -1014,6 +999,7 @@
      "sec-fetch-site: same-origin",
      "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
      "x-requested-with: XMLHttpRequest",
+     "x-page-seq: 3",
      "cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; JSESSIONID=SYNTH00000000000000000000000001",
      "content-length: 377",
      "connection: keep-alive"
@@ -1035,8 +1021,6 @@
      "content-type: text/html; charset=UTF-8",
      "expires: Thu, 01 Jan 1970 00:00:00 GMT",
      "pragma: no-cache",
-     "set-cookie: TS01a1b2c3=0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0; Path=/; Secure; HttpOnly",
-     "set-cookie: JSESSIONID=SYNTH00000000000000000000000001; Path=/detran-portal-servicos; Secure; HttpOnly",
      "x-frame-options: SAMEORIGIN"
     ]
    }

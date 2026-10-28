@@ -1,0 +1,31 @@
+{
+ "schema": "scrapelens.fixture.case/1",
+ "id": "detran-pb-b",
+ "label": "sanitized-shape-real-case",
+ "origin": "2ª captura sintética do mesmo fluxo de 13 passos (par da detran-pb); valores 100% sintéticos",
+ "files": {
+  "har": "detran-pb-b-sanitized.har",
+  "cdp": "detran-pb-b.cdp.jsonl",
+  "netlog": "detran-pb-b.netlog.json",
+  "cdp_bodies": "detran-pb-b.cdp-bodies.jsonl"
+ },
+ "values": {
+  "session_id": "CSAN00000_000000000002",
+  "process_id": "100000000002",
+  "plates": [
+   "TST0T02",
+   "TST0T03"
+  ],
+  "cookie_ts": "TS01a1b2c3",
+  "jsessionid": "SYNTH00000000000000000000000002",
+  "stamp_base": 3000,
+  "delta_prefix": "DLTB"
+ },
+ "counts": {
+  "entries": 13,
+  "cdp_events": 47,
+  "netlog_events": 52
+ },
+ "pair_of": "../detran-pb/manifest.json (chain_compare)",
+ "note": "Mesmas páginas, modelos e constantes da A; SESSIONID, processId, cookies TS*/JSESSIONID, STAMP, delta e placas diferentes."
+}
