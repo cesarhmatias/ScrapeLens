@@ -179,6 +179,19 @@ export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id
           </ol>
         </div>
       )}
+      {chain.auxiliaryPages && chain.auxiliaryPages.length > 0 && (
+        <details style={{ padding: "0 13px" }}>
+          <summary>
+            Frames auxiliares <span className="count">{chain.auxiliaryPages.length}</span>{" "}
+            <span className="dim">(carregados por parser: *_JLIBS, cscform, about:blank; não produzem valores)</span>
+          </summary>
+          <ol className="chain-list">
+            {chain.auxiliaryPages.map((step) => (
+              <StepItem key={step.requestId} step={step} onOpen={onOpen} />
+            ))}
+          </ol>
+        </details>
+      )}
       {chain.protection.length > 0 && (
         <div style={{ padding: "0 13px" }}>
           <h4>Proteção (não é lógica da aplicação)</h4>

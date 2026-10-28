@@ -25,6 +25,7 @@ const url = `http://127.0.0.1:${server.address().port}/`;
 
 let pick = d1;
 let cmp = null;
+let injectedAux = false;
 const core = (...a) => JSON.parse(execFileSync(coreBin, a, { maxBuffer: 1 << 28 }).toString());
 const dyn = (p) => p.counts.dynamic + p.counts.onlyA + p.counts.onlyB + p.counts.redacted > 0;
 async function rpc(cmd, args) {
@@ -34,7 +35,15 @@ async function rpc(cmd, args) {
       return { session, sessionDir: args.path, synthetic: false, pending: false };
     }
     case "request_origins": return core("origins", args.sessionDir, args.requestId);
-    case "request_chain": return core("chain", args.sessionDir, args.requestId);
+    case "request_chain": {
+      const chain = core("chain", args.sessionDir, args.requestId);
+      // Nenhuma fixture emite auxiliaryPages ainda: INJETADO À MÃO (2 frames sintéticos copiados de `pages`) só para o print 19.
+      if (!(chain.auxiliaryPages ?? []).length && chain.pages?.length) {
+        chain.auxiliaryPages = chain.pages.slice(0, 2).map((p, i) => ({ ...p, class: "auxiliary", url: p.url.replace(/[^/]*$/, i === 0 ? "SIM1000X_JLIBS.html" : "cscform.html"), reason: "frame auxiliar carregado por parser" }));
+        injectedAux = true;
+      }
+      return chain;
+    }
     case "search_session": {
       const a = ["search", args.sessionDir, args.text];
       for (const s of args.scopes) a.push("--scope", s);
@@ -128,6 +137,9 @@ await page.screenshot({ path: path.join(outDir, "18b-origem-stamp-controle-html.
 await page.evaluate(() => document.querySelector(".chain-list")?.scrollIntoView({ block: "start" }));
 results.pagesGroup = await page.getByText(/Páginas de contexto/).count();
 results.protectionGroup = await page.getByText(/Proteção \(não é lógica/).count();
+results.auxiliaryGroup = await page.getByText(/Frames auxiliares/).count();
+results.auxiliaryInjectedByHand = injectedAux;
+await page.locator("summary", { hasText: "Frames auxiliares" }).click();
 await shot("19-cadeia-paginas-protecao.png");
 
 // Composite (campo curto com componentes)

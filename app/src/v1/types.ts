@@ -144,7 +144,14 @@ export interface HeaderEvidence {
   view: HeaderView;
 }
 
+export interface Initiator {
+  kind: string;
+  url?: string;
+}
+
 export interface Attempt {
+  /** Quem iniciou a tentativa (CDP initiator, HAR _initiator), quando conhecido. */
+  initiator?: Initiator;
   id: string;
   logicalId: string;
   index: number;

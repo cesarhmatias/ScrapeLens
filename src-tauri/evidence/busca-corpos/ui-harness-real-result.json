@@ -13,16 +13,18 @@
   "originSummary": [
     "header x-requested-with\tXMLHttpRequest\tsem origem observada (já circulava)",
     "corpo SESSIONID\tCSAN00011_700000000011\tsem origem observada (já circulava)",
+    "sem origem observada; contém o valor de m_currentSessionId de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente (valor já circulava em har-0007, har-0010, har-0012, har-0015, har-0017)",
     "corpo PAGEINITPARAM\t(vazio)\tsem origem observada",
     "\tv2232001705027000195\tsem origem observada",
     "\tCSAN00011\tpossível origem (value-match)\t",
     "\t_700000000011\tsem origem observada",
-    "\tSYNTHPID000000000000000000000011\tpossível origem (value-match)\t",
-    "\tSA90003_CSAN00000\tpossível origem (value-match)\t"
+    "\tSYNTHPID000000000000000000000011\tpossível origem (value-match)\t"
   ],
   "stampRow": "corpo STAMP\t4105\torigem observada\t\nhar-0017 same-field · forte controle de formulário HTML (STAMP) produziu em responseBody:STAMP · byte 9968",
   "pagesGroup": 1,
   "protectionGroup": 1,
+  "auxiliaryGroup": 1,
+  "auxiliaryInjectedByHand": true,
   "compositeRows": [
     "corpo token\tALPHA0001_987654321012\tcomposto (ver trechos)\t",
     "↳ corpo token[1]",

@@ -113,6 +113,8 @@ export interface PrimingChain {
   protection: ChainStep[];
   /** Páginas de contexto (Referer): nunca produtoras. */
   pages?: ChainStep[];
+  /** Frames auxiliares carregados por parser (fora de `pages`). */
+  auxiliaryPages?: ChainStep[];
   unresolved: UnresolvedValue[];
   redactedValues: number;
   warnings: string[];

@@ -167,4 +167,12 @@ assert.equal(roundHeader(undefined, undefined, rounds), null);
 // origem com unobservable.suggestion: o campo é preservado pelo adapter de tipos
 const sug = vo({ unobservable: [{ requestId: "har-0003", state: "unavailable", suggestion: "har-0030" }] }) as any;
 assert.equal(sug.unobservable[0].suggestion, "har-0030");
+import { initiatorLabel } from "../src/v1/adapter";
+assert.equal(initiatorLabel(undefined), undefined);
+assert.equal(initiatorLabel({ kind: "parser", url: "https://x.invalid/a.html" }), "parser · https://x.invalid/a.html");
+assert.equal(initiatorLabel({ kind: "script" }), "script");
+const withInit = structuredClone(minimal) as any;
+withInit.requests[0].attempts = [{ id: "a", logicalId: "r", index: 0, url: "u", method: "GET", protocol: "h1", initiator: { kind: "parser", url: "https://x.invalid/p" } }];
+assert.equal(adaptSession(withInit).session.requests[0].initiator, "parser · https://x.invalid/p");
+assert.equal(adaptSession(minimal).session.requests[0].initiator, undefined);
 console.log("adapter-minimal: ok");

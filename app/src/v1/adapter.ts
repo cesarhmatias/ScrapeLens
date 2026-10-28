@@ -446,6 +446,7 @@ export function adaptSession(
       path: safePath(request.url),
       status: rawStatus,
       statusText: statusText(rawStatus),
+      initiator: initiatorLabel(request.attempts?.length ? request.attempts[request.attempts.length - 1].initiator ?? request.attempts[0].initiator : undefined),
       protocol: protocolLabel(request.protocol),
       type: RESOURCE_TYPES.has((request.resourceType ?? "").toLowerCase() as ResourceType)
         ? ((request.resourceType ?? "other").toLowerCase() as ResourceType)
@@ -539,6 +540,12 @@ function safePath(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** `kind` + url do iniciador; sem ele, `undefined` (a UI mostra "não informado"). */
+export function initiatorLabel(initiator: { kind: string; url?: string } | undefined): string | undefined {
+  if (!initiator?.kind) return undefined;
+  return initiator.url ? `${initiator.kind} · ${initiator.url}` : initiator.kind;
 }
 
 function statusText(status: number): string {
