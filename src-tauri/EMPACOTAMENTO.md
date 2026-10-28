@@ -46,7 +46,7 @@ Ferramentas usadas: rustc 1.98.1, Node 26.8.1, macOS 26.5.2 (arm64).
 | Bundle | `src-tauri/target/release/bundle/macos/ScrapeLens.app` |
 | Executável | `ScrapeLens.app/Contents/MacOS/scrapelens` |
 | Arquitetura | `Mach-O 64-bit executable arm64`, thin (sem universal binary) |
-| Tamanho do bundle | 15.368 KiB (~15,0 MiB, `du -sk`) |
+| Tamanho do bundle | 15.608 KiB (~15,2 MiB, `du -sk`) |
 | Tamanho do executável | 15.227.952 bytes |
 | SHA-256 do executável | `1697321ddc3b0cdc1e9818ce92d1287ae555c6baef04b4bd3443ca2730d22557` |
 | Identificador | `app.scrapelens.desktop` |
