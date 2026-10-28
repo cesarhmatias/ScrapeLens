@@ -137,3 +137,47 @@ Todos abaixo de 1,6 s e 130 MiB; sem problema de desempenho.
 | L6 | Pareamento do compare com capturas de 2 rodadas deixa a 1ª rodada "só em B" e dá 51 ambiguidades | Alinhar por fase/ocorrência do modelo (rodada) e mostrar rodadas como grupos; permitir escolher a faixa de requisições a comparar |
 | L7 | `requestBody` de GET aparece como `unavailable` ("HAR não fornece postData") | GET sem corpo deve ser `none/não aplicável`, reservando `unavailable` para corpo realmente indisponível |
 | L8 | Unavailable de respostas do Connector em H2/H3 (1ª rodada) bloqueia a origem do 1º `cmd_consultar_placa` | Na UI, indicar qual produtor está indisponível e sugerir a ocorrência equivalente na rodada seguinte |
+
+## Rodada 6 — revalidação (core fc4aa29, `check_real_detran.py`, só agregados)
+
+Reexecutado nos mesmos 3 HARs com `python3 tests/aceite/check_real_detran.py <H1> <H2> <H3>` (diretório
+temporário 0700, apagado; nenhum valor impresso). Core release recompilado do HEAD.
+
+| Métrica | Antes (fa54020) | Depois (fc4aa29) |
+|---|---|---|
+| STAMP resolvido (same-field forte, POSTs com STAMP≠INIT e resposta anterior disponível) | 0 de 5 (H1); 0 de 10 (H2) | **5/5 (H1), 10/10 (H2), 11/11 (H3) = 100%** |
+| delta resolvido (value-match na textarea anterior, produtor = POST do Connector) | 0 de 5; 1 de 10 | **5/5, 10/10, 11/11 = 100%** |
+| Passos da cadeia do 1º `cmd_consultar_placa` | 5 (H1), 6 (H2), nenhum POST do Connector | 10 (H1), 9 (H2/H3), **5 / 4 / 4 POSTs do Connector** |
+| Grupo `pages` | ausente | 11 (ver análise) |
+| `protection` | 70 / 85 | 70 / 41 / 41 (as páginas e scripts saíram do grupo de proteção) |
+| Placas após sanitize | 4 de 2 (H1), 10 de 2 (H2) | **0 / 0 / 0** |
+| Aviso `har.cookies_absent` em origins/chain | não | **sim** |
+| compare H1×H2 | 108 pares, 27 só em A, 101 só em B, 51 ambiguidades | **21 pares, 0 só em A, 5 só em B, 0 ambiguidades, 2 rodadas sem par** |
+
+Critérios do Aceite 5 (≥ 95% STAMP/delta, cadeia com os POSTs do Connector, 0 placas): **atendidos**.
+
+Diferença de contagem com a do Core (7/7 em H1 e 14/14 em H2): meu denominador é mais estrito (POSTs com
+STAMP ≠ `INIT` e resposta anterior capturada = 5, 10 e 11); o Core conta também os `init`, cujo STAMP é a constante
+`INIT` e cujo delta não vem da resposta anterior no real. Não reproduzi 7/7 e 14/14 como definido, mas o
+resultado que importa (100% nos POSTs em que STAMP/delta dependem da resposta anterior) confere.
+
+**As "11 páginas de contexto" têm excesso.** Esperado: easynat-app + NatLogon + SIM1000X + VES0009X = 4.
+Obtido por HAR: 1 easynat-app, 3 páginas da aplicação e **7 documentos que não são passos do fluxo**:
+3× `*_JLIBS.html` (frames auxiliares de NatLogon/SIM1000X/VES0009X), 3× `cscform.html` e 1× `aboutBlank.html`.
+Todos entram porque são o Referer/iniciador de requisições de **proteção** (os GETs `/TSPD/…`), não de passos da
+aplicação (os motivos citam GETs de proteção). Requisito L4b: `pages` deve ser derivado só dos Referer dos
+**passos** (POSTs do Connector e produtores), nunca de requisições de proteção ou estáticas, e agrupar
+frames auxiliares (`*_JLIBS`, `cscform`, `aboutBlank`) como sub-documentos ou omiti-los.
+`unresolved` continua com 13–15 campos (cabeçalhos condicionais, `op`, partes do XML sem fonte).
+
+### Rodada 6: aceite sintético
+`check_real_shape.py` OK; `check_chain_compare.py` OK (agora 12 pares de aplicação + 1 em `groups.protection`, e
+`compare --all` = 13); `check_bodies_search.py` OK (5 + 2 casos); `run_acceptance.py` 10/10;
+`validate.py` das fixtures OK; `cargo test` do core: 161 passam, 0 falham.
+
+### Veredito atualizado
+**O caso agora é identificável e analisável com a ferramenta.** Os POSTs do Connector entram na cadeia por STAMP e
+delta, `/TSPD/` fica em proteção, cookies ausentes são declarados, placas somem no sanitize e o compare entre
+capturas é utilizável (0 ambiguidades, rodadas sem par explícitas). Pendências restantes: o excesso de páginas de
+contexto (L4b), o `partialComposition` do SESSIONID (dica ainda por chegar do Core) e a origem de cookies, que
+só existe com captura ao vivo (CDP/NetLog).

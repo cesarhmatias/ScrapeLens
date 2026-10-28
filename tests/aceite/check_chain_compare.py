@@ -159,7 +159,13 @@ def check_compare(core, a, b, ex, ida, idb):
     if doc is None:
         return
     c = ex["compare_4_2"]
-    check(len(doc["pairs"]) == 13, f"compare: {len(doc['pairs'])} pares (esperado 13)")
+    # L6 (docs/10): o alinhamento padrão só tem requisições de aplicação; /TSPD/ vai para groups[kind=protection]
+    check(len(doc["pairs"]) == 12, f"compare: {len(doc['pairs'])} pares (esperado 12 de aplicação)")
+    prot = [g for g in doc.get("groups", []) if g.get("kind") == "protection"]
+    check(len(prot) == 1 and len(prot[0]["a"]) == 1 and len(prot[0]["b"]) == 1 and "/TSPD/" in prot[0]["a"][0]["url"],
+          f"compare: esperado 1 grupo protection com 1 /TSPD/ em cada lado, obtido {prot}")
+    allp = run(core, "compare", a, b, "--all")[0]
+    check(allp is not None and len(allp["pairs"]) == 13, f"compare --all: esperado 13 pares, obtido {None if allp is None else len(allp['pairs'])}")
     check(not doc["onlyInA"] and not doc["onlyInB"], f"compare: só em A/B inesperado {doc['onlyInA']} {doc['onlyInB']}")
     check(not doc["ambiguities"], f"compare: ambiguidades {doc['ambiguities']}")
     check(not any(p["outOfOrder"] for p in doc["pairs"]), "compare: par fora de ordem")

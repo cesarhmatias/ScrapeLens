@@ -99,6 +99,16 @@ def analyse(core, har, tmp, idx):
         conn = {r["id"] for r in posts}
         out["chain"] = {"steps": len(c["steps"]), "connector_steps": sum(1 for x in c["steps"] if x["requestId"] in conn),
                         "pages": len(c.get("pages", [])), "protection": len(c["protection"]), "unresolved": len(c["unresolved"])}
+        reqs = {r["id"]: r for r in s["requests"]}
+        cat = {}
+        for pg in c.get("pages", []):
+            u = reqs[pg["requestId"]]["url"].split("?")[0]
+            base = u.rsplit("/", 1)[-1]
+            key = base if base in ("NatLogon.html", "SIM1000X.html", "VES0009X.html", "easynat-app") else \
+                ("protection-like" if "/TSPD/" in u or re.fullmatch(r"[0-9a-f]{20,}", base or "") else "other")
+            cat[key] = cat.get(key, 0) + 1
+        out["chain"]["pages_by_kind"] = cat
+        out["chain"]["partial_composition_hint"] = any("partialComposition" in json.dumps(v) for v in run(core, "origins", sess, first_consulta)["values"])
         out["chain_has_connector_posts"] = out["chain"]["connector_steps"] >= 3
         out["cookies_warning"] = any("cookie" in w.lower() for w in c["warnings"])
     san = str(Path(tmp) / f"san{idx}")
