@@ -120,3 +120,19 @@ inventado, e o código gerado não muda de comportamento.
 
 Commits Conventional Commits por dono, sem push nem publicação, sem rede
 externa. Preservar `tests/results/app-latest/testserver/app-20261027/h1.jsonl`.
+
+## Decisões durante a rodada
+
+- 2026-10-28, `reissued`: um valor que aparece em respostas posteriores depois
+  de já ter circulado em requisições (ex.: SESSIONID repetido no HTML de
+  SIM1000X/VES0009X) não é produtor concorrente. A origem é a 1ª resposta
+  (`produced`), e as demais são marcadas `reissued`. `ambíguo` fica para
+  candidatos realmente concorrentes antes do 1º uso. O manifest da fixture foi
+  ajustado a essa regra.
+- `initiator` do CDP não está disponível no modelo da sessão, e isso fica
+  declarado em `warnings`. Preservar o initiator é candidato a uma rodada
+  futura.
+- `unobservable`: "sem origem observada" lista as respostas anteriores sem
+  corpo observável (core af477f0).
+- O caso `unavailable` da fixture A passou da resposta de 1010.10 (produtora de
+  STAMP e delta) para a de 1013.13 (Testes 3747e02).
