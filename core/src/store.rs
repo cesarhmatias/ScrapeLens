@@ -146,6 +146,57 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Abre um anexo para leitura recusando symlink (na pasta e no arquivo) e
+/// qualquer coisa que não seja arquivo regular; confere que o arquivo aberto é
+/// o mesmo que foi inspecionado (TOCTOU). Devolve o arquivo e o tamanho.
+pub fn open_regular_attachment(dir: &Path, name: &str) -> Result<(File, u64)> {
+    validate_attachment_name(name)?;
+    let refused = |message: String| CoreError::LimitExceeded { message };
+    let root = dir.join(ATTACHMENTS_DIR);
+    let root_meta = fs::symlink_metadata(&root).map_err(|error| CoreError::io(&root, error))?;
+    if root_meta.file_type().is_symlink() {
+        return Err(refused(
+            "a pasta de anexos é um link simbólico; recusado".into(),
+        ));
+    }
+    let target = root.join(name);
+    let before = fs::symlink_metadata(&target).map_err(|error| CoreError::io(&target, error))?;
+    if before.file_type().is_symlink() {
+        return Err(refused(format!(
+            "o anexo {name} é um link simbólico; recusado"
+        )));
+    }
+    let file = File::open(&target).map_err(|error| CoreError::io(&target, error))?;
+    let opened = file
+        .metadata()
+        .map_err(|error| CoreError::io(&target, error))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if opened.ino() != before.ino() || opened.dev() != before.dev() {
+            return Err(refused(format!(
+                "o anexo {name} mudou durante a abertura; recusado"
+            )));
+        }
+    }
+    if !opened.is_file() {
+        return Err(refused(format!("o anexo {name} não é um arquivo regular")));
+    }
+    Ok((file, opened.len()))
+}
+
+/// Lê no máximo `limit` bytes de um anexo (ver [`open_regular_attachment`]).
+/// O segundo valor é `true` quando o arquivo é maior que o limite.
+pub fn read_attachment_limited(dir: &Path, name: &str, limit: u64) -> Result<(Vec<u8>, bool)> {
+    use std::io::Read;
+    let (file, size) = open_regular_attachment(dir, name)?;
+    let mut bytes = Vec::with_capacity(size.min(limit) as usize);
+    file.take(limit)
+        .read_to_end(&mut bytes)
+        .map_err(|error| CoreError::io(dir.join(ATTACHMENTS_DIR).join(name), error))?;
+    Ok((bytes, size > limit))
+}
+
 pub fn read_file(path: &Path) -> Result<Vec<u8>> {
     fs::read(path).map_err(|error| CoreError::io(path, error))
 }

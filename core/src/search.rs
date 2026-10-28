@@ -3,13 +3,17 @@
 //! API para o App (onda 4b, via Tauri):
 //!
 //! ```text
-//! pub fn search(bundle: &SessionBundle, query: &SearchQuery) -> SearchResult
+//! pub fn search(source: &dyn BodySource, query: &SearchQuery) -> SearchResult
 //! SearchResult { matches: Vec<Match>, skipped_binary: usize,
 //!                partial: bool, partial_attempts: Vec<String>, limit_reached: bool }
 //! Match { request_id, attempt_id, scope, field: Option<String>,
 //!         byte_offset: Option<u64>, byte_length: Option<u64>, exact: bool,
 //!         snippet, decoded }
 //! ```
+//!
+//! Sessões grandes: `search_lazy(&LazySession, &SearchQuery)` (veja
+//! [`crate::lazy`]) lê um corpo por vez do disco; `search_with` aceita qualquer
+//! [`BodySource`].
 //!
 //! Recebe o [`SessionBundle`] (e não só a sessão) porque os corpos vivem em
 //! anexos. `request_id` é o id lógico da sessão (`LogicalRequest::id`).
@@ -29,7 +33,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Attempt, BodyState, HeaderView, LogicalRequest, SessionBundle};
+use std::borrow::Cow;
+
+use crate::model::{Attempt, BodyState, HeaderView, LogicalRequest, SessionBundle, SessionV1};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -248,8 +254,61 @@ fn snippet(text: &str, at: usize, len: usize) -> String {
         .collect()
 }
 
+/// Bytes de um anexo entregues à busca. `cut` = havia mais bytes que o limite
+/// de leitura (a busca vira parcial).
+pub struct Loaded<'a> {
+    pub bytes: Cow<'a, [u8]>,
+    pub cut: bool,
+}
+
+/// Origem dos corpos pesquisados. A busca pede um corpo por vez e o solta ao
+/// terminar de varrê-lo.
+pub trait BodySource {
+    fn load(&self, name: &str) -> Option<Loaded<'_>>;
+}
+
+impl BodySource for SessionBundle {
+    fn load(&self, name: &str) -> Option<Loaded<'_>> {
+        self.attachment(name).map(|bytes| Loaded {
+            bytes: Cow::Borrowed(bytes),
+            cut: false,
+        })
+    }
+}
+
+struct LazyBodies<'a>(&'a crate::lazy::LazySession);
+
+impl BodySource for LazyBodies<'_> {
+    fn load(&self, name: &str) -> Option<Loaded<'_>> {
+        let (bytes, cut) = self
+            .0
+            .read_attachment(name, crate::lazy::BODY_READ_LIMIT)
+            .ok()?;
+        Some(Loaded {
+            bytes: Cow::Owned(bytes),
+            cut,
+        })
+    }
+}
+
 /// Busca `query` na sessão. Veja o módulo para a semântica.
 pub fn search(bundle: &SessionBundle, query: &SearchQuery) -> SearchResult {
+    search_with(&bundle.session, bundle, query)
+}
+
+/// Busca em sessão aberta com [`crate::lazy::LazySession`]: lê um corpo por
+/// vez do disco (sem symlinks, até 5 MiB por corpo; corpo maior é pesquisado só
+/// no prefixo e marca a busca como parcial) e não retém os bytes.
+pub fn search_lazy(lazy: &crate::lazy::LazySession, query: &SearchQuery) -> SearchResult {
+    search_with(&lazy.session, &LazyBodies(lazy), query)
+}
+
+/// Busca com origem de corpos arbitrária.
+pub fn search_with(
+    session: &SessionV1,
+    source: &dyn BodySource,
+    query: &SearchQuery,
+) -> SearchResult {
     let needle = if query.case_sensitive {
         query.text.as_bytes().to_vec()
     } else {
@@ -268,21 +327,21 @@ pub fn search(bundle: &SessionBundle, query: &SearchQuery) -> SearchResult {
     if query.text.is_empty() {
         return ctx.result;
     }
-    for request in &bundle.session.requests {
+    for request in &session.requests {
         ctx.request_id = request.id.clone();
         if request.attempts.is_empty() {
             ctx.attempt_id = String::new();
-            search_logical(&mut ctx, bundle, request);
+            search_logical(&mut ctx, source, request);
         }
         for attempt in &request.attempts {
             ctx.attempt_id = attempt.id.clone();
-            search_attempt(&mut ctx, bundle, attempt);
+            search_attempt(&mut ctx, source, attempt);
         }
     }
     ctx.result
 }
 
-fn search_logical(ctx: &mut Ctx<'_>, bundle: &SessionBundle, request: &LogicalRequest) {
+fn search_logical(ctx: &mut Ctx<'_>, source: &dyn BodySource, request: &LogicalRequest) {
     if ctx.query.wants(Scope::Url) {
         ctx.scan_url(&request.url);
     }
@@ -291,21 +350,21 @@ fn search_logical(ctx: &mut Ctx<'_>, bundle: &SessionBundle, request: &LogicalRe
     search_cookies(ctx, &request.cookie, &request.set_cookies);
     search_body(
         ctx,
-        bundle,
+        source,
         Scope::RequestBody,
         &request.request_body,
         &request.request_headers,
     );
     search_body(
         ctx,
-        bundle,
+        source,
         Scope::ResponseBody,
         &request.response_body,
         &request.response_headers,
     );
 }
 
-fn search_attempt(ctx: &mut Ctx<'_>, bundle: &SessionBundle, attempt: &Attempt) {
+fn search_attempt(ctx: &mut Ctx<'_>, source: &dyn BodySource, attempt: &Attempt) {
     if ctx.query.wants(Scope::Url) {
         ctx.scan_url(&attempt.url);
     }
@@ -314,14 +373,14 @@ fn search_attempt(ctx: &mut Ctx<'_>, bundle: &SessionBundle, attempt: &Attempt) 
     search_cookies(ctx, &attempt.cookie, &attempt.set_cookies);
     search_body(
         ctx,
-        bundle,
+        source,
         Scope::RequestBody,
         &attempt.request_body,
         &attempt.request_headers,
     );
     search_body(
         ctx,
-        bundle,
+        source,
         Scope::ResponseBody,
         &attempt.response_body,
         &attempt.response_headers,
@@ -378,7 +437,7 @@ fn text_of(bytes: &[u8], truncated: bool) -> Option<&str> {
 
 fn search_body(
     ctx: &mut Ctx<'_>,
-    bundle: &SessionBundle,
+    source: &dyn BodySource,
     scope: Scope,
     body: &crate::model::Body,
     headers: &HeaderView,
@@ -386,14 +445,15 @@ fn search_body(
     if !ctx.query.wants(scope) || !body.has_bytes() {
         return;
     }
-    let Some(bytes) = body
+    let Some(loaded) = body
         .attachment
         .as_deref()
-        .and_then(|name| bundle.attachment(name))
+        .and_then(|name| source.load(name))
     else {
         return;
     };
-    let truncated = body.state == BodyState::Truncated;
+    let bytes: &[u8] = &loaded.bytes;
+    let truncated = body.state == BodyState::Truncated || loaded.cut;
     let Some(text) = text_of(bytes, truncated) else {
         ctx.result.skipped_binary += 1;
         return;
@@ -420,6 +480,9 @@ fn search_body(
     if let Some(units) = &units {
         for unit in units {
             for at in ctx.matcher.find_all(unit.text.as_bytes()) {
+                if ctx.result.limit_reached {
+                    break;
+                }
                 let span = unit.original_span(at, ctx.matcher.needle.len());
                 covered.push((span.0, span.0 + span.1));
                 ctx.push(scope, Some(&unit.field), span, &unit.text, at, true);
@@ -427,6 +490,9 @@ fn search_body(
         }
     }
     for at in ctx.matcher.find_all(text.as_bytes()) {
+        if ctx.result.limit_reached {
+            break;
+        }
         let span = (at, at + ctx.matcher.needle.len());
         if covered.iter().any(|c| span.0 < c.1 && c.0 < span.1) {
             continue;

@@ -148,12 +148,12 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
 }
 
 fn search_command(args: &[String]) -> Result<(), String> {
-    use scrapelens_core::search::{search, Scope, SearchQuery};
+    use scrapelens_core::search::{Scope, SearchQuery};
     if args.len() < 2 {
         return Err(usage());
     }
-    let imported =
-        scrapelens_core::import_session_dir(&PathBuf::from(&args[0])).map_err(|e| e.to_string())?;
+    let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
     let mut query = SearchQuery::new(args[1].clone());
     let mut rest = args[2..].iter();
     while let Some(arg) = rest.next() {
@@ -170,7 +170,7 @@ fn search_command(args: &[String]) -> Result<(), String> {
             other => return Err(format!("argumento desconhecido: {other}\n\n{}", usage())),
         }
     }
-    print_json(&search(&imported.bundle, &query))
+    print_json(&scrapelens_core::search::search_lazy(&lazy, &query))
 }
 
 fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {

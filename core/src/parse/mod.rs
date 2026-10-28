@@ -101,6 +101,11 @@ pub fn import_session_dir(path: &Path) -> Result<ImportedSession> {
     own::import_session_dir(path)
 }
 
+/// Abre uma sessão v1 com anexos preguiçosos (ver [`crate::lazy`]).
+pub fn open_session_dir_lazy(path: &Path) -> Result<(crate::lazy::LazySession, ImportReport)> {
+    own::open_session_dir_lazy(path)
+}
+
 /// Importa HAR 1.2. Ordem/duplicatas em HAR são **não verificadas**: a matriz
 /// não instrumentou o exportador do DevTools.
 pub fn import_har(json: &[u8]) -> Result<ImportedSession> {

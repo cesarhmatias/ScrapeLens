@@ -18,6 +18,7 @@ pub mod correlate;
 pub mod diff;
 pub mod error;
 pub mod export;
+pub mod lazy;
 pub mod model;
 pub mod normalize;
 pub mod parse;
@@ -33,5 +34,5 @@ pub use model::{
 };
 pub use parse::{
     import_capture, import_capture_labeled, import_capture_with_bodies, import_har, import_netlog,
-    import_session_dir, ImportReport, ImportedSession, InputFormat,
+    import_session_dir, open_session_dir_lazy, ImportReport, ImportedSession, InputFormat,
 };
