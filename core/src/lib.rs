@@ -20,6 +20,7 @@ pub mod diff;
 pub mod error;
 pub mod export;
 pub mod flow;
+pub mod html;
 pub mod lazy;
 pub mod model;
 pub mod normalize;

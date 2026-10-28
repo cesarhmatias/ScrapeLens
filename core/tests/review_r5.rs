@@ -574,19 +574,20 @@ fn generic_names_and_short_values_are_only_possible_origins() {
 
 #[test]
 fn value_match_only_is_a_possible_origin_and_the_chain_marks_the_step_possible() {
-    // T7: coincidências (UA, build, timestamp) casadas só por conteúdo
+    // T7: coincidências (UA, build, timestamp) casadas só por conteúdo. O produtor é
+    // uma página (um .js estático viraria `context`, L3 da rodada 6).
     let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
     let mut s = S::default();
     s.req(
         "1.1",
         1.0,
-        "http://h.test/app.js",
+        "http://h.test/page.html",
         "GET",
         R {
             resp: Some(&format!(
                 "var UA=\"{ua}\"; var build=\"v20261027-abcdef12\";"
             )),
-            rct: Some("application/javascript"),
+            rct: Some("text/html"),
             ..Default::default()
         },
     );
@@ -1015,4 +1016,79 @@ fn l2_swapped_unique_requests_are_flagged_as_reordered() {
     let c = sc.build();
     let r = compare_sessions(&a.session, &a, &c.session, &c, &CompareOptions::default());
     assert!(r.reordered.is_empty());
+}
+
+#[test]
+fn l3_static_resources_are_context_never_steps() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "http://h.test/app.js",
+        "GET",
+        R {
+            resp: Some("var build=\"v20261027-abcdef12\";"),
+            rct: Some("application/javascript"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "http://h.test/send",
+        "POST",
+        R {
+            body: Some("build=v20261027-abcdef12"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let v = entry(&origins(&b, "1.2"), "build").clone();
+    assert_eq!(v.status, OriginStatus::None);
+    assert!(v.evidences.is_empty());
+    assert_eq!(v.context.len(), 1);
+    assert!(v.label.contains("recurso estático"));
+    let chain = priming_chain(&b.session, &b, &lid(&b, "1.2"), &FlowOptions::default()).unwrap();
+    assert!(chain.steps.is_empty());
+    // presente no estático E em resposta dinâmica: só o dinâmico produz
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "http://h.test/app.js",
+        "GET",
+        R {
+            resp: Some("var build=\"v20261027-abcdef12\";"),
+            rct: Some("application/javascript"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "http://h.test/dyn",
+        "GET",
+        R {
+            resp: Some("<p>var b=\"v20261027-abcdef12\"</p>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.3",
+        3.0,
+        "http://h.test/send",
+        "POST",
+        R {
+            body: Some("build=v20261027-abcdef12"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let o = origins(&b, "1.3");
+    let v = entry(&o, "build");
+    assert_eq!(v.evidences.len(), 1);
+    assert_eq!(v.evidences[0].request_id, lid(&b, "1.2"));
+    assert!(v.context.is_empty());
 }

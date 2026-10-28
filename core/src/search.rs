@@ -119,6 +119,9 @@ pub struct Match {
     pub exact: bool,
     pub snippet: String,
     pub decoded: bool,
+    /// O campo é um controle de formulário HTML (`input`/`textarea`/`select`).
+    #[serde(default)]
+    pub html_control: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -171,6 +174,8 @@ struct Ctx<'a> {
     result: SearchResult,
     request_id: String,
     attempt_id: String,
+    /// O próximo `push` vem de um controle de formulário HTML.
+    html: bool,
 }
 
 impl Ctx<'_> {
@@ -198,6 +203,7 @@ impl Ctx<'_> {
             exact,
             snippet: snippet(text, at, self.matcher.needle.len()),
             decoded,
+            html_control: self.html,
         });
     }
 
@@ -324,6 +330,7 @@ pub fn search_with(
         result: SearchResult::default(),
         request_id: String::new(),
         attempt_id: String::new(),
+        html: false,
     };
     if query.text.is_empty() {
         return ctx.result;
@@ -474,6 +481,21 @@ fn search_body(
         Some(form_units(text))
     } else if content_type.contains("json") || looks_like_json(text) {
         json_units(text, truncated)
+    } else if content_type.contains("html") || text.contains("<textarea") || text.contains("<input")
+    {
+        let units: Vec<Unit> = crate::html::html_controls(text)
+            .into_iter()
+            .map(|c| Unit {
+                field: c.name,
+                text: c.value,
+                start: c.start,
+                end: c.end,
+                map: c.map,
+                lossy: false,
+                html: true,
+            })
+            .collect();
+        (!units.is_empty()).then_some(units)
     } else {
         None
     };
@@ -486,7 +508,9 @@ fn search_body(
                 }
                 let span = unit.original_span(at, ctx.matcher.needle.len());
                 covered.push((span.0, span.0 + span.1));
+                ctx.html = unit.html;
                 ctx.push(scope, Some(&unit.field), span, &unit.text, at, true);
+                ctx.html = false;
             }
         }
     }
@@ -522,6 +546,8 @@ struct Unit {
     map: Vec<usize>,
     /// A decodificação trocou algo por U+FFFD: o mapa não é exato.
     lossy: bool,
+    /// O campo é um controle de formulário HTML.
+    html: bool,
 }
 
 impl Unit {
@@ -586,6 +612,7 @@ fn unit_from(field: String, raw: &str, start: usize) -> Unit {
         end: start + raw.len(),
         map,
         lossy: false,
+        html: false,
     }
 }
 
@@ -767,6 +794,7 @@ impl JsonScan<'_> {
             end,
             map,
             lossy,
+            html: false,
         });
     }
 

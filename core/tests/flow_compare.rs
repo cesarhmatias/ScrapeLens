@@ -341,15 +341,18 @@ fn compare_classifies_dynamic_runtime_static_and_pairs_same_url_by_order() {
     )
     .bundle();
     let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
-    assert_eq!(r.pairs.len(), 4);
+    // L6: por padrão só a aplicação é alinhada; /TSPD/ vai para o grupo `protection`
+    assert_eq!(r.pairs.len(), 3);
+    assert_eq!(r.groups.len(), 1);
+    assert_eq!(r.groups[0].kind, "protection");
     assert!(r.only_in_a.is_empty() && r.only_in_b.is_empty());
     // as duas requisições POST com a mesma URL são pareadas em ordem, sem cruzar
-    assert_eq!(r.pairs[2].a.request_id, logical(&a, "3.1"));
-    assert_eq!(r.pairs[2].b.request_id, logical(&b, "3.1"));
-    assert_eq!(r.pairs[3].b.request_id, logical(&b, "4.1"));
+    assert_eq!(r.pairs[1].a.request_id, logical(&a, "3.1"));
+    assert_eq!(r.pairs[1].b.request_id, logical(&b, "3.1"));
+    assert_eq!(r.pairs[2].b.request_id, logical(&b, "4.1"));
     assert!(r.pairs.iter().all(|p| !p.out_of_order));
 
-    let consulta = &r.pairs[3];
+    let consulta = &r.pairs[2];
     let field = |scope, name: &str| {
         consulta
             .fields

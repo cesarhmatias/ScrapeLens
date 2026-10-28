@@ -21,10 +21,24 @@
 //!     strength: strong|medium|complement, role: produced|reissued, producerRequestId,
 //!     producerAttemptId, scope: setCookie|responseHeader|location|responseBody, field,
 //!     producerOffset, consumedOffset, consumedLength, timing: observed|inferred } ] }
-//! chain: { requestId, steps: [ChainStep], protection: [ChainStep], unresolved[], warnings }
+//! chain: { requestId, steps: [ChainStep], protection: [ChainStep], pages: [ChainStep]
+//!   (class: page, "página de contexto" por Referer; nunca produtoras), unresolved[], warnings }
 //! ChainStep: { requestId, attemptId, method, url, startedAt, class: application|protection,
 //!   confidence: strong|possible, reason, reasons: [ { provides, field, kind, strength, consumedBy } ] }
 //! ```
+//!
+//! Rodada 6 (docs/10), campos novos:
+//! - `evidences[].htmlControl`: o produtor é um controle de formulário HTML
+//!   (`input`/`textarea`/`select` de uma resposta text/html; ver [`crate::html`]);
+//!   `producerOffset` aponta o valor no HTML original, mesmo com entidades;
+//! - `ValueOrigin.context[]` `{requestId, field, note}`: valor também presente em
+//!   recurso estático (script, css, fonte, imagem, mídia): provável constante do
+//!   protocolo; nunca é produtor nem passo;
+//! - `unobservable[].suggestion`: ocorrência equivalente (mesmo modelo) mais
+//!   adiante com corpo observável;
+//! - `chain.pages[]` (`class: page`): documentos que carregaram a página de onde
+//!   cada passo foi emitido (Referer); "página de contexto", nunca produtoras;
+//! - avisos de HAR sem cookies (`har.cookies_absent`) repetidos em `warnings`.
 //!
 //! O esquema de `compare` está em [`crate::compare`].
 //!
@@ -181,6 +195,16 @@ pub struct Evidence {
     pub consumed_offset: Option<u64>,
     pub consumed_length: Option<u64>,
     pub timing: Timing,
+    /// O produtor é um controle de formulário HTML (`input`/`textarea`/`select`).
+    pub html_control: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextNote {
+    pub request_id: String,
+    pub field: Option<String>,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -190,6 +214,9 @@ pub struct Unobservable {
     /// `unavailable`, `discarded` ou `truncated`.
     pub state: String,
     pub reason: Option<String>,
+    /// Ocorrência equivalente (mesmo modelo) mais adiante, com corpo observável:
+    /// onde procurar a mesma informação.
+    pub suggestion: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -217,6 +244,9 @@ pub struct ValueOrigin {
     /// Respostas anteriores sem corpo observável (unavailable/discarded/
     /// truncated): a origem pode estar nelas (até 20; o total vai no rótulo).
     pub unobservable: Vec<Unobservable>,
+    /// Valor também presente em recursos estáticos (provável constante do
+    /// protocolo): nunca é produtor nem passo da cadeia.
+    pub context: Vec<ContextNote>,
     /// Campo opaco de que este trecho faz parte (`composite`).
     pub parent: Option<String>,
     pub note: Option<String>,
@@ -247,13 +277,24 @@ struct Item {
     offset: Option<u64>,
     /// Pode servir de `sameField` (tem nome de campo/header/cookie).
     named: bool,
+    /// Controle de formulário HTML (`input`/`textarea`/`select`).
+    html: bool,
+}
+
+#[derive(Debug)]
+struct OpaqueField {
+    name: String,
+    value: String,
+    /// Mapa de offsets decodificado → original (controles HTML).
+    map: Option<Vec<usize>>,
+    html: bool,
 }
 
 #[derive(Debug, Default)]
 struct ProducerData {
     items: Vec<Item>,
-    /// Campos opacos de resposta (nome, valor) para comparação por substring.
-    opaque: Vec<(String, String)>,
+    /// Campos opacos de resposta para comparação por substring.
+    opaque: Vec<OpaqueField>,
 }
 
 #[derive(Debug, Clone)]
@@ -508,6 +549,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                 value: parsed.value.trim_matches('"').to_string(),
                 offset: None,
                 named: true,
+                html: false,
             });
         }
     }
@@ -525,6 +567,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                 value: entry.value.clone(),
                 offset: None,
                 named: false,
+                html: false,
             });
             for (name, value) in query_pairs(&entry.value) {
                 data.items.push(Item {
@@ -533,6 +576,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                     value,
                     offset: None,
                     named: true,
+                    html: false,
                 });
             }
         } else if !is_protocol_header(&lower) {
@@ -542,16 +586,45 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                 value: entry.value.clone(),
                 offset: None,
                 named: true,
+                html: false,
             });
         }
     }
     if let Some(text) = body_text(source, &attempt.response_body) {
         let media = media_of(&attempt.response_headers, &attempt.response_body);
+        let is_html = (media.contains("html") && text.contains('<'))
+            || find_ci_ascii(&text, "<textarea")
+            || find_ci_ascii(&text, "<input");
+        if is_html {
+            for c in crate::html::html_controls(&text) {
+                if c.value.len() >= OPAQUE_MIN {
+                    data.opaque.push(OpaqueField {
+                        name: c.name.clone(),
+                        value: c.value.clone(),
+                        map: Some(c.map.clone()),
+                        html: true,
+                    });
+                }
+                data.items.push(Item {
+                    scope: ProducerScope::ResponseBody,
+                    field: Some(c.name),
+                    value: c.value,
+                    offset: Some(c.start as u64),
+                    named: true,
+                    html: true,
+                });
+            }
+        }
         match named_fields(&text, &media) {
-            Some(fields) => {
+            Some(fields) if !is_html => {
                 for (name, value, offset) in fields {
                     if value.len() >= OPAQUE_MIN {
-                        data.opaque.push((name.clone(), value.clone()));
+                        data.opaque.push(OpaqueField {
+                            name: name.clone(),
+                            value: value.clone(),
+                            map: None,
+                            html: false,
+                        });
                     }
                     data.items.push(Item {
                         scope: ProducerScope::ResponseBody,
@@ -559,10 +632,11 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                         value,
                         offset,
                         named: true,
+                        html: false,
                     });
                 }
             }
-            None => {
+            _ => {
                 for (literal, offset, hint) in string_literals(&text, min) {
                     data.items.push(Item {
                         scope: ProducerScope::ResponseBody,
@@ -570,12 +644,18 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                         value: literal,
                         offset: Some(offset),
                         named: false,
+                        html: false,
                     });
                 }
             }
         }
     }
     data
+}
+
+fn find_ci_ascii(text: &str, needle: &str) -> bool {
+    let (h, n) = (text.as_bytes(), needle.as_bytes());
+    h.len() >= n.len() && (0..=h.len() - n.len()).any(|i| h[i..i + n.len()].eq_ignore_ascii_case(n))
 }
 
 fn consumed_values(attempt: &Attempt, source: &dyn BodySource) -> Vec<Consumed> {
@@ -772,6 +852,58 @@ impl<'a> FlowContext<'a> {
         false
     }
 
+    /// Recurso estático (script, stylesheet, fonte, imagem, mídia) por tipo,
+    /// MIME ou extensão: não é produtor de valores de sessão.
+    pub(crate) fn is_static(&self, pos: Pos) -> bool {
+        let request = &self.session.requests[pos.0];
+        let attempt = self.attempt(pos);
+        if let Some(kind) = request.resource_type.as_deref() {
+            if matches!(
+                kind.to_ascii_lowercase().as_str(),
+                "script" | "stylesheet" | "font" | "image" | "media"
+            ) {
+                return true;
+            }
+        }
+        let mime = attempt
+            .response_headers
+            .first_value("content-type")
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if mime.contains("javascript")
+            || mime.contains("ecmascript")
+            || mime.contains("text/css")
+            || mime.starts_with("image/")
+            || mime.starts_with("font/")
+            || mime.starts_with("audio/")
+            || mime.starts_with("video/")
+            || mime.contains("woff")
+        {
+            return true;
+        }
+        let path = attempt.url.split(['?', '#']).next().unwrap_or("");
+        let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+        path.contains('.')
+            && matches!(
+                ext.as_str(),
+                "js" | "mjs"
+                    | "css"
+                    | "png"
+                    | "jpg"
+                    | "jpeg"
+                    | "gif"
+                    | "svg"
+                    | "ico"
+                    | "woff"
+                    | "woff2"
+                    | "ttf"
+                    | "otf"
+                    | "eot"
+                    | "webp"
+                    | "map"
+            )
+    }
+
     fn producer(&self, pos: Pos) -> Rc<ProducerData> {
         if let Some(found) = self.producers.borrow().get(&pos) {
             return found.clone();
@@ -895,6 +1027,14 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
         ],
     };
 
+    if let Some(w) = ctx
+        .session
+        .warnings
+        .iter()
+        .find(|w| w.code == "har.cookies_absent")
+    {
+        result.warnings.push(w.message.clone());
+    }
     let mut earlier: Vec<Pos> = Vec::new();
     for pos in ctx.positions() {
         match ctx.rel(pos, target) {
@@ -931,6 +1071,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 evidences: Vec::new(),
                 repeated_from: Vec::new(),
                 unobservable: Vec::new(),
+                context: Vec::new(),
                 parent: None,
                 note: Some("valor redigido: não rastreável".to_string()),
             });
@@ -977,6 +1118,8 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
         let mut found: FoundMap = HashMap::new();
         if bytes.len() >= min {
             let partial_ok = bytes.len() >= OPAQUE_CONSUMER_MIN;
+            // campo nomeado curto: peças só servem para a decomposição por inteiro
+            let decomp_ok = !partial_ok && bytes.len() >= 16 && value.scope == ConsumedScope::Body;
             let strong_from: BTreeSet<Pos> = evidences.iter().map(|(r, _)| earlier[*r]).collect();
             for start in 0..=bytes.len() - 8 {
                 let mut key = [0u8; 8];
@@ -1009,12 +1152,13 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                                 None,
                             ),
                         ));
-                    } else if partial_ok {
+                    } else if (partial_ok || decomp_ok) && !ctx.is_static(*pos) {
                         found.entry((start, item.value.len())).or_default().push((
                             *pos,
                             item.scope,
                             item.field.clone(),
                             item.offset,
+                            item.html,
                         ));
                     }
                 }
@@ -1024,6 +1168,21 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
             }
         }
         let mut entry = finish_entry(ctx, value, evidences, &earlier);
+        // Valor composto: campo nomeado curto coberto POR INTEIRO por >= 2 valores
+        // de produtores + separadores. Cobertura parcial (só um prefixo) não vale.
+        let mut composite_cover = false;
+        if entry.status == OriginStatus::None
+            && !found.is_empty()
+            && bytes.len() < OPAQUE_CONSUMER_MIN
+        {
+            match cover_pieces(bytes, &found) {
+                Some(chosen) => {
+                    found.retain(|key, _| chosen.contains(key));
+                    composite_cover = true;
+                }
+                None => found.clear(),
+            }
+        }
         // campo com origem própria não vira também "composto" (sem duplicar)
         let sub = if matches!(entry.status, OriginStatus::Origin | OriginStatus::Ambiguous) {
             Vec::new()
@@ -1032,6 +1191,9 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
         };
         if entry.status == OriginStatus::None && !sub.is_empty() {
             entry.status = OriginStatus::Composite;
+            if composite_cover {
+                entry.confidence = Some(Confidence::Possible);
+            }
         }
         if entry.status == OriginStatus::None && !value.value.is_empty() {
             entry.repeated_from = repeated_from(ctx, value, &earlier);
@@ -1066,6 +1228,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 request_id: ctx.request_id(*pos).to_string(),
                 state: body.state.as_str().to_string(),
                 reason: body.note.clone(),
+                suggestion: equivalent_later(ctx, *pos),
             })
         })
         .collect();
@@ -1079,6 +1242,13 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 entry.label,
                 hidden.len()
             );
+            if let Some(hint) = hidden.iter().find_map(|h| {
+                h.suggestion
+                    .as_ref()
+                    .map(|s| format!(" (ocorrência equivalente com corpo: {s})"))
+            }) {
+                entry.label.push_str(&hint);
+            }
         }
     }
     if result.redacted_values > 0 {
@@ -1111,6 +1281,7 @@ fn evidence(
         consumed_offset,
         consumed_length,
         timing: Timing::Observed,
+        html_control: item.html,
     }
 }
 
@@ -1122,6 +1293,32 @@ fn finish_entry(
     _earlier: &[Pos],
 ) -> ValueOrigin {
     raw.sort_by_key(|(rank, _)| *rank);
+    // Recurso estático só dá contexto: value-match estático nunca é produtor.
+    let mut context: Vec<ContextNote> = Vec::new();
+    let is_static_ev = |e: &Evidence| {
+        e.kind == EvidenceKind::ValueMatch
+            && _ctx
+                .by_attempt
+                .get(&e.attempt_id)
+                .is_some_and(|pos| _ctx.is_static(*pos))
+    };
+    if raw.iter().any(|(_, e)| is_static_ev(e)) {
+        let has_dynamic = raw.iter().any(|(_, e)| !is_static_ev(e));
+        let (statics, dynamic): (Vec<_>, Vec<_>) =
+            raw.into_iter().partition(|(_, e)| is_static_ev(e));
+        if !has_dynamic {
+            for (_, e) in &statics {
+                if !context.iter().any(|c| c.request_id == e.request_id) {
+                    context.push(ContextNote {
+                        request_id: e.request_id.clone(),
+                        field: e.field.clone(),
+                        note: "valor também presente em recurso estático: provável constante do protocolo".to_string(),
+                    });
+                }
+            }
+        }
+        raw = dynamic;
+    }
     let mut last: HashMap<(EvidenceKind, ProducerScope, Option<String>, Option<u64>), Pos> =
         HashMap::new();
     let mut evidences = Vec::new();
@@ -1181,9 +1378,51 @@ fn finish_entry(
         evidences,
         repeated_from: Vec::new(),
         unobservable: Vec::new(),
+        context,
         parent: None,
         note,
     }
+}
+
+/// Próxima ocorrência do mesmo modelo (método + host + caminho + nomes de
+/// campos) depois de `pos`, com corpo de resposta observável.
+fn equivalent_later(ctx: &FlowContext<'_>, pos: Pos) -> Option<String> {
+    let attempt = ctx.attempt(pos);
+    let (host, path) = crate::compare::split_url(&attempt.url);
+    let names = |p: Pos| -> Vec<String> {
+        let mut n: Vec<String> = ctx
+            .consumed_of(p)
+            .iter()
+            .filter(|c| matches!(c.scope, ConsumedScope::Query | ConsumedScope::Body))
+            .map(|c| format!("{:?}:{}", c.scope, c.field))
+            .collect();
+        n.sort();
+        n.dedup();
+        n
+    };
+    let wanted = names(pos);
+    let from = ctx.seq[&pos];
+    for candidate in &ctx.ordered {
+        if ctx.seq[candidate] <= from {
+            continue;
+        }
+        let other = ctx.attempt(*candidate);
+        if !other.method.eq_ignore_ascii_case(&attempt.method) {
+            continue;
+        }
+        let (h, p) = crate::compare::split_url(&other.url);
+        if h != host || p != path {
+            continue;
+        }
+        if matches!(
+            other.response_body.state,
+            BodyState::Captured | BodyState::Truncated
+        ) && names(*candidate) == wanted
+        {
+            return Some(ctx.request_id(*candidate).to_string());
+        }
+    }
+    None
 }
 
 fn relabel(entry: &mut ValueOrigin) {
@@ -1208,7 +1447,13 @@ fn relabel(entry: &mut ValueOrigin) {
             "sem origem observada (valor já circulava em {})",
             entry.repeated_from.join(", ")
         ),
+        OriginStatus::None if !entry.context.is_empty() => {
+            "sem origem observada; valor também presente em recurso estático (provável constante do protocolo)".to_string()
+        }
         OriginStatus::None => "sem origem observada".to_string(),
+        OriginStatus::Composite if entry.confidence == Some(Confidence::Possible) => {
+            "possível origem composta: ver trechos (parent)".to_string()
+        }
         OriginStatus::Composite => "composto: ver trechos (parent)".to_string(),
         OriginStatus::Redacted => "redigido: não rastreável".to_string(),
     };
@@ -1232,7 +1477,7 @@ fn repeated_from(ctx: &FlowContext<'_>, value: &Consumed, earlier: &[Pos]) -> Ve
     out
 }
 
-type Producer = (Pos, ProducerScope, Option<String>, Option<u64>);
+type Producer = (Pos, ProducerScope, Option<String>, Option<u64>, bool);
 type FoundMap = HashMap<(usize, usize), Vec<Producer>>;
 
 /// Trechos de um campo opaco que coincidem (>= 8) com o mesmo campo em
@@ -1248,7 +1493,8 @@ fn opaque_candidates(
     let a = value.value.as_bytes();
     for pos in earlier {
         let data = ctx.producer(*pos);
-        for (name, other) in data.opaque.iter() {
+        for field in data.opaque.iter() {
+            let (name, other) = (&field.name, &field.value);
             if !name.eq_ignore_ascii_case(&value.field) || is_redacted(other) {
                 continue;
             }
@@ -1263,11 +1509,17 @@ fn opaque_candidates(
                 if cut_in_number(a, b, start, len, other_start) {
                     continue;
                 }
+                let original = field
+                    .map
+                    .as_ref()
+                    .and_then(|m| m.get(other_start).copied())
+                    .unwrap_or(other_start);
                 found.entry((start, len)).or_default().push((
                     *pos,
                     ProducerScope::ResponseBody,
                     Some(name.clone()),
-                    Some(other_start as u64),
+                    Some(original as u64),
+                    field.html,
                 ));
             }
         }
@@ -1276,6 +1528,28 @@ fn opaque_candidates(
 
 /// O trecho comum termina (ou começa) no meio de uma sequência de dígitos que
 /// difere dos dois lados: é um contador, não um valor compartilhado.
+/// Peças que cobrem o valor inteiro (exceto separadores `_ - . : |`), com pelo
+/// menos 2 produtores distintos; `None` se houver lacuna (prefixo parcial não vale).
+fn cover_pieces(bytes: &[u8], found: &FoundMap) -> Option<Vec<(usize, usize)>> {
+    let mut chosen: Vec<(usize, usize)> = Vec::new();
+    let mut producers: BTreeSet<Pos> = BTreeSet::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if matches!(bytes[i], b'_' | b'-' | b'.' | b':' | b'|') {
+            i += 1;
+            continue;
+        }
+        let best = found
+            .keys()
+            .filter(|(start, _)| *start == i)
+            .max_by_key(|(_, len)| *len)?;
+        chosen.push(*best);
+        producers.insert(found[best][0].0);
+        i += best.1;
+    }
+    (chosen.len() >= 2 && producers.len() >= 2).then_some(chosen)
+}
+
 fn cut_in_number(a: &[u8], b: &[u8], start: usize, len: usize, other_start: usize) -> bool {
     let digit = |s: &[u8], i: usize| s.get(i).is_some_and(u8::is_ascii_digit);
     let right = digit(a, start + len) && digit(b, other_start + len) && digit(a, start + len - 1);
@@ -1306,13 +1580,14 @@ fn partial_entries(
         }
         taken.push((start, len));
         let mut raw = Vec::new();
-        for (pos, scope, field, offset) in producers {
+        for (pos, scope, field, offset, html) in producers {
             let item = Item {
                 scope,
                 field,
                 value: String::new(),
                 offset,
                 named: true,
+                html,
             };
             raw.push((
                 rank[&pos],
@@ -1336,6 +1611,10 @@ fn partial_entries(
         let mut entry = finish_entry(ctx, &sub, raw, &[]);
         entry.parent = Some(value.field.clone());
         entry.offset = Some(start as u64);
+        if a.len() < OPAQUE_CONSUMER_MIN {
+            // componentes de um campo nomeado curto: `token[0]`, `token[1]`…
+            entry.field = format!("{}[{}]", value.field, out.len());
+        }
         relabel(&mut entry);
         out.push((start, entry));
     }
@@ -1370,6 +1649,7 @@ fn partial_entries(
                 evidences: Vec::new(),
                 repeated_from: Vec::new(),
                 unobservable: Vec::new(),
+                context: Vec::new(),
                 parent: Some(value.field.clone()),
                 note: None,
             };
@@ -1431,6 +1711,9 @@ pub(crate) fn maximal_common(a: &[u8], b: &[u8], min: usize) -> Vec<(usize, usiz
 pub enum StepClass {
     Application,
     Protection,
+    /// Página de contexto (documento que carregou a página de onde um passo
+    /// foi emitido): nunca produtora de valor.
+    Page,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1469,6 +1752,9 @@ pub struct PrimingChain {
     pub steps: Vec<ChainStep>,
     /// Requisições de proteção (/TSPD/, cookies TS*), separadas.
     pub protection: Vec<ChainStep>,
+    /// Páginas de contexto (Referer): documentos que carregaram a página de onde
+    /// cada passo foi emitido. Não produzem valores.
+    pub pages: Vec<ChainStep>,
     /// Valores sem origem observada, ambíguos ou redigidos (não resolvidos).
     pub unresolved: Vec<UnresolvedValue>,
     pub redacted_values: usize,
@@ -1486,7 +1772,7 @@ pub struct UnresolvedValue {
     pub status: OriginStatus,
 }
 
-fn is_protection_path(url: &str) -> bool {
+pub(crate) fn is_protection_path(url: &str) -> bool {
     let path = url.split('?').next().unwrap_or(url);
     path.contains("/TSPD/") || path.ends_with("/TSPD")
 }
@@ -1507,6 +1793,7 @@ pub fn priming_chain(
         request_id: request_id.to_string(),
         steps: Vec::new(),
         protection: Vec::new(),
+        pages: Vec::new(),
         unresolved: Vec::new(),
         redacted_values: 0,
         warnings: Vec::new(),
@@ -1662,8 +1949,68 @@ pub fn priming_chain(
         };
         key(a).cmp(&key(b))
     });
+    // Páginas de contexto: documento anterior cuja URL é o Referer de um passo
+    // (ou do alvo); fora dos passos e da proteção.
+    {
+        let emitters: Vec<(String, Pos)> = std::iter::once(request_id.to_string())
+            .chain(all.iter().map(|s| s.request_id.clone()))
+            .filter_map(|id| ctx.find(&id).map(|pos| (id, pos)))
+            .collect();
+        let mut pages: Vec<ChainStep> = Vec::new();
+        for (emitter, pos) in emitters {
+            let attempt = ctx.attempt_ref(pos);
+            let Some(referer) = attempt.request_headers.first_value("referer") else {
+                continue;
+            };
+            let referer = referer.split('#').next().unwrap_or(referer);
+            let found = ctx
+                .positions()
+                .filter(|cand| {
+                    let a = ctx.attempt_ref(*cand);
+                    ctx.request_id(*cand) != emitter
+                        && ctx.rel(*cand, pos) == Rel::Before
+                        && a.url.split('#').next() == Some(referer)
+                        && a.method.eq_ignore_ascii_case("GET")
+                        && !ctx.is_static(*cand)
+                        && !is_protection_path(&a.url)
+                })
+                .max_by_key(|cand| ctx.seq[cand]);
+            let Some(cand) = found else { continue };
+            let id = ctx.request_id(cand);
+            if id == request_id || pages.iter().any(|p| p.request_id == id) {
+                continue;
+            }
+            let a = ctx.attempt_ref(cand);
+            pages.push(ChainStep {
+                request_id: id.to_string(),
+                attempt_id: a.id.clone(),
+                method: a.method.clone(),
+                url: a.url.clone(),
+                started_at: a.started_at,
+                class: StepClass::Page,
+                confidence: Confidence::Possible,
+                reason: format!(
+                    "página de contexto: carregou a página de onde {emitter} foi emitido (Referer)"
+                ),
+                reasons: vec![StepReason {
+                    provides: "página de contexto".to_string(),
+                    field: String::new(),
+                    kind: EvidenceKind::Initiator,
+                    strength: Strength::Complement,
+                    consumed_by: emitter.clone(),
+                }],
+            });
+        }
+        pages.sort_by(|a, b| {
+            a.started_at
+                .partial_cmp(&b.started_at)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        chain.pages = pages;
+    }
     for step in all {
         match step.class {
+            StepClass::Page => {}
             StepClass::Application => chain.steps.push(step),
             StepClass::Protection => chain.protection.push(step),
         }

@@ -8,7 +8,7 @@
 //!   scrapelens-core search <sessao> <texto> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
 //!   scrapelens-core origins <sessao> <requestId>
 //!   scrapelens-core chain <sessao> <requestId>
-//!   scrapelens-core compare <sessaoA> <sessaoB>
+//!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core sanitize <sessao> <saida>
@@ -154,8 +154,25 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
 
 fn compare_command(args: &[String]) -> Result<(), String> {
     use scrapelens_core::compare::{compare_sessions, CompareOptions};
-    if args.len() != 2 {
+    if args.len() < 2 {
         return Err(usage());
+    }
+    let mut options = CompareOptions::default();
+    let mut rest = args[2..].iter();
+    while let Some(arg) = rest.next() {
+        let mut range = |name: &str| -> Result<scrapelens_core::compare::RequestRange, String> {
+            let value = rest.next().ok_or_else(|| {
+                format!("{name} exige um valor (ex.: 10:50 ou har-0010:har-0050)")
+            })?;
+            scrapelens_core::compare::RequestRange::parse(value)
+                .ok_or_else(|| format!("{name}: faixa inválida {value:?}"))
+        };
+        match arg.as_str() {
+            "--all" => options.include_all = true,
+            "--a-range" => options.a_range = Some(range("--a-range")?),
+            "--b-range" => options.b_range = Some(range("--b-range")?),
+            other => return Err(format!("argumento desconhecido: {other}\n\n{}", usage())),
+        }
     }
     let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
         .map_err(|e| e.to_string())?;
@@ -166,7 +183,7 @@ fn compare_command(args: &[String]) -> Result<(), String> {
         &scrapelens_core::search::LazyBodies(&a),
         &b.session,
         &scrapelens_core::search::LazyBodies(&b),
-        &CompareOptions::default(),
+        &options,
     );
     print_json(&result)
 }
@@ -338,7 +355,7 @@ fn usage() -> String {
   scrapelens-core search <sessao> <texto> [--scope <escopo>]... [--case-sensitive]
   scrapelens-core origins <sessao> <requestId>
   scrapelens-core chain <sessao> <requestId>
-  scrapelens-core compare <sessaoA> <sessaoB>
+  scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
   scrapelens-core sanitize <sessao> <saida>

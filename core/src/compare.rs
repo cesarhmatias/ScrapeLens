@@ -16,6 +16,16 @@
 //! dinâmicos de campos compostos (`dynamic == runtime + noOrigin`); `partsCounts` mostra só a parte dos trechos
 //! (e os estáticos).
 //!
+//! Rodada 6: por padrão só a aplicação é alinhada (proteção e recursos estáticos
+//! saem em `groups: [{kind: protection|static, a[], b[]}]`; `CompareOptions
+//! {includeAll}` os inclui). A e B são segmentadas em rodadas pela requisição de
+//! entrada (`entryRequest`: o 1º documento da aplicação que se repete); cada
+//! rodada de A pareia com a rodada mais parecida de B (`rounds: [{aRound, bRound,
+//! score, aRequests, bRequests}]`) e as rodadas sem par saem em `unpairedRounds`
+//! (não em `onlyInA/onlyInB`). `pairs[].round` indexa `rounds`. Faixas:
+//! `CompareOptions {aRange, bRange: {from, to}}` (ids ou números 1-based; CLI
+//! `--a-range de:ate --b-range de:ate`).
+//!
 //! - Alinhamento A↔B por modelo (método + host + caminho normalizado +
 //!   nomes de query + nomes de campos do corpo); requisições do mesmo modelo
 //!   são pareadas em ordem. Sobras ficam `onlyInA`/`onlyInB`; as que só
@@ -44,6 +54,46 @@ use crate::search::BodySource;
 #[serde(rename_all = "camelCase")]
 pub struct CompareOptions {
     pub flow: FlowOptions,
+    /// Inclui proteção (/TSPD/) e recursos estáticos no alinhamento. Por padrão
+    /// só as requisições da aplicação são alinhadas; as demais saem em `groups`.
+    #[serde(default)]
+    pub include_all: bool,
+    /// Faixa de A a comparar: pontas inclusivas, cada uma um id de requisição
+    /// ou um número (1 = primeira requisição da sessão).
+    #[serde(default)]
+    pub a_range: Option<RequestRange>,
+    #[serde(default)]
+    pub b_range: Option<RequestRange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestRange {
+    pub from: String,
+    pub to: String,
+}
+
+impl RequestRange {
+    /// `"har-0010:har-0050"`, `"10:50"` ou `"10-50"`.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (from, to) = text.split_once(':').or_else(|| text.split_once('-'))?;
+        let (from, to) = (from.trim(), to.trim());
+        (!from.is_empty() && !to.is_empty()).then(|| Self {
+            from: from.to_string(),
+            to: to.to_string(),
+        })
+    }
+
+    fn resolve(&self, session: &SessionV1) -> Option<(usize, usize)> {
+        let index = |s: &str| {
+            s.parse::<usize>()
+                .ok()
+                .filter(|n| *n >= 1)
+                .map(|n| n - 1)
+                .or_else(|| session.requests.iter().position(|q| q.id == s))
+        };
+        Some((index(&self.from)?, index(&self.to)?))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +130,9 @@ pub struct OriginSummary {
     pub ambiguous: bool,
     /// `strong` ou `possible` (só evidência média).
     pub confidence: Option<Confidence>,
+    /// O produtor é um controle de formulário HTML.
+    #[serde(default)]
+    pub html_control: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -154,6 +207,8 @@ pub struct PairComparison {
     pub b: RequestRef,
     /// `model` (modelo idêntico) ou `path` (só método + host + caminho).
     pub aligned_by: String,
+    /// Índice em `rounds` a que o par pertence.
+    pub round: usize,
     /// B não preserva a ordem relativa de A neste par.
     pub out_of_order: bool,
     pub fields: Vec<FieldDiff>,
@@ -161,6 +216,37 @@ pub struct PairComparison {
     /// composto não conta por si; contam os trechos).
     pub counts: PairCounts,
     pub parts_counts: PartsCounts,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoundInfo {
+    pub a_round: usize,
+    pub b_round: usize,
+    /// Modelos em comum (soma de min(contagem A, contagem B)).
+    pub score: usize,
+    pub a_requests: usize,
+    pub b_requests: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnpairedRound {
+    /// `A` ou `B`.
+    pub side: String,
+    pub round: usize,
+    pub requests: usize,
+    pub first: RequestRef,
+    pub last: RequestRef,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OtherGroup {
+    /// `protection` ou `static`.
+    pub kind: String,
+    pub a: Vec<RequestRef>,
+    pub b: Vec<RequestRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -173,6 +259,14 @@ pub struct ReorderedPair {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionComparison {
+    /// Rodadas pareadas (A e B segmentadas pela requisição de entrada).
+    pub rounds: Vec<RoundInfo>,
+    /// Rodadas sem par no outro lado (não entram em `onlyInA`/`onlyInB`).
+    pub unpaired_rounds: Vec<UnpairedRound>,
+    /// Requisições fora do alinhamento da aplicação (proteção, estáticos).
+    pub groups: Vec<OtherGroup>,
+    /// Modelo da requisição de entrada usada na segmentação (`método|host|caminho`).
+    pub entry_request: Option<String>,
     /// Sobras dos dois lados com o MESMO modelo: provavelmente as mesmas
     /// requisições em outra ordem (o pareamento continua monotônico).
     pub reordered: Vec<ReorderedPair>,
@@ -192,7 +286,7 @@ fn is_redacted(value: &str) -> bool {
     value.contains("REDACTED")
 }
 
-fn split_url(url: &str) -> (String, String) {
+pub(crate) fn split_url(url: &str) -> (String, String) {
     let no_frag = url.split('#').next().unwrap_or(url);
     let no_query = no_frag.split('?').next().unwrap_or(no_frag);
     let (host, path) = match no_query.split_once("://") {
@@ -222,6 +316,7 @@ fn split_url(url: &str) -> (String, String) {
     )
 }
 
+#[derive(Clone)]
 struct Entry {
     index: usize,
     id: String,
@@ -229,6 +324,16 @@ struct Entry {
     url: String,
     base: String,
     model: String,
+    kind: EntryKind,
+    /// Documento (GET com resposta HTML) da aplicação.
+    document: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EntryKind {
+    App,
+    Protection,
+    Static,
 }
 
 fn entries(ctx: &FlowContext<'_>) -> Vec<Entry> {
@@ -249,6 +354,19 @@ fn entries(ctx: &FlowContext<'_>) -> Vec<Entry> {
         names.sort();
         names.dedup();
         let model = format!("{base}|{}", names.join(","));
+        let kind = if crate::flow::is_protection_path(&attempt.url) {
+            EntryKind::Protection
+        } else if ctx.is_static(pos) {
+            EntryKind::Static
+        } else {
+            EntryKind::App
+        };
+        let document = kind == EntryKind::App
+            && attempt.method.eq_ignore_ascii_case("GET")
+            && attempt
+                .response_headers
+                .first_value("content-type")
+                .is_some_and(|ct| ct.to_ascii_lowercase().contains("html"));
         out.push(Entry {
             index,
             id: request.id.clone(),
@@ -256,6 +374,8 @@ fn entries(ctx: &FlowContext<'_>) -> Vec<Entry> {
             url: attempt.url.clone(),
             base,
             model,
+            kind,
+            document,
         });
     }
     out
@@ -286,6 +406,7 @@ fn summary(value: &ValueOrigin) -> Option<OriginSummary> {
         field: oldest.field.clone(),
         ambiguous: value.status == OriginStatus::Ambiguous,
         confidence: value.confidence,
+        html_control: oldest.html_control,
     })
 }
 
@@ -377,9 +498,11 @@ pub fn compare_sessions(
 ) -> SessionComparison {
     let ctx_a = FlowContext::new(a, a_source, &options.flow);
     let ctx_b = FlowContext::new(b, b_source, &options.flow);
-    let ea = entries(&ctx_a);
-    let eb = entries(&ctx_b);
     let mut result = SessionComparison {
+        rounds: Vec::new(),
+        unpaired_rounds: Vec::new(),
+        groups: Vec::new(),
+        entry_request: None,
         reordered: Vec::new(),
         pairs: Vec::new(),
         only_in_a: Vec::new(),
@@ -390,10 +513,204 @@ pub fn compare_sessions(
         redacted_fields: 0,
         warnings: Vec::new(),
     };
+    let mut all_a = entries(&ctx_a);
+    let mut all_b = entries(&ctx_b);
+    for (list, range, session, side) in [
+        (&mut all_a, &options.a_range, a, "A"),
+        (&mut all_b, &options.b_range, b, "B"),
+    ] {
+        if let Some(range) = range {
+            match range.resolve(session) {
+                Some((from, to)) => list.retain(|e| e.index >= from && e.index <= to),
+                None => result.warnings.push(format!(
+                    "faixa de {side} inválida ({}..{}); comparando a sessão inteira",
+                    range.from, range.to
+                )),
+            }
+        }
+    }
+    // Só a aplicação é alinhada por padrão; o resto vira grupos próprios.
+    let (ea, eb): (Vec<Entry>, Vec<Entry>) = if options.include_all {
+        (all_a.clone(), all_b.clone())
+    } else {
+        for kind in [EntryKind::Protection, EntryKind::Static] {
+            let pick = |list: &[Entry]| {
+                list.iter()
+                    .filter(|e| e.kind == kind)
+                    .map(request_ref)
+                    .collect::<Vec<_>>()
+            };
+            let (ga, gb) = (pick(&all_a), pick(&all_b));
+            if !ga.is_empty() || !gb.is_empty() {
+                result.groups.push(OtherGroup {
+                    kind: if kind == EntryKind::Protection {
+                        "protection"
+                    } else {
+                        "static"
+                    }
+                    .to_string(),
+                    a: ga,
+                    b: gb,
+                });
+            }
+        }
+        (
+            all_a
+                .iter()
+                .filter(|e| e.kind == EntryKind::App)
+                .cloned()
+                .collect(),
+            all_b
+                .iter()
+                .filter(|e| e.kind == EntryKind::App)
+                .cloned()
+                .collect(),
+        )
+    };
 
-    // Alinhamento monotônico (sem cruzar a ordem): mesmo modelo pesa mais que
-    // só método + host + caminho.
-    let (pairs, dropped) = align(&ea, &eb);
+    // Rodadas: segmentação pela requisição de entrada (1º documento da
+    // aplicação que se repete).
+    let entry = entry_base(&ea, &eb);
+    result.entry_request = entry.clone();
+    let rounds_a = split_rounds(&ea, entry.as_deref());
+    let rounds_b = split_rounds(&eb, entry.as_deref());
+    let mut scores: Vec<(usize, usize, usize)> = Vec::new();
+    for (i, ra) in rounds_a.iter().enumerate() {
+        for (j, rb) in rounds_b.iter().enumerate() {
+            scores.push((round_score(ra, rb), i, j));
+        }
+    }
+    scores.sort_by(|x, y| y.0.cmp(&x.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2)));
+    let (mut used_a, mut used_b) = (vec![false; rounds_a.len()], vec![false; rounds_b.len()]);
+    let mut matched: Vec<(usize, usize, usize)> = Vec::new();
+    let single = rounds_a.len() == 1 && rounds_b.len() == 1;
+    for (score, i, j) in scores {
+        if used_a[i] || used_b[j] || (score == 0 && !single) {
+            continue;
+        }
+        used_a[i] = true;
+        used_b[j] = true;
+        matched.push((i, j, score));
+    }
+    matched.sort();
+    for (side, rounds, used) in [("A", &rounds_a, &used_a), ("B", &rounds_b, &used_b)] {
+        for (n, round) in rounds.iter().enumerate() {
+            if !used[n] && !round.is_empty() {
+                result.unpaired_rounds.push(UnpairedRound {
+                    side: side.to_string(),
+                    round: n,
+                    requests: round.len(),
+                    first: request_ref(&round[0]),
+                    last: request_ref(&round[round.len() - 1]),
+                });
+            }
+        }
+    }
+
+    let mut compared: Vec<(usize, PairComparison)> = Vec::new();
+    for (round_no, (i, j, score)) in matched.iter().enumerate() {
+        let (ra, rb) = (&rounds_a[*i], &rounds_b[*j]);
+        result.rounds.push(RoundInfo {
+            a_round: *i,
+            b_round: *j,
+            score: *score,
+            a_requests: ra.len(),
+            b_requests: rb.len(),
+        });
+        align_round(&ctx_a, &ctx_b, ra, rb, round_no, &mut result, &mut compared);
+    }
+    compared.sort_by_key(|(index, _)| *index);
+    for (_, pair) in compared {
+        add_counts(&mut result.counts, &pair.counts);
+        result.parts_counts.r#static += pair.parts_counts.r#static;
+        result.parts_counts.dynamic += pair.parts_counts.dynamic;
+        result.parts_counts.runtime += pair.parts_counts.runtime;
+        result.parts_counts.no_origin += pair.parts_counts.no_origin;
+        result.pairs.push(pair);
+    }
+    result.redacted_fields = result.counts.redacted;
+    if result.redacted_fields > 0 {
+        result.warnings.push(format!(
+            "{} campo(s) redigido(s) ([REDACTED]) não podem ser comparados nem rastreados",
+            result.redacted_fields
+        ));
+    }
+    result
+}
+
+/// Modelo (`método|host|caminho`) do primeiro documento da aplicação que se
+/// repete; deve existir nos dois lados.
+fn entry_base(ea: &[Entry], eb: &[Entry]) -> Option<String> {
+    let repeated = |list: &[Entry]| -> Vec<String> {
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for e in list.iter().filter(|e| e.document) {
+            *counts.entry(&e.base).or_default() += 1;
+        }
+        let mut order: Vec<String> = Vec::new();
+        for e in list.iter().filter(|e| e.document) {
+            if counts[e.base.as_str()] >= 2 && !order.contains(&e.base) {
+                order.push(e.base.clone());
+            }
+        }
+        order
+    };
+    let has = |list: &[Entry], base: &str| list.iter().any(|e| e.document && e.base == base);
+    repeated(ea)
+        .into_iter()
+        .find(|base| has(eb, base))
+        .or_else(|| repeated(eb).into_iter().find(|base| has(ea, base)))
+}
+
+fn split_rounds(list: &[Entry], entry: Option<&str>) -> Vec<Vec<Entry>> {
+    let Some(entry) = entry else {
+        return vec![list.to_vec()];
+    };
+    let starts: Vec<usize> = list
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.document && e.base == entry)
+        .map(|(i, _)| i)
+        .collect();
+    if starts.len() < 2 {
+        return vec![list.to_vec()];
+    }
+    let mut bounds: Vec<usize> = starts[1..].to_vec();
+    bounds.insert(0, 0);
+    bounds.push(list.len());
+    bounds
+        .windows(2)
+        .map(|w| list[w[0]..w[1]].to_vec())
+        .collect()
+}
+
+fn round_score(ra: &[Entry], rb: &[Entry]) -> usize {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for e in ra {
+        *counts.entry(&e.model).or_default() += 1;
+    }
+    let mut score = 0;
+    for e in rb {
+        if let Some(n) = counts.get_mut(e.model.as_str()) {
+            if *n > 0 {
+                *n -= 1;
+                score += 1;
+            }
+        }
+    }
+    score
+}
+
+/// Alinha e compara um par de rodadas.
+fn align_round(
+    ctx_a: &FlowContext<'_>,
+    ctx_b: &FlowContext<'_>,
+    ea: &[Entry],
+    eb: &[Entry],
+    round_no: usize,
+    result: &mut SessionComparison,
+    out: &mut Vec<(usize, PairComparison)>,
+) {
+    let (pairs, dropped) = align(ea, eb);
     let mut used_a = vec![false; ea.len()];
     let mut used_b = vec![false; eb.len()];
     for (i, j, how) in &pairs {
@@ -414,13 +731,12 @@ pub fn compare_sessions(
     }
     let still_a: Vec<usize> = (0..ea.len()).filter(|i| !used_a[*i]).collect();
     let left_b: Vec<usize> = (0..eb.len()).filter(|j| !used_b[*j]).collect();
-    // Modelos com contagem diferente: sobra posicional é ambígua.
     let mut count_a: HashMap<&str, usize> = HashMap::new();
     let mut count_b: HashMap<&str, usize> = HashMap::new();
-    for e in &ea {
+    for e in ea {
         *count_a.entry(&e.model).or_default() += 1;
     }
-    for e in &eb {
+    for e in eb {
         *count_b.entry(&e.model).or_default() += 1;
     }
     for (model, na) in &count_a {
@@ -456,27 +772,14 @@ pub fn compare_sessions(
     for j in left_b {
         result.only_in_b.push(request_ref(&eb[j]));
     }
-
     let mut max_b_seen: Option<usize> = None;
     for (i, j, how) in pairs {
         let out_of_order = max_b_seen.is_some_and(|m| eb[j].index < m);
         max_b_seen = Some(max_b_seen.map_or(eb[j].index, |m| m.max(eb[j].index)));
-        let pair = compare_pair(&ctx_a, &ctx_b, &ea[i], &eb[j], how, out_of_order);
-        add_counts(&mut result.counts, &pair.counts);
-        result.parts_counts.r#static += pair.parts_counts.r#static;
-        result.parts_counts.dynamic += pair.parts_counts.dynamic;
-        result.parts_counts.runtime += pair.parts_counts.runtime;
-        result.parts_counts.no_origin += pair.parts_counts.no_origin;
-        result.pairs.push(pair);
+        let mut pair = compare_pair(ctx_a, ctx_b, &ea[i], &eb[j], how, out_of_order);
+        pair.round = round_no;
+        out.push((ea[i].index, pair));
     }
-    result.redacted_fields = result.counts.redacted;
-    if result.redacted_fields > 0 {
-        result.warnings.push(format!(
-            "{} campo(s) redigido(s) ([REDACTED]) não podem ser comparados nem rastreados",
-            result.redacted_fields
-        ));
-    }
-    result
 }
 
 /// Pareamento A↔B monotônico. Devolve os pares `(i, j, "model"|"path")` em
@@ -803,6 +1106,7 @@ fn compare_pair(
         a: request_ref(ea),
         b: request_ref(eb),
         aligned_by: how.to_string(),
+        round: 0,
         out_of_order,
         fields,
         counts,

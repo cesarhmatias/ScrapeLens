@@ -202,6 +202,12 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     session.session.completeness.counts.source_events_used = report.source_events_used;
     session.session.completeness.counts.source_events_unknown = report.source_events_unknown;
 
+    if !session.requests.is_empty() && !har_has_cookies(entries) {
+        report.warn(Warning::new(
+            "har.cookies_absent",
+            "o HAR não contém cookies (exportação do DevTools os remove); origem de cookies não avaliável — use captura ao vivo (CDP/NetLog)",
+        ));
+    }
     for warning in &report.warnings {
         session.warnings.push(warning.clone());
     }
@@ -394,6 +400,7 @@ fn parse_entry(
     let request_body = parse_request_body(
         request,
         &request_id,
+        &method,
         &request_provenance,
         attachments,
         report,
@@ -509,14 +516,54 @@ fn parse_har_headers(
     }
 }
 
+/// Algum Cookie/Set-Cookie/`cookies[]` em qualquer entrada?
+fn har_has_cookies(entries: &[Value]) -> bool {
+    entries.iter().any(|entry| {
+        ["request", "response"].iter().any(|side| {
+            let Some(part) = entry.get(*side) else {
+                return false;
+            };
+            let cookies = part
+                .get("cookies")
+                .and_then(Value::as_array)
+                .is_some_and(|list| !list.is_empty());
+            let headers = part
+                .get("headers")
+                .and_then(Value::as_array)
+                .is_some_and(|list| {
+                    list.iter().any(|header| {
+                        header
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .is_some_and(|name| {
+                                name.eq_ignore_ascii_case("cookie")
+                                    || name.eq_ignore_ascii_case("set-cookie")
+                            })
+                    })
+                });
+            cookies || headers
+        })
+    })
+}
+
 fn parse_request_body(
     request: Option<&Map<String, Value>>,
     id: &str,
+    method: &str,
     provenance: &Provenance,
     attachments: &mut std::collections::BTreeMap<String, Vec<u8>>,
     report: &mut ImportReport,
 ) -> Body {
     let Some(post_data) = request.and_then(|request| request.get("postData")) else {
+        // Método sem corpo e sem postData: não é um corpo ausente.
+        if matches!(
+            method.to_ascii_uppercase().as_str(),
+            "GET" | "HEAD" | "OPTIONS"
+        ) {
+            let mut body = Body::empty(provenance);
+            body.note = Some("não aplicável: método sem corpo".to_string());
+            return body;
+        }
         return Body::unavailable("HAR não fornece postData");
     };
     let mime = post_data

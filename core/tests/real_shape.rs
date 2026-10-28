@@ -1,0 +1,695 @@
+//! Rodada 6 — fidelidade ao caso real (docs/10): respostas HTML com controles de
+//! formulário, HAR sem cookies, rodadas, campos de negócio. Mini-fixtures próprias.
+
+use scrapelens_core::compare::{compare_sessions, CompareOptions, RequestRange};
+use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
+use scrapelens_core::flow::{
+    priming_chain, value_origins, Confidence, EvidenceKind, FlowOptions, OriginStatus, StepClass,
+    ValueOrigin, ValueOrigins,
+};
+use scrapelens_core::model::{BodyState, SessionBundle};
+use scrapelens_core::parse::cdp::{build_cdp_session, parse_cdp_jsonl};
+use scrapelens_core::parse::cdp_bodies::apply_cdp_bodies;
+use scrapelens_core::search::{search, SearchQuery};
+use serde_json::{json, Value};
+
+const FORM: &str = "application/x-www-form-urlencoded";
+
+#[derive(Default)]
+struct S {
+    ev: Vec<Value>,
+    bd: Vec<Value>,
+}
+
+#[derive(Default)]
+struct R<'a> {
+    headers: Option<Value>,
+    body: Option<&'a str>,
+    resp: Option<&'a str>,
+}
+
+impl S {
+    fn req(&mut self, id: &str, t: f64, url: &str, method: &str, r: R) {
+        let mut h = r.headers.unwrap_or(json!({}));
+        if r.body.is_some() {
+            h["content-type"] = json!(FORM);
+        }
+        self.ev.push(json!({"method": "Network.requestWillBeSent", "params": {
+            "requestId": id, "loaderId": "L", "timestamp": t, "wallTime": 1793000000.0 + t,
+            "request": {"url": url, "method": method, "headers": h, "hasPostData": r.body.is_some()},
+            "type": "XHR", "frameId": "F"}}));
+        if let Some(body) = r.body {
+            self.bd.push(line(id, "request", body, t));
+        }
+        self.ev.push(json!({"method": "Network.responseReceived", "params": {
+            "requestId": id, "loaderId": "L", "timestamp": t + 0.02, "type": "XHR",
+            "response": {"url": url, "status": 200, "statusText": "", "headers": {"content-type": "text/html"}, "protocol": "http/1.1"}}}));
+        self.ev.push(json!({"method": "Network.loadingFinished", "params": {"requestId": id, "timestamp": t + 0.04, "encodedDataLength": 1}}));
+        if let Some(resp) = r.resp {
+            self.bd.push(line(id, "response", resp, t + 0.04));
+        }
+    }
+
+    fn build(&self) -> SessionBundle {
+        let jl = |v: &[Value]| {
+            v.iter()
+                .map(|x| format!("{x}\n"))
+                .collect::<String>()
+                .into_bytes()
+        };
+        let capture = parse_cdp_jsonl(&jl(&self.ev)).unwrap();
+        let (mut session, _) = build_cdp_session(&capture);
+        let mut attachments = Default::default();
+        apply_cdp_bodies(&mut session, &mut attachments, &jl(&self.bd));
+        let mut b = SessionBundle::new(session);
+        b.attachments = attachments;
+        b
+    }
+}
+
+fn line(id: &str, kind: &str, data: &str, ts: f64) -> Value {
+    json!({"v":1,"requestId":id,"attemptIndex":0,"kind":kind,"state":"captured","encoding":"utf8",
+        "data":data,"originalSize":data.len(),"capturedSize":data.len(),"source":"x","reason":null,"timestamp":ts})
+}
+
+fn lid(b: &SessionBundle, cdp: &str) -> String {
+    b.session
+        .requests
+        .iter()
+        .find(|r| r.cdp.as_ref().and_then(|c| c.request_id.as_deref()) == Some(cdp))
+        .unwrap()
+        .id
+        .clone()
+}
+
+fn origins(b: &SessionBundle, cdp: &str) -> ValueOrigins {
+    value_origins(&b.session, b, &lid(b, cdp), &FlowOptions::default()).unwrap()
+}
+
+fn entry<'a>(o: &'a ValueOrigins, field: &str) -> &'a ValueOrigin {
+    o.values
+        .iter()
+        .find(|v| v.field == field && v.parent.is_none())
+        .unwrap_or_else(|| panic!("{field} ausente"))
+}
+
+/// Resposta do Connector na forma real: HTML com script antes, controles com
+/// aspas duplas/simples/sem aspas, maiúsculas, entidades e textarea com `<` escapado.
+fn connector_html(stamp: &str, delta: &str) -> String {
+    format!(
+        "<html><head><script>var f5 = \"<input name='STAMP' value='9999'>\"; function x(){{}}</script></head>\n<body><FORM method=post>\n\
+         <INPUT TYPE=hidden NAME=STAMP VALUE=\"{stamp}\">\n\
+         <input type='hidden' name='ECHO' value='a&amp;b&#x21;'>\n\
+         <input name=BARE value=unquoted>\n\
+         <input name=\"ERRORMESSAGE\">\n\
+         <textarea name=\"XML\" rows=\"3\">lp08nextPage&lt;/UIC/VES0009X.html&gt;k05v_tmpx08{delta}</textarea>\n\
+         <textarea name=\"ERRORMESSAGE2\"></textarea></FORM></body></html>"
+    )
+}
+
+// ---- L1 ---------------------------------------------------------------------------------
+
+#[test]
+fn l1_html_controls_feed_same_field_and_value_match() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=init0&STAMP=2004"),
+            resp: Some(&connector_html("2005", "DLTA0005")),
+            ..Default::default()
+        },
+    );
+    s.req("1.2", 2.0, "https://x.test/app/Connector", "POST", R {
+        body: Some("SESSIONID=S1&ECHO=a%26b!&STAMP=2005&XML=i2212001705027000195dummy-cmd_consultar_placa-falsex08DLTA0005"),
+        resp: Some("<html></html>"),
+        ..Default::default()
+    });
+    let b = s.build();
+    let o = origins(&b, "1.2");
+    // STAMP: same-field forte, vindo de <input hidden> (e não do script do F5)
+    let stamp = entry(&o, "STAMP");
+    assert_eq!(stamp.status, OriginStatus::Origin);
+    assert_eq!(stamp.confidence, Some(Confidence::Strong));
+    assert_eq!(stamp.evidences[0].kind, EvidenceKind::SameField);
+    assert!(stamp.evidences[0].html_control);
+    assert_eq!(stamp.evidences[0].request_id, lid(&b, "1.1"));
+    // entidades decodificadas no valor
+    assert_eq!(entry(&o, "ECHO").status, OriginStatus::Origin);
+    // delta: trecho do XML vindo da textarea anterior (value-match, offset no original)
+    let delta = o
+        .values
+        .iter()
+        .find(|v| v.parent.as_deref() == Some("XML") && v.value.contains("DLTA0005"))
+        .expect("trecho do delta");
+    assert!(!delta.evidences.is_empty());
+    let e = &delta.evidences[0];
+    assert!(e.html_control);
+    assert_eq!(e.kind, EvidenceKind::ValueMatch);
+    let html = connector_html("2005", "DLTA0005");
+    let at = e.producer_offset.unwrap() as usize;
+    assert!(
+        html[at..].starts_with("x08DLTA0005"),
+        "offset original da textarea: {}",
+        &html[at..at + 12]
+    );
+}
+
+#[test]
+fn l1_search_sees_html_controls_by_name() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=init0"),
+            resp: Some(&connector_html("2005", "DLTA0005")),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let r = search(&b, &SearchQuery::new("</UIC/VES0009X.html>"));
+    let m = r
+        .matches
+        .iter()
+        .find(|m| m.field.as_deref() == Some("XML"))
+        .expect("achado na textarea");
+    assert!(m.decoded && m.html_control);
+    let r = search(&b, &SearchQuery::new("a&b!"));
+    assert!(
+        r.matches
+            .iter()
+            .find(|m| m.field.as_deref() == Some("ECHO"))
+            .unwrap()
+            .decoded
+    );
+}
+
+// ---- L2 / L7 (HAR) -----------------------------------------------------------------------
+
+fn har(with_cookie: bool) -> Vec<u8> {
+    let mut headers = vec![json!({"name": "Accept", "value": "*/*"})];
+    if with_cookie {
+        headers.push(json!({"name": "Cookie", "value": "a=b"}));
+    }
+    let entry = |method: &str, url: &str, post: bool| {
+        let mut request = json!({"method": method, "url": url, "httpVersion": "HTTP/1.1", "headers": headers, "queryString": [], "cookies": [], "headersSize": -1, "bodySize": 0});
+        if post {
+            request["postData"] = json!({"mimeType": FORM, "text": "a=1"});
+        }
+        json!({"startedDateTime": "2026-10-26T20:00:00.000Z", "time": 1, "request": request,
+            "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.1", "headers": [{"name": "content-type", "value": "text/html"}], "cookies": [], "content": {"size": 2, "mimeType": "text/html", "text": "ok"}, "redirectURL": "", "headersSize": -1, "bodySize": 2},
+            "cache": {}, "timings": {"send": 0, "wait": 1, "receive": 0}})
+    };
+    let mut no_body_post = entry("POST", "https://x.test/p", false);
+    no_body_post["request"]["bodySize"] = json!(5);
+    serde_json::to_vec(&json!({"log": {"version": "1.2", "creator": {"name": "WebInspector", "version": "537.36"},
+        "entries": [entry("GET", "https://x.test/a", false), entry("HEAD", "https://x.test/b", false), entry("OPTIONS", "https://x.test/c", false), no_body_post, entry("POST", "https://x.test/d", true)]}}))
+    .unwrap()
+}
+
+#[test]
+fn l2_har_without_cookies_warns_and_origins_repeat_it() {
+    let imported = scrapelens_core::import_har(&har(false)).unwrap();
+    let codes: Vec<_> = imported
+        .bundle
+        .session
+        .warnings
+        .iter()
+        .map(|w| w.code.as_str())
+        .collect();
+    assert!(codes.contains(&"har.cookies_absent"), "{codes:?}");
+    let id = imported.bundle.session.requests[4].id.clone();
+    let o = value_origins(
+        &imported.bundle.session,
+        &imported.bundle,
+        &id,
+        &FlowOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        o.warnings.iter().any(|w| w.contains("não contém cookies")),
+        "{:?}",
+        o.warnings
+    );
+    let chain = priming_chain(
+        &imported.bundle.session,
+        &imported.bundle,
+        &id,
+        &FlowOptions::default(),
+    )
+    .unwrap();
+    assert!(chain
+        .warnings
+        .iter()
+        .any(|w| w.contains("não contém cookies")));
+    // com cookie em alguma entrada: sem aviso
+    let with = scrapelens_core::import_har(&har(true)).unwrap();
+    assert!(with
+        .bundle
+        .session
+        .warnings
+        .iter()
+        .all(|w| w.code != "har.cookies_absent"));
+}
+
+#[test]
+fn l7_har_get_head_options_without_postdata_are_empty_not_applicable() {
+    let imported = scrapelens_core::import_har(&har(false)).unwrap();
+    let rs = &imported.bundle.session.requests;
+    for r in &rs[..3] {
+        assert_eq!(r.request_body.state, BodyState::Empty, "{}", r.method);
+        assert_eq!(
+            r.request_body.note.as_deref(),
+            Some("não aplicável: método sem corpo")
+        );
+    }
+    // POST sem postData: corpo esperado que não veio
+    assert_eq!(rs[3].request_body.state, BodyState::Unavailable);
+    assert_eq!(rs[4].request_body.state, BodyState::Captured);
+}
+
+// ---- L4 ---------------------------------------------------------------------------------
+
+#[test]
+fn l4_context_pages_by_referer_are_not_producers_or_steps() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/Page.html",
+        "GET",
+        R {
+            resp: Some("<html><body>pagina</body></html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            headers: Some(json!({"referer": "https://x.test/app/Page.html"})),
+            body: Some("XML=init0&STAMP=2004"),
+            resp: Some(&connector_html("2005", "DLTA0005")),
+        },
+    );
+    s.req(
+        "1.3",
+        3.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            headers: Some(json!({"referer": "https://x.test/app/Page.html#frag"})),
+            body: Some("STAMP=2005&XML=cmd"),
+            resp: Some("<html></html>"),
+        },
+    );
+    let b = s.build();
+    let chain = priming_chain(&b.session, &b, &lid(&b, "1.3"), &FlowOptions::default()).unwrap();
+    assert_eq!(chain.steps.len(), 1, "o POST do Connector entra por STAMP");
+    assert_eq!(chain.steps[0].request_id, lid(&b, "1.2"));
+    assert_eq!(chain.steps[0].confidence, Confidence::Strong);
+    assert_eq!(chain.pages.len(), 1);
+    assert_eq!(chain.pages[0].request_id, lid(&b, "1.1"));
+    assert_eq!(chain.pages[0].class, StepClass::Page);
+    assert!(chain.pages[0].reason.starts_with("página de contexto"));
+    assert!(
+        !chain.steps.iter().any(|s| s.request_id == lid(&b, "1.1")),
+        "página não é produtora"
+    );
+}
+
+// ---- L5 ---------------------------------------------------------------------------------
+
+fn all_text(b: &SessionBundle) -> String {
+    let mut text = serde_json::to_string(&b.session).unwrap();
+    for bytes in b.attachments.values() {
+        text.push_str(&String::from_utf8_lossy(bytes));
+    }
+    text
+}
+
+#[test]
+fn l5_business_fields_are_redacted_in_opaque_values_and_propagated() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=p0700007v_placaTST0T00p1300003cpf12345678901xx&STAMP=2004&v_placa_x=1"),
+            resp: Some("<html><textarea name=\"XML\">v_placaTST0T00 eco</textarea></html>"),
+            ..Default::default()
+        },
+    );
+    s.req("1.2", 2.0, "https://x.test/app/Connector?ref=TST0T00", "POST", R {
+        body: Some("placa=TST0T00&renavam=123456789&XML=aaaaaaaaaaaa-v_placaXY-bbbbbbbbbb-cmd_consultar_placa-falsecccc"),
+        resp: Some("ok TST0T00"),
+        ..Default::default()
+    });
+    let b = s.build();
+    let before = all_text(&b);
+    assert!(before.contains("TST0T00") && before.contains("12345678901"));
+    let export = sanitize_bundle(&b, &SanitizeOptions::default());
+    let after = all_text(&export.bundle);
+    assert!(!after.contains("TST0T00"), "placa vazou");
+    assert!(!after.contains("12345678901"), "CPF vazou");
+    assert!(!after.contains("123456789&") && !after.contains("renavam=123456789"));
+    // relatório por tipo, sem valores
+    assert!(
+        export
+            .redactions
+            .get("business:placa")
+            .copied()
+            .unwrap_or(0)
+            >= 2,
+        "{:?}",
+        export.redactions
+    );
+    assert!(export.redactions.get("business:cpf").copied().unwrap_or(0) >= 1);
+    assert!(
+        export.redactions.keys().any(|k| k == "propagated:business"),
+        "{:?}",
+        export.redactions
+    );
+    // valor fora do formato: aviso, sem redação silenciosa
+    let warn = export
+        .warnings
+        .iter()
+        .find(|w| w.code == "sanitize.business_field_unmatched")
+        .expect("aviso");
+    assert!(!warn.message.contains("XY"));
+    assert!(
+        after.contains("v_placaXY"),
+        "valor fora do formato permanece (com aviso)"
+    );
+    // lista configurável
+    let options = SanitizeOptions {
+        business_fields: vec!["matricula".to_string()],
+        ..Default::default()
+    };
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/a",
+        "POST",
+        R {
+            body: Some("matricula=MAT99887766&placa=TST0T00"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let after = all_text(&sanitize_bundle(&b, &options).bundle);
+    assert!(!after.contains("MAT99887766"));
+    assert!(after.contains("TST0T00"), "fora da lista configurada");
+}
+
+// ---- L6 ---------------------------------------------------------------------------------
+
+fn round(s: &mut S, base: f64, n: usize, stamp: &str) {
+    let id = |k: usize| format!("{n}.{k}");
+    s.req(
+        &id(1),
+        base,
+        "https://x.test/app/easynat",
+        "GET",
+        R {
+            resp: Some("<html>entrada</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        &id(2),
+        base + 0.1,
+        "https://x.test/TSPD/?type=18",
+        "GET",
+        R {
+            resp: Some("bin"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        &id(3),
+        base + 0.2,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some(&format!("XML=init&STAMP={stamp}")),
+            resp: Some("<html>r</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        &id(4),
+        base + 0.3,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some(&format!("XML=consulta&STAMP={stamp}")),
+            resp: Some("<html>r</html>"),
+            ..Default::default()
+        },
+    );
+}
+
+#[test]
+fn l6_compare_by_rounds_application_only_with_unpaired_rounds_and_ranges() {
+    let mut sa = S::default();
+    round(&mut sa, 1.0, 1, "1000");
+    let mut sb = S::default();
+    round(&mut sb, 1.0, 1, "2000");
+    round(&mut sb, 5.0, 2, "2100");
+    let (a, b) = (sa.build(), sb.build());
+    let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
+    assert!(r.entry_request.as_deref().unwrap().contains("/app/easynat"));
+    assert_eq!(r.rounds.len(), 1);
+    assert_eq!(r.unpaired_rounds.len(), 1);
+    assert_eq!(
+        (
+            r.unpaired_rounds[0].side.as_str(),
+            r.unpaired_rounds[0].round,
+            r.unpaired_rounds[0].requests
+        ),
+        ("B", 1, 3)
+    );
+    assert_eq!(r.pairs.len(), 3, "só a aplicação: entrada + 2 POSTs");
+    assert!(
+        r.only_in_a.is_empty() && r.only_in_b.is_empty(),
+        "rodada sem par não vira sobra"
+    );
+    assert!(r.ambiguities.is_empty(), "{:?}", r.ambiguities);
+    assert_eq!(r.groups.len(), 1);
+    assert_eq!(r.groups[0].kind, "protection");
+    assert_eq!((r.groups[0].a.len(), r.groups[0].b.len()), (1, 2));
+    // incluir tudo traz a proteção para o alinhamento
+    let all = compare_sessions(
+        &a.session,
+        &a,
+        &b.session,
+        &b,
+        &CompareOptions {
+            include_all: true,
+            ..Default::default()
+        },
+    );
+    assert!(all.groups.is_empty() && all.pairs.len() > r.pairs.len());
+    // faixa explícita: só a 2ª rodada de B (requisições 5..8)
+    let ranged = compare_sessions(
+        &a.session,
+        &a,
+        &b.session,
+        &b,
+        &CompareOptions {
+            b_range: RequestRange::parse("5:8"),
+            ..Default::default()
+        },
+    );
+    assert!(ranged.unpaired_rounds.is_empty());
+    assert_eq!(ranged.pairs.len(), 3);
+    assert_eq!(ranged.pairs[0].b.request_id, b.session.requests[4].id);
+    let by_id = RequestRange::parse(&format!(
+        "{}:{}",
+        b.session.requests[4].id, b.session.requests[7].id
+    ))
+    .unwrap();
+    assert_eq!(by_id.from, b.session.requests[4].id);
+    let bad = compare_sessions(
+        &a.session,
+        &a,
+        &b.session,
+        &b,
+        &CompareOptions {
+            b_range: RequestRange::parse("zzz:yyy"),
+            ..Default::default()
+        },
+    );
+    assert!(bad
+        .warnings
+        .iter()
+        .any(|w| w.contains("faixa de B inválida")));
+}
+
+// ---- L8 ---------------------------------------------------------------------------------
+
+#[test]
+fn l8_unobservable_points_to_the_equivalent_occurrence_in_the_next_round() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=cmd_filtro"),
+            resp: Some(&connector_html("2005", "DLTA0005")),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=consulta&STAMP=2005"),
+            resp: Some("<html></html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.3",
+        3.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=cmd_filtro"),
+            resp: Some(&connector_html("2006", "DLTA0006")),
+            ..Default::default()
+        },
+    );
+    let mut b = s.build();
+    // a resposta do cmd_filtro da 1ª rodada não está no HAR
+    let first = lid(&b, "1.1");
+    for r in &mut b.session.requests {
+        if r.id == first {
+            let body = scrapelens_core::Body::unavailable("response.content sem text");
+            r.attempts[0].response_body = body.clone();
+            r.response_body = body;
+        }
+    }
+    let o = origins(&b, "1.2");
+    let stamp = entry(&o, "STAMP");
+    assert_eq!(stamp.status, OriginStatus::None);
+    assert_eq!(stamp.unobservable.len(), 1);
+    assert_eq!(stamp.unobservable[0].request_id, first);
+    assert_eq!(
+        stamp.unobservable[0].suggestion.as_deref(),
+        Some(lid(&b, "1.3").as_str())
+    );
+    assert!(stamp.label.contains(&lid(&b, "1.3")), "{}", stamp.label);
+}
+
+// ---- valor composto (campo nomeado curto) e variável do Natural -------------------------------
+
+#[test]
+fn composite_rule_needs_full_cover_by_two_producers_and_partial_prefix_is_not_an_origin() {
+    // a 2ª peça vem de uma folha JSON de outra resposta
+    let mut s2 = S::default();
+    s2.req(
+        "1.1",
+        1.0,
+        "https://x.test/a",
+        "GET",
+        R {
+            resp: Some("<script>var part_a = \"ALPHA0001\";</script>"),
+            ..Default::default()
+        },
+    );
+    let ev = json!({"method": "Network.responseReceived", "params": {"requestId": "1.2", "loaderId": "L", "timestamp": 2.02, "type": "XHR",
+        "response": {"url": "https://x.test/b", "status": 200, "statusText": "", "headers": {"content-type": "application/json"}, "protocol": "http/1.1"}}});
+    s2.req(
+        "1.2",
+        2.0,
+        "https://x.test/b",
+        "GET",
+        R {
+            resp: Some("{\"part_b\":\"987654321012\"}"),
+            ..Default::default()
+        },
+    );
+    s2.ev.push(ev); // sobrescreve o content-type para JSON
+    s2.req(
+        "1.3",
+        3.0,
+        "https://x.test/c",
+        "POST",
+        R {
+            body: Some("token=ALPHA0001_987654321012&token2=ALPHA0001_555555555555"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s2.build();
+    let o = origins(&b, "1.3");
+    let full = entry(&o, "token");
+    assert_eq!(full.status, OriginStatus::Composite);
+    assert_eq!(full.confidence, Some(Confidence::Possible));
+    let parts: Vec<_> = o
+        .values
+        .iter()
+        .filter(|v| v.parent.as_deref() == Some("token"))
+        .collect();
+    let mut producers: Vec<_> = parts
+        .iter()
+        .flat_map(|p| p.evidences.iter().map(|e| e.request_id.clone()))
+        .collect();
+    producers.sort();
+    producers.dedup();
+    assert_eq!(producers, vec![lid(&b, "1.1"), lid(&b, "1.2")]);
+    // só o prefixo tem produtor: cobertura parcial não vale
+    let partial = entry(&o, "token2");
+    assert_eq!(partial.status, OriginStatus::None);
+    assert!(partial.evidences.is_empty());
+    assert!(partial.label.starts_with("sem origem observada"));
+}
+
+#[test]
+fn natural_variable_names_prefixed_with_v_are_business_fields() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/c",
+        "POST",
+        R {
+            body: Some(
+                "XML=p0500011v_cpf00000000191p0900002v_renavam12p1300003#f12_selected2.0&A=b",
+            ),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let export = sanitize_bundle(&b, &SanitizeOptions::default());
+    let after = all_text(&export.bundle);
+    assert!(!after.contains("00000000191"), "CPF vazou");
+    assert!(
+        after.contains("v_renavam12"),
+        "valor fora do formato permanece, com aviso"
+    );
+    assert!(export
+        .warnings
+        .iter()
+        .any(|w| w.code == "sanitize.business_field_unmatched"));
+    assert!(export.redactions.get("business:cpf").copied().unwrap_or(0) >= 1);
+}

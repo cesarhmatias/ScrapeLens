@@ -5,6 +5,12 @@
 //! segurança (binários, texto não estruturado, JSON inválido, grande demais) são
 //! **omitidos com aviso**, nunca copiados silenciosamente.
 //!
+//! Campos de negócio (placa, v_placa, plate, renavam, cpf, cnpj, chassi, vin;
+//! `SanitizeOptions::business_fields`): em campos nomeados o valor é redigido e
+//! propagado; em campos opacos, nome + valor no formato do tipo é redigido (e
+//! propagado pela sessão). `redactions["business:<tipo>"]` conta por tipo, sem
+//! valores; nome sem valor no formato gera `sanitize.business_field_unmatched`.
+//!
 //! Limite conhecido: tokens embutidos em segmentos de path, HTML/JS livre e
 //! campos de texto sem estrutura não são detectados de forma confiável; esses
 //! corpos são omitidos por padrão.
@@ -29,6 +35,10 @@ pub struct SanitizeOptions {
     /// Mantém `cdp-events.jsonl`/`netlog.json`. Padrão: não.
     pub keep_raw_events: bool,
     pub max_body_bytes: usize,
+    /// Campos de negócio sensíveis (case-insensitive, também como sufixo do
+    /// nome): em campos nomeados o valor é redigido e propagado; em campos
+    /// opacos, a ocorrência do nome seguida de valor no formato do tipo.
+    pub business_fields: Vec<String>,
 }
 
 impl Default for SanitizeOptions {
@@ -39,6 +49,10 @@ impl Default for SanitizeOptions {
             omit_unstructured_bodies: true,
             keep_raw_events: false,
             max_body_bytes: 8 * 1024 * 1024,
+            business_fields: DEFAULT_BUSINESS_FIELDS
+                .iter()
+                .map(|name| name.to_string())
+                .collect(),
         }
     }
 }
@@ -92,6 +106,7 @@ impl SanitizedExport {
 }
 
 pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> SanitizedExport {
+    BUSINESS.with(|b| *b.borrow_mut() = (options.business_fields.clone(), BTreeMap::new()));
     let mut session = bundle.session.clone();
     let mut warnings = Vec::new();
     let mut redactions: BTreeMap<String, usize> = BTreeMap::new();
@@ -217,6 +232,18 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
         &mut warnings,
     );
 
+    // contadores por tipo (sem valores) e aviso para nomes sem valor no formato
+    let business = BUSINESS.with(|b| std::mem::take(&mut b.borrow_mut().1));
+    for (kind, count) in business {
+        if kind == "unmatched" {
+            warnings.push(Warning::new(
+                "sanitize.business_field_unmatched",
+                format!("{count} ocorrência(s) de nome de campo de negócio (placa, cpf…) sem valor no formato esperado; não redigidas: revise o resultado"),
+            ));
+        } else {
+            *redactions.entry(format!("business:{kind}")).or_default() += count;
+        }
+    }
     let mut sanitized_bundle = SessionBundle {
         session,
         cdp_events_jsonl: if options.keep_raw_events {
@@ -511,6 +538,9 @@ fn sanitize_json(
                 if is_sensitive_key(key) {
                     *value = Value::String(options.placeholder.clone());
                     *counts.entry("json-key".to_string()).or_default() += 1;
+                } else if is_business_key(key, &business_fields()) {
+                    business_count(BusinessKind::of(key).label());
+                    *value = Value::String(options.placeholder.clone());
                 } else {
                     if is_url_key(key) {
                         if let Value::String(text) = value {
@@ -527,6 +557,9 @@ fn sanitize_json(
             }
         }
         Value::String(text) => {
+            if text.len() >= 12 {
+                *text = redact_business_text(text, &options.placeholder);
+            }
             if text.contains("://") {
                 let sanitized = sanitize_url_reference(text, options);
                 if sanitized != *text {
@@ -548,8 +581,18 @@ fn sanitize_form(text: &str, options: &SanitizeOptions) -> String {
         .map(|pair| match pair.split_once('=') {
             Some((name, value)) => {
                 let decoded = percent_decode(name);
+                let fields = business_fields();
                 if is_sensitive_key(&decoded) {
                     format!("{name}={}", options.placeholder)
+                } else if is_business_key(&decoded, &fields) {
+                    business_count(BusinessKind::of(&decoded).label());
+                    format!("{name}={}", options.placeholder)
+                } else if value.len() >= 12 {
+                    // campo opaco: nome de negócio + valor no formato dentro do valor
+                    format!(
+                        "{name}={}",
+                        redact_business_text(value, &options.placeholder)
+                    )
                 } else {
                     format!("{name}={value}")
                 }
@@ -628,7 +671,8 @@ fn sanitize_query(query: &str, options: &SanitizeOptions) -> String {
         .split('&')
         .map(|pair| match pair.split_once('=') {
             Some((name, _value)) => {
-                if is_sensitive_key(&percent_decode(name)) {
+                let decoded = percent_decode(name);
+                if is_sensitive_key(&decoded) || is_business_key(&decoded, &business_fields()) {
                     format!("{name}={placeholder}")
                 } else {
                     pair.to_string()
@@ -851,6 +895,200 @@ fn is_url_key(name: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Campos de negócio sensíveis (placa, CPF…) — L5 da rodada 6
+// ---------------------------------------------------------------------------
+
+/// Lista padrão (configurável em [`SanitizeOptions::business_fields`]).
+pub const DEFAULT_BUSINESS_FIELDS: &[&str] = &[
+    "placa", "v_placa", "plate", "renavam", "cpf", "cnpj", "chassi", "vin",
+];
+
+thread_local! {
+    /// Contexto da sanitização em curso: campos de negócio e contadores de
+    /// redação por tipo (sem valores). Zerado/drenado em `sanitize_bundle`.
+    static BUSINESS: std::cell::RefCell<(Vec<String>, BTreeMap<String, usize>)> =
+        const { std::cell::RefCell::new((Vec::new(), BTreeMap::new())) };
+}
+
+fn business_fields() -> Vec<String> {
+    BUSINESS.with(|b| b.borrow().0.clone())
+}
+
+fn business_count(key: &str) {
+    BUSINESS.with(|b| *b.borrow_mut().1.entry(key.to_string()).or_default() += 1);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BusinessKind {
+    Placa,
+    Cpf,
+    Cnpj,
+    Renavam,
+    Chassi,
+    /// Campo configurado sem formato conhecido: só vale em campos nomeados.
+    Other,
+}
+
+impl BusinessKind {
+    fn of(name: &str) -> Self {
+        let n = name.to_ascii_lowercase();
+        if n.contains("placa") || n.contains("plate") {
+            BusinessKind::Placa
+        } else if n.contains("cnpj") {
+            BusinessKind::Cnpj
+        } else if n.contains("cpf") {
+            BusinessKind::Cpf
+        } else if n.contains("renavam") {
+            BusinessKind::Renavam
+        } else if n.contains("chassi") || n == "vin" || n.ends_with("_vin") {
+            BusinessKind::Chassi
+        } else {
+            BusinessKind::Other
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            BusinessKind::Placa => "placa",
+            BusinessKind::Cpf => "cpf",
+            BusinessKind::Cnpj => "cnpj",
+            BusinessKind::Renavam => "renavam",
+            BusinessKind::Chassi => "chassi",
+            BusinessKind::Other => "outro",
+        }
+    }
+
+    /// Comprimento do valor no formato do tipo no início de `rest`, se casar.
+    fn match_len(self, rest: &str) -> Option<usize> {
+        let b = rest.as_bytes();
+        let digits = b.iter().take_while(|c| c.is_ascii_digit()).count();
+        match self {
+            BusinessKind::Placa => {
+                let ok = b.len() >= 7
+                    && b[..3].iter().all(u8::is_ascii_alphabetic)
+                    && b[3].is_ascii_digit()
+                    && b[4].is_ascii_alphanumeric()
+                    && b[5].is_ascii_digit()
+                    && b[6].is_ascii_digit();
+                ok.then_some(7)
+            }
+            BusinessKind::Cpf => (digits == 11).then_some(11),
+            BusinessKind::Cnpj => (digits == 14).then_some(14),
+            BusinessKind::Renavam => (9..=11).contains(&digits).then_some(digits),
+            BusinessKind::Chassi => {
+                let ok = b.len() >= 17
+                    && b[..17].iter().all(|c| {
+                        c.is_ascii_alphanumeric()
+                            && !matches!(c.to_ascii_uppercase(), b'I' | b'O' | b'Q')
+                    });
+                ok.then_some(17)
+            }
+            BusinessKind::Other => None,
+        }
+    }
+}
+
+/// O nome do campo é (ou termina em) um campo de negócio configurado.
+fn is_business_key(name: &str, fields: &[String]) -> bool {
+    let lower = name.trim().to_ascii_lowercase();
+    !lower.is_empty()
+        && fields.iter().any(|field| {
+            let field = field.to_ascii_lowercase();
+            !field.is_empty() && (lower == field || lower.ends_with(&field))
+        })
+}
+
+/// Ocorrências `nome` + valor no formato do tipo dentro de um texto opaco:
+/// (início do valor, tamanho, tipo). Nomes colados a uma palavra (letra ou `_`
+/// antes) não são campo. Nome sem valor no formato conta como não casado.
+fn scan_business(text: &str, fields: &[String]) -> (Vec<(usize, usize, BusinessKind)>, usize) {
+    let lower = text.to_ascii_lowercase();
+    let mut names: Vec<String> = fields.iter().map(|f| f.to_ascii_lowercase()).collect();
+    names.sort_by_key(|n| std::cmp::Reverse(n.len()));
+    names.dedup();
+    let mut hits: Vec<(usize, usize, BusinessKind)> = Vec::new();
+    let mut covered: Vec<(usize, usize)> = Vec::new();
+    let mut unmatched = 0usize;
+    for name in &names {
+        if name.is_empty() {
+            continue;
+        }
+        let kind = BusinessKind::of(name);
+        let mut from = 0;
+        while let Some(rel) = lower[from..].find(name.as_str()) {
+            let at = from + rel;
+            let end = at + name.len();
+            from = end;
+            if covered.iter().any(|(s, e)| at < *e && *s < end) {
+                continue;
+            }
+            let prev = lower.as_bytes().get(at.wrapping_sub(1)).filter(|_| at > 0);
+            // Colado a uma palavra (`consultar_placa`) não é campo; exceção: a
+            // variável do Natural (`v_cpf`, `v_renavam`), precedida de `v_`.
+            let natural_var = at >= 2
+                && &lower.as_bytes()[at - 2..at] == b"v_"
+                && (at == 2 || !lower.as_bytes()[at - 3].is_ascii_alphabetic());
+            if prev.is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_') && !natural_var {
+                continue;
+            }
+            match text.get(end..).and_then(|rest| kind.match_len(rest)) {
+                Some(len) => {
+                    covered.push((at, end + len));
+                    hits.push((end, len, kind));
+                }
+                None => {
+                    covered.push((at, end));
+                    unmatched += 1;
+                }
+            }
+        }
+    }
+    hits.sort_by_key(|(start, len, _)| (*start, *len));
+    (hits, unmatched)
+}
+
+/// Redige os valores de negócio achados em um texto opaco, contando por tipo.
+fn redact_business_text(text: &str, placeholder: &str) -> String {
+    let fields = business_fields();
+    if fields.is_empty() {
+        return text.to_string();
+    }
+    let (hits, unmatched) = scan_business(text, &fields);
+    for _ in 0..unmatched {
+        business_count("unmatched");
+    }
+    if hits.is_empty() {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut cursor = 0;
+    for (start, len, kind) in hits {
+        if start < cursor {
+            continue;
+        }
+        out.push_str(&text[cursor..start]);
+        out.push_str(placeholder);
+        business_count(kind.label());
+        cursor = start + len;
+    }
+    out.push_str(&text[cursor..]);
+    out
+}
+
+/// Valores de negócio de um texto opaco (para a propagação por valor).
+fn find_business_values(text: &str) -> Vec<String> {
+    let fields = business_fields();
+    if fields.is_empty() {
+        return Vec::new();
+    }
+    scan_business(text, &fields)
+        .0
+        .into_iter()
+        .map(|(start, len, _)| text[start..start + len].to_string())
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Propagação por valor
 // ---------------------------------------------------------------------------
 
@@ -914,7 +1152,14 @@ fn has_secret_word(compact: &str) -> bool {
         || without_author.contains("auth")
 }
 
-fn is_trivial_value(value: &str, options: &SanitizeOptions) -> bool {
+fn is_trivial_value(value: &str, options: &SanitizeOptions, business: bool) -> bool {
+    if business
+        && value.len() >= 6
+        && !options.placeholder.contains(value)
+        && !value.contains(&options.placeholder)
+    {
+        return false; // valor de negócio no formato do tipo
+    }
     if value.len() < PROPAGATION_MIN_LEN {
         return true;
     }
@@ -984,7 +1229,12 @@ fn variants_of(value: &str) -> Vec<Variant> {
 fn collect_query(query: &str, out: &mut Vec<SensitiveValue>) {
     for pair in query.split('#').next().unwrap_or("").split('&') {
         if let Some((name, value)) = pair.split_once('=') {
-            if is_propagating_key(&percent_decode(name)) {
+            if is_business_key(&percent_decode(name), &business_fields()) {
+                out.push(SensitiveValue {
+                    origin: "business",
+                    value: percent_decode(value),
+                });
+            } else if is_propagating_key(&percent_decode(name)) {
                 out.push(SensitiveValue {
                     origin: "urlQuery",
                     value: percent_decode(value),
@@ -1005,11 +1255,24 @@ fn collect_json(value: &Value, out: &mut Vec<SensitiveValue>) {
         Value::Object(object) => {
             for (key, value) in object {
                 match value {
+                    Value::String(text) if is_business_key(key, &business_fields()) => {
+                        out.push(SensitiveValue {
+                            origin: "business",
+                            value: text.clone(),
+                        })
+                    }
                     Value::String(text) if is_propagating_key(key) => out.push(SensitiveValue {
                         origin: "bodyJson",
                         value: text.clone(),
                     }),
-                    Value::String(_) => {}
+                    Value::String(text) => {
+                        for found in find_business_values(text) {
+                            out.push(SensitiveValue {
+                                origin: "business",
+                                value: found,
+                            });
+                        }
+                    }
                     other => collect_json(other, out),
                 }
             }
@@ -1034,11 +1297,24 @@ fn collect_body_bytes(bytes: &[u8], content_type: Option<&str>, out: &mut Vec<Se
     if media.contains("x-www-form-urlencoded") || (media.is_empty() && text.contains('=')) {
         for pair in text.split('&') {
             if let Some((name, value)) = pair.split_once('=') {
-                if is_propagating_key(&percent_decode(name)) {
+                let decoded = percent_decode(name);
+                if is_business_key(&decoded, &business_fields()) {
+                    out.push(SensitiveValue {
+                        origin: "business",
+                        value: percent_decode(value),
+                    });
+                } else if is_propagating_key(&decoded) {
                     out.push(SensitiveValue {
                         origin: "bodyForm",
                         value: percent_decode(value),
                     });
+                } else {
+                    for found in find_business_values(&percent_decode(value)) {
+                        out.push(SensitiveValue {
+                            origin: "business",
+                            value: found,
+                        });
+                    }
                 }
             }
         }
@@ -1267,7 +1543,7 @@ fn propagate_sensitive_values(
     let mut seen = std::collections::BTreeSet::new();
     let mut values: Vec<SensitiveValue> = collect_sensitive_values(original)
         .into_iter()
-        .filter(|item| !is_trivial_value(&item.value, options))
+        .filter(|item| !is_trivial_value(&item.value, options, item.origin == "business"))
         .filter(|item| seen.insert(item.value.clone()))
         .collect();
     values.sort_by(|a, b| {
