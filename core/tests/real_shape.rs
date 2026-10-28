@@ -693,3 +693,120 @@ fn natural_variable_names_prefixed_with_v_are_business_fields() {
         .any(|w| w.code == "sanitize.business_field_unmatched"));
     assert!(export.redactions.get("business:cpf").copied().unwrap_or(0) >= 1);
 }
+
+#[test]
+fn partial_composition_hint_for_known_part_plus_unsourced_part() {
+    // SESSIONID real: literal de 9 chars + "_" + 12 dígitos sem fonte observada
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/easynat",
+        "GET",
+        R {
+            resp: Some("<script>var m_currentSessionId = \"CSAN00011\";</script>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "https://x.test/c",
+        "POST",
+        R {
+            body: Some("SESSIONID=CSAN00011_700000000011&other=ZZZZZZZZ_QQ"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let o = origins(&b, "1.2");
+    let v = entry(&o, "SESSIONID");
+    assert_eq!(v.status, OriginStatus::None, "não é origem");
+    assert!(v.evidences.is_empty());
+    assert_eq!(v.partial_composition.len(), 1);
+    let h = &v.partial_composition[0];
+    assert_eq!((h.start, h.length), (0, 9));
+    assert_eq!(h.producer_request_id, lid(&b, "1.1"));
+    assert_eq!(h.field.as_deref(), Some("m_currentSessionId"));
+    assert!(v
+        .label
+        .starts_with("sem origem observada; contém o valor de m_currentSessionId de "));
+    assert!(v.label.contains("provável composição no cliente"));
+    assert!(entry(&o, "other").partial_composition.is_empty());
+    // sem passo na cadeia
+    let chain = priming_chain(&b.session, &b, &lid(&b, "1.2"), &FlowOptions::default()).unwrap();
+    assert!(chain.steps.is_empty(), "{:?}", chain.steps);
+    // caso TIEVALUE da R5, sem separador: nenhuma dica
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/a",
+        "GET",
+        R {
+            resp: Some("tok=TIEVALUE12345678"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "https://x.test/b",
+        "POST",
+        R {
+            body: Some("tok=TIEVALUE87654321"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let o = origins(&s.build(), "1.2");
+    assert!(entry(&o, "tok").partial_composition.is_empty());
+    assert_eq!(entry(&o, "tok").label, "sem origem observada");
+}
+
+#[test]
+fn delta_at_the_end_survives_a_one_byte_overlap_with_a_longer_constant() {
+    // A constante comum (13 bytes) engole 1 byte do "x06TOKEN" final: o delta
+    // continua resolvido pelo trecho aparado.
+    let mut s = S::default();
+    let tail = "cISAddons.focusItemNamex06DLTC07";
+    let prev = format!(
+        "<textarea name=\"XML\">lp1600000v_situacao_atualK05v_tmpp2300003{tail}</textarea>"
+    );
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=init0&STAMP=INIT"),
+            resp: Some(&prev),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some(&format!(
+                "XML=i2212001705027000195dummyp2300003{tail}&STAMP=9"
+            )),
+            resp: Some("<html></html>"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let o = origins(&b, "1.2");
+    let hit = o
+        .values
+        .iter()
+        .find(|v| v.parent.as_deref() == Some("XML") && v.value.contains("DLTC07"))
+        .expect("trecho com o delta");
+    assert!(hit
+        .evidences
+        .iter()
+        .any(|e| e.request_id == lid(&b, "1.1") && e.html_control));
+}

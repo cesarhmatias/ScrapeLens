@@ -34,6 +34,10 @@
 //! - `ValueOrigin.context[]` `{requestId, field, note}`: valor também presente em
 //!   recurso estático (script, css, fonte, imagem, mídia): provável constante do
 //!   protocolo; nunca é produtor nem passo;
+//! - `ValueOrigin.partialComposition[]` `{producerRequestId, field, start, length}`: valor
+//!   curto sem origem que contém (alinhado a `_ - . : |` ou à borda, >= 8 bytes) o
+//!   valor de um produtor e uma parte sem fonte: dica de composição no cliente, não
+//!   é origem e não cria passo;
 //! - `unobservable[].suggestion`: ocorrência equivalente (mesmo modelo) mais
 //!   adiante com corpo observável;
 //! - `chain.pages[]` (`class: page`): documentos que carregaram a página de onde
@@ -199,6 +203,17 @@ pub struct Evidence {
     pub html_control: bool,
 }
 
+/// Dica informativa (não é origem): o valor contém, alinhado a um separador ou
+/// à borda, o valor de um produtor, e o resto não tem fonte observada.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialComposition {
+    pub producer_request_id: String,
+    pub field: Option<String>,
+    pub start: usize,
+    pub length: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextNote {
@@ -247,6 +262,8 @@ pub struct ValueOrigin {
     /// Valor também presente em recursos estáticos (provável constante do
     /// protocolo): nunca é produtor nem passo da cadeia.
     pub context: Vec<ContextNote>,
+    /// Composição parcial provável (cliente): ver [`PartialComposition`].
+    pub partial_composition: Vec<PartialComposition>,
     /// Campo opaco de que este trecho faz parte (`composite`).
     pub parent: Option<String>,
     pub note: Option<String>,
@@ -1072,6 +1089,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 repeated_from: Vec::new(),
                 unobservable: Vec::new(),
                 context: Vec::new(),
+                partial_composition: Vec::new(),
                 parent: None,
                 note: Some("valor redigido: não rastreável".to_string()),
             });
@@ -1171,6 +1189,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
         // Valor composto: campo nomeado curto coberto POR INTEIRO por >= 2 valores
         // de produtores + separadores. Cobertura parcial (só um prefixo) não vale.
         let mut composite_cover = false;
+        let mut partial_hints: Vec<PartialComposition> = Vec::new();
         if entry.status == OriginStatus::None
             && !found.is_empty()
             && bytes.len() < OPAQUE_CONSUMER_MIN
@@ -1180,7 +1199,10 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                     found.retain(|key, _| chosen.contains(key));
                     composite_cover = true;
                 }
-                None => found.clear(),
+                None => {
+                    partial_hints = aligned_hints(ctx, bytes, &found, &rank);
+                    found.clear();
+                }
             }
         }
         // campo com origem própria não vira também "composto" (sem duplicar)
@@ -1200,6 +1222,9 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
             if !entry.repeated_from.is_empty() {
                 entry.status = OriginStatus::Repeated;
             }
+        }
+        if entry.status == OriginStatus::None {
+            entry.partial_composition = partial_hints;
         }
         relabel(&mut entry);
         result.values.push(entry);
@@ -1379,6 +1404,7 @@ fn finish_entry(
         repeated_from: Vec::new(),
         unobservable: Vec::new(),
         context,
+        partial_composition: Vec::new(),
         parent: None,
         note,
     }
@@ -1447,6 +1473,15 @@ fn relabel(entry: &mut ValueOrigin) {
             "sem origem observada (valor já circulava em {})",
             entry.repeated_from.join(", ")
         ),
+        OriginStatus::None if !entry.partial_composition.is_empty() => {
+            let h = &entry.partial_composition[0];
+            format!(
+                "sem origem observada; contém o valor de {} de {} ({}) e parte sem fonte observada — provável composição no cliente",
+                h.field.as_deref().unwrap_or("?"),
+                h.producer_request_id,
+                if h.start == 0 { "prefixo" } else { "trecho" }
+            )
+        }
         OriginStatus::None if !entry.context.is_empty() => {
             "sem origem observada; valor também presente em recurso estático (provável constante do protocolo)".to_string()
         }
@@ -1530,6 +1565,47 @@ fn opaque_candidates(
 /// difere dos dois lados: é um contador, não um valor compartilhado.
 /// Peças que cobrem o valor inteiro (exceto separadores `_ - . : |`), com pelo
 /// menos 2 produtores distintos; `None` se houver lacuna (prefixo parcial não vale).
+/// Partes conhecidas (>= 8) de um valor curto alinhadas a um separador
+/// `_ - . : |` ou à borda: dica de composição parcial (não é origem).
+fn aligned_hints(
+    ctx: &FlowContext<'_>,
+    bytes: &[u8],
+    found: &FoundMap,
+    rank: &HashMap<Pos, usize>,
+) -> Vec<PartialComposition> {
+    let sep = |b: u8| matches!(b, b'_' | b'-' | b'.' | b':' | b'|');
+    let mut keys: Vec<&(usize, usize)> = found.keys().collect();
+    keys.sort_by(|x, y| y.1.cmp(&x.1).then(x.0.cmp(&y.0)));
+    let mut taken: Vec<(usize, usize)> = Vec::new();
+    let mut out = Vec::new();
+    for &&(start, len) in &keys {
+        let end = start + len;
+        let left = start == 0 || sep(bytes[start - 1]);
+        let right = end == bytes.len() || sep(bytes[end]);
+        if len < 8 || !left || !right || (start == 0 && end == bytes.len()) {
+            continue;
+        }
+        if taken.iter().any(|(s, l)| start < s + l && *s < end) {
+            continue;
+        }
+        let Some((pos, _, field, _, _)) = found[&(start, len)]
+            .iter()
+            .min_by_key(|(pos, ..)| rank.get(pos).copied().unwrap_or(usize::MAX))
+        else {
+            continue;
+        };
+        taken.push((start, len));
+        out.push(PartialComposition {
+            producer_request_id: ctx.request_id(*pos).to_string(),
+            field: field.clone(),
+            start,
+            length: len,
+        });
+    }
+    out.sort_by_key(|h| h.start);
+    out
+}
+
 fn cover_pieces(bytes: &[u8], found: &FoundMap) -> Option<Vec<(usize, usize)>> {
     let mut chosen: Vec<(usize, usize)> = Vec::new();
     let mut producers: BTreeSet<Pos> = BTreeSet::new();
@@ -1574,10 +1650,37 @@ fn partial_entries(
     chosen.sort_by(|x, y| y.0 .1.cmp(&x.0 .1).then(x.0 .0.cmp(&y.0 .0)));
     let mut taken: Vec<(usize, usize)> = Vec::new();
     let mut out = Vec::new();
-    for ((start, len), producers) in chosen {
-        if taken.iter().any(|(s, l)| start < s + l && *s < start + len) {
+    let min_len = ctx.options.min_match_len.max(8);
+    for ((orig_start, orig_len), producers) in chosen {
+        // Um trecho que sobrepõe um já escolhido é aparado ao que sobra livre
+        // (>= mínimo), em vez de descartado: a ponta de um valor (ex.: o delta no
+        // fim do XML) não pode se perder por 1 byte de sobreposição.
+        let (mut s0, mut e0) = (orig_start, orig_start + orig_len);
+        for _ in 0..2 {
+            for (ts, tl) in &taken {
+                let te = ts + tl;
+                if s0 < te && *ts < e0 {
+                    if *ts <= s0 {
+                        s0 = te.min(e0);
+                    } else if te >= e0 {
+                        e0 = (*ts).max(s0);
+                    } else {
+                        e0 = s0; // trecho já escolhido no meio: descarta
+                    }
+                }
+            }
+        }
+        if e0 <= s0 || e0 - s0 < min_len {
             continue;
         }
+        let shift = (s0 - orig_start) as u64;
+        let (start, len) = (s0, e0 - s0);
+        let producers: Vec<_> = producers
+            .into_iter()
+            .map(|(pos, scope, field, offset, html)| {
+                (pos, scope, field, offset.map(|o| o + shift), html)
+            })
+            .collect();
         taken.push((start, len));
         let mut raw = Vec::new();
         for (pos, scope, field, offset, html) in producers {
@@ -1650,6 +1753,7 @@ fn partial_entries(
                 repeated_from: Vec::new(),
                 unobservable: Vec::new(),
                 context: Vec::new(),
+                partial_composition: Vec::new(),
                 parent: Some(value.field.clone()),
                 note: None,
             };
