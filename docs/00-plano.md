@@ -11,8 +11,16 @@ scraping. Especificação completa:
   corrigidos em 16015a1, adapter tolerante em 0d4dbab, bridge 16/16. Prova
   nativa no bundle 9c04b98b (salvar/cancelar, cópia, sanitizar e reabrir)
   feita pelo líder com diálogos em primeiro plano e verificada por Testes
-  (adc56ab). Próxima rodada: corpos CDP e busca no payload.
-- Aceite automatizado: 10/10 critérios, 282/282 asserções (77c32a7).
+  (adc56ab).
+- Rodada 4 (docs/08), corpos CDP e busca no payload: concluída e aprovada na
+  re-revisão independente (até 71eef98; bundle 0e2754f4…). Corpos gravados ao
+  vivo com estado explícito e `transformed`; busca em 6 escopos com visão
+  decodificada e intervalo exato; sanitização por propagação de valor
+  (fail-closed); rótulos de origem; NetLog truncado reparado; busca com
+  anexos sob demanda (pico 1,75 GB → 257 MB). Acabamento não bloqueante em
+  curso. Próxima rodada: cadeia de priming e comparação entre capturas (caso
+  DETRAN, docs/05-caso-referencia-detran.md).
+- Aceite automatizado: 10/10 critérios (283 checks em 229b623).
 - Captura nova e importações HAR/NetLog pela UI do bundle final validadas.
   Seleção manual do usuário e conferência independente dos arquivos persistidos.
 - Relatório de fechamento: `docs/06-entrega.md`; nada publicado.

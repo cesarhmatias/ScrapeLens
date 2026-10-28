@@ -164,3 +164,26 @@ Revisor: parcial, com 1 falha alta. Correções:
   "CDP: requisição sem corpo". A mensagem enganosa atual é removida.
 - A exportação cURL/Python sinaliza no próprio código quando a URL inicial de
   um 307/308 difere da final.
+
+## Fechamento (2026-10-28)
+
+Re-revisão independente até 71eef98: Parte A (core, captura, fixtures)
+APROVADA; Parte B (app) APROVADA, com ressalva: app ao vivo não aberto pelo
+revisor. Sem falhas críticas ou altas. Bateria: cargo test core e src-tauri
+(36 ok/3 ignorados), tests/exportacao 18/18, run_acceptance 10/10,
+check_bodies_search detran 5/5 / edge 2/2 / sanitizada OK, run_bodies 20/20
+ao vivo. Memória da busca na sessão grande: pico 1,75 GB → 257 MB. Bundle
+0e2754f4….
+
+Acabamento (não bloqueante), delegado:
+- Core: exportação cURL/Python avisa quando o corpo tem `transformed` (média);
+  variante de percent-encoding duplo na propagação; proveniência de GET
+  `empty`.
+- App: legenda do realce condizente com o realce visível; remover
+  `evidence/busca-corpos/debug.png`; aviso `chrome-decoded` menos ruidoso
+  (resumo discreto e destaque só para charset/lossy).
+
+Aceito como limitação: arquivos HAR/CDP crus importados sem `--label`
+aparecem como importação real. O arquivo não carrega rótulo, e o app não
+deve adivinhar. As fixtures do repositório sempre são importadas com
+`--label synthetic-fixture`.
