@@ -276,7 +276,8 @@ impl BodySource for SessionBundle {
     }
 }
 
-struct LazyBodies<'a>(&'a crate::lazy::LazySession);
+/// Corpos lidos sob demanda de uma [`crate::lazy::LazySession`].
+pub struct LazyBodies<'a>(pub &'a crate::lazy::LazySession);
 
 impl BodySource for LazyBodies<'_> {
     fn load(&self, name: &str) -> Option<Loaded<'_>> {

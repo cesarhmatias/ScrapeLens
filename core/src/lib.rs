@@ -14,10 +14,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod compare;
 pub mod correlate;
 pub mod diff;
 pub mod error;
 pub mod export;
+pub mod flow;
 pub mod lazy;
 pub mod model;
 pub mod normalize;

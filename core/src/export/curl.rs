@@ -18,6 +18,17 @@ pub fn to_curl(
     body: Option<&[u8]>,
     options: &ExportOptions,
 ) -> Result<ExportOutput> {
+    to_curl_with_origins(request, body, options, None)
+}
+
+/// Como [`to_curl`], anotando em comentário os campos "obter em runtime" (com a
+/// origem) quando `origins` é dado. O código gerado não muda.
+pub fn to_curl_with_origins(
+    request: &LogicalRequest,
+    body: Option<&[u8]>,
+    options: &ExportOptions,
+    origins: Option<&crate::flow::ValueOrigins>,
+) -> Result<ExportOutput> {
     let url = export_url(request)?.to_string();
     let mut output = ExportOutput::new(String::new());
     let headers = exportable_headers(request, &mut output);
@@ -67,6 +78,11 @@ pub fn to_curl(
     }
     if let Some(note) = &output.body_note {
         text.push_str(&format!("# corpo: {note}\n"));
+    }
+    if let Some(origins) = origins {
+        for line in super::runtime_origin_notes(origins) {
+            text.push_str(&format!("# {line}\n"));
+        }
     }
     if let Some(note) = super::redirect_url_note(request) {
         text.push_str(&format!("# ATENÇÃO: {note}\n"));

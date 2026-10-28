@@ -6,8 +6,11 @@
 //!   scrapelens-core import-netlog <netlog> --out <sessao> [--label <rótulo>]...
 //!   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>] [--label <rótulo>]...
 //!   scrapelens-core search <sessao> <texto> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
-//!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo]
-//!   scrapelens-core export-python <sessao> <requestId> [--out arquivo]
+//!   scrapelens-core origins <sessao> <requestId>
+//!   scrapelens-core chain <sessao> <requestId>
+//!   scrapelens-core compare <sessaoA> <sessaoB>
+//!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
+//!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core sanitize <sessao> <saida>
 //!   scrapelens-core diff <sessao> <requestIdA> <requestIdB>
 
@@ -100,6 +103,8 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             write_imported(&imported, &out)
         }
         "search" => search_command(&args),
+        "origins" | "chain" => flow_command(&command, &args),
+        "compare" => compare_command(&args),
         "export-curl" => export_request(&args, true),
         "export-python" => export_request(&args, false),
         "sanitize" => {
@@ -147,6 +152,45 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
     }
 }
 
+fn compare_command(args: &[String]) -> Result<(), String> {
+    use scrapelens_core::compare::{compare_sessions, CompareOptions};
+    if args.len() != 2 {
+        return Err(usage());
+    }
+    let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
+    let (b, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[1]))
+        .map_err(|e| e.to_string())?;
+    let result = compare_sessions(
+        &a.session,
+        &scrapelens_core::search::LazyBodies(&a),
+        &b.session,
+        &scrapelens_core::search::LazyBodies(&b),
+        &CompareOptions::default(),
+    );
+    print_json(&result)
+}
+
+fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
+    use scrapelens_core::flow::{priming_chain, value_origins, FlowOptions};
+    if args.len() != 2 {
+        return Err(usage());
+    }
+    let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    let options = FlowOptions::default();
+    if command == "origins" {
+        let found =
+            value_origins(&lazy.session, &source, &args[1], &options).map_err(|e| e.to_string())?;
+        print_json(&found)
+    } else {
+        let chain =
+            priming_chain(&lazy.session, &source, &args[1], &options).map_err(|e| e.to_string())?;
+        print_json(&chain)
+    }
+}
+
 fn search_command(args: &[String]) -> Result<(), String> {
     use scrapelens_core::search::{Scope, SearchQuery};
     if args.len() < 2 {
@@ -187,10 +231,25 @@ fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {
         .ok_or_else(|| format!("requisição {request_id} não encontrada"))?;
     let body = scrapelens_core::export::request_body_bytes(&imported.bundle, request);
     let options = scrapelens_core::export::ExportOptions::default();
-    let output = if is_curl {
-        curl::to_curl(request, body, &options).map_err(|e| e.to_string())?
+    let origins = if args.iter().any(|arg| arg == "--with-origins") {
+        Some(
+            scrapelens_core::flow::value_origins(
+                &imported.bundle.session,
+                &imported.bundle,
+                request_id,
+                &scrapelens_core::flow::FlowOptions::default(),
+            )
+            .map_err(|e| e.to_string())?,
+        )
     } else {
-        python::to_python(request, body, &options).map_err(|e| e.to_string())?
+        None
+    };
+    let output = if is_curl {
+        curl::to_curl_with_origins(request, body, &options, origins.as_ref())
+            .map_err(|e| e.to_string())?
+    } else {
+        python::to_python_with_origins(request, body, &options, origins.as_ref())
+            .map_err(|e| e.to_string())?
     };
     for warning in &output.warnings {
         eprintln!("aviso [{}]: {}", warning.code, warning.message);
@@ -277,8 +336,11 @@ fn usage() -> String {
   scrapelens-core import-netlog <netlog> --out <sessao> [--label <rótulo>]...
   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>] [--label <rótulo>]...
   scrapelens-core search <sessao> <texto> [--scope <escopo>]... [--case-sensitive]
-  scrapelens-core export-curl <sessao> <requestId> [--out arquivo]
-  scrapelens-core export-python <sessao> <requestId> [--out arquivo]
+  scrapelens-core origins <sessao> <requestId>
+  scrapelens-core chain <sessao> <requestId>
+  scrapelens-core compare <sessaoA> <sessaoB>
+  scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
+  scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
   scrapelens-core sanitize <sessao> <saida>
   scrapelens-core diff <sessao> <requestIdA> <requestIdB>"
         .to_string()

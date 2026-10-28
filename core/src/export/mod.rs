@@ -180,6 +180,49 @@ pub fn request_body_bytes<'a>(
         .and_then(|name| bundle.attachment(name))
 }
 
+/// Linhas de comentário "obter em runtime (origem: …)" para os valores da
+/// requisição que têm produtor observado em resposta anterior. Não inclui
+/// valores (só campo e origem) e não altera o código gerado.
+pub fn runtime_origin_notes(origins: &crate::flow::ValueOrigins) -> Vec<String> {
+    use crate::flow::{ConsumedScope, OriginStatus, Role, Strength};
+    let mut lines = Vec::new();
+    for value in &origins.values {
+        if !matches!(value.status, OriginStatus::Origin | OriginStatus::Ambiguous) {
+            continue;
+        }
+        let Some(evidence) = value.evidences.iter().find(|e| {
+            e.role == Role::Produced && matches!(e.strength, Strength::Strong | Strength::Medium)
+        }) else {
+            continue;
+        };
+        let scope = match value.scope {
+            ConsumedScope::Query => "query",
+            ConsumedScope::Header => "header",
+            ConsumedScope::Cookie => "cookie",
+            ConsumedScope::Body => "corpo",
+        };
+        let part = if value.parent.is_some() {
+            " (trecho)"
+        } else {
+            ""
+        };
+        let ambiguous = if value.status == OriginStatus::Ambiguous {
+            ", ambíguo"
+        } else {
+            ""
+        };
+        lines.push(format!(
+            "obter em runtime (origem: {} {:?}{ambiguous}): {scope} {}{part}",
+            evidence.request_id, evidence.kind, value.field
+        ));
+        if lines.len() >= 60 {
+            lines.push("… (demais origens omitidas)".to_string());
+            break;
+        }
+    }
+    lines
+}
+
 /// Aviso quando a URL exportada (1ª tentativa) difere da URL final após um
 /// redirect 307/308, que preserva método e corpo.
 pub fn redirect_url_note(request: &LogicalRequest) -> Option<String> {
