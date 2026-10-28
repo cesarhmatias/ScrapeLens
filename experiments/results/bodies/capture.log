@@ -1,11 +1,30 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.18s
+warning: field `0` is never read
+   --> src/capture.rs:357:14
+    |
+357 |     Graceful(Option<i32>),
+    |     -------- ^^^^^^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `ChromeExit` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+357 -     Graceful(Option<i32>),
+357 +     Graceful(()),
+    |
+
+warning: `scrapelens` (lib) generated 1 warning
+warning: `scrapelens` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
      Running unittests src/lib.rs (target/debug/deps/scrapelens_lib-f5a556b33c09cf7d)
 
 running 1 test
-live bodies: notice=Some("Sessão capturada e importada: 8572 evento(s) CDP+NetLog usados, 3 aviso(s).")
+capture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 206 }
+live bodies: notice=Some("Sessão capturada e importada: 7515 evento(s) CDP+NetLog usados, 4 aviso(s).")
 test capture::tests::live_bodies_cycle ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 13.41s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 7.00s
 
      Running unittests src/main.rs (target/debug/deps/scrapelens-77975daab09b576d)
 

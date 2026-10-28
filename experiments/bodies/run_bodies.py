@@ -52,6 +52,8 @@ def main():
     ap.add_argument("--keep", action="store_true", help="não apagar session/, server/ e tmp/ (centenas de MB)")
     ap.add_argument("--out", default=str(HERE.parent / "results" / "bodies"))
     a = ap.parse_args()
+    if subprocess.run(["pgrep", "-f", "live_bodies_cycle"], capture_output=True).stdout.strip():
+        sys.exit("já existe uma captura live_bodies_cycle em andamento; encerre-a antes")
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     session = out / "session"; tmp = out / "tmp"; srv = out / "server"
     for d in (session, tmp, srv):
@@ -60,6 +62,7 @@ def main():
     base = f"http://127.0.0.1:{a.port}"
     latin = http.server.ThreadingHTTPServer(("127.0.0.1", a.port + 1), Latin1)
     threading.Thread(target=latin.serve_forever, daemon=True).start()
+    test = None
     server = subprocess.Popen(
         [str(ROOT / "testserver/target/debug/scrapelens-testserver"), "serve", "--only", "h1",
          "--h1", f"127.0.0.1:{a.port}", "--evidence", str(srv), "--run-id", "bodies"],
@@ -79,6 +82,12 @@ def main():
         if test.wait(timeout=120): sys.exit("captura falhou; veja capture.log")
         report = verify(out, session, base)
     finally:
+        # Nunca deixa uma captura órfã (duas capturas no mesmo diretório se
+        # corrompem): pede o encerramento gracioso e espera.
+        if test is not None and test.poll() is None:
+            stop.write_text("stop\n")
+            try: test.wait(timeout=90)
+            except Exception: test.kill()
         latin.shutdown()
         server.send_signal(signal.SIGINT)
         try: server.wait(timeout=5)
@@ -240,7 +249,7 @@ def add_session_checks(session, add, by_case):
          "states": {"form.req": form["state"], "gzip.resp": gz["state"], "big_get.resp": big["state"], "r302.a0.resp": r302[0]["responseBody"]["state"],
                     "zero": z["state"], "204": e["state"], "refused": rf["state"]},
          "bodiesFileAbsentWarning": any(w["code"] == "cdp.bodies_file_absent" for w in doc["warnings"])})
-    add("session_label", "live-capture" in doc["session"].get("labels", []), {"labels": doc["session"].get("labels")})
+    add("session_label", doc["session"].get("labels") == ["live-capture"], {"labels": doc["session"].get("labels")})
     out = subprocess.run([str(CORE), "search", str(session), "cmd_consultar_placa", "--scope", "requestBody"], capture_output=True, text=True)
     matches = json.loads(out.stdout)["matches"] if out.returncode == 0 else []
     url_of = {m["requestId"]: next(r["url"] for r in doc["requests"] if r["id"] == m["requestId"]) for m in matches}

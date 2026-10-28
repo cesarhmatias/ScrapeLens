@@ -63,3 +63,22 @@ centenas de MB, ficam em `session/` e `server/`, ignorados pelo git; sem `--keep
 Em 1 de ~6 execuções o ciclo ao vivo falhou na importação: "JSON inválido em
 NetLog … line 3661" (NetLog não finalizado ao encerrar o Chrome). Não
 reproduzido nas 5 execuções seguintes; não corrigido aqui.
+
+## NetLog truncado (diagnóstico e correção)
+
+- **Falha original**: 1 ciclo ("JSON inválido em NetLog … line 3661"); o NetLog terminava em
+  evento completo + vírgula, sem `]}`. Esse ciclo veio logo após uma execução em que o
+  driver falhou e deixou a captura (teste + Chrome) viva, escrevendo no mesmo diretório.
+  **Não reproduzido**: 12 ciclos com diagnóstico e 20 ciclos finais, todos com
+  `Browser.close` ok e saída graciosa do Chrome (0,2–2,4 s). A causa provável é essa captura
+  órfã (harness), mas não está provada.
+- **Defesa**: `run_bodies.py` encerra a captura própria no `finally`, recusa rodar se já
+  houver `live_bodies_cycle` e `capture.rs` registra como o Chrome saiu.
+- **Em `capture.rs`**: `cdp-events.jsonl` é gravado antes de qualquer passo que possa falhar.
+  NetLog truncado é reparado (corta no último evento completo, fecha `]}`; o original fica em
+  `netlog.original.json`); irreparável/ausente → importa só CDP+corpos. Em ambos:
+  `completeness` parcial + aviso `capture.netlog_incomplete` / `capture.netlog_unusable`;
+  Chrome morto à força → `capture.chrome_killed`. Nunca descarta a sessão em silêncio.
+  Provado por testes unitários com NetLog real do Chrome cortado em 6 pontos (o core importa o
+  reparado); não há prova ao vivo do reparo porque a falha não reproduziu.
+- `python3 loop_bodies.py 20` → `results/bodies/cycles.json` (20 ciclos, 0 falhas).

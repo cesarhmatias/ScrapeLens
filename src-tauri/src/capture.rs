@@ -27,7 +27,7 @@ use serde_json::{json, Value};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
-use scrapelens_core::{correlate::CorrelationOptions, import_capture_with_bodies, store};
+use scrapelens_core::{correlate::CorrelationOptions, import_capture_labeled, store};
 
 use crate::commands::SessionPayload;
 
@@ -178,7 +178,8 @@ fn run_inner(
     cdp.finish_bodies();
 
     // Encerra o Chrome de forma graciosa para o NetLog ser finalizado.
-    let _ = cdp.send(
+    let close_started = Instant::now();
+    let close_result = cdp.send(
         &mut socket,
         "Browser.close",
         json!({}),
@@ -186,7 +187,13 @@ fn run_inner(
         Duration::from_secs(2),
     );
     let _ = socket.close(None);
-    wait_or_kill(&mut child, Duration::from_secs(10));
+    let exit = wait_or_kill(&mut child, Duration::from_secs(20));
+    let shutdown = ShutdownReport {
+        browser_close: close_result.map(|_| ()).map_err(|error| error),
+        exit,
+        waited_ms: close_started.elapsed().as_millis() as u64,
+    };
+    eprintln!("capture shutdown: {shutdown:?}");
     let _ = std::fs::remove_dir_all(&profile);
 
     let cdp_bytes = cdp.events_text().into_bytes();
@@ -196,32 +203,34 @@ fn run_inner(
         let _ = ready.send(Err(error.clone()));
         return Err(error);
     }
-    let netlog = std::fs::read(&netlog_path).map_err(|error| {
-        format!(
-            "O Chrome não deixou o NetLog em {}: {error}",
-            netlog_path.display()
-        )
-    })?;
-    if netlog.is_empty() {
-        return Err("O Chrome gravou um NetLog vazio; a captura não pode ser verificada. A sessão não foi criada.".to_string());
+    // O CDP e os corpos já são evidência: ficam em disco antes de qualquer
+    // passo que possa falhar (um NetLog ruim nunca descarta a captura).
+    write_private(&cdp_path, &cdp_bytes).map_err(|error| format!("cdp-events.jsonl: {error}"))?;
+
+    let netlog_raw = std::fs::read(&netlog_path)
+        .ok()
+        .filter(|bytes| !bytes.is_empty());
+    let (netlog, netlog_status) = prepare_netlog(netlog_raw.as_deref());
+    if let NetlogStatus::Repaired { .. } | NetlogStatus::Unusable { .. } = &netlog_status {
+        // Preserva o arquivo original do Chrome ao lado da sessão.
+        if let Some(raw) = &netlog_raw {
+            let _ = write_private(&config.session_dir.join("netlog.original.json"), raw);
+        }
     }
 
     // Sem o arquivo de corpos (falha de gravação), o core avisa uma vez por sessão.
     let bodies_bytes = std::fs::read(&bodies_path).ok();
-    let mut imported = import_capture_with_bodies(
+    let mut imported = import_capture_labeled(
         &cdp_bytes,
         &netlog,
         bodies_bytes.as_deref(),
+        &["live-capture".to_string()],
         CorrelationOptions::default(),
     )
     .map_err(|error| format!("O core não conseguiu importar a captura: {error}"))?;
+    mark_incomplete(&mut imported.bundle.session, &netlog_status, &shutdown);
     // Metadados da captura são do pipeline, não do parser: o core monta o
     // documento a partir do CDP e não sabe que este fluxo também gravou NetLog.
-    // Origem: distingue a sessão ao vivo de imports de arquivo.
-    let labels = &mut imported.bundle.session.session.labels;
-    if !labels.iter().any(|label| label == "live-capture") {
-        labels.push("live-capture".to_string());
-    }
     match imported.bundle.session.session.capture.as_mut() {
         Some(capture) => {
             capture.mode = Some("cdp+netlog".to_string());
@@ -342,18 +351,34 @@ fn wait_for_devtools(
     )
 }
 
-fn wait_or_kill(child: &mut Child, timeout: Duration) {
+#[derive(Debug, Clone)]
+enum ChromeExit {
+    /// O processo saiu sozinho depois de `Browser.close`.
+    Graceful(Option<i32>),
+    /// Estourou o prazo e foi morto por este módulo (NetLog pode ficar truncado).
+    Killed,
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
+struct ShutdownReport {
+    browser_close: Result<(), String>,
+    exit: ChromeExit,
+    waited_ms: u64,
+}
+
+fn wait_or_kill(child: &mut Child, timeout: Duration) -> ChromeExit {
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => return,
+            Ok(Some(status)) => return ChromeExit::Graceful(status.code()),
             Ok(None) => {}
-            Err(_) => return,
+            Err(_) => return ChromeExit::Unknown,
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return;
+            return ChromeExit::Killed;
         }
         thread::sleep(Duration::from_millis(100));
     }
@@ -656,6 +681,131 @@ impl Cdp {
         text.push('\n');
         text
     }
+}
+
+const EMPTY_NETLOG: &[u8] = br#"{"constants":{},"events":[]}"#;
+
+/// Estado do NetLog lido do disco depois do encerramento do Chrome.
+#[derive(Debug, Clone, PartialEq)]
+enum NetlogStatus {
+    Complete,
+    /// Truncado; reparado cortando no último evento completo.
+    Repaired {
+        original_bytes: usize,
+        kept_bytes: usize,
+    },
+    /// Ausente, vazio ou irrecuperável: a sessão segue só com o CDP.
+    Unusable {
+        reason: String,
+    },
+}
+
+fn is_valid_json(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<serde::de::IgnoredAny>(bytes).is_ok()
+}
+
+/// O Chrome grava um evento por linha em `"events":[`. Um arquivo cortado
+/// termina em evento completo seguido de vírgula ou em linha parcial: corta no
+/// último fim de linha, tira a vírgula e fecha `]}` (o `polledData` se perde).
+fn repair_netlog(raw: &[u8]) -> Option<Vec<u8>> {
+    let marker = raw
+        .windows(10)
+        .position(|w| w == b"\"events\":[" || w == b"\"events\": ")?;
+    let mut end = raw.len();
+    for _ in 0..16 {
+        let mut candidate = raw[..end].to_vec();
+        while candidate
+            .last()
+            .is_some_and(|byte| byte.is_ascii_whitespace() || *byte == b',')
+        {
+            candidate.pop();
+        }
+        candidate.extend_from_slice(b"]}");
+        if is_valid_json(&candidate) {
+            return Some(candidate);
+        }
+        // Recua uma linha; para antes de entrar nas constantes.
+        end = raw[..end].iter().rposition(|byte| *byte == b'\n')?;
+        if end <= marker {
+            return None;
+        }
+    }
+    None
+}
+
+fn prepare_netlog(raw: Option<&[u8]>) -> (Vec<u8>, NetlogStatus) {
+    let Some(raw) = raw else {
+        return (
+            EMPTY_NETLOG.to_vec(),
+            NetlogStatus::Unusable {
+                reason: "NetLog ausente ou vazio".to_string(),
+            },
+        );
+    };
+    if is_valid_json(raw) {
+        return (raw.to_vec(), NetlogStatus::Complete);
+    }
+    match repair_netlog(raw) {
+        Some(fixed) => {
+            let kept_bytes = fixed.len();
+            (
+                fixed,
+                NetlogStatus::Repaired {
+                    original_bytes: raw.len(),
+                    kept_bytes,
+                },
+            )
+        }
+        None => (
+            EMPTY_NETLOG.to_vec(),
+            NetlogStatus::Unusable {
+                reason: "NetLog truncado e irreparável".to_string(),
+            },
+        ),
+    }
+}
+
+/// Registra na sessão tudo o que tornou a captura incompleta. Nunca em silêncio.
+fn mark_incomplete(
+    document: &mut scrapelens_core::model::SessionV1,
+    netlog: &NetlogStatus,
+    shutdown: &ShutdownReport,
+) {
+    let detail = json!({
+        "browserClose": shutdown.browser_close.clone().err(),
+        "chromeExit": format!("{:?}", shutdown.exit),
+        "waitedMs": shutdown.waited_ms,
+        "netlog": format!("{netlog:?}"),
+    });
+    let killed = matches!(shutdown.exit, ChromeExit::Killed);
+    let (code, message) = match netlog {
+        NetlogStatus::Complete if !killed => return,
+        NetlogStatus::Complete => (
+            "capture.chrome_killed",
+            "O Chrome não encerrou no prazo e foi finalizado à força; o NetLog pode não refletir o fim da captura.".to_string(),
+        ),
+        NetlogStatus::Repaired { original_bytes, kept_bytes } => (
+            "capture.netlog_incomplete",
+            format!("O NetLog do Chrome estava truncado ({original_bytes} bytes); a sessão usa só os eventos completos ({kept_bytes} bytes). O original está em netlog.original.json."),
+        ),
+        NetlogStatus::Unusable { reason } => (
+            "capture.netlog_unusable",
+            format!("{reason}: a sessão foi importada só com CDP e corpos, sem evidência de NetLog. O original (se existir) está em netlog.original.json."),
+        ),
+    };
+    document
+        .session
+        .completeness
+        .add_reason(format!("{code}: {message}"));
+    document
+        .warnings
+        .push(scrapelens_core::model::Warning::new(code, message).with_detail(detail));
+}
+
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = open_private(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 // ---------------------------------------------------------------------------
@@ -1790,6 +1940,126 @@ mod tests {
             )
             .is_empty());
         assert_eq!(lines(&mut c)[0]["transformed"], json!(["lossy-postData"]));
+    }
+
+    fn fixture(name: &str) -> Vec<u8> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../experiments/results/h1-page")
+            .join(name);
+        std::fs::read(path).expect("fixture de experiments/results/h1-page")
+    }
+
+    fn quiet_shutdown(exit: ChromeExit) -> ShutdownReport {
+        ShutdownReport {
+            browser_close: Ok(()),
+            exit,
+            waited_ms: 1,
+        }
+    }
+
+    #[test]
+    fn truncated_netlog_is_repaired_and_still_imports() {
+        let full = fixture("chrome-netlog.json");
+        let cdp = fixture("cdp-events.jsonl");
+        assert_eq!(prepare_netlog(Some(&full)).1, NetlogStatus::Complete);
+        let full_events = serde_json::from_slice::<Value>(&full).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .len();
+        // Cortes em pontos variados: fim de linha com vírgula e meio de linha.
+        for fraction in [0.3_f64, 0.55, 0.8] {
+            let mut cut = (full.len() as f64 * fraction) as usize;
+            for variant in 0..2 {
+                if variant == 1 {
+                    cut += 7;
+                }
+                let (fixed, status) = prepare_netlog(Some(&full[..cut]));
+                assert!(
+                    matches!(status, NetlogStatus::Repaired { .. }),
+                    "{fraction}/{variant}: {status:?}"
+                );
+                let events = serde_json::from_slice::<Value>(&fixed).unwrap()["events"]
+                    .as_array()
+                    .unwrap()
+                    .len();
+                assert!(events > 0 && events < full_events);
+                let imported = scrapelens_core::import_capture_with_bodies(
+                    &cdp,
+                    &fixed,
+                    None,
+                    CorrelationOptions::default(),
+                );
+                assert!(
+                    imported.is_ok(),
+                    "import do NetLog reparado: {:?}",
+                    imported.err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unusable_netlog_falls_back_to_cdp_only_import() {
+        let cdp = fixture("cdp-events.jsonl");
+        for raw in [None, Some(&b"{\"constants\":{\"a\":"[..])] {
+            let (netlog, status) = prepare_netlog(raw);
+            assert!(matches!(status, NetlogStatus::Unusable { .. }));
+            let mut imported = scrapelens_core::import_capture_with_bodies(
+                &cdp,
+                &netlog,
+                None,
+                CorrelationOptions::default(),
+            )
+            .expect("CDP sem NetLog ainda importa");
+            mark_incomplete(
+                &mut imported.bundle.session,
+                &status,
+                &quiet_shutdown(ChromeExit::Graceful(Some(0))),
+            );
+            let session = &imported.bundle.session;
+            assert!(session
+                .warnings
+                .iter()
+                .any(|w| w.code == "capture.netlog_unusable"));
+            assert!(session
+                .session
+                .completeness
+                .reasons
+                .iter()
+                .any(|r| r.contains("capture.netlog_unusable")));
+            assert!(!session.requests.is_empty());
+        }
+    }
+
+    #[test]
+    fn killed_chrome_adds_a_warning_even_with_valid_netlog() {
+        let cdp = fixture("cdp-events.jsonl");
+        let full = fixture("chrome-netlog.json");
+        let mut imported = scrapelens_core::import_capture_with_bodies(
+            &cdp,
+            &full,
+            None,
+            CorrelationOptions::default(),
+        )
+        .unwrap();
+        let before = imported.bundle.session.warnings.len();
+        mark_incomplete(
+            &mut imported.bundle.session,
+            &NetlogStatus::Complete,
+            &quiet_shutdown(ChromeExit::Graceful(Some(0))),
+        );
+        assert_eq!(imported.bundle.session.warnings.len(), before);
+        mark_incomplete(
+            &mut imported.bundle.session,
+            &NetlogStatus::Complete,
+            &quiet_shutdown(ChromeExit::Killed),
+        );
+        assert!(imported
+            .bundle
+            .session
+            .warnings
+            .iter()
+            .any(|w| w.code == "capture.chrome_killed"));
     }
 
     #[cfg(unix)]

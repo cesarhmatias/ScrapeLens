@@ -340,9 +340,9 @@
       "rows": 28,
       "byState": {
         "truncated": 3,
+        "captured": 20,
         "empty": 2,
-        "unavailable": 3,
-        "captured": 20
+        "unavailable": 3
       }
     },
     {
@@ -382,11 +382,13 @@
       "urlScopeMatches": 0,
       "first": [
         {
-          "requestId": "cdp-r0012",
-          "attemptId": "cdp-r0012-a1",
+          "requestId": "cdp-r0010",
+          "attemptId": "cdp-r0010-a1",
           "scope": "requestBody",
           "field": "cmd_consultar_placa",
           "byteOffset": 0,
+          "byteLength": 19,
+          "exact": true,
           "snippet": "cmd_consultar_placa",
           "decoded": true
         }

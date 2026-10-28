@@ -1,0 +1,146 @@
+{
+  "cycles": 20,
+  "failures": 0,
+  "rows": [
+    {
+      "cycle": 1,
+      "ok": true,
+      "seconds": 10.3,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 320 }",
+      "error": null
+    },
+    {
+      "cycle": 2,
+      "ok": true,
+      "seconds": 10.0,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 1574 }",
+      "error": null
+    },
+    {
+      "cycle": 3,
+      "ok": true,
+      "seconds": 9.8,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 637 }",
+      "error": null
+    },
+    {
+      "cycle": 4,
+      "ok": true,
+      "seconds": 9.0,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 413 }",
+      "error": null
+    },
+    {
+      "cycle": 5,
+      "ok": true,
+      "seconds": 9.6,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 623 }",
+      "error": null
+    },
+    {
+      "cycle": 6,
+      "ok": true,
+      "seconds": 9.1,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 1287 }",
+      "error": null
+    },
+    {
+      "cycle": 7,
+      "ok": true,
+      "seconds": 7.2,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 106 }",
+      "error": null
+    },
+    {
+      "cycle": 8,
+      "ok": true,
+      "seconds": 8.4,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 1792 }",
+      "error": null
+    },
+    {
+      "cycle": 9,
+      "ok": true,
+      "seconds": 8.1,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 110 }",
+      "error": null
+    },
+    {
+      "cycle": 10,
+      "ok": true,
+      "seconds": 10.1,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 2760 }",
+      "error": null
+    },
+    {
+      "cycle": 11,
+      "ok": true,
+      "seconds": 10.5,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 1281 }",
+      "error": null
+    },
+    {
+      "cycle": 12,
+      "ok": true,
+      "seconds": 7.2,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 211 }",
+      "error": null
+    },
+    {
+      "cycle": 13,
+      "ok": true,
+      "seconds": 7.3,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 102 }",
+      "error": null
+    },
+    {
+      "cycle": 14,
+      "ok": true,
+      "seconds": 7.1,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 102 }",
+      "error": null
+    },
+    {
+      "cycle": 15,
+      "ok": true,
+      "seconds": 8.5,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 962 }",
+      "error": null
+    },
+    {
+      "cycle": 16,
+      "ok": true,
+      "seconds": 17.1,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 212 }",
+      "error": null
+    },
+    {
+      "cycle": 17,
+      "ok": true,
+      "seconds": 23.4,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 213 }",
+      "error": null
+    },
+    {
+      "cycle": 18,
+      "ok": true,
+      "seconds": 11.5,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 1742 }",
+      "error": null
+    },
+    {
+      "cycle": 19,
+      "ok": true,
+      "seconds": 16.0,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 2431 }",
+      "error": null
+    },
+    {
+      "cycle": 20,
+      "ok": true,
+      "seconds": 7.7,
+      "shutdown": "ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 319 }",
+      "error": null
+    }
+  ]
+}
