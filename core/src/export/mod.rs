@@ -180,6 +180,52 @@ pub fn request_body_bytes<'a>(
         .and_then(|name| bundle.attachment(name))
 }
 
+/// ÚNICA porta de entrada para texto em comentário do código gerado (cURL e
+/// Python). O conteúdo pode vir da captura (nomes de campo, URLs, notas), então:
+/// CR, LF, VT, FF, NEL, U+2028/U+2029 e qualquer outro controle quebram a linha
+/// ou somem, caracteres de formatação/bidi são removidos, cada linha resultante
+/// ganha o prefixo `# ` e o comprimento é limitado. Nada do conteúdo sai de um
+/// comentário.
+pub fn comment(text: &str) -> String {
+    const MAX_LINE: usize = 240;
+    const MAX_LINES: usize = 8;
+    let is_break = |c: char| {
+        matches!(
+            c,
+            '\n' | '\r' | '\u{b}' | '\u{c}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+        )
+    };
+    let is_format = |c: char| matches!(c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{feff}');
+    let mut out = String::new();
+    let mut lines = 0;
+    for piece in text.split(is_break) {
+        let clean: String = piece
+            .chars()
+            .map(|c| if c == '\t' { ' ' } else { c })
+            .filter(|c| !c.is_control() && !is_format(*c))
+            .collect();
+        let clean = clean.trim_end();
+        if clean.trim().is_empty() {
+            continue;
+        }
+        let shown: String = clean.chars().take(MAX_LINE).collect();
+        out.push_str("# ");
+        out.push_str(&shown);
+        if clean.chars().count() > MAX_LINE {
+            out.push('…');
+        }
+        out.push('\n');
+        lines += 1;
+        if lines >= MAX_LINES {
+            break;
+        }
+    }
+    if out.is_empty() {
+        out.push_str("#\n");
+    }
+    out
+}
+
 /// Linhas de comentário "obter em runtime (origem: …)" para os valores da
 /// requisição que têm produtor observado em resposta anterior. Não inclui
 /// valores (só campo e origem) e não altera o código gerado.

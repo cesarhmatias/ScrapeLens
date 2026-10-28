@@ -15,30 +15,38 @@
 //! origins: { requestId, attemptId, values: [ValueOrigin], redactedValues, ties, warnings }
 //! ValueOrigin: { scope: query|header|cookie|body, field, occurrence, value, length,
 //!   status: origin|ambiguous|repeated|none|composite|redacted, label (PT-BR),
+//!   confidence: strong|possible|null ("possível origem (<tipo>)" quando só há evidência média),
 //!   offset (trechos), oldest (índice em evidences), parent (campo opaco do trecho),
 //!   repeatedFrom[], unobservable: [{requestId, state, reason}], note, evidences: [ { kind: cookie-jar|same-field|value-match|initiator,
 //!     strength: strong|medium|complement, role: produced|reissued, producerRequestId,
 //!     producerAttemptId, scope: setCookie|responseHeader|location|responseBody, field,
-//!     producerOffset, consumedOffset, consumedLength } ] }
+//!     producerOffset, consumedOffset, consumedLength, timing: observed|inferred } ] }
 //! chain: { requestId, steps: [ChainStep], protection: [ChainStep], unresolved[], warnings }
 //! ChainStep: { requestId, attemptId, method, url, startedAt, class: application|protection,
-//!   reason, reasons: [ { provides, field, kind, strength, consumedBy } ] }
+//!   confidence: strong|possible, reason, reasons: [ { provides, field, kind, strength, consumedBy } ] }
 //! ```
 //!
 //! O esquema de `compare` está em [`crate::compare`].
 //!
 //! Regras:
-//! - só entram produtores observados ANTES da tentativa alvo (tempo de início da
-//!   tentativa; sem tempo em algum dos lados, a ordem da sessão). Empate de
-//!   tempo nunca vira produtor: fica em `ties`;
-//! - evidências separadas: `cookieJar` e `sameField` (fortes; `sameField`
-//!   vale mesmo para valores curtos porque o nome amarra), `valueMatch`
+//! - só entram produtores cuja RESPOSTA terminou (`ended_at`) até o início da
+//!   tentativa alvo; resposta que termina depois não é produtora. Sem tempos, a
+//!   ordem da sessão vale e a evidência leva `timing: inferred`. Empate de
+//!   início nunca vira produtor: fica em `ties`;
+//! - evidências separadas: `cookieJar` (forte) e `sameField` (forte só com nome
+//!   não genérico — id, value, data, page, type, lang, name, key, code, state,
+//!   status, action, op, mode, format, limit, offset, q, query, v, t, ts — e
+//!   valor com ≥ 4 caracteres; senão média), `valueMatch`
 //!   (média; valor de resposta com >= 8 caracteres encontrado na requisição,
 //!   inteiro ou como substring de campo opaco) e `initiator` (complemento; o
 //!   modelo atual não preserva o initiator do CDP, o que é declarado);
 //! - nenhum candidato = `none` ("sem origem observada"); vários produtores
 //!   independentes = `ambiguous` com todos os candidatos e o mais antigo
-//!   indicado; reemissões do mesmo valor pela mesma fonte são `reissued`;
+//!   indicado; `reissued` só quando o valor circulou numa requisição entre um
+//!   produtor e o seguinte (senão são concorrentes: `ambiguous`);
+//! - "origem observada" exige evidência forte; só média = `confidence:
+//!   possible` ("possível origem (<tipo>)"); a cadeia marca cada passo
+//!   `strong` ou `possible`;
 //! - valores redigidos (`[REDACTED]`) não casam e são declarados.
 
 use std::cell::RefCell;
@@ -72,7 +80,7 @@ impl Default for FlowOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EvidenceKind {
     CookieJar,
@@ -89,6 +97,25 @@ pub enum Strength {
     Complement,
 }
 
+/// Confiança da origem: `strong` exige evidência forte; só evidência média é
+/// `possible` ("possível origem").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Confidence {
+    Strong,
+    Possible,
+}
+
+/// Como a ordem produtor → consumidor foi estabelecida.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Timing {
+    /// A resposta do produtor terminou (tempo da fonte) antes do início do alvo.
+    Observed,
+    /// Faltou tempo de início/fim: valeu a ordem da sessão.
+    Inferred,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Role {
@@ -96,7 +123,7 @@ pub enum Role {
     Reissued,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProducerScope {
     SetCookie,
@@ -150,6 +177,7 @@ pub struct Evidence {
     /// Onde o trecho aparece no valor consumido (campos opacos).
     pub consumed_offset: Option<u64>,
     pub consumed_length: Option<u64>,
+    pub timing: Timing,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -174,6 +202,8 @@ pub struct ValueOrigin {
     pub status: OriginStatus,
     /// Rótulo legível ("sem origem observada", "ambíguo…"…).
     pub label: String,
+    /// `strong` (há evidência forte) ou `possible` (só evidência média).
+    pub confidence: Option<Confidence>,
     /// Offset do trecho no valor consumido (entradas `parent`).
     pub offset: Option<u64>,
     /// Índice em `evidences` do produtor mais antigo.
@@ -616,6 +646,8 @@ pub(crate) struct FlowContext<'a> {
     /// Índice por prefixo de 8 bytes: valores de produtor com >= 8 bytes.
     index: RefCell<Option<Rc<PrefixIndex>>>,
     seq: HashMap<Pos, usize>,
+    by_attempt: HashMap<String, Pos>,
+    ordered: Vec<Pos>,
 }
 
 struct PrefixIndex {
@@ -629,10 +661,14 @@ impl<'a> FlowContext<'a> {
         options: &FlowOptions,
     ) -> Self {
         let mut seq = HashMap::new();
+        let mut by_attempt = HashMap::new();
+        let mut ordered = Vec::new();
         let mut next = 0;
         for (ri, request) in session.requests.iter().enumerate() {
-            for ai in 0..request.attempts.len() {
+            for (ai, attempt) in request.attempts.iter().enumerate() {
                 seq.insert((ri, ai), next);
+                by_attempt.insert(attempt.id.clone(), (ri, ai));
+                ordered.push((ri, ai));
                 next += 1;
             }
         }
@@ -644,6 +680,8 @@ impl<'a> FlowContext<'a> {
             consumed: RefCell::new(HashMap::new()),
             index: RefCell::new(None),
             seq,
+            by_attempt,
+            ordered,
         }
     }
 
@@ -659,6 +697,8 @@ impl<'a> FlowContext<'a> {
             .flat_map(|(ri, r)| (0..r.attempts.len()).map(move |ai| (ri, ai)))
     }
 
+    /// `Before` só se a resposta do candidato terminou até o início do alvo
+    /// (`ended_at`); sem tempos, vale a ordem da sessão (ver [`Self::inferred`]).
     fn rel(&self, candidate: Pos, target: Pos) -> Rel {
         if candidate == target {
             return Rel::After;
@@ -666,12 +706,16 @@ impl<'a> FlowContext<'a> {
         let (a, b) = (self.attempt(candidate), self.attempt(target));
         match (a.started_at, b.started_at) {
             (Some(x), Some(y)) => {
-                if x < y {
-                    Rel::Before
+                if x == y {
+                    Rel::Tie
                 } else if x > y {
                     Rel::After
                 } else {
-                    Rel::Tie
+                    match a.ended_at {
+                        Some(end) if end <= y => Rel::Before,
+                        Some(_) => Rel::After,
+                        None => Rel::Before,
+                    }
                 }
             }
             _ => {
@@ -682,6 +726,42 @@ impl<'a> FlowContext<'a> {
                 }
             }
         }
+    }
+
+    /// A ordem candidato → alvo veio da sequência da sessão, não dos tempos.
+    fn inferred(&self, candidate: Pos, target: Pos) -> bool {
+        let (a, b) = (self.attempt(candidate), self.attempt(target));
+        a.started_at.is_none() || b.started_at.is_none() || a.ended_at.is_none()
+    }
+
+    /// O valor circulou numa requisição depois da resposta de `from` e até a
+    /// resposta de `to` (inclusive o pedido do próprio `to`, que o enviou antes
+    /// de a resposta chegar): então `to` só reemite o valor.
+    fn circulated(&self, text: &str, from: Pos, to: Pos) -> bool {
+        let (lo, hi) = (self.seq[&from], self.seq[&to]);
+        let after = self.attempt(from).ended_at;
+        let before = self.attempt(to).ended_at.or(self.attempt(to).started_at);
+        for pos in &self.ordered {
+            let n = self.seq[pos];
+            if n <= lo || n > hi || *pos == from {
+                continue;
+            }
+            if let (Some(after), Some(before), Some(start)) =
+                (after, before, self.attempt(*pos).started_at)
+            {
+                if start < after || start > before {
+                    continue;
+                }
+            }
+            if self
+                .consumed_of(*pos)
+                .iter()
+                .any(|c| c.value.contains(text))
+            {
+                return true;
+            }
+        }
+        false
     }
 
     fn producer(&self, pos: Pos) -> Rc<ProducerData> {
@@ -749,6 +829,18 @@ impl<'a> FlowContext<'a> {
     pub(crate) fn attempt_ref(&self, pos: Pos) -> &'a Attempt {
         self.attempt(pos)
     }
+}
+
+/// Nomes de campo genéricos: `same-field` com eles é só evidência média.
+const GENERIC_NAMES: &[&str] = &[
+    "id", "value", "data", "page", "type", "lang", "name", "key", "code", "state", "status",
+    "action", "op", "mode", "format", "limit", "offset", "q", "query", "v", "t", "ts",
+];
+
+fn is_generic_name(name: &str) -> bool {
+    GENERIC_NAMES
+        .iter()
+        .any(|generic| generic.eq_ignore_ascii_case(name))
 }
 
 fn preview(value: &str) -> String {
@@ -825,6 +917,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 length: value.value.len(),
                 status: OriginStatus::Redacted,
                 label: "redigido: não rastreável".to_string(),
+                confidence: None,
                 offset: None,
                 oldest: None,
                 evidences: Vec::new(),
@@ -855,9 +948,16 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                     _ => None,
                 };
                 if let Some(kind) = kind {
+                    let strength = if kind == EvidenceKind::SameField
+                        && (is_generic_name(&value.field) || value.value.len() < 4)
+                    {
+                        Strength::Medium
+                    } else {
+                        Strength::Strong
+                    };
                     evidences.push((
                         rank[pos],
-                        evidence(ctx, *pos, item, kind, Strength::Strong, None, None),
+                        evidence(ctx, *pos, item, kind, strength, None, None),
                     ));
                 }
             }
@@ -914,8 +1014,13 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 opaque_candidates(ctx, value, &earlier, &mut found);
             }
         }
-        let sub = partial_entries(ctx, value, found, &rank);
         let mut entry = finish_entry(ctx, value, evidences, &earlier);
+        // campo com origem própria não vira também "composto" (sem duplicar)
+        let sub = if matches!(entry.status, OriginStatus::Origin | OriginStatus::Ambiguous) {
+            Vec::new()
+        } else {
+            partial_entries(ctx, value, found, &rank)
+        };
         if entry.status == OriginStatus::None && !sub.is_empty() {
             entry.status = OriginStatus::Composite;
         }
@@ -929,6 +1034,15 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
         result.values.push(entry);
         for part in sub {
             result.values.push(part);
+        }
+    }
+    for entry in result.values.iter_mut() {
+        for e in entry.evidences.iter_mut() {
+            if let Some(pos) = ctx.by_attempt.get(&e.attempt_id) {
+                if ctx.inferred(*pos, target) {
+                    e.timing = Timing::Inferred;
+                }
+            }
         }
     }
     let hidden: Vec<Unobservable> = earlier
@@ -987,6 +1101,7 @@ fn evidence(
         producer_offset: item.offset,
         consumed_offset,
         consumed_length,
+        timing: Timing::Observed,
     }
 }
 
@@ -998,15 +1113,23 @@ fn finish_entry(
     _earlier: &[Pos],
 ) -> ValueOrigin {
     raw.sort_by_key(|(rank, _)| *rank);
-    let mut groups: Vec<(EvidenceKind, ProducerScope, Option<String>, Option<u64>)> = Vec::new();
+    let mut last: HashMap<(EvidenceKind, ProducerScope, Option<String>, Option<u64>), Pos> =
+        HashMap::new();
     let mut evidences = Vec::new();
     let mut produced = 0usize;
     for (_, mut e) in raw {
         let key = (e.kind, e.scope, e.field.clone(), e.consumed_offset);
-        if groups.contains(&key) {
+        let pos = _ctx.by_attempt.get(&e.attempt_id).copied();
+        let mut reissued = false;
+        if let (Some(prev), Some(pos)) = (last.get(&key).copied(), pos) {
+            reissued = _ctx.circulated(&value.value, prev, pos);
+        }
+        if let Some(pos) = pos {
+            last.insert(key, pos);
+        }
+        if reissued {
             e.role = Role::Reissued;
         } else {
-            groups.push(key);
             produced += 1;
         }
         evidences.push(e);
@@ -1025,15 +1148,16 @@ fn finish_entry(
         1 => OriginStatus::Origin,
         _ => OriginStatus::Ambiguous,
     };
-    let strongest = evidences
-        .iter()
-        .map(|e| e.strength)
-        .min_by_key(|s| match s {
-            Strength::Strong => 0,
-            Strength::Medium => 1,
-            Strength::Complement => 2,
-        });
-    let _ = strongest;
+    let confidence = (status != OriginStatus::None).then(|| {
+        if evidences
+            .iter()
+            .any(|e| e.role == Role::Produced && e.strength == Strength::Strong)
+        {
+            Confidence::Strong
+        } else {
+            Confidence::Possible
+        }
+    });
     ValueOrigin {
         scope: value.scope,
         field: value.field.clone(),
@@ -1042,6 +1166,7 @@ fn finish_entry(
         length: value.value.len(),
         status,
         label: String::new(),
+        confidence,
         offset: None,
         oldest,
         evidences,
@@ -1054,14 +1179,22 @@ fn finish_entry(
 
 fn relabel(entry: &mut ValueOrigin) {
     entry.label = match entry.status {
-        OriginStatus::Origin => "origem observada".to_string(),
-        OriginStatus::Ambiguous => format!(
-            "ambíguo (mais antigo: {})",
-            entry
-                .oldest
-                .and_then(|i| entry.evidences.get(i))
-                .map_or("?", |e| e.request_id.as_str())
-        ),
+        OriginStatus::Origin | OriginStatus::Ambiguous => {
+            let oldest = entry.oldest.and_then(|i| entry.evidences.get(i));
+            let kind = oldest.map_or("?", |e| match e.kind {
+                EvidenceKind::CookieJar => "cookie-jar",
+                EvidenceKind::SameField => "same-field",
+                EvidenceKind::ValueMatch => "value-match",
+                EvidenceKind::Initiator => "initiator",
+            });
+            let id = oldest.map_or("?", |e| e.request_id.as_str());
+            match (entry.status, entry.confidence) {
+                (OriginStatus::Origin, Some(Confidence::Strong)) => "origem observada".to_string(),
+                (OriginStatus::Origin, _) => format!("possível origem ({kind})"),
+                (_, Some(Confidence::Strong)) => format!("ambíguo (mais antigo: {id})"),
+                _ => format!("possível origem ({kind}), ambíguo (mais antigo: {id})"),
+            }
+        }
         OriginStatus::Repeated => format!(
             "sem origem observada (valor já circulava em {})",
             entry.repeated_from.join(", ")
@@ -1115,6 +1248,9 @@ fn opaque_candidates(
                 continue;
             }
             for (start, len, other_start) in maximal_common(a, b, min) {
+                if start == 0 && len == a.len() {
+                    continue; // valor inteiro: evidência do próprio campo
+                }
                 if cut_in_number(a, b, start, len, other_start) {
                     continue;
                 }
@@ -1219,6 +1355,7 @@ fn partial_entries(
                 length: end - start,
                 status: OriginStatus::None,
                 label: String::new(),
+                confidence: None,
                 offset: Some(start as u64),
                 oldest: None,
                 evidences: Vec::new(),
@@ -1308,6 +1445,8 @@ pub struct ChainStep {
     pub url: String,
     pub started_at: Option<f64>,
     pub class: StepClass,
+    /// `strong` se algum motivo tem evidência forte; senão `possible`.
+    pub confidence: Confidence,
     /// Motivo legível (campos que a requisição fornece e quem os consome).
     pub reason: String,
     pub reasons: Vec<StepReason>,
@@ -1377,6 +1516,9 @@ pub fn priming_chain(
                 chain.warnings.push(w.clone());
             }
         }
+        let current_protection = ctx
+            .find(&current)
+            .is_some_and(|pos| is_protection_path(&ctx.attempt_ref(pos).url));
         for value in &origins.values {
             if value.status == OriginStatus::Composite {
                 continue;
@@ -1385,7 +1527,7 @@ pub fn priming_chain(
                 value.status,
                 OriginStatus::None | OriginStatus::Redacted | OriginStatus::Repeated
             ) {
-                if value.parent.is_none() && value.length > 0 {
+                if value.parent.is_none() && value.length > 0 && !current_protection {
                     chain.unresolved.push(UnresolvedValue {
                         label: value.label.clone(),
                         unobservable: value.unobservable.clone(),
@@ -1397,7 +1539,10 @@ pub fn priming_chain(
                 }
                 continue;
             }
-            if value.status == OriginStatus::Ambiguous && value.parent.is_none() {
+            if value.status == OriginStatus::Ambiguous
+                && value.parent.is_none()
+                && !current_protection
+            {
                 chain.unresolved.push(UnresolvedValue {
                     label: value.label.clone(),
                     unobservable: value.unobservable.clone(),
@@ -1425,6 +1570,7 @@ pub fn priming_chain(
                         url: attempt.url.clone(),
                         started_at: attempt.started_at,
                         class: StepClass::Application,
+                        confidence: Confidence::Possible,
                         reason: String::new(),
                         reasons: Vec::new(),
                     });
@@ -1442,6 +1588,11 @@ pub fn priming_chain(
     let target_pos = ctx.find(request_id);
     let mut all: Vec<ChainStep> = included.into_values().collect();
     for step in &mut all {
+        step.confidence = if step.reasons.iter().any(|r| r.strength == Strength::Strong) {
+            Confidence::Strong
+        } else {
+            Confidence::Possible
+        };
         let only_ts =
             !step.reasons.is_empty() && step.reasons.iter().all(|r| is_ts_cookie(&r.field));
         if is_protection_path(&step.url) || only_ts {
@@ -1465,6 +1616,7 @@ pub fn priming_chain(
                     url: attempt.url.clone(),
                     started_at: attempt.started_at,
                     class: StepClass::Protection,
+                    confidence: Confidence::Possible,
                     reason: "proteção: caminho /TSPD/ antes da requisição alvo".to_string(),
                     reasons: vec![StepReason {
                         provides: "proteção (caminho /TSPD/)".to_string(),
@@ -1507,6 +1659,14 @@ pub fn priming_chain(
             StepClass::Protection => chain.protection.push(step),
         }
     }
+    let protection_ids: BTreeSet<String> = chain
+        .protection
+        .iter()
+        .map(|step| step.request_id.clone())
+        .collect();
+    chain
+        .unresolved
+        .retain(|u| !protection_ids.contains(&u.request_id));
     chain.unresolved.dedup();
     Ok(chain)
 }

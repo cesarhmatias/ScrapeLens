@@ -34,8 +34,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::flow::{
-    origins_in, ConsumedScope, Evidence, EvidenceKind, FlowContext, FlowOptions, OriginStatus,
-    ProducerScope, ValueOrigin, ValueOrigins,
+    origins_in, Confidence, ConsumedScope, Evidence, EvidenceKind, FlowContext, FlowOptions,
+    OriginStatus, ProducerScope, ValueOrigin, ValueOrigins,
 };
 use crate::model::SessionV1;
 use crate::search::BodySource;
@@ -78,6 +78,8 @@ pub struct OriginSummary {
     pub scope: ProducerScope,
     pub field: Option<String>,
     pub ambiguous: bool,
+    /// `strong` ou `possible` (só evidência média).
+    pub confidence: Option<Confidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -273,6 +275,7 @@ fn summary(value: &ValueOrigin) -> Option<OriginSummary> {
         scope: oldest.scope,
         field: oldest.field.clone(),
         ambiguous: value.status == OriginStatus::Ambiguous,
+        confidence: value.confidence,
     })
 }
 
@@ -377,43 +380,29 @@ pub fn compare_sessions(
         warnings: Vec::new(),
     };
 
-    // 1) mesmo modelo, em ordem.
-    let mut by_model_b: HashMap<&str, Vec<usize>> = HashMap::new();
-    for (i, e) in eb.iter().enumerate() {
-        by_model_b.entry(&e.model).or_default().push(i);
-    }
-    let mut cursor: HashMap<&str, usize> = HashMap::new();
-    let mut pairs: Vec<(usize, usize, &'static str)> = Vec::new();
+    // Alinhamento monotônico (sem cruzar a ordem): mesmo modelo pesa mais que
+    // só método + host + caminho.
+    let (pairs, dropped) = align(&ea, &eb);
+    let mut used_a = vec![false; ea.len()];
     let mut used_b = vec![false; eb.len()];
-    let mut left_a: Vec<usize> = Vec::new();
-    for (i, e) in ea.iter().enumerate() {
-        let slot = cursor.entry(&e.model).or_default();
-        match by_model_b.get(e.model.as_str()).and_then(|v| v.get(*slot)) {
-            Some(&j) => {
-                *slot += 1;
-                used_b[j] = true;
-                pairs.push((i, j, "model"));
-            }
-            None => left_a.push(i),
+    for (i, j, how) in &pairs {
+        used_a[*i] = true;
+        used_b[*j] = true;
+        if *how == "path" {
+            result.ambiguities.push(format!(
+                "{} ↔ {}: mesmo método/host/caminho, mas nomes de campos diferentes; pareados por ordem",
+                ea[*i].id, eb[*j].id
+            ));
         }
     }
-    // 2) sobras com o mesmo método + host + caminho.
-    let mut left_b: Vec<usize> = (0..eb.len()).filter(|j| !used_b[*j]).collect();
-    let mut still_a = Vec::new();
-    for i in left_a {
-        let found = left_b.iter().position(|&j| eb[j].base == ea[i].base);
-        match found {
-            Some(pos) => {
-                let j = left_b.remove(pos);
-                pairs.push((i, j, "path"));
-                result.ambiguities.push(format!(
-                    "{} ↔ {}: mesmo método/host/caminho, mas nomes de campos diferentes; pareados por ordem",
-                    ea[i].id, eb[j].id
-                ));
-            }
-            None => still_a.push(i),
-        }
+    for (i, j) in dropped {
+        result.ambiguities.push(format!(
+            "{} ↔ {}: mesmo modelo, mas o pareamento cruzaria a ordem; não pareados",
+            ea[i].id, eb[j].id
+        ));
     }
+    let still_a: Vec<usize> = (0..ea.len()).filter(|i| !used_a[*i]).collect();
+    let left_b: Vec<usize> = (0..eb.len()).filter(|j| !used_b[*j]).collect();
     // Modelos com contagem diferente: sobra posicional é ambígua.
     let mut count_a: HashMap<&str, usize> = HashMap::new();
     let mut count_b: HashMap<&str, usize> = HashMap::new();
@@ -439,7 +428,6 @@ pub fn compare_sessions(
         result.only_in_b.push(request_ref(&eb[j]));
     }
 
-    pairs.sort_by_key(|(i, _, _)| *i);
     let mut max_b_seen: Option<usize> = None;
     for (i, j, how) in pairs {
         let out_of_order = max_b_seen.is_some_and(|m| eb[j].index < m);
@@ -460,6 +448,104 @@ pub fn compare_sessions(
         ));
     }
     result
+}
+
+/// Pareamento A↔B monotônico. Devolve os pares `(i, j, "model"|"path")` em
+/// ordem e os pares de mesmo modelo descartados por cruzarem a ordem.
+type Aligned = (Vec<(usize, usize, &'static str)>, Vec<(usize, usize)>);
+
+fn align(ea: &[Entry], eb: &[Entry]) -> Aligned {
+    let (n, m) = (ea.len(), eb.len());
+    let weight = |i: usize, j: usize| -> u32 {
+        if ea[i].model == eb[j].model {
+            4
+        } else if ea[i].base == eb[j].base {
+            1
+        } else {
+            0
+        }
+    };
+    if n.saturating_mul(m) <= 16_000_000 {
+        let width = m + 1;
+        let mut table = vec![0u32; (n + 1) * width];
+        for i in (0..n).rev() {
+            for j in (0..m).rev() {
+                let mut best = table[(i + 1) * width + j].max(table[i * width + j + 1]);
+                let w = weight(i, j);
+                if w > 0 {
+                    best = best.max(table[(i + 1) * width + j + 1] + w);
+                }
+                table[i * width + j] = best;
+            }
+        }
+        let (mut i, mut j) = (0, 0);
+        let mut pairs = Vec::new();
+        while i < n && j < m {
+            let w = weight(i, j);
+            if w > 0 && table[i * width + j] == table[(i + 1) * width + j + 1] + w {
+                pairs.push((i, j, if w == 4 { "model" } else { "path" }));
+                i += 1;
+                j += 1;
+            } else if table[(i + 1) * width + j] >= table[i * width + j + 1] {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+        return (pairs, Vec::new());
+    }
+    // Sessões enormes: modelo em ordem + maior subsequência crescente.
+    let mut by_model: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (j, e) in eb.iter().enumerate() {
+        by_model.entry(&e.model).or_default().push(j);
+    }
+    let mut cursor: HashMap<&str, usize> = HashMap::new();
+    let mut greedy: Vec<(usize, usize)> = Vec::new();
+    for (i, e) in ea.iter().enumerate() {
+        let slot = cursor.entry(&e.model).or_default();
+        if let Some(&j) = by_model.get(e.model.as_str()).and_then(|v| v.get(*slot)) {
+            *slot += 1;
+            greedy.push((i, j));
+        }
+    }
+    // LIS por j
+    let mut tails: Vec<usize> = Vec::new();
+    let mut prev: Vec<Option<usize>> = vec![None; greedy.len()];
+    let mut tail_idx: Vec<usize> = Vec::new();
+    for (k, (_, j)) in greedy.iter().enumerate() {
+        let pos = tails.partition_point(|t| t < j);
+        if pos == tails.len() {
+            tails.push(*j);
+            tail_idx.push(k);
+        } else {
+            tails[pos] = *j;
+            tail_idx[pos] = k;
+        }
+        prev[k] = if pos > 0 {
+            Some(tail_idx[pos - 1])
+        } else {
+            None
+        };
+    }
+    let mut keep = vec![false; greedy.len()];
+    let mut cur = tail_idx.last().copied();
+    while let Some(k) = cur {
+        keep[k] = true;
+        cur = prev[k];
+    }
+    let pairs = greedy
+        .iter()
+        .zip(&keep)
+        .filter(|(_, k)| **k)
+        .map(|((i, j), _)| (*i, *j, "model"))
+        .collect();
+    let dropped = greedy
+        .iter()
+        .zip(&keep)
+        .filter(|(_, k)| !**k)
+        .map(|((i, j), _)| (*i, *j))
+        .collect();
+    (pairs, dropped)
 }
 
 fn add_counts(total: &mut PairCounts, add: &PairCounts) {
@@ -894,10 +980,15 @@ fn gap_parts(
 fn origin_label(kind: Option<DynamicKind>, origin: Option<&OriginSummary>) -> Option<String> {
     match kind? {
         DynamicKind::Runtime => Some(match origin {
-            Some(o) if o.ambiguous => {
-                format!("obter em runtime (origem: {}, ambíguo)", o.request_id)
+            Some(o) => {
+                let word = if o.confidence == Some(Confidence::Possible) {
+                    "origem possível"
+                } else {
+                    "origem"
+                };
+                let amb = if o.ambiguous { ", ambíguo" } else { "" };
+                format!("obter em runtime ({word}: {}{amb})", o.request_id)
             }
-            Some(o) => format!("obter em runtime (origem: {})", o.request_id),
             None => "obter em runtime".to_string(),
         }),
         DynamicKind::NoOrigin => Some("dinâmico sem origem".to_string()),

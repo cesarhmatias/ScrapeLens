@@ -50,42 +50,42 @@ pub fn to_curl_with_origins(
 
     let verification = request.request_headers.verification();
     let mut text = String::new();
-    text.push_str(&format!(
-        "# ScrapeLens — export cURL da requisição {}\n",
+    text.push_str(&super::comment(&format!(
+        "ScrapeLens — export cURL da requisição {}",
         request.id
-    ));
+    )));
     text.push_str(
         "# NÃO reproduz TLS nem fingerprint do navegador (JA3/JA4, frames, HPACK); apenas a requisição HTTP.\n",
     );
-    text.push_str(&format!(
-        "# protocolo capturado: {} · verificação dos headers: {}\n",
+    text.push_str(&super::comment(&format!(
+        "protocolo capturado: {} · verificação dos headers: {}",
         request.protocol.as_str(),
         verification.as_str()
-    ));
+    )));
     if verification == Verification::Unverified {
         text.push_str(
             "# ATENÇÃO: sequência de headers NÃO verificada; trate como não confiável.\n",
         );
     }
     if !output.skipped_headers.is_empty() {
-        text.push_str(&format!(
-            "# {} header(s)/campo(s) não replicado(s):\n",
+        text.push_str(&super::comment(&format!(
+            "{} header(s)/campo(s) não replicado(s):",
             output.skipped_headers.len()
-        ));
+        )));
         for skipped in &output.skipped_headers {
-            text.push_str(&format!("#   - {skipped}\n"));
+            text.push_str(&super::comment(&format!("  - {skipped}")));
         }
     }
     if let Some(note) = &output.body_note {
-        text.push_str(&format!("# corpo: {note}\n"));
+        text.push_str(&super::comment(&format!("corpo: {note}")));
     }
     if let Some(origins) = origins {
         for line in super::runtime_origin_notes(origins) {
-            text.push_str(&format!("# {line}\n"));
+            text.push_str(&super::comment(&line));
         }
     }
     if let Some(note) = super::redirect_url_note(request) {
-        text.push_str(&format!("# ATENÇÃO: {note}\n"));
+        text.push_str(&super::comment(&format!("ATENÇÃO: {note}")));
     }
     text.push_str("# Contém credenciais/cookies se a sessão não foi sanitizada.\n");
 

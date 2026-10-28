@@ -69,39 +69,39 @@ pub fn to_python_with_origins(
     let verification = request.request_headers.verification();
     let mut text = String::new();
     text.push_str("# -*- coding: utf-8 -*-\n");
-    text.push_str(&format!(
-        "# ScrapeLens — export Python (http.client) da requisição {}\n",
+    text.push_str(&super::comment(&format!(
+        "ScrapeLens — export Python (http.client) da requisição {}",
         request.id
-    ));
+    )));
     text.push_str(
         "# NÃO reproduz TLS nem fingerprint do navegador (JA3/JA4, frames, HPACK); apenas a requisição HTTP.\n",
     );
     text.push_str(
         "# Preserva ordem e duplicatas de headers; pseudoheaders HTTP/2 não existem em HTTP/1.1.\n",
     );
-    text.push_str(&format!(
-        "# protocolo capturado: {} · verificação dos headers: {}\n",
+    text.push_str(&super::comment(&format!(
+        "protocolo capturado: {} · verificação dos headers: {}",
         request.protocol.as_str(),
         verification.as_str()
-    ));
+    )));
     if verification == Verification::Unverified {
         text.push_str("# ATENÇÃO: sequência de headers NÃO verificada.\n");
     }
     if !output.skipped_headers.is_empty() {
         for skipped in &output.skipped_headers {
-            text.push_str(&format!("# não replicado: {skipped}\n"));
+            text.push_str(&super::comment(&format!("não replicado: {skipped}")));
         }
     }
     if let Some(note) = &output.body_note {
-        text.push_str(&format!("# corpo: {note}\n"));
+        text.push_str(&super::comment(&format!("corpo: {note}")));
     }
     if let Some(origins) = origins {
         for line in super::runtime_origin_notes(origins) {
-            text.push_str(&format!("# {line}\n"));
+            text.push_str(&super::comment(&line));
         }
     }
     if let Some(note) = super::redirect_url_note(request) {
-        text.push_str(&format!("# ATENÇÃO: {note}\n"));
+        text.push_str(&super::comment(&format!("ATENÇÃO: {note}")));
     }
     text.push_str("# Contém credenciais/cookies se a sessão não foi sanitizada.\n\n");
     text.push_str("import http.client\n");
