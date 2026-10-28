@@ -47,14 +47,14 @@ Ferramentas usadas: rustc 1.98.1, Node 26.8.1, macOS 26.5.2 (arm64).
 | Executável | `ScrapeLens.app/Contents/MacOS/scrapelens` |
 | Arquitetura | `Mach-O 64-bit executable arm64`, thin (sem universal binary) |
 | Tamanho do bundle | 14.380 KiB (~14,1 MiB, `du -sk`) |
-| Tamanho do executável | 13.969.728 bytes |
-| SHA-256 do executável | `5934556ce0f1cda5e425d11fc5c6504952b86168827d2e4f0a297138029eaad2` |
+| Tamanho do executável | 13.968.432 bytes |
+| SHA-256 do executável | `9c04b98b30b3d6451ee53fa5eee589aaba0cd4e5d3185894e39facb0335bdbe5` |
 | Identificador | `app.scrapelens.desktop` |
 | Assinatura | ad-hoc (`flags=0x2(adhoc)`, `TeamIdentifier=not set`) |
 | `codesign --verify --deep --strict` | exit 0 (valid on disk, satisfaz o Designated Requirement) |
 | `spctl -a` | rejeitado — esperado: sem Developer ID e sem notarização |
 
-Rebuild com validação de todos os ancestrais do destino (F1/F2): o hash acima é deste build. O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
+Rebuild de 0d4dbab (`fix(app)`: adapter tolera campos omitidos que o core aceita via serde default; teste `npm run test:adapter` com a fixture mínima; 15+1 ignorado Tauri, 16/16 regressões tests/exportacao). Hash anterior `5934556c…` (16015a1) substituído. Antes: rebuild com validação de todos os ancestrais do destino (F1/F2): o hash acima é deste build. O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
 produz um binário byte-diferente (o linker assina antes do bundle), por isso o
 hash identifica este artefato, não a saída de qualquer build. O build anterior
 desta mesma rodada, sem o ajuste `3a3c676`, tinha
