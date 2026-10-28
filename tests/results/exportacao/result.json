@@ -18,10 +18,18 @@
     "passed": 91,
     "ignored": 1
   },
-  "nativeSaveDialog": "not tested; previous known blocker not retried",
-  "clipboard": "not tested independently in native bundle; simulated in App harness",
+  "nativeSaveDialog": "approved: native proof by leader, file verification by Testes",
+  "clipboard": "approved: native proof by leader (pbpaste UTF-8 identical)",
   "preexistingModifiedFile": {
     "path": "tests/results/app-latest/testserver/app-20261027/h1.jsonl",
     "sha256": "9e383c2161252fa76fc807551e2f6028fa669788101c580971bd54dfe6474eed"
-  }
+  },
+  "finalBundleExecutableSha256": "9c04b98b30b3d6451ee53fa5eee589aaba0cd4e5d3185894e39facb0335bdbe5",
+  "finalHead": "b226f9b",
+  "regressions": {
+    "passed": 16,
+    "failed": 0
+  },
+  "sanitizedReopen": "approved",
+  "verifyManual": "approved ignoring only .DS_Store"
 }

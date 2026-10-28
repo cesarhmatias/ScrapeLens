@@ -9,7 +9,10 @@ ROOT=Path(__file__).resolve().parents[2]
 BASE=ROOT/'tests/.work/exportacao-manual'
 SOURCE=BASE/'source'
 expected=json.loads((BASE/'source-manifest.json').read_text())
-actual={str(p.relative_to(SOURCE)):hashlib.sha256(p.read_bytes()).hexdigest() for p in SOURCE.rglob('*') if p.is_file()}
+# Único arquivo ignorado: '.DS_Store' (metadado do Finder criado ao navegar na pasta;
+# o app nunca grava na origem). Qualquer outro arquivo novo/alterado/ausente reprova.
+IGNORED_FINDER_METADATA = {'.DS_Store'}
+actual={str(p.relative_to(SOURCE)):hashlib.sha256(p.read_bytes()).hexdigest() for p in SOURCE.rglob('*') if p.is_file() and p.name not in IGNORED_FINDER_METADATA}
 assert actual==expected, 'Origem foi alterada'
 for ext in ('sh','py'):
     file=BASE/f'native.{ext}'
