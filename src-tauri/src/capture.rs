@@ -27,7 +27,7 @@ use serde_json::{json, Value};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
-use scrapelens_core::{correlate::CorrelationOptions, import_capture, store};
+use scrapelens_core::{correlate::CorrelationOptions, import_capture_with_bodies, store};
 
 use crate::commands::SessionPayload;
 
@@ -206,8 +206,15 @@ fn run_inner(
         return Err("O Chrome gravou um NetLog vazio; a captura não pode ser verificada. A sessão não foi criada.".to_string());
     }
 
-    let mut imported = import_capture(&cdp_bytes, &netlog, CorrelationOptions::default())
-        .map_err(|error| format!("O core não conseguiu importar a captura: {error}"))?;
+    // Sem o arquivo de corpos (falha de gravação), o core avisa uma vez por sessão.
+    let bodies_bytes = std::fs::read(&bodies_path).ok();
+    let mut imported = import_capture_with_bodies(
+        &cdp_bytes,
+        &netlog,
+        bodies_bytes.as_deref(),
+        CorrelationOptions::default(),
+    )
+    .map_err(|error| format!("O core não conseguiu importar a captura: {error}"))?;
     // Metadados da captura são do pipeline, não do parser: o core monta o
     // documento a partir do CDP e não sabe que este fluxo também gravou NetLog.
     match imported.bundle.session.session.capture.as_mut() {
