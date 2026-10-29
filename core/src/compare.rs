@@ -359,7 +359,10 @@ fn entries(ctx: &FlowContext<'_>) -> Vec<Entry> {
         let mut names: Vec<String> = ctx
             .consumed_for(pos)
             .iter()
-            .filter(|c| matches!(c.scope, ConsumedScope::Query | ConsumedScope::Body))
+            // partes de adaptador não entram no modelo: o alinhamento é o mesmo com ou sem adaptador
+            .filter(|c| {
+                matches!(c.scope, ConsumedScope::Query | ConsumedScope::Body) && c.part_of.is_none()
+            })
             .map(|c| format!("{:?}:{}", c.scope, c.field))
             .collect();
         names.sort();

@@ -320,3 +320,19 @@ fn html_textarea_with_entities_maps_offsets_to_the_original_html() {
         value_origins(&b.session, &b, &logical(&b, "2.1"), &FlowOptions::default()).unwrap();
     assert!(!plain.values.iter().any(|v| v.field.starts_with("XML.")));
 }
+
+#[test]
+fn adapter_does_not_change_request_alignment() {
+    // B não tem a placa: com adaptador, os nomes `XML.*` não podem mudar o modelo/pareamento.
+    let a = flow("D3LTA-0001", "ABC1D23");
+    let b = flow("D3LTA-0002", "Q");
+    let plain = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
+    let options = CompareOptions {
+        flow: registry(),
+        ..CompareOptions::default()
+    };
+    let with = compare_sessions(&a.session, &a, &b.session, &b, &options);
+    assert_eq!(plain.pairs.len(), with.pairs.len());
+    assert_eq!(plain.ambiguities, with.ambiguities);
+    assert_eq!(plain.only_in_a.len(), with.only_in_a.len());
+}
