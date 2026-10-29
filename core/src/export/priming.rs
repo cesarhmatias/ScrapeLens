@@ -2667,8 +2667,8 @@ pub fn to_python(
                             &origins,
                             opts,
                             &content_type,
-                            &k,
-                            &v,
+                            k,
+                            v,
                             &pairs,
                         ) {
                             Some(expr) => expr,
