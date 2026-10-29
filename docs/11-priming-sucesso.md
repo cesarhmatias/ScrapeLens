@@ -137,3 +137,29 @@ Veredito: parcial, com 1 falha alta.
   proteção.
 - App: `blocked?` não é "falha da aplicação". A contagem e o filtro ficam
   separados ("falhas da aplicação" × "possíveis bloqueios").
+
+## Re-revisão da rodada 7 (2026-10-29) — decisões
+
+Redirect, origins, ReDoS, erro no terminal, F5, /TSPD/ e regras estritas foram
+aprovados. Restam 2 falhas altas.
+- Headers: o gerador reutiliza `is_sensitive_header` da sanitização, mais os
+  nomes com key, token, csrf, xsrf, session, sess, jwt, secret, auth,
+  signature, user e device. Um header desses nunca sai literal: se tem
+  origem, é extraído em runtime (CSRF/XSRF); senão, vira parâmetro
+  obrigatório sem padrão; o resto é omitido com nota. O Referer é montado
+  em runtime com a URL real do passo anterior correspondente (mesmo
+  origin+caminho); sem correspondência, é omitido. Nunca sai a query
+  capturada.
+- Corpo não-form: JSON é decomposto em campos e recebe o mesmo tratamento do
+  form (extração, parâmetros, constantes, sensíveis). Outros tipos
+  (texto/XML/binário) são recusados por padrão; `--allow-literal-body`
+  inclui o corpo, mas os valores detectados como sensíveis/de negócio viram
+  parâmetros obrigatórios, e o script avisa que o resto foi congelado.
+- IDs dinâmicos nunca são constante estrutural: JWT (`eyJ…`), ULID/KSUID,
+  datas ISO/timestamps, números de 5+ dígitos, alfanuméricos de 6+ com
+  letras e dígitos misturados, e nomes que contêm sess/token/key/sid.
+  Valores curtos de navegação (ex.: `op=S37`) continuam permitidos.
+- Regras do assess: marcador vazio recusado; `blockedStatuses` só 4xx/5xx.
+- Script: `S.trust_env = False` por padrão (sem proxy/.netrc do ambiente);
+  `--usar-proxy-do-ambiente` habilita. Aviso quando o Python é < 3.13
+  (HTMLParser com casos quadráticos conhecidos).
