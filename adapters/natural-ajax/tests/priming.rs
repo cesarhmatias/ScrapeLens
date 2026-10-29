@@ -532,3 +532,23 @@ fn abbreviated_sensitive_names_are_required_with_and_without_adapter() {
         );
     }
 }
+
+#[test]
+fn delta_without_origin_is_a_required_parameter_when_the_server_echoes_state() {
+    // hid2: a resposta anterior traz um delta; o novo não tem origem observada
+    // nem prova de constância: parâmetro obrigatório, nunca literal.
+    let (lazy, target) = same_round_session();
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    let out = to_python(&lazy.session, &source, &target, &options()).expect("gera");
+    assert!(out.text.contains("('xml_delta', None,"), "{}", out.text);
+    assert!(!out.text.contains("DLTA0006new"), "delta capturado vazou");
+    assert!(
+        out.text.contains("('delta', 'D', P['xml_delta'])"),
+        "{}",
+        out.text
+    );
+    assert!(out
+        .text
+        .contains("XML.delta: sem origem observada; informe o valor da resposta anterior"));
+    python_ast_ok(&out.text);
+}

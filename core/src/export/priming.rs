@@ -461,6 +461,66 @@ fn adapter_chain_expr(
     None
 }
 
+/// O mesmo delta aparece em outro passo do plano? Então é constante do
+/// protocolo (ex.: delta de `init`), não eco do servidor.
+fn delta_repeated_in_plan(
+    gen: &Gen,
+    request: &LogicalRequest,
+    adapter: &dyn crate::adapter::ProtocolAdapter,
+    field: &str,
+    value: &str,
+) -> bool {
+    use crate::adapter::PartRole;
+    gen.steps.iter().filter(|id| **id != request.id).any(|rid| {
+        let Some(other) = gen.session.find_request(rid) else {
+            return false;
+        };
+        let Some(attachment) = other.request_body.attachment.as_deref() else {
+            return false;
+        };
+        let Some(loaded) = gen.source.load(attachment) else {
+            return false;
+        };
+        let text = String::from_utf8_lossy(&loaded.bytes).into_owned();
+        form_pairs(&text).iter().any(|(k, v)| {
+            k == field
+                && adapter.decode(v).is_ok_and(|d| {
+                    d.parts
+                        .iter()
+                        .any(|p| p.role == PartRole::Delta && p.value == value)
+                })
+        })
+    })
+}
+
+/// Algum passo anterior do plano devolveu um campo do adaptador com delta?
+/// Então o delta enviado agora é eco do estado do servidor (não constante).
+fn earlier_response_has_delta(
+    gen: &Gen,
+    request: &LogicalRequest,
+    adapter: &dyn crate::adapter::ProtocolAdapter,
+    field: &str,
+) -> bool {
+    use crate::adapter::PartRole;
+    let Some(pos) = gen.steps.iter().position(|id| id == &request.id) else {
+        return false;
+    };
+    gen.steps[..pos].iter().any(|rid| {
+        let Some(producer) = gen.session.find_request(rid) else {
+            return false;
+        };
+        let Some(text) = response_text(producer, gen.source) else {
+            return false;
+        };
+        html_controls(&text).iter().any(|control| {
+            control.name == field
+                && adapter
+                    .decode(&control.value)
+                    .is_ok_and(|d| d.parts.iter().any(|p| p.role == PartRole::Delta))
+        })
+    })
+}
+
 /// Campo reivindicado por um adaptador de protocolo: o script monta as partes
 /// (constantes + extraídas + parâmetros) e chama o codificador Python do
 /// adaptador, que recalcula todos os prefixos. `None` = não reivindicado.
@@ -595,6 +655,29 @@ fn adapter_field_expr(
                             &part.value,
                         ) {
                             Some(expr) => expr,
+                            // Delta (ou valor com cara de identificador) sem
+                            // origem e sem prova de constância: regra F1,
+                            // parâmetro obrigatório.
+                            None if matches!(part.role, PartRole::Delta)
+                                && earlier_response_has_delta(
+                                    gen,
+                                    request,
+                                    adapter.as_ref(),
+                                    name,
+                                )
+                                && !delta_repeated_in_plan(
+                                    gen,
+                                    request,
+                                    adapter.as_ref(),
+                                    name,
+                                    &part.value,
+                                ) =>
+                            {
+                                gen.notes.push(format!(
+                                    "{full}: sem origem observada; informe o valor da resposta anterior"
+                                ));
+                                gen.fallback_param(&full, &part.value, false, false, false)
+                            }
                             None => pieces_expr(scrub_literal(&part.value, &mut gen.params)),
                         },
                     }
