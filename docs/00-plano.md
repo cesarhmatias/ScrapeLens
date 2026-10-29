@@ -26,7 +26,10 @@ scraping. Especificação completa:
 - Rodada 6 (docs/10), fidelidade ao caso real DETRAN-PB: APROVADA (7a11441).
   O caso é identificável e analisável nos 3 HARs reais do usuário.
 - Rodada 7 (docs/11), script de priming e sucesso da aplicação × HTTP:
-  APROVADA (1bdd8b9), com acabamento de detectores em curso. Nos 3 HARs reais: 11 passos na ordem
+  APROVADA (1bdd8b9); acabamento dos detectores em 6a85676.
+- Pacote final: bundle 6e301e70… (c5d1f61), aceite final verde
+  (tests/RELATORIO-FINAL.md, 4b16b0e), entrega em docs/06-entrega.md.
+  Pendente: teste manual do .app com o seletor nativo (usuário). Nos 3 HARs reais: 11 passos na ordem
   do fluxo manual, só placa e sufixo do SESSIONID como parâmetros, 0 valores
   capturados no código; prova no detran-sim nos 4 modos.
 - Aceite automatizado: 10/10 critérios (283 checks em 229b623).

@@ -131,3 +131,41 @@ a importação. Testes verificou as novas sessões antes de aprovar (77c32a7):
 
 Bateria consolidada reexecutada: 282/282 (critério 9: 118/118). Captura e build
 não foram repetidos nessa última passada. O hash do bundle permaneceu o mesmo.
+
+## Entrega das rodadas 4 a 7 (2026-10-29)
+
+Pacote: `src-tauri/target/release/bundle/macos/ScrapeLens.app`, compilado no
+HEAD 4b16b0e (commit de build c5d1f61), assinado ad-hoc
+(`codesign --verify --deep --strict` OK), SHA-256 do executável
+`6e301e70161c314c4475923a91182edd26bcf009ec2a5f3ddd90106b6e91cce9`. Nada foi
+publicado.
+
+Funcionalidades novas:
+- Rodada 4 (docs/08): corpos CDP gravados ao vivo, com estado explícito e
+  `transformed`; busca em 6 escopos com visão decodificada e intervalo exato;
+  sanitização por propagação de valor.
+- Rodada 5 (docs/09): origem dos valores com tipo e força da evidência,
+  cadeia de priming e comparação entre capturas por campo.
+- Rodada 6 (docs/10): fidelidade ao caso real DETRAN-PB (controles HTML,
+  rodadas, páginas de contexto, frames auxiliares, campos de negócio).
+- Rodada 7 (docs/11): script de priming Python (extração em runtime, sem
+  valores capturados nem PII, sem redirect cross-origin, parada no passo
+  ruim) e veredito de sucesso da aplicação × HTTP.
+
+Aceite: `tests/RELATORIO-FINAL.md` (4b16b0e). 10/10 critérios com captura ao
+vivo nova (critério 9), todas as baterias verdes, cargo test core 250 e
+src-tauri 42. Nos 3 HARs reais do usuário (agregado): STAMP e delta 100%,
+script com 11 passos na ordem do fluxo manual, só placa e sufixo do SESSIONID
+como parâmetros e 0 placas após sanitize. Cada rodada foi aprovada por revisão
+independente.
+
+Limites conhecidos: o script não recalcula os prefixos de comprimento do
+Natural for Ajax (avisa); PII em texto livre sem formato (nome, endereço,
+e-mail ofuscado, data) não é detectada em query/header/caminho; o
+`--allow-literal-body` congela o resto do corpo (avisado); HAR do DevTools
+não traz cookies (avisado).
+
+Pendente com o usuário: teste do `.app` real com o seletor nativo de pastas
+(não automatizável). As sessões sintéticas já importadas estão em
+`tests/.work/teste-manual-final/` (fora do git): `1-detran-uma-rodada`,
+`2-detran-duas-rodadas` e `3-detran-bloqueio`.
