@@ -114,3 +114,21 @@ Outros:
   script a chama NA GERAÇÃO e grava a constante, sem cálculo em runtime nem
   `hashlib`. O validate recalcula e avisa "plano não confere". As mensagens
   anteriores com definições diferentes ficam sem efeito.
+
+## Re-revisão da rodada 9 (2026-10-29)
+
+APROVADA COM RESSALVAS (2f5702b), sem falha crítica nem alta. Ajustes finais
+decididos pelo líder:
+- M1: `plan.hash` que não confere passa a dar `diverges`, motivo "plano
+  diferente do gerado a partir desta captura", e não só aviso. Para não
+  punir o usuário que sobrescreve um parâmetro opcional, o hash usa só
+  `plan.parameters`: os nomes dos parâmetros OBRIGATÓRIOS do plano, gravados
+  pelo gerador. O `parameters` de topo continua com todos os usados, para a
+  classificação "parâmetro do usuário".
+- L2: um trace sem `plan` gera o aviso "plano ausente: execução não
+  verificada contra o plano".
+- L4: o app limpa as pastas temporárias de validação antigas na
+  inicialização (confirmar pelo código e por teste).
+Residuais aceitos: M2 (constante curta numa captura de uma rodada é
+indistinguível de parâmetro) e L1 (map_origin automático para outro serviço
+em loopback, com aviso e mapeamento citado no resumo).
