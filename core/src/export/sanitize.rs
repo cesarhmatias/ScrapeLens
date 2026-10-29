@@ -970,10 +970,31 @@ impl BusinessKind {
                     && b[4].is_ascii_alphanumeric()
                     && b[5].is_ascii_digit()
                     && b[6].is_ascii_digit();
-                ok.then_some(7)
+                // formato antigo com hífen: ABC-1234
+                let dashed = b.len() >= 8
+                    && b[..3].iter().all(u8::is_ascii_alphabetic)
+                    && b[3] == b'-'
+                    && b[4..8].iter().all(u8::is_ascii_digit);
+                if dashed {
+                    Some(8)
+                } else {
+                    ok.then_some(7)
+                }
             }
-            BusinessKind::Cpf => (digits == 11).then_some(11),
-            BusinessKind::Cnpj => (digits == 14).then_some(14),
+            BusinessKind::Cpf => {
+                if shaped(b, b"ddd.ddd.ddd-dd") {
+                    Some(14)
+                } else {
+                    (digits == 11).then_some(11)
+                }
+            }
+            BusinessKind::Cnpj => {
+                if shaped(b, b"dd.ddd.ddd/dddd-dd") {
+                    Some(18)
+                } else {
+                    (digits == 14).then_some(14)
+                }
+            }
             BusinessKind::Renavam => (9..=11).contains(&digits).then_some(digits),
             BusinessKind::Chassi => {
                 let ok = b.len() >= 17
@@ -988,13 +1009,32 @@ impl BusinessKind {
     }
 }
 
+/// `b` começa com o molde (`d` = dígito, outros = literal).
+fn shaped(b: &[u8], pattern: &[u8]) -> bool {
+    b.len() >= pattern.len()
+        && pattern.iter().zip(b).all(|(p, c)| {
+            if *p == b'd' {
+                c.is_ascii_digit()
+            } else {
+                p == c
+            }
+        })
+}
+
 /// O nome do campo é (ou termina em) um campo de negócio configurado.
 fn is_business_key(name: &str, fields: &[String]) -> bool {
     let lower = name.trim().to_ascii_lowercase();
     !lower.is_empty()
         && fields.iter().any(|field| {
             let field = field.to_ascii_lowercase();
-            !field.is_empty() && (lower == field || lower.ends_with(&field))
+            if field.is_empty() {
+                return false;
+            }
+            // nome exato, ou sufixo depois de separador (`v_placa`, `x-cpf`)
+            lower == field
+                || lower
+                    .strip_suffix(field.as_str())
+                    .is_some_and(|head| head.ends_with(['_', '-', '.']))
         })
 }
 
@@ -1002,6 +1042,29 @@ fn is_business_key(name: &str, fields: &[String]) -> bool {
 /// (início do valor, tamanho, tipo). Nomes colados a uma palavra (letra ou `_`
 /// antes) não são campo. Nome sem valor no formato conta como não casado.
 fn scan_business(text: &str, fields: &[String]) -> (Vec<(usize, usize, BusinessKind)>, usize) {
+    if text.contains('&') {
+        // Entidades no nome (`&#80;laca`): casa no texto decodificado e mapeia
+        // os intervalos de volta ao original.
+        let (decoded, map) = crate::html::decode_entities(text, 0);
+        if decoded != text {
+            let (hits, unmatched) = scan_business_plain(&decoded, fields);
+            let mapped = hits
+                .into_iter()
+                .map(|(start, len, kind)| {
+                    let (a, z) = (map[start], map[start + len]);
+                    (a, z - a, kind)
+                })
+                .collect();
+            return (mapped, unmatched);
+        }
+    }
+    scan_business_plain(text, fields)
+}
+
+fn scan_business_plain(
+    text: &str,
+    fields: &[String],
+) -> (Vec<(usize, usize, BusinessKind)>, usize) {
     let lower = text.to_ascii_lowercase();
     let mut names: Vec<String> = fields.iter().map(|f| f.to_ascii_lowercase()).collect();
     names.sort_by_key(|n| std::cmp::Reverse(n.len()));

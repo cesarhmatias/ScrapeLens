@@ -1112,3 +1112,37 @@ fn r6_single_producer_is_not_ambiguous_and_buttons_are_not_producers() {
         .iter()
         .all(|e| e.strength != Strength::Strong));
 }
+
+#[test]
+fn r6_business_names_are_exact_or_separated_and_formats_and_entities_are_covered() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/a",
+        "POST",
+        R {
+            body: Some(
+                "XML=aaaa-placaQWE1234-bbbb-placaABC-1234-cccc-cpf390.533.447-05-dddd-cnpj11.222.333/0001-81-eeee&template=ZZZPLATE99&kevin=KEVINVALUE1&x_cpf=39053344705",
+            ),
+            resp: Some("<p>&#80;lacaTST0T00 e placaTST1T11</p>"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let after = all_text(&sanitize_bundle(&b, &SanitizeOptions::default()).bundle);
+    for leaked in [
+        "QWE1234",
+        "ABC-1234",
+        "390.533.447-05",
+        "11.222.333/0001-81",
+    ] {
+        assert!(!after.contains(leaked), "vazou {leaked}");
+    }
+    assert!(!after.contains("TST0T00"), "vazou via entidade no nome");
+    assert!(!after.contains("TST1T11"));
+    // `template`/`kevin` não são campos de negócio (sufixo sem separador)
+    assert!(after.contains("ZZZPLATE99") && after.contains("KEVINVALUE1"));
+    // sufixo depois de separador continua valendo
+    assert!(!after.contains("39053344705"));
+}
