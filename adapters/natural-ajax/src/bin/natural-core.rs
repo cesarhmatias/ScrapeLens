@@ -121,6 +121,110 @@ fn adapter_roundtrip(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn registry(args: &[String]) -> Result<AdapterRegistry, String> {
+    check_adapter_flag(args)?;
+    if args.iter().any(|a| a == "--adapter") && !args.iter().any(|a| a == "--sem-adaptador") {
+        Ok(AdapterRegistry::new().with(Arc::new(NaturalAjax)))
+    } else {
+        Ok(AdapterRegistry::new())
+    }
+}
+
+/// Argumentos sem `--adapter <id>` e `--sem-adaptador`.
+fn strip_adapter_flags(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--adapter" => {
+                it.next();
+            }
+            "--sem-adaptador" => {}
+            _ => out.push(a.clone()),
+        }
+    }
+    out
+}
+
+fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?
+    );
+    Ok(())
+}
+
+/// `origins`/`chain <sessao> <requestId>` com o adaptador registrado.
+fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
+    use scrapelens_core::flow::{priming_chain, value_origins, FlowOptions};
+    let options = FlowOptions {
+        adapters: registry(args)?,
+        ..FlowOptions::default()
+    };
+    let args = strip_adapter_flags(args);
+    if args.len() != 2 {
+        return Err(format!(
+            "uso: natural-core {command} <sessao> <requestId> [--adapter natural-ajax]"
+        ));
+    }
+    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    if command == "origins" {
+        print_json(
+            &value_origins(&lazy.session, &source, &args[1], &options)
+                .map_err(|e| e.to_string())?,
+        )
+    } else {
+        print_json(
+            &priming_chain(&lazy.session, &source, &args[1], &options)
+                .map_err(|e| e.to_string())?,
+        )
+    }
+}
+
+/// `compare <A> <B> [--all] [--a-range r] [--b-range r]` com o adaptador.
+fn compare_command(args: &[String]) -> Result<(), String> {
+    use scrapelens_core::compare::{compare_sessions, CompareOptions, RequestRange};
+    let mut options = CompareOptions {
+        flow: scrapelens_core::flow::FlowOptions {
+            adapters: registry(args)?,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let args = strip_adapter_flags(args);
+    if args.len() < 2 {
+        return Err("uso: natural-core compare <sessaoA> <sessaoB> [--all] [--a-range r] [--b-range r] [--adapter natural-ajax]".into());
+    }
+    let mut rest = args[2..].iter();
+    while let Some(arg) = rest.next() {
+        let mut range = |name: &str| -> Result<RequestRange, String> {
+            let value = rest
+                .next()
+                .ok_or_else(|| format!("{name} exige um valor"))?;
+            RequestRange::parse(value).ok_or_else(|| format!("{name}: faixa inválida {value:?}"))
+        };
+        match arg.as_str() {
+            "--all" => options.include_all = true,
+            "--a-range" => options.a_range = Some(range("--a-range")?),
+            "--b-range" => options.b_range = Some(range("--b-range")?),
+            other => return Err(format!("argumento desconhecido: {other}")),
+        }
+    }
+    let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
+    let (b, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[1]))
+        .map_err(|e| e.to_string())?;
+    print_json(&compare_sessions(
+        &a.session,
+        &scrapelens_core::search::LazyBodies(&a),
+        &b.session,
+        &scrapelens_core::search::LazyBodies(&b),
+        &options,
+    ))
+}
+
 fn export_priming(args: &[String]) -> Result<(), String> {
     check_adapter_flag(args)?;
     if args.len() < 2 {
@@ -168,6 +272,20 @@ fn export_priming(args: &[String]) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(command @ ("origins" | "chain" | "compare")) = args.first().map(String::as_str) {
+        let result = if command == "compare" {
+            compare_command(&args[1..])
+        } else {
+            flow_command(command, &args[1..])
+        };
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(message) => {
+                eprintln!("erro: {message}");
+                ExitCode::from(1)
+            }
+        };
+    }
     if args.first().map(String::as_str) == Some("adapter-roundtrip") {
         return match adapter_roundtrip(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,

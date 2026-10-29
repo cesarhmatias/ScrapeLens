@@ -157,6 +157,7 @@ name = "scrapelens-natural-ajax"
 version = "0.1.0"
 dependencies = [
  "scrapelens-core",
+ "serde",
  "serde_json",
  "tempfile",
 ]
