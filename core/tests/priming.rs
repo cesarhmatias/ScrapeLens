@@ -112,7 +112,7 @@ fn each_step_checks_its_own_response_before_the_next_request() {
             continue;
         }
         let body = chunk;
-        let request_at = body.find("resp = S.request(").unwrap();
+        let request_at = body.find("resp = send(S,").unwrap();
         let status_at = body
             .find("if not (200 <= resp.status_code < 400):")
             .unwrap();
@@ -903,6 +903,17 @@ fn hostile_names_and_values_stay_inside_literals() {
         "tuple",
         "index",
         "sys",
+        "find",
+        "send",
+        "safe_text",
+        "url_origin",
+        "isprintable",
+        "str",
+        "urlsplit",
+        "urljoin",
+        "lower",
+        "request",
+        "items",
     ];
     for call in &calls {
         assert!(
@@ -950,5 +961,155 @@ fn comments_carry_no_raw_hostile_text() {
             "{line}"
         );
         assert!(!line.contains('\0'));
+    }
+}
+
+/// Driver sem rede: sessão falsa que responde com um redirect e registra o
+/// que foi enviado e para onde.
+const REDIRECT_DRIVER: &str = r#"
+import runpy, sys
+mod = runpy.run_path(sys.argv[1])
+status, location = int(sys.argv[2]), sys.argv[3]
+class Resp:
+    def __init__(self, code, loc=None):
+        self.status_code = code
+        self.headers = {'Location': loc} if loc else {}
+        self.text = ''
+        self.content = b'x'
+class S:
+    cookies = {}
+    def __init__(self):
+        self.sent = []
+    def request(self, method, url, **kw):
+        assert kw.get('allow_redirects') is False, 'allow_redirects precisa ser False'
+        self.sent.append((method, url))
+        if len(self.sent) == 1:
+            return Resp(status, location)
+        return Resp(200)
+s = S()
+try:
+    mod['step_1'](s, {}, {}, 'http://127.0.0.1:9')
+    print('OK', s.sent)
+except SystemExit as exc:
+    print('FAIL', exc, s.sent)
+"#;
+
+#[test]
+fn redirects_never_leave_the_base_origin() {
+    let bundle = header_outside_latin1_bundle();
+    let script = generate(&bundle, "har-0001");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("priming.py");
+    std::fs::write(&path, &script).unwrap();
+    assert!(script.contains("allow_redirects=False"));
+    for status in ["301", "302", "303", "307", "308"] {
+        let out = Command::new("python3")
+            .arg("-I")
+            .args(["-c", REDIRECT_DRIVER])
+            .arg(&path)
+            .args([status, "http://evil.invalid/x"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("FAIL") && stdout.contains("redirect para outro origin"),
+            "{status}: redirect para outro origin deveria falhar: {stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            !stdout.contains("evil.invalid') ]") && stdout.matches("http://").count() <= 2,
+            "{status}: nada pode ser enviado ao outro origin: {stdout}"
+        );
+        assert!(
+            !stdout.contains("('GET', 'http://evil") && !stdout.contains("('POST', 'http://evil"),
+            "{status}: enviou ao outro origin: {stdout}"
+        );
+        let out = Command::new("python3")
+            .arg("-I")
+            .args(["-c", REDIRECT_DRIVER])
+            .arg(&path)
+            .args([status, "/destino"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("OK") && stdout.contains("http://127.0.0.1:9/destino"),
+            "{status}: mesmo origin deveria seguir: {stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn rebase_compares_the_exact_origin() {
+    let bundle = header_outside_latin1_bundle();
+    let script = generate(&bundle, "har-0001");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("priming.py");
+    std::fs::write(&path, &script).unwrap();
+    let driver = r#"
+import runpy, sys
+mod = runpy.run_path(sys.argv[1])
+o = mod['CAPTURED_ORIGIN']
+print(mod['rebase'](o + '.evil.example/x', 'http://127.0.0.1:1'))
+print(mod['rebase'](o + '/x', 'http://127.0.0.1:1'))
+"#;
+    let out = python(&["-c", driver], &path);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines[0].contains(".evil.example") && !lines[0].starts_with("http://127.0.0.1:1"),
+        "{stdout}"
+    );
+    assert_eq!(lines[1], "http://127.0.0.1:1/x");
+}
+
+#[test]
+fn ctx_extract_is_linear_on_hostile_input() {
+    let bundle = header_outside_latin1_bundle();
+    let script = generate(&bundle, "har-0001");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("priming.py");
+    std::fs::write(&path, &script).unwrap();
+    let driver = r#"
+import runpy, sys, time
+mod = runpy.run_path(sys.argv[1])
+for text, before, after in [('Page' * 40000, 'Page', 'ZZ'), ('sId = "' * 40000, 'sId = "', '"X')]:
+    t = time.time()
+    try:
+        mod['ctx_extract'](text, before, after, 'teste')
+    except SystemExit:
+        pass
+    print('%.3f' % (time.time() - t))
+print(mod['ctx_extract']('a[xyz]b', 'a[', ']b', 't'))
+print(mod['safe_text']('a\x1b[31m\u202eb\n'))
+"#;
+    let out = python(&["-c", driver], &path);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    for l in &lines[..2] {
+        assert!(l.parse::<f64>().unwrap() < 1.0, "lento: {stdout}");
+    }
+    assert_eq!(lines[2], "xyz");
+    assert_eq!(lines[3], "a?[31m?b?");
+}
+
+#[test]
+fn foreign_origin_steps_are_refused_unless_allowed() {
+    let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
+    let id = first_placa_request(&bundle);
+    let mut bundle = bundle;
+    // Move o primeiro passo não-alvo para outro host.
+    let mut moved = false;
+    for r in bundle.session.requests.iter_mut() {
+        if !moved && r.id != id && r.url.starts_with("http") && r.url.contains("cscform") {
+            r.url = r.url.replacen("://", "://outro.example.invalid-", 1);
+            moved = true;
+        }
+    }
+    assert!(moved);
+    let err = to_python(&bundle.session, &bundle, &id, &PrimingOptions::default());
+    if let Err(e) = err {
+        assert!(e.to_string().contains("--allow-origin"), "{e}");
     }
 }

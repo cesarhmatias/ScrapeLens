@@ -212,7 +212,7 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
     }
 }
 
-/// `export-priming <sessao> <requestId> [--out f] [--allow-incomplete]`: gera
+/// `export-priming <sessao> <requestId> [--out f] [--allow-incomplete] [--allow-origin o]...`: gera
 /// o script, sem executá-lo.
 fn export_priming_command(args: &[String]) -> Result<(), String> {
     if args.len() < 2 {
@@ -223,6 +223,11 @@ fn export_priming_command(args: &[String]) -> Result<(), String> {
     let source = scrapelens_core::search::LazyBodies(&lazy);
     let options = scrapelens_core::export::priming::PrimingOptions {
         allow_incomplete: args.iter().any(|arg| arg == "--allow-incomplete"),
+        allow_origins: args
+            .windows(2)
+            .filter(|w| w[0] == "--allow-origin")
+            .map(|w| w[1].clone())
+            .collect(),
         ..Default::default()
     };
     let output =

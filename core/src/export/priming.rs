@@ -52,6 +52,9 @@ pub struct PrimingOptions {
     /// Gera o script mesmo quando a cadeia depende de resposta sem corpo
     /// observável, com `fail()` explícito nesses passos.
     pub allow_incomplete: bool,
+    /// Origins (`esquema://host[:porta]`) além do alvo que a cadeia pode
+    /// contatar; sem eles, um passo com outro origin é recusado na geração.
+    pub allow_origins: Vec<String>,
 }
 
 const CONTEXT_BEFORE: usize = 16;
@@ -1414,6 +1417,26 @@ pub fn to_python(
     };
     let (captured_origin, _) = split_origin(&target.url);
     let captured_origin = captured_origin.to_string();
+    let mut foreign: BTreeSet<String> = BTreeSet::new();
+    for (request, _, _) in &step_reqs {
+        let (origin, _) = split_origin(&request.url);
+        if origin != captured_origin
+            && !opts
+                .allow_origins
+                .iter()
+                .any(|a| a.trim_end_matches('/').eq_ignore_ascii_case(origin))
+        {
+            foreign.insert(origin.to_string());
+        }
+    }
+    if !foreign.is_empty() {
+        return Err(CoreError::Export {
+            message: format!(
+                "a cadeia contata origin(s) diferente(s) do alvo ({}); recusado. Passe --allow-origin <esquema://host[:porta]> para cada um que você aceita contatar",
+                foreign.into_iter().collect::<Vec<_>>().join(", ")
+            ),
+        });
+    }
 
     // Com `allow_incomplete`, cada consumidor afetado falha explicitamente em
     // vez de seguir com a cadeia incompleta.
@@ -1660,7 +1683,7 @@ pub fn to_python(
         let _ = writeln!(step_code, "    try:");
         let _ = writeln!(
             step_code,
-            "        resp = S.request({}, url, headers=headers{}, timeout=30)",
+            "        resp = send(S, {}, url, {n}, base, headers=headers{}, timeout=30)",
             lit(&step.method),
             step.data_arg
         );
@@ -1716,6 +1739,15 @@ pub fn to_python(
     text.push_str(&unresolved_comments);
     text.push_str(PRELUDE);
     let _ = writeln!(text, "CAPTURED_ORIGIN = {}", lit(&captured_origin));
+    let _ = writeln!(
+        text,
+        "EXTRA_ORIGINS = [{}]",
+        opts.allow_origins
+            .iter()
+            .map(|o| lit(o.trim_end_matches('/')))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     let _ = writeln!(text, "TARGET = {}", lit(target_request_id));
     let _ = writeln!(
         text,
@@ -1763,8 +1795,15 @@ import sys
 import urllib.parse
 
 
+def safe_text(value):
+    """Texto vindo de resposta: sem ESC, controles nem bidi/invisíveis."""
+    return ''.join(c if (c.isprintable() and c not in '\u200e\u200f\u061c\u2028\u2029'
+                         and not '\u202a' <= c <= '\u202e' and not '\u2066' <= c <= '\u2069'
+                         and c != '\ufeff') else '?' for c in str(value))
+
+
 def fail(message):
-    sys.exit('priming: ' + message)
+    sys.exit('priming: ' + safe_text(message))
 
 
 class _Controls(html.parser.HTMLParser):
@@ -1862,7 +1901,7 @@ def step_error(resp, index):
     value = find_control(resp, 'ERRORMESSAGE', 0)
     if value is not None and value.strip():
         fail('a aplicação respondeu com ERRORMESSAGE no passo %d: %s'
-             % (index, value.strip()[:200]))
+             % (index, safe_text(value.strip()[:200])))
 
 
 def get_cookie(session, name, who):
@@ -1880,11 +1919,21 @@ def get_header(resp, name, who):
 
 
 def ctx_extract(text, before, after, who):
-    pattern = (re.escape(before) if before else r'\A') + '(.+?)' + (re.escape(after) if after else r'\Z')
-    match = re.search(pattern, text, re.S)
-    if not match:
-        fail('não achei o valor pelo contexto (%r ... %r) para %s' % (before, after, who))
-    return match.group(1)
+    start = 0
+    if before:
+        at = text.find(before)
+        if at < 0:
+            fail('não achei o valor pelo contexto (%r ... %r) para %s' % (before, after, who))
+        start = at + len(before)
+    if after:
+        end = text.find(after, start + 1)
+        if end < 0:
+            fail('não achei o valor pelo contexto (%r ... %r) para %s' % (before, after, who))
+    else:
+        end = len(text)
+        if end <= start:
+            fail('não achei o valor pelo contexto (%r ... %r) para %s' % (before, after, who))
+    return text[start:end]
 
 
 def checked(value, size, who):
@@ -1893,10 +1942,43 @@ def checked(value, size, who):
     return value
 
 
+def url_origin(url):
+    parts = urllib.parse.urlsplit(url)
+    return (parts.scheme + '://' + parts.netloc).lower()
+
+
 def rebase(url, base):
-    if base and url.startswith(CAPTURED_ORIGIN):
+    if base and url_origin(url) == CAPTURED_ORIGIN.lower():
         return base.rstrip('/') + url[len(CAPTURED_ORIGIN):]
     return url
+
+
+def send(S, method, url, index, base, **kw):
+    """Envia um passo sem seguir redirects sozinho: só o MESMO origin é seguido."""
+    home = url_origin(base) if base else CAPTURED_ORIGIN.lower()
+    allowed = {home} | {o.lower() for o in EXTRA_ORIGINS}
+    if url_origin(url) not in allowed:
+        fail('passo %d: origin %s fora dos permitidos; nada foi enviado' % (index, url_origin(url)))
+    resp = S.request(method, url, allow_redirects=False, **kw)
+    hops = 0
+    while resp.status_code in (301, 302, 303, 307, 308):
+        location = resp.headers.get('Location')
+        if not location:
+            fail('passo %d: redirect HTTP %d sem Location' % (index, resp.status_code))
+        nxt = urllib.parse.urljoin(url, location)
+        if url_origin(nxt) != url_origin(url):
+            fail('passo %d: redirect para outro origin (%s) recusado' % (index, safe_text(url_origin(nxt))))
+        hops += 1
+        if hops > 5:
+            fail('passo %d: redirects demais' % index)
+        if resp.status_code == 303 or (resp.status_code in (301, 302) and method == 'POST'):
+            method = 'GET'
+            kw = {k: v for k, v in kw.items() if k not in ('data', 'json', 'files')}
+            kw['headers'] = {k: v for k, v in kw.get('headers', {}).items()
+                             if k.lower() not in ('content-type', 'content-length')}
+        url = nxt
+        resp = S.request(method, url, allow_redirects=False, **kw)
+    return resp
 
 "#;
 
