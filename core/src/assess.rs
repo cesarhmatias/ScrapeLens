@@ -15,8 +15,9 @@
 //!
 //! Um marcador de proteção SOZINHO não bloqueia: páginas da aplicação citam
 //! `/TSPD/` num `<script src>`. `blocked?` exige status 403/429, rota de
-//! proteção (configurável), conteúdo de desafio sem a página esperada ou uma
-//! rota que trazia controles e agora vem sem eles.
+//! proteção (configurável), conteúdo de desafio sem a página esperada, uma
+//! rota que trazia controles e agora vem sem eles, ou a página padrão de
+//! rejeição do F5 ASM.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -65,7 +66,8 @@ pub struct MarkerRule {
     pub contains: String,
     #[serde(default)]
     pub signal: Option<String>,
-    /// Como o marcador aparece: citação (URL/script) ou conteúdo do desafio.
+    /// Como o marcador aparece: citação (URL/script), conteúdo do desafio ou
+    /// página de rejeição conhecida.
     #[serde(default)]
     pub kind: MarkerKind,
 }
@@ -81,6 +83,9 @@ pub enum MarkerKind {
     /// Conteúdo do próprio desafio (variável/código da proteção): sem os
     /// controles esperados, é bloqueio.
     Challenge,
+    /// Página de rejeição conhecida (F5 ASM): bloqueia sempre, com ou sem
+    /// controles e sem depender de expectativa aprendida na rota.
+    Rejection,
 }
 
 /// Regras de avaliação. Só dados; `Default` é conservador.
@@ -125,6 +130,15 @@ impl Default for AssessRules {
             protection_markers: vec![
                 marker("/TSPD/", "TSPD", MarkerKind::Reference),
                 marker("_tsChallenge", "TSPD", MarkerKind::Challenge),
+                // Página padrão de bloqueio do F5 ASM; a fixture sintética usa
+                // a forma curta "request rejected" e o título "Request Rejected".
+                marker(
+                    "The requested URL was rejected",
+                    "f5-rejected",
+                    MarkerKind::Rejection,
+                ),
+                marker("Your support ID is", "f5-rejected", MarkerKind::Rejection),
+                marker("Request Rejected", "f5-rejected", MarkerKind::Rejection),
             ],
             protection_paths: vec!["/TSPD/".to_string()],
             blocked_statuses: vec![403, 429],
@@ -512,17 +526,22 @@ pub fn response_outcome_with(
     }
     let marker_hit = parsed.html.then_some(()).and_then(|()| {
         let text = parsed.text.as_deref()?.to_ascii_lowercase();
-        let mut citation = None;
+        // Rejeição conhecida > conteúdo de desafio > citação. Uma página pode
+        // citar /TSPD/ e ainda ser a página de rejeição do F5.
+        let rank = |kind| match kind {
+            MarkerKind::Rejection => 2,
+            MarkerKind::Challenge => 1,
+            MarkerKind::Reference => 0,
+        };
+        let mut best: Option<&MarkerRule> = None;
         for marker in &rules.protection_markers {
-            if text.contains(&marker.contains.to_ascii_lowercase()) {
-                // Conteúdo de desafio é evidência mais forte que uma citação.
-                if marker.kind == MarkerKind::Challenge {
-                    return Some(marker);
-                }
-                citation.get_or_insert(marker);
+            if text.contains(&marker.contains.to_ascii_lowercase())
+                && best.map_or(true, |current| rank(marker.kind) > rank(current.kind))
+            {
+                best = Some(marker);
             }
         }
-        citation
+        best
     });
     let path = path_of(&request.url);
     let protection_path = rules
@@ -530,17 +549,37 @@ pub fn response_outcome_with(
         .iter()
         .any(|p| !p.is_empty() && path.contains(p.as_str()));
     if let Some(marker) = marker_hit {
-        let name = marker
+        // Numa rota de proteção, o sinal dela (ex.: TSPD) tem prioridade sobre
+        // um marcador genérico de rejeição presente no corpo.
+        let mut name = marker
             .signal
             .clone()
             .unwrap_or_else(|| marker.contains.clone());
+        if protection_path {
+            if let Some(route) = rules
+                .protection_markers
+                .iter()
+                .find(|m| path.contains(&m.contains))
+            {
+                name = route
+                    .signal
+                    .clone()
+                    .unwrap_or_else(|| route.contains.clone());
+            }
+        }
         let no_controls = parsed.fields.is_empty();
         let replaces_expected = no_controls && learned.expected(request).is_some();
         let challenge = marker.kind == MarkerKind::Challenge && no_controls;
-        if protection_path || challenge || replaces_expected {
+        let rejection = marker.kind == MarkerKind::Rejection;
+        if protection_path || rejection || challenge || replaces_expected {
             block_signal.get_or_insert_with(|| name.clone());
             let detail = if protection_path {
                 format!("rota de proteção com o marcador {}", marker.contains)
+            } else if rejection {
+                format!(
+                    "página de rejeição conhecida (marcador {})",
+                    marker.contains
+                )
             } else if challenge {
                 format!(
                     "conteúdo de desafio sem a página esperada (marcador {})",

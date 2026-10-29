@@ -65,12 +65,15 @@ fn blocked_har_gets_coherent_verdicts() {
     assert_eq!(outcomes[0].verdict, "blocked? (TSPD)");
     assert_eq!(outcomes[0].verdict_kind, VerdictKind::Blocked);
     assert!(outcomes[0].http_ok);
-    // Connector 200 sem XML/STAMP e sem expectativa aprendida nesta rota:
-    // não é suspeito, é não-avaliado. Os bloqueios explícitos acima e abaixo ficam.
-    assert_eq!(outcomes[1].verdict, "não-avaliado");
-    assert_eq!(outcomes[1].verdict_kind, VerdictKind::NotAssessed);
+    // Connector 200 com a página padrão de rejeição do F5 ASM, sem modelo
+    // aprendido nesta rota: é evidência explícita de bloqueio.
+    assert_eq!(outcomes[1].verdict, "blocked? (f5-rejected)");
+    assert_eq!(outcomes[1].verdict_kind, VerdictKind::Blocked);
     assert!(outcomes[1].http_ok);
-    assert!(outcomes[1].reason.contains("sem sinais"));
+    assert!(outcomes[1]
+        .app_signals
+        .iter()
+        .any(|s| s.detail.contains("rejeição")));
     // 403 explícito.
     assert_eq!(outcomes[2].verdict, "blocked? (http-403)");
     assert_eq!(outcomes[2].verdict_kind, VerdictKind::Blocked);
@@ -193,7 +196,7 @@ fn html_without_controls_replacing_a_known_route_is_blocked_with_question_mark()
             CONN,
             200,
             "text/html",
-            "<html><body>request rejected</body></html>",
+            "<html><body>sem controles</body></html>",
         ),
     ]);
     let o = &run(&bundle, &AssessRules::default())[1];
@@ -436,6 +439,59 @@ fn challenge_marker_wins_over_a_citation_on_the_same_page() {
     let outcome = &run(&bundle, &AssessRules::default())[0];
     assert_eq!(outcome.verdict, "blocked? (TSPD)");
     assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
+}
+
+/// Página padrão de bloqueio do F5 ASM (estrutura real; valores fictícios).
+const F5_REJECTED: &str = "<html><head><title>Request Rejected</title></head><body>\
+The requested URL was rejected. Please consult with your administrator.<br><br>\
+Your support ID is: 1234567890</body></html>";
+
+#[test]
+fn f5_rejection_page_blocks_without_a_learned_route() {
+    // Uma única resposta, rota nunca vista: a página padrão do F5 é evidência
+    // explícita, não `não-avaliado`.
+    let bundle = mini(&[("POST", CONN, 200, "text/html", F5_REJECTED)]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "blocked? (f5-rejected)");
+    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
+    assert!(outcome.http_ok);
+    assert!(outcome
+        .app_signals
+        .iter()
+        .any(|s| s.detail.contains("rejeição")));
+}
+
+#[test]
+fn f5_rejection_variant_with_support_id_blocks() {
+    let body = "<html><body>Your support ID is: 987654321</body></html>";
+    let bundle = mini(&[("POST", CONN, 200, "text/html", body)]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "blocked? (f5-rejected)");
+}
+
+#[test]
+fn f5_rejection_page_blocks_even_with_controls() {
+    // A página é conhecida: não depende de "sem controles" como o desafio.
+    let body = format!("{F5_REJECTED}{}", form("lp1", "1", ""));
+    let bundle = mini(&[("POST", CONN, 200, "text/html", &body)]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "blocked? (f5-rejected)");
+    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
+}
+
+#[test]
+fn f5_text_on_the_protection_route_keeps_the_tspd_signal() {
+    // As páginas /TSPD/ reais trazem "Your support ID is"; a rota de proteção
+    // continua sendo o sinal, não vira `f5-rejected`.
+    let bundle = mini(&[(
+        "GET",
+        "https://app.example.test/TSPD/?type=20",
+        200,
+        "text/html",
+        F5_REJECTED,
+    )]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "blocked? (TSPD)");
 }
 
 #[test]
