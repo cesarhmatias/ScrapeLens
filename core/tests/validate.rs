@@ -484,14 +484,9 @@ fn plan_hash_mismatch_is_a_warning() {
         v.warnings
     );
     let cap = pcap();
-    let h = scrapelens_core::validate::plan_hash(
-        &cap.session,
-        &cap,
-        "har-0004",
-        &Default::default(),
-        &["placa".to_string()],
-    )
-    .unwrap();
+    let h =
+        scrapelens_core::validate::plan_hash(&cap.session, &cap, "har-0004", &Default::default())
+            .unwrap();
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
