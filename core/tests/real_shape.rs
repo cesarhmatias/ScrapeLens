@@ -1270,10 +1270,10 @@ fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() 
 // ---- Rodada 7: cadeia na rodada do consumidor e scripts fora dos passos -----------------------
 
 /// Um valor constante do protocolo (STAMP=INIT) tem produtores em todas as rodadas.
-/// A cadeia usa o produtor observado mais recente antes do consumidor (produced ou
-/// reissued); a rodada anterior não entra por causa dele.
+/// A cadeia usa o produtor da própria rodada do consumidor (produced ou reissued);
+/// a rodada anterior não entra por causa dele.
 #[test]
-fn r7_chain_uses_the_most_recent_producer_before_the_consumer() {
+fn r7_chain_uses_the_producer_of_the_targets_round() {
     let mut s = S::default();
     for (base, prefix) in [(1.0, "1"), (5.0, "2")] {
         let id = |k: usize| format!("{prefix}.{k}");
@@ -1486,4 +1486,154 @@ fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
             .collect(),
         "pages só da rodada do alvo"
     );
+}
+
+/// F3: dentro da rodada, uma constante reemitida por várias páginas (STAMP=INIT)
+/// não repete cada reemissão. O passo é o primeiro produtor da rodada; a página
+/// que só reemite o mesmo valor fica em `pages` (contexto), não em `steps`.
+#[test]
+fn r7_chain_does_not_repeat_reissued_constants() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/entry",
+        "GET",
+        R {
+            resp: Some("<html>entrada</html>"),
+            ..Default::default()
+        },
+    );
+    // Primeiro produtor de STAMP=INIT na rodada.
+    s.req(
+        "1.2",
+        1.1,
+        "https://x.test/app/form1.html",
+        "GET",
+        R {
+            headers: Some(json!({"referer": "https://x.test/app/entry"})),
+            resp: Some("<html><input type=hidden name=STAMP value=INIT></html>"),
+            ..Default::default()
+        },
+    );
+    // POST que também devolve um valor de negócio consumido pelo alvo.
+    s.req(
+        "1.3",
+        1.2,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            headers: Some(json!({"referer": "https://x.test/app/form1.html"})),
+            body: Some("XML=init&STAMP=INIT"),
+            resp: Some("<html><input type=hidden name=placa value=TOKEN987654321></html>"),
+            ..Default::default()
+        },
+    );
+    // Segunda página só reemite a mesma constante.
+    s.req(
+        "1.4",
+        1.3,
+        "https://x.test/app/form2.html",
+        "GET",
+        R {
+            headers: Some(json!({"referer": "https://x.test/app/entry"})),
+            resp: Some("<html><input type=hidden name=STAMP value=INIT></html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.5",
+        1.4,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            headers: Some(json!({"referer": "https://x.test/app/form2.html"})),
+            body: Some("XML=cmd&STAMP=INIT&placa=TOKEN987654321"),
+            resp: Some("<html>ok</html>"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let chain = priming_chain(&b.session, &b, &lid(&b, "1.5"), &FlowOptions::default()).unwrap();
+    let steps: Vec<String> = chain.steps.iter().map(|s| s.request_id.clone()).collect();
+    assert_eq!(
+        steps,
+        vec![lid(&b, "1.2"), lid(&b, "1.3")],
+        "só o primeiro produtor da constante e o produtor do token"
+    );
+    let pages: Vec<String> = chain.pages.iter().map(|p| p.request_id.clone()).collect();
+    assert!(
+        pages.contains(&lid(&b, "1.4")),
+        "a página que só reemite fica como contexto: {pages:?}"
+    );
+    // As origens continuam listando todos os produtores da constante.
+    let o = origins(&b, "1.5");
+    let st = entry(&o, "STAMP");
+    let reissued: Vec<&str> = st
+        .evidences
+        .iter()
+        .filter(|e| e.role == Role::Reissued)
+        .map(|e| e.request_id.as_str())
+        .collect();
+    assert_eq!(reissued, vec![lid(&b, "1.4")], "{:?}", st.evidences);
+}
+
+/// Exceção da rodada: um valor FORTE cujo único produtor ficou na rodada anterior
+/// (cookie definido uma única vez) entra na cadeia. Fragmentos médios de XML não
+/// justificam subir (ver o teste da constante reemitida).
+#[test]
+fn r7_chain_climbs_to_a_one_time_cookie_from_the_previous_round() {
+    let mk = |started: &str,
+              method: &str,
+              url: &str,
+              req_headers: Value,
+              req_cookies: Value,
+              resp_headers: Value,
+              text: &str| {
+        json!({
+            "startedDateTime": started, "time": 1,
+            "request": {"method": method, "url": url, "httpVersion": "HTTP/1.1",
+                "headers": req_headers, "queryString": [], "cookies": req_cookies,
+                "headersSize": -1, "bodySize": 0},
+            "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.1",
+                "headers": resp_headers, "cookies": [],
+                "content": {"size": text.len(), "mimeType": "text/html", "text": text},
+                "redirectURL": "", "headersSize": -1, "bodySize": text.len()},
+            "cache": {}, "timings": {"send": 0, "wait": 1, "receive": 0}
+        })
+    };
+    let html = json!([{"name": "content-type", "value": "text/html"}]);
+    let with_cookie = json!([
+        {"name": "content-type", "value": "text/html"},
+        {"name": "set-cookie", "value": "ONCE=abc12345; Path=/"}
+    ]);
+    let bytes = serde_json::to_vec(&json!({"log": {"version": "1.2",
+    "creator": {"name": "WebInspector", "version": "537.36"},
+    "entries": [
+        mk("2026-10-26T20:00:00.000Z", "GET", "https://x.test/app/entry",
+            json!([]), json!([]), with_cookie, "<html>entrada</html>"),
+        // 2ª rodada: mesmo documento de entrada, sem reemitir o cookie.
+        mk("2026-10-26T20:00:05.000Z", "GET", "https://x.test/app/entry",
+            json!([]), json!([]), html.clone(), "<html>entrada 2</html>"),
+        mk("2026-10-26T20:00:06.000Z", "POST", "https://x.test/app/Connector",
+            json!([{"name": "Cookie", "value": "ONCE=abc12345"}]),
+            json!([{"name": "ONCE", "value": "abc12345"}]),
+            html, "<html>ok</html>"),
+    ]}}))
+    .unwrap();
+    let b = scrapelens_core::import_har(&bytes)
+        .expect("importa HAR")
+        .bundle;
+    let target = b.session.requests[2].id.clone();
+    let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    let steps: Vec<&str> = chain.steps.iter().map(|s| s.request_id.as_str()).collect();
+    assert_eq!(
+        steps,
+        vec![b.session.requests[0].id.as_str()],
+        "o cookie de uma vez só vem da rodada anterior"
+    );
+    let o = value_origins(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    let once = entry(&o, "ONCE");
+    assert_eq!(once.status, OriginStatus::Origin);
+    assert_eq!(once.evidences[0].kind, EvidenceKind::CookieJar);
 }

@@ -2163,13 +2163,15 @@ pub fn priming_chain(
                     status: value.status,
                 });
             }
-            // Para a CADEIA, o passo é o produtor observado mais recente antes do
-            // consumidor (`produced` ou `reissued`): um valor constante do
-            // protocolo (ex.: STAMP=INIT) tem produtores em todas as rodadas, e
-            // só o mais próximo mantém a cadeia na rodada do alvo. As origens
-            // continuam listando todos os produtores.
+            // Para a CADEIA, o passo é o produtor da própria rodada do alvo
+            // (`produced` ou `reissued`): um valor constante do protocolo (ex.:
+            // STAMP=INIT) é reemitido por cada página, e repetir as reemissões
+            // só engorda a cadeia sem acrescentar valor. Escolhe-se o primeiro
+            // produtor da rodada; só quando não há nenhum nela (ex.: cookie
+            // definido uma única vez) sobe-se para o mais recente anterior. As
+            // origens continuam listando todos os produtores.
             let nearest = ctx.find(&current).and_then(|consumer| {
-                value
+                let candidates: Vec<(Pos, &Evidence)> = value
                     .evidences
                     .iter()
                     .filter(|e| {
@@ -2179,8 +2181,28 @@ pub fn priming_chain(
                     })
                     .filter_map(|e| ctx.find(&e.request_id).map(|pos| (pos, e)))
                     .filter(|(pos, _)| ctx.rel(*pos, consumer) == Rel::Before)
-                    .filter(|(pos, _)| round_start.map_or(true, |start| ctx.seq[pos] >= start))
-                    .max_by_key(|(pos, _)| ctx.seq[pos])
+                    .collect();
+                match round_start {
+                    Some(start) => candidates
+                        .iter()
+                        .copied()
+                        .filter(|(pos, _)| ctx.seq[pos] >= start)
+                        .min_by_key(|(pos, _)| ctx.seq[pos])
+                        .or_else(|| {
+                            // Exceção: valor forte (ex.: cookie definido uma única
+                            // vez) cujo único produtor ficou numa rodada anterior.
+                            // Fragmentos médios de XML não justificam subir.
+                            candidates
+                                .iter()
+                                .copied()
+                                .filter(|(_, e)| e.strength == Strength::Strong)
+                                .max_by_key(|(pos, _)| ctx.seq[pos])
+                        }),
+                    None => candidates
+                        .iter()
+                        .copied()
+                        .max_by_key(|(pos, _)| ctx.seq[pos]),
+                }
             });
             if let Some((pos, e)) = nearest {
                 let attempt = ctx.attempt_ref(pos);
