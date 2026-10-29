@@ -11,7 +11,10 @@
 //!   "parameters": [ {"name":"placa","part":"XML.p.v_placa"} ],  // opcional: entradas do
 //!                                              // usuário do script, SEM valores; `part` =
 //!                                              // nome interno (parte de adaptador) ou campo
-//!                                              // do form/query; sem `part`, vale `name`
+//!                                              // do form/query; sem `part`, vale `name`.
+//!                                              // Item cujo `name` também está em
+//!                                              // `plan.parameters` é parte produzida pelo plano:
+//!                                              // classifica, sem as checagens de parâmetro
 //!   "target": "har-0127",                      // requestId do alvo NA CAPTURA (o validate exige
 //!                                              // que seja pareado; sem ele, "incompleta")
 //!   "complete": true,                          // o script executou todo o plano (false/ausente
@@ -73,6 +76,10 @@ type StepNotes = (
 
 /// Prefixo das notas de sessão que carregam os parâmetros do usuário do trace.
 pub const PARAM_NOTE_PREFIX: &str = "trace-param: ";
+/// Parâmetro de topo cujo `name` também é parâmetro do plano: a parte é
+/// produzida pelo plano, então só classifica (sem as checagens de "parâmetro
+/// inválido" nem de identificador longo).
+pub const PARAM_PLAN_NOTE_PREFIX: &str = "trace-param-plan: ";
 pub const TARGET_NOTE_PREFIX: &str = "trace-target: ";
 pub const COMPLETE_NOTE_PREFIX: &str = "trace-complete: ";
 pub const PLAN_HASH_NOTE_PREFIX: &str = "trace-plan-hash: ";
@@ -93,6 +100,19 @@ fn bad(message: impl Into<String>) -> CoreError {
     CoreError::UnsupportedFormat {
         message: format!("trace: {}", message.into()),
     }
+}
+
+/// Nome de um item de `parameters`/`plan.parameters`: texto direto, ou o
+/// `name` e, na falta dele, o `part`.
+fn param_name(p: &Value) -> Option<&str> {
+    match p {
+        Value::String(s) => Some(s.as_str()),
+        _ => p
+            .get("name")
+            .and_then(Value::as_str)
+            .or_else(|| p.get("part").and_then(Value::as_str)),
+    }
+    .filter(|s| !s.is_empty())
 }
 
 /// `YYYY-MM-DDTHH:MM:SS[.fff](Z|±HH:MM)`.
@@ -402,9 +422,15 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         session.session.labels.push(TRACE_LABEL.to_string());
     }
     let plan = root.get("plan").filter(|v| !v.is_null());
-    // `parameters` de topo: entradas do usuário do script (passam pelas checagens
-    // do validate). `plan.parameters` são os parâmetros obrigatórios do plano e
-    // ficam em notas próprias: só classificam, sem as checagens.
+    let plan_names: Vec<&str> = plan
+        .filter(|p| p.is_object())
+        .and_then(|p| p.get("parameters"))
+        .and_then(Value::as_array)
+        .map(|list| list.iter().filter_map(param_name).collect())
+        .unwrap_or_default();
+    // `parameters` de topo: entradas do usuário do script. Quando o `name` do
+    // item também é parâmetro do plano, a parte é produzida pelo plano: vai para
+    // uma nota própria e não passa pelas checagens do validate.
     if let Some(params) = root.get("parameters").filter(|v| !v.is_null()) {
         let list = params
             .as_array()
@@ -417,13 +443,19 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
                     p.get("part").and_then(Value::as_str),
                 ),
             };
-            let part = part
-                .filter(|s| !s.is_empty())
-                .or(name.filter(|s| !s.is_empty()));
+            let name = name.filter(|s| !s.is_empty());
+            let part = part.filter(|s| !s.is_empty()).or(name);
             let Some(part) = part else {
                 return Err(bad(format!("parameters[{n}] precisa de name ou part")));
             };
-            let note = format!("{PARAM_NOTE_PREFIX}{part}");
+            let from_plan =
+                name.is_some_and(|n| plan_names.iter().any(|p| p.eq_ignore_ascii_case(n)));
+            let prefix = if from_plan {
+                PARAM_PLAN_NOTE_PREFIX
+            } else {
+                PARAM_NOTE_PREFIX
+            };
+            let note = format!("{prefix}{part}");
             if !session.session.notes.contains(&note) {
                 session.session.notes.push(note);
             }
@@ -443,14 +475,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         }
         if let Some(list) = plan.get("parameters").and_then(Value::as_array) {
             for p in list {
-                let name = match p {
-                    Value::String(s) => Some(s.as_str()),
-                    _ => p
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .or_else(|| p.get("part").and_then(Value::as_str)),
-                };
-                if let Some(name) = name.filter(|s| !s.is_empty()) {
+                if let Some(name) = param_name(p) {
                     session
                         .session
                         .notes

@@ -26,6 +26,8 @@
 //! constante (identificador longo e opaco); os demais são ignorados com o
 //! aviso "parâmetro inválido". `plan.parameters` são os obrigatórios do plano:
 //! classificam como parâmetro do usuário, mas não passam por essas checagens.
+//! Uma parte de `parameters` cujo `name` também é parâmetro do plano é produzida
+//! pelo plano e segue a mesma isenção (ex. XML.sid/SESSIONID via adaptador).
 //!
 //! Plano versionado: `plan.version` igual a [`PLAN_VERSION`] compara o hash do
 //! plano (divergência se não confere); versão ausente ou diferente é plano de
@@ -47,8 +49,8 @@ use crate::flow::{
 };
 use crate::model::SessionV1;
 use crate::parse::trace::{
-    COMPLETE_NOTE_PREFIX, PARAM_NOTE_PREFIX, PLAN_HASH_NOTE_PREFIX, PLAN_PARAM_NOTE_PREFIX,
-    PLAN_PRESENT_NOTE, PLAN_VERSION_NOTE_PREFIX, TARGET_NOTE_PREFIX,
+    COMPLETE_NOTE_PREFIX, PARAM_NOTE_PREFIX, PARAM_PLAN_NOTE_PREFIX, PLAN_HASH_NOTE_PREFIX,
+    PLAN_PARAM_NOTE_PREFIX, PLAN_PRESENT_NOTE, PLAN_VERSION_NOTE_PREFIX, TARGET_NOTE_PREFIX,
 };
 use crate::search::BodySource;
 
@@ -303,9 +305,21 @@ pub fn validate(
             (true, None) => params.push(name),
         }
     }
-    // `plan.parameters` são os parâmetros obrigatórios do plano: classificam
-    // como parâmetro do usuário, mas não passam pelas checagens acima (um
-    // deles pode ter origem observada, ex. XML.sid via adaptador).
+    // partes produzidas pelo plano (o `name` do item de topo também é parâmetro
+    // do plano): classificam como parâmetro do usuário, mas não passam pelas
+    // checagens acima — ex. SESSIONID/XML.sid com origem via adaptador.
+    for name in trace
+        .session
+        .notes
+        .iter()
+        .filter_map(|n| n.strip_prefix(PARAM_PLAN_NOTE_PREFIX))
+    {
+        if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
+            params.push(name);
+        }
+    }
+    // `plan.parameters` são os parâmetros obrigatórios do plano: também só
+    // classificam, sem as checagens acima.
     for name in trace
         .session
         .notes

@@ -548,24 +548,26 @@ fn faithful_plan_has_no_spurious_warnings() {
         GOOD_GO,
         GOOD_GO2,
         json!({
-            "parameters": [{"name":"placa"}],
+            "parameters": [{"name":"placa"},{"name":"sessionid_cliente","part":"sig"}],
             "plan": {"version":2, "hash": h, "parameters": names},
         }),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
-    // único aviso permitido: o mapeamento automático de origem (hosts diferentes)
+    // único aviso permitido: o mapeamento automático de origem (hosts diferentes).
+    // A parte `sig` do item `sessionid_cliente` é produzida pelo plano (name em
+    // plan.parameters): não gera aviso de constante/identificador longo.
     let spurious: Vec<&String> = v
         .warnings
         .iter()
         .filter(|w| !w.contains("mapeadas automaticamente"))
         .collect();
     assert!(spurious.is_empty(), "{spurious:?}");
-    // o mesmo nome no `parameters` de topo continua checado e avisa
+    // nome fora de plan.parameters continua checado: parte longa avisa
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
         json!({
-            "parameters": [{"name":"placa"},{"name":"cpf"}],
+            "parameters": [{"name":"placa"},{"name":"q","part":"sig"}],
             "plan": {"version":2, "hash": h, "parameters": names},
         }),
     ));
@@ -573,7 +575,24 @@ fn faithful_plan_has_no_spurious_warnings() {
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("parâmetro inválido: `cpf`")),
+            .any(|w| w.contains("parâmetro inválido: `sig`")),
+        "{:?}",
+        v.warnings
+    );
+    // item forjado inexistente (sem parte) também avisa
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({
+            "parameters": [{"name":"placa"},{"name":"forjado"}],
+            "plan": {"version":2, "hash": h, "parameters": names},
+        }),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w.contains("parâmetro inválido: `forjado`")),
         "{:?}",
         v.warnings
     );
