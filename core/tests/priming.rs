@@ -101,7 +101,12 @@ fn each_step_checks_its_own_response_before_the_next_request() {
     assert_eq!(script.matches("except UnicodeEncodeError").count(), steps);
     // A ausência de ERRORMESSAGE não pode virar erro engolido: nenhum
     // `except SystemExit` no script e a checagem só falha se houver valor.
-    assert!(!script.contains("except SystemExit"), "{script}");
+    // O único `except SystemExit` é o do `main`, que grava o trace e re-lança.
+    assert_eq!(script.matches("except SystemExit").count(), 1, "{script}");
+    assert!(
+        script.contains("trace_close(base)\n        raise"),
+        "o except do main precisa re-lançar:\n{script}"
+    );
     assert!(!script.contains("erro = ''"), "{script}");
     assert!(script.contains("if value is not None and value.strip():"));
     // Todo passo que produz controle para outro tem a checagem na própria
@@ -904,6 +909,31 @@ fn hostile_names_and_values_stay_inside_literals() {
         "index",
         "sys",
         "find",
+        "b64encode",
+        "trace_time",
+        "strftime",
+        "pop",
+        "rebase",
+        "extend",
+        "append",
+        "dumps",
+        "time",
+        "timezone",
+        "open",
+        "ascii",
+        "decode",
+        "encode",
+        "round",
+        "bytes",
+        "fromtimestamp",
+        "memoryview",
+        "fchmod",
+        "isoformat",
+        "trace_body",
+        "trace_open",
+        "trace_exchange",
+        "trace_check",
+        "trace_close",
         "send",
         "safe_text",
         "url_origin",
@@ -939,7 +969,7 @@ fn hostile_names_and_values_stay_inside_literals() {
     let probe = r#"
 import ast, sys
 tree = ast.parse(open(sys.argv[1], encoding='utf-8').read())
-bad = [n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id in ('os', '__import__')]
+bad = [n for n in ast.walk(tree) if (isinstance(n, ast.Name) and n.id == '__import__') or (isinstance(n, ast.Attribute) and n.attr in ('system', 'popen', 'spawn'))]
 print(len(bad))
 "#;
     let path = dir.path().join("priming.py");
@@ -1758,4 +1788,203 @@ fn claimed_field_is_built_by_parts_with_the_adapter_encoder() {
     );
     let dir = tempfile::tempdir().unwrap();
     ast_calls(&out.text, &dir);
+}
+
+/// Driver sem rede: injeta um módulo `requests` falso e roda o `main` do
+/// script gerado com `--trace`.
+const TRACE_DRIVER: &str = r#"
+import json, runpy, sys, types
+script, status, *argv = sys.argv[1:]
+class Hdr(dict):
+    pass
+class Req:
+    def __init__(self, method, url, body):
+        self.method, self.url, self.body = method, url, body
+        self.headers = Hdr({'Accept': '*/*', 'User-Agent': 'fake/1.0'})
+class Resp:
+    def __init__(self, req, code):
+        self.status_code = code
+        self.headers = Hdr({'Content-Type': 'text/html'})
+        self.text = '<input type="hidden" name="tok" value="abc12345">'
+        self.content = self.text.encode()
+        if __import__('os').environ.get('TRACE_BIG'):
+            self.content = b'x' * (3 * 1024 * 1024)
+        self.request = req
+        self.url = req.url
+class Jar:
+    def get(self, name):
+        return None
+class Session:
+    trust_env = True
+    cookies = Jar()
+    def request(self, method, url, **kw):
+        data = kw.get('data')
+        return Resp(Req(method, url, data), int(status))
+fake = types.ModuleType('requests')
+fake.Session = Session
+sys.modules['requests'] = fake
+mod = runpy.run_path(script, run_name='priming_test')
+sys.argv = [script] + argv
+try:
+    mod['main']()
+    print('RC 0')
+except SystemExit as exc:
+    print('RC', exc.code)
+"#;
+
+fn trace_run(script: &std::path::Path, status: u32, args: &[&str]) -> std::process::Output {
+    Command::new("python3")
+        .arg("-I")
+        .args(["-c", TRACE_DRIVER])
+        .arg(script)
+        .arg(status.to_string())
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let bundle = custom_bundle(&[("GET", "https://h.example.test/alvo", &[], None)]);
+    let script = generate(&bundle, "har-0001");
+    let dir = tempfile::tempdir().unwrap();
+    let script_path = dir.path().join("priming.py");
+    std::fs::write(&script_path, &script).unwrap();
+
+    // Execução ok.
+    let trace = dir.path().join("trace.json");
+    let out = trace_run(&script_path, 200, &["--trace", trace.to_str().unwrap()]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stdout.contains("RC 0"), "{stdout}{stderr}");
+    assert!(
+        stderr.contains("o trace contém dados da sua sessão; não compartilhe sem sanitizar"),
+        "{stderr}"
+    );
+    let mode = std::fs::metadata(&trace).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+    let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(&trace).unwrap()).unwrap();
+    assert_eq!(doc["schema"], "scrapelens.trace/1");
+    let exchange = &doc["steps"][0];
+    assert_eq!(exchange["checks"][0]["ok"], true);
+    assert_eq!(exchange["method"], "GET");
+    assert_eq!(exchange["status"], 200);
+    assert!(exchange["requestHeaders"].is_array() && exchange["responseHeaders"].is_array());
+    assert_eq!(exchange["responseBody"]["truncated"], false);
+
+    // Já existe: recusa, sem sobrescrever.
+    let before = std::fs::read(&trace).unwrap();
+    let out = trace_run(&script_path, 200, &["--trace", trace.to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace:"));
+    assert_eq!(std::fs::read(&trace).unwrap(), before);
+    // Link simbólico (existente e pendente): recusa e não escreve no alvo.
+    let target = dir.path().join("alvo.txt");
+    std::fs::write(&target, "intacto").unwrap();
+    let link = dir.path().join("link.json");
+    symlink(&target, &link).unwrap();
+    let out = trace_run(&script_path, 200, &["--trace", link.to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace:"));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "intacto");
+    let dangling = dir.path().join("pendente.json");
+    symlink(dir.path().join("nao-existe.json"), &dangling).unwrap();
+    let out = trace_run(&script_path, 200, &["--trace", dangling.to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace:"));
+    assert!(!dir.path().join("nao-existe.json").exists());
+
+    // Falha no passo: o trace é gravado até o passo ruim, com a falha registrada.
+    let failing = dir.path().join("falha.json");
+    let out = trace_run(&script_path, 403, &["--trace", failing.to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: passo 1: HTTP 403"));
+    let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(&failing).unwrap()).unwrap();
+    assert_eq!(doc["steps"][0]["checks"][0]["ok"], false);
+    assert!(doc["steps"][0]["checks"][0]["detail"]
+        .as_str()
+        .unwrap()
+        .contains("HTTP 403"));
+    assert_eq!(doc["steps"][0]["status"], 403);
+    // O core importa o trace gravado (esquema exato).
+    let session = dir.path().join("trace-session");
+    let import = Command::new(env!("CARGO_BIN_EXE_scrapelens-core"))
+        .arg("import-trace")
+        .arg(&failing)
+        .arg("--out")
+        .arg(&session)
+        .output()
+        .unwrap();
+    assert!(
+        import.status.success(),
+        "{}",
+        String::from_utf8_lossy(&import.stderr)
+    );
+    assert_eq!(
+        std::fs::metadata(&failing).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
+    // Sem --trace, nada é criado; no modo plano (passo que altera estado, sem
+    // --confirmar), nada é gravado.
+    let post = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/alvo",
+        &[],
+        Some(("application/x-www-form-urlencoded", "a=1")),
+    )]);
+    let post_script = dir.path().join("post.py");
+    std::fs::write(&post_script, generate(&post, "har-0001")).unwrap();
+    let plan_trace = dir.path().join("plano.json");
+    let out = trace_run(
+        &post_script,
+        200,
+        &["--trace", plan_trace.to_str().unwrap()],
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Nada foi enviado"));
+    assert!(!plan_trace.exists());
+}
+
+#[test]
+fn trace_bodies_are_capped_at_2_mib_with_truncated_state() {
+    let bundle = custom_bundle(&[("GET", "https://h.example.test/alvo", &[], None)]);
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("p.py");
+    std::fs::write(&script, generate(&bundle, "har-0001")).unwrap();
+    let trace = dir.path().join("t.json");
+    let out = Command::new("python3")
+        .arg("-I")
+        .args(["-c", TRACE_DRIVER])
+        .arg(&script)
+        .arg("200")
+        .args(["--trace", trace.to_str().unwrap()])
+        .env("TRACE_BIG", "1")
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC 0"));
+    let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(&trace).unwrap()).unwrap();
+    let body = &doc["steps"][0]["responseBody"];
+    assert_eq!(body["truncated"], true);
+    assert_eq!(body["size"], 3 * 1024 * 1024);
+    assert_eq!(body["text"].as_str().unwrap().len(), 2 * 1024 * 1024);
+}
+
+#[test]
+fn trace_records_every_step_of_a_multi_step_chain() {
+    let bundle = custom_bundle(&[
+        ("GET", "https://h.example.test/pagina", &[], None),
+        ("GET", "https://h.example.test/alvo?tok=abc12345", &[], None),
+    ]);
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("p.py");
+    std::fs::write(&script, generate(&bundle, "har-0002")).unwrap();
+    let trace = dir.path().join("t.json");
+    let out = trace_run(&script, 200, &["--trace", trace.to_str().unwrap()]);
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("RC 0"),
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(&trace).unwrap()).unwrap();
+    let steps = doc["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 2, "{doc}");
+    assert!(steps.iter().all(|s| s["checks"][0]["ok"] == true));
 }

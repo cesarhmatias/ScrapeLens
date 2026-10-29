@@ -3513,10 +3513,14 @@ fn to_python_with(
 
 const PRELUDE: &str = r#"
 import argparse
+import base64
+import datetime
 import html.parser
 import json
+import os
 import re
 import sys
+import time
 import urllib.parse
 
 
@@ -3696,13 +3700,114 @@ def rebase(url, base):
     return url
 
 
+TRACE = {'fd': None, 'started': None, 'exchanges': [], 'checks': {}}
+TRACE_BODY_LIMIT = 2 * 1024 * 1024
+
+
+def trace_body(data):
+    """Corpo para o trace: texto UTF-8 ou base64, no máximo 2 MiB (estado truncated)."""
+    if data is None:
+        return None
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    size = len(data)
+    chunk = bytes(data[:TRACE_BODY_LIMIT])
+    truncated = size > TRACE_BODY_LIMIT
+    try:
+        out = {'text': chunk.decode('utf-8'), 'encoding': 'utf8', 'truncated': truncated}
+    except UnicodeDecodeError:
+        out = {'text': base64.b64encode(chunk).decode('ascii'), 'encoding': 'base64', 'truncated': truncated}
+    if truncated:
+        out['size'] = size
+    return out
+
+
+def trace_time(moment):
+    return datetime.datetime.fromtimestamp(moment, datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+
+def trace_open(path):
+    """Cria o arquivo do trace com 0600, sem sobrescrever nem seguir link simbólico."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
+    try:
+        fd = os.open(path, flags, 0o600)
+    except FileExistsError:
+        fail('--trace: %s já existe (ou é um link simbólico); não sobrescrevo' % safe_text(path))
+    except OSError as exc:
+        fail('--trace: não consegui criar %s: %s' % (safe_text(path), safe_text(exc.strerror or exc)))
+    os.fchmod(fd, 0o600)
+    TRACE['fd'] = fd
+    TRACE['started'] = time.time()
+    sys.stderr.write('priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar\n')
+
+
+def trace_exchange(index, method, url, resp, started):
+    if TRACE['fd'] is None:
+        return
+    request = resp.request
+    TRACE['exchanges'].append({
+        'step': index,
+        'method': method,
+        'url': url,
+        'requestHeaders': [[str(k), str(v)] for k, v in request.headers.items()],
+        'requestBody': trace_body(request.body),
+        'status': resp.status_code,
+        'responseHeaders': [[str(k), str(v)] for k, v in resp.headers.items()],
+        'responseBody': trace_body(resp.content),
+        'startedAt': trace_time(started),
+        'elapsedMs': round((time.time() - started) * 1000, 3),
+    })
+
+
+def trace_check(index, ok, reason):
+    if TRACE['fd'] is not None:
+        TRACE['checks'][index] = {'name': 'passo', 'ok': ok}
+        if reason:
+            TRACE['checks'][index]['detail'] = reason
+
+
+def trace_close(base=None):
+    if TRACE['fd'] is None:
+        return
+    entries = []
+    for index, (rid, method, url, _, _) in enumerate(PLAN, 1):
+        mine = [e for e in TRACE['exchanges'] if e['step'] == index]
+        check = TRACE['checks'].get(index)
+        if not mine and check is None:
+            continue
+        if not mine:
+            # Falha antes de qualquer pedido (ex.: origin recusado): registra o planejado.
+            mine = [{'step': index, 'method': method, 'url': rebase(url, base), 'requestHeaders': [],
+                     'requestBody': None, 'status': None, 'responseHeaders': [], 'responseBody': None,
+                     'error': (check or {}).get('detail') or 'passo não enviado'}]
+        mine = [{k: v for k, v in entry.items() if k != 'step'} for entry in mine]
+        if check is not None:
+            mine[-1]['checks'] = [check]
+        entries.extend(mine)
+    doc = {
+        'schema': 'scrapelens.trace/1',
+        'generator': 'scrapelens-priming 1.0',
+        'startedAt': trace_time(TRACE['started']),
+        'steps': entries,
+    }
+    data = json.dumps(doc, ensure_ascii=False).encode('utf-8')
+    view = memoryview(data)
+    while len(view):
+        written = os.write(TRACE['fd'], view)
+        view = view[written:]
+    os.close(TRACE['fd'])
+    TRACE['fd'] = None
+
+
 def send(S, method, url, index, base, **kw):
     """Envia um passo sem seguir redirects sozinho: só o MESMO origin é seguido."""
     home = url_origin(base) if base else CAPTURED_ORIGIN.lower()
     allowed = {home} | {o.lower() for o in EXTRA_ORIGINS}
     if url_origin(url) not in allowed:
         fail('passo %d: origin %s fora dos permitidos; nada foi enviado' % (index, url_origin(url)))
+    started = time.time()
     resp = S.request(method, url, allow_redirects=False, **kw)
+    trace_exchange(index, method, url, resp, started)
     hops = 0
     while resp.status_code in (301, 302, 303, 307, 308):
         location = resp.headers.get('Location')
@@ -3720,7 +3825,9 @@ def send(S, method, url, index, base, **kw):
             kw['headers'] = {k: v for k, v in kw.get('headers', {}).items()
                              if k.lower() not in ('content-type', 'content-length')}
         url = nxt
+        started = time.time()
         resp = S.request(method, url, allow_redirects=False, **kw)
+        trace_exchange(index, method, url, resp, started)
     return resp
 
 "#;
@@ -3740,6 +3847,7 @@ def main():
     parser = argparse.ArgumentParser(description='Script de priming (ScrapeLens)')
     parser.add_argument('--confirmar', action='store_true', help='executa os passos que alteram estado')
     parser.add_argument('--usar-proxy-do-ambiente', action='store_true', help='usa proxy/.netrc do ambiente (padrão: ignora)')
+    parser.add_argument('--trace', default=None, metavar='ARQUIVO', help='grava um trace JSON (scrapelens.trace/1) da execução; contém dados da sua sessão')
     parser.add_argument('--base-url', default=None, help='troca esquema/host/porta do alvo capturado (ex.: http://127.0.0.1:8791)')
     for name, default, note in PARAMS:
         parser.add_argument('--' + name.replace('_', '-'), dest='p_' + name, default=default,
@@ -3768,10 +3876,21 @@ def main():
     if sys.version_info < (3, 13):
         sys.stderr.write('priming: aviso: Python < 3.13; o HTMLParser tem casos quadráticos conhecidos com respostas hostis\n')
     R = {}
-    for index, (step, (rid, method, url, _, _)) in enumerate(zip(STEPS, PLAN), 1):
-        resp = step(S, R, P, base)
-        R[rid] = resp
-        print('  [%d/%d] %s %s -> HTTP %d' % (index, len(STEPS), method, rebase(url, base), resp.status_code))
+    if args.trace:
+        trace_open(args.trace)
+    current = 0
+    try:
+        for index, (step, (rid, method, url, _, _)) in enumerate(zip(STEPS, PLAN), 1):
+            current = index
+            resp = step(S, R, P, base)
+            R[rid] = resp
+            trace_check(index, True, None)
+            print('  [%d/%d] %s %s -> HTTP %d' % (index, len(STEPS), method, rebase(url, base), resp.status_code))
+    except SystemExit as exc:
+        trace_check(current, False, safe_text(exc.code))
+        trace_close(base)
+        raise
+    trace_close(base)
     print('Cadeia concluída; último HTTP %d.' % R[PLAN[-1][0]].status_code)
     return 0
 
