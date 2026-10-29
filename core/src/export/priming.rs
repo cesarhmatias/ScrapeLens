@@ -89,7 +89,19 @@ const SENSITIVE_WORDS: &[&str] = &[
     "cartao",
     "credential",
     "chave",
+    "nome",
+    "email",
+    "telefone",
+    "celular",
+    "endereco",
+    "endereço",
+    "nascimento",
+    "session",
+    "callback",
 ];
+/// Palavras curtas demais para casar por substring (`rg` em `target`): só
+/// valem como palavra inteira do nome (`rg`, `user_rg`, `sid`, `jsid`).
+const SENSITIVE_SHORT_WORDS: &[&str] = &["rg", "sid", "sessid", "jsid", "tel", "fone"];
 
 /// Literal Python ASCII com aspas simples; nada além de `[ -~]` sai cru.
 fn lit(text: &str) -> String {
@@ -136,7 +148,12 @@ fn bytes_lit(bytes: &[u8]) -> String {
 
 fn is_sensitive_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    SENSITIVE_WORDS.iter().any(|w| lower.contains(w))
+    if SENSITIVE_WORDS.iter().any(|w| lower.contains(w)) {
+        return true;
+    }
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|word| SENSITIVE_SHORT_WORDS.contains(&word))
 }
 
 fn is_plate_at(b: &[u8], i: usize) -> bool {
@@ -167,7 +184,31 @@ fn looks_opaque_id(value: &str) -> bool {
     if digits && value.len() >= 6 {
         return true;
     }
-    value.len() >= 16 && value.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+    if value.len() >= 16 && value.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+        return true;
+    }
+    // Versões e contadores (`1.2.3`, `123_456`, `jQuery123_456`): cara de valor
+    // dinâmico, nunca constante estrutural.
+    if value.bytes().any(|b| b.is_ascii_digit())
+        && value.bytes().any(|b| matches!(b, b'.' | b'_' | b'-'))
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'))
+    {
+        return true;
+    }
+    let digits = value.bytes().filter(u8::is_ascii_digit).count();
+    if digits >= 3 && value.contains('_') && value.bytes().any(|b| b.is_ascii_alphabetic()) {
+        return true;
+    }
+    // Base64/base64url longo e misto.
+    value.len() >= 20
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=' | b'_' | b'-'))
+        && value.bytes().any(|b| b.is_ascii_digit())
+        && value.bytes().any(|b| b.is_ascii_uppercase())
+        && value.bytes().any(|b| b.is_ascii_lowercase())
 }
 
 /// Tokens de navegação de uma URL: segmentos do caminho, nome do recurso sem
@@ -186,7 +227,8 @@ fn navigation_tokens(url: &str) -> Vec<String> {
         None => "",
     };
     for segment in path.split('/') {
-        let segment = segment.trim();
+        // `;nome=valor` no caminho é dado, nunca navegação.
+        let segment = segment.split(';').next().unwrap_or(segment).trim();
         if segment.is_empty() {
             continue;
         }
@@ -930,8 +972,10 @@ impl Gen<'_> {
             && value.len() <= 200
             && !looks_opaque_id(value)
             && self.structural.contains(value);
-        let constant =
-            !sensitive && (in_context || structural || self.is_proven_constant(name, value));
+        let constant = !sensitive
+            && (in_context
+                || structural
+                || (!looks_opaque_id(value) && self.is_proven_constant(name, value)));
         if constant {
             self.notes.push(if structural {
                 format!(
@@ -1223,6 +1267,49 @@ fn split_origin(url: &str) -> (&str, &str) {
     url.split_at(scheme_end + 3 + cut)
 }
 
+/// URL com parâmetros de caminho (`;jsessionid=...`): cada valor vira
+/// parâmetro obrigatório (dado de sessão, nunca literal). Devolve a URL para o
+/// plano (valores trocados por `<nome>`) e a expressão Python.
+fn path_param_expr(gen: &mut Gen, url_base: &str) -> (String, String) {
+    let (origin, path) = split_origin(url_base);
+    if !path.contains(';') {
+        return (
+            url_base.to_string(),
+            format!("rebase({}, base)", lit(url_base)),
+        );
+    }
+    let mut plan = String::from(origin);
+    let mut pieces: Vec<String> = Vec::new();
+    let mut literal = String::from(origin);
+    let mut rest = path;
+    while let Some(at) = rest.find(';') {
+        literal.push_str(&rest[..at]);
+        plan.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let end = after.find(['/', ';']).unwrap_or(after.len());
+        let (name, value) = after[..end].split_once('=').unwrap_or((&after[..end], ""));
+        literal.push(';');
+        literal.push_str(name);
+        literal.push('=');
+        plan.push_str(&format!(";{name}=<{name}>"));
+        let expr = gen.fallback_param(&format!("path_{name}"), value, true, false, false);
+        if pieces.is_empty() {
+            pieces.push(format!("rebase({}, base)", lit(&literal)));
+        } else {
+            pieces.push(lit(&literal));
+        }
+        pieces.push(format!("urllib.parse.quote({expr}, safe='')"));
+        literal = String::new();
+        rest = &after[end..];
+    }
+    literal.push_str(rest);
+    plan.push_str(rest);
+    if !literal.is_empty() {
+        pieces.push(lit(&literal));
+    }
+    (plan, pieces.join(" + "))
+}
+
 /// Recurso estático (script, css, imagem, fonte, mídia): nunca é passo.
 fn is_static(request: &LogicalRequest) -> bool {
     let media = request
@@ -1512,7 +1599,7 @@ pub fn to_python(
             ),
             None => (request.url.split('#').next().unwrap_or(&request.url), None),
         };
-        let mut url_expr = format!("rebase({}, base)", lit(url_base));
+        let (url_base_clean, mut url_expr) = path_param_expr(&mut gen, url_base);
         if let Some(q) = query {
             let mut seen: BTreeMap<String, usize> = BTreeMap::new();
             let mut items = Vec::new();
@@ -1660,7 +1747,7 @@ pub fn to_python(
             "    ({}, {}, {}, {}, {}),",
             lit(&request.id),
             lit(&request.method.to_ascii_uppercase()),
-            lit(url_base),
+            lit(&url_base_clean),
             lit(&reasons
                 .first()
                 .map(|r| r.chars().take(160).collect::<String>())

@@ -1113,3 +1113,44 @@ fn foreign_origin_steps_are_refused_unless_allowed() {
         assert!(e.to_string().contains("--allow-origin"), "{e}");
     }
 }
+
+#[test]
+fn path_params_and_pii_names_are_data_not_literals() {
+    let bundle = mini_bundle(vec![
+        (
+            "GET",
+            "https://mini.example.test/app;jsessionid=SESSVAL1234ABCD?nome=Fulano&email=a@b.test&callback=jQuery123_456&v=1.2.3&op=S37",
+            None,
+            Some("ok"),
+        ),
+        (
+            "GET",
+            "https://mini.example.test/target;jsessionid=SESSVAL1234ABCD?op=S37&nome=Fulano&email=a@b.test&callback=jQuery123_456&v=1.2.3&rg=99887&target=x",
+            None,
+            Some("ok"),
+        ),
+    ]);
+    let script = generate(&bundle, "har-0002");
+    for leaked in [
+        "SESSVAL1234ABCD",
+        "Fulano",
+        "a@b.test",
+        "jQuery123_456",
+        "1.2.3",
+        "99887",
+    ] {
+        assert!(!script.contains(leaked), "{leaked} vazou:\n{script}");
+    }
+    assert!(script.contains("jsessionid"), "{script}");
+    assert!(script.contains("('path_jsessionid', None,"), "{script}");
+    for name in ["nome", "email", "callback", "v", "rg"] {
+        assert!(
+            script.contains(&format!("('{name}', None,")),
+            "{name} deveria ser obrigatório:\n{script}"
+        );
+    }
+    // Estrutural continua padrão; `target` não é sensível por conter `rg`.
+    assert!(script.contains("('op', 'S37', 'constante estrutural')"));
+    let dir = tempfile::tempdir().unwrap();
+    ast_calls(&script, &dir);
+}
