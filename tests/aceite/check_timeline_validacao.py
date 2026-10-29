@@ -211,6 +211,127 @@ def rv_cases():
     return cases
 
 
+def plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target):
+    """Rodada 9 (7410fa4): `plan.parameters` só isenta com o plano VERIFICADO.
+
+    Sobre a trace autêntica do detran-sim: v1, sem `version` e v2 sem `hash`, cada um com
+    `plan.parameters += "XML.delta"`, não podem isentar delta congelado nem inventado (L13–L15, N1/N3
+    da matriz do revisor): os seis têm de DIVERGIR. v1 fiel (sem valor trocado) fica `equivalent`,
+    só com o aviso "plano de versão anterior (v1)". Se algum caso só avisar, é falha: fica registrada.
+    """
+    info = INFO["plano_nao_verificado"] = {}
+    doc = json.loads(Path(trace_ok).read_text())
+    sess = json.loads((Path(cap) / "session.json").read_text(encoding="utf-8"))
+    cdelta = None
+    for q in sess.get("requests", []):
+        if q.get("id") != target:
+            continue
+        for a in q.get("attempts", []):
+            ref = ((a.get("requestBody") or {}) or {}).get("attachment")
+            if not ref:
+                continue
+            captured = (Path(cap) / "attachments" / ref).read_text(errors="replace")
+            m = re.search(r"x(\d{2})([^&]+)&", captured)
+            if m and "STAMP=" in captured:
+                cdelta = m.group(2)
+                break
+    info["delta_capturado"] = cdelta
+    if not check(bool(cdelta), f"plano não verificado: não achei o delta no corpo capturado de {target}"):
+        return
+
+    def last_connector(d):
+        for i in range(len(d.get("steps", [])) - 1, -1, -1):
+            b = ((d["steps"][i].get("requestBody") or {}).get("text") or "")
+            if re.search(r"x\d{2}[^&]+&", b) and "STAMP=" in b:
+                return i
+        return None
+
+    def with_delta(d, value):
+        d = json.loads(json.dumps(d))
+        i = last_connector(d)
+        if i is None:
+            return None
+        b = d["steps"][i]["requestBody"]["text"]
+        m = re.search(r"x(\d{2})([^&]+)&", b)
+        d["steps"][i]["requestBody"]["text"] = b[:m.start()] + f"x{len(value):02d}{value}&" + b[m.end():]
+        return d
+
+    def variant(d, kind, delta_param=True, delta_value=None):
+        d = json.loads(json.dumps(d))
+        plan = d.setdefault("plan", {})
+        if kind == "v1":
+            plan["version"] = 1
+        elif kind == "sem-versao":
+            plan.pop("version", None)
+        elif kind == "v2-sem-hash":
+            plan.pop("hash", None)
+        if delta_param:
+            params = plan.setdefault("parameters", [])
+            if "XML.delta" not in params:
+                params.append("XML.delta")
+        if delta_value is not None:
+            d = with_delta(d, delta_value)
+        return d
+
+    def validate(doc2, label):
+        p = tmp / f"nv-{label}.json"
+        p.write_text(json.dumps(doc2, ensure_ascii=False))
+        s = tmp / f"nv-ses-{label}"
+        shutil.rmtree(s, ignore_errors=True)
+        ip = sh([core, "import-trace", p, "--out", s])
+        if not check(ip.returncode == 0,
+                     f"plano não verificado {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
+            return None
+        v = sh([wrapper, "validate", cap, s, "--adapter", "natural-ajax"])
+        try:
+            return json.loads(v.stdout)
+        except Exception:
+            return None
+
+    # v1 fiel: equivalent, com o aviso de versão anterior e nenhum aviso de parâmetro
+    v = validate(variant(doc, "v1", delta_param=False), "v1-fiel")
+    if v is not None:
+        avisos = [str(w) for w in v.get("warnings", [])]
+        info["v1_fiel"] = {"verdict": v.get("verdict"), "avisos": avisos}
+        check(v.get("verdict") == "equivalent",
+              f"plano não verificado v1 fiel: deveria ser equivalent; deu {v.get('verdict')!r} "
+              f"({str(v.get('summary'))[:120]!r})")
+        check(any("plano de versão anterior (v1)" in w for w in avisos),
+              f"plano não verificado v1 fiel: falta o aviso 'plano de versão anterior (v1)': {avisos[:5]}")
+        check(not any(re.search(r"par[âa]metro", w, re.I) for w in avisos),
+              f"plano não verificado v1 fiel: avisos de parâmetro inesperados: {[w for w in avisos if re.search(r'par[âa]metro', w, re.I)][:4]}")
+
+    for kind, rotulo, motivo_plano in (("v1", "v1", r"plano de versão anterior"),
+                                       ("sem-versao", "sem versão", r"plano de versão anterior"),
+                                       ("v2-sem-hash", "v2 sem hash", r"plano sem impressão")):
+        base = validate(variant(doc, kind), f"{kind}-base")
+        if base is not None:
+            info[f"{rotulo} base"] = {"verdict": base.get("verdict"),
+                                      "avisos": [str(w) for w in base.get("warnings", [])]}
+            check(base.get("verdict") == "equivalent",
+                  f"plano não verificado {rotulo}: trace sem valor trocado deveria ser equivalent; "
+                  f"deu {base.get('verdict')!r} ({str(base.get('summary'))[:120]!r})")
+            check(any(re.search(motivo_plano, w, re.I) for w in info[f"{rotulo} base"]["avisos"]),
+                  f"plano não verificado {rotulo}: falta o aviso do plano ({motivo_plano}): "
+                  f"{info[f'{rotulo} base']['avisos'][:5]}")
+        for nome, valor, motivo in (("congelado", cdelta, r"congelad"),
+                                    ("inventado", "ZZZZ" + "0" * 8, r"sem origem|inventad")):
+            v = validate(variant(doc, kind, delta_value=valor), f"{kind}-{nome}")
+            if v is None:
+                continue
+            salvo = info[f"{rotulo} {nome}"] = {"verdict": v.get("verdict"), "step": v.get("step"),
+                                                "resumo": str(v.get("summary"))[:180],
+                                                "avisos": [str(w) for w in v.get("warnings", [])]}
+            check(v.get("verdict") == "diverges",
+                  f"plano não verificado {rotulo}, delta {nome}: deveria DIVERGIR; deu {v.get('verdict')!r} "
+                  f"({salvo['resumo']!r}) — plan.parameters de plano não verificado não pode isentar")
+            check(bool(re.search(motivo, json.dumps(v, ensure_ascii=False), re.I)),
+                  f"plano não verificado {rotulo}, delta {nome}: motivo sem /{motivo}/: {salvo['resumo']!r}")
+            check(not any("plano não confere" in w for w in salvo["avisos"]),
+                  f"plano não verificado {rotulo}: não deveria acusar 'plano não confere' (o hash nem é comparado): "
+                  f"{salvo['avisos'][:4]}")
+
+
 def fuga_cases(core, wrapper, tmp, cap, trace_ok, target):
     """Rodada 9 (39410bf): `parameters` só isenta o par (name, part) que o plano regenerado produz.
 
@@ -583,6 +704,9 @@ def main():
         # ---- (6) `parameters` não isenta par que o plano não produz (39410bf)
         if trace_ok.exists():
             fuga_cases(core, wrapper, tmp, cap, trace_ok, target)
+        # ---- (7) `plan.parameters` só isenta com plano verificado (7410fa4)
+        if trace_ok.exists():
+            plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target)
     finally:
         sim.terminate()
         shutil.rmtree(tmp, ignore_errors=True)

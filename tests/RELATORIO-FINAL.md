@@ -59,13 +59,13 @@ recusaram (rc 1); depois de `cargo build --release` a bateria inteira foi repeti
 
 Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captura ao vivo de 2026-10-29 (`live-final`); não foi refeita nesta rodada.
 
-## Rodada 9, onda B — bundle final, plano versionado e `parameters` sem isenção indevida
+## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
-- **HEAD testado:** 0d28d04 (`build(app): bundle recompilado no HEAD 39410bf (isenção de parameters por (name, part))`)
+- **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)
 - **Data:** 2026-10-29
 - **Build:** `core` e `adapters/natural-ajax` (natural-core) recompilados em release antes da bateria.
-- **Bundle aceito:** `a4fe000af5e94a1a25c4146b2e58e94cdc410268850c2ee341429e01dbe313e9`
-  (16.371.376 bytes, arm64, ad-hoc), conferido por `shasum -a 256` no executável do `.app`; `tests/aceite/run_acceptance.py`
+- **Bundle aceito:** `d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f`
+  (16.384.352 bytes, arm64, ad-hoc), conferido por `shasum -a 256` no executável do `.app`; `tests/aceite/run_acceptance.py`
   (`EXPECTED_APP_SHA256`) e `src-tauri/EMPACOTAMENTO.md` apontam o mesmo hash.
 - **Dados:** sintéticos; HARs reais (H1–H3) só em agregados.
 
@@ -76,19 +76,19 @@ Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captu
 | check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
 | check_priming_injection | OK; `hashlib` proibido (o script usa `PLAN_HASH`); `os` só em `trace_*`; 12 corridas não vazias por variante |
 | check_natural_adapter (sim `strict`) | OK |
-| check_timeline_validacao | OK, com `plan.version` e os casos de fuga de `parameters` (abaixo) |
+| check_timeline_validacao | OK, com `plan.version`, fuga de `parameters` e plano não verificado (abaixo) |
 | prove_strict (adapters/natural-ajax) | OK, `fails: []` |
 | tests/exportacao | 19 passaram, 0 falhas |
-| cargo test core / src-tauri / natural-ajax | 297 / 48 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
+| cargo test core / src-tauri / natural-ajax | 298 / 48 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
 | check_real_detran (H1–H3) | OK |
 | check_real_priming sem / com `--wrapper` (H1–H3) | OK / OK |
 
-**Ciclo real do app refeito no bundle final.** `Iniciar sessão` → `Encerrar` no `ScrapeLens.app` a4fe000a:
-captura `capture-1793300173556`, 11 requisições, `complete`, `cdp+netlog`, 2 ambíguas, 154 headers verificados,
-14 linhas no testserver h1; HAR e NetLog reimportados pela UI no mesmo bundle (`har-3dbc391c02a985c5-4`, 24 requisições
-complete, e `netlog-1704043c442dcbd1-4`, 32 requisições partial). Prints novos em
+**Ciclo real do app refeito no bundle final.** `Iniciar sessão` → `Encerrar` no `ScrapeLens.app` d1136cbb:
+captura `capture-1793302372326`, 11 requisições, `complete`, `cdp+netlog`, 2 ambíguas, 154 headers verificados,
+14 linhas no testserver h1; HAR e NetLog reimportados pela UI no mesmo bundle (`har-3dbc391c02a985c5-5`, 24 requisições
+complete, e `netlog-1704043c442dcbd1-5`, 32 requisições partial). Prints novos em
 `tests/results/app-latest/screenshot-app-live.png` e `screenshot-app-imports.png`; `run.json` regenerado por
-`tests/capture/app_validate.py` (bundle novo, sessões novas, `testserver/app-20261029b`).
+`tests/capture/app_validate.py` (bundle novo, sessões novas, `testserver/app-20261029c`).
 
 **Plano versionado (`plan.version` 2) no `check_timeline_validacao`:**
 - trace fiel gerado pelo script atual declara `plan.version: 2` → `equivalent`, ZERO avisos de parâmetro ou de plano;
@@ -104,7 +104,15 @@ STAMP `4105`), com o par forjado sob um nome do plano:
 - STAMP congelado ou inventado + `{cpf → STAMP}` → `diverges` nos dois, com "valor congelado" e "sem origem";
 - `{sessionid_cliente → sig}` → só aviso "parâmetro não corresponde ao plano: sessionid_cliente → sig", `equivalent`;
 - trace fiel → `equivalent`, nenhum aviso além do de origem mapeada.
-- Em todos os casos de fuga o aviso "parâmetro não corresponde ao plano: <name> → <part>" também aparece; nada ficou em aviso.
+
+**`plan.parameters` só isenta com plano verificado (7410fa4 — L13–L15, N1/N3).**
+Na mesma trace autêntica, `plan.parameters += "XML.delta"` com o plano não verificado:
+- v1 (`plan.version: 1`) + delta congelado ou inventado → `diverges` no passo 10 ("valor congelado" / "valor sem origem");
+- sem `plan.version` + delta congelado ou inventado → `diverges`, mesmos motivos;
+- v2 sem `plan.hash` + delta congelado ou inventado → `diverges`, mesmos motivos (aviso "plano sem impressão");
+- nas três variantes, a trace sem valor trocado fica `equivalent` (o `XML.delta` do plano passa a gerar
+  "parâmetro inválido: `XML.delta` tem origem na captura", provando que não foi isentado);
+- v1 fiel (sem o item de `plan.parameters`) → `equivalent`, só com o aviso "plano de versão anterior (v1)".
 
 Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa `tests/results/app-latest` regenerado nesta
 rodada; a captura `live-final` de 2026-10-29 segue como evidência do ciclo CDP/NetLog do `run-cycle.sh`.

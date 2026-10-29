@@ -684,5 +684,99 @@
    ]
   }
  },
+ "plano_nao_verificado": {
+  "delta_capturado": "DLTC0005",
+  "v1_fiel": {
+   "verdict": "equivalent",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano de versão anterior (v1): gere o script de novo para verificar contra o plano"
+   ]
+  },
+  "v1 base": {
+   "verdict": "equivalent",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano de versão anterior (v1): gere o script de novo para verificar contra o plano",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  },
+  "v1 congelado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `XML.delta`: valor congelado: igual ao capturado e ausente da resposta pareada) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano de versão anterior (v1): gere o script de novo para verificar contra o plano",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  },
+  "v1 inventado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `XML.delta`: valor sem origem no trace (não veio de resposta anterior)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano de versão anterior (v1): gere o script de novo para verificar contra o plano",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  },
+  "sem versão base": {
+   "verdict": "equivalent",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano de versão anterior (v1): gere o script de novo para verificar contra o plano",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  },
+  "sem versão congelado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `XML.delta`: valor congelado: igual ao capturado e ausente da resposta pareada) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano de versão anterior (v1): gere o script de novo para verificar contra o plano",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  },
+  "sem versão inventado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `XML.delta`: valor sem origem no trace (não veio de resposta anterior)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano de versão anterior (v1): gere o script de novo para verificar contra o plano",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  },
+  "v2 sem hash base": {
+   "verdict": "equivalent",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano sem impressão",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  },
+  "v2 sem hash congelado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `XML.delta`: valor congelado: igual ao capturado e ausente da resposta pareada) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano sem impressão",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  },
+  "v2 sem hash inventado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `XML.delta`: valor sem origem no trace (não veio de resposta anterior)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano sem impressão",
+    "parâmetro inválido: `XML.delta` tem origem na captura"
+   ]
+  }
+ },
  "fails": []
 }

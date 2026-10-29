@@ -41,7 +41,7 @@ REPORT = ROOT / "tests" / "RELATORIO.md"
 # SHA-256 do executável do bundle final aceito nesta rodada, documentado em
 # `src-tauri/EMPACOTAMENTO.md`. Um rebuild legítimo muda o hash: atualize os dois
 # lugares juntos, para que a bateria nunca aprove um artefato não documentado.
-EXPECTED_APP_SHA256 = "a4fe000af5e94a1a25c4146b2e58e94cdc410268850c2ee341429e01dbe313e9"
+EXPECTED_APP_SHA256 = "d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f"
 
 SECRETS = [
     "SECRET-AUTH-TOKEN",
@@ -966,8 +966,8 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                         f"· prints `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}` e "
                         f"`{rel(pathlib.Path(app.get('gui', {}).get('importsScreenshot') or ''))}`")
         notes.append("Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final "
-                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em 2026-10-29 15:50 UTC−03 com o core até "
-                     "`39410bf`, incluindo `ea03ee5`/`fa23279`/`f5ea46d`); a sessão ao vivo acima é nova, não reaproveitada.")
+                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em 2026-10-29 16:28 UTC−03 com o core até "
+                     "`7410fa4`, incluindo `ea03ee5`/`fa23279`/`f5ea46d`); a sessão ao vivo acima é nova, não reaproveitada.")
         notes.append("As importações HAR e NetLog também foram refeitas no bundle final "
                      f"(`{har_import.get('id')}` e `{netlog_import.get('id')}`), agora pela UI: o usuário "
                      "selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável "
