@@ -97,3 +97,22 @@ exato.
   dois caminhos. (4) O wrapper conta a profundidade de re-execução por
   variável de ambiente e recusa quando o fallback for ele mesmo. (5) `flag`
   entra na lista de genéricos.
+- Re-revisão em 5d2c6e6: hid2, custo, abreviações e wrapper aprovados.
+  Decisões de princípio para as partes do adaptador:
+  (1) Produtor fora do plano, em qualquer rodada: com evidência forte, o
+  produtor sobe para o plano (como na cadeia); com evidência possível, ou
+  produtor sem corpo, a parte vira parâmetro obrigatório com nota. Nunca
+  literal em silêncio.
+  (2) Literal numa parte do adaptador só para: papel Structure; valor
+  constante comprovado (o mesmo valor em ≥ 2 ocorrências da sessão, inclusive
+  entre rodadas, ou presente em contexto estático); ou valor de navegação
+  (nome de página/recurso da própria cadeia). Qualquer outra parte vira
+  parâmetro obrigatório. Medir nos 3 HARs reais: os valores repetidos (ex.:
+  timeZoneOffset, #f12_selected) seguem constantes; só valores únicos e sem
+  origem viram parâmetro.
+  (3) Lista de nomes: acrescentar pw, pswrd, passw, pwrd, 2fa, mfa, totp,
+  salt, hash, assinatura, login, usuario, uid, pai, responsavel,
+  beneficiario, agencia, banco, iban, whatsapp, rua, complemento, municipio,
+  documento. Falsos positivos de nome (ex.: conta_corrente) são aceitos
+  como erro do lado seguro: viram parâmetro, nunca vazam.
+  (4) Passo produtor que não fornece nenhum valor referenciado sai do plano.
