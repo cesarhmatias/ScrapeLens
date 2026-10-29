@@ -14,10 +14,11 @@
 //! recurso de proteção não enchem a lista de suspeitos. Nada aqui abre rede.
 //!
 //! Um marcador de proteção SOZINHO não bloqueia: páginas da aplicação citam
-//! `/TSPD/` num `<script src>`. `blocked?` exige status 403/429, rota de
-//! proteção (configurável), conteúdo de desafio sem a página esperada, uma
-//! rota que trazia controles e agora vem sem eles, ou a página padrão de
-//! rejeição do F5 ASM.
+//! `/TSPD/` num `<script src>`. `blocked?` exige status 403/429, conteúdo de
+//! desafio sem a página esperada, uma rota que trazia controles e agora vem sem
+//! eles, ou a página padrão de rejeição do F5 ASM — sempre numa rota da
+//! APLICAÇÃO. Requisições às rotas de proteção (`/TSPD/`) são o handshake
+//! normal: saem `não-avaliado` com o sinal informativo `proteção`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -516,108 +517,85 @@ pub fn response_outcome_with(
     }
 
     // 2. Evidência explícita de bloqueio.
-    let mut block_signal: Option<String> = None;
-    if let Some(status) = request.status {
-        if rules.blocked_statuses.contains(&status) {
-            let name = format!("http-{status}");
-            block_signal.get_or_insert_with(|| name.clone());
-            signals.push(sig(&name, SignalKind::Protection, format!("HTTP {status}")));
-        }
-    }
-    let marker_hit = parsed.html.then_some(()).and_then(|()| {
-        let text = parsed.text.as_deref()?.to_ascii_lowercase();
-        // Rejeição conhecida > conteúdo de desafio > citação. Uma página pode
-        // citar /TSPD/ e ainda ser a página de rejeição do F5.
-        let rank = |kind| match kind {
-            MarkerKind::Rejection => 2,
-            MarkerKind::Challenge => 1,
-            MarkerKind::Reference => 0,
-        };
-        let mut best: Option<&MarkerRule> = None;
-        for marker in &rules.protection_markers {
-            if text.contains(&marker.contains.to_ascii_lowercase())
-                && best.map_or(true, |current| rank(marker.kind) > rank(current.kind))
-            {
-                best = Some(marker);
-            }
-        }
-        best
-    });
     let path = path_of(&request.url);
     let protection_path = rules
         .protection_paths
         .iter()
         .any(|p| !p.is_empty() && path.contains(p.as_str()));
-    if let Some(marker) = marker_hit {
-        // Numa rota de proteção, o sinal dela (ex.: TSPD) tem prioridade sobre
-        // um marcador genérico de rejeição presente no corpo.
-        let mut name = marker
-            .signal
-            .clone()
-            .unwrap_or_else(|| marker.contains.clone());
-        if protection_path {
-            if let Some(route) = rules
-                .protection_markers
-                .iter()
-                .find(|m| path.contains(&m.contains))
-            {
-                name = route
-                    .signal
-                    .clone()
-                    .unwrap_or_else(|| route.contains.clone());
+    let mut block_signal: Option<String> = None;
+    if protection_path {
+        // Rota da proteção: o handshake (desafio/cookie/script) é normal.
+        // `blocked?` só se a APLICAÇÃO responder desafio/rejeição ou 403/429.
+        signals.push(sig(
+            "proteção",
+            SignalKind::Info,
+            format!("rota de proteção {path}; handshake normal, não avaliada"),
+        ));
+    } else {
+        if let Some(status) = request.status {
+            if rules.blocked_statuses.contains(&status) {
+                let name = format!("http-{status}");
+                block_signal.get_or_insert_with(|| name.clone());
+                signals.push(sig(&name, SignalKind::Protection, format!("HTTP {status}")));
             }
         }
-        let no_controls = parsed.fields.is_empty();
-        let replaces_expected = no_controls && learned.expected(request).is_some();
-        let challenge = marker.kind == MarkerKind::Challenge && no_controls;
-        let rejection = marker.kind == MarkerKind::Rejection;
-        if protection_path || rejection || challenge || replaces_expected {
-            block_signal.get_or_insert_with(|| name.clone());
-            let detail = if protection_path {
-                format!("rota de proteção com o marcador {}", marker.contains)
-            } else if rejection {
-                format!(
-                    "página de rejeição conhecida (marcador {})",
-                    marker.contains
-                )
-            } else if challenge {
-                format!(
-                    "conteúdo de desafio sem a página esperada (marcador {})",
-                    marker.contains
-                )
-            } else {
-                format!(
-                    "conteúdo de desafio sem os controles esperados (marcador {})",
-                    marker.contains
-                )
+        let marker_hit = parsed.html.then_some(()).and_then(|()| {
+            let text = parsed.text.as_deref()?.to_ascii_lowercase();
+            // Rejeição conhecida > conteúdo de desafio > citação.
+            let rank = |kind| match kind {
+                MarkerKind::Rejection => 2,
+                MarkerKind::Challenge => 1,
+                MarkerKind::Reference => 0,
             };
-            signals.push(sig(&name, SignalKind::Protection, detail));
-        } else {
-            signals.push(sig(
-                &name,
-                SignalKind::Info,
-                format!(
-                    "marcador {} citado por uma página da aplicação; sozinho não é bloqueio",
-                    marker.contains
-                ),
-            ));
+            let mut best: Option<&MarkerRule> = None;
+            for marker in &rules.protection_markers {
+                if text.contains(&marker.contains.to_ascii_lowercase())
+                    && best.map_or(true, |current| rank(marker.kind) > rank(current.kind))
+                {
+                    best = Some(marker);
+                }
+            }
+            best
+        });
+        if let Some(marker) = marker_hit {
+            let name = marker
+                .signal
+                .clone()
+                .unwrap_or_else(|| marker.contains.clone());
+            let no_controls = parsed.fields.is_empty();
+            let replaces_expected = no_controls && learned.expected(request).is_some();
+            let challenge = marker.kind == MarkerKind::Challenge && no_controls;
+            let rejection = marker.kind == MarkerKind::Rejection;
+            if rejection || challenge || replaces_expected {
+                block_signal.get_or_insert_with(|| name.clone());
+                let detail = if rejection {
+                    format!(
+                        "página de rejeição conhecida (marcador {})",
+                        marker.contains
+                    )
+                } else if challenge {
+                    format!(
+                        "conteúdo de desafio sem a página esperada (marcador {})",
+                        marker.contains
+                    )
+                } else {
+                    format!(
+                        "conteúdo de desafio sem os controles esperados (marcador {})",
+                        marker.contains
+                    )
+                };
+                signals.push(sig(&name, SignalKind::Protection, detail));
+            } else {
+                signals.push(sig(
+                    &name,
+                    SignalKind::Info,
+                    format!(
+                        "marcador {} citado por uma página da aplicação; sozinho não é bloqueio",
+                        marker.contains
+                    ),
+                ));
+            }
         }
-    } else if protection_path {
-        // A própria rota de proteção, sem marcador reconhecível no corpo. A
-        // rota é evidência explícita mesmo quando o desafio vem como script
-        // (`text/javascript`): é a proteção respondendo, não a aplicação.
-        let name = rules
-            .protection_markers
-            .iter()
-            .find(|m| path.contains(m.contains.as_str()))
-            .and_then(|m| m.signal.clone())
-            .unwrap_or_else(|| "proteção".to_string());
-        block_signal.get_or_insert_with(|| name.clone());
-        signals.push(sig(
-            &name,
-            SignalKind::Protection,
-            format!("rota de proteção {path}"),
-        ));
     }
 
     // 3. Sinais positivos e campos esperados ausentes.
@@ -662,7 +640,10 @@ pub fn response_outcome_with(
         .status
         .map_or("sem status".to_string(), |s| s.to_string());
     let mut reason = String::new();
-    let (kind, verdict) = if let Some(signal) = error_signal {
+    let (kind, verdict) = if protection_path {
+        reason = format!("rota de proteção {path}; handshake normal, não avaliada");
+        (VerdictKind::NotAssessed, "não-avaliado".to_string())
+    } else if let Some(signal) = error_signal {
         (VerdictKind::AppError, format!("app-error ({signal})"))
     } else if let Some(signal) = block_signal {
         (VerdictKind::Blocked, format!("blocked? ({signal})"))

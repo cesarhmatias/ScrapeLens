@@ -156,6 +156,59 @@ fn looks_sensitive_value(value: &str) -> bool {
     value.contains("REDACTED") || (0..value.len()).any(|i| is_plate_at(value.as_bytes(), i))
 }
 
+/// Identificador opaco (CPF/processo/timestamp): longo e só de dígitos, ou hex
+/// longo. Nunca é constante estrutural, mesmo que apareça numa URL de
+/// navegação.
+fn looks_opaque_id(value: &str) -> bool {
+    let digits = value.bytes().all(|b| b.is_ascii_digit());
+    if digits && value.len() >= 6 {
+        return true;
+    }
+    value.len() >= 16 && value.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+}
+
+/// Tokens de navegação de uma URL: segmentos do caminho, nome do recurso sem
+/// extensão/`_JLIBS` e valores de query. São candidatos a constante estrutural
+/// (`op=S37`, `page=NatLogon`, `SIM1000X.html`).
+fn navigation_tokens(url: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let url = url.split('#').next().unwrap_or(url);
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let (path, query) = match rest.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (rest, None),
+    };
+    let path = match path.split_once('/') {
+        Some((_, p)) => p,
+        None => "",
+    };
+    for segment in path.split('/') {
+        let segment = segment.trim();
+        if segment.is_empty() {
+            continue;
+        }
+        out.push(segment.to_string());
+        if let Some((stem, _ext)) = segment.rsplit_once('.') {
+            if !stem.is_empty() {
+                out.push(stem.to_string());
+                if let Some(base) = stem.strip_suffix("_JLIBS") {
+                    if !base.is_empty() {
+                        out.push(base.to_string());
+                    }
+                }
+            }
+        }
+    }
+    if let Some(query) = query {
+        for (_, value) in form_pairs(query) {
+            if !value.is_empty() {
+                out.push(value);
+            }
+        }
+    }
+    out
+}
+
 /// Nome Python seguro para um parâmetro (`[a-z0-9_]`, não começa com dígito).
 fn sanitize_name(raw: &str) -> String {
     let mut name: String = raw
@@ -438,6 +491,10 @@ struct Gen<'a> {
     occurrences: Option<HashMap<(String, String), usize>>,
     /// Cache de "valor aparece em alguma resposta".
     response_hits: HashMap<String, bool>,
+    /// Valores que a própria cadeia usa como rota de navegação: segmento de
+    /// caminho, nome de página/recurso ou valor de query de `steps`/`pages`.
+    /// São constantes estruturais, não dados de sessão.
+    structural: BTreeSet<String>,
     /// Passo produtor → o que a resposta dele precisa conter para os
     /// consumidores seguintes (preenchido ao gerar cada consumidor).
     expectations: BTreeMap<String, BTreeSet<Expectation>>,
@@ -696,7 +753,7 @@ impl Gen<'_> {
         // Valor também visto em recurso estático/contexto: constante do protocolo.
         let in_context = origin.is_some_and(|o| !o.context.is_empty());
         let Some(origin) = origin else {
-            return self.fallback_param(name, value, sensitive, in_context);
+            return self.fallback_param(name, value, sensitive, in_context, true);
         };
         match origin.status {
             OriginStatus::Redacted => {
@@ -721,7 +778,7 @@ impl Gen<'_> {
                         .push(format!("{name}: extraído em runtime (origem {how}{amb})"));
                     expr
                 } else {
-                    self.fallback_param(name, value, sensitive, in_context)
+                    self.fallback_param(name, value, sensitive, in_context, false)
                 }
             }
             OriginStatus::Composite if scope == ConsumedScope::Body => {
@@ -733,28 +790,43 @@ impl Gen<'_> {
                         return expr;
                     }
                 }
-                self.fallback_param(name, value, sensitive, in_context)
+                let structural = origin.partial_composition.is_empty();
+                self.fallback_param(name, value, sensitive, in_context, structural)
             }
         }
     }
 
     /// Parâmetro para um valor sem origem observada: o valor capturado só
-    /// vira padrão com prova de constância; fora disso é obrigatório.
+    /// vira padrão com prova de constância ou quando é constante estrutural da
+    /// própria cadeia (rota/navegação); fora disso é obrigatório.
     fn fallback_param(
         &mut self,
         name: &str,
         value: &str,
         sensitive: bool,
         in_context: bool,
+        structural_ok: bool,
     ) -> String {
         if value.is_empty() {
             return "''".to_string();
         }
-        let constant = !sensitive && (in_context || self.is_proven_constant(name, value));
+        let structural = structural_ok
+            && !value.is_empty()
+            && value.len() <= 200
+            && !looks_opaque_id(value)
+            && self.structural.contains(value);
+        let constant =
+            !sensitive && (in_context || structural || self.is_proven_constant(name, value));
         if constant {
-            self.notes.push(format!(
-                "{name}: constante comprovada; parâmetro com o valor capturado como padrão"
-            ));
+            self.notes.push(if structural {
+                format!(
+                    "{name}: constante estrutural (rota/navegação); parâmetro com o valor capturado como padrão"
+                )
+            } else {
+                format!(
+                    "{name}: constante comprovada; parâmetro com o valor capturado como padrão"
+                )
+            });
         } else {
             self.notes.push(format!(
                 "{name}: sem origem observada; parâmetro obrigatório, sem padrão"
@@ -765,7 +837,11 @@ impl Gen<'_> {
             value,
             sensitive,
             if constant {
-                "constante do protocolo"
+                if structural {
+                    "constante estrutural"
+                } else {
+                    "constante do protocolo"
+                }
             } else {
                 "sem origem observada"
             },
@@ -1202,6 +1278,15 @@ pub fn to_python(
         step_reqs.push((target, vec!["requisição alvo".to_string()], String::new()));
     }
 
+    let mut structural: BTreeSet<String> = BTreeSet::new();
+    for url in std::iter::once(target.url.as_str())
+        .chain(chain.steps.iter().map(|s| s.url.as_str()))
+        .chain(chain.pages.iter().map(|s| s.url.as_str()))
+        .chain(chain.auxiliary_pages.iter().map(|s| s.url.as_str()))
+    {
+        structural.extend(navigation_tokens(url));
+    }
+
     let mut gen = Gen {
         session,
         source,
@@ -1211,6 +1296,7 @@ pub fn to_python(
         notes: Vec::new(),
         occurrences: None,
         response_hits: HashMap::new(),
+        structural,
         expectations: BTreeMap::new(),
     };
     let (captured_origin, _) = split_origin(&target.url);

@@ -161,6 +161,124 @@ fn header_outside_latin1_bundle() -> SessionBundle {
         .bundle
 }
 
+/// Driver que roda passos do script gerado com um `S.request` falso, contando
+/// quantas requisições foram disparadas antes do `fail()`.
+const STEP_DRIVER: &str = r#"
+import runpy, sys
+mod = runpy.run_path(sys.argv[3])
+mode = sys.argv[1]
+first = int(sys.argv[2])
+class Resp:
+    def __init__(self, status, text):
+        self.status_code = status
+        self.text = text
+        self.content = text.encode()
+        self.headers = {}
+class Jar:
+    def get(self, name):
+        return None
+class Session:
+    cookies = Jar()
+class S:
+    calls = 0
+    def request(self, *a, **k):
+        S.calls += 1
+        if mode == 'http403':
+            return Resp(403, 'no')
+        if mode == 'nocontrols':
+            return Resp(200, '<html><body>ok</body></html>')
+        if mode == 'fillederror':
+            return Resp(200, '<html><body><textarea name="STAMP">7</textarea>'
+                             '<textarea name="ERRORMESSAGE">Placa invalida</textarea></body></html>')
+        return Resp(200, '<html><body><textarea name="STAMP">7</textarea></body></html>')
+P = {n: d for n, d, _ in mod['PARAMS']}
+try:
+    for index in (first, first + 1):
+        if 'step_%d' % index not in mod:
+            break
+        mod['step_%d' % index](S(), {}, P, None)
+except SystemExit as exc:
+    sys.stderr.write('%s\nCALLS=%d' % (exc, S.calls))
+else:
+    sys.stderr.write('NO-FAIL CALLS=%d' % S.calls)
+"#;
+
+#[test]
+fn each_step_stops_on_bad_response_before_the_next_request() {
+    let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
+    let id = first_placa_request(&bundle);
+    let script = generate(&bundle, &id);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("priming.py");
+    std::fs::write(&path, &script).unwrap();
+
+    let run = |mode: &str, first: &str| {
+        let out = python(&["-c", STEP_DRIVER, mode, first], &path);
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+
+    // Status fora de 2xx/3xx: falha no próprio passo, sem pedir o seguinte.
+    let stderr = run("http403", "1");
+    assert!(stderr.contains("priming: passo 1: HTTP 403"), "{stderr}");
+    assert!(stderr.contains("CALLS=1"), "pediu depois do erro: {stderr}");
+
+    // Resposta sem o controle que o passo entrega aos seguintes.
+    let stderr = run("nocontrols", "2");
+    assert!(
+        stderr.contains("priming: passo 2: resposta sem STAMP"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("CALLS=1"), "pediu depois do erro: {stderr}");
+
+    // ERRORMESSAGE preenchido com HTTP 200: erro da aplicação, no passo.
+    let stderr = run("fillederror", "2");
+    assert!(
+        stderr.contains("priming: a aplicação respondeu com ERRORMESSAGE no passo 2"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("CALLS=1"), "pediu depois do erro: {stderr}");
+}
+
+#[test]
+fn step_error_fails_only_when_errormessage_is_filled() {
+    let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
+    let id = first_placa_request(&bundle);
+    let script = generate(&bundle, &id);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("priming.py");
+    std::fs::write(&path, &script).unwrap();
+    let driver = r#"
+import runpy, sys
+mod = runpy.run_path(sys.argv[1])
+class Resp:
+    def __init__(self, text):
+        self.status_code = 200
+        self.text = text
+        self.content = text.encode()
+        self.headers = {}
+try:
+    mod['step_error'](Resp('<html><body>sem erro</body></html>'), 9)
+    sys.stdout.write('ABSENT-OK\n')
+except SystemExit as exc:
+    sys.stdout.write('ABSENT-FAIL %s\n' % exc)
+try:
+    mod['step_error'](Resp('<html><body><textarea name="ERRORMESSAGE">falhou</textarea></body></html>'), 9)
+    sys.stdout.write('FILLED-OK\n')
+except SystemExit as exc:
+    sys.stdout.write('FILLED-FAIL %s\n' % exc)
+"#;
+    let out = python(&["-c", driver], &path);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("ABSENT-OK"),
+        "ausência de ERRORMESSAGE virou erro: {stdout}"
+    );
+    assert!(
+        stdout.contains("FILLED-FAIL") && stdout.contains("ERRORMESSAGE"),
+        "ERRORMESSAGE preenchido não falhou: {stdout}"
+    );
+}
+
 #[test]
 fn header_outside_latin1_fails_with_a_clear_priming_message() {
     let bundle = header_outside_latin1_bundle();
@@ -248,9 +366,18 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
         !script.contains("SYNTHPID000000000000000000000011"),
         "processId capturado"
     );
-    // F1: navegação sem origem observada também é obrigatória (sem padrão).
-    assert!(script.contains("('op', None, 'sem origem observada')"));
-    assert!(script.contains("('page', None, 'sem origem observada')"));
+    // F1 refinado: navegação da própria cadeia é constante estrutural, não dado
+    // de sessão — `op=S37` (query do passo) e `page=NatLogon` (query de uma
+    // página da cadeia) podem ter o valor capturado como padrão.
+    assert!(
+        script.contains("('op', 'S37', 'constante estrutural')"),
+        "op é navegação do fluxo e deveria ser constante estrutural:\n{script}"
+    );
+    assert!(
+        script.contains("('page', 'NatLogon', 'constante estrutural')"),
+        "page é navegação do fluxo e deveria ser constante estrutural:\n{script}"
+    );
+    assert!(script.contains("constante estrutural (rota/navegação)"));
 }
 
 /// HAR mínimo com `entries` (method, url, corpo de requisição, texto da resposta).
@@ -349,6 +476,69 @@ fn value_without_origin_is_a_default_only_with_constancy_proof() {
     assert!(
         !script.contains("ONLY_ONCE_XYZ"),
         "valor capturado não pode aparecer no script"
+    );
+}
+
+#[test]
+fn navigation_values_are_structural_constants() {
+    // O passo 1 é navegação da cadeia (`op`/`page` na query e `SIM1000X.html`
+    // no caminho); o alvo repete esses valores. São constantes estruturais.
+    let bundle = mini_bundle(vec![
+        (
+            "GET",
+            "https://mini.example.test/app?op=S37&page=NatLogon",
+            None,
+            Some("TOK=abc12345"),
+        ),
+        (
+            "GET",
+            "https://mini.example.test/UIC-SERVICOS/SIM1000X.html",
+            None,
+            Some("TOK=def67890"),
+        ),
+        (
+            "POST",
+            "https://mini.example.test/target",
+            Some("token=abc12345&token2=def67890&op=S37&page=NatLogon&page_2=SIM1000X&code=42"),
+            Some("ok"),
+        ),
+    ]);
+    let script = generate(&bundle, "har-0003");
+    for expected in [
+        "('op', 'S37', 'constante estrutural')",
+        "('page', 'NatLogon', 'constante estrutural')",
+        "('page_2', 'SIM1000X', 'constante estrutural')",
+    ] {
+        assert!(
+            script.contains(expected),
+            "{expected} deveria ser constante estrutural:\n{script}"
+        );
+    }
+    // Fora da navegação, sem prova de constância, segue obrigatório.
+    assert!(
+        script.contains("('code', None, 'sem origem observada')"),
+        "query que não é de navegação não pode ganhar padrão:\n{script}"
+    );
+}
+
+#[test]
+fn structural_constant_never_covers_sensitive_or_business_values() {
+    // A placa aparece no caminho/query da navegação, mas é dado de negócio:
+    // continua obrigatória e o valor capturado não entra no script.
+    let bundle = mini_bundle(vec![(
+        "GET",
+        "https://mini.example.test/produto.html?placa=TST0T10",
+        None,
+        Some("ok"),
+    )]);
+    let script = generate(&bundle, "har-0001");
+    assert!(
+        script.contains("('placa', None,"),
+        "placa não pode virar padrão:\n{script}"
+    );
+    assert!(
+        !script.contains("TST0T10"),
+        "placa capturada não pode aparecer no script"
     );
 }
 

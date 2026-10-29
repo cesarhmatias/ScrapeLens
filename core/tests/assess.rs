@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use scrapelens_core::assess::{assess_session, AssessRules, ResponseOutcome, VerdictKind};
+use scrapelens_core::assess::{
+    assess_session, AssessRules, ResponseOutcome, SignalKind, VerdictKind,
+};
 use scrapelens_core::import_har;
 
 fn har(dir: &str, name: &str) -> scrapelens_core::SessionBundle {
@@ -103,12 +105,18 @@ fn real_shape_normal_responses_are_app_ok() {
             assert_eq!(outcome.verdict_kind, VerdictKind::AppOk);
             assert!(outcome.http_ok && !outcome.app_signals.is_empty());
         } else if request.url.contains("/TSPD/") {
-            // A própria rota de proteção é evidência explícita de bloqueio,
-            // inclusive quando o desafio é servido como JavaScript: a resposta
-            // vem da proteção, não da aplicação.
+            // Rota de proteção: handshake normal da sessão, não bloqueio.
             protection += 1;
-            assert_eq!(outcome.verdict, "blocked? (TSPD)", "{}", outcome.url);
-            assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
+            assert_eq!(outcome.verdict, "não-avaliado", "{}", outcome.url);
+            assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+            assert!(
+                outcome
+                    .app_signals
+                    .iter()
+                    .any(|s| s.signal == "proteção" && s.kind == SignalKind::Info),
+                "{} sem sinal informativo de proteção",
+                outcome.url
+            );
         } else {
             not_assessed += 1;
             assert_eq!(
@@ -126,6 +134,14 @@ fn real_shape_normal_responses_are_app_ok() {
     assert!(protection >= 1, "fixture sem rota /TSPD/");
     assert_eq!(not_assessed + protection, 19);
     assert_eq!(outcomes.len(), 30);
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|o| o.verdict_kind == VerdictKind::Blocked)
+            .count(),
+        0,
+        "sessão que funcionou não pode ter blocked?"
+    );
     assert_eq!(
         outcomes
             .iter()
@@ -238,7 +254,7 @@ fn page_that_only_cites_the_protection_script_is_not_a_block() {
 }
 
 #[test]
-fn protection_route_itself_is_a_block() {
+fn protection_route_is_not_assessed_with_info_signal() {
     let bundle = mini(&[(
         "GET",
         "https://app.example.test/TSPD/?type=20",
@@ -247,9 +263,14 @@ fn protection_route_itself_is_a_block() {
         "<html><script>var x=1;</script></html>",
     )]);
     let outcome = &run(&bundle, &AssessRules::default())[0];
-    assert_eq!(outcome.verdict, "blocked? (TSPD)");
-    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
-    // Configurável: sem esse prefixo nas regras, a mesma resposta não bloqueia.
+    assert_eq!(outcome.verdict, "não-avaliado");
+    assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+    assert!(outcome
+        .app_signals
+        .iter()
+        .any(|s| s.signal == "proteção" && s.kind == SignalKind::Info));
+    // Configurável: sem esse prefixo nas regras, a mesma resposta também não
+    // bloqueia (só deixa de ter o sinal dedicado).
     let mut rules = AssessRules::default();
     rules.protection_paths.clear();
     let outcome = &run(&bundle, &rules)[0];
@@ -257,9 +278,9 @@ fn protection_route_itself_is_a_block() {
 }
 
 #[test]
-fn protection_route_serving_javascript_is_still_a_block() {
-    // O desafio também chega como `text/javascript`; a rota de proteção é
-    // evidência explícita mesmo sem HTML e sem marcador no corpo.
+fn protection_route_serving_javascript_is_not_assessed() {
+    // O desafio também chega como `text/javascript`; a rota de proteção é o
+    // handshake normal, não evidência de bloqueio.
     let bundle = mini(&[(
         "GET",
         "https://app.example.test/TSPD/?type=18&uid=abc",
@@ -268,9 +289,20 @@ fn protection_route_serving_javascript_is_still_a_block() {
         "var _0x1234=function(){return 1};",
     )]);
     let outcome = &run(&bundle, &AssessRules::default())[0];
-    assert_eq!(outcome.verdict, "blocked? (TSPD)");
-    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
-    assert!(outcome.verdict.contains('?'));
+    assert_eq!(outcome.verdict, "não-avaliado");
+    assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+    assert!(outcome.app_signals.iter().any(|s| s.signal == "proteção"));
+    // Mesmo com 403, a rota de proteção não vira `blocked?`: o bloqueio é
+    // afirmado na aplicação, não no handshake.
+    let bundle = mini(&[(
+        "GET",
+        "https://app.example.test/TSPD/?type=18",
+        403,
+        "text/html",
+        "no",
+    )]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "não-avaliado");
 }
 
 #[test]
@@ -498,9 +530,9 @@ fn f5_rejection_page_blocks_even_with_controls() {
 }
 
 #[test]
-fn f5_text_on_the_protection_route_keeps_the_tspd_signal() {
+fn f5_text_on_the_protection_route_stays_not_assessed() {
     // As páginas /TSPD/ reais trazem "Your support ID is"; a rota de proteção
-    // continua sendo o sinal, não vira `f5-rejected`.
+    // é handshake normal e segue `não-avaliado`, sem virar `f5-rejected`.
     let bundle = mini(&[(
         "GET",
         "https://app.example.test/TSPD/?type=20",
@@ -509,7 +541,9 @@ fn f5_text_on_the_protection_route_keeps_the_tspd_signal() {
         F5_REJECTED,
     )]);
     let outcome = &run(&bundle, &AssessRules::default())[0];
-    assert_eq!(outcome.verdict, "blocked? (TSPD)");
+    assert_eq!(outcome.verdict, "não-avaliado");
+    assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+    assert!(outcome.app_signals.iter().any(|s| s.signal == "proteção"));
 }
 
 #[test]
