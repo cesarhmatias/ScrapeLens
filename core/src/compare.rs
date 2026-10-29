@@ -608,7 +608,7 @@ pub fn compare_sessions(
             }
             for round in rounds {
                 let n = round.len();
-                if n > 0 && n * 2 < median {
+                if n > 0 && n < median && median - n >= 2 {
                     result.warnings.push(format!(
                         "possível reload: rodada com {n} passos ({side} {}); confira se a entrada foi recarregada no meio da aplicação",
                         request_ref(&round[0]).request_id

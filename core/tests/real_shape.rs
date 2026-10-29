@@ -1986,3 +1986,66 @@ fn r8_unresolved_groups_the_same_field_with_all_consumers() {
         pending[0].request_ids
     );
 }
+
+/// Item 5 (revisão 9): rodada de 3 passos contra mediana 5 também avisa; o
+/// critério antigo (`n*2 < mediana`) só pegava menos da metade.
+#[test]
+fn r9_compare_warns_for_a_three_step_reload_against_five() {
+    let mut s = S::default();
+    s.req(
+        "1.0a",
+        0.5,
+        "https://x.test/app/entry",
+        "GET",
+        R {
+            resp: Some("<html>entrada</html>"),
+            ..Default::default()
+        },
+    );
+    for (id, t) in [("1.1", 1.0), ("1.2", 1.1), ("1.3", 1.2), ("1.4", 1.3)] {
+        s.req(
+            id,
+            t,
+            "https://x.test/app/Connector",
+            "POST",
+            R {
+                body: Some("XML=consulta&STAMP=1000"),
+                resp: Some("<html>ok</html>"),
+                ..Default::default()
+            },
+        );
+    }
+    s.req(
+        "2.1",
+        5.0,
+        "https://x.test/app/entry",
+        "GET",
+        R {
+            resp: Some("<html>entrada 2</html>"),
+            ..Default::default()
+        },
+    );
+    for (id, t) in [("2.2", 5.1), ("2.3", 5.2)] {
+        s.req(
+            id,
+            t,
+            "https://x.test/app/Connector",
+            "POST",
+            R {
+                body: Some("XML=consulta&STAMP=1001"),
+                resp: Some("<html>ok</html>"),
+                ..Default::default()
+            },
+        );
+    }
+    let b = s.build();
+    let r = compare_sessions(&b.session, &b, &b.session, &b, &CompareOptions::default());
+    assert_eq!(r.rounds.len(), 2, "reload abre rodada: {:?}", r.rounds);
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("possível reload: rodada com 3 passos")),
+        "{:?}",
+        r.warnings
+    );
+}

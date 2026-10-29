@@ -15,7 +15,7 @@
 //! campos de texto sem estrutura não são detectados de forma confiável; esses
 //! corpos são omitidos por padrão.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
@@ -1070,7 +1070,11 @@ fn scan_business_plain(
     names.sort_by_key(|n| std::cmp::Reverse(n.len()));
     names.dedup();
     let mut hits: Vec<(usize, usize, BusinessKind)> = Vec::new();
-    let mut covered: Vec<(usize, usize)> = Vec::new();
+    // Intervalos já cobertos, por início. Nomes mais longos são processados
+    // antes e os intervalos não se sobrepõem; guardar por início e consultar
+    // só as bordas evita varrer todos a cada ocorrência (O(n²) em texto
+    // hostil, ex.: `placa1` × 200 mil).
+    let mut covered: BTreeMap<usize, usize> = BTreeMap::new();
     let mut unmatched = 0usize;
     for name in &names {
         if name.is_empty() {
@@ -1082,7 +1086,7 @@ fn scan_business_plain(
             let at = from + rel;
             let end = at + name.len();
             from = end;
-            if covered.iter().any(|(s, e)| at < *e && *s < end) {
+            if is_covered(&covered, at, end) {
                 continue;
             }
             let prev = lower.as_bytes().get(at.wrapping_sub(1)).filter(|_| at > 0);
@@ -1096,18 +1100,18 @@ fn scan_business_plain(
                 // vem seguido do valor no formato (`…aplacaQWE1234`): é
                 // vazamento, então redige e conta em vez de ignorar.
                 if let Some(len) = text.get(end..).and_then(|rest| kind.match_len(rest)) {
-                    covered.push((at, end + len));
+                    covered.insert(at, end + len);
                     hits.push((end, len, kind));
                 }
                 continue;
             }
             match text.get(end..).and_then(|rest| kind.match_len(rest)) {
                 Some(len) => {
-                    covered.push((at, end + len));
+                    covered.insert(at, end + len);
                     hits.push((end, len, kind));
                 }
                 None => {
-                    covered.push((at, end));
+                    covered.insert(at, end);
                     unmatched += 1;
                 }
             }
@@ -1115,6 +1119,17 @@ fn scan_business_plain(
     }
     hits.sort_by_key(|(start, len, _)| (*start, *len));
     (hits, unmatched)
+}
+
+/// `[at, end)` já está num intervalo coberto? Os intervalos não se sobrepõem;
+/// só o anterior ao início (ou um que comece dentro do trecho, possível com
+/// nomes de campo configurados que se sobrepõem) pode cruzar.
+fn is_covered(covered: &BTreeMap<usize, usize>, at: usize, end: usize) -> bool {
+    covered
+        .range(..=at)
+        .next_back()
+        .is_some_and(|(_, e)| at < *e)
+        || covered.range(at..end).next().is_some()
 }
 
 /// Redige os valores de negócio achados em um texto opaco, contando por tipo.
@@ -1674,7 +1689,7 @@ fn propagate_sensitive_values(
     }
 
     let mut not_scanned = 0usize;
-    let mut changed: Vec<String> = Vec::new();
+    let mut changed: BTreeSet<String> = BTreeSet::new();
     for (name, bytes) in generated.iter_mut() {
         let Ok(text) = std::str::from_utf8(bytes) else {
             not_scanned += 1;
@@ -1685,7 +1700,7 @@ fn propagate_sensitive_values(
         propagator.apply(&mut text);
         if text != before {
             *bytes = text.into_bytes();
-            changed.push(name.clone());
+            changed.insert(name.clone());
         }
     }
     for request in &mut session.requests {
@@ -1988,6 +2003,31 @@ mod tests {
             .iter()
             .any(|note| note.contains("heurística")));
         assert!(export.redactions.contains_key("header:auth-scheme"));
+    }
+
+    #[test]
+    fn business_scan_stays_linear_on_hostile_repeats() {
+        let limit = if cfg!(debug_assertions) { 30.0 } else { 1.0 };
+        let fields: Vec<String> = DEFAULT_BUSINESS_FIELDS
+            .iter()
+            .map(|f| f.to_string())
+            .collect();
+        BUSINESS.with(|b| *b.borrow_mut() = (fields, BTreeMap::new()));
+        for text in [
+            "placa1".repeat(200_000),
+            "placaABC1D23;".repeat(100_000),
+            "\"cpf 123\"".repeat(200_000),
+        ] {
+            let t = std::time::Instant::now();
+            let _ = redact_business_text(&text, "[REDACTED]");
+            let elapsed = t.elapsed();
+            assert!(
+                elapsed.as_secs_f64() < limit,
+                "texto de {} bytes levou {elapsed:?}",
+                text.len()
+            );
+        }
+        BUSINESS.with(|b| *b.borrow_mut() = (Vec::new(), BTreeMap::new()));
     }
 
     #[test]
