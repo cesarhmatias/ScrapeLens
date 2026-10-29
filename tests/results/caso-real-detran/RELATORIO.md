@@ -181,3 +181,55 @@ delta, `/TSPD/` fica em proteção, cookies ausentes são declarados, placas som
 capturas é utilizável (0 ambiguidades, rodadas sem par explícitas). Pendências restantes: o excesso de páginas de
 contexto (L4b), o `partialComposition` do SESSIONID (dica ainda por chegar do Core) e a origem de cookies, que
 só existe com captura ao vivo (CDP/NetLog).
+
+## Rodada 7 — script de priming e assess nos HARs reais (gerador f858b17, assess c28533b)
+
+`python3 tests/aceite/check_real_priming.py <H1> <H2> <H3>` (HARs somente leitura; sessão e scripts em `/tmp` 0700,
+apagados; só agregados; o script gerado **não** foi executado: só o modo plano, sem `--confirmar`, e sem rede).
+Valores capturados foram usados só em memória para contar ocorrências literais.
+
+### Script do 1º `cmd_consultar_placa`
+| Métrica | H1 | H2 | H3 |
+|---|---|---|---|
+| `ast.parse` | OK | OK | OK |
+| Modo plano (rc, linhas = passos, "Nada foi enviado") | 0 / 11 / sim | 0 / 10 / sim | 0 / 10 / sim |
+| Passos / POSTs do Connector no script (POSTs no HAR) | 11 / 6 (8) | 10 / 5 (19) | 10 / 5 (23) |
+| Ordem = fluxo manual (easynat-app → NatLogon → init → SIM1000X → init → on_interceptor → VES0009X → init → cmd_filtro → consultar) | **sim** | **não** (sem `cmd_filtro`) | **não** (sem `cmd_filtro`) |
+| Resposta do POST anterior capturada no HAR | sim | **não** (4 respostas do Connector sem corpo) | **não** (idem) |
+| STAMP | controle HTML | **parâmetro `stamp` (padrão = valor capturado)** | idem H2 |
+| delta (trecho do XML) | trecho extraído em runtime | idem | idem |
+| SESSIONID | prefixo extraído do easynat-app + parâmetro `sessionid_cliente` | idem | idem |
+| placa | parâmetro obrigatório | obrigatório | obrigatório |
+| Parâmetros obrigatórios / com padrão | `placa` / `op`, `sessionid_cliente` | `placa` / `op`, `sessionid_cliente`, `stamp` | idem H2 |
+| **Valores capturados literais no código (contagem)** | **1** (sufixo do SESSIONID, em `PARAMS`) | **2** (sufixo do SESSIONID + STAMP, ambos em `PARAMS`) | **2** (idem) |
+
+Alvo alternativo em H2/H3 (1º `cmd_consultar_placa` cuja resposta anterior foi capturada, 2ª rodada): STAMP por controle HTML,
+placa obrigatória, mas o script tem **16 passos / 10 POSTs** e **repete a rodada 1 inteira** (2× easynat-app, 2 sequências de
+init) antes do `cmd_filtro`; 2 sufixos de SESSIONID literais em `PARAMS` (um por sessão).
+Falso positivo tratado: um "delta" curto (≤ 8) coincide com a constante do cabeçalho do XML dos `init`; contado à parte, não como vazamento.
+
+### assess
+| Veredito (todas as requisições) | H1 | H2 | H3 |
+|---|---|---|---|
+| app-ok / blocked? / indeterminado | 11 / 13 / 111 | 21 / 14 / 174 | 28 / 31 / 287 |
+| POSTs do Connector | **8 app-ok** | 15 app-ok + 4 indeterminado | 19 app-ok + 4 indeterminado |
+| `blocked?` em 200 do Connector | 0 | 0 | 0 |
+| `blocked?` sem sinal explícito | 0 | 0 | 0 |
+
+Os 4 `indeterminado` de H2/H3 são exatamente os POSTs do Connector sem corpo de resposta capturado (coerente: sem corpo não se afirma app-ok).
+Respostas normais do Connector saem `app-ok`. Os `blocked?` são todos de GET, com o marcador `/TSPD/` como sinal explícito;
+porém **parte deles são páginas da própria aplicação** (easynat-app: 1/2/3, SIM1000X e VES0009X: 1/2/3 por HAR) que apenas
+referenciam o script `/TSPD/`: provável falso positivo ("HTML sem controles com o marcador /TSPD/" em página de entrada/modelo).
+
+### Veredito da Rodada 7
+O gerador funciona e o fluxo **bate com o manual quando os corpos existem** (H1: `ast` OK, ordem exata, STAMP por controle HTML,
+delta por trecho, placa obrigatória, modo plano sem enviar). Reprovações que viram requisitos:
+1. **Valor de sessão capturado como padrão de parâmetro** (`sessionid_cliente = '_<12 dígitos>'`, e `stamp` em H2/H3): contraria o Aceite 1
+   ("nenhum valor sensível capturado como padrão"). Sufixo do SESSIONID, STAMP e similares devem ser obrigatórios e sem padrão
+   (ou ao menos redigidos); o `op` (constante pública do protocolo) pode ter padrão.
+2. **Sem corpo de resposta anterior, o passo `cmd_filtro` some e o STAMP vira parâmetro** em vez de falhar claramente: o script devia avisar
+   que a cadeia está incompleta (respostas do Connector sem corpo no HAR) em vez de gerar um plano que não bate com o fluxo.
+3. **Script do 1º consultar da 2ª rodada repete a rodada anterior** (16 passos, 2 sessões): o gerador deve restringir os produtores à rodada do alvo
+   (mesma causa do INIT cruzando rodadas já reportada nas fixtures).
+4. **assess**: não marcar `blocked?` páginas de aplicação que só citam `/TSPD/`; exigir resposta de proteção (corpo curto/sem marcadores da aplicação) ou status.
+Pendente: a prova contra o `detran-sim` com `--confirmar` (Aceite 2) e a de injeção (Aceite 4) não fazem parte desta rodada de HARs reais.
