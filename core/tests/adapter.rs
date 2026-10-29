@@ -1,0 +1,246 @@
+//! Ponto de extensão `ProtocolAdapter` com um protocolo inventado (sem Natural):
+//! `LP!` + registros `<nn:nome><nome><mm:valor><valor>` com comprimentos de 2 dígitos.
+
+use std::sync::Arc;
+
+use scrapelens_core::adapter::{
+    AdapterContext, AdapterPart, AdapterRegistry, Decoded, PartRole, ProtocolAdapter,
+};
+use scrapelens_core::compare::{compare_sessions, CompareOptions};
+use scrapelens_core::error::{CoreError, Result};
+use scrapelens_core::flow::{value_origins, ConsumedScope, FlowOptions, OriginStatus};
+use scrapelens_core::model::SessionBundle;
+use scrapelens_core::parse::cdp::{build_cdp_session, parse_cdp_jsonl};
+use scrapelens_core::parse::cdp_bodies::apply_cdp_bodies;
+use serde_json::{json, Value};
+
+struct LenPrefix;
+
+impl ProtocolAdapter for LenPrefix {
+    fn id(&self) -> &str {
+        "len-prefix"
+    }
+    fn detect(&self, field: &str, value: &str, _ctx: &AdapterContext<'_>) -> bool {
+        field == "XML" && value.starts_with("LP!")
+    }
+    fn decode(&self, value: &str) -> Result<Decoded> {
+        let bad = |why: &str| CoreError::LimitExceeded {
+            message: format!("len-prefix: {why}"),
+        };
+        let b = value.as_bytes();
+        let mut i = 3;
+        let mut parts = Vec::new();
+        let read = |i: &mut usize| -> Result<(usize, usize)> {
+            let n: usize = value
+                .get(*i..*i + 2)
+                .and_then(|s| s.parse().ok())
+                .ok_or_else(|| bad("comprimento"))?;
+            let start = *i + 2;
+            if start + n > b.len() {
+                return Err(bad("truncado"));
+            }
+            *i = start + n;
+            Ok((start, n))
+        };
+        while i < b.len() {
+            let (ns, nl) = read(&mut i)?;
+            let (vs, vl) = read(&mut i)?;
+            let name = &value[ns..ns + nl];
+            parts.push(AdapterPart {
+                name: if name == "delta" {
+                    name.into()
+                } else {
+                    format!("p.{name}")
+                },
+                value: value[vs..vs + vl].to_string(),
+                offset: vs,
+                len: vl,
+                role: if name == "delta" {
+                    PartRole::Delta
+                } else {
+                    PartRole::Value
+                },
+            });
+        }
+        Ok(Decoded { parts })
+    }
+    fn encode(&self, d: &Decoded) -> Result<String> {
+        let mut out = String::from("LP!");
+        for p in &d.parts {
+            let name = p.name.strip_prefix("p.").unwrap_or(&p.name);
+            out += &format!("{:02}{}{:02}{}", name.len(), name, p.value.len(), p.value);
+        }
+        Ok(out)
+    }
+}
+
+fn lp(delta: &str, plate: &str) -> String {
+    format!(
+        "LP!{:02}delta{:02}{delta}07v_placa{:02}{plate}",
+        5,
+        delta.len(),
+        plate.len()
+    )
+}
+
+fn registry() -> FlowOptions {
+    FlowOptions {
+        adapters: AdapterRegistry::new().with(Arc::new(LenPrefix)),
+        ..FlowOptions::default()
+    }
+}
+
+fn body_line(id: &str, kind: &str, data: &str) -> Value {
+    json!({"v":1,"requestId":id,"attemptIndex":0,"kind":kind,"state":"captured","encoding":"utf8",
+        "data":data,"originalSize":data.len(),"capturedSize":data.len(),"source":"x","reason":null,"timestamp":1.0})
+}
+
+/// resposta com o delta (req 1) → consulta que o devolve com uma placa (req 2).
+fn flow(delta: &str, plate: &str) -> SessionBundle {
+    let (mut events, mut bodies) = (Vec::new(), Vec::new());
+    let mut step = |n: u32, post: Option<String>, resp: String, ts: f64| {
+        let id = format!("{n}.1");
+        let mut h = json!({});
+        if post.is_some() {
+            h["content-type"] = json!("application/x-www-form-urlencoded");
+        }
+        events.push(json!({"method":"Network.requestWillBeSent","params":{"requestId":id,"loaderId":"L",
+            "timestamp":ts,"wallTime":1793046000.0+ts,"request":{"url":"https://x.test/app/Connector","method":"POST",
+            "headers":h,"postData":post,"hasPostData":post.is_some()},"type":"XHR","frameId":"F"}}));
+        events.push(json!({"method":"Network.responseReceived","params":{"requestId":id,"loaderId":"L",
+            "timestamp":ts+0.01,"type":"XHR","response":{"url":"https://x.test/app/Connector","status":200,
+            "statusText":"","headers":{"content-type":"text/html"},"protocol":"http/1.1"}}}));
+        events.push(json!({"method":"Network.loadingFinished","params":{"requestId":id,"timestamp":ts+0.02,"encodedDataLength":1}}));
+        if let Some(p) = post {
+            bodies.push(body_line(&id, "request", &p));
+        }
+        bodies.push(body_line(&id, "response", &resp));
+    };
+    step(
+        1,
+        Some("A=1".into()),
+        format!("XML={}&STAMP=7", lp(delta, "ZZZ0Z00")),
+        1.0,
+    );
+    step(
+        2,
+        Some(format!("XML={}&STAMP=7", lp(delta, plate))),
+        "XML=ok".into(),
+        2.0,
+    );
+    let jsonl = |v: &[Value]| {
+        v.iter()
+            .map(|x| format!("{x}\n"))
+            .collect::<String>()
+            .into_bytes()
+    };
+    let capture = parse_cdp_jsonl(&jsonl(&events)).unwrap();
+    let (mut session, _) = build_cdp_session(&capture);
+    let mut attachments = Default::default();
+    apply_cdp_bodies(&mut session, &mut attachments, &jsonl(&bodies));
+    let mut bundle = SessionBundle::new(session);
+    bundle.attachments = attachments;
+    bundle
+}
+
+fn logical(b: &SessionBundle, cdp_id: &str) -> String {
+    b.session
+        .requests
+        .iter()
+        .find(|r| r.cdp.as_ref().and_then(|c| c.request_id.as_deref()) == Some(cdp_id))
+        .unwrap()
+        .id
+        .clone()
+}
+
+#[test]
+fn detect_and_round_trip() {
+    let ctx = AdapterContext {
+        url: "u",
+        method: "POST",
+        request: true,
+        media: None,
+    };
+    let reg = registry().adapters;
+    let text = lp("D3LTA-0001", "ABC1D23");
+    let adapter = reg.claim("XML", &text, &ctx).expect("reivindica");
+    assert_eq!(adapter.id(), "len-prefix");
+    assert!(reg.claim("OUTRO", &text, &ctx).is_none());
+    assert!(reg.claim("XML", "plain", &ctx).is_none());
+    let decoded = adapter.decode(&text).unwrap();
+    assert_eq!(adapter.encode(&decoded).unwrap(), text);
+    let p = &decoded.parts[1];
+    assert_eq!(
+        (p.name.as_str(), p.value.as_str()),
+        ("p.v_placa", "ABC1D23")
+    );
+    assert_eq!(&text[p.offset..p.offset + p.len], "ABC1D23");
+    // gramática violada → erro, não pânico
+    assert!(adapter.decode("LP!99x").is_err());
+}
+
+#[test]
+fn origins_use_internal_names_and_offsets_with_adapter() {
+    let b = flow("D3LTA-0001", "ABC1D23");
+    let target = logical(&b, "2.1");
+    let o = value_origins(&b.session, &b, &target, &registry()).unwrap();
+    let delta = o
+        .values
+        .iter()
+        .find(|v| v.scope == ConsumedScope::Body && v.field == "XML.delta")
+        .unwrap_or_else(|| {
+            panic!(
+                "{:?}",
+                o.values.iter().map(|v| &v.field).collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(delta.value, "D3LTA-0001");
+    assert_eq!(delta.parent.as_deref(), Some("XML"));
+    assert_eq!(delta.offset, Some(12)); // "LP!05delta10"
+    assert!(
+        matches!(delta.status, OriginStatus::Origin),
+        "{:?}",
+        delta.status
+    );
+    assert_eq!(delta.evidences[0].request_id, logical(&b, "1.1"));
+    let plate = o
+        .values
+        .iter()
+        .find(|v| v.field == "XML.p.v_placa")
+        .expect("placa");
+    assert_eq!(plate.value, "ABC1D23");
+    // sem substrings comuns no lugar dos nomes
+    let stray: Vec<_> = o
+        .values
+        .iter()
+        .filter(|v| v.parent.as_deref() == Some("XML") && !v.field.starts_with("XML."))
+        .map(|v| (&v.field, &v.value))
+        .collect();
+    assert!(stray.is_empty(), "{stray:?}");
+}
+
+#[test]
+fn without_registry_nothing_changes() {
+    let b = flow("D3LTA-0001", "ABC1D23");
+    let target = logical(&b, "2.1");
+    let o = value_origins(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    assert!(!o.values.iter().any(|v| v.field.starts_with("XML.")));
+    // continua o comportamento por substrings comuns
+    assert!(o.values.iter().any(|v| v.parent.as_deref() == Some("XML")));
+}
+
+#[test]
+fn compare_shows_internal_names() {
+    let a = flow("D3LTA-0001", "ABC1D23");
+    let bb = flow("D3LTA-0002", "QWE9R88");
+    let options = CompareOptions {
+        flow: registry(),
+        ..CompareOptions::default()
+    };
+    let r = compare_sessions(&a.session, &a, &bb.session, &bb, &options);
+    let text = serde_json::to_string(&r).unwrap();
+    assert!(text.contains("XML.delta"), "{text}");
+    assert!(text.contains("XML.p.v_placa"), "{text}");
+    let plain = compare_sessions(&a.session, &a, &bb.session, &bb, &CompareOptions::default());
+    assert!(!serde_json::to_string(&plain).unwrap().contains("XML.delta"));
+}

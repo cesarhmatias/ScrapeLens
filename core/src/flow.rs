@@ -78,6 +78,7 @@ use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::adapter::{AdapterContext, AdapterRegistry, PartRole};
 use crate::error::{CoreError, Result};
 use crate::model::{Attempt, BodyState, SessionV1};
 use crate::search::BodySource;
@@ -328,6 +329,10 @@ pub(crate) struct Consumed {
     pub(crate) field: String,
     pub(crate) occurrence: usize,
     pub(crate) value: String,
+    /// Reivindicado por um adaptador: sem trechos por substring comum.
+    pub(crate) adapted: bool,
+    /// Parte decodificada por adaptador: campo-pai e offset no original.
+    pub(crate) part_of: Option<(String, u64)>,
 }
 
 const REDACTED_MARK: &str = "REDACTED";
@@ -573,7 +578,12 @@ fn named_fields(text: &str, media: &str) -> Option<Vec<(String, String, Option<u
     None
 }
 
-fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> ProducerData {
+fn producer_data(
+    attempt: &Attempt,
+    source: &dyn BodySource,
+    min: usize,
+    adapters: &AdapterRegistry,
+) -> ProducerData {
     let mut data = ProducerData::default();
     for record in &attempt.set_cookies {
         if let Some(parsed) = &record.parsed {
@@ -656,7 +666,26 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
         }
         match named_fields(&text, &media) {
             Some(fields) if !is_html => {
+                let actx = AdapterContext {
+                    url: &attempt.url,
+                    method: &attempt.method,
+                    request: false,
+                    media: Some(&media),
+                };
                 for (name, value, offset) in fields {
+                    if let Some(parts) = adapter_parts(adapters, &name, &value, &actx) {
+                        for (part_name, part_value, part_offset) in parts {
+                            data.items.push(Item {
+                                scope: ProducerScope::ResponseBody,
+                                field: Some(format!("{name}.{part_name}")),
+                                value: part_value,
+                                offset: offset.map(|o| o + part_offset as u64),
+                                named: true,
+                                html: false,
+                                soft: false,
+                            });
+                        }
+                    }
                     if value.len() >= OPAQUE_MIN {
                         data.opaque.push(OpaqueField {
                             name: name.clone(),
@@ -694,12 +723,40 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
     data
 }
 
+/// Partes (nome relativo, valor, offset) de um campo reivindicado por adaptador;
+/// `None` sem registro, sem reivindicação ou com erro de decodificação (volta
+/// ao comportamento sem adaptador).
+fn adapter_parts(
+    adapters: &AdapterRegistry,
+    field: &str,
+    value: &str,
+    ctx: &AdapterContext<'_>,
+) -> Option<Vec<(String, String, usize)>> {
+    if adapters.is_empty() {
+        return None;
+    }
+    let adapter = adapters.claim(field, value, ctx)?;
+    let decoded = adapter.decode(value).ok()?;
+    Some(
+        decoded
+            .parts
+            .into_iter()
+            .filter(|p| p.role != PartRole::Structure && !p.value.is_empty())
+            .map(|p| (p.name, p.value, p.offset))
+            .collect(),
+    )
+}
+
 fn find_ci_ascii(text: &str, needle: &str) -> bool {
     let (h, n) = (text.as_bytes(), needle.as_bytes());
     h.len() >= n.len() && (0..=h.len() - n.len()).any(|i| h[i..i + n.len()].eq_ignore_ascii_case(n))
 }
 
-fn consumed_values(attempt: &Attempt, source: &dyn BodySource) -> Vec<Consumed> {
+fn consumed_values(
+    attempt: &Attempt,
+    source: &dyn BodySource,
+    adapters: &AdapterRegistry,
+) -> Vec<Consumed> {
     let mut out: Vec<Consumed> = Vec::new();
     let mut counts: HashMap<(u8, String), usize> = HashMap::new();
     let mut push = |scope: ConsumedScope, field: String, value: String, out: &mut Vec<Consumed>| {
@@ -710,6 +767,8 @@ fn consumed_values(attempt: &Attempt, source: &dyn BodySource) -> Vec<Consumed> 
             field,
             occurrence: *occurrence,
             value,
+            adapted: false,
+            part_of: None,
         });
         *occurrence += 1;
     };
@@ -743,8 +802,30 @@ fn consumed_values(attempt: &Attempt, source: &dyn BodySource) -> Vec<Consumed> 
         let media = media_of(&attempt.request_headers, &attempt.request_body);
         match named_fields(&text, &media) {
             Some(fields) => {
+                let ctx = AdapterContext {
+                    url: &attempt.url,
+                    method: &attempt.method,
+                    request: true,
+                    media: Some(&media),
+                };
                 for (name, value, _) in fields {
-                    push(ConsumedScope::Body, name, value, &mut out);
+                    let parts = adapter_parts(adapters, &name, &value, &ctx);
+                    push(ConsumedScope::Body, name.clone(), value, &mut out);
+                    if let Some(parts) = parts {
+                        if let Some(last) = out.last_mut() {
+                            last.adapted = true;
+                        }
+                        for (part_name, part_value, offset) in parts {
+                            let before = out.len();
+                            push(
+                                ConsumedScope::Body,
+                                format!("{name}.{part_name}"),
+                                part_value,
+                                &mut out,
+                            );
+                            out[before].part_of = Some((name.clone(), offset as u64));
+                        }
+                    }
                 }
             }
             None => push(ConsumedScope::Body, "(body)".to_string(), text, &mut out),
@@ -1003,6 +1084,7 @@ impl<'a> FlowContext<'a> {
             self.attempt(pos),
             self.source,
             self.options.min_match_len,
+            &self.options.adapters,
         ));
         self.producers.borrow_mut().insert(pos, data.clone());
         data
@@ -1012,7 +1094,11 @@ impl<'a> FlowContext<'a> {
         if let Some(found) = self.consumed.borrow().get(&pos) {
             return found.clone();
         }
-        let data = Rc::new(consumed_values(self.attempt(pos), self.source));
+        let data = Rc::new(consumed_values(
+            self.attempt(pos),
+            self.source,
+            &self.options.adapters,
+        ));
         self.consumed.borrow_mut().insert(pos, data.clone());
         data
     }
@@ -1258,7 +1344,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                     }
                 }
             }
-            if value.scope == ConsumedScope::Body && partial_ok {
+            if value.scope == ConsumedScope::Body && partial_ok && !value.adapted {
                 opaque_candidates(ctx, value, &earlier, &mut found);
             }
         }
@@ -1283,7 +1369,9 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
             }
         }
         // campo com origem própria não vira também "composto" (sem duplicar)
-        let sub = if matches!(entry.status, OriginStatus::Origin | OriginStatus::Ambiguous) {
+        let sub = if value.adapted
+            || matches!(entry.status, OriginStatus::Origin | OriginStatus::Ambiguous)
+        {
             Vec::new()
         } else {
             partial_entries(ctx, value, found, &rank)
@@ -1312,6 +1400,10 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 }
             }
             entry.partial_composition = partial_hints;
+        }
+        if let Some((parent, offset)) = &value.part_of {
+            entry.parent = Some(parent.clone());
+            entry.offset = Some(*offset);
         }
         relabel(&mut entry);
         result.values.push(entry);
@@ -1835,6 +1927,8 @@ fn partial_entries(
             field: value.field.clone(),
             occurrence: value.occurrence,
             value: String::from_utf8_lossy(&a[start..start + len]).into_owned(),
+            adapted: false,
+            part_of: None,
         };
         let mut entry = finish_entry(ctx, &sub, raw, &[]);
         entry.parent = Some(value.field.clone());
