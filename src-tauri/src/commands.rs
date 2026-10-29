@@ -809,12 +809,7 @@ fn validate_execution_blocking(
     let trace = cached_session(&dir)?;
     let mut options = ValidateOptions { rules, ..Default::default() };
     options.compare.flow = crate::adapters::flow_options();
-    // mesmas opções do script exportado (adaptador e codificador) para recalcular o `plan.hash`
-    options.priming = scrapelens_core::export::priming::PrimingOptions {
-        flow: crate::adapters::flow_options(),
-        adapter_encoders: crate::adapters::priming_encoders(),
-        ..Default::default()
-    };
+    // o `plan.hash` é recalculado com os mesmos adaptadores da geração (o app gera e valida sempre com o adaptador)
     options.compare.map_origin = map;
     let validation = validate(
         &capture.session,
@@ -891,7 +886,7 @@ fn read_rules_file(path: &Path) -> Result<Option<String>, String> {
 }
 
 pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
-    use scrapelens_core::assess::{assess_session, AssessRules};
+    use scrapelens_core::assess::assess_session;
     let rules_path = dir.join("assess-rules.json");
     let rules = load_rules(dir)?;
     let lazy = cached_session(dir)?;
@@ -1781,13 +1776,17 @@ mod tests {
         fs::remove_dir_all(&root).ok();
         fs::create_dir_all(&root).unwrap();
         let ok = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), None).unwrap();
-        assert_eq!(ok.validation.summary, "execução equivalente à captura");
+        assert!(ok.validation.summary.starts_with("execução equivalente à captura"), "{}", ok.validation.summary);
+        assert!(ok.validation.summary.contains("[origem mapeada:"));
         assert!(
             ok.validation.steps.iter().flat_map(|st| &st.expected).any(|n| n.reason.contains("parâmetro do usuário")),
             "placa/CPF informados viram esperado (parâmetro do usuário)"
         );
         let bad = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-403.json"), None).unwrap();
         assert!(bad.validation.summary.starts_with("diverge no passo 3"), "{}", bad.validation.summary);
+        let down = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-incompleta.json"), None).unwrap();
+        assert_eq!(serde_json::to_value(down.validation.verdict).unwrap(), "incomplete");
+        assert!(down.validation.summary.starts_with("incompleta: parou no passo 1"), "{}", down.validation.summary);
         assert_ne!(ok.trace_dir, bad.trace_dir);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(fs::metadata(&bad.trace_dir).unwrap().permissions().mode() & 0o777, 0o700);

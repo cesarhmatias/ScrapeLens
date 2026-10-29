@@ -75,7 +75,7 @@ await page.waitForSelector(".tabs");
 results.openedFromTimeline = await page.locator("h1, .req-title, .detail-head").first().innerText().catch(() => null);
 await page.getByRole("button", { name: /Sessão/ }).first().click();
 // Validar execução: trace ok, depois 403
-for (const [n, name] of [[0, "39-validar-execucao-equivalente.png"], [1, "40-validar-execucao-diverge-403.png"]]) {
+for (const [n, name] of [[0, "39-validar-execucao-equivalente.png"], [1, "40-validar-execucao-diverge-403.png"], [2, "41-validar-execucao-incompleta.png"]]) {
   nextValidate = n;
   await page.getByRole("button", { name: "Validar execução…" }).click();
   await page.waitForSelector(".validation-table tbody tr");
