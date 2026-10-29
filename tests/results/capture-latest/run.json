@@ -1,7 +1,7 @@
 {
- "runId": "20261027T0730Z",
- "generatedAt": "2026-10-27T07:11:07Z",
- "chromeVersion": "156.0.8078.48",
+ "runId": "live-final",
+ "generatedAt": "2026-10-29T04:20:57Z",
+ "chromeVersion": "156.0.8078.73",
  "ports": 9781,
  "certificateInstalled": false,
  "networkPolicy": "Chrome com --host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
@@ -22,24 +22,24 @@
    "streamSessions": 2,
    "verifiedRequestViews": 11,
    "completeness": "complete",
-   "netlogBytes": 1127728,
-   "cdpBytes": 423503,
+   "netlogBytes": 1200343,
+   "cdpBytes": 423595,
    "meta": {
     "name": "h1h2",
-    "startedAt": "2026-10-27T07:10:19.330Z",
-    "finishedAt": "2026-10-27T07:10:30.223Z",
+    "startedAt": "2026-10-29T04:19:57.912Z",
+    "finishedAt": "2026-10-29T04:20:21.596Z",
     "browser": {
      "name": "Chrome",
-     "version": "Chrome/156.0.8078.48",
+     "version": "Chrome/156.0.8078.73",
      "protocol": "1.3"
     },
-    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/profile-h1h2",
+    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/live-final/profile-h1h2",
     "chromeArgs": [
      "--headless=new",
-     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/profile-h1h2",
+     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/live-final/profile-h1h2",
      "--remote-debugging-port=9881",
      "--remote-debugging-address=127.0.0.1",
-     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/h1h2.chrome-netlog.json",
+     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/live-final/h1h2.chrome-netlog.json",
      "--net-log-capture-mode=Everything",
      "--no-first-run",
      "--no-default-browser-check",
@@ -95,11 +95,11 @@
     "cdpEvents": 146,
     "harWritten": false,
     "harError": "Network.getHAR indisponível: 'Network.getHAR' wasn't found",
-    "netlogBytes": 1127728,
-    "cdpBytes": 423503,
+    "netlogBytes": 1200343,
+    "cdpBytes": 423595,
     "error": null
    },
-   "sessionSha256": "ba2fccd1704ccc6d8e63bf71e4d2f2fbfd784e1a4c913f32e88a31ceb7f241b7"
+   "sessionSha256": "ba63ae797e950f76b6d927a94942652892946a69601ffaad28a4ecd34f7e966a"
   },
   {
    "name": "h3",
@@ -116,25 +116,25 @@
    "streamSessions": 12,
    "verifiedRequestViews": 0,
    "completeness": "complete",
-   "netlogBytes": 1321057,
-   "cdpBytes": 391811,
+   "netlogBytes": 1307241,
+   "cdpBytes": 392240,
    "meta": {
     "name": "h3",
-    "startedAt": "2026-10-27T07:10:44.047Z",
-    "finishedAt": "2026-10-27T07:10:54.238Z",
+    "startedAt": "2026-10-29T04:20:34.915Z",
+    "finishedAt": "2026-10-29T04:20:43.903Z",
     "browser": {
      "name": "Chrome",
-     "version": "Chrome/156.0.8078.48",
+     "version": "Chrome/156.0.8078.73",
      "protocol": "1.3"
     },
-    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/profile-h3",
+    "profile": "/Users/cesar/Projects/scrapelens/tests/capture/runs/live-final/profile-h3",
     "chromeArgs": [
      "--headless=new",
      "--origin-to-force-quic-on=127.0.0.1:9782",
-     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/profile-h3",
+     "--user-data-dir=/Users/cesar/Projects/scrapelens/tests/capture/runs/live-final/profile-h3",
      "--remote-debugging-port=9881",
      "--remote-debugging-address=127.0.0.1",
-     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/20261027T0730Z/h3.chrome-netlog.json",
+     "--log-net-log=/Users/cesar/Projects/scrapelens/tests/capture/runs/live-final/h3.chrome-netlog.json",
      "--net-log-capture-mode=Everything",
      "--no-first-run",
      "--no-default-browser-check",
@@ -175,14 +175,14 @@
       "probe": "{\"done\":null,\"loc\":\"https://127.0.0.1:9782/echo-order?case=real-h3\"}"
      }
     ],
-    "cdpEvents": 103,
+    "cdpEvents": 105,
     "harWritten": false,
     "harError": null,
-    "netlogBytes": 1321057,
-    "cdpBytes": 391811,
+    "netlogBytes": 1307241,
+    "cdpBytes": 392240,
     "error": null
    },
-   "sessionSha256": "5b8b0139d0f8b719916b9dd17b1a185b3383a0d8a846dd777a204471ed96411e"
+   "sessionSha256": "58a0bf9d7ae860074c9c697eb11da60387db5f5397508d3da7ab8331b829a78a"
   }
  ],
  "har": {

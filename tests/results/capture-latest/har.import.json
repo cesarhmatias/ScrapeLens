@@ -1,5 +1,5 @@
 {
-  "output": "tests/capture/runs/20261027T0730Z/session-har",
+  "output": "tests/capture/runs/live-final/session-har",
   "requests": 15,
   "warnings": 0
 }
