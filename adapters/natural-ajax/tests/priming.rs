@@ -752,3 +752,25 @@ fn header_command_and_resource_names_stay_literal_in_strict_mode() {
     assert!(!out.text.contains("('xml_event_2', None,"), "{}", out.text);
     assert!(out.text.contains("('event', 'V', 'cmd_"), "{}", out.text);
 }
+
+#[test]
+fn param_uses_map_parameters_to_adapter_parts_without_values() {
+    let bundle = fixture("real-shape-1round.har");
+    let target = bundle
+        .session
+        .requests
+        .iter()
+        .rev()
+        .find(|r| r.method == "POST" && r.url.contains("Connector"))
+        .map(|r| r.id.clone())
+        .unwrap();
+    let out = to_python(&bundle.session, &bundle, &target, &options()).expect("gera");
+    let uses = out
+        .text
+        .lines()
+        .find(|l| l.starts_with("PARAM_USES = ["))
+        .expect("PARAM_USES");
+    assert!(uses.contains("('placa', 'XML.p.v_placa')"), "{uses}");
+    assert!(uses.contains("('sessionid_cliente', 'XML.sid')"), "{uses}");
+    assert!(!uses.contains("TST0T10"), "{uses}");
+}

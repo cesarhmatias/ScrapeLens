@@ -865,6 +865,7 @@ fn adapter_field_expr(
                 }
             }
         };
+        gen.note_params(&format!("{name}.{}", part.name), &expr);
         items.push(format!("({}, {}, {})", lit(&part.name), lit(role), expr));
     }
     gen.encoders_used.insert(encoder_index);
@@ -1407,9 +1408,23 @@ struct Gen<'a> {
     part_counts: HashMap<String, HashMap<(String, String), usize>>,
     /// Campos reivindicados por adaptador (para podar produtores não usados).
     claimed_fields: BTreeSet<String>,
+    /// (parâmetro, parte/campo onde entra): só nomes, para o trace.
+    param_uses: BTreeSet<(String, String)>,
 }
 
 impl Gen<'_> {
+    /// Registra que a expressão `expr` usa parâmetros `P['nome']` em `part`.
+    fn note_params(&mut self, part: &str, expr: &str) {
+        let mut rest = expr;
+        while let Some(at) = rest.find("P['") {
+            let after = &rest[at + 3..];
+            let Some(end) = after.find("']") else { break };
+            self.param_uses
+                .insert((after[..end].to_string(), part.to_string()));
+            rest = &after[end..];
+        }
+    }
+
     fn expect(&mut self, producer: &str, expectation: Expectation) {
         self.expectations
             .entry(producer.to_string())
@@ -2149,14 +2164,16 @@ fn json_expr<'a>(
         .unwrap_or(path)
         .trim_end_matches(']');
     let leaf = |gen: &mut Gen, text: String| {
-        gen.value_expr(
+        let expr = gen.value_expr(
             request,
             find(path).or_else(|| find(last)),
             origins,
             path,
             &text,
             scope,
-        )
+        );
+        gen.note_params(path, &expr);
+        expr
     };
     match value {
         Value::Object(map) => {
@@ -2643,6 +2660,7 @@ fn path_param_expr(gen: &mut Gen, url_base: &str) -> (String, String) {
             push_lit(&mut parts, &format!(";{name}="));
             plan.push_str(&format!(";{name}=<{name}>"));
             let expr = gen.fallback_param(&format!("path_{name}"), value, true, false, false);
+            gen.note_params(&format!("path:{name}"), &expr);
             parts.push(Part::Expr(format!("urllib.parse.quote({expr}, safe='')")));
         }
     }
@@ -2919,6 +2937,7 @@ fn to_python_with(
         encoders_used: BTreeSet::new(),
         part_counts: HashMap::new(),
         claimed_fields: BTreeSet::new(),
+        param_uses: BTreeSet::new(),
     };
     let (captured_origin, _) = split_origin(&target.url);
     let captured_origin = captured_origin.to_string();
@@ -3034,6 +3053,7 @@ fn to_python_with(
                     &v,
                     ConsumedScope::Query,
                 );
+                gen.note_params(&k, &e);
                 items.push(format!("({}, {})", lit(&k), e));
             }
             url_expr = format!(
@@ -3120,6 +3140,7 @@ fn to_python_with(
             } else {
                 lit(&entry.value)
             };
+            gen.note_params(&format!("header:{lname}"), &value);
             header_items.push(format!("{}: {}", lit(&entry.name), value));
         }
 
@@ -3168,15 +3189,19 @@ fn to_python_with(
                             &pairs,
                         ) {
                             Some(expr) => expr,
-                            None => field_expr(
-                                &mut gen,
-                                request,
-                                origin,
-                                &origins,
-                                k,
-                                v,
-                                ConsumedScope::Body,
-                            ),
+                            None => {
+                                let expr = field_expr(
+                                    &mut gen,
+                                    request,
+                                    origin,
+                                    &origins,
+                                    k,
+                                    v,
+                                    ConsumedScope::Body,
+                                );
+                                gen.note_params(k, &expr);
+                                expr
+                            }
                         };
                         items.push(format!("({}, {})", lit(k), e));
                     }
@@ -3417,6 +3442,15 @@ fn to_python_with(
     );
     let _ = writeln!(text, "PLAN = [\n{plan}]");
     let _ = writeln!(text, "PARAMS = [\n{params_code}]");
+    let _ = writeln!(
+        text,
+        "PARAM_USES = [{}]",
+        gen.param_uses
+            .iter()
+            .map(|(n, p)| format!("({}, {})", lit(n), lit(p)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     text.push_str(&step_code);
     let _ = writeln!(
         text,
@@ -3700,7 +3734,7 @@ def rebase(url, base):
     return url
 
 
-TRACE = {'fd': None, 'started': None, 'exchanges': [], 'checks': {}}
+TRACE = {'fd': None, 'started': None, 'exchanges': [], 'checks': {}, 'params': []}
 TRACE_BODY_LIMIT = 2 * 1024 * 1024
 
 
@@ -3788,6 +3822,8 @@ def trace_close(base=None):
         'schema': 'scrapelens.trace/1',
         'generator': 'scrapelens-priming 1.0',
         'startedAt': trace_time(TRACE['started']),
+        # Só nomes dos parâmetros do usuário e das partes onde entram, nunca valores.
+        'parameters': [{'name': n, 'part': part} for n, part in PARAM_USES if n in TRACE['params']],
         'steps': entries,
     }
     data = json.dumps(doc, ensure_ascii=False).encode('utf-8')
@@ -3878,6 +3914,8 @@ def main():
     R = {}
     if args.trace:
         trace_open(args.trace)
+        # Parâmetros fornecidos pelo usuário: obrigatórios ou com valor diferente do padrão.
+        TRACE['params'] = [name for name, default, _ in PARAMS if default is None or P[name] != default]
     current = 0
     try:
         for index, (step, (rid, method, url, _, _)) in enumerate(zip(STEPS, PLAN), 1):

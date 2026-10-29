@@ -1988,3 +1988,52 @@ fn trace_records_every_step_of_a_multi_step_chain() {
     assert_eq!(steps.len(), 2, "{doc}");
     assert!(steps.iter().all(|s| s["checks"][0]["ok"] == true));
 }
+
+#[test]
+fn trace_lists_user_parameters_with_their_parts_and_never_values() {
+    let bundle = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/alvo",
+        &[],
+        Some(("application/x-www-form-urlencoded", "placa=TST0T10")),
+    )]);
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("p.py");
+    std::fs::write(&script, generate(&bundle, "har-0001")).unwrap();
+    let trace = dir.path().join("t.json");
+    let out = trace_run(
+        &script,
+        200,
+        &[
+            "--confirmar",
+            "--placa",
+            "ZZZ9Z99",
+            "--trace",
+            trace.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("RC 0"),
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let raw = std::fs::read_to_string(&trace).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let parameters = doc["parameters"].as_array().unwrap();
+    assert!(
+        parameters
+            .iter()
+            .any(|p| p["name"] == "placa" && p["part"] == "placa"),
+        "{parameters:?}"
+    );
+    // `op` ficou no padrão (não é entrada do usuário).
+    assert!(
+        parameters.iter().all(|p| p["name"] != "op"),
+        "{parameters:?}"
+    );
+    // Só nomes: o valor passado não aparece em `parameters`.
+    assert!(!serde_json::to_string(parameters)
+        .unwrap()
+        .contains("ZZZ9Z99"));
+}
