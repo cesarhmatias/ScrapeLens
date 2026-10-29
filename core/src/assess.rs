@@ -602,9 +602,10 @@ pub fn response_outcome_with(
                 ),
             ));
         }
-    } else if protection_path && parsed.html {
-        // A própria rota de proteção, sem corpo ou sem marcador reconhecível.
-        // Scripts/CSS servidos por ela não são resposta de desafio.
+    } else if protection_path {
+        // A própria rota de proteção, sem marcador reconhecível no corpo. A
+        // rota é evidência explícita mesmo quando o desafio vem como script
+        // (`text/javascript`): é a proteção respondendo, não a aplicação.
         let name = rules
             .protection_markers
             .iter()

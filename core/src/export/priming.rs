@@ -25,8 +25,14 @@
 //! havia resposta anterior sem corpo observável, `to_python` RECUSA por
 //! padrão (listando os produtores e a ocorrência equivalente com corpo).
 //! `allow_incomplete` gera o script com `fail()` explícito nesses passos.
+//!
+//! Cada passo valida a PRÓPRIA resposta antes de devolver: status fora de
+//! 2xx/3xx, controle/campo/cookie/header que ele entrega aos passos seguintes
+//! (pela cadeia) e `ERRORMESSAGE` preenchido falham `priming: passo N: …` e
+//! nenhum pedido é enviado depois. Header fora de latin-1 também falha com
+//! mensagem `priming:` clara, em vez de `UnicodeEncodeError` cru.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use crate::error::{CoreError, Result};
@@ -179,6 +185,37 @@ struct Param {
     default: Option<String>,
     captured: String,
     note: String,
+}
+
+/// O que um passo precisa entregar na própria resposta para os passos
+/// seguintes da cadeia (checado no passo, antes de qualquer outro pedido).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Expectation {
+    Cookie(String),
+    Header(String),
+    Control(String, usize),
+    Field(String),
+    /// Corpo genérico (extração por contexto): exige resposta não vazia.
+    Body,
+}
+
+impl Expectation {
+    fn python(&self) -> String {
+        match self {
+            Expectation::Cookie(name) => format!("('cookie', {}, 0)", lit(name)),
+            Expectation::Header(name) => format!("('header', {}, 0)", lit(name)),
+            Expectation::Control(name, index) => format!("('control', {}, {index})", lit(name)),
+            Expectation::Field(name) => format!("('field', {}, 0)", lit(name)),
+            Expectation::Body => "('body', 'corpo', 0)".to_string(),
+        }
+    }
+}
+
+/// Onde o valor foi localizado na resposta do produtor.
+enum Located {
+    Control(String, usize),
+    Field(String),
+    Body,
 }
 
 #[derive(Default)]
@@ -401,9 +438,19 @@ struct Gen<'a> {
     occurrences: Option<HashMap<(String, String), usize>>,
     /// Cache de "valor aparece em alguma resposta".
     response_hits: HashMap<String, bool>,
+    /// Passo produtor → o que a resposta dele precisa conter para os
+    /// consumidores seguintes (preenchido ao gerar cada consumidor).
+    expectations: BTreeMap<String, BTreeSet<Expectation>>,
 }
 
 impl Gen<'_> {
+    fn expect(&mut self, producer: &str, expectation: Expectation) {
+        self.expectations
+            .entry(producer.to_string())
+            .or_default()
+            .insert(expectation);
+    }
+
     fn warn(&mut self, code: &str, message: String) {
         self.warnings.push(Warning::new(code, message));
     }
@@ -537,16 +584,26 @@ impl Gen<'_> {
         match evidence.scope {
             ProducerScope::SetCookie => {
                 let name = field?;
+                self.expect(&evidence.request_id, Expectation::Cookie(name.clone()));
                 Some(format!("get_cookie(S, {}, {who})", lit(&name)))
             }
             ProducerScope::ResponseHeader | ProducerScope::Location => {
                 let name = field.unwrap_or_else(|| "location".to_string());
+                self.expect(&evidence.request_id, Expectation::Header(name.clone()));
                 Some(format!("get_header(R[{rid}], {}, {who})", lit(&name)))
             }
             ProducerScope::ResponseBody => {
                 let text = response_text(&producer, self.source)?;
-                let (container, container_text, whole) =
+                let (container, container_text, whole, located) =
                     self.body_container(&producer, &text, evidence, value, &rid, &who)?;
+                self.expect(
+                    &evidence.request_id,
+                    match located {
+                        Located::Control(name, index) => Expectation::Control(name, index),
+                        Located::Field(name) => Expectation::Field(name),
+                        Located::Body => Expectation::Body,
+                    },
+                );
                 if whole {
                     return Some(container);
                 }
@@ -562,7 +619,8 @@ impl Gen<'_> {
     }
 
     /// Onde procurar: controle HTML, campo form/JSON ou o corpo inteiro.
-    /// Devolve (expressão do contêiner, texto do contêiner, valor inteiro?).
+    /// Devolve (expressão do contêiner, texto do contêiner, valor inteiro?,
+    /// localização para a checagem no passo produtor).
     fn body_container(
         &self,
         producer: &LogicalRequest,
@@ -571,7 +629,7 @@ impl Gen<'_> {
         value: &str,
         rid: &str,
         who: &str,
-    ) -> Option<(String, String, bool)> {
+    ) -> Option<(String, String, bool, Located)> {
         if let Some(field) = evidence.field.as_deref() {
             if evidence.html_control {
                 let controls = html_controls(text);
@@ -592,25 +650,35 @@ impl Gen<'_> {
                 })?;
                 let expr = format!("html_control(R[{rid}], {}, {index}, {who})", lit(field));
                 let whole = ctext == value && evidence.kind == EvidenceKind::SameField;
-                return Some((expr, ctext, whole));
+                return Some((
+                    expr,
+                    ctext,
+                    whole,
+                    Located::Control(field.to_string(), index),
+                ));
             }
             // Campo form/JSON; ou variável de script (nesse caso o corpo cru).
             let fields = form_pairs(text);
             if let Some((_, v)) = fields.iter().find(|(k, _)| k == field) {
                 let expr = format!("body_field(R[{rid}], {}, {who})", lit(field));
                 let whole = v == value && evidence.kind == EvidenceKind::SameField;
-                return Some((expr, v.clone(), whole));
+                return Some((expr, v.clone(), whole, Located::Field(field.to_string())));
             }
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
                 if let Some(v) = json_find(&json, field) {
                     let expr = format!("body_field(R[{rid}], {}, {who})", lit(field));
                     let whole = v == value && evidence.kind == EvidenceKind::SameField;
-                    return Some((expr, v, whole));
+                    return Some((expr, v, whole, Located::Field(field.to_string())));
                 }
             }
         }
         let _ = producer;
-        Some((format!("R[{rid}].text"), text.to_string(), false))
+        Some((
+            format!("R[{rid}].text"),
+            text.to_string(),
+            false,
+            Located::Body,
+        ))
     }
 
     /// Expressão de um valor escalar de `step` (campo de corpo, query ou header).
@@ -723,6 +791,7 @@ impl Gen<'_> {
         let pos = text.find(piece)?;
         let rid = lit(&producer.id);
         let who = lit(&Self::who(step, name));
+        self.expect(&pc.producer_request_id, Expectation::Body);
         let (cb, ca) = context_for(&text, pos, piece.len());
         let extracted = format!(
             "ctx_extract(R[{rid}].text, {}, {}, {who})",
@@ -1140,6 +1209,7 @@ pub fn to_python(
         notes: Vec::new(),
         occurrences: None,
         response_hits: HashMap::new(),
+        expectations: BTreeMap::new(),
     };
     let (captured_origin, _) = split_origin(&target.url);
     let captured_origin = captured_origin.to_string();
@@ -1171,9 +1241,14 @@ pub fn to_python(
         }
     }
 
-    let mut step_code = String::new();
     let mut plan = String::new();
     let mut unresolved_comments = String::new();
+    struct GeneratedStep {
+        body: String,
+        method: String,
+        data_arg: String,
+    }
+    let mut steps_out: Vec<GeneratedStep> = Vec::new();
     for u in &chain.unresolved {
         let _ = write!(
             unresolved_comments,
@@ -1323,36 +1398,38 @@ pub fn to_python(
             }
         }
 
-        // Montagem do passo
-        let _ = write!(step_code, "\n\ndef step_{n}(S, R, P, base):\n");
+        // Corpo do passo: comentários, fail-safe e montagem. A requisição e as
+        // checagens da própria resposta são emitidas depois (quando já se sabe
+        // o que os passos seguintes vão consumir desta resposta).
+        let mut body = String::new();
         for r in reasons {
             for line in comment(&format!("passo {n}: {r}")).lines() {
-                let _ = writeln!(step_code, "    {line}");
+                let _ = writeln!(body, "    {line}");
             }
         }
         for note in gen.notes.clone() {
             for line in comment(&note).lines() {
-                let _ = writeln!(step_code, "    {line}");
+                let _ = writeln!(body, "    {line}");
             }
         }
         if let Some(message) = incomplete_steps.get(&request.id) {
             // Fail-safe explícito: o passo não prossegue com valor sem origem.
-            let _ = writeln!(step_code, "    fail({})", lit(message));
+            let _ = writeln!(body, "    fail({})", lit(message));
         }
-        let _ = writeln!(step_code, "    url = {url_expr}");
-        let _ = writeln!(step_code, "    headers = {{{}}}", header_items.join(", "));
+        let _ = writeln!(body, "    url = {url_expr}");
+        let _ = writeln!(body, "    headers = {{{}}}", header_items.join(", "));
         let data_arg = if body_line.is_empty() {
             String::new()
         } else {
-            step_code.push_str("    ");
-            step_code.push_str(&body_line);
+            body.push_str("    ");
+            body.push_str(&body_line);
             ", data=data".to_string()
         };
-        let _ = writeln!(
-            step_code,
-            "    return S.request({}, url, headers=headers{data_arg}, timeout=30)",
-            lit(&request.method.to_ascii_uppercase())
-        );
+        steps_out.push(GeneratedStep {
+            body,
+            method: request.method.to_ascii_uppercase(),
+            data_arg,
+        });
 
         let _ = writeln!(
             plan,
@@ -1370,6 +1447,45 @@ pub fn to_python(
                 "False"
             }
         );
+    }
+
+    // Emissão dos passos: cada um checa a PRÓPRIA resposta antes de devolver,
+    // para que a cadeia nunca envie outro pedido depois de uma resposta ruim.
+    let mut step_code = String::new();
+    for (index, step) in steps_out.iter().enumerate() {
+        let n = index + 1;
+        let _ = write!(step_code, "\n\ndef step_{n}(S, R, P, base):\n");
+        step_code.push_str(&step.body);
+        let _ = writeln!(step_code, "    try:");
+        let _ = writeln!(
+            step_code,
+            "        resp = S.request({}, url, headers=headers{}, timeout=30)",
+            lit(&step.method),
+            step.data_arg
+        );
+        let _ = writeln!(step_code, "    except UnicodeEncodeError as exc:");
+        let _ = writeln!(
+            step_code,
+            "        fail('passo {n}: header com caractere fora de latin-1: %s' % exc)"
+        );
+        let _ = writeln!(step_code, "    if not (200 <= resp.status_code < 400):");
+        let _ = writeln!(
+            step_code,
+            "        fail('passo {n}: HTTP %d' % resp.status_code)"
+        );
+        let expected = step_reqs
+            .get(index)
+            .and_then(|(request, _, _)| gen.expectations.get(&request.id));
+        if let Some(expected) = expected.filter(|e| !e.is_empty()) {
+            let items: Vec<String> = expected.iter().map(Expectation::python).collect();
+            let _ = writeln!(
+                step_code,
+                "    step_expected(resp, S, {n}, [{}])",
+                items.join(", ")
+            );
+        }
+        let _ = writeln!(step_code, "    step_error(resp, {n})");
+        let _ = writeln!(step_code, "    return resp");
     }
 
     // Parâmetros
@@ -1475,17 +1591,24 @@ class _Controls(html.parser.HTMLParser):
             self._area = None
 
 
-def html_control(resp, name, index, who):
+def find_control(resp, name, index):
     parser = _Controls()
     parser.feed(resp.text)
     parser.close()
     found = [v for k, v in parser.items if k == name]
     if index >= len(found):
-        fail('controle HTML %r não encontrado na resposta de %s' % (name, who))
+        return None
     return found[index]
 
 
-def body_field(resp, name, who):
+def html_control(resp, name, index, who):
+    value = find_control(resp, name, index)
+    if value is None:
+        fail('controle HTML %r não encontrado na resposta de %s' % (name, who))
+    return value
+
+
+def find_body_field(resp, name):
     text = resp.text
     try:
         stack = [json.loads(text)]
@@ -1502,7 +1625,43 @@ def body_field(resp, name, who):
     values = urllib.parse.parse_qs(text, keep_blank_values=True).get(name)
     if values:
         return values[0]
-    fail('campo %r não encontrado na resposta de %s' % (name, who))
+    return None
+
+
+def body_field(resp, name, who):
+    value = find_body_field(resp, name)
+    if value is None:
+        fail('campo %r não encontrado na resposta de %s' % (name, who))
+    return value
+
+
+def step_expected(resp, session, index, expected):
+    """Controles/campos que ESTE passo precisa entregar aos passos seguintes."""
+    missing = []
+    for kind, name, extra in expected:
+        if kind == 'cookie':
+            ok = session.cookies.get(name) is not None
+        elif kind == 'header':
+            ok = resp.headers.get(name) is not None
+        elif kind == 'control':
+            ok = find_control(resp, name, extra) is not None
+        elif kind == 'field':
+            ok = find_body_field(resp, name) is not None
+        else:
+            ok = bool(resp.content)
+        if not ok:
+            missing.append(name)
+    if missing:
+        fail('passo %d: resposta sem %s (provável bloqueio ou sessão inválida)'
+             % (index, ', '.join(missing)))
+
+
+def step_error(resp, index):
+    """ERRORMESSAGE preenchido é erro da aplicação; ausência não é erro."""
+    value = find_control(resp, 'ERRORMESSAGE', 0)
+    if value is not None and value.strip():
+        fail('a aplicação respondeu com ERRORMESSAGE no passo %d: %s'
+             % (index, value.strip()[:200]))
 
 
 def get_cookie(session, name, who):
@@ -1574,12 +1733,6 @@ def main():
         resp = step(S, R, P, base)
         R[rid] = resp
         print('  [%d/%d] %s %s -> HTTP %d' % (index, len(STEPS), method, rebase(url, base), resp.status_code))
-        try:
-            erro = html_control(resp, 'ERRORMESSAGE', 0, rid)
-        except SystemExit:
-            erro = ''
-        if erro.strip():
-            fail('a aplicação respondeu com ERRORMESSAGE no passo %d (%s): %s' % (index, rid, erro.strip()[:200]))
     print('Cadeia concluída; último HTTP %d.' % R[PLAN[-1][0]].status_code)
     return 0
 

@@ -103,11 +103,12 @@ fn real_shape_normal_responses_are_app_ok() {
             assert_eq!(outcome.verdict_kind, VerdictKind::AppOk);
             assert!(outcome.http_ok && !outcome.app_signals.is_empty());
         } else if request.url.contains("/TSPD/") {
-            // Guarda sintética servida como JavaScript: a rota de proteção só
-            // é evidência de bloqueio quando a resposta é uma página HTML.
+            // A própria rota de proteção é evidência explícita de bloqueio,
+            // inclusive quando o desafio é servido como JavaScript: a resposta
+            // vem da proteção, não da aplicação.
             protection += 1;
-            assert_eq!(outcome.verdict, "não-avaliado", "{}", outcome.url);
-            assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+            assert_eq!(outcome.verdict, "blocked? (TSPD)", "{}", outcome.url);
+            assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
         } else {
             not_assessed += 1;
             assert_eq!(
@@ -253,6 +254,23 @@ fn protection_route_itself_is_a_block() {
     rules.protection_paths.clear();
     let outcome = &run(&bundle, &rules)[0];
     assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+}
+
+#[test]
+fn protection_route_serving_javascript_is_still_a_block() {
+    // O desafio também chega como `text/javascript`; a rota de proteção é
+    // evidência explícita mesmo sem HTML e sem marcador no corpo.
+    let bundle = mini(&[(
+        "GET",
+        "https://app.example.test/TSPD/?type=18&uid=abc",
+        200,
+        "text/javascript",
+        "var _0x1234=function(){return 1};",
+    )]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "blocked? (TSPD)");
+    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
+    assert!(outcome.verdict.contains('?'));
 }
 
 #[test]

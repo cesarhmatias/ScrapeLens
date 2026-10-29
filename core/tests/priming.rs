@@ -75,6 +75,129 @@ fn first_placa_request(bundle: &SessionBundle) -> String {
 }
 
 #[test]
+fn each_step_checks_its_own_response_before_the_next_request() {
+    let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
+    let id = first_placa_request(&bundle);
+    let script = generate(&bundle, &id);
+    // Um `step_N` por passo do plano; cada um checa status e ERRORMESSAGE
+    // DENTRO da função, antes de devolver a resposta para o próximo pedido.
+    let steps = script
+        .match_indices("\ndef step_")
+        .filter(|(i, _)| {
+            script[i + "\ndef step_".len()..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit())
+        })
+        .count();
+    assert!(steps >= 9, "passos esperados para o alvo:\n{script}");
+    assert_eq!(
+        script
+            .matches("if not (200 <= resp.status_code < 400):")
+            .count(),
+        steps
+    );
+    assert_eq!(script.matches("\n    step_error(resp, ").count(), steps);
+    assert_eq!(script.matches("except UnicodeEncodeError").count(), steps);
+    // A ausência de ERRORMESSAGE não pode virar erro engolido: nenhum
+    // `except SystemExit` no script e a checagem só falha se houver valor.
+    assert!(!script.contains("except SystemExit"), "{script}");
+    assert!(!script.contains("erro = ''"), "{script}");
+    assert!(script.contains("if value is not None and value.strip():"));
+    // Todo passo que produz controle para outro tem a checagem na própria
+    // função, antes do `return resp`; nunca no laço do main.
+    for chunk in script.split("\ndef step_").skip(1) {
+        let name: String = chunk.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if name.is_empty() {
+            continue;
+        }
+        let body = chunk;
+        let request_at = body.find("resp = S.request(").unwrap();
+        let status_at = body
+            .find("if not (200 <= resp.status_code < 400):")
+            .unwrap();
+        let error_at = body.find("step_error(").unwrap();
+        let return_at = body.find("return resp").unwrap();
+        assert!(request_at < status_at && status_at < error_at && error_at < return_at);
+        if let Some(expected_at) = body.find("step_expected(") {
+            assert!(
+                status_at < expected_at && expected_at < error_at,
+                "checagem de campos fora de ordem no passo {name}:\n{body}"
+            );
+        }
+    }
+    // O XML que o passo produtor entrega aos seguintes é checado nele.
+    let producer = script
+        .split("\ndef step_")
+        .find(|chunk| chunk.contains("('control', 'XML', 0)"))
+        .expect("nenhum passo checa o XML que produz");
+    assert!(
+        producer.contains("step_expected(resp, S,"),
+        "passo produtor sem checagem do XML:\n{producer}"
+    );
+}
+
+/// HAR mínimo com um header cujo valor não cabe em latin-1.
+fn header_outside_latin1_bundle() -> SessionBundle {
+    let entries = serde_json::json!([{
+        "startedDateTime": "2026-10-27T12:00:00.000Z", "time": 1,
+        "request": {
+            "method": "GET", "url": "https://h.example.test/p", "httpVersion": "HTTP/1.1",
+            "headers": [{"name": "X-Bad", "value": "a\u{202e}b"}],
+            "queryString": [], "cookies": [], "headersSize": -1, "bodySize": 0
+        },
+        "response": {
+            "status": 200, "statusText": "", "httpVersion": "HTTP/1.1", "headers": [],
+            "cookies": [], "headersSize": -1, "bodySize": 2, "redirectURL": "",
+            "content": {"size": 2, "mimeType": "text/html", "text": "ok"}
+        },
+        "cache": {}, "timings": {"send": 0, "wait": 1, "receive": 0}
+    }]);
+    let har = serde_json::json!({
+        "log": {"version": "1.2", "creator": {"name": "t", "version": "1"}, "entries": entries}
+    });
+    import_har(har.to_string().as_bytes())
+        .expect("HAR com header fora de latin-1")
+        .bundle
+}
+
+#[test]
+fn header_outside_latin1_fails_with_a_clear_priming_message() {
+    let bundle = header_outside_latin1_bundle();
+    let script = generate(&bundle, "har-0001");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("priming.py");
+    std::fs::write(&path, &script).unwrap();
+    // O `requests` codifica headers em latin-1. O driver simula a exceção no
+    // passo (sem rede e sem depender do pacote `requests`).
+    let driver = r#"
+import runpy, sys
+mod = runpy.run_path(sys.argv[1])
+class S:
+    def request(self, *a, **k):
+        raise UnicodeEncodeError('latin-1', 'a', 0, 1, 'ordinal not in range(256)')
+try:
+    mod['step_1'](S(), {}, {}, None)
+except SystemExit as exc:
+    sys.stderr.write(str(exc))
+"#;
+    let out = python(&["-c", driver], &path);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("priming:"),
+        "mensagem sem prefixo:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("fora de latin-1"),
+        "mensagem deveria apontar o header fora de latin-1:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("UnicodeEncodeError"),
+        "o erro cru não pode vazar:\n{stderr}"
+    );
+}
+
+#[test]
 fn real_shape_script_has_app_steps_extractions_and_parameters() {
     let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
     let id = first_placa_request(&bundle);
@@ -509,7 +632,12 @@ fn hostile_names_and_values_stay_inside_literals() {
         "re",
         "replace",
         "body_field",
+        "bool",
         "exit",
+        "find_body_field",
+        "find_control",
+        "step_error",
+        "step_expected",
         "ImportError",
         "SystemExit",
         "step",
