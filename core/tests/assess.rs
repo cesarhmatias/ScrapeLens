@@ -87,6 +87,7 @@ fn real_shape_normal_responses_are_app_ok() {
     let mut connectors = 0;
     let mut forms = 0;
     let mut not_assessed = 0;
+    let mut protection = 0;
     for (request, outcome) in bundle.session.requests.iter().zip(&outcomes) {
         let form_page = request.url.contains("cscform.html");
         if request.url.ends_with("/servlet/Connector") || form_page {
@@ -98,6 +99,12 @@ fn real_shape_normal_responses_are_app_ok() {
             assert_eq!(outcome.verdict, "app-ok", "{}", outcome.url);
             assert_eq!(outcome.verdict_kind, VerdictKind::AppOk);
             assert!(outcome.http_ok && !outcome.app_signals.is_empty());
+        } else if request.url.contains("/TSPD/") {
+            // Guarda sintética servida como JavaScript: a rota de proteção só
+            // é evidência de bloqueio quando a resposta é uma página HTML.
+            protection += 1;
+            assert_eq!(outcome.verdict, "não-avaliado", "{}", outcome.url);
+            assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
         } else {
             not_assessed += 1;
             assert_eq!(
@@ -108,10 +115,12 @@ fn real_shape_normal_responses_are_app_ok() {
             assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
         }
     }
-    // 30 respostas: 8 Connector + 3 páginas cscform (têm controles) e 19 sem sinal.
+    // 30 respostas: 8 Connector + 3 páginas cscform (têm controles) e o resto
+    // sem sinal (páginas, frames, estáticos) ou rota de proteção.
     assert_eq!(connectors, 8);
     assert_eq!(forms, 3);
-    assert_eq!(not_assessed, 19);
+    assert!(protection >= 1, "fixture sem rota /TSPD/");
+    assert_eq!(not_assessed + protection, 19);
     assert_eq!(outcomes.len(), 30);
     assert_eq!(
         outcomes
@@ -203,6 +212,109 @@ fn protection_marker_inside_page_with_controls_is_not_a_block() {
 }
 
 #[test]
+fn page_that_only_cites_the_protection_script_is_not_a_block() {
+    // Página da aplicação: cita /TSPD/ num <script src>, sem controles e sem
+    // expectativa aprendida. Antes era `blocked?`; agora é `não-avaliado`.
+    let page = "<html><head><script src=\"/TSPD/abc.js\"></script></head><body><div id=\"app\"></div></body></html>";
+    let bundle = mini(&[(
+        "GET",
+        "https://app.example.test/easynat-app?op=S37",
+        200,
+        "text/html",
+        page,
+    )]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "não-avaliado", "{}", outcome.verdict);
+    assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+    // O marcador continua visível como sinal informativo.
+    assert!(outcome
+        .app_signals
+        .iter()
+        .any(|s| s.signal == "TSPD" && s.detail.contains("citado")));
+}
+
+#[test]
+fn protection_route_itself_is_a_block() {
+    let bundle = mini(&[(
+        "GET",
+        "https://app.example.test/TSPD/?type=20",
+        200,
+        "text/html",
+        "<html><script>var x=1;</script></html>",
+    )]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "blocked? (TSPD)");
+    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
+    // Configurável: sem esse prefixo nas regras, a mesma resposta não bloqueia.
+    let mut rules = AssessRules::default();
+    rules.protection_paths.clear();
+    let outcome = &run(&bundle, &rules)[0];
+    assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+}
+
+#[test]
+fn challenge_content_without_the_expected_page_is_a_block() {
+    // Conteúdo do desafio (variável da proteção) no lugar da página esperada.
+    let bundle = mini(&[
+        (
+            "GET",
+            "https://app.example.test/entrada",
+            200,
+            "text/html",
+            "<html><body>ok</body></html>",
+        ),
+        (
+            "GET",
+            "https://app.example.test/entrada",
+            200,
+            "text/html",
+            "<html><body><script>var _tsChallenge = 'X';</script></body></html>",
+        ),
+    ]);
+    let outcome = &run(&bundle, &AssessRules::default())[1];
+    assert_eq!(outcome.verdict, "blocked? (TSPD)");
+    assert!(outcome.verdict.contains('?'));
+}
+
+#[test]
+fn route_that_had_controls_and_now_cites_protection_is_a_block() {
+    let bundle = mini(&[
+        ("POST", CONN, 200, "text/html", &form("lp1", "1", "")),
+        (
+            "POST",
+            CONN,
+            200,
+            "text/html",
+            "<html><script src=\"/TSPD/x.js\"></script></html>",
+        ),
+    ]);
+    let outcome = &run(&bundle, &AssessRules::default())[1];
+    assert_eq!(outcome.verdict, "blocked? (TSPD)");
+    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
+}
+
+#[test]
+fn reference_marker_alone_does_not_block_custom_rules() {
+    let rules = AssessRules::from_json(
+        r#"{
+          "schema": "scrapelens.assess-rules/1",
+          "protectionMarkers": [{"contains": "captcha", "signal": "CAPTCHA"}]
+        }"#,
+    )
+    .expect("regras");
+    let bundle = mini(&[(
+        "GET",
+        "https://x.test/p",
+        200,
+        "text/html",
+        "<html><script src=\"/captcha/widget.js\"></script><div id=\"app\"></div></html>",
+    )]);
+    let outcome = &run(&bundle, &rules)[0];
+    assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
+    assert!(outcome.app_signals.iter().any(|s| s.signal == "CAPTCHA"));
+}
+
+#[test]
 fn rate_limit_and_server_error_statuses() {
     let bundle = mini(&[
         (
@@ -258,7 +370,7 @@ fn custom_rules_from_json_change_signals_and_markers() {
             {"name": "erro", "signal": "ERRO", "kind": "error"}
           ],
           "requiredFields": ["token"],
-          "protectionMarkers": [{"contains": "captcha", "signal": "CAPTCHA"}],
+          "protectionMarkers": [{"contains": "captcha", "signal": "CAPTCHA", "kind": "challenge"}],
           "blockedStatuses": [418]
         }"#,
     )
@@ -306,6 +418,24 @@ fn custom_rules_from_json_change_signals_and_markers() {
     // Regras padrão não conhecem esses nomes.
     let default_v = run(&bundle, &AssessRules::default());
     assert_ne!(default_v[0].verdict, "app-ok");
+}
+
+#[test]
+fn challenge_marker_wins_over_a_citation_on_the_same_page() {
+    // Uma página pode citar /TSPD/ e ainda trazer o conteúdo do desafio; o
+    // conteúdo é evidência mais forte do que a citação.
+    let page = "<html><head><script src=\"/TSPD/x.js\"></script></head>\
+                <body><script>var _tsChallenge = 'X';</script></body></html>";
+    let bundle = mini(&[(
+        "GET",
+        "https://app.example.test/entrada",
+        200,
+        "text/html",
+        page,
+    )]);
+    let outcome = &run(&bundle, &AssessRules::default())[0];
+    assert_eq!(outcome.verdict, "blocked? (TSPD)");
+    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
 }
 
 #[test]

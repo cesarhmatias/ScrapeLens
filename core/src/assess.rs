@@ -12,6 +12,11 @@
 //! faltou. Resposta sem sinal da aplicação e sem expectativa aprendida na
 //! rota é `não-avaliado` (`not-assessed`): página, frame, estático ou
 //! recurso de proteção não enchem a lista de suspeitos. Nada aqui abre rede.
+//!
+//! Um marcador de proteção SOZINHO não bloqueia: páginas da aplicação citam
+//! `/TSPD/` num `<script src>`. `blocked?` exige status 403/429, rota de
+//! proteção (configurável), conteúdo de desafio sem a página esperada ou uma
+//! rota que trazia controles e agora vem sem eles.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -60,6 +65,22 @@ pub struct MarkerRule {
     pub contains: String,
     #[serde(default)]
     pub signal: Option<String>,
+    /// Como o marcador aparece: citação (URL/script) ou conteúdo do desafio.
+    #[serde(default)]
+    pub kind: MarkerKind,
+}
+
+/// Como o marcador de proteção aparece na resposta.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MarkerKind {
+    /// Citação numa página da aplicação (`<script src="/TSPD/...">`): sozinha
+    /// não é evidência de bloqueio.
+    #[default]
+    Reference,
+    /// Conteúdo do próprio desafio (variável/código da proteção): sem os
+    /// controles esperados, é bloqueio.
+    Challenge,
 }
 
 /// Regras de avaliação. Só dados; `Default` é conservador.
@@ -70,8 +91,11 @@ pub struct AssessRules {
     pub fields: Vec<FieldRule>,
     /// Campos que toda resposta de aplicação deve trazer (além dos aprendidos).
     pub required_fields: Vec<String>,
-    /// Marcadores de proteção; só valem em HTML sem nenhum controle.
+    /// Marcadores de proteção: só bloqueiam como desafio, como rota de
+    /// proteção ou quando substituem a página esperada.
     pub protection_markers: Vec<MarkerRule>,
+    /// Prefixos de caminho que são, eles próprios, resposta de proteção.
+    pub protection_paths: Vec<String>,
     /// Status HTTP que são evidência explícita de bloqueio.
     pub blocked_statuses: Vec<u16>,
     /// Aprende, na sessão, os campos que cada rota (método + caminho) traz.
@@ -85,9 +109,10 @@ impl Default for AssessRules {
             signal: None,
             kind,
         };
-        let marker = |contains: &str, signal: &str| MarkerRule {
+        let marker = |contains: &str, signal: &str, kind| MarkerRule {
             contains: contains.to_string(),
             signal: Some(signal.to_string()),
+            kind,
         };
         Self {
             schema: RULES_SCHEMA.to_string(),
@@ -97,7 +122,11 @@ impl Default for AssessRules {
                 field("ERRORMESSAGE", FieldKind::Error),
             ],
             required_fields: Vec::new(),
-            protection_markers: vec![marker("/TSPD/", "TSPD"), marker("_tsChallenge", "TSPD")],
+            protection_markers: vec![
+                marker("/TSPD/", "TSPD", MarkerKind::Reference),
+                marker("_tsChallenge", "TSPD", MarkerKind::Challenge),
+            ],
+            protection_paths: vec!["/TSPD/".to_string()],
             blocked_statuses: vec![403, 429],
             learn_routes: true,
         }
@@ -414,6 +443,20 @@ pub fn learn_routes(
     learned
 }
 
+/// Caminho da URL (sem esquema/host e sem query/fragmento).
+fn path_of(url: &str) -> &str {
+    let no_frag = url.split('#').next().unwrap_or(url);
+    let no_query = no_frag.split('?').next().unwrap_or(no_frag);
+    match no_query.find("://") {
+        Some(scheme) => {
+            let rest = &no_query[scheme + 3..];
+            let cut = rest.find('/').unwrap_or(rest.len());
+            &rest[cut..]
+        }
+        None => no_query,
+    }
+}
+
 /// Avalia uma resposta só com as regras (sem aprendizado de rota).
 pub fn response_outcome(
     request: &LogicalRequest,
@@ -469,33 +512,72 @@ pub fn response_outcome_with(
     }
     let marker_hit = parsed.html.then_some(()).and_then(|()| {
         let text = parsed.text.as_deref()?.to_ascii_lowercase();
-        rules
-            .protection_markers
-            .iter()
-            .find(|m| text.contains(&m.contains.to_ascii_lowercase()))
+        let mut citation = None;
+        for marker in &rules.protection_markers {
+            if text.contains(&marker.contains.to_ascii_lowercase()) {
+                // Conteúdo de desafio é evidência mais forte que uma citação.
+                if marker.kind == MarkerKind::Challenge {
+                    return Some(marker);
+                }
+                citation.get_or_insert(marker);
+            }
+        }
+        citation
     });
+    let path = path_of(&request.url);
+    let protection_path = rules
+        .protection_paths
+        .iter()
+        .any(|p| !p.is_empty() && path.contains(p.as_str()));
     if let Some(marker) = marker_hit {
         let name = marker
             .signal
             .clone()
             .unwrap_or_else(|| marker.contains.clone());
-        if parsed.fields.is_empty() {
+        let no_controls = parsed.fields.is_empty();
+        let replaces_expected = no_controls && learned.expected(request).is_some();
+        let challenge = marker.kind == MarkerKind::Challenge && no_controls;
+        if protection_path || challenge || replaces_expected {
             block_signal.get_or_insert_with(|| name.clone());
-            signals.push(sig(
-                &name,
-                SignalKind::Protection,
-                format!("HTML sem controles com o marcador {}", marker.contains),
-            ));
+            let detail = if protection_path {
+                format!("rota de proteção com o marcador {}", marker.contains)
+            } else if challenge {
+                format!(
+                    "conteúdo de desafio sem a página esperada (marcador {})",
+                    marker.contains
+                )
+            } else {
+                format!(
+                    "conteúdo de desafio sem os controles esperados (marcador {})",
+                    marker.contains
+                )
+            };
+            signals.push(sig(&name, SignalKind::Protection, detail));
         } else {
             signals.push(sig(
                 &name,
                 SignalKind::Info,
                 format!(
-                    "marcador {} presente, mas a página tem controles",
+                    "marcador {} citado por uma página da aplicação; sozinho não é bloqueio",
                     marker.contains
                 ),
             ));
         }
+    } else if protection_path && parsed.html {
+        // A própria rota de proteção, sem corpo ou sem marcador reconhecível.
+        // Scripts/CSS servidos por ela não são resposta de desafio.
+        let name = rules
+            .protection_markers
+            .iter()
+            .find(|m| path.contains(m.contains.as_str()))
+            .and_then(|m| m.signal.clone())
+            .unwrap_or_else(|| "proteção".to_string());
+        block_signal.get_or_insert_with(|| name.clone());
+        signals.push(sig(
+            &name,
+            SignalKind::Protection,
+            format!("rota de proteção {path}"),
+        ));
     }
 
     // 3. Sinais positivos e campos esperados ausentes.
