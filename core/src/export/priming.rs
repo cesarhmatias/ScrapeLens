@@ -62,6 +62,13 @@ pub struct PrimingOptions {
     /// `flow.adapters`: sem eles, o campo reivindicado volta ao tratamento
     /// por trechos.
     pub adapter_encoders: Vec<AdapterEncoder>,
+    /// Princípio estrito das partes do adaptador: literal só para papel
+    /// Structure, constante comprovada (≥ 2 requisições da sessão ou contexto
+    /// estático) ou valor de navegação; toda outra parte sem origem vira
+    /// parâmetro obrigatório. Sem a opção, só valores com cara de
+    /// identificador/segredo (UUID, hex, ULID, base64, timestamp, misto
+    /// alfanumérico longo) viram parâmetro e o resto segue literal.
+    pub strict_parts: bool,
 }
 
 /// Codificador Python equivalente ao `encode` de um adaptador. O `source`
@@ -161,6 +168,30 @@ const SENSITIVE_ABBREVIATIONS: &[&str] = &[
     "sexo",
     "mail",
     "cidade",
+    "pw",
+    "pswrd",
+    "passw",
+    "pwrd",
+    "2fa",
+    "mfa",
+    "totp",
+    "salt",
+    "hash",
+    "assinatura",
+    "login",
+    "usuario",
+    "uid",
+    "pai",
+    "responsavel",
+    "beneficiario",
+    "agencia",
+    "banco",
+    "iban",
+    "whatsapp",
+    "rua",
+    "complemento",
+    "municipio",
+    "documento",
 ];
 /// Termos longos o bastante para casar como substring (`codSeguranca`).
 const SENSITIVE_LONG_TERMS: &[&str] = &[
@@ -461,6 +492,53 @@ fn adapter_chain_expr(
     None
 }
 
+/// Quantas requisições da sessão (qualquer rodada) carregam a parte `nome`
+/// com o `valor`, no campo `field` decodificado pelo adaptador.
+fn part_occurrences(
+    gen: &mut Gen,
+    adapter: &dyn crate::adapter::ProtocolAdapter,
+    field: &str,
+    part: &str,
+    value: &str,
+) -> usize {
+    use crate::adapter::PartRole;
+    if !gen.part_counts.contains_key(field) {
+        let mut counts: HashMap<(String, String), usize> = HashMap::new();
+        for request in &gen.session.requests {
+            let Some(attachment) = request.request_body.attachment.as_deref() else {
+                continue;
+            };
+            let Some(loaded) = gen.source.load(attachment) else {
+                continue;
+            };
+            let text = String::from_utf8_lossy(&loaded.bytes).into_owned();
+            let mut seen: HashSet<(String, String)> = HashSet::new();
+            for (k, v) in form_pairs(&text) {
+                if k != field {
+                    continue;
+                }
+                let Ok(decoded) = adapter.decode(&v) else {
+                    continue;
+                };
+                for p in decoded.parts {
+                    if p.role != PartRole::Structure && !p.value.is_empty() {
+                        seen.insert((format!("{field}.{}", p.name), p.value));
+                    }
+                }
+            }
+            for key in seen {
+                *counts.entry(key).or_default() += 1;
+            }
+        }
+        gen.part_counts.insert(field.to_string(), counts);
+    }
+    gen.part_counts
+        .get(field)
+        .and_then(|m| m.get(&(part.to_string(), value.to_string())))
+        .copied()
+        .unwrap_or(0)
+}
+
 /// O mesmo delta aparece em outro passo do plano? Então é constante do
 /// protocolo (ex.: delta de `init`), não eco do servidor.
 fn delta_repeated_in_plan(
@@ -678,7 +756,38 @@ fn adapter_field_expr(
                                 ));
                                 gen.fallback_param(&full, &part.value, false, false, false)
                             }
-                            None => pieces_expr(scrub_literal(&part.value, &mut gen.params)),
+                            None => {
+                                // Literal só para: constante comprovada (≥ 2
+                                // requisições da sessão ou contexto estático) ou
+                                // valor de navegação. O resto é parâmetro.
+                                let proven = part_occurrences(
+                                    gen,
+                                    adapter.as_ref(),
+                                    name,
+                                    &full,
+                                    &part.value,
+                                ) >= 2;
+                                let in_static_context =
+                                    origin.is_some_and(|o| !o.context.is_empty());
+                                let navigation = gen.structural.contains(part.value.as_str());
+                                let scrubbed = scrub_literal(&part.value, &mut gen.params);
+                                let has_param =
+                                    scrubbed.iter().any(|p| matches!(p, Piece::Expr(_)));
+                                let identifier = looks_identifier_value(&part.value);
+                                if proven
+                                    || in_static_context
+                                    || navigation
+                                    || has_param
+                                    || (!opts.strict_parts && !identifier)
+                                {
+                                    pieces_expr(scrubbed)
+                                } else {
+                                    gen.notes.push(format!(
+                                        "{full}: sem origem observada nem prova de constância; informe o valor"
+                                    ));
+                                    gen.fallback_param(&full, &part.value, false, false, false)
+                                }
+                            }
                         },
                     }
                 }
@@ -687,6 +796,7 @@ fn adapter_field_expr(
         items.push(format!("({}, {}, {})", lit(&part.name), lit(role), expr));
     }
     gen.encoders_used.insert(encoder_index);
+    gen.claimed_fields.insert(name.to_string());
     gen.notes.push(format!(
         "{name}: campo do protocolo {}; montado por partes e recodificado com os comprimentos recalculados",
         adapter.id()
@@ -788,6 +898,31 @@ fn looks_dynamic_token(value: &str) -> bool {
         && b.iter().any(u8::is_ascii_digit)
         && b.iter().any(u8::is_ascii_uppercase)
         && b.iter().any(u8::is_ascii_lowercase)
+}
+
+/// Identificador, segredo ou carimbo de tempo: UUID, hex, ULID/KSUID, base64,
+/// timestamp e alfanumérico misto longo. Mais largo que `looks_opaque_id`,
+/// mas sem pegar valores curtos de estado (`-180`, `2.0`, `true`).
+fn looks_identifier_value(value: &str) -> bool {
+    let b = value.as_bytes();
+    if b.len() < 8 || b.iter().any(u8::is_ascii_whitespace) {
+        return false;
+    }
+    if looks_opaque_id(value) || looks_secret_value(value) {
+        return true;
+    }
+    let token_chars = b
+        .iter()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'+' | b'/' | b'=' | b'.'));
+    let digits = b.iter().filter(|c| c.is_ascii_digit()).count();
+    let letters = b.iter().filter(|c| c.is_ascii_alphabetic()).count();
+    token_chars && digits >= 1 && letters >= 1 && b.len() >= 12
+        || token_chars && digits >= 10
+        || (b.len() >= 8
+            && letters >= 4
+            && digits >= 1
+            && b.iter().any(u8::is_ascii_lowercase)
+            && b.iter().any(u8::is_ascii_uppercase))
 }
 
 /// Valor de header com cara de credencial/identificador, qualquer que seja o nome.
@@ -1170,6 +1305,11 @@ struct Gen<'a> {
     expectations: BTreeMap<String, BTreeSet<Expectation>>,
     /// Índices (em `opts.adapter_encoders`) dos codificadores usados.
     encoders_used: BTreeSet<usize>,
+    /// Campo reivindicado → (nome da parte, valor) → nº de requisições da
+    /// sessão que o carregam (prova de constância das partes).
+    part_counts: HashMap<String, HashMap<(String, String), usize>>,
+    /// Campos reivindicados por adaptador (para podar produtores não usados).
+    claimed_fields: BTreeSet<String>,
 }
 
 impl Gen<'_> {
@@ -2557,6 +2697,27 @@ pub fn to_python(
     target_request_id: &str,
     opts: &PrimingOptions,
 ) -> Result<ExportOutput> {
+    let (output, extras) =
+        to_python_with(session, source, target_request_id, opts, &HashSet::new())?;
+    // Passo produtor (vindo das partes do adaptador, ou que só fornecia o
+    // campo reivindicado) que nenhum passo referencia sai do plano.
+    let unreferenced: HashSet<String> = extras
+        .into_iter()
+        .filter(|rid| !output.text.contains(&format!("R[{}]", lit(rid))))
+        .collect();
+    if unreferenced.is_empty() {
+        return Ok(output);
+    }
+    to_python_with(session, source, target_request_id, opts, &unreferenced).map(|(o, _)| o)
+}
+
+fn to_python_with(
+    session: &SessionV1,
+    source: &dyn BodySource,
+    target_request_id: &str,
+    opts: &PrimingOptions,
+    excluded_extras: &HashSet<String>,
+) -> Result<(ExportOutput, Vec<String>)> {
     // Os passos vêm da cadeia sem adaptador: partes de um campo reivindicado
     // têm origens de granularidade fina (inclusive em rodadas anteriores) que
     // não devem puxar passos extras nem recusar uma cadeia que o gerador sem
@@ -2572,6 +2733,7 @@ pub fn to_python(
     // na ordem da sessão: nenhum valor com origem observada vira literal só
     // porque o produtor não estava no plano. Produtores de rodadas anteriores
     // ficam de fora (regra da rodada 7).
+    let mut extra_ids: Vec<String> = Vec::new();
     if !opts.flow.adapters.is_empty() {
         if let Ok(with_parts) = priming_chain(session, source, target_request_id, &opts.flow) {
             let base_start = chain
@@ -2586,10 +2748,19 @@ pub fn to_python(
                 .filter(|s| {
                     !known.contains(&s.request_id)
                         && s.request_id != target_request_id
-                        && s.started_at.is_some_and(|t| t >= base_start)
+                        && !excluded_extras.contains(&s.request_id)
+                        && (s.started_at.is_some_and(|t| t >= base_start)
+                            // Rodada anterior: só com valor produzido pela
+                            // resposta (ValueMatch forte), não por um campo
+                            // que apenas se repete (SameField).
+                            || s.reasons.iter().any(|r| {
+                                r.strength == crate::flow::Strength::Strong
+                                    && r.kind == EvidenceKind::ValueMatch
+                            }))
                 })
                 .collect();
             if !extras.is_empty() {
+                extra_ids = extras.iter().map(|s| s.request_id.clone()).collect();
                 chain.steps.extend(extras);
                 chain.steps.sort_by(|a, b| {
                     a.started_at
@@ -2612,7 +2783,7 @@ pub fn to_python(
     let mut step_reqs: Vec<(&LogicalRequest, Vec<String>, String)> = Vec::new();
     for step in &chain.steps {
         if let Some(r) = session.find_request(&step.request_id) {
-            if r.id != target.id && is_static(r) {
+            if r.id != target.id && (is_static(r) || excluded_extras.contains(&r.id)) {
                 continue;
             }
             let reasons: Vec<String> = std::iter::once(step.reason.clone())
@@ -2653,6 +2824,8 @@ pub fn to_python(
         structural,
         expectations: BTreeMap::new(),
         encoders_used: BTreeSet::new(),
+        part_counts: HashMap::new(),
+        claimed_fields: BTreeSet::new(),
     };
     let (captured_origin, _) = split_origin(&target.url);
     let captured_origin = captured_origin.to_string();
@@ -3178,7 +3351,8 @@ pub fn to_python(
             ),
         ));
     }
-    Ok(output)
+    let prune: Vec<String> = extra_ids;
+    Ok((output, prune))
 }
 
 const PRELUDE: &str = r#"

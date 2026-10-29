@@ -552,3 +552,120 @@ fn delta_without_origin_is_a_required_parameter_when_the_server_echoes_state() {
         .contains("XML.delta: sem origem observada; informe o valor da resposta anterior"));
     python_ast_ok(&out.text);
 }
+
+fn plain_head() -> grammar::Op {
+    grammar::Op::Head {
+        init: false,
+        fields: [
+            "SID1".into(),
+            "PID1".into(),
+            String::new(),
+            "MODEL".into(),
+            "dummy".into(),
+            "PAGE".into(),
+            "ev".into(),
+            "false".into(),
+        ],
+    }
+}
+
+#[test]
+fn identifier_like_parts_without_origin_are_required_and_state_stays_literal() {
+    let ids = [
+        ("v_a", "123e4567-e89b-12d3-a456-426614174000"),
+        ("v_b", "9f86d081884c7d659a2feaa0c55ad015"),
+        ("v_c", "01ARZ3NDEKTSV4RRFFQ69G5FAV"),
+        ("v_d", "dGhpcyBpcyBhIHRlc3Qgb2YgYmFzZTY0"),
+        ("v_e", "1730000000123"),
+        ("v_f", "hunter2hunter2"),
+    ];
+    let mut ops = vec![plain_head()];
+    for (k, v) in ids {
+        ops.push(grammar::Op::Lit {
+            op: 'p',
+            key: k.into(),
+            value: v.into(),
+        });
+    }
+    ops.push(grammar::Op::Lit {
+        op: 'p',
+        key: "v_estado".into(),
+        value: "true".into(),
+    });
+    ops.push(grammar::Op::Lit {
+        op: 'p',
+        key: "v_zona".into(),
+        value: "-180".into(),
+    });
+    ops.push(grammar::Op::Delta("dd".into()));
+    let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
+    let call = |text: &str| {
+        text.lines()
+            .find(|l| l.contains("natural_ajax_encode(["))
+            .unwrap_or_default()
+            .to_string()
+    };
+    let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
+    for (k, v) in ids {
+        assert!(!out.text.contains(v), "{k} vazou:\n{}", out.text);
+    }
+    assert!(call(&out.text).contains("'true'") && call(&out.text).contains("'-180'"));
+    // Modo estrito: qualquer parte única sem origem vira parâmetro.
+    let mut strict = options();
+    strict.strict_parts = true;
+    let out = to_python(&bundle.session, &bundle, "har-0001", &strict).expect("gera");
+    let line = call(&out.text);
+    assert!(
+        !line.contains("'true'") && !line.contains("'-180'"),
+        "{line}"
+    );
+    assert!(
+        out.text.contains("('xml_p_v_estado', None,"),
+        "{}",
+        out.text
+    );
+}
+
+#[test]
+fn more_sensitive_abbreviations_are_required() {
+    let names = [
+        "v_pw",
+        "v_pswrd",
+        "v_passw",
+        "v_pwrd",
+        "v_2fa",
+        "v_mfa",
+        "v_totp",
+        "v_salt",
+        "v_hash",
+        "v_assinatura",
+        "v_login",
+        "v_usuario",
+        "v_uid",
+        "v_pai",
+        "v_responsavel",
+        "v_beneficiario",
+        "v_agencia",
+        "v_banco",
+        "v_iban",
+        "v_whatsapp",
+        "v_rua",
+        "v_complemento",
+        "v_municipio",
+        "v_documento",
+    ];
+    let mut ops = vec![plain_head()];
+    for (i, name) in names.iter().enumerate() {
+        ops.push(grammar::Op::Lit {
+            op: 'p',
+            key: (*name).into(),
+            value: format!("valorx{i}zz"),
+        });
+    }
+    ops.push(grammar::Op::Delta("dd".into()));
+    let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
+    let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
+    for (i, name) in names.iter().enumerate() {
+        assert!(!out.text.contains(&format!("valorx{i}zz")), "{name} vazou");
+    }
+}

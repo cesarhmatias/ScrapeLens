@@ -77,9 +77,9 @@ fn adapter_roundtrip(args: &[String]) -> Result<(), String> {
     use scrapelens_core::adapter::{AdapterContext, ProtocolAdapter};
     use scrapelens_natural_ajax::grammar::{self, Op};
     check_adapter_flag(args)?;
-    let dir = args
-        .first()
-        .ok_or("uso: natural-core adapter-roundtrip <sessao> [--adapter natural-ajax]")?;
+    let dir = args.first().ok_or(
+        "uso: natural-core adapter-roundtrip <sessao> [--adapter natural-ajax] [--strict-parts]",
+    )?;
     let (lazy, _report) =
         scrapelens_core::open_session_dir_lazy(&PathBuf::from(dir)).map_err(|e| e.to_string())?;
     let source = scrapelens_core::search::LazyBodies(&lazy);
@@ -262,6 +262,7 @@ fn export_priming(args: &[String]) -> Result<(), String> {
     let mut options = PrimingOptions {
         allow_incomplete: args.iter().any(|a| a == "--allow-incomplete"),
         allow_literal_body: args.iter().any(|a| a == "--allow-literal-body"),
+        strict_parts: args.iter().any(|a| a == "--strict-parts"),
         allow_origins: args
             .windows(2)
             .filter(|w| w[0] == "--allow-origin")
