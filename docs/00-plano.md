@@ -29,7 +29,11 @@ scraping. Especificação completa:
   APROVADA (1bdd8b9); acabamento dos detectores em 6a85676.
 - Pacote final: bundle 6e301e70… (c5d1f61), aceite final verde
   (tests/RELATORIO-FINAL.md, 4b16b0e), entrega em docs/06-entrega.md.
-  Pendente: teste manual do .app com o seletor nativo (usuário). Nos 3 HARs reais: 11 passos na ordem
+  Pendente: teste manual do .app com o seletor nativo (usuário).
+- Rodada 8 (docs/12), adaptador Natural for Ajax fora do core: APROVADA
+  (c07b514, acabamento em curso). Prefixos UTF-16 recalculados no script de
+  priming (prova no detran-sim strict), visão estruturada no app e nomes
+  internos (XML.delta, XML.p.v_placa) em origens/compare. Nos 3 HARs reais: 11 passos na ordem
   do fluxo manual, só placa e sufixo do SESSIONID como parâmetros, 0 valores
   capturados no código; prova no detran-sim nos 4 modos.
 - Aceite automatizado: 10/10 critérios (283 checks em 229b623).

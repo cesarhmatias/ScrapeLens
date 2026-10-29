@@ -129,3 +129,17 @@ exato.
   O modo estrito fica disponível por `--strict-parts`. O produtor de outra
   rodada só sobe para o plano com ValueMatch forte; SameField de campo
   repetido não sobe, para não puxar a rodada anterior.
+
+## Fechamento (2026-10-29)
+
+Re-revisão final em c07b514: APROVADA com ressalvas, sem falha crítica nem
+alta. Decisão revista pelo líder com o dado do revisor: com `is_ui_constant`,
+`--strict-parts` gera nos 3 HARs reais exatamente os mesmos parâmetros que o
+intermediário. Por isso o ESTRITO passa a ser o padrão, e o intermediário
+fica como opção `--lenient-parts`. Acabamento: uma parte com SameField de
+outra rodada vira parâmetro obrigatório com a nota "origem em outra rodada
+(cdp-rNNNN)"; os nomes sen, snh, nip, ticket, voucher, chv e doc entram na
+lista; a poda cobre o caso dos dois produtores com valores diferentes.
+Residual aceito: texto livre (nome, endereço, login) e PIN de 4 dígitos sob
+nome neutro são indistinguíveis de estado de UI; um valor repetido em 2
+requisições conta como constante, exceto sob nome sensível.
