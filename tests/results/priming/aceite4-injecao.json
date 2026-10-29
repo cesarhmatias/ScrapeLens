@@ -1,0 +1,105 @@
+{
+ "payload": "__import__('os').system('touch <marcador>') + newline/aspas triplas/barra final/bidi/NUL",
+ "cases": {
+  "headers-latin1-hostis": {
+   "script_bytes": 10097,
+   "static": {
+    "imports": [
+     "argparse",
+     "html.parser",
+     "json",
+     "re",
+     "requests",
+     "sys",
+     "urllib.parse"
+    ],
+    "dangerous_calls": [],
+    "payload_in_strings_or_comments_only": true
+   },
+   "stray_payload_lines": 0,
+   "run_hostile_server": {
+    "rc": 0,
+    "forbidden_events": [],
+    "files_created": [],
+    "marker_files": [],
+    "stderr_last": ""
+   },
+   "posts_received_by_hostile_server": 1,
+   "fresh_value_used_not_captured": true,
+   "run_detran_sim": {
+    "rc": 1,
+    "forbidden_events": [],
+    "files_created": [],
+    "marker_files": [],
+    "stderr_last": ""
+   }
+  },
+  "headers-com-newline-e-NUL": {
+   "script_bytes": 10151,
+   "static": {
+    "imports": [
+     "argparse",
+     "html.parser",
+     "json",
+     "re",
+     "requests",
+     "sys",
+     "urllib.parse"
+    ],
+    "dangerous_calls": [],
+    "payload_in_strings_or_comments_only": true
+   },
+   "stray_payload_lines": 0,
+   "run_hostile_server": {
+    "rc": 0,
+    "forbidden_events": [],
+    "files_created": [],
+    "marker_files": [],
+    "stderr_last": ""
+   },
+   "posts_received_by_hostile_server": 1,
+   "fresh_value_used_not_captured": true,
+   "run_detran_sim": {
+    "rc": 1,
+    "forbidden_events": [],
+    "files_created": [],
+    "marker_files": [],
+    "stderr_last": ""
+   }
+  },
+  "headers-com-bidi": {
+   "script_bytes": 10121,
+   "static": {
+    "imports": [
+     "argparse",
+     "html.parser",
+     "json",
+     "re",
+     "requests",
+     "sys",
+     "urllib.parse"
+    ],
+    "dangerous_calls": [],
+    "payload_in_strings_or_comments_only": true
+   },
+   "stray_payload_lines": 0,
+   "run_hostile_server": {
+    "rc": 1,
+    "forbidden_events": [],
+    "files_created": [],
+    "marker_files": [],
+    "stderr_last": "CRASH: UnicodeEncodeError: 'latin-1' codec can't encode characters in position 60-61: ordinal not in range(256)"
+   },
+   "posts_received_by_hostile_server": 0,
+   "fresh_value_used_not_captured": null,
+   "run_detran_sim": {
+    "rc": 1,
+    "forbidden_events": [],
+    "files_created": [],
+    "marker_files": [],
+    "stderr_last": "CRASH: UnicodeEncodeError: 'latin-1' codec can't encode characters in position 60-61: ordinal not in range(256)"
+   }
+  }
+ },
+ "fails": []
+}

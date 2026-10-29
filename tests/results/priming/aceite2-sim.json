@@ -1,0 +1,60 @@
+{
+ "base": "http://127.0.0.1:8791",
+ "scenarios": {
+  "ok#1": {
+   "rc": 0,
+   "requests": 10,
+   "connector_posts": 6,
+   "sim_sessions": 1,
+   "events": [
+    "ok evento=init",
+    "ok evento=init",
+    "ok evento=on_interceptor",
+    "ok evento=init",
+    "ok evento=cmd_filtro",
+    "ok evento=cmd_consultar_placa"
+   ]
+  },
+  "ok#2": {
+   "rc": 0,
+   "requests": 10,
+   "connector_posts": 6,
+   "sim_sessions": 1,
+   "events": [
+    "ok evento=init",
+    "ok evento=init",
+    "ok evento=on_interceptor",
+    "ok evento=init",
+    "ok evento=cmd_filtro",
+    "ok evento=cmd_consultar_placa"
+   ]
+  },
+  "error": {
+   "rc": 1,
+   "requests_sent": 10,
+   "first_bad_response_at_request": 10,
+   "stopped_at_bad_step": true,
+   "message": "priming: a aplicação respondeu com ERRORMESSAGE no passo 10 (har-0026): Placa não encontrada (modo error, sintético)"
+  },
+  "nocontrols": {
+   "rc": 1,
+   "requests_sent": 4,
+   "first_bad_response_at_request": 3,
+   "stopped_at_bad_step": false,
+   "message": "priming: controle HTML 'XML' não encontrado na resposta de XML[96] (har-0015)"
+  },
+  "403": {
+   "rc": 1,
+   "requests_sent": 4,
+   "first_bad_response_at_request": 3,
+   "stopped_at_bad_step": false,
+   "message": "priming: controle HTML 'XML' não encontrado na resposta de XML[96] (har-0015)"
+  }
+ },
+ "plan_steps": 10,
+ "negative_control_captured_post_rejected": true,
+ "fails": [
+  "nocontrols: o script NÃO parou na resposta ruim: ruim no pedido #3, enviou 4 pedidos (não pode seguir adiante)",
+  "403: o script NÃO parou na resposta ruim: ruim no pedido #3, enviou 4 pedidos (não pode seguir adiante)"
+ ]
+}
