@@ -173,3 +173,16 @@ aprovados. Restam 2 falhas altas.
   leve). (3) Referer para outro origin (`--allow-origin`) leva só o origin,
   como no navegador. (4) Regras do assess: nomes/caminhos vazios são
   recusados.
+- Re-revisão em e74ecb0: falta 1 alta, JSON como VALOR de campo (form ou
+  string JSON). Decisão de princípio, para parar de tapar caso a caso: (a)
+  valores de campo que são JSON válido, inclusive JSON dentro de string JSON,
+  são decompostos recursivamente (profundidade limitada); (b) um filtro FINAL
+  e único de literais: todo literal de string que o gerador vai emitir
+  (corpo, campos, trechos opacos, headers e query) passa pelos detectores de
+  PII/segredo (e-mail, CPF, CNPJ, cartão com Luhn, telefone BR, placa, JWT,
+  esquemas Bearer/Basic, dígitos longos e nomes de negócio/PII no contexto).
+  Um trecho detectado vira parâmetro obrigatório no lugar exato. Se não der
+  para mapear, a geração é recusada com a lista do que foi achado. Os
+  avisos das regras também cobrem "nenhuma detecção configurada". O app lê
+  `assess-rules.json` como arquivo regular, sem symlink, com limite de
+  tamanho.
