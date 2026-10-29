@@ -701,16 +701,53 @@ pub async fn assess_session(session_dir: String) -> Result<serde_json::Value, St
         .map_err(|error| format!("a avaliação foi interrompida: {error}"))?
 }
 
+const RULES_MAX_BYTES: u64 = 256 * 1024;
+
+/// Lê `assess-rules.json` só se for arquivo regular sem symlink (symlink_metadata + inode) e até 256 KiB.
+/// `None` quando não existe.
+fn read_rules_file(path: &Path) -> Result<Option<String>, String> {
+    use std::io::Read;
+    let before = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("não foi possível verificar {}: {error}", path.display())),
+    };
+    if before.file_type().is_symlink() || !before.is_file() {
+        return Err(format!("{} não é um arquivo regular (link simbólico recusado); remova-o", path.display()));
+    }
+    let file = fs::File::open(path).map_err(|error| format!("não foi possível ler {}: {error}", path.display()))?;
+    let opened = file.metadata().map_err(|error| format!("não foi possível ler {}: {error}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if opened.ino() != before.ino() || opened.dev() != before.dev() {
+            return Err(format!("{} mudou durante a abertura; recusado", path.display()));
+        }
+    }
+    if !opened.is_file() || opened.len() > RULES_MAX_BYTES {
+        return Err(format!("{} excede 256 KiB ou não é arquivo regular; reduza ou remova o arquivo", path.display()));
+    }
+    let mut bytes = Vec::new();
+    file.take(RULES_MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("não foi possível ler {}: {error}", path.display()))?;
+    if bytes.len() as u64 > RULES_MAX_BYTES {
+        return Err(format!("{} excede 256 KiB; reduza ou remova o arquivo", path.display()));
+    }
+    String::from_utf8(bytes).map(Some).map_err(|_| format!("{} não é UTF-8 válido; corrija ou remova o arquivo", path.display()))
+}
+
 pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
     use scrapelens_core::assess::{assess_session, AssessRules};
     let rules_path = dir.join("assess-rules.json");
-    let rules = if rules_path.is_file() {
-        let text = fs::read_to_string(&rules_path)
-            .map_err(|error| format!("não foi possível ler {}: {error}", rules_path.display()))?;
-        AssessRules::from_json(&text)
-            .map_err(|error| format!("{error} (arquivo {}; corrija ou remova-o)", rules_path.display()))?
-    } else {
-        AssessRules::default()
+    let rules = match read_rules_file(&rules_path)? {
+        Some(text) => AssessRules::from_json(&text).map_err(|_| {
+            format!(
+                "as regras em {} não são válidas (JSON, schema ou campos fora do esquema scrapelens.assess-rules/1); corrija ou remova o arquivo",
+                rules_path.display()
+            )
+        })?,
+        None => AssessRules::default(),
     };
     let lazy = cached_session(dir)?;
     let outcomes = assess_session(&lazy.session, &scrapelens_core::search::LazyBodies(&lazy), &rules);
@@ -1310,6 +1347,19 @@ mod tests {
         // regras inválidas viram erro acionável
         fs::write(dir.join("assess-rules.json"), "{\"schema\":\"x\"}").unwrap();
         assert!(assess_blocking(&dir).unwrap_err().contains("corrija ou remova"));
+        // o erro de parse não ecoa conteúdo do arquivo
+        fs::write(dir.join("assess-rules.json"), "SEGREDO-NO-ARQUIVO").unwrap();
+        assert!(!assess_blocking(&dir).unwrap_err().contains("SEGREDO"));
+        // arquivo grande é recusado
+        fs::write(dir.join("assess-rules.json"), vec![b' '; 256 * 1024 + 1]).unwrap();
+        assert!(assess_blocking(&dir).unwrap_err().contains("256 KiB"));
+        // symlink é recusado, sem ler o alvo
+        let outside = dir.join("fora.json");
+        fs::write(&outside, "{\"schema\":\"scrapelens.assess-rules/1\"}").unwrap();
+        fs::remove_file(dir.join("assess-rules.json")).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("assess-rules.json")).unwrap();
+        assert!(assess_blocking(&dir).unwrap_err().contains("link simbólico"));
+        fs::remove_file(dir.join("assess-rules.json")).unwrap();
         // sem regras ou com regras sãs, sem avisos; regras que distorcem devolvem os avisos do core
         fs::remove_file(dir.join("assess-rules.json")).ok();
         assert_eq!(result["warnings"].as_array().unwrap().len(), 0);
