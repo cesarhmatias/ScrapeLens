@@ -23,6 +23,12 @@ scraping. Especificação completa:
   capturas: concluída e aprovada na re-revisão (bundle ac7213b2…). Próximo:
   validação no caso real DETRAN (HARs locais, sem dados no repositório) e
   rodada 6 (script de priming e sucesso da aplicação × HTTP).
+- Rodada 6 (docs/10), fidelidade ao caso real DETRAN-PB: APROVADA (7a11441).
+  O caso é identificável e analisável nos 3 HARs reais do usuário.
+- Rodada 7 (docs/11), script de priming e sucesso da aplicação × HTTP:
+  implementada e em revisão independente. Nos 3 HARs reais: 11 passos na ordem
+  do fluxo manual, só placa e sufixo do SESSIONID como parâmetros, 0 valores
+  capturados no código; prova no detran-sim nos 4 modos.
 - Aceite automatizado: 10/10 critérios (283 checks em 229b623).
 - Captura nova e importações HAR/NetLog pela UI do bundle final validadas.
   Seleção manual do usuário e conferência independente dos arquivos persistidos.

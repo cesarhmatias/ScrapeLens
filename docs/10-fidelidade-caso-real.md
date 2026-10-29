@@ -128,3 +128,19 @@ agregado); há 1 falha alta.
   abre rodada nova.
 - O aviso "initiator não preservado" sai quando a tentativa tem initiator.
   `pages` usa Referer OU initiator.url.
+
+## Fechamento (2026-10-29)
+
+Re-revisão final (em 4206ae5): o revisor disse "quase aprovada" e
+condicionou a aprovação a um único item, o custo quadrático do scan_business
+na sanitização. Corrigido em 7a11441 (BTreeMap de intervalos; o mesmo padrão
+foi removido em `changed` do Propagator). O líder conferiu com a própria
+sonda do revisor (/tmp/rev6/p/sz.py) no HEAD: `placa1` ×200 mil em 0,22 s,
+`"cpf 123"` ×200 mil em 0,18 s, escala linear (antes, 26,7 s e 31,6 s).
+Rodada 6 APROVADA.
+
+Resultado no caso real (3 HARs do usuário, agregado): STAMP e delta resolvidos
+em 100%; cadeia com os POSTs do Connector e 4 páginas de contexto; SESSIONID
+com a dica de composição (prefixo do servidor + parte montada no cliente);
+nenhuma placa após sanitize; compare H1×H2 com 21 pares e 0 ambiguidades;
+tokenizador e sanitização lineares em entradas hostis de vários MB.
