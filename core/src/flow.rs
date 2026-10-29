@@ -2006,6 +2006,86 @@ fn is_ts_cookie(name: &str) -> bool {
     name.len() > 2 && name.starts_with("TS") && name[2..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Documento que carregou `pos` (Referer ou `initiator.url`): GET HTML, anterior,
+/// fora de proteção e de estáticos. É a aresta da cadeia de páginas.
+fn referer_page_of(ctx: &FlowContext<'_>, pos: Pos) -> Option<Pos> {
+    let attempt = ctx.attempt_ref(pos);
+    let referer = attempt
+        .request_headers
+        .first_value("referer")
+        .or_else(|| attempt.initiator.as_ref().and_then(|i| i.url.as_deref()))?;
+    let referer = referer.split('#').next().unwrap_or(referer);
+    ctx.positions()
+        .filter(|cand| {
+            let a = ctx.attempt_ref(*cand);
+            *cand != pos
+                && ctx.rel(*cand, pos) == Rel::Before
+                && a.url.split('#').next() == Some(referer)
+                && a.method.eq_ignore_ascii_case("GET")
+                && !ctx.is_static(*cand)
+                && !is_protection_path(&a.url)
+        })
+        .max_by_key(|cand| ctx.seq[cand])
+}
+
+/// Raiz da cadeia de Referer acima de `pos`: a entrada da rodada a que ele pertence.
+fn referer_root(ctx: &FlowContext<'_>, pos: Pos) -> Option<Pos> {
+    let mut cur = pos;
+    let mut root = None;
+    for _ in 0..12 {
+        let Some(parent) = referer_page_of(ctx, cur) else {
+            break;
+        };
+        root = Some(parent);
+        cur = parent;
+    }
+    root
+}
+
+/// Documento de entrada: GET HTML da aplicação, fora de proteção e de estáticos e
+/// não iniciado pelo parser (frame).
+fn is_entry_document(ctx: &FlowContext<'_>, pos: Pos) -> bool {
+    let a = ctx.attempt_ref(pos);
+    if !a.method.eq_ignore_ascii_case("GET")
+        || ctx.is_static(pos)
+        || is_protection_path(&a.url)
+        || a.initiator
+            .as_ref()
+            .is_some_and(|i| i.kind.eq_ignore_ascii_case("parser"))
+    {
+        return false;
+    }
+    a.response_headers
+        .first_value("content-type")
+        .is_some_and(|ct| ct.to_ascii_lowercase().contains("html"))
+}
+
+/// Começo da rodada do alvo: a ocorrência mais recente, até ele, do documento de
+/// entrada (o primeiro documento da aplicação da sessão). Um POST do Connector tem
+/// Referer do próprio Connector, então a raiz de Referer sozinha não acha a rodada.
+/// Sem documento de entrada, cai na raiz da cadeia de Referer.
+fn round_start_of(ctx: &FlowContext<'_>, target: Pos) -> Option<Pos> {
+    let first = ctx
+        .positions()
+        .filter(|pos| is_entry_document(ctx, *pos))
+        .min_by_key(|pos| ctx.seq[pos]);
+    if let Some(first) = first {
+        let base = |pos: Pos| {
+            let (host, path) = crate::compare::split_url(&ctx.attempt_ref(pos).url);
+            format!("{host}|{path}")
+        };
+        let entry = base(first);
+        let start = ctx
+            .positions()
+            .filter(|pos| ctx.seq[pos] < ctx.seq[&target])
+            .filter(|pos| is_entry_document(ctx, *pos))
+            .filter(|pos| base(*pos) == entry)
+            .max_by_key(|pos| ctx.seq[pos]);
+        return start.or(Some(first).filter(|pos| ctx.seq[pos] <= ctx.seq[&target]));
+    }
+    referer_root(ctx, target)
+}
+
 /// Fecho transitivo das origens fortes e médias da requisição alvo.
 pub fn priming_chain(
     session: &SessionV1,
@@ -2027,6 +2107,13 @@ pub fn priming_chain(
     let mut included: HashMap<String, ChainStep> = HashMap::new();
     let mut visited: BTreeSet<String> = BTreeSet::new();
     let mut queue = vec![request_id.to_string()];
+    // A cadeia fica na rodada do alvo: produtores anteriores à entrada da rodada
+    // (raiz da cadeia de Referer do alvo) não viram passo. Sem Referer, não há
+    // fronteira e vale a sessão inteira.
+    let round_start = ctx
+        .find(request_id)
+        .and_then(|target| round_start_of(&ctx, target))
+        .map(|start| ctx.seq[&start]);
     while let Some(current) = queue.pop() {
         if !visited.insert(current.clone()) {
             continue;
@@ -2092,6 +2179,7 @@ pub fn priming_chain(
                     })
                     .filter_map(|e| ctx.find(&e.request_id).map(|pos| (pos, e)))
                     .filter(|(pos, _)| ctx.rel(*pos, consumer) == Rel::Before)
+                    .filter(|(pos, _)| round_start.map_or(true, |start| ctx.seq[pos] >= start))
                     .max_by_key(|(pos, _)| ctx.seq[pos])
             });
             if let Some((pos, e)) = nearest {
@@ -2202,25 +2290,7 @@ pub fn priming_chain(
             )
             .filter_map(|id| ctx.find(&id).map(|pos| (id, pos)))
             .collect();
-        let referer_page = |pos: Pos| -> Option<Pos> {
-            let attempt = ctx.attempt_ref(pos);
-            let referer = attempt
-                .request_headers
-                .first_value("referer")
-                .or_else(|| attempt.initiator.as_ref().and_then(|i| i.url.as_deref()))?;
-            let referer = referer.split('#').next().unwrap_or(referer);
-            ctx.positions()
-                .filter(|cand| {
-                    let a = ctx.attempt_ref(*cand);
-                    *cand != pos
-                        && ctx.rel(*cand, pos) == Rel::Before
-                        && a.url.split('#').next() == Some(referer)
-                        && a.method.eq_ignore_ascii_case("GET")
-                        && !ctx.is_static(*cand)
-                        && !is_protection_path(&a.url)
-                })
-                .max_by_key(|cand| ctx.seq[cand])
-        };
+        let referer_page = |pos: Pos| -> Option<Pos> { referer_page_of(&ctx, pos) };
         let make = |cand: Pos, emitter: &str, aux: bool| {
             let a = ctx.attempt_ref(cand);
             ChainStep {
@@ -2255,20 +2325,6 @@ pub fn priming_chain(
         let mut auxiliary: Vec<ChainStep> = Vec::new();
         // Passos de rodadas anteriores (antes da raiz de Referer do alvo) não
         // trazem as páginas da rodada deles.
-        let round_start = emitters.first().and_then(|(_, target)| {
-            let mut cur = *target;
-            let mut root = None;
-            let mut guard = 0;
-            while let Some(parent) = referer_page(cur) {
-                root = Some(parent);
-                cur = parent;
-                guard += 1;
-                if guard >= 12 {
-                    break;
-                }
-            }
-            root.map(|r| ctx.seq[&r])
-        });
         for (emitter, pos) in emitters {
             if round_start.is_some_and(|start| ctx.seq[&pos] < start) {
                 continue;
@@ -2287,6 +2343,10 @@ pub fn priming_chain(
             for cand in ancestors {
                 let id = ctx.request_id(cand);
                 if id == request_id {
+                    continue;
+                }
+                // Páginas de rodadas anteriores não entram na rodada do alvo.
+                if round_start.is_some_and(|start| ctx.seq[&cand] < start) {
                     continue;
                 }
                 let aux = ctx

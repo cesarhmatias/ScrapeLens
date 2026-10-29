@@ -1447,3 +1447,43 @@ fn r7_compare_rounds_ignore_parser_frames_when_detecting_the_entry() {
         "entrada deve ser o documento da aplicação, não o frame: {entry}"
     );
 }
+
+/// F3: a cadeia de um alvo da 2ª rodada não repete a 1ª. A fronteira é a
+/// ocorrência mais recente do documento de entrada (o POST do Connector tem
+/// Referer do próprio Connector, então a raiz de Referer não basta).
+#[test]
+fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../fixtures/detran-pb-real-shape/real-shape-2rounds.har");
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let b = scrapelens_core::import_har(&bytes)
+        .expect("importa HAR")
+        .bundle;
+    // har-0031 é o easynat-app que abre a 2ª rodada; har-0056 é o alvo.
+    let chain = priming_chain(&b.session, &b, "har-0056", &FlowOptions::default()).unwrap();
+    let round_one: Vec<&str> = chain
+        .steps
+        .iter()
+        .map(|s| s.request_id.as_str())
+        .filter(|id| *id < "har-0031")
+        .collect();
+    assert!(round_one.is_empty(), "passos da rodada 1: {round_one:?}");
+    assert!(
+        chain.steps.iter().any(|s| s.request_id == "har-0031"),
+        "a entrada da rodada 2 é passo: {:?}",
+        chain
+            .steps
+            .iter()
+            .map(|s| &s.request_id)
+            .collect::<Vec<_>>()
+    );
+    let pages: std::collections::BTreeSet<&str> =
+        chain.pages.iter().map(|p| p.request_id.as_str()).collect();
+    assert_eq!(
+        pages,
+        ["har-0031", "har-0035", "har-0042", "har-0049"]
+            .into_iter()
+            .collect(),
+        "pages só da rodada do alvo"
+    );
+}
