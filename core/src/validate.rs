@@ -24,8 +24,10 @@
 //!
 //! `parameters` só vale para campo sem origem na captura e que não seja
 //! constante (identificador longo e opaco); os demais são ignorados com o
-//! aviso "parâmetro inválido". `plan.parameters` são os obrigatórios do plano:
-//! classificam como parâmetro do usuário, mas não passam por essas checagens.
+//! aviso "parâmetro inválido". `plan.parameters` de um plano verificado (versão
+//! atual, hash e alvo conferidos) classificam como parâmetro do usuário, sem
+//! essas checagens; num plano não verificado recebem o mesmo tratamento do
+//! `parameters` de topo e não isentam nada.
 //! A isenção de `parameters` vale só para o par (name, part) que o plano
 //! regenerado da captura realmente produz (ex. sessionid_cliente → XML.sid);
 //! outro par sob um nome do plano passa por todas as checagens e ganha o aviso
@@ -318,6 +320,61 @@ pub fn validate(
         .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
         .collect();
 
+    // impressão do plano × recalculada a partir da captura e do alvo, só com os
+    // parâmetros do plano (`plan.parameters`); o `parameters` de topo (inclusive
+    // opcionais sobrescritos pelo usuário) não entra no hash. A versão do plano
+    // protege traces de builds anteriores: sem `plan.version` atual, não compara.
+    // `plan.parameters` só classifica como parâmetro quando o plano está
+    // verificado (versão atual, hash e alvo conferidos); nos demais casos ele
+    // não isenta nada.
+    let target = target_note;
+    let mut plan_mismatch = false;
+    let mut plan_verified = false;
+    if !trace.session.notes.iter().any(|n| n == PLAN_PRESENT_NOTE) {
+        warnings.push("plano ausente: execução não verificada contra o plano".to_string());
+    } else {
+        let version =
+            note_value(trace, PLAN_VERSION_NOTE_PREFIX).and_then(|v| v.parse::<u32>().ok());
+        if version != Some(PLAN_VERSION) {
+            let message = match version {
+                Some(v) if v > PLAN_VERSION => format!(
+                    "plano de versão diferente (v{v}): gere o script de novo para verificar contra o plano"
+                ),
+                _ => {
+                    let label = version.map_or_else(|| "v1".to_string(), |v| format!("v{v}"));
+                    format!(
+                        "plano de versão anterior ({label}): gere o script de novo para verificar contra o plano"
+                    )
+                }
+            };
+            warnings.push(message);
+        } else if let Some(declared_hash) = note_value(trace, PLAN_HASH_NOTE_PREFIX) {
+            if let Some(target) = &target {
+                let names: Vec<String> = plan_names.iter().map(|n| n.to_string()).collect();
+                match plan_hash(
+                    capture,
+                    capture_source,
+                    target,
+                    &options.compare.flow,
+                    &names,
+                ) {
+                    Ok(h) if h == declared_hash => plan_verified = true,
+                    Ok(h) => {
+                        plan_mismatch = true;
+                        warnings.push(format!(
+                            "plano não confere: o trace declara o hash {declared_hash} e a captura com o alvo {target} dá {h}"
+                        ));
+                    }
+                    Err(e) => warnings.push(format!("plano não verificado: {e}")),
+                }
+            } else {
+                warnings.push("plano sem alvo: execução não verificada contra o plano".to_string());
+            }
+        } else {
+            warnings.push("plano sem impressão".to_string());
+        }
+    }
+
     // parâmetros declarados no trace: `(name, part)`. Só a parte que o plano
     // produz é isenta; as demais passam pelas checagens normais.
     let declared: Vec<(String, String)> = trace
@@ -390,11 +447,47 @@ pub fn validate(
             params.push(part.as_str());
         }
     }
-    // `plan.parameters` são os parâmetros obrigatórios do plano: também só
-    // classificam, sem as checagens acima.
-    for name in &plan_names {
-        if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
-            params.push(name);
+    if plan_verified {
+        // `plan.parameters` de um plano VERIFICADO (versão atual, hash e alvo
+        // conferidos): classificam como parâmetro do usuário, sem checagens.
+        for name in &plan_names {
+            if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
+                params.push(name);
+            }
+        }
+    } else {
+        // Plano não verificado (versão antiga/diferente, sem hash, hash que não
+        // confere ou sem alvo): os nomes de `plan.parameters` recebem o mesmo
+        // tratamento do `parameters` de topo. Nome que não é parte não gera
+        // aviso de "não existe"; o campo concreto segue a proveniência/diff.
+        for name in &plan_names {
+            let mut seen = false;
+            let mut why: Option<&str> = None;
+            for o in origins_a.values() {
+                for v in o.values.iter().filter(|v| {
+                    matches!(v.scope, ConsumedScope::Body | ConsumedScope::Query)
+                        && v.field.eq_ignore_ascii_case(name)
+                }) {
+                    seen = true;
+                    if v.evidences
+                        .iter()
+                        .any(|e| e.kind != crate::flow::EvidenceKind::Initiator)
+                    {
+                        why = Some("tem origem na captura");
+                    } else if long_opaque(&v.value) && why.is_none() {
+                        why = Some("é uma constante/identificador longo");
+                    }
+                }
+            }
+            match (seen, why) {
+                (false, _) => {}
+                (true, Some(why)) => warnings.push(format!("parâmetro inválido: `{name}` {why}")),
+                (true, None) => {
+                    if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
+                        params.push(name);
+                    }
+                }
+            }
         }
     }
     let is_param = |field: &str| params.iter().any(|p| p.eq_ignore_ascii_case(field));
@@ -686,63 +779,6 @@ pub fn validate(
         .filter(|r| idx_a(&r.request_id).is_some_and(|i| i > lo && i < hi))
         .map(|r| r.request_id.clone())
         .collect();
-
-    // impressão do plano × recalculada a partir da captura e do alvo, só com os
-    // parâmetros do plano (`plan.parameters`); o `parameters` de topo (inclusive
-    // opcionais sobrescritos pelo usuário) não entra no hash. A versão do plano
-    // protege traces de builds anteriores: sem `plan.version` atual, não compara.
-    let target = target_note;
-    let mut plan_mismatch = false;
-    if !trace.session.notes.iter().any(|n| n == PLAN_PRESENT_NOTE) {
-        warnings.push("plano ausente: execução não verificada contra o plano".to_string());
-    } else {
-        let version =
-            note_value(trace, PLAN_VERSION_NOTE_PREFIX).and_then(|v| v.parse::<u32>().ok());
-        if version != Some(PLAN_VERSION) {
-            let message = match version {
-                Some(v) if v > PLAN_VERSION => format!(
-                    "plano de versão diferente (v{v}): gere o script de novo para verificar contra o plano"
-                ),
-                _ => {
-                    let label = version.map_or_else(|| "v1".to_string(), |v| format!("v{v}"));
-                    format!(
-                        "plano de versão anterior ({label}): gere o script de novo para verificar contra o plano"
-                    )
-                }
-            };
-            warnings.push(message);
-        } else if let Some(declared_hash) = note_value(trace, PLAN_HASH_NOTE_PREFIX) {
-            if let Some(target) = &target {
-                let names: Vec<String> = trace
-                    .session
-                    .notes
-                    .iter()
-                    .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
-                    .map(str::to_string)
-                    .collect();
-                match plan_hash(
-                    capture,
-                    capture_source,
-                    target,
-                    &options.compare.flow,
-                    &names,
-                ) {
-                    Ok(h) if h == declared_hash => {}
-                    Ok(h) => {
-                        plan_mismatch = true;
-                        warnings.push(format!(
-                            "plano não confere: o trace declara o hash {declared_hash} e a captura com o alvo {target} dá {h}"
-                        ));
-                    }
-                    Err(e) => warnings.push(format!("plano não verificado: {e}")),
-                }
-            } else {
-                warnings.push("plano sem alvo: execução não verificada contra o plano".to_string());
-            }
-        } else {
-            warnings.push("plano sem impressão".to_string());
-        }
-    }
 
     // veredito: primeiro problema, em ordem de passo
     let mut verdict = ValidationVerdict::Equivalent;

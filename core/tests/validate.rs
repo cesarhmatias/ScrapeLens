@@ -902,6 +902,120 @@ fn forged_parameters_under_plan_names_do_not_mask_stamp() {
 }
 
 #[test]
+fn unverified_plan_parameters_do_not_mask_values() {
+    // L13–L15, N1 e N3: `plan.parameters` sem plano verificado não classifica
+    // nenhum campo; valor congelado/inventado continua divergindo.
+    let cap = lp_capture("D2");
+    let make = |prev: &str, target: &str| lp_trace(prev, target, &["placa"], json!({}));
+    let add_delta = |t: &mut SessionBundle| {
+        t.session
+            .session
+            .notes
+            .push("trace-plan-param: XML.delta".to_string());
+    };
+    // N2: controle v2 sem hash, sem item → diverges
+    let mut t = make("D3", "D2");
+    t.session
+        .session
+        .notes
+        .retain(|n| !n.starts_with("trace-plan-hash"));
+    let v = run_flow(&cap, &t, lp_flow());
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    // N1: v2 sem hash + plan.parameters += XML.delta + delta congelado
+    let mut t = make("D3", "D2");
+    t.session
+        .session
+        .notes
+        .retain(|n| !n.starts_with("trace-plan-hash"));
+    add_delta(&mut t);
+    let v = run_flow(&cap, &t, lp_flow());
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    assert!(v.summary.contains("congelado"), "{}", v.summary);
+    // L13: v1 + plan.parameters += XML.delta + delta congelado
+    let mut t = make("D3", "D2");
+    t.session.session.notes = t
+        .session
+        .session
+        .notes
+        .iter()
+        .map(|n| {
+            if n.starts_with("trace-plan-version: ") {
+                "trace-plan-version: 1".to_string()
+            } else {
+                n.clone()
+            }
+        })
+        .collect();
+    add_delta(&mut t);
+    let v = run_flow(&cap, &t, lp_flow());
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    // L15: versão ausente + plan.parameters += XML.delta + delta congelado
+    let mut t = make("D3", "D2");
+    t.session
+        .session
+        .notes
+        .retain(|n| !n.starts_with("trace-plan-version"));
+    add_delta(&mut t);
+    let v = run_flow(&cap, &t, lp_flow());
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    // L14/N3: v1 + plan.parameters += XML.delta + delta inventado
+    let mut t = make("D3", "DZ");
+    t.session.session.notes = t
+        .session
+        .session
+        .notes
+        .iter()
+        .map(|n| {
+            if n.starts_with("trace-plan-version: ") {
+                "trace-plan-version: 1".to_string()
+            } else {
+                n.clone()
+            }
+        })
+        .collect();
+    add_delta(&mut t);
+    let v = run_flow(&cap, &t, lp_flow());
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    assert!(
+        v.steps[2]
+            .unexpected
+            .iter()
+            .any(|n| n.field == "XML.delta" && n.reason.contains("sem origem")),
+        "{:?}",
+        v.steps[2]
+    );
+    // v1 fiel, sem item forjado → equivalent, só com o aviso de versão
+    let mut t = make("D2", "D2");
+    t.session.session.notes = t
+        .session
+        .session
+        .notes
+        .iter()
+        .map(|n| {
+            if n.starts_with("trace-plan-version: ") {
+                "trace-plan-version: 1".to_string()
+            } else {
+                n.clone()
+            }
+        })
+        .collect();
+    let v = run_flow(&cap, &t, lp_flow());
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    let plan_warnings: Vec<&String> = v.warnings.iter().filter(|w| w.contains("plano")).collect();
+    assert_eq!(plan_warnings.len(), 1, "{:?}", v.warnings);
+    assert!(
+        plan_warnings[0].contains("plano de versão anterior (v1)"),
+        "{:?}",
+        plan_warnings
+    );
+    assert!(
+        !v.warnings.iter().any(|w| w.contains("parâmetro inválido")),
+        "{:?}",
+        v.warnings
+    );
+}
+
+#[test]
 fn old_plan_version_warns_instead_of_diverging() {
     let h = hash_for(&["placa"]);
     // versão ausente: build anterior → aviso, sem comparar o hash
