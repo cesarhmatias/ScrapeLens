@@ -895,14 +895,6 @@ impl<'a> FlowContext<'a> {
     /// JSON/JSONP pode ser produtor dinâmico, mesmo com cara de estático.
     fn maybe_dynamic(&self, pos: Pos) -> bool {
         let attempt = self.attempt(pos);
-        let cache = attempt
-            .response_headers
-            .first_value("cache-control")
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        if cache.contains("no-store") || cache.contains("no-cache") {
-            return true;
-        }
         let url = attempt.url.split('#').next().unwrap_or("");
         let path = url.split('?').next().unwrap_or("").to_ascii_lowercase();
         let is_script = path.ends_with(".js") || path.ends_with(".mjs");
@@ -914,6 +906,18 @@ impl<'a> FlowContext<'a> {
         let is_script = is_script || mime.contains("javascript") || mime.contains("ecmascript");
         if is_script && url.contains('?') {
             return true;
+        }
+        // `no-store`/`no-cache` só conta fora de scripts: bibliotecas JS reais
+        // costumam vir assim (caso DETRAN) e não são produtoras por isso.
+        if !is_script {
+            let cache = attempt
+                .response_headers
+                .first_value("cache-control")
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if cache.contains("no-store") || cache.contains("no-cache") {
+                return true;
+            }
         }
         if is_script || mime.contains("json") {
             if let Some(text) = body_text(self.source, &attempt.response_body) {
@@ -1100,11 +1104,14 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
         values: Vec::new(),
         redacted_values: 0,
         ties: Vec::new(),
-        warnings: vec![
+        warnings: Vec::new(),
+    };
+    if attempt.initiator.is_none() {
+        result.warnings.push(
             "initiator do CDP não é preservado no modelo: evidência `initiator` indisponível"
                 .to_string(),
-        ],
-    };
+        );
+    }
 
     if let Some(w) = ctx
         .session
@@ -2185,7 +2192,10 @@ pub fn priming_chain(
             .collect();
         let referer_page = |pos: Pos| -> Option<Pos> {
             let attempt = ctx.attempt_ref(pos);
-            let referer = attempt.request_headers.first_value("referer")?;
+            let referer = attempt
+                .request_headers
+                .first_value("referer")
+                .or_else(|| attempt.initiator.as_ref().and_then(|i| i.url.as_deref()))?;
             let referer = referer.split('#').next().unwrap_or(referer);
             ctx.positions()
                 .filter(|cand| {
@@ -2231,7 +2241,26 @@ pub fn priming_chain(
         };
         let mut pages: Vec<ChainStep> = Vec::new();
         let mut auxiliary: Vec<ChainStep> = Vec::new();
+        // Passos de rodadas anteriores (antes da raiz de Referer do alvo) não
+        // trazem as páginas da rodada deles.
+        let round_start = emitters.first().and_then(|(_, target)| {
+            let mut cur = *target;
+            let mut root = None;
+            let mut guard = 0;
+            while let Some(parent) = referer_page(cur) {
+                root = Some(parent);
+                cur = parent;
+                guard += 1;
+                if guard >= 12 {
+                    break;
+                }
+            }
+            root.map(|r| ctx.seq[&r])
+        });
         for (emitter, pos) in emitters {
+            if round_start.is_some_and(|start| ctx.seq[&pos] < start) {
+                continue;
+            }
             let mut ancestors: Vec<Pos> = Vec::new();
             let mut cur = pos;
             while let Some(parent) = referer_page(cur) {

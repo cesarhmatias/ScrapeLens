@@ -84,15 +84,26 @@ impl RequestRange {
         })
     }
 
-    fn resolve(&self, session: &SessionV1) -> Option<(usize, usize)> {
-        let index = |s: &str| {
-            s.parse::<usize>()
-                .ok()
-                .filter(|n| *n >= 1)
-                .map(|n| n - 1)
-                .or_else(|| session.requests.iter().position(|q| q.id == s))
+    /// Índices (inclusivos) ou o motivo de a faixa não valer.
+    fn resolve(&self, session: &SessionV1) -> std::result::Result<(usize, usize), String> {
+        let index = |s: &str| -> std::result::Result<usize, String> {
+            if let Some(i) = session.requests.iter().position(|q| q.id == s) {
+                return Ok(i);
+            }
+            match s.parse::<usize>() {
+                Ok(n) if (1..=session.requests.len()).contains(&n) => Ok(n - 1),
+                Ok(n) => Err(format!(
+                    "{n} fora dos limites (a sessão tem {} requisições)",
+                    session.requests.len()
+                )),
+                Err(_) => Err(format!("requisição {s:?} não encontrada")),
+            }
         };
-        Some((index(&self.from)?, index(&self.to)?))
+        let (from, to) = (index(&self.from)?, index(&self.to)?);
+        if from > to {
+            return Err("faixa invertida (início depois do fim)".to_string());
+        }
+        Ok((from, to))
     }
 }
 
@@ -361,7 +372,12 @@ fn entries(ctx: &FlowContext<'_>) -> Vec<Entry> {
         } else {
             EntryKind::App
         };
+        // frame iniciado pelo parser (cscform, JLIBS…) não é a entrada da rodada
         let document = kind == EntryKind::App
+            && !attempt
+                .initiator
+                .as_ref()
+                .is_some_and(|i| i.kind.eq_ignore_ascii_case("parser"))
             && attempt.method.eq_ignore_ascii_case("GET")
             && attempt
                 .response_headers
@@ -521,9 +537,9 @@ pub fn compare_sessions(
     ] {
         if let Some(range) = range {
             match range.resolve(session) {
-                Some((from, to)) => list.retain(|e| e.index >= from && e.index <= to),
-                None => result.warnings.push(format!(
-                    "faixa de {side} inválida ({}..{}); comparando a sessão inteira",
+                Ok((from, to)) => list.retain(|e| e.index >= from && e.index <= to),
+                Err(why) => result.warnings.push(format!(
+                    "faixa de {side} inválida ({}..{}): {why}; comparando a sessão inteira",
                     range.from, range.to
                 )),
             }
@@ -671,6 +687,20 @@ fn split_rounds(list: &[Entry], entry: Option<&str>) -> Vec<Vec<Entry>> {
         .filter(|(_, e)| e.document && e.base == entry)
         .map(|(i, _)| i)
         .collect();
+    // Reload da entrada (nenhum passo de aplicação desde a ocorrência anterior)
+    // não abre rodada nova.
+    let mut kept: Vec<usize> = Vec::new();
+    for &i in &starts {
+        let progressed = kept.last().map_or(true, |&prev| {
+            list[prev + 1..i]
+                .iter()
+                .any(|e| e.kind == EntryKind::App && !(e.document && e.base == entry))
+        });
+        if progressed {
+            kept.push(i);
+        }
+    }
+    let starts = kept;
     if starts.len() < 2 {
         return vec![list.to_vec()];
     }

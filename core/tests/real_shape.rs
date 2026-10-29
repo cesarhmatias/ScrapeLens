@@ -1146,3 +1146,123 @@ fn r6_business_names_are_exact_or_separated_and_formats_and_entities_are_covered
     // sufixo depois de separador continua valendo
     assert!(!after.contains("39053344705"));
 }
+
+#[test]
+fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() {
+    let mut sa = S::default();
+    round(&mut sa, 1.0, 1, "1000");
+    let mut sb = S::default();
+    round(&mut sb, 1.0, 1, "2000");
+    let (a, b) = (sa.build(), sb.build());
+    for (range, why) in [("3:2", "invertida"), ("90:99", "fora dos limites")] {
+        let r = compare_sessions(
+            &a.session,
+            &a,
+            &b.session,
+            &b,
+            &CompareOptions {
+                a_range: RequestRange::parse(range),
+                ..Default::default()
+            },
+        );
+        assert!(
+            r.warnings
+                .iter()
+                .any(|w| w.contains("faixa de A") && w.contains(why)),
+            "{range}: {:?}",
+            r.warnings
+        );
+    }
+    // reload da entrada sem passo de aplicação entre as ocorrências: 1 rodada só
+    let mut sr = S::default();
+    sr.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/easynat",
+        "GET",
+        R {
+            resp: Some("<html>e</html>"),
+            ..Default::default()
+        },
+    );
+    sr.req(
+        "1.2",
+        2.0,
+        "https://x.test/app/easynat",
+        "GET",
+        R {
+            resp: Some("<html>e</html>"),
+            ..Default::default()
+        },
+    );
+    sr.req(
+        "1.3",
+        3.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=init&STAMP=1000"),
+            resp: Some("<html>r</html>"),
+            ..Default::default()
+        },
+    );
+    sr.req(
+        "1.4",
+        4.0,
+        "https://x.test/app/easynat",
+        "GET",
+        R {
+            resp: Some("<html>e</html>"),
+            ..Default::default()
+        },
+    );
+    sr.req(
+        "1.5",
+        5.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=init&STAMP=1001"),
+            resp: Some("<html>r</html>"),
+            ..Default::default()
+        },
+    );
+    let c = sr.build();
+    let r = compare_sessions(&c.session, &c, &c.session, &c, &CompareOptions::default());
+    assert_eq!(r.rounds.len(), 2, "reload não abre rodada: {:?}", r.rounds);
+    // pages por initiator.url (sem Referer) e sem aviso de initiator ausente
+    let mut sp = S::default();
+    sp.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/Page.html",
+        "GET",
+        R {
+            resp: Some("<html>p</html>"),
+            ..Default::default()
+        },
+    );
+    sp.req(
+        "1.2",
+        2.0,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=init&STAMP=1"),
+            resp: Some("<html></html>"),
+            initiator: Some(json!({"type": "script", "url": "https://x.test/app/Page.html"})),
+            ..Default::default()
+        },
+    );
+    let p = sp.build();
+    let chain = priming_chain(&p.session, &p, &lid(&p, "1.2"), &FlowOptions::default()).unwrap();
+    assert_eq!(chain.pages.len(), 1, "{:?}", chain.pages);
+    let o = origins(&p, "1.2");
+    assert!(
+        !o.warnings
+            .iter()
+            .any(|w| w.contains("initiator do CDP não é preservado")),
+        "{:?}",
+        o.warnings
+    );
+}

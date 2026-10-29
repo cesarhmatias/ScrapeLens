@@ -1119,17 +1119,17 @@ fn r6_script_with_query_nocache_or_jsonp_can_be_producer() {
             "query",
         ),
         (
-            "http://h.test/app.js",
+            "http://h.test/theme.css",
             R {
-                resp: Some("var build=\"v20261027-abcdef12\";"),
-                rct: Some("application/javascript"),
+                resp: Some("a{content:\"v20261027-abcdef12\"}"),
+                rct: Some("text/css"),
                 resp_headers: Some(json!({"cache-control": "no-store"})),
                 ..Default::default()
             },
             "no-store",
         ),
         (
-            "http://h.test/app.js",
+            "http://h.test/theme.css",
             R {
                 resp: Some("cb({\"x\":\"v20261027-abcdef12\"})"),
                 rct: Some("application/javascript"),
