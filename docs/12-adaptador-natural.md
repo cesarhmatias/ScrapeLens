@@ -116,3 +116,16 @@ exato.
   documento. Falsos positivos de nome (ex.: conta_corrente) são aceitos
   como erro do lado seguro: viram parâmetro, nunca vazam.
   (4) Passo produtor que não fornece nenhum valor referenciado sai do plano.
+- Decisão do líder sobre o princípio (2), medido pela Captura em b4511fb: o
+  estrito por padrão transformaria estado de UI (`v_filtro_sel`,
+  `interceptor_is_active`, `#f12_selected`, `pagePixelHeight/Width`) em
+  parâmetros obrigatórios nos HARs reais, sem ganho de segurança. Padrão:
+  modo intermediário. Toda parte sem origem e sem prova que tenha cara de
+  identificador, segredo ou carimbo de tempo (UUID, hex, ULID/KSUID, base64,
+  timestamp, alfanumérico misto, senha-padrão) vira parâmetro obrigatório.
+  Constantes de UI ficam literais, definidas explicitamente: booleanos,
+  números de até 4 caracteres (com sinal e decimal) e valores
+  repetidos/navegação. Nomes sensíveis e detectores de PII continuam valendo.
+  O modo estrito fica disponível por `--strict-parts`. O produtor de outra
+  rodada só sobe para o plano com ValueMatch forte; SameField de campo
+  repetido não sobe, para não puxar a rodada anterior.
