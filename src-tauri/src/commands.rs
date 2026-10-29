@@ -722,6 +722,7 @@ pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
         "schema": "scrapelens.assess/1",
         "rules": if rules_path.is_file() { rules_path.display().to_string() } else { "default".to_string() },
         "counts": counts,
+        "warnings": rules.warnings(),
         "outcomes": outcomes,
     }))
 }
@@ -1309,6 +1310,17 @@ mod tests {
         // regras inválidas viram erro acionável
         fs::write(dir.join("assess-rules.json"), "{\"schema\":\"x\"}").unwrap();
         assert!(assess_blocking(&dir).unwrap_err().contains("corrija ou remova"));
+        // sem regras ou com regras sãs, sem avisos; regras que distorcem devolvem os avisos do core
+        fs::remove_file(dir.join("assess-rules.json")).ok();
+        assert_eq!(result["warnings"].as_array().unwrap().len(), 0);
+        fs::write(
+            dir.join("assess-rules.json"),
+            "{\"schema\":\"scrapelens.assess-rules/1\",\"protectionPaths\":[\"/\"]}",
+        )
+        .unwrap();
+        let warned = assess_blocking(&dir).unwrap();
+        let warnings = warned["warnings"].as_array().unwrap();
+        assert!(warnings.iter().any(|w| w.as_str().unwrap().contains("protectionPaths")), "{warnings:?}");
         fs::remove_dir_all(dir).ok();
     }
 

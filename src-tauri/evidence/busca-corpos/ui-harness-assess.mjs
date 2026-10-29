@@ -39,7 +39,12 @@ async function rpc(cmd, args) {
       const session = JSON.parse(fs.readFileSync(path.join(args.path, "session.json"), "utf8"));
       return { session, sessionDir: args.path, synthetic: false, pending: false };
     }
-    case "assess_session": return core("assess", args.sessionDir);
+    case "assess_session": {
+      const r = core("assess", args.sessionDir);
+      // o CLI não imprime `warnings`; o comando Tauri sim (teste Rust). Aqui só para o print 33.
+      if (args.sessionDir === blockedRules && process.env.HARNESS_WARN) r.warnings = [process.env.HARNESS_WARN];
+      return r;
+    }
     case "request_origins": return core("origins", args.sessionDir, args.requestId);
     case "request_chain": {
       const chain = core("chain", args.sessionDir, args.requestId);

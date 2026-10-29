@@ -18,7 +18,7 @@ import { matchRanges } from "./highlight";
 import { classifyTransforms } from "./transforms";
 import { OriginsTab } from "./Origins";
 import { CaptureCompareView } from "./CaptureCompare";
-import { AppSuccessSection, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
+import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
@@ -641,10 +641,12 @@ function DetailView({
   outcomes,
   assessError,
   assessLoading,
+  assessWarnings,
 }: {
   outcomes: OutcomeMap;
   assessError?: string;
   assessLoading?: boolean;
+  assessWarnings?: string[];
   onOpenRequest: (id: string) => void;
   matches: SearchMatch[];
   needle?: { text: string; caseSensitive: boolean };
@@ -1063,7 +1065,7 @@ function DetailView({
             ))}
 
           {tab === "app" && (
-            <AppSuccessSection outcome={outcomes.get(req.id)} error={assessError} loading={assessLoading} />
+            <AppSuccessSection outcome={outcomes.get(req.id)} error={assessError} loading={assessLoading} warnings={assessWarnings} />
           )}
 
           {tab === "origins" && (
@@ -2027,6 +2029,7 @@ export default function App() {
                   </label>
                 </div>
               )}
+              <AssessWarnings warnings={assess.result?.warnings} />
               <div className="filters">
                 {(
                   [
@@ -2246,6 +2249,7 @@ export default function App() {
             outcomes={outcomes}
             assessError={assess.error}
             assessLoading={assess.loading}
+            assessWarnings={assess.result?.warnings}
           />
         )}
 

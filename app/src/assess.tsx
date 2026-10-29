@@ -30,6 +30,8 @@ export interface AssessResult {
   rules: string;
   /** Chaves iguais ao `verdictKind` do core (`VerdictKind::count_key()`). */
   counts: Record<string, number>;
+  /** Avisos das regras (`AssessRules::warnings()`); ausente em cores antigos. */
+  warnings?: string[];
   outcomes: ResponseOutcome[];
 }
 
@@ -120,13 +122,27 @@ const signalLabel: Record<string, string> = {
   info: "observação",
 };
 
-export function AppSuccessSection({ outcome, error, loading }: { outcome?: ResponseOutcome; error?: string; loading?: boolean }) {
+/** Avisos de `assess-rules.json` em destaque (regras que zeram detecções, `/` como proteção, marcador vazio). */
+export function AssessWarnings({ warnings }: { warnings?: string[] }) {
+  if (!warnings || warnings.length === 0) return null;
+  return (
+    <div className="body-flag flag-truncated" role="alert">
+      <strong>Regras da avaliação (assess-rules.json) com problema</strong>
+      <ul className="chain-list">
+        {warnings.map((w, i) => <li key={i}>{w}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+export function AppSuccessSection({ outcome, error, loading, warnings }: { outcome?: ResponseOutcome; error?: string; loading?: boolean; warnings?: string[] }) {
   return (
     <section className="body-panel">
       <header className="block-head">
         <h3>Sucesso da aplicação</h3>
         <span className="block-meta">HTTP não é sucesso da aplicação · veredito do core</span>
       </header>
+      <AssessWarnings warnings={warnings} />
       {error && <div className="body-flag flag-truncated"><strong>Avaliação indisponível</strong><span>{error}</span></div>}
       {!error && !outcome && <div className="empty">{loading ? "Avaliando…" : "Sem avaliação: exige uma sessão aberta da pasta persistida."}</div>}
       {outcome && (
