@@ -1995,7 +1995,8 @@ pub struct UnresolvedValue {
     pub label: String,
     pub partial_composition: Vec<PartialComposition>,
     pub unobservable: Vec<Unobservable>,
-    pub request_id: String,
+    /// Requisições que consomem o valor (o alvo e os passos da cadeia).
+    pub request_ids: Vec<String>,
     pub scope: ConsumedScope,
     pub field: String,
     pub status: OriginStatus,
@@ -2145,7 +2146,7 @@ pub fn priming_chain(
                         label: value.label.clone(),
                         partial_composition: value.partial_composition.clone(),
                         unobservable: value.unobservable.clone(),
-                        request_id: current.clone(),
+                        request_ids: vec![current.clone()],
                         scope: value.scope,
                         field: value.field.clone(),
                         status: value.status,
@@ -2161,7 +2162,7 @@ pub fn priming_chain(
                     label: value.label.clone(),
                     partial_composition: value.partial_composition.clone(),
                     unobservable: value.unobservable.clone(),
-                    request_id: current.clone(),
+                    request_ids: vec![current.clone()],
                     scope: value.scope,
                     field: value.field.clone(),
                     status: value.status,
@@ -2259,10 +2260,9 @@ pub fn priming_chain(
             } else if let Some((pos, _)) = withheld {
                 // Trecho de campo opaco: não sobe, mas fica visível com o motivo.
                 let label = format!("produtor só em rodada anterior ({})", ctx.request_id(pos));
-                let duplicate = chain
-                    .unresolved
-                    .iter()
-                    .any(|u| u.request_id == current && u.field == value.field && u.label == label);
+                let duplicate = chain.unresolved.iter().any(|u| {
+                    u.request_ids.contains(&current) && u.field == value.field && u.label == label
+                });
                 if !current_protection
                     && value.status != OriginStatus::Ambiguous
                     && value.length > 0
@@ -2272,7 +2272,7 @@ pub fn priming_chain(
                         label,
                         partial_composition: value.partial_composition.clone(),
                         unobservable: value.unobservable.clone(),
-                        request_id: current.clone(),
+                        request_ids: vec![current.clone()],
                         scope: value.scope,
                         field: value.field.clone(),
                         status: value.status,
@@ -2455,9 +2455,33 @@ pub fn priming_chain(
         .iter()
         .map(|step| step.request_id.clone())
         .collect();
-    chain
-        .unresolved
-        .retain(|u| !protection_ids.contains(&u.request_id));
+    chain.unresolved.retain_mut(|u| {
+        u.request_ids.retain(|id| !protection_ids.contains(id));
+        !u.request_ids.is_empty()
+    });
+    // A mesma pendência (campo, valor/razão e pistas) pode ser consumida pelo
+    // alvo e por um passo da cadeia (ex.: `n` em duas requisições): agrupa em
+    // uma entrada com a lista de consumidores em vez de repetir o campo.
+    let mut grouped: Vec<UnresolvedValue> = Vec::new();
+    for mut value in std::mem::take(&mut chain.unresolved) {
+        if let Some(existing) = grouped.iter_mut().find(|u| {
+            u.field == value.field
+                && u.label == value.label
+                && u.scope == value.scope
+                && u.status == value.status
+                && u.partial_composition == value.partial_composition
+                && u.unobservable == value.unobservable
+        }) {
+            for id in value.request_ids.drain(..) {
+                if !existing.request_ids.contains(&id) {
+                    existing.request_ids.push(id);
+                }
+            }
+        } else {
+            grouped.push(value);
+        }
+    }
+    chain.unresolved = grouped;
     chain.unresolved.dedup();
     Ok(chain)
 }

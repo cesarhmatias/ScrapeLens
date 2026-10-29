@@ -1095,18 +1095,20 @@ fn missing_body_dependencies(chain: &PrimingChain) -> Vec<MissingBody> {
         {
             continue;
         }
-        match out.iter_mut().find(|m| m.request_id == value.request_id) {
-            Some(entry) => {
-                if !entry.producers.is_empty() {
-                    entry.field.push_str(", ");
+        for request_id in &value.request_ids {
+            match out.iter_mut().find(|m| m.request_id == *request_id) {
+                Some(entry) => {
+                    if !entry.producers.is_empty() {
+                        entry.field.push_str(", ");
+                    }
+                    entry.field.push_str(&value.field);
                 }
-                entry.field.push_str(&value.field);
+                None => out.push(MissingBody {
+                    request_id: request_id.clone(),
+                    field: value.field.clone(),
+                    producers: value.unobservable.clone(),
+                }),
             }
-            None => out.push(MissingBody {
-                request_id: value.request_id.clone(),
-                field: value.field.clone(),
-                producers: value.unobservable.clone(),
-            }),
         }
     }
     out
@@ -1255,7 +1257,7 @@ pub fn to_python(
             "{}",
             comment(&format!(
                 "não resolvido: {} {} ({}){}",
-                u.request_id,
+                u.request_ids.join(", "),
                 u.field,
                 u.label,
                 if u.partial_composition.is_empty() {

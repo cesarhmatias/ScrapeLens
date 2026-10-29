@@ -1906,3 +1906,83 @@ fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
         r.warnings
     );
 }
+
+/// Item 6 da revisão 8: a mesma pendência consumida pelo alvo e por um passo da
+/// cadeia (ex.: `n` em cr3) aparece uma vez, com a lista de consumidores.
+#[test]
+fn r8_unresolved_groups_the_same_field_with_all_consumers() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/entry",
+        "GET",
+        R {
+            resp: Some("<html>entrada</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        1.1,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("STAMP=INIT&n=1"),
+            resp: Some("<html><input type=hidden name=STAMP value=2006></html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "2.1",
+        2.0,
+        "https://x.test/app/entry",
+        "GET",
+        R {
+            resp: Some("<html>entrada 2</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "2.2",
+        2.1,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("STAMP=INIT&n=2"),
+            resp: Some("<html><input type=hidden name=STAMP value=2007></html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "2.3",
+        2.2,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("STAMP=2007&n=3"),
+            resp: Some("<html>ok</html>"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let target = lid(&b, "2.3");
+    let step = lid(&b, "2.2");
+    let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    assert!(
+        chain.steps.iter().any(|st| st.request_id == step),
+        "2.2 deve ser passo (produz STAMP): {:?}",
+        chain
+            .steps
+            .iter()
+            .map(|s| &s.request_id)
+            .collect::<Vec<_>>()
+    );
+    let pending: Vec<_> = chain.unresolved.iter().filter(|u| u.field == "n").collect();
+    assert_eq!(pending.len(), 1, "campo agrupado: {:?}", chain.unresolved);
+    assert!(
+        pending[0].request_ids.contains(&target) && pending[0].request_ids.contains(&step),
+        "consumidores: {:?}",
+        pending[0].request_ids
+    );
+}
