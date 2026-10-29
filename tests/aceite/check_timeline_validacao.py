@@ -9,7 +9,7 @@
     `event @ page`, proteção recolhida (nenhuma entrada /TSPD/ avulsa). Nos HARs reais (H1–H3 padrão), só agregado:
     contagens e ordem de rótulos (nomes de evento/página, nunca valores).
 (2) script de priming da real-shape rodado POR ESTE TESTE contra o detran-sim com `--confirmar --base-url --trace`;
-    `import-trace`; `compare` com a captura: todos os passos do trace pareados, nenhum POST do Connector sobrando só na
+    `import-trace`; `validate <captura> <trace>` (scrapelens.validate/1; core 94478de): todos os passos do trace pareados, nenhum POST do Connector sobrando só na
     captura, só dinâmicos esperados diferem (STAMP, delta, SESSIONID + o inerente à troca de host), assess app-ok, e o
     resumo "equivalente".
 (3) modos error/nocontrols/403: o trace termina no passo ruim; compare aponta "diverge no passo N" (N = último passo do
@@ -41,7 +41,7 @@ FIXTURE_ROUND = EVENTS + ["cmd_nova", "cmd_consultar_placa"]                    
 REAL = ["/Users/cesar/Projects/scripts/detran_scraper/detran_paraiba/inputs/sem_captcha.har",
         "/Users/cesar/Downloads/wsdetran.pb.gov.br.har.txt.har",
         "/Users/cesar/Downloads/wsdetran.fluxo.captcha.solve.pgEvy4.har.txt.har"]
-DYNAMIC_OK = re.compile(r"STAMP|SESSIONID|delta|processId|content-length|host|date|server|url|origin|referer|port", re.I)
+DYNAMIC_OK = re.compile(r"^XML(\.|$)|STAMP|SESSIONID|delta|processId|content-length|host|date|server|url|origin|referer|port", re.I)
 PLACA = "BRA2E19"
 FAILS: list[str] = []
 INFO: dict = {}
@@ -227,26 +227,37 @@ def main():
             if not check(ip.returncode == 0, f"{mode}: import-trace: rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
                 continue
             assess = jload(sh([core, "assess", ts]), f"{mode}: assess do trace")
-            cmp_ = jload(sh([core, "compare", cap, ts]), f"{mode}: compare")
+            val = jload(sh([core, "validate", cap, ts]), f"{mode}: validate")
             outs = (assess or {}).get("outcomes", [])
             conn = [o for o in outs if o.get("url", "").endswith("/servlet/Connector")]
             sc["assess_connector"] = [o.get("verdictKind") for o in conn]
+            vsteps = (val or {}).get("steps", []) if isinstance(val, dict) else []
+            sc["validate"] = {"verdict": (val or {}).get("verdict"), "step": (val or {}).get("step"),
+                              "summary": str((val or {}).get("summary", ""))[:140], "passos": len(vsteps)}
+            if val is not None:
+                check(val.get("schema") == "scrapelens.validate/1", f"{mode}: schema do validate {val.get('schema')!r}")
             if mode == "ok":
                 check(p.returncode == 0, f"ok: script rc={p.returncode}")
                 check(len(steps) == len(log), f"ok: trace com {len(steps)} passos, sim viu {len(log)} pedidos")
                 check(conn and all(o.get("verdictKind") == "app-ok" for o in conn), f"ok: assess do trace não é app-ok em todos os POSTs: {sc['assess_connector']}")
                 check(not any(o.get("verdictKind") in ("app-error", "blocked") for o in outs), "ok: algum passo do trace com app-error/blocked")
-                if cmp_:
-                    pairs = cmp_.get("pairs", [])
-                    only_b = cmp_.get("onlyInB", [])
-                    only_a = cmp_.get("onlyInA", [])
-                    sc["compare"] = {"pairs": len(pairs), "onlyInA": len(only_a), "onlyInB": len(only_b)}
-                    check(len(pairs) == len(steps) and not only_b, f"ok: passos do trace não pareados 1:1 ({len(pairs)} pares, {len(steps)} passos, {len(only_b)} só no trace)")
-                    check(not any(str(x).count("Connector") for x in only_a), "ok: POST do Connector da captura sem par no trace")
-                    extra = sorted(n for n in diff_names(pairs) if not DYNAMIC_OK.search(n))
-                    sc["compare"]["diferencas_fora_do_esperado"] = extra
-                    check(not extra, f"ok: diferenças além de STAMP/delta/SESSIONID: {extra[:8]}")
-                    check(find_text(cmp_, r"equivalente à captura|execução equivalente"), "ok: compare sem o resumo 'execução equivalente à captura'")
+                if val:
+                    g = lambda d, *k: next((d[x] for x in k if x in d), None)  # noqa: E731
+                    unpaired = [x for x in vsteps if not g(x, "captureRequestId", "capture_request_id")]
+                    unexpected = [(g(x, "step"), n.get("field")) for x in vsteps for n in x.get("unexpected", [])]
+                    expected = sorted({str(n.get("field")) for x in vsteps for n in x.get("expected", [])})
+                    missing = g(val, "missingInTrace", "missing_in_trace") or []
+                    sc["validate"].update({"nao_pareados": len(unpaired), "inesperados": len(unexpected), "esperados_campos": expected,
+                                           "missingInTrace": len(missing), "mappedOrigin": bool(g(val, "mappedOrigin", "mapped_origin"))})
+                    check(val.get("verdict") == "equivalent", f"ok: verdict {val.get('verdict')!r}, esperado equivalent ({sc['validate']['summary']})")
+                    check("equivalente" in str(val.get("summary", "")), "ok: resumo sem 'execução equivalente à captura'")
+                    check(len(vsteps) == len(steps) and not unpaired, f"ok: passos não pareados 1:1 ({len(vsteps)} passos validados, {len(steps)} no trace, {len(unpaired)} sem par)")
+                    check(not unexpected, f"ok: diferenças inesperadas (passo, campo): {unexpected[:6]}")
+                    extra = [n for n in expected if not DYNAMIC_OK.search(n)]
+                    check(not extra, f"ok: diferenças esperadas fora de STAMP/delta/SESSIONID: {extra[:8]}")
+                    check(not missing, f"ok: {len(missing)} requisição(ões) da captura ausentes no trace")
+                    check(all(str(g(x, "verdictTrace", "verdict_trace")) in ("app-ok", "not-assessed") for x in vsteps),
+                          "ok: algum passo com veredito do trace diferente de app-ok/não-avaliado")
             else:
                 want = {"error": {"app-error"}, "403": {"blocked"}, "nocontrols": {"indeterminate", "indeterminado", "blocked", "not-assessed", "app-error"}}[mode]
                 check(p.returncode != 0, f"{mode}: o script deveria falhar")
@@ -255,10 +266,15 @@ def main():
                 last = outs[-1].get("verdictKind") if outs else None
                 sc["veredito_ultimo_passo"] = last
                 check(last in want and last != "app-ok", f"{mode}: veredito do passo ruim {last!r}, esperado um de {sorted(want)}")
-                m = find_text(cmp_, r"diverge no passo (\d+)") if cmp_ else None
-                sc["compare_resumo"] = m.group(0) if m else None
-                check(m is not None and int(m.group(1)) == first_bad,
-                      f"{mode}: compare deveria dizer 'diverge no passo {first_bad}'; disse {sc['compare_resumo']!r}")
+                if val:
+                    m = re.search(r"diverge no passo (\d+)", str(val.get("summary", "")))
+                    check(val.get("verdict") == "diverges", f"{mode}: verdict {val.get('verdict')!r}, esperado diverges")
+                    check(val.get("step") == first_bad and m is not None and int(m.group(1)) == first_bad,
+                          f"{mode}: validate deveria apontar o passo {first_bad}; apontou step={val.get('step')} resumo={sc['validate']['summary']!r}")
+                    hint = {"error": r"app-error|ERRORMESSAGE", "403": r"403|blocked"}.get(mode)
+                    if hint:
+                        check(re.search(hint, str(val.get("summary", "")) + str(val.get("reason", "")), re.I),
+                              f"{mode}: motivo sem {hint!r}: {sc['validate']['summary']!r}")
             # ---- (4) sanitize (cenário ok)
             if mode == "ok":
                 san = tmp / "san"

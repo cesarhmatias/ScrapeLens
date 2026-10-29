@@ -170,11 +170,20 @@
     "app-ok",
     "app-ok"
    ],
-   "compare": {
-    "pairs": 0,
-    "onlyInA": 19,
-    "onlyInB": 10,
-    "diferencas_fora_do_esperado": []
+   "validate": {
+    "verdict": "equivalent",
+    "step": null,
+    "summary": "execução equivalente à captura",
+    "passos": 10,
+    "nao_pareados": 0,
+    "inesperados": 0,
+    "esperados_campos": [
+     "SESSIONID",
+     "STAMP",
+     "XML"
+    ],
+    "missingInTrace": 0,
+    "mappedOrigin": true
    },
    "sanitize_vazamentos": {
     "SESSIONID": 0,
@@ -201,8 +210,13 @@
     "app-ok",
     "app-error"
    ],
-   "veredito_ultimo_passo": "app-error",
-   "compare_resumo": null
+   "validate": {
+    "verdict": "diverges",
+    "step": 10,
+    "summary": "diverge no passo 10 (veredito app-error (ERRORMESSAGE) no trace × app-ok na captura)",
+    "passos": 10
+   },
+   "veredito_ultimo_passo": "app-error"
   },
   "nocontrols": {
    "script_rc": 1,
@@ -213,8 +227,13 @@
    "assess_connector": [
     "not-assessed"
    ],
-   "veredito_ultimo_passo": "not-assessed",
-   "compare_resumo": null
+   "validate": {
+    "verdict": "diverges",
+    "step": 3,
+    "summary": "diverge no passo 3 (veredito não-avaliado no trace × app-ok na captura)",
+    "passos": 3
+   },
+   "veredito_ultimo_passo": "not-assessed"
   },
   "403": {
    "script_rc": 1,
@@ -225,8 +244,13 @@
    "assess_connector": [
     "blocked"
    ],
-   "veredito_ultimo_passo": "blocked",
-   "compare_resumo": null
+   "validate": {
+    "verdict": "diverges",
+    "step": 3,
+    "summary": "diverge no passo 3 (status 200 na captura × 403 no trace)",
+    "passos": 3
+   },
+   "veredito_ultimo_passo": "blocked"
   }
  },
  "fails": [
@@ -239,12 +263,6 @@
   "HAR real #2: 6 de 19 POSTs do Connector sem rótulo `event @ page` com o adaptador",
   "HAR real #2: eventos fora da ordem do fluxo manual",
   "HAR real #3: 9 de 23 POSTs do Connector sem rótulo `event @ page` com o adaptador",
-  "HAR real #3: eventos fora da ordem do fluxo manual",
-  "ok: passos do trace não pareados 1:1 (0 pares, 10 passos, 10 só no trace)",
-  "ok: POST do Connector da captura sem par no trace",
-  "ok: compare sem o resumo 'execução equivalente à captura'",
-  "error: compare deveria dizer 'diverge no passo 10'; disse None",
-  "nocontrols: compare deveria dizer 'diverge no passo 3'; disse None",
-  "403: compare deveria dizer 'diverge no passo 3'; disse None"
+  "HAR real #3: eventos fora da ordem do fluxo manual"
  ]
 }
