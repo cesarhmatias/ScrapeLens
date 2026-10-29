@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-29T04:23:20Z",
- "coreSha256": "54b1fc6d7860f63c51ff9a281374cdabea4ec739787a24590cc4cab15a26d236",
- "coreBytes": 3339376,
- "gitCommit": "6a85676",
+ "generatedAt": "2026-10-29T08:22:01Z",
+ "coreSha256": "0601ac7e9d8178202cf65497db42f66c7fed4016cf0c82ff290b2dbbc496ef55",
+ "coreBytes": 3435360,
+ "gitCommit": "dc14ac3",
  "macos": "26.5.2",
  "machine": "arm64",
  "python": "3.14.8",
@@ -158,7 +158,7 @@
     },
     {
      "ok": true,
-     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'session.netlog_missing', 'har.missing_response', 'session.cdp_missing', 'har.cookies_absent'}"
+     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'session.netlog_missing', 'har.cookies_absent', 'session.cdp_missing', 'har.missing_response'}"
     },
     {
      "ok": true,
@@ -178,7 +178,7 @@
     },
     {
      "ok": true,
-     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'har.unknown_encoding', 'session.netlog_missing', 'har.cookies_absent', 'session.cdp_missing'}"
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'session.netlog_missing', 'har.cookies_absent', 'session.cdp_missing', 'har.unknown_encoding'}"
     },
     {
      "ok": true,
@@ -202,7 +202,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'netlog.unknown_event_type', 'netlog.time_unit_assumed', 'session.cdp_missing'}"
+     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'session.cdp_missing', 'netlog.unknown_event_type', 'netlog.time_unit_assumed'}"
     },
     {
      "ok": true,
@@ -234,7 +234,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'netlog.time_unit_assumed', 'session.cdp_missing', 'netlog.header_line_invalid'}"
+     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'session.cdp_missing', 'netlog.header_line_invalid', 'netlog.time_unit_assumed'}"
     },
     {
      "ok": true,
@@ -261,7 +261,7 @@
     "HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.",
     "Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos."
    ],
-   "seconds": 0.16
+   "seconds": 0.17
   },
   {
    "item": 3,
@@ -420,7 +420,7 @@
    "notes": [
     "O redirect é um elo entre tentativas, não uma requisição separada."
    ],
-   "seconds": 0.05
+   "seconds": 0.06
   },
   {
    "item": 5,
@@ -489,7 +489,7 @@
     },
     {
      "ok": true,
-     "label": "todos os cinco estados aparecem na fixture: esperado {'discarded', 'empty', 'truncated', 'captured', 'unavailable'}, obtido {'discarded', 'empty', 'truncated', 'captured', 'unavailable'}"
+     "label": "todos os cinco estados aparecem na fixture: esperado {'truncated', 'unavailable', 'discarded', 'empty', 'captured'}, obtido {'truncated', 'unavailable', 'discarded', 'empty', 'captured'}"
     }
    ],
    "passed": 16,
@@ -500,7 +500,7 @@
    "notes": [
     "`empty` só é usado quando a fonte afirma zero bytes; ausência vira `unavailable` com nota."
    ],
-   "seconds": 0.02
+   "seconds": 0.01
   },
   {
    "item": 6,
@@ -682,7 +682,7 @@
    "notes": [
     "Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK)."
    ],
-   "seconds": 0.17
+   "seconds": 0.21
   },
   {
    "item": 8,
@@ -723,11 +723,11 @@
     },
     {
      "ok": true,
-     "label": "aviso sanitize.raw_events_removed presente: 'sanitize.raw_events_removed' presente em {'sanitize.raw_events_removed', 'sanitize.attachment_omitted'}"
+     "label": "aviso sanitize.raw_events_removed presente: 'sanitize.raw_events_removed' presente em {'sanitize.attachment_omitted', 'sanitize.raw_events_removed'}"
     },
     {
      "ok": true,
-     "label": "anexo não sanitizável omitido com aviso: 'sanitize.attachment_omitted' presente em {'sanitize.raw_events_removed', 'sanitize.attachment_omitted'}"
+     "label": "anexo não sanitizável omitido com aviso: 'sanitize.attachment_omitted' presente em {'sanitize.attachment_omitted', 'sanitize.raw_events_removed'}"
     },
     {
      "ok": true,
@@ -776,7 +776,7 @@
    "notes": [
     "Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso."
    ],
-   "seconds": 0.04
+   "seconds": 0.05
   },
   {
    "item": 9,
@@ -837,7 +837,7 @@
     },
     {
      "ok": true,
-     "label": "h1h2: protocolo h2 presente: 'h2' presente em {'h2', 'h1'}"
+     "label": "h1h2: protocolo h2 presente: 'h2' presente em {'h1', 'h2'}"
     },
     {
      "ok": true,
@@ -1271,7 +1271,7 @@
     "Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`a7004d4e95e8`, compilado em 2026-10-27 04:00 UTC−03 com o core até `b5846be`, incluindo `f6c6bdd`); a sessão ao vivo acima é nova, não reaproveitada.",
     "As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-2` e `netlog-1704043c442dcbd1-2`), agora pela UI: o usuário selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão."
    ],
-   "seconds": 0.12
+   "seconds": 0.13
   },
   {
    "item": 10,
@@ -1292,35 +1292,35 @@
     },
     {
      "ok": true,
-     "label": "import-har abaixo de 60 s (1.07 s)"
+     "label": "import-har abaixo de 60 s (1.72 s)"
     },
     {
      "ok": true,
-     "label": "pico do import abaixo de 1,5 GiB (821 MiB)"
+     "label": "pico do import abaixo de 1,5 GiB (766 MiB)"
     },
     {
      "ok": true,
-     "label": "inspect abaixo de 60 s (3.22 s)"
+     "label": "inspect abaixo de 60 s (3.12 s)"
     },
     {
      "ok": true,
-     "label": "inspect com pico abaixo de 3,5 GiB (1595 MiB)"
+     "label": "inspect com pico abaixo de 3,5 GiB (1594 MiB)"
     }
    ],
    "passed": 7,
    "failed": 0,
    "evidence": [
-    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.07 s, pico 821 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.72 s, pico 766 MiB RSS",
     "sessão gravada: session.json 236.3 MiB",
-    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.22 s, pico 1595 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.12 s, pico 1594 MiB RSS",
     "complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB"
    ],
    "notes": [
     "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
-    "`inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1595 MiB vem da serialização, não do parser.",
+    "`inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1594 MiB vem da serialização, não do parser.",
     "Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo."
    ],
-   "seconds": 10.21
+   "seconds": 11.12
   }
  ],
  "scope": [

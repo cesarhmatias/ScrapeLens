@@ -33,3 +33,28 @@ Resultado: **tudo verde, 0 falhas.**
 ## Nota de execução
 O primeiro passe da bateria rodou com `core/target/release` mais antigo que `core/src` e `check_real_detran`/`check_real_priming`
 recusaram (rc 1); depois de `cargo build --release` a bateria inteira foi repetida e é a que consta acima.
+
+## Rodada 8 — adaptador Natural for Ajax
+
+- **HEAD testado:** dc14ac3 (`feat(priming): event/page/model do cabeçalho são estrutura do protocolo no modo estrito`)
+- **Data:** 2026-10-29
+- **Build:** `core` e `adapters/natural-ajax` (natural-core) recompilados em release antes da bateria.
+- **Dados:** sintéticos; HARs reais só em agregados (H1/H2/H3), temporários apagados.
+
+| Bateria | Resultado |
+|---|---|
+| run_acceptance (captura ao vivo da rodada final, `live-final`) | 10/10 OK |
+| check_bodies_search | OK, 5 casos |
+| check_chain_compare | OK |
+| check_real_shape | OK |
+| check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
+| check_priming_injection | OK |
+| check_natural_adapter (detran-sim `strict`) | OK: (a) controle sem adaptador falha; (b) com adaptador 2 sessões completas; (c) round-trip 0 divergências |
+| prove_strict (adapters/natural-ajax/scripts) | OK, `fails: []` |
+| tests/exportacao | 19 passaram, 0 falhas |
+| cargo test core / src-tauri / natural-ajax | 259 / 45 / 28 passaram, 0 falhas |
+| check_real_detran (H1, H2, H3) | OK |
+| check_real_priming sem `--wrapper` | OK |
+| check_real_priming com `--wrapper` (natural-core) | OK: alvo com resposta anterior capturada gera script com `natural_ajax_encode`; "primeiro" de H2/H3 segue recusado (respostas sem corpo) |
+
+Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captura ao vivo de 2026-10-29 (`live-final`); não foi refeita nesta rodada.
