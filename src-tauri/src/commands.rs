@@ -716,7 +716,7 @@ pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
     let outcomes = assess_session(&lazy.session, &scrapelens_core::search::LazyBodies(&lazy), &rules);
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for outcome in &outcomes {
-        *counts.entry(format!("{:?}", outcome.verdict_kind)).or_default() += 1;
+        *counts.entry(outcome.verdict_kind.count_key().to_string()).or_default() += 1;
     }
     Ok(serde_json::json!({
         "schema": "scrapelens.assess/1",
@@ -1299,6 +1299,13 @@ mod tests {
         let outcomes = result["outcomes"].as_array().unwrap();
         assert!(!outcomes.is_empty());
         assert!(outcomes.iter().any(|o| o["verdictKind"] == "app-ok"));
+        // as chaves de `counts` são as mesmas do `verdictKind` (kebab-case)
+        let counts = result["counts"].as_object().unwrap();
+        assert!(!counts.is_empty());
+        for (key, value) in counts {
+            assert_eq!(value.as_u64().unwrap() as usize, outcomes.iter().filter(|o| o["verdictKind"] == key.as_str()).count(), "chave {key} fora do esquema");
+            assert!(["app-ok", "app-error", "blocked", "indeterminado", "not-assessed"].contains(&key.as_str()), "chave inesperada: {key}");
+        }
         // regras inválidas viram erro acionável
         fs::write(dir.join("assess-rules.json"), "{\"schema\":\"x\"}").unwrap();
         assert!(assess_blocking(&dir).unwrap_err().contains("corrija ou remova"));

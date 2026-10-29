@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { bridge } from "./bridge";
 
-/** `not-assessed` chega com o core novo; opcional até lá. */
+/** Veredito do core (`VerdictKind`, kebab-case). `not-assessed` desde o core 306e8f5. */
 export type VerdictKind = "app-ok" | "app-error" | "blocked" | "indeterminado" | "not-assessed";
 
 export interface AppSignal {
@@ -28,8 +28,23 @@ export interface ResponseOutcome {
 export interface AssessResult {
   schema: string;
   rules: string;
+  /** Chaves iguais ao `verdictKind` do core (`VerdictKind::count_key()`). */
   counts: Record<string, number>;
   outcomes: ResponseOutcome[];
+}
+
+/** Chaves de `counts` no esquema `scrapelens.assess/1` (nada de `Debug`). */
+export const VERDICT_KINDS: readonly VerdictKind[] = [
+  "app-ok",
+  "app-error",
+  "blocked",
+  "indeterminado",
+  "not-assessed",
+];
+
+/** Contagens por veredito; chaves fora do esquema são ignoradas. */
+export function verdictCounts(counts: Record<string, number> | undefined): Record<VerdictKind, number> {
+  return Object.fromEntries(VERDICT_KINDS.map((kind) => [kind, counts?.[kind] ?? 0])) as Record<VerdictKind, number>;
 }
 
 export type OutcomeMap = Map<string, ResponseOutcome>;

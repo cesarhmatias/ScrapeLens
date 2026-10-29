@@ -175,7 +175,7 @@ const withInit = structuredClone(minimal) as any;
 withInit.requests[0].attempts = [{ id: "a", logicalId: "r", index: 0, url: "u", method: "GET", protocol: "h1", initiator: { kind: "parser", url: "https://x.invalid/p" } }];
 assert.equal(adaptSession(withInit).session.requests[0].initiator, "parser · https://x.invalid/p");
 assert.equal(adaptSession(minimal).session.requests[0].initiator, undefined);
-import { isAppFailure, type ResponseOutcome } from "../src/assess";
+import { isAppFailure, verdictCounts, VERDICT_KINDS, type ResponseOutcome } from "../src/assess";
 const oc = (verdictKind: ResponseOutcome["verdictKind"], httpOk = true) => ({ requestId: "r", method: "POST", url: "u", status: 200, httpOk, appSignals: [], verdict: verdictKind, verdictKind, missingFields: [] }) as ResponseOutcome;
 assert.equal(isAppFailure(oc("app-error")), true);
 assert.equal(isAppFailure(oc("blocked")), true); // 200 bloqueado fica visível no filtro
@@ -183,4 +183,12 @@ assert.equal(isAppFailure(oc("indeterminado")), false);
 assert.equal(isAppFailure(oc("app-ok")), false);
 assert.equal(isAppFailure(undefined), false);
 assert.equal(isAppFailure(oc("not-assessed")), false);
+// counts do Rust usam count_key() (kebab-case), nunca o Debug do enum
+const byVerdict = verdictCounts({ "app-ok": 11, indeterminado: 19, "not-assessed": 3, NotAssessed: 7 } as Record<string, number>);
+assert.deepEqual(Object.keys(byVerdict), [...VERDICT_KINDS]);
+assert.equal(byVerdict["app-ok"], 11);
+assert.equal(byVerdict.indeterminado, 19);
+assert.equal(byVerdict["not-assessed"], 3);
+assert.equal((byVerdict as Record<string, number>).NotAssessed, undefined);
+assert.deepEqual(verdictCounts(undefined), { "app-ok": 0, "app-error": 0, blocked: 0, indeterminado: 0, "not-assessed": 0 });
 console.log("adapter-minimal: ok");
