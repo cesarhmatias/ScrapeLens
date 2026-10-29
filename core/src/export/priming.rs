@@ -58,6 +58,24 @@ pub struct PrimingOptions {
     /// Aceita corpo que não é form nem JSON, reenviado como capturado; os
     /// valores sensíveis/de negócio detectados viram parâmetros obrigatórios.
     pub allow_literal_body: bool,
+    /// Codificadores Python dos adaptadores de protocolo registrados em
+    /// `flow.adapters`: sem eles, o campo reivindicado volta ao tratamento
+    /// por trechos.
+    pub adapter_encoders: Vec<AdapterEncoder>,
+}
+
+/// Codificador Python equivalente ao `encode` de um adaptador. O `source`
+/// define `function(parts)`, que recebe `(nome, papel, valor)` em ordem, com
+/// papel `S` (estrutura), `N` (nome), `V` (valor), `D` (delta) ou `O`.
+#[derive(Debug, Clone, Default)]
+pub struct AdapterEncoder {
+    pub adapter_id: String,
+    pub function: String,
+    /// Função Python `decode(texto)` que devolve as mesmas partes
+    /// `(nome, papel, valor)` do `decode` do adaptador (vazio = sem extração
+    /// por parte de respostas).
+    pub decoder: String,
+    pub source: String,
 }
 
 const CONTEXT_BEFORE: usize = 16;
@@ -287,6 +305,210 @@ fn json_container(text: &str) -> Option<serde_json::Value> {
         return None;
     }
     serde_json::from_str(trimmed).ok()
+}
+
+/// Valor de uma parte de requisição sem origem rastreada pelo fluxo: procura,
+/// nas respostas dos passos anteriores, um campo do mesmo adaptador cuja parte
+/// decodificada tenha o mesmo valor, e o extrai em runtime pelo nome da parte
+/// (imune a mudanças de comprimento).
+#[allow(clippy::too_many_arguments)]
+fn adapter_chain_expr(
+    gen: &mut Gen,
+    request: &LogicalRequest,
+    opts: &PrimingOptions,
+    encoder_index: usize,
+    adapter: &dyn crate::adapter::ProtocolAdapter,
+    field: &str,
+    part_name: &str,
+    value: &str,
+) -> Option<String> {
+    use crate::adapter::PartRole;
+    let decoder = &opts.adapter_encoders[encoder_index].decoder;
+    if decoder.is_empty() || value.len() < 4 || looks_sensitive_value(value) || contains_pii(value)
+    {
+        return None;
+    }
+    let dynamic = value.bytes().any(|b| b.is_ascii_digit()) || value.len() >= 8;
+    if !dynamic {
+        return None;
+    }
+    let pos = gen.steps.iter().position(|id| id == &request.id)?;
+    let who = lit(&Gen::who(request, part_name));
+    let previous: Vec<String> = gen.steps[..pos].to_vec();
+    for rid in previous.iter().rev() {
+        let producer = gen.session.find_request(rid)?.clone();
+        let Some(text) = response_text(&producer, gen.source) else {
+            continue;
+        };
+        let mut index = 0usize;
+        for control in &html_controls(&text) {
+            if control.name != field {
+                continue;
+            }
+            let this_index = index;
+            index += 1;
+            let Ok(decoded) = adapter.decode(&control.value) else {
+                continue;
+            };
+            let candidates: Vec<&crate::adapter::AdapterPart> = decoded
+                .parts
+                .iter()
+                .filter(|p| matches!(p.role, PartRole::Value | PartRole::Delta))
+                .collect();
+            let Some(hit) = candidates.iter().find(|p| p.value == value) else {
+                continue;
+            };
+            let nth = candidates
+                .iter()
+                .filter(|p| p.name == hit.name)
+                .position(|p| std::ptr::eq(*p, *hit))?;
+            gen.expect(rid, Expectation::Control(field.to_string(), this_index));
+            gen.notes.push(format!(
+                "{part_name}: igual a {} da resposta {rid}; extraído em runtime pelo nome",
+                hit.name
+            ));
+            return Some(format!(
+                "adapter_get({}, html_control(R[{}], {}, {this_index}, {who}), {}, {nth}, {who})",
+                opts.adapter_encoders[encoder_index].decoder,
+                lit(rid),
+                lit(field),
+                lit(&hit.name),
+            ));
+        }
+    }
+    None
+}
+
+/// Campo reivindicado por um adaptador de protocolo: o script monta as partes
+/// (constantes + extraídas + parâmetros) e chama o codificador Python do
+/// adaptador, que recalcula todos os prefixos. `None` = não reivindicado.
+#[allow(clippy::too_many_arguments)]
+fn adapter_field_expr(
+    gen: &mut Gen,
+    request: &LogicalRequest,
+    origins: &ValueOrigins,
+    opts: &PrimingOptions,
+    media: &str,
+    name: &str,
+    value: &str,
+    siblings: &[(String, String)],
+) -> Option<String> {
+    use crate::adapter::{AdapterContext, PartRole};
+    if opts.flow.adapters.is_empty() || value.is_empty() {
+        return None;
+    }
+    let ctx = AdapterContext {
+        url: &request.url,
+        method: &request.method,
+        request: true,
+        media: Some(media),
+    };
+    let adapter = opts.flow.adapters.claim(name, value, &ctx)?;
+    let encoder_index = opts
+        .adapter_encoders
+        .iter()
+        .position(|e| e.adapter_id == adapter.id())?;
+    let decoded = adapter.decode(value).ok()?;
+    // Só quando o codificador reproduz o capturado byte a byte.
+    if adapter.encode(&decoded).ok().as_deref() != Some(value) {
+        return None;
+    }
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    let mut items: Vec<String> = Vec::new();
+    for part in &decoded.parts {
+        let role = match &part.role {
+            PartRole::Structure => "S",
+            PartRole::Name => "N",
+            PartRole::Value => "V",
+            PartRole::Delta => "D",
+            PartRole::Other(_) => "O",
+        };
+        let expr = if matches!(part.role, PartRole::Structure | PartRole::Name)
+            || part.value.is_empty()
+        {
+            lit(&part.value)
+        } else {
+            let full = format!("{name}.{}", part.name);
+            let occ = seen.entry(full.clone()).or_default();
+            // As partes do campo reivindicado chegam com `parent = campo`.
+            let origin = origins.values.iter().find(|v| {
+                v.scope == ConsumedScope::Body
+                    && v.parent.as_deref() == Some(name)
+                    && v.field == full
+                    && v.occurrence == *occ
+            });
+            *occ += 1;
+            // Outro campo do mesmo form com o mesmo valor (ex.: SESSIONID): é a
+            // mesma informação, com o mesmo nome de parâmetro.
+            let label = siblings
+                .iter()
+                .find(|(k, v)| k != name && v == &part.value)
+                .map_or(full.as_str(), |(k, _)| k.as_str())
+                .to_string();
+            let traced = origin.filter(|o| {
+                matches!(o.status, OriginStatus::Redacted | OriginStatus::Composite)
+                    || !o.partial_composition.is_empty()
+            });
+            let extracted = origin
+                .filter(|o| {
+                    traced.is_none()
+                        && matches!(o.status, OriginStatus::Origin | OriginStatus::Ambiguous)
+                })
+                .and_then(|o| gen.source_expr(o, &part.value, request, &label));
+            match (traced, extracted) {
+                (_, Some(expr)) => expr,
+                (Some(o), None) => gen.value_expr(
+                    request,
+                    Some(o),
+                    origins,
+                    &label,
+                    &part.value,
+                    ConsumedScope::Body,
+                ),
+                (None, None) => {
+                    let prop = part.name.strip_prefix("p.").unwrap_or(&part.name);
+                    let business = match prop {
+                        "v_cpf" => Some("cpf"),
+                        "v_cnpj" => Some("cnpj"),
+                        "v_renavam" => Some("renavam"),
+                        _ => None,
+                    };
+                    match business {
+                        Some(label) => {
+                            gen.notes
+                                .push(format!("{full}: dado do usuário; parâmetro obrigatório"));
+                            gen.params
+                                .get(label, &part.value, true, "dado do usuário", false)
+                        }
+                        None => match adapter_chain_expr(
+                            gen,
+                            request,
+                            opts,
+                            encoder_index,
+                            adapter.as_ref(),
+                            name,
+                            &full,
+                            &part.value,
+                        ) {
+                            Some(expr) => expr,
+                            None => pieces_expr(scrub_literal(&part.value, &mut gen.params)),
+                        },
+                    }
+                }
+            }
+        };
+        items.push(format!("({}, {}, {})", lit(&part.name), lit(role), expr));
+    }
+    gen.encoders_used.insert(encoder_index);
+    gen.notes.push(format!(
+        "{name}: campo do protocolo {}; montado por partes e recodificado com os comprimentos recalculados",
+        adapter.id()
+    ));
+    Some(format!(
+        "{}([{}])",
+        opts.adapter_encoders[encoder_index].function,
+        items.join(", ")
+    ))
 }
 
 /// Valor de campo de form/query: JSON embutido é decomposto recursivamente;
@@ -759,6 +981,8 @@ struct Gen<'a> {
     /// Passo produtor → o que a resposta dele precisa conter para os
     /// consumidores seguintes (preenchido ao gerar cada consumidor).
     expectations: BTreeMap<String, BTreeSet<Expectation>>,
+    /// Índices (em `opts.adapter_encoders`) dos codificadores usados.
+    encoders_used: BTreeSet<usize>,
 }
 
 impl Gen<'_> {
@@ -2198,6 +2422,7 @@ pub fn to_python(
         response_hits: HashMap::new(),
         structural,
         expectations: BTreeMap::new(),
+        encoders_used: BTreeSet::new(),
     };
     let (captured_origin, _) = split_origin(&target.url);
     let captured_origin = captured_origin.to_string();
@@ -2423,7 +2648,8 @@ pub fn to_python(
                     let text = String::from_utf8_lossy(&bytes).into_owned();
                     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
                     let mut items = Vec::new();
-                    for (k, v) in form_pairs(&text) {
+                    let pairs = form_pairs(&text);
+                    for (k, v) in &pairs {
                         if k.chars().count() > 40 && v.is_empty() {
                             return Err(CoreError::Export {
                                 message: format!(
@@ -2433,17 +2659,29 @@ pub fn to_python(
                             });
                         }
                         let occ = seen.entry(k.clone()).or_default();
-                        let origin = find_origin(ConsumedScope::Body, &k, *occ);
+                        let origin = find_origin(ConsumedScope::Body, k, *occ);
                         *occ += 1;
-                        let e = field_expr(
+                        let e = match adapter_field_expr(
                             &mut gen,
                             request,
-                            origin,
                             &origins,
+                            opts,
+                            &content_type,
                             &k,
                             &v,
-                            ConsumedScope::Body,
-                        );
+                            &pairs,
+                        ) {
+                            Some(expr) => expr,
+                            None => field_expr(
+                                &mut gen,
+                                request,
+                                origin,
+                                &origins,
+                                &k,
+                                &v,
+                                ConsumedScope::Body,
+                            ),
+                        };
                         items.push(format!("({}, {})", lit(&k), e));
                     }
                     body_line = format!(
@@ -2668,6 +2906,13 @@ pub fn to_python(
             .collect::<Vec<_>>()
             .join(", ")
     );
+    if !gen.encoders_used.is_empty() {
+        text.push_str(ADAPTER_HELPERS);
+    }
+    for index in &gen.encoders_used {
+        text.push_str(&opts.adapter_encoders[*index].source);
+        text.push('\n');
+    }
     let _ = writeln!(text, "TARGET = {}", lit(target_request_id));
     let _ = writeln!(
         text,
@@ -2917,6 +3162,15 @@ def send(S, method, url, index, base, **kw):
         url = nxt
         resp = S.request(method, url, allow_redirects=False, **kw)
     return resp
+
+"#;
+
+const ADAPTER_HELPERS: &str = r#"
+def adapter_get(decode, text, name, nth, who):
+    found = [v for n, role, v in decode(text) if n == name and role in ('V', 'D')]
+    if nth >= len(found):
+        fail('parte %r não encontrada na resposta usada por %s' % (name, who))
+    return found[nth]
 
 "#;
 

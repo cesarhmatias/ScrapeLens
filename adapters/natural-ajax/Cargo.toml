@@ -1,0 +1,18 @@
+[package]
+name = "scrapelens-natural-ajax"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+description = "Adaptador Natural for Ajax para o ScrapeLens (gramática do campo XML do Connector)"
+publish = false
+
+[dependencies]
+scrapelens-core = { path = "../../core" }
+
+[dev-dependencies]
+tempfile = "3"
+serde_json = "1"
+
+# Crate independente do core (o core não conhece nenhum protocolo).
+[workspace]

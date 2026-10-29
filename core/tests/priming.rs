@@ -1668,3 +1668,94 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
     assert!(!script.contains("ABC-1234"));
     assert!(script.contains("('placa_ref', None,"));
 }
+
+/// Adaptador de brinquedo `kv:a=1;b=2` para exercitar o caminho genérico do
+/// priming sem nenhum conhecimento de protocolo real no core.
+struct KvAdapter;
+
+impl scrapelens_core::adapter::ProtocolAdapter for KvAdapter {
+    fn id(&self) -> &str {
+        "kv"
+    }
+    fn detect(
+        &self,
+        field: &str,
+        value: &str,
+        _ctx: &scrapelens_core::adapter::AdapterContext<'_>,
+    ) -> bool {
+        field == "XML" && value.starts_with("kv:")
+    }
+    fn decode(&self, value: &str) -> scrapelens_core::Result<scrapelens_core::adapter::Decoded> {
+        use scrapelens_core::adapter::{AdapterPart, PartRole};
+        let body = value.strip_prefix("kv:").unwrap_or(value);
+        let mut parts = vec![AdapterPart {
+            name: "op".into(),
+            value: "kv:".into(),
+            offset: 0,
+            len: 3,
+            role: PartRole::Structure,
+        }];
+        let mut at = 3;
+        for pair in body.split(';') {
+            let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+            parts.push(AdapterPart {
+                name: format!("p.{k}"),
+                value: v.to_string(),
+                offset: at + k.len() + 1,
+                len: v.len(),
+                role: PartRole::Value,
+            });
+            at += pair.len() + 1;
+        }
+        Ok(scrapelens_core::adapter::Decoded { parts })
+    }
+    fn encode(&self, d: &scrapelens_core::adapter::Decoded) -> scrapelens_core::Result<String> {
+        let pairs: Vec<String> = d
+            .parts
+            .iter()
+            .filter(|p| p.name != "op")
+            .map(|p| format!("{}={}", p.name.trim_start_matches("p."), p.value))
+            .collect();
+        Ok(format!("kv:{}", pairs.join(";")))
+    }
+}
+
+#[test]
+fn claimed_field_is_built_by_parts_with_the_adapter_encoder() {
+    use scrapelens_core::adapter::AdapterRegistry;
+    use scrapelens_core::export::priming::AdapterEncoder;
+    let bundle = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/api",
+        &[],
+        Some((
+            "application/x-www-form-urlencoded",
+            "XML=kv%3Av_placa%3DTST0T10%3Bmodo%3Dfixo",
+        )),
+    )]);
+    let mut opts = PrimingOptions::default();
+    opts.flow.adapters = AdapterRegistry::new().with(std::sync::Arc::new(KvAdapter));
+    // Sem codificador Python, volta ao tratamento por trechos.
+    let plain = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("gera");
+    assert!(!plain.text.contains("kv_encode"));
+    opts.adapter_encoders.push(AdapterEncoder {
+        adapter_id: "kv".into(),
+        function: "kv_encode".into(),
+        decoder: String::new(),
+        source: "def kv_encode(parts):\n    return 'kv:' + ';'.join(\n        n[2:] + '=' + v for n, r, v in parts if n != 'op')\n".into(),
+    });
+    let out = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("gera");
+    assert!(
+        out.text
+            .contains("kv_encode([('op', 'S', 'kv:'), ('p.v_placa', 'V', P['placa'])"),
+        "{}",
+        out.text
+    );
+    assert!(out.text.contains("def kv_encode"));
+    assert!(
+        !out.text.contains("TST0T10"),
+        "placa capturada não pode ficar"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    ast_calls(&out.text, &dir);
+}

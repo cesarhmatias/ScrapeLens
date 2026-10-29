@@ -1,0 +1,39 @@
+{
+  "base": "http://127.0.0.1:8791",
+  "mode": "strict",
+  "placa": "Mercosul sintética",
+  "runs": {
+    "com_adaptador": {
+      "usa_codificador_natural": true,
+      "execucoes": [
+        {
+          "rc": 0,
+          "requests": 10,
+          "stderr_tail": ""
+        },
+        {
+          "rc": 0,
+          "requests": 10,
+          "stderr_tail": ""
+        }
+      ]
+    },
+    "controle_sem_adaptador": {
+      "usa_codificador_natural": false,
+      "execucoes": [
+        {
+          "rc": 1,
+          "requests": 3,
+          "stderr_tail": "priming: a aplicação respondeu com ERRORMESSAGE no passo 3: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)"
+        },
+        {
+          "rc": 1,
+          "requests": 3,
+          "stderr_tail": "priming: a aplicação respondeu com ERRORMESSAGE no passo 3: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)"
+        }
+      ]
+    }
+  },
+  "controle_falha_como_esperado": true,
+  "fails": []
+}
