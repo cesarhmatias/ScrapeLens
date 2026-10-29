@@ -1261,7 +1261,10 @@ fn credential_headers_are_never_literal_and_referer_is_runtime_only() {
         ),
     ]);
     let script = generate(&bundle, "har-0002");
-    assert!(script.contains("'Referer': R['har-0001'].url"), "{script}");
+    assert!(
+        script.contains("'Referer': referer_for(R['har-0001'].url, url)"),
+        "{script}"
+    );
     assert!(!script.contains("00000000191"));
 }
 
@@ -1444,9 +1447,145 @@ fn cross_origin_referer_carries_only_the_origin() {
     let out = to_python(&bundle.session, &bundle, "har-0002", &opts).expect("gera");
     assert!(
         out.text
-            .contains("'Referer': urllib.parse.urljoin(R['har-0001'].url, '/')"),
+            .contains("'Referer': referer_for(R['har-0001'].url, url)"),
         "{}",
         out.text
     );
     assert!(!out.text.contains("00000000191"));
+}
+
+const PII_JSON: &str = r#"{"STAMP":"INIT","nome":"Maria Silva","email":"a@b.test","cpf":"12345678909","cartao":"4111111111111111","dados":{"cpf2":"98765432100"}}"#;
+const PII_VALUES: [&str; 6] = [
+    "Maria Silva",
+    "a@b.test",
+    "12345678909",
+    "4111111111111111",
+    "98765432100",
+    "4111",
+];
+
+fn assert_no_pii(script: &str, label: &str) {
+    for value in PII_VALUES {
+        assert!(!script.contains(value), "{label}: {value} vazou:\n{script}");
+    }
+}
+
+fn form_bundle(body: &str) -> SessionBundle {
+    custom_bundle(&[(
+        "POST",
+        "https://h.example.test/api",
+        &[],
+        Some(("application/x-www-form-urlencoded", body)),
+    )])
+}
+
+#[test]
+fn json_inside_field_values_is_decomposed_recursively() {
+    let encoded: String = url_encode(PII_JSON);
+    let double = url_encode(&encoded);
+    let nested = serde_json::json!({"payload": PII_JSON, "x": 1}).to_string();
+    for (label, body) in [
+        ("data=<json> codificado", format!("data={encoded}")),
+        ("data=<json> cru", format!("data={PII_JSON}")),
+        (
+            "payload + outros",
+            format!("payload={encoded}&x=1&STAMP=INIT"),
+        ),
+        ("a=1&b=<json>", format!("a=1&b={encoded}")),
+        ("codificado duas vezes", format!("data={double}")),
+    ] {
+        let script = generate(&form_bundle(&body), "har-0001");
+        assert_no_pii(&script, label);
+        assert!(script.contains("json.dumps("), "{label}:\n{script}");
+        let dir = tempfile::tempdir().unwrap();
+        ast_calls(&script, &dir);
+    }
+    // JSON dentro de string JSON, sob application/json.
+    let bundle = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/api",
+        &[],
+        Some(("application/json", &nested)),
+    )]);
+    assert_no_pii(&generate(&bundle, "har-0001"), "{\"payload\":\"<json>\"}");
+}
+
+#[test]
+fn partial_json_and_free_text_with_pii_are_refused_or_parameterised() {
+    let partial = format!("data={}", url_encode(&PII_JSON[..90]));
+    let free = "Maria Silva CPF 12345678909 tel 83999";
+    for (label, body) in [("JSON parcial", partial.as_str()), ("campo sem =", free)] {
+        match to_python(
+            &form_bundle(body).session,
+            &form_bundle(body),
+            "har-0001",
+            &PrimingOptions::default(),
+        ) {
+            Ok(out) => assert_no_pii(&out.text, label),
+            Err(e) => assert!(
+                !e.to_string().contains("12345678909") && !e.to_string().contains("Maria"),
+                "{label}: a mensagem não pode trazer o valor: {e}"
+            ),
+        }
+    }
+    // A barreira final recusa listando tipos, sem valores.
+    let bundle = form_bundle(free);
+    let err = to_python(
+        &bundle.session,
+        &bundle,
+        "har-0001",
+        &PrimingOptions::default(),
+    )
+    .expect_err("recusa");
+    let message = err.to_string();
+    assert!(message.contains("dado pessoal"), "{message}");
+    assert!(!message.contains("12345678909"));
+}
+
+#[test]
+fn referer_for_sends_only_the_origin_across_origins() {
+    let bundle = header_outside_latin1_bundle();
+    let script = generate(&bundle, "har-0001");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("priming.py");
+    std::fs::write(&path, &script).unwrap();
+    let driver = r#"
+import runpy, sys
+mod = runpy.run_path(sys.argv[1])
+f = mod['referer_for']
+print(f('https://a.test/p?cpf=1', 'https://b.test/x'))
+print(f('https://a.test/p?q=1', 'https://a.test/x'))
+"#;
+    let out = python(&["-c", driver], &path);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        ["https://a.test/", "https://a.test/p?q=1"],
+        "{stdout}"
+    );
+}
+
+#[test]
+fn header_and_query_literals_with_pii_become_required_parameters() {
+    let bundle = custom_bundle(&[(
+        "GET",
+        "https://h.example.test/api?contato=a%40b.test&cartao_x=4111111111111111&q=1",
+        &[("X-Note", "fale com a@b.test")],
+        None,
+    )]);
+    let script = generate(&bundle, "har-0001");
+    assert!(!script.contains("a@b.test") && !script.contains("a%40b.test"));
+    assert!(!script.contains("4111111111111111"));
+}
+
+fn url_encode(text: &str) -> String {
+    text.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }

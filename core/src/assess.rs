@@ -207,6 +207,15 @@ impl AssessRules {
         {
             out.push("as regras desligam todas as detecções: nada será marcado".to_string());
         }
+        if self.fields.is_empty()
+            && self.protection_markers.is_empty()
+            && self.blocked_statuses.is_empty()
+        {
+            out.push(
+                "nenhuma detecção configurada (fields, protectionMarkers e blockedStatuses vazios)"
+                    .to_string(),
+            );
+        }
         if self
             .protection_paths
             .iter()

@@ -150,7 +150,7 @@ fn cli_assess_prints_rule_warnings() {
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("desligam todas as detecções"));
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(json["warnings"].as_array().unwrap().len(), 1);
+    assert_eq!(json["warnings"].as_array().unwrap().len(), 2);
     // Regras padrão: sem avisos.
     let out = cli().arg("assess").arg(&session).output().unwrap();
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();

@@ -231,6 +231,65 @@ fn looks_opaque_id(value: &str) -> bool {
         && value.bytes().any(|b| b.is_ascii_lowercase())
 }
 
+/// Valor de campo que é um objeto/array JSON válido.
+fn json_container(text: &str) -> Option<serde_json::Value> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with(['{', '[']) {
+        return None;
+    }
+    serde_json::from_str(trimmed).ok()
+}
+
+/// Valor de campo de form/query: JSON embutido é decomposto recursivamente;
+/// senão, o tratamento normal.
+#[allow(clippy::too_many_arguments)]
+fn field_expr<'a>(
+    gen: &mut Gen,
+    request: &LogicalRequest,
+    origin: Option<&ValueOrigin>,
+    origins: &'a ValueOrigins,
+    name: &str,
+    value: &str,
+    scope: ConsumedScope,
+) -> String {
+    let extracted = origin.is_some_and(|o| matches!(o.status, OriginStatus::Origin));
+    if !extracted {
+        // JSON possivelmente codificado em porcentagem mais de uma vez.
+        let mut current = value.to_string();
+        let mut layers = 0;
+        let found = loop {
+            if let Some(json) = json_container(&current) {
+                break Some(json);
+            }
+            if layers >= 3 || !current.contains('%') {
+                break None;
+            }
+            let next = percent_decode(&current);
+            if next == current {
+                break None;
+            }
+            current = next;
+            layers += 1;
+        };
+        if let Some(json) = found {
+            let find = |field: &str| -> Option<&'a ValueOrigin> {
+                origins.values.iter().find(|v| {
+                    v.scope == scope && v.parent.is_none() && v.field == field && v.occurrence == 0
+                })
+            };
+            let mut expr = format!(
+                "json.dumps({})",
+                json_expr(gen, request, origins, &json, name, &find, scope, 1)
+            );
+            for _ in 0..layers {
+                expr = format!("urllib.parse.quote({expr}, safe='')");
+            }
+            return expr;
+        }
+    }
+    gen.value_expr(request, origin, origins, name, value, scope)
+}
+
 /// Corpo que começa com `{`/`[` e é JSON válido, qualquer que seja o Content-Type.
 fn body_is_json(bytes: &[u8]) -> bool {
     let Ok(text) = std::str::from_utf8(bytes) else {
@@ -1004,7 +1063,8 @@ impl Gen<'_> {
         scope: ConsumedScope,
     ) -> String {
         let label = name.to_string();
-        let sensitive = is_sensitive_name(name) || looks_sensitive_value(value);
+        let sensitive =
+            is_sensitive_name(name) || looks_sensitive_value(value) || contains_pii(value);
         // Valor também visto em recurso estático/contexto: constante do protocolo.
         let in_context = origin.is_some_and(|o| !o.context.is_empty());
         let Some(origin) = origin else {
@@ -1374,6 +1434,7 @@ fn split_origin(url: &str) -> (&str, &str) {
 
 /// Expressão Python (dict/list/valor) para um corpo JSON; cada folha recebe o
 /// mesmo tratamento de um campo de form (extração, parâmetro, constante).
+#[allow(clippy::too_many_arguments)]
 fn json_expr<'a>(
     gen: &mut Gen,
     request: &LogicalRequest,
@@ -1381,16 +1442,23 @@ fn json_expr<'a>(
     value: &serde_json::Value,
     path: &str,
     find: &dyn Fn(&str) -> Option<&'a ValueOrigin>,
+    scope: ConsumedScope,
+    depth: usize,
 ) -> String {
     use serde_json::Value;
+    let last = path
+        .rsplit(['.', '['])
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(']');
     let leaf = |gen: &mut Gen, text: String| {
         gen.value_expr(
             request,
-            find(path),
+            find(path).or_else(|| find(last)),
             origins,
             path,
             &text,
-            ConsumedScope::Body,
+            scope,
         )
     };
     match value {
@@ -1406,7 +1474,16 @@ fn json_expr<'a>(
                     format!(
                         "{}: {}",
                         lit(key),
-                        json_expr(gen, request, origins, child, &child_path, find)
+                        json_expr(
+                            gen,
+                            request,
+                            origins,
+                            child,
+                            &child_path,
+                            find,
+                            scope,
+                            depth
+                        )
                     )
                 })
                 .collect();
@@ -1417,22 +1494,39 @@ fn json_expr<'a>(
                 .iter()
                 .enumerate()
                 .map(|(i, child)| {
-                    json_expr(gen, request, origins, child, &format!("{path}[{i}]"), find)
+                    json_expr(
+                        gen,
+                        request,
+                        origins,
+                        child,
+                        &format!("{path}[{i}]"),
+                        find,
+                        scope,
+                        depth,
+                    )
                 })
                 .collect();
             format!("[{}]", items.join(", "))
         }
-        Value::String(text) => leaf(gen, text.clone()),
+        Value::String(text) => match json_container(text).filter(|_| depth < 8) {
+            // JSON dentro de string JSON: decomposto e remontado no mesmo lugar.
+            Some(inner) => format!(
+                "json.dumps({})",
+                json_expr(gen, request, origins, &inner, path, find, scope, depth + 1)
+            ),
+            None => leaf(gen, text.clone()),
+        },
         Value::Number(number) => format!("json_num({})", leaf(gen, number.to_string())),
         Value::Bool(flag) => format!("json_bool({})", leaf(gen, flag.to_string())),
         Value::Null => "None".to_string(),
     }
 }
 
-/// Corpo textual reenviado como capturado: valores sensíveis/de negócio
-/// detectados viram parâmetros obrigatórios. Devolve a expressão (bytes) e
-/// quantos valores foram trocados.
-fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
+/// Detectores de dado pessoal/credencial em texto livre: valor após nome
+/// sensível (`"cpf":`, `nome=`), e-mail, JWT, Bearer/Basic, placa e
+/// sequências longas de dígitos (CPF, CNPJ, cartão com Luhn, telefone).
+/// Devolve `(início, fim, tipo)`, sem repetir o valor.
+fn pii_spans(text: &str, wide: bool) -> Vec<(usize, usize, String)> {
     let bytes = text.as_bytes();
     let mut spans: Vec<(usize, usize, String)> = Vec::new();
     let is_name_byte = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.');
@@ -1445,7 +1539,7 @@ fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
                 j += 1;
             }
             let name = &text[i..j];
-            if is_sensitive_name(name) {
+            if (wide && is_sensitive_name(name)) || is_pii_name(name) {
                 let mut k = j;
                 while k < bytes.len() && matches!(bytes[k], b'"' | b'\'' | b' ') {
                     k += 1;
@@ -1465,6 +1559,15 @@ fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
                         e += 1;
                     }
                     if e > k && text.is_char_boundary(k) && text.is_char_boundary(e) {
+                        spans.push((k, e, name.to_string()));
+                    }
+                } else if k > j && is_secret_word(name) {
+                    // `senha hunter2hunter2`: segredo logo após a palavra.
+                    let mut e = k;
+                    while e < bytes.len() && !bytes[e].is_ascii_whitespace() {
+                        e += 1;
+                    }
+                    if e - k >= 6 && text.is_char_boundary(k) && text.is_char_boundary(e) {
                         spans.push((k, e, name.to_string()));
                     }
                 }
@@ -1493,7 +1596,10 @@ fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
                 j += 1;
             }
             if digits >= 8 {
-                spans.push((i, j, "valor_numerico".to_string()));
+                let kind = digit_kind(&text[i..j]);
+                if !kind.is_empty() {
+                    spans.push((i, j, kind));
+                }
             }
             i = j.max(i + 1);
             continue;
@@ -1503,7 +1609,7 @@ fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
             i += 7;
             continue;
         }
-        if text[i..].starts_with("eyJ") {
+        if bytes[i..].starts_with(b"eyJ") {
             let mut j = i;
             while j < bytes.len()
                 && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b'.' | b'-' | b'_'))
@@ -1536,6 +1642,202 @@ fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
         }
         i += 1;
     }
+    for scheme in ["Bearer ", "Basic "] {
+        let mut from = 0;
+        while let Some(at) = text[from..].find(scheme) {
+            let begin = from + at + scheme.len();
+            let mut end = begin;
+            while end < bytes.len()
+                && !bytes[end].is_ascii_whitespace()
+                && !matches!(bytes[end], b'"' | b'\'')
+            {
+                end += 1;
+            }
+            if end - begin >= 8 {
+                spans.push((begin, end, "token".to_string()));
+            }
+            from = end.max(begin);
+        }
+    }
+    spans
+}
+
+fn is_secret_word(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    ["senha", "password", "passwd", "secret", "token"]
+        .iter()
+        .any(|w| lower == *w)
+}
+
+fn digit_kind(run: &str) -> String {
+    let digits: Vec<u32> = run.chars().filter_map(|c| c.to_digit(10)).collect();
+    let luhn = || {
+        digits
+            .iter()
+            .rev()
+            .enumerate()
+            .map(|(i, d)| {
+                if i % 2 == 1 {
+                    let x = d * 2;
+                    if x > 9 {
+                        x - 9
+                    } else {
+                        x
+                    }
+                } else {
+                    *d
+                }
+            })
+            .sum::<u32>()
+            % 10
+            == 0
+    };
+    let formatted = run.bytes().any(|b| !b.is_ascii_digit());
+    // Epoch em segundos (10 dígitos começando em 15-19) não é telefone.
+    let epoch = digits.len() == 10 && matches!(digits[0], 1) && (5..=9).contains(&digits[1]);
+    match digits.len() {
+        14 => "cnpj".to_string(),
+        15 | 16 if (3..=6).contains(&digits[0]) && luhn() => "cartao".to_string(),
+        11 => "cpf_ou_telefone".to_string(),
+        10 if (formatted || !epoch)
+            && (11..=99).contains(&(digits[0] * 10 + digits[1]))
+            && (2..=5).contains(&digits[2]) =>
+        {
+            "telefone".to_string()
+        }
+        8..=12 if !epoch && digits[0] != 0 => "digitos_longos".to_string(),
+        // Demais comprimentos longos: contadores e constantes de protocolo.
+        _ => String::new(),
+    }
+}
+
+/// Nomes cujo valor é dado pessoal/credencial por si só (não só sessão/chave).
+fn is_pii_name(name: &str) -> bool {
+    const WORDS: &[&str] = &[
+        "cpf",
+        "cnpj",
+        "renavam",
+        "nome",
+        "email",
+        "telefone",
+        "celular",
+        "endereco",
+        "endereço",
+        "nascimento",
+        "cartao",
+        "password",
+        "passwd",
+        "senha",
+        "secret",
+        "mae",
+        "cvv",
+    ];
+    let lower = name.to_ascii_lowercase();
+    WORDS.iter().any(|w| lower.contains(w))
+        || lower
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|word| matches!(word, "rg" | "tel" | "fone"))
+}
+
+fn contains_pii(text: &str) -> bool {
+    !pii_spans(text, false).is_empty()
+}
+
+/// Literais de string Python (`'...'`, `b'...'`) de um trecho gerado, já
+/// decodificados. Linhas de comentário são ignoradas.
+fn python_literals(code: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in code.lines() {
+        if line.trim_start().starts_with('#') {
+            continue;
+        }
+        let chars: Vec<char> = line.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] != '\'' {
+                i += 1;
+                continue;
+            }
+            i += 1;
+            let mut cur = String::new();
+            while i < chars.len() && chars[i] != '\'' {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    i += 1;
+                    match chars[i] {
+                        'n' => cur.push('\n'),
+                        'r' => cur.push('\r'),
+                        't' => cur.push('\t'),
+                        'x' | 'u' | 'U' => {
+                            let width = match chars[i] {
+                                'x' => 2,
+                                'u' => 4,
+                                _ => 8,
+                            };
+                            let hex: String = chars[i + 1..].iter().take(width).collect();
+                            if let Some(c) =
+                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                            {
+                                cur.push(c);
+                            }
+                            i += hex.chars().count();
+                        }
+                        other => cur.push(other),
+                    }
+                } else {
+                    cur.push(chars[i]);
+                }
+                i += 1;
+            }
+            i += 1;
+            out.push(cur);
+        }
+    }
+    out
+}
+
+/// Barreira final e única: nenhum literal emitido pode conter dado
+/// pessoal/credencial detectável. Devolve os tipos achados (sem valores).
+fn literal_pii_kinds(code: &str) -> Vec<String> {
+    let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
+    for literal in python_literals(code) {
+        // Também a forma decodificada (porcentagem, até 3 camadas): o
+        // detector não pode ser driblado por codificação.
+        let mut views = vec![literal.clone()];
+        let mut current = literal;
+        for _ in 0..3 {
+            if !current.contains('%') {
+                break;
+            }
+            let next = percent_decode(&current);
+            if next == current {
+                break;
+            }
+            views.push(next.clone());
+            current = next;
+        }
+        let mut found: BTreeMap<String, usize> = BTreeMap::new();
+        for view in &views {
+            for (_, _, kind) in pii_spans(view, false) {
+                let entry = found.entry(kind).or_default();
+                *entry = (*entry).max(1);
+            }
+        }
+        for (kind, n) in found {
+            *kinds.entry(kind).or_default() += n;
+        }
+    }
+    kinds
+        .into_iter()
+        .map(|(k, n)| format!("{k} ({n})"))
+        .collect()
+}
+
+/// Corpo textual reenviado como capturado: valores sensíveis/de negócio
+/// detectados viram parâmetros obrigatórios. Devolve a expressão (bytes) e
+/// quantos valores foram trocados.
+fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
+    let bytes = text.as_bytes();
+    let mut spans = pii_spans(text, true);
     spans.sort_by_key(|(start, end, _)| (*start, std::cmp::Reverse(*end)));
     let mut parts: Vec<String> = Vec::new();
     let mut cursor = 0;
@@ -1907,7 +2209,15 @@ pub fn to_python(
                 let occ = seen.entry(k.clone()).or_default();
                 let origin = find_origin(ConsumedScope::Query, &k, *occ);
                 *occ += 1;
-                let e = gen.value_expr(request, origin, &origins, &k, &v, ConsumedScope::Query);
+                let e = field_expr(
+                    &mut gen,
+                    request,
+                    origin,
+                    &origins,
+                    &k,
+                    &v,
+                    ConsumedScope::Query,
+                );
                 items.push(format!("({}, {})", lit(&k), e));
             }
             url_expr = format!(
@@ -1956,10 +2266,7 @@ pub fn to_python(
                     .rev()
                     .find(|(r, _, _)| origin_and_path(&r.url) == wanted);
                 match producer {
-                    Some((r, _, _)) if split_origin(&r.url).0 != captured_origin => {
-                        format!("urllib.parse.urljoin(R[{}].url, '/')", lit(&r.id))
-                    }
-                    Some((r, _, _)) => format!("R[{}].url", lit(&r.id)),
+                    Some((r, _, _)) => format!("referer_for(R[{}].url, url)", lit(&r.id)),
                     None => {
                         gen.notes.push(
                             "header referer omitido (sem passo anterior correspondente)"
@@ -1992,6 +2299,8 @@ pub fn to_python(
                     &entry.value,
                     ConsumedScope::Header,
                 )
+            } else if contains_pii(&entry.value) {
+                gen.fallback_param(&lname, &entry.value, true, false, false)
             } else {
                 lit(&entry.value)
             };
@@ -2031,8 +2340,15 @@ pub fn to_python(
                         let occ = seen.entry(k.clone()).or_default();
                         let origin = find_origin(ConsumedScope::Body, &k, *occ);
                         *occ += 1;
-                        let e =
-                            gen.value_expr(request, origin, &origins, &k, &v, ConsumedScope::Body);
+                        let e = field_expr(
+                            &mut gen,
+                            request,
+                            origin,
+                            &origins,
+                            &k,
+                            &v,
+                            ConsumedScope::Body,
+                        );
                         items.push(format!("({}, {})", lit(&k), e));
                     }
                     body_line = format!(
@@ -2052,10 +2368,16 @@ pub fn to_python(
                                 "passo {n}: corpo declarado JSON, mas inválido ({e}); use --allow-literal-body"
                             ),
                         })?;
-                    let expr =
-                        json_expr(&mut gen, request, &origins, &value, "", &|field: &str| {
-                            find_origin(ConsumedScope::Body, field, 0)
-                        });
+                    let expr = json_expr(
+                        &mut gen,
+                        request,
+                        &origins,
+                        &value,
+                        "",
+                        &|field: &str| find_origin(ConsumedScope::Body, field, 0),
+                        ConsumedScope::Body,
+                        0,
+                    );
                     body_line = format!("data = json.dumps({expr})\n");
                 }
                 Some(bytes) => {
@@ -2074,6 +2396,17 @@ pub fn to_python(
                             request.id
                         ),
                     })?;
+                    if text
+                        .chars()
+                        .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r'))
+                    {
+                        return Err(CoreError::Export {
+                            message: format!(
+                                "passo {n} ({}): corpo binário (caracteres de controle) não pode ser inspecionado em busca de dados sensíveis; recusado",
+                                request.id
+                            ),
+                        });
+                    }
                     let (expr, found) = literal_body_expr(&mut gen, &text);
                     gen.warn(
                         "priming.body_literal",
@@ -2209,6 +2542,16 @@ pub fn to_python(
         "Valores sensíveis ou redigidos são parâmetros obrigatórios, sem padrão.".to_string(),
     ] {
         text.push_str(&comment(&line));
+    }
+    let emitted = format!("{plan}\n{params_code}\n{step_code}");
+    let kinds = literal_pii_kinds(&emitted);
+    if !kinds.is_empty() {
+        return Err(CoreError::Export {
+            message: format!(
+                "geração recusada: o script teria literais com dado pessoal/credencial ({}); o trecho não pôde ser mapeado a um parâmetro. Valores omitidos",
+                kinds.join(", ")
+            ),
+        });
     }
     text.push_str(&unresolved_comments);
     text.push_str(PRELUDE);
@@ -2425,6 +2768,13 @@ def json_num(text):
 
 def json_bool(text):
     return str(text).lower() == 'true'
+
+
+def referer_for(previous_url, url):
+    """Como o navegador: entre origins diferentes, o Referer leva só o origin."""
+    if url_origin(previous_url) != url_origin(url):
+        return url_origin(previous_url) + '/'
+    return previous_url
 
 
 def url_origin(url):
