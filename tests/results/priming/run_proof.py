@@ -55,7 +55,14 @@ def main():
                 urllib.request.urlopen(BASE + "/healthz"); break
             except OSError:
                 time.sleep(0.1)
-        params = ["--confirmar", "--base-url", BASE, "--placa", "TST0T10", "--cpf", "00000000191"]
+        # Parâmetros públicos: navegação fixa do portal (op/page) e o sufixo do
+        # SESSIONID que a aplicação monta no cliente. Nenhum valor capturado de
+        # servidor (STAMP/delta/sessão-prefixo) é passado aqui.
+        params = ["--confirmar", "--base-url", BASE,
+                  "--op", "S37", "--page", "NatLogon",
+                  "--page-2", "SIM1000X", "--page-3", "VES0009X",
+                  "--sessionid-cliente", "_700000000011",
+                  "--placa", "TST0T10", "--cpf", "00000000191"]
 
         plan = run([args.python, script])
         result["checks"]["plan_only_without_confirmar"] = (

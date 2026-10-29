@@ -14,7 +14,7 @@
   "runs": [
     {
       "returncode": 0,
-      "requests": 13,
+      "requests": 10,
       "connector_posts": 6,
       "all_200": true,
       "no_error_note": true,
@@ -29,7 +29,7 @@
     },
     {
       "returncode": 0,
-      "requests": 13,
+      "requests": 10,
       "connector_posts": 6,
       "all_200": true,
       "no_error_note": true,

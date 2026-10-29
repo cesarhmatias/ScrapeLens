@@ -14,14 +14,25 @@
 //! Heurísticas declaradas: valores que parecem entrada do usuário dentro de
 //! campos opacos sem origem (placa, CPF/CNPJ/RENAVAM após `v_cpf`, `v_cnpj`,
 //! `v_renavam`) viram parâmetros obrigatórios, sem padrão.
+//!
+//! Padrão de parâmetro: um valor sem origem observada só vira padrão do
+//! parâmetro se for constante comprovada (aparece igual, no mesmo campo, em
+//! ≥ 2 requisições da sessão, ou está num recurso estático/contexto). Os
+//! demais — inclusive o sufixo de `partialComposition` e o `STAMP` sem
+//! produtor — são obrigatórios e o valor capturado não entra no código.
+//!
+//! Cadeia incompleta: se um valor consumido pela cadeia não tem origem e
+//! havia resposta anterior sem corpo observável, `to_python` RECUSA por
+//! padrão (listando os produtores e a ocorrência equivalente com corpo).
+//! `allow_incomplete` gera o script com `fail()` explícito nesses passos.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use crate::error::{CoreError, Result};
 use crate::flow::{
     priming_chain, value_origins, ConsumedScope, Evidence, EvidenceKind, FlowOptions, OriginStatus,
-    ProducerScope, Role, ValueOrigin, ValueOrigins,
+    PrimingChain, ProducerScope, Role, Unobservable, ValueOrigin, ValueOrigins,
 };
 use crate::html::html_controls;
 use crate::model::{BodyState, LogicalRequest, SessionV1, Warning};
@@ -32,6 +43,9 @@ use super::{comment, is_header_token, is_safe_header_value, ExportOutput};
 #[derive(Debug, Clone, Default)]
 pub struct PrimingOptions {
     pub flow: FlowOptions,
+    /// Gera o script mesmo quando a cadeia depende de resposta sem corpo
+    /// observável, com `fail()` explícito nesses passos.
+    pub allow_incomplete: bool,
 }
 
 const CONTEXT_BEFORE: usize = 16;
@@ -178,7 +192,17 @@ struct Params {
 impl Params {
     /// Registra (ou reaproveita) um parâmetro; devolve a expressão `P[...]`.
     /// Mesmo nome com valor capturado diferente vira outro parâmetro (`_2`…).
-    fn get(&mut self, raw: &str, captured: &str, sensitive: bool, note: &str) -> String {
+    /// `constant` só pode ser `true` quando houver prova de que o valor é
+    /// constante do protocolo; sem ela o parâmetro é obrigatório e o valor
+    /// capturado não vira padrão.
+    fn get(
+        &mut self,
+        raw: &str,
+        captured: &str,
+        sensitive: bool,
+        note: &str,
+        constant: bool,
+    ) -> String {
         let base = sanitize_name(raw);
         let mut name = base.clone();
         let mut n = 1;
@@ -190,8 +214,9 @@ impl Params {
                     name = format!("{base}_{n}");
                 }
                 None => {
-                    let default = (!sensitive && !captured.is_empty() && captured.len() <= 200)
-                        .then(|| captured.to_string());
+                    let default =
+                        (!sensitive && constant && !captured.is_empty() && captured.len() <= 200)
+                            .then(|| captured.to_string());
                     self.list.push(Param {
                         name: name.clone(),
                         default,
@@ -283,6 +308,7 @@ fn scrub_literal(text: &str, params: &mut Params) -> Vec<Piece> {
                 &text[start..end],
                 true,
                 "entrada do usuário dentro de campo opaco",
+                false,
             ))),
             (_, Some(expr)) => out.push(Piece::Expr(expr)),
             _ => {}
@@ -370,6 +396,11 @@ struct Gen<'a> {
     warnings: Vec<Warning>,
     /// Notas (viram comentários) do passo em construção.
     notes: Vec<String>,
+    /// Prova de constância: (campo, valor) → nº de requisições distintas com
+    /// esse par. Calculado uma vez, sob demanda.
+    occurrences: Option<HashMap<(String, String), usize>>,
+    /// Cache de "valor aparece em alguma resposta".
+    response_hits: HashMap<String, bool>,
 }
 
 impl Gen<'_> {
@@ -379,6 +410,99 @@ impl Gen<'_> {
 
     fn who(step: &LogicalRequest, label: &str) -> String {
         format!("{} ({})", label, step.id)
+    }
+
+    /// Pares (campo, valor) que aparecem no mesmo campo em ≥ 1 requisição,
+    /// contando requisições distintas. Prova barata de constância: campos de
+    /// query e corpos form-urlencoded pequenos (até 1 MiB).
+    fn occurrences(&mut self) -> &HashMap<(String, String), usize> {
+        if self.occurrences.is_none() {
+            let mut counts: HashMap<(String, String), usize> = HashMap::new();
+            for request in &self.session.requests {
+                let mut seen: HashSet<(String, String)> = HashSet::new();
+                if let Some((_, query)) = request.url.split_once('?') {
+                    let query = query.split('#').next().unwrap_or(query);
+                    for (k, v) in form_pairs(query) {
+                        if !v.is_empty() {
+                            seen.insert((k.to_ascii_lowercase(), v));
+                        }
+                    }
+                }
+                let content_type = request
+                    .request_headers
+                    .first_value("content-type")
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if content_type.contains("x-www-form-urlencoded")
+                    && request.request_body.has_bytes()
+                {
+                    if let Some(loaded) = request
+                        .request_body
+                        .attachment
+                        .as_deref()
+                        .and_then(|a| self.source.load(a))
+                    {
+                        if loaded.bytes.len() <= 1_048_576 {
+                            let text = String::from_utf8_lossy(&loaded.bytes).into_owned();
+                            for (k, v) in form_pairs(&text) {
+                                if !v.is_empty() {
+                                    seen.insert((k.to_ascii_lowercase(), v));
+                                }
+                            }
+                        }
+                    }
+                }
+                for key in seen {
+                    *counts.entry(key).or_default() += 1;
+                }
+            }
+            self.occurrences = Some(counts);
+        }
+        self.occurrences.as_ref().expect("calculado acima")
+    }
+
+    /// Prova de constância: o mesmo (campo, valor) em ≥ 2 requisições
+    /// distintas da sessão E o valor nunca aparece numa resposta (se a
+    /// aplicação o produziu, é valor de sessão, não constante do protocolo).
+    fn is_proven_constant(&mut self, field: &str, value: &str) -> bool {
+        if value.is_empty() || value.len() > 200 {
+            return false;
+        }
+        let key = (field.to_ascii_lowercase(), value.to_string());
+        let seen = self.occurrences().get(&key).copied().unwrap_or(0);
+        seen >= 2 && !self.value_in_any_response(value)
+    }
+
+    /// `true` se o valor aparece em algum corpo de resposta capturado.
+    fn value_in_any_response(&mut self, value: &str) -> bool {
+        if let Some(hit) = self.response_hits.get(value) {
+            return *hit;
+        }
+        let needle = value.as_bytes();
+        let mut hit = false;
+        for request in &self.session.requests {
+            if !matches!(
+                request.response_body.state,
+                BodyState::Captured | BodyState::Truncated
+            ) {
+                continue;
+            }
+            let Some(loaded) = request
+                .response_body
+                .attachment
+                .as_deref()
+                .and_then(|a| self.source.load(a))
+            else {
+                continue;
+            };
+            let hay = &loaded.bytes;
+            if needle.len() <= hay.len() && hay.windows(needle.len()).any(|w| w == needle) {
+                hit = true;
+                break;
+            }
+        }
+        self.response_hits.insert(value.to_string(), hit);
+        hit
     }
 
     /// Texto bruto da resposta do produtor, para localizar contexto.
@@ -501,15 +625,18 @@ impl Gen<'_> {
     ) -> String {
         let label = name.to_string();
         let sensitive = is_sensitive_name(name) || looks_sensitive_value(value);
+        // Valor também visto em recurso estático/contexto: constante do protocolo.
+        let in_context = origin.is_some_and(|o| !o.context.is_empty());
         let Some(origin) = origin else {
-            return self.fallback_param(name, value, sensitive);
+            return self.fallback_param(name, value, sensitive, in_context);
         };
         match origin.status {
             OriginStatus::Redacted => {
                 self.notes.push(format!(
                     "{name}: valor redigido na captura; informe pelo parâmetro"
                 ));
-                self.params.get(name, "", true, "redigido na captura")
+                self.params
+                    .get(name, "", true, "redigido na captura", false)
             }
             OriginStatus::Origin | OriginStatus::Ambiguous => {
                 if let Some(expr) = self.source_expr(origin, value, step, &label) {
@@ -526,7 +653,7 @@ impl Gen<'_> {
                         .push(format!("{name}: extraído em runtime (origem {how}{amb})"));
                     expr
                 } else {
-                    self.fallback_param(name, value, sensitive)
+                    self.fallback_param(name, value, sensitive, in_context)
                 }
             }
             OriginStatus::Composite if scope == ConsumedScope::Body => {
@@ -538,19 +665,44 @@ impl Gen<'_> {
                         return expr;
                     }
                 }
-                self.fallback_param(name, value, sensitive)
+                self.fallback_param(name, value, sensitive, in_context)
             }
         }
     }
 
-    fn fallback_param(&mut self, name: &str, value: &str, sensitive: bool) -> String {
+    /// Parâmetro para um valor sem origem observada: o valor capturado só
+    /// vira padrão com prova de constância; fora disso é obrigatório.
+    fn fallback_param(
+        &mut self,
+        name: &str,
+        value: &str,
+        sensitive: bool,
+        in_context: bool,
+    ) -> String {
         if value.is_empty() {
             return "''".to_string();
         }
-        self.notes
-            .push(format!("{name}: sem origem observada; vira parâmetro"));
-        self.params
-            .get(name, value, sensitive, "sem origem observada")
+        let constant = !sensitive && (in_context || self.is_proven_constant(name, value));
+        if constant {
+            self.notes.push(format!(
+                "{name}: constante comprovada; parâmetro com o valor capturado como padrão"
+            ));
+        } else {
+            self.notes.push(format!(
+                "{name}: sem origem observada; parâmetro obrigatório, sem padrão"
+            ));
+        }
+        self.params.get(
+            name,
+            value,
+            sensitive,
+            if constant {
+                "constante do protocolo"
+            } else {
+                "sem origem observada"
+            },
+            constant,
+        )
     }
 
     /// `partialComposition`: parte extraída do produtor + parte montada no cliente.
@@ -581,11 +733,13 @@ impl Gen<'_> {
         let before = &value[..pc.start];
         let after = &value[end..];
         if !before.is_empty() {
+            // Parte montada no cliente: sem prova de valor, sempre obrigatória.
             pieces.push(Piece::Expr(self.params.get(
                 &format!("{name}_cliente_inicio"),
                 before,
                 false,
                 "montado no cliente",
+                false,
             )));
         }
         pieces.push(Piece::Expr(extracted));
@@ -595,6 +749,7 @@ impl Gen<'_> {
                 after,
                 false,
                 "montado no cliente",
+                false,
             );
             self.params
                 .client_parts
@@ -602,7 +757,7 @@ impl Gen<'_> {
             pieces.push(Piece::Expr(expr));
         }
         self.notes.push(format!(
-            "{name}: montado no cliente: complete aqui (parte inicial extraída do produtor {}; o resto é o parâmetro {}_cliente)",
+            "{name}: montado no cliente: complete aqui (parte inicial extraída do produtor {}; o resto é o parâmetro {}_cliente, obrigatório)",
             pc.producer_request_id,
             sanitize_name(name)
         ));
@@ -844,6 +999,98 @@ fn is_idempotent(method: &str) -> bool {
     )
 }
 
+/// Cabeçalhos condicionais de cache: não são valor da aplicação e não provam
+/// dependência de corpo ausente.
+const CONDITIONAL_HEADERS: &[&str] = &["if-modified-since", "if-none-match", "if-range"];
+
+/// Valor consumido pela cadeia que só poderia ter vindo de uma resposta sem
+/// corpo observável.
+#[derive(Debug, Clone)]
+struct MissingBody {
+    request_id: String,
+    field: String,
+    producers: Vec<Unobservable>,
+}
+
+/// Dependências da cadeia em respostas sem corpo observável: valor sem origem
+/// observada (não repetido, sem composição parcial, não header condicional)
+/// cujas únicas pistas são respostas anteriores `unavailable`/`discarded`/
+/// `truncated`.
+fn missing_body_dependencies(chain: &PrimingChain) -> Vec<MissingBody> {
+    let mut out: Vec<MissingBody> = Vec::new();
+    for value in &chain.unresolved {
+        if value.status != OriginStatus::None
+            || !value.partial_composition.is_empty()
+            || value.unobservable.is_empty()
+            || CONDITIONAL_HEADERS.contains(&value.field.to_ascii_lowercase().as_str())
+        {
+            continue;
+        }
+        match out.iter_mut().find(|m| m.request_id == value.request_id) {
+            Some(entry) => {
+                if !entry.producers.is_empty() {
+                    entry.field.push_str(", ");
+                }
+                entry.field.push_str(&value.field);
+            }
+            None => out.push(MissingBody {
+                request_id: value.request_id.clone(),
+                field: value.field.clone(),
+                producers: value.unobservable.clone(),
+            }),
+        }
+    }
+    out
+}
+
+fn incomplete_chain_error(missing: &[MissingBody]) -> CoreError {
+    let consumers: Vec<String> = missing
+        .iter()
+        .map(|m| format!("{} [{}]", m.request_id, m.field))
+        .collect();
+    let mut producers: Vec<String> = Vec::new();
+    for entry in missing.iter().flat_map(|m| m.producers.iter()) {
+        let text = format!("{} ({})", entry.request_id, entry.state);
+        if !producers.contains(&text) {
+            producers.push(text);
+        }
+    }
+    let shown: Vec<String> = producers.iter().take(6).cloned().collect();
+    let more = if producers.len() > shown.len() {
+        format!(" e mais {}", producers.len() - shown.len())
+    } else {
+        String::new()
+    };
+    let mut suggestions: Vec<String> = Vec::new();
+    for entry in missing.iter().flat_map(|m| m.producers.iter()) {
+        if let Some(suggestion) = &entry.suggestion {
+            if !suggestions.contains(suggestion) {
+                suggestions.push(suggestion.clone());
+            }
+        }
+    }
+    let suggestion = if suggestions.is_empty() {
+        "nenhuma ocorrência equivalente com corpo observável nesta sessão".to_string()
+    } else {
+        format!(
+            "gere o script para a ocorrência equivalente com corpo completo: {}",
+            suggestions.join(", ")
+        )
+    };
+    CoreError::Export {
+        message: format!(
+            "cadeia incompleta: {} valor(es) dependem de resposta(s) sem corpo observável ({}). \
+             Respostas sem corpo: {}{}. Nenhum valor capturado é usado no lugar. {}; ou use \
+             --allow-incomplete para gerar o script com fail() explícito nesses passos.",
+            missing.len(),
+            consumers.join("; "),
+            shown.join(", "),
+            more,
+            suggestion
+        ),
+    }
+}
+
 /// Gera o script de priming para a requisição `target_request_id`.
 pub fn to_python(
     session: &SessionV1,
@@ -852,6 +1099,10 @@ pub fn to_python(
     opts: &PrimingOptions,
 ) -> Result<ExportOutput> {
     let chain = priming_chain(session, source, target_request_id, &opts.flow)?;
+    let missing = missing_body_dependencies(&chain);
+    if !missing.is_empty() && !opts.allow_incomplete {
+        return Err(incomplete_chain_error(&missing));
+    }
     let target = session
         .find_request(target_request_id)
         .ok_or_else(|| CoreError::Export {
@@ -887,9 +1138,38 @@ pub fn to_python(
         params: Params::default(),
         warnings: Vec::new(),
         notes: Vec::new(),
+        occurrences: None,
+        response_hits: HashMap::new(),
     };
     let (captured_origin, _) = split_origin(&target.url);
     let captured_origin = captured_origin.to_string();
+
+    // Com `allow_incomplete`, cada consumidor afetado falha explicitamente em
+    // vez de seguir com a cadeia incompleta.
+    let mut incomplete_steps: BTreeMap<String, String> = BTreeMap::new();
+    if opts.allow_incomplete {
+        for entry in &missing {
+            let producers: Vec<String> = entry
+                .producers
+                .iter()
+                .take(4)
+                .map(|u| format!("{} ({})", u.request_id, u.state))
+                .collect();
+            let more = entry.producers.len().saturating_sub(producers.len());
+            incomplete_steps.entry(entry.request_id.clone()).or_insert_with(|| {
+                format!(
+                    "cadeia incompleta: {} sem produtor com corpo observável ({}{}); gere o script para o alvo equivalente de outra rodada",
+                    entry.field,
+                    producers.join(", "),
+                    if more > 0 {
+                        format!(" e mais {more}")
+                    } else {
+                        String::new()
+                    }
+                )
+            });
+        }
+    }
 
     let mut step_code = String::new();
     let mut plan = String::new();
@@ -1055,6 +1335,10 @@ pub fn to_python(
                 let _ = writeln!(step_code, "    {line}");
             }
         }
+        if let Some(message) = incomplete_steps.get(&request.id) {
+            // Fail-safe explícito: o passo não prossegue com valor sem origem.
+            let _ = writeln!(step_code, "    fail({})", lit(message));
+        }
         let _ = writeln!(step_code, "    url = {url_expr}");
         let _ = writeln!(step_code, "    headers = {{{}}}", header_items.join(", "));
         let data_arg = if body_line.is_empty() {
@@ -1140,6 +1424,15 @@ pub fn to_python(
         output
             .warnings
             .push(Warning::info("priming.chain", w.clone()));
+    }
+    if !incomplete_steps.is_empty() {
+        output.warnings.push(Warning::new(
+            "priming.incomplete_chain",
+            format!(
+                "{} passo(s) falham explicitamente: a cadeia depende de resposta sem corpo observável (ver --allow-incomplete)",
+                incomplete_steps.len()
+            ),
+        ));
     }
     Ok(output)
 }

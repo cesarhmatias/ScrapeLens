@@ -15,6 +15,9 @@ padrão), ast.parse e saída do modo plano. E do assess: contagens por veredito 
 Critérios (exit 1, sem afrouxar): ast OK; modo plano rc 0 e sem enviar; ordem = fluxo manual; STAMP por
 controle HTML; delta por trecho extraído; SESSIONID e placa como parâmetro/composição (nunca literal); 0 valores
 capturados literais fora de comentários; nenhum 200 do Connector `blocked?`; respostas normais do Connector app-ok.
+Cadeia incompleta (F2): se o HAR tem POST do Connector sem corpo de resposta, `export-priming` tem de RECUSAR,
+listando os produtores sem corpo e a ocorrência equivalente com corpo; com `--allow-incomplete`, o script gerado
+tem `fail()` explícito e continua válido em `ast.parse`/modo plano.
 """
 from __future__ import annotations
 
@@ -139,6 +142,17 @@ def analyse(core, har, tmp, idx):
     out["assess_connector"] = dict(cv)
     nobody = sum(1 for r in posts if (r["attempts"][0].get("responseBody") or {}).get("state") != "captured")
     out["connector_posts_without_response_body"] = nobody
+    # F2: com produtor sem corpo, a recusa é o resultado CORRETO — e a mensagem
+    # precisa listar os produtores e a ocorrência equivalente com corpo.
+    refused = {k: v["refused"] for k, v in out["targets"].items() if "refused" in v}
+    out["refusal_for_incomplete_chain"] = sorted(k for k, v in refused.items() if v["mentions_incomplete"])
+    if nobody and not out["refusal_for_incomplete_chain"]:
+        fails.append(f"{nobody} resposta(s) do Connector sem corpo, mas export-priming não recusou a cadeia incompleta")
+    for label, v in refused.items():
+        if v["mentions_incomplete"] and not (v["lists_producers"] and v["suggests_equivalent"] and v["allow_incomplete_script"] == "OK"):
+            fails.append(f"[{label}] recusa incompleta sem produtores/sugestão/fail() explícito: {v}")
+        elif not v["mentions_incomplete"]:
+            fails.append(f"[{label}] export-priming recusou por outro motivo: {v['message'][:200]}")
     blocked_other = Counter()
     for o in a["outcomes"]:
         if o["verdictKind"] == "blocked" and not o["url"].endswith(rd.CONNECTOR):
@@ -158,7 +172,37 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     out, fails = {}, []
     p = subprocess.run([core, "export-priming", sess, first], capture_output=True, text=True)
     if p.returncode != 0:
-        return sess, out, [f"export-priming falhou ({p.returncode})"]
+        msg = " ".join(p.stderr.split())
+        out["refused"] = {
+            "rc": p.returncode,
+            "mentions_incomplete": "cadeia incompleta" in msg,
+            "lists_producers": "sem corpo observável" in msg and "Respostas sem corpo:" in msg,
+            "suggests_equivalent": bool(re.search(r"(ocorrência equivalente com corpo completo: har-\d{4}|nenhuma ocorrência equivalente)", msg)),
+            "message": msg[:400],
+            "allow_incomplete_script": "FALHOU",
+        }
+        # --allow-incomplete: script gerado com fail() explícito, ainda válido em Python.
+        p2 = subprocess.run([core, "export-priming", sess, first, "--allow-incomplete"], capture_output=True, text=True)
+        if p2.returncode == 0:
+            script = p2.stdout
+            spath = Path(tmp) / f"priming{idx}-{label}-incomplete.py"
+            spath.write_text(script)
+            try:
+                ast.parse(script)
+                plan = re.search(r"^PLAN = \[\n(.*?)^\]", script, re.S | re.M)
+                ids = re.findall(r"^\s+\('(har-\d+)', '(GET|POST)'", plan.group(1), re.M) if plan else []
+                pl = subprocess.run([sys.executable, "-I", str(spath)], capture_output=True, text=True, timeout=30)
+                out["refused"]["allow_incomplete"] = {
+                    "steps": len(ids),
+                    "fail_calls": len(re.findall(r"^\s+fail\(", script, re.M)),
+                    "plan_mode_rc": pl.returncode,
+                    "nothing_sent_notice": "Nada foi enviado" in pl.stdout,
+                }
+                if out["refused"]["allow_incomplete"]["fail_calls"] >= 1 and pl.returncode == 0 and "Nada foi enviado" in pl.stdout:
+                    out["refused"]["allow_incomplete_script"] = "OK"
+            except SyntaxError:
+                out["refused"]["allow_incomplete_script"] = "FALHOU"
+        return out, fails
     script = p.stdout
     spath = Path(tmp) / f"priming{idx}-{label}.py"
     spath.write_text(script)

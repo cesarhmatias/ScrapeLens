@@ -9,7 +9,7 @@
 //!   scrapelens-core origins <sessao> <requestId>
 //!   scrapelens-core chain <sessao> <requestId>
 //!   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
-//!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo]
+//!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete]
 //!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
@@ -212,7 +212,8 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
     }
 }
 
-/// `export-priming <sessao> <requestId> [--out f]`: gera o script, sem executá-lo.
+/// `export-priming <sessao> <requestId> [--out f] [--allow-incomplete]`: gera
+/// o script, sem executá-lo.
 fn export_priming_command(args: &[String]) -> Result<(), String> {
     if args.len() < 2 {
         return Err(usage());
@@ -220,13 +221,13 @@ fn export_priming_command(args: &[String]) -> Result<(), String> {
     let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
         .map_err(|e| e.to_string())?;
     let source = scrapelens_core::search::LazyBodies(&lazy);
-    let output = scrapelens_core::export::priming::to_python(
-        &lazy.session,
-        &source,
-        &args[1],
-        &scrapelens_core::export::priming::PrimingOptions::default(),
-    )
-    .map_err(|e| e.to_string())?;
+    let options = scrapelens_core::export::priming::PrimingOptions {
+        allow_incomplete: args.iter().any(|arg| arg == "--allow-incomplete"),
+        ..Default::default()
+    };
+    let output =
+        scrapelens_core::export::priming::to_python(&lazy.session, &source, &args[1], &options)
+            .map_err(|e| e.to_string())?;
     for warning in &output.warnings {
         eprintln!("aviso [{}]: {}", warning.code, warning.message);
     }
@@ -449,6 +450,8 @@ fn usage() -> String {
   scrapelens-core search <sessao> <texto> [--scope <escopo>]... [--case-sensitive]
   scrapelens-core origins <sessao> <requestId>
   scrapelens-core chain <sessao> <requestId>
+  scrapelens-core assess <sessao> [requestId] [--rules regras.json]
+  scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete]
   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]

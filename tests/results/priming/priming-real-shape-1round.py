@@ -12,16 +12,16 @@
 # não resolvido: har-0024 SESSIONID (sem origem observada; contém o valor de m_currentSessionId de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente (valor já circulava em har-0010, har-0015, har-0017, har-0022))…
 # não resolvido: har-0022 x-requested-with (sem origem observada (valor já circulava em har-0010, har-0015, har-0017))
 # não resolvido: har-0022 SESSIONID (sem origem observada; contém o valor de m_currentSessionId de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente (valor já circulava em har-0010, har-0015, har-0017)) — montado…
-# não resolvido: har-0008 page (sem origem observada)
+# não resolvido: har-0021 page (sem origem observada)
 # não resolvido: har-0017 x-requested-with (sem origem observada (valor já circulava em har-0010, har-0015))
 # não resolvido: har-0017 SESSIONID (sem origem observada; contém o valor de m_currentSessionId de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente (valor já circulava em har-0010, har-0015)) — montado no client…
 # não resolvido: har-0015 x-requested-with (sem origem observada (valor já circulava em har-0010))
 # não resolvido: har-0015 SESSIONID (sem origem observada; contém o valor de m_currentSessionId de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente (valor já circulava em har-0010)) — montado no cliente: complet…
+# não resolvido: har-0014 page (sem origem observada)
 # não resolvido: har-0010 x-requested-with (sem origem observada)
 # não resolvido: har-0010 SESSIONID (sem origem observada; contém o valor de m_currentSessionId de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente) — montado no cliente: complete aqui
+# não resolvido: har-0008 page (sem origem observada)
 # não resolvido: har-0001 op (sem origem observada)
-# não resolvido: har-0014 page (sem origem observada)
-# não resolvido: har-0021 page (sem origem observada)
 
 import argparse
 import html.parser
@@ -128,25 +128,22 @@ TARGET = 'har-0026'
 HAS_STATE_CHANGE = True
 PLAN = [
     ('har-0001', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app', 'fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch); fornece XML a har-0017 (ValueMatch); fornece XML ', True),
-    ('har-0005', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html', 'fornece XML a har-0010 (ValueMatch)', True),
-    ('har-0008', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/cscform.html', 'fornece STAMP a har-0022 (SameField); fornece STAMP a har-0015 (SameField); fornece XML a har-0010 (ValueMatch); fornece STAMP a har-0010 (SameField)', True),
-    ('har-0010', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)', False),
-    ('har-0012', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html', 'fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)', True),
-    ('har-0014', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html', 'fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)', True),
+    ('har-0008', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/cscform.html', 'fornece XML a har-0010 (ValueMatch); fornece STAMP a har-0010 (SameField)', True),
+    ('har-0010', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'fornece XML a har-0015 (ValueMatch)', False),
+    ('har-0014', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html', 'fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch); fornece STAMP a har-0015 (SameField)', True),
     ('har-0015', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'fornece XML a har-0017 (ValueMatch); fornece STAMP a har-0017 (SameField)', False),
-    ('har-0017', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)', False),
-    ('har-0019', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html', 'fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)', True),
-    ('har-0021', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html', 'fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)', True),
-    ('har-0022', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'fornece XML a har-0024 (ValueMatch); fornece STAMP a har-0024 (SameField)', False),
+    ('har-0017', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'fornece XML a har-0022 (ValueMatch)', False),
+    ('har-0021', 'GET', 'https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html', 'fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch); fornece STAMP a har-0022 (SameField)', True),
+    ('har-0022', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece STAMP a har-0024 (SameField)', False),
     ('har-0024', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'fornece XML a har-0026 (ValueMatch); fornece STAMP a har-0026 (SameField)', False),
     ('har-0026', 'POST', 'https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector', 'requisi\xe7\xe3o alvo', False),
 ]
 PARAMS = [
-    ('op', 'S37', 'sem origem observada'),
-    ('page', 'NatLogon', 'sem origem observada'),
-    ('sessionid_cliente', '_700000000011', 'montado no cliente'),
-    ('page_2', 'SIM1000X', 'sem origem observada'),
-    ('page_3', 'VES0009X', 'sem origem observada'),
+    ('op', None, 'sem origem observada'),
+    ('page', None, 'sem origem observada'),
+    ('sessionid_cliente', None, 'montado no cliente'),
+    ('page_2', None, 'sem origem observada'),
+    ('page_3', None, 'sem origem observada'),
     ('placa', None, 'entrada do usu\xe1rio dentro de campo opaco'),
     ('cpf', None, 'entrada do usu\xe1rio dentro de campo opaco'),
 ]
@@ -155,33 +152,25 @@ PARAMS = [
 def step_1(S, R, P, base):
     # passo 1: fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch); fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch); fornece XML a har-0010 (ValueMatch)
     # passo 1: confiança possible
-    # op: sem origem observada; vira parâmetro
+    # op: sem origem observada; parâmetro obrigatório, sem padrão
     url = rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app', base) + '?' + urllib.parse.urlencode([('op', P['op'])])
     headers = {'accept': '*/*', 'accept-language': 'pt-BR,pt;q=0.9', 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'}
     return S.request('GET', url, headers=headers, timeout=30)
 
 
 def step_2(S, R, P, base):
-    # passo 2: fornece XML a har-0010 (ValueMatch)
-    # passo 2: confiança possible
-    url = rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html', base)
-    headers = {'accept': '*/*', 'accept-language': 'pt-BR,pt;q=0.9', 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', 'referer': rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37', base)}
-    return S.request('GET', url, headers=headers, timeout=30)
-
-
-def step_3(S, R, P, base):
-    # passo 3: fornece STAMP a har-0022 (SameField); fornece STAMP a har-0015 (SameField); fornece XML a har-0010 (ValueMatch); fornece STAMP a har-0010 (SameField)
-    # passo 3: confiança strong
-    # page: sem origem observada; vira parâmetro
+    # passo 2: fornece XML a har-0010 (ValueMatch); fornece STAMP a har-0010 (SameField)
+    # passo 2: confiança strong
+    # page: sem origem observada; parâmetro obrigatório, sem padrão
     url = rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/cscform.html', base) + '?' + urllib.parse.urlencode([('page', P['page'])])
     headers = {'accept': '*/*', 'accept-language': 'pt-BR,pt;q=0.9', 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', 'referer': rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html', base)}
     return S.request('GET', url, headers=headers, timeout=30)
 
 
-def step_4(S, R, P, base):
-    # passo 4: fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)
-    # passo 4: confiança possible
-    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente)
+def step_3(S, R, P, base):
+    # passo 3: fornece XML a har-0015 (ValueMatch)
+    # passo 3: confiança possible
+    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente, obrigatório)
     # XML: trecho 20..29 extraído em runtime (origem possível)
     # XML: trecho 42..74 extraído em runtime (origem possível)
     # XML: trecho 74..91 extraído em runtime (origem possível, ambíguo)
@@ -197,27 +186,19 @@ def step_4(S, R, P, base):
     return S.request('POST', url, headers=headers, data=data, timeout=30)
 
 
-def step_5(S, R, P, base):
-    # passo 5: fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)
-    # passo 5: confiança possible
-    url = rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html', base)
-    headers = {'accept': '*/*', 'accept-language': 'pt-BR,pt;q=0.9', 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', 'referer': rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html', base)}
-    return S.request('GET', url, headers=headers, timeout=30)
-
-
-def step_6(S, R, P, base):
-    # passo 6: fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)
-    # passo 6: confiança possible
-    # page: sem origem observada; vira parâmetro
+def step_4(S, R, P, base):
+    # passo 4: fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch); fornece STAMP a har-0015 (SameField)
+    # passo 4: confiança strong
+    # page: sem origem observada; parâmetro obrigatório, sem padrão
     url = rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html', base) + '?' + urllib.parse.urlencode([('page', P['page_2'])])
     headers = {'accept': '*/*', 'accept-language': 'pt-BR,pt;q=0.9', 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', 'referer': rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html', base)}
     return S.request('GET', url, headers=headers, timeout=30)
 
 
-def step_7(S, R, P, base):
-    # passo 7: fornece XML a har-0017 (ValueMatch); fornece STAMP a har-0017 (SameField)
-    # passo 7: confiança strong
-    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente)
+def step_5(S, R, P, base):
+    # passo 5: fornece XML a har-0017 (ValueMatch); fornece STAMP a har-0017 (SameField)
+    # passo 5: confiança strong
+    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente, obrigatório)
     # XML: trecho 20..29 extraído em runtime (origem possível)
     # XML: trecho 42..74 extraído em runtime (origem possível)
     # XML: trecho 74..91 extraído em runtime (origem possível, ambíguo)
@@ -229,16 +210,16 @@ def step_7(S, R, P, base):
     data = urllib.parse.urlencode([
         ('SESSIONID', ctx_extract(R['har-0001'].text, ' = "', '"', 'SESSIONID (har-0015)') + P['sessionid_cliente']),
         ('PAGEINITPARAM', ''),
-        ('XML', 'i2232001705027000005' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0015)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0015)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0012'].text, 'Id("', '"', 'XML[74] (har-0015)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0010'], 'XML', 0, 'XML[96] (har-0015)'), 'Page', 'k', 'XML[96] (har-0015)'), 27, 'XML[96]') + 'falsep1300000pageInitParamp1500001pagePixelHeight0p1400001pagePixelWidth0p1400004timeZoneOffset-180' + checked(ctx_extract(html_control(R['har-0010'], 'XML', 0, 'XML[222] (har-0015)'), '_tmp', '', 'XML[222] (har-0015)'), 11, 'XML[222]')),
+        ('XML', 'i2232001705027000005' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0015)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0015)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0014'].text, 'el="', '"', 'XML[74] (har-0015)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0010'], 'XML', 0, 'XML[96] (har-0015)'), 'Page', 'k', 'XML[96] (har-0015)'), 27, 'XML[96]') + 'falsep1300000pageInitParamp1500001pagePixelHeight0p1400001pagePixelWidth0p1400004timeZoneOffset-180' + checked(ctx_extract(html_control(R['har-0010'], 'XML', 0, 'XML[222] (har-0015)'), '_tmp', '', 'XML[222] (har-0015)'), 11, 'XML[222]')),
         ('STAMP', html_control(R['har-0008'], 'STAMP', 0, 'STAMP (har-0015)'))
     ])
     return S.request('POST', url, headers=headers, data=data, timeout=30)
 
 
-def step_8(S, R, P, base):
-    # passo 8: fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)
-    # passo 8: confiança possible
-    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente)
+def step_6(S, R, P, base):
+    # passo 6: fornece XML a har-0022 (ValueMatch)
+    # passo 6: confiança possible
+    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente, obrigatório)
     # XML: trecho 20..29 extraído em runtime (origem possível)
     # XML: trecho 42..74 extraído em runtime (origem possível)
     # XML: trecho 74..91 extraído em runtime (origem possível, ambíguo)
@@ -250,34 +231,26 @@ def step_8(S, R, P, base):
     data = urllib.parse.urlencode([
         ('SESSIONID', ctx_extract(R['har-0001'].text, ' = "', '"', 'SESSIONID (har-0017)') + P['sessionid_cliente']),
         ('PAGEINITPARAM', ''),
-        ('XML', 'v2232001705027000145' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0017)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0017)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0012'].text, 'Id("', '"', 'XML[74] (har-0017)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0010'], 'XML', 0, 'XML[96] (har-0017)'), 'Page', 'k', 'XML[96] (har-0017)'), 27, 'XML[96]') + 'on_interceptorfalsep2100005interceptor_is_activefalsep4500000interceptor_params.items[0].interceptor_valuep4500003interceptor_params.items[1].interceptor_valueS37p4500000interceptor_params.items[2].interceptor_valuep4500000interceptor_params.items[3].interceptor_valuep4500000interceptor_params.items[4].interceptor_valuep4500000interceptor_params.items[5].interceptor_value' + checked(ctx_extract(html_control(R['har-0015'], 'XML', 0, 'XML[497] (har-0017)'), '_tmp', '', 'XML[497] (har-0017)'), 11, 'XML[497]')),
+        ('XML', 'v2232001705027000145' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0017)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0017)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0014'].text, 'el="', '"', 'XML[74] (har-0017)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0010'], 'XML', 0, 'XML[96] (har-0017)'), 'Page', 'k', 'XML[96] (har-0017)'), 27, 'XML[96]') + 'on_interceptorfalsep2100005interceptor_is_activefalsep4500000interceptor_params.items[0].interceptor_valuep4500003interceptor_params.items[1].interceptor_valueS37p4500000interceptor_params.items[2].interceptor_valuep4500000interceptor_params.items[3].interceptor_valuep4500000interceptor_params.items[4].interceptor_valuep4500000interceptor_params.items[5].interceptor_value' + checked(ctx_extract(html_control(R['har-0015'], 'XML', 0, 'XML[497] (har-0017)'), '_tmp', '', 'XML[497] (har-0017)'), 11, 'XML[497]')),
         ('ERRORMESSAGE', ''),
         ('STAMP', html_control(R['har-0015'], 'STAMP', 0, 'STAMP (har-0017)'))
     ])
     return S.request('POST', url, headers=headers, data=data, timeout=30)
 
 
-def step_9(S, R, P, base):
-    # passo 9: fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)
-    # passo 9: confiança possible
-    url = rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html', base)
-    headers = {'accept': '*/*', 'accept-language': 'pt-BR,pt;q=0.9', 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', 'referer': rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html', base)}
-    return S.request('GET', url, headers=headers, timeout=30)
-
-
-def step_10(S, R, P, base):
-    # passo 10: fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)
-    # passo 10: confiança possible
-    # page: sem origem observada; vira parâmetro
+def step_7(S, R, P, base):
+    # passo 7: fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch); fornece STAMP a har-0022 (SameField)
+    # passo 7: confiança strong
+    # page: sem origem observada; parâmetro obrigatório, sem padrão
     url = rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html', base) + '?' + urllib.parse.urlencode([('page', P['page_3'])])
     headers = {'accept': '*/*', 'accept-language': 'pt-BR,pt;q=0.9', 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', 'referer': rebase('https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html', base)}
     return S.request('GET', url, headers=headers, timeout=30)
 
 
-def step_11(S, R, P, base):
-    # passo 11: fornece XML a har-0024 (ValueMatch); fornece STAMP a har-0024 (SameField)
-    # passo 11: confiança strong
-    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente)
+def step_8(S, R, P, base):
+    # passo 8: fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece STAMP a har-0024 (SameField)
+    # passo 8: confiança strong
+    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente, obrigatório)
     # XML: trecho 20..29 extraído em runtime (origem possível)
     # XML: trecho 42..74 extraído em runtime (origem possível)
     # XML: trecho 74..91 extraído em runtime (origem possível, ambíguo)
@@ -289,16 +262,16 @@ def step_11(S, R, P, base):
     data = urllib.parse.urlencode([
         ('SESSIONID', ctx_extract(R['har-0001'].text, ' = "', '"', 'SESSIONID (har-0022)') + P['sessionid_cliente']),
         ('PAGEINITPARAM', ''),
-        ('XML', 'i2232001705027000005' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0022)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0022)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0019'].text, 'Id("', '"', 'XML[74] (har-0022)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0017'], 'XML', 0, 'XML[96] (har-0022)'), 'Page', 'k', 'XML[96] (har-0022)'), 27, 'XML[96]') + 'falsep1300000pageInitParamp1500001pagePixelHeight0p1400001pagePixelWidth0p1400004timeZoneOffset-180' + checked(ctx_extract(html_control(R['har-0017'], 'XML', 0, 'XML[222] (har-0022)'), '_tmp', '', 'XML[222] (har-0022)'), 11, 'XML[222]')),
+        ('XML', 'i2232001705027000005' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0022)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0022)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0021'].text, 'el="', '"', 'XML[74] (har-0022)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0017'], 'XML', 0, 'XML[96] (har-0022)'), 'Page', 'k', 'XML[96] (har-0022)'), 27, 'XML[96]') + 'falsep1300000pageInitParamp1500001pagePixelHeight0p1400001pagePixelWidth0p1400004timeZoneOffset-180' + checked(ctx_extract(html_control(R['har-0017'], 'XML', 0, 'XML[222] (har-0022)'), '_tmp', '', 'XML[222] (har-0022)'), 11, 'XML[222]')),
         ('STAMP', html_control(R['har-0008'], 'STAMP', 0, 'STAMP (har-0022)'))
     ])
     return S.request('POST', url, headers=headers, data=data, timeout=30)
 
 
-def step_12(S, R, P, base):
-    # passo 12: fornece XML a har-0026 (ValueMatch); fornece STAMP a har-0026 (SameField)
-    # passo 12: confiança strong
-    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente)
+def step_9(S, R, P, base):
+    # passo 9: fornece XML a har-0026 (ValueMatch); fornece STAMP a har-0026 (SameField)
+    # passo 9: confiança strong
+    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente, obrigatório)
     # XML: trecho 20..29 extraído em runtime (origem possível)
     # XML: trecho 42..74 extraído em runtime (origem possível)
     # XML: trecho 74..91 extraído em runtime (origem possível, ambíguo)
@@ -310,16 +283,16 @@ def step_12(S, R, P, base):
     data = urllib.parse.urlencode([
         ('SESSIONID', ctx_extract(R['har-0001'].text, ' = "', '"', 'SESSIONID (har-0024)') + P['sessionid_cliente']),
         ('PAGEINITPARAM', ''),
-        ('XML', 'v2232001705027000105' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0024)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0024)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0019'].text, 'Id("', '"', 'XML[74] (har-0024)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0017'], 'XML', 0, 'XML[96] (har-0024)'), 'Page', 'k', 'XML[96] (har-0024)'), 27, 'XML[96]') + 'cmd_filtrofalsep1200003v_filtro_sel2.0p1300003#f12_selected2.0' + checked(ctx_extract(html_control(R['har-0022'], 'XML', 0, 'XML[185] (har-0024)'), '_tmp', '', 'XML[185] (har-0024)'), 11, 'XML[185]')),
+        ('XML', 'v2232001705027000105' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0024)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0024)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0021'].text, 'el="', '"', 'XML[74] (har-0024)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0017'], 'XML', 0, 'XML[96] (har-0024)'), 'Page', 'k', 'XML[96] (har-0024)'), 27, 'XML[96]') + 'cmd_filtrofalsep1200003v_filtro_sel2.0p1300003#f12_selected2.0' + checked(ctx_extract(html_control(R['har-0022'], 'XML', 0, 'XML[185] (har-0024)'), '_tmp', '', 'XML[185] (har-0024)'), 11, 'XML[185]')),
         ('ERRORMESSAGE', ''),
         ('STAMP', html_control(R['har-0022'], 'STAMP', 0, 'STAMP (har-0024)'))
     ])
     return S.request('POST', url, headers=headers, data=data, timeout=30)
 
 
-def step_13(S, R, P, base):
-    # passo 13: requisição alvo
-    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente)
+def step_10(S, R, P, base):
+    # passo 10: requisição alvo
+    # SESSIONID: montado no cliente: complete aqui (parte inicial extraída do produtor har-0001; o resto é o parâmetro sessionid_cliente, obrigatório)
     # XML: trecho 20..29 extraído em runtime (origem possível)
     # XML: trecho 42..74 extraído em runtime (origem possível)
     # XML: trecho 74..91 extraído em runtime (origem possível, ambíguo)
@@ -332,14 +305,14 @@ def step_13(S, R, P, base):
     data = urllib.parse.urlencode([
         ('SESSIONID', ctx_extract(R['har-0001'].text, ' = "', '"', 'SESSIONID (har-0026)') + P['sessionid_cliente']),
         ('PAGEINITPARAM', ''),
-        ('XML', 'v2232001705027000195' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0026)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0026)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0019'].text, 'Id("', '"', 'XML[74] (har-0026)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0017'], 'XML', 0, 'XML[96] (har-0026)'), 'Page', 'k', 'XML[96] (har-0026)'), 27, 'XML[96]') + 'cmd_consultar_placafalsep1400000' + 'v_filtro_' + 'errorp0700007v_placa' + P['placa'] + 'p0500011v_cpf' + P['cpf'] + 'p1300003#f12_selected2.0' + checked(ctx_extract(html_control(R['har-0024'], 'XML', 0, 'XML[239] (har-0026)'), '_tmp', '', 'XML[239] (har-0026)'), 11, 'XML[239]')),
+        ('XML', 'v2232001705027000195' + checked(ctx_extract(R['har-0001'].text, ' = "', '"', 'XML[20] (har-0026)'), 9, 'XML[20]') + P['sessionid_cliente'] + checked(ctx_extract(R['har-0001'].text, 'sId = "', '"', 'XML[42] (har-0026)'), 32, 'XML[42]') + checked(ctx_extract(R['har-0021'].text, 'el="', '"', 'XML[74] (har-0026)'), 17, 'XML[74]') + 'dummy' + checked(ctx_extract(html_control(R['har-0017'], 'XML', 0, 'XML[96] (har-0026)'), 'Page', 'k', 'XML[96] (har-0026)'), 27, 'XML[96]') + 'cmd_consultar_placafalsep1400000' + 'v_filtro_' + 'errorp0700007v_placa' + P['placa'] + 'p0500011v_cpf' + P['cpf'] + 'p1300003#f12_selected2.0' + checked(ctx_extract(html_control(R['har-0024'], 'XML', 0, 'XML[239] (har-0026)'), '_tmp', '', 'XML[239] (har-0026)'), 11, 'XML[239]')),
         ('ERRORMESSAGE', ''),
         ('STAMP', html_control(R['har-0024'], 'STAMP', 0, 'STAMP (har-0026)'))
     ])
     return S.request('POST', url, headers=headers, data=data, timeout=30)
 
 
-STEPS = [step_1, step_2, step_3, step_4, step_5, step_6, step_7, step_8, step_9, step_10, step_11, step_12, step_13]
+STEPS = [step_1, step_2, step_3, step_4, step_5, step_6, step_7, step_8, step_9, step_10]
 
 
 def main():

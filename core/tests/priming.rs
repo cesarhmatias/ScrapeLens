@@ -101,6 +101,11 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
     // SESSIONID: prefixo extraído + comentário de composição parcial.
     assert!(script.contains("montado no cliente: complete aqui"));
     assert!(script.contains("P['sessionid_cliente']"));
+    // F1: a parte montada no cliente é obrigatória, sem valor capturado.
+    assert!(
+        script.contains("('sessionid_cliente', None, 'montado no cliente')"),
+        "sufixo de composição parcial não pode ter padrão capturado"
+    );
     // Placa e CPF: parâmetros obrigatórios, sem o valor capturado.
     assert!(script.contains("P['placa']"));
     assert!(script.contains("('placa', None,"));
@@ -120,6 +125,237 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
         !script.contains("SYNTHPID000000000000000000000011"),
         "processId capturado"
     );
+    // F1: navegação sem origem observada também é obrigatória (sem padrão).
+    assert!(script.contains("('op', None, 'sem origem observada')"));
+    assert!(script.contains("('page', None, 'sem origem observada')"));
+}
+
+/// HAR mínimo com `entries` (method, url, corpo de requisição, texto da resposta).
+/// `None` no texto da resposta = resposta sem corpo observável (`unavailable`).
+fn mini_bundle(entries: Vec<(&str, &str, Option<&str>, Option<&str>)>) -> SessionBundle {
+    let entries: Vec<serde_json::Value> = entries
+        .into_iter()
+        .enumerate()
+        .map(|(i, (method, url, body, response))| {
+            let mut request = serde_json::json!({
+                "method": method, "url": url, "httpVersion": "HTTP/1.1",
+                "headers": [], "queryString": [], "cookies": [],
+                "headersSize": -1, "bodySize": 0
+            });
+            if let Some(body) = body {
+                request["headers"] = serde_json::json!([
+                    {"name": "Content-Type", "value": "application/x-www-form-urlencoded"}
+                ]);
+                request["bodySize"] = serde_json::json!(body.len());
+                request["postData"] =
+                    serde_json::json!({"mimeType": "application/x-www-form-urlencoded", "text": body});
+            }
+            let content = match response {
+                Some(text) => serde_json::json!({
+                    "size": text.len(), "mimeType": "text/html", "text": text
+                }),
+                // Tamanho > 0 sem texto = `unavailable` (não `empty`).
+                None => serde_json::json!({"size": 1, "mimeType": "text/html"}),
+            };
+            serde_json::json!({
+                "startedDateTime": format!("2026-10-27T12:00:{i:02}.000Z"),
+                "time": 1,
+                "request": request,
+                "response": {
+                    "status": 200, "statusText": "", "httpVersion": "HTTP/1.1",
+                    "headers": [], "cookies": [], "headersSize": -1,
+                    "bodySize": response.map_or(1, str::len), "redirectURL": "",
+                    "content": content
+                },
+                "cache": {}, "timings": {"send": 0, "wait": 1, "receive": 0}
+            })
+        })
+        .collect();
+    let har = serde_json::json!({
+        "log": {"version": "1.2", "creator": {"name": "t", "version": "1"}, "entries": entries}
+    });
+    import_har(har.to_string().as_bytes())
+        .expect("HAR mínimo")
+        .bundle
+}
+
+#[test]
+fn value_without_origin_is_a_default_only_with_constancy_proof() {
+    // Mesmo (campo, valor) em duas requisições e fora de qualquer resposta:
+    // constante do protocolo, pode virar padrão.
+    let bundle = mini_bundle(vec![
+        (
+            "POST",
+            "https://mini.example.test/init",
+            Some("mode=CONST_MODE&x=1"),
+            Some("ok"),
+        ),
+        (
+            "POST",
+            "https://mini.example.test/target",
+            Some("mode=CONST_MODE&y=2"),
+            Some("ok"),
+        ),
+    ]);
+    let script = generate(&bundle, "har-0002");
+    assert!(
+        script.contains("('mode', 'CONST_MODE', 'constante do protocolo')"),
+        "constância comprovada deveria permitir o padrão:\n{script}"
+    );
+
+    // Uma única ocorrência: parâmetro obrigatório, sem o valor capturado.
+    let bundle = mini_bundle(vec![
+        (
+            "GET",
+            "https://mini.example.test/page",
+            None,
+            Some("<html>ok</html>"),
+        ),
+        (
+            "POST",
+            "https://mini.example.test/target",
+            Some("mode=ONLY_ONCE_XYZ&x=2"),
+            Some("ok"),
+        ),
+    ]);
+    let script = generate(&bundle, "har-0002");
+    assert!(
+        script.contains("('mode', None, 'sem origem observada')"),
+        "valor sem prova de constância deve ser obrigatório:\n{script}"
+    );
+    assert!(
+        !script.contains("ONLY_ONCE_XYZ"),
+        "valor capturado não pode aparecer no script"
+    );
+}
+
+#[test]
+fn stamp_without_producer_is_required_and_never_a_captured_literal() {
+    let bundle = mini_bundle(vec![
+        (
+            "GET",
+            "https://mini.example.test/page",
+            None,
+            Some("<html>sem STAMP nesta página</html>"),
+        ),
+        (
+            "POST",
+            "https://mini.example.test/target",
+            Some("STAMP=STAMP_UNIQUE_42&x=3"),
+            Some("ok"),
+        ),
+    ]);
+    let script = generate(&bundle, "har-0002");
+    assert!(
+        script.contains("('stamp', None, 'sem origem observada')"),
+        "STAMP sem produtor tem de ser obrigatório:\n{script}"
+    );
+    assert!(
+        !script.contains("STAMP_UNIQUE_42"),
+        "STAMP capturado não pode ficar em código nem em comentário:\n{script}"
+    );
+    for line in script.lines() {
+        assert!(!line.contains("STAMP_UNIQUE_42"), "{line}");
+    }
+}
+
+#[test]
+fn partial_composition_suffix_is_required_without_a_captured_default() {
+    let page = "<html><script>m_currentSessionId = \"HEAD12345\";</script></html>";
+    let bundle = mini_bundle(vec![
+        ("GET", "https://mini.example.test/page", None, Some(page)),
+        (
+            "POST",
+            "https://mini.example.test/target",
+            Some("SESSIONID=HEAD12345_999999999999&head=HEAD12345&x=4"),
+            Some("ok"),
+        ),
+    ]);
+    let script = generate(&bundle, "har-0002");
+    assert!(
+        script.contains("montado no cliente"),
+        "composição parcial deveria ser reconhecida:\n{script}"
+    );
+    assert!(
+        script.contains("('sessionid_cliente', None, 'montado no cliente')"),
+        "sufixo montado no cliente deve ser obrigatório:\n{script}"
+    );
+    assert!(
+        !script.contains("999999999999"),
+        "sufixo capturado não pode ficar em código nem em comentário:\n{script}"
+    );
+}
+
+#[test]
+fn incomplete_chain_is_refused_and_allow_incomplete_emits_explicit_fail() {
+    // A primeira resposta não tem corpo; o alvo consome um valor que só
+    // poderia ter vindo dela. A terceira é a ocorrência equivalente completa.
+    let bundle = mini_bundle(vec![
+        (
+            "POST",
+            "https://mini.example.test/step",
+            Some("field=UNIQUE_A_111"),
+            None,
+        ),
+        (
+            "POST",
+            "https://mini.example.test/target",
+            Some("field=UNIQUE_B_222"),
+            Some("ok"),
+        ),
+        (
+            "POST",
+            "https://mini.example.test/step",
+            Some("field=UNIQUE_C_333"),
+            Some("ok"),
+        ),
+    ]);
+    let err = to_python(
+        &bundle.session,
+        &bundle,
+        "har-0002",
+        &PrimingOptions::default(),
+    )
+    .expect_err("cadeia incompleta deve ser recusada");
+    let message = err.to_string();
+    assert!(message.contains("cadeia incompleta"), "{message}");
+    assert!(message.contains("har-0002 [field]"), "{message}");
+    assert!(message.contains("har-0001 (unavailable)"), "{message}");
+    assert!(message.contains("har-0003"), "sugestão ausente: {message}");
+    assert!(
+        message.contains("Nenhum valor capturado é usado no lugar"),
+        "{message}"
+    );
+    assert!(message.contains("--allow-incomplete"), "{message}");
+
+    let opts = PrimingOptions {
+        allow_incomplete: true,
+        ..PrimingOptions::default()
+    };
+    let output = to_python(&bundle.session, &bundle, "har-0002", &opts)
+        .expect("--allow-incomplete gera o script");
+    let script = output.text;
+    assert!(
+        script.contains("fail('cadeia incompleta: field sem produtor com corpo observ"),
+        "passo incompleto precisa falhar explicitamente:\n{script}"
+    );
+    assert!(
+        !script.contains("UNIQUE_B_222"),
+        "valor capturado não substitui a origem ausente:\n{script}"
+    );
+    assert!(
+        script.contains("('field', None, 'sem origem observada')"),
+        "parâmetro continua obrigatório, sem padrão:\n{script}"
+    );
+    assert!(
+        output
+            .warnings
+            .iter()
+            .any(|w| w.code == "priming.incomplete_chain"),
+        "aviso da cadeia incompleta ausente"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    ast_calls(&script, &dir);
 }
 
 #[test]
