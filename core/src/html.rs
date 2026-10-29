@@ -21,6 +21,7 @@ pub struct HtmlControl {
 }
 
 const MAX_CONTROLS: usize = 20_000;
+const MAX_RUNAWAY_TAGS: usize = 64;
 
 /// Decodifica entidades HTML com mapa de offsets (base = deslocamento do
 /// trecho no texto original). Entidade desconhecida fica literal.
@@ -90,7 +91,12 @@ fn is_space(b: u8) -> bool {
 }
 
 /// Lê a tag que começa em `at` (`<`). `None` se não parecer uma tag.
-fn parse_tag(text: &str, at: usize) -> Option<Tag<'_>> {
+fn parse_tag<'a>(text: &'a str, at: usize, no_close: &mut [usize; 3]) -> Option<Tag<'a>> {
+    // Tag que corre até o fim do texto custa uma varredura inteira; depois de
+    // algumas, o resto do documento deixa de ser lido como tag (linear).
+    if no_close[2] >= MAX_RUNAWAY_TAGS {
+        return None;
+    }
     let bytes = text.as_bytes();
     let mut i = at + 1;
     let closing = bytes.get(i) == Some(&b'/');
@@ -111,6 +117,7 @@ fn parse_tag(text: &str, at: usize) -> Option<Tag<'_>> {
             i += 1;
         }
         if i >= bytes.len() {
+            no_close[2] += 1;
             return None; // tag sem `>`
         }
         if bytes[i] == b'>' {
@@ -145,7 +152,19 @@ fn parse_tag(text: &str, at: usize) -> Option<Tag<'_>> {
         match bytes.get(j) {
             Some(&q) if q == b'"' || q == b'\'' => {
                 let v_start = j + 1;
-                let v_end = text[v_start..].find(q as char).map(|e| v_start + e)?;
+                // Memoriza onde já não há aspas de fechamento: mantém o
+                // tokenizador linear com aspas sem par (`<a b="` repetido).
+                let slot = usize::from(q == b'\'');
+                if v_start >= no_close[slot] {
+                    no_close[2] += 1;
+                    return None;
+                }
+                let Some(e) = text[v_start..].find(q as char) else {
+                    no_close[slot] = no_close[slot].min(v_start);
+                    no_close[2] += 1;
+                    return None;
+                };
+                let v_end = v_start + e;
                 attrs.push((attr, &text[v_start..v_end], v_start));
                 i = v_end + 1;
             }
@@ -158,7 +177,10 @@ fn parse_tag(text: &str, at: usize) -> Option<Tag<'_>> {
                 attrs.push((attr, &text[v_start..k], v_start));
                 i = k;
             }
-            None => return None,
+            None => {
+                no_close[2] += 1;
+                return None;
+            }
         }
     }
 }
@@ -202,6 +224,7 @@ fn control(name: &str, raw: &str, start: usize) -> Option<HtmlControl> {
 pub fn html_controls(text: &str) -> Vec<HtmlControl> {
     let bytes = text.as_bytes();
     let mut out: Vec<HtmlControl> = Vec::new();
+    let mut no_close = [usize::MAX, usize::MAX, 0];
     let mut i = 0;
     while i < bytes.len() && out.len() < MAX_CONTROLS {
         let Some(rel) = text[i..].find('<') else {
@@ -214,7 +237,7 @@ pub fn html_controls(text: &str) -> Vec<HtmlControl> {
                 .map_or(bytes.len(), |e| at + 4 + e + 3);
             continue;
         }
-        let Some(tag) = parse_tag(text, at) else {
+        let Some(tag) = parse_tag(text, at, &mut no_close) else {
             i = at + 1;
             continue;
         };
@@ -261,7 +284,7 @@ pub fn html_controls(text: &str) -> Vec<HtmlControl> {
                     let Some(rel) = text[j..end].find('<') else {
                         break;
                     };
-                    let Some(option) = parse_tag(text, j + rel) else {
+                    let Some(option) = parse_tag(text, j + rel, &mut no_close) else {
                         j += rel + 1;
                         continue;
                     };
@@ -331,5 +354,15 @@ mod tests {
         assert!(html_controls("<input name=\"x\" value=\"abc").is_empty());
         assert!(html_controls("<textarea name=\"x\">sem fim").len() == 1);
         assert!(html_controls("<<>><input").is_empty());
+    }
+
+    #[test]
+    fn unclosed_quotes_stay_linear() {
+        for unit in ["<a b=\"", "<a b='", "<input name=\"x\" value='"] {
+            let html = unit.repeat(50_000);
+            let t = std::time::Instant::now();
+            assert!(html_controls(&html).is_empty());
+            assert!(t.elapsed().as_secs_f64() < 1.0, "{unit}: {:?}", t.elapsed());
+        }
     }
 }
