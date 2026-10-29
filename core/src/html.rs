@@ -61,8 +61,14 @@ fn entity_at(raw: &str, at: usize) -> Option<(char, usize)> {
     let body = &rest[..end];
     let ch = if let Some(num) = body.strip_prefix('#') {
         let code = if let Some(hex) = num.strip_prefix(['x', 'X']) {
+            if hex.is_empty() || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
             u32::from_str_radix(hex, 16).ok()?
         } else {
+            if num.is_empty() || !num.bytes().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
             num.parse::<u32>().ok()?
         };
         char::from_u32(code)?
@@ -236,9 +242,20 @@ pub fn html_controls(text: &str) -> Vec<HtmlControl> {
         };
         let at = i + rel;
         if text[at..].starts_with("<!--") {
-            i = text[at + 4..]
-                .find("-->")
-                .map_or(bytes.len(), |e| at + 4 + e + 3);
+            // HTML5: `<!-->` e `<!--->` fecham na hora.
+            let rest = &text[at + 4..];
+            i = if rest.starts_with('>') {
+                at + 5
+            } else if rest.starts_with("->") {
+                at + 6
+            } else {
+                rest.find("-->").map_or(bytes.len(), |e| at + 4 + e + 3)
+            };
+            continue;
+        }
+        // CDATA, `<!x…>` e `<?…>` são comentários bogus até o primeiro `>`.
+        if text[at..].starts_with("<!") || text[at..].starts_with("<?") {
+            i = text[at..].find('>').map_or(bytes.len(), |e| at + e + 1);
             continue;
         }
         let Some(tag) = parse_tag(text, at, &mut no_close) else {
@@ -363,6 +380,28 @@ mod tests {
         assert!(html_controls("<input name=\"x\" value=\"abc").is_empty());
         assert!(html_controls("<textarea name=\"x\">sem fim").len() == 1);
         assert!(html_controls("<<>><input").is_empty());
+    }
+
+    #[test]
+    fn html5_comments_bogus_comments_and_strict_entities() {
+        let c = |h: &str| html_controls(h).len();
+        assert_eq!(c("<!--><input name=a value=1>"), 1, "<!--> fecha na hora");
+        assert_eq!(c("<!---><input name=a value=1>"), 1);
+        assert_eq!(c("<!-- x --><input name=a value=1>"), 1);
+        assert_eq!(
+            c("<![CDATA[ <input name=n value=1> ]]><input name=a value=1>"),
+            1
+        );
+        assert_eq!(c("<!x <input name=n value=1>><input name=a value=1>"), 1);
+        assert_eq!(
+            c("<?php <input name=n value=1> ?><input name=a value=1>"),
+            1
+        );
+        let v = |h: &str| html_controls(h)[0].value.clone();
+        assert_eq!(
+            v("<input name=a value='&#+65;&#x+41;&#65;'>"),
+            "&#+65;&#x+41;A"
+        );
     }
 
     #[test]
