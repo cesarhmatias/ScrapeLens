@@ -590,6 +590,33 @@ pub fn compare_sessions(
     result.entry_request = entry.clone();
     let rounds_a = split_rounds(&ea, entry.as_deref());
     let rounds_b = split_rounds(&eb, entry.as_deref());
+    // Rodada bem menor que a mediana: um reload da entrada no meio da aplicação
+    // (`[E,P,C1,E,C2,C3]`) abre rodada nova, que pode ficar com poucos passos.
+    // A heurística de segmentação continua; o aviso só pede conferência.
+    let mut sizes: Vec<usize> = rounds_a
+        .iter()
+        .chain(rounds_b.iter())
+        .map(Vec::len)
+        .filter(|n| *n > 0)
+        .collect();
+    if sizes.len() >= 2 {
+        sizes.sort_unstable();
+        let median = sizes[sizes.len() / 2];
+        for (side, rounds) in [("A", &rounds_a), ("B", &rounds_b)] {
+            if rounds.len() < 2 {
+                continue;
+            }
+            for round in rounds {
+                let n = round.len();
+                if n > 0 && n * 2 < median {
+                    result.warnings.push(format!(
+                        "possível reload: rodada com {n} passos ({side} {}); confira se a entrada foi recarregada no meio da aplicação",
+                        request_ref(&round[0]).request_id
+                    ));
+                }
+            }
+        }
+    }
     let mut scores: Vec<(usize, usize, usize)> = Vec::new();
     for (i, ra) in rounds_a.iter().enumerate() {
         for (j, rb) in rounds_b.iter().enumerate() {

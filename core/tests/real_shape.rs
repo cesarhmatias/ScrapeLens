@@ -1843,3 +1843,66 @@ fn r8_business_name_glued_to_letters_is_redacted() {
         export.redactions
     );
 }
+
+/// Item 5 da revisão 8: reload da entrada no meio da aplicação abre rodada nova
+/// (heurística mantida), mas uma rodada bem menor que a mediana gera aviso.
+#[test]
+fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
+    let mut s = S::default();
+    for (id, t) in [("1.1", 1.0), ("1.2", 1.1), ("1.3", 1.2), ("1.4", 1.3)] {
+        s.req(
+            id,
+            t,
+            "https://x.test/app/Connector",
+            "POST",
+            R {
+                body: Some("XML=consulta&STAMP=1000"),
+                resp: Some("<html>ok</html>"),
+                ..Default::default()
+            },
+        );
+    }
+    s.req(
+        "1.0a",
+        0.5,
+        "https://x.test/app/entry",
+        "GET",
+        R {
+            resp: Some("<html>entrada</html>"),
+            ..Default::default()
+        },
+    );
+    // Reload da entrada depois dos passos de aplicação: abre a 2ª rodada, que
+    // fica com 2 passos contra 5 da primeira.
+    s.req(
+        "2.1",
+        5.0,
+        "https://x.test/app/entry",
+        "GET",
+        R {
+            resp: Some("<html>entrada 2</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "2.2",
+        5.1,
+        "https://x.test/app/Connector",
+        "POST",
+        R {
+            body: Some("XML=consulta&STAMP=1001"),
+            resp: Some("<html>ok</html>"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let r = compare_sessions(&b.session, &b, &b.session, &b, &CompareOptions::default());
+    assert_eq!(r.rounds.len(), 2, "reload abre rodada: {:?}", r.rounds);
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("possível reload: rodada com 2 passos")),
+        "{:?}",
+        r.warnings
+    );
+}
