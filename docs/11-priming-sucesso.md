@@ -163,3 +163,13 @@ aprovados. Restam 2 falhas altas.
 - Script: `S.trust_env = False` por padrão (sem proxy/.netrc do ambiente);
   `--usar-proxy-do-ambiente` habilita. Aviso quando o Python é < 3.13
   (HTMLParser com casos quadráticos conhecidos).
+- Re-revisão final (732f6b5): as 2 falhas altas anteriores foram aprovadas;
+  sobrou 1 alta nova. Decisões: (1) o corpo é classificado pelo conteúdo e
+  não só pelo Content-Type. JSON válido sob content-type de form recebe o
+  tratamento de JSON, e um campo de form sem `=` com mais de 40 caracteres
+  nunca sai literal (recusa). (2) Detecção pelo valor de esquemas
+  `Bearer`/`Basic`/`Digest`/`Negotiate` em qualquer header; os nomes hmac,
+  bearer, digest e nonce entram na lista; `x-forwarded-for` é omitido (PII
+  leve). (3) Referer para outro origin (`--allow-origin`) leva só o origin,
+  como no navegador. (4) Regras do assess: nomes/caminhos vazios são
+  recusados.
