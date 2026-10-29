@@ -1092,3 +1092,89 @@ fn l3_static_resources_are_context_never_steps() {
     assert_eq!(v.evidences[0].request_id, lid(&b, "1.2"));
     assert!(v.context.is_empty());
 }
+
+#[test]
+fn r6_script_with_query_nocache_or_jsonp_can_be_producer() {
+    let post = |s: &mut S| {
+        s.req(
+            "1.9",
+            9.0,
+            "http://h.test/send",
+            "POST",
+            R {
+                body: Some("build=v20261027-abcdef12"),
+                resp: Some("ok"),
+                ..Default::default()
+            },
+        )
+    };
+    let cases: [(&str, R, &str); 4] = [
+        (
+            "http://h.test/app.js?sid=1",
+            R {
+                resp: Some("var o={\"build\":\"v20261027-abcdef12\"};"),
+                rct: Some("application/javascript"),
+                ..Default::default()
+            },
+            "query",
+        ),
+        (
+            "http://h.test/app.js",
+            R {
+                resp: Some("var build=\"v20261027-abcdef12\";"),
+                rct: Some("application/javascript"),
+                resp_headers: Some(json!({"cache-control": "no-store"})),
+                ..Default::default()
+            },
+            "no-store",
+        ),
+        (
+            "http://h.test/app.js",
+            R {
+                resp: Some("cb({\"x\":\"v20261027-abcdef12\"})"),
+                rct: Some("application/javascript"),
+                ..Default::default()
+            },
+            "jsonp",
+        ),
+        (
+            "http://h.test/data.json",
+            R {
+                resp: Some("{\"build\":\"v20261027-abcdef12\"}"),
+                rct: Some("application/json"),
+                ..Default::default()
+            },
+            "json",
+        ),
+    ];
+    for (url, r, why) in cases {
+        let mut s = S::default();
+        s.req("1.1", 1.0, url, "GET", r);
+        post(&mut s);
+        let b = s.build();
+        let v = entry(&origins(&b, "1.9"), "build").clone();
+        assert_eq!(v.evidences.len(), 1, "{why}: {v:?}");
+    }
+    // literal estático puro continua contexto, com o rótulo novo
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "http://h.test/app.js",
+        "GET",
+        R {
+            resp: Some("var build=\"v20261027-abcdef12\";"),
+            rct: Some("application/javascript"),
+            ..Default::default()
+        },
+    );
+    post(&mut s);
+    let b = s.build();
+    let v = entry(&origins(&b, "1.9"), "build").clone();
+    assert!(v.evidences.is_empty());
+    assert!(
+        v.label.contains("pode ser constante do protocolo"),
+        "{}",
+        v.label
+    );
+}

@@ -32,7 +32,7 @@
 //!   (`input`/`textarea`/`select` de uma resposta text/html; ver [`crate::html`]);
 //!   `producerOffset` aponta o valor no HTML original, mesmo com entidades;
 //! - `ValueOrigin.context[]` `{requestId, field, note}`: valor também presente em
-//!   recurso estático (script, css, fonte, imagem, mídia): provável constante do
+//!   recurso estático (script, css, fonte, imagem, mídia): pode ser constante do
 //!   protocolo; nunca é produtor nem passo;
 //! - `ValueOrigin.partialComposition[]` `{producerRequestId, field, start, length}`: valor
 //!   curto sem origem que contém (alinhado a `_ - . : |` ou à borda, >= 8 bytes) o
@@ -261,7 +261,7 @@ pub struct ValueOrigin {
     /// Respostas anteriores sem corpo observável (unavailable/discarded/
     /// truncated): a origem pode estar nelas (até 20; o total vai no rótulo).
     pub unobservable: Vec<Unobservable>,
-    /// Valor também presente em recursos estáticos (provável constante do
+    /// Valor também presente em recursos estáticos (pode ser constante do
     /// protocolo): nunca é produtor nem passo da cadeia.
     pub context: Vec<ContextNote>,
     /// Composição parcial provável (cliente): ver [`PartialComposition`].
@@ -507,6 +507,11 @@ fn assigned_name(text: &str, quote_at: usize) -> Option<String> {
         .strip_suffix('=')
         .or_else(|| before.strip_suffix(':'))?;
     let before = before.trim_end();
+    // chave de objeto entre aspas: `{"token": "…"}` / `{'token': '…'}`
+    let before = before
+        .strip_suffix(['"', '\''])
+        .filter(|rest| rest.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$'))
+        .unwrap_or(before);
     let name: String = before
         .chars()
         .rev()
@@ -883,6 +888,52 @@ impl<'a> FlowContext<'a> {
     /// Recurso estático (script, stylesheet, fonte, imagem, mídia) por tipo,
     /// MIME ou extensão: não é produtor de valores de sessão.
     pub(crate) fn is_static(&self, pos: Pos) -> bool {
+        self.static_candidate(pos) && !self.maybe_dynamic(pos)
+    }
+
+    /// Script com query string, `Cache-Control: no-store|no-cache` ou corpo
+    /// JSON/JSONP pode ser produtor dinâmico, mesmo com cara de estático.
+    fn maybe_dynamic(&self, pos: Pos) -> bool {
+        let attempt = self.attempt(pos);
+        let cache = attempt
+            .response_headers
+            .first_value("cache-control")
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if cache.contains("no-store") || cache.contains("no-cache") {
+            return true;
+        }
+        let url = attempt.url.split('#').next().unwrap_or("");
+        let path = url.split('?').next().unwrap_or("").to_ascii_lowercase();
+        let is_script = path.ends_with(".js") || path.ends_with(".mjs");
+        let mime = attempt
+            .response_headers
+            .first_value("content-type")
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let is_script = is_script || mime.contains("javascript") || mime.contains("ecmascript");
+        if is_script && url.contains('?') {
+            return true;
+        }
+        if is_script || mime.contains("json") {
+            if let Some(text) = body_text(self.source, &attempt.response_body) {
+                let t = text.trim_start();
+                let jsonp = t.split_once('(').is_some_and(|(head, rest)| {
+                    !head.is_empty()
+                        && head
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '$' | '.'))
+                        && rest.trim_start().starts_with(['{', '['])
+                });
+                if t.starts_with(['{', '[']) || jsonp {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn static_candidate(&self, pos: Pos) -> bool {
         let request = &self.session.requests[pos.0];
         let attempt = self.attempt(pos);
         if let Some(kind) = request.resource_type.as_deref() {
@@ -1388,7 +1439,7 @@ fn finish_entry(
                     context.push(ContextNote {
                         request_id: e.request_id.clone(),
                         field: e.field.clone(),
-                        note: "valor também presente em recurso estático: provável constante do protocolo".to_string(),
+                        note: "valor também presente em recurso estático (pode ser constante do protocolo)".to_string(),
                     });
                 }
             }
@@ -1541,7 +1592,7 @@ fn relabel(entry: &mut ValueOrigin) {
         ),
         OriginStatus::None if !entry.partial_composition.is_empty() => composition_label(entry),
         OriginStatus::None if !entry.context.is_empty() => {
-            "sem origem observada; valor também presente em recurso estático (provável constante do protocolo)".to_string()
+            "sem origem observada; valor também presente em recurso estático (pode ser constante do protocolo)".to_string()
         }
         OriginStatus::None => "sem origem observada".to_string(),
         OriginStatus::Composite if entry.confidence == Some(Confidence::Possible) => {
