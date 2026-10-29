@@ -39,7 +39,11 @@ Sonnet 5.5 low. Em 2026-10-28, por decisão do usuário, todos os agentes não d
 (Documentação, Captura, Core, Testes e App) passaram para
 `opencode-go/deepseek-v4.1-flash` (OpenCode Go, esforço high), com reserva
 automática `opencode/deepseek-v4.1-flash-free` quando a cota acabar. Os
-decisores (Líder e Revisor independente) não mudaram de modelo. Sem substituição silenciosa de modelo.
+decisores (Líder e Revisor independente) não mudaram de modelo. Em 2026-10-29 o
+`opencode-go/deepseek-v4.1-flash` falhou: as tarefas eram encerradas em ~1 s,
+sem trabalho, e a chamada direta pelo CLI não respondeu em 3 min. Os
+executores voltaram temporariamente para Sonnet 5.5 low até o DeepSeek ser
+diagnosticado. Sem substituição silenciosa de modelo.
 
 Equipe (seção OpenBot "ScrapeLens"):
 
