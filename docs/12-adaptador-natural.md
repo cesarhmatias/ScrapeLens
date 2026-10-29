@@ -60,3 +60,26 @@ dados.
 4. App mostra a visão estruturada; o bruto continua primário.
 5. Sem regressão: bateria completa e check_real_priming (só placa e sufixo
    do SESSIONID; 0 literais).
+
+## Revisão da rodada 8 (2026-10-29) — decisões
+
+Veredito: parcial (2 falhas altas). A gramática é correta e o round-trip é
+exato.
+- Limites do adaptador (Rust e Python gerado): profundidade de escopo ≤ 32,
+  chaves de dicionário ≤ 10 mil, path guardado como pilha de índices e
+  montado sob demanda, nomes em mapa. Custo linear: `b01a`×40 mil em < 1 s e
+  < 100 MB. `detect` é barato (cabeçalho e no máximo um parse curto, com o
+  resultado reaproveitado); o app limita o tamanho do campo decodificado.
+- O priming com adaptador aplica `is_sensitive_name`/`is_pii_name` ao último
+  componente do nome da parte (`XML.p.v_senha` → senha) e às mesmas listas do
+  caminho sem adaptador. Uma parte sensível vira parâmetro obrigatório ou
+  recusa.
+- Nomes genéricos (id, type, lang, q, page, flag, …) são avaliados pelo
+  último componente dos nomes internos, e o same-field forte fica rebaixado.
+- O adaptador não pode piorar a cobertura: quando a origem de uma parte está
+  numa resposta sem corpo, o gerador segue a regra da rodada 7 (recusa só
+  com a cadeia de fato incompleta, e o alvo alternativo com resposta
+  anterior capturada deve gerar). O check exige o gerador COM adaptador
+  nesse alvo.
+- O decodificador Python gerado é tão estrito quanto o Rust (escopo aberto
+  no fim, par substituto cortado → erro).
