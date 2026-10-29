@@ -91,6 +91,9 @@ pub struct FlowOptions {
     pub max_evidence: usize,
     /// Máximo de células de DP para comparar dois campos opacos.
     pub max_opaque_cells: usize,
+    /// Adaptadores de protocolo (opcional; vazio = comportamento sem adaptador).
+    #[serde(skip)]
+    pub adapters: crate::adapter::AdapterRegistry,
 }
 
 impl Default for FlowOptions {
@@ -99,6 +102,7 @@ impl Default for FlowOptions {
             min_match_len: 8,
             max_evidence: 8,
             max_opaque_cells: 4_000_000,
+            adapters: Default::default(),
         }
     }
 }

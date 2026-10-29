@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod adapter;
 pub mod assess;
 pub mod compare;
 pub mod correlate;
