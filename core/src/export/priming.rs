@@ -2682,7 +2682,7 @@ pub fn to_python(
                                 ConsumedScope::Body,
                             ),
                         };
-                        items.push(format!("({}, {})", lit(&k), e));
+                        items.push(format!("({}, {})", lit(k), e));
                     }
                     body_line = format!(
                         "data = urllib.parse.urlencode([\n        {}\n    ])\n",
