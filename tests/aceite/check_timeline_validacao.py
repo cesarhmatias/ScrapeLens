@@ -192,31 +192,32 @@ def rv_cases():
     good = [rv_step("GET", f"{L}/entry", resp="<html>entry</html>"), rv_step("GET", f"{L}/a", resp=st(ST)) if False else rv_step("GET", f"{L}/a", resp=st(ST)),
             rv_step("POST", f"{L}/go", f"STAMP={ST}&q=cadastro&{SIG}&placa=XYZ9K88", go_resp), done]
     cases = {}
-    cases["V1 fiel (controle)"] = (good, [{"name": "placa"}], "equivalent")
-    cases["V2b prefixo (sem o alvo)"] = (good[:3], [{"name": "placa"}], "not-equivalent")
+    cases["V1 fiel (controle)"] = (good, [{"name": "placa"}], "equivalent", None, True)
+    cases["V2b prefixo (sem o alvo)"] = (good[:3], [{"name": "placa"}], "not-equivalent", r"incomplet", False)
     froz = list(good)
     froz[2] = rv_step("POST", f"{L}/go", f"STAMP=STAMPCAP1234567&q=cadastro&{SIG}&placa=XYZ9K88", go_resp)
     froz[3] = rv_step("POST", f"{L}/go2", "STAMP=STAMPCAP7654321&q=consulta", done["responseBody"]["text"])
-    cases["V3 STAMP congelado (valor da captura)"] = (froz, [{"name": "placa"}], "not-equivalent")
+    cases["V3 STAMP congelado (valor da captura)"] = (froz, [{"name": "placa"}], "not-equivalent", r"congelad", True)
     sig = list(good)
     sig[2] = rv_step("POST", f"{L}/go", f"STAMP={ST}&q=cadastro&sig=ffffffffffffffffffffffffffffffff&placa=XYZ9K88", go_resp)
-    cases["V5 constante longa trocada (sig)"] = (sig, [{"name": "placa"}], "not-equivalent")
+    cases["V5 constante longa trocada (sig)"] = (sig, [{"name": "placa"}], "not-equivalent", None, True)
     forged = [good[0], good[1], rv_step("POST", f"{L}/go", "STAMP=INVENTED&q=OUTRA&sig=ffffffffffffffffffffffffffffffff&placa=XYZ9K88", go_resp), good[3]]
-    cases["V7 parameters forjado (q, sig, STAMP)"] = (forged, [{"name": "q"}, {"name": "sig"}, {"name": "STAMP"}, {"name": "placa"}], "not-equivalent")
+    cases["V7 parameters forjado (q, sig, STAMP)"] = (forged, [{"name": "q"}, {"name": "sig"}, {"name": "STAMP"}, {"name": "placa"}], "not-equivalent", r"par[âa]metro inv[áa]lido", True)
     wrong = list(good)   # origem errada: o passo 4 usa o STAMP do passo 2 (ST), não o da resposta anterior (ST2)
     wrong[3] = rv_step("POST", f"{L}/go2", f"STAMP={ST}&q=consulta", done["responseBody"]["text"])
-    cases["V18 origem errada (STAMP de resposta antiga)"] = (wrong, [{"name": "placa"}], "not-equivalent")
+    cases["V18 origem errada (STAMP de resposta antiga)"] = (wrong, [{"name": "placa"}], "not-equivalent", r"origem diferente", True)
     other = [dict(x, url=x["url"].replace("127.0.0.1:18791", "evil.example")) for x in good]
-    cases["V12 host não-loopback (evil.example)"] = (other, [{"name": "placa"}], "not-equivalent")
+    cases["V12 host não-loopback (evil.example), sem --map-origin"] = (other, [{"name": "placa"}], "not-equivalent", None, True)
     return cases
 
 
-def reviewer_cases(core, tmp, info):
+def reviewer_cases(core, wrapper, tmp, info):
     """Casos do revisor: tudo que NÃO é a execução fiel deve DIVERGIR (ou dar erro); o controle V1 deve ser equivalent."""
     cap = rv_capture(tmp, core)
     info["revisor"] = {}
-    for name, (steps, params, want) in rv_cases().items():
-        doc = {"schema": "scrapelens.trace/1", "generator": "scrapelens-priming 1.0", "steps": steps, "parameters": params}
+    for name, (steps, params, want, reason_rx, complete) in rv_cases().items():
+        doc = {"schema": "scrapelens.trace/1", "generator": "scrapelens-priming 1.0", "steps": steps, "parameters": params,
+               "target": "har-0004", "complete": complete}
         tp = tmp / "rv-trace.json"; tp.write_text(json.dumps(doc))
         ts = tmp / "rv-ses"; shutil.rmtree(ts, ignore_errors=True)
         ip = sh([core, "import-trace", tp, "--out", ts])
@@ -224,7 +225,7 @@ def reviewer_cases(core, tmp, info):
             info["revisor"][name] = {"import": "erro", "rc": ip.returncode}
             check(want != "equivalent", f"revisor {name}: o controle foi recusado no import-trace: {' '.join(ip.stderr.split())[:100]}")
             continue
-        v = sh([core, "validate", cap, ts])
+        v = sh([wrapper, "validate", cap, ts, "--adapter", "natural-ajax"])
         try:
             d = json.loads(v.stdout)
         except Exception:
@@ -235,6 +236,8 @@ def reviewer_cases(core, tmp, info):
             check(verdict == "equivalent", f"revisor {name}: controle deveria ser equivalent; deu {verdict} ({info['revisor'][name]['resumo']})")
         else:
             check(verdict != "equivalent", f"revisor {name}: deveria DIVERGIR (ou dar erro) mas o validate disse {verdict!r}: {info['revisor'][name]['resumo']}")
+            if reason_rx:
+                check(re.search(reason_rx, v.stdout + v.stderr, re.I), f"revisor {name}: motivo sem /{reason_rx}/: {info['revisor'][name]['resumo']!r}")
 
 
 def main():
@@ -278,7 +281,7 @@ def main():
                 check(subsequence(agg["sequencia_eventos"], EVENTS), f"HAR real #{i}: eventos fora da ordem do fluxo manual")
 
         # ---- casos do revisor (Rodada 9): validate não pode dar 'equivalente' a execução infiel
-        reviewer_cases(core, tmp, INFO)
+        reviewer_cases(core, wrapper, tmp, INFO)
 
         # ---- (2)/(3)/(4) execução do script
         cap = tmp / "cap"; sh([core, "import-har", ps.HAR, "--out", cap, "--label", "synthetic-fixture"])
@@ -317,7 +320,7 @@ def main():
             if not check(ip.returncode == 0, f"{mode}: import-trace: rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
                 continue
             assess = jload(sh([core, "assess", ts]), f"{mode}: assess do trace")
-            val = jload(sh([core, "validate", cap, ts]), f"{mode}: validate")
+            val = jload(sh([wrapper, "validate", cap, ts, "--adapter", "natural-ajax"]), f"{mode}: validate")
             outs = (assess or {}).get("outcomes", [])
             conn = [o for o in outs if o.get("url", "").endswith("/servlet/Connector")]
             sc["assess_connector"] = [o.get("verdictKind") for o in conn]

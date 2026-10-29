@@ -159,37 +159,37 @@
   "V1 fiel (controle)": {
    "verdict": "equivalent",
    "step": null,
-   "resumo": "execução equivalente à captura"
+   "resumo": "execução equivalente à captura [origem mapeada: http://app.test → http://127.0.0.1:18791]"
   },
   "V2b prefixo (sem o alvo)": {
-   "verdict": "equivalent",
-   "step": null,
-   "resumo": "execução equivalente à captura"
+   "verdict": "incomplete",
+   "step": 3,
+   "resumo": "incompleta: parou no passo 3 (o alvo har-0004 não está entre os passos pareados) [origem mapeada: ht"
   },
   "V3 STAMP congelado (valor da captura)": {
-   "verdict": "equivalent",
-   "step": null,
-   "resumo": "execução equivalente à captura"
+   "verdict": "diverges",
+   "step": 3,
+   "resumo": "diverge no passo 3 (body `STAMP`: valor congelado: igual ao capturado e ausente da resposta pareada)"
   },
   "V5 constante longa trocada (sig)": {
-   "verdict": "equivalent",
-   "step": null,
-   "resumo": "execução equivalente à captura"
+   "verdict": "diverges",
+   "step": 3,
+   "resumo": "diverge no passo 3 (body `sig`: campo que deveria ser constante mudou (sem origem)) [origem mapeada:"
   },
   "V7 parameters forjado (q, sig, STAMP)": {
-   "verdict": "equivalent",
-   "step": null,
-   "resumo": "execução equivalente à captura"
+   "verdict": "diverges",
+   "step": 3,
+   "resumo": "diverge no passo 3 (body `STAMP`: valor sem origem no trace (não veio de resposta anterior)) [origem"
   },
   "V18 origem errada (STAMP de resposta antiga)": {
-   "verdict": "equivalent",
-   "step": null,
-   "resumo": "execução equivalente à captura"
+   "verdict": "diverges",
+   "step": 4,
+   "resumo": "diverge no passo 4 (body `STAMP`: origem diferente: no trace vem de har-0002, na captura vinha de ha"
   },
-  "V12 host não-loopback (evil.example)": {
-   "verdict": "equivalent",
-   "step": null,
-   "resumo": "execução equivalente à captura"
+  "V12 host não-loopback (evil.example), sem --map-origin": {
+   "verdict": "diverges",
+   "step": 1,
+   "resumo": "diverge no passo 1 (nenhum passo do trace foi pareado com a captura (origens diferentes: http://app."
   }
  },
  "cenarios": {
@@ -210,14 +210,18 @@
    "validate": {
     "verdict": "equivalent",
     "step": null,
-    "summary": "execução equivalente à captura",
+    "summary": "execução equivalente à captura [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
     "passos": 10,
     "nao_pareados": 0,
     "inesperados": 0,
     "esperados_campos": [
      "SESSIONID",
      "STAMP",
-     "XML"
+     "XML.delta",
+     "XML.p.v_placa",
+     "XML.page",
+     "XML.pid",
+     "XML.sid"
     ],
     "missingInTrace": 0,
     "mappedOrigin": true
@@ -250,7 +254,7 @@
    "validate": {
     "verdict": "diverges",
     "step": 10,
-    "summary": "diverge no passo 10 (veredito app-error (ERRORMESSAGE) no trace × app-ok na captura)",
+    "summary": "diverge no passo 10 (veredito app-error (ERRORMESSAGE) no trace × app-ok na captura) [origem mapeada: https://wsdetran.pb.gov.br → http://12",
     "passos": 10
    },
    "veredito_ultimo_passo": "app-error"
@@ -267,7 +271,7 @@
    "validate": {
     "verdict": "diverges",
     "step": 3,
-    "summary": "diverge no passo 3 (veredito não-avaliado no trace × app-ok na captura)",
+    "summary": "diverge no passo 3 (veredito não-avaliado no trace × app-ok na captura) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
     "passos": 3
    },
    "veredito_ultimo_passo": "not-assessed"
@@ -284,18 +288,11 @@
    "validate": {
     "verdict": "diverges",
     "step": 3,
-    "summary": "diverge no passo 3 (status 200 na captura × 403 no trace)",
+    "summary": "diverge no passo 3 (status 200 na captura × 403 no trace) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
     "passos": 3
    },
    "veredito_ultimo_passo": "blocked"
   }
  },
- "fails": [
-  "revisor V2b prefixo (sem o alvo): deveria DIVERGIR (ou dar erro) mas o validate disse 'equivalent': execução equivalente à captura",
-  "revisor V3 STAMP congelado (valor da captura): deveria DIVERGIR (ou dar erro) mas o validate disse 'equivalent': execução equivalente à captura",
-  "revisor V5 constante longa trocada (sig): deveria DIVERGIR (ou dar erro) mas o validate disse 'equivalent': execução equivalente à captura",
-  "revisor V7 parameters forjado (q, sig, STAMP): deveria DIVERGIR (ou dar erro) mas o validate disse 'equivalent': execução equivalente à captura",
-  "revisor V18 origem errada (STAMP de resposta antiga): deveria DIVERGIR (ou dar erro) mas o validate disse 'equivalent': execução equivalente à captura",
-  "revisor V12 host não-loopback (evil.example): deveria DIVERGIR (ou dar erro) mas o validate disse 'equivalent': execução equivalente à captura"
- ]
+ "fails": []
 }
