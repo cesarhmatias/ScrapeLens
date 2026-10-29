@@ -99,8 +99,9 @@ def static_checks(script: str, label: str):
             imports |= {a.name for a in n.names}
         elif isinstance(n, ast.ImportFrom):
             imports.add(n.module)
-    allowed = {"argparse", "html.parser", "json", "re", "sys", "urllib.parse", "requests", "os", "base64", "datetime", "time", "hashlib"}
+    allowed = {"argparse", "html.parser", "json", "re", "sys", "urllib.parse", "requests", "os", "base64", "datetime", "time"}
     check(imports <= allowed, f"{label}: imports inesperados {sorted(imports - allowed)}")
+    check("hashlib" not in imports, f"{label}: hashlib voltou a ser proibido (plan.hash é a constante PLAN_HASH)")
     check("subprocess" not in imports and "ctypes" not in imports, f"{label}: import de subprocess/ctypes")
     # escopo: cada nó sabe em que função (de nível mais externo) está; só `trace_*` pode usar `os`
     owner: dict[int, str | None] = {}
@@ -144,15 +145,6 @@ def static_checks(script: str, label: str):
     check(not found, f"{label}: chamadas perigosas no código: {sorted(found)}")
     check(not os_misuse, f"{label}: uso de `os` fora de trace_* ou fora das permitidas: {os_misuse[:5]}")
     check(not open_misuse, f"{label}: open() builtin fora de trace_*")
-    hl_misuse = []
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "hashlib":
-            fn = owner.get(id(n)) or ""
-            if not (fn.startswith("trace_") or "plan" in fn.lower()) or n.attr != "sha256":
-                hl_misuse.append(f"hashlib.{n.attr} em {fn or 'nível do módulo'}")
-        elif isinstance(n, ast.Attribute) and n.attr not in ("sha256", "hexdigest", "update") and False:
-            pass
-    check(not hl_misuse, f"{label}: uso de hashlib fora de trace_*/plano ou além de sha256: {sorted(set(hl_misuse))[:4]}")
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     check(not ({"__import__", "system", "subprocess"} & names), f"{label}: nomes perigosos no código: {sorted({'__import__', 'system', 'subprocess'} & names)}")
     leaked = [t.string for t in tokenize.generate_tokens(io.StringIO(script).readline)

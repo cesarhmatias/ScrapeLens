@@ -58,3 +58,26 @@ recusaram (rc 1); depois de `cargo build --release` a bateria inteira foi repeti
 | check_real_priming com `--wrapper` (natural-core) | OK: alvo com resposta anterior capturada gera script com `natural_ajax_encode`; "primeiro" de H2/H3 segue recusado (respostas sem corpo) |
 
 Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captura ao vivo de 2026-10-29 (`live-final`); não foi refeita nesta rodada.
+
+## Rodada 9 — linha do tempo e validação da execução
+
+- **HEAD testado:** a37cd60 (`feat(priming): plan.hash calculado na geração por validate::plan_hash (sem hashlib no script)`)
+- **Data:** 2026-10-29
+- **Build:** `core` e `adapters/natural-ajax` (natural-core) recompilados em release antes da bateria.
+- **Dados:** sintéticos; HARs reais só em agregados.
+
+| Bateria | Resultado |
+|---|---|
+| run_acceptance (captura ao vivo `live-final`) | 10/10 OK |
+| check_bodies_search / check_chain_compare / check_real_shape | OK |
+| check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
+| check_priming_injection | OK; `hashlib` volta a ser proibido (import falha); `os` só em `trace_*`; 12 corridas não vazias por variante (completed com POSTs>0 ou falha declarada `priming:`) |
+| check_natural_adapter (sim `strict`) | OK |
+| check_timeline_validacao | OK: timeline com `event @ page` (incl. `init`) e proteção recolhida; validate equivalent/diverges nos 4 modos do sim; trace 0600 + sanitize; casos do revisor V1–V18 com o motivo esperado |
+| prove_strict (adapters/natural-ajax) | OK |
+| tests/exportacao | 19 passaram |
+| cargo test core / src-tauri / natural-ajax | 292 / 47 / 31 passaram, 0 falhas |
+| check_real_detran (H1–H3) | OK |
+| check_real_priming sem / com `--wrapper` (H1–H3) | OK / OK |
+
+Resultado: **tudo verde, 0 falhas.** Critério 9 do run_acceptance segue com a captura ao vivo de 2026-10-29 (`live-final`), não refeita nesta rodada.

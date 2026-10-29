@@ -2,13 +2,12 @@
  "payload": "__import__('os').system('touch <marcador>') + newline/aspas triplas/barra final/bidi/NUL",
  "cases": {
   "headers-latin1-hostis": {
-   "script_bytes": 22549,
+   "script_bytes": 22181,
    "static": {
     "imports": [
      "argparse",
      "base64",
      "datetime",
-     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -27,7 +26,6 @@
      "trace_error",
      "trace_exchange",
      "trace_open",
-     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
@@ -68,7 +66,6 @@
      "argparse",
      "base64",
      "datetime",
-     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -87,7 +84,6 @@
      "trace_error",
      "trace_exchange",
      "trace_open",
-     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
@@ -140,13 +136,12 @@
    }
   },
   "headers-com-newline-e-NUL": {
-   "script_bytes": 22603,
+   "script_bytes": 22235,
    "static": {
     "imports": [
      "argparse",
      "base64",
      "datetime",
-     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -165,7 +160,6 @@
      "trace_error",
      "trace_exchange",
      "trace_open",
-     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
@@ -206,7 +200,6 @@
      "argparse",
      "base64",
      "datetime",
-     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -225,7 +218,6 @@
      "trace_error",
      "trace_exchange",
      "trace_open",
-     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
@@ -278,13 +270,12 @@
    }
   },
   "headers-com-bidi": {
-   "script_bytes": 22573,
+   "script_bytes": 22205,
    "static": {
     "imports": [
      "argparse",
      "base64",
      "datetime",
-     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -303,7 +294,6 @@
      "trace_error",
      "trace_exchange",
      "trace_open",
-     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
@@ -344,7 +334,6 @@
      "argparse",
      "base64",
      "datetime",
-     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -363,7 +352,6 @@
      "trace_error",
      "trace_exchange",
      "trace_open",
-     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
