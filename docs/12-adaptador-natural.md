@@ -83,3 +83,17 @@ exato.
   nesse alvo.
 - O decodificador Python gerado é tão estrito quanto o Rust (escopo aberto
   no fim, par substituto cortado → erro).
+- Re-revisão em b0ce0f0: as 2 altas anteriores foram aprovadas. Decisões
+  novas: (1) nenhum valor com origem observada (forte ou possível) pode
+  virar literal. Se uma parte do adaptador tem produtor fora do plano, o
+  produtor entra no plano (mesma rodada, na ordem da sessão, junto da cadeia
+  base); se o produtor está fora da rodada ou sem corpo, a geração segue a
+  regra de incompletude. (2) Limite de operações por campo (≤ 200 mil) e
+  `Item` compacto: `l`×8 MiB < 500 MB. O app corta a visão em 2 000 partes
+  por campo ("N partes omitidas"). (3) As listas de nomes sensíveis/PII
+  passam a incluir abreviações: pwd, pass, psw, pswd, pin, otp, passcode,
+  seguranca, cookie, nm_*, aniversario, filiacao, logradouro, bairro,
+  titular, proprietario, razaosocial, conta, sexo. As mesmas listas valem nos
+  dois caminhos. (4) O wrapper conta a profundidade de re-execução por
+  variável de ambiente e recusa quando o fallback for ele mesmo. (5) `flag`
+  entra na lista de genéricos.
