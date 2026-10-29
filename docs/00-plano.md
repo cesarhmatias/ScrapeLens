@@ -63,7 +63,11 @@ App, Captura e Documentação) passaram para `opencode/deepseek-v4.1-flash-free`
 (esforço high), testado e respondendo. Vale a partir da próxima tarefa de cada
 um. Revisor e Líder sem mudança. Em 2026-10-29 03:14 a cota gratuita também
 acabou ("Free usage limit reached"); os executores voltaram para Sonnet 5.5 low,
-e as tarefas perdidas foram reenviadas. Sem substituição silenciosa de modelo.
+e as tarefas perdidas foram reenviadas. Em 2026-10-29 ~17h, a pedido do usuário, o Líder passou de Claude Opus 5.5
+para Grok 4.7 (high), e os 6 agentes em Sonnet (Core, Testes, App, Captura,
+Documentação e Revisor) passaram para `opencode-go/deepseek-v4.1-flash`
+(high), que voltou a responder (cota renovada; o free segue sem cota). A
+reserva automática é Claude Sonnet 5.5. Sem substituição silenciosa de modelo.
 
 Equipe (seção OpenBot "ScrapeLens"):
 
