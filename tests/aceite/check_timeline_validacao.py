@@ -211,6 +211,119 @@ def rv_cases():
     return cases
 
 
+def fuga_cases(core, wrapper, tmp, cap, trace_ok, target):
+    """Rodada 9 (39410bf): `parameters` só isenta o par (name, part) que o plano regenerado produz.
+
+    Sobre a trace AUTÊNTICA do detran-sim (mesma captura e alvo do validate), com o par forjado sob um nome
+    do plano: delta congelado/inventado + {cpf → XML.delta} DIVERGE; STAMP congelado/inventado + {cpf → STAMP}
+    DIVERGE; {sessionid_cliente → sig} só avisa "parâmetro não corresponde ao plano"; a trace fiel fica sem
+    aviso além da origem. Se algum caso só avisar, é falha do core: fica registrada, sem máscara.
+    """
+    info = INFO["parameters_fuga"] = {}
+    doc = json.loads(Path(trace_ok).read_text())
+    sess = json.loads((Path(cap) / "session.json").read_text(encoding="utf-8"))
+    attempt = next((a for q in sess.get("requests", []) if q.get("id") == target
+                    for a in q.get("attempts", [])), None)
+    body_ref = ((attempt or {}).get("requestBody") or {}).get("attachment")
+    cdelta = cstamp = None
+    if body_ref:
+        captured = (Path(cap) / "attachments" / body_ref).read_text(errors="replace")
+        m = re.search(r"x(\d{2})([^&]+)&", captured)
+        cdelta = m.group(2) if m else None
+        m = re.search(r"STAMP=(\d+)", captured)
+        cstamp = m.group(1) if m else None
+    info["valores_capturados"] = {"XML.delta": cdelta, "STAMP": cstamp}
+    if not check(bool(cdelta) and bool(cstamp), f"fuga: não achei delta/STAMP no corpo capturado de {target}"):
+        return
+
+    # passo mutado: o último POST do Connector com delta e STAMP (o alvo do fluxo, passo 10)
+    def last_step(d):
+        for i in range(len(d.get("steps", [])) - 1, -1, -1):
+            b = ((d["steps"][i].get("requestBody") or {}).get("text") or "")
+            if re.search(r"x\d{2}[^&]+&", b) and "STAMP=" in b:
+                return i
+        return None
+
+    def mutate(d, kind, value):
+        d = json.loads(json.dumps(d))
+        i = last_step(d)
+        if i is None:
+            return None
+        b = d["steps"][i]["requestBody"]["text"]
+        if kind == "delta":
+            m = re.search(r"x(\d{2})([^&]+)&", b)
+            b = b[:m.start()] + f"x{len(value):02d}{value}&" + b[m.end():]
+        else:
+            b = re.sub(r"STAMP=\d+", f"STAMP={value}", b)
+        d["steps"][i]["requestBody"]["text"] = b
+        return d
+
+    def with_param(d, name, part):
+        d = json.loads(json.dumps(d))
+        d.setdefault("parameters", []).append({"name": name, "part": part})
+        return d
+
+    def validate(doc2, label):
+        p = tmp / f"fuga-{label}.json"
+        p.write_text(json.dumps(doc2, ensure_ascii=False))
+        s = tmp / f"fuga-ses-{label}"
+        shutil.rmtree(s, ignore_errors=True)
+        ip = sh([core, "import-trace", p, "--out", s])
+        if not check(ip.returncode == 0,
+                     f"fuga {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
+            return None
+        v = sh([wrapper, "validate", cap, s, "--adapter", "natural-ajax"])
+        try:
+            return json.loads(v.stdout)
+        except Exception:
+            return None
+
+    # (e) trace fiel: nenhum aviso além da origem mapeada
+    base = validate(doc, "fiel")
+    if base is not None:
+        extra = [str(w) for w in base.get("warnings", []) if "origens de aplicação diferentes" not in str(w)]
+        info["fiel"] = {"verdict": base.get("verdict"), "avisos_alem_da_origem": extra}
+        check(base.get("verdict") == "equivalent" and not extra,
+              f"fuga: trace fiel deveria ser equivalent sem avisos além da origem; deu "
+              f"{base.get('verdict')!r} e {extra[:4]}")
+
+    casos = [
+        ("delta congelado", "delta", cdelta, "cpf", "XML.delta", r"congelad"),
+        ("delta inventado", "delta", "ZZZZ" + "0" * 8, "cpf", "XML.delta", r"sem origem|inventad"),
+        ("STAMP congelado", "stamp", cstamp, "cpf", "STAMP", r"congelad"),
+        ("STAMP inventado", "stamp", "9999", "cpf", "STAMP", r"sem origem|inventad"),
+    ]
+    for nome, kind, value, pname, part, motivo in casos:
+        d = mutate(doc, kind, value)
+        if d is None:
+            check(False, f"fuga {nome}: não achei passo com delta/STAMP no trace")
+            continue
+        v = validate(with_param(d, pname, part), nome.replace(" ", "-"))
+        if v is None:
+            continue
+        salvo = info[nome] = {"verdict": v.get("verdict"), "step": v.get("step"),
+                              "resumo": str(v.get("summary"))[:180],
+                              "avisos": [str(w) for w in v.get("warnings", [])]}
+        check(v.get("verdict") == "diverges",
+              f"fuga {nome} + {pname} → {part}: deveria DIVERGIR; deu {v.get('verdict')!r} "
+              f"({salvo['resumo']!r}) — parameters não pode isentar este par")
+        check(bool(re.search(motivo, json.dumps(v, ensure_ascii=False), re.I)),
+              f"fuga {nome}: motivo sem /{motivo}/: {salvo['resumo']!r}")
+        check(any(f"parâmetro não corresponde ao plano: {pname} → {part}" in w for w in salvo["avisos"]),
+              f"fuga {nome}: falta o aviso 'parâmetro não corresponde ao plano: {pname} → {part}': "
+              f"{salvo['avisos'][:5]}")
+
+    # aviso de par sob nome do plano que ele não produz: não isenta e não cala
+    v = validate(with_param(doc, "sessionid_cliente", "sig"), "sessionid-sig")
+    if v is not None:
+        avisos = [str(w) for w in v.get("warnings", [])]
+        info["sessionid_cliente_sig"] = {"verdict": v.get("verdict"), "avisos": avisos}
+        check(any("parâmetro não corresponde ao plano: sessionid_cliente → sig" in w for w in avisos),
+              f"fuga sessionid_cliente → sig: falta o aviso 'parâmetro não corresponde ao plano': {avisos[:5]}")
+        check(v.get("verdict") == "equivalent",
+              f"fuga sessionid_cliente → sig: sem valor trocado, deveria seguir equivalent; deu {v.get('verdict')!r}")
+
+
 def plan_cases(core, wrapper, tmp, cap, target, trace_path, val):
     """Rodada 9, onda B: plano versionado no trace (`plan.version` 2, validate::PLAN_VERSION).
 
@@ -467,6 +580,9 @@ def main():
         trace_ok = tmp / "trace-ok.json"
         if check(trace_ok.exists(), "plano: o trace do cenário ok não existe"):
             plan_cases(core, wrapper, tmp, cap, target, trace_ok, INFO["cenarios"].get("ok", {}).get("validate_doc"))
+        # ---- (6) `parameters` não isenta par que o plano não produz (39410bf)
+        if trace_ok.exists():
+            fuga_cases(core, wrapper, tmp, cap, trace_ok, target)
     finally:
         sim.terminate()
         shutil.rmtree(tmp, ignore_errors=True)

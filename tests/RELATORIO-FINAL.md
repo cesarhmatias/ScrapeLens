@@ -59,13 +59,13 @@ recusaram (rc 1); depois de `cargo build --release` a bateria inteira foi repeti
 
 Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captura ao vivo de 2026-10-29 (`live-final`); não foi refeita nesta rodada.
 
-## Rodada 9, onda B — bundle final e plano versionado
+## Rodada 9, onda B — bundle final, plano versionado e `parameters` sem isenção indevida
 
-- **HEAD testado:** 6d1e780 (`test(app): traces ok/403/incompleta no plan.version 2 e validação sem avisos espúrios`)
+- **HEAD testado:** 0d28d04 (`build(app): bundle recompilado no HEAD 39410bf (isenção de parameters por (name, part))`)
 - **Data:** 2026-10-29
 - **Build:** `core` e `adapters/natural-ajax` (natural-core) recompilados em release antes da bateria.
-- **Bundle aceito:** `860c2008e68948839b4e8851fd303a2e618707c491e7a76df365a2436fbdd690`
-  (16.365.856 bytes, arm64, ad-hoc), conferido por `shasum -a 256` no executável do `.app`; `tests/aceite/run_acceptance.py`
+- **Bundle aceito:** `a4fe000af5e94a1a25c4146b2e58e94cdc410268850c2ee341429e01dbe313e9`
+  (16.371.376 bytes, arm64, ad-hoc), conferido por `shasum -a 256` no executável do `.app`; `tests/aceite/run_acceptance.py`
   (`EXPECTED_APP_SHA256`) e `src-tauri/EMPACOTAMENTO.md` apontam o mesmo hash.
 - **Dados:** sintéticos; HARs reais (H1–H3) só em agregados.
 
@@ -74,27 +74,37 @@ Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captu
 | run_acceptance (10 critérios, com `app-latest`) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 asserções, 0 falhas) |
 | check_bodies_search / check_chain_compare / check_real_shape | OK (5 casos / OK / OK) |
 | check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
-| check_priming_injection | OK; `hashlib` proibido de novo (o script usa `PLAN_HASH`); `os` só em `trace_*`; 12 corridas não vazias por variante |
+| check_priming_injection | OK; `hashlib` proibido (o script usa `PLAN_HASH`); `os` só em `trace_*`; 12 corridas não vazias por variante |
 | check_natural_adapter (sim `strict`) | OK |
-| check_timeline_validacao | OK, incluindo os casos novos de `plan.version` (abaixo) |
+| check_timeline_validacao | OK, com `plan.version` e os casos de fuga de `parameters` (abaixo) |
 | prove_strict (adapters/natural-ajax) | OK, `fails: []` |
 | tests/exportacao | 19 passaram, 0 falhas |
-| cargo test core / src-tauri / natural-ajax | 295 / 48 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
+| cargo test core / src-tauri / natural-ajax | 297 / 48 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
 | check_real_detran (H1–H3) | OK |
 | check_real_priming sem / com `--wrapper` (H1–H3) | OK / OK |
 
-**Ciclo real do app refeito no bundle final.** `Iniciar sessão` → `Encerrar` no `ScrapeLens.app` 860c2008:
-captura `capture-1793297106302`, 11 requisições, `complete`, `cdp+netlog`, 2 ambíguas, 153 headers verificados,
-14 linhas no testserver h1; HAR e NetLog reimportados pela UI no mesmo bundle (`har-3dbc391c02a985c5-3`, 24 requisições
-complete, e `netlog-1704043c442dcbd1-3`, 32 requisições partial, como no ciclo anterior). Prints novos em
+**Ciclo real do app refeito no bundle final.** `Iniciar sessão` → `Encerrar` no `ScrapeLens.app` a4fe000a:
+captura `capture-1793300173556`, 11 requisições, `complete`, `cdp+netlog`, 2 ambíguas, 154 headers verificados,
+14 linhas no testserver h1; HAR e NetLog reimportados pela UI no mesmo bundle (`har-3dbc391c02a985c5-4`, 24 requisições
+complete, e `netlog-1704043c442dcbd1-4`, 32 requisições partial). Prints novos em
 `tests/results/app-latest/screenshot-app-live.png` e `screenshot-app-imports.png`; `run.json` regenerado por
-`tests/capture/app_validate.py` (bundle novo, sessões novas, `testserver/app-20261029`).
+`tests/capture/app_validate.py` (bundle novo, sessões novas, `testserver/app-20261029b`).
 
 **Plano versionado (`plan.version` 2) no `check_timeline_validacao`:**
 - trace fiel gerado pelo script atual declara `plan.version: 2` → `equivalent`, ZERO avisos de parâmetro ou de plano;
 - `plan.version` ausente → `equivalent` + aviso "plano de versão anterior (v1): gere o script de novo…", sem divergir;
 - `plan.version: 2` com o `PLAN_HASH` de outro alvo da MESMA captura (har-0030, `26fdb4657a22511f`) → `diverges`
   no passo 1, "plano diferente do gerado a partir desta captura" (não ficou em aviso).
+
+**Fuga de `parameters` (39410bf): a isenção vale só para o par (name, part) que o plano produz.**
+Sobre a trace autêntica do detran-sim (captura `real-shape-1round`, alvo har-0026; delta capturado `DLTC0005`,
+STAMP `4105`), com o par forjado sob um nome do plano:
+- delta congelado + `{cpf → XML.delta}` → `diverges` no passo 10, "valor congelado: igual ao capturado e ausente da resposta pareada";
+- delta inventado + o mesmo item → `diverges`, "valor sem origem no trace";
+- STAMP congelado ou inventado + `{cpf → STAMP}` → `diverges` nos dois, com "valor congelado" e "sem origem";
+- `{sessionid_cliente → sig}` → só aviso "parâmetro não corresponde ao plano: sessionid_cliente → sig", `equivalent`;
+- trace fiel → `equivalent`, nenhum aviso além do de origem mapeada.
+- Em todos os casos de fuga o aviso "parâmetro não corresponde ao plano: <name> → <part>" também aparece; nada ficou em aviso.
 
 Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa `tests/results/app-latest` regenerado nesta
 rodada; a captura `live-final` de 2026-10-29 segue como evidência do ciclo CDP/NetLog do `run-cycle.sh`.

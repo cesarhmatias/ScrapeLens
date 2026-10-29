@@ -626,5 +626,63 @@
    ]
   }
  },
+ "parameters_fuga": {
+  "valores_capturados": {
+   "XML.delta": "DLTC0005",
+   "STAMP": "4105"
+  },
+  "fiel": {
+   "verdict": "equivalent",
+   "avisos_alem_da_origem": []
+  },
+  "delta congelado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `XML.delta`: valor congelado: igual ao capturado e ausente da resposta pareada) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "parâmetro inválido: `XML.delta` tem origem na captura",
+    "parâmetro não corresponde ao plano: cpf → XML.delta"
+   ]
+  },
+  "delta inventado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `XML.delta`: valor sem origem no trace (não veio de resposta anterior)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "parâmetro inválido: `XML.delta` tem origem na captura",
+    "parâmetro não corresponde ao plano: cpf → XML.delta"
+   ]
+  },
+  "STAMP congelado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `STAMP`: valor congelado: igual ao capturado e ausente da resposta pareada) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "parâmetro inválido: `STAMP` tem origem na captura",
+    "parâmetro não corresponde ao plano: cpf → STAMP"
+   ]
+  },
+  "STAMP inventado": {
+   "verdict": "diverges",
+   "step": 10,
+   "resumo": "diverge no passo 10 (body `STAMP`: valor sem origem no trace (não veio de resposta anterior)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "parâmetro inválido: `STAMP` tem origem na captura",
+    "parâmetro não corresponde ao plano: cpf → STAMP"
+   ]
+  },
+  "sessionid_cliente_sig": {
+   "verdict": "equivalent",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "parâmetro inválido: `sig` não existe nos passos pareados da captura",
+    "parâmetro não corresponde ao plano: sessionid_cliente → sig"
+   ]
+  }
+ },
  "fails": []
 }

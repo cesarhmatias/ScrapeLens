@@ -1,6 +1,6 @@
 # Relatório de aceite — ScrapeLens MVP
 
-Execução: 2026-10-29T18:09:32Z · binário do core `8631c8093f1b` (3700064 bytes) · commit `6d1e780`
+Execução: 2026-10-29T19:10:10Z · binário do core `e7bc76ce83bd` (3714112 bytes) · commit `0d28d04`
 
 Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 
@@ -24,8 +24,8 @@ Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/inc
 Escopo das evidências:
 
 - Novo nesta rodada: captura CLI `tests/capture/runs/live-final` (2026-10-29T04:20:57Z), com os dois legs (h1h2 e h3) e o HAR derivado do CDP.
-- Novo nesta rodada: sessão ao vivo `capture-1793297106302` iniciada e encerrada pelo bundle final (`860c2008e689`).
-- Novo nesta rodada: importações HAR/NetLog pela UI do bundle final (har `har-3dbc391c02a985c5-3`, netlog `netlog-1704043c442dcbd1-3`), com seleção manual do usuário e verificação por SHA-256/sequência contra os arquivos preparados em `~/Projects/scrapelens-import-tmp`.
+- Novo nesta rodada: sessão ao vivo `capture-1793300173556` iniciada e encerrada pelo bundle final (`a4fe000af5e9`).
+- Novo nesta rodada: importações HAR/NetLog pela UI do bundle final (har `har-3dbc391c02a985c5-4`, netlog `netlog-1704043c442dcbd1-4`), com seleção manual do usuário e verificação por SHA-256/sequência contra os arquivos preparados em `~/Projects/scrapelens-import-tmp`.
 
 ## 1. Headers repetidos e cookies preservados nas fixtures — aprovado
 
@@ -35,7 +35,7 @@ Evidência:
 - `scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`
 - asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte
 
-Asserções: 29 passaram, 0 falharam (0.08 s).
+Asserções: 29 passaram, 0 falharam (0.09 s).
 
 ## 2. HAR e NetLog válidos, incompletos e com eventos desconhecidos — aprovado
 
@@ -50,7 +50,7 @@ Evidência:
 
 > Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos.
 
-Asserções: 26 passaram, 0 falharam (0.15 s).
+Asserções: 26 passaram, 0 falharam (0.18 s).
 
 ## 3. Requisições simultâneas idênticas sem associação falsa — aprovado
 
@@ -64,7 +64,7 @@ Evidência:
 
 > Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`.
 
-Asserções: 19 passaram, 0 falharam (0.05 s).
+Asserções: 19 passaram, 0 falharam (0.06 s).
 
 ## 4. Redirects e múltiplas tentativas — aprovado
 
@@ -126,7 +126,7 @@ Asserções: 19 passaram, 0 falharam (0.04 s).
 Evidência:
 
 - execução real: `tests/capture/runs/live-final` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`
-- app empacotado: `ScrapeLens.app` 16.32 MiB, arm64, ad-hoc, binário único, executável `860c2008e68948839b4e8851fd303a2e618707c491e7a76df365a2436fbdd690`; captura ao vivo capture-1793297106302 (11 req, 153 headers verificados, 2 ambíguas); importação HAR pela UI `har-3dbc391c02a985c5-3` (24 req, ['h1', 'h2'], 24 sourceEvents); importação NetLog pela UI `netlog-1704043c442dcbd1-3` (32 req, ['h1', 'h2', 'h3', 'unknown'], 15 StreamSessions, 5354 sourceEvents).
+- app empacotado: `ScrapeLens.app` 16.33 MiB, arm64, ad-hoc, binário único, executável `a4fe000af5e94a1a25c4146b2e58e94cdc410268850c2ee341429e01dbe313e9`; captura ao vivo capture-1793300173556 (11 req, 154 headers verificados, 2 ambíguas); importação HAR pela UI `har-3dbc391c02a985c5-4` (24 req, ['h1', 'h2'], 24 sourceEvents); importação NetLog pela UI `netlog-1704043c442dcbd1-4` (32 req, ['h1', 'h2', 'h3', 'unknown'], 15 StreamSessions, 5354 sourceEvents).
 - sessões reais do app: `/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions` · prints `tests/results/app-latest/screenshot-app-live.png` e `tests/results/app-latest/screenshot-app-imports.png`
 - CLI: Chrome 156.0.8078.73; 27 requisições; 14 StreamSessions h3; 2 ambíguas; redirects=6
 
@@ -136,9 +136,9 @@ Evidência:
 
 > O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.
 
-> Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`860c2008e689`, compilado em 2026-10-29 14:56 UTC−03 com o core até `6d1e780`, incluindo `ea03ee5`/`fa23279`/`f5ea46d`); a sessão ao vivo acima é nova, não reaproveitada.
+> Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`a4fe000af5e9`, compilado em 2026-10-29 15:50 UTC−03 com o core até `39410bf`, incluindo `ea03ee5`/`fa23279`/`f5ea46d`); a sessão ao vivo acima é nova, não reaproveitada.
 
-> As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-3` e `netlog-1704043c442dcbd1-3`), agora pela UI: o usuário selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão.
+> As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-4` e `netlog-1704043c442dcbd1-4`), agora pela UI: o usuário selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão.
 
 Asserções: 118 passaram, 0 falharam (0.11 s).
 
@@ -146,9 +146,9 @@ Asserções: 118 passaram, 0 falharam (0.11 s).
 
 Evidência:
 
-- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.07 s, pico 821 MiB RSS
+- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.15 s, pico 819 MiB RSS
 - sessão gravada: session.json 236.3 MiB
-- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.12 s, pico 1595 MiB RSS
+- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.08 s, pico 1595 MiB RSS
 - complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB
 
 > HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).
@@ -157,7 +157,7 @@ Evidência:
 
 > Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.
 
-Asserções: 7 passaram, 0 falharam (9.67 s).
+Asserções: 7 passaram, 0 falharam (9.75 s).
 
 ## Como reproduzir
 
