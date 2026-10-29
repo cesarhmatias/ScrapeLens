@@ -347,3 +347,23 @@ fn generic_last_component_of_adapter_part_is_only_possible() {
     assert_eq!(get("XML.p.flag").confidence, Some(Confidence::Possible));
     assert_eq!(get("XML.delta").confidence, Some(Confidence::Strong));
 }
+
+#[test]
+fn compare_resolves_the_origin_of_adapter_parts() {
+    let a = flow("D3LTA-0001", "ABC1D23");
+    let b = flow("D3LTA-0002", "QWE9R88");
+    let options = CompareOptions {
+        flow: registry(),
+        ..CompareOptions::default()
+    };
+    let r = compare_sessions(&a.session, &a, &b.session, &b, &options);
+    let delta = r
+        .pairs
+        .iter()
+        .flat_map(|p| p.fields.iter())
+        .find(|f| {
+            f.field == "XML.delta" && f.class == scrapelens_core::compare::FieldClass::Dynamic
+        })
+        .expect("XML.delta dinâmico");
+    assert!(delta.origin.is_some(), "{delta:?}");
+}

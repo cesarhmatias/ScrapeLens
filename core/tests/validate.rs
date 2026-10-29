@@ -244,3 +244,32 @@ fn constant_field_that_changed_is_unexpected() {
         v.steps[2]
     );
 }
+
+#[test]
+fn declared_user_parameters_are_expected_differences() {
+    let cap = bundle(CAP, "AAAA1111", Some(200), true, false);
+    let steps = |with_params: bool| {
+        let mut t = json!({"schema":"scrapelens.trace/1","steps":[
+            step(TR, "GET", "/app/entry", None, Some(200), "<html>entry</html>"),
+            step(TR, "POST", "/app/Connector", Some("OP=init&STAMP=INIT"), Some(200), "OP=ok&STAMP=BBBB2222"),
+            step(TR, "POST", "/app/Connector", Some("OP=consulta&STAMP=BBBB2222&PLACA=ZZZ9Z99"), Some(200), "OP=ok&STAMP=99"),
+        ]});
+        if with_params {
+            t["parameters"] = json!([{"name":"placa","part":"PLACA"}]);
+        }
+        import_trace(&serde_json::to_vec(&t).unwrap())
+            .unwrap()
+            .bundle
+    };
+    let v = run(&cap, &steps(false), None);
+    assert_eq!(v.verdict, ValidationVerdict::Diverges);
+    let v = run(&cap, &steps(true), None);
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(v.steps[2]
+        .expected
+        .iter()
+        .any(|n| n.reason.contains("parâmetro do usuário")));
+    // esquema: parameters malformado é erro claro
+    let bad = json!({"schema":"scrapelens.trace/1","parameters":[{}],"steps":[]});
+    assert!(import_trace(&serde_json::to_vec(&bad).unwrap()).is_err());
+}

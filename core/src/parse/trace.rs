@@ -8,6 +8,10 @@
 //!   "schema": "scrapelens.trace/1",            // obrigatório, exato
 //!   "generator": "scrapelens-priming 1.0",     // opcional
 //!   "startedAt": "2026-10-29T12:00:00Z",       // opcional, ISO-8601 UTC
+//!   "parameters": [ {"name":"placa","part":"XML.p.v_placa"} ],  // opcional: entradas do
+//!                                              // usuário do script, SEM valores; `part` =
+//!                                              // nome interno (parte de adaptador) ou campo
+//!                                              // do form/query; sem `part`, vale `name`
 //!   "steps": [                                 // obrigatório; ordem de execução
 //!     {
 //!       "method": "POST",                      // obrigatório
@@ -55,6 +59,9 @@ type StepNotes = (
     Vec<String>,
     Option<String>,
 );
+
+/// Prefixo das notas de sessão que carregam os parâmetros do usuário do trace.
+pub const PARAM_NOTE_PREFIX: &str = "trace-param: ";
 
 pub const MAX_STEPS: usize = 100_000;
 
@@ -302,6 +309,28 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
     let session = &mut imported.bundle.session;
     if !session.session.labels.iter().any(|l| l == TRACE_LABEL) {
         session.session.labels.push(TRACE_LABEL.to_string());
+    }
+    if let Some(params) = root.get("parameters").filter(|v| !v.is_null()) {
+        let list = params
+            .as_array()
+            .ok_or_else(|| bad("parameters não é lista"))?;
+        for (n, p) in list.iter().enumerate() {
+            let name = p
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            let part = p
+                .get("part")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            let Some(part) = part.or(name) else {
+                return Err(bad(format!("parameters[{n}] precisa de name ou part")));
+            };
+            session
+                .session
+                .notes
+                .push(format!("{PARAM_NOTE_PREFIX}{part}"));
+        }
     }
     session.session.notes.push(
         "fonte: execução do script (scrapelens.trace/1); headers sem garantia de ordem do fio"

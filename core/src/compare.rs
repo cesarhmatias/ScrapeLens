@@ -1154,7 +1154,10 @@ fn compare_pair(
                 .unwrap_or_default();
             let entry = origins.as_ref().and_then(|o| {
                 o.values.iter().find(|v| {
-                    v.parent.is_none()
+                    // parte de adaptador (`XML.delta`) vale; trecho solto de campo opaco não
+                    v.parent
+                        .as_ref()
+                        .map_or(true, |p| v.field.starts_with(&format!("{p}.")))
                         && v.scope == diff.scope
                         && v.occurrence == diff.occurrence
                         && field_key(v.scope, &v.field, v.occurrence)

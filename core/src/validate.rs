@@ -141,6 +141,13 @@ pub fn validate(
             .any(|w| w.code == "trace.step_error" && w.entity.as_deref() == Some(id))
     };
 
+    // parâmetros do usuário declarados no trace (nomes, sem valores)
+    let params: Vec<&str> = trace
+        .session
+        .notes
+        .iter()
+        .filter_map(|n| n.strip_prefix(crate::parse::trace::PARAM_NOTE_PREFIX))
+        .collect();
     let mut steps: Vec<StepValidation> = Vec::new();
     let mut seen: std::collections::BTreeSet<String> = Default::default();
     for pair in &cmp.pairs {
@@ -159,8 +166,12 @@ pub fn validate(
             };
             let env = f.scope == ConsumedScope::Cookie
                 || (f.scope == ConsumedScope::Header && env_header(&f.field));
+            let is_param = |name: &str| params.iter().any(|p| p.eq_ignore_ascii_case(name));
             match f.class {
                 FieldClass::Static | FieldClass::Redacted => {}
+                _ if is_param(&f.field) => {
+                    expected.push(note("esperado (parâmetro do usuário)"));
+                }
                 FieldClass::Dynamic => {
                     let composite_dynamic = !f.parts.is_empty();
                     if env {
