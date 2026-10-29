@@ -137,6 +137,75 @@ const SENSITIVE_WORDS: &[&str] = &[
 /// Palavras curtas demais para casar por substring (`rg` em `target`): só
 /// valem como palavra inteira do nome (`rg`, `user_rg`, `sid`, `jsid`).
 const SENSITIVE_SHORT_WORDS: &[&str] = &["rg", "sid", "sessid", "jsid", "tel", "fone"];
+/// Abreviações e termos de PII/credencial, só como palavra inteira do nome
+/// (`v_pass` sim, `v_passo` não). Valem com e sem adaptador.
+const SENSITIVE_ABBREVIATIONS: &[&str] = &[
+    "pwd",
+    "pass",
+    "psw",
+    "pswd",
+    "pin",
+    "otp",
+    "passcode",
+    "seguranca",
+    "cookie",
+    "nm",
+    "aniversario",
+    "filiacao",
+    "logradouro",
+    "bairro",
+    "titular",
+    "proprietario",
+    "razaosocial",
+    "conta",
+    "sexo",
+    "mail",
+    "cidade",
+];
+/// Termos longos o bastante para casar como substring (`codSeguranca`).
+const SENSITIVE_LONG_TERMS: &[&str] = &[
+    "seguranca",
+    "aniversario",
+    "filiacao",
+    "logradouro",
+    "proprietario",
+    "razaosocial",
+    "passcode",
+    "passaporte",
+];
+
+/// Palavras de um nome: separadores não alfanuméricos e fronteiras camelCase.
+fn name_words(name: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut prev_lower = false;
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+            prev_lower = false;
+            continue;
+        }
+        if c.is_ascii_uppercase() && prev_lower && !current.is_empty() {
+            words.push(std::mem::take(&mut current));
+        }
+        prev_lower = c.is_ascii_lowercase();
+        current.push(c.to_ascii_lowercase());
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+fn has_sensitive_abbreviation(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    SENSITIVE_LONG_TERMS.iter().any(|t| lower.contains(t))
+        || name_words(name)
+            .iter()
+            .any(|w| SENSITIVE_ABBREVIATIONS.contains(&w.as_str()))
+}
 
 /// Literal Python ASCII com aspas simples; nada além de `[ -~]` sai cru.
 fn lit(text: &str) -> String {
@@ -189,6 +258,7 @@ fn is_sensitive_name(name: &str) -> bool {
     lower
         .split(|c: char| !c.is_ascii_alphanumeric())
         .any(|word| SENSITIVE_SHORT_WORDS.contains(&word))
+        || has_sensitive_abbreviation(name)
 }
 
 fn is_plate_at(b: &[u8], i: usize) -> bool {
@@ -324,14 +394,19 @@ fn adapter_chain_expr(
 ) -> Option<String> {
     use crate::adapter::PartRole;
     let decoder = &opts.adapter_encoders[encoder_index].decoder;
-    if decoder.is_empty() || value.len() < 4 || looks_sensitive_value(value) || contains_pii(value)
+    if decoder.is_empty() || value.is_empty() || looks_sensitive_value(value) || contains_pii(value)
     {
         return None;
     }
-    let dynamic = value.bytes().any(|b| b.is_ascii_digit()) || value.len() >= 8;
-    if !dynamic {
-        return None;
-    }
+    // Mesmo nome de parte: o valor igual já basta, por menor que seja. Sem
+    // o mesmo nome, só valores com cara de dinâmicos.
+    let dynamic =
+        value.len() >= 4 && (value.bytes().any(|b| b.is_ascii_digit()) || value.len() >= 8);
+    // `XML.p.v_ctr` → `p.v_ctr`: o nome da parte relativo ao campo.
+    let part_name_in_field = part_name
+        .strip_prefix(field)
+        .and_then(|rest| rest.strip_prefix('.'))
+        .unwrap_or(part_name);
     let pos = gen.steps.iter().position(|id| id == &request.id)?;
     let who = lit(&Gen::who(request, part_name));
     let previous: Vec<String> = gen.steps[..pos].to_vec();
@@ -355,7 +430,14 @@ fn adapter_chain_expr(
                 .iter()
                 .filter(|p| matches!(p.role, PartRole::Value | PartRole::Delta))
                 .collect();
-            let Some(hit) = candidates.iter().find(|p| p.value == value) else {
+            let same_name = candidates
+                .iter()
+                .find(|p| p.value == value && p.name == part_name_in_field);
+            let Some(hit) = same_name.or_else(|| {
+                dynamic
+                    .then(|| candidates.iter().find(|p| p.value == value))
+                    .flatten()
+            }) else {
                 continue;
             };
             let nth = candidates
@@ -2056,6 +2138,7 @@ fn is_pii_name(name: &str) -> bool {
         || lower
             .split(|c: char| !c.is_ascii_alphanumeric())
             .any(|word| matches!(word, "rg" | "tel" | "fone"))
+        || has_sensitive_abbreviation(name)
 }
 
 fn contains_pii(text: &str) -> bool {
@@ -2400,7 +2483,39 @@ pub fn to_python(
         adapters: Default::default(),
         ..opts.flow.clone()
     };
-    let chain = priming_chain(session, source, target_request_id, &chain_flow)?;
+    let mut chain = priming_chain(session, source, target_request_id, &chain_flow)?;
+    // Produtores das PARTES do adaptador que ficaram fora da cadeia base e
+    // são da mesma rodada (a partir do primeiro passo base) entram no plano,
+    // na ordem da sessão: nenhum valor com origem observada vira literal só
+    // porque o produtor não estava no plano. Produtores de rodadas anteriores
+    // ficam de fora (regra da rodada 7).
+    if !opts.flow.adapters.is_empty() {
+        if let Ok(with_parts) = priming_chain(session, source, target_request_id, &opts.flow) {
+            let base_start = chain
+                .steps
+                .iter()
+                .filter_map(|s| s.started_at)
+                .fold(f64::INFINITY, f64::min);
+            let known: HashSet<String> = chain.steps.iter().map(|s| s.request_id.clone()).collect();
+            let extras: Vec<_> = with_parts
+                .steps
+                .into_iter()
+                .filter(|s| {
+                    !known.contains(&s.request_id)
+                        && s.request_id != target_request_id
+                        && s.started_at.is_some_and(|t| t >= base_start)
+                })
+                .collect();
+            if !extras.is_empty() {
+                chain.steps.extend(extras);
+                chain.steps.sort_by(|a, b| {
+                    a.started_at
+                        .unwrap_or(f64::INFINITY)
+                        .total_cmp(&b.started_at.unwrap_or(f64::INFINITY))
+                });
+            }
+        }
+    }
     let missing = missing_body_dependencies(&chain);
     if !missing.is_empty() && !opts.allow_incomplete {
         return Err(incomplete_chain_error(&missing));

@@ -467,3 +467,50 @@ print(json.dumps({{'ok': res, 'secs': time.time() - t, 'rss_mb': rss / (1024 * 1
     assert!(python["secs"].as_f64().unwrap() < 1.0, "{python}");
     assert!(python["rss_mb"].as_f64().unwrap() < 100.0, "{python}");
 }
+
+#[test]
+fn python_decoder_refuses_too_many_operations_within_memory() {
+    use scrapelens_natural_ajax::PYTHON_DECODER;
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("d.py");
+    let input = dir.path().join("in.json");
+    std::fs::write(
+        &script,
+        format!(
+            r#"
+import json, sys, time, resource
+def fail(message):
+    raise SystemExit('priming: ' + message)
+{PYTHON_ENCODER}
+texts = json.load(open(sys.argv[1], encoding='utf-8'))
+res = []
+t = time.time()
+for text in texts:
+    try:
+        {PYTHON_DECODER}(text); res.append(True)
+    except SystemExit:
+        res.append(False)
+rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+print(json.dumps({{'ok': res, 'secs': time.time() - t, 'rss_mb': rss / (1024 * 1024 if sys.platform == 'darwin' else 1024)}}))
+"#
+        ),
+    )
+    .unwrap();
+    let big = "l".repeat(8 * 1024 * 1024);
+    let ok = "l".repeat(200_000 - 1);
+    std::fs::write(&input, serde_json::to_string(&[big, ok]).unwrap()).unwrap();
+    let out = Command::new("python3")
+        .arg("-I")
+        .arg(&script)
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let j: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(j["ok"], serde_json::json!([false, true]));
+    assert!(j["rss_mb"].as_f64().unwrap() < 500.0, "{j}");
+}

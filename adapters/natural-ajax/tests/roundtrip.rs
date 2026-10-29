@@ -161,3 +161,30 @@ fn parse_cost_is_linear() {
     assert_eq!(grammar::serialize(&ops).unwrap(), text);
     assert!(start.elapsed().as_secs_f64() < 2.0, "{:?}", start.elapsed());
 }
+
+fn rss_mb() -> f64 {
+    let out = std::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse::<f64>()
+        .unwrap_or(0.0)
+        / 1024.0
+}
+
+#[test]
+fn operation_limit_bounds_time_and_memory() {
+    // `l`×8 MiB: recusado pelo limite de operações, sem estourar memória.
+    let text = "l".repeat(8 * 1024 * 1024);
+    let start = std::time::Instant::now();
+    assert!(grammar::parse(&text).is_err());
+    assert!(NaturalAjax.decode(&text).is_err());
+    assert!(start.elapsed().as_secs_f64() < 2.0, "{:?}", start.elapsed());
+    assert!(rss_mb() < 500.0, "{} MB", rss_mb());
+    // Logo abaixo do limite ainda funciona.
+    let ok = "l".repeat(grammar::MAX_OPS);
+    assert_eq!(grammar::parse(&ok).unwrap().len(), grammar::MAX_OPS);
+    assert!(grammar::parse(&format!("{ok}l")).is_err());
+}

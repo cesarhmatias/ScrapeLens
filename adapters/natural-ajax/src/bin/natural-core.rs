@@ -16,23 +16,42 @@ use scrapelens_natural_ajax::{
     NaturalAjax, ADAPTER_ID, PYTHON_DECODER, PYTHON_ENCODER, PYTHON_FUNCTION,
 };
 
-fn core_binary() -> PathBuf {
-    // Nunca devolve o próprio wrapper (um SCRAPELENS_CORE_BIN apontando para
-    // ele geraria recursão infinita de processos).
+/// Procura `name` no PATH (quando não é caminho).
+fn resolve_in_path(path: PathBuf) -> Option<PathBuf> {
+    if path.components().count() > 1 {
+        return path.is_file().then_some(path);
+    }
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(&path))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+/// O `scrapelens-core` que recebe os subcomandos repassados. Nunca devolve o
+/// próprio wrapper (variável de ambiente, vizinho ou PATH que resolvam para
+/// ele), o que geraria recursão infinita de processos.
+fn core_binary() -> Result<PathBuf, String> {
     let me = std::env::current_exe().and_then(|p| p.canonicalize()).ok();
     let is_me = |path: &PathBuf| path.canonicalize().ok().is_some_and(|p| Some(p) == me);
-    if let Some(path) = std::env::var_os("SCRAPELENS_CORE_BIN") {
+    if let Some(path) = std::env::var_os("SCRAPELENS_CORE_BIN").filter(|v| !v.is_empty()) {
         let path = PathBuf::from(path);
         if !is_me(&path) {
-            return path;
+            return Ok(path);
         }
     }
     let sibling =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../core/target/release/scrapelens-core");
     if sibling.is_file() && !is_me(&sibling) {
-        sibling
-    } else {
-        PathBuf::from("scrapelens-core")
+        return Ok(sibling);
+    }
+    match resolve_in_path(PathBuf::from("scrapelens-core")) {
+        Some(found) if !is_me(&found) => Ok(found),
+        Some(_) => Err(
+            "o scrapelens-core encontrado é este próprio wrapper; defina SCRAPELENS_CORE_BIN"
+                .into(),
+        ),
+        None => Err("scrapelens-core não encontrado; defina SCRAPELENS_CORE_BIN".into()),
     }
 }
 
@@ -311,7 +330,27 @@ fn main() -> ExitCode {
             }
         };
     }
-    match Command::new(core_binary()).args(&args).status() {
+    // Profundidade de re-execução: o repasse ao core acontece no máximo uma vez.
+    let depth: u32 = std::env::var("NATURAL_CORE_DEPTH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    if depth >= 1 {
+        eprintln!("erro: recursão de re-execução recusada (NATURAL_CORE_DEPTH={depth})");
+        return ExitCode::from(1);
+    }
+    let core = match core_binary() {
+        Ok(core) => core,
+        Err(message) => {
+            eprintln!("erro: {message}");
+            return ExitCode::from(1);
+        }
+    };
+    match Command::new(core)
+        .env("NATURAL_CORE_DEPTH", (depth + 1).to_string())
+        .args(&args)
+        .status()
+    {
         Ok(status) => ExitCode::from(status.code().unwrap_or(1) as u8),
         Err(e) => {
             eprintln!("erro: não consegui executar o scrapelens-core: {e}");

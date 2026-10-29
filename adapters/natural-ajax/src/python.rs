@@ -76,10 +76,14 @@ _NATURAL_HEAD = (('sid', 'V'), ('pid', 'V'), ('empty', 'S'), ('model', 'V'), ('d
 def natural_ajax_decode(text):
     if len(text.encode('utf-8', 'surrogatepass')) > 8 * 1024 * 1024:
         fail('protocolo Natural: limite excedido: mensagem grande demais')
-    raw = text.encode('utf-16-le', 'surrogatepass')
-    s = ''.join(chr(int.from_bytes(raw[i:i + 2], 'little')) for i in range(0, len(raw), 2))
+    if text.isascii():
+        s = text
+    else:
+        raw = text.encode('utf-16-le', 'surrogatepass')
+        s = ''.join(chr(int.from_bytes(raw[i:i + 2], 'little')) for i in range(0, len(raw), 2))
     state = {'pos': 0}
     parts, marks, names = [], [], {}
+    ops = 0
     prefix = ''
 
     def uni(v):
@@ -104,11 +108,15 @@ def natural_ajax_decode(text):
 
     if s[:1] in ('i', 'v'):
         parts.append(('op', 'S', s[0]))
+        ops = 1
         state['pos'] = 1
         lens = [number(w) for w in (2, 2, 2, 2, 2, 3, 5, 1)]
         for (name, role), n in zip(_NATURAL_HEAD, lens):
             parts.append((name, role, uni(take(n))))
     while state['pos'] < len(s):
+        ops += 1
+        if ops > 200000:
+            fail('protocolo Natural: limite excedido: operações demais')
         op = take(1)
         if op == 'l':
             parts.append(('op', 'S', 'l'))

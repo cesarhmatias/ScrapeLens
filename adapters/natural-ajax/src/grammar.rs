@@ -38,6 +38,8 @@ pub const MAX_KEYS: usize = 10_000;
 pub const MAX_PATH: usize = 512;
 /// Tamanho máximo do texto reivindicado/decodificado (bytes).
 pub const MAX_INPUT: usize = 8 * 1024 * 1024;
+/// Operações máximas por campo.
+pub const MAX_OPS: usize = 200_000;
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -106,8 +108,8 @@ pub struct Item {
 struct Units {
     units: Vec<u16>,
     /// `byte[i]` = byte do original em que a unidade `i` começa;
-    /// `usize::MAX` marca a segunda metade de um par substituto.
-    byte: Vec<usize>,
+    /// `u32::MAX` marca a segunda metade de um par substituto.
+    byte: Vec<u32>,
 }
 
 impl Units {
@@ -119,10 +121,10 @@ impl Units {
             let encoded = c.encode_utf16(&mut buf);
             for (i, u) in encoded.iter().enumerate() {
                 units.push(*u);
-                byte.push(if i == 0 { at } else { usize::MAX });
+                byte.push(if i == 0 { at as u32 } else { u32::MAX });
             }
         }
-        byte.push(text.len());
+        byte.push(text.len() as u32);
         Units { units, byte }
     }
 }
@@ -134,7 +136,10 @@ struct Cursor<'a> {
 
 impl Cursor<'_> {
     fn byte_at(&self, unit: usize) -> usize {
-        self.u.byte[unit]
+        match self.u.byte[unit] {
+            u32::MAX => usize::MAX,
+            b => b as usize,
+        }
     }
 
     /// Consome `n` unidades; devolve o texto e os bytes (início, fim).
@@ -229,6 +234,9 @@ pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
     }
 
     while cur.pos < units.units.len() {
+        if out.len() >= MAX_OPS {
+            return Err(Error::Limit("operações demais"));
+        }
         let start = cur.byte_at(cur.pos);
         let (op_text, _, _) = cur.take(1)?;
         let op = op_text.chars().next().ok_or(Error::Truncated)?;

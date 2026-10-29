@@ -396,3 +396,139 @@ fn adapter_never_worsens_coverage_on_second_round_targets() {
     }
     assert!(compared >= 4, "poucos alvos comparados: {compared}");
 }
+
+fn same_round_session() -> (scrapelens_core::lazy::LazySession, String) {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/same-round-producer");
+    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("sessão");
+    let target = lazy
+        .session
+        .requests
+        .iter()
+        .rev()
+        .find(|r| r.method == "POST")
+        .map(|r| r.id.clone())
+        .unwrap();
+    (lazy, target)
+}
+
+#[test]
+fn part_with_observed_origin_never_becomes_a_literal() {
+    // `XML.p.v_tok` tem produtor (mesma rodada) fora da cadeia base: o
+    // produtor entra no plano e o valor é extraído em runtime.
+    let (lazy, target) = same_round_session();
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    let out = to_python(&lazy.session, &source, &target, &options()).expect("gera");
+    let call = out
+        .text
+        .lines()
+        .find(|l| l.contains("natural_ajax_encode(["))
+        .expect("chamada do codificador");
+    let tok_part = call
+        .split("('p.v_tok'")
+        .nth(1)
+        .and_then(|rest| rest.split("), ('").next())
+        .expect("parte v_tok");
+    assert!(
+        tok_part.contains("adapter_get(") || tok_part.contains("html_control("),
+        "{tok_part}"
+    );
+    assert!(!tok_part.contains("'AB12'"), "{tok_part}");
+    assert!(
+        out.text.contains("R['cdp-r0002']"),
+        "o produtor entra no plano"
+    );
+    python_ast_ok(&out.text);
+}
+
+#[test]
+fn abbreviated_sensitive_names_are_required_with_and_without_adapter() {
+    let names = [
+        "v_pwd",
+        "v_pass",
+        "v_psw",
+        "v_pswd",
+        "v_pin",
+        "v_otp",
+        "v_passcode",
+        "v_seguranca",
+        "v_cookie",
+        "nm_usuario",
+        "v_aniversario",
+        "v_filiacao",
+        "v_logradouro",
+        "v_bairro",
+        "v_titular",
+        "v_proprietario",
+        "v_razaosocial",
+        "v_conta",
+        "v_sexo",
+    ];
+    // Com adaptador: partes do XML.
+    let head = grammar::Op::Head {
+        init: false,
+        fields: [
+            "SID1".into(),
+            "PID1".into(),
+            String::new(),
+            "MODEL".into(),
+            "dummy".into(),
+            "PAGE".into(),
+            "ev".into(),
+            "false".into(),
+        ],
+    };
+    let mut ops = vec![head];
+    for (i, name) in names.iter().enumerate() {
+        ops.push(grammar::Op::Lit {
+            op: 'p',
+            key: (*name).into(),
+            value: format!("valorx{i}zz"),
+        });
+    }
+    ops.push(grammar::Op::Lit {
+        op: 'p',
+        key: "v_passo".into(),
+        value: "abc".into(),
+    });
+    ops.push(grammar::Op::Delta("dd".into()));
+    let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
+    let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
+    for (i, name) in names.iter().enumerate() {
+        assert!(!out.text.contains(&format!("valorx{i}zz")), "{name} vazou");
+    }
+    assert!(out.text.contains("'abc'"), "v_passo não é sensível");
+    // Sem adaptador: campos de form com os mesmos nomes.
+    let body: String = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| format!("{n}=valorx{i}zz"))
+        .collect::<Vec<_>>()
+        .join("&");
+    let har = serde_json::json!({"log": {"version": "1.2", "creator": {"name": "t", "version": "1"},
+    "entries": [{
+        "startedDateTime": "2026-10-27T12:00:00.000Z", "time": 1,
+        "request": {"method": "POST", "url": "https://h.example.test/api",
+            "httpVersion": "HTTP/1.1",
+            "headers": [{"name": "Content-Type", "value": "application/x-www-form-urlencoded"}],
+            "queryString": [], "cookies": [], "headersSize": -1, "bodySize": body.len(),
+            "postData": {"mimeType": "application/x-www-form-urlencoded", "text": body}},
+        "response": {"status": 200, "statusText": "", "httpVersion": "HTTP/1.1", "headers": [],
+            "cookies": [], "headersSize": -1, "bodySize": 2, "redirectURL": "",
+            "content": {"size": 2, "mimeType": "text/html", "text": "ok"}},
+        "cache": {}, "timings": {"send": 0, "wait": 1, "receive": 0}
+    }]}});
+    let plain = import_har(har.to_string().as_bytes()).unwrap().bundle;
+    let out = to_python(
+        &plain.session,
+        &plain,
+        "har-0001",
+        &PrimingOptions::default(),
+    )
+    .expect("gera");
+    for (i, name) in names.iter().enumerate() {
+        assert!(
+            !out.text.contains(&format!("valorx{i}zz")),
+            "{name} vazou sem adaptador"
+        );
+    }
+}

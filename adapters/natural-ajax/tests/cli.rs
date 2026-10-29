@@ -130,3 +130,15 @@ fn wrapper_never_recurses_when_core_bin_points_to_itself() {
     let _ = core;
     assert!(out.status.code().is_some());
 }
+
+#[test]
+fn wrapper_refuses_a_second_re_execution_level() {
+    let me = env!("CARGO_BIN_EXE_natural-core");
+    let out = Command::new(me)
+        .env("NATURAL_CORE_DEPTH", "1")
+        .arg("inspect")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("recursão"));
+}
