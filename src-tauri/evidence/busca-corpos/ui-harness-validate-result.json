@@ -24,24 +24,24 @@
   "steps0": [
     "1 har-0001 → har-0001 GET /detran-portal-servicos/servlet/easynat-app?op=S37 200 × 200 não-avaliado × não-avaliado sem diferenças",
     "2 har-0008 → har-0002 GET /detran-portal-servicos/cisnatural/cscform.html?page=NatLogon 200 × 200 app-ok × app-ok sem diferenças",
-    "3 har-0010 → har-0003 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (3)",
+    "3 har-0010 → har-0003 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (3) body:XML.pid dinâmico com origem equivalente body:SESSIONID p",
     "4 har-0012 → har-0004 GET /detran-portal-servicos/UIC-SERVICOS/SIM1000X.html 200 × 200 não-avaliado × não-avaliado sem diferenças",
-    "5 har-0015 → har-0005 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (4)",
-    "6 har-0017 → har-0006 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (6)",
+    "5 har-0015 → har-0005 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (4) body:XML.pid dinâmico com origem equivalente body:XML.delta d",
+    "6 har-0017 → har-0006 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (6) body:XML.pid dinâmico com origem equivalente body:XML.page di",
     "7 har-0019 → har-0007 GET /detran-portal-servicos/UIC-SERVICOS/VES0009X.html 200 × 200 não-avaliado × não-avaliado sem diferenças",
-    "8 har-0022 → har-0008 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (4)",
-    "9 har-0024 → har-0009 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (5)",
+    "8 har-0022 → har-0008 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (4) body:XML.pid dinâmico com origem equivalente body:XML.delta d",
+    "9 har-0024 → har-0009 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (5) body:XML.pid dinâmico com origem equivalente body:XML.delta d",
     "10 har-0026 → har-0010 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (6) body:XML.pid dinâmico com origem equivalente body:XML.delta "
   ],
-  "summary1": "!\ndiverge no passo 3 (status 200 na captura × 403 no trace) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8796]",
+  "summary1": "!\ndiverge no passo 3 (status 200 na captura × 403 no trace) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8795]",
   "warning1": "i\nO trace contém dados da sessão da execução (cookies, valores, corpos); não o compartilhe sem sanitizar. A sessão importada fica numa pasta temporária privada, apagada ao fechar esta tela ou o app. Guardar esta execução… Sanitizar a sessão do trace…",
   "steps1": [
     "1 har-0001 → har-0001 GET /detran-portal-servicos/servlet/easynat-app?op=S37 200 × 200 não-avaliado × não-avaliado sem diferenças",
     "2 har-0008 → har-0002 GET /detran-portal-servicos/cisnatural/cscform.html?page=NatLogon 200 × 200 app-ok × app-ok sem diferenças",
-    "3 har-0010 → har-0003 POST /detran-portal-servicos/servlet/Connector 200 × 403 app-ok × blocked? Diverge status 200 na captura × 403 no trace esperadas (3)"
+    "3 har-0010 → har-0003 POST /detran-portal-servicos/servlet/Connector 200 × 403 app-ok × blocked? Diverge status 200 na captura × 403 no trace esperadas (3) body:XML.pid d"
   ],
-  "summary2": "…\nincompleta: parou no passo 1 (sem resposta (falha de transporte registrada no trace)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8799]",
-  "warning2": "…\nincompleta: parou no passo 1 (sem resposta (falha de transporte registrada no trace)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8799]",
+  "summary2": "…\nincompleta: parou no passo 1 (sem resposta (falha de transporte registrada no trace)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8794]",
+  "warning2": "…\nincompleta: parou no passo 1 (sem resposta (falha de transporte registrada no trace)) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8794]",
   "steps2": [
     "1 har-0001 → har-0001 GET /detran-portal-servicos/servlet/easynat-app 200 × — não-avaliado × não-avaliado inesperadas (1) query:op só na captura Incompleta: parou aqui se"
   ],

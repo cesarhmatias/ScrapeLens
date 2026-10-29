@@ -1778,6 +1778,17 @@ mod tests {
         let ok = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), None).unwrap();
         assert!(ok.validation.summary.starts_with("execução equivalente à captura"), "{}", ok.validation.summary);
         assert!(ok.validation.summary.contains("[origem mapeada:"));
+        // trace fiel (plan.version 2): nenhum aviso de parâmetro ou de plano; só o de origem mapeada
+        assert!(
+            ok.validation.warnings.iter().all(|w| w.starts_with("origens de aplicação diferentes")),
+            "a trace fiel não pode gerar avisos além do de origem mapeada: {:?}",
+            ok.validation.warnings
+        );
+        assert!(
+            !ok.validation.warnings.iter().any(|w| w.contains("parâmetro") || w.contains("plano")),
+            "avisos espúrios de parâmetro/plano: {:?}",
+            ok.validation.warnings
+        );
         assert!(
             ok.validation.steps.iter().flat_map(|st| &st.expected).any(|n| n.reason.contains("parâmetro do usuário")),
             "placa/CPF informados viram esperado (parâmetro do usuário)"
