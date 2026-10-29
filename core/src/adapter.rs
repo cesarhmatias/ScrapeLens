@@ -104,6 +104,11 @@ impl AdapterRegistry {
         self.adapters.is_empty()
     }
 
+    /// Adaptadores registrados, na ordem de precedência.
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<dyn ProtocolAdapter>> {
+        self.adapters.iter()
+    }
+
     pub fn get(&self, id: &str) -> Option<&Arc<dyn ProtocolAdapter>> {
         self.adapters.iter().find(|a| a.id() == id)
     }

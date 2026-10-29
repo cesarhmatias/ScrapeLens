@@ -1,10 +1,94 @@
 //! `validate` (captura × trace) e `map_origin`, com sessões sintéticas e hosts diferentes.
 
+use std::sync::Arc;
+
+use scrapelens_core::adapter::{
+    AdapterContext, AdapterPart, AdapterRegistry, Decoded, PartRole, ProtocolAdapter,
+};
 use scrapelens_core::compare::{compare_sessions, CompareOptions, OriginMap};
+use scrapelens_core::error::{CoreError, Result};
+use scrapelens_core::flow::FlowOptions;
 use scrapelens_core::model::SessionBundle;
 use scrapelens_core::parse::import_trace;
 use scrapelens_core::validate::{validate, ValidateOptions, ValidationVerdict};
 use serde_json::{json, Value};
+
+/// Adaptador mínimo para os testes de parte de protocolo: `LP!` + registros
+/// `<nn:nome><nome><mm:valor><valor>`, com a parte `delta`.
+struct Lp;
+
+impl ProtocolAdapter for Lp {
+    fn id(&self) -> &str {
+        "lp-test"
+    }
+    fn detect(&self, field: &str, value: &str, _ctx: &AdapterContext<'_>) -> bool {
+        field == "XML" && value.starts_with("LP!")
+    }
+    fn decode(&self, value: &str) -> Result<Decoded> {
+        let bad = |why: &str| CoreError::LimitExceeded {
+            message: format!("lp-test: {why}"),
+        };
+        let mut i = 3;
+        let mut parts = Vec::new();
+        let read = |i: &mut usize| -> Result<(usize, usize)> {
+            let n: usize = value
+                .get(*i..*i + 2)
+                .and_then(|s| s.parse().ok())
+                .ok_or_else(|| bad("comprimento"))?;
+            let start = *i + 2;
+            if start + n > value.len() {
+                return Err(bad("truncado"));
+            }
+            *i = start + n;
+            Ok((start, n))
+        };
+        while i < value.len() {
+            let (ns, nl) = read(&mut i)?;
+            let (vs, vl) = read(&mut i)?;
+            let name = &value[ns..ns + nl];
+            parts.push(AdapterPart {
+                name: if name == "delta" {
+                    name.into()
+                } else {
+                    format!("p.{name}")
+                },
+                value: value[vs..vs + vl].to_string(),
+                offset: vs,
+                len: vl,
+                role: if name == "delta" {
+                    PartRole::Delta
+                } else {
+                    PartRole::Value
+                },
+            });
+        }
+        Ok(Decoded { parts })
+    }
+    fn encode(&self, d: &Decoded) -> Result<String> {
+        let mut out = String::from("LP!");
+        for p in &d.parts {
+            let name = p.name.strip_prefix("p.").unwrap_or(&p.name);
+            out += &format!("{:02}{}{:02}{}", name.len(), name, p.value.len(), p.value);
+        }
+        Ok(out)
+    }
+}
+
+fn lp(delta: &str, plate: &str) -> String {
+    format!(
+        "LP!{:02}delta{:02}{delta}07v_placa{:02}{plate}",
+        5,
+        delta.len(),
+        plate.len()
+    )
+}
+
+fn lp_flow() -> FlowOptions {
+    FlowOptions {
+        adapters: AdapterRegistry::new().with(Arc::new(Lp)),
+        ..FlowOptions::default()
+    }
+}
 
 fn step(
     origin: &str,
@@ -78,6 +162,64 @@ fn run(
     let mut options = ValidateOptions::default();
     options.compare.map_origin = map;
     validate(&a.session, a, &b.session, b, &options)
+}
+
+fn run_flow(
+    a: &SessionBundle,
+    b: &SessionBundle,
+    flow: FlowOptions,
+) -> scrapelens_core::validate::Validation {
+    let mut options = ValidateOptions::default();
+    options.compare.flow = flow;
+    validate(&a.session, a, &b.session, b, &options)
+}
+
+/// Captura com campo `XML` de protocolo (adaptador `Lp`): o delta do alvo vem
+/// da resposta do POST anterior. `d_prev` é o delta dessa resposta.
+fn lp_capture(d_prev: &str) -> SessionBundle {
+    let o = "http://app.test";
+    let prev = format!(
+        "<input type=hidden name=\"STAMP\" value=\"S2\"><textarea name=\"XML\">{}</textarea>",
+        lp(d_prev, "ABC1D23")
+    );
+    import(
+        json!({"schema":"scrapelens.trace/1","steps":[
+            pstep(o, "GET", "/a", None, "<html><input type=hidden name=\"STAMP\" value=\"S1\"></html>"),
+            pstep(o, "POST", "/go", Some(&format!("STAMP=S1&XML={}", lp("D1", "ABC1D23"))), &prev),
+            pstep(o, "POST", "/go2", Some(&format!("STAMP=S2&XML={}", lp(d_prev, "ABC1D23"))), "<html>ok</html>"),
+        ]}),
+        false,
+    )
+}
+
+/// Trace do plano do `lp_capture`: a resposta do POST anterior traz `d_prev` e o
+/// alvo manda `d_target`. `plan` presente com hash do plano e nomes `["placa"]`.
+fn lp_trace(d_prev: &str, d_target: &str, names: &[&str], extra: Value) -> SessionBundle {
+    let o = "http://127.0.0.1:18791";
+    let cap = lp_capture("D2");
+    let names: Vec<String> = names.iter().map(|s| s.to_string()).collect();
+    let h =
+        scrapelens_core::validate::plan_hash(&cap.session, &cap, "har-0003", &lp_flow(), &names)
+            .unwrap();
+    let prev = format!(
+        "<input type=hidden name=\"STAMP\" value=\"S2\"><textarea name=\"XML\">{}</textarea>",
+        lp(d_prev, "ABC1D23")
+    );
+    let mut doc = json!({"schema":"scrapelens.trace/1","target":"har-0003","complete":true,"steps":[
+        pstep(o, "GET", "/a", None, "<html><input type=hidden name=\"STAMP\" value=\"S1\"></html>"),
+        pstep(o, "POST", "/go", Some(&format!("STAMP=S1&XML={}", lp("D1", "ABC1D23"))), &prev),
+        pstep(o, "POST", "/go2", Some(&format!("STAMP=S2&XML={}", lp(d_target, "ABC1D23"))), "<html>ok</html>"),
+    ]});
+    doc["plan"] = json!({"version":2, "hash": h, "parameters": names});
+    for (k, v) in extra.as_object().cloned().unwrap_or_default() {
+        doc[k] = v;
+    }
+    let mut b = import_trace(&serde_json::to_vec(&doc).unwrap())
+        .unwrap()
+        .bundle;
+    b.session.session.labels.retain(|l| l != "script-trace");
+    b.session.session.labels.push("script-trace".to_string());
+    b
 }
 
 const CAP: &str = "https://real.test";
@@ -401,20 +543,43 @@ fn changed_constant_diverges_and_forged_parameters_are_ignored_with_a_warning() 
     let v = pv(&ptrace(
         go,
         GOOD_GO2,
-        json!({"parameters":[{"name":"placa"},{"name":"sig"},{"name":"STAMP"}]}),
+        json!({"parameters":[{"name":"placa"},{"name":"STAMP"}]}),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("parâmetro inválido") && w.contains("sig")),
+            .any(|w| w.contains("parâmetro inválido") && w.contains("STAMP")),
         "{:?}",
         v.warnings
     );
+    // `sig` é parâmetro obrigatório do plano regenerado (pair (sig, sig)):
+    // declará-lo é consistente com o plano, então a troca deixa de divergir.
+    let v = pv(&ptrace(
+        go,
+        GOOD_GO2,
+        json!({"parameters":[{"name":"placa"},{"name":"sig"}]}),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.steps[2]
+            .expected
+            .iter()
+            .any(|n| n.field == "sig" && n.reason.contains("parâmetro do usuário")),
+        "{:?}",
+        v.steps[2]
+    );
+    // item sob um name do plano com parte que o plano não produz não é isento
+    let v = pv(&ptrace(
+        go,
+        GOOD_GO2,
+        json!({"parameters":[{"name":"placa"},{"name":"sig","part":"q"}]}),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("parâmetro inválido") && w.contains("STAMP")),
+            .any(|w| w == "parâmetro não corresponde ao plano: sig → q"),
         "{:?}",
         v.warnings
     );
@@ -539,11 +704,28 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
 
 #[test]
 fn faithful_plan_has_no_spurious_warnings() {
-    // trace fiel do gerador atual: `plan.parameters` (obrigatórios, inclusive
-    // nomes que não existem nos passos pareados e uma constante longa) não passa
-    // pelas checagens de `parameters` → equivalente, ZERO avisos.
+    // trace fiel do gerador atual: `plan.parameters` não passa pelas checagens e
+    // o par (name, part) que o plano regenerado da captura produz é isento.
     let names = ["placa", "cpf", "sessionid_cliente", "SESSIONID", "sig"];
     let h = hash_for(&names);
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({
+            "parameters": [{"name":"placa"},{"name":"sig"}],
+            "plan": {"version":2, "hash": h, "parameters": names},
+        }),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    // único aviso permitido: o mapeamento automático de origem (hosts diferentes).
+    let spurious: Vec<&String> = v
+        .warnings
+        .iter()
+        .filter(|w| !w.contains("mapeadas automaticamente"))
+        .collect();
+    assert!(spurious.is_empty(), "{spurious:?}");
+    // name do plano com parte que o plano NÃO produz: não é isento, avisa e
+    // passa pelas checagens normais (constante longa).
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
@@ -553,25 +735,13 @@ fn faithful_plan_has_no_spurious_warnings() {
         }),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
-    // único aviso permitido: o mapeamento automático de origem (hosts diferentes).
-    // A parte `sig` do item `sessionid_cliente` é produzida pelo plano (name em
-    // plan.parameters): não gera aviso de constante/identificador longo.
-    let spurious: Vec<&String> = v
-        .warnings
-        .iter()
-        .filter(|w| !w.contains("mapeadas automaticamente"))
-        .collect();
-    assert!(spurious.is_empty(), "{spurious:?}");
-    // nome fora de plan.parameters continua checado: parte longa avisa
-    let v = pv(&ptrace(
-        GOOD_GO,
-        GOOD_GO2,
-        json!({
-            "parameters": [{"name":"placa"},{"name":"q","part":"sig"}],
-            "plan": {"version":2, "hash": h, "parameters": names},
-        }),
-    ));
-    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w == "parâmetro não corresponde ao plano: sessionid_cliente → sig"),
+        "{:?}",
+        v.warnings
+    );
     assert!(
         v.warnings
             .iter()
@@ -596,6 +766,139 @@ fn faithful_plan_has_no_spurious_warnings() {
         "{:?}",
         v.warnings
     );
+}
+
+#[test]
+fn only_the_pair_the_plan_produces_is_exempt() {
+    // D1/E2/D5 da matriz do revisor com uma parte de protocolo real (`XML.delta`).
+    let cap = lp_capture("D2");
+    let v = run_flow(
+        &cap,
+        &lp_trace("D2", "D2", &["placa"], json!({})),
+        lp_flow(),
+    );
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    let spurious: Vec<&String> = v
+        .warnings
+        .iter()
+        .filter(|w| !w.contains("mapeadas automaticamente"))
+        .collect();
+    assert!(spurious.is_empty(), "{spurious:?}");
+    // D1: delta congelado + param(sessionid_cliente, XML.delta) → não é isento
+    let v = run_flow(
+        &cap,
+        &lp_trace(
+            "D3",
+            "D2",
+            &["placa", "sessionid_cliente"],
+            json!({"parameters":[{"name":"sessionid_cliente","part":"XML.delta"}]}),
+        ),
+        lp_flow(),
+    );
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    assert_eq!(v.step, Some(3));
+    assert!(v.summary.contains("congelado"), "{}", v.summary);
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w == "parâmetro não corresponde ao plano: sessionid_cliente → XML.delta"),
+        "{:?}",
+        v.warnings
+    );
+    // E2: delta inventado + param(cpf, XML.delta) → não é isento
+    let v = run_flow(
+        &cap,
+        &lp_trace(
+            "D3",
+            "DZ",
+            &["placa", "cpf"],
+            json!({"parameters":[{"name":"cpf","part":"XML.delta"}]}),
+        ),
+        lp_flow(),
+    );
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    assert_eq!(v.step, Some(3));
+    assert!(
+        v.steps[2]
+            .unexpected
+            .iter()
+            .any(|n| n.field == "XML.delta" && n.reason.contains("sem origem")),
+        "{:?}",
+        v.steps[2]
+    );
+    // D5: fiel + param(cpf, XML.delta) → equivalente, mas avisa e não isenta
+    let v = run_flow(
+        &cap,
+        &lp_trace(
+            "D2",
+            "D2",
+            &["placa", "cpf"],
+            json!({"parameters":[{"name":"cpf","part":"XML.delta"}]}),
+        ),
+        lp_flow(),
+    );
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w == "parâmetro não corresponde ao plano: cpf → XML.delta"),
+        "{:?}",
+        v.warnings
+    );
+    // sem `plan`: a isenção continua vindo do plano regenerado da captura
+    let mut no_plan = lp_trace(
+        "D2",
+        "D2",
+        &["placa"],
+        json!({"parameters":[{"name":"placa","part":"XML.p.v_placa"}]}),
+    );
+    no_plan
+        .session
+        .session
+        .notes
+        .retain(|n| !n.starts_with("trace-plan"));
+    let v = run_flow(&cap, &no_plan, lp_flow());
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    let spurious: Vec<&String> = v
+        .warnings
+        .iter()
+        .filter(|w| {
+            !w.contains("mapeadas automaticamente")
+                && !w.starts_with("plano ausente: execução não verificada")
+        })
+        .collect();
+    assert!(spurious.is_empty(), "{spurious:?}");
+}
+
+#[test]
+fn forged_parameters_under_plan_names_do_not_mask_stamp() {
+    // E4/E5: STAMP congelado/inventado com part STAMP sob o nome cpf.
+    let cap = pcap();
+    let h = hash_for(&["placa", "cpf"]);
+    let plan = json!({"version":2, "hash": h, "parameters":["placa","cpf"]});
+    let frozen = ptrace(
+        GOOD_GO,
+        "STAMP=STAMPCAP7654321&q=consulta",
+        json!({"parameters":[{"name":"cpf","part":"STAMP"}], "plan": plan}),
+    );
+    let v = run(&cap, &frozen, None);
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    assert_eq!(v.step, Some(4), "{v:#?}");
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w == "parâmetro não corresponde ao plano: cpf → STAMP"),
+        "{:?}",
+        v.warnings
+    );
+    let invented = ptrace(
+        GOOD_GO,
+        "STAMP=9999&q=consulta",
+        json!({"parameters":[{"name":"cpf","part":"STAMP"}], "plan": plan}),
+    );
+    let v = run(&cap, &invented, None);
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
+    assert_eq!(v.step, Some(4), "{v:#?}");
 }
 
 #[test]

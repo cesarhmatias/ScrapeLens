@@ -12,9 +12,10 @@
 //!                                              // usuário do script, SEM valores; `part` =
 //!                                              // nome interno (parte de adaptador) ou campo
 //!                                              // do form/query; sem `part`, vale `name`.
-//!                                              // Item cujo `name` também está em
-//!                                              // `plan.parameters` é parte produzida pelo plano:
-//!                                              // classifica, sem as checagens de parâmetro
+//!                                              // O validate isenta só o par (name, part)
+//!                                              // que o plano regenerado da captura produz
+//!                                              // (ex. sessionid_cliente → XML.sid); outro
+//!                                              // par passa pelas checagens normais
 //!   "target": "har-0127",                      // requestId do alvo NA CAPTURA (o validate exige
 //!                                              // que seja pareado; sem ele, "incompleta")
 //!   "complete": true,                          // o script executou todo o plano (false/ausente
@@ -75,11 +76,9 @@ type StepNotes = (
 );
 
 /// Prefixo das notas de sessão que carregam os parâmetros do usuário do trace.
+/// O valor da nota é um objeto JSON `{"name":…,"part":…}` (o `validate` decide
+/// a isenção comparando o par com o plano regenerado da captura).
 pub const PARAM_NOTE_PREFIX: &str = "trace-param: ";
-/// Parâmetro de topo cujo `name` também é parâmetro do plano: a parte é
-/// produzida pelo plano, então só classifica (sem as checagens de "parâmetro
-/// inválido" nem de identificador longo).
-pub const PARAM_PLAN_NOTE_PREFIX: &str = "trace-param-plan: ";
 pub const TARGET_NOTE_PREFIX: &str = "trace-target: ";
 pub const COMPLETE_NOTE_PREFIX: &str = "trace-complete: ";
 pub const PLAN_HASH_NOTE_PREFIX: &str = "trace-plan-hash: ";
@@ -422,15 +421,9 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         session.session.labels.push(TRACE_LABEL.to_string());
     }
     let plan = root.get("plan").filter(|v| !v.is_null());
-    let plan_names: Vec<&str> = plan
-        .filter(|p| p.is_object())
-        .and_then(|p| p.get("parameters"))
-        .and_then(Value::as_array)
-        .map(|list| list.iter().filter_map(param_name).collect())
-        .unwrap_or_default();
-    // `parameters` de topo: entradas do usuário do script. Quando o `name` do
-    // item também é parâmetro do plano, a parte é produzida pelo plano: vai para
-    // uma nota própria e não passa pelas checagens do validate.
+    // `parameters` de topo: entradas do usuário do script. A nota guarda o par
+    // (name, part); o validate isenta só o par que o plano regenerado da
+    // captura produz, nunca o que o trace declara.
     if let Some(params) = root.get("parameters").filter(|v| !v.is_null()) {
         let list = params
             .as_array()
@@ -448,14 +441,10 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
             let Some(part) = part else {
                 return Err(bad(format!("parameters[{n}] precisa de name ou part")));
             };
-            let from_plan =
-                name.is_some_and(|n| plan_names.iter().any(|p| p.eq_ignore_ascii_case(n)));
-            let prefix = if from_plan {
-                PARAM_PLAN_NOTE_PREFIX
-            } else {
-                PARAM_NOTE_PREFIX
-            };
-            let note = format!("{prefix}{part}");
+            let note = format!(
+                "{PARAM_NOTE_PREFIX}{}",
+                json!({"name": name.unwrap_or(part), "part": part})
+            );
             if !session.session.notes.contains(&note) {
                 session.session.notes.push(note);
             }

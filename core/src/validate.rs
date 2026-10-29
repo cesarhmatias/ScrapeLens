@@ -26,8 +26,10 @@
 //! constante (identificador longo e opaco); os demais são ignorados com o
 //! aviso "parâmetro inválido". `plan.parameters` são os obrigatórios do plano:
 //! classificam como parâmetro do usuário, mas não passam por essas checagens.
-//! Uma parte de `parameters` cujo `name` também é parâmetro do plano é produzida
-//! pelo plano e segue a mesma isenção (ex. XML.sid/SESSIONID via adaptador).
+//! A isenção de `parameters` vale só para o par (name, part) que o plano
+//! regenerado da captura realmente produz (ex. sessionid_cliente → XML.sid);
+//! outro par sob um nome do plano passa por todas as checagens e ganha o aviso
+//! "parâmetro não corresponde ao plano: <name> → <part>".
 //!
 //! Plano versionado: `plan.version` igual a [`PLAN_VERSION`] compara o hash do
 //! plano (divergência se não confere); versão ausente ou diferente é plano de
@@ -43,14 +45,15 @@ use crate::compare::{
     compare_sessions, single_app_origin, split_url, CompareOptions, FieldClass, OriginMap,
 };
 use crate::error::Result;
+use crate::export::priming::{plan_parameter_uses, AdapterEncoder, PrimingOptions};
 use crate::flow::{
     origins_in, priming_chain, ConsumedScope, FlowContext, FlowOptions, OriginStatus, ValueOrigin,
     ValueOrigins,
 };
 use crate::model::SessionV1;
 use crate::parse::trace::{
-    COMPLETE_NOTE_PREFIX, PARAM_NOTE_PREFIX, PARAM_PLAN_NOTE_PREFIX, PLAN_HASH_NOTE_PREFIX,
-    PLAN_PARAM_NOTE_PREFIX, PLAN_PRESENT_NOTE, PLAN_VERSION_NOTE_PREFIX, TARGET_NOTE_PREFIX,
+    COMPLETE_NOTE_PREFIX, PARAM_NOTE_PREFIX, PLAN_HASH_NOTE_PREFIX, PLAN_PARAM_NOTE_PREFIX,
+    PLAN_PRESENT_NOTE, PLAN_VERSION_NOTE_PREFIX, TARGET_NOTE_PREFIX,
 };
 use crate::search::BodySource;
 
@@ -208,6 +211,37 @@ fn note_value<'a>(trace: &'a SessionV1, prefix: &str) -> Option<&'a str> {
         .find_map(|n| n.strip_prefix(prefix))
 }
 
+/// Pares `(parâmetro, parte/campo)` que o plano REGENERADO DA CAPTURA instala.
+/// Nunca usa o que o trace declara: o gerador é chamado com a captura, o alvo
+/// e o mesmo fluxo do hash. Codificadores só entram na forma do texto gerado;
+/// aqui basta um marcador por adaptador para que as partes sejam decodificadas
+/// e os nomes registrados (o texto é descartado).
+fn produced_parameter_uses(
+    capture: &SessionV1,
+    source: &dyn BodySource,
+    target: &str,
+    flow: &FlowOptions,
+) -> Option<Vec<(String, String)>> {
+    let adapter_encoders: Vec<AdapterEncoder> = flow
+        .adapters
+        .iter()
+        .map(|a| AdapterEncoder {
+            adapter_id: a.id().to_string(),
+            function: format!("{}_encode", a.id().replace('-', "_")),
+            decoder: String::new(),
+            source: String::new(),
+        })
+        .collect();
+    let opts = PrimingOptions {
+        flow: flow.clone(),
+        adapter_encoders,
+        ..Default::default()
+    };
+    plan_parameter_uses(capture, source, target, &opts)
+        .ok()
+        .map(|uses| uses.into_iter().collect())
+}
+
 pub fn validate(
     capture: &SessionV1,
     capture_source: &dyn BodySource,
@@ -270,21 +304,62 @@ pub fn validate(
         })
         .collect();
 
-    // parâmetros declarados: só valem para campos sem origem e não constantes
-    let declared: Vec<&str> = trace
+    // alvo declarado e pares que o plano REGENERADO DA CAPTURA produz; só esses
+    // pares podem ser isentos. Sem alvo (ou se a geração falhar), não isenta.
+    let target_note = note_value(trace, TARGET_NOTE_PREFIX).map(str::to_string);
+    let produced: Vec<(String, String)> = target_note
+        .as_deref()
+        .and_then(|t| produced_parameter_uses(capture, capture_source, t, &options.compare.flow))
+        .unwrap_or_default();
+    let plan_names: Vec<&str> = trace
+        .session
+        .notes
+        .iter()
+        .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
+        .collect();
+
+    // parâmetros declarados no trace: `(name, part)`. Só a parte que o plano
+    // produz é isenta; as demais passam pelas checagens normais.
+    let declared: Vec<(String, String)> = trace
         .session
         .notes
         .iter()
         .filter_map(|n| n.strip_prefix(PARAM_NOTE_PREFIX))
+        .filter_map(|v| {
+            let doc: Option<serde_json::Value> = serde_json::from_str(v).ok();
+            let (name, part) = match doc {
+                Some(o) => (
+                    o.get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string),
+                    o.get("part")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string),
+                ),
+                // formato antigo: só a parte
+                None => (Some(v.to_string()), Some(v.to_string())),
+            };
+            let part = part.filter(|s| !s.is_empty())?;
+            Some((name.unwrap_or_else(|| part.clone()), part))
+        })
         .collect();
     let mut params: Vec<&str> = Vec::new();
-    for name in &declared {
+    for (name, part) in &declared {
+        let produced_pair = produced
+            .iter()
+            .any(|(n, p)| n.eq_ignore_ascii_case(name) && p.eq_ignore_ascii_case(part));
+        if produced_pair {
+            if !params.iter().any(|p| p.eq_ignore_ascii_case(part)) {
+                params.push(part.as_str());
+            }
+            continue;
+        }
         let mut seen = false;
         let mut why: Option<&str> = None;
         for o in origins_a.values() {
             for v in o.values.iter().filter(|v| {
                 matches!(v.scope, ConsumedScope::Body | ConsumedScope::Query)
-                    && v.field.eq_ignore_ascii_case(name)
+                    && v.field.eq_ignore_ascii_case(part)
             }) {
                 seen = true;
                 if v.evidences
@@ -299,33 +374,25 @@ pub fn validate(
         }
         match (seen, why) {
             (false, _) => warnings.push(format!(
-                "parâmetro inválido: `{name}` não existe nos passos pareados da captura"
+                "parâmetro inválido: `{part}` não existe nos passos pareados da captura"
             )),
-            (true, Some(why)) => warnings.push(format!("parâmetro inválido: `{name}` {why}")),
-            (true, None) => params.push(name),
+            (true, Some(why)) => warnings.push(format!("parâmetro inválido: `{part}` {why}")),
+            (true, None) => {}
         }
-    }
-    // partes produzidas pelo plano (o `name` do item de topo também é parâmetro
-    // do plano): classificam como parâmetro do usuário, mas não passam pelas
-    // checagens acima — ex. SESSIONID/XML.sid com origem via adaptador.
-    for name in trace
-        .session
-        .notes
-        .iter()
-        .filter_map(|n| n.strip_prefix(PARAM_PLAN_NOTE_PREFIX))
-    {
-        if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
-            params.push(name);
+        let in_plan = plan_names.iter().any(|n| n.eq_ignore_ascii_case(name))
+            || produced.iter().any(|(n, _)| n.eq_ignore_ascii_case(name));
+        if in_plan {
+            warnings.push(format!(
+                "parâmetro não corresponde ao plano: {name} → {part}"
+            ));
+            // não classifica: a parte segue a proveniência e o diff normais
+        } else if seen && why.is_none() && !params.iter().any(|p| p.eq_ignore_ascii_case(part)) {
+            params.push(part.as_str());
         }
     }
     // `plan.parameters` são os parâmetros obrigatórios do plano: também só
     // classificam, sem as checagens acima.
-    for name in trace
-        .session
-        .notes
-        .iter()
-        .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
-    {
+    for name in &plan_names {
         if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
             params.push(name);
         }
@@ -624,7 +691,7 @@ pub fn validate(
     // parâmetros do plano (`plan.parameters`); o `parameters` de topo (inclusive
     // opcionais sobrescritos pelo usuário) não entra no hash. A versão do plano
     // protege traces de builds anteriores: sem `plan.version` atual, não compara.
-    let target = note_value(trace, TARGET_NOTE_PREFIX).map(str::to_string);
+    let target = target_note;
     let mut plan_mismatch = false;
     if !trace.session.notes.iter().any(|n| n == PLAN_PRESENT_NOTE) {
         warnings.push("plano ausente: execução não verificada contra o plano".to_string());
@@ -632,10 +699,18 @@ pub fn validate(
         let version =
             note_value(trace, PLAN_VERSION_NOTE_PREFIX).and_then(|v| v.parse::<u32>().ok());
         if version != Some(PLAN_VERSION) {
-            let label = version.map_or_else(|| "v1".to_string(), |v| format!("v{v}"));
-            warnings.push(format!(
-                "plano de versão anterior ({label}): gere o script de novo para verificar contra o plano"
-            ));
+            let message = match version {
+                Some(v) if v > PLAN_VERSION => format!(
+                    "plano de versão diferente (v{v}): gere o script de novo para verificar contra o plano"
+                ),
+                _ => {
+                    let label = version.map_or_else(|| "v1".to_string(), |v| format!("v{v}"));
+                    format!(
+                        "plano de versão anterior ({label}): gere o script de novo para verificar contra o plano"
+                    )
+                }
+            };
+            warnings.push(message);
         } else if let Some(declared_hash) = note_value(trace, PLAN_HASH_NOTE_PREFIX) {
             if let Some(target) = &target {
                 let names: Vec<String> = trace

@@ -2812,15 +2812,43 @@ pub fn to_python(
     target_request_id: &str,
     opts: &PrimingOptions,
 ) -> Result<ExportOutput> {
-    let (output, extras) =
+    to_python_and_uses(session, source, target_request_id, opts).map(|(output, _)| output)
+}
+
+/// Pares `(parâmetro, parte/campo)` que o plano gerado a partir da captura
+/// instala no script, na mesma passada que produz o script. O `validate` usa
+/// isso para isentar só as partes que o plano realmente produz (nunca as que
+/// o trace declara). Nomes de parte/campo são os do gerador (`SESSIONID`,
+/// `XML.sid`…), sem valores.
+pub fn plan_parameter_uses(
+    session: &SessionV1,
+    source: &dyn BodySource,
+    target_request_id: &str,
+    opts: &PrimingOptions,
+) -> Result<BTreeSet<(String, String)>> {
+    to_python_and_uses(session, source, target_request_id, opts).map(|(_, uses)| uses)
+}
+
+fn to_python_and_uses(
+    session: &SessionV1,
+    source: &dyn BodySource,
+    target_request_id: &str,
+    opts: &PrimingOptions,
+) -> Result<(ExportOutput, BTreeSet<(String, String)>)> {
+    let (output, extras, uses) =
         to_python_with(session, source, target_request_id, opts, &HashSet::new())?;
     // Passos produtores que nenhum passo referencia saem do plano.
     let unreferenced: HashSet<String> = extras.into_iter().collect();
     if unreferenced.is_empty() {
-        return Ok(output);
+        return Ok((output, uses));
     }
-    to_python_with(session, source, target_request_id, opts, &unreferenced).map(|(o, _)| o)
+    let (output, _, uses) =
+        to_python_with(session, source, target_request_id, opts, &unreferenced)?;
+    Ok((output, uses))
 }
+
+/// Script gerado, passos extras a podar e pares `(parâmetro, parte)` usados.
+type GeneratedPlan = (ExportOutput, Vec<String>, BTreeSet<(String, String)>);
 
 fn to_python_with(
     session: &SessionV1,
@@ -2828,7 +2856,7 @@ fn to_python_with(
     target_request_id: &str,
     opts: &PrimingOptions,
     excluded_extras: &HashSet<String>,
-) -> Result<(ExportOutput, Vec<String>)> {
+) -> Result<GeneratedPlan> {
     // Os passos vêm da cadeia sem adaptador: partes de um campo reivindicado
     // têm origens de granularidade fina (inclusive em rodadas anteriores) que
     // não devem puxar passos extras nem recusar uma cadeia que o gerador sem
@@ -3570,7 +3598,7 @@ fn to_python_with(
     }
     prune.sort();
     prune.dedup();
-    Ok((output, prune))
+    Ok((output, prune, gen.param_uses.clone()))
 }
 
 const PRELUDE: &str = r#"
