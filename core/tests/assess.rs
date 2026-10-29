@@ -635,3 +635,20 @@ fn unavailable_or_truncated_body_on_a_learned_route_is_indeterminate() {
             || outcomes[2].missing_fields.iter().any(|f| f == "STAMP")
     );
 }
+
+#[test]
+fn rules_json_rejects_empty_marker_and_non_error_statuses() {
+    assert!(AssessRules::from_json(
+        r#"{"schema":"scrapelens.assess-rules/1","protectionMarkers":[{"contains":""}]}"#
+    )
+    .is_err());
+    for status in ["200", "302", "99", "600"] {
+        let text =
+            format!(r#"{{"schema":"scrapelens.assess-rules/1","blockedStatuses":[{status}]}}"#);
+        assert!(AssessRules::from_json(&text).is_err(), "{status}");
+    }
+    assert!(AssessRules::from_json(
+        r#"{"schema":"scrapelens.assess-rules/1","blockedStatuses":[403,429,503]}"#
+    )
+    .is_ok());
+}

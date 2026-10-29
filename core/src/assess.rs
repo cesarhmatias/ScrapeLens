@@ -161,6 +161,22 @@ impl AssessRules {
         }
         let rules: Self =
             serde_json::from_value(raw).map_err(|e| format!("regras de assess inválidas: {e}"))?;
+        if rules
+            .protection_markers
+            .iter()
+            .any(|m| m.contains.trim().is_empty())
+        {
+            return Err("regras de assess: marcador de proteção com \"contains\" vazio".into());
+        }
+        if let Some(bad) = rules
+            .blocked_statuses
+            .iter()
+            .find(|s| !(400..=599).contains(*s))
+        {
+            return Err(format!(
+                "regras de assess: blockedStatuses aceita só 4xx/5xx (recebeu {bad})"
+            ));
+        }
         if rules.schema != RULES_SCHEMA {
             return Err(format!(
                 "schema de regras desconhecido: {} (esperado {RULES_SCHEMA})",
