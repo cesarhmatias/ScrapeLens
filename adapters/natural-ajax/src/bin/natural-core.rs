@@ -209,6 +209,27 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
     }
 }
 
+/// `timeline <sessao> [--adapter natural-ajax]`: linha do tempo com rótulos
+/// `event @ page` quando o adaptador está registrado.
+fn timeline_command(args: &[String]) -> Result<(), String> {
+    use scrapelens_core::timeline::{timeline, TimelineOptions};
+    let options = TimelineOptions {
+        flow: scrapelens_core::flow::FlowOptions {
+            adapters: registry(args)?,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let args = strip_adapter_flags(args);
+    if args.len() != 1 {
+        return Err("uso: natural-core timeline <sessao> [--adapter natural-ajax]".into());
+    }
+    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    print_json(&timeline(&lazy.session, &source, &options))
+}
+
 /// `compare <A> <B> [--all] [--a-range r] [--b-range r]` com o adaptador.
 fn compare_command(args: &[String]) -> Result<(), String> {
     use scrapelens_core::compare::{compare_sessions, CompareOptions, RequestRange};
@@ -299,8 +320,12 @@ fn export_priming(args: &[String]) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(command @ ("origins" | "chain" | "compare")) = args.first().map(String::as_str) {
-        let result = if command == "compare" {
+    if let Some(command @ ("origins" | "chain" | "compare" | "timeline")) =
+        args.first().map(String::as_str)
+    {
+        let result = if command == "timeline" {
+            timeline_command(&args[1..])
+        } else if command == "compare" {
             compare_command(&args[1..])
         } else {
             flow_command(command, &args[1..])

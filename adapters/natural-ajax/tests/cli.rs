@@ -142,3 +142,41 @@ fn wrapper_refuses_a_second_re_execution_level() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("recursão"));
 }
+
+#[test]
+fn timeline_subcommand_accepts_the_adapter_flag() {
+    let Some(core) = core_binary() else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let session = dir.path().join("s");
+    let har = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/detran-pb-real-shape/real-shape-1round.har");
+    assert!(wrapper(&core)
+        .arg("import-har")
+        .arg(&har)
+        .arg("--out")
+        .arg(&session)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let with = wrapper(&core)
+        .arg("timeline")
+        .arg(&session)
+        .args(["--adapter", "natural-ajax"])
+        .output()
+        .unwrap();
+    assert!(
+        with.status.success(),
+        "{}",
+        String::from_utf8_lossy(&with.stderr)
+    );
+    let text = String::from_utf8_lossy(&with.stdout);
+    assert!(text.contains(" @ "), "rótulos `event @ page` ausentes");
+    let bad = wrapper(&core)
+        .arg("timeline")
+        .arg(&session)
+        .args(["--adapter", "outro"])
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+}
