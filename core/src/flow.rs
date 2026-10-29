@@ -2167,43 +2167,67 @@ pub fn priming_chain(
             // (`produced` ou `reissued`): um valor constante do protocolo (ex.:
             // STAMP=INIT) é reemitido por cada página, e repetir as reemissões
             // só engorda a cadeia sem acrescentar valor. Escolhe-se o primeiro
-            // produtor da rodada; só quando não há nenhum nela (ex.: cookie
-            // definido uma única vez) sobe-se para o mais recente anterior. As
-            // origens continuam listando todos os produtores.
-            let nearest = ctx.find(&current).and_then(|consumer| {
-                let candidates: Vec<(Pos, &Evidence)> = value
-                    .evidences
-                    .iter()
-                    .filter(|e| {
-                        matches!(e.role, Role::Produced | Role::Reissued)
-                            && matches!(e.strength, Strength::Strong | Strength::Medium)
-                            && e.request_id != current
-                    })
-                    .filter_map(|e| ctx.find(&e.request_id).map(|pos| (pos, e)))
-                    .filter(|(pos, _)| ctx.rel(*pos, consumer) == Rel::Before)
-                    .collect();
-                match round_start {
-                    Some(start) => candidates
+            // produtor da rodada.
+            //
+            // Sem produtor na rodada, sobe-se para o mais recente anterior só
+            // quando a evidência é forte (ex.: cookie definido uma única vez) ou
+            // um value-match do valor INTEIRO de um campo (ex.: SESSIONID que só
+            // aparece no easynat-app da rodada 1). Fragmentos de campo opaco não
+            // sobem: viram `unresolved` com o motivo, para a cadeia nunca sair
+            // vazia em silêncio. As origens continuam listando tudo.
+            let (nearest, withheld) = ctx
+                .find(&current)
+                .map(|consumer| {
+                    let candidates: Vec<(Pos, &Evidence)> = value
+                        .evidences
                         .iter()
-                        .copied()
-                        .filter(|(pos, _)| ctx.seq[pos] >= start)
-                        .min_by_key(|(pos, _)| ctx.seq[pos])
-                        .or_else(|| {
-                            // Exceção: valor forte (ex.: cookie definido uma única
-                            // vez) cujo único produtor ficou numa rodada anterior.
-                            // Fragmentos médios de XML não justificam subir.
+                        .filter(|e| {
+                            matches!(e.role, Role::Produced | Role::Reissued)
+                                && matches!(e.strength, Strength::Strong | Strength::Medium)
+                                && e.request_id != current
+                        })
+                        .filter_map(|e| ctx.find(&e.request_id).map(|pos| (pos, e)))
+                        .filter(|(pos, _)| ctx.rel(*pos, consumer) == Rel::Before)
+                        .collect();
+                    let first_in_round = round_start.and_then(|start| {
+                        candidates
+                            .iter()
+                            .copied()
+                            .filter(|(pos, _)| ctx.seq[pos] >= start)
+                            .min_by_key(|(pos, _)| ctx.seq[pos])
+                    });
+                    if first_in_round.is_some() || round_start.is_none() {
+                        let chosen = first_in_round.or_else(|| {
                             candidates
                                 .iter()
                                 .copied()
-                                .filter(|(_, e)| e.strength == Strength::Strong)
                                 .max_by_key(|(pos, _)| ctx.seq[pos])
-                        }),
-                    None => candidates
+                        });
+                        return (chosen, None);
+                    }
+                    let whole_value = |e: &Evidence| {
+                        e.strength == Strength::Strong
+                            || (e.kind == EvidenceKind::ValueMatch
+                                && e.consumed_offset.is_none()
+                                && e.consumed_length.is_none())
+                    };
+                    match candidates
                         .iter()
                         .copied()
-                        .max_by_key(|(pos, _)| ctx.seq[pos]),
-                }
-            });
+                        .filter(|(_, e)| whole_value(e))
+                        .max_by_key(|(pos, _)| ctx.seq[pos])
+                    {
+                        Some(chosen) => (Some(chosen), None),
+                        None => (
+                            None,
+                            candidates
+                                .iter()
+                                .copied()
+                                .max_by_key(|(pos, _)| ctx.seq[pos]),
+                        ),
+                    }
+                })
+                .unwrap_or((None, None));
             if let Some((pos, e)) = nearest {
                 let attempt = ctx.attempt_ref(pos);
                 let producer_id = ctx.request_id(pos).to_string();
@@ -2228,6 +2252,28 @@ pub fn priming_chain(
                     consumed_by: current.clone(),
                 });
                 queue.push(producer_id);
+            } else if let Some((pos, _)) = withheld {
+                // Trecho de campo opaco: não sobe, mas fica visível com o motivo.
+                let label = format!("produtor só em rodada anterior ({})", ctx.request_id(pos));
+                let duplicate = chain
+                    .unresolved
+                    .iter()
+                    .any(|u| u.request_id == current && u.field == value.field && u.label == label);
+                if !current_protection
+                    && value.status != OriginStatus::Ambiguous
+                    && value.length > 0
+                    && !duplicate
+                {
+                    chain.unresolved.push(UnresolvedValue {
+                        label,
+                        partial_composition: value.partial_composition.clone(),
+                        unobservable: value.unobservable.clone(),
+                        request_id: current.clone(),
+                        scope: value.scope,
+                        field: value.field.clone(),
+                        status: value.status,
+                    });
+                }
             }
         }
     }

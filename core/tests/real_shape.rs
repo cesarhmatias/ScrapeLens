@@ -1637,3 +1637,137 @@ fn r7_chain_climbs_to_a_one_time_cookie_from_the_previous_round() {
     assert_eq!(once.status, OriginStatus::Origin);
     assert_eq!(once.evidences[0].kind, EvidenceKind::CookieJar);
 }
+
+/// Item 2 da revisão 8 (cr3): o SESSIONID só é produzido no easynat-app da rodada 1
+/// como value-match do valor INTEIRO de um campo. Sem produtor na rodada do alvo,
+/// a cadeia sobe para esse produtor em vez de sair sem ele.
+#[test]
+fn r8_chain_climbs_to_a_whole_value_session_id_from_the_previous_round() {
+    let mut s = S::default();
+    s.req(
+        "1.0",
+        1.0,
+        "http://h.test/easynat-app",
+        "GET",
+        R {
+            resp: Some(r#"<script>var m_currentSessionId="CSAN00000_000000000001";</script>"#),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.1",
+        2.0,
+        "http://h.test/connector",
+        "POST",
+        R {
+            body: Some("SESSIONID=CSAN00000_000000000001&n=1"),
+            resp: Some("<input type=hidden name=STAMP value=2006>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "2.0",
+        4.0,
+        "http://h.test/easynat-app",
+        "GET",
+        R {
+            resp: Some("<html>x</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "2.1",
+        5.0,
+        "http://h.test/connector",
+        "POST",
+        R {
+            body: Some("SESSIONID=CSAN00000_000000000001&STAMP=2006&n=2"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let target = lid(&b, "2.1");
+    let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    let steps: Vec<&str> = chain.steps.iter().map(|s| s.request_id.as_str()).collect();
+    assert!(
+        steps.contains(&lid(&b, "1.0").as_str()),
+        "value-match do valor inteiro sobe: {steps:?}"
+    );
+    assert!(
+        steps.contains(&lid(&b, "1.1").as_str()),
+        "STAMP forte também sobe: {steps:?}"
+    );
+    let o = origins(&b, "2.1");
+    assert_eq!(entry(&o, "SESSIONID").status, OriginStatus::Origin);
+}
+
+/// Item 2 da revisão 8: fragmento de campo opaco não sobe de rodada, mas não
+/// desaparece em silêncio: fica em `unresolved` com o motivo e o produtor antigo.
+#[test]
+fn r8_chain_withholds_opaque_fragment_and_reports_it() {
+    let mut s = S::default();
+    s.req(
+        "1.0",
+        1.0,
+        "http://h.test/easynat-app",
+        "GET",
+        R {
+            resp: Some("<html>entrada</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.1",
+        2.0,
+        "http://h.test/connector",
+        "POST",
+        R {
+            body: Some("n=1"),
+            resp: Some("<input type=hidden name=piece value=FRAGMENT01>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "2.0",
+        4.0,
+        "http://h.test/easynat-app",
+        "GET",
+        R {
+            resp: Some("<html>entrada 2</html>"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "2.1",
+        5.0,
+        "http://h.test/connector",
+        "POST",
+        R {
+            body: Some("blob=QQQQQQQQQQFRAGMENT01WWWWWWWWWWZZZZZZZZZZ"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let target = lid(&b, "2.1");
+    let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    let steps: Vec<&str> = chain.steps.iter().map(|s| s.request_id.as_str()).collect();
+    assert!(
+        !steps.contains(&lid(&b, "1.1").as_str()),
+        "fragmento opaco não sobe: {steps:?}"
+    );
+    let old = lid(&b, "1.1");
+    assert!(
+        chain
+            .unresolved
+            .iter()
+            .any(|u| u.label == format!("produtor só em rodada anterior ({old})")),
+        "motivo presente: {:?}",
+        chain
+            .unresolved
+            .iter()
+            .map(|u| &u.label)
+            .collect::<Vec<_>>()
+    );
+}
