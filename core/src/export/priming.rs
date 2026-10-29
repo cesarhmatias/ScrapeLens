@@ -189,8 +189,57 @@ fn is_plate_at(b: &[u8], i: usize) -> bool {
     ok && before_ok && after_ok
 }
 
+/// Placa com hífen: `ABC-1234` e Mercosul `ABC-1D23`.
+fn is_plate_dash_at(b: &[u8], i: usize) -> bool {
+    if i + 8 > b.len() {
+        return false;
+    }
+    let w = &b[i..i + 8];
+    let ok = w[..3].iter().all(u8::is_ascii_uppercase)
+        && w[3] == b'-'
+        && w[4].is_ascii_digit()
+        && (w[5].is_ascii_digit() || w[5].is_ascii_uppercase())
+        && w[6].is_ascii_digit()
+        && w[7].is_ascii_digit();
+    let before_ok = i == 0 || !(b[i - 1].is_ascii_uppercase() || b[i - 1].is_ascii_digit());
+    let after_ok =
+        i + 8 == b.len() || !(b[i + 8].is_ascii_uppercase() || b[i + 8].is_ascii_digit());
+    ok && before_ok && after_ok
+}
+
+/// VIN/chassi: 17 caracteres `[A-HJ-NPR-Z0-9]` em maiúsculas, com letra e dígito.
+fn is_vin_at(b: &[u8], i: usize) -> bool {
+    if i + 17 > b.len() || (i > 0 && b[i - 1].is_ascii_alphanumeric()) {
+        return false;
+    }
+    let w = &b[i..i + 17];
+    let shaped = w.iter().all(|c| {
+        (c.is_ascii_uppercase() || c.is_ascii_digit()) && !matches!(c, b'I' | b'O' | b'Q')
+    });
+    shaped
+        && w.iter().any(u8::is_ascii_digit)
+        && w.iter().any(u8::is_ascii_uppercase)
+        && (i + 17 == b.len() || !b[i + 17].is_ascii_alphanumeric())
+}
+
+/// Largura total (NFKC básico): `１２３` vira `123`, `＠` vira `@`.
+fn fold_width(text: &str) -> String {
+    text.chars()
+        .map(|c| match c as u32 {
+            0xFF01..=0xFF5E => char::from_u32(c as u32 - 0xFEE0).unwrap_or(c),
+            0x3000 => ' ',
+            _ => c,
+        })
+        .collect()
+}
+
 fn looks_sensitive_value(value: &str) -> bool {
-    value.contains("REDACTED") || (0..value.len()).any(|i| is_plate_at(value.as_bytes(), i))
+    value.contains("REDACTED")
+        || (0..value.len()).any(|i| {
+            is_plate_at(value.as_bytes(), i)
+                || is_plate_dash_at(value.as_bytes(), i)
+                || is_vin_at(value.as_bytes(), i)
+        })
 }
 
 /// Identificador opaco (CPF/processo/timestamp): longo e só de dígitos, ou hex
@@ -1577,10 +1626,20 @@ fn pii_spans(text: &str, wide: bool) -> Vec<(usize, usize, String)> {
             i += 1;
         }
     }
-    // 2. E-mail, JWT, placa e sequências longas de dígitos (CPF/CNPJ/cartão/telefone).
+    // 2. E-mail, JWT, placa, chassi e sequências longas de dígitos (CPF/CNPJ/cartão/telefone).
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
+        if is_plate_dash_at(bytes, i) {
+            spans.push((i, i + 8, "placa".to_string()));
+            i += 8;
+            continue;
+        }
+        if is_vin_at(bytes, i) {
+            spans.push((i, i + 17, "chassi".to_string()));
+            i += 17;
+            continue;
+        }
         if b.is_ascii_digit() {
             let mut j = i;
             let mut digits = 0;
@@ -1698,6 +1757,19 @@ fn digit_kind(run: &str) -> String {
     match digits.len() {
         14 => "cnpj".to_string(),
         15 | 16 if (3..=6).contains(&digits[0]) && luhn() => "cartao".to_string(),
+        // Série 2 (2221–2720).
+        16 if digits[0] == 2
+            && (2221..=2720).contains(&digits[..4].iter().fold(0, |a, d| a * 10 + d))
+            && luhn() =>
+        {
+            "cartao".to_string()
+        }
+        // 19 dígitos (Maestro/UnionPay/Discover): só prefixos conhecidos.
+        19 if matches!(digits[0] * 10 + digits[1], 50 | 56..=58 | 60 | 62 | 67) && luhn() => {
+            "cartao".to_string()
+        }
+        // Telefone com DDI 55: 12 ou 13 dígitos.
+        12 | 13 if digits[0] == 5 && digits[1] == 5 => "telefone".to_string(),
         11 => "cpf_ou_telefone".to_string(),
         10 if (formatted || !epoch)
             && (11..=99).contains(&(digits[0] * 10 + digits[1]))
@@ -1740,7 +1812,7 @@ fn is_pii_name(name: &str) -> bool {
 }
 
 fn contains_pii(text: &str) -> bool {
-    !pii_spans(text, false).is_empty()
+    !pii_spans(&fold_width(text), false).is_empty()
 }
 
 /// Literais de string Python (`'...'`, `b'...'`) de um trecho gerado, já
@@ -1802,6 +1874,7 @@ fn literal_pii_kinds(code: &str) -> Vec<String> {
     for literal in python_literals(code) {
         // Também a forma decodificada (porcentagem, até 3 camadas): o
         // detector não pode ser driblado por codificação.
+        let literal = fold_width(&literal);
         let mut views = vec![literal.clone()];
         let mut current = literal;
         for _ in 0..3 {
@@ -1874,42 +1947,64 @@ fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
 /// plano (valores trocados por `<nome>`) e a expressão Python.
 fn path_param_expr(gen: &mut Gen, url_base: &str) -> (String, String) {
     let (origin, path) = split_origin(url_base);
-    if !path.contains(';') {
+    let pii_segment = |seg: &str| {
+        let base = seg.split(';').next().unwrap_or(seg);
+        contains_pii(&percent_decode(base))
+    };
+    if !path.contains(';') && !path.split('/').any(pii_segment) {
         return (
             url_base.to_string(),
             format!("rebase({}, base)", lit(url_base)),
         );
     }
+    enum Part {
+        Lit(String),
+        Expr(String),
+    }
+    let mut parts: Vec<Part> = vec![Part::Lit(origin.to_string())];
     let mut plan = String::from(origin);
-    let mut pieces: Vec<String> = Vec::new();
-    let mut literal = String::from(origin);
-    let mut rest = path;
-    while let Some(at) = rest.find(';') {
-        literal.push_str(&rest[..at]);
-        plan.push_str(&rest[..at]);
-        let after = &rest[at + 1..];
-        let end = after.find(['/', ';']).unwrap_or(after.len());
-        let (name, value) = after[..end].split_once('=').unwrap_or((&after[..end], ""));
-        literal.push(';');
-        literal.push_str(name);
-        literal.push('=');
-        plan.push_str(&format!(";{name}=<{name}>"));
-        let expr = gen.fallback_param(&format!("path_{name}"), value, true, false, false);
-        if pieces.is_empty() {
-            pieces.push(format!("rebase({}, base)", lit(&literal)));
-        } else {
-            pieces.push(lit(&literal));
+    let push_lit = |parts: &mut Vec<Part>, text: &str| match parts.last_mut() {
+        Some(Part::Lit(existing)) => existing.push_str(text),
+        _ => parts.push(Part::Lit(text.to_string())),
+    };
+    for (index, segment) in path.split('/').enumerate() {
+        if index > 0 {
+            push_lit(&mut parts, "/");
+            plan.push('/');
         }
-        pieces.push(format!("urllib.parse.quote({expr}, safe='')"));
-        literal = String::new();
-        rest = &after[end..];
+        let mut pieces = segment.split(';');
+        let base = pieces.next().unwrap_or("");
+        if pii_segment(base) {
+            let expr = gen.fallback_param(
+                &format!("path_segmento_{index}"),
+                &percent_decode(base),
+                true,
+                false,
+                false,
+            );
+            parts.push(Part::Expr(format!("urllib.parse.quote({expr}, safe='')")));
+            plan.push_str(&format!("<path_segmento_{index}>"));
+        } else {
+            push_lit(&mut parts, base);
+            plan.push_str(base);
+        }
+        for param in pieces {
+            let (name, value) = param.split_once('=').unwrap_or((param, ""));
+            push_lit(&mut parts, &format!(";{name}="));
+            plan.push_str(&format!(";{name}=<{name}>"));
+            let expr = gen.fallback_param(&format!("path_{name}"), value, true, false, false);
+            parts.push(Part::Expr(format!("urllib.parse.quote({expr}, safe='')")));
+        }
     }
-    literal.push_str(rest);
-    plan.push_str(rest);
-    if !literal.is_empty() {
-        pieces.push(lit(&literal));
+    let mut out: Vec<String> = Vec::new();
+    for (i, part) in parts.iter().enumerate() {
+        match part {
+            Part::Lit(text) if i == 0 => out.push(format!("rebase({}, base)", lit(text))),
+            Part::Lit(text) => out.push(lit(text)),
+            Part::Expr(expr) => out.push(expr.clone()),
+        }
     }
-    (plan, pieces.join(" + "))
+    (plan, out.join(" + "))
 }
 
 /// Recurso estático (script, css, imagem, fonte, mídia): nunca é passo.
@@ -2396,6 +2491,14 @@ pub fn to_python(
                             request.id
                         ),
                     })?;
+                    if fold_width(&text) != text && contains_pii(&text) {
+                        return Err(CoreError::Export {
+                            message: format!(
+                                "passo {n} ({}): corpo com caracteres de largura total escondendo dado pessoal; recusado",
+                                request.id
+                            ),
+                        });
+                    }
                     if text
                         .chars()
                         .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r'))

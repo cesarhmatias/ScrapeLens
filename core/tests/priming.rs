@@ -1589,3 +1589,82 @@ fn url_encode(text: &str) -> String {
         })
         .collect()
 }
+
+#[test]
+fn business_pii_formats_never_reach_literals_or_the_plan() {
+    // (rótulo, valor): placa com hífen, Mercosul com hífen, chassi, +55,
+    // cartão série 2 e de 19 dígitos (Luhn), largura total.
+    let values = [
+        ("placa hífen", "ABC-1234"),
+        ("placa Mercosul hífen", "ABC-1D23"),
+        ("chassi", "9BWZZZ377VT004251"),
+        ("+55 pontuado", "+55 83 99999-8888"),
+        ("55 cru", "5583999998888"),
+        ("cartão série 2", "2223000048400011"),
+        ("cartão 19", "6221260000000000001"),
+        ("largura total", "１２３４５６７８９０９"),
+    ];
+    for (label, value) in values {
+        let encoded = url_encode(value);
+        // Query com nome genérico (nunca constante estrutural).
+        let bundle = custom_bundle(&[(
+            "GET",
+            &format!("https://h.example.test/go?ref={encoded}&p=1"),
+            &[],
+            None,
+        )]);
+        let script = generate(&bundle, "har-0001");
+        assert!(
+            !script.contains(value) && !script.contains(&encoded),
+            "{label} em query:\n{script}"
+        );
+        assert!(
+            script.contains("('ref', None,"),
+            "{label}: query deve ser obrigatória"
+        );
+        // Header de nome qualquer.
+        let bundle = custom_bundle(&[(
+            "GET",
+            "https://h.example.test/go",
+            &[("x-foo", value)],
+            None,
+        )]);
+        let script = generate(&bundle, "har-0001");
+        assert!(!script.contains(value), "{label} em header:\n{script}");
+        // Segmento de caminho: vira parâmetro, nunca literal nem plano.
+        let bundle = custom_bundle(&[(
+            "GET",
+            &format!("https://h.example.test/go/{encoded}/fim"),
+            &[],
+            None,
+        )]);
+        let script = generate(&bundle, "har-0001");
+        assert!(
+            !script.contains(value) && !script.contains(&encoded),
+            "{label} no caminho:\n{script}"
+        );
+        assert!(script.contains("path_segmento_2"), "{label}:\n{script}");
+        assert!(script.contains("/fim"));
+        // Chave de form.
+        let bundle = form_bundle(&format!("{encoded}=1"));
+        match to_python(
+            &bundle.session,
+            &bundle,
+            "har-0001",
+            &PrimingOptions::default(),
+        ) {
+            Ok(out) => assert!(!out.text.contains(value), "{label} em chave:\n{}", out.text),
+            Err(e) => assert!(!e.to_string().contains(value)),
+        }
+    }
+    // O mesmo placa_ref=ABC-1234 do revisor.
+    let bundle = custom_bundle(&[(
+        "GET",
+        "https://h.example.test/go?placa_ref=ABC-1234",
+        &[],
+        None,
+    )]);
+    let script = generate(&bundle, "har-0001");
+    assert!(!script.contains("ABC-1234"));
+    assert!(script.contains("('placa_ref', None,"));
+}
