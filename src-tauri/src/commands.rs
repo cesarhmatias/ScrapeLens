@@ -1031,7 +1031,7 @@ fn open_comparison_with(
 
 /// Script de priming (cadeia completa até a requisição); usa o codificador do adaptador
 /// de protocolo quando ele reivindica o campo e informa isso na prévia.
-fn priming_preview(dir: &Path, request_id: &str) -> Result<crate::export::ExportPreview, String> {
+fn priming_preview(dir: &Path, request_id: &str, lenient_parts: bool) -> Result<crate::export::ExportPreview, String> {
     let lazy = cached_session(dir)?;
     let request = lazy
         .session
@@ -1042,6 +1042,7 @@ fn priming_preview(dir: &Path, request_id: &str) -> Result<crate::export::Export
     let options = scrapelens_core::export::priming::PrimingOptions {
         flow: crate::adapters::flow_options(),
         adapter_encoders: crate::adapters::priming_encoders(),
+        lenient_parts,
         ..Default::default()
     };
     let output = scrapelens_core::export::priming::to_python(
@@ -1076,9 +1077,10 @@ fn export_preview(
     request_id: &str,
     format: &str,
     annotate: bool,
+    lenient_parts: bool,
 ) -> Result<crate::export::ExportPreview, String> {
     if format == "priming" {
-        return priming_preview(dir, request_id);
+        return priming_preview(dir, request_id, lenient_parts);
     }
     let origins = annotate.then(|| {
         cached_session(dir).and_then(|lazy| {
@@ -1105,9 +1107,10 @@ pub async fn export_request(
     request_id: String,
     format: String,
     annotate_origins: Option<bool>,
+    lenient_parts: Option<bool>,
 ) -> Result<crate::export::ExportPreview, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        export_preview(Path::new(&session_dir), &request_id, &format, annotate_origins.unwrap_or(false))
+        export_preview(Path::new(&session_dir), &request_id, &format, annotate_origins.unwrap_or(false), lenient_parts.unwrap_or(false))
     })
     .await
     .map_err(|error| format!("a geração da exportação falhou: {error}"))?
@@ -1445,8 +1448,8 @@ mod tests {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = detran_session("annot");
         let d = Path::new(&dir);
-        let plain = export_preview(d, "cdp-r0011", "curl", false).unwrap();
-        let noted = export_preview(d, "cdp-r0011", "curl", true).unwrap();
+        let plain = export_preview(d, "cdp-r0011", "curl", false, false).unwrap();
+        let noted = export_preview(d, "cdp-r0011", "curl", true, false).unwrap();
         let strip = |text: &str| text.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n");
         assert_eq!(strip(&plain.text), strip(&noted.text));
         assert!(noted.text.len() > plain.text.len(), "deve haver comentários de origem");
@@ -1465,7 +1468,7 @@ mod tests {
         let mut all = serde_json::Map::new();
         for format in ["curl", "python"] {
             for annotate in [false, true] {
-                let preview = export_preview(Path::new(&dir), &request, format, annotate).unwrap();
+                let preview = export_preview(Path::new(&dir), &request, format, annotate, false).unwrap();
                 all.insert(format!("{format}-{annotate}"), serde_json::to_value(&preview).unwrap());
             }
         }
@@ -1603,9 +1606,12 @@ mod tests {
         assert!(!view.fields[0].raw.is_empty());
         assert!(crate::adapters::view(&lazy, request, "lado").is_err());
         // script de priming usa o codificador do adaptador e a prévia diz isso
-        let preview = export_preview(&dir, "har-0026", "priming", false).unwrap();
+        let preview = export_preview(&dir, "har-0026", "priming", false, false).unwrap();
         assert_eq!(preview.format, "priming");
         assert_eq!(preview.adapter.as_deref(), Some("natural-ajax"));
+        // `--lenient-parts` é opção avançada: desligada por padrão, e ligada ela gera o script sem erro (nesta fixture o texto sai igual ao estrito)
+        let lenient = export_preview(&dir, "har-0026", "priming", false, true).unwrap();
+        assert_eq!(lenient.adapter.as_deref(), Some("natural-ajax"));
         let _ = d;
         fs::remove_dir_all(dir).ok();
     }
@@ -1655,7 +1661,7 @@ mod tests {
             }
         }
         for id in ["har-0026"] {
-            if let Ok(p) = priming_preview(Path::new(&dir), id) { fs::write(out.join(format!("{id}.priming.json")), serde_json::to_string(&p).unwrap()).unwrap(); }
+            if let Ok(p) = priming_preview(Path::new(&dir), id, false) { fs::write(out.join(format!("{id}.priming.json")), serde_json::to_string(&p).unwrap()).unwrap(); }
         }
     }
 

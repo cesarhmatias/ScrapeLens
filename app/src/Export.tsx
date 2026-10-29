@@ -123,6 +123,7 @@ export function ExportDialog({
   const sessionDir = session.sourcePath;
   const [format, setFormat] = useState<"curl" | "python" | "priming">("curl");
   const [annotate, setAnnotate] = useState(false);
+  const [lenient, setLenient] = useState(false);
   const [preview, setPreview] = useState<ExportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -143,7 +144,7 @@ export function ExportDialog({
     setSaved(null);
     setPreview(null);
     bridge
-      .exportRequest(sessionDir, request.id, format, annotate)
+      .exportRequest(sessionDir, request.id, format, annotate, format === "priming" && lenient)
       .then((result) => {
         if (!alive) return;
         if (result.requestId !== request.id) {
@@ -161,7 +162,7 @@ export function ExportDialog({
     return () => {
       alive = false;
     };
-  }, [format, annotate, request.id, sessionDir]);
+  }, [format, annotate, lenient, request.id, sessionDir]);
 
   const copy = useCallback(async () => {
     if (!preview) return;
@@ -242,6 +243,14 @@ export function ExportDialog({
         <label className="annotate-opt" hidden={format === "priming"} title="Comentários com a origem observada de cada valor; o comando gerado não muda">
           <input type="checkbox" checked={annotate} onChange={(e) => setAnnotate(e.target.checked)} /> anotar origens
         </label>
+        {format === "priming" && (
+          <label
+            className="annotate-opt"
+            title="Avançado: só valores com cara de identificador, segredo ou carimbo de tempo viram parâmetro; o resto das partes sem origem fica literal. Desligado por padrão (modo estrito)."
+          >
+            <input type="checkbox" checked={lenient} onChange={(e) => setLenient(e.target.checked)} /> partes tolerantes (avançado)
+          </label>
+        )}
         <span className="grow" />
         {preview && (
           <span className={`tag ${preview.headerVerification === "verified" ? "tag-real" : "tag-demo"}`}>

@@ -286,8 +286,9 @@ export const bridge = {
     requestId: string,
     format: "curl" | "python" | "priming",
     annotateOrigins = false,
+    lenientParts = false,
   ): Promise<ExportPreview> {
-    return invoke("export_request", { sessionDir, requestId, format, annotateOrigins });
+    return invoke("export_request", { sessionDir, requestId, format, annotateOrigins, lenientParts });
   },
 
   async requestOrigins(sessionDir: string, requestId: string): Promise<ValueOrigins> {
