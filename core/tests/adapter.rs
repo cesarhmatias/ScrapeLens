@@ -244,3 +244,79 @@ fn compare_shows_internal_names() {
     let plain = compare_sessions(&a.session, &a, &bb.session, &bb, &CompareOptions::default());
     assert!(!serde_json::to_string(&plain).unwrap().contains("XML.delta"));
 }
+
+/// Produtor em `<textarea name="XML">` com entidades; o consumidor o devolve.
+fn html_flow(delta: &str) -> (SessionBundle, usize) {
+    // `&amp;` antes do delta desloca os offsets decodificados × originais
+    let payload = lp(delta, "ZZZ0Z00");
+    let escaped = payload.replace('!', "&#33;");
+    let page = format!(
+        "<html><body><form><textarea name=\"XML\">{escaped}</textarea></form></body></html>"
+    );
+    let delta_at = page.find("delta").unwrap() + "delta10".len() - 2 + 2;
+    let post = format!("XML={}&STAMP=7", lp(delta, "ABC1D23"));
+    let jsonl = |v: &[Value]| {
+        v.iter()
+            .map(|x| format!("{x}\n"))
+            .collect::<String>()
+            .into_bytes()
+    };
+    let mut events = Vec::new();
+    let mut bodies = Vec::new();
+    for (n, ts, p, resp) in [
+        (1u32, 1.0, None, page.clone()),
+        (2, 2.0, Some(post), "ok".to_string()),
+    ] {
+        let id = format!("{n}.1");
+        let mut h = json!({});
+        if p.is_some() {
+            h["content-type"] = json!("application/x-www-form-urlencoded");
+        }
+        events.push(json!({"method":"Network.requestWillBeSent","params":{"requestId":id,"loaderId":"L",
+            "timestamp":ts,"wallTime":1793046000.0+ts,"request":{"url":"https://x.test/app/Connector","method":"POST",
+            "headers":h,"postData":p,"hasPostData":p.is_some()},"type":"XHR","frameId":"F"}}));
+        events.push(json!({"method":"Network.responseReceived","params":{"requestId":id,"loaderId":"L",
+            "timestamp":ts+0.01,"type":"XHR","response":{"url":"https://x.test/app/Connector","status":200,
+            "statusText":"","headers":{"content-type":"text/html"},"protocol":"http/1.1"}}}));
+        events.push(json!({"method":"Network.loadingFinished","params":{"requestId":id,"timestamp":ts+0.02,"encodedDataLength":1}}));
+        if let Some(p) = p {
+            bodies.push(body_line(&id, "request", &p));
+        }
+        bodies.push(body_line(&id, "response", &resp));
+    }
+    let capture = parse_cdp_jsonl(&jsonl(&events)).unwrap();
+    let (mut session, _) = build_cdp_session(&capture);
+    let mut attachments = Default::default();
+    apply_cdp_bodies(&mut session, &mut attachments, &jsonl(&bodies));
+    let mut bundle = SessionBundle::new(session);
+    bundle.attachments = attachments;
+    (bundle, delta_at)
+}
+
+#[test]
+fn html_textarea_with_entities_maps_offsets_to_the_original_html() {
+    let (b, _) = html_flow("D3LTA-0001");
+    let o = value_origins(&b.session, &b, &logical(&b, "2.1"), &registry()).unwrap();
+    let delta = o
+        .values
+        .iter()
+        .find(|v| v.field == "XML.delta")
+        .expect("XML.delta");
+    assert_eq!(delta.status, OriginStatus::Origin);
+    let ev = &delta.evidences[0];
+    assert_eq!(ev.request_id, logical(&b, "1.1"));
+    assert_eq!(ev.field.as_deref(), Some("XML.delta"));
+    let page = format!(
+        "<html><body><form><textarea name=\"XML\">{}</textarea></form></body></html>",
+        lp("D3LTA-0001", "ZZZ0Z00").replace('!', "&#33;")
+    );
+    assert!(ev.html_control);
+    assert_eq!(
+        ev.producer_offset,
+        Some(page.find("D3LTA-0001").unwrap() as u64)
+    );
+    // sem registro não há nomes internos
+    let plain =
+        value_origins(&b.session, &b, &logical(&b, "2.1"), &FlowOptions::default()).unwrap();
+    assert!(!plain.values.iter().any(|v| v.field.starts_with("XML.")));
+}

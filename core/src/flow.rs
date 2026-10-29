@@ -644,7 +644,29 @@ fn producer_data(
             || find_ci_ascii(&text, "<textarea")
             || find_ci_ascii(&text, "<input");
         if is_html {
+            let actx = AdapterContext {
+                url: &attempt.url,
+                method: &attempt.method,
+                request: false,
+                media: Some(&media),
+            };
             for c in crate::html::html_controls(&text) {
+                // Controle HTML (valor já sem entidades): partes do adaptador com
+                // offset mapeado até o HTML original.
+                if let Some(parts) = adapter_parts(adapters, &c.name, &c.value, &actx) {
+                    for (part_name, part_value, part_offset) in parts {
+                        let original = c.map.get(part_offset).copied().unwrap_or(c.start);
+                        data.items.push(Item {
+                            scope: ProducerScope::ResponseBody,
+                            field: Some(format!("{}.{part_name}", c.name)),
+                            value: part_value,
+                            offset: Some(original as u64),
+                            named: true,
+                            html: true,
+                            soft: false,
+                        });
+                    }
+                }
                 if c.value.len() >= OPAQUE_MIN {
                     data.opaque.push(OpaqueField {
                         name: c.name.clone(),
