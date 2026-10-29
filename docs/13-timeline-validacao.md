@@ -132,3 +132,23 @@ decididos pelo líder:
 Residuais aceitos: M2 (constante curta numa captura de uma rodada é
 indistinguível de parâmetro) e L1 (map_origin automático para outro serviço
 em loopback, com aviso e mapeamento citado no resumo).
+
+## Fechamento da rodada 9 (2026-10-29)
+
+APROVADA (revisor, b9c0c21; veredito em /tmp/rev21/VEREDITO.md). Decisões
+desde a re-revisão:
+- `plan.version` (inteiro), atual = `validate::PLAN_VERSION` = 2. O hash só é
+  comparado com a versão atual; versão ausente ou menor avisa "plano de
+  versão anterior (vN)", maior avisa "plano de versão diferente (vN)", sem
+  divergir. Plano sem hash avisa "plano sem impressão".
+- Isenção de parâmetro: só o par (name, part) que o plano REGENERADO DA
+  CAPTURA produz (`priming::plan_parameter_uses`), nunca o que o trace
+  declara. Outro item sob um nome do plano passa por todas as checagens e
+  avisa "parâmetro não corresponde ao plano".
+- `plan.parameters` do trace só viram parâmetros do usuário com o plano
+  verificado (versão atual, hash conferido, alvo pareado). Plano antigo ou
+  sem hash não isenta nada.
+- Trace fiel do gerador atual: equivalente, sem avisos além da origem mapeada.
+Bundle de referência: d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f
+(HEAD 7410fa4). Residuais aceitos: sid/SESSIONID congelado só detectado na
+execução; plano antigo ou sem hash equivalente com aviso; M2; L1.
