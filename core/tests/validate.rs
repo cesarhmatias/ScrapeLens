@@ -491,7 +491,7 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
-        json!({"parameters":[{"name":"placa"}], "plan": {"hash": other, "parameters": ["placa"]}}),
+        json!({"parameters":[{"name":"placa"}], "plan": {"version":2,"hash": other, "parameters": ["placa"]}}),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert!(
@@ -506,7 +506,7 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
-        json!({"parameters":[{"name":"placa"}], "plan": {"hash": h, "parameters": ["placa"]}}),
+        json!({"parameters":[{"name":"placa"}], "plan": {"version":2,"hash": h, "parameters": ["placa"]}}),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
     assert!(
@@ -518,7 +518,7 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
-        json!({"parameters":[{"name":"placa"},{"name":"q"}], "plan": {"hash": h, "parameters": ["placa"]}}),
+        json!({"parameters":[{"name":"placa"},{"name":"q"}], "plan": {"version":2,"hash": h, "parameters": ["placa"]}}),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
     // sem `plan`: aviso, sem divergência
@@ -532,6 +532,93 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
         v.warnings
             .iter()
             .any(|w| w.contains("plano ausente: execução não verificada contra o plano")),
+        "{:?}",
+        v.warnings
+    );
+}
+
+#[test]
+fn faithful_plan_has_no_spurious_warnings() {
+    // trace fiel do gerador atual: `plan.parameters` (obrigatórios, inclusive
+    // nomes que não existem nos passos pareados e uma constante longa) não passa
+    // pelas checagens de `parameters` → equivalente, ZERO avisos.
+    let names = ["placa", "cpf", "sessionid_cliente", "SESSIONID", "sig"];
+    let h = hash_for(&names);
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({
+            "parameters": [{"name":"placa"}],
+            "plan": {"version":2, "hash": h, "parameters": names},
+        }),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    // único aviso permitido: o mapeamento automático de origem (hosts diferentes)
+    let spurious: Vec<&String> = v
+        .warnings
+        .iter()
+        .filter(|w| !w.contains("mapeadas automaticamente"))
+        .collect();
+    assert!(spurious.is_empty(), "{spurious:?}");
+    // o mesmo nome no `parameters` de topo continua checado e avisa
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({
+            "parameters": [{"name":"placa"},{"name":"cpf"}],
+            "plan": {"version":2, "hash": h, "parameters": names},
+        }),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w.contains("parâmetro inválido: `cpf`")),
+        "{:?}",
+        v.warnings
+    );
+}
+
+#[test]
+fn old_plan_version_warns_instead_of_diverging() {
+    let h = hash_for(&["placa"]);
+    // versão ausente: build anterior → aviso, sem comparar o hash
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({"parameters":[{"name":"placa"}], "plan": {"hash": h, "parameters": ["placa"]}}),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w.contains("plano de versão anterior (v1)")),
+        "{:?}",
+        v.warnings
+    );
+    // versão antiga com hash que não confere: ainda só aviso
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({"plan": {"version":1, "hash": hash_for(&["outro"]), "parameters": ["placa"]}}),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w.contains("plano de versão anterior (v1)")),
+        "{:?}",
+        v.warnings
+    );
+    // plano sem hash: mensagem precisa, sem divergir
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({"plan": {"version":2, "parameters": ["placa"]}}),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.warnings.iter().any(|w| w == "plano sem impressão"),
         "{:?}",
         v.warnings
     );

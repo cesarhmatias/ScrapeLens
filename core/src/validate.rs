@@ -24,7 +24,12 @@
 //!
 //! `parameters` só vale para campo sem origem na captura e que não seja
 //! constante (identificador longo e opaco); os demais são ignorados com o
-//! aviso "parâmetro inválido".
+//! aviso "parâmetro inválido". `plan.parameters` são os obrigatórios do plano:
+//! classificam como parâmetro do usuário, mas não passam por essas checagens.
+//!
+//! Plano versionado: `plan.version` igual a [`PLAN_VERSION`] compara o hash do
+//! plano (divergência se não confere); versão ausente ou diferente é plano de
+//! build anterior e só avisa; plano sem hash avisa "plano sem impressão".
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -43,7 +48,7 @@ use crate::flow::{
 use crate::model::SessionV1;
 use crate::parse::trace::{
     COMPLETE_NOTE_PREFIX, PARAM_NOTE_PREFIX, PLAN_HASH_NOTE_PREFIX, PLAN_PARAM_NOTE_PREFIX,
-    PLAN_PRESENT_NOTE, TARGET_NOTE_PREFIX,
+    PLAN_PRESENT_NOTE, PLAN_VERSION_NOTE_PREFIX, TARGET_NOTE_PREFIX,
 };
 use crate::search::BodySource;
 
@@ -145,6 +150,12 @@ fn client_composed(v: &ValueOrigin) -> bool {
         || v.label.contains("composição no cliente")
         || v.label.contains("gerado no cliente")
 }
+
+/// Versão atual do plano (`plan.version` no trace). O hash só é comparado
+/// quando o trace declara exatamente esta versão; versão ausente ou diferente
+/// é plano de build anterior e gera só um aviso. Mudou a definição do hash?
+/// Suba a versão.
+pub const PLAN_VERSION: u32 = 2;
 
 /// Impressão do plano de um alvo: passos da cadeia (método + caminho
 /// normalizado, sem host) e nomes dos parâmetros. FNV-1a 64 em hexadecimal.
@@ -290,6 +301,19 @@ pub fn validate(
             )),
             (true, Some(why)) => warnings.push(format!("parâmetro inválido: `{name}` {why}")),
             (true, None) => params.push(name),
+        }
+    }
+    // `plan.parameters` são os parâmetros obrigatórios do plano: classificam
+    // como parâmetro do usuário, mas não passam pelas checagens acima (um
+    // deles pode ter origem observada, ex. XML.sid via adaptador).
+    for name in trace
+        .session
+        .notes
+        .iter()
+        .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
+    {
+        if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
+            params.push(name);
         }
     }
     let is_param = |field: &str| params.iter().any(|p| p.eq_ignore_ascii_case(field));
@@ -584,39 +608,51 @@ pub fn validate(
 
     // impressão do plano × recalculada a partir da captura e do alvo, só com os
     // parâmetros do plano (`plan.parameters`); o `parameters` de topo (inclusive
-    // opcionais sobrescritos pelo usuário) não entra no hash
+    // opcionais sobrescritos pelo usuário) não entra no hash. A versão do plano
+    // protege traces de builds anteriores: sem `plan.version` atual, não compara.
     let target = note_value(trace, TARGET_NOTE_PREFIX).map(str::to_string);
     let mut plan_mismatch = false;
     if !trace.session.notes.iter().any(|n| n == PLAN_PRESENT_NOTE) {
         warnings.push("plano ausente: execução não verificada contra o plano".to_string());
-    } else if let (Some(declared_hash), Some(target)) =
-        (note_value(trace, PLAN_HASH_NOTE_PREFIX), &target)
-    {
-        let names: Vec<String> = trace
-            .session
-            .notes
-            .iter()
-            .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
-            .map(str::to_string)
-            .collect();
-        match plan_hash(
-            capture,
-            capture_source,
-            target,
-            &options.compare.flow,
-            &names,
-        ) {
-            Ok(h) if h == declared_hash => {}
-            Ok(h) => {
-                plan_mismatch = true;
-                warnings.push(format!(
-                    "plano não confere: o trace declara o hash {declared_hash} e a captura com o alvo {target} dá {h}"
-                ));
-            }
-            Err(e) => warnings.push(format!("plano não verificado: {e}")),
-        }
     } else {
-        warnings.push("plano ausente: execução não verificada contra o plano".to_string());
+        let version =
+            note_value(trace, PLAN_VERSION_NOTE_PREFIX).and_then(|v| v.parse::<u32>().ok());
+        if version != Some(PLAN_VERSION) {
+            let label = version.map_or_else(|| "v1".to_string(), |v| format!("v{v}"));
+            warnings.push(format!(
+                "plano de versão anterior ({label}): gere o script de novo para verificar contra o plano"
+            ));
+        } else if let Some(declared_hash) = note_value(trace, PLAN_HASH_NOTE_PREFIX) {
+            if let Some(target) = &target {
+                let names: Vec<String> = trace
+                    .session
+                    .notes
+                    .iter()
+                    .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
+                    .map(str::to_string)
+                    .collect();
+                match plan_hash(
+                    capture,
+                    capture_source,
+                    target,
+                    &options.compare.flow,
+                    &names,
+                ) {
+                    Ok(h) if h == declared_hash => {}
+                    Ok(h) => {
+                        plan_mismatch = true;
+                        warnings.push(format!(
+                            "plano não confere: o trace declara o hash {declared_hash} e a captura com o alvo {target} dá {h}"
+                        ));
+                    }
+                    Err(e) => warnings.push(format!("plano não verificado: {e}")),
+                }
+            } else {
+                warnings.push("plano sem alvo: execução não verificada contra o plano".to_string());
+            }
+        } else {
+            warnings.push("plano sem impressão".to_string());
+        }
     }
 
     // veredito: primeiro problema, em ordem de passo

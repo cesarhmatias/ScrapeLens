@@ -16,9 +16,13 @@
 //!                                              // que seja pareado; sem ele, "incompleta")
 //!   "complete": true,                          // o script executou todo o plano (false/ausente
 //!                                              // = "incompleta")
-//!   "plan": {"hash":"<hex>", "parameters":[…]},// opcional: impressão do plano (ver
-//!                                              // `validate::plan_hash`); `plan.parameters`
-//!                                              // vale como `parameters`
+//!   "plan": {"version":2,                      // opcional: versão do esquema do plano; sem ela,
+//!                                              // o validate trata como versão anterior e só avisa
+//!            "hash":"<hex>",                    // impressão do plano (ver
+//!                                              // `validate::plan_hash`)
+//!            "parameters":[…]},                 // parâmetros OBRIGATÓRIOS do plano (nomes usados
+//!                                              // no hash; classificam como parâmetro do usuário,
+//!                                              // mas não passam pelas checagens de `parameters`)
 //!   "steps": [                                 // obrigatório; ordem de execução
 //!     {
 //!       "method": "POST",                      // obrigatório
@@ -76,6 +80,8 @@ pub const PLAN_HASH_NOTE_PREFIX: &str = "trace-plan-hash: ";
 pub const PLAN_PARAM_NOTE_PREFIX: &str = "trace-plan-param: ";
 /// Presente quando o trace traz o objeto `plan`.
 pub const PLAN_PRESENT_NOTE: &str = "trace-plan: present";
+/// Versão do esquema do plano (`plan.version`), quando presente.
+pub const PLAN_VERSION_NOTE_PREFIX: &str = "trace-plan-version: ";
 
 pub const MAX_STEPS: usize = 20_000;
 /// Headers por lista (enviados e recebidos), por passo.
@@ -396,17 +402,10 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         session.session.labels.push(TRACE_LABEL.to_string());
     }
     let plan = root.get("plan").filter(|v| !v.is_null());
-    let mut lists: Vec<&Value> = Vec::new();
-    if let Some(p) = root.get("parameters").filter(|v| !v.is_null()) {
-        lists.push(p);
-    }
-    if let Some(p) = plan
-        .and_then(|p| p.get("parameters"))
-        .filter(|v| !v.is_null())
-    {
-        lists.push(p);
-    }
-    for params in lists {
+    // `parameters` de topo: entradas do usuário do script (passam pelas checagens
+    // do validate). `plan.parameters` são os parâmetros obrigatórios do plano e
+    // ficam em notas próprias: só classificam, sem as checagens.
+    if let Some(params) = root.get("parameters").filter(|v| !v.is_null()) {
         let list = params
             .as_array()
             .ok_or_else(|| bad("parameters não é lista"))?;
@@ -432,6 +431,16 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
     }
     if let Some(plan) = plan.filter(|p| p.is_object()) {
         session.session.notes.push(PLAN_PRESENT_NOTE.to_string());
+        if let Some(version) = plan.get("version").filter(|v| !v.is_null()) {
+            let version = version
+                .as_u64()
+                .filter(|n| *n <= u64::from(u32::MAX))
+                .ok_or_else(|| bad("plan.version deve ser inteiro"))?;
+            session
+                .session
+                .notes
+                .push(format!("{PLAN_VERSION_NOTE_PREFIX}{version}"));
+        }
         if let Some(list) = plan.get("parameters").and_then(Value::as_array) {
             for p in list {
                 let name = match p {
