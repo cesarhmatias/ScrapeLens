@@ -38,5 +38,6 @@ Qualquer divergência (inclusive valores de outra sessão/HAR) devolve 200 com `
 | `error` | `cmd_consultar_placa` responde 200 com `ERRORMESSAGE` preenchido (demais eventos normais) | `app-error` |
 | `nocontrols` | 200 com HTML sem `XML`/`STAMP`/`ERRORMESSAGE` | `indeterminado` (ou `blocked?` por heurística) |
 | `403` | HTTP 403 com página de bloqueio sintética | `blocked?` |
+| `strict` | como `ok`, mas valida a gramática do `XML` recebido com prefixos em unidades **UTF-16** (`serialize`/`jslen`): tipo `i`/`v`, larguras 2/2/2/2/2/3/5/1, sid do XML == `SESSIONID`, campos fixos, grupos `p` (2/5), `x` (2), sem sobras. Prefixo errado → 200 com `ERRORMESSAGE` (`gramática do XML: …`). Gera valores de tamanho diferente das fixtures: SESSIONID com 15 chars de prefixo (+`_`+12), delta de 20 chars com acento (`Dé…`), resposta com acentos | `app-ok` / `app-error` |
 
 `--seed N` torna os valores reprodutíveis (testes); sem ele, cada execução é aleatória.

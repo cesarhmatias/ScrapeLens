@@ -1,0 +1,86 @@
+{
+ "a_sem_adaptador": {
+  "rc": 1,
+  "requests": 3,
+  "app_errors": [
+   "app-error: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)"
+  ],
+  "stderr": "priming: a aplicação respondeu com ERRORMESSAGE no passo 3: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)"
+ },
+ "b_export_rc": 0,
+ "b_sessao_1": {
+  "rc": 1,
+  "requests": 3,
+  "connector_posts": 1,
+  "sim_sessions": 1,
+  "app_errors": [
+   "app-error: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)"
+  ]
+ },
+ "b_sessao_2": {
+  "rc": 1,
+  "requests": 3,
+  "connector_posts": 1,
+  "sim_sessions": 1,
+  "app_errors": [
+   "app-error: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)"
+  ]
+ },
+ "c_roundtrip": {
+  "detran-pb-blocked.har": {
+   "oraculo_campos": 0,
+   "xml": 0,
+   "adapter": null,
+   "rc": 1
+  },
+  "detran-pb-sanitized.har": {
+   "oraculo_campos": 158,
+   "xml": 8,
+   "adapter": null,
+   "rc": 1
+  },
+  "detran-pb-b-sanitized.har": {
+   "oraculo_campos": 158,
+   "xml": 8,
+   "adapter": null,
+   "rc": 1
+  },
+  "real-shape-1round.har": {
+   "oraculo_campos": 134,
+   "xml": 8,
+   "adapter": null,
+   "rc": 1
+  },
+  "real-shape-2rounds.har": {
+   "oraculo_campos": 268,
+   "xml": 16,
+   "adapter": null,
+   "rc": 1
+  },
+  "real-shape-composite.har": {
+   "oraculo_campos": 0,
+   "xml": 0,
+   "adapter": null,
+   "rc": 1
+  }
+ },
+ "c_total": {
+  "fixtures": 6,
+  "fields": 0,
+  "divergences": 0
+ },
+ "fails": [
+  "(b) sessão 1: rc=1: colo podem precisar de ajuste\npriming: a aplicação respondeu com ERRORMESSAGE no passo 3: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)",
+  "(b) sessão 1: 1 POSTs; erros=['app-error: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)']",
+  "(b) sessão 1: sem 'Cadeia concluída'",
+  "(b) sessão 2: rc=1: colo podem precisar de ajuste\npriming: a aplicação respondeu com ERRORMESSAGE no passo 3: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)",
+  "(b) sessão 2: 1 POSTs; erros=['app-error: prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)']",
+  "(b) sessão 2: sem 'Cadeia concluída'",
+  "(c) round-trip indisponível em detran-pb-blocked.har: `adapter-roundtrip` rc=1 erro: comando desconhecido: adapter-roundtrip\n\nuso:\n  scrapelens-core inspect <sessao>\n  scrapelens-",
+  "(c) round-trip indisponível em detran-pb-sanitized.har: `adapter-roundtrip` rc=1 erro: comando desconhecido: adapter-roundtrip\n\nuso:\n  scrapelens-core inspect <sessao>\n  scrapelens-",
+  "(c) round-trip indisponível em detran-pb-b-sanitized.har: `adapter-roundtrip` rc=1 erro: comando desconhecido: adapter-roundtrip\n\nuso:\n  scrapelens-core inspect <sessao>\n  scrapelens-",
+  "(c) round-trip indisponível em real-shape-1round.har: `adapter-roundtrip` rc=1 erro: comando desconhecido: adapter-roundtrip\n\nuso:\n  scrapelens-core inspect <sessao>\n  scrapelens-",
+  "(c) round-trip indisponível em real-shape-2rounds.har: `adapter-roundtrip` rc=1 erro: comando desconhecido: adapter-roundtrip\n\nuso:\n  scrapelens-core inspect <sessao>\n  scrapelens-",
+  "(c) round-trip indisponível em real-shape-composite.har: `adapter-roundtrip` rc=1 erro: comando desconhecido: adapter-roundtrip\n\nuso:\n  scrapelens-core inspect <sessao>\n  scrapelens-"
+ ]
+}

@@ -4,7 +4,9 @@
 Só biblioteca padrão; escuta APENAS em 127.0.0.1 (padrão 8791). Sem rede externa, sem telemetria.
 Cada GET em /servlet/easynat-app abre uma sessão NOVA (SESSIONID-prefixo, processId, STAMP, delta novos);
 valores capturados em outra sessão são rejeitados (ERRORMESSAGE), então só vale quem extrai da resposta.
-Modos (global; `--mode` ou GET /__sim/mode?m=...): ok | error | nocontrols | 403.
+Modos (global; `--mode` ou GET /__sim/mode?m=...): ok | error | nocontrols | 403 | strict.
+strict = ok + valida a gramática do campo XML (prefixos em unidades UTF-16, como `serialize`/`jslen`) e gera valores de
+tamanhos diferentes das fixtures (SESSIONID e delta mais longos, delta com acento).
 Documentação das rotas: testserver/detran-sim/README.md.
 """
 from __future__ import annotations
@@ -28,7 +30,7 @@ import build_fixtures as bf  # noqa: E402  (response_stream, jslen)
 import build_real_shape as brs  # noqa: E402  (connector_html, page_html, frame html)
 
 PREFIX = "/detran-portal-servicos"
-MODES = ("ok", "error", "nocontrols", "403")
+MODES = ("ok", "error", "nocontrols", "403", "strict")
 MODELS = brs.MODELS
 LOCK = threading.RLock()
 STATE = {"mode": "ok", "sessions": {}, "log": [], "rng": random.Random()}
@@ -38,9 +40,10 @@ PAGES = {"/cisnatural/NatLogon.html": ("NatLogon", "logon"), "/UIC-SERVICOS/SIM1
 
 def new_session() -> dict:
     r = STATE["rng"]
-    head = f"CSAN{r.randrange(10**5):05d}"
+    strict = STATE["mode"] == "strict"
+    head = f"CSAN{r.randrange(10**11):011d}" if strict else f"CSAN{r.randrange(10**5):05d}"
     s = {"head": head, "pid": "SYNTHPID" + "".join(r.choice("0123456789ABCDEF") for _ in range(24)),
-         "stamp": None, "delta": "inittini", "n": r.randrange(1000, 9000), "dp": "D" + "".join(r.choice("ABCDEFGH") for _ in range(3)),
+         "stamp": None, "delta": "inittini", "n": r.randrange(1000, 9000), "dp": ("Dé" + "".join(r.choice("ABCDEFGH") for _ in range(10))) if strict else "D" + "".join(r.choice("ABCDEFGH") for _ in range(3)),
          "dn": 0, "created": time.time()}
     STATE["sessions"][head] = s
     return s
@@ -67,6 +70,53 @@ def parse_request_xml(xml: str) -> dict | None:
     dl = int(xml[pos + 1:pos + 3])
     return {"init": xml[0] == "i", "sid": parts[0], "pid": parts[1], "model": parts[3], "page": parts[5],
             "event": parts[6], "props": props, "delta": xml[pos + 3:pos + 3 + dl]}
+
+
+def parse_request_xml_strict(xml: str, sid: str) -> tuple[dict | None, str]:
+    """Gramática estrita do XML de requisição; todos os comprimentos em unidades UTF-16 (jslen).
+    Devolve (req, "") ou (None, motivo). Não normaliza nem corrige: prefixo que não bate = erro."""
+    u = xml.encode("utf-16-le", "surrogatepass")
+    total, pos = len(u) // 2, 0
+
+    def take(n):
+        nonlocal pos
+        if n < 0 or pos + n > total:
+            raise ValueError(f"leitura além do fim (pos {pos}, n {n}, total {total})")
+        out = u[pos * 2:(pos + n) * 2].decode("utf-16-le", "surrogatepass"); pos += n
+        return out
+
+    def num(w):
+        t = take(w)
+        if len(t) != w or not t.isascii() or not t.isdigit():
+            raise ValueError(f"prefixo de largura {w} não numérico")
+        return int(t)
+    try:
+        kind = take(1)
+        if kind not in ("i", "v"):
+            return None, "tipo de mensagem inválido"
+        lens = [num(w) for w in (2, 2, 2, 2, 2, 3, 5, 1)]
+        parts = [take(n) for n in lens]
+        if parts[0] != sid:
+            return None, "prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)"
+        if parts[2] != "" or parts[4] != "dummy" or parts[7] != "false":
+            return None, "campos fixos do cabeçalho não batem"
+        props = {}
+        while True:
+            op = take(1)
+            if op == "p":
+                nl = num(2); vl = num(5)
+                name = take(nl); props[name] = take(vl)
+            elif op == "x":
+                delta = take(num(2))
+                break
+            else:
+                return None, f"operação inesperada {op!r} (prefixo de comprimento errado?)"
+        if pos != total:
+            return None, f"{total - pos} unidades UTF-16 sobrando após o delta (prefixo errado)"
+    except ValueError as e:
+        return None, "gramática do XML: " + str(e)
+    return {"init": kind == "i", "sid": parts[0], "pid": parts[1], "model": parts[3], "page": parts[5],
+            "event": parts[6], "props": props, "delta": delta}, ""
 
 
 class H(BaseHTTPRequestHandler):
@@ -155,7 +205,11 @@ class H(BaseHTTPRequestHandler):
                 return self._send(403, "<html><body><h1>403</h1><p>Request blocked (synthetic protection page)</p></body></html>\n")
             sid, head = form.get("SESSIONID", ""), form.get("SESSIONID", "").split("_")[0]
             s = STATE["sessions"].get(head)
-            req = parse_request_xml(form.get("XML", ""))
+            strict_err = ""
+            if mode == "strict":
+                req, strict_err = parse_request_xml_strict(form.get("XML", ""), sid)
+            else:
+                req = parse_request_xml(form.get("XML", ""))
             if mode == "nocontrols":
                 self._rec(p, 200, "modo nocontrols: 200 sem XML/STAMP")
                 return self._send(200, "<html><body><h1>Servico indisponivel</h1><p>tente novamente (sintético)</p></body></html>\n")
@@ -165,7 +219,7 @@ class H(BaseHTTPRequestHandler):
             elif not re.fullmatch(r"\d{12}", sid.partition("_")[2]):
                 problems.append("SESSIONID sem o sufixo montado no cliente (12 dígitos)")
             if req is None:
-                problems.append("XML ilegível")
+                problems.append(strict_err or "XML ilegível")
             if s and req:
                 if req["pid"] != s["pid"]:
                     problems.append("processId diferente")
@@ -190,7 +244,7 @@ class H(BaseHTTPRequestHandler):
             fields = [("nextPage", PAGES_NEXT.get(req["page"], "/UIC-SERVICOS/VES0009X.html"))]
             if req["event"] == "cmd_consultar_placa":
                 fields = [("v_placa", req["props"].get("v_placa", "")), ("v_cpf", req["props"].get("v_cpf", "")),
-                          ("v_situacao_atual", "Apreendido & Liberado <ok>"), ("vp_situacao_atual", "true"), ("v_tmp", "x")]
+                          ("v_situacao_atual", "Apreensão & Liberação <ok> – pátio" if mode == "strict" else "Apreendido & Liberado <ok>"), ("vp_situacao_atual", "true"), ("v_tmp", "x")]
             xml = bf.response_stream(fields, s["delta"])
             self._rec(p, 200, f"ok evento={req['event'] or 'init'}")
             return self._send(200, brs.connector_html(s["n"], xml, s["stamp"]))
