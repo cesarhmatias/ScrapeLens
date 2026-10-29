@@ -713,6 +713,92 @@ pub async fn adapter_view(
     .map_err(|error| format!("a leitura foi interrompida: {error}"))?
 }
 
+/// Linha do tempo da aplicação (`timeline::timeline`), com o registro de adaptadores do app.
+#[tauri::command]
+pub async fn session_timeline(session_dir: String) -> Result<scrapelens_core::timeline::Timeline, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = Path::new(&session_dir);
+        let rules = load_rules(dir)?;
+        let lazy = cached_session(dir)?;
+        Ok(scrapelens_core::timeline::timeline(
+            &lazy.session,
+            &scrapelens_core::search::LazyBodies(&lazy),
+            &scrapelens_core::timeline::TimelineOptions { flow: crate::adapters::flow_options(), rules },
+        ))
+    })
+    .await
+    .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidationResult {
+    /// Pasta nova (0700) com a sessão importada do trace; contém dados da execução.
+    pub trace_dir: String,
+    pub trace_requests: usize,
+    pub validation: scrapelens_core::validate::Validation,
+}
+
+/// Importa o trace de execução do script (`scrapelens.trace/1`) para uma pasta nova e valida
+/// contra a sessão aberta. Nada é executado e nenhuma rede é usada.
+#[tauri::command]
+pub async fn validate_execution(
+    app: AppHandle,
+    session_dir: String,
+    trace_path: String,
+    map_origin: Option<String>,
+) -> Result<ValidationResult, String> {
+    let root = sessions_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        validate_execution_blocking(&root, Path::new(&session_dir), &trace_path, map_origin.as_deref())
+    })
+    .await
+    .map_err(|error| format!("a validação foi interrompida: {error}"))?
+}
+
+fn validate_execution_blocking(
+    root: &Path,
+    capture_dir: &Path,
+    trace_path: &str,
+    map_origin: Option<&str>,
+) -> Result<ValidationResult, String> {
+    use scrapelens_core::validate::{validate, ValidateOptions};
+    let map = match map_origin.map(str::trim).filter(|m| !m.is_empty()) {
+        None => None,
+        Some(text) => Some(
+            scrapelens_core::compare::OriginMap::parse(text)
+                .ok_or_else(|| format!("mapeamento de origem inválido ({text}); use <origem-da-captura>=<origem-do-trace>, por exemplo https://sistema.gov.br=http://127.0.0.1:8080"))?,
+        ),
+    };
+    let bytes = read_import_file(trace_path, "trace de execução")?;
+    let imported = scrapelens_core::parse::import_trace(&bytes).map_err(|error| {
+        format!("trace inválido: {error}. Use o arquivo gerado pelo script de priming com --trace (scrapelens.trace/1).")
+    })?;
+    let dir = unique_session_dir(root, &sanitize_dir_name(&imported.bundle.session.session.id));
+    store::write_session_dir(&imported.bundle, &dir)
+        .map_err(|error| format!("não foi possível gravar a sessão do trace: {error}"))?;
+    let rules = load_rules(capture_dir)?;
+    let capture = cached_session(capture_dir)?;
+    let trace = cached_session(&dir)?;
+    let mut options = ValidateOptions { rules, ..Default::default() };
+    // Sem adaptador de propósito: com o `NaturalAjax` o core aponta `XML.delta`/`XML.p.v_placa` como
+    // "constante que mudou (sem origem)" numa execução correta (ver relatório da Rodada 9); sem ele o
+    // campo `XML` inteiro é dinâmico, como no `validate` do CLI.
+    options.compare.map_origin = map;
+    let validation = validate(
+        &capture.session,
+        &scrapelens_core::search::LazyBodies(&capture),
+        &trace.session,
+        &scrapelens_core::search::LazyBodies(&trace),
+        &options,
+    );
+    Ok(ValidationResult {
+        trace_dir: dir.display().to_string(),
+        trace_requests: trace.session.requests.len(),
+        validation,
+    })
+}
+
 /// Sucesso da aplicação × HTTP (`assess::assess_session`). Regras opcionais em
 /// `<sessao>/assess-rules.json`; regras inválidas viram erro acionável.
 #[tauri::command]
@@ -720,6 +806,21 @@ pub async fn assess_session(session_dir: String) -> Result<serde_json::Value, St
     tauri::async_runtime::spawn_blocking(move || assess_blocking(Path::new(&session_dir)))
         .await
         .map_err(|error| format!("a avaliação foi interrompida: {error}"))?
+}
+
+/// Regras opcionais `<sessao>/assess-rules.json` (arquivo regular, até 256 KiB); padrão sem o arquivo.
+fn load_rules(dir: &Path) -> Result<scrapelens_core::assess::AssessRules, String> {
+    use scrapelens_core::assess::AssessRules;
+    let rules_path = dir.join("assess-rules.json");
+    match read_rules_file(&rules_path)? {
+        Some(text) => AssessRules::from_json(&text).map_err(|_| {
+            format!(
+                "as regras em {} não são válidas (JSON, schema ou campos fora do esquema scrapelens.assess-rules/1); corrija ou remova o arquivo",
+                rules_path.display()
+            )
+        }),
+        None => Ok(AssessRules::default()),
+    }
 }
 
 const RULES_MAX_BYTES: u64 = 256 * 1024;
@@ -761,15 +862,7 @@ fn read_rules_file(path: &Path) -> Result<Option<String>, String> {
 pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
     use scrapelens_core::assess::{assess_session, AssessRules};
     let rules_path = dir.join("assess-rules.json");
-    let rules = match read_rules_file(&rules_path)? {
-        Some(text) => AssessRules::from_json(&text).map_err(|_| {
-            format!(
-                "as regras em {} não são válidas (JSON, schema ou campos fora do esquema scrapelens.assess-rules/1); corrija ou remova o arquivo",
-                rules_path.display()
-            )
-        })?,
-        None => AssessRules::default(),
-    };
+    let rules = load_rules(dir)?;
     let lazy = cached_session(dir)?;
     let outcomes = assess_session(&lazy.session, &scrapelens_core::search::LazyBodies(&lazy), &rules);
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
@@ -1636,6 +1729,59 @@ mod tests {
         assert!(field.parts.is_empty());
         assert!(field.raw.starts_with("v000") && field.raw.len() < 70 * 1024, "bruto cortado, não inteiro");
         fs::remove_dir_all(dir).ok();
+    }
+
+    fn sim_trace(name: &str) -> String {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("evidence/busca-corpos").join(name).display().to_string()
+    }
+
+    #[test]
+    fn timeline_and_validate_execution_on_real_shape_with_sim_traces() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let capture = real_shape_session("timeline-cap");
+        // linha do tempo: eventos da aplicação com rótulo do adaptador e grupos recolhidos
+        let rt = tauri::async_runtime::block_on(session_timeline(capture.display().to_string())).unwrap();
+        assert!(rt.counts.events > 0 && rt.counts.protection > 0);
+        let json = serde_json::to_value(&rt).unwrap();
+        assert!(json["items"].as_array().unwrap().iter().any(|i| i["type"] == "group" && i["kind"] == "protection"));
+        assert!(json["items"].as_array().unwrap().iter().any(|i| i["label"].as_str().is_some_and(|l| l.contains("cmd_consultar_placa"))), "rótulo event do adaptador");
+        // validação: trace ok = equivalente; 403 = diverge, trace em pasta nova 0700
+        let root = temp_session_dir("timeline-root");
+        fs::remove_dir_all(&root).ok();
+        fs::create_dir_all(&root).unwrap();
+        let ok = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), None).unwrap();
+        assert_eq!(ok.validation.summary, "execução equivalente à captura");
+        let bad = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-403.json"), None).unwrap();
+        assert!(bad.validation.summary.starts_with("diverge no passo 3"), "{}", bad.validation.summary);
+        assert_ne!(ok.trace_dir, bad.trace_dir);
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(fs::metadata(&bad.trace_dir).unwrap().permissions().mode() & 0o777, 0o700);
+        // erros acionáveis
+        let invalid = root.join("nao-e-trace.json");
+        fs::write(&invalid, "{\"schema\":\"x\"}").unwrap();
+        assert!(validate_execution_blocking(&root, &capture, invalid.to_str().unwrap(), None).unwrap_err().contains("trace inválido"));
+        assert!(validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), Some("sem-igual")).unwrap_err().contains("mapeamento de origem inválido"));
+        assert!(validate_execution_blocking(&root, &capture, "/nao/existe.json", None).is_err());
+        fs::remove_dir_all(capture).ok();
+        fs::remove_dir_all(root).ok();
+    }
+
+    /// Dados reais da Rodada 9 para o harness de UI:
+    /// `SL_SESSION=<pasta> SL_TRACES=<a.json,b.json> SL_DUMP=<dir> cargo test -- --ignored dump_round9_evidence`.
+    #[test]
+    #[ignore]
+    fn dump_round9_evidence() {
+        let dir = std::env::var("SL_SESSION").expect("SL_SESSION");
+        let out = PathBuf::from(std::env::var("SL_DUMP").expect("SL_DUMP"));
+        fs::create_dir_all(&out).unwrap();
+        let t = tauri::async_runtime::block_on(session_timeline(dir.clone())).unwrap();
+        fs::write(out.join("timeline.json"), serde_json::to_string(&t).unwrap()).unwrap();
+        let root = out.join("traces");
+        fs::create_dir_all(&root).unwrap();
+        for (n, trace) in std::env::var("SL_TRACES").expect("SL_TRACES").split(',').enumerate() {
+            let r = validate_execution_blocking(&root, Path::new(&dir), trace, None).unwrap();
+            fs::write(out.join(format!("validate-{n}.json")), serde_json::to_string(&r).unwrap()).unwrap();
+        }
     }
 
     /// Dados reais (adaptador Natural registrado) para o harness de UI:

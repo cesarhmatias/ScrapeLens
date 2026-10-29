@@ -12,6 +12,7 @@ import {
   type SearchResultDto,
   type SearchScope,
   type SessionPayload,
+  type ValidationResultDto,
 } from "./bridge";
 import { ExportDialog, SanitizeDialog } from "./Export";
 import { matchRanges } from "./highlight";
@@ -19,6 +20,7 @@ import { classifyTransforms } from "./transforms";
 import { OriginsTab } from "./Origins";
 import { CaptureCompareView } from "./CaptureCompare";
 import { AdapterViewPanel } from "./AdapterView";
+import { TimelineView, ValidationView } from "./Timeline";
 import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
@@ -34,7 +36,7 @@ import type {
   VerificationKey,
 } from "./types";
 
-type View = "session" | "detail" | "compare" | "capture-compare";
+type View = "session" | "detail" | "compare" | "capture-compare" | "timeline" | "validate";
 type Theme = "light" | "dark";
 type DetailTab =
   | "headers"
@@ -1416,6 +1418,8 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [exportTarget, setExportTarget] = useState<RequestRecord | null>(null);
   const [sanitizeOpen, setSanitizeOpen] = useState(false);
+  const [sanitizeTraceDir, setSanitizeTraceDir] = useState<string | null>(null);
+  const [validation, setValidation] = useState<{ result: ValidationResultDto; tracePath: string } | null>(null);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
   const [captureCmp, setCaptureCmp] = useState<{ summary: CompareSummary; dirA: string; dirB: string; labelA: string; labelB: string } | null>(null);
@@ -1489,6 +1493,23 @@ export default function App() {
       setBusy(null);
     }
   }, [applyPayload, desktop]);
+
+  const validateExecution = useCallback(async () => {
+    if (!desktop || !loaded.session.sourcePath) return;
+    const dir = loaded.session.sourcePath;
+    try {
+      const tracePath = await bridge.pickTraceFile();
+      if (!tracePath) return;
+      setBusy("Importando o trace e validando…");
+      const result = await bridge.validateExecution(dir, tracePath);
+      setValidation({ result, tracePath });
+      setView("validate");
+    } catch (error) {
+      setNotice({ kind: "error", text: "Não foi possível validar a execução.", detail: String(error) });
+    } finally {
+      setBusy(null);
+    }
+  }, [desktop, loaded.session.sourcePath]);
 
   const importCapture = useCallback(
     async (kind: "har" | "netlog") => {
@@ -1926,6 +1947,26 @@ export default function App() {
                 >
                   Sanitizar…
                 </button>
+                <button
+                  className="btn"
+                  onClick={() => setView("timeline")}
+                  disabled={!session.sourcePath || !!recording || !!busy}
+                  title={session.sourcePath ? "Eventos da aplicação na ordem, sem o ruído da proteção" : "Linha do tempo indisponível: esta sessão não tem pasta persistida."}
+                >
+                  Linha do tempo
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => void validateExecution()}
+                  disabled={!desktop || !session.sourcePath || !!recording || !!busy}
+                  title={
+                    !desktop
+                      ? "Validar execução usa o seletor nativo do macOS e só existe no app desktop."
+                      : "Importa o trace do script (--trace) e compara a execução com esta captura; nada é executado pelo ScrapeLens"
+                  }
+                >
+                  Validar execução…
+                </button>
               </div>
             </div>
 
@@ -2266,6 +2307,29 @@ export default function App() {
           </div>
         )}
 
+        {view === "timeline" && (
+          <TimelineView
+            sessionDir={session.sourcePath}
+            onBack={() => setView("session")}
+            onOpenRequest={(id) => {
+              if (requests.some((r) => r.id === id)) {
+                setSelectedId(id);
+                setTab("headers");
+                setView("detail");
+              }
+            }}
+          />
+        )}
+
+        {view === "validate" && validation && (
+          <ValidationView
+            result={validation.result}
+            tracePath={validation.tracePath}
+            onBack={() => setView("session")}
+            onSanitizeTrace={() => setSanitizeTraceDir(validation.result.traceDir)}
+          />
+        )}
+
         {view === "capture-compare" && captureCmp && (
           <CaptureCompareView
             summary={captureCmp.summary}
@@ -2304,6 +2368,17 @@ export default function App() {
             session={session}
             request={exportTarget}
             onClose={() => setExportTarget(null)}
+          />
+        )}
+
+        {sanitizeTraceDir && (
+          <SanitizeDialog
+            session={{ ...session, id: "script-trace", sourcePath: sanitizeTraceDir }}
+            onClose={() => setSanitizeTraceDir(null)}
+            onOpened={(payload) => {
+              applyPayload(payload);
+              setSanitizeTraceDir(null);
+            }}
           />
         )}
 

@@ -56,6 +56,8 @@ pub fn run() {
             commands::request_chain,
             commands::assess_session,
             commands::adapter_view,
+            commands::session_timeline,
+            commands::validate_execution,
             commands::compare_open,
             commands::compare_page,
             commands::compare_fields,

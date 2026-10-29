@@ -89,6 +89,12 @@ export function VerdictChip({ outcome }: { outcome: ResponseOutcome | undefined 
   );
 }
 
+/** Chip de um `verdictKind` solto (timeline e validação). */
+export function VerdictKindChip({ kind, title }: { kind: VerdictKind; title?: string }) {
+  if (kind === "not-assessed") return <span className="dim" title={title}>{SHORT[kind]}</span>;
+  return <span className={`chip ${CLASS[kind] ?? "tag"}`} title={title}>{SHORT[kind] ?? kind}</span>;
+}
+
 /** Carrega a avaliação da sessão (cache no Rust); `undefined` sem pasta persistida. */
 export function useAssess(dir: string | undefined, enabled = true) {
   const [state, setState] = useState<{ dir: string; result?: AssessResult; error?: string } | null>(null);

@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { SessionV1 } from "./v1/types";
-import type { AssessResult } from "./assess";
+import type { AssessResult, VerdictKind } from "./assess";
 import type { ComparePage, CompareSummary, FieldDiff, PrimingChain, ValueOrigins } from "./flow";
 
 export interface SessionPayload {
@@ -59,6 +59,66 @@ export interface ExportPreview {
   bodyState: string;
   /** Adaptador de protocolo cujo codificador entrou no script de priming. */
   adapter?: string;
+}
+
+export interface TimelineEventDto {
+  type: "event";
+  requestId: string;
+  round: number;
+  kind: string;
+  label: string;
+  method: string;
+  url: string;
+  status: number | null;
+  tMs: number | null;
+  verdict: string;
+  verdictKind: VerdictKind;
+  consumed: string[];
+  produced: string[];
+}
+export interface TimelineGroupDto {
+  type: "group";
+  kind: "protection" | "static";
+  count: number;
+  requestIds: string[];
+}
+export interface TimelineDto {
+  entryRequest: string | null;
+  rounds: number;
+  items: (TimelineEventDto | TimelineGroupDto)[];
+  counts: { events: number; protection: number; static: number };
+  warnings: string[];
+}
+
+export interface FieldNoteDto { scope: string; field: string; reason: string }
+export interface StepValidationDto {
+  step: number;
+  traceRequestId: string;
+  captureRequestId: string | null;
+  method: string;
+  url: string;
+  statusCapture: number | null;
+  statusTrace: number | null;
+  verdictCapture: VerdictKind | null;
+  verdictTrace: VerdictKind;
+  expected: FieldNoteDto[];
+  unexpected: FieldNoteDto[];
+  problem: string | null;
+}
+export interface ValidationResultDto {
+  traceDir: string;
+  traceRequests: number;
+  validation: {
+    schema: string;
+    verdict: "equivalent" | "diverges" | "incomplete";
+    step: number | null;
+    reason: string | null;
+    summary: string;
+    steps: StepValidationDto[];
+    missingInTrace: string[];
+    mappedOrigin: { from: string; to: string } | null;
+    warnings: string[];
+  };
 }
 
 export interface AdapterViewDto {
@@ -297,6 +357,26 @@ export const bridge = {
 
   async adapterView(sessionDir: string, requestId: string, side: "request" | "response"): Promise<AdapterViewDto> {
     return invoke("adapter_view", { sessionDir, requestId, side });
+  },
+
+  async sessionTimeline(sessionDir: string): Promise<TimelineDto> {
+    return invoke("session_timeline", { sessionDir });
+  },
+
+  /** Seletor nativo do arquivo de trace (`--trace` do script de priming); `null` se cancelar. */
+  async pickTraceFile(): Promise<string | null> {
+    if (!isTauri()) return null;
+    const picked = await openDialog({
+      title: "Escolher o trace da execução do script",
+      message: "Arquivo JSON gerado pelo script de priming com --trace (scrapelens.trace/1).",
+      multiple: false,
+      filters: [{ name: "Trace", extensions: ["json"] }],
+    });
+    return typeof picked === "string" ? picked : null;
+  },
+
+  async validateExecution(sessionDir: string, tracePath: string, mapOrigin?: string): Promise<ValidationResultDto> {
+    return invoke("validate_execution", { sessionDir, tracePath, mapOrigin: mapOrigin || null });
   },
 
   async assessSession(sessionDir: string): Promise<AssessResult> {
