@@ -1,0 +1,53 @@
+{
+ "timeline": {
+  "real-shape-1round.har": null,
+  "real-shape-2rounds.har": null
+ },
+ "timeline_real": {},
+ "cenarios": {
+  "ok": {
+   "script_rc": 0,
+   "pedidos_no_sim": 10,
+   "primeiro_ruim": null,
+   "trace_modo": "0o600",
+   "trace_passos": 10
+  },
+  "error": {
+   "script_rc": 1,
+   "pedidos_no_sim": 10,
+   "primeiro_ruim": 10,
+   "trace_modo": "0o600",
+   "trace_passos": 10
+  },
+  "nocontrols": {
+   "script_rc": 1,
+   "pedidos_no_sim": 3,
+   "primeiro_ruim": 3,
+   "trace_modo": "0o600",
+   "trace_passos": 3
+  },
+  "403": {
+   "script_rc": 1,
+   "pedidos_no_sim": 3,
+   "primeiro_ruim": 3,
+   "trace_modo": "0o600",
+   "trace_passos": 3
+  }
+ },
+ "fails": [
+  "real-shape-1round.har: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
+  "real-shape-1round.har: timeline sem entradas",
+  "real-shape-2rounds.har: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
+  "real-shape-2rounds.har: timeline sem entradas",
+  "HAR real #1: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
+  "HAR real #1: timeline sem entradas",
+  "HAR real #2: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
+  "HAR real #2: timeline sem entradas",
+  "HAR real #3: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
+  "HAR real #3: timeline sem entradas",
+  "ok: import-trace: rc=1: erro: formato não suportado: trace: steps[0].method ausente ou vazio",
+  "error: import-trace: rc=1: erro: formato não suportado: trace: steps[0].method ausente ou vazio",
+  "nocontrols: import-trace: rc=1: erro: formato não suportado: trace: steps[0].method ausente ou vazio",
+  "403: import-trace: rc=1: erro: formato não suportado: trace: steps[0].method ausente ou vazio"
+ ]
+}
