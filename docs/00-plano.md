@@ -54,7 +54,9 @@ diagnosticado. Diagnóstico (log do OpenCode): "Go usage limit exceeded"
 entrou. Em 2026-10-29, a pedido do usuário, os não decisores (Core, Testes,
 App, Captura e Documentação) passaram para `opencode/deepseek-v4.1-flash-free`
 (esforço high), testado e respondendo. Vale a partir da próxima tarefa de cada
-um. Revisor e Líder sem mudança. Sem substituição silenciosa de modelo.
+um. Revisor e Líder sem mudança. Em 2026-10-29 03:14 a cota gratuita também
+acabou ("Free usage limit reached"); os executores voltaram para Sonnet 5.5 low,
+e as tarefas perdidas foram reenviadas. Sem substituição silenciosa de modelo.
 
 Equipe (seção OpenBot "ScrapeLens"):
 
