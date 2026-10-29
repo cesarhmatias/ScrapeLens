@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { SessionV1 } from "./v1/types";
+import type { AssessResult } from "./assess";
 import type { ComparePage, CompareSummary, FieldDiff, PrimingChain, ValueOrigins } from "./flow";
 
 export interface SessionPayload {
@@ -276,6 +277,10 @@ export const bridge = {
 
   async requestOrigins(sessionDir: string, requestId: string): Promise<ValueOrigins> {
     return invoke("request_origins", { sessionDir, requestId });
+  },
+
+  async assessSession(sessionDir: string): Promise<AssessResult> {
+    return invoke("assess_session", { sessionDir });
   },
 
   async requestChain(sessionDir: string, requestId: string): Promise<PrimingChain> {

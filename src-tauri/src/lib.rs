@@ -53,6 +53,7 @@ pub fn run() {
             commands::read_body,
             commands::request_origins,
             commands::request_chain,
+            commands::assess_session,
             commands::compare_open,
             commands::compare_page,
             commands::compare_fields,

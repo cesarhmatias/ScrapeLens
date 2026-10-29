@@ -692,6 +692,40 @@ pub async fn request_chain(
     .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
 }
 
+/// Sucesso da aplicação × HTTP (`assess::assess_session`). Regras opcionais em
+/// `<sessao>/assess-rules.json`; regras inválidas viram erro acionável.
+#[tauri::command]
+pub async fn assess_session(session_dir: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || assess_blocking(Path::new(&session_dir)))
+        .await
+        .map_err(|error| format!("a avaliação foi interrompida: {error}"))?
+}
+
+pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
+    use scrapelens_core::assess::{assess_session, AssessRules};
+    let rules_path = dir.join("assess-rules.json");
+    let rules = if rules_path.is_file() {
+        let text = fs::read_to_string(&rules_path)
+            .map_err(|error| format!("não foi possível ler {}: {error}", rules_path.display()))?;
+        AssessRules::from_json(&text)
+            .map_err(|error| format!("{error} (arquivo {}; corrija ou remova-o)", rules_path.display()))?
+    } else {
+        AssessRules::default()
+    };
+    let lazy = cached_session(dir)?;
+    let outcomes = assess_session(&lazy.session, &scrapelens_core::search::LazyBodies(&lazy), &rules);
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for outcome in &outcomes {
+        *counts.entry(format!("{:?}", outcome.verdict_kind)).or_default() += 1;
+    }
+    Ok(serde_json::json!({
+        "schema": "scrapelens.assess/1",
+        "rules": if rules_path.is_file() { rules_path.display().to_string() } else { "default".to_string() },
+        "counts": counts,
+        "outcomes": outcomes,
+    }))
+}
+
 /// Comparação mantida no Rust: a UI recebe só o resumo e pede páginas de pares
 /// e os campos de um par sob demanda (evita dezenas de MB de JSON no IPC).
 struct StoredComparison {
@@ -1254,6 +1288,21 @@ mod tests {
         assert!(Arc::ptr_eq(&lazy, &again));
         fs::remove_dir_all(a).ok();
         fs::remove_dir_all(b).ok();
+    }
+
+    #[test]
+    fn assess_marks_blocked_responses_on_detran_fixture() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = detran_session("assess");
+        let result = assess_blocking(&dir).unwrap();
+        assert_eq!(result["schema"], "scrapelens.assess/1");
+        let outcomes = result["outcomes"].as_array().unwrap();
+        assert!(!outcomes.is_empty());
+        assert!(outcomes.iter().any(|o| o["verdictKind"] == "app-ok"));
+        // regras inválidas viram erro acionável
+        fs::write(dir.join("assess-rules.json"), "{\"schema\":\"x\"}").unwrap();
+        assert!(assess_blocking(&dir).unwrap_err().contains("corrija ou remova"));
+        fs::remove_dir_all(dir).ok();
     }
 
     #[test]

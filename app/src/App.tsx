@@ -18,6 +18,7 @@ import { matchRanges } from "./highlight";
 import { classifyTransforms } from "./transforms";
 import { OriginsTab } from "./Origins";
 import { CaptureCompareView } from "./CaptureCompare";
+import { AppSuccessSection, VerdictChip, isAppFailure, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
@@ -41,10 +42,11 @@ type DetailTab =
   | "payload"
   | "response"
   | "origins"
+  | "app"
   | "redirects"
   | "attempts"
   | "event";
-type TypeFilter = "all" | "fetch" | "document" | "media" | "error";
+type TypeFilter = "all" | "fetch" | "document" | "media" | "error" | "appfail";
 
 const params = new URLSearchParams(window.location.search);
 const storedTheme = typeof localStorage !== "undefined" ? localStorage.getItem("scrapelens.theme") : null;
@@ -636,7 +638,13 @@ function DetailView({
   onOpenRequest,
   matches,
   needle,
+  outcomes,
+  assessError,
+  assessLoading,
 }: {
+  outcomes: OutcomeMap;
+  assessError?: string;
+  assessLoading?: boolean;
   onOpenRequest: (id: string) => void;
   matches: SearchMatch[];
   needle?: { text: string; caseSensitive: boolean };
@@ -662,6 +670,7 @@ function DetailView({
     { id: "response", label: "Resposta" },
     { id: "redirects", label: "Redirects", count: req.redirects.length },
     { id: "attempts", label: "Tentativas", count: req.attempts.length },
+    { id: "app", label: "Aplicação" },
     { id: "origins", label: "Origem" },
     { id: "event", label: "Evento" },
   ];
@@ -1053,8 +1062,12 @@ function DetailView({
               </section>
             ))}
 
+          {tab === "app" && (
+            <AppSuccessSection outcome={outcomes.get(req.id)} error={assessError} loading={assessLoading} />
+          )}
+
           {tab === "origins" && (
-            <OriginsTab sessionDir={session.sourcePath} requestId={req.id} onOpen={onOpenRequest} />
+            <OriginsTab sessionDir={session.sourcePath} requestId={req.id} onOpen={onOpenRequest} verdicts={outcomes} />
           )}
 
           {tab === "event" && (
@@ -1657,6 +1670,8 @@ export default function App() {
   }, [recording?.sessionId, desktop]);
 
   const searchDir = desktop ? session.sourcePath : undefined;
+  const assess = useAssess(searchDir);
+  const outcomes = assess.map;
   const searchText = query.trim();
   const searchKey = searchDir && searchText ? JSON.stringify([searchDir, searchText, scopes, caseSensitive]) : "";
   useEffect(() => {
@@ -1696,6 +1711,7 @@ export default function App() {
       if (typeFilter === "document" && r.type !== "document") return false;
       if (typeFilter === "media" && !(r.type === "image" || r.type === "font")) return false;
       if (typeFilter === "error" && r.status < 400) return false;
+      if (typeFilter === "appfail" && !isAppFailure(outcomes.get(r.id))) return false;
       if (protocol !== "all" && r.protocol !== protocol) return false;
       if (!q) return true;
       if (payloadSearch) {
@@ -1714,7 +1730,7 @@ export default function App() {
         String(r.status).includes(q)
       );
     });
-  }, [requests, query, typeFilter, protocol, payloadSearch, matchesById]);
+  }, [requests, query, typeFilter, protocol, payloadSearch, matchesById, outcomes]);
 
   const errors = requests.filter((r) => r.status >= 400).length;
   const counts = {
@@ -1723,6 +1739,7 @@ export default function App() {
     document: requests.filter((r) => r.type === "document").length,
     media: requests.filter((r) => r.type === "image" || r.type === "font").length,
     error: errors,
+    appfail: requests.filter((r) => isAppFailure(outcomes.get(r.id))).length,
   };
 
   const ROW_HEIGHT = 34;
@@ -2010,6 +2027,7 @@ export default function App() {
                     ["document", "Documento"],
                     ["media", "Mídia"],
                     ["error", "Erros 4xx/5xx"],
+                    ["appfail", "Só falhas da aplicação"],
                   ] as [TypeFilter, string][]
                 ).map(([id, label]) => (
                   <button
@@ -2106,6 +2124,7 @@ export default function App() {
                     <th className="col-domain">Domínio</th>
                     <th className="col-path">Caminho</th>
                     <th className="col-status">Status</th>
+                    <th className="col-app" title="Sucesso da aplicação (≠ status HTTP)">Aplicação</th>
                     <th className="col-proto">Protocolo</th>
                     <th className="col-type">Tipo</th>
                     <th className="col-time num">Duração</th>
@@ -2114,7 +2133,7 @@ export default function App() {
                 <tbody>
                   {startIndex > 0 && (
                     <tr className="spacer" aria-hidden="true">
-                      <td colSpan={8} style={{ height: startIndex * ROW_HEIGHT }} />
+                      <td colSpan={9} style={{ height: startIndex * ROW_HEIGHT }} />
                     </tr>
                   )}
                   {visibleRows.map((r, i) => (
@@ -2134,6 +2153,9 @@ export default function App() {
                         <span className={`status ${statusClass(r.status)}`}>{fmtStatus(r.status)}</span>
                       </td>
                       <td>
+                        <VerdictChip outcome={outcomes.get(r.id)} />
+                      </td>
+                      <td>
                         <span className="proto">{fmtProtocol(r.protocol)}</span>
                       </td>
                       <td className="type">{typeLabels[r.type]}</td>
@@ -2145,12 +2167,12 @@ export default function App() {
                   ))}
                   {endIndex < filtered.length && (
                     <tr className="spacer" aria-hidden="true">
-                      <td colSpan={8} style={{ height: (filtered.length - endIndex) * ROW_HEIGHT }} />
+                      <td colSpan={9} style={{ height: (filtered.length - endIndex) * ROW_HEIGHT }} />
                     </tr>
                   )}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <div className="empty">
                           Nenhuma requisição corresponde a “{query}” com os filtros atuais.
                           <button className="link" onClick={() => { setQuery(""); setTypeFilter("all"); setProtocol("all"); }}>
@@ -2198,6 +2220,9 @@ export default function App() {
             }}
             matches={matchesById.get(selected.id) ?? []}
             needle={payloadSearch ? { text: searchText, caseSensitive } : undefined}
+            outcomes={outcomes}
+            assessError={assess.error}
+            assessLoading={assess.loading}
           />
         )}
 

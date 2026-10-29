@@ -2,6 +2,7 @@
 // Tudo vem do core (flow::value_origins / priming_chain); a UI não infere nada.
 import { useEffect, useMemo, useState } from "react";
 import { bridge } from "./bridge";
+import { VerdictChip, type OutcomeMap } from "./assess";
 import {
   CONTEXT_LABEL,
   evidenceLabels,
@@ -128,7 +129,7 @@ function OriginRow({ value, part, onOpen }: { value: ValueOrigin; part?: boolean
   );
 }
 
-function StepItem({ step, index, onOpen }: { step: ChainStep; index?: number; onOpen: (id: string) => void }) {
+function StepItem({ step, index, onOpen, verdicts }: { step: ChainStep; index?: number; onOpen: (id: string) => void; verdicts?: OutcomeMap }) {
   return (
     <li className={step.class === "protection" ? "chain-protection" : undefined}>
       {index !== undefined && <strong>{index + 1}. </strong>}
@@ -138,6 +139,7 @@ function StepItem({ step, index, onOpen }: { step: ChainStep; index?: number; on
           {stepConfidence(step) === "strong" ? "confiança forte" : "possível"}
         </span>
       )}{" "}
+      {verdicts && <span title="Sucesso da aplicação neste passo"><VerdictChip outcome={verdicts.get(step.requestId)} /> </span>}
       <span className="mono dim">{step.url}</span>
       <div className="why">
         {step.reasons.length === 0
@@ -150,7 +152,7 @@ function StepItem({ step, index, onOpen }: { step: ChainStep; index?: number; on
   );
 }
 
-export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id: string) => void }) {
+export function ChainPanel({ chain, onOpen, verdicts }: { chain: PrimingChain; onOpen: (id: string) => void; verdicts?: OutcomeMap }) {
   return (
     <section className="body-panel">
       <header className="block-head">
@@ -165,7 +167,7 @@ export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id
       </div>
       <ol className="chain-list" style={{ padding: "0 13px" }}>
         {chain.steps.map((step, index) => (
-          <StepItem key={step.requestId} step={step} index={index} onOpen={onOpen} />
+          <StepItem key={step.requestId} step={step} index={index} onOpen={onOpen} verdicts={verdicts} />
         ))}
         {chain.steps.length === 0 && <li>Nenhuma requisição anterior fornece valores a esta.</li>}
       </ol>
@@ -174,7 +176,7 @@ export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id
           <h4>Páginas de contexto (carregaram a página de onde os passos foram emitidos; não produzem valores)</h4>
           <ol className="chain-list">
             {chain.pages.map((step) => (
-              <StepItem key={step.requestId} step={step} onOpen={onOpen} />
+              <StepItem key={step.requestId} step={step} onOpen={onOpen} verdicts={verdicts} />
             ))}
           </ol>
         </div>
@@ -187,7 +189,7 @@ export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id
           </summary>
           <ol className="chain-list">
             {chain.auxiliaryPages.map((step) => (
-              <StepItem key={step.requestId} step={step} onOpen={onOpen} />
+              <StepItem key={step.requestId} step={step} onOpen={onOpen} verdicts={verdicts} />
             ))}
           </ol>
         </details>
@@ -197,7 +199,7 @@ export function ChainPanel({ chain, onOpen }: { chain: PrimingChain; onOpen: (id
           <h4>Proteção (não é lógica da aplicação)</h4>
           <ol className="chain-list">
             {chain.protection.map((step) => (
-              <StepItem key={step.requestId} step={step} onOpen={onOpen} />
+              <StepItem key={step.requestId} step={step} onOpen={onOpen} verdicts={verdicts} />
             ))}
           </ol>
         </div>
@@ -243,10 +245,12 @@ export function OriginsTab({
   sessionDir,
   requestId,
   onOpen,
+  verdicts,
 }: {
   sessionDir?: string;
   requestId: string;
   onOpen: (id: string) => void;
+  verdicts?: OutcomeMap;
 }) {
   const [origins, setOrigins] = useState<ValueOrigins | null>(null);
   const [chain, setChain] = useState<PrimingChain | null>(null);
@@ -322,7 +326,7 @@ export function OriginsTab({
           <div className="body-foot">Tentativas com o mesmo instante de início, excluídas como produtoras: {origins.ties.join(", ")}.</div>
         )}
       </section>
-      {chain ? <ChainPanel chain={chain} onOpen={onOpen} /> : <div className="empty">Calculando cadeia…</div>}
+      {chain ? <ChainPanel chain={chain} onOpen={onOpen} verdicts={verdicts} /> : <div className="empty">Calculando cadeia…</div>}
     </>
   );
 }

@@ -1,6 +1,7 @@
 // Comparação A × B entre duas capturas (compare::compare_sessions do core).
 import { useEffect, useState } from "react";
 import { bridge } from "./bridge";
+import { VerdictChip, useAssess, type OutcomeMap } from "./assess";
 import {
   DYNAMIC_ONLY_THRESHOLD,
   dynamicSummary,
@@ -107,7 +108,7 @@ function OnlyList({
   );
 }
 
-function PairBlock({ handle, pair, onlyDynamic }: { handle: number; pair: PairSummary; onlyDynamic: boolean }) {
+function PairBlock({ handle, pair, onlyDynamic, outA, outB }: { handle: number; pair: PairSummary; onlyDynamic: boolean; outA?: OutcomeMap; outB?: OutcomeMap }) {
   const [open, setOpen] = useState(false);
   const [fields, setFields] = useState<FieldDiff[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +135,11 @@ function PairBlock({ handle, pair, onlyDynamic }: { handle: number; pair: PairSu
         <span className="sep">↔</span>
         <span className="mono">B {pair.b.requestId}</span>
         <span className="mono dim">{pair.a.url}</span>
+        {outA && outB && (
+          <span title="Sucesso da aplicação: A → B">
+            app: <VerdictChip outcome={outA.get(pair.a.requestId)} /> → <VerdictChip outcome={outB.get(pair.b.requestId)} />
+          </span>
+        )}
         <span className="chip tag">alinhado por {pair.alignedBy}</span>
         {pair.outOfOrder && <span className="chip v-partial">fora de ordem</span>}
         <span className="dim">
@@ -163,6 +169,8 @@ export function CaptureCompareView({
   labelB: string;
   onBack: () => void;
 }) {
+  const assessA = useAssess(dirA);
+  const assessB = useAssess(dirB);
   const [summary, setSummary] = useState(initial);
   const [includeAll, setIncludeAll] = useState(initial.includeAll ?? false);
   const [aRange, setARange] = useState("");
@@ -343,7 +351,7 @@ export function CaptureCompareView({
         return (
           <div key={`${summary.handle}-${pair.index}-${onlyDynamic}`}>
             {header && <h4 className="cmp-round">{header}</h4>}
-            <PairBlock handle={summary.handle} pair={pair} onlyDynamic={onlyDynamic} />
+            <PairBlock handle={summary.handle} pair={pair} onlyDynamic={onlyDynamic} outA={assessA.map} outB={assessB.map} />
           </div>
         );
       })}
