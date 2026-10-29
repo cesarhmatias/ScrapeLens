@@ -2,6 +2,8 @@
   "com_adaptador": {
     "script_rc": 0,
     "resumo": "execução equivalente à captura [origem mapeada: https://wsde",
+    "plan_version": 2,
+    "avisos_no_trace_genuino": [],
     "aviso_plano_no_trace_genuino": [],
     "aviso_plano_no_trace_alterado": true,
     "opcional_sobrescrito": {
@@ -15,7 +17,9 @@
   },
   "sem_adaptador": {
     "script_rc": 0,
-    "resumo": "diverge no passo 3 (body `XML`: trecho dinâmico sem origem (",
+    "resumo": "execução equivalente à captura [origem mapeada: https://wsde",
+    "plan_version": 2,
+    "avisos_no_trace_genuino": [],
     "aviso_plano_no_trace_genuino": [],
     "aviso_plano_no_trace_alterado": true,
     "opcional_sobrescrito": {
@@ -23,7 +27,7 @@
       "plan_igual": true,
       "op_em_parameters_de_topo": true,
       "aviso_plano": [],
-      "resumo": "diverge no passo 3 (body `XML`: trecho dinâmico sem origem ("
+      "resumo": "execução equivalente à captura [origem mapeada: https://wsde"
     },
     "hash_de_outro_plano_avisa": true
   },
