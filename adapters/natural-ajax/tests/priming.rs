@@ -733,3 +733,22 @@ fn unreferenced_producer_with_a_different_value_leaves_the_plan() {
         .collect();
     assert!(plan.iter().all(|l| !l.contains("'cdp-r0002'")), "{plan:?}");
 }
+
+#[test]
+fn header_command_and_resource_names_stay_literal_in_strict_mode() {
+    // real-shape-1round: os nomes de comando (`event`) aparecem uma vez e sem
+    // origem; seguem literais (estrutura do protocolo), sem parâmetro novo.
+    let bundle = fixture("real-shape-1round.har");
+    let target = bundle
+        .session
+        .requests
+        .iter()
+        .rev()
+        .find(|r| r.method == "POST" && r.url.contains("Connector"))
+        .map(|r| r.id.clone())
+        .unwrap();
+    let out = to_python(&bundle.session, &bundle, &target, &options()).expect("gera");
+    assert!(!out.text.contains("('xml_event', None,"), "{}", out.text);
+    assert!(!out.text.contains("('xml_event_2', None,"), "{}", out.text);
+    assert!(out.text.contains("('event', 'V', 'cmd_"), "{}", out.text);
+}

@@ -66,7 +66,9 @@ pub struct PrimingOptions {
     /// papel Structure, constante comprovada (≥ 2 requisições da sessão ou
     /// contexto estático), valor de navegação ou "constante de UI"
     /// (`is_ui_constant`: booleanos e números de até 4 caracteres com
-    /// sinal/decimal: `true`, `-180`, `2.0`); toda outra parte sem origem vira
+    /// sinal/decimal: `true`, `-180`, `2.0`) ou nome de comando/recurso do
+    /// cabeçalho (`event`, `page`, `model`, como `cmd_filtro`) sem cara de
+    /// identificador nem PII; toda outra parte sem origem vira
     /// parâmetro obrigatório. Com `lenient_parts`, só valores com cara de
     /// identificador/segredo/carimbo de tempo (UUID, hex, ULID, base64,
     /// timestamp, misto alfanumérico longo) viram parâmetro e o resto fica
@@ -817,6 +819,13 @@ fn adapter_field_expr(
                                     || navigation
                                     || has_param
                                     || is_ui_constant(&part.value)
+                                    // Nome de comando/recurso do cabeçalho
+                                    // (`event`, `page`, `model`): estrutura do
+                                    // protocolo, salvo se parecer identificador.
+                                    || (matches!(part.name.as_str(), "event" | "page" | "model")
+                                        && !identifier
+                                        && observed_elsewhere.is_none()
+                                        && !contains_pii(&part.value))
                                     // Nenhuma resposta anterior do plano traz o
                                     // campo: constantes iniciais do protocolo.
                                     || (!identifier

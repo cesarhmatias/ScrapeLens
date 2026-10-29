@@ -20,7 +20,9 @@ ScrapeLens. Vive fora do core: depende de `scrapelens-core` só pelo trait
   pelo caminho por trechos (controle). Padrão **estrito** nas partes do adaptador: literal só para papel Structure,
   constante comprovada (≥ 2 requisições da sessão ou contexto estático),
   navegação ou *constante de UI* (booleanos e números de até 4 caracteres com
-  sinal/decimal: `true`, `-180`, `2.0`); qualquer outra parte sem origem vira
+  sinal/decimal: `true`, `-180`, `2.0`) ou nome de comando/recurso do
+  cabeçalho (`event`, `page`, `model`, como `cmd_filtro`) sem cara de
+  identificador nem PII; qualquer outra parte sem origem vira
   parâmetro obrigatório, e valor com origem em outra rodada nunca é literal.
   `--lenient-parts` (intermediário): só valor com cara de identificador,
   segredo ou carimbo de tempo (UUID, hex, ULID, base64, timestamp,
