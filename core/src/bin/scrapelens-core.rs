@@ -9,7 +9,7 @@
 //!   scrapelens-core origins <sessao> <requestId>
 //!   scrapelens-core chain <sessao> <requestId>
 //!   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
-//!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>]
+//!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
 //!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
@@ -223,6 +223,7 @@ fn export_priming_command(args: &[String]) -> Result<(), String> {
     let source = scrapelens_core::search::LazyBodies(&lazy);
     let options = scrapelens_core::export::priming::PrimingOptions {
         allow_incomplete: args.iter().any(|arg| arg == "--allow-incomplete"),
+        allow_literal_body: args.iter().any(|arg| arg == "--allow-literal-body"),
         allow_origins: args
             .windows(2)
             .filter(|w| w[0] == "--allow-origin")
@@ -461,7 +462,7 @@ fn usage() -> String {
   scrapelens-core origins <sessao> <requestId>
   scrapelens-core chain <sessao> <requestId>
   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
-  scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>]
+  scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]

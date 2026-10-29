@@ -55,6 +55,9 @@ pub struct PrimingOptions {
     /// Origins (`esquema://host[:porta]`) além do alvo que a cadeia pode
     /// contatar; sem eles, um passo com outro origin é recusado na geração.
     pub allow_origins: Vec<String>,
+    /// Aceita corpo que não é form nem JSON, reenviado como capturado; os
+    /// valores sensíveis/de negócio detectados viram parâmetros obrigatórios.
+    pub allow_literal_body: bool,
 }
 
 const CONTEXT_BEFORE: usize = 16;
@@ -98,6 +101,16 @@ const SENSITIVE_WORDS: &[&str] = &[
     "nascimento",
     "session",
     "callback",
+    "key",
+    "csrf",
+    "xsrf",
+    "jwt",
+    "sess",
+    "secret",
+    "signature",
+    "auth",
+    "device",
+    "user",
 ];
 /// Palavras curtas demais para casar por substring (`rg` em `target`): só
 /// valem como palavra inteira do nome (`rg`, `user_rg`, `sid`, `jsid`).
@@ -181,7 +194,10 @@ fn looks_sensitive_value(value: &str) -> bool {
 /// navegação.
 fn looks_opaque_id(value: &str) -> bool {
     let digits = value.bytes().all(|b| b.is_ascii_digit());
-    if digits && value.len() >= 6 {
+    if digits && value.len() >= 5 {
+        return true;
+    }
+    if looks_dynamic_token(value) {
         return true;
     }
     if value.len() >= 16 && value.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
@@ -209,6 +225,75 @@ fn looks_opaque_id(value: &str) -> bool {
         && value.bytes().any(|b| b.is_ascii_digit())
         && value.bytes().any(|b| b.is_ascii_uppercase())
         && value.bytes().any(|b| b.is_ascii_lowercase())
+}
+
+/// JWT, ULID/KSUID, data ISO/timestamp e alfanumérico misto: cara de valor
+/// dinâmico mesmo curto.
+fn looks_dynamic_token(value: &str) -> bool {
+    let b = value.as_bytes();
+    if value.starts_with("eyJ") {
+        return true;
+    }
+    // ULID (26, Crockford) e KSUID (27, base62).
+    let alnum = b.iter().all(u8::is_ascii_alphanumeric);
+    if alnum && b.len() == 26 && b.iter().all(|c| !c.is_ascii_lowercase()) {
+        return true;
+    }
+    if alnum && b.len() == 27 {
+        return true;
+    }
+    // AAAA-MM-DD, com ou sem hora.
+    if b.len() >= 10
+        && b[..4].iter().all(u8::is_ascii_digit)
+        && b[4] == b'-'
+        && b[5..7].iter().all(u8::is_ascii_digit)
+        && b[7] == b'-'
+        && b[8..10].iter().all(u8::is_ascii_digit)
+    {
+        return true;
+    }
+    // Letras maiúsculas e minúsculas misturadas com dígitos, 6+.
+    b.len() >= 6
+        && alnum
+        && b.iter().any(u8::is_ascii_digit)
+        && b.iter().any(u8::is_ascii_uppercase)
+        && b.iter().any(u8::is_ascii_lowercase)
+}
+
+/// Valor de header com cara de credencial/identificador, qualquer que seja o nome.
+fn looks_secret_value(value: &str) -> bool {
+    if value.starts_with("eyJ") {
+        return true;
+    }
+    let b = value.as_bytes();
+    if b.len() >= 8 && b.iter().all(u8::is_ascii_digit) {
+        return true;
+    }
+    b.len() >= 24
+        && b.iter().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.' | b'+' | b'/' | b'=')
+        })
+        && b.iter().any(u8::is_ascii_digit)
+        && b.iter().any(u8::is_ascii_alphabetic)
+}
+
+/// Header de credencial/sessão/identidade: nunca sai literal.
+fn is_credential_header(lname: &str) -> bool {
+    if lname == "user-agent" || lname.starts_with("sec-fetch-") || lname.starts_with("sec-ch-") {
+        return false;
+    }
+    super::sanitize::is_sensitive_header(lname)
+        || SENSITIVE_WORDS.iter().any(|w| lname.contains(w))
+        || lname
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|word| SENSITIVE_SHORT_WORDS.contains(&word))
+}
+
+/// Origin (`esquema://host`) e caminho de uma URL, sem query, fragmento nem
+/// parâmetros de caminho.
+fn origin_and_path(url: &str) -> String {
+    let url = url.split(['?', '#']).next().unwrap_or(url);
+    url.split(';').next().unwrap_or(url).to_string()
 }
 
 /// Tokens de navegação de uma URL: segmentos do caminho, nome do recurso sem
@@ -1267,6 +1352,201 @@ fn split_origin(url: &str) -> (&str, &str) {
     url.split_at(scheme_end + 3 + cut)
 }
 
+/// Expressão Python (dict/list/valor) para um corpo JSON; cada folha recebe o
+/// mesmo tratamento de um campo de form (extração, parâmetro, constante).
+fn json_expr<'a>(
+    gen: &mut Gen,
+    request: &LogicalRequest,
+    origins: &ValueOrigins,
+    value: &serde_json::Value,
+    path: &str,
+    find: &dyn Fn(&str) -> Option<&'a ValueOrigin>,
+) -> String {
+    use serde_json::Value;
+    let leaf = |gen: &mut Gen, text: String| {
+        gen.value_expr(
+            request,
+            find(path),
+            origins,
+            path,
+            &text,
+            ConsumedScope::Body,
+        )
+    };
+    match value {
+        Value::Object(map) => {
+            let items: Vec<String> = map
+                .iter()
+                .map(|(key, child)| {
+                    let child_path = if path.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{path}.{key}")
+                    };
+                    format!(
+                        "{}: {}",
+                        lit(key),
+                        json_expr(gen, request, origins, child, &child_path, find)
+                    )
+                })
+                .collect();
+            format!("{{{}}}", items.join(", "))
+        }
+        Value::Array(items) => {
+            let items: Vec<String> = items
+                .iter()
+                .enumerate()
+                .map(|(i, child)| {
+                    json_expr(gen, request, origins, child, &format!("{path}[{i}]"), find)
+                })
+                .collect();
+            format!("[{}]", items.join(", "))
+        }
+        Value::String(text) => leaf(gen, text.clone()),
+        Value::Number(number) => format!("json_num({})", leaf(gen, number.to_string())),
+        Value::Bool(flag) => format!("json_bool({})", leaf(gen, flag.to_string())),
+        Value::Null => "None".to_string(),
+    }
+}
+
+/// Corpo textual reenviado como capturado: valores sensíveis/de negócio
+/// detectados viram parâmetros obrigatórios. Devolve a expressão (bytes) e
+/// quantos valores foram trocados.
+fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
+    let bytes = text.as_bytes();
+    let mut spans: Vec<(usize, usize, String)> = Vec::new();
+    let is_name_byte = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.');
+    // 1. Valor logo após um nome sensível (`nome=`, `"cpf":"`, `<email>`).
+    let mut i = 0;
+    while i < bytes.len() {
+        if is_name_byte(bytes[i]) && (i == 0 || !is_name_byte(bytes[i - 1])) {
+            let mut j = i;
+            while j < bytes.len() && is_name_byte(bytes[j]) {
+                j += 1;
+            }
+            let name = &text[i..j];
+            if is_sensitive_name(name) {
+                let mut k = j;
+                while k < bytes.len() && matches!(bytes[k], b'"' | b'\'' | b' ') {
+                    k += 1;
+                }
+                if k < bytes.len() && matches!(bytes[k], b'=' | b':' | b'>') {
+                    k += 1;
+                    while k < bytes.len() && matches!(bytes[k], b'"' | b'\'' | b' ') {
+                        k += 1;
+                    }
+                    let mut e = k;
+                    while e < bytes.len()
+                        && !matches!(
+                            bytes[e],
+                            b'"' | b'\'' | b'&' | b'<' | b',' | b'}' | b'\n' | b'\r'
+                        )
+                    {
+                        e += 1;
+                    }
+                    if e > k && text.is_char_boundary(k) && text.is_char_boundary(e) {
+                        spans.push((k, e, name.to_string()));
+                    }
+                }
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    // 2. E-mail, JWT, placa e sequências longas de dígitos (CPF/CNPJ/cartão/telefone).
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_digit() {
+            let mut j = i;
+            let mut digits = 0;
+            while j < bytes.len()
+                && (bytes[j].is_ascii_digit()
+                    || (matches!(bytes[j], b'.' | b'-' | b' ' | b'/')
+                        && j + 1 < bytes.len()
+                        && bytes[j + 1].is_ascii_digit()))
+            {
+                if bytes[j].is_ascii_digit() {
+                    digits += 1;
+                }
+                j += 1;
+            }
+            if digits >= 8 {
+                spans.push((i, j, "valor_numerico".to_string()));
+            }
+            i = j.max(i + 1);
+            continue;
+        }
+        if is_plate_at(bytes, i) {
+            spans.push((i, i + 7, "placa".to_string()));
+            i += 7;
+            continue;
+        }
+        if text[i..].starts_with("eyJ") {
+            let mut j = i;
+            while j < bytes.len()
+                && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b'.' | b'-' | b'_'))
+            {
+                j += 1;
+            }
+            spans.push((i, j, "token".to_string()));
+            i = j;
+            continue;
+        }
+        if b == b'@' {
+            let mut s0 = i;
+            while s0 > 0
+                && (bytes[s0 - 1].is_ascii_alphanumeric()
+                    || matches!(bytes[s0 - 1], b'.' | b'_' | b'-' | b'+'))
+            {
+                s0 -= 1;
+            }
+            let mut e = i + 1;
+            while e < bytes.len()
+                && (bytes[e].is_ascii_alphanumeric() || matches!(bytes[e], b'.' | b'-'))
+            {
+                e += 1;
+            }
+            if s0 < i && e > i + 1 {
+                spans.push((s0, e, "email".to_string()));
+            }
+            i = e;
+            continue;
+        }
+        i += 1;
+    }
+    spans.sort_by_key(|(start, end, _)| (*start, std::cmp::Reverse(*end)));
+    let mut parts: Vec<String> = Vec::new();
+    let mut cursor = 0;
+    let mut found = 0;
+    for (start, end, name) in spans {
+        if start < cursor || !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+            continue;
+        }
+        if start > cursor {
+            parts.push(bytes_lit(&bytes[cursor..start]));
+        }
+        let expr = gen.fallback_param(
+            &format!("corpo_{name}"),
+            &text[start..end],
+            true,
+            false,
+            false,
+        );
+        parts.push(format!("{expr}.encode('utf-8')"));
+        cursor = end;
+        found += 1;
+    }
+    if cursor < bytes.len() {
+        parts.push(bytes_lit(&bytes[cursor..]));
+    }
+    if parts.is_empty() {
+        parts.push("b''".to_string());
+    }
+    (parts.join(" + "), found)
+}
+
 /// URL com parâmetros de caminho (`;jsessionid=...`): cada valor vira
 /// parâmetro obrigatório (dado de sessão, nunca literal). Devolve a URL para o
 /// plano (valores trocados por `<nome>`) e a expressão Python.
@@ -1638,8 +1918,40 @@ pub fn to_python(
                 continue;
             }
             let origin = find_origin(ConsumedScope::Header, &lname, 0);
-            let value = if matches!(lname.as_str(), "referer" | "origin") {
-                format!("rebase({}, base)", lit(&entry.value))
+            let value = if lname == "referer" {
+                // Montado em runtime com a URL real do passo anterior que tem o
+                // mesmo origin+caminho; sem correspondência, é omitido. A query
+                // capturada nunca sai.
+                let wanted = origin_and_path(&entry.value);
+                let producer = step_reqs[..n - 1]
+                    .iter()
+                    .rev()
+                    .find(|(r, _, _)| origin_and_path(&r.url) == wanted);
+                match producer {
+                    Some((r, _, _)) => format!("R[{}].url", lit(&r.id)),
+                    None => {
+                        gen.notes.push(
+                            "header referer omitido (sem passo anterior correspondente)"
+                                .to_string(),
+                        );
+                        continue;
+                    }
+                }
+            } else if lname == "origin" {
+                format!("rebase({}, base)", lit(split_origin(&entry.value).0))
+            } else if is_credential_header(&lname) || looks_secret_value(&entry.value) {
+                if origin.is_some() {
+                    gen.value_expr(
+                        request,
+                        origin,
+                        &origins,
+                        &lname,
+                        &entry.value,
+                        ConsumedScope::Header,
+                    )
+                } else {
+                    gen.fallback_param(&lname, &entry.value, true, false, false)
+                }
             } else if origin.is_some_and(|o| matches!(o.status, OriginStatus::Origin)) {
                 gen.value_expr(
                     request,
@@ -1687,18 +1999,52 @@ pub fn to_python(
                         items.join(",\n        ")
                     );
                 }
+                Some(bytes) if content_type.contains("json") => {
+                    let text = String::from_utf8(bytes).map_err(|_| CoreError::Export {
+                        message: format!(
+                            "passo {n}: corpo JSON que não é UTF-8 não pode ser gerado"
+                        ),
+                    })?;
+                    let value: serde_json::Value =
+                        serde_json::from_str(&text).map_err(|e| CoreError::Export {
+                            message: format!(
+                                "passo {n}: corpo declarado JSON, mas inválido ({e}); use --allow-literal-body"
+                            ),
+                        })?;
+                    let expr =
+                        json_expr(&mut gen, request, &origins, &value, "", &|field: &str| {
+                            find_origin(ConsumedScope::Body, field, 0)
+                        });
+                    body_line = format!("data = json.dumps({expr})\n");
+                }
                 Some(bytes) => {
+                    if !opts.allow_literal_body {
+                        return Err(CoreError::Export {
+                            message: format!(
+                                "passo {n} ({}): corpo '{}' que não é form nem JSON; recusado. Use --allow-literal-body para reenviá-lo, com valores sensíveis como parâmetros",
+                                request.id,
+                                content_type.split(';').next().unwrap_or("").trim()
+                            ),
+                        });
+                    }
+                    let text = String::from_utf8(bytes).map_err(|_| CoreError::Export {
+                        message: format!(
+                            "passo {n} ({}): corpo binário não pode ser inspecionado em busca de dados sensíveis; recusado",
+                            request.id
+                        ),
+                    })?;
+                    let (expr, found) = literal_body_expr(&mut gen, &text);
                     gen.warn(
                         "priming.body_literal",
                         format!(
-                            "passo {n}: corpo não form-urlencoded reenviado como capturado (valores dinâmicos não substituídos)"
+                            "passo {n}: corpo reenviado como capturado; {found} valor(es) sensível(is)/de negócio viraram parâmetros obrigatórios e o restante foi congelado"
                         ),
                     );
                     gen.notes.push(
-                        "corpo reenviado como capturado: valores dinâmicos NÃO substituídos"
+                        "corpo congelado (--allow-literal-body): o que não foi detectado como sensível segue literal"
                             .to_string(),
                     );
-                    body_line = format!("data = {}\n", bytes_lit(&bytes));
+                    body_line = format!("data = {expr}\n");
                 }
                 None => {
                     gen.warn(
@@ -2029,6 +2375,17 @@ def checked(value, size, who):
     return value
 
 
+def json_num(text):
+    try:
+        return int(text)
+    except ValueError:
+        return float(text)
+
+
+def json_bool(text):
+    return str(text).lower() == 'true'
+
+
 def url_origin(url):
     parts = urllib.parse.urlsplit(url)
     return (parts.scheme + '://' + parts.netloc).lower()
@@ -2074,6 +2431,7 @@ const MAIN: &str = r#"
 def main():
     parser = argparse.ArgumentParser(description='Script de priming (ScrapeLens)')
     parser.add_argument('--confirmar', action='store_true', help='executa os passos que alteram estado')
+    parser.add_argument('--usar-proxy-do-ambiente', action='store_true', help='usa proxy/.netrc do ambiente (padrão: ignora)')
     parser.add_argument('--base-url', default=None, help='troca esquema/host/porta do alvo capturado (ex.: http://127.0.0.1:8791)')
     for name, default, note in PARAMS:
         parser.add_argument('--' + name.replace('_', '-'), dest='p_' + name, default=default,
@@ -2098,6 +2456,9 @@ def main():
     except ImportError:
         fail('o pacote "requests" não está instalado (pip install requests)')
     S = requests.Session()
+    S.trust_env = bool(args.usar_proxy_do_ambiente)
+    if sys.version_info < (3, 13):
+        sys.stderr.write('priming: aviso: Python < 3.13; o HTMLParser tem casos quadráticos conhecidos com respostas hostis\n')
     R = {}
     for index, (step, (rid, method, url, _, _)) in enumerate(zip(STEPS, PLAN), 1):
         resp = step(S, R, P, base)

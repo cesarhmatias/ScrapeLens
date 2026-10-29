@@ -907,6 +907,10 @@ fn hostile_names_and_values_stay_inside_literals() {
         "send",
         "safe_text",
         "url_origin",
+        "float",
+        "json_num",
+        "json_bool",
+        "bool",
         "isprintable",
         "str",
         "urlsplit",
@@ -1153,4 +1157,200 @@ fn path_params_and_pii_names_are_data_not_literals() {
     assert!(script.contains("('op', 'S37', 'constante estrutural')"));
     let dir = tempfile::tempdir().unwrap();
     ast_calls(&script, &dir);
+}
+
+/// HAR sintético com headers/Content-Type próprios; a última entrada é o alvo.
+type CustomEntry<'a> = (
+    &'a str,
+    &'a str,
+    &'a [(&'a str, &'a str)],
+    Option<(&'a str, &'a str)>,
+);
+
+fn custom_bundle(entries: &[CustomEntry]) -> SessionBundle {
+    let entries: Vec<serde_json::Value> = entries
+        .iter()
+        .enumerate()
+        .map(|(i, (method, url, headers, body))| {
+            let mut hs: Vec<serde_json::Value> = headers
+                .iter()
+                .map(|(k, v)| serde_json::json!({"name": k, "value": v}))
+                .collect();
+            let mut request = serde_json::json!({
+                "method": method, "url": url, "httpVersion": "HTTP/1.1",
+                "queryString": [], "cookies": [], "headersSize": -1, "bodySize": 0
+            });
+            if let Some((ctype, text)) = body {
+                hs.push(serde_json::json!({"name": "Content-Type", "value": ctype}));
+                request["bodySize"] = serde_json::json!(text.len());
+                request["postData"] = serde_json::json!({"mimeType": ctype, "text": text});
+            }
+            request["headers"] = serde_json::Value::Array(hs);
+            serde_json::json!({
+                "startedDateTime": format!("2026-10-27T12:00:{i:02}.000Z"), "time": 1,
+                "request": request,
+                "response": {
+                    "status": 200, "statusText": "", "httpVersion": "HTTP/1.1",
+                    "headers": [], "cookies": [], "headersSize": -1, "bodySize": 40,
+                    "redirectURL": "",
+                    "content": {"size": 40, "mimeType": "text/html", "text": "<input type=hidden name=\"tok\" value=\"abc12345\">"}
+                },
+                "cache": {}, "timings": {"send": 0, "wait": 1, "receive": 0}
+            })
+        })
+        .collect();
+    let har = serde_json::json!({
+        "log": {"version": "1.2", "creator": {"name": "t", "version": "1"}, "entries": entries}
+    });
+    import_har(har.to_string().as_bytes()).expect("HAR").bundle
+}
+
+#[test]
+fn credential_headers_are_never_literal_and_referer_is_runtime_only() {
+    let secrets = [
+        ("x-api-key", "AKEYVALUE111"),
+        ("X-Auth-Token", "ATOKENVALUE222"),
+        ("x-csrf-token", "CSRFVALUE333"),
+        ("x-xsrf-token", "XSRFVALUE444"),
+        ("x-session-id", "SESSIONVALUE555"),
+        ("x-jwt", "JWTVALUE666"),
+        ("x-access-token", "ACCESSVALUE777"),
+        ("private-token", "PRIVVALUE888"),
+        ("x-amz-security-token", "AMZVALUE999"),
+        ("x-custom-secret", "CUSTSECRET000"),
+        ("x-user", "USERVALUE1010"),
+        ("x-device-id", "DEVICEVALUE1111"),
+        ("x-trace", "eyJhbGciOiJIUzI1NiJ9.payload.sig"),
+    ];
+    let mut headers: Vec<(&str, &str)> = secrets.to_vec();
+    headers.push((
+        "Referer",
+        "https://h.example.test/pagina?cpf=00000000191&q=1",
+    ));
+    headers.push(("User-Agent", "Mozilla/5.0 teste"));
+    let bundle = custom_bundle(&[("GET", "https://h.example.test/alvo", &headers, None)]);
+    let script = generate(&bundle, "har-0001");
+    for (name, value) in secrets {
+        assert!(!script.contains(value), "{name} vazou:\n{script}");
+    }
+    assert!(!script.contains("00000000191"), "query do Referer vazou");
+    assert!(
+        !script.contains("'Referer'"),
+        "sem passo anterior, Referer é omitido"
+    );
+    assert!(
+        script.contains("Mozilla/5.0 teste"),
+        "User-Agent segue literal"
+    );
+    assert!(script.contains("('x_api_key', None,"), "{script}");
+    assert!(script.contains("('x_jwt', None,"), "{script}");
+
+    // Com passo anterior de mesmo origin+caminho, o Referer vem do runtime.
+    let bundle = custom_bundle(&[
+        (
+            "GET",
+            "https://h.example.test/pagina?cpf=00000000191",
+            &[],
+            None,
+        ),
+        (
+            "GET",
+            "https://h.example.test/alvo?tok=abc12345",
+            &[("Referer", "https://h.example.test/pagina?cpf=00000000191")],
+            None,
+        ),
+    ]);
+    let script = generate(&bundle, "har-0002");
+    assert!(script.contains("'Referer': R['har-0001'].url"), "{script}");
+    assert!(!script.contains("00000000191"));
+}
+
+#[test]
+fn json_body_is_decomposed_and_sensitive_fields_are_required() {
+    let body = r#"{"STAMP":"INIT","nome":"Fulano Teste","cpf":"00000000191","cartao":"4111111111111111","n":3,"ok":true,"end":{"rua":"Rua Sintetica 1"}}"#;
+    let bundle = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/api",
+        &[],
+        Some(("application/json", body)),
+    )]);
+    let script = generate(&bundle, "har-0001");
+    for leaked in [
+        "Fulano Teste",
+        "00000000191",
+        "4111111111111111",
+        "Rua Sintetica",
+    ] {
+        assert!(!script.contains(leaked), "{leaked} vazou:\n{script}");
+    }
+    assert!(script.contains("json.dumps("), "{script}");
+    for name in ["nome", "cpf", "cartao", "end_rua"] {
+        assert!(
+            script.contains(&format!("('{name}', None,")),
+            "{name}:\n{script}"
+        );
+    }
+    let dir = tempfile::tempdir().unwrap();
+    ast_calls(&script, &dir);
+}
+
+#[test]
+fn non_form_non_json_body_is_refused_unless_allowed() {
+    let body = "<req><nome>Fulano Teste</nome><cpf>00000000191</cpf><mail>a@b.test</mail><obs>livre</obs></req>";
+    let bundle = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/api",
+        &[],
+        Some(("text/xml", body)),
+    )]);
+    let err = to_python(
+        &bundle.session,
+        &bundle,
+        "har-0001",
+        &PrimingOptions::default(),
+    )
+    .expect_err("recusa por padrão");
+    assert!(err.to_string().contains("--allow-literal-body"), "{err}");
+    let opts = PrimingOptions {
+        allow_literal_body: true,
+        ..PrimingOptions::default()
+    };
+    let out = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("com a opção");
+    for leaked in ["Fulano Teste", "00000000191", "a@b.test"] {
+        assert!(!out.text.contains(leaked), "{leaked} vazou:\n{}", out.text);
+    }
+    assert!(out.text.contains("livre"), "o resto fica congelado");
+    assert!(out
+        .warnings
+        .iter()
+        .any(|w| w.code == "priming.body_literal"));
+    let dir = tempfile::tempdir().unwrap();
+    ast_calls(&out.text, &dir);
+}
+
+#[test]
+fn dynamic_ids_are_never_structural_constants() {
+    let url = "https://h.example.test/app?op=S37&t=eyJhbGciOiJIUzI1NiJ9&u=01ARZ3NDEKTSV4RRFFQ69G5FAV&d=2026-10-27T12:00:00Z&n=12345&m=aB3dE9xK&sess_ref=abc";
+    let bundle = custom_bundle(&[("GET", url, &[], None)]);
+    let script = generate(&bundle, "har-0001");
+    for leaked in [
+        "eyJhbGciOiJIUzI1NiJ9",
+        "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "2026-10-27T12:00:00Z",
+        "12345",
+        "aB3dE9xK",
+    ] {
+        assert!(!script.contains(leaked), "{leaked} virou padrão:\n{script}");
+    }
+    assert!(script.contains("('op', 'S37', 'constante estrutural')"));
+    assert!(script.contains("('sess_ref', None,"), "{script}");
+}
+
+#[test]
+fn script_ignores_environment_proxy_by_default() {
+    let bundle = header_outside_latin1_bundle();
+    let script = generate(&bundle, "har-0001");
+    assert!(script.contains("--usar-proxy-do-ambiente"));
+    assert!(script.contains("S.trust_env = bool(args.usar_proxy_do_ambiente)"));
+    assert!(script.contains("Python < 3.13"));
 }
