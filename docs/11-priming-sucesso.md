@@ -92,3 +92,16 @@ esperados, marcador de proteção) e `verdict`: `app-ok`,
    vereditos de assess (contagens) são coerentes. Nenhum valor real no
    relatório.
 6. Bateria sem regressão.
+
+## Andamento (2026-10-29)
+
+- assess (Captura, c28533b). A decisão de acrescentar `não-avaliado`
+  (`not-assessed`) para respostas sem sinal da aplicação e sem expectativa na
+  rota tira o ruído de páginas, estáticos e /TSPD/.
+- Gerador de priming (Captura, f858b17). Prova offline no detran-sim: a
+  cadeia de 13 passos (6 POSTs) completou 2× com valores novos, e o controle
+  negativo com os valores capturados recebeu ERRORMESSAGE.
+- Limite conhecido: o Natural for Ajax usa prefixos de comprimento. Quando o
+  trecho extraído muda de tamanho, o script avisa em stderr, mas não recalcula
+  o prefixo. Um servidor real pode rejeitar. Recalcular exige conhecer o
+  protocolo (fora do core; candidato a extensão/plugin).
