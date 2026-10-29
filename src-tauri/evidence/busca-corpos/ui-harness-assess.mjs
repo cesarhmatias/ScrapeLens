@@ -166,6 +166,10 @@ await page.waitForSelector(".chain-list");
 results.chainVerdicts = await page.locator(".chain-list li").evaluateAll((els) => els.slice(0, 12).map((e) => e.innerText.split("\n")[0]));
 await page.evaluate(() => document.querySelector(".chain-list")?.scrollIntoView({ block: "start" }));
 await shot("31-cadeia-veredito.png");
+// smoke do build final: frames auxiliares reais do core e iniciador no detalhe
+results.chainAuxText = (await page.locator("body").innerText()).match(/Frames auxiliares\s*\d+/)?.[0] ?? null;
+await page.getByRole("tab", { name: /Visão geral|Geral|Cabeçalhos/ }).first().click().catch(() => {});
+results.initiatorText = (await page.locator("dt:has-text('Iniciador') + dd").first().innerText().catch(() => null));
 
 // compare 1 × 2 rodadas: veredito A → B por par
 await backToSession();
