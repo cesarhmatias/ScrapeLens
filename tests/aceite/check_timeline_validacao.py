@@ -32,6 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_bodies_search as cb  # noqa: E402
 import check_priming_sim as ps  # noqa: E402
+import check_priming_injection as ci  # noqa: E402  (entry(): montagem de HAR sintético)
 
 ROOT = cb.ROOT
 OUT = ROOT / "tests" / "results" / "priming" / "timeline-validacao.json"
@@ -150,6 +151,92 @@ def diff_names(o, under=False, out=None):
     return out
 
 
+FORM = "application/x-www-form-urlencoded"
+LOOP = "http://127.0.0.1:18791"
+
+
+def rv_capture(tmp, core):
+    """Captura sintética de 4 passos (casos do revisor, val1.py): STAMP novo a cada resposta, constantes longa/curta, placa."""
+    A = "http://app.test"
+    ent = [
+        ci.entry(1, "GET", f"{A}/entry", 200, "text/html", "<html>entry</html>", []),
+        ci.entry(2, "GET", f"{A}/a", 200, "text/html", '<input type=hidden name="STAMP" value="STAMPCAP1234567">', []),
+        ci.entry(3, "POST", f"{A}/go", 200, "text/html",
+                 '<input type=hidden name="STAMP" value="STAMPCAP7654321"><textarea name="XML">ok</textarea>', [],
+                 post=[("STAMP", "STAMPCAP1234567"), ("q", "cadastro"), ("sig", "0123456789abcdef0123456789abcdef"), ("placa", "ABC1D23")]),
+        ci.entry(4, "POST", f"{A}/go2", 200, "text/html",
+                 '<input type=hidden name="STAMP" value="STAMPCAP0000000"><textarea name="XML">done</textarea>', [],
+                 post=[("STAMP", "STAMPCAP7654321"), ("q", "consulta")]),
+    ]
+    har = {"log": {"version": "1.2", "creator": {"name": "WebInspector", "version": "1"}, "pages": [], "entries": ent}}
+    (tmp / "rv-cap.har").write_text(json.dumps(har))
+    sh([core, "import-har", tmp / "rv-cap.har", "--out", tmp / "rv-cap", "--label", "synthetic-fixture"])
+    return tmp / "rv-cap"
+
+
+def rv_step(method, url, req=None, resp="", status=200):
+    return {"method": method, "url": url, "status": status,
+            "requestHeaders": [["content-type", FORM]] if req is not None else [],
+            "responseHeaders": [["content-type", "text/html"]],
+            "requestBody": {"text": req, "encoding": "utf8", "truncated": False} if req is not None else None,
+            "responseBody": {"text": resp, "encoding": "utf8", "truncated": False}}
+
+
+def rv_cases():
+    L = LOOP
+    st = lambda v: f'<input type=hidden name="STAMP" value="{v}">'  # noqa: E731
+    ST, ST2, ST3 = "STAMPNEW0000001", "STAMPNEW0000002", "STAMPNEW0000003"
+    SIG = "sig=0123456789abcdef0123456789abcdef"
+    go_resp = st(ST2) + '<textarea name="XML">ok</textarea>'
+    done = rv_step("POST", f"{L}/go2", f"STAMP={ST2}&q=consulta", st(ST3) + '<textarea name="XML">done</textarea>')
+    good = [rv_step("GET", f"{L}/entry", resp="<html>entry</html>"), rv_step("GET", f"{L}/a", resp=st(ST)) if False else rv_step("GET", f"{L}/a", resp=st(ST)),
+            rv_step("POST", f"{L}/go", f"STAMP={ST}&q=cadastro&{SIG}&placa=XYZ9K88", go_resp), done]
+    cases = {}
+    cases["V1 fiel (controle)"] = (good, [{"name": "placa"}], "equivalent")
+    cases["V2b prefixo (sem o alvo)"] = (good[:3], [{"name": "placa"}], "not-equivalent")
+    froz = list(good)
+    froz[2] = rv_step("POST", f"{L}/go", f"STAMP=STAMPCAP1234567&q=cadastro&{SIG}&placa=XYZ9K88", go_resp)
+    froz[3] = rv_step("POST", f"{L}/go2", "STAMP=STAMPCAP7654321&q=consulta", done["responseBody"]["text"])
+    cases["V3 STAMP congelado (valor da captura)"] = (froz, [{"name": "placa"}], "not-equivalent")
+    sig = list(good)
+    sig[2] = rv_step("POST", f"{L}/go", f"STAMP={ST}&q=cadastro&sig=ffffffffffffffffffffffffffffffff&placa=XYZ9K88", go_resp)
+    cases["V5 constante longa trocada (sig)"] = (sig, [{"name": "placa"}], "not-equivalent")
+    forged = [good[0], good[1], rv_step("POST", f"{L}/go", "STAMP=INVENTED&q=OUTRA&sig=ffffffffffffffffffffffffffffffff&placa=XYZ9K88", go_resp), good[3]]
+    cases["V7 parameters forjado (q, sig, STAMP)"] = (forged, [{"name": "q"}, {"name": "sig"}, {"name": "STAMP"}, {"name": "placa"}], "not-equivalent")
+    wrong = list(good)   # origem errada: o passo 4 usa o STAMP do passo 2 (ST), não o da resposta anterior (ST2)
+    wrong[3] = rv_step("POST", f"{L}/go2", f"STAMP={ST}&q=consulta", done["responseBody"]["text"])
+    cases["V18 origem errada (STAMP de resposta antiga)"] = (wrong, [{"name": "placa"}], "not-equivalent")
+    other = [dict(x, url=x["url"].replace("127.0.0.1:18791", "evil.example")) for x in good]
+    cases["V12 host não-loopback (evil.example)"] = (other, [{"name": "placa"}], "not-equivalent")
+    return cases
+
+
+def reviewer_cases(core, tmp, info):
+    """Casos do revisor: tudo que NÃO é a execução fiel deve DIVERGIR (ou dar erro); o controle V1 deve ser equivalent."""
+    cap = rv_capture(tmp, core)
+    info["revisor"] = {}
+    for name, (steps, params, want) in rv_cases().items():
+        doc = {"schema": "scrapelens.trace/1", "generator": "scrapelens-priming 1.0", "steps": steps, "parameters": params}
+        tp = tmp / "rv-trace.json"; tp.write_text(json.dumps(doc))
+        ts = tmp / "rv-ses"; shutil.rmtree(ts, ignore_errors=True)
+        ip = sh([core, "import-trace", tp, "--out", ts])
+        if ip.returncode != 0:   # recusar já na importação conta como "erro" esperado, exceto no controle
+            info["revisor"][name] = {"import": "erro", "rc": ip.returncode}
+            check(want != "equivalent", f"revisor {name}: o controle foi recusado no import-trace: {' '.join(ip.stderr.split())[:100]}")
+            continue
+        v = sh([core, "validate", cap, ts])
+        try:
+            d = json.loads(v.stdout)
+        except Exception:
+            d = None
+        verdict = d.get("verdict") if d else f"erro(rc={v.returncode})"
+        info["revisor"][name] = {"verdict": verdict, "step": d.get("step") if d else None, "resumo": str(d.get("summary", ""))[:100] if d else v.stderr.strip()[:80]}
+        if want == "equivalent":
+            check(verdict == "equivalent", f"revisor {name}: controle deveria ser equivalent; deu {verdict} ({info['revisor'][name]['resumo']})")
+        else:
+            check(verdict != "equivalent", f"revisor {name}: deveria DIVERGIR (ou dar erro) mas o validate disse {verdict!r}: {info['revisor'][name]['resumo']}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--core"); ap.add_argument("--python"); ap.add_argument("--port", type=int, default=8793)
@@ -189,6 +276,9 @@ def main():
                 INFO["timeline_real"][f"H{i}"] = {k: agg[k] for k in ("entradas", "posts_connector", "posts_sem_rotulo_event_page", "grupos_protecao", "protecao_avulsa", "protecao_recolhida")}
                 INFO["timeline_real"][f"H{i}"]["ordem_rotulos"] = [f"{e}@{p}" for e, p in zip(agg["sequencia_eventos"], agg["paginas"])]
                 check(subsequence(agg["sequencia_eventos"], EVENTS), f"HAR real #{i}: eventos fora da ordem do fluxo manual")
+
+        # ---- casos do revisor (Rodada 9): validate não pode dar 'equivalente' a execução infiel
+        reviewer_cases(core, tmp, INFO)
 
         # ---- (2)/(3)/(4) execução do script
         cap = tmp / "cap"; sh([core, "import-har", ps.HAR, "--out", cap, "--label", "synthetic-fixture"])

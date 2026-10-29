@@ -2,12 +2,13 @@
  "payload": "__import__('os').system('touch <marcador>') + newline/aspas triplas/barra final/bidi/NUL",
  "cases": {
   "headers-latin1-hostis": {
-   "script_bytes": 19384,
+   "script_bytes": 22549,
    "static": {
     "imports": [
      "argparse",
      "base64",
      "datetime",
+     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -23,8 +24,10 @@
      "trace_body",
      "trace_check",
      "trace_close",
+     "trace_error",
      "trace_exchange",
      "trace_open",
+     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
@@ -35,6 +38,9 @@
     "files_created": [],
     "marker_files": [],
     "stderr_last": "",
+    "outcome": "completed",
+    "posts_received": 1,
+    "expected": "completed",
     "forbidden_events": []
    },
    "run_hostile_server_trace": {
@@ -50,15 +56,50 @@
      "schema": "scrapelens.trace/1",
      "steps": 2
     },
+    "outcome": "completed",
+    "posts_received": 1,
+    "expected": "completed",
     "forbidden_events": []
    },
    "posts_received_by_hostile_server": 2,
    "fresh_value_used_not_captured": true,
+   "static_sim": {
+    "imports": [
+     "argparse",
+     "base64",
+     "datetime",
+     "hashlib",
+     "html.parser",
+     "json",
+     "os",
+     "re",
+     "requests",
+     "sys",
+     "time",
+     "urllib.parse"
+    ],
+    "dangerous_calls": [],
+    "os_fora_de_trace": [],
+    "trace_functions": [
+     "trace_body",
+     "trace_check",
+     "trace_close",
+     "trace_error",
+     "trace_exchange",
+     "trace_open",
+     "trace_plan_hash",
+     "trace_time"
+    ],
+    "payload_in_strings_or_comments_only": true
+   },
    "run_detran_sim": {
     "rc": 1,
     "files_created": [],
     "marker_files": [],
-    "stderr_last": "",
+    "stderr_last": "priming: a aplicação respondeu com ERRORMESSAGE no passo 1: sessão desconhecida (SESSIONID de outra sessão); XML ilegível",
+    "outcome": "declared-failure",
+    "posts_received": 1,
+    "expected": "declared",
     "forbidden_events": []
    },
    "run_detran_sim_trace": {
@@ -67,23 +108,45 @@
      "trace.json"
     ],
     "marker_files": [],
-    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar | priming: a aplicação respondeu com ERRORMESSAGE no passo 1: sessão desconhecida (SESSIONID de outra sessão); XML ilegível",
     "trace": {
      "mode": "0o600",
      "json_valid": true,
      "schema": "scrapelens.trace/1",
      "steps": 1
     },
+    "outcome": "declared-failure",
+    "posts_received": 1,
+    "expected": "declared",
     "forbidden_events": []
+   },
+   "placar": {
+    "run_hostile_server": [
+     "completed",
+     1
+    ],
+    "run_hostile_server_trace": [
+     "completed",
+     1
+    ],
+    "run_detran_sim": [
+     "declared-failure",
+     1
+    ],
+    "run_detran_sim_trace": [
+     "declared-failure",
+     1
+    ]
    }
   },
   "headers-com-newline-e-NUL": {
-   "script_bytes": 19438,
+   "script_bytes": 22603,
    "static": {
     "imports": [
      "argparse",
      "base64",
      "datetime",
+     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -99,8 +162,10 @@
      "trace_body",
      "trace_check",
      "trace_close",
+     "trace_error",
      "trace_exchange",
      "trace_open",
+     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
@@ -111,6 +176,9 @@
     "files_created": [],
     "marker_files": [],
     "stderr_last": "",
+    "outcome": "completed",
+    "posts_received": 1,
+    "expected": "completed",
     "forbidden_events": []
    },
    "run_hostile_server_trace": {
@@ -126,40 +194,19 @@
      "schema": "scrapelens.trace/1",
      "steps": 2
     },
+    "outcome": "completed",
+    "posts_received": 1,
+    "expected": "completed",
     "forbidden_events": []
    },
    "posts_received_by_hostile_server": 2,
    "fresh_value_used_not_captured": true,
-   "run_detran_sim": {
-    "rc": 1,
-    "files_created": [],
-    "marker_files": [],
-    "stderr_last": "",
-    "forbidden_events": []
-   },
-   "run_detran_sim_trace": {
-    "rc": 1,
-    "files_created": [
-     "trace.json"
-    ],
-    "marker_files": [],
-    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
-    "trace": {
-     "mode": "0o600",
-     "json_valid": true,
-     "schema": "scrapelens.trace/1",
-     "steps": 1
-    },
-    "forbidden_events": []
-   }
-  },
-  "headers-com-bidi": {
-   "script_bytes": 19408,
-   "static": {
+   "static_sim": {
     "imports": [
      "argparse",
      "base64",
      "datetime",
+     "hashlib",
      "html.parser",
      "json",
      "os",
@@ -175,8 +222,88 @@
      "trace_body",
      "trace_check",
      "trace_close",
+     "trace_error",
      "trace_exchange",
      "trace_open",
+     "trace_plan_hash",
+     "trace_time"
+    ],
+    "payload_in_strings_or_comments_only": true
+   },
+   "run_detran_sim": {
+    "rc": 1,
+    "files_created": [],
+    "marker_files": [],
+    "stderr_last": "priming: a aplicação respondeu com ERRORMESSAGE no passo 1: sessão desconhecida (SESSIONID de outra sessão); XML ilegível",
+    "outcome": "declared-failure",
+    "posts_received": 1,
+    "expected": "declared",
+    "forbidden_events": []
+   },
+   "run_detran_sim_trace": {
+    "rc": 1,
+    "files_created": [
+     "trace.json"
+    ],
+    "marker_files": [],
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar | priming: a aplicação respondeu com ERRORMESSAGE no passo 1: sessão desconhecida (SESSIONID de outra sessão); XML ilegível",
+    "trace": {
+     "mode": "0o600",
+     "json_valid": true,
+     "schema": "scrapelens.trace/1",
+     "steps": 1
+    },
+    "outcome": "declared-failure",
+    "posts_received": 1,
+    "expected": "declared",
+    "forbidden_events": []
+   },
+   "placar": {
+    "run_hostile_server": [
+     "completed",
+     1
+    ],
+    "run_hostile_server_trace": [
+     "completed",
+     1
+    ],
+    "run_detran_sim": [
+     "declared-failure",
+     1
+    ],
+    "run_detran_sim_trace": [
+     "declared-failure",
+     1
+    ]
+   }
+  },
+  "headers-com-bidi": {
+   "script_bytes": 22573,
+   "static": {
+    "imports": [
+     "argparse",
+     "base64",
+     "datetime",
+     "hashlib",
+     "html.parser",
+     "json",
+     "os",
+     "re",
+     "requests",
+     "sys",
+     "time",
+     "urllib.parse"
+    ],
+    "dangerous_calls": [],
+    "os_fora_de_trace": [],
+    "trace_functions": [
+     "trace_body",
+     "trace_check",
+     "trace_close",
+     "trace_error",
+     "trace_exchange",
+     "trace_open",
+     "trace_plan_hash",
      "trace_time"
     ],
     "payload_in_strings_or_comments_only": true
@@ -186,7 +313,10 @@
     "rc": 1,
     "files_created": [],
     "marker_files": [],
-    "stderr_last": "",
+    "stderr_last": "priming: passo 1: header com caractere fora de latin-1: 'latin-1' codec can't encode characters in position 60-61: ordinal not in range(256)",
+    "outcome": "declared-failure",
+    "posts_received": 0,
+    "expected": "declared",
     "forbidden_events": []
    },
    "run_hostile_server_trace": {
@@ -195,22 +325,57 @@
      "trace.json"
     ],
     "marker_files": [],
-    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar | priming: passo 1: header com caractere fora de latin-1: 'latin-1' codec can't encode characters in position 60-61: ordinal not in range(256)",
     "trace": {
      "mode": "0o600",
      "json_valid": true,
      "schema": "scrapelens.trace/1",
      "steps": 1
     },
+    "outcome": "declared-failure",
+    "posts_received": 0,
+    "expected": "declared",
     "forbidden_events": []
    },
    "posts_received_by_hostile_server": 0,
    "fresh_value_used_not_captured": null,
+   "static_sim": {
+    "imports": [
+     "argparse",
+     "base64",
+     "datetime",
+     "hashlib",
+     "html.parser",
+     "json",
+     "os",
+     "re",
+     "requests",
+     "sys",
+     "time",
+     "urllib.parse"
+    ],
+    "dangerous_calls": [],
+    "os_fora_de_trace": [],
+    "trace_functions": [
+     "trace_body",
+     "trace_check",
+     "trace_close",
+     "trace_error",
+     "trace_exchange",
+     "trace_open",
+     "trace_plan_hash",
+     "trace_time"
+    ],
+    "payload_in_strings_or_comments_only": true
+   },
    "run_detran_sim": {
     "rc": 1,
     "files_created": [],
     "marker_files": [],
-    "stderr_last": "",
+    "stderr_last": "priming: passo 1: header com caractere fora de latin-1: 'latin-1' codec can't encode characters in position 60-61: ordinal not in range(256)",
+    "outcome": "declared-failure",
+    "posts_received": 0,
+    "expected": "declared",
     "forbidden_events": []
    },
    "run_detran_sim_trace": {
@@ -219,16 +384,44 @@
      "trace.json"
     ],
     "marker_files": [],
-    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar | priming: passo 1: header com caractere fora de latin-1: 'latin-1' codec can't encode characters in position 60-61: ordinal not in range(256)",
     "trace": {
      "mode": "0o600",
      "json_valid": true,
      "schema": "scrapelens.trace/1",
      "steps": 1
     },
+    "outcome": "declared-failure",
+    "posts_received": 0,
+    "expected": "declared",
     "forbidden_events": []
+   },
+   "placar": {
+    "run_hostile_server": [
+     "declared-failure",
+     0
+    ],
+    "run_hostile_server_trace": [
+     "declared-failure",
+     0
+    ],
+    "run_detran_sim": [
+     "declared-failure",
+     0
+    ],
+    "run_detran_sim_trace": [
+     "declared-failure",
+     0
+    ]
    }
   }
  },
- "fails": []
+ "fails": [
+  "headers-latin1-hostis: imports inesperados ['hashlib']",
+  "headers-latin1-hostis/sim: imports inesperados ['hashlib']",
+  "headers-com-newline-e-NUL: imports inesperados ['hashlib']",
+  "headers-com-newline-e-NUL/sim: imports inesperados ['hashlib']",
+  "headers-com-bidi: imports inesperados ['hashlib']",
+  "headers-com-bidi/sim: imports inesperados ['hashlib']"
+ ]
 }

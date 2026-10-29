@@ -67,20 +67,24 @@ def entry(t, method, url, status, mime, body, headers, post=None):
             "cache": {}, "timings": {"send": 1, "wait": 40, "receive": 9}, "_resourceType": "document"}
 
 
-def hostile_har(value_tag, newline_headers=False, bidi_header=False):
+def hostile_har(value_tag, newline_headers=False, bidi_header=False, sim=False):
     """E1 (produtor) traz os valores hostis em controle HTML, literal JS e textarea; E2 (consumidor) os reenvia em form."""
     v_ctrl, v_lit, v_area = HOSTILE(f"CTRL{value_tag}"), f"LIT{value_tag}-{PAYLOAD}-ABCDEFGH", HOSTILE(f"AREA{value_tag}")
     name = HOSTILE("HID").replace("\u0000", "")
     html_body = (f'<html><script>var tokenLit = "{v_lit}";</script>\n'
                  f'<input type="hidden" name="{name.replace(chr(34), "&quot;")}" value="{v_ctrl.replace(chr(34), "&quot;")}">\n'
                  f'<textarea name="AREA">{v_area}</textarea></html>\n')
+    if sim:  # o detran-sim não devolve controles hostis: aqui os valores hostis são constantes do código gerado
+        html_body = "<html><body>ok</body></html>\n"
     hv = HOSTILE("H").replace("\n", " ").replace("\u0000", "")
     hdrs = [("accept", "*/*"), ("x-inj", hv if bidi_header else hv.replace(NASTY, "")), ("x-" + "n" * 3, f"{PAYLOAD} \\")]
     if newline_headers:
         hdrs.append(("x-nl", f"a{NL}b\u0000c{PAYLOAD}"))
-    e1 = entry(1, "GET", f"{APP}/inj/page?{urllib.parse.quote(HOSTILE('q'))}={urllib.parse.quote(PAYLOAD)}", 200, "text/html;charset=UTF-8", html_body, hdrs)
+    page_url = f"{APP}/UIC-SERVICOS/VES0009X.html" if sim else f"{APP}/inj/page"   # rotas que o detran-sim conhece
+    post_url = f"{APP}/servlet/Connector" if sim else f"{APP}/inj/post"
+    e1 = entry(1, "GET", f"{page_url}?{urllib.parse.quote(HOSTILE('q'))}={urllib.parse.quote(PAYLOAD)}", 200, "text/html;charset=UTF-8", html_body, hdrs)
     form = [(name, v_ctrl), ("tokenLit", v_lit), ("AREA", v_area), (HOSTILE("n"), HOSTILE("v")), ("evil", PAYLOAD), ("plain", "ok")]
-    e2 = entry(2, "POST", f"{APP}/inj/post", 200, "text/plain", "ok\n", hdrs[:2] + [("referer", f"{APP}/inj/page")], post=form)
+    e2 = entry(2, "POST", post_url, 200, "text/plain", "ok\n", hdrs[:2] + [("referer", page_url)], post=form)
     return {"log": {"version": "1.2", "creator": {"name": "WebInspector", "version": "1"}, "pages": [], "entries": [e1, e2]}}, v_ctrl, v_lit, v_area
 
 
@@ -178,7 +182,10 @@ rc = 0
 try:
     runpy.run_path(script, run_name="__main__")
 except SystemExit as e:
-    rc = e.code if isinstance(e.code, int) else 1
+    if isinstance(e.code, int) or e.code is None:
+        rc = e.code or 0
+    else:
+        sys.stderr.write(str(e.code) + "\n"); rc = 1   # fail('...') do script sai com texto: preserva a mensagem
 except BaseException as e:
     sys.stderr.write("CRASH: %s: %s\n" % (type(e).__name__, str(e)[:120])); rc = 1
 sys.stderr.write("\nAUDIT_JSON:" + json.dumps(EV) + "\n")
@@ -202,12 +209,13 @@ class Hostile(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Length", "3"); self.end_headers(); self.wfile.write(b"ok\n")
 
 
-def execute(py, script, base, label, extra_args=(), trace_name=None):
+def execute(py, script, base, label, extra_args=(), trace_name=None, expect="completed", posts=None):
     """trace_name=None: 0 escritas permitidas. Com trace_name (relativo ao cwd): exatamente 1 arquivo criado, o do trace."""
     work = Path(tempfile.mkdtemp(prefix="sl-inj-run-")); os.chmod(work, 0o700)
     try:
         wrap = Path(tempfile.mkdtemp(prefix="sl-inj-wrap-")) / "wrap.py"; wrap.write_text(WRAP)
         before = sorted(os.listdir(work))
+        posts_before = posts() if posts else 0
         targs = ["--trace", trace_name] if trace_name else []
         # entradas obrigatórias que o próprio script declara (F1: placa/sessionid-cliente; hostil: campos sem origem), com
         # valores sintéticos: sem isso o argparse sai antes de executar a cadeia e a prova seria vazia
@@ -250,6 +258,20 @@ def execute(py, script, base, label, extra_args=(), trace_name=None):
         else:
             forbidden = events
             check(created == [], f"{label}: arquivos criados sem --trace: {created}")
+        # Prova não-vazia (Rodada 9, achado 10): a execução tem de ter RODADA. Ou completou (rc 0) com POSTs recebidos, ou
+        # falhou de forma DECLARADA (mensagem `priming:` do próprio script, sem traceback/CRASH) — nunca um crash mudo.
+        text_err = "\n".join(l for l in p.stderr.split("AUDIT_JSON")[0].splitlines() if "o trace contém dados da sua sessão" not in l)
+        n_posts = (posts() if posts else 0) - posts_before
+        crashed = "CRASH:" in text_err or "Traceback" in text_err
+        declared = p.returncode != 0 and "priming:" in text_err and not crashed
+        outcome = "completed" if p.returncode == 0 else ("declared-failure" if declared else "undeclared-failure")
+        info.update({"outcome": outcome, "posts_received": n_posts, "expected": expect})
+        if expect == "completed":
+            check(p.returncode == 0 and n_posts > 0, f"{label}: esperado rc=0 com POSTs>0; rc={p.returncode}, POSTs={n_posts}, {outcome}: {text_err.strip()[-120:]!r}")
+        else:  # "declared": falha esperada e declarada (rc!=0 + `priming:`); ou completou
+            check(outcome in ("completed", "declared-failure"), f"{label}: falha não declarada (sem `priming:`): rc={p.returncode} {text_err.strip()[-140:]!r}")
+            if outcome == "completed":
+                check(n_posts > 0, f"{label}: completou mas 0 POSTs recebidos (execução vazia)")
         info["forbidden_events"] = forbidden
         check(not forbidden, f"{label}: eventos proibidos na execução: {forbidden[:4]}")
         check(not marker, f"{label}: marcador do payload criado: {marker}")
@@ -289,23 +311,44 @@ def main():
             stray = [l for l in text.splitlines() if l.strip().startswith(("__import__", MARK))]
             check(not stray, f"{variant}: linha solta do payload no script ({len(stray)})")
             case["stray_payload_lines"] = len(stray)
-            # execução 1: servidor hostil que devolve valores NOVOS hostis; 2: detran-sim
+            # execução 1: servidor hostil que devolve valores NOVOS hostis; 2: detran-sim (HAR com as rotas do sim)
             fresh = hostile_har("B", False)[1:]
             Hostile.page = (f'<html><script>var tokenLit = "{fresh[1]}";</script>\n<input type="hidden" name="{HOSTILE("HID").replace(chr(34), "&quot;").replace(chr(0), "")}" value="{fresh[0].replace(chr(34), "&quot;")}">\n'
                             f'<textarea name="AREA">{fresh[2]}</textarea></html>\n')
             Hostile.seen.clear()
             hbase = f"http://127.0.0.1:{srv.server_address[1]}"
-            case["run_hostile_server"], _ = execute(py, script, hbase, f"{variant}/servidor-hostil")
-            case["run_hostile_server_trace"], _ = execute(py, script, hbase, f"{variant}/servidor-hostil+trace", trace_name="trace.json")
+            hposts = lambda: len(Hostile.seen)  # noqa: E731
+            # header fora de latin-1 (bidi): falha DECLARADA esperada; as demais variantes têm de completar no servidor hostil
+            exp_h = "declared" if bidi else "completed"
+            case["run_hostile_server"], _ = execute(py, script, hbase, f"{variant}/servidor-hostil", expect=exp_h, posts=hposts)
+            n0 = len(Hostile.seen)
+            case["run_hostile_server_trace"], _ = execute(py, script, hbase, f"{variant}/servidor-hostil+trace", trace_name="trace.json", expect=exp_h, posts=hposts)
             case["posts_received_by_hostile_server"] = len(Hostile.seen)
             case["fresh_value_used_not_captured"] = None
             if Hostile.seen:
-                body = Hostile.seen[0]
-                case["fresh_value_used_not_captured"] = ("CTRLB" in urllib.parse.unquote_plus(body)) and ("CTRLA" not in urllib.parse.unquote_plus(body))
-            ps.http(f"http://127.0.0.1:{a.port}", "/__sim/reset")
-            case["run_detran_sim"], _ = execute(py, script, f"http://127.0.0.1:{a.port}", f"{variant}/detran-sim")
-            ps.http(f"http://127.0.0.1:{a.port}", "/__sim/reset")
-            case["run_detran_sim_trace"], _ = execute(py, script, f"http://127.0.0.1:{a.port}", f"{variant}/detran-sim+trace", trace_name="trace.json")
+                body = urllib.parse.unquote_plus(Hostile.seen[0])
+                case["fresh_value_used_not_captured"] = ("CTRLB" in body) and ("CTRLA" not in body)
+                check(case["fresh_value_used_not_captured"], f"{variant}: o POST não usou o valor NOVO (ou usou o capturado)")
+            elif not bidi:
+                check(False, f"{variant}: o servidor hostil não recebeu POST")
+            # detran-sim: o HAR da variante usa GET /UIC-SERVICOS/VES0009X.html e POST /servlet/Connector (rotas reais do sim)
+            sbase = f"http://127.0.0.1:{a.port}"
+            sim_har, *_ = hostile_har("A", nlh, bidi, sim=True)
+            hp2 = tmp / f"{variant}-sim.har"; hp2.write_text(json.dumps(sim_har, ensure_ascii=False))
+            sess2 = tmp / f"s-{variant}-sim"
+            subprocess.run([core, "import-har", hp2, "--out", sess2, "--label", "synthetic-fixture"], capture_output=True, check=True)
+            ids2 = [x["id"] for x in json.loads((sess2 / "session.json").read_text())["requests"]]
+            script2 = tmp / f"{variant}-sim.py"
+            g2 = subprocess.run([core, "export-priming", sess2, ids2[-1], "--out", script2], capture_output=True, text=True)
+            check(g2.returncode == 0, f"{variant}/sim: export-priming falhou: {g2.stderr[:150]}")
+            if g2.returncode == 0:
+                case["static_sim"] = static_checks(script2.read_text(), variant + "/sim")
+                sposts = lambda: sum(1 for x in ps.http(sbase, "/__sim/log")["log"] if x["method"] == "POST")  # noqa: E731
+                ps.http(sbase, "/__sim/reset")
+                case["run_detran_sim"], _ = execute(py, script2, sbase, f"{variant}/detran-sim", expect="declared", posts=sposts)
+                ps.http(sbase, "/__sim/reset")
+                case["run_detran_sim_trace"], _ = execute(py, script2, sbase, f"{variant}/detran-sim+trace", trace_name="trace.json", expect="declared", posts=sposts)
+            case["placar"] = {k: (v["outcome"], v["posts_received"]) for k, v in case.items() if k.startswith("run_") and isinstance(v, dict) and "outcome" in v}
             res["cases"][variant] = case
     finally:
         sim.terminate(); srv.shutdown(); shutil.rmtree(tmp, ignore_errors=True)
