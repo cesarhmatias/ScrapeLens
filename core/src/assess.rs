@@ -8,7 +8,10 @@
 //!
 //! Princípios: regras são dados (JSON, sem código executável), `blocked?` só
 //! sai com evidência explícita e sempre com "?", e o que não dá para afirmar
-//! é `indeterminado`, com a lista do que faltou. Nada aqui abre rede.
+//! numa rota que já tem expectativa é `indeterminado`, com a lista do que
+//! faltou. Resposta sem sinal da aplicação e sem expectativa aprendida na
+//! rota é `não-avaliado` (`not-assessed`): página, frame, estático ou
+//! recurso de proteção não enchem a lista de suspeitos. Nada aqui abre rede.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -147,6 +150,22 @@ pub enum VerdictKind {
     AppError,
     Blocked,
     Indeterminado,
+    /// Sem sinal da aplicação e sem expectativa aprendida na rota.
+    NotAssessed,
+}
+
+impl VerdictKind {
+    /// Chave de `counts` no JSON (`scrapelens.assess/1`), igual a `verdictKind`.
+    #[must_use]
+    pub const fn count_key(self) -> &'static str {
+        match self {
+            Self::AppOk => "app-ok",
+            Self::AppError => "app-error",
+            Self::Blocked => "blocked",
+            Self::Indeterminado => "indeterminado",
+            Self::NotAssessed => "not-assessed",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -159,13 +178,14 @@ pub struct ResponseOutcome {
     /// 2xx/3xx.
     pub http_ok: bool,
     pub app_signals: Vec<AppSignal>,
-    /// `app-ok`, `app-error (<sinal>)`, `blocked? (<sinal>)` ou `indeterminado`.
+    /// `app-ok`, `app-error (<sinal>)`, `blocked? (<sinal>)`, `indeterminado`
+    /// ou `não-avaliado`.
     pub verdict: String,
     pub verdict_kind: VerdictKind,
     /// Campos esperados (aprendidos na rota ou exigidos pelas regras) que
     /// faltaram ou vieram vazios.
     pub missing_fields: Vec<String>,
-    /// Por que o veredito é `indeterminado` (vazio nos demais).
+    /// Por que o veredito é `indeterminado` ou `não-avaliado` (vazio nos demais).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub reason: String,
 }
@@ -542,19 +562,26 @@ pub fn response_outcome_with(
             "blocked? (html-sem-controles)".to_string(),
         )
     } else if !missing.is_empty() {
-        reason = format!("faltam campos esperados: {}", missing.join(", "));
+        let fields = missing.join(", ");
+        reason = if parsed.text.is_none() {
+            format!("corpo da resposta indisponível; faltam campos esperados: {fields}")
+        } else if parsed.truncated {
+            format!("corpo truncado; faltam campos esperados: {fields}")
+        } else {
+            format!("faltam campos esperados: {fields}")
+        };
         (VerdictKind::Indeterminado, "indeterminado".to_string())
     } else if positives > 0 {
         (VerdictKind::AppOk, "app-ok".to_string())
     } else {
         reason = if parsed.text.is_none() {
-            "corpo da resposta indisponível".to_string()
+            "corpo da resposta indisponível; rota sem expectativa aprendida".to_string()
         } else if parsed.truncated {
-            "corpo truncado; sinais podem estar no trecho cortado".to_string()
+            "corpo truncado; rota sem expectativa aprendida".to_string()
         } else {
             "sem sinais de aplicação nem campos esperados nesta rota".to_string()
         };
-        (VerdictKind::Indeterminado, "indeterminado".to_string())
+        (VerdictKind::NotAssessed, "não-avaliado".to_string())
     };
     if kind == VerdictKind::Indeterminado && parsed.truncated && !reason.contains("truncado") {
         reason.push_str("; corpo truncado");

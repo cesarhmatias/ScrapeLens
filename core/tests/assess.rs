@@ -63,13 +63,17 @@ fn blocked_har_gets_coherent_verdicts() {
     assert_eq!(outcomes.len(), 3);
     // 200 com desafio de proteção e sem controles → bloqueio, nunca app-ok.
     assert_eq!(outcomes[0].verdict, "blocked? (TSPD)");
+    assert_eq!(outcomes[0].verdict_kind, VerdictKind::Blocked);
     assert!(outcomes[0].http_ok);
-    // Connector 200 sem XML/STAMP e sem nada aprendido → não afirma nada.
-    assert_eq!(outcomes[1].verdict, "indeterminado");
+    // Connector 200 sem XML/STAMP e sem expectativa aprendida nesta rota:
+    // não é suspeito, é não-avaliado. Os bloqueios explícitos acima e abaixo ficam.
+    assert_eq!(outcomes[1].verdict, "não-avaliado");
+    assert_eq!(outcomes[1].verdict_kind, VerdictKind::NotAssessed);
     assert!(outcomes[1].http_ok);
     assert!(outcomes[1].reason.contains("sem sinais"));
     // 403 explícito.
     assert_eq!(outcomes[2].verdict, "blocked? (http-403)");
+    assert_eq!(outcomes[2].verdict_kind, VerdictKind::Blocked);
     assert!(!outcomes[2].http_ok);
     assert!(outcomes
         .iter()
@@ -81,27 +85,41 @@ fn real_shape_normal_responses_are_app_ok() {
     let bundle = har("detran-pb-real-shape", "real-shape-1round.har");
     let outcomes = run(&bundle, &AssessRules::default());
     let mut connectors = 0;
+    let mut forms = 0;
+    let mut not_assessed = 0;
     for (request, outcome) in bundle.session.requests.iter().zip(&outcomes) {
-        if request.url.ends_with("/servlet/Connector") {
-            connectors += 1;
+        let form_page = request.url.contains("cscform.html");
+        if request.url.ends_with("/servlet/Connector") || form_page {
+            if form_page {
+                forms += 1;
+            } else {
+                connectors += 1;
+            }
             assert_eq!(outcome.verdict, "app-ok", "{}", outcome.url);
+            assert_eq!(outcome.verdict_kind, VerdictKind::AppOk);
             assert!(outcome.http_ok && !outcome.app_signals.is_empty());
+        } else {
+            not_assessed += 1;
+            assert_eq!(
+                outcome.verdict, "não-avaliado",
+                "{} é {}",
+                outcome.url, outcome.verdict
+            );
+            assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
         }
-        // Guard TSPD em página com controles ou JS não vira bloqueio.
-        assert_ne!(
-            outcome.verdict_kind,
-            VerdictKind::Blocked,
-            "{}",
-            outcome.url
-        );
-        assert_ne!(
-            outcome.verdict_kind,
-            VerdictKind::AppError,
-            "{}",
-            outcome.url
-        );
     }
+    // 30 respostas: 8 Connector + 3 páginas cscform (têm controles) e 19 sem sinal.
     assert_eq!(connectors, 8);
+    assert_eq!(forms, 3);
+    assert_eq!(not_assessed, 19);
+    assert_eq!(outcomes.len(), 30);
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|o| o.verdict_kind == VerdictKind::Indeterminado)
+            .count(),
+        0
+    );
 }
 
 #[test]
@@ -298,10 +316,41 @@ fn rules_reject_wrong_schema_and_bad_json() {
 }
 
 #[test]
-fn unavailable_body_is_indeterminate_not_ok() {
-    let mut bundle = mini(&[("POST", CONN, 200, "text/html", &form("lp", "1", ""))]);
+fn unavailable_body_without_route_expectation_is_not_assessed() {
+    let mut bundle = mini(&[(
+        "GET",
+        "https://app.example.test/static.js",
+        200,
+        "text/javascript",
+        "var x=1",
+    )]);
     bundle.session.requests[0].response_body.state = scrapelens_core::model::BodyState::Unavailable;
     let o = &run(&bundle, &AssessRules::default())[0];
-    assert_eq!(o.verdict, "indeterminado");
+    assert_eq!(o.verdict, "não-avaliado");
+    assert_eq!(o.verdict_kind, VerdictKind::NotAssessed);
     assert!(o.reason.contains("indisponível"));
+}
+
+#[test]
+fn unavailable_or_truncated_body_on_a_learned_route_is_indeterminate() {
+    let mut bundle = mini(&[
+        ("POST", CONN, 200, "text/html", &form("lp", "1", "")),
+        ("POST", CONN, 200, "text/html", &form("lp", "2", "")),
+        ("POST", CONN, 200, "text/html", &form("lp", "3", "")),
+    ]);
+    bundle.session.requests[1].response_body.state = scrapelens_core::model::BodyState::Unavailable;
+    bundle.session.requests[1].response_body.attachment = None;
+    bundle.session.requests[2].response_body.state = scrapelens_core::model::BodyState::Truncated;
+    bundle.session.requests[2].response_body.attachment = None;
+    let outcomes = run(&bundle, &AssessRules::default());
+    assert_eq!(outcomes[0].verdict, "app-ok");
+    assert_eq!(outcomes[1].verdict, "indeterminado");
+    assert_eq!(outcomes[1].verdict_kind, VerdictKind::Indeterminado);
+    assert!(outcomes[1].reason.contains("indisponível") || outcomes[1].reason.contains("faltam"));
+    assert!(outcomes[1].missing_fields.iter().any(|f| f == "XML"));
+    assert_eq!(outcomes[2].verdict, "indeterminado");
+    assert!(
+        outcomes[2].reason.contains("truncado")
+            || outcomes[2].missing_fields.iter().any(|f| f == "STAMP")
+    );
 }

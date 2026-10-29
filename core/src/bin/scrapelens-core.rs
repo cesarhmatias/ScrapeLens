@@ -291,7 +291,7 @@ fn assess_command(args: &[String]) -> Result<(), String> {
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for outcome in &outcomes {
         *counts
-            .entry(format!("{:?}", outcome.verdict_kind))
+            .entry(outcome.verdict_kind.count_key().to_string())
             .or_default() += 1;
     }
     print_json(&serde_json::json!({
