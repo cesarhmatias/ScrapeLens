@@ -781,9 +781,7 @@ fn validate_execution_blocking(
     let capture = cached_session(capture_dir)?;
     let trace = cached_session(&dir)?;
     let mut options = ValidateOptions { rules, ..Default::default() };
-    // Sem adaptador de propósito: com o `NaturalAjax` o core aponta `XML.delta`/`XML.p.v_placa` como
-    // "constante que mudou (sem origem)" numa execução correta (ver relatório da Rodada 9); sem ele o
-    // campo `XML` inteiro é dinâmico, como no `validate` do CLI.
+    options.compare.flow = crate::adapters::flow_options();
     options.compare.map_origin = map;
     let validation = validate(
         &capture.session,
@@ -1751,6 +1749,10 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let ok = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), None).unwrap();
         assert_eq!(ok.validation.summary, "execução equivalente à captura");
+        assert!(
+            ok.validation.steps.iter().flat_map(|st| &st.expected).any(|n| n.reason.contains("parâmetro do usuário")),
+            "placa/CPF informados viram esperado (parâmetro do usuário)"
+        );
         let bad = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-403.json"), None).unwrap();
         assert!(bad.validation.summary.starts_with("diverge no passo 3"), "{}", bad.validation.summary);
         assert_ne!(ok.trace_dir, bad.trace_dir);

@@ -20,25 +20,25 @@
   "groupExpanded": "har-0002",
   "openedFromTimeline": "GET\n/detran-portal-servicos/UIC-SERVICOS/cscform.html?page=SIM1000X\n200\nHTTP/1.1\noutro\nhttps://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html?page=SIM1000X\nCopiar URL\nExportar…\n·\n100 ms\n·\nwsdetran.pb.gov.br",
   "summary0": "✓\nexecução equivalente à captura",
-  "warning0": "i\nO trace contém dados da sessão da execução (cookies, valores, corpos); não o compartilhe sem sanitizar. Ele foi importado para /tmp/sl-r9/dump/traces/har-f83eadcae3322c43 (pasta privada) a partir de /tmp/sl-r9/dump/trace-selecionado.json. Sanitizar a sessão do trace…",
+  "warning0": "i\nO trace contém dados da sessão da execução (cookies, valores, corpos); não o compartilhe sem sanitizar. Ele foi importado para /tmp/sl-r9/dump/traces/har-180e77b55009d0c8 (pasta privada) a partir de /tmp/sl-r9/dump/trace-selecionado.json. Sanitizar a sessão do trace…",
   "steps0": [
     "1 har-0001 → har-0001 GET /detran-portal-servicos/servlet/easynat-app?op=S37 200 × 200 não-avaliado × não-avaliado sem diferenças",
     "2 har-0008 → har-0002 GET /detran-portal-servicos/cisnatural/cscform.html?page=NatLogon 200 × 200 app-ok × app-ok sem diferenças",
-    "3 har-0010 → har-0003 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (2)",
+    "3 har-0010 → har-0003 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (4) body:SESSIONID parâmetro do usuário esperado (parâmetro do us",
     "4 har-0012 → har-0004 GET /detran-portal-servicos/UIC-SERVICOS/SIM1000X.html 200 × 200 não-avaliado × não-avaliado sem diferenças",
-    "5 har-0015 → har-0005 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (2)",
-    "6 har-0017 → har-0006 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (3)",
+    "5 har-0015 → har-0005 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (5) body:SESSIONID parâmetro do usuário esperado (parâmetro do us",
+    "6 har-0017 → har-0006 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (7) body:SESSIONID parâmetro do usuário esperado (parâmetro do us",
     "7 har-0019 → har-0007 GET /detran-portal-servicos/UIC-SERVICOS/VES0009X.html 200 × 200 não-avaliado × não-avaliado sem diferenças",
-    "8 har-0022 → har-0008 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (2)",
-    "9 har-0024 → har-0009 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (3)",
-    "10 har-0026 → har-0010 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (3)"
+    "8 har-0022 → har-0008 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (5) body:SESSIONID parâmetro do usuário esperado (parâmetro do us",
+    "9 har-0024 → har-0009 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (6) body:SESSIONID parâmetro do usuário esperado (parâmetro do us",
+    "10 har-0026 → har-0010 POST /detran-portal-servicos/servlet/Connector 200 × 200 app-ok × app-ok esperadas (7) body:SESSIONID parâmetro do usuário esperado (parâmetro do u"
   ],
   "summary1": "!\ndiverge no passo 3 (status 200 na captura × 403 no trace)",
-  "warning1": "i\nO trace contém dados da sessão da execução (cookies, valores, corpos); não o compartilhe sem sanitizar. Ele foi importado para /tmp/sl-r9/dump/traces/har-16c5a94ac5fc9d62 (pasta privada) a partir de /tmp/sl-r9/dump/trace-selecionado.json. Sanitizar a sessão do trace…",
+  "warning1": "i\nO trace contém dados da sessão da execução (cookies, valores, corpos); não o compartilhe sem sanitizar. Ele foi importado para /tmp/sl-r9/dump/traces/har-aacc6aa79678c35d (pasta privada) a partir de /tmp/sl-r9/dump/trace-selecionado.json. Sanitizar a sessão do trace…",
   "steps1": [
     "1 har-0001 → har-0001 GET /detran-portal-servicos/servlet/easynat-app?op=S37 200 × 200 não-avaliado × não-avaliado sem diferenças",
     "2 har-0008 → har-0002 GET /detran-portal-servicos/cisnatural/cscform.html?page=NatLogon 200 × 200 app-ok × app-ok sem diferenças",
-    "3 har-0010 → har-0003 POST /detran-portal-servicos/servlet/Connector 200 × 403 app-ok × blocked? Diverge status 200 na captura × 403 no trace esperadas (2)"
+    "3 har-0010 → har-0003 POST /detran-portal-servicos/servlet/Connector 200 × 403 app-ok × blocked? Diverge status 200 na captura × 403 no trace esperadas (4) body:SESSIONID"
   ],
   "pageErrors": []
 }

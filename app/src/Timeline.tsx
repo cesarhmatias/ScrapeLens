@@ -173,10 +173,16 @@ export function ValidationView({
                   </details>
                 )}
                 {s.expected.length > 0 && (
-                  <details>
+                  <details open={s.expected.some((n) => n.reason.includes("parâmetro do usuário"))}>
                     <summary>esperadas ({s.expected.length})</summary>
                     <ul className="chain-list">
-                      {s.expected.map((n, i) => <li key={i}><span className="mono">{n.scope}:{n.field}</span> <span className="dim">{n.reason}</span></li>)}
+                      {s.expected.map((n, i) => (
+                        <li key={i}>
+                          <span className="mono">{n.scope}:{n.field}</span>{" "}
+                          {n.reason.includes("parâmetro do usuário") && <span className="chip v-partial">parâmetro do usuário</span>}{" "}
+                          <span className="dim">{n.reason}</span>
+                        </li>
+                      ))}
                     </ul>
                   </details>
                 )}
