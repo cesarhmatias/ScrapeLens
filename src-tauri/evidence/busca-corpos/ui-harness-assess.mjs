@@ -115,9 +115,13 @@ const rows = async () => (await page.locator("tbody tr:not(.spacer)").allInnerTe
 results.blockedList = await rows();
 await shot("25-lista-aplicacao-bloqueado.png");
 // filtro "só falhas da aplicação"
-await page.getByRole("button", { name: /Só falhas da aplicação/ }).click();
+results.failCountLabel = await page.getByRole("button", { name: /Falhas da aplicação/ }).innerText();
+results.blockCountLabel = await page.getByRole("button", { name: /Possíveis bloqueios/ }).innerText();
+await page.getByRole("button", { name: /Possíveis bloqueios/ }).click();
 results.blockedFiltered = await rows();
-results.filterCount = await page.getByRole("button", { name: /Só falhas da aplicação/ }).innerText();
+await page.getByRole("button", { name: /Falhas da aplicação/ }).click(); // combinados (união)
+results.combinedFiltered = await rows();
+await page.getByRole("button", { name: /Falhas da aplicação/ }).click(); // volta só bloqueios para o print
 await shot("26-filtro-falhas-aplicacao.png");
 // detalhe: 200 bloqueado
 await page.locator("tbody tr:not(.spacer)").first().click();

@@ -64,9 +64,11 @@ const CLASS: Record<VerdictKind, string> = {
   "not-assessed": "tag dim",
 };
 
-/** Falha da aplicação = app-error ou blocked? (HTTP pode ter sido 200). */
-export const isAppFailure = (o: ResponseOutcome | undefined) =>
-  o?.verdictKind === "app-error" || o?.verdictKind === "blocked";
+/** Falha da aplicação = app-error (afirmado; HTTP pode ter sido 200). */
+export const isAppFailure = (o: ResponseOutcome | undefined) => o?.verdictKind === "app-error";
+
+/** Possível bloqueio = blocked? (não afirmado). */
+export const isPossibleBlock = (o: ResponseOutcome | undefined) => o?.verdictKind === "blocked";
 
 export function VerdictChip({ outcome }: { outcome: ResponseOutcome | undefined }) {
   if (!outcome) return <span className="dim">—</span>;

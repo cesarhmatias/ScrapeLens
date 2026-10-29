@@ -18,7 +18,7 @@ import { matchRanges } from "./highlight";
 import { classifyTransforms } from "./transforms";
 import { OriginsTab } from "./Origins";
 import { CaptureCompareView } from "./CaptureCompare";
-import { AppSuccessSection, VerdictChip, isAppFailure, useAssess, type OutcomeMap } from "./assess";
+import { AppSuccessSection, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { adaptSession, type AdaptedSession } from "./v1/adapter";
@@ -46,7 +46,7 @@ type DetailTab =
   | "redirects"
   | "attempts"
   | "event";
-type TypeFilter = "all" | "fetch" | "document" | "media" | "error" | "appfail";
+type TypeFilter = "all" | "fetch" | "document" | "media" | "error";
 
 const params = new URLSearchParams(window.location.search);
 const storedTheme = typeof localStorage !== "undefined" ? localStorage.getItem("scrapelens.theme") : null;
@@ -1384,6 +1384,8 @@ export default function App() {
   const [query, setQuery] = useState(params.get("q") ?? "");
   const initialFilter = (params.get("filter") as TypeFilter | null) ?? "all";
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(initialFilter);
+  const [failFilter, setFailFilter] = useState(false);
+  const [blockFilter, setBlockFilter] = useState(false);
   const [protocol, setProtocol] = useState<"all" | Protocol>("all");
   const [selectedId, setSelectedId] = useState(params.get("id") ?? "req-0004");
   const [tab, setTab] = useState<DetailTab>(initialTab);
@@ -1456,6 +1458,8 @@ export default function App() {
     setView("session");
     setQuery("");
     setTypeFilter("all");
+    setFailFilter(false);
+    setBlockFilter(false);
     setProtocol("all");
     setSelectedId(payload.session.requests[0]?.id ?? "");
     setIsLargeDemo(false);
@@ -1711,7 +1715,10 @@ export default function App() {
       if (typeFilter === "document" && r.type !== "document") return false;
       if (typeFilter === "media" && !(r.type === "image" || r.type === "font")) return false;
       if (typeFilter === "error" && r.status < 400) return false;
-      if (typeFilter === "appfail" && !isAppFailure(outcomes.get(r.id))) return false;
+      if (failFilter || blockFilter) {
+        const o = outcomes.get(r.id);
+        if (!((failFilter && isAppFailure(o)) || (blockFilter && isPossibleBlock(o)))) return false;
+      }
       if (protocol !== "all" && r.protocol !== protocol) return false;
       if (!q) return true;
       if (payloadSearch) {
@@ -1730,7 +1737,7 @@ export default function App() {
         String(r.status).includes(q)
       );
     });
-  }, [requests, query, typeFilter, protocol, payloadSearch, matchesById, outcomes]);
+  }, [requests, query, typeFilter, failFilter, blockFilter, protocol, payloadSearch, matchesById, outcomes]);
 
   const errors = requests.filter((r) => r.status >= 400).length;
   const counts = {
@@ -1739,8 +1746,9 @@ export default function App() {
     document: requests.filter((r) => r.type === "document").length,
     media: requests.filter((r) => r.type === "image" || r.type === "font").length,
     error: errors,
-    appfail: requests.filter((r) => isAppFailure(outcomes.get(r.id))).length,
   };
+  const failCount = requests.filter((r) => isAppFailure(outcomes.get(r.id))).length;
+  const blockCount = requests.filter((r) => isPossibleBlock(outcomes.get(r.id))).length;
 
   const ROW_HEIGHT = 34;
   const OVERSCAN = 6;
@@ -1760,7 +1768,7 @@ export default function App() {
   useEffect(() => {
     setScrollTop(0);
     if (tableRef.current) tableRef.current.scrollTop = 0;
-  }, [query, typeFilter, protocol]);
+  }, [query, typeFilter, failFilter, blockFilter, protocol]);
 
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endIndex = Math.min(filtered.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
@@ -2027,7 +2035,6 @@ export default function App() {
                     ["document", "Documento"],
                     ["media", "Mídia"],
                     ["error", "Erros 4xx/5xx"],
-                    ["appfail", "Só falhas da aplicação"],
                   ] as [TypeFilter, string][]
                 ).map(([id, label]) => (
                   <button
@@ -2039,6 +2046,22 @@ export default function App() {
                     <span className="count">{counts[id]}</span>
                   </button>
                 ))}
+                <button
+                  className={failFilter ? "chip-filter active" : "chip-filter"}
+                  onClick={() => setFailFilter((v) => !v)}
+                  title="Respostas com falha da aplicação afirmada (app-error), mesmo com HTTP 200"
+                >
+                  Falhas da aplicação
+                  <span className="count">{failCount}</span>
+                </button>
+                <button
+                  className={blockFilter ? "chip-filter active" : "chip-filter"}
+                  onClick={() => setBlockFilter((v) => !v)}
+                  title="Possíveis bloqueios (blocked?): evidência, não confirmação"
+                >
+                  Possíveis bloqueios?
+                  <span className="count">{blockCount}</span>
+                </button>
               </div>
               <label className="proto-select">
                 <span>Protocolo</span>
@@ -2175,7 +2198,7 @@ export default function App() {
                       <td colSpan={9}>
                         <div className="empty">
                           Nenhuma requisição corresponde a “{query}” com os filtros atuais.
-                          <button className="link" onClick={() => { setQuery(""); setTypeFilter("all"); setProtocol("all"); }}>
+                          <button className="link" onClick={() => { setQuery(""); setTypeFilter("all"); setFailFilter(false); setBlockFilter(false); setProtocol("all"); }}>
                             Limpar busca e filtros
                           </button>
                         </div>

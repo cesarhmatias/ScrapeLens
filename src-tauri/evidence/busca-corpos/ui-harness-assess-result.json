@@ -1,54 +1,61 @@
 {
   "blockedList": [
     "01 GET wsdetran.pb.gov.br /detran-portal-servicos/servlet/easynat-app?op=S37 200 blocked? HTTP/1.1 outro 100 ms",
-    "02 POST wsdetran.pb.gov.br /detran-portal-servicos/servlet/Connector 200 indeterminado HTTP/1.1 outro 100 ms",
+    "02 POST wsdetran.pb.gov.br /detran-portal-servicos/servlet/Connector 200 blocked? HTTP/1.1 outro 100 ms",
     "03 GET wsdetran.pb.gov.br /detran-portal-servicos/UIC-SERVICOS/VES0009X.html 403 blocked? HTTP/1.1 outro 100 ms"
   ],
+  "failCountLabel": "Falhas da aplicação0",
+  "blockCountLabel": "Possíveis bloqueios?3",
   "blockedFiltered": [
     "01 GET wsdetran.pb.gov.br /detran-portal-servicos/servlet/easynat-app?op=S37 200 blocked? HTTP/1.1 outro 100 ms",
-    "02 GET wsdetran.pb.gov.br /detran-portal-servicos/UIC-SERVICOS/VES0009X.html 403 blocked? HTTP/1.1 outro 100 ms"
+    "02 POST wsdetran.pb.gov.br /detran-portal-servicos/servlet/Connector 200 blocked? HTTP/1.1 outro 100 ms",
+    "03 GET wsdetran.pb.gov.br /detran-portal-servicos/UIC-SERVICOS/VES0009X.html 403 blocked? HTTP/1.1 outro 100 ms"
   ],
-  "filterCount": "Só falhas da aplicação2",
-  "blockedDetail": "Sucesso da aplicação\nHTTP não é sucesso da aplicação · veredito do core\n\nHTTP 200 blocked? blocked? (TSPD)\n\nHTTP bem-sucedido, mas a aplicação não teve sucesso\npossível bloqueio (não afirmado) — evidência: TSPD (HTML sem controles com o marcador _tsChallenge)\nSinais (1)\nproteção TSPD\nHTML sem controles com o marcador _tsChallenge",
-  "indeterminadoDetail": "Sucesso da aplicação\nHTTP não é sucesso da aplicação · veredito do core\n\nHTTP 200 indeterminado indeterminado\n\nMotivo: faltam campos esperados: STAMP, XML\n\nSinais (0)\n\nNenhum sinal da aplicação nesta resposta.\n\nCampos ausentes (2)\n\nSTAMP, XML\n\nEsperados porque a mesma rota os trouxe em outras respostas desta sessão (ou pelas regras).",
+  "combinedFiltered": [
+    "01 GET wsdetran.pb.gov.br /detran-portal-servicos/servlet/easynat-app?op=S37 200 blocked? HTTP/1.1 outro 100 ms",
+    "02 POST wsdetran.pb.gov.br /detran-portal-servicos/servlet/Connector 200 blocked? HTTP/1.1 outro 100 ms",
+    "03 GET wsdetran.pb.gov.br /detran-portal-servicos/UIC-SERVICOS/VES0009X.html 403 blocked? HTTP/1.1 outro 100 ms"
+  ],
+  "blockedDetail": "Sucesso da aplicação\nHTTP não é sucesso da aplicação · veredito do core\n\nHTTP 200 blocked? blocked? (TSPD)\n\nHTTP bem-sucedido, mas a aplicação não teve sucesso\npossível bloqueio (não afirmado) — evidência: TSPD (conteúdo de desafio sem a página esperada (marcador _tsChallenge))\nSinais (1)\nproteção TSPD\nconteúdo de desafio sem a página esperada (marcador _tsChallenge)",
+  "indeterminadoDetail": "Sucesso da aplicação\nHTTP não é sucesso da aplicação · veredito do core\n\nHTTP 200 blocked? blocked? (f5-rejected)\n\nHTTP bem-sucedido, mas a aplicação não teve sucesso\npossível bloqueio (não afirmado) — evidência: f5-rejected (página de rejeição conhecida (marcador Request Rejected))\nSinais (1)\nproteção f5-rejected\npágina de rejeição conhecida (marcador Request Rejected)\nCampos ausentes (2)\n\nSTAMP, XML\n\nEsperados porque a mesma rota os trouxe em outras respostas desta sessão (ou pelas regras).",
   "realList": [
-    "01 GET wsdetran.pb.gov.br /detran-portal-servicos/servlet/easynat-app?op=S37 200 indeterminado HTTP/1.1 outro 100 ms",
-    "02 GET wsdetran.pb.gov.br /TSPD/0000SYNTHGUARD?type=18 200 indeterminado HTTP/1.1 outro 100 ms",
-    "03 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/jquery-ui.min.js 200 indeterminado HTTP/1.1 outro 100 ms",
-    "04 GET wsdetran.pb.gov.br /detran-portal-servicos/ciscentral/CIS_V1_SYNTH.js 200 indeterminado HTTP/1.1 outro 100 ms",
-    "05 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/NatLogon.html 200 indeterminado HTTP/1.1 outro 100 ms",
-    "06 GET wsdetran.pb.gov.br /TSPD/0000SYNTHGUARD?type=9 200 indeterminado HTTP/1.1 outro 100 ms",
-    "07 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/NatLogon_JLIBS.html 200 indeterminado HTTP/1.1 outro 100 ms",
+    "01 GET wsdetran.pb.gov.br /detran-portal-servicos/servlet/easynat-app?op=S37 200 não-avaliado HTTP/1.1 outro 100 ms",
+    "02 GET wsdetran.pb.gov.br /TSPD/0000SYNTHGUARD?type=18 200 não-avaliado HTTP/1.1 outro 100 ms",
+    "03 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/jquery-ui.min.js 200 não-avaliado HTTP/1.1 outro 100 ms",
+    "04 GET wsdetran.pb.gov.br /detran-portal-servicos/ciscentral/CIS_V1_SYNTH.js 200 não-avaliado HTTP/1.1 outro 100 ms",
+    "05 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/NatLogon.html 200 não-avaliado HTTP/1.1 outro 100 ms",
+    "06 GET wsdetran.pb.gov.br /TSPD/0000SYNTHGUARD?type=9 200 não-avaliado HTTP/1.1 outro 100 ms",
+    "07 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/NatLogon_JLIBS.html 200 não-avaliado HTTP/1.1 outro 100 ms",
     "08 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/cscform.html?page=NatLogon 200 app-ok HTTP/1.1 outro 100 ms",
-    "09 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/aboutBlank.html 200 indeterminado HTTP/1.1 outro 100 ms",
+    "09 GET wsdetran.pb.gov.br /detran-portal-servicos/cisnatural/aboutBlank.html 200 não-avaliado HTTP/1.1 outro 100 ms",
     "10 POST wsdetran.pb.gov.br /detran-portal-servicos/servlet/Connector 200 app-ok HTTP/1.1 outro 100 ms",
-    "11 GET wsdetran.pb.gov.br /TSPD/0000SYNTHGUARD?type=17 200 indeterminado HTTP/1.1 outro 100 ms",
-    "12 GET wsdetran.pb.gov.br /detran-portal-servicos/UIC-SERVICOS/SIM1000X.html 200 indeterminado HTTP/1.1 outro 100 ms"
+    "11 GET wsdetran.pb.gov.br /TSPD/0000SYNTHGUARD?type=17 200 não-avaliado HTTP/1.1 outro 100 ms",
+    "12 GET wsdetran.pb.gov.br /detran-portal-servicos/UIC-SERVICOS/SIM1000X.html 200 não-avaliado HTTP/1.1 outro 100 ms"
   ],
   "appOkDetail": "Sucesso da aplicação\nHTTP não é sucesso da aplicação · veredito do core\n\nHTTP 200 app-ok app-ok\n\nSinais (2)\nsinal de sucesso XML\nXML presente\nsinal de sucesso STAMP\nSTAMP presente",
   "chainVerdicts": [
-    "1. GET har-0001 possível indeterminado https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37",
-    "2. GET har-0003 possível indeterminado https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/jquery-ui.min.js",
-    "3. GET har-0004 possível indeterminado https://wsdetran.pb.gov.br/detran-portal-servicos/ciscentral/CIS_V1_SYNTH.js",
-    "4. GET har-0005 possível indeterminado https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html",
-    "5. GET har-0008 confiança forte app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/cscform.html?page=NatLogon",
-    "6. POST har-0010 possível app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
-    "7. GET har-0012 possível indeterminado https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
-    "8. GET har-0014 possível app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html?page=SIM1000X",
-    "9. POST har-0015 confiança forte app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
-    "10. POST har-0017 possível app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
-    "11. GET har-0019 possível indeterminado https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
-    "12. GET har-0021 possível app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/cscform.html?page=VES0009X"
+    "1. GET har-0001 possível não-avaliado https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37",
+    "2. GET har-0008 confiança forte app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/cscform.html?page=NatLogon",
+    "3. POST har-0010 possível app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "4. GET har-0012 possível não-avaliado https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "5. POST har-0015 confiança forte app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "6. POST har-0017 possível app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "7. GET har-0019 possível não-avaliado https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "8. POST har-0022 confiança forte app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "9. POST har-0024 confiança forte app-ok https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
+    "GET har-0019 não-avaliado https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "GET har-0012 não-avaliado https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "GET har-0005 não-avaliado https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html"
   ],
   "comparePairs": [
-    "▸ campos GET A har-0001 ↔ B har-0001 https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37 app: indeterminado → indeterminado alinhado por model 1 est. · 0 din. · 1 campo(s)",
-    "▸ campos GET A har-0003 ↔ B har-0003 https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/jquery-ui.min.js app: indeterminado → indeterminado alinhado por model 0 est. · 0 din. · 0 campo(s)",
-    "▸ campos GET A har-0004 ↔ B har-0004 https://wsdetran.pb.gov.br/detran-portal-servicos/ciscentral/CIS_V1_SYNTH.js app: indeterminado → indeterminado alinhado por model 0 est. · 0 din. · 0 campo(s)",
-    "▸ campos GET A har-0005 ↔ B har-0005 https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html app: indeterminado → indeterminado alinhado por model 0 est. · 0 din. · 0 campo(s)",
-    "▸ campos GET A har-0007 ↔ B har-0007 https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon_JLIBS.html app: indeterminado → indeterminado alinhado por model 0 est. · 0 din. · 0 campo(s)",
+    "▸ campos GET A har-0001 ↔ B har-0001 https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37 app: não-avaliado → não-avaliado alinhado por model 1 est. · 0 din. · 1 campo(s)",
+    "▸ campos GET A har-0005 ↔ B har-0005 https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html app: não-avaliado → não-avaliado alinhado por model 0 est. · 0 din. · 0 campo(s)",
+    "▸ campos GET A har-0007 ↔ B har-0007 https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon_JLIBS.html app: não-avaliado → não-avaliado alinhado por model 0 est. · 0 din. · 0 campo(s)",
     "▸ campos GET A har-0008 ↔ B har-0008 https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/cscform.html?page=NatLogon app: app-ok → app-ok alinhado por model 1 est. · 0 din. · 1 campo(s)",
-    "▸ campos GET A har-0009 ↔ B har-0009 https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/aboutBlank.html app: indeterminado → indeterminado alinhado por model 0 est. · 0 din. · 0 campo(s)",
-    "▸ campos POST A har-0010 ↔ B har-0010 https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector app: app-ok → app-ok alinhado por model 3 est. · 4 din. · 5 campo(s)"
+    "▸ campos GET A har-0009 ↔ B har-0009 https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/aboutBlank.html app: não-avaliado → não-avaliado alinhado por model 0 est. · 0 din. · 0 campo(s)",
+    "▸ campos POST A har-0010 ↔ B har-0010 https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector app: app-ok → app-ok alinhado por model 3 est. · 4 din. · 5 campo(s)",
+    "▸ campos GET A har-0012 ↔ B har-0012 https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html app: não-avaliado → não-avaliado alinhado por model 0 est. · 0 din. · 0 campo(s)",
+    "▸ campos GET A har-0013 ↔ B har-0013 https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X_JLIBS.html app: não-avaliado → não-avaliado alinhado por model 0 est. · 0 din. · 0 campo(s)"
   ],
   "pageErrors": []
 }
