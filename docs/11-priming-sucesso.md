@@ -186,3 +186,26 @@ aprovados. Restam 2 falhas altas.
   avisos das regras também cobrem "nenhuma detecção configurada". O app lê
   `assess-rules.json` como arquivo regular, sem symlink, com limite de
   tamanho.
+
+## Fechamento (2026-10-29)
+
+Revisão final em 1bdd8b9: APROVADA com ressalvas. Script de priming:
+- sem redirect para outro origin;
+- origin exato, injeção fechada e extração linear;
+- credenciais e PII nunca literais em JSON, form nomeado ou campo opaco;
+- filtro final de literais;
+- Referer em runtime;
+- parada no passo da resposta ruim;
+- recusa de cadeia incompleta.
+
+Assess: vereditos coerentes, regras estritas com avisos, sem falso bloqueio
+no handshake da proteção. Nos 3 HARs reais: 11 passos na ordem do fluxo
+manual, só placa e sufixo do SESSIONID como parâmetros, 0 literais e nenhum
+falso positivo do filtro. detran-sim aprovado nos 4 modos.
+
+Acabamento delegado: detectores para placa com hífen (ABC-1234), VIN/chassi
+de 17 caracteres, telefone +55 com 12–13 dígitos, cartão da série 2 (2221–2720)
+e de 19 dígitos, e dígitos fullwidth; filtro aplicado também a segmentos de
+caminho, chaves de form e valores de header. Limite aceito: texto livre sem
+formato (nome, endereço, e-mail ofuscado) em query, header e caminho, e
+qualquer conteúdo sob `--allow-literal-body` (avisado no script).
