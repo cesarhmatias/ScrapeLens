@@ -65,9 +65,11 @@ pub struct PrimingOptions {
     /// Princípio estrito das partes do adaptador: literal só para papel
     /// Structure, constante comprovada (≥ 2 requisições da sessão ou contexto
     /// estático) ou valor de navegação; toda outra parte sem origem vira
-    /// parâmetro obrigatório. Sem a opção, só valores com cara de
-    /// identificador/segredo (UUID, hex, ULID, base64, timestamp, misto
-    /// alfanumérico longo) viram parâmetro e o resto segue literal.
+    /// parâmetro obrigatório. Sem a opção (modo padrão), só valores com cara
+    /// de identificador/segredo (UUID, hex, ULID, base64, timestamp, misto
+    /// alfanumérico longo) viram parâmetro; o resto segue literal. Com ou
+    /// sem a opção, a "constante de UI" (booleanos e números de até 4
+    /// caracteres com sinal/decimal: `true`, `-180`, `2.0`) é literal.
     pub strict_parts: bool,
 }
 
@@ -778,6 +780,7 @@ fn adapter_field_expr(
                                     || in_static_context
                                     || navigation
                                     || has_param
+                                    || is_ui_constant(&part.value)
                                     || (!opts.strict_parts && !identifier)
                                 {
                                     pieces_expr(scrubbed)
@@ -898,6 +901,31 @@ fn looks_dynamic_token(value: &str) -> bool {
         && b.iter().any(u8::is_ascii_digit)
         && b.iter().any(u8::is_ascii_uppercase)
         && b.iter().any(u8::is_ascii_lowercase)
+}
+
+/// "Constante de UI": estado de interface que o servidor repete sem ser dado
+/// de sessão. Só estes valores sem origem ficam literais por si mesmos
+/// (além de valor repetido na sessão, contexto estático e navegação):
+/// booleanos (`true`/`false`) e números de até 4 caracteres, com sinal e/ou
+/// parte decimal (`-180`, `2.0`, `1568`).
+pub(crate) fn is_ui_constant(value: &str) -> bool {
+    if value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false") {
+        return true;
+    }
+    if value.is_empty() || value.len() > 4 {
+        return false;
+    }
+    let body = value.strip_prefix(['-', '+']).unwrap_or(value);
+    let mut dots = 0;
+    let mut digits = 0;
+    for c in body.chars() {
+        match c {
+            '0'..='9' => digits += 1,
+            '.' => dots += 1,
+            _ => return false,
+        }
+    }
+    digits >= 1 && dots <= 1 && !body.starts_with('.') && !body.ends_with('.')
 }
 
 /// Identificador, segredo ou carimbo de tempo: UUID, hex, ULID/KSUID, base64,
@@ -3623,3 +3651,33 @@ def main():
 if __name__ == '__main__':
     sys.exit(main())
 "#;
+
+#[cfg(test)]
+mod ui_constant_tests {
+    use super::is_ui_constant;
+
+    #[test]
+    fn ui_constants_are_explicit() {
+        for yes in [
+            "true", "false", "TRUE", "-180", "2.0", "1568", "+3", "0", "1.5",
+        ] {
+            assert!(is_ui_constant(yes), "{yes}");
+        }
+        for no in [
+            "",
+            "12345",
+            "-1800",
+            "2.00x",
+            ".5",
+            "5.",
+            "1.2.3",
+            "maybe",
+            "abc",
+            "1730000000123",
+            "texto livre",
+            "a1",
+        ] {
+            assert!(!is_ui_constant(no), "{no}");
+        }
+    }
+}

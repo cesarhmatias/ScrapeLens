@@ -254,7 +254,7 @@ fn compare_command(args: &[String]) -> Result<(), String> {
 fn export_priming(args: &[String]) -> Result<(), String> {
     check_adapter_flag(args)?;
     if args.len() < 2 {
-        return Err("uso: natural-core export-priming <sessao> <requestId> [--out f] [--allow-incomplete] [--allow-origin o] [--allow-literal-body] [--adapter natural-ajax]".into());
+        return Err("uso: natural-core export-priming <sessao> <requestId> [--out f] [--allow-incomplete] [--allow-origin o] [--allow-literal-body] [--adapter natural-ajax] [--strict-parts]".into());
     }
     let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
         .map_err(|e| e.to_string())?;

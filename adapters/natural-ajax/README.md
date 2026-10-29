@@ -17,7 +17,13 @@ ScrapeLens. Vive fora do core: depende de `scrapelens-core` só pelo trait
 - `natural-core`: wrapper do CLI do core com o adaptador registrado
   (`export-priming`; os outros subcomandos vão ao `scrapelens-core`).
   O adaptador só vale com `--adapter natural-ajax`; sem a flag, o script sai
-  pelo caminho por trechos (controle). `adapter-roundtrip <sessao>` imprime
+  pelo caminho por trechos (controle). `--strict-parts` liga o princípio estrito das partes: literal só para papel
+  Structure, constante comprovada (≥ 2 requisições da sessão ou contexto
+  estático), navegação ou *constante de UI* (booleanos e números de até 4
+  caracteres com sinal/decimal: `true`, `-180`, `2.0`); qualquer outra parte
+  sem origem vira parâmetro obrigatório. Sem a flag (padrão), só valor com
+  cara de identificador, segredo ou carimbo de tempo (UUID, hex, ULID, base64,
+  timestamp, alfanumérico misto) vira parâmetro. `adapter-roundtrip <sessao>` imprime
   `{"fields", "divergences", "divergenceKinds", ...}` (só agregados).
 
 Testes: `cargo test` (round-trip nas fixtures e, se existirem, nos 3 HARs

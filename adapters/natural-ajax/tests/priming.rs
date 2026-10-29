@@ -597,6 +597,16 @@ fn identifier_like_parts_without_origin_are_required_and_state_stays_literal() {
         key: "v_zona".into(),
         value: "-180".into(),
     });
+    ops.push(grammar::Op::Lit {
+        op: 'p',
+        key: "v_decimal".into(),
+        value: "2.0".into(),
+    });
+    ops.push(grammar::Op::Lit {
+        op: 'p',
+        key: "v_livre".into(),
+        value: "texto livre".into(),
+    });
     ops.push(grammar::Op::Delta("dd".into()));
     let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
     let call = |text: &str| {
@@ -609,21 +619,27 @@ fn identifier_like_parts_without_origin_are_required_and_state_stays_literal() {
     for (k, v) in ids {
         assert!(!out.text.contains(v), "{k} vazou:\n{}", out.text);
     }
-    assert!(call(&out.text).contains("'true'") && call(&out.text).contains("'-180'"));
+    assert!(
+        call(&out.text).contains("'true'")
+            && call(&out.text).contains("'-180'")
+            && call(&out.text).contains("'2.0'")
+            && call(&out.text).contains("'texto livre'"),
+        "{}",
+        call(&out.text)
+    );
     // Modo estrito: qualquer parte única sem origem vira parâmetro.
     let mut strict = options();
     strict.strict_parts = true;
     let out = to_python(&bundle.session, &bundle, "har-0001", &strict).expect("gera");
     let line = call(&out.text);
+    // Constante de UI (booleano, número curto com sinal/decimal): literal
+    // mesmo no estrito; qualquer outro valor único sem origem é parâmetro.
     assert!(
-        !line.contains("'true'") && !line.contains("'-180'"),
+        line.contains("'true'") && line.contains("'-180'") && line.contains("'2.0'"),
         "{line}"
     );
-    assert!(
-        out.text.contains("('xml_p_v_estado', None,"),
-        "{}",
-        out.text
-    );
+    assert!(!line.contains("'texto livre'"), "{line}");
+    assert!(out.text.contains("('xml_p_v_livre', None,"), "{}", out.text);
 }
 
 #[test]
