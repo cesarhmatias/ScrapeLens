@@ -8,6 +8,7 @@
 //!   scrapelens-core search <sessao> <texto> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
 //!   scrapelens-core origins <sessao> <requestId>
 //!   scrapelens-core chain <sessao> <requestId>
+//!   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
 //!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
@@ -105,6 +106,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "search" => search_command(&args),
         "origins" | "chain" => flow_command(&command, &args),
         "compare" => compare_command(&args),
+        "assess" => assess_command(&args),
         "export-curl" => export_request(&args, true),
         "export-python" => export_request(&args, false),
         "sanitize" => {
@@ -206,6 +208,65 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
             priming_chain(&lazy.session, &source, &args[1], &options).map_err(|e| e.to_string())?;
         print_json(&chain)
     }
+}
+
+/// `assess <sessao> [requestId] [--rules f.json]`. Sem `--rules`, usa
+/// `<sessao>/assess-rules.json` se existir; senão as regras padrão.
+fn assess_command(args: &[String]) -> Result<(), String> {
+    use scrapelens_core::assess::{assess_session, AssessRules};
+    let mut positional: Vec<&String> = Vec::new();
+    let mut rules_path: Option<PathBuf> = None;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        if arg == "--rules" {
+            let value = rest
+                .next()
+                .ok_or_else(|| "--rules exige um caminho".to_string())?;
+            rules_path = Some(PathBuf::from(value));
+        } else if arg.starts_with("--") {
+            return Err(format!("argumento desconhecido: {arg}\n\n{}", usage()));
+        } else {
+            positional.push(arg);
+        }
+    }
+    if positional.is_empty() || positional.len() > 2 {
+        return Err(usage());
+    }
+    let dir = PathBuf::from(positional[0]);
+    let rules_path = rules_path.or_else(|| {
+        let default = dir.join("assess-rules.json");
+        default.is_file().then_some(default)
+    });
+    let rules = match &rules_path {
+        Some(path) => {
+            let text =
+                std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            AssessRules::from_json(&text)?
+        }
+        None => AssessRules::default(),
+    };
+    let (lazy, _report) =
+        scrapelens_core::open_session_dir_lazy(&dir).map_err(|e| e.to_string())?;
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    let mut outcomes = assess_session(&lazy.session, &source, &rules);
+    if let Some(id) = positional.get(1) {
+        outcomes.retain(|outcome| &outcome.request_id == *id);
+        if outcomes.is_empty() {
+            return Err(format!("requisição {id} não encontrada"));
+        }
+    }
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for outcome in &outcomes {
+        *counts
+            .entry(format!("{:?}", outcome.verdict_kind))
+            .or_default() += 1;
+    }
+    print_json(&serde_json::json!({
+        "schema": "scrapelens.assess/1",
+        "rules": rules_path.map(|p| p.display().to_string()).unwrap_or_else(|| "default".into()),
+        "counts": counts,
+        "outcomes": outcomes,
+    }))
 }
 
 fn search_command(args: &[String]) -> Result<(), String> {
