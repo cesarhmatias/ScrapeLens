@@ -183,6 +183,9 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     p = subprocess.run([*EXPORT(core), "export-priming", sess, first, *EXPORT_ARGS], capture_output=True, text=True)
     if p.returncode != 0:
         msg = " ".join(p.stderr.split())
+        if EXPORT_ARGS and label == "primeiro_com_resposta_anterior_capturada":
+            fails.append("com --wrapper o alvo com resposta anterior capturada DEVE gerar o script com o adaptador; "
+                         "recusa não é aceitável: " + msg[:160])
         out["refused"] = {
             "rc": p.returncode,
             "mentions_incomplete": "cadeia incompleta" in msg,
@@ -221,6 +224,10 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     script = p.stdout
     spath = Path(tmp) / f"priming{idx}-{label}.py"
     spath.write_text(script)
+    if EXPORT_ARGS:
+        out["usa_adaptador_natural_ajax_encode"] = "natural_ajax_encode" in script
+        if not out["usa_adaptador_natural_ajax_encode"]:
+            fails.append("com --wrapper o script gerado deveria usar o adaptador (natural_ajax_encode ausente)")
     try:
         ast.parse(script); out["ast_parse"] = "OK"
     except SyntaxError:
