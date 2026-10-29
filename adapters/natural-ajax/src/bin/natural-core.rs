@@ -214,6 +214,17 @@ fn validate_command(args: &[String]) -> Result<(), String> {
     use scrapelens_core::validate::{validate, ValidateOptions};
     let mut options = ValidateOptions::default();
     options.compare.flow.adapters = registry(args)?;
+    // O `plan.hash` é recalculado com o gerador: as mesmas opções do script,
+    // inclusive o adaptador e o codificador (senão os parâmetros diferem).
+    if !options.compare.flow.adapters.is_empty() {
+        options.priming.flow.adapters = options.compare.flow.adapters.clone();
+        options.priming.adapter_encoders.push(AdapterEncoder {
+            adapter_id: ADAPTER_ID.to_string(),
+            function: PYTHON_FUNCTION.to_string(),
+            decoder: PYTHON_DECODER.to_string(),
+            source: PYTHON_ENCODER.to_string(),
+        });
+    }
     let args = strip_adapter_flags(args);
     if args.len() < 2 {
         return Err("uso: natural-core validate <captura> <sessao-trace> [--map-origin a=b] [--adapter natural-ajax]".into());
