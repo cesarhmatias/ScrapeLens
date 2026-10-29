@@ -209,6 +209,46 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
     }
 }
 
+/// `validate <captura> <trace> [--map-origin a=b] [--adapter natural-ajax]`.
+fn validate_command(args: &[String]) -> Result<(), String> {
+    use scrapelens_core::validate::{validate, ValidateOptions};
+    let mut options = ValidateOptions::default();
+    options.compare.flow.adapters = registry(args)?;
+    let args = strip_adapter_flags(args);
+    if args.len() < 2 {
+        return Err("uso: natural-core validate <captura> <sessao-trace> [--map-origin a=b] [--adapter natural-ajax]".into());
+    }
+    let mut rest = args[2..].iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--map-origin" => {
+                let value = rest.next().ok_or_else(|| {
+                    "--map-origin exige <origem-captura>=<origem-trace>".to_string()
+                })?;
+                options.compare.map_origin = Some(
+                    scrapelens_core::compare::OriginMap::parse(value)
+                        .ok_or_else(|| format!("--map-origin inválido: {value:?}"))?,
+                );
+            }
+            other => return Err(format!("argumento desconhecido: {other}")),
+        }
+    }
+    let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
+    let (b, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[1]))
+        .map_err(|e| e.to_string())?;
+    let result = validate(
+        &a.session,
+        &scrapelens_core::search::LazyBodies(&a),
+        &b.session,
+        &scrapelens_core::search::LazyBodies(&b),
+        &options,
+    );
+    print_json(&result)?;
+    eprintln!("{}", result.summary);
+    Ok(())
+}
+
 /// `timeline <sessao> [--adapter natural-ajax]`: linha do tempo com rótulos
 /// `event @ page` quando o adaptador está registrado.
 fn timeline_command(args: &[String]) -> Result<(), String> {
@@ -320,10 +360,12 @@ fn export_priming(args: &[String]) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(command @ ("origins" | "chain" | "compare" | "timeline")) =
+    if let Some(command @ ("origins" | "chain" | "compare" | "timeline" | "validate")) =
         args.first().map(String::as_str)
     {
-        let result = if command == "timeline" {
+        let result = if command == "validate" {
+            validate_command(&args[1..])
+        } else if command == "timeline" {
             timeline_command(&args[1..])
         } else if command == "compare" {
             compare_command(&args[1..])
