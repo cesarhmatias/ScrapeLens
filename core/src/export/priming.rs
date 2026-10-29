@@ -3434,6 +3434,29 @@ fn to_python_with(
         text.push_str(&opts.adapter_encoders[*index].source);
         text.push('\n');
     }
+    // Impressão do plano: uma só implementação, a do core (`validate::plan_hash`),
+    // calculada na geração com os mesmos adaptadores do gerador e os nomes dos
+    // parâmetros obrigatórios do script. O validate deve usar o mesmo `--adapter`.
+    // O importador do trace declara, para cada item de `parameters`, a `part`
+    // (ou o nome) e, para `plan.parameters`, os nomes: o validate passa essa
+    // união ao `plan_hash`. Aqui: os nomes obrigatórios e as partes deles.
+    let required_names: Vec<String> = gen
+        .params
+        .list
+        .iter()
+        .filter(|p| p.default.is_none())
+        .map(|p| p.name.clone())
+        .collect();
+    let mut required: Vec<String> = required_names.clone();
+    required.extend(
+        gen.param_uses
+            .iter()
+            .filter(|(name, _)| required_names.contains(name))
+            .map(|(_, part)| part.clone()),
+    );
+    let plan_hash =
+        crate::validate::plan_hash(session, source, target_request_id, &opts.flow, &required)?;
+    let _ = writeln!(text, "PLAN_HASH = {}", lit(&plan_hash));
     let _ = writeln!(text, "TARGET = {}", lit(target_request_id));
     let _ = writeln!(
         text,
@@ -3549,7 +3572,6 @@ const PRELUDE: &str = r#"
 import argparse
 import base64
 import datetime
-import hashlib
 import html.parser
 import json
 import os
@@ -3807,13 +3829,6 @@ def trace_error(index, text):
         TRACE['errors'][index] = text
 
 
-def trace_plan_hash():
-    """Impressão do plano: hash dos passos (id, método, URL sem query) e nomes dos parâmetros."""
-    lines = ['%s %s %s' % (rid, method, url.split('?', 1)[0].split('#', 1)[0]) for rid, method, url, _, _ in PLAN]
-    lines.append(','.join(sorted(name for name, _, _ in PARAMS)))
-    return hashlib.sha256('\n'.join(lines).encode('utf-8')).hexdigest()
-
-
 def trace_close(base=None):
     if TRACE['fd'] is None:
         return
@@ -3840,7 +3855,7 @@ def trace_close(base=None):
         'startedAt': trace_time(TRACE['started']),
         'target': TARGET,
         'complete': TRACE['complete'],
-        'plan': {'hash': trace_plan_hash(), 'parameters': sorted(TRACE['params'])},
+        'plan': {'hash': PLAN_HASH, 'parameters': sorted(TRACE['params'])},
         # Só nomes dos parâmetros do usuário e das partes onde entram, nunca valores.
         'parameters': [{'name': n, 'part': part} for n, part in PARAM_USES if n in TRACE['params']],
         'steps': entries,

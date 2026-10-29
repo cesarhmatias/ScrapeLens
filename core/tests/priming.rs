@@ -2096,7 +2096,7 @@ fn transport_errors_leave_a_valid_incomplete_trace_and_never_zero_bytes() {
         let doc: serde_json::Value = serde_json::from_slice(&raw).unwrap();
         assert_eq!(doc["complete"], false, "{kind}");
         assert_eq!(doc["target"], "har-0001");
-        assert!(doc["plan"]["hash"].as_str().unwrap().len() == 64);
+        assert_eq!(doc["plan"]["hash"].as_str().unwrap().len(), 16);
         let step = &doc["steps"][0];
         assert!(
             step["error"]
@@ -2230,4 +2230,54 @@ fn real_sockets_that_close_or_stay_silent_leave_a_valid_incomplete_trace() {
         );
         let _ = handle.join();
     }
+}
+
+#[test]
+fn plan_hash_is_computed_at_generation_by_the_core_and_the_script_has_no_hashlib() {
+    let bundle = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/alvo",
+        &[],
+        Some(("application/x-www-form-urlencoded", "placa=TST0T10")),
+    )]);
+    let script = generate(&bundle, "har-0001");
+    assert!(
+        !script.contains("hashlib"),
+        "o script não precisa de hashlib"
+    );
+    let literal = script
+        .lines()
+        .find_map(|l| l.strip_prefix("PLAN_HASH = '"))
+        .and_then(|l| l.strip_suffix('\''))
+        .expect("PLAN_HASH constante");
+    // Parâmetros obrigatórios: o nome e a parte onde entra (como o importador do trace declara).
+    let names = vec!["placa".to_string(), "placa".to_string()];
+    let expected = scrapelens_core::validate::plan_hash(
+        &bundle.session,
+        &bundle,
+        "har-0001",
+        &scrapelens_core::flow::FlowOptions::default(),
+        &names,
+    )
+    .unwrap();
+    assert_eq!(literal, expected);
+    // Executando o script com `--trace`, o hash gravado é o mesmo.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("p.py");
+    std::fs::write(&path, &script).unwrap();
+    let trace = dir.path().join("t.json");
+    let out = trace_run(
+        &path,
+        200,
+        &[
+            "--confirmar",
+            "--placa",
+            "ZZZ9Z99",
+            "--trace",
+            trace.to_str().unwrap(),
+        ],
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC 0"));
+    let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(&trace).unwrap()).unwrap();
+    assert_eq!(doc["plan"]["hash"], literal);
 }

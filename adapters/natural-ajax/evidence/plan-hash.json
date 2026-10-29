@@ -1,0 +1,15 @@
+{
+  "com_adaptador": {
+    "script_rc": 0,
+    "resumo": "execução equivalente à captura [origem mapeada: https://wsde",
+    "aviso_plano_no_trace_genuino": [],
+    "aviso_plano_no_trace_alterado": true
+  },
+  "sem_adaptador": {
+    "script_rc": 0,
+    "resumo": "diverge no passo 3 (body `XML`: trecho dinâmico sem origem (",
+    "aviso_plano_no_trace_genuino": [],
+    "aviso_plano_no_trace_alterado": true
+  },
+  "fails": []
+}
