@@ -154,3 +154,56 @@ fn compare_assess_and_sanitize_work_on_the_imported_session() {
     let text = serde_json::to_string(&export.bundle.session).unwrap();
     assert!(!text.contains("SECRETCOOKIE0001"));
 }
+
+#[test]
+fn limits_base64_request_body_url_and_started_at_are_validated() {
+    // mais de 20 mil passos
+    let many: Vec<Value> = (0..20_001)
+        .map(|_| json!({"method":"GET","url":"https://x.test/"}))
+        .collect();
+    let err = import_trace(&trace(many)).unwrap_err().to_string();
+    assert!(err.contains("máximo"), "{err}");
+    // headers demais por passo
+    let headers: Vec<Value> = (0..600).map(|i| json!([format!("H{i}"), "v"])).collect();
+    let err = import_trace(&trace(vec![
+        json!({"method":"GET","url":"https://x.test/","requestHeaders":headers}),
+    ]))
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("headers"), "{err}");
+    // url com espaço / controle
+    for url in ["https://x.test/a b", "https://x.test/a\nb"] {
+        let err = import_trace(&trace(vec![json!({"method":"GET","url":url})]))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("url"), "{err}");
+    }
+    // startedAt inválido (topo e passo)
+    for doc in [
+        json!({"schema":"scrapelens.trace/1","startedAt":"ontem","steps":[]}),
+        json!({"schema":"scrapelens.trace/1","steps":[{"method":"GET","url":"https://x.test/","startedAt":"2026-13"}]}),
+    ] {
+        let err = import_trace(&serde_json::to_vec(&doc).unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("startedAt"), "{err}");
+    }
+    // base64 no corpo enviado é aceito (e inválido dá erro claro)
+    let ok = json!({"method":"POST","url":"https://x.test/","requestHeaders":[["Content-Type","application/x-www-form-urlencoded"]],
+        "requestBody":{"text":"QT0xJkI9Mg==","encoding":"base64"}});
+    let imported = import_trace(&trace(vec![ok])).unwrap();
+    let a = &imported.bundle.session.requests[0].attempts[0];
+    let att = a.request_body.attachment.clone().unwrap();
+    let bytes = imported.bundle.attachments.get(&att).expect("anexo");
+    assert_eq!(String::from_utf8_lossy(bytes), "A=1&B=2");
+    let bad = json!({"method":"POST","url":"https://x.test/","requestBody":{"text":"!!!","encoding":"base64"}});
+    let err = import_trace(&trace(vec![bad])).unwrap_err().to_string();
+    assert!(err.contains("base64"), "{err}");
+    // target/complete/plan malformados
+    for doc in [
+        json!({"schema":"scrapelens.trace/1","target":5,"steps":[]}),
+        json!({"schema":"scrapelens.trace/1","complete":"sim","steps":[]}),
+    ] {
+        assert!(import_trace(&serde_json::to_vec(&doc).unwrap()).is_err());
+    }
+}

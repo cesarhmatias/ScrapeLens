@@ -92,7 +92,7 @@ impl OriginMap {
 }
 
 /// `host[:porta]` em minúsculas de uma origem (ou URL).
-fn host_of_origin(origin: &str) -> Option<String> {
+pub(crate) fn host_of_origin(origin: &str) -> Option<String> {
     let rest = origin.split_once("://")?.1;
     let host = rest.split(['/', '?', '#']).next()?;
     (!host.is_empty()).then(|| host.to_ascii_lowercase())
@@ -549,8 +549,20 @@ fn diff_regions(a: &[u8], b: &[u8], cap: usize) -> Vec<(usize, usize, usize, usi
         .collect()
 }
 
+/// `localhost`, `127.0.0.0/8`, `::1`.
+pub(crate) fn is_loopback_origin(origin: &str) -> bool {
+    let Some(host) = host_of_origin(origin) else {
+        return false;
+    };
+    let name = match host.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or(""),
+        None => host.rsplit_once(':').map_or(host.as_str(), |(h, _)| h),
+    };
+    name == "localhost" || name == "::1" || name.starts_with("127.")
+}
+
 /// Origem única de aplicação de uma sessão (`scheme://host`), se for uma só.
-fn single_app_origin(ctx: &FlowContext<'_>) -> Option<String> {
+pub(crate) fn single_app_origin(ctx: &FlowContext<'_>) -> Option<String> {
     let mut found: Option<String> = None;
     for e in entries(ctx, None) {
         if e.kind != EntryKind::App {
@@ -588,6 +600,10 @@ fn auto_map(ctx_a: &FlowContext<'_>, ctx_b: &FlowContext<'_>) -> Option<(OriginM
         return None;
     }
     let (from, to) = if b_trace { (oa, ob) } else { (ob, oa) };
+    // só o trace em loopback (o sim local) é mapeado sozinho; outro host exige --map-origin
+    if !is_loopback_origin(&to) {
+        return None;
+    }
     let why = format!(
         "origens de aplicação diferentes ({from} × {to}); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)"
     );

@@ -12,6 +12,13 @@
 //!                                              // usuário do script, SEM valores; `part` =
 //!                                              // nome interno (parte de adaptador) ou campo
 //!                                              // do form/query; sem `part`, vale `name`
+//!   "target": "har-0127",                      // requestId do alvo NA CAPTURA (o validate exige
+//!                                              // que seja pareado; sem ele, "incompleta")
+//!   "complete": true,                          // o script executou todo o plano (false/ausente
+//!                                              // = "incompleta")
+//!   "plan": {"hash":"<hex>", "parameters":[…]},// opcional: impressão do plano (ver
+//!                                              // `validate::plan_hash`); `plan.parameters`
+//!                                              // vale como `parameters`
 //!   "steps": [                                 // obrigatório; ordem de execução
 //!     {
 //!       "method": "POST",                      // obrigatório
@@ -62,13 +69,56 @@ type StepNotes = (
 
 /// Prefixo das notas de sessão que carregam os parâmetros do usuário do trace.
 pub const PARAM_NOTE_PREFIX: &str = "trace-param: ";
+pub const TARGET_NOTE_PREFIX: &str = "trace-target: ";
+pub const COMPLETE_NOTE_PREFIX: &str = "trace-complete: ";
+pub const PLAN_HASH_NOTE_PREFIX: &str = "trace-plan-hash: ";
 
-pub const MAX_STEPS: usize = 100_000;
+pub const MAX_STEPS: usize = 20_000;
+/// Headers por lista (enviados e recebidos), por passo.
+pub const MAX_HEADERS_PER_STEP: usize = 512;
+/// Tamanho máximo do arquivo de trace.
+pub const MAX_TRACE_BYTES: usize = 256 * 1024 * 1024;
 
 fn bad(message: impl Into<String>) -> CoreError {
     CoreError::UnsupportedFormat {
         message: format!("trace: {}", message.into()),
     }
+}
+
+/// `YYYY-MM-DDTHH:MM:SS[.fff](Z|±HH:MM)`.
+fn valid_iso(text: &str) -> bool {
+    let b = text.as_bytes();
+    let digits =
+        |r: std::ops::Range<usize>| b.get(r).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
+    if b.len() < 20
+        || !(digits(0..4) && b[4] == b'-' && digits(5..7) && b[7] == b'-' && digits(8..10))
+        || !(b[10] == b'T'
+            && digits(11..13)
+            && b[13] == b':'
+            && digits(14..16)
+            && b[16] == b':'
+            && digits(17..19))
+    {
+        return false;
+    }
+    let mut i = 19;
+    if b[i] == b'.' {
+        i += 1;
+        let start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == start {
+            return false;
+        }
+    }
+    let tz = &text[i..];
+    tz == "Z"
+        || (tz.len() == 6
+            && matches!(tz.as_bytes()[0], b'+' | b'-')
+            && tz.as_bytes()[3] == b':'
+            && digits(i + 1..i + 3)
+            && digits(i + 4..i + 6))
 }
 
 fn headers_of(step: &Value, key: &str, index: usize) -> Result<Vec<Value>> {
@@ -78,6 +128,14 @@ fn headers_of(step: &Value, key: &str, index: usize) -> Result<Vec<Value>> {
     let array = value
         .as_array()
         .ok_or_else(|| bad(format!("steps[{index}].{key} não é lista")))?;
+    if array.len() > MAX_HEADERS_PER_STEP {
+        return Err(CoreError::LimitExceeded {
+            message: format!(
+                "trace: steps[{index}].{key} com {} headers (máximo {MAX_HEADERS_PER_STEP})",
+                array.len()
+            ),
+        });
+    }
     array
         .iter()
         .enumerate()
@@ -137,6 +195,14 @@ fn body_of(step: &Value, key: &str, index: usize) -> Result<Option<BodyParts>> {
 }
 
 pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
+    if json_bytes.len() > MAX_TRACE_BYTES {
+        return Err(CoreError::LimitExceeded {
+            message: format!(
+                "trace com {} bytes (máximo {MAX_TRACE_BYTES})",
+                json_bytes.len()
+            ),
+        });
+    }
     let root: Value =
         serde_json::from_slice(json_bytes).map_err(|e| CoreError::json("trace", e))?;
     match root.get("schema").and_then(Value::as_str) {
@@ -169,6 +235,11 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         .unwrap_or("script");
     let epoch = "1970-01-01T00:00:00Z";
     let started = root.get("startedAt").and_then(Value::as_str);
+    if started.is_some_and(|t| !valid_iso(t)) {
+        return Err(bad(
+            "startedAt inválido (use ISO-8601, ex.: 2026-10-29T12:00:00Z)",
+        ));
+    }
 
     let mut entries = Vec::with_capacity(steps.len());
     // (índice, request truncado, response truncado, tamanhos reais, verificações ruins, erro)
@@ -187,6 +258,11 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         let url = text_of("url")?;
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             return Err(bad(format!("steps[{index}].url não é http(s)")));
+        }
+        if url.len() > 16 * 1024 || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(bad(format!(
+                "steps[{index}].url com espaço, caractere de controle ou longa demais"
+            )));
         }
         let mut request = json!({
             "method": method, "url": url, "httpVersion": "HTTP/1.1",
@@ -208,10 +284,15 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
                 .unwrap_or("application/octet-stream")
                 .to_string();
             if body.get("encoding").is_some() {
-                // postData HAR não tem encoding: base64 vira texto decodificado pelo importador de HAR
-                return Err(bad(format!(
-                    "steps[{index}].requestBody.encoding base64 não é suportado em corpo enviado"
-                )));
+                // postData HAR não tem encoding: decodifica o base64 aqui
+                use base64::Engine;
+                let raw = body["text"].as_str().unwrap_or("");
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(raw)
+                    .map_err(|e| bad(format!("steps[{index}].requestBody base64 inválido: {e}")))?;
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                body.insert("text".into(), json!(text));
+                body.remove("encoding");
             }
             body.insert("mimeType".into(), json!(mime));
             request["postData"] = Value::Object(body);
@@ -246,11 +327,11 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         if elapsed.is_some_and(|e| e < 0.0 || !e.is_finite()) {
             return Err(bad(format!("steps[{index}].elapsedMs inválido")));
         }
-        let step_start = step
-            .get("startedAt")
-            .and_then(Value::as_str)
-            .or(started)
-            .unwrap_or(epoch);
+        let own_start = step.get("startedAt").and_then(Value::as_str);
+        if own_start.is_some_and(|t| !valid_iso(t)) {
+            return Err(bad(format!("steps[{index}].startedAt inválido (ISO-8601)")));
+        }
+        let step_start = own_start.or(started).unwrap_or(epoch);
         let mut bad_checks = Vec::new();
         if let Some(checks) = step.get("checks").filter(|v| !v.is_null()) {
             let list = checks
@@ -310,27 +391,69 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
     if !session.session.labels.iter().any(|l| l == TRACE_LABEL) {
         session.session.labels.push(TRACE_LABEL.to_string());
     }
-    if let Some(params) = root.get("parameters").filter(|v| !v.is_null()) {
+    let plan = root.get("plan").filter(|v| !v.is_null());
+    let mut lists: Vec<&Value> = Vec::new();
+    if let Some(p) = root.get("parameters").filter(|v| !v.is_null()) {
+        lists.push(p);
+    }
+    if let Some(p) = plan
+        .and_then(|p| p.get("parameters"))
+        .filter(|v| !v.is_null())
+    {
+        lists.push(p);
+    }
+    for params in lists {
         let list = params
             .as_array()
             .ok_or_else(|| bad("parameters não é lista"))?;
         for (n, p) in list.iter().enumerate() {
-            let name = p
-                .get("name")
-                .and_then(Value::as_str)
-                .filter(|s| !s.is_empty());
-            let part = p
-                .get("part")
-                .and_then(Value::as_str)
-                .filter(|s| !s.is_empty());
-            let Some(part) = part.or(name) else {
+            let (name, part) = match p {
+                Value::String(s) => (Some(s.as_str()), None),
+                _ => (
+                    p.get("name").and_then(Value::as_str),
+                    p.get("part").and_then(Value::as_str),
+                ),
+            };
+            let part = part
+                .filter(|s| !s.is_empty())
+                .or(name.filter(|s| !s.is_empty()));
+            let Some(part) = part else {
                 return Err(bad(format!("parameters[{n}] precisa de name ou part")));
             };
-            session
-                .session
-                .notes
-                .push(format!("{PARAM_NOTE_PREFIX}{part}"));
+            let note = format!("{PARAM_NOTE_PREFIX}{part}");
+            if !session.session.notes.contains(&note) {
+                session.session.notes.push(note);
+            }
         }
+    }
+    if let Some(target) = root.get("target").filter(|v| !v.is_null()) {
+        let target = target
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 256)
+            .ok_or_else(|| bad("target deve ser texto (requestId do alvo na captura)"))?;
+        session
+            .session
+            .notes
+            .push(format!("{TARGET_NOTE_PREFIX}{target}"));
+    }
+    if let Some(complete) = root.get("complete").filter(|v| !v.is_null()) {
+        let complete = complete
+            .as_bool()
+            .ok_or_else(|| bad("complete deve ser booleano"))?;
+        session
+            .session
+            .notes
+            .push(format!("{COMPLETE_NOTE_PREFIX}{complete}"));
+    }
+    if let Some(hash) = plan.and_then(|p| p.get("hash")).filter(|v| !v.is_null()) {
+        let hash = hash
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 128)
+            .ok_or_else(|| bad("plan.hash deve ser texto"))?;
+        session
+            .session
+            .notes
+            .push(format!("{PLAN_HASH_NOTE_PREFIX}{hash}"));
     }
     session.session.notes.push(
         "fonte: execução do script (scrapelens.trace/1); headers sem garantia de ordem do fio"

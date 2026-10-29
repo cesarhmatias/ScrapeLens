@@ -21,7 +21,7 @@ use serde::Serialize;
 use crate::adapter::AdapterContext;
 use crate::assess::{assess_session, AssessRules, VerdictKind};
 use crate::compare::{entries, entry_base, split_rounds, EntryKind};
-use crate::flow::{origins_in, FlowContext, FlowOptions, OriginStatus};
+use crate::flow::{linked_field_names, FlowContext, FlowOptions};
 use crate::model::SessionV1;
 use crate::search::BodySource;
 
@@ -113,9 +113,9 @@ pub fn timeline(
         .map(|o| (o.request_id.clone(), o))
         .collect();
 
-    // nomes consumidos (por consumidor) e produzidos (por produtor)
-    let mut consumed: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut produced: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // nomes consumidos (por consumidor) e produzidos (por produtor): índice linear
+    let app_ids: std::collections::HashSet<&str> = app.iter().map(|e| e.id.as_str()).collect();
+    let (consumed, produced) = linked_field_names(&ctx, &|id| app_ids.contains(id));
     let mut labels: BTreeMap<String, String> = BTreeMap::new();
     for e in &app {
         let Some(pos) = ctx.find(&e.id) else { continue };
@@ -152,26 +152,6 @@ pub fn timeline(
                 labels.insert(e.id.clone(), n);
             }
             _ => {}
-        }
-        let Ok(origins) = origins_in(&ctx, &e.id) else {
-            continue;
-        };
-        for v in origins.values.iter().filter(|v| {
-            // partes de adaptador (`XML.delta`) entram; trechos soltos de um campo opaco não
-            v.parent
-                .as_ref()
-                .map_or(true, |p| v.field.starts_with(&format!("{p}.")))
-                && matches!(
-                    v.status,
-                    OriginStatus::Origin | OriginStatus::Ambiguous | OriginStatus::Composite
-                )
-        }) {
-            push_unique(consumed.entry(e.id.clone()).or_default(), &v.field);
-            for ev in &v.evidences {
-                if let Some(field) = &ev.field {
-                    push_unique(produced.entry(ev.request_id.clone()).or_default(), field);
-                }
-            }
         }
     }
 
@@ -250,11 +230,5 @@ pub fn timeline(
         items,
         counts,
         warnings: Vec::new(),
-    }
-}
-
-fn push_unique(list: &mut Vec<String>, name: &str) {
-    if !list.iter().any(|n| n == name) {
-        list.push(name.to_string());
     }
 }

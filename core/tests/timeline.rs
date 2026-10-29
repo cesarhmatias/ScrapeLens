@@ -282,3 +282,35 @@ fn timeline_has_a_verdict_per_event() {
         assert!(!e.verdict.is_empty(), "{}", e.request_id);
     }
 }
+
+#[test]
+fn timeline_scales_roughly_linearly() {
+    use scrapelens_core::parse::import_trace;
+    let make = |n: usize| {
+        let steps: Vec<Value> = (0..n)
+            .map(|i| {
+                json!({"method":"POST","url":"http://a.test/go",
+                    "requestHeaders":[["Content-Type","application/x-www-form-urlencoded"]],
+                    "requestBody":{"text":format!("T=TOK{:08}&x={i}", i.saturating_sub(1))},
+                    "status":200,"responseHeaders":[["Content-Type","text/html"]],
+                    "responseBody":{"text":format!("<input type=hidden name=\"T\" value=\"TOK{i:08}\">")}})
+            })
+            .collect();
+        let bytes =
+            serde_json::to_vec(&json!({"schema":"scrapelens.trace/1","steps":steps})).unwrap();
+        import_trace(&bytes).unwrap().bundle
+    };
+    let time = |n: usize| {
+        let b = make(n);
+        let started = std::time::Instant::now();
+        let t = timeline(&b.session, &b, &TimelineOptions::default());
+        assert_eq!(t.counts.events, n);
+        started.elapsed().as_secs_f64()
+    };
+    let (small, large) = (time(400), time(1600));
+    // 4x mais requisições: com custo ~n^2,7 daria ~40x; aceita até ~12x
+    assert!(
+        large < small.max(0.02) * 12.0 + 0.5,
+        "400 → {small:.3}s, 1600 → {large:.3}s"
+    );
+}

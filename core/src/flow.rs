@@ -879,6 +879,8 @@ pub(crate) struct FlowContext<'a> {
     index: RefCell<Option<Rc<PrefixIndex>>>,
     seq: HashMap<Pos, usize>,
     by_attempt: HashMap<String, Pos>,
+    /// id da requisição → posição da última tentativa.
+    by_request: HashMap<String, Pos>,
     ordered: Vec<Pos>,
 }
 
@@ -894,9 +896,13 @@ impl<'a> FlowContext<'a> {
     ) -> Self {
         let mut seq = HashMap::new();
         let mut by_attempt = HashMap::new();
+        let mut by_request: HashMap<String, Pos> = HashMap::new();
         let mut ordered = Vec::new();
         let mut next = 0;
         for (ri, request) in session.requests.iter().enumerate() {
+            if let Some(last) = request.attempts.len().checked_sub(1) {
+                by_request.entry(request.id.clone()).or_insert((ri, last));
+            }
             for (ai, attempt) in request.attempts.iter().enumerate() {
                 seq.insert((ri, ai), next);
                 by_attempt.insert(attempt.id.clone(), (ri, ai));
@@ -913,6 +919,7 @@ impl<'a> FlowContext<'a> {
             index: RefCell::new(None),
             seq,
             by_attempt,
+            by_request,
             ordered,
         }
     }
@@ -1148,13 +1155,7 @@ impl<'a> FlowContext<'a> {
     }
 
     pub(crate) fn find(&self, request_id: &str) -> Option<Pos> {
-        let ri = self
-            .session
-            .requests
-            .iter()
-            .position(|r| r.id == request_id)?;
-        let ai = self.session.requests[ri].attempts.len().checked_sub(1)?;
-        Some((ri, ai))
+        self.by_request.get(request_id).copied()
     }
 
     pub(crate) fn consumed_for(&self, pos: Pos) -> Rc<Vec<Consumed>> {
@@ -1168,6 +1169,70 @@ impl<'a> FlowContext<'a> {
     pub(crate) fn attempt_ref(&self, pos: Pos) -> &'a Attempt {
         self.attempt(pos)
     }
+}
+
+/// Nomes (sem valores) dos campos consumidos que reaparecem como valor de uma
+/// resposta anterior e dos campos de resposta que foram reaproveitados depois.
+/// Linear no tamanho da sessão (índices por valor); serve à timeline, que não
+/// precisa da classificação completa das origens.
+pub(crate) fn linked_field_names(
+    ctx: &FlowContext<'_>,
+    only: &dyn Fn(&str) -> bool,
+) -> (HashMap<String, Vec<String>>, HashMap<String, Vec<String>>) {
+    let min = ctx.options.min_match_len.max(8);
+    // valor longo → produtores; (campo, valor) → produtores (qualquer tamanho >= 4)
+    let mut long: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    let mut named: HashMap<(String, String), Vec<(String, String)>> = HashMap::new();
+    let mut consumed_names: HashMap<String, Vec<String>> = HashMap::new();
+    let mut produced_names: HashMap<String, Vec<String>> = HashMap::new();
+    let push = |list: &mut Vec<String>, name: &str| {
+        if !list.iter().any(|n| n == name) {
+            list.push(name.to_string());
+        }
+    };
+    for pos in ctx.positions().collect::<Vec<_>>() {
+        let id = ctx.request_id(pos).to_string();
+        if only(&id) {
+            for c in ctx.consumed_for(pos).iter() {
+                if c.value.is_empty() || is_redacted(&c.value) {
+                    continue;
+                }
+                let mut producers: Vec<&(String, String)> = Vec::new();
+                if let Some(v) = named.get(&(c.field.to_ascii_lowercase(), c.value.clone())) {
+                    producers.extend(v);
+                }
+                if c.value.len() >= min {
+                    if let Some(v) = long.get(&c.value) {
+                        producers.extend(v);
+                    }
+                }
+                for (pid, pfield) in producers {
+                    if *pid != id {
+                        push(consumed_names.entry(id.clone()).or_default(), &c.field);
+                        push(produced_names.entry(pid.clone()).or_default(), pfield);
+                    }
+                }
+            }
+        }
+        for item in ctx.producer(pos).items.iter() {
+            if item.value.is_empty() || is_redacted(&item.value) {
+                continue;
+            }
+            let field = item.field.clone().unwrap_or_default();
+            if item.named && !field.is_empty() {
+                named
+                    .entry((field.to_ascii_lowercase(), item.value.clone()))
+                    .or_default()
+                    .push((id.clone(), field.clone()));
+            }
+            if item.value.len() >= min {
+                long.entry(item.value.clone())
+                    .or_default()
+                    .push((id.clone(), field));
+            }
+        }
+    }
+    (consumed_names, produced_names)
 }
 
 /// Nomes de campo genéricos: `same-field` com eles é só evidência média.
