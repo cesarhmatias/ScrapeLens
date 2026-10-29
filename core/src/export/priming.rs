@@ -3352,7 +3352,7 @@ fn to_python_with(
         let _ = writeln!(step_code, "    try:");
         let _ = writeln!(
             step_code,
-            "        resp = send(S, {}, url, {n}, base, headers=headers{}, timeout=30)",
+            "        resp = send(S, {}, url, {n}, base, headers=headers{}, timeout=TIMEOUT)",
             lit(&step.method),
             step.data_arg
         );
@@ -3549,6 +3549,7 @@ const PRELUDE: &str = r#"
 import argparse
 import base64
 import datetime
+import hashlib
 import html.parser
 import json
 import os
@@ -3734,7 +3735,8 @@ def rebase(url, base):
     return url
 
 
-TRACE = {'fd': None, 'started': None, 'exchanges': [], 'checks': {}, 'params': []}
+TIMEOUT = 30
+TRACE = {'fd': None, 'started': None, 'exchanges': [], 'checks': {}, 'errors': {}, 'params': [], 'complete': False}
 TRACE_BODY_LIMIT = 2 * 1024 * 1024
 
 
@@ -3800,6 +3802,18 @@ def trace_check(index, ok, reason):
             TRACE['checks'][index]['detail'] = reason
 
 
+def trace_error(index, text):
+    if TRACE['fd'] is not None:
+        TRACE['errors'][index] = text
+
+
+def trace_plan_hash():
+    """Impressão do plano: hash dos passos (id, método, URL sem query) e nomes dos parâmetros."""
+    lines = ['%s %s %s' % (rid, method, url.split('?', 1)[0].split('#', 1)[0]) for rid, method, url, _, _ in PLAN]
+    lines.append(','.join(sorted(name for name, _, _ in PARAMS)))
+    return hashlib.sha256('\n'.join(lines).encode('utf-8')).hexdigest()
+
+
 def trace_close(base=None):
     if TRACE['fd'] is None:
         return
@@ -3807,14 +3821,16 @@ def trace_close(base=None):
     for index, (rid, method, url, _, _) in enumerate(PLAN, 1):
         mine = [e for e in TRACE['exchanges'] if e['step'] == index]
         check = TRACE['checks'].get(index)
-        if not mine and check is None:
+        if not mine and check is None and index not in TRACE['errors']:
             continue
         if not mine:
             # Falha antes de qualquer pedido (ex.: origin recusado): registra o planejado.
             mine = [{'step': index, 'method': method, 'url': rebase(url, base), 'requestHeaders': [],
                      'requestBody': None, 'status': None, 'responseHeaders': [], 'responseBody': None,
-                     'error': (check or {}).get('detail') or 'passo não enviado'}]
+                     'error': TRACE['errors'].get(index) or (check or {}).get('detail') or 'passo não enviado'}]
         mine = [{k: v for k, v in entry.items() if k != 'step'} for entry in mine]
+        if index in TRACE['errors'] and 'error' not in mine[-1]:
+            mine[-1]['error'] = TRACE['errors'][index]
         if check is not None:
             mine[-1]['checks'] = [check]
         entries.extend(mine)
@@ -3822,6 +3838,9 @@ def trace_close(base=None):
         'schema': 'scrapelens.trace/1',
         'generator': 'scrapelens-priming 1.0',
         'startedAt': trace_time(TRACE['started']),
+        'target': TARGET,
+        'complete': TRACE['complete'],
+        'plan': {'hash': trace_plan_hash(), 'parameters': sorted(TRACE['params'])},
         # Só nomes dos parâmetros do usuário e das partes onde entram, nunca valores.
         'parameters': [{'name': n, 'part': part} for n, part in PARAM_USES if n in TRACE['params']],
         'steps': entries,
@@ -3879,16 +3898,38 @@ def adapter_get(decode, text, name, nth, who):
 
 const MAIN: &str = r#"
 
+def check_arguments(args):
+    """Valida o argv antes de qualquer pedido: bytes inválidos, NUL, --trace vazio, --timeout."""
+    if args.trace is not None and not args.trace.strip():
+        fail('--trace exige um caminho de arquivo (recebeu texto vazio)')
+    if not (0 < args.timeout < 3600):
+        fail('--timeout deve estar entre 0 e 3600 segundos')
+    for key, value in sorted(vars(args).items()):
+        if isinstance(value, str):
+            try:
+                value.encode('utf-8')
+            except UnicodeEncodeError:
+                fail('argumento --%s tem bytes inválidos (não é UTF-8)' % key.replace('p_', '', 1).replace('_', '-'))
+            if '\x00' in value:
+                fail('argumento --%s contém NUL' % key.replace('p_', '', 1).replace('_', '-'))
+    if args.base_url is not None:
+        parts = urllib.parse.urlsplit(args.base_url)
+        if parts.scheme not in ('http', 'https') or not parts.netloc:
+            fail('--base-url precisa ser http(s)://host[:porta]')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Script de priming (ScrapeLens)')
     parser.add_argument('--confirmar', action='store_true', help='executa os passos que alteram estado')
     parser.add_argument('--usar-proxy-do-ambiente', action='store_true', help='usa proxy/.netrc do ambiente (padrão: ignora)')
+    parser.add_argument('--timeout', type=float, default=30.0, help='tempo limite de cada pedido, em segundos (padrão: 30)')
     parser.add_argument('--trace', default=None, metavar='ARQUIVO', help='grava um trace JSON (scrapelens.trace/1) da execução; contém dados da sua sessão')
     parser.add_argument('--base-url', default=None, help='troca esquema/host/porta do alvo capturado (ex.: http://127.0.0.1:8791)')
     for name, default, note in PARAMS:
         parser.add_argument('--' + name.replace('_', '-'), dest='p_' + name, default=default,
                             required=False, help=(note + (' (obrigatório)' if default is None else ' (padrão: valor capturado)')).replace('%', '%%'))
     args = parser.parse_args()
+    check_arguments(args)
     P = {name: getattr(args, 'p_' + name) for name, _, _ in PARAMS}
     base = args.base_url
 
@@ -3912,7 +3953,9 @@ def main():
     if sys.version_info < (3, 13):
         sys.stderr.write('priming: aviso: Python < 3.13; o HTMLParser tem casos quadráticos conhecidos com respostas hostis\n')
     R = {}
-    if args.trace:
+    global TIMEOUT
+    TIMEOUT = args.timeout
+    if args.trace is not None:
         trace_open(args.trace)
         # Parâmetros fornecidos pelo usuário: obrigatórios ou com valor diferente do padrão.
         TRACE['params'] = [name for name, default, _ in PARAMS if default is None or P[name] != default]
@@ -3924,10 +3967,20 @@ def main():
             R[rid] = resp
             trace_check(index, True, None)
             print('  [%d/%d] %s %s -> HTTP %d' % (index, len(STEPS), method, rebase(url, base), resp.status_code))
+        TRACE['complete'] = True
     except SystemExit as exc:
         trace_check(current, False, safe_text(exc.code))
         trace_close(base)
         raise
+    except BaseException as exc:
+        # Erro de transporte (ConnectionError, Timeout, qualquer exceção): o trace nunca fica vazio.
+        text = safe_text('%s: %s' % (type(exc).__name__, exc))[:300]
+        trace_error(current, text)
+        trace_check(current, False, 'erro de transporte: ' + text)
+        trace_close(base)
+        if isinstance(exc, KeyboardInterrupt):
+            raise
+        fail('passo %d: erro de transporte (%s)' % (current, text))
     trace_close(base)
     print('Cadeia concluída; último HTTP %d.' % R[PLAN[-1][0]].status_code)
     return 0

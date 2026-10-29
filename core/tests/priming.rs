@@ -98,7 +98,10 @@ fn each_step_checks_its_own_response_before_the_next_request() {
         steps
     );
     assert_eq!(script.matches("\n    step_error(resp, ").count(), steps);
-    assert_eq!(script.matches("except UnicodeEncodeError").count(), steps);
+    assert_eq!(
+        script.matches("except UnicodeEncodeError as exc").count(),
+        steps
+    );
     // A ausência de ERRORMESSAGE não pode virar erro engolido: nenhum
     // `except SystemExit` no script e a checagem só falha se houver valor.
     // O único `except SystemExit` é o do `main`, que grava o trace e re-lança.
@@ -910,6 +913,14 @@ fn hostile_names_and_values_stay_inside_literals() {
         "sys",
         "find",
         "b64encode",
+        "split",
+        "vars",
+        "type",
+        "hexdigest",
+        "sha256",
+        "trace_plan_hash",
+        "trace_error",
+        "check_arguments",
         "trace_time",
         "strftime",
         "pop",
@@ -1818,6 +1829,11 @@ class Session:
     trust_env = True
     cookies = Jar()
     def request(self, method, url, **kw):
+        kind = __import__('os').environ.get('TRACE_RAISE')
+        if kind == 'ConnectionError':
+            raise ConnectionError('conexão fechada pelo servidor')
+        if kind == 'Timeout':
+            raise TimeoutError('tempo esgotado')
         data = kw.get('data')
         return Resp(Req(method, url, data), int(status))
 fake = types.ModuleType('requests')
@@ -1830,6 +1846,16 @@ try:
     print('RC 0')
 except SystemExit as exc:
     print('RC', exc.code)
+"#;
+
+const BAD_ARGV_DRIVER: &str = r#"
+import runpy, sys
+m = runpy.run_path(sys.argv[1], run_name='t')
+sys.argv = [sys.argv[1], '--trace', '/tmp/\udcff-x']
+try:
+    m['main']()
+except SystemExit as e:
+    print('RC', e.code)
 "#;
 
 fn trace_run(script: &std::path::Path, status: u32, args: &[&str]) -> std::process::Output {
@@ -2036,4 +2062,172 @@ fn trace_lists_user_parameters_with_their_parts_and_never_values() {
     assert!(!serde_json::to_string(parameters)
         .unwrap()
         .contains("ZZZ9Z99"));
+}
+
+#[test]
+fn transport_errors_leave_a_valid_incomplete_trace_and_never_zero_bytes() {
+    use std::os::unix::fs::PermissionsExt;
+    let bundle = custom_bundle(&[("GET", "https://h.example.test/alvo", &[], None)]);
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("p.py");
+    std::fs::write(&script, generate(&bundle, "har-0001")).unwrap();
+    for kind in ["ConnectionError", "Timeout"] {
+        let trace = dir.path().join(format!("{kind}.json"));
+        let out = Command::new("python3")
+            .arg("-I")
+            .args(["-c", TRACE_DRIVER])
+            .arg(&script)
+            .arg("200")
+            .args(["--trace", trace.to_str().unwrap()])
+            .env("TRACE_RAISE", kind)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("RC priming: passo 1: erro de transporte"),
+            "{kind}: {stdout}"
+        );
+        let raw = std::fs::read(&trace).unwrap();
+        assert!(!raw.is_empty(), "{kind}: trace vazio");
+        assert_eq!(
+            std::fs::metadata(&trace).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let doc: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(doc["complete"], false, "{kind}");
+        assert_eq!(doc["target"], "har-0001");
+        assert!(doc["plan"]["hash"].as_str().unwrap().len() == 64);
+        let step = &doc["steps"][0];
+        assert!(
+            step["error"]
+                .as_str()
+                .unwrap()
+                .contains(kind.trim_end_matches("Error"))
+                || step["error"].as_str().unwrap().contains("Error"),
+            "{step}"
+        );
+        assert_eq!(step["checks"][0]["ok"], false);
+        assert!(step["status"].is_null());
+        // Importável pelo Core.
+        let session = dir.path().join(format!("s-{kind}"));
+        let import = Command::new(env!("CARGO_BIN_EXE_scrapelens-core"))
+            .arg("import-trace")
+            .arg(&trace)
+            .arg("--out")
+            .arg(&session)
+            .output()
+            .unwrap();
+        assert!(
+            import.status.success(),
+            "{kind}: {}",
+            String::from_utf8_lossy(&import.stderr)
+        );
+    }
+}
+
+#[test]
+fn invalid_arguments_fail_before_any_request_and_complete_is_true_on_success() {
+    let bundle = custom_bundle(&[("GET", "https://h.example.test/alvo", &[], None)]);
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("p.py");
+    std::fs::write(&script, generate(&bundle, "har-0001")).unwrap();
+    // --trace vazio é erro; nada é pedido.
+    let out = trace_run(&script, 200, &["--trace", ""]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace exige"));
+    // --base-url inválida e --timeout fora da faixa.
+    let out = trace_run(&script, 200, &["--base-url", "ftp://x"]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --base-url"));
+    let out = trace_run(&script, 200, &["--timeout", "0"]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --timeout"));
+    // Bytes inválidos no argv (surrogate escape): falha antes de rodar.
+    let out = Command::new("python3")
+        .arg("-I")
+        .args(["-c", BAD_ARGV_DRIVER])
+        .arg(&script)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("RC priming: argumento --trace tem bytes inválidos"),
+        "{stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Sucesso: complete=true.
+    let trace = dir.path().join("ok.json");
+    let out = trace_run(&script, 200, &["--trace", trace.to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC 0"));
+    let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(&trace).unwrap()).unwrap();
+    assert_eq!(doc["complete"], true);
+}
+
+fn python_with_requests() -> Option<String> {
+    ["/tmp/sl-venv-req/bin/python", "/tmp/rev10/venv/bin/python"]
+        .iter()
+        .find(|p| {
+            std::path::Path::new(p).exists()
+                && Command::new(p)
+                    .args(["-c", "import requests"])
+                    .status()
+                    .is_ok_and(|s| s.success())
+        })
+        .map(|p| p.to_string())
+}
+
+#[test]
+fn real_sockets_that_close_or_stay_silent_leave_a_valid_incomplete_trace() {
+    use std::io::Read;
+    use std::net::TcpListener;
+    let Some(python) = python_with_requests() else {
+        return; // sem `requests` instalado, o teste com fakes acima cobre a lógica
+    };
+    for mode in ["close", "silent"] {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                if mode == "silent" {
+                    let mut buf = [0u8; 1024];
+                    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                    let _ = stream.read(&mut buf);
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                }
+                // "close": fecha sem responder.
+            }
+        });
+        let bundle = custom_bundle(&[("GET", &format!("http://127.0.0.1:{port}/alvo"), &[], None)]);
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("p.py");
+        std::fs::write(&script, generate(&bundle, "har-0001")).unwrap();
+        let trace = dir.path().join("t.json");
+        let out = Command::new(&python)
+            .arg("-I")
+            .arg(&script)
+            .args(["--timeout", "0.5", "--trace", trace.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{mode}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("priming: passo 1: erro de transporte"),
+            "{mode}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let raw = std::fs::read(&trace).unwrap();
+        assert!(!raw.is_empty(), "{mode}: trace vazio");
+        let doc: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(doc["complete"], false, "{mode}");
+        assert!(doc["steps"][0]["error"].as_str().unwrap().len() > 3);
+        let import = Command::new(env!("CARGO_BIN_EXE_scrapelens-core"))
+            .arg("import-trace")
+            .arg(&trace)
+            .arg("--out")
+            .arg(dir.path().join("sess"))
+            .output()
+            .unwrap();
+        assert!(
+            import.status.success(),
+            "{mode}: {}",
+            String::from_utf8_lossy(&import.stderr)
+        );
+        let _ = handle.join();
+    }
 }
