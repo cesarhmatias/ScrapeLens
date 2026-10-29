@@ -72,6 +72,10 @@ pub const PARAM_NOTE_PREFIX: &str = "trace-param: ";
 pub const TARGET_NOTE_PREFIX: &str = "trace-target: ";
 pub const COMPLETE_NOTE_PREFIX: &str = "trace-complete: ";
 pub const PLAN_HASH_NOTE_PREFIX: &str = "trace-plan-hash: ";
+/// Nomes em `plan.parameters` (os parâmetros do plano, usados no hash).
+pub const PLAN_PARAM_NOTE_PREFIX: &str = "trace-plan-param: ";
+/// Presente quando o trace traz o objeto `plan`.
+pub const PLAN_PRESENT_NOTE: &str = "trace-plan: present";
 
 pub const MAX_STEPS: usize = 20_000;
 /// Headers por lista (enviados e recebidos), por passo.
@@ -423,6 +427,26 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
             let note = format!("{PARAM_NOTE_PREFIX}{part}");
             if !session.session.notes.contains(&note) {
                 session.session.notes.push(note);
+            }
+        }
+    }
+    if let Some(plan) = plan.filter(|p| p.is_object()) {
+        session.session.notes.push(PLAN_PRESENT_NOTE.to_string());
+        if let Some(list) = plan.get("parameters").and_then(Value::as_array) {
+            for p in list {
+                let name = match p {
+                    Value::String(s) => Some(s.as_str()),
+                    _ => p
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .or_else(|| p.get("part").and_then(Value::as_str)),
+                };
+                if let Some(name) = name.filter(|s| !s.is_empty()) {
+                    session
+                        .session
+                        .notes
+                        .push(format!("{PLAN_PARAM_NOTE_PREFIX}{name}"));
+                }
             }
         }
     }

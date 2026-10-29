@@ -471,36 +471,68 @@ fn only_loopback_hosts_are_mapped_automatically() {
     assert!(v.summary.contains("origem mapeada"), "{}", v.summary);
 }
 
-#[test]
-fn plan_hash_mismatch_is_a_warning() {
-    let v = pv(&ptrace(
-        GOOD_GO,
-        GOOD_GO2,
-        json!({"parameters":[{"name":"placa"}], "plan": {"hash": "deadbeef"}}),
-    ));
-    assert!(
-        v.warnings.iter().any(|w| w.contains("plano não confere")),
-        "{:?}",
-        v.warnings
-    );
+fn hash_for(names: &[&str]) -> String {
     let cap = pcap();
-    let h = scrapelens_core::validate::plan_hash(
+    let names: Vec<String> = names.iter().map(|s| s.to_string()).collect();
+    scrapelens_core::validate::plan_hash(
         &cap.session,
         &cap,
         "har-0004",
         &Default::default(),
-        &["placa".to_string()],
+        &names,
     )
-    .unwrap();
+    .unwrap()
+}
+
+#[test]
+fn copied_plan_hash_diverges_and_missing_plan_warns() {
+    // hash de outro plano (copiado) → diverge
+    let other = hash_for(&["outro"]);
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
-        json!({"plan": {"hash": h, "parameters": [{"name":"placa"}]}}),
+        json!({"parameters":[{"name":"placa"}], "plan": {"hash": other, "parameters": ["placa"]}}),
     ));
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert!(
-        !v.warnings.iter().any(|w| w.contains("plano não confere")),
+        v.summary
+            .contains("plano diferente do gerado a partir desta captura"),
+        "{}",
+        v.summary
+    );
+    assert!(v.warnings.iter().any(|w| w.contains("plano não confere")));
+    // hash certo (parâmetros do plano = placa) → equivalente
+    let h = hash_for(&["placa"]);
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({"parameters":[{"name":"placa"}], "plan": {"hash": h, "parameters": ["placa"]}}),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        !v.warnings.iter().any(|w| w.contains("plano")),
         "{:?}",
         v.warnings
     );
+    // o usuário sobrescreveu um opcional: nome extra só no `parameters` de topo
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({"parameters":[{"name":"placa"},{"name":"q"}], "plan": {"hash": h, "parameters": ["placa"]}}),
+    ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    // sem `plan`: aviso, sem divergência
+    let v = pv(&ptrace(
+        GOOD_GO,
+        GOOD_GO2,
+        json!({"parameters":[{"name":"placa"}]}),
+    ));
+    assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
+    assert!(
+        v.warnings
+            .iter()
+            .any(|w| w.contains("plano ausente: execução não verificada contra o plano")),
+        "{:?}",
+        v.warnings
+    );
 }

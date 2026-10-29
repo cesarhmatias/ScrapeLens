@@ -42,7 +42,8 @@ use crate::flow::{
 };
 use crate::model::SessionV1;
 use crate::parse::trace::{
-    COMPLETE_NOTE_PREFIX, PARAM_NOTE_PREFIX, PLAN_HASH_NOTE_PREFIX, TARGET_NOTE_PREFIX,
+    COMPLETE_NOTE_PREFIX, PARAM_NOTE_PREFIX, PLAN_HASH_NOTE_PREFIX, PLAN_PARAM_NOTE_PREFIX,
+    PLAN_PRESENT_NOTE, TARGET_NOTE_PREFIX,
 };
 use crate::search::BodySource;
 
@@ -581,24 +582,51 @@ pub fn validate(
         .map(|r| r.request_id.clone())
         .collect();
 
-    // impressão do plano (se declarada) × recalculada a partir da captura e do alvo
+    // impressão do plano × recalculada a partir da captura e do alvo, só com os
+    // parâmetros do plano (`plan.parameters`); o `parameters` de topo (inclusive
+    // opcionais sobrescritos pelo usuário) não entra no hash
     let target = note_value(trace, TARGET_NOTE_PREFIX).map(str::to_string);
-    if let (Some(declared_hash), Some(target)) = (note_value(trace, PLAN_HASH_NOTE_PREFIX), &target)
+    let mut plan_mismatch = false;
+    if !trace.session.notes.iter().any(|n| n == PLAN_PRESENT_NOTE) {
+        warnings.push("plano ausente: execução não verificada contra o plano".to_string());
+    } else if let (Some(declared_hash), Some(target)) =
+        (note_value(trace, PLAN_HASH_NOTE_PREFIX), &target)
     {
-        let names: Vec<String> = declared.iter().map(|s| s.to_string()).collect();
-        match plan_hash(capture, capture_source, target, &options.compare.flow, &names) {
+        let names: Vec<String> = trace
+            .session
+            .notes
+            .iter()
+            .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
+            .map(str::to_string)
+            .collect();
+        match plan_hash(
+            capture,
+            capture_source,
+            target,
+            &options.compare.flow,
+            &names,
+        ) {
             Ok(h) if h == declared_hash => {}
-            Ok(h) => warnings.push(format!(
-                "plano não confere: o trace declara o hash {declared_hash} e a captura com o alvo {target} dá {h}"
-            )),
+            Ok(h) => {
+                plan_mismatch = true;
+                warnings.push(format!(
+                    "plano não confere: o trace declara o hash {declared_hash} e a captura com o alvo {target} dá {h}"
+                ));
+            }
             Err(e) => warnings.push(format!("plano não verificado: {e}")),
         }
+    } else {
+        warnings.push("plano ausente: execução não verificada contra o plano".to_string());
     }
 
     // veredito: primeiro problema, em ordem de passo
     let mut verdict = ValidationVerdict::Equivalent;
     let (mut step, mut reason) = (None, None);
-    if !trace.requests.is_empty() && cmp.pairs.is_empty() {
+    if plan_mismatch {
+        verdict = ValidationVerdict::Diverges;
+        step = Some(1);
+        reason = Some("plano diferente do gerado a partir desta captura".to_string());
+    } else if !trace.requests.is_empty() && cmp.pairs.is_empty() {
         let oa = single_app_origin(&ctx_a);
         let ob = single_app_origin(&ctx_b);
         verdict = ValidationVerdict::Diverges;
