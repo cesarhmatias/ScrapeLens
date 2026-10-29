@@ -56,24 +56,14 @@
   "sessionid_cliente": "_ + 12 dígitos gerados no check",
   "client_novo_vs_har": true,
   "required_params": [
-   "--op",
-   "--page",
    "--sessionid-cliente",
    "--placa",
    "--cpf"
   ],
-  "required_params_extra": [
-   "--op",
-   "--page"
-  ],
-  "extra_synthetic_filled": [
-   "--op",
-   "--page"
-  ]
+  "required_params_extra": [],
+  "extra_synthetic_filled": []
  },
  "plan_steps": 10,
  "negative_control_captured_post_rejected": true,
- "fails": [
-  "o script exige entrada obrigatória além de placa/sessionid-cliente (o gerador deve derivá-la): --op, --page"
- ]
+ "fails": []
 }
