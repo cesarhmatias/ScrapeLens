@@ -176,9 +176,7 @@ pub fn plan_hash(
 }
 
 /// Lê `PLAN = [...]` e `PARAMS = [...]` do script gerado (literais Python).
-type PlanStep = (String, String, String);
-
-fn parse_plan(text: &str) -> Option<(Vec<PlanStep>, Vec<String>)> {
+fn parse_plan(text: &str) -> Option<(Vec<(String, String, String)>, Vec<String>)> {
     let section = |name: &str| -> Option<Vec<Vec<String>>> {
         let start = text.find(&format!("\n{name} = [\n"))? + name.len() + 6;
         let body = &text[start..];
