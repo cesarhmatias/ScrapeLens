@@ -69,6 +69,7 @@ export interface AdapterViewDto {
     raw: string;
     error?: string | null;
     parts: { name: string; role: string; value: string; offset: number; len: number }[];
+    omittedParts?: number;
   }[];
   note?: string | null;
 }

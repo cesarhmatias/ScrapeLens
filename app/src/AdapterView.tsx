@@ -74,6 +74,9 @@ export function AdapterViewPanel({
                   ))}
                 </tbody>
               </table>
+              {(f.omittedParts ?? 0) > 0 && (
+                <p className="dim">{f.omittedParts} partes omitidas — veja o bruto.</p>
+              )}
             </div>
           )}
         </section>

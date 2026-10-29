@@ -58,6 +58,8 @@ pub struct AdapterField {
     /// Mensagem quando o decode falha; `parts` fica vazio.
     pub error: Option<String>,
     pub parts: Vec<ViewPart>,
+    /// Partes não enviadas por causa dos limites (por campo e por corpo); o bruto tem tudo.
+    pub omitted_parts: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,6 +73,17 @@ pub struct AdapterView {
 }
 
 const MAX_FIELDS: usize = 20;
+/// Partes enviadas por campo e por corpo (IPC e tabela da UI).
+pub const MAX_PARTS_PER_FIELD: usize = 2_000;
+pub const MAX_PARTS_PER_BODY: usize = 10_000;
+
+/// Corta `parts` em `min(por campo, orçamento restante)`; devolve as mantidas e quantas foram omitidas.
+pub fn cap_parts<T>(mut parts: Vec<T>, body_budget: usize) -> (Vec<T>, usize) {
+    let keep = MAX_PARTS_PER_FIELD.min(body_budget);
+    let omitted = parts.len().saturating_sub(keep);
+    parts.truncate(keep);
+    (parts, omitted)
+}
 /// Campo maior que isto não é decodificado na visão (a decodificação roda na thread de trabalho).
 pub const MAX_FIELD_BYTES: usize = 512 * 1024;
 /// Tempo máximo de decodificação por campo.
@@ -173,6 +186,7 @@ pub fn view(
                     raw: clip(&value),
                     error: Some(format!("{TOO_BIG_MESSAGE} (limite {} KiB)", MAX_FIELD_BYTES / 1024)),
                     parts: Vec::new(),
+                    omitted_parts: 0,
                 });
             }
             continue;
@@ -205,8 +219,10 @@ pub fn view(
             ),
             Err(error) => (Vec::new(), Some(error.to_string())),
         };
+        let used: usize = view.fields.iter().map(|f| f.parts.len()).sum();
+        let (parts, omitted_parts) = cap_parts(parts, MAX_PARTS_PER_BODY.saturating_sub(used));
         let raw = if error.is_some() { clip(&value) } else { value };
-        view.fields.push(AdapterField { field, adapter_id: adapter.id().to_string(), raw, error, parts });
+        view.fields.push(AdapterField { field, adapter_id: adapter.id().to_string(), raw, error, parts, omitted_parts });
     }
     if view.fields.is_empty() && view.note.is_none() {
         view.note = Some("nenhum campo deste corpo é reivindicado por um adaptador de protocolo".into());
@@ -216,4 +232,22 @@ pub fn view(
         view.note = Some(view.note.map_or(extra.to_string(), |n| format!("{n}; {extra}")));
     }
     Ok(view)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parts_are_capped_per_field_and_per_body() {
+        let (kept, omitted) = cap_parts((0..524_288).collect::<Vec<_>>(), MAX_PARTS_PER_BODY);
+        assert_eq!((kept.len(), omitted), (MAX_PARTS_PER_FIELD, 524_288 - MAX_PARTS_PER_FIELD));
+        // orçamento do corpo quase esgotado
+        let (kept, omitted) = cap_parts((0..500).collect::<Vec<_>>(), 120);
+        assert_eq!((kept.len(), omitted), (120, 380));
+        let (kept, omitted) = cap_parts((0..10).collect::<Vec<_>>(), 0);
+        assert_eq!((kept.len(), omitted), (0, 10));
+        let (kept, omitted) = cap_parts((0..10).collect::<Vec<_>>(), 50);
+        assert_eq!((kept.len(), omitted), (10, 0));
+    }
 }
