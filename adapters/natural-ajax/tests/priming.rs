@@ -774,3 +774,31 @@ fn param_uses_map_parameters_to_adapter_parts_without_values() {
     assert!(uses.contains("('sessionid_cliente', 'XML.sid')"), "{uses}");
     assert!(!uses.contains("TST0T10"), "{uses}");
 }
+
+#[test]
+fn generated_script_declares_the_current_plan_version_in_the_trace() {
+    let bundle = fixture("real-shape-1round.har");
+    let target = bundle
+        .session
+        .requests
+        .iter()
+        .rev()
+        .find(|r| r.method == "POST" && r.url.contains("Connector"))
+        .map(|r| r.id.clone())
+        .unwrap();
+    let out = to_python(&bundle.session, &bundle, &target, &options()).expect("gera");
+    let expected = scrapelens_core::validate::PLAN_VERSION;
+    assert!(
+        out.text
+            .lines()
+            .any(|l| l == format!("PLAN_VERSION = {expected}")),
+        "{}",
+        out.text
+    );
+    assert!(
+        out.text
+            .contains("'plan': {'version': PLAN_VERSION, 'hash': PLAN_HASH, 'parameters': PLAN_PARAMETERS}"),
+        "{}",
+        out.text
+    );
+}

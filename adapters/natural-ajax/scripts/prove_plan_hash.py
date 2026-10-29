@@ -4,7 +4,7 @@
 
   python3 adapters/natural-ajax/scripts/prove_plan_hash.py [--python PY_COM_REQUESTS] [--port 8801]
 """
-import argparse, json, os, random, subprocess, sys, tempfile, time, urllib.request
+import argparse, json, os, random, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 from pathlib import Path
 
 R = Path(__file__).resolve().parents[3]
@@ -35,6 +35,12 @@ def main():
         target = man["expectations"]["aceite_1_origins_chain"]["A"]["target"]
         subprocess.run([C, "import-har", str(R / "fixtures/detran-pb-real-shape/real-shape-1round.har"), "--out", str(tmp / "cap")],
                        capture_output=True, check=True)
+        insp = json.loads(subprocess.run([C, "inspect", str(tmp / "cap")], capture_output=True, text=True).stdout)
+        target_url = next(r["url"] for r in insp["session"]["requests"] if r["id"] == target)
+        cap_origin = urllib.parse.urlsplit(target_url).scheme + "://" + urllib.parse.urlsplit(target_url).netloc
+        # Mapeamento explícito da origem capturada para o sim: sem o aviso de origem automática,
+        # o trace fiel fica com ZERO avisos (a meta do líder).
+        map_flag = ["--map-origin", f"{cap_origin}={base}"]
         for label, adapter, mode in (("com_adaptador", True, "strict"), ("sem_adaptador", False, "ok")):
             flag = ["--adapter", "natural-ajax"] if adapter else []
             subprocess.run([N, "export-priming", str(tmp / "cap"), target, "--out", str(tmp / "p.py"), *flag],
@@ -51,28 +57,38 @@ def main():
 
             def validate(trace_path, name):
                 subprocess.run([C, "import-trace", str(trace_path), "--out", str(tmp / name)], capture_output=True, check=True)
-                v = subprocess.run([N, "validate", str(tmp / "cap"), str(tmp / name), *flag], capture_output=True, text=True)
-                return v, [w[:60] for w in json.loads(v.stdout)["warnings"] if "plano" in w.lower()]
+                v = subprocess.run([N, "validate", str(tmp / "cap"), str(tmp / name), *flag, *map_flag], capture_output=True, text=True)
+                warnings = [w[:70] for w in json.loads(v.stdout)["warnings"]]
+                return v, [w for w in warnings if "plano" in w.lower()], warnings
 
             p, tr = run_script(f"{label}.json", [])
-            v, plan_warn = validate(tr, f"s_{label}")
+            v, plan_warn, genuine_warn = validate(tr, f"s_{label}")
             genuine = json.load(open(tr))
             # Parâmetro opcional sobrescrito (`--op`): `plan` igual e nenhum aviso de plano.
             p2, tr2 = run_script(f"{label}_op.json", ["--op", "S38"])
-            v2, ov_warn = validate(tr2, f"o_{label}")
+            v2, ov_warn, _ = validate(tr2, f"o_{label}")
             over = json.load(open(tr2))
             op_in_top = any(x["name"] == "op" for x in over["parameters"])
             # Plano alterado e hash copiado de outro plano.
             altered_doc = json.loads(json.dumps(genuine)); altered_doc["plan"]["hash"] = "0" * 16
             json.dump(altered_doc, open(tmp / f"{label}_alt.json", "w"))
-            _, altered = validate(tmp / f"{label}_alt.json", f"z_{label}")
+            _, altered, _ = validate(tmp / f"{label}_alt.json", f"z_{label}")
             res[label] = {"script_rc": p.returncode, "resumo": v.stderr.strip()[:60],
+                          "plan_version": genuine["plan"].get("version"),
+                          "avisos_no_trace_genuino": genuine_warn,
                           "aviso_plano_no_trace_genuino": plan_warn, "aviso_plano_no_trace_alterado": bool(altered),
                           "opcional_sobrescrito": {"script_rc": p2.returncode, "plan_igual": over["plan"] == genuine["plan"],
                                                     "op_em_parameters_de_topo": op_in_top, "aviso_plano": ov_warn,
                                                     "resumo": v2.stderr.strip()[:60]}}
             if p.returncode != 0: fails.append(f"{label}: script rc={p.returncode}")
+            if genuine["plan"].get("version") != 2:
+                fails.append(f"{label}: plan.version = {genuine['plan'].get('version')!r}, esperado 2")
             if plan_warn: fails.append(f"{label}: trace genuíno avisa plano: {plan_warn}")
+            # Meta do líder: trace fiel do gerador atual (com adaptador) -> equivalent e ZERO avisos.
+            if adapter and genuine_warn:
+                fails.append(f"{label}: trace genuíno com avisos: {genuine_warn}")
+            if adapter and "equivalente à captura" not in v.stderr:
+                fails.append(f"{label}: trace genuíno não é equivalente: {v.stderr.strip()[:80]}")
             if not altered: fails.append(f"{label}: plano alterado não avisou")
             if over["plan"] != genuine["plan"]: fails.append(f"{label}: plan mudou ao sobrescrever opcional")
             if ov_warn: fails.append(f"{label}: opcional sobrescrito avisa plano: {ov_warn}")
@@ -93,7 +109,7 @@ def main():
             if foreign:
                 fdoc = json.loads(json.dumps(genuine)); fdoc["plan"]["hash"] = foreign
                 json.dump(fdoc, open(tmp / f"{label}_foreign.json", "w"))
-                _, foreign_warn = validate(tmp / f"{label}_foreign.json", f"f_{label}")
+                _, foreign_warn, _ = validate(tmp / f"{label}_foreign.json", f"f_{label}")
                 res[label]["hash_de_outro_plano_avisa"] = bool(foreign_warn)
                 if not foreign_warn: fails.append(f"{label}: hash de outro plano não avisou")
             else:

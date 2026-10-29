@@ -3450,6 +3450,8 @@ fn to_python_with(
     required.dedup();
     let plan_hash =
         crate::validate::plan_hash(session, source, target_request_id, &opts.flow, &required)?;
+    // `plan.version`: o validate só compara o hash quando a versão é a atual.
+    let _ = writeln!(text, "PLAN_VERSION = {}", crate::validate::PLAN_VERSION);
     let _ = writeln!(text, "PLAN_HASH = {}", lit(&plan_hash));
     let _ = writeln!(
         text,
@@ -3858,7 +3860,7 @@ def trace_close(base=None):
         'startedAt': trace_time(TRACE['started']),
         'target': TARGET,
         'complete': TRACE['complete'],
-        'plan': {'hash': PLAN_HASH, 'parameters': PLAN_PARAMETERS},
+        'plan': {'version': PLAN_VERSION, 'hash': PLAN_HASH, 'parameters': PLAN_PARAMETERS},
         # Só nomes dos parâmetros do usuário e das partes onde entram, nunca valores.
         'parameters': [{'name': n, 'part': part} for n, part in PARAM_USES if n in TRACE['params']],
         'steps': entries,
