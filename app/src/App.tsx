@@ -1419,7 +1419,7 @@ export default function App() {
   const [exportTarget, setExportTarget] = useState<RequestRecord | null>(null);
   const [sanitizeOpen, setSanitizeOpen] = useState(false);
   const [sanitizeTraceDir, setSanitizeTraceDir] = useState<string | null>(null);
-  const [validation, setValidation] = useState<{ result: ValidationResultDto; tracePath: string } | null>(null);
+  const [validation, setValidation] = useState<{ result: ValidationResultDto; tracePath: string; kept?: boolean } | null>(null);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
   const [captureCmp, setCaptureCmp] = useState<{ summary: CompareSummary; dirA: string; dirB: string; labelA: string; labelB: string } | null>(null);
@@ -1494,6 +1494,19 @@ export default function App() {
     }
   }, [applyPayload, desktop]);
 
+  const validationRef = useRef(validation);
+  validationRef.current = validation;
+  // Fechar a tela de validação apaga a sessão temporária do trace (a menos que tenha sido guardada).
+  const closeValidation = useCallback(() => {
+    const current = validationRef.current;
+    setView("session");
+    setSanitizeTraceDir(null);
+    if (current) {
+      if (!current.kept) void bridge.discardValidation(current.result.traceDir).catch(() => {});
+      setValidation(null);
+    }
+  }, []);
+
   const validateExecution = useCallback(async () => {
     if (!desktop || !loaded.session.sourcePath) return;
     const dir = loaded.session.sourcePath;
@@ -1502,6 +1515,7 @@ export default function App() {
       if (!tracePath) return;
       setBusy("Importando o trace e validando…");
       const result = await bridge.validateExecution(dir, tracePath);
+      if (validationRef.current && !validationRef.current.kept) void bridge.discardValidation(validationRef.current.result.traceDir).catch(() => {});
       setValidation({ result, tracePath });
       setView("validate");
     } catch (error) {
@@ -2325,8 +2339,9 @@ export default function App() {
           <ValidationView
             result={validation.result}
             tracePath={validation.tracePath}
-            onBack={() => setView("session")}
+            onBack={closeValidation}
             onSanitizeTrace={() => setSanitizeTraceDir(validation.result.traceDir)}
+            onKept={() => setValidation((v) => (v ? { ...v, kept: true } : v))}
           />
         )}
 
@@ -2376,8 +2391,8 @@ export default function App() {
             session={{ ...session, id: "script-trace", sourcePath: sanitizeTraceDir }}
             onClose={() => setSanitizeTraceDir(null)}
             onOpened={(payload) => {
+              closeValidation(); // a sessão sanitizada passa a ser a aberta; a temporária do trace é apagada
               applyPayload(payload);
-              setSanitizeTraceDir(null);
             }}
           />
         )}

@@ -102,19 +102,37 @@ const verdictClass: Record<string, string> = {
   diverges: "notice-error",
   incomplete: "notice-info",
 };
+/** Veredito desconhecido (o core pode acrescentar motivos) conta como divergência, nunca como sucesso. */
+const noticeClass = (verdict: string) => verdictClass[verdict] ?? "notice-error";
 
 export function ValidationView({
   result,
   tracePath,
   onBack,
   onSanitizeTrace,
+  onKept,
 }: {
   result: ValidationResultDto;
   tracePath: string;
   onBack: () => void;
   onSanitizeTrace: () => void;
+  onKept: (path: string) => void;
 }) {
   const v = result.validation;
+  const [kept, setKept] = useState<string | null>(null);
+  const [keepError, setKeepError] = useState<string | null>(null);
+  const keep = async () => {
+    setKeepError(null);
+    try {
+      const path = await bridge.keepValidation(result.traceDir);
+      if (path) {
+        setKept(path);
+        onKept(path);
+      }
+    } catch (error) {
+      setKeepError(String(error));
+    }
+  };
   const problemSteps = v.steps.filter((s) => s.problem || s.unexpected.length > 0).length;
   return (
     <div className="validation-view">
@@ -122,18 +140,21 @@ export function ValidationView({
         <button className="link" onClick={onBack}>← Sessão</button> <span className="dim">/ Validar execução</span>
       </div>
       <h2>Validar execução do script</h2>
-      <div className={`notice ${verdictClass[v.verdict] ?? "notice-info"}`} role="status">
-        <span className="notice-icon">{v.verdict === "equivalent" ? "✓" : v.verdict === "diverges" ? "!" : "…"}</span>
+      <div className={`notice ${noticeClass(v.verdict)}`} role="status">
+        <span className="notice-icon">{v.verdict === "equivalent" ? "✓" : v.verdict === "incomplete" ? "…" : "!"}</span>
         <span><strong>{v.summary}</strong></span>
       </div>
       <div className="notice notice-info">
         <span className="notice-icon">i</span>
         <span>
-          O trace contém dados da sessão da execução (cookies, valores, corpos); não o compartilhe sem sanitizar. Ele foi importado para
-          <span className="mono"> {result.traceDir}</span> (pasta privada) a partir de <span className="mono">{tracePath}</span>.{" "}
-          <button className="link" onClick={onSanitizeTrace}>Sanitizar a sessão do trace…</button>
+          O trace contém dados da sessão da execução (cookies, valores, corpos); não o compartilhe sem sanitizar. A sessão importada fica numa
+          pasta temporária privada, <strong>apagada ao fechar esta tela</strong> ou o app{kept ? <>; ela foi guardada em <span className="mono">{kept}</span></> : null}.{" "}
+          {!kept && <button className="link" onClick={() => void keep()}>Guardar esta execução…</button>}{" "}
+          {!kept && <button className="link" onClick={onSanitizeTrace}>Sanitizar a sessão do trace…</button>}
         </span>
       </div>
+      <p className="dim">Trace lido de <span className="mono">{tracePath}</span>.</p>
+      {keepError && <div className="notice notice-error"><span className="notice-icon">!</span><span>{keepError}</span></div>}
       {v.mappedOrigin && (
         <p className="dim">Origem mapeada: <span className="mono">{v.mappedOrigin.from}</span> → <span className="mono">{v.mappedOrigin.to}</span> (a troca de host da execução não conta como diferença).</p>
       )}

@@ -230,13 +230,18 @@ fn persist_imported(
 }
 
 fn read_import_file(path: &str, label: &str) -> Result<Vec<u8>, String> {
+    read_import_file_max(path, label, 256 * 1024 * 1024)
+}
+
+fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, String> {
     let metadata = fs::metadata(path).map_err(|error| format!("{label} não encontrado em {path}: {error}"))?;
     if metadata.is_dir() {
         return Err(format!("{label}: {path} é um diretório, selecione um arquivo"));
     }
-    if metadata.len() > 256 * 1024 * 1024 {
+    if metadata.len() > max {
         return Err(format!(
-            "{label} maior que 256 MiB ({} bytes); divida a captura ou use o formato de sessão v1",
+            "{label} maior que {} MiB ({} bytes); divida a captura ou use o formato de sessão v1",
+            max / (1024 * 1024),
             metadata.len()
         ));
     }
@@ -739,6 +744,28 @@ pub struct ValidationResult {
     pub validation: scrapelens_core::validate::Validation,
 }
 
+fn validation_root(app: &AppHandle) -> Result<PathBuf, String> {
+    let data = app.path().app_data_dir().map_err(|error| format!("sem diretório de dados do app: {error}"))?;
+    crate::validation::tmp_root(&data)
+}
+
+/// Descarta a sessão temporária do trace (fechar a tela de validação).
+#[tauri::command]
+pub fn discard_validation(app: AppHandle, trace_dir: String) -> Result<(), String> {
+    crate::validation::discard(&validation_root(&app)?, Path::new(&trace_dir))
+}
+
+/// "Guardar esta execução": copia a sessão do trace para uma pasta nova e apaga a temporária.
+#[tauri::command]
+pub async fn keep_validation(app: AppHandle, trace_dir: String, destination: String) -> Result<String, String> {
+    let root = validation_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::validation::keep(&root, Path::new(&trace_dir), Path::new(&destination)).map(|p| p.display().to_string())
+    })
+    .await
+    .map_err(|error| format!("o salvamento falhou: {error}"))?
+}
+
 /// Importa o trace de execução do script (`scrapelens.trace/1`) para uma pasta nova e valida
 /// contra a sessão aberta. Nada é executado e nenhuma rede é usada.
 #[tauri::command]
@@ -748,7 +775,7 @@ pub async fn validate_execution(
     trace_path: String,
     map_origin: Option<String>,
 ) -> Result<ValidationResult, String> {
-    let root = sessions_root(&app)?;
+    let root = validation_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         validate_execution_blocking(&root, Path::new(&session_dir), &trace_path, map_origin.as_deref())
     })
@@ -770,7 +797,7 @@ fn validate_execution_blocking(
                 .ok_or_else(|| format!("mapeamento de origem inválido ({text}); use <origem-da-captura>=<origem-do-trace>, por exemplo https://sistema.gov.br=http://127.0.0.1:8080"))?,
         ),
     };
-    let bytes = read_import_file(trace_path, "trace de execução")?;
+    let bytes = read_import_file_max(trace_path, "trace de execução", crate::validation::TRACE_MAX_BYTES)?;
     let imported = scrapelens_core::parse::import_trace(&bytes).map_err(|error| {
         format!("trace inválido: {error}. Use o arquivo gerado pelo script de priming com --trace (scrapelens.trace/1).")
     })?;
@@ -1764,6 +1791,13 @@ mod tests {
         assert!(validate_execution_blocking(&root, &capture, invalid.to_str().unwrap(), None).unwrap_err().contains("trace inválido"));
         assert!(validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), Some("sem-igual")).unwrap_err().contains("mapeamento de origem inválido"));
         assert!(validate_execution_blocking(&root, &capture, "/nao/existe.json", None).is_err());
+        // trace acima de 64 MiB: erro acionável, sem ler nem criar sessão
+        let huge = root.join("enorme.json");
+        fs::File::create(&huge).unwrap().set_len(crate::validation::TRACE_MAX_BYTES + 1).unwrap();
+        let before = fs::read_dir(&root).unwrap().count();
+        let err = validate_execution_blocking(&root, &capture, huge.to_str().unwrap(), None).unwrap_err();
+        assert!(err.contains("maior que 64 MiB"), "{err}");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), before);
         fs::remove_dir_all(capture).ok();
         fs::remove_dir_all(root).ok();
     }

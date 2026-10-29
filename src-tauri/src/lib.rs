@@ -12,6 +12,7 @@ pub mod commands;
 pub mod export;
 pub mod menu;
 pub mod prefs;
+pub mod validation;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -36,6 +37,12 @@ pub fn run() {
                 let state = app.state::<AppState>();
                 *state.chrome_path.lock().expect("chrome_path lock") = Some(path);
             }
+            // sobras de validações de execução (crash/kill): o trace guarda dados da sessão
+            if let Ok(data) = app.path().app_data_dir() {
+                if let Ok(root) = validation::tmp_root(&data) {
+                    validation::cleanup_all(&root);
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -58,6 +65,8 @@ pub fn run() {
             commands::adapter_view,
             commands::session_timeline,
             commands::validate_execution,
+            commands::discard_validation,
+            commands::keep_validation,
             commands::compare_open,
             commands::compare_page,
             commands::compare_fields,
@@ -67,6 +76,13 @@ pub fn run() {
             commands::save_sanitized,
             commands::reveal_path,
         ])
-        .run(tauri::generate_context!())
-        .expect("erro ao iniciar o ScrapeLens");
+        .build(tauri::generate_context!())
+        .expect("erro ao iniciar o ScrapeLens")
+        .run(|handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Ok(data) = handle.path().app_data_dir() {
+                    validation::cleanup_all(&data.join("validate-tmp"));
+                }
+            }
+        });
 }

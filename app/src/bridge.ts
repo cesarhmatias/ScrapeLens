@@ -110,7 +110,8 @@ export interface ValidationResultDto {
   traceRequests: number;
   validation: {
     schema: string;
-    verdict: "equivalent" | "diverges" | "incomplete";
+    /** Veredito do core; outros valores (o core pode acrescentar) aparecem como divergência. */
+    verdict: string;
     step: number | null;
     reason: string | null;
     summary: string;
@@ -377,6 +378,24 @@ export const bridge = {
 
   async validateExecution(sessionDir: string, tracePath: string, mapOrigin?: string): Promise<ValidationResultDto> {
     return invoke("validate_execution", { sessionDir, tracePath, mapOrigin: mapOrigin || null });
+  },
+
+  /** Apaga a sessão temporária do trace (ao fechar a tela de validação). */
+  async discardValidation(traceDir: string): Promise<void> {
+    if (!isTauri()) return;
+    return invoke("discard_validation", { traceDir });
+  },
+
+  /** "Guardar esta execução": escolhe uma pasta nova e move a sessão do trace para lá; `null` se cancelar. */
+  async keepValidation(traceDir: string): Promise<string | null> {
+    if (!isTauri()) return null;
+    const picked = await saveDialog({
+      title: "Escolher pasta nova para guardar a execução",
+      defaultPath: "execucao-do-script",
+      canCreateDirectories: true,
+    });
+    if (!picked) return null;
+    return invoke("keep_validation", { traceDir, destination: picked });
   },
 
   async assessSession(sessionDir: string): Promise<AssessResult> {
