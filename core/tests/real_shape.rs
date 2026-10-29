@@ -1266,3 +1266,184 @@ fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() 
         o.warnings
     );
 }
+
+// ---- Rodada 7: cadeia na rodada do consumidor e scripts fora dos passos -----------------------
+
+/// Um valor constante do protocolo (STAMP=INIT) tem produtores em todas as rodadas.
+/// A cadeia usa o produtor observado mais recente antes do consumidor (produced ou
+/// reissued); a rodada anterior não entra por causa dele.
+#[test]
+fn r7_chain_uses_the_most_recent_producer_before_the_consumer() {
+    let mut s = S::default();
+    for (base, prefix) in [(1.0, "1"), (5.0, "2")] {
+        let id = |k: usize| format!("{prefix}.{k}");
+        s.req(
+            &id(1),
+            base,
+            "https://x.test/app/entry",
+            "GET",
+            R {
+                resp: Some("<html>entrada</html>"),
+                ..Default::default()
+            },
+        );
+        s.req(
+            &id(2),
+            base + 0.1,
+            "https://x.test/app/cscform.html",
+            "GET",
+            R {
+                headers: Some(json!({"referer": "https://x.test/app/entry"})),
+                resp: Some("<html><input type=hidden name=STAMP value=INIT></html>"),
+                ..Default::default()
+            },
+        );
+        s.req(
+            &id(3),
+            base + 0.2,
+            "https://x.test/app/Connector",
+            "POST",
+            R {
+                headers: Some(json!({"referer": "https://x.test/app/cscform.html"})),
+                body: Some("XML=init&STAMP=INIT"),
+                resp: Some("<html>ok</html>"),
+                ..Default::default()
+            },
+        );
+    }
+    let b = s.build();
+    let target = lid(&b, "2.3");
+    let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
+    let steps: Vec<String> = chain.steps.iter().map(|s| s.request_id.clone()).collect();
+    assert!(
+        steps.contains(&lid(&b, "2.2")),
+        "o produtor mais recente é a cscform da rodada 2: {steps:?}"
+    );
+    assert!(
+        !steps.contains(&lid(&b, "1.2")),
+        "a cscform da rodada 1 não é passo da rodada 2: {steps:?}"
+    );
+    let pages: Vec<String> = chain.pages.iter().map(|s| s.request_id.clone()).collect();
+    assert_eq!(
+        pages,
+        vec![lid(&b, "2.1"), lid(&b, "2.2")],
+        "pages só da rodada do consumidor"
+    );
+    // As origens continuam listando todos os produtores, com o status de hoje.
+    let o = origins(&b, "2.3");
+    let st = entry(&o, "STAMP");
+    assert_eq!(st.status, OriginStatus::Origin);
+    let produced: Vec<&str> = st
+        .evidences
+        .iter()
+        .filter(|e| e.role == Role::Produced)
+        .map(|e| e.request_id.as_str())
+        .collect();
+    assert_eq!(
+        produced,
+        vec![lid(&b, "1.2")],
+        "origem continua na rodada 1"
+    );
+    assert!(
+        st.evidences
+            .iter()
+            .any(|e| e.role == Role::Reissued && e.request_id == lid(&b, "2.2")),
+        "o produtor da rodada 2 é reemissão (INIT circulou): {:?}",
+        st.evidences
+            .iter()
+            .map(|e| (e.role, e.request_id.as_str()))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Recurso estático nunca é passo: na forma real, nenhum `.js` entra em `steps`.
+#[test]
+fn r7_real_shape_steps_have_no_static_script() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../fixtures/detran-pb-real-shape/real-shape-1round.har");
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let b = scrapelens_core::import_har(&bytes)
+        .expect("importa HAR")
+        .bundle;
+    let chain = priming_chain(&b.session, &b, "har-0026", &FlowOptions::default()).unwrap();
+    let scripts: Vec<&str> = chain
+        .steps
+        .iter()
+        .map(|s| s.url.split('?').next().unwrap_or(""))
+        .filter(|p| p.ends_with(".js") || p.ends_with(".mjs"))
+        .collect();
+    assert!(scripts.is_empty(), "scripts em steps: {scripts:?}");
+    let pages: std::collections::BTreeSet<&str> =
+        chain.pages.iter().map(|p| p.request_id.as_str()).collect();
+    assert_eq!(
+        pages,
+        ["har-0001", "har-0005", "har-0012", "har-0019"]
+            .into_iter()
+            .collect()
+    );
+}
+
+/// Rodadas: frame iniciado pelo parser (cscform/JLIBS) não é entrada de rodada,
+/// nem serve de fronteira. Duas rodadas de verdade continuam duas.
+#[test]
+fn r7_compare_rounds_ignore_parser_frames_when_detecting_the_entry() {
+    let build = || {
+        let mut s = S::default();
+        for (base, n) in [(1.0, 1), (5.0, 2)] {
+            let id = |k: usize| format!("{n}.{k}");
+            s.req(
+                &format!("{n}.0"),
+                base - 0.2,
+                "https://x.test/app/cscform.html",
+                "GET",
+                R {
+                    resp: Some("<html><input type=hidden name=STAMP value=INIT></html>"),
+                    initiator: Some(json!({"type": "parser", "url": "https://x.test/app/entry"})),
+                    ..Default::default()
+                },
+            );
+            s.req(
+                &id(1),
+                base,
+                "https://x.test/app/entry",
+                "GET",
+                R {
+                    resp: Some("<html>entrada</html>"),
+                    ..Default::default()
+                },
+            );
+            s.req(
+                &id(2),
+                base + 0.1,
+                "https://x.test/app/Connector",
+                "POST",
+                R {
+                    body: Some("XML=init&STAMP=1000"),
+                    resp: Some("<html>ok</html>"),
+                    ..Default::default()
+                },
+            );
+            s.req(
+                &id(3),
+                base + 0.2,
+                "https://x.test/app/Connector",
+                "POST",
+                R {
+                    body: Some("XML=consulta&STAMP=1000"),
+                    resp: Some("<html>ok</html>"),
+                    ..Default::default()
+                },
+            );
+        }
+        s.build()
+    };
+    let (a, b) = (build(), build());
+    let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
+    assert_eq!(r.rounds.len(), 2, "{:?}", r.unpaired_rounds);
+    assert!(r.unpaired_rounds.is_empty(), "{:?}", r.unpaired_rounds);
+    let entry = r.entry_request.as_deref().unwrap_or("");
+    assert!(
+        entry.ends_with("|/app/entry"),
+        "entrada deve ser o documento da aplicação, não o frame: {entry}"
+    );
+}

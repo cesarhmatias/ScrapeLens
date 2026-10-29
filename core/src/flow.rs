@@ -2076,20 +2076,32 @@ pub fn priming_chain(
                     status: value.status,
                 });
             }
-            for e in value.evidences.iter().filter(|e| {
-                e.role == Role::Produced
-                    && matches!(e.strength, Strength::Strong | Strength::Medium)
-            }) {
-                if e.request_id == current {
-                    continue;
-                }
-                let pos = ctx.find(&e.request_id).unwrap_or((0, 0));
+            // Para a CADEIA, o passo é o produtor observado mais recente antes do
+            // consumidor (`produced` ou `reissued`): um valor constante do
+            // protocolo (ex.: STAMP=INIT) tem produtores em todas as rodadas, e
+            // só o mais próximo mantém a cadeia na rodada do alvo. As origens
+            // continuam listando todos os produtores.
+            let nearest = ctx.find(&current).and_then(|consumer| {
+                value
+                    .evidences
+                    .iter()
+                    .filter(|e| {
+                        matches!(e.role, Role::Produced | Role::Reissued)
+                            && matches!(e.strength, Strength::Strong | Strength::Medium)
+                            && e.request_id != current
+                    })
+                    .filter_map(|e| ctx.find(&e.request_id).map(|pos| (pos, e)))
+                    .filter(|(pos, _)| ctx.rel(*pos, consumer) == Rel::Before)
+                    .max_by_key(|(pos, _)| ctx.seq[pos])
+            });
+            if let Some((pos, e)) = nearest {
                 let attempt = ctx.attempt_ref(pos);
+                let producer_id = ctx.request_id(pos).to_string();
                 let step = included
-                    .entry(e.request_id.clone())
+                    .entry(producer_id.clone())
                     .or_insert_with(|| ChainStep {
-                        request_id: e.request_id.clone(),
-                        attempt_id: e.attempt_id.clone(),
+                        request_id: producer_id.clone(),
+                        attempt_id: attempt.id.clone(),
                         method: attempt.method.clone(),
                         url: attempt.url.clone(),
                         started_at: attempt.started_at,
@@ -2105,7 +2117,7 @@ pub fn priming_chain(
                     strength: e.strength,
                     consumed_by: current.clone(),
                 });
-                queue.push(e.request_id.clone());
+                queue.push(producer_id);
             }
         }
     }
