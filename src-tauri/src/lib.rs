@@ -39,9 +39,7 @@ pub fn run() {
             }
             // sobras de validações de execução (crash/kill): o trace guarda dados da sessão
             if let Ok(data) = app.path().app_data_dir() {
-                if let Ok(root) = validation::tmp_root(&data) {
-                    validation::cleanup_all(&root);
-                }
+                validation::cleanup_on_start(&data);
             }
             Ok(())
         })

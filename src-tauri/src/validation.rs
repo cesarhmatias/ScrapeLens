@@ -18,6 +18,14 @@ pub fn tmp_root(app_data: &Path) -> Result<PathBuf, String> {
     Ok(root)
 }
 
+/// Partida do app: apaga as execuções que ficaram sem `discard_validation` (crash, kill, saída forçada).
+/// Só filhos imediatos da raiz; symlinks são removidos como links, nunca seguidos.
+pub fn cleanup_on_start(app_data: &Path) {
+    if let Ok(root) = tmp_root(app_data) {
+        cleanup_all(&root);
+    }
+}
+
 /// Apaga tudo o que sobrou na raiz temporária (início do app, encerramento).
 pub fn cleanup_all(root: &Path) {
     let Ok(entries) = fs::read_dir(root) else { return };
@@ -121,6 +129,30 @@ mod tests {
         fs::write(dir.join("session.json"), "{}").unwrap();
         fs::write(dir.join("attachments/a.bin"), "dado da execução").unwrap();
         dir
+    }
+
+    #[test]
+    fn startup_removes_executions_left_without_discard() {
+        let base = tmp("startup");
+        // "sessão anterior" terminou sem discard_validation: pastas, arquivo solto e symlink para fora
+        let root = tmp_root(&base).unwrap();
+        make_exec(&root, "har-aaaa");
+        make_exec(&root, "har-bbbb");
+        fs::write(root.join("solto.json"), "x").unwrap();
+        let outside = make_exec(&base, "dados-do-usuario");
+        std::os::unix::fs::symlink(&outside, root.join("link-para-fora")).unwrap();
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 4);
+        // nova partida
+        cleanup_on_start(&base);
+        assert!(root.is_dir(), "a raiz continua");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0, "todo filho da raiz foi apagado");
+        assert!(outside.join("session.json").exists(), "o alvo do symlink não foi tocado");
+        // sem raiz ainda: partida limpa cria a raiz privada
+        let fresh = tmp("startup-fresh");
+        cleanup_on_start(&fresh);
+        assert_eq!(fs::metadata(fresh.join("validate-tmp")).unwrap().permissions().mode() & 0o777, 0o700);
+        let _ = fs::remove_dir_all(&base);
+        let _ = fs::remove_dir_all(&fresh);
     }
 
     #[test]
