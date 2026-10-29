@@ -292,8 +292,8 @@ fn protection_route_serving_javascript_is_not_assessed() {
     assert_eq!(outcome.verdict, "não-avaliado");
     assert_eq!(outcome.verdict_kind, VerdictKind::NotAssessed);
     assert!(outcome.app_signals.iter().any(|s| s.signal == "proteção"));
-    // Mesmo com 403, a rota de proteção não vira `blocked?`: o bloqueio é
-    // afirmado na aplicação, não no handshake.
+    // 403/429 na própria rota de proteção é evidência explícita; o 200 de
+    // handshake (acima) segue não-avaliado.
     let bundle = mini(&[(
         "GET",
         "https://app.example.test/TSPD/?type=18",
@@ -302,7 +302,8 @@ fn protection_route_serving_javascript_is_not_assessed() {
         "no",
     )]);
     let outcome = &run(&bundle, &AssessRules::default())[0];
-    assert_eq!(outcome.verdict, "não-avaliado");
+    assert_eq!(outcome.verdict, "blocked? (http-403)");
+    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
 }
 
 #[test]
@@ -520,13 +521,55 @@ fn f5_rejection_variant_with_support_id_blocks() {
 }
 
 #[test]
-fn f5_rejection_page_blocks_even_with_controls() {
-    // A página é conhecida: não depende de "sem controles" como o desafio.
-    let body = format!("{F5_REJECTED}{}", form("lp1", "1", ""));
-    let bundle = mini(&[("POST", CONN, 200, "text/html", &body)]);
-    let outcome = &run(&bundle, &AssessRules::default())[0];
-    assert_eq!(outcome.verdict, "blocked? (f5-rejected)");
-    assert_eq!(outcome.verdict_kind, VerdictKind::Blocked);
+fn f5_text_in_a_page_with_the_expected_controls_is_app_ok() {
+    // Rota com controles aprendidos: um 200 que os traz e apenas cita o texto
+    // da rejeição é a aplicação respondendo.
+    let ok = form("lp1", "1", "");
+    let quoting = format!("{ok}<p>Request Rejected by manager</p>");
+    let bundle = mini(&[
+        ("POST", CONN, 200, "text/html", &ok),
+        ("POST", CONN, 200, "text/html", &ok),
+        ("POST", CONN, 200, "text/html", &quoting),
+    ]);
+    let outcomes = run(&bundle, &AssessRules::default());
+    assert_eq!(outcomes[2].verdict, "app-ok");
+    // Sem expectativa, mas com controles, também é app-ok.
+    let bundle = mini(&[("POST", CONN, 200, "text/html", &quoting)]);
+    assert_eq!(run(&bundle, &AssessRules::default())[0].verdict, "app-ok");
+    // Mesma rota aprendida, agora sem os controles: rejeição.
+    let bundle = mini(&[
+        ("POST", CONN, 200, "text/html", &ok),
+        ("POST", CONN, 200, "text/html", &ok),
+        ("POST", CONN, 200, "text/html", F5_REJECTED),
+    ]);
+    assert_eq!(
+        run(&bundle, &AssessRules::default())[2].verdict,
+        "blocked? (f5-rejected)"
+    );
+}
+
+#[test]
+fn rules_json_requires_schema_and_rejects_unknown_keys() {
+    assert!(AssessRules::from_json("{}").is_err());
+    assert!(AssessRules::from_json(r#"{"fields":[]}"#).is_err());
+    assert!(AssessRules::from_json(
+        r#"{"schema":"scrapelens.assess-rules/1","protectionPath":["/"]}"#
+    )
+    .is_err());
+    assert!(AssessRules::from_json(
+        r#"{"schema":"scrapelens.assess-rules/1","fields":[{"name":"a","kind":"present","x":1}]}"#
+    )
+    .is_err());
+    let rules =
+        AssessRules::from_json(r#"{"schema":"scrapelens.assess-rules/1","protectionPaths":["/"]}"#)
+            .expect("regras");
+    assert!(rules.warnings().iter().any(|w| w.contains("\"/\"")));
+    let empty = AssessRules::from_json(
+        r#"{"schema":"scrapelens.assess-rules/1","fields":[],"protectionMarkers":[],"protectionPaths":[],"blockedStatuses":[]}"#,
+    )
+    .expect("regras");
+    assert!(empty.warnings().iter().any(|w| w.contains("desligam")));
+    assert!(AssessRules::default().warnings().is_empty());
 }
 
 #[test]

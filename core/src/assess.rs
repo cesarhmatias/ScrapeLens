@@ -43,7 +43,7 @@ pub enum FieldKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldRule {
     /// Nome do campo (controle HTML, chave de form ou caminho/chave JSON),
     /// sem distinguir maiúsculas.
@@ -61,7 +61,7 @@ impl FieldRule {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MarkerRule {
     /// Trecho (sem distinguir maiúsculas) procurado em respostas HTML.
     pub contains: String,
@@ -91,7 +91,7 @@ pub enum MarkerKind {
 
 /// Regras de avaliação. Só dados; `Default` é conservador.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct AssessRules {
     pub schema: String,
     pub fields: Vec<FieldRule>,
@@ -152,8 +152,15 @@ impl AssessRules {
     /// Lê regras de JSON. Campos ausentes assumem o padrão; schema diferente
     /// de [`RULES_SCHEMA`] é recusado.
     pub fn from_json(text: &str) -> Result<Self, String> {
-        let rules: Self =
+        let raw: serde_json::Value =
             serde_json::from_str(text).map_err(|e| format!("regras de assess inválidas: {e}"))?;
+        if raw.get("schema").and_then(|v| v.as_str()).is_none() {
+            return Err(format!(
+                "regras de assess sem \"schema\" (esperado {RULES_SCHEMA})"
+            ));
+        }
+        let rules: Self =
+            serde_json::from_value(raw).map_err(|e| format!("regras de assess inválidas: {e}"))?;
         if rules.schema != RULES_SCHEMA {
             return Err(format!(
                 "schema de regras desconhecido: {} (esperado {RULES_SCHEMA})",
@@ -161,6 +168,37 @@ impl AssessRules {
             ));
         }
         Ok(rules)
+    }
+
+    /// Avisos para regras legítimas, mas que esvaziam ou distorcem a avaliação.
+    pub fn warnings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.fields.is_empty()
+            && self.required_fields.is_empty()
+            && self.protection_markers.is_empty()
+            && self.protection_paths.is_empty()
+            && self.blocked_statuses.is_empty()
+        {
+            out.push("as regras desligam todas as detecções: nada será marcado".to_string());
+        }
+        if self
+            .protection_paths
+            .iter()
+            .any(|p| matches!(p.as_str(), "/" | "*"))
+        {
+            out.push(
+                "protectionPaths contém \"/\": toda requisição seria rota de proteção e ficaria não-avaliada"
+                    .to_string(),
+            );
+        }
+        if self
+            .protection_markers
+            .iter()
+            .any(|m| m.contains.trim().is_empty())
+        {
+            out.push("há marcador de proteção vazio, que casaria com qualquer HTML".to_string());
+        }
+        out
     }
 }
 
@@ -531,6 +569,14 @@ pub fn response_outcome_with(
             SignalKind::Info,
             format!("rota de proteção {path}; handshake normal, não avaliada"),
         ));
+        // 403/429 na própria rota de proteção é evidência explícita.
+        if let Some(status) = request.status {
+            if rules.blocked_statuses.contains(&status) {
+                let name = format!("http-{status}");
+                block_signal.get_or_insert_with(|| name.clone());
+                signals.push(sig(&name, SignalKind::Protection, format!("HTTP {status}")));
+            }
+        }
     } else {
         if let Some(status) = request.status {
             if rules.blocked_statuses.contains(&status) {
@@ -565,7 +611,24 @@ pub fn response_outcome_with(
             let no_controls = parsed.fields.is_empty();
             let replaces_expected = no_controls && learned.expected(request).is_some();
             let challenge = marker.kind == MarkerKind::Challenge && no_controls;
-            let rejection = marker.kind == MarkerKind::Rejection;
+            // Rejeição só vale sem os controles esperados: uma página da
+            // aplicação com os controles que a rota traz e que apenas cita o
+            // texto da rejeição é aplicação respondendo.
+            let expected_here = {
+                let mut e: BTreeSet<String> = rules.required_fields.iter().cloned().collect();
+                if let Some(known) = learned.expected(request) {
+                    e.extend(known.iter().cloned());
+                }
+                e
+            };
+            let controls_missing = if expected_here.is_empty() {
+                no_controls
+            } else {
+                expected_here
+                    .iter()
+                    .any(|name| find(&parsed.fields, name).is_none())
+            };
+            let rejection = marker.kind == MarkerKind::Rejection && controls_missing;
             if rejection || challenge || replaces_expected {
                 block_signal.get_or_insert_with(|| name.clone());
                 let detail = if rejection {
@@ -640,7 +703,7 @@ pub fn response_outcome_with(
         .status
         .map_or("sem status".to_string(), |s| s.to_string());
     let mut reason = String::new();
-    let (kind, verdict) = if protection_path {
+    let (kind, verdict) = if protection_path && block_signal.is_none() {
         reason = format!("rota de proteção {path}; handshake normal, não avaliada");
         (VerdictKind::NotAssessed, "não-avaliado".to_string())
     } else if let Some(signal) = error_signal {
