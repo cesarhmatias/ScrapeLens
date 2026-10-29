@@ -482,6 +482,9 @@ struct Gen<'a> {
     session: &'a SessionV1,
     source: &'a dyn BodySource,
     step_ids: HashSet<String>,
+    /// Ids dos passos na ordem do plano: um valor cujo produtor ficou fora da
+    /// cadeia pode ser extraído do passo equivalente que está dentro dela.
+    steps: Vec<String>,
     params: Params,
     warnings: Vec<Warning>,
     /// Notas (viram comentários) do passo em construção.
@@ -675,6 +678,108 @@ impl Gen<'_> {
         }
     }
 
+    /// Valor que a cadeia gera, mas cujo produtor registrado ficou fora dela
+    /// (rodada anterior, página equivalente): procura nos passos anteriores do
+    /// plano um controle/campo/literal da página com o mesmo nome e valor e
+    /// extrai em runtime. Assim `STAMP=INIT` da cscform não vira `--stamp`.
+    fn chain_definition_expr(
+        &mut self,
+        name: &str,
+        value: &str,
+        step: &LogicalRequest,
+    ) -> Option<String> {
+        if value.is_empty() || value.len() > 200 || looks_opaque_id(value) {
+            return None;
+        }
+        let pos = self.steps.iter().position(|id| id == &step.id)?;
+        let who = lit(&Self::who(step, name));
+        let previous: Vec<String> = self.steps[..pos].to_vec();
+        for rid in previous {
+            let producer = self.session.find_request(&rid)?.clone();
+            let Some(text) = response_text(&producer, self.source) else {
+                continue;
+            };
+            // 1. Controle da página com o mesmo nome e o mesmo valor.
+            let mut index = 0usize;
+            for control in &html_controls(&text) {
+                if control.name != name {
+                    continue;
+                }
+                if control.value == value {
+                    self.expect(&rid, Expectation::Control(name.to_string(), index));
+                    self.notes.push(format!(
+                        "{name}: definido pelo controle da página ({rid}); extraído em runtime"
+                    ));
+                    return Some(format!(
+                        "html_control(R[{}], {}, {}, {who})",
+                        lit(&rid),
+                        lit(name),
+                        index
+                    ));
+                }
+                index += 1;
+            }
+            // 2. Campo form/JSON da página com o mesmo nome e valor.
+            if form_pairs(&text)
+                .iter()
+                .any(|(k, v)| k == name && v == value)
+            {
+                self.expect(&rid, Expectation::Field(name.to_string()));
+                self.notes.push(format!(
+                    "{name}: definido por campo da página ({rid}); extraído em runtime"
+                ));
+                return Some(format!(
+                    "body_field(R[{}], {}, {who})",
+                    lit(&rid),
+                    lit(name)
+                ));
+            }
+            // 3. Literal citado junto do nome no script da página.
+            if let Some(expr) = self.page_literal_expr(&text, &rid, name, value, &who) {
+                return Some(expr);
+            }
+        }
+        None
+    }
+
+    /// Literal entre aspas, citado perto do nome do campo, no script da página.
+    fn page_literal_expr(
+        &mut self,
+        text: &str,
+        rid: &str,
+        name: &str,
+        value: &str,
+        who: &str,
+    ) -> Option<String> {
+        let lower = text.to_ascii_lowercase();
+        let needle = name.to_ascii_lowercase();
+        let mut search = 0usize;
+        while let Some(rel) = lower[search..].find(&needle) {
+            let at = search + rel;
+            let end = char_ceil(text, at + needle.len() + 96);
+            let window = text.get(at..end)?;
+            for quote in ['\'', '"'] {
+                let literal = format!("{quote}{value}{quote}");
+                if let Some(off) = window.find(&literal) {
+                    let value_at = at + off + quote.len_utf8();
+                    let (before, after) = context_for(text, value_at, value.len());
+                    self.expect(rid, Expectation::Body);
+                    self.notes.push(format!(
+                        "{name}: literal da página ({rid}); extraído em runtime"
+                    ));
+                    return Some(format!(
+                        "ctx_extract(R[{}].text, {}, {}, {who})",
+                        lit(rid),
+                        lit(&before),
+                        lit(&after)
+                    ));
+                }
+            }
+            search = at + needle.len();
+        }
+        None
+    }
+
     /// Onde procurar: controle HTML, campo form/JSON ou o corpo inteiro.
     /// Devolve (expressão do contêiner, texto do contêiner, valor inteiro?,
     /// localização para a checagem no passo produtor).
@@ -777,6 +882,8 @@ impl Gen<'_> {
                     self.notes
                         .push(format!("{name}: extraído em runtime (origem {how}{amb})"));
                     expr
+                } else if let Some(expr) = self.chain_definition_expr(name, value, step) {
+                    expr
                 } else {
                     self.fallback_param(name, value, sensitive, in_context, false)
                 }
@@ -791,6 +898,11 @@ impl Gen<'_> {
                     }
                 }
                 let structural = origin.partial_composition.is_empty();
+                if structural {
+                    if let Some(expr) = self.chain_definition_expr(name, value, step) {
+                        return expr;
+                    }
+                }
                 self.fallback_param(name, value, sensitive, in_context, structural)
             }
         }
@@ -1291,6 +1403,7 @@ pub fn to_python(
         session,
         source,
         step_ids: step_reqs.iter().map(|(r, _, _)| r.id.clone()).collect(),
+        steps: step_reqs.iter().map(|(r, _, _)| r.id.clone()).collect(),
         params: Params::default(),
         warnings: Vec::new(),
         notes: Vec::new(),

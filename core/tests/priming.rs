@@ -430,6 +430,66 @@ fn mini_bundle(entries: Vec<(&str, &str, Option<&str>, Option<&str>)>) -> Sessio
 }
 
 #[test]
+fn second_round_target_extracts_stamp_from_the_chain_page() {
+    // Rodada 2: o alvo consome STAMP=INIT, definido pelo controle da cscform.
+    // O produtor registrado é a página da rodada 1 (fora da cadeia gerada);
+    // o passo equivalente da própria cadeia (har-0038) define o mesmo valor,
+    // então o script extrai em runtime em vez de pedir --stamp.
+    let bundle = fixture("detran-pb-real-shape", "real-shape-2rounds.har");
+    let script = generate(&bundle, "har-0056");
+    assert!(
+        !script.contains("('stamp',"),
+        "STAMP de página virou parâmetro obrigatório:\n{script}"
+    );
+    assert!(
+        !script.contains("('pageinitparam', None"),
+        "PAGEINITPARAM de página virou parâmetro obrigatório:\n{script}"
+    );
+    assert!(
+        script.contains("html_control(R['har-0038'], 'STAMP', 0"),
+        "STAMP deveria ser extraído do controle da cscform da cadeia:\n{script}"
+    );
+    assert!(script.contains("definido pelo controle da página"));
+    // Só o que é da sessão/cliente continua obrigatório.
+    assert!(script.contains("('sessionid_cliente', None, 'montado no cliente')"));
+    assert!(script.contains("('placa', None,"));
+}
+
+#[test]
+fn page_control_and_literal_are_extracted_not_asked() {
+    // A página da cadeia define STAMP por controle e PAGEINITPARAM por
+    // literal; o script extrai ambos em runtime.
+    let page = "<html><script>var PAGEINITPARAM = \"PI_XYZ\";</script>\
+                <input type=\"hidden\" name=\"STAMP\" value=\"INIT\">\
+                <div>TOK=abc12345</div></html>";
+    let bundle = mini_bundle(vec![
+        (
+            "GET",
+            "https://mini.example.test/cscform.html",
+            None,
+            Some(page),
+        ),
+        (
+            "POST",
+            "https://mini.example.test/target",
+            Some("token=abc12345&PAGEINITPARAM=PI_XYZ&STAMP=INIT&y=2"),
+            Some("ok"),
+        ),
+    ]);
+    let script = generate(&bundle, "har-0002");
+    assert!(!script.contains("('stamp',"), "{script}");
+    assert!(!script.contains("('pageinitparam',"), "{script}");
+    assert!(
+        script.contains("html_control(R['har-0001'], 'STAMP'"),
+        "STAMP deveria vir do controle da página:\n{script}"
+    );
+    assert!(
+        script.contains("ctx_extract(R['har-0001'].text"),
+        "PAGEINITPARAM deveria vir do literal da página:\n{script}"
+    );
+}
+
+#[test]
 fn value_without_origin_is_a_default_only_with_constancy_proof() {
     // Mesmo (campo, valor) em duas requisições e fora de qualquer resposta:
     // constante do protocolo, pode virar padrão.
