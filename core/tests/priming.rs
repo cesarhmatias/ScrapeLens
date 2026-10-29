@@ -1354,3 +1354,99 @@ fn script_ignores_environment_proxy_by_default() {
     assert!(script.contains("S.trust_env = bool(args.usar_proxy_do_ambiente)"));
     assert!(script.contains("Python < 3.13"));
 }
+
+#[test]
+fn json_under_a_form_content_type_is_never_literal() {
+    let body =
+        r#"{"STAMP":"INIT","nome":"Fulano Teste","cpf":"00000000191","cartao":"4111111111111111"}"#;
+    let bundle = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/api",
+        &[],
+        Some(("application/x-www-form-urlencoded; charset=UTF-8", body)),
+    )]);
+    let script = generate(&bundle, "har-0001");
+    for leaked in ["Fulano Teste", "00000000191", "4111111111111111"] {
+        assert!(!script.contains(leaked), "{leaked} vazou:\n{script}");
+    }
+    assert!(script.contains("json.dumps("), "{script}");
+    assert!(script.contains("('cpf', None,"));
+    assert!(script.contains("application/x-www-form-urlencoded"));
+    // Texto livre com cara de form, sem '=' e longo: recusado.
+    let free = "Fulano Teste de Tal, CPF 00000000191, mora na Rua Sintetica 1 em Cidade";
+    let bundle = custom_bundle(&[(
+        "POST",
+        "https://h.example.test/api",
+        &[],
+        Some(("application/x-www-form-urlencoded", free)),
+    )]);
+    let err = to_python(
+        &bundle.session,
+        &bundle,
+        "har-0001",
+        &PrimingOptions::default(),
+    )
+    .expect_err("recusa");
+    assert!(err.to_string().contains("sem '='"), "{err}");
+}
+
+#[test]
+fn auth_schemes_by_value_and_extra_names_are_never_literal() {
+    let headers = [
+        ("x-hmac", "HMACVALUE1"),
+        ("x-bearer", "BEARERVALUE2"),
+        ("x-digest", "DIGESTVALUE3"),
+        ("x-nonce", "NONCEVALUE4"),
+        ("x-foo", "Bearer SCHEMEVALUE5"),
+        ("x-bar", "Basic SCHEMEVALUE6"),
+        ("x-baz", "Digest SCHEMEVALUE7"),
+        ("x-qux", "Negotiate SCHEMEVALUE8"),
+        ("x-forwarded-for", "203.0.113.9"),
+        ("x-note", "texto livre"),
+    ];
+    let bundle = custom_bundle(&[("GET", "https://h.example.test/alvo", &headers, None)]);
+    let script = generate(&bundle, "har-0001");
+    for (name, value) in headers {
+        if name == "x-note" {
+            assert!(script.contains(value));
+        } else {
+            let secret = value.rsplit(' ').next().unwrap();
+            assert!(!script.contains(secret), "{name} vazou:\n{script}");
+        }
+    }
+    assert!(!script.contains("203.0.113.9") && !script.contains("'x-forwarded-for'"));
+    assert!(script.contains("('x_foo', None,"), "{script}");
+}
+
+#[test]
+fn cross_origin_referer_carries_only_the_origin() {
+    let bundle = custom_bundle(&[
+        (
+            "GET",
+            "https://outro.example.test/pagina?cpf=00000000191",
+            &[],
+            None,
+        ),
+        (
+            "GET",
+            "https://h.example.test/alvo?tok=abc12345",
+            &[(
+                "Referer",
+                "https://outro.example.test/pagina?cpf=00000000191",
+            )],
+            None,
+        ),
+    ]);
+    let opts = PrimingOptions {
+        allow_origins: vec!["https://outro.example.test".to_string()],
+        ..PrimingOptions::default()
+    };
+    let out = to_python(&bundle.session, &bundle, "har-0002", &opts).expect("gera");
+    assert!(
+        out.text
+            .contains("'Referer': urllib.parse.urljoin(R['har-0001'].url, '/')"),
+        "{}",
+        out.text
+    );
+    assert!(!out.text.contains("00000000191"));
+}

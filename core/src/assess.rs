@@ -161,6 +161,16 @@ impl AssessRules {
         }
         let rules: Self =
             serde_json::from_value(raw).map_err(|e| format!("regras de assess inválidas: {e}"))?;
+        let blank = |s: &String| s.trim().is_empty();
+        if rules.fields.iter().any(|f| blank(&f.name))
+            || rules.required_fields.iter().any(blank)
+            || rules.protection_paths.iter().any(blank)
+        {
+            return Err(
+                "regras de assess: fields[].name, requiredFields[] e protectionPaths[] não podem ser vazios"
+                    .into(),
+            );
+        }
         if rules
             .protection_markers
             .iter()

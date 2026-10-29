@@ -652,3 +652,15 @@ fn rules_json_rejects_empty_marker_and_non_error_statuses() {
     )
     .is_ok());
 }
+
+#[test]
+fn rules_json_rejects_blank_names_and_paths() {
+    for body in [
+        r#""fields":[{"name":"  ","kind":"present"}]"#,
+        r#""requiredFields":[""]"#,
+        r#""protectionPaths":[" "]"#,
+    ] {
+        let text = format!(r#"{{"schema":"scrapelens.assess-rules/1",{body}}}"#);
+        assert!(AssessRules::from_json(&text).is_err(), "{body}");
+    }
+}

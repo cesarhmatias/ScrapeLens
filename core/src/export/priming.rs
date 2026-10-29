@@ -111,6 +111,10 @@ const SENSITIVE_WORDS: &[&str] = &[
     "auth",
     "device",
     "user",
+    "hmac",
+    "bearer",
+    "digest",
+    "nonce",
 ];
 /// Palavras curtas demais para casar por substring (`rg` em `target`): só
 /// valem como palavra inteira do nome (`rg`, `user_rg`, `sid`, `jsid`).
@@ -227,6 +231,15 @@ fn looks_opaque_id(value: &str) -> bool {
         && value.bytes().any(|b| b.is_ascii_lowercase())
 }
 
+/// Corpo que começa com `{`/`[` e é JSON válido, qualquer que seja o Content-Type.
+fn body_is_json(bytes: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let text = text.trim_start();
+    text.starts_with(['{', '[']) && serde_json::from_str::<serde_json::Value>(text).is_ok()
+}
+
 /// JWT, ULID/KSUID, data ISO/timestamp e alfanumérico misto: cara de valor
 /// dinâmico mesmo curto.
 fn looks_dynamic_token(value: &str) -> bool {
@@ -263,6 +276,13 @@ fn looks_dynamic_token(value: &str) -> bool {
 /// Valor de header com cara de credencial/identificador, qualquer que seja o nome.
 fn looks_secret_value(value: &str) -> bool {
     if value.starts_with("eyJ") {
+        return true;
+    }
+    let lower = value.trim_start().to_ascii_lowercase();
+    if ["bearer ", "basic ", "digest ", "negotiate "]
+        .iter()
+        .any(|scheme| lower.starts_with(scheme))
+    {
         return true;
     }
     let b = value.as_bytes();
@@ -1910,6 +1930,14 @@ pub fn to_python(
                 }
                 continue;
             }
+            if matches!(
+                lname.as_str(),
+                "x-forwarded-for" | "forwarded" | "x-real-ip"
+            ) {
+                gen.notes
+                    .push(format!("header {lname} omitido (endereço do cliente)"));
+                continue;
+            }
             if !is_header_token(&entry.name) || !is_safe_header_value(&entry.value) {
                 gen.warn(
                     "priming.header_skipped",
@@ -1928,6 +1956,9 @@ pub fn to_python(
                     .rev()
                     .find(|(r, _, _)| origin_and_path(&r.url) == wanted);
                 match producer {
+                    Some((r, _, _)) if split_origin(&r.url).0 != captured_origin => {
+                        format!("urllib.parse.urljoin(R[{}].url, '/')", lit(&r.id))
+                    }
                     Some((r, _, _)) => format!("R[{}].url", lit(&r.id)),
                     None => {
                         gen.notes.push(
@@ -1982,11 +2013,21 @@ pub fn to_python(
                 .and_then(|a| source.load(a))
                 .map(|l| l.bytes.into_owned());
             match bytes {
-                Some(bytes) if content_type.contains("x-www-form-urlencoded") => {
+                Some(bytes)
+                    if content_type.contains("x-www-form-urlencoded") && !body_is_json(&bytes) =>
+                {
                     let text = String::from_utf8_lossy(&bytes).into_owned();
                     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
                     let mut items = Vec::new();
                     for (k, v) in form_pairs(&text) {
+                        if k.chars().count() > 40 && v.is_empty() {
+                            return Err(CoreError::Export {
+                                message: format!(
+                                    "passo {n} ({}): campo de form sem '=' com mais de 40 caracteres (corpo que não é form); recusado",
+                                    request.id
+                                ),
+                            });
+                        }
                         let occ = seen.entry(k.clone()).or_default();
                         let origin = find_origin(ConsumedScope::Body, &k, *occ);
                         *occ += 1;
@@ -1999,7 +2040,7 @@ pub fn to_python(
                         items.join(",\n        ")
                     );
                 }
-                Some(bytes) if content_type.contains("json") => {
+                Some(bytes) if content_type.contains("json") || body_is_json(&bytes) => {
                     let text = String::from_utf8(bytes).map_err(|_| CoreError::Export {
                         message: format!(
                             "passo {n}: corpo JSON que não é UTF-8 não pode ser gerado"
