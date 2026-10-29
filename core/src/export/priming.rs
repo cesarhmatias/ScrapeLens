@@ -2677,8 +2677,8 @@ pub fn to_python(
                                 request,
                                 origin,
                                 &origins,
-                                &k,
-                                &v,
+                                k,
+                                v,
                                 ConsumedScope::Body,
                             ),
                         };
