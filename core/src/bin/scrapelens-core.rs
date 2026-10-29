@@ -3,6 +3,7 @@
 //! Uso:
 //!   scrapelens-core inspect <sessao>
 //!   scrapelens-core import-har <har> --out <sessao> [--label <rótulo>]...
+//!   scrapelens-core import-trace <trace.json> --out <sessao> [--label <rótulo>]...
 //!   scrapelens-core import-netlog <netlog> --out <sessao> [--label <rótulo>]...
 //!   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>] [--label <rótulo>]...
 //!   scrapelens-core search <sessao> <texto> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
@@ -53,6 +54,14 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let (path, out) = input_and_out(&args)?;
             let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             let mut imported = import_har(&bytes).map_err(|e| e.to_string())?;
+            add_labels(&mut imported, &cli_labels(&args)?);
+            write_imported(&imported, &out)
+        }
+        "import-trace" => {
+            let (path, out) = input_and_out(&args)?;
+            let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let mut imported =
+                scrapelens_core::parse::import_trace(&bytes).map_err(|e| e.to_string())?;
             add_labels(&mut imported, &cli_labels(&args)?);
             write_imported(&imported, &out)
         }
@@ -456,6 +465,7 @@ fn usage() -> String {
     "uso:
   scrapelens-core inspect <sessao>
   scrapelens-core import-har <har> --out <sessao> [--label <rótulo>]...
+  scrapelens-core import-trace <trace.json> --out <sessao> [--label <rótulo>]...
   scrapelens-core import-netlog <netlog> --out <sessao> [--label <rótulo>]...
   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>] [--label <rótulo>]...
   scrapelens-core search <sessao> <texto> [--scope <escopo>]... [--case-sensitive]

@@ -8,6 +8,7 @@ pub mod cdp_bodies;
 pub mod har;
 pub mod netlog;
 pub mod own;
+pub mod trace;
 
 use std::path::Path;
 
@@ -110,6 +111,11 @@ pub fn open_session_dir_lazy(path: &Path) -> Result<(crate::lazy::LazySession, I
 /// não instrumentou o exportador do DevTools.
 pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     har::import_har(json)
+}
+
+/// Importa o trace de execução do script (`scrapelens.trace/1`).
+pub fn import_trace(json: &[u8]) -> Result<ImportedSession> {
+    trace::import_trace(json)
 }
 
 /// Importa um NetLog do Chrome isoladamente (sem CDP).
