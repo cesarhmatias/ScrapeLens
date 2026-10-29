@@ -554,7 +554,11 @@ fn named_fields(text: &str, media: &str) -> Option<Vec<(String, String, Option<u
             return Some(leaves.into_iter().map(|(n, v)| (n, v, None)).collect());
         }
     }
-    if media.contains("x-www-form-urlencoded") || looks_form(text) {
+    // Script não é formulário: `window.cfg={"tok":"V"}` tem `=` e um nome com
+    // ponto, mas o corpo é JS. Sem esta guarda o objeto vira um único campo
+    // `window.cfg` e os literais internos deixam de ser candidatos.
+    let script = media.contains("javascript") || media.contains("ecmascript");
+    if media.contains("x-www-form-urlencoded") || (!script && looks_form(text)) {
         return Some(
             form_fields(text)
                 .into_iter()

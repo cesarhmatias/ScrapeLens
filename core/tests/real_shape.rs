@@ -26,6 +26,7 @@ struct R<'a> {
     headers: Option<Value>,
     body: Option<&'a str>,
     resp: Option<&'a str>,
+    resp_type: Option<&'a str>,
     initiator: Option<Value>,
 }
 
@@ -47,9 +48,10 @@ impl S {
         if let Some(body) = r.body {
             self.bd.push(line(id, "request", body, t));
         }
+        let resp_type = r.resp_type.unwrap_or("text/html");
         self.ev.push(json!({"method": "Network.responseReceived", "params": {
             "requestId": id, "loaderId": "L", "timestamp": t + 0.02, "type": "XHR",
-            "response": {"url": url, "status": 200, "statusText": "", "headers": {"content-type": "text/html"}, "protocol": "http/1.1"}}}));
+            "response": {"url": url, "status": 200, "statusText": "", "headers": {"content-type": resp_type}, "protocol": "http/1.1"}}}));
         self.ev.push(json!({"method": "Network.loadingFinished", "params": {"requestId": id, "timestamp": t + 0.04, "encodedDataLength": 1}}));
         if let Some(resp) = r.resp {
             self.bd.push(line(id, "response", resp, t + 0.04));
@@ -1770,4 +1772,40 @@ fn r8_chain_withholds_opaque_fragment_and_reports_it() {
             .map(|u| &u.label)
             .collect::<Vec<_>>()
     );
+}
+
+/// Item 3 da revisão 8: corpo JS com atribuição a membro (`window.cfg={"tok":"V"}`)
+/// não é formulário. Sem a guarda de mídia, `=` + nome com ponto fazia o objeto
+/// virar um único campo e o literal interno deixava de ser candidato.
+#[test]
+fn r8_js_member_assignment_literal_is_a_candidate() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "http://h.test/session.js?_=1",
+        "GET",
+        R {
+            resp: Some(r#"window.cfg={"tok":"SHAREDVALUE123456"};"#),
+            resp_type: Some("application/javascript"),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "http://h.test/go",
+        "POST",
+        R {
+            body: Some("x=SHAREDVALUE123456"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let o = origins(&b, "1.2");
+    let x = entry(&o, "x");
+    assert_eq!(x.status, OriginStatus::Origin);
+    assert_eq!(x.evidences[0].kind, EvidenceKind::ValueMatch);
+    assert_eq!(x.evidences[0].request_id, lid(&b, "1.1"));
 }
