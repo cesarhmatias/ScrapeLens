@@ -182,4 +182,5 @@ assert.equal(isAppFailure(oc("blocked")), true); // 200 bloqueado fica visível 
 assert.equal(isAppFailure(oc("indeterminado")), false);
 assert.equal(isAppFailure(oc("app-ok")), false);
 assert.equal(isAppFailure(undefined), false);
+assert.equal(isAppFailure(oc("not-assessed")), false);
 console.log("adapter-minimal: ok");

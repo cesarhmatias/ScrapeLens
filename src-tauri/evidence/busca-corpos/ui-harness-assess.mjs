@@ -16,7 +16,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 
-const [blocked, d1, d2, coreBin, outDir] = process.argv.slice(2);
+const [blocked, d1, d2, coreBin, outDir, blockedRules] = process.argv.slice(2);
 const sanitizeFile = null;
 const dist = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../app/dist");
 const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
@@ -127,7 +127,13 @@ results.blockedDetail = await page.locator(".body-panel").first().innerText();
 await shot("27-detalhe-200-bloqueado.png");
 await backToSession();
 await page.getByRole("button", { name: /Todos/ }).click();
-// indeterminado (POST Connector)
+// o indeterminado usa cópia da sessão com assess-rules.json (requiredFields XML,STAMP) para exibir campos ausentes
+await backToSession();
+await openSession(blocked);
+await page.waitForSelector("tbody tr:not(.spacer)");
+await backToSession();
+await openSession(blockedRules);
+// indeterminado: POST ao Connector (rota da aplicação) 200 sem XML/STAMP, na fixture de bloqueio (har-0002)
 await page.locator("tbody tr:not(.spacer)", { hasText: "Connector" }).first().click();
 await page.getByRole("tab", { name: /Aplicação/ }).click();
 await page.waitForSelector("text=Sucesso da aplicação");
@@ -140,7 +146,7 @@ await openSession(d1);
 await page.waitForTimeout(500);
 results.realList = (await rows()).slice(0, 12);
 await shot("29-lista-app-ok.png");
-const first = core("search", d1, "cmd_consultar_placa").matches[0].requestId;
+const first = core("search", d1, "cmd_consultar_placa").matches.find((m) => m.scope === "requestBody").requestId;
 await page.locator("tbody tr:not(.spacer)").nth(Number(first.split("-")[1]) - 1).click();
 await page.getByRole("tab", { name: /Aplicação/ }).click();
 await page.waitForSelector("text=Sucesso da aplicação");

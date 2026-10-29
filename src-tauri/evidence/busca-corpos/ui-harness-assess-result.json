@@ -10,7 +10,7 @@
   ],
   "filterCount": "Só falhas da aplicação2",
   "blockedDetail": "Sucesso da aplicação\nHTTP não é sucesso da aplicação · veredito do core\n\nHTTP 200 blocked? blocked? (TSPD)\n\nHTTP bem-sucedido, mas a aplicação não teve sucesso\npossível bloqueio (não afirmado) — evidência: TSPD (HTML sem controles com o marcador _tsChallenge)\nSinais (1)\nproteção TSPD\nHTML sem controles com o marcador _tsChallenge",
-  "indeterminadoDetail": "Sucesso da aplicação\nHTTP não é sucesso da aplicação · veredito do core\n\nHTTP 200 indeterminado indeterminado\n\nMotivo: sem sinais de aplicação nem campos esperados nesta rota\n\nSinais (0)\n\nNenhum sinal da aplicação nesta resposta.",
+  "indeterminadoDetail": "Sucesso da aplicação\nHTTP não é sucesso da aplicação · veredito do core\n\nHTTP 200 indeterminado indeterminado\n\nMotivo: faltam campos esperados: STAMP, XML\n\nSinais (0)\n\nNenhum sinal da aplicação nesta resposta.\n\nCampos ausentes (2)\n\nSTAMP, XML\n\nEsperados porque a mesma rota os trouxe em outras respostas desta sessão (ou pelas regras).",
   "realList": [
     "01 GET wsdetran.pb.gov.br /detran-portal-servicos/servlet/easynat-app?op=S37 200 indeterminado HTTP/1.1 outro 100 ms",
     "02 GET wsdetran.pb.gov.br /TSPD/0000SYNTHGUARD?type=18 200 indeterminado HTTP/1.1 outro 100 ms",

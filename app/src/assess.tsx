@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { bridge } from "./bridge";
 
-export type VerdictKind = "app-ok" | "app-error" | "blocked" | "indeterminado";
+/** `not-assessed` chega com o core novo; opcional até lá. */
+export type VerdictKind = "app-ok" | "app-error" | "blocked" | "indeterminado" | "not-assessed";
 
 export interface AppSignal {
   signal: string;
@@ -38,12 +39,14 @@ const SHORT: Record<VerdictKind, string> = {
   "app-error": "app-error",
   blocked: "blocked?",
   indeterminado: "indeterminado",
+  "not-assessed": "não-avaliado",
 };
 const CLASS: Record<VerdictKind, string> = {
   "app-ok": "v-ok",
   "app-error": "v-none",
   blocked: "v-none dashed",
   indeterminado: "v-partial",
+  "not-assessed": "tag dim",
 };
 
 /** Falha da aplicação = app-error ou blocked? (HTTP pode ter sido 200). */
@@ -53,6 +56,13 @@ export const isAppFailure = (o: ResponseOutcome | undefined) =>
 export function VerdictChip({ outcome }: { outcome: ResponseOutcome | undefined }) {
   if (!outcome) return <span className="dim">—</span>;
   const kind = outcome.verdictKind;
+  if (kind === "not-assessed") {
+    return (
+      <span className="dim" title={outcome.verdict}>
+        {SHORT[kind]}
+      </span>
+    );
+  }
   return (
     <span className={`chip ${CLASS[kind] ?? "tag"}`} title={outcome.verdict}>
       {SHORT[kind] ?? outcome.verdict}
