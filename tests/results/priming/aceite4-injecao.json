@@ -2,102 +2,231 @@
  "payload": "__import__('os').system('touch <marcador>') + newline/aspas triplas/barra final/bidi/NUL",
  "cases": {
   "headers-latin1-hostis": {
-   "script_bytes": 14954,
+   "script_bytes": 19384,
    "static": {
     "imports": [
      "argparse",
+     "base64",
+     "datetime",
      "html.parser",
      "json",
+     "os",
      "re",
      "requests",
      "sys",
+     "time",
      "urllib.parse"
     ],
     "dangerous_calls": [],
+    "os_fora_de_trace": [],
+    "trace_functions": [
+     "trace_body",
+     "trace_check",
+     "trace_close",
+     "trace_exchange",
+     "trace_open",
+     "trace_time"
+    ],
     "payload_in_strings_or_comments_only": true
    },
    "stray_payload_lines": 0,
    "run_hostile_server": {
-    "rc": 1,
-    "forbidden_events": [],
+    "rc": 0,
     "files_created": [],
     "marker_files": [],
-    "stderr_last": ""
+    "stderr_last": "",
+    "forbidden_events": []
    },
-   "posts_received_by_hostile_server": 0,
-   "fresh_value_used_not_captured": null,
+   "run_hostile_server_trace": {
+    "rc": 0,
+    "files_created": [
+     "trace.json"
+    ],
+    "marker_files": [],
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "trace": {
+     "mode": "0o600",
+     "json_valid": true,
+     "schema": "scrapelens.trace/1",
+     "steps": 2
+    },
+    "forbidden_events": []
+   },
+   "posts_received_by_hostile_server": 2,
+   "fresh_value_used_not_captured": true,
    "run_detran_sim": {
     "rc": 1,
-    "forbidden_events": [],
     "files_created": [],
     "marker_files": [],
-    "stderr_last": ""
+    "stderr_last": "",
+    "forbidden_events": []
+   },
+   "run_detran_sim_trace": {
+    "rc": 1,
+    "files_created": [
+     "trace.json"
+    ],
+    "marker_files": [],
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "trace": {
+     "mode": "0o600",
+     "json_valid": true,
+     "schema": "scrapelens.trace/1",
+     "steps": 1
+    },
+    "forbidden_events": []
    }
   },
   "headers-com-newline-e-NUL": {
-   "script_bytes": 15008,
+   "script_bytes": 19438,
    "static": {
     "imports": [
      "argparse",
+     "base64",
+     "datetime",
      "html.parser",
      "json",
+     "os",
      "re",
      "requests",
      "sys",
+     "time",
      "urllib.parse"
     ],
     "dangerous_calls": [],
+    "os_fora_de_trace": [],
+    "trace_functions": [
+     "trace_body",
+     "trace_check",
+     "trace_close",
+     "trace_exchange",
+     "trace_open",
+     "trace_time"
+    ],
     "payload_in_strings_or_comments_only": true
    },
    "stray_payload_lines": 0,
    "run_hostile_server": {
-    "rc": 1,
-    "forbidden_events": [],
+    "rc": 0,
     "files_created": [],
     "marker_files": [],
-    "stderr_last": ""
+    "stderr_last": "",
+    "forbidden_events": []
    },
-   "posts_received_by_hostile_server": 0,
-   "fresh_value_used_not_captured": null,
+   "run_hostile_server_trace": {
+    "rc": 0,
+    "files_created": [
+     "trace.json"
+    ],
+    "marker_files": [],
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "trace": {
+     "mode": "0o600",
+     "json_valid": true,
+     "schema": "scrapelens.trace/1",
+     "steps": 2
+    },
+    "forbidden_events": []
+   },
+   "posts_received_by_hostile_server": 2,
+   "fresh_value_used_not_captured": true,
    "run_detran_sim": {
     "rc": 1,
-    "forbidden_events": [],
     "files_created": [],
     "marker_files": [],
-    "stderr_last": ""
+    "stderr_last": "",
+    "forbidden_events": []
+   },
+   "run_detran_sim_trace": {
+    "rc": 1,
+    "files_created": [
+     "trace.json"
+    ],
+    "marker_files": [],
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "trace": {
+     "mode": "0o600",
+     "json_valid": true,
+     "schema": "scrapelens.trace/1",
+     "steps": 1
+    },
+    "forbidden_events": []
    }
   },
   "headers-com-bidi": {
-   "script_bytes": 14978,
+   "script_bytes": 19408,
    "static": {
     "imports": [
      "argparse",
+     "base64",
+     "datetime",
      "html.parser",
      "json",
+     "os",
      "re",
      "requests",
      "sys",
+     "time",
      "urllib.parse"
     ],
     "dangerous_calls": [],
+    "os_fora_de_trace": [],
+    "trace_functions": [
+     "trace_body",
+     "trace_check",
+     "trace_close",
+     "trace_exchange",
+     "trace_open",
+     "trace_time"
+    ],
     "payload_in_strings_or_comments_only": true
    },
    "stray_payload_lines": 0,
    "run_hostile_server": {
     "rc": 1,
-    "forbidden_events": [],
     "files_created": [],
     "marker_files": [],
-    "stderr_last": ""
+    "stderr_last": "",
+    "forbidden_events": []
+   },
+   "run_hostile_server_trace": {
+    "rc": 1,
+    "files_created": [
+     "trace.json"
+    ],
+    "marker_files": [],
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "trace": {
+     "mode": "0o600",
+     "json_valid": true,
+     "schema": "scrapelens.trace/1",
+     "steps": 1
+    },
+    "forbidden_events": []
    },
    "posts_received_by_hostile_server": 0,
    "fresh_value_used_not_captured": null,
    "run_detran_sim": {
     "rc": 1,
-    "forbidden_events": [],
     "files_created": [],
     "marker_files": [],
-    "stderr_last": ""
+    "stderr_last": "",
+    "forbidden_events": []
+   },
+   "run_detran_sim_trace": {
+    "rc": 1,
+    "files_created": [
+     "trace.json"
+    ],
+    "marker_files": [],
+    "stderr_last": "priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar",
+    "trace": {
+     "mode": "0o600",
+     "json_valid": true,
+     "schema": "scrapelens.trace/1",
+     "steps": 1
+    },
+    "forbidden_events": []
    }
   }
  },

@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -83,6 +84,9 @@ def hostile_har(value_tag, newline_headers=False, bidi_header=False):
     return {"log": {"version": "1.2", "creator": {"name": "WebInspector", "version": "1"}, "pages": [], "entries": [e1, e2]}}, v_ctrl, v_lit, v_area
 
 
+TRACE_OS_CALLS = {"open", "fchmod", "write", "close"}
+
+
 def static_checks(script: str, label: str):
     tree = ast.parse(script)
     imports = set()
@@ -91,21 +95,61 @@ def static_checks(script: str, label: str):
             imports |= {a.name for a in n.names}
         elif isinstance(n, ast.ImportFrom):
             imports.add(n.module)
-    allowed = {"argparse", "html.parser", "json", "re", "sys", "urllib.parse", "requests"}
+    allowed = {"argparse", "html.parser", "json", "re", "sys", "urllib.parse", "requests", "os", "base64", "datetime", "time"}
     check(imports <= allowed, f"{label}: imports inesperados {sorted(imports - allowed)}")
-    bad_calls = {"eval", "exec", "compile", "__import__", "open", "system", "popen", "Popen", "run", "call", "spawn", "fork", "execv", "setattr", "globals", "locals"}
-    found = sorted({(n.func.id if isinstance(n.func, ast.Name) else n.func.attr) for n in ast.walk(tree) if isinstance(n, ast.Call)
-                    and (n.func.id if isinstance(n.func, ast.Name) else getattr(n.func, "attr", "")) in bad_calls})
-    check(not found, f"{label}: chamadas perigosas no código: {found}")
+    check("subprocess" not in imports and "ctypes" not in imports, f"{label}: import de subprocess/ctypes")
+    # escopo: cada nó sabe em que função (de nível mais externo) está; só `trace_*` pode usar `os`
+    owner: dict[int, str | None] = {}
+
+    def walk(node, fn):
+        for ch in ast.iter_child_nodes(node):
+            f = fn
+            if fn is None and isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                f = ch.name
+            owner[id(ch)] = f
+            walk(ch, f)
+    walk(tree, None)
+    in_trace = lambda n: (owner.get(id(n)) or "").startswith("trace_")  # noqa: E731
+    bad_calls = {"eval", "exec", "compile", "__import__", "system", "popen", "Popen", "run", "call", "spawn", "fork",
+                 "execv", "setattr", "globals", "locals", "check_output", "check_call"}
+    found, os_misuse, open_misuse = set(), [], []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call):
+            name = n.func.id if isinstance(n.func, ast.Name) else getattr(n.func, "attr", "")
+            if name in bad_calls:
+                found.add(name)
+            if isinstance(n.func, ast.Name) and n.func.id == "open" and not in_trace(n):
+                open_misuse.append("open()")
+            if name == "getattr" and n.args and isinstance(n.args[0], ast.Name) and n.args[0].id == "os":
+                # só constantes literais `O_*` (flags de abertura) dentro de trace_*; nome dinâmico é proibido
+                lit = len(n.args) > 1 and isinstance(n.args[1], ast.Constant) and isinstance(n.args[1].value, str) and n.args[1].value.startswith("O_")
+                if not (lit and in_trace(n)):
+                    found.add("getattr(os) dinâmico")
+            if isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id == "os":
+                if not (in_trace(n) and n.func.attr in TRACE_OS_CALLS):
+                    os_misuse.append(f"os.{n.func.attr}() em {owner.get(id(n)) or 'nível do módulo'}")
+        elif isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "os":
+            if not in_trace(n):
+                os_misuse.append(f"os.{n.attr} em {owner.get(id(n)) or 'nível do módulo'}")
+            elif n.attr not in TRACE_OS_CALLS and not n.attr.startswith("O_"):
+                os_misuse.append(f"os.{n.attr} em {owner.get(id(n))}")
+        elif isinstance(n, ast.Name) and n.id == "os" and isinstance(n.ctx, ast.Load) and not in_trace(n):
+            if not isinstance(owner.get(id(n)), str) or not owner[id(n)].startswith("trace_"):
+                os_misuse.append(f"nome os em {owner.get(id(n)) or 'nível do módulo'}")
+    os_misuse = sorted(set(os_misuse))
+    check(not found, f"{label}: chamadas perigosas no código: {sorted(found)}")
+    check(not os_misuse, f"{label}: uso de `os` fora de trace_* ou fora das permitidas: {os_misuse[:5]}")
+    check(not open_misuse, f"{label}: open() builtin fora de trace_*")
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
-    check(not ({"__import__", "system", "os", "subprocess"} & names), f"{label}: nomes perigosos no código: {sorted({'__import__', 'system', 'os', 'subprocess'} & names)}")
-    # o texto do payload só existe em strings/comentários (tokenize): nenhum token NAME/OP o contém
+    check(not ({"__import__", "system", "subprocess"} & names), f"{label}: nomes perigosos no código: {sorted({'__import__', 'system', 'subprocess'} & names)}")
     leaked = [t.string for t in tokenize.generate_tokens(io.StringIO(script).readline)
               if t.type in (tokenize.NAME, tokenize.OP) and ("__import__" in t.string or "system" == t.string)]
     check(not leaked, f"{label}: payload virou código ({leaked[:3]})")
-    # comentários nunca podem conter quebra de linha crua do dado (cada linha do script começa como código ou '#')
     check("\u0000" not in script, f"{label}: NUL cru no script")
-    return {"imports": sorted(imports), "dangerous_calls": found, "payload_in_strings_or_comments_only": not leaked}
+    trace_fns = sorted({f for f in owner.values() if f and f.startswith("trace_")})
+    check(bool(trace_fns), f"{label}: o script não tem funções trace_* (--trace ausente?)")
+    return {"imports": sorted(imports), "dangerous_calls": sorted(found), "os_fora_de_trace": os_misuse,
+            "trace_functions": trace_fns, "payload_in_strings_or_comments_only": not leaked}
 
 
 WRAP = r'''
@@ -158,24 +202,59 @@ class Hostile(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Length", "3"); self.end_headers(); self.wfile.write(b"ok\n")
 
 
-def execute(py, script, base, label, extra_args=()):
+def execute(py, script, base, label, extra_args=(), trace_name=None):
+    """trace_name=None: 0 escritas permitidas. Com trace_name (relativo ao cwd): exatamente 1 arquivo criado, o do trace."""
     work = Path(tempfile.mkdtemp(prefix="sl-inj-run-")); os.chmod(work, 0o700)
     try:
         wrap = Path(tempfile.mkdtemp(prefix="sl-inj-wrap-")) / "wrap.py"; wrap.write_text(WRAP)
         before = sorted(os.listdir(work))
-        p = subprocess.run([py, "-I", str(wrap), str(script), "--confirmar", "--base-url", base, *extra_args],
+        targs = ["--trace", trace_name] if trace_name else []
+        # entradas obrigatórias que o próprio script declara (F1: placa/sessionid-cliente; hostil: campos sem origem), com
+        # valores sintéticos: sem isso o argparse sai antes de executar a cadeia e a prova seria vazia
+        req = ps.required_params(py, script, work) or []
+        synth = {"--placa": "TST0T10", "--sessionid-cliente": "_" + "0" * 12, "--cpf": ps.CPF}
+        req_args = [x for n in req for x in (n, synth.get(n, "synthetic"))]
+        p = subprocess.run([py, "-I", str(wrap), str(script), "--confirmar", "--base-url", base, *req_args, *extra_args, *targs],
                            capture_output=True, text=True, cwd=work, timeout=120,
                            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})  # sem .pyc: qualquer escrita restante é do script
         m = re.search(r"AUDIT_JSON:(.*)", p.stderr)
         events = json.loads(m.group(1)) if m else [["sem-auditoria", p.stderr[-100:]]]
-        # eventos de escrita em arquivo do próprio interpretador (ex.: __pycache__/.pyc) não existem com -I e sem import local
         after = sorted(os.listdir(work))
         marker = [str(x) for x in Path(work).rglob("*") if MARK in str(x)] + [str(x) for x in Path(tempfile.gettempdir()).glob(f"{MARK}*")] + list(Path(ROOT).glob(f"{MARK}*"))
-        check(not events, f"{label}: eventos proibidos na execução: {events[:4]}")
-        check(before == after, f"{label}: arquivos criados no diretório de execução: {sorted(set(after) - set(before))}")
+        created = sorted(set(after) - set(before))
+        info = {"rc": p.returncode, "files_created": created, "marker_files": marker,
+                "stderr_last": " | ".join(p.stderr.split("AUDIT_JSON")[0].strip().splitlines()[-3:])[:300]}
+        if trace_name:
+            tr_writes = [e for e in events if e[0] == "open-write" and Path(str(e[1]).strip("'\"")).name == trace_name]
+            forbidden = [e for e in events if e not in tr_writes and e[0] != "os.chmod"]
+            check(len(tr_writes) == 1, f"{label}: esperada exatamente 1 abertura de escrita (o trace), houve {len(tr_writes)}")
+            check(created == [trace_name], f"{label}: arquivos criados {created}, esperado só [{trace_name!r}]")
+            tf = work / trace_name
+            if tf.exists():
+                mode = stat.S_IMODE(tf.stat().st_mode)
+                check(mode == 0o600, f"{label}: trace com modo {oct(mode)}, esperado 0600")
+                try:
+                    tj = json.loads(tf.read_text())
+                    ok_json = isinstance(tj, dict)
+                    raw = tf.read_text()
+                    info["trace"] = {"mode": oct(mode), "json_valid": ok_json, "schema": tj.get("schema") if ok_json else None,
+                                     "steps": len(tj.get("steps", [])) if ok_json else None}
+                    check(ok_json and tj.get("schema") == "scrapelens.trace/1", f"{label}: trace sem schema scrapelens.trace/1")
+                    # dado, não código: o payload só pode estar dentro de strings JSON (json.loads fechou) e sem NUL cru
+                    check("\u0000" not in raw, f"{label}: NUL cru no trace")
+                except Exception as e:
+                    info["trace"] = {"mode": oct(mode), "json_valid": False}
+                    check(False, f"{label}: trace não é JSON válido: {str(e)[:80]}")
+            else:
+                check(False, f"{label}: trace não foi criado")
+        else:
+            forbidden = events
+            check(created == [], f"{label}: arquivos criados sem --trace: {created}")
+        info["forbidden_events"] = forbidden
+        check(not forbidden, f"{label}: eventos proibidos na execução: {forbidden[:4]}")
         check(not marker, f"{label}: marcador do payload criado: {marker}")
-        return {"rc": p.returncode, "forbidden_events": events, "files_created": sorted(set(after) - set(before)), "marker_files": marker,
-                "stderr_last": (p.stderr.split("AUDIT_JSON")[0].strip().splitlines() or [""])[-1][:160]}, p
+        check(not any(e[0] == "connect-external" for e in events), f"{label}: conexão fora de 127.0.0.1")
+        return info, p
     finally:
         shutil.rmtree(work, ignore_errors=True); shutil.rmtree(wrap.parent, ignore_errors=True)
 
@@ -215,7 +294,9 @@ def main():
             Hostile.page = (f'<html><script>var tokenLit = "{fresh[1]}";</script>\n<input type="hidden" name="{HOSTILE("HID").replace(chr(34), "&quot;").replace(chr(0), "")}" value="{fresh[0].replace(chr(34), "&quot;")}">\n'
                             f'<textarea name="AREA">{fresh[2]}</textarea></html>\n')
             Hostile.seen.clear()
-            case["run_hostile_server"], _ = execute(py, script, f"http://127.0.0.1:{srv.server_address[1]}", f"{variant}/servidor-hostil")
+            hbase = f"http://127.0.0.1:{srv.server_address[1]}"
+            case["run_hostile_server"], _ = execute(py, script, hbase, f"{variant}/servidor-hostil")
+            case["run_hostile_server_trace"], _ = execute(py, script, hbase, f"{variant}/servidor-hostil+trace", trace_name="trace.json")
             case["posts_received_by_hostile_server"] = len(Hostile.seen)
             case["fresh_value_used_not_captured"] = None
             if Hostile.seen:
@@ -223,6 +304,8 @@ def main():
                 case["fresh_value_used_not_captured"] = ("CTRLB" in urllib.parse.unquote_plus(body)) and ("CTRLA" not in urllib.parse.unquote_plus(body))
             ps.http(f"http://127.0.0.1:{a.port}", "/__sim/reset")
             case["run_detran_sim"], _ = execute(py, script, f"http://127.0.0.1:{a.port}", f"{variant}/detran-sim")
+            ps.http(f"http://127.0.0.1:{a.port}", "/__sim/reset")
+            case["run_detran_sim_trace"], _ = execute(py, script, f"http://127.0.0.1:{a.port}", f"{variant}/detran-sim+trace", trace_name="trace.json")
             res["cases"][variant] = case
     finally:
         sim.terminate(); srv.shutdown(); shutil.rmtree(tmp, ignore_errors=True)

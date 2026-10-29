@@ -36,7 +36,8 @@ import check_priming_sim as ps  # noqa: E402
 ROOT = cb.ROOT
 OUT = ROOT / "tests" / "results" / "priming" / "timeline-validacao.json"
 FIX = ROOT / "fixtures" / "detran-pb-real-shape"
-EVENTS = ["init", "init", "on_interceptor", "init", "cmd_filtro", "cmd_consultar_placa"]
+EVENTS = ["init", "init", "on_interceptor", "init", "cmd_filtro", "cmd_consultar_placa"]   # fluxo manual até a 1ª consulta
+FIXTURE_ROUND = EVENTS + ["cmd_nova", "cmd_consultar_placa"]                                   # a fixture traz uma 2ª consulta
 REAL = ["/Users/cesar/Projects/scripts/detran_scraper/detran_paraiba/inputs/sem_captcha.har",
         "/Users/cesar/Downloads/wsdetran.pb.gov.br.har.txt.har",
         "/Users/cesar/Downloads/wsdetran.fluxo.captcha.solve.pgEvy4.har.txt.har"]
@@ -70,7 +71,7 @@ def jload(p, what):
 def entries_of(d):
     if isinstance(d, list):
         return [e for e in d if isinstance(e, dict)]
-    for k in ("entries", "events", "timeline", "items"):
+    for k in ("items", "entries", "events", "timeline"):
         if isinstance(d, dict) and isinstance(d.get(k), list):
             return [e for e in d[k] if isinstance(e, dict)]
     return []
@@ -80,8 +81,15 @@ def kind(e):
     return str(e.get("kind") or e.get("type") or "").lower()
 
 
+def is_group(e):
+    return e.get("type") == "group" or "group" in kind(e) or "grupo" in kind(e)
+
+
 def is_protection(e):
-    return "protec" in kind(e) or "proteç" in kind(e) or "/TSPD/" in str(e.get("url", "")) + str(e.get("label", ""))
+    """Proteção avulsa = entrada de evento /TSPD/; o grupo `protection` (type=group) é a forma recolhida correta."""
+    if is_group(e):
+        return "protec" in kind(e)
+    return "/TSPD/" in str(e.get("url", "")) + str(e.get("label", ""))
 
 
 def timeline_agg(wrapper, sess, what):
@@ -89,14 +97,18 @@ def timeline_agg(wrapper, sess, what):
     es = entries_of(d)
     if not check(bool(es), f"{what}: timeline sem entradas"):
         return None
-    labels = [str(e.get("label", "")) for e in es]
-    ev = [l.split(" @ ")[0] for l in labels if " @ " in l]
-    pages = [l.split(" @ ")[1] for l in labels if " @ " in l]
-    prot = [e for e in es if is_protection(e)]
-    collapsed = all(("group" in kind(e) or "grupo" in kind(e) or "count" in e or "total" in e) for e in prot)
-    agg = {"entradas": len(es), "eventos_event_page": len(ev), "sequencia_eventos": ev, "paginas": pages,
-           "protecao_entradas": len(prot), "protecao_recolhida": collapsed}
-    check(collapsed, f"{what}: proteção deveria vir recolhida em grupos com contagem; há {len(prot)} entradas avulsas")
+    posts = [e for e in es if not is_group(e) and str(e.get("url", "")).endswith("/servlet/Connector")]
+    labels = [str(e.get("label", "")) for e in posts]
+    ev = [l.split(" @ ")[0] if " @ " in l else "?" for l in labels]
+    pages = [l.split(" @ ")[1] if " @ " in l else "?" for l in labels]
+    groups = [e for e in es if is_group(e) and "protec" in kind(e)]
+    standalone = [e for e in es if not is_group(e) and is_protection(e)]
+    agg = {"entradas": len(es), "posts_connector": len(posts), "posts_sem_rotulo_event_page": ev.count("?"),
+           "sequencia_eventos": ev, "paginas": pages, "grupos_protecao": len(groups),
+           "protecao_recolhida": bool(groups) and not standalone, "protecao_avulsa": len(standalone)}
+    check(bool(groups) and not standalone,
+          f"{what}: proteção deveria vir recolhida em grupos com contagem ({len(groups)} grupos, {len(standalone)} entradas avulsas)")
+    check(ev.count("?") == 0, f"{what}: {ev.count('?')} de {len(posts)} POSTs do Connector sem rótulo `event @ page` com o adaptador")
     return agg
 
 
@@ -165,9 +177,8 @@ def main():
             agg = timeline_agg(wrapper, s, name)
             INFO["timeline"][name] = agg
             if agg:
-                check(agg["sequencia_eventos"] == EVENTS * n_round,
-                      f"{name}: eventos {agg['sequencia_eventos']} != fluxo manual {EVENTS * n_round}")
-                check(all(" @ " in l for l in [f"{e} @ x" for e in agg["sequencia_eventos"]]), "rótulos event @ page")
+                check(agg["sequencia_eventos"] == FIXTURE_ROUND * n_round,
+                      f"{name}: eventos {agg['sequencia_eventos']} != fluxo manual {FIXTURE_ROUND * n_round}")
         INFO["timeline_real"] = {}
         if not a.hars:
             check(False, "nenhum HAR real encontrado para o agregado da timeline")
@@ -175,7 +186,7 @@ def main():
             s = tmp / f"tl-real{i}"; sh([core, "import-har", h, "--out", s])
             agg = timeline_agg(wrapper, s, f"HAR real #{i}")
             if agg:
-                INFO["timeline_real"][f"H{i}"] = {k: agg[k] for k in ("entradas", "eventos_event_page", "protecao_entradas", "protecao_recolhida")}
+                INFO["timeline_real"][f"H{i}"] = {k: agg[k] for k in ("entradas", "posts_connector", "posts_sem_rotulo_event_page", "grupos_protecao", "protecao_avulsa", "protecao_recolhida")}
                 INFO["timeline_real"][f"H{i}"]["ordem_rotulos"] = [f"{e}@{p}" for e, p in zip(agg["sequencia_eventos"], agg["paginas"])]
                 check(subsequence(agg["sequencia_eventos"], EVENTS), f"HAR real #{i}: eventos fora da ordem do fluxo manual")
 

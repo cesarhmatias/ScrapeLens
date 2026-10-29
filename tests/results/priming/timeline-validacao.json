@@ -1,53 +1,250 @@
 {
  "timeline": {
-  "real-shape-1round.har": null,
-  "real-shape-2rounds.har": null
+  "real-shape-1round.har": {
+   "entradas": 29,
+   "posts_connector": 8,
+   "posts_sem_rotulo_event_page": 3,
+   "sequencia_eventos": [
+    "?",
+    "?",
+    "on_interceptor",
+    "?",
+    "cmd_filtro",
+    "cmd_consultar_placa",
+    "cmd_nova",
+    "cmd_consultar_placa"
+   ],
+   "paginas": [
+    "?",
+    "?",
+    "/UIC-SERVICOS/SIM1000X.html",
+    "?",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html"
+   ],
+   "grupos_protecao": 9,
+   "protecao_recolhida": true,
+   "protecao_avulsa": 0
+  },
+  "real-shape-2rounds.har": {
+   "entradas": 58,
+   "posts_connector": 16,
+   "posts_sem_rotulo_event_page": 6,
+   "sequencia_eventos": [
+    "?",
+    "?",
+    "on_interceptor",
+    "?",
+    "cmd_filtro",
+    "cmd_consultar_placa",
+    "cmd_nova",
+    "cmd_consultar_placa",
+    "?",
+    "?",
+    "on_interceptor",
+    "?",
+    "cmd_filtro",
+    "cmd_consultar_placa",
+    "cmd_nova",
+    "cmd_consultar_placa"
+   ],
+   "paginas": [
+    "?",
+    "?",
+    "/UIC-SERVICOS/SIM1000X.html",
+    "?",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html",
+    "?",
+    "?",
+    "/UIC-SERVICOS/SIM1000X.html",
+    "?",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html",
+    "/UIC-SERVICOS/VES0009X.html"
+   ],
+   "grupos_protecao": 18,
+   "protecao_recolhida": true,
+   "protecao_avulsa": 0
+  }
  },
- "timeline_real": {},
+ "timeline_real": {
+  "H1": {
+   "entradas": 63,
+   "posts_connector": 8,
+   "posts_sem_rotulo_event_page": 3,
+   "grupos_protecao": 26,
+   "protecao_avulsa": 0,
+   "protecao_recolhida": true,
+   "ordem_rotulos": [
+    "?@?",
+    "?@?",
+    "on_interceptor@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "?@?",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_nova@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html"
+   ]
+  },
+  "H2": {
+   "entradas": 108,
+   "posts_connector": 19,
+   "posts_sem_rotulo_event_page": 6,
+   "grupos_protecao": 42,
+   "protecao_avulsa": 0,
+   "protecao_recolhida": true,
+   "ordem_rotulos": [
+    "?@?",
+    "?@?",
+    "on_interceptor@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "?@?",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_nova@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "?@?",
+    "?@?",
+    "on_interceptor@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "?@?",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_nova@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html"
+   ]
+  },
+  "H3": {
+   "entradas": 156,
+   "posts_connector": 23,
+   "posts_sem_rotulo_event_page": 9,
+   "grupos_protecao": 62,
+   "protecao_avulsa": 0,
+   "protecao_recolhida": true,
+   "ordem_rotulos": [
+    "?@?",
+    "?@?",
+    "on_interceptor@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "?@?",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_nova@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "?@?",
+    "?@?",
+    "on_interceptor@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "?@?",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_nova@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_filtro@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "cmd_consultar_placa@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+    "?@?",
+    "?@?",
+    "on_interceptor@https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+    "?@?"
+   ]
+  }
+ },
  "cenarios": {
   "ok": {
    "script_rc": 0,
    "pedidos_no_sim": 10,
    "primeiro_ruim": null,
    "trace_modo": "0o600",
-   "trace_passos": 10
+   "trace_passos": 10,
+   "assess_connector": [
+    "app-ok",
+    "app-ok",
+    "app-ok",
+    "app-ok",
+    "app-ok",
+    "app-ok"
+   ],
+   "compare": {
+    "pairs": 0,
+    "onlyInA": 19,
+    "onlyInB": 10,
+    "diferencas_fora_do_esperado": []
+   },
+   "sanitize_vazamentos": {
+    "SESSIONID": 0,
+    "placa": 0,
+    "cookies": 0,
+    "parte_cliente": 0
+   },
+   "sanitize_valores_testados": {
+    "SESSIONID": 1,
+    "cookies": 0
+   }
   },
   "error": {
    "script_rc": 1,
    "pedidos_no_sim": 10,
    "primeiro_ruim": 10,
    "trace_modo": "0o600",
-   "trace_passos": 10
+   "trace_passos": 10,
+   "assess_connector": [
+    "app-ok",
+    "app-ok",
+    "app-ok",
+    "app-ok",
+    "app-ok",
+    "app-error"
+   ],
+   "veredito_ultimo_passo": "app-error",
+   "compare_resumo": null
   },
   "nocontrols": {
    "script_rc": 1,
    "pedidos_no_sim": 3,
    "primeiro_ruim": 3,
    "trace_modo": "0o600",
-   "trace_passos": 3
+   "trace_passos": 3,
+   "assess_connector": [
+    "not-assessed"
+   ],
+   "veredito_ultimo_passo": "not-assessed",
+   "compare_resumo": null
   },
   "403": {
    "script_rc": 1,
    "pedidos_no_sim": 3,
    "primeiro_ruim": 3,
    "trace_modo": "0o600",
-   "trace_passos": 3
+   "trace_passos": 3,
+   "assess_connector": [
+    "blocked"
+   ],
+   "veredito_ultimo_passo": "blocked",
+   "compare_resumo": null
   }
  },
  "fails": [
-  "real-shape-1round.har: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
-  "real-shape-1round.har: timeline sem entradas",
-  "real-shape-2rounds.har: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
-  "real-shape-2rounds.har: timeline sem entradas",
-  "HAR real #1: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
-  "HAR real #1: timeline sem entradas",
-  "HAR real #2: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
-  "HAR real #2: timeline sem entradas",
-  "HAR real #3: timeline: rc=1: erro: comando desconhecido: timeline uso: scrapelens-core inspect <sessao> scrapelens-core import-har <har> --out <sessao> [--label <rótulo>",
-  "HAR real #3: timeline sem entradas",
-  "ok: import-trace: rc=1: erro: formato não suportado: trace: steps[0].method ausente ou vazio",
-  "error: import-trace: rc=1: erro: formato não suportado: trace: steps[0].method ausente ou vazio",
-  "nocontrols: import-trace: rc=1: erro: formato não suportado: trace: steps[0].method ausente ou vazio",
-  "403: import-trace: rc=1: erro: formato não suportado: trace: steps[0].method ausente ou vazio"
+  "real-shape-1round.har: 3 de 8 POSTs do Connector sem rótulo `event @ page` com o adaptador",
+  "real-shape-1round.har: eventos ['?', '?', 'on_interceptor', '?', 'cmd_filtro', 'cmd_consultar_placa', 'cmd_nova', 'cmd_consultar_placa'] != fluxo manual ['init', 'init', 'on_interceptor', 'init', 'cmd_filtro', 'cmd_consultar_placa', 'cmd_nova', 'cmd_consultar_placa']",
+  "real-shape-2rounds.har: 6 de 16 POSTs do Connector sem rótulo `event @ page` com o adaptador",
+  "real-shape-2rounds.har: eventos ['?', '?', 'on_interceptor', '?', 'cmd_filtro', 'cmd_consultar_placa', 'cmd_nova', 'cmd_consultar_placa', '?', '?', 'on_interceptor', '?', 'cmd_filtro', 'cmd_consultar_placa', 'cmd_nova', 'cmd_consultar_placa'] != fluxo manual ['init', 'init', 'on_interceptor', 'init', 'cmd_filtro', 'cmd_consultar_placa', 'cmd_nova', 'cmd_consultar_placa', 'init', 'init', 'on_interceptor', 'init', 'cmd_filtro', 'cmd_consultar_placa', 'cmd_nova', 'cmd_consultar_placa']",
+  "HAR real #1: 3 de 8 POSTs do Connector sem rótulo `event @ page` com o adaptador",
+  "HAR real #1: eventos fora da ordem do fluxo manual",
+  "HAR real #2: 6 de 19 POSTs do Connector sem rótulo `event @ page` com o adaptador",
+  "HAR real #2: eventos fora da ordem do fluxo manual",
+  "HAR real #3: 9 de 23 POSTs do Connector sem rótulo `event @ page` com o adaptador",
+  "HAR real #3: eventos fora da ordem do fluxo manual",
+  "ok: passos do trace não pareados 1:1 (0 pares, 10 passos, 10 só no trace)",
+  "ok: POST do Connector da captura sem par no trace",
+  "ok: compare sem o resumo 'execução equivalente à captura'",
+  "error: compare deveria dizer 'diverge no passo 10'; disse None",
+  "nocontrols: compare deveria dizer 'diverge no passo 3'; disse None",
+  "403: compare deveria dizer 'diverge no passo 3'; disse None"
  ]
 }
