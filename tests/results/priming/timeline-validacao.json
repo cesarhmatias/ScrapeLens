@@ -199,6 +199,309 @@
    "primeiro_ruim": null,
    "trace_modo": "0o600",
    "trace_passos": 10,
+   "validate_doc": {
+    "schema": "scrapelens.validate/1",
+    "verdict": "equivalent",
+    "step": null,
+    "reason": null,
+    "summary": "execução equivalente à captura [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+    "steps": [
+     {
+      "step": 1,
+      "traceRequestId": "har-0001",
+      "captureRequestId": "har-0001",
+      "method": "GET",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/servlet/easynat-app?op=S37",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "not-assessed",
+      "verdictTrace": "not-assessed",
+      "expected": [],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 2,
+      "traceRequestId": "har-0002",
+      "captureRequestId": "har-0008",
+      "method": "GET",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/cisnatural/cscform.html?page=NatLogon",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "app-ok",
+      "verdictTrace": "app-ok",
+      "expected": [],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 3,
+      "traceRequestId": "har-0003",
+      "captureRequestId": "har-0010",
+      "method": "POST",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/servlet/Connector",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "app-ok",
+      "verdictTrace": "app-ok",
+      "expected": [
+       {
+        "scope": "body",
+        "field": "XML.pid",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "SESSIONID",
+        "reason": "esperado (parâmetro do usuário)"
+       },
+       {
+        "scope": "body",
+        "field": "XML.sid",
+        "reason": "esperado (parâmetro do usuário)"
+       }
+      ],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 4,
+      "traceRequestId": "har-0004",
+      "captureRequestId": "har-0012",
+      "method": "GET",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "not-assessed",
+      "verdictTrace": "not-assessed",
+      "expected": [],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 5,
+      "traceRequestId": "har-0005",
+      "captureRequestId": "har-0015",
+      "method": "POST",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/servlet/Connector",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "app-ok",
+      "verdictTrace": "app-ok",
+      "expected": [
+       {
+        "scope": "body",
+        "field": "XML.pid",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "XML.delta",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "SESSIONID",
+        "reason": "esperado (parâmetro do usuário)"
+       },
+       {
+        "scope": "body",
+        "field": "XML.sid",
+        "reason": "esperado (parâmetro do usuário)"
+       }
+      ],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 6,
+      "traceRequestId": "har-0006",
+      "captureRequestId": "har-0017",
+      "method": "POST",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/servlet/Connector",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "app-ok",
+      "verdictTrace": "app-ok",
+      "expected": [
+       {
+        "scope": "body",
+        "field": "XML.pid",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "XML.page",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "XML.delta",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "STAMP",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "SESSIONID",
+        "reason": "esperado (parâmetro do usuário)"
+       },
+       {
+        "scope": "body",
+        "field": "XML.sid",
+        "reason": "esperado (parâmetro do usuário)"
+       }
+      ],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 7,
+      "traceRequestId": "har-0007",
+      "captureRequestId": "har-0019",
+      "method": "GET",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "not-assessed",
+      "verdictTrace": "not-assessed",
+      "expected": [],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 8,
+      "traceRequestId": "har-0008",
+      "captureRequestId": "har-0022",
+      "method": "POST",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/servlet/Connector",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "app-ok",
+      "verdictTrace": "app-ok",
+      "expected": [
+       {
+        "scope": "body",
+        "field": "XML.pid",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "XML.delta",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "SESSIONID",
+        "reason": "esperado (parâmetro do usuário)"
+       },
+       {
+        "scope": "body",
+        "field": "XML.sid",
+        "reason": "esperado (parâmetro do usuário)"
+       }
+      ],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 9,
+      "traceRequestId": "har-0009",
+      "captureRequestId": "har-0024",
+      "method": "POST",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/servlet/Connector",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "app-ok",
+      "verdictTrace": "app-ok",
+      "expected": [
+       {
+        "scope": "body",
+        "field": "XML.pid",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "XML.delta",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "STAMP",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "SESSIONID",
+        "reason": "esperado (parâmetro do usuário)"
+       },
+       {
+        "scope": "body",
+        "field": "XML.sid",
+        "reason": "esperado (parâmetro do usuário)"
+       }
+      ],
+      "unexpected": [],
+      "problem": null
+     },
+     {
+      "step": 10,
+      "traceRequestId": "har-0010",
+      "captureRequestId": "har-0026",
+      "method": "POST",
+      "url": "http://127.0.0.1:8793/detran-portal-servicos/servlet/Connector",
+      "statusCapture": 200,
+      "statusTrace": 200,
+      "verdictCapture": "app-ok",
+      "verdictTrace": "app-ok",
+      "expected": [
+       {
+        "scope": "body",
+        "field": "XML.pid",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "XML.delta",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "STAMP",
+        "reason": "dinâmico com origem equivalente"
+       },
+       {
+        "scope": "body",
+        "field": "SESSIONID",
+        "reason": "esperado (parâmetro do usuário)"
+       },
+       {
+        "scope": "body",
+        "field": "XML.sid",
+        "reason": "esperado (parâmetro do usuário)"
+       },
+       {
+        "scope": "body",
+        "field": "XML.p.v_placa",
+        "reason": "esperado (parâmetro do usuário)"
+       }
+      ],
+      "unexpected": [],
+      "problem": null
+     }
+    ],
+    "missingInTrace": [],
+    "mappedOrigin": {
+     "from": "https://wsdetran.pb.gov.br",
+     "to": "http://127.0.0.1:8793"
+    },
+    "warnings": [
+     "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)"
+    ]
+   },
    "assess_connector": [
     "app-ok",
     "app-ok",
@@ -243,6 +546,7 @@
    "primeiro_ruim": 10,
    "trace_modo": "0o600",
    "trace_passos": 10,
+   "validate_doc": null,
    "assess_connector": [
     "app-ok",
     "app-ok",
@@ -265,6 +569,7 @@
    "primeiro_ruim": 3,
    "trace_modo": "0o600",
    "trace_passos": 3,
+   "validate_doc": null,
    "assess_connector": [
     "not-assessed"
    ],
@@ -282,6 +587,7 @@
    "primeiro_ruim": 3,
    "trace_modo": "0o600",
    "trace_passos": 3,
+   "validate_doc": null,
    "assess_connector": [
     "blocked"
    ],
@@ -292,6 +598,32 @@
     "passos": 3
    },
    "veredito_ultimo_passo": "blocked"
+  }
+ },
+ "plano": {
+  "versao_no_trace": 2,
+  "avisos_fiel": [
+   "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)"
+  ],
+  "sem_versao": {
+   "verdict": "equivalent",
+   "passo": null,
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano de versão anterior (v1): gere o script de novo para verificar contra o plano"
+   ]
+  },
+  "alvo_do_outro_hash": "har-0030",
+  "hash_do_outro_alvo": "26fdb4657a22511f",
+  "hash_de_outro": {
+   "verdict": "diverges",
+   "passo": 1,
+   "resumo": "diverge no passo 1 (plano diferente do gerado a partir desta captura) [origem mapeada: https://wsdetran.pb.gov.br → http://127.0.0.1:8793]",
+   "motivo": "plano diferente do gerado a partir desta captura",
+   "avisos": [
+    "origens de aplicação diferentes (https://wsdetran.pb.gov.br × http://127.0.0.1:8793); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)",
+    "plano não confere: o trace declara o hash 26fdb4657a22511f e a captura com o alvo har-0026 dá 73491c7e6ec6e8da"
+   ]
   }
  },
  "fails": []

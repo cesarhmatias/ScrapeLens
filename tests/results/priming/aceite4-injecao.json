@@ -2,7 +2,7 @@
  "payload": "__import__('os').system('touch <marcador>') + newline/aspas triplas/barra final/bidi/NUL",
  "cases": {
   "headers-latin1-hostis": {
-   "script_bytes": 22181,
+   "script_bytes": 22243,
    "static": {
     "imports": [
      "argparse",
@@ -136,7 +136,7 @@
    }
   },
   "headers-com-newline-e-NUL": {
-   "script_bytes": 22235,
+   "script_bytes": 22297,
    "static": {
     "imports": [
      "argparse",
@@ -270,7 +270,7 @@
    }
   },
   "headers-com-bidi": {
-   "script_bytes": 22205,
+   "script_bytes": 22267,
    "static": {
     "imports": [
      "argparse",

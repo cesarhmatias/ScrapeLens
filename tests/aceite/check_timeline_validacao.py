@@ -211,6 +211,83 @@ def rv_cases():
     return cases
 
 
+def plan_cases(core, wrapper, tmp, cap, target, trace_path, val):
+    """Rodada 9, onda B: plano versionado no trace (`plan.version` 2, validate::PLAN_VERSION).
+
+    Fiel v2 -> equivalent e ZERO avisos de parâmetro/plano; sem `version` -> só o aviso "plano de versão
+    anterior", sem divergir; `version` 2 com o hash de OUTRO alvo da MESMA captura -> DIVERGE
+    ("plano diferente do gerado"). Se o último caso só avisar, é falha do core: fica registrada, sem máscara.
+    """
+    info = INFO["plano"] = {}
+    doc = json.loads(trace_path.read_text())
+    plan = doc.get("plan") or {}
+    info["versao_no_trace"] = plan.get("version")
+    check(plan.get("version") == 2,
+          f"plano: o trace do script atual deveria declarar plan.version 2; declara {plan.get('version')!r}")
+    warns = [str(w) for w in (val or {}).get("warnings", [])]
+    info["avisos_fiel"] = warns
+    espurios = [w for w in warns if re.search(r"par[âa]metro inv[áa]lido|plano", w, re.I)]
+    check(not espurios, f"plano fiel (v2): avisos de parâmetro/plano não deveriam existir: {espurios[:6]}")
+
+    def validate(doc2, label):
+        p = tmp / f"plano-{label}.json"
+        p.write_text(json.dumps(doc2, ensure_ascii=False))
+        s = tmp / f"plano-ses-{label}"
+        shutil.rmtree(s, ignore_errors=True)
+        ip = sh([core, "import-trace", p, "--out", s])
+        if not check(ip.returncode == 0,
+                     f"plano {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
+            return None
+        v = sh([wrapper, "validate", cap, s, "--adapter", "natural-ajax"])
+        try:
+            return json.loads(v.stdout)
+        except Exception:
+            return None
+
+    # (b) versão ausente: avisa e não diverge
+    old = json.loads(json.dumps(doc))
+    old.get("plan", {}).pop("version", None)
+    v = validate(old, "sem-versao")
+    if v is not None:
+        info["sem_versao"] = {"verdict": v.get("verdict"), "passo": v.get("step"),
+                              "avisos": [str(w) for w in v.get("warnings", [])]}
+        check(v.get("verdict") == "equivalent",
+              f"plano sem versão: deveria ser equivalent (só avisa); deu {v.get('verdict')!r} "
+              f"({str(v.get('summary'))[:120]!r})")
+        check(any("plano de versão anterior" in w for w in info["sem_versao"]["avisos"]),
+              f"plano sem versão: falta o aviso 'plano de versão anterior': {info['sem_versao']['avisos'][:6]}")
+
+    # (c) versão 2 com o hash de outro alvo da mesma captura: tem de divergir
+    outro = next((r for r in ("har-0030", "har-0026", "har-0022", "har-0017", "har-0024") if r != target), None)
+    outros = dict(os.environ)  # export-priming não abre rede; só usa a captura e o alvo
+    hash_outro = None
+    if outro:
+        script = tmp / "plano-outro.py"
+        g = sh([wrapper, "export-priming", cap, outro, "--out", script, "--adapter", "natural-ajax"], env=outros)
+        if g.returncode == 0 and script.exists():
+            m = re.search(r"^PLAN_HASH\s*=\s*['\"]([0-9a-fA-F]+)['\"]", script.read_text(errors="replace"), re.M)
+            hash_outro = m.group(1) if m else None
+    info["alvo_do_outro_hash"] = outro
+    info["hash_do_outro_alvo"] = hash_outro
+    check(bool(hash_outro), f"plano outro alvo: não obtive o PLAN_HASH de outro alvo da captura ({outro})")
+    if hash_outro:
+        check(hash_outro != plan.get("hash"),
+              "plano outro alvo: o hash de outro alvo é igual ao do alvo do trace (não prova nada)")
+        cop = json.loads(json.dumps(doc))
+        cop.setdefault("plan", {})["hash"] = hash_outro
+        v = validate(cop, "hash-de-outro")
+        if v is not None:
+            info["hash_de_outro"] = {"verdict": v.get("verdict"), "passo": v.get("step"),
+                                     "resumo": str(v.get("summary"))[:160], "motivo": str(v.get("reason"))[:160],
+                                     "avisos": [str(w) for w in v.get("warnings", [])]}
+            check(v.get("verdict") == "diverges",
+                  f"plano com hash de outro alvo: deveria DIVERGIR; deu {v.get('verdict')!r} "
+                  f"({info['hash_de_outro']['resumo']!r}) — só aviso não serve")
+            check(bool(re.search(r"plano diferente do gerado", json.dumps(v, ensure_ascii=False), re.I)),
+                  f"plano com hash de outro alvo: motivo sem 'plano diferente do gerado…': "
+                  f"{info['hash_de_outro']['resumo']!r} / {info['hash_de_outro']['motivo']!r}")
+
+
 def reviewer_cases(core, wrapper, tmp, info):
     """Casos do revisor: tudo que NÃO é a execução fiel deve DIVERGIR (ou dar erro); o controle V1 deve ser equivalent."""
     cap = rv_capture(tmp, core)
@@ -321,6 +398,7 @@ def main():
                 continue
             assess = jload(sh([core, "assess", ts]), f"{mode}: assess do trace")
             val = jload(sh([wrapper, "validate", cap, ts, "--adapter", "natural-ajax"]), f"{mode}: validate")
+            sc["validate_doc"] = val if mode == "ok" else None
             outs = (assess or {}).get("outcomes", [])
             conn = [o for o in outs if o.get("url", "").endswith("/servlet/Connector")]
             sc["assess_connector"] = [o.get("verdictKind") for o in conn]
@@ -385,6 +463,10 @@ def main():
                 check(bool(body), "sanitize: saída vazia")
                 check(len(sid) > 0, "sanitize: nenhum SESSIONID no trace para testar a remoção")
                 check(not any(leaks.values()), f"sanitize: valores sensíveis ainda presentes: { {k: len(v) for k, v in leaks.items() if v} }")
+        # ---- (5) plano versionado no trace (Rodada 9, onda B)
+        trace_ok = tmp / "trace-ok.json"
+        if check(trace_ok.exists(), "plano: o trace do cenário ok não existe"):
+            plan_cases(core, wrapper, tmp, cap, target, trace_ok, INFO["cenarios"].get("ok", {}).get("validate_doc"))
     finally:
         sim.terminate()
         shutil.rmtree(tmp, ignore_errors=True)
