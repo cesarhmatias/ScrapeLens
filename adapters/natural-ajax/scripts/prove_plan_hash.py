@@ -40,22 +40,64 @@ def main():
             subprocess.run([N, "export-priming", str(tmp / "cap"), target, "--out", str(tmp / "p.py"), *flag],
                            capture_output=True, check=True)
             urllib.request.urlopen(base + "/__sim/reset"); urllib.request.urlopen(base + "/__sim/mode?m=" + mode)
-            tr = tmp / f"{label}.json"
-            p = subprocess.run([py, "-I", str(tmp / "p.py"), "--confirmar", "--base-url", base, "--placa", "TST1A23",
-                                "--cpf", "00000000191", "--sessionid-cliente", "_" + "".join(random.choice("0123456789") for _ in range(12)),
-                                "--trace", str(tr)], capture_output=True, text=True)
-            subprocess.run([C, "import-trace", str(tr), "--out", str(tmp / f"s_{label}")], capture_output=True, check=True)
-            v = subprocess.run([N, "validate", str(tmp / "cap"), str(tmp / f"s_{label}"), *flag], capture_output=True, text=True)
-            plan_warn = [w[:60] for w in json.loads(v.stdout)["warnings"] if "plano" in w.lower()]
-            t = json.load(open(tr)); t["plan"]["hash"] = "0" * 16; json.dump(t, open(tr, "w"))
-            subprocess.run([C, "import-trace", str(tr), "--out", str(tmp / f"z_{label}")], capture_output=True, check=True)
-            z = subprocess.run([N, "validate", str(tmp / "cap"), str(tmp / f"z_{label}"), *flag], capture_output=True, text=True)
-            altered = [w[:60] for w in json.loads(z.stdout)["warnings"] if "plano" in w.lower()]
-            res[label] = {"script_rc": p.returncode, "resumo": v.stderr.strip()[:60], "aviso_plano_no_trace_genuino": plan_warn,
-                          "aviso_plano_no_trace_alterado": bool(altered)}
+            def run_script(name, extra):
+                urllib.request.urlopen(base + "/__sim/reset"); urllib.request.urlopen(base + "/__sim/mode?m=" + mode)
+                out = tmp / name
+                proc = subprocess.run([py, "-I", str(tmp / "p.py"), "--confirmar", "--base-url", base, "--placa", "TST1A23",
+                                       "--cpf", "00000000191", "--sessionid-cliente",
+                                       "_" + "".join(random.choice("0123456789") for _ in range(12)), "--trace", str(out), *extra],
+                                      capture_output=True, text=True)
+                return proc, out
+
+            def validate(trace_path, name):
+                subprocess.run([C, "import-trace", str(trace_path), "--out", str(tmp / name)], capture_output=True, check=True)
+                v = subprocess.run([N, "validate", str(tmp / "cap"), str(tmp / name), *flag], capture_output=True, text=True)
+                return v, [w[:60] for w in json.loads(v.stdout)["warnings"] if "plano" in w.lower()]
+
+            p, tr = run_script(f"{label}.json", [])
+            v, plan_warn = validate(tr, f"s_{label}")
+            genuine = json.load(open(tr))
+            # Parâmetro opcional sobrescrito (`--op`): `plan` igual e nenhum aviso de plano.
+            p2, tr2 = run_script(f"{label}_op.json", ["--op", "S38"])
+            v2, ov_warn = validate(tr2, f"o_{label}")
+            over = json.load(open(tr2))
+            op_in_top = any(x["name"] == "op" for x in over["parameters"])
+            # Plano alterado e hash copiado de outro plano.
+            altered_doc = json.loads(json.dumps(genuine)); altered_doc["plan"]["hash"] = "0" * 16
+            json.dump(altered_doc, open(tmp / f"{label}_alt.json", "w"))
+            _, altered = validate(tmp / f"{label}_alt.json", f"z_{label}")
+            res[label] = {"script_rc": p.returncode, "resumo": v.stderr.strip()[:60],
+                          "aviso_plano_no_trace_genuino": plan_warn, "aviso_plano_no_trace_alterado": bool(altered),
+                          "opcional_sobrescrito": {"script_rc": p2.returncode, "plan_igual": over["plan"] == genuine["plan"],
+                                                    "op_em_parameters_de_topo": op_in_top, "aviso_plano": ov_warn,
+                                                    "resumo": v2.stderr.strip()[:60]}}
             if p.returncode != 0: fails.append(f"{label}: script rc={p.returncode}")
             if plan_warn: fails.append(f"{label}: trace genuíno avisa plano: {plan_warn}")
             if not altered: fails.append(f"{label}: plano alterado não avisou")
+            if over["plan"] != genuine["plan"]: fails.append(f"{label}: plan mudou ao sobrescrever opcional")
+            if ov_warn: fails.append(f"{label}: opcional sobrescrito avisa plano: {ov_warn}")
+            if not op_in_top: fails.append(f"{label}: `op` sobrescrito não aparece em parameters")
+            # Hash copiado do plano de OUTRO alvo da mesma captura: também avisa.
+            insp = json.loads(subprocess.run([C, "inspect", str(tmp / "cap")], capture_output=True, text=True).stdout)
+            others = [r["id"] for r in insp["session"]["requests"]
+                      if r["method"] == "POST" and "Connector" in r["url"] and r["id"] != target]
+            foreign = None
+            for other in others:
+                subprocess.run([N, "export-priming", str(tmp / "cap"), other, "--out", str(tmp / "o.py"), *flag], capture_output=True)
+                if (tmp / "o.py").exists():
+                    line = next((l for l in (tmp / "o.py").read_text().splitlines() if l.startswith("PLAN_HASH = ")), "")
+                    cand = line.split("'")[1] if "'" in line else None
+                    (tmp / "o.py").unlink()
+                    if cand and cand != genuine["plan"]["hash"]:
+                        foreign = cand; break
+            if foreign:
+                fdoc = json.loads(json.dumps(genuine)); fdoc["plan"]["hash"] = foreign
+                json.dump(fdoc, open(tmp / f"{label}_foreign.json", "w"))
+                _, foreign_warn = validate(tmp / f"{label}_foreign.json", f"f_{label}")
+                res[label]["hash_de_outro_plano_avisa"] = bool(foreign_warn)
+                if not foreign_warn: fails.append(f"{label}: hash de outro plano não avisou")
+            else:
+                res[label]["hash_de_outro_plano_avisa"] = "sem outro alvo com hash diferente"
     finally:
         sim.terminate()
     res["fails"] = fails

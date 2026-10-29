@@ -2250,8 +2250,8 @@ fn plan_hash_is_computed_at_generation_by_the_core_and_the_script_has_no_hashlib
         .find_map(|l| l.strip_prefix("PLAN_HASH = '"))
         .and_then(|l| l.strip_suffix('\''))
         .expect("PLAN_HASH constante");
-    // Parâmetros obrigatórios: o nome e a parte onde entra (como o importador do trace declara).
-    let names = vec!["placa".to_string(), "placa".to_string()];
+    // O hash usa exatamente os nomes dos parâmetros OBRIGATÓRIOS (`plan.parameters`).
+    let names = vec!["placa".to_string()];
     let expected = scrapelens_core::validate::plan_hash(
         &bundle.session,
         &bundle,
@@ -2280,4 +2280,51 @@ fn plan_hash_is_computed_at_generation_by_the_core_and_the_script_has_no_hashlib
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC 0"));
     let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(&trace).unwrap()).unwrap();
     assert_eq!(doc["plan"]["hash"], literal);
+    assert_eq!(doc["plan"]["parameters"], serde_json::json!(["placa"]));
+}
+
+#[test]
+fn overriding_an_optional_parameter_changes_neither_plan_hash_nor_plan_parameters() {
+    // `op` tem padrão (constante estrutural): opcional.
+    let bundle = custom_bundle(&[
+        ("GET", "https://h.example.test/app?op=S37", &[], None),
+        (
+            "POST",
+            "https://h.example.test/alvo?op=S37",
+            &[],
+            Some((
+                "application/x-www-form-urlencoded",
+                "placa=TST0T10&tok=abc12345",
+            )),
+        ),
+    ]);
+    let script = generate(&bundle, "har-0002");
+    assert!(script.contains("('op', 'S37',"), "{script}");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("p.py");
+    std::fs::write(&path, &script).unwrap();
+    let run = |extra: &[&str], name: &str| {
+        let trace = dir.path().join(name);
+        let mut args = vec!["--confirmar", "--placa", "ZZZ9Z99"];
+        args.extend_from_slice(extra);
+        args.extend_from_slice(&["--trace", trace.to_str().unwrap()]);
+        let out = trace_run(&path, 200, &args);
+        assert!(String::from_utf8_lossy(&out.stdout).contains("RC 0"));
+        serde_json::from_slice::<serde_json::Value>(&std::fs::read(&trace).unwrap()).unwrap()
+    };
+    let base = run(&[], "a.json");
+    let overridden = run(&["--op", "OUTRO"], "b.json");
+    assert_eq!(base["plan"], overridden["plan"]);
+    assert_eq!(base["plan"]["parameters"], serde_json::json!(["placa"]));
+    // `parameters` de topo continua com todos os usados (aqui, `op` entra a mais).
+    let names = |d: &serde_json::Value| -> Vec<String> {
+        d["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert!(!names(&base).contains(&"op".to_string()));
+    assert!(names(&overridden).contains(&"op".to_string()));
 }

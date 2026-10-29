@@ -3437,26 +3437,29 @@ fn to_python_with(
     // Impressão do plano: uma só implementação, a do core (`validate::plan_hash`),
     // calculada na geração com os mesmos adaptadores do gerador e os nomes dos
     // parâmetros obrigatórios do script. O validate deve usar o mesmo `--adapter`.
-    // O importador do trace declara, para cada item de `parameters`, a `part`
-    // (ou o nome) e, para `plan.parameters`, os nomes: o validate passa essa
-    // união ao `plan_hash`. Aqui: os nomes obrigatórios e as partes deles.
-    let required_names: Vec<String> = gen
+    // `plan.parameters`: só os nomes dos parâmetros OBRIGATÓRIOS do plano, e o hash
+    // é calculado com exatamente esses nomes (sobrescrever um opcional não o muda).
+    let mut required: Vec<String> = gen
         .params
         .list
         .iter()
         .filter(|p| p.default.is_none())
         .map(|p| p.name.clone())
         .collect();
-    let mut required: Vec<String> = required_names.clone();
-    required.extend(
-        gen.param_uses
-            .iter()
-            .filter(|(name, _)| required_names.contains(name))
-            .map(|(_, part)| part.clone()),
-    );
+    required.sort();
+    required.dedup();
     let plan_hash =
         crate::validate::plan_hash(session, source, target_request_id, &opts.flow, &required)?;
     let _ = writeln!(text, "PLAN_HASH = {}", lit(&plan_hash));
+    let _ = writeln!(
+        text,
+        "PLAN_PARAMETERS = [{}]",
+        required
+            .iter()
+            .map(|n| lit(n))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     let _ = writeln!(text, "TARGET = {}", lit(target_request_id));
     let _ = writeln!(
         text,
@@ -3855,7 +3858,7 @@ def trace_close(base=None):
         'startedAt': trace_time(TRACE['started']),
         'target': TARGET,
         'complete': TRACE['complete'],
-        'plan': {'hash': PLAN_HASH, 'parameters': sorted(TRACE['params'])},
+        'plan': {'hash': PLAN_HASH, 'parameters': PLAN_PARAMETERS},
         # Só nomes dos parâmetros do usuário e das partes onde entram, nunca valores.
         'parameters': [{'name': n, 'part': part} for n, part in PARAM_USES if n in TRACE['params']],
         'steps': entries,
