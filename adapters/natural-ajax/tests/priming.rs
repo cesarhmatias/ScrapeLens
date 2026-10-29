@@ -488,7 +488,7 @@ fn abbreviated_sensitive_names_are_required_with_and_without_adapter() {
     ops.push(grammar::Op::Lit {
         op: 'p',
         key: "v_passo".into(),
-        value: "abc".into(),
+        value: "3".into(),
     });
     ops.push(grammar::Op::Delta("dd".into()));
     let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
@@ -496,7 +496,7 @@ fn abbreviated_sensitive_names_are_required_with_and_without_adapter() {
     for (i, name) in names.iter().enumerate() {
         assert!(!out.text.contains(&format!("valorx{i}zz")), "{name} vazou");
     }
-    assert!(out.text.contains("'abc'"), "v_passo não é sensível");
+    assert!(out.text.contains("'3'"), "v_passo não é sensível");
     // Sem adaptador: campos de form com os mesmos nomes.
     let body: String = names
         .iter()
@@ -615,31 +615,34 @@ fn identifier_like_parts_without_origin_are_required_and_state_stays_literal() {
             .unwrap_or_default()
             .to_string()
     };
+    // Intermediário (`lenient_parts`): identificadores viram parâmetro, o resto
+    // segue literal.
+    let mut lenient = options();
+    lenient.lenient_parts = true;
+    let out = to_python(&bundle.session, &bundle, "har-0001", &lenient).expect("gera");
+    for (k, v) in ids {
+        assert!(!out.text.contains(v), "{k} vazou:\n{}", out.text);
+    }
+    let line = call(&out.text);
+    assert!(
+        line.contains("'true'")
+            && line.contains("'-180'")
+            && line.contains("'2.0'")
+            && line.contains("'texto livre'"),
+        "{line}"
+    );
+    // Padrão (estrito): identificadores seguem parâmetros; sem resposta
+    // anterior com o campo (requisição inicial), o resto são as constantes
+    // iniciais do protocolo e fica literal.
     let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
     for (k, v) in ids {
         assert!(!out.text.contains(v), "{k} vazou:\n{}", out.text);
     }
-    assert!(
-        call(&out.text).contains("'true'")
-            && call(&out.text).contains("'-180'")
-            && call(&out.text).contains("'2.0'")
-            && call(&out.text).contains("'texto livre'"),
-        "{}",
-        call(&out.text)
-    );
-    // Modo estrito: qualquer parte única sem origem vira parâmetro.
-    let mut strict = options();
-    strict.strict_parts = true;
-    let out = to_python(&bundle.session, &bundle, "har-0001", &strict).expect("gera");
     let line = call(&out.text);
-    // Constante de UI (booleano, número curto com sinal/decimal): literal
-    // mesmo no estrito; qualquer outro valor único sem origem é parâmetro.
     assert!(
-        line.contains("'true'") && line.contains("'-180'") && line.contains("'2.0'"),
+        line.contains("'true'") && line.contains("'-180'") && line.contains("'texto livre'"),
         "{line}"
     );
-    assert!(!line.contains("'texto livre'"), "{line}");
-    assert!(out.text.contains("('xml_p_v_livre', None,"), "{}", out.text);
 }
 
 #[test]
@@ -669,6 +672,13 @@ fn more_sensitive_abbreviations_are_required() {
         "v_complemento",
         "v_municipio",
         "v_documento",
+        "v_sen",
+        "v_snh",
+        "v_nip",
+        "v_ticket",
+        "v_voucher",
+        "v_chv",
+        "v_doc",
     ];
     let mut ops = vec![plain_head()];
     for (i, name) in names.iter().enumerate() {
@@ -684,4 +694,42 @@ fn more_sensitive_abbreviations_are_required() {
     for (i, name) in names.iter().enumerate() {
         assert!(!out.text.contains(&format!("valorx{i}zz")), "{name} vazou");
     }
+}
+
+#[test]
+fn value_observed_in_another_round_is_a_required_parameter_with_a_note() {
+    let dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/previous-round-producer");
+    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("sessão");
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    let out = to_python(&lazy.session, &source, "cdp-r0006", &options()).expect("gera");
+    assert!(!out.text.contains("AB12"), "AB12 vazou:\n{}", out.text);
+    assert!(
+        out.text
+            .contains("('xml_p_v_tok', None, 'origem em outra rodada (cdp-r0002)')"),
+        "{}",
+        out.text
+    );
+    assert!(out
+        .text
+        .contains("# XML.p.v_tok: origem em outra rodada (cdp-r0002); informe o valor"));
+    assert!(!out.text.contains("XML.p.v_tok: sem origem observada"));
+    python_ast_ok(&out.text);
+}
+
+#[test]
+fn unreferenced_producer_with_a_different_value_leaves_the_plan() {
+    // hid3-c2: dois produtores da mesma parte; só o segundo tem o valor do alvo.
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pruned-producer");
+    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("sessão");
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    let out = to_python(&lazy.session, &source, "cdp-r0004", &options()).expect("gera");
+    assert!(out.text.contains("R['cdp-r0003']"), "{}", out.text);
+    assert!(!out.text.contains("R['cdp-r0002']"));
+    let plan: Vec<&str> = out
+        .text
+        .lines()
+        .filter(|l| l.starts_with("    ('cdp-r"))
+        .collect();
+    assert!(plan.iter().all(|l| !l.contains("'cdp-r0002'")), "{plan:?}");
 }

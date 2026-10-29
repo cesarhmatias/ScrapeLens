@@ -1,0 +1,1565 @@
+{
+  "schemaVersion": 1,
+  "session": {
+    "id": "capture-415026d5a9501b17",
+    "browser": {
+      "name": "Chrome"
+    },
+    "startedAt": "2026-10-26T07:33:21.000Z",
+    "completeness": {
+      "state": "partial",
+      "reasons": [
+        "captura com avisos de erro"
+      ],
+      "counts": {
+        "requests": 6,
+        "attempts": 6,
+        "redirects": 0,
+        "connections": 1,
+        "streamSessions": 0,
+        "sourceEvents": 18,
+        "sourceEventsUsed": 18,
+        "sourceEventsUnknown": 0,
+        "warnings": 4
+      }
+    },
+    "capture": {
+      "mode": "cdp",
+      "notes": "CDP: headers de objeto não comprovam sequência; use NetLog"
+    },
+    "labels": [
+      "capture-import"
+    ]
+  },
+  "requests": [
+    {
+      "id": "cdp-r0001",
+      "url": "http://127.0.0.1:18791/easynat-app",
+      "method": "GET",
+      "protocol": "h1",
+      "status": 200,
+      "resourceType": "XHR",
+      "cdp": {
+        "requestId": "1.0",
+        "loaderId": "L"
+      },
+      "netlog": {},
+      "attempts": [
+        {
+          "id": "cdp-r0001-a1",
+          "logicalId": "cdp-r0001",
+          "index": 0,
+          "url": "http://127.0.0.1:18791/easynat-app",
+          "method": "GET",
+          "protocol": "h1",
+          "status": 200,
+          "connectionId": "cdp-conn-aabafe7104d914be",
+          "outcome": "completed",
+          "startedAt": 1.0,
+          "endedAt": 1.05,
+          "requestHeaders": {
+            "headers": [],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+            ]
+          },
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "text/html",
+                "source": "cdp",
+                "event": "Network.responseReceived.headers",
+                "sourceId": "1.0",
+                "timestamp": 1.025,
+                "method": "cdp.response.headers",
+                "verification": "unverified",
+                "notes": [
+                  "objeto CDP: ordem ASCII e duplicatas fundidas"
+                ]
+              }
+            ],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.responseReceived: objeto não preserva sequência transmitida"
+            ]
+          },
+          "cookie": {
+            "raw": [],
+            "pairs": [],
+            "wireLines": [],
+            "unparsed": [],
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent.request.headers",
+              "sourceId": "1.0",
+              "timestamp": 1.0,
+              "method": "cdp.request.headers",
+              "verification": "unverified",
+              "notes": [
+                "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+              ]
+            }
+          },
+          "headerEvidence": [
+            {
+              "id": "1.0-resp-Network.responseReceived.headers",
+              "role": "response",
+              "protocol": "h1",
+              "event": "Network.responseReceived.headers",
+              "view": {
+                "headers": [
+                  {
+                    "name": "content-type",
+                    "value": "text/html",
+                    "source": "cdp",
+                    "event": "Network.responseReceived.headers",
+                    "sourceId": "1.0",
+                    "timestamp": 1.025,
+                    "method": "cdp.response.headers",
+                    "verification": "unverified",
+                    "notes": [
+                      "objeto CDP: ordem ASCII e duplicatas fundidas"
+                    ]
+                  }
+                ],
+                "orderState": "reconstructed",
+                "notes": [
+                  "Network.responseReceived: objeto não preserva sequência transmitida"
+                ]
+              }
+            }
+          ],
+          "requestBody": {
+            "state": "empty",
+            "note": "CDP: requisição sem corpo",
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent",
+              "sourceId": "1.0",
+              "method": "requestWillBeSent",
+              "verification": "unverified",
+              "notes": [
+                "inferido: método sem corpo e hasPostData ausente no evento"
+              ]
+            }
+          },
+          "responseBody": {
+            "state": "captured",
+            "attachment": "cdp-r0001-a1.response.body",
+            "bytes": 18,
+            "contentType": "text/html",
+            "provenance": {
+              "source": "cdp",
+              "event": "x",
+              "sourceId": "1.0",
+              "timestamp": 1.05,
+              "method": "cdp-bodies.jsonl",
+              "verification": "unverified"
+            }
+          },
+          "timings": {
+            "requestTime": 1.0,
+            "wallTime": "2026-10-26T07:33:21.000Z",
+            "totalMs": 50.00000000000004,
+            "estimated": false
+          },
+          "cdp": {
+            "requestId": "1.0",
+            "loaderId": "L"
+          },
+          "netlog": {},
+          "match": "unmatched",
+          "provenance": {
+            "source": "cdp",
+            "sourceId": "1.0",
+            "timestamp": 1.0,
+            "method": "Network.attempt",
+            "verification": "unverified"
+          }
+        }
+      ],
+      "requestHeaders": {
+        "headers": [],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+        ]
+      },
+      "responseHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "text/html",
+            "source": "cdp",
+            "event": "Network.responseReceived.headers",
+            "sourceId": "1.0",
+            "timestamp": 1.025,
+            "method": "cdp.response.headers",
+            "verification": "unverified",
+            "notes": [
+              "objeto CDP: ordem ASCII e duplicatas fundidas"
+            ]
+          }
+        ],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.responseReceived: objeto não preserva sequência transmitida"
+        ]
+      },
+      "cookie": {
+        "raw": [],
+        "pairs": [],
+        "wireLines": [],
+        "unparsed": [],
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent.request.headers",
+          "sourceId": "1.0",
+          "timestamp": 1.0,
+          "method": "cdp.request.headers",
+          "verification": "unverified",
+          "notes": [
+            "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+          ]
+        }
+      },
+      "requestBody": {
+        "state": "empty",
+        "note": "CDP: requisição sem corpo",
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent",
+          "sourceId": "1.0",
+          "method": "requestWillBeSent",
+          "verification": "unverified",
+          "notes": [
+            "inferido: método sem corpo e hasPostData ausente no evento"
+          ]
+        }
+      },
+      "responseBody": {
+        "state": "captured",
+        "attachment": "cdp-r0001-a1.response.body",
+        "bytes": 18,
+        "contentType": "text/html",
+        "provenance": {
+          "source": "cdp",
+          "event": "x",
+          "sourceId": "1.0",
+          "timestamp": 1.05,
+          "method": "cdp-bodies.jsonl",
+          "verification": "unverified"
+        }
+      },
+      "timings": {
+        "requestTime": 1.0,
+        "wallTime": "2026-10-26T07:33:21.000Z",
+        "totalMs": 50.00000000000004,
+        "estimated": false
+      },
+      "match": "unmatched",
+      "provenance": {
+        "source": "cdp",
+        "sourceId": "1.0",
+        "timestamp": 1.0,
+        "wallTime": "2026-10-26T07:33:21.000Z",
+        "method": "Network.*",
+        "verification": "unverified",
+        "notes": [
+          "estrutura vinda do CDP; verificação por informação"
+        ]
+      }
+    },
+    {
+      "id": "cdp-r0002",
+      "url": "http://127.0.0.1:18791/b",
+      "method": "GET",
+      "protocol": "h1",
+      "status": 200,
+      "resourceType": "XHR",
+      "cdp": {
+        "requestId": "1.1",
+        "loaderId": "L"
+      },
+      "netlog": {},
+      "attempts": [
+        {
+          "id": "cdp-r0002-a1",
+          "logicalId": "cdp-r0002",
+          "index": 0,
+          "url": "http://127.0.0.1:18791/b",
+          "method": "GET",
+          "protocol": "h1",
+          "status": 200,
+          "connectionId": "cdp-conn-aabafe7104d914be",
+          "outcome": "completed",
+          "startedAt": 2.0,
+          "endedAt": 2.05,
+          "requestHeaders": {
+            "headers": [],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+            ]
+          },
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "text/html",
+                "source": "cdp",
+                "event": "Network.responseReceived.headers",
+                "sourceId": "1.1",
+                "timestamp": 2.025,
+                "method": "cdp.response.headers",
+                "verification": "unverified",
+                "notes": [
+                  "objeto CDP: ordem ASCII e duplicatas fundidas"
+                ]
+              }
+            ],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.responseReceived: objeto não preserva sequência transmitida"
+            ]
+          },
+          "cookie": {
+            "raw": [],
+            "pairs": [],
+            "wireLines": [],
+            "unparsed": [],
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent.request.headers",
+              "sourceId": "1.1",
+              "timestamp": 2.0,
+              "method": "cdp.request.headers",
+              "verification": "unverified",
+              "notes": [
+                "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+              ]
+            }
+          },
+          "headerEvidence": [
+            {
+              "id": "1.1-resp-Network.responseReceived.headers",
+              "role": "response",
+              "protocol": "h1",
+              "event": "Network.responseReceived.headers",
+              "view": {
+                "headers": [
+                  {
+                    "name": "content-type",
+                    "value": "text/html",
+                    "source": "cdp",
+                    "event": "Network.responseReceived.headers",
+                    "sourceId": "1.1",
+                    "timestamp": 2.025,
+                    "method": "cdp.response.headers",
+                    "verification": "unverified",
+                    "notes": [
+                      "objeto CDP: ordem ASCII e duplicatas fundidas"
+                    ]
+                  }
+                ],
+                "orderState": "reconstructed",
+                "notes": [
+                  "Network.responseReceived: objeto não preserva sequência transmitida"
+                ]
+              }
+            }
+          ],
+          "requestBody": {
+            "state": "empty",
+            "note": "CDP: requisição sem corpo",
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent",
+              "sourceId": "1.1",
+              "method": "requestWillBeSent",
+              "verification": "unverified",
+              "notes": [
+                "inferido: método sem corpo e hasPostData ausente no evento"
+              ]
+            }
+          },
+          "responseBody": {
+            "state": "captured",
+            "attachment": "cdp-r0002-a1.response.body",
+            "bytes": 135,
+            "contentType": "text/html",
+            "provenance": {
+              "source": "cdp",
+              "event": "x",
+              "sourceId": "1.1",
+              "timestamp": 2.05,
+              "method": "cdp-bodies.jsonl",
+              "verification": "unverified"
+            }
+          },
+          "timings": {
+            "requestTime": 2.0,
+            "wallTime": "2026-10-26T07:33:22.000Z",
+            "totalMs": 49.99999999999982,
+            "estimated": false
+          },
+          "cdp": {
+            "requestId": "1.1",
+            "loaderId": "L"
+          },
+          "netlog": {},
+          "match": "unmatched",
+          "provenance": {
+            "source": "cdp",
+            "sourceId": "1.1",
+            "timestamp": 2.0,
+            "method": "Network.attempt",
+            "verification": "unverified"
+          }
+        }
+      ],
+      "requestHeaders": {
+        "headers": [],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+        ]
+      },
+      "responseHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "text/html",
+            "source": "cdp",
+            "event": "Network.responseReceived.headers",
+            "sourceId": "1.1",
+            "timestamp": 2.025,
+            "method": "cdp.response.headers",
+            "verification": "unverified",
+            "notes": [
+              "objeto CDP: ordem ASCII e duplicatas fundidas"
+            ]
+          }
+        ],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.responseReceived: objeto não preserva sequência transmitida"
+        ]
+      },
+      "cookie": {
+        "raw": [],
+        "pairs": [],
+        "wireLines": [],
+        "unparsed": [],
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent.request.headers",
+          "sourceId": "1.1",
+          "timestamp": 2.0,
+          "method": "cdp.request.headers",
+          "verification": "unverified",
+          "notes": [
+            "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+          ]
+        }
+      },
+      "requestBody": {
+        "state": "empty",
+        "note": "CDP: requisição sem corpo",
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent",
+          "sourceId": "1.1",
+          "method": "requestWillBeSent",
+          "verification": "unverified",
+          "notes": [
+            "inferido: método sem corpo e hasPostData ausente no evento"
+          ]
+        }
+      },
+      "responseBody": {
+        "state": "captured",
+        "attachment": "cdp-r0002-a1.response.body",
+        "bytes": 135,
+        "contentType": "text/html",
+        "provenance": {
+          "source": "cdp",
+          "event": "x",
+          "sourceId": "1.1",
+          "timestamp": 2.05,
+          "method": "cdp-bodies.jsonl",
+          "verification": "unverified"
+        }
+      },
+      "timings": {
+        "requestTime": 2.0,
+        "wallTime": "2026-10-26T07:33:22.000Z",
+        "totalMs": 49.99999999999982,
+        "estimated": false
+      },
+      "match": "unmatched",
+      "provenance": {
+        "source": "cdp",
+        "sourceId": "1.1",
+        "timestamp": 2.0,
+        "wallTime": "2026-10-26T07:33:22.000Z",
+        "method": "Network.*",
+        "verification": "unverified",
+        "notes": [
+          "estrutura vinda do CDP; verificação por informação"
+        ]
+      }
+    },
+    {
+      "id": "cdp-r0003",
+      "url": "http://127.0.0.1:18791/a",
+      "method": "GET",
+      "protocol": "h1",
+      "status": 200,
+      "resourceType": "XHR",
+      "cdp": {
+        "requestId": "1.2",
+        "loaderId": "L"
+      },
+      "netlog": {},
+      "attempts": [
+        {
+          "id": "cdp-r0003-a1",
+          "logicalId": "cdp-r0003",
+          "index": 0,
+          "url": "http://127.0.0.1:18791/a",
+          "method": "GET",
+          "protocol": "h1",
+          "status": 200,
+          "connectionId": "cdp-conn-aabafe7104d914be",
+          "outcome": "completed",
+          "startedAt": 3.0,
+          "endedAt": 3.05,
+          "requestHeaders": {
+            "headers": [],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+            ]
+          },
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "text/html",
+                "source": "cdp",
+                "event": "Network.responseReceived.headers",
+                "sourceId": "1.2",
+                "timestamp": 3.025,
+                "method": "cdp.response.headers",
+                "verification": "unverified",
+                "notes": [
+                  "objeto CDP: ordem ASCII e duplicatas fundidas"
+                ]
+              }
+            ],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.responseReceived: objeto não preserva sequência transmitida"
+            ]
+          },
+          "cookie": {
+            "raw": [],
+            "pairs": [],
+            "wireLines": [],
+            "unparsed": [],
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent.request.headers",
+              "sourceId": "1.2",
+              "timestamp": 3.0,
+              "method": "cdp.request.headers",
+              "verification": "unverified",
+              "notes": [
+                "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+              ]
+            }
+          },
+          "headerEvidence": [
+            {
+              "id": "1.2-resp-Network.responseReceived.headers",
+              "role": "response",
+              "protocol": "h1",
+              "event": "Network.responseReceived.headers",
+              "view": {
+                "headers": [
+                  {
+                    "name": "content-type",
+                    "value": "text/html",
+                    "source": "cdp",
+                    "event": "Network.responseReceived.headers",
+                    "sourceId": "1.2",
+                    "timestamp": 3.025,
+                    "method": "cdp.response.headers",
+                    "verification": "unverified",
+                    "notes": [
+                      "objeto CDP: ordem ASCII e duplicatas fundidas"
+                    ]
+                  }
+                ],
+                "orderState": "reconstructed",
+                "notes": [
+                  "Network.responseReceived: objeto não preserva sequência transmitida"
+                ]
+              }
+            }
+          ],
+          "requestBody": {
+            "state": "empty",
+            "note": "CDP: requisição sem corpo",
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent",
+              "sourceId": "1.2",
+              "method": "requestWillBeSent",
+              "verification": "unverified",
+              "notes": [
+                "inferido: método sem corpo e hasPostData ausente no evento"
+              ]
+            }
+          },
+          "responseBody": {
+            "state": "captured",
+            "attachment": "cdp-r0003-a1.response.body",
+            "bytes": 56,
+            "contentType": "text/html",
+            "provenance": {
+              "source": "cdp",
+              "event": "x",
+              "sourceId": "1.2",
+              "timestamp": 3.05,
+              "method": "cdp-bodies.jsonl",
+              "verification": "unverified"
+            }
+          },
+          "timings": {
+            "requestTime": 3.0,
+            "wallTime": "2026-10-26T07:33:23.000Z",
+            "totalMs": 49.99999999999982,
+            "estimated": false
+          },
+          "cdp": {
+            "requestId": "1.2",
+            "loaderId": "L"
+          },
+          "netlog": {},
+          "match": "unmatched",
+          "provenance": {
+            "source": "cdp",
+            "sourceId": "1.2",
+            "timestamp": 3.0,
+            "method": "Network.attempt",
+            "verification": "unverified"
+          }
+        }
+      ],
+      "requestHeaders": {
+        "headers": [],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+        ]
+      },
+      "responseHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "text/html",
+            "source": "cdp",
+            "event": "Network.responseReceived.headers",
+            "sourceId": "1.2",
+            "timestamp": 3.025,
+            "method": "cdp.response.headers",
+            "verification": "unverified",
+            "notes": [
+              "objeto CDP: ordem ASCII e duplicatas fundidas"
+            ]
+          }
+        ],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.responseReceived: objeto não preserva sequência transmitida"
+        ]
+      },
+      "cookie": {
+        "raw": [],
+        "pairs": [],
+        "wireLines": [],
+        "unparsed": [],
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent.request.headers",
+          "sourceId": "1.2",
+          "timestamp": 3.0,
+          "method": "cdp.request.headers",
+          "verification": "unverified",
+          "notes": [
+            "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+          ]
+        }
+      },
+      "requestBody": {
+        "state": "empty",
+        "note": "CDP: requisição sem corpo",
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent",
+          "sourceId": "1.2",
+          "method": "requestWillBeSent",
+          "verification": "unverified",
+          "notes": [
+            "inferido: método sem corpo e hasPostData ausente no evento"
+          ]
+        }
+      },
+      "responseBody": {
+        "state": "captured",
+        "attachment": "cdp-r0003-a1.response.body",
+        "bytes": 56,
+        "contentType": "text/html",
+        "provenance": {
+          "source": "cdp",
+          "event": "x",
+          "sourceId": "1.2",
+          "timestamp": 3.05,
+          "method": "cdp-bodies.jsonl",
+          "verification": "unverified"
+        }
+      },
+      "timings": {
+        "requestTime": 3.0,
+        "wallTime": "2026-10-26T07:33:23.000Z",
+        "totalMs": 49.99999999999982,
+        "estimated": false
+      },
+      "match": "unmatched",
+      "provenance": {
+        "source": "cdp",
+        "sourceId": "1.2",
+        "timestamp": 3.0,
+        "wallTime": "2026-10-26T07:33:23.000Z",
+        "method": "Network.*",
+        "verification": "unverified",
+        "notes": [
+          "estrutura vinda do CDP; verificação por informação"
+        ]
+      }
+    },
+    {
+      "id": "cdp-r0004",
+      "url": "http://127.0.0.1:18791/easynat-app",
+      "method": "GET",
+      "protocol": "h1",
+      "status": 200,
+      "resourceType": "XHR",
+      "cdp": {
+        "requestId": "2.0",
+        "loaderId": "L"
+      },
+      "netlog": {},
+      "attempts": [
+        {
+          "id": "cdp-r0004-a1",
+          "logicalId": "cdp-r0004",
+          "index": 0,
+          "url": "http://127.0.0.1:18791/easynat-app",
+          "method": "GET",
+          "protocol": "h1",
+          "status": 200,
+          "connectionId": "cdp-conn-aabafe7104d914be",
+          "outcome": "completed",
+          "startedAt": 10.0,
+          "endedAt": 10.05,
+          "requestHeaders": {
+            "headers": [],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+            ]
+          },
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "text/html",
+                "source": "cdp",
+                "event": "Network.responseReceived.headers",
+                "sourceId": "2.0",
+                "timestamp": 10.025,
+                "method": "cdp.response.headers",
+                "verification": "unverified",
+                "notes": [
+                  "objeto CDP: ordem ASCII e duplicatas fundidas"
+                ]
+              }
+            ],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.responseReceived: objeto não preserva sequência transmitida"
+            ]
+          },
+          "cookie": {
+            "raw": [],
+            "pairs": [],
+            "wireLines": [],
+            "unparsed": [],
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent.request.headers",
+              "sourceId": "2.0",
+              "timestamp": 10.0,
+              "method": "cdp.request.headers",
+              "verification": "unverified",
+              "notes": [
+                "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+              ]
+            }
+          },
+          "headerEvidence": [
+            {
+              "id": "2.0-resp-Network.responseReceived.headers",
+              "role": "response",
+              "protocol": "h1",
+              "event": "Network.responseReceived.headers",
+              "view": {
+                "headers": [
+                  {
+                    "name": "content-type",
+                    "value": "text/html",
+                    "source": "cdp",
+                    "event": "Network.responseReceived.headers",
+                    "sourceId": "2.0",
+                    "timestamp": 10.025,
+                    "method": "cdp.response.headers",
+                    "verification": "unverified",
+                    "notes": [
+                      "objeto CDP: ordem ASCII e duplicatas fundidas"
+                    ]
+                  }
+                ],
+                "orderState": "reconstructed",
+                "notes": [
+                  "Network.responseReceived: objeto não preserva sequência transmitida"
+                ]
+              }
+            }
+          ],
+          "requestBody": {
+            "state": "empty",
+            "note": "CDP: requisição sem corpo",
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent",
+              "sourceId": "2.0",
+              "method": "requestWillBeSent",
+              "verification": "unverified",
+              "notes": [
+                "inferido: método sem corpo e hasPostData ausente no evento"
+              ]
+            }
+          },
+          "responseBody": {
+            "state": "captured",
+            "attachment": "cdp-r0004-a1.response.body",
+            "bytes": 18,
+            "contentType": "text/html",
+            "provenance": {
+              "source": "cdp",
+              "event": "x",
+              "sourceId": "2.0",
+              "timestamp": 10.05,
+              "method": "cdp-bodies.jsonl",
+              "verification": "unverified"
+            }
+          },
+          "timings": {
+            "requestTime": 10.0,
+            "wallTime": "2026-10-26T07:33:30.000Z",
+            "totalMs": 50.00000000000071,
+            "estimated": false
+          },
+          "cdp": {
+            "requestId": "2.0",
+            "loaderId": "L"
+          },
+          "netlog": {},
+          "match": "unmatched",
+          "provenance": {
+            "source": "cdp",
+            "sourceId": "2.0",
+            "timestamp": 10.0,
+            "method": "Network.attempt",
+            "verification": "unverified"
+          }
+        }
+      ],
+      "requestHeaders": {
+        "headers": [],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+        ]
+      },
+      "responseHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "text/html",
+            "source": "cdp",
+            "event": "Network.responseReceived.headers",
+            "sourceId": "2.0",
+            "timestamp": 10.025,
+            "method": "cdp.response.headers",
+            "verification": "unverified",
+            "notes": [
+              "objeto CDP: ordem ASCII e duplicatas fundidas"
+            ]
+          }
+        ],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.responseReceived: objeto não preserva sequência transmitida"
+        ]
+      },
+      "cookie": {
+        "raw": [],
+        "pairs": [],
+        "wireLines": [],
+        "unparsed": [],
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent.request.headers",
+          "sourceId": "2.0",
+          "timestamp": 10.0,
+          "method": "cdp.request.headers",
+          "verification": "unverified",
+          "notes": [
+            "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+          ]
+        }
+      },
+      "requestBody": {
+        "state": "empty",
+        "note": "CDP: requisição sem corpo",
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent",
+          "sourceId": "2.0",
+          "method": "requestWillBeSent",
+          "verification": "unverified",
+          "notes": [
+            "inferido: método sem corpo e hasPostData ausente no evento"
+          ]
+        }
+      },
+      "responseBody": {
+        "state": "captured",
+        "attachment": "cdp-r0004-a1.response.body",
+        "bytes": 18,
+        "contentType": "text/html",
+        "provenance": {
+          "source": "cdp",
+          "event": "x",
+          "sourceId": "2.0",
+          "timestamp": 10.05,
+          "method": "cdp-bodies.jsonl",
+          "verification": "unverified"
+        }
+      },
+      "timings": {
+        "requestTime": 10.0,
+        "wallTime": "2026-10-26T07:33:30.000Z",
+        "totalMs": 50.00000000000071,
+        "estimated": false
+      },
+      "match": "unmatched",
+      "provenance": {
+        "source": "cdp",
+        "sourceId": "2.0",
+        "timestamp": 10.0,
+        "wallTime": "2026-10-26T07:33:30.000Z",
+        "method": "Network.*",
+        "verification": "unverified",
+        "notes": [
+          "estrutura vinda do CDP; verificação por informação"
+        ]
+      }
+    },
+    {
+      "id": "cdp-r0005",
+      "url": "http://127.0.0.1:18791/a",
+      "method": "GET",
+      "protocol": "h1",
+      "status": 200,
+      "resourceType": "XHR",
+      "cdp": {
+        "requestId": "2.1",
+        "loaderId": "L"
+      },
+      "netlog": {},
+      "attempts": [
+        {
+          "id": "cdp-r0005-a1",
+          "logicalId": "cdp-r0005",
+          "index": 0,
+          "url": "http://127.0.0.1:18791/a",
+          "method": "GET",
+          "protocol": "h1",
+          "status": 200,
+          "connectionId": "cdp-conn-aabafe7104d914be",
+          "outcome": "completed",
+          "startedAt": 11.0,
+          "endedAt": 11.05,
+          "requestHeaders": {
+            "headers": [],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+            ]
+          },
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "text/html",
+                "source": "cdp",
+                "event": "Network.responseReceived.headers",
+                "sourceId": "2.1",
+                "timestamp": 11.025,
+                "method": "cdp.response.headers",
+                "verification": "unverified",
+                "notes": [
+                  "objeto CDP: ordem ASCII e duplicatas fundidas"
+                ]
+              }
+            ],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.responseReceived: objeto não preserva sequência transmitida"
+            ]
+          },
+          "cookie": {
+            "raw": [],
+            "pairs": [],
+            "wireLines": [],
+            "unparsed": [],
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent.request.headers",
+              "sourceId": "2.1",
+              "timestamp": 11.0,
+              "method": "cdp.request.headers",
+              "verification": "unverified",
+              "notes": [
+                "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+              ]
+            }
+          },
+          "headerEvidence": [
+            {
+              "id": "2.1-resp-Network.responseReceived.headers",
+              "role": "response",
+              "protocol": "h1",
+              "event": "Network.responseReceived.headers",
+              "view": {
+                "headers": [
+                  {
+                    "name": "content-type",
+                    "value": "text/html",
+                    "source": "cdp",
+                    "event": "Network.responseReceived.headers",
+                    "sourceId": "2.1",
+                    "timestamp": 11.025,
+                    "method": "cdp.response.headers",
+                    "verification": "unverified",
+                    "notes": [
+                      "objeto CDP: ordem ASCII e duplicatas fundidas"
+                    ]
+                  }
+                ],
+                "orderState": "reconstructed",
+                "notes": [
+                  "Network.responseReceived: objeto não preserva sequência transmitida"
+                ]
+              }
+            }
+          ],
+          "requestBody": {
+            "state": "empty",
+            "note": "CDP: requisição sem corpo",
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent",
+              "sourceId": "2.1",
+              "method": "requestWillBeSent",
+              "verification": "unverified",
+              "notes": [
+                "inferido: método sem corpo e hasPostData ausente no evento"
+              ]
+            }
+          },
+          "responseBody": {
+            "state": "captured",
+            "attachment": "cdp-r0005-a1.response.body",
+            "bytes": 56,
+            "contentType": "text/html",
+            "provenance": {
+              "source": "cdp",
+              "event": "x",
+              "sourceId": "2.1",
+              "timestamp": 11.05,
+              "method": "cdp-bodies.jsonl",
+              "verification": "unverified"
+            }
+          },
+          "timings": {
+            "requestTime": 11.0,
+            "wallTime": "2026-10-26T07:33:31.000Z",
+            "totalMs": 50.00000000000071,
+            "estimated": false
+          },
+          "cdp": {
+            "requestId": "2.1",
+            "loaderId": "L"
+          },
+          "netlog": {},
+          "match": "unmatched",
+          "provenance": {
+            "source": "cdp",
+            "sourceId": "2.1",
+            "timestamp": 11.0,
+            "method": "Network.attempt",
+            "verification": "unverified"
+          }
+        }
+      ],
+      "requestHeaders": {
+        "headers": [],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+        ]
+      },
+      "responseHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "text/html",
+            "source": "cdp",
+            "event": "Network.responseReceived.headers",
+            "sourceId": "2.1",
+            "timestamp": 11.025,
+            "method": "cdp.response.headers",
+            "verification": "unverified",
+            "notes": [
+              "objeto CDP: ordem ASCII e duplicatas fundidas"
+            ]
+          }
+        ],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.responseReceived: objeto não preserva sequência transmitida"
+        ]
+      },
+      "cookie": {
+        "raw": [],
+        "pairs": [],
+        "wireLines": [],
+        "unparsed": [],
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent.request.headers",
+          "sourceId": "2.1",
+          "timestamp": 11.0,
+          "method": "cdp.request.headers",
+          "verification": "unverified",
+          "notes": [
+            "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+          ]
+        }
+      },
+      "requestBody": {
+        "state": "empty",
+        "note": "CDP: requisição sem corpo",
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent",
+          "sourceId": "2.1",
+          "method": "requestWillBeSent",
+          "verification": "unverified",
+          "notes": [
+            "inferido: método sem corpo e hasPostData ausente no evento"
+          ]
+        }
+      },
+      "responseBody": {
+        "state": "captured",
+        "attachment": "cdp-r0005-a1.response.body",
+        "bytes": 56,
+        "contentType": "text/html",
+        "provenance": {
+          "source": "cdp",
+          "event": "x",
+          "sourceId": "2.1",
+          "timestamp": 11.05,
+          "method": "cdp-bodies.jsonl",
+          "verification": "unverified"
+        }
+      },
+      "timings": {
+        "requestTime": 11.0,
+        "wallTime": "2026-10-26T07:33:31.000Z",
+        "totalMs": 50.00000000000071,
+        "estimated": false
+      },
+      "match": "unmatched",
+      "provenance": {
+        "source": "cdp",
+        "sourceId": "2.1",
+        "timestamp": 11.0,
+        "wallTime": "2026-10-26T07:33:31.000Z",
+        "method": "Network.*",
+        "verification": "unverified",
+        "notes": [
+          "estrutura vinda do CDP; verificação por informação"
+        ]
+      }
+    },
+    {
+      "id": "cdp-r0006",
+      "url": "http://127.0.0.1:18791/go",
+      "method": "POST",
+      "protocol": "h1",
+      "status": 200,
+      "resourceType": "XHR",
+      "cdp": {
+        "requestId": "9.9",
+        "loaderId": "L"
+      },
+      "netlog": {},
+      "attempts": [
+        {
+          "id": "cdp-r0006-a1",
+          "logicalId": "cdp-r0006",
+          "index": 0,
+          "url": "http://127.0.0.1:18791/go",
+          "method": "POST",
+          "protocol": "h1",
+          "status": 200,
+          "connectionId": "cdp-conn-aabafe7104d914be",
+          "outcome": "completed",
+          "startedAt": 50.0,
+          "endedAt": 50.05,
+          "requestHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "application/x-www-form-urlencoded",
+                "source": "cdp",
+                "event": "Network.requestWillBeSent.request.headers",
+                "sourceId": "9.9",
+                "timestamp": 50.0,
+                "method": "cdp.request.headers",
+                "verification": "unverified",
+                "notes": [
+                  "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+                ]
+              }
+            ],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+            ]
+          },
+          "responseHeaders": {
+            "headers": [
+              {
+                "name": "content-type",
+                "value": "text/html",
+                "source": "cdp",
+                "event": "Network.responseReceived.headers",
+                "sourceId": "9.9",
+                "timestamp": 50.025,
+                "method": "cdp.response.headers",
+                "verification": "unverified",
+                "notes": [
+                  "objeto CDP: ordem ASCII e duplicatas fundidas"
+                ]
+              }
+            ],
+            "orderState": "reconstructed",
+            "notes": [
+              "Network.responseReceived: objeto não preserva sequência transmitida"
+            ]
+          },
+          "cookie": {
+            "raw": [],
+            "pairs": [],
+            "wireLines": [],
+            "unparsed": [],
+            "provenance": {
+              "source": "cdp",
+              "event": "Network.requestWillBeSent.request.headers",
+              "sourceId": "9.9",
+              "timestamp": 50.0,
+              "method": "cdp.request.headers",
+              "verification": "unverified",
+              "notes": [
+                "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+              ]
+            }
+          },
+          "headerEvidence": [
+            {
+              "id": "9.9-req-blink",
+              "role": "request",
+              "protocol": "unknown",
+              "event": "Network.requestWillBeSent.request.headers",
+              "view": {
+                "headers": [
+                  {
+                    "name": "content-type",
+                    "value": "application/x-www-form-urlencoded",
+                    "source": "cdp",
+                    "event": "Network.requestWillBeSent.request.headers",
+                    "sourceId": "9.9",
+                    "timestamp": 50.0,
+                    "method": "cdp.request.headers",
+                    "verification": "unverified",
+                    "notes": [
+                      "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+                    ]
+                  }
+                ],
+                "orderState": "reconstructed",
+                "notes": [
+                  "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+                ]
+              }
+            },
+            {
+              "id": "9.9-resp-Network.responseReceived.headers",
+              "role": "response",
+              "protocol": "h1",
+              "event": "Network.responseReceived.headers",
+              "view": {
+                "headers": [
+                  {
+                    "name": "content-type",
+                    "value": "text/html",
+                    "source": "cdp",
+                    "event": "Network.responseReceived.headers",
+                    "sourceId": "9.9",
+                    "timestamp": 50.025,
+                    "method": "cdp.response.headers",
+                    "verification": "unverified",
+                    "notes": [
+                      "objeto CDP: ordem ASCII e duplicatas fundidas"
+                    ]
+                  }
+                ],
+                "orderState": "reconstructed",
+                "notes": [
+                  "Network.responseReceived: objeto não preserva sequência transmitida"
+                ]
+              }
+            }
+          ],
+          "requestBody": {
+            "state": "captured",
+            "attachment": "cdp-r0006-a1.request.body",
+            "bytes": 116,
+            "contentType": "application/x-www-form-urlencoded",
+            "provenance": {
+              "source": "cdp",
+              "event": "x",
+              "sourceId": "9.9",
+              "timestamp": 50.0,
+              "method": "cdp-bodies.jsonl",
+              "verification": "unverified"
+            }
+          },
+          "responseBody": {
+            "state": "captured",
+            "attachment": "cdp-r0006-a1.response.body",
+            "bytes": 2,
+            "contentType": "text/html",
+            "provenance": {
+              "source": "cdp",
+              "event": "x",
+              "sourceId": "9.9",
+              "timestamp": 50.05,
+              "method": "cdp-bodies.jsonl",
+              "verification": "unverified"
+            }
+          },
+          "timings": {
+            "requestTime": 50.0,
+            "wallTime": "2026-10-26T07:34:10.000Z",
+            "totalMs": 49.99999999999716,
+            "estimated": false
+          },
+          "cdp": {
+            "requestId": "9.9",
+            "loaderId": "L"
+          },
+          "netlog": {},
+          "match": "unmatched",
+          "provenance": {
+            "source": "cdp",
+            "sourceId": "9.9",
+            "timestamp": 50.0,
+            "method": "Network.attempt",
+            "verification": "unverified"
+          }
+        }
+      ],
+      "requestHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "application/x-www-form-urlencoded",
+            "source": "cdp",
+            "event": "Network.requestWillBeSent.request.headers",
+            "sourceId": "9.9",
+            "timestamp": 50.0,
+            "method": "cdp.request.headers",
+            "verification": "unverified",
+            "notes": [
+              "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+            ]
+          }
+        ],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.requestWillBeSent.request.headers: objeto não preserva sequência transmitida"
+        ]
+      },
+      "responseHeaders": {
+        "headers": [
+          {
+            "name": "content-type",
+            "value": "text/html",
+            "source": "cdp",
+            "event": "Network.responseReceived.headers",
+            "sourceId": "9.9",
+            "timestamp": 50.025,
+            "method": "cdp.response.headers",
+            "verification": "unverified",
+            "notes": [
+              "objeto CDP: ordem ASCII e duplicatas fundidas"
+            ]
+          }
+        ],
+        "orderState": "reconstructed",
+        "notes": [
+          "Network.responseReceived: objeto não preserva sequência transmitida"
+        ]
+      },
+      "cookie": {
+        "raw": [],
+        "pairs": [],
+        "wireLines": [],
+        "unparsed": [],
+        "provenance": {
+          "source": "cdp",
+          "event": "Network.requestWillBeSent.request.headers",
+          "sourceId": "9.9",
+          "timestamp": 50.0,
+          "method": "cdp.request.headers",
+          "verification": "unverified",
+          "notes": [
+            "subconjunto; ordem diferente do fio; duplicatas não representáveis"
+          ]
+        }
+      },
+      "requestBody": {
+        "state": "captured",
+        "attachment": "cdp-r0006-a1.request.body",
+        "bytes": 116,
+        "contentType": "application/x-www-form-urlencoded",
+        "provenance": {
+          "source": "cdp",
+          "event": "x",
+          "sourceId": "9.9",
+          "timestamp": 50.0,
+          "method": "cdp-bodies.jsonl",
+          "verification": "unverified"
+        }
+      },
+      "responseBody": {
+        "state": "captured",
+        "attachment": "cdp-r0006-a1.response.body",
+        "bytes": 2,
+        "contentType": "text/html",
+        "provenance": {
+          "source": "cdp",
+          "event": "x",
+          "sourceId": "9.9",
+          "timestamp": 50.05,
+          "method": "cdp-bodies.jsonl",
+          "verification": "unverified"
+        }
+      },
+      "timings": {
+        "requestTime": 50.0,
+        "wallTime": "2026-10-26T07:34:10.000Z",
+        "totalMs": 49.99999999999716,
+        "estimated": false
+      },
+      "match": "unmatched",
+      "provenance": {
+        "source": "cdp",
+        "sourceId": "9.9",
+        "timestamp": 50.0,
+        "wallTime": "2026-10-26T07:34:10.000Z",
+        "method": "Network.*",
+        "verification": "unverified",
+        "notes": [
+          "estrutura vinda do CDP; verificação por informação"
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "cdp-conn-aabafe7104d914be",
+      "protocol": "h1",
+      "host": "127.0.0.1",
+      "provenance": {
+        "source": "cdp",
+        "method": "response.connectionId",
+        "verification": "verified"
+      }
+    }
+  ],
+  "warnings": [
+    {
+      "code": "netlog.time_unit_assumed",
+      "message": "NetLog sem timeTickOffset; unidade de `time` assumida como milissegundos e relógio relativo",
+      "severity": "warning"
+    },
+    {
+      "code": "netlog.no_wall_clock",
+      "message": "NetLog sem timeTickOffset; startedAt usa época Unix como marcador explícito",
+      "severity": "warning"
+    },
+    {
+      "code": "netlog.no_requests",
+      "message": "NetLog não produziu nenhuma requisição utilizável",
+      "severity": "error"
+    },
+    {
+      "code": "correlate.unmatched",
+      "message": "6 tentativa(s) CDP sem correspondência no NetLog dentro da janela de 5.0s",
+      "severity": "warning"
+    }
+  ]
+}

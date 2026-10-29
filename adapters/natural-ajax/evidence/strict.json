@@ -7,14 +7,14 @@
       "usa_codificador_natural": true,
       "execucoes": [
         {
-          "rc": 0,
-          "requests": 10,
-          "stderr_tail": ""
+          "rc": 1,
+          "requests": 0,
+          "stderr_tail": "priming: parâmetros obrigatórios ausentes: --xml-event, --xml-event-2"
         },
         {
-          "rc": 0,
-          "requests": 10,
-          "stderr_tail": ""
+          "rc": 1,
+          "requests": 0,
+          "stderr_tail": "priming: parâmetros obrigatórios ausentes: --xml-event, --xml-event-2"
         }
       ]
     },
@@ -35,5 +35,8 @@
     }
   },
   "controle_falha_como_esperado": true,
-  "fails": []
+  "fails": [
+    "com adaptador: rc=1 priming: parâmetros obrigatórios ausentes: --xml-event, --xml-event-2",
+    "com adaptador: rc=1 priming: parâmetros obrigatórios ausentes: --xml-event, --xml-event-2"
+  ]
 }

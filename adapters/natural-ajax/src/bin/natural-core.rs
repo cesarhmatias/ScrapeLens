@@ -78,7 +78,7 @@ fn adapter_roundtrip(args: &[String]) -> Result<(), String> {
     use scrapelens_natural_ajax::grammar::{self, Op};
     check_adapter_flag(args)?;
     let dir = args.first().ok_or(
-        "uso: natural-core adapter-roundtrip <sessao> [--adapter natural-ajax] [--strict-parts]",
+        "uso: natural-core adapter-roundtrip <sessao> [--adapter natural-ajax] [--lenient-parts]",
     )?;
     let (lazy, _report) =
         scrapelens_core::open_session_dir_lazy(&PathBuf::from(dir)).map_err(|e| e.to_string())?;
@@ -254,7 +254,7 @@ fn compare_command(args: &[String]) -> Result<(), String> {
 fn export_priming(args: &[String]) -> Result<(), String> {
     check_adapter_flag(args)?;
     if args.len() < 2 {
-        return Err("uso: natural-core export-priming <sessao> <requestId> [--out f] [--allow-incomplete] [--allow-origin o] [--allow-literal-body] [--adapter natural-ajax] [--strict-parts]".into());
+        return Err("uso: natural-core export-priming <sessao> <requestId> [--out f] [--allow-incomplete] [--allow-origin o] [--allow-literal-body] [--adapter natural-ajax] [--lenient-parts]".into());
     }
     let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
         .map_err(|e| e.to_string())?;
@@ -262,7 +262,7 @@ fn export_priming(args: &[String]) -> Result<(), String> {
     let mut options = PrimingOptions {
         allow_incomplete: args.iter().any(|a| a == "--allow-incomplete"),
         allow_literal_body: args.iter().any(|a| a == "--allow-literal-body"),
-        strict_parts: args.iter().any(|a| a == "--strict-parts"),
+        lenient_parts: args.iter().any(|a| a == "--lenient-parts"),
         allow_origins: args
             .windows(2)
             .filter(|w| w[0] == "--allow-origin")

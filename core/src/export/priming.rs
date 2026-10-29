@@ -62,15 +62,16 @@ pub struct PrimingOptions {
     /// `flow.adapters`: sem eles, o campo reivindicado volta ao tratamento
     /// por trechos.
     pub adapter_encoders: Vec<AdapterEncoder>,
-    /// Princípio estrito das partes do adaptador: literal só para papel
-    /// Structure, constante comprovada (≥ 2 requisições da sessão ou contexto
-    /// estático) ou valor de navegação; toda outra parte sem origem vira
-    /// parâmetro obrigatório. Sem a opção (modo padrão), só valores com cara
-    /// de identificador/segredo (UUID, hex, ULID, base64, timestamp, misto
-    /// alfanumérico longo) viram parâmetro; o resto segue literal. Com ou
-    /// sem a opção, a "constante de UI" (booleanos e números de até 4
-    /// caracteres com sinal/decimal: `true`, `-180`, `2.0`) é literal.
-    pub strict_parts: bool,
+    /// Princípio das partes do adaptador. Padrão (estrito): literal só para
+    /// papel Structure, constante comprovada (≥ 2 requisições da sessão ou
+    /// contexto estático), valor de navegação ou "constante de UI"
+    /// (`is_ui_constant`: booleanos e números de até 4 caracteres com
+    /// sinal/decimal: `true`, `-180`, `2.0`); toda outra parte sem origem vira
+    /// parâmetro obrigatório. Com `lenient_parts`, só valores com cara de
+    /// identificador/segredo/carimbo de tempo (UUID, hex, ULID, base64,
+    /// timestamp, misto alfanumérico longo) viram parâmetro e o resto fica
+    /// literal. Valor com origem em outra rodada nunca é literal.
+    pub lenient_parts: bool,
 }
 
 /// Codificador Python equivalente ao `encode` de um adaptador. O `source`
@@ -194,6 +195,13 @@ const SENSITIVE_ABBREVIATIONS: &[&str] = &[
     "complemento",
     "municipio",
     "documento",
+    "sen",
+    "snh",
+    "nip",
+    "ticket",
+    "voucher",
+    "chv",
+    "doc",
 ];
 /// Termos longos o bastante para casar como substring (`codSeguranca`).
 const SENSITIVE_LONG_TERMS: &[&str] = &[
@@ -581,6 +589,19 @@ fn earlier_response_has_delta(
     adapter: &dyn crate::adapter::ProtocolAdapter,
     field: &str,
 ) -> bool {
+    earlier_response_has_field(gen, request, adapter, field, true)
+}
+
+/// Algum passo anterior do plano devolveu um campo do adaptador (com delta,
+/// se `with_delta`)? Sem isso, os valores da requisição são as constantes
+/// iniciais do protocolo (handshake), não eco de estado do servidor.
+fn earlier_response_has_field(
+    gen: &Gen,
+    request: &LogicalRequest,
+    adapter: &dyn crate::adapter::ProtocolAdapter,
+    field: &str,
+    with_delta: bool,
+) -> bool {
     use crate::adapter::PartRole;
     let Some(pos) = gen.steps.iter().position(|id| id == &request.id) else {
         return false;
@@ -596,7 +617,7 @@ fn earlier_response_has_delta(
             control.name == field
                 && adapter
                     .decode(&control.value)
-                    .is_ok_and(|d| d.parts.iter().any(|p| p.role == PartRole::Delta))
+                    .is_ok_and(|d| !with_delta || d.parts.iter().any(|p| p.role == PartRole::Delta))
         })
     })
 }
@@ -776,14 +797,53 @@ fn adapter_field_expr(
                                 let has_param =
                                     scrubbed.iter().any(|p| matches!(p, Piece::Expr(_)));
                                 let identifier = looks_identifier_value(&part.value);
+                                // Valor com produtor observado fora do plano
+                                // (outra rodada): nunca literal.
+                                let observed_elsewhere = origin
+                                    .filter(|o| {
+                                        matches!(
+                                            o.status,
+                                            OriginStatus::Origin | OriginStatus::Ambiguous
+                                        )
+                                    })
+                                    .and_then(|o| {
+                                        o.oldest
+                                            .and_then(|i| o.evidences.get(i))
+                                            .or_else(|| o.evidences.first())
+                                    })
+                                    .map(|e| e.request_id.clone());
                                 if proven
                                     || in_static_context
                                     || navigation
                                     || has_param
                                     || is_ui_constant(&part.value)
-                                    || (!opts.strict_parts && !identifier)
+                                    // Nenhuma resposta anterior do plano traz o
+                                    // campo: constantes iniciais do protocolo.
+                                    || (!identifier
+                                        && observed_elsewhere.is_none()
+                                        && !earlier_response_has_field(
+                                            gen,
+                                            request,
+                                            adapter.as_ref(),
+                                            name,
+                                            false,
+                                        ))
+                                    || (opts.lenient_parts
+                                        && !identifier
+                                        && observed_elsewhere.is_none())
                                 {
                                     pieces_expr(scrubbed)
+                                } else if let Some(rid) = &observed_elsewhere {
+                                    gen.notes.push(format!(
+                                        "{full}: origem em outra rodada ({rid}); informe o valor"
+                                    ));
+                                    gen.params.get(
+                                        &full,
+                                        &part.value,
+                                        false,
+                                        &format!("origem em outra rodada ({rid})"),
+                                        false,
+                                    )
                                 } else {
                                     gen.notes.push(format!(
                                         "{full}: sem origem observada nem prova de constância; informe o valor"
@@ -2727,12 +2787,8 @@ pub fn to_python(
 ) -> Result<ExportOutput> {
     let (output, extras) =
         to_python_with(session, source, target_request_id, opts, &HashSet::new())?;
-    // Passo produtor (vindo das partes do adaptador, ou que só fornecia o
-    // campo reivindicado) que nenhum passo referencia sai do plano.
-    let unreferenced: HashSet<String> = extras
-        .into_iter()
-        .filter(|rid| !output.text.contains(&format!("R[{}]", lit(rid))))
-        .collect();
+    // Passos produtores que nenhum passo referencia saem do plano.
+    let unreferenced: HashSet<String> = extras.into_iter().collect();
     if unreferenced.is_empty() {
         return Ok(output);
     }
@@ -3379,7 +3435,70 @@ fn to_python_with(
             ),
         ));
     }
-    let prune: Vec<String> = extra_ids;
+    // Poda: passo extra não referenciado, ou passo da base não referenciado
+    // cujo papel era só fornecer partes do campo reivindicado que outro passo
+    // referenciado já fornece (mesmos nomes de parte, valores diferentes).
+    let referenced = |rid: &str| output.text.contains(&format!("R[{}]", lit(rid)));
+    let mut prune: Vec<String> = extra_ids
+        .into_iter()
+        .filter(|rid| !referenced(rid))
+        .collect();
+    if let Some(encoder_index) = gen.encoders_used.iter().next().copied() {
+        if let Some(adapter) = opts
+            .flow
+            .adapters
+            .get(&opts.adapter_encoders[encoder_index].adapter_id)
+        {
+            let names_of = |rid: &str, field: &str| -> BTreeSet<String> {
+                let mut out = BTreeSet::new();
+                if let Some(producer) = session.find_request(rid) {
+                    if let Some(text) = response_text(producer, source) {
+                        for control in html_controls(&text) {
+                            if control.name == field {
+                                if let Ok(decoded) = adapter.decode(&control.value) {
+                                    out.extend(
+                                        decoded
+                                            .parts
+                                            .into_iter()
+                                            .filter(|p| !p.name.is_empty())
+                                            .map(|p| p.name),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                out
+            };
+            for field in gen.claimed_fields.clone() {
+                let mut supplied: BTreeSet<String> = BTreeSet::new();
+                for step in &chain.steps {
+                    if step.request_id != target_request_id && referenced(&step.request_id) {
+                        supplied.extend(names_of(&step.request_id, &field));
+                    }
+                }
+                for step in &chain.steps {
+                    if step.request_id == target_request_id
+                        || referenced(&step.request_id)
+                        || prune.contains(&step.request_id)
+                        || step.reasons.is_empty()
+                        || !step
+                            .reasons
+                            .iter()
+                            .all(|r| r.field.split('.').next().unwrap_or(&r.field) == field)
+                    {
+                        continue;
+                    }
+                    let mine = names_of(&step.request_id, &field);
+                    if !mine.is_empty() && mine.is_subset(&supplied) {
+                        prune.push(step.request_id.clone());
+                    }
+                }
+            }
+        }
+    }
+    prune.sort();
+    prune.dedup();
     Ok((output, prune))
 }
 
