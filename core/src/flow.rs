@@ -2015,10 +2015,13 @@ fn is_ts_cookie(name: &str) -> bool {
 /// fora de proteção e de estáticos. É a aresta da cadeia de páginas.
 fn referer_page_of(ctx: &FlowContext<'_>, pos: Pos) -> Option<Pos> {
     let attempt = ctx.attempt_ref(pos);
-    let referer = attempt
-        .request_headers
-        .first_value("referer")
-        .or_else(|| attempt.initiator.as_ref().and_then(|i| i.url.as_deref()))?;
+    let referer = attempt.request_headers.first_value("referer").or_else(|| {
+        attempt.initiator.as_ref().and_then(|i| {
+            i.url
+                .as_deref()
+                .or_else(|| i.stack_top.as_ref().and_then(|f| f.url.as_deref()))
+        })
+    })?;
     let referer = referer.split('#').next().unwrap_or(referer);
     ctx.positions()
         .filter(|cand| {

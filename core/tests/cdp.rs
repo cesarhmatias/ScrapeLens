@@ -96,3 +96,46 @@ fn real_h1_correlation_matches_and_prefers_netlog_sequence() {
         .iter()
         .any(|evidence| evidence.event.contains("responseReceivedExtraInfo")));
 }
+
+#[test]
+fn initiator_keeps_type_url_line_and_stack_top() {
+    let line = |id: &str, url: &str, extra: &str, init: &str| {
+        format!(
+            r#"{{"method":"Network.requestWillBeSent","params":{{"requestId":"{id}","timestamp":1.0,"wallTime":1.0,"type":"XHR","request":{{"url":"{url}","method":"GET","headers":{{}}}},"initiator":{init}{extra}}}}}"#
+        )
+    };
+    let script = r#"{"type":"script","url":"https://x.test/a.js","lineNumber":7,"stack":{"callFrames":[{"functionName":"go","url":"https://x.test/a.js","lineNumber":12,"columnNumber":3},{"functionName":"outer","url":"https://x.test/b.js","lineNumber":1}]}}"#;
+    let jsonl = [
+        line(
+            "1",
+            "https://x.test/p",
+            "",
+            r#"{"type":"parser","url":"https://x.test/"}"#,
+        ),
+        line("2", "https://x.test/r", "", script),
+        line("3", "https://x.test/o", "", r#"{"type":"other"}"#),
+    ]
+    .join("\n");
+    let capture = parse_cdp_jsonl(jsonl.as_bytes()).unwrap();
+    let (session, _) = build_cdp_session(&capture);
+    let init = |suffix: &str| {
+        session
+            .requests
+            .iter()
+            .find(|r| r.url.ends_with(suffix))
+            .and_then(|r| r.attempts[0].initiator.clone())
+            .unwrap_or_else(|| panic!("initiator de {suffix}"))
+    };
+    assert_eq!(init("/p").kind, "parser");
+    assert_eq!(init("/p").url.as_deref(), Some("https://x.test/"));
+    let s = init("/r");
+    assert_eq!((s.kind.as_str(), s.line_number), ("script", Some(7)));
+    let top = s.stack_top.expect("topo do stack");
+    assert_eq!(top.function.as_deref(), Some("go"));
+    assert_eq!(top.line_number, Some(12));
+    assert_eq!(init("/o").kind, "other");
+    // sessão antiga sem os campos novos continua válida
+    let old: scrapelens_core::model::Initiator =
+        serde_json::from_str(r#"{"kind":"parser","url":"u"}"#).unwrap();
+    assert!(old.stack_top.is_none() && old.line_number.is_none());
+}

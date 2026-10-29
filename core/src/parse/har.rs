@@ -478,12 +478,7 @@ fn parse_entry(
         initiator: object
             .get("_initiator")
             .and_then(Value::as_object)
-            .and_then(|init| {
-                Some(crate::model::Initiator {
-                    kind: init.get("type")?.as_str()?.to_string(),
-                    url: init.get("url").and_then(Value::as_str).map(str::to_string),
-                })
-            }),
+            .and_then(|init| crate::model::Initiator::from_json(init)),
         provenance: {
             let provenance = Provenance::new(Source::Har, "log.entries", Verification::Unverified)
                 .with_event(format!("log.entries[{index}]"))

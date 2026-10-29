@@ -174,16 +174,10 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     }
                 }
 
-                let initiator =
-                    params
-                        .get("initiator")
-                        .and_then(Value::as_object)
-                        .and_then(|init| {
-                            Some(crate::model::Initiator {
-                                kind: init.get("type")?.as_str()?.to_string(),
-                                url: init.get("url").and_then(Value::as_str).map(str::to_string),
-                            })
-                        });
+                let initiator = params
+                    .get("initiator")
+                    .and_then(Value::as_object)
+                    .and_then(|init| crate::model::Initiator::from_json(init));
                 let mut attempt = CdpAttempt {
                     initiator,
                     url: request

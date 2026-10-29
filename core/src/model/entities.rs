@@ -94,6 +94,49 @@ pub struct Initiator {
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_number: Option<u32>,
+    /// Topo do stack (CDP `initiator.stack.callFrames[0]`); o stack inteiro não é guardado.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack_top: Option<InitiatorFrame>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitiatorFrame {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_number: Option<u32>,
+}
+
+impl Initiator {
+    /// Lê `{type, url, lineNumber, stack}` (CDP e HAR `_initiator` têm a mesma forma).
+    pub fn from_json(init: &serde_json::Map<String, serde_json::Value>) -> Option<Self> {
+        let text = |v: Option<&serde_json::Value>| v.and_then(|v| v.as_str()).map(str::to_string);
+        let line = |v: Option<&serde_json::Value>| {
+            v.and_then(|v| v.as_u64())
+                .and_then(|n| u32::try_from(n).ok())
+        };
+        let stack_top = init
+            .get("stack")
+            .and_then(|s| s.get("callFrames"))
+            .and_then(|f| f.as_array())
+            .and_then(|f| f.first())
+            .map(|f| InitiatorFrame {
+                url: text(f.get("url")),
+                function: text(f.get("functionName")).filter(|n| !n.is_empty()),
+                line_number: line(f.get("lineNumber")),
+            });
+        Some(Initiator {
+            kind: init.get("type")?.as_str()?.to_string(),
+            url: text(init.get("url")),
+            line_number: line(init.get("lineNumber")),
+            stack_top,
+        })
+    }
 }
 
 /// Referência a um evento CDP; IDs não são equivalentes aos do NetLog.
