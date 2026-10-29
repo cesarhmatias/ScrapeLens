@@ -9,7 +9,7 @@
 //!   scrapelens-core origins <sessao> <requestId>
 //!   scrapelens-core chain <sessao> <requestId>
 //!   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
-//!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete]
+//!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>]
 //!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
@@ -284,6 +284,10 @@ fn assess_command(args: &[String]) -> Result<(), String> {
         }
         None => AssessRules::default(),
     };
+    let warnings = rules.warnings();
+    for warning in &warnings {
+        eprintln!("aviso: {warning}");
+    }
     let (lazy, _report) =
         scrapelens_core::open_session_dir_lazy(&dir).map_err(|e| e.to_string())?;
     let source = scrapelens_core::search::LazyBodies(&lazy);
@@ -304,6 +308,7 @@ fn assess_command(args: &[String]) -> Result<(), String> {
         "schema": "scrapelens.assess/1",
         "rules": rules_path.map(|p| p.display().to_string()).unwrap_or_else(|| "default".into()),
         "counts": counts,
+        "warnings": warnings,
         "outcomes": outcomes,
     }))
 }
@@ -456,7 +461,7 @@ fn usage() -> String {
   scrapelens-core origins <sessao> <requestId>
   scrapelens-core chain <sessao> <requestId>
   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
-  scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete]
+  scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>]
   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]

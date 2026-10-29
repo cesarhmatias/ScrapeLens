@@ -121,3 +121,38 @@ fn cli_uses_help_for_usage() {
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("import-capture"));
 }
+
+#[test]
+fn cli_assess_prints_rule_warnings() {
+    let root = tempfile::tempdir().unwrap();
+    let session = root.path().join("s");
+    let out = cli()
+        .arg("import-har")
+        .arg(har_fixture())
+        .arg("--out")
+        .arg(&session)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let rules = root.path().join("rules.json");
+    std::fs::write(
+        &rules,
+        r#"{"schema":"scrapelens.assess-rules/1","fields":[],"protectionMarkers":[],"protectionPaths":[],"blockedStatuses":[]}"#,
+    )
+    .unwrap();
+    let out = cli()
+        .arg("assess")
+        .arg(&session)
+        .arg("--rules")
+        .arg(&rules)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("desligam todas as detecções"));
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["warnings"].as_array().unwrap().len(), 1);
+    // Regras padrão: sem avisos.
+    let out = cli().arg("assess").arg(&session).output().unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(json["warnings"].as_array().unwrap().is_empty());
+}
