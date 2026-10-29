@@ -43,7 +43,12 @@ decisores (Líder e Revisor independente) não mudaram de modelo. Em 2026-10-29 
 `opencode-go/deepseek-v4.1-flash` falhou: as tarefas eram encerradas em ~1 s,
 sem trabalho, e a chamada direta pelo CLI não respondeu em 3 min. Os
 executores voltaram temporariamente para Sonnet 5.5 low até o DeepSeek ser
-diagnosticado. Sem substituição silenciosa de modelo.
+diagnosticado. Diagnóstico (log do OpenCode): "Go usage limit exceeded"
+(cota da assinatura OpenCode Go esgotada), e a reserva automática não
+entrou. Em 2026-10-29, a pedido do usuário, os não decisores (Core, Testes,
+App, Captura e Documentação) passaram para `opencode/deepseek-v4.1-flash-free`
+(esforço high), testado e respondendo. Vale a partir da próxima tarefa de cada
+um. Revisor e Líder sem mudança. Sem substituição silenciosa de modelo.
 
 Equipe (seção OpenBot "ScrapeLens"):
 
