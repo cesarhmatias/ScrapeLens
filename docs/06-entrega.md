@@ -169,3 +169,27 @@ Pendente com o usuário: teste do `.app` real com o seletor nativo de pastas
 (não automatizável). As sessões sintéticas já importadas estão em
 `tests/.work/teste-manual-final/` (fora do git): `1-detran-uma-rodada`,
 `2-detran-duas-rodadas` e `3-detran-bloqueio`.
+
+## Entrega da rodada 8 (2026-10-29)
+
+Pacote: o mesmo caminho, compilado no HEAD dc14ac3, assinado ad-hoc, com
+SHA-256 do executável `bda06a2db30c4b4315247f78fa728c967b946d7850641f4ab161995983f1e052`.
+Nada foi publicado.
+
+Novo: o adaptador Natural for Ajax (`adapters/natural-ajax`, fora do core,
+CLI `natural-core --adapter natural-ajax`). Ele traz:
+- decodificação e recodificação exatas do campo `XML`, com limites e custo
+  linear;
+- nomes internos (`XML.delta`, `XML.p.v_placa`) em origens e compare;
+- visão estruturada no app;
+- script de priming que recalcula os prefixos UTF-16 (provado no detran-sim
+  strict, com o controle sem adaptador falhando).
+
+As partes do adaptador seguem o modo estrito por padrão (`--lenient-parts`
+opcional). Aceite: tests/RELATORIO-FINAL.md, seção "Rodada 8", tudo verde
+(core 259, src-tauri 45, natural-ajax 28; 3 HARs reais com e sem adaptador).
+Revisão independente aprovada, com os residuais aceitos registrados em
+docs/12.
+
+Pendente com o usuário: o teste manual do `.app` com o seletor nativo. As
+sessões sintéticas estão em tests/.work/teste-manual-final/.
