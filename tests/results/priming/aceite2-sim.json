@@ -34,27 +34,46 @@
    "requests_sent": 10,
    "first_bad_response_at_request": 10,
    "stopped_at_bad_step": true,
-   "message": "priming: a aplicação respondeu com ERRORMESSAGE no passo 10 (har-0026): Placa não encontrada (modo error, sintético)"
+   "message": "priming: a aplicação respondeu com ERRORMESSAGE no passo 10: Placa não encontrada (modo error, sintético)"
   },
   "nocontrols": {
    "rc": 1,
-   "requests_sent": 4,
+   "requests_sent": 3,
    "first_bad_response_at_request": 3,
-   "stopped_at_bad_step": false,
-   "message": "priming: controle HTML 'XML' não encontrado na resposta de XML[96] (har-0015)"
+   "stopped_at_bad_step": true,
+   "message": "priming: passo 3: resposta sem XML (provável bloqueio ou sessão inválida)"
   },
   "403": {
    "rc": 1,
-   "requests_sent": 4,
+   "requests_sent": 3,
    "first_bad_response_at_request": 3,
-   "stopped_at_bad_step": false,
-   "message": "priming: controle HTML 'XML' não encontrado na resposta de XML[96] (har-0015)"
+   "stopped_at_bad_step": true,
+   "message": "priming: passo 3: HTTP 403"
   }
+ },
+ "operator_inputs": {
+  "placa": "sintética",
+  "sessionid_cliente": "_ + 12 dígitos gerados no check",
+  "client_novo_vs_har": true,
+  "required_params": [
+   "--op",
+   "--page",
+   "--sessionid-cliente",
+   "--placa",
+   "--cpf"
+  ],
+  "required_params_extra": [
+   "--op",
+   "--page"
+  ],
+  "extra_synthetic_filled": [
+   "--op",
+   "--page"
+  ]
  },
  "plan_steps": 10,
  "negative_control_captured_post_rejected": true,
  "fails": [
-  "nocontrols: o script NÃO parou na resposta ruim: ruim no pedido #3, enviou 4 pedidos (não pode seguir adiante)",
-  "403: o script NÃO parou na resposta ruim: ruim no pedido #3, enviou 4 pedidos (não pode seguir adiante)"
+  "o script exige entrada obrigatória além de placa/sessionid-cliente (o gerador deve derivá-la): --op, --page"
  ]
 }

@@ -5,6 +5,10 @@
   python3 tests/aceite/check_priming_sim.py [--core BIN] [--python PY_COM_REQUESTS] [--port 8791]
 
 O interpretador do script precisa de `requests` (ex.: python3 -m venv /tmp/v && /tmp/v/bin/pip install requests).
+Entradas do operador (F1, 48b3cdb): o script exige a placa e a parte do SESSIONID montada no cliente (`_` + 12
+dígitos, formato que o detran-sim valida). Este check passa uma placa sintética e GERA essa parte a cada execução,
+como o navegador faria, nunca um valor capturado do HAR; qualquer outra entrada obrigatória faz o check falhar
+com mensagem clara.
 Cenários: ok (cadeia completa; 2 execuções com sessões diferentes; valores capturados rejeitados pelo simulador),
 error / nocontrols / 403 (o script deve falhar com mensagem clara e NÃO seguir adiante: a execução termina no
 próprio passo que recebeu a resposta ruim). Resultado em tests/results/priming/aceite2-sim.json.
@@ -14,11 +18,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -29,6 +36,19 @@ ROOT = cb.ROOT
 SIM = ROOT / "testserver" / "detran-sim" / "detran_sim.py"
 HAR = ROOT / "fixtures" / "detran-pb-real-shape" / "real-shape-1round.har"
 OUT = ROOT / "tests" / "results" / "priming" / "aceite2-sim.json"
+PLACA = "TST0T10"      # sintética
+CPF = "00000000191"    # sintético
+# Entradas do operador que o script pode exigir (F1): placa e a parte do SESSIONID montada no cliente.
+# Critério do líder (Rodada 7, F1): qualquer outra entrada obrigatória — inclusive --op/--page, que são
+# navegação derivável do próprio fluxo — faz o check falhar com mensagem clara. Não se passa valor do HAR
+# para contornar: isso esconderia o defeito do gerador.
+ALLOWED_REQUIRED = {"--placa", "--cpf", "--sessionid-cliente"}
+# O detran-sim valida o formato: prefixo do easynat-app + "_" + 12 dígitos montados no cliente. A entrada do
+# script é essa parte montada no cliente, com o separador.
+CLIENT_RE = re.compile(r"_\d{12}")
+# Valores sintéticos para uma entrada extra exigida pelo gerador (nunca um valor do HAR). A exigência em si
+# continua contando como falha; isto só mantém os 4 modos medidos enquanto o gerador não deriva o valor.
+EXTRA_SYNTHETIC = {"--op": "SIM", "--page": "PAGINA"}
 FAILS: list[str] = []
 
 
@@ -48,14 +68,45 @@ def http(base, path):
     return json.load(urllib.request.urlopen(base + path, timeout=5))
 
 
-def run_script(py, script, base, cwd, extra=()):
-    p = subprocess.run([py, "-I", str(script), "--confirmar", "--base-url", base, "--placa", "TST0T10", "--cpf", "00000000191", *extra],
-                       capture_output=True, text=True, timeout=120, cwd=cwd)
-    return p
+def new_client_part():
+    """Parte do SESSIONID montada no cliente: `_` + 12 dígitos, nova a cada execução, como no navegador."""
+    return "_" + "".join(random.choice("0123456789") for _ in range(12))
+
+
+def captured_clients(har_path):
+    """Sufixos (12 dígitos) de SESSIONID que existem no HAR, só para provar que o check não usa nenhum."""
+    parts = set()
+    for e in json.loads(har_path.read_text())["log"]["entries"]:
+        vals = [i.get("value", "") for i in e["request"].get("queryString", [])]
+        vals += [i.get("value", "") for i in e["request"].get("headers", [])]
+        vals += re.findall(r"SESSIONID=([^&\s]+)", e["request"].get("postData", {}).get("text", ""))
+        for v in vals:
+            tail = v.strip().partition("_")[2]
+            if re.fullmatch(r"\d{12}", tail):
+                parts.add(tail)
+    return parts
+
+
+def required_params(py, script, cwd):
+    """Com `--confirmar` e sem entradas, o script falha antes de qualquer requisição listando o que exige (F1)."""
+    p = subprocess.run([py, "-I", str(script), "--confirmar"], capture_output=True, text=True, timeout=60, cwd=cwd)
+    m = re.search(r"parâmetros obrigatórios ausentes: (.+)", p.stderr)
+    if not m:
+        return None
+    return [x.strip() for x in m.group(1).split(",") if x.strip()]
+
+
+def run_script(py, script, base, cwd, client, confirm=True, extra=()):
+    argv = [py, "-I", str(script)]
+    if confirm:
+        argv.append("--confirmar")
+    argv += ["--base-url", base, "--placa", PLACA, "--cpf", CPF, "--sessionid-cliente", client, *extra]
+    return subprocess.run(argv, capture_output=True, text=True, timeout=120, cwd=cwd)
 
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--core"); ap.add_argument("--python"); ap.add_argument("--port", type=int, default=8791)
+    ap.add_argument("--sessionid-suffix", help="12 dígitos da parte montada no cliente; por padrão é gerada a cada execução")
     a = ap.parse_args()
     core, py = cb.core_bin(a.core), a.python or default_python()
     base = f"http://127.0.0.1:{a.port}"
@@ -75,15 +126,41 @@ def main():
         script = tmp / "priming.py"
         g = subprocess.run([core, "export-priming", sess, target, "--out", script], capture_output=True, text=True)
         check(g.returncode == 0, f"export-priming falhou: {g.stderr[:150]}")
-        plan = subprocess.run([py, "-I", str(script)], capture_output=True, text=True, cwd=tmp)
+
+        # Entradas do operador (F1): placa sintética + parte do SESSIONID montada no cliente, nova a cada
+        # execução; nunca um valor do HAR. O sim valida o formato (prefixo + "_" + 12 dígitos).
+        client = a.sessionid_suffix or new_client_part()
+        if not client.startswith("_"):
+            client = "_" + client
+        check(bool(CLIENT_RE.fullmatch(client)), f"a parte do SESSIONID deveria ser _+12 dígitos: {client!r}")
+        cap_tails = captured_clients(HAR)
+        check(client[1:] not in cap_tails, "a parte do SESSIONID não pode ser um valor capturado do HAR")
+        req = required_params(py, script, tmp)
+        extra_req = sorted(set(req or []) - ALLOWED_REQUIRED) if req is not None else []
+        # Entradas extras que o gerador exigir são FALHA (critério do líder), mas o check segue rodando com
+        # valores sintéticos (nunca do HAR) para que os 4 modos continuem medidos e regressões apareçam.
+        extra_argv = [arg for name in extra_req for arg in (name, EXTRA_SYNTHETIC.get(name, "SYNTH"))]
+        res["operator_inputs"] = {"placa": "sintética", "sessionid_cliente": "_ + 12 dígitos gerados no check",
+                                  "client_novo_vs_har": client[1:] not in cap_tails,
+                                  "required_params": req, "required_params_extra": extra_req,
+                                  "extra_synthetic_filled": sorted({n for n in extra_req})}
+        check(req is not None, "o script não listou as entradas obrigatórias ao rodar com --confirmar e sem entradas")
+        if req is not None:
+            check("--placa" in req and "--sessionid-cliente" in req,
+                  f"o script deveria exigir --placa e --sessionid-cliente; exigiu {req}")
+            check(not extra_req,
+                  "o script exige entrada obrigatória além de placa/sessionid-cliente (o gerador deve derivá-la): "
+                  + ", ".join(extra_req))
+
+        plan = run_script(py, script, base, tmp, client, confirm=False, extra=extra_argv)
         n_plan = sum(1 for l in plan.stdout.splitlines() if l.lstrip()[:1].isdigit() and ". " in l[:6])
-        check(plan.returncode == 0 and "Nada foi enviado" in plan.stdout, "modo plano deveria sair 0 e não enviar")
+        check(plan.returncode == 0 and "Nada foi enviado" in plan.stdout, f"modo plano deveria sair 0 e não enviar: {plan.stderr[-160:]}")
         check(http(base, "/__sim/log")["log"] == [], "modo plano não pode tocar o simulador")
         res["plan_steps"] = n_plan
 
         def scenario(mode):
             http(base, "/__sim/reset"); http(base, f"/__sim/mode?m={mode}")
-            p = run_script(py, script, base, tmp)
+            p = run_script(py, script, base, tmp, client, extra=extra_argv)
             log = http(base, "/__sim/log")
             return p, log["log"], log["sessions"]
 
@@ -131,7 +208,7 @@ def main():
     OUT.write_text(json.dumps(res, indent=1, ensure_ascii=False) + "\n")
     if FAILS:
         print(f"FAIL ({len(FAILS)}):"); [print(" -", f) for f in FAILS]; return 1
-    print("OK: priming × detran-sim — cadeia completa (2 sessões) e falha clara/imediata em error, nocontrols e 403"); return 0
+    print("OK: priming × detran-sim — entradas placa+parte do SESSIONID, cadeia completa (2 sessões) e falha clara/imediata em error, nocontrols e 403"); return 0
 
 
 if __name__ == "__main__":
