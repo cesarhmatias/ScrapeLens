@@ -416,12 +416,5 @@
    }
   }
  },
- "fails": [
-  "headers-latin1-hostis: imports inesperados ['hashlib']",
-  "headers-latin1-hostis/sim: imports inesperados ['hashlib']",
-  "headers-com-newline-e-NUL: imports inesperados ['hashlib']",
-  "headers-com-newline-e-NUL/sim: imports inesperados ['hashlib']",
-  "headers-com-bidi: imports inesperados ['hashlib']",
-  "headers-com-bidi/sim: imports inesperados ['hashlib']"
- ]
+ "fails": []
 }
