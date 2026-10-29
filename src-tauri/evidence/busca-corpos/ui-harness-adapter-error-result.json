@@ -1,0 +1,10 @@
+{
+  "originFields": [
+    "header x-requested-with XMLHttpRequest sem origem observada (já circulava) neutro: pode ser constante, entrada do usuário ou valor gerado no",
+    "corpo XML v000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "viewHeading": "Visão do adaptador Natural (derivada)",
+  "viewRows": [],
+  "errorPanel": "Não foi possível decodificar o campo\ncampo grande demais para a visão do adaptador (limite 512 KiB)",
+  "pageErrors": []
+}

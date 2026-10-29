@@ -1610,6 +1610,28 @@ mod tests {
         fs::remove_dir_all(dir).ok();
     }
 
+    #[test]
+    fn adapter_view_refuses_oversized_field_and_keeps_raw() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = real_shape_session("natural-big");
+        let name = {
+            let session: serde_json::Value = serde_json::from_slice(&fs::read(dir.join("session.json")).unwrap()).unwrap();
+            let req = session["requests"].as_array().unwrap().iter().find(|r| r["id"] == "har-0026").unwrap();
+            req["requestBody"]["attachment"].as_str().unwrap().to_string()
+        };
+        let big = format!("XML=v{}", "0".repeat(crate::adapters::MAX_FIELD_BYTES + 10));
+        fs::write(dir.join("attachments").join(&name), big).unwrap();
+        let lazy = cached_session(&dir).unwrap();
+        let request = lazy.session.requests.iter().find(|r| r.id == "har-0026").unwrap();
+        let view = crate::adapters::view(&lazy, request, "request").unwrap();
+        assert_eq!(view.fields.len(), 1);
+        let field = &view.fields[0];
+        assert!(field.error.as_deref().unwrap().contains("campo grande demais para a visão do adaptador"));
+        assert!(field.parts.is_empty());
+        assert!(field.raw.starts_with("v000") && field.raw.len() < 70 * 1024, "bruto cortado, não inteiro");
+        fs::remove_dir_all(dir).ok();
+    }
+
     /// Dados reais (adaptador Natural registrado) para o harness de UI:
     /// `SL_SESSION=<pasta> SL_DUMP=<dir> cargo test -- --ignored dump_adapter_evidence`.
     #[test]

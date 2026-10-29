@@ -71,6 +71,24 @@ pub struct AdapterView {
 }
 
 const MAX_FIELDS: usize = 20;
+/// Campo maior que isto não é decodificado na visão (a decodificação roda na thread de trabalho).
+pub const MAX_FIELD_BYTES: usize = 512 * 1024;
+/// Tempo máximo de decodificação por campo.
+const DECODE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+/// Quanto do bruto acompanha um campo que não foi decodificado.
+const RAW_SHOWN_BYTES: usize = 64 * 1024;
+pub const TOO_BIG_MESSAGE: &str = "campo grande demais para a visão do adaptador";
+
+fn clip(raw: &str) -> String {
+    if raw.len() <= RAW_SHOWN_BYTES {
+        return raw.to_string();
+    }
+    let mut end = RAW_SHOWN_BYTES;
+    while !raw.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}… (+{} bytes não exibidos)", &raw[..end], raw.len() - end)
+}
 
 fn role_name(role: &PartRole) -> String {
     match role {
@@ -146,12 +164,37 @@ pub fn view(
     let adapters = registry();
     let ctx = AdapterContext { url: &request.url, method: &request.method, request: request_side, media: Some(&media) };
     for (field, value) in candidates(&text, &media) {
+        // O tamanho é checado antes de `claim` (que já percorre a gramática).
+        if value.len() > MAX_FIELD_BYTES {
+            if view.fields.len() < MAX_FIELDS {
+                view.fields.push(AdapterField {
+                    field,
+                    adapter_id: ADAPTER_ID.to_string(),
+                    raw: clip(&value),
+                    error: Some(format!("{TOO_BIG_MESSAGE} (limite {} KiB)", MAX_FIELD_BYTES / 1024)),
+                    parts: Vec::new(),
+                });
+            }
+            continue;
+        }
         let Some(adapter) = adapters.claim(&field, &value, &ctx) else { continue };
         if view.fields.len() >= MAX_FIELDS {
             view.note = Some(format!("mostrando os primeiros {MAX_FIELDS} campos reivindicados"));
             break;
         }
-        let (parts, error) = match adapter.decode(&value) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        {
+            let (adapter, value) = (Arc::clone(adapter), value.clone());
+            std::thread::spawn(move || {
+                let _ = tx.send(adapter.decode(&value));
+            });
+        }
+        let decoded = rx
+            .recv_timeout(DECODE_TIMEOUT)
+            .unwrap_or_else(|_| Err(scrapelens_core::error::CoreError::LimitExceeded {
+                message: format!("a decodificação passou de {} s; campo não decodificado", DECODE_TIMEOUT.as_secs()),
+            }));
+        let (parts, error) = match decoded {
             Ok(decoded) => (
                 decoded
                     .parts
@@ -162,7 +205,8 @@ pub fn view(
             ),
             Err(error) => (Vec::new(), Some(error.to_string())),
         };
-        view.fields.push(AdapterField { field, adapter_id: adapter.id().to_string(), raw: value, error, parts });
+        let raw = if error.is_some() { clip(&value) } else { value };
+        view.fields.push(AdapterField { field, adapter_id: adapter.id().to_string(), raw, error, parts });
     }
     if view.fields.is_empty() && view.note.is_none() {
         view.note = Some("nenhum campo deste corpo é reivindicado por um adaptador de protocolo".into());

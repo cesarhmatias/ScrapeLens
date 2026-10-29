@@ -87,6 +87,17 @@ results.viewHeading = await page.locator("h3", { hasText: "Visão do adaptador" 
 results.viewRows = await page.locator("section:has(h3:has-text('Visão do adaptador')) tbody tr").evaluateAll((rows) => rows.map((r) => r.innerText.replace(/\s+/g, " ")));
 await page.locator("h3", { hasText: "Visão do adaptador" }).first().scrollIntoViewIfNeeded();
 await shot("35-visao-adaptador-natural.png");
+if (process.env.HARNESS_ERR) {
+  // Painel de erro de decode (campo grande demais) com a visão real do Rust sobre um corpo de 512 KiB + 10.
+  await page.getByRole("tab", { name: /Payload/ }).click();
+  await page.waitForSelector("text=Não foi possível decodificar o campo");
+  results.errorPanel = await page.locator("section:has(h3:has-text('Visão do adaptador')) .body-flag").first().innerText();
+  await shot("37-visao-adaptador-campo-grande.png");
+  results.pageErrors = errors;
+  fs.writeFileSync(path.join(outDir, "ui-harness-adapter-error-result.json"), JSON.stringify(results, null, 2));
+  console.log(JSON.stringify(results, null, 2));
+  await browser.close(); server.close(); process.exit(0);
+}
 // Exportar: script de priming com o codificador do adaptador
 await page.getByRole("button", { name: /Exportar/ }).first().click();
 await page.getByRole("tab", { name: /Script de priming/ }).click();
