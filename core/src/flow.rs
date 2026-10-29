@@ -1182,6 +1182,15 @@ fn is_generic_name(name: &str) -> bool {
         .any(|generic| generic.eq_ignore_ascii_case(name))
 }
 
+/// Nome genérico; em partes de adaptador (`XML.p.id`) vale o último componente.
+fn is_generic_value(value: &Consumed) -> bool {
+    if value.part_of.is_some() {
+        let last = value.field.rsplit('.').next().unwrap_or(&value.field);
+        return is_generic_name(last);
+    }
+    is_generic_name(&value.field)
+}
+
 fn preview(value: &str) -> String {
     let mut out: String = value.chars().take(160).collect();
     if value.chars().count() > 160 {
@@ -1301,7 +1310,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 };
                 if let Some(kind) = kind {
                     let strength = if kind == EvidenceKind::SameField
-                        && (is_generic_name(&value.field) || value.value.len() < 4 || item.soft)
+                        && (is_generic_value(value) || value.value.len() < 4 || item.soft)
                     {
                         Strength::Medium
                     } else {

@@ -76,7 +76,7 @@ impl ProtocolAdapter for LenPrefix {
 
 fn lp(delta: &str, plate: &str) -> String {
     format!(
-        "LP!{:02}delta{:02}{delta}07v_placa{:02}{plate}",
+        "LP!{:02}delta{:02}{delta}07v_placa{:02}{plate}02id0812345678",
         5,
         delta.len(),
         plate.len()
@@ -335,4 +335,14 @@ fn adapter_does_not_change_request_alignment() {
     assert_eq!(plain.pairs.len(), with.pairs.len());
     assert_eq!(plain.ambiguities, with.ambiguities);
     assert_eq!(plain.only_in_a.len(), with.only_in_a.len());
+}
+
+#[test]
+fn generic_last_component_of_adapter_part_is_only_possible() {
+    use scrapelens_core::flow::Confidence;
+    let b = flow("D3LTA-0001", "ABC1D23");
+    let o = value_origins(&b.session, &b, &logical(&b, "2.1"), &registry()).unwrap();
+    let get = |f: &str| o.values.iter().find(|v| v.field == f).unwrap();
+    assert_eq!(get("XML.p.id").confidence, Some(Confidence::Possible));
+    assert_eq!(get("XML.delta").confidence, Some(Confidence::Strong));
 }
