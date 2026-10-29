@@ -90,11 +90,15 @@ def kind_of(r, event):
     return base.replace(".html", "") if base.replace(".html", "") in PAGE_KEYS else None
 
 
+EXPORT = lambda core: [core]   # com --wrapper: [wrapper] (export-priming com adaptador); import/assess seguem no core
+EXPORT_ARGS: list[str] = []
+
+
 def extraction_kinds(expr_src):
-    names = set(re.findall(r"\b(html_control|body_field|ctx_extract|get_cookie|get_header|checked)\(", expr_src))
+    names = set(re.findall(r"\b(html_control|body_field|ctx_extract|adapter_get|get_cookie|get_header|checked)\(", expr_src))
     kinds = []
     if "html_control" in names: kinds.append("controle HTML")
-    if "ctx_extract" in names: kinds.append("trecho/literal de resposta")
+    if "ctx_extract" in names or "adapter_get" in names: kinds.append("trecho/literal de resposta")
     if "body_field" in names: kinds.append("campo form/JSON")
     if "get_cookie" in names: kinds.append("cookie jar")
     if re.search(r"\bP\[", expr_src): kinds.append("parâmetro")
@@ -176,7 +180,7 @@ def analyse(core, har, tmp, idx):
 
 def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, strict):
     out, fails = {}, []
-    p = subprocess.run([core, "export-priming", sess, first], capture_output=True, text=True)
+    p = subprocess.run([*EXPORT(core), "export-priming", sess, first, *EXPORT_ARGS], capture_output=True, text=True)
     if p.returncode != 0:
         msg = " ".join(p.stderr.split())
         out["refused"] = {
@@ -188,7 +192,7 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
             "allow_incomplete_script": "FALHOU",
         }
         # --allow-incomplete: script gerado com fail() explícito, ainda válido em Python.
-        p2 = subprocess.run([core, "export-priming", sess, first, "--allow-incomplete"], capture_output=True, text=True)
+        p2 = subprocess.run([*EXPORT(core), "export-priming", sess, first, "--allow-incomplete", *EXPORT_ARGS], capture_output=True, text=True)
         if p2.returncode == 0:
             script = p2.stdout
             spath = Path(tmp) / f"priming{idx}-{label}-incomplete.py"
@@ -279,7 +283,14 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("hars", nargs="+"); ap.add_argument("--core"); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument("hars", nargs="+"); ap.add_argument("--core")
+    ap.add_argument("--wrapper", help="natural-core: roda export-priming COM o adaptador (--adapter natural-ajax)")
+    a = ap.parse_args()
+    if a.wrapper:
+        global EXPORT, EXPORT_ARGS
+        os.environ["SCRAPELENS_CORE_BIN"] = cb.core_bin(a.core)
+        EXPORT = lambda core: [a.wrapper]
+        EXPORT_ARGS = ["--adapter", "natural-ajax"]
     core = cb.core_bin(a.core)
     tmp = tempfile.mkdtemp(prefix="sl-prime-"); os.chmod(tmp, 0o700)
     fails = []

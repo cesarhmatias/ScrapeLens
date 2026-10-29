@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rodada 8 (docs/12-adaptador-natural.md), aceite 1–2: adaptador Natural for Ajax × detran-sim em modo `strict`.
 
-  python3 tests/aceite/check_natural_adapter.py [--core BIN] [--python PY_COM_REQUESTS] [--port 8792]
+  python3 tests/aceite/check_natural_adapter.py [--core BIN] [--wrapper natural-core] [--python PY_COM_REQUESTS] [--port 8792]
          [--adapter-args "--adapter natural-ajax"] [--roundtrip-cmd "adapter-roundtrip"]
 
 (a) CONTROLE: script de priming SEM o adaptador contra o sim `strict` (valores de tamanhos diferentes das fixtures:
@@ -81,11 +81,15 @@ def run(py, script, base, cwd, client, extra=()):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--core"); ap.add_argument("--python"); ap.add_argument("--port", type=int, default=8792)
+    ap.add_argument("--core"); ap.add_argument("--wrapper", default=str(ROOT / "adapters/natural-ajax/target/release/natural-core")); ap.add_argument("--python"); ap.add_argument("--port", type=int, default=8792)
     ap.add_argument("--adapter-args", default="--adapter natural-ajax")
     ap.add_argument("--roundtrip-cmd", default="adapter-roundtrip")
     a = ap.parse_args()
     core, py = cb.core_bin(a.core), a.python or ps.default_python()
+    wrapper = a.wrapper
+    if not Path(wrapper).exists():
+        sys.exit(f"wrapper não encontrado: {wrapper} (cargo build --release em adapters/natural-ajax)")
+    os.environ["SCRAPELENS_CORE_BIN"] = core
     base = f"http://127.0.0.1:{a.port}"
     tmp = Path(tempfile.mkdtemp(prefix="sl-natural-")); os.chmod(tmp, 0o700)
     sim = subprocess.Popen([sys.executable, str(ps.SIM), "--port", str(a.port), "--mode", "strict"],
@@ -104,7 +108,7 @@ def main():
 
         # --- (a) controle: sem adaptador
         plain = tmp / "plain.py"
-        g = subprocess.run([core, "export-priming", sess, target, "--out", plain], capture_output=True, text=True)
+        g = subprocess.run([wrapper, "export-priming", sess, target, "--out", plain, "--sem-adaptador"], capture_output=True, text=True)
         check(g.returncode == 0, f"(a) export-priming sem adaptador falhou: {g.stderr[:150]}")
         client = ps.new_client_part()
         ps.http(base, "/__sim/reset"); ps.http(base, "/__sim/mode?m=strict")
@@ -119,7 +123,7 @@ def main():
 
         # --- (b) com adaptador, 2 sessões
         ad = tmp / "adapted.py"
-        g = subprocess.run([core, "export-priming", sess, target, "--out", ad, *shlex.split(a.adapter_args)], capture_output=True, text=True)
+        g = subprocess.run([wrapper, "export-priming", sess, target, "--out", ad, *shlex.split(a.adapter_args)], capture_output=True, text=True)
         INFO["b_export_rc"] = g.returncode
         check(g.returncode == 0, f"(b) adaptador indisponível: `export-priming {a.adapter_args}` rc={g.returncode}: {g.stderr.strip()[:140]}")
         if g.returncode == 0:
@@ -152,7 +156,7 @@ def main():
                 check(ok, f"(c) oráculo não fecha a gramática em {f.name} (fixture inválida?)")
             s2 = tmp / ("rt-" + f.stem)
             subprocess.run([core, "import-har", f, "--out", s2, "--label", "synthetic-fixture"], capture_output=True)
-            r = subprocess.run([core, *shlex.split(a.roundtrip_cmd), s2], capture_output=True, text=True)
+            r = subprocess.run([wrapper, *shlex.split(a.roundtrip_cmd), s2, *shlex.split(a.adapter_args)], capture_output=True, text=True)
             try:
                 j = json.loads(r.stdout)
             except Exception:
