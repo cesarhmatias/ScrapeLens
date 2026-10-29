@@ -14,7 +14,10 @@ padrão), ast.parse e saída do modo plano. E do assess: contagens por veredito 
 
 Critérios (exit 1, sem afrouxar): ast OK; modo plano rc 0 e sem enviar; ordem = fluxo manual; STAMP por
 controle HTML; delta por trecho extraído; SESSIONID e placa como parâmetro/composição (nunca literal); 0 valores
-capturados literais fora de comentários; nenhum 200 do Connector `blocked?`; respostas normais do Connector app-ok.
+capturados literais fora de comentários; parâmetros obrigatórios ⊆ {sessionid_cliente, placa} em todo alvo
+gerado pelo caminho normal; nenhum 200 do Connector `blocked?`; respostas normais do Connector app-ok.
+O script do escape hatch `--allow-incomplete` (cadeia com produtor sem corpo) só tem os parâmetros registrados
+como informação: nele o valor sem produtor observável é, por definição, entrada do operador.
 Cadeia incompleta (F2): se o HAR tem POST do Connector sem corpo de resposta, `export-priming` tem de RECUSAR,
 listando os produtores sem corpo e a ocorrência equivalente com corpo; com `--allow-incomplete`, o script gerado
 tem `fail()` explícito e continua válido em `ast.parse`/modo plano.
@@ -42,6 +45,9 @@ import check_real_detran as rd  # noqa: E402
 
 EXPECTED = ["easynat-app", "NatLogon", "init", "SIM1000X", "init", "on_interceptor", "VES0009X", "init", "cmd_filtro", "cmd_consultar_placa"]
 PAGE_KEYS = ("easynat-app", "NatLogon", "SIM1000X", "VES0009X")
+# Entradas do operador aceitas no script gerado: a placa (busca do usuário) e a parte do SESSIONID montada no
+# cliente. Todo o resto (STAMP, delta, processId, pageInitParam, navegação) tem de ser extraído ou derivado.
+ALLOWED_REQUIRED = {"sessionid_cliente", "placa"}
 
 
 def code_without_comments(src):
@@ -198,6 +204,11 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
                     "plan_mode_rc": pl.returncode,
                     "nothing_sent_notice": "Nada foi enviado" in pl.stdout,
                 }
+                # Escape hatch explícito (cadeia incompleta): registra o que ele exige, sem aplicar o critério
+                # de qualidade — aqui o valor sem produtor observável só pode ser entrada do operador.
+                ap_ = re.search(r"^PARAMS = \[\n(.*?)^\]", script, re.S | re.M)
+                aprm = re.findall(r"^\s+\('([^']*)', (None|'[^']*'|\"[^\"]*\"), ", ap_.group(1), re.M) if ap_ else []
+                out["refused"]["allow_incomplete"]["params_required"] = [n for n, d in aprm if d == "None"]
                 if out["refused"]["allow_incomplete"]["fail_calls"] >= 1 and pl.returncode == 0 and "Nada foi enviado" in pl.stdout:
                     out["refused"]["allow_incomplete_script"] = "OK"
             except SyntaxError:
@@ -231,6 +242,12 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     dflt = [n for n, d in prm if d != "None"]
     out["params_required"] = req
     out["params_with_default"] = dflt
+    # Qualidade (líder, F1): só placa e sessionid_cliente podem ser exigidas; o resto é derivável.
+    out["params_required_extra"] = [n for n in req if n not in ALLOWED_REQUIRED]
+    out["params_required_only_placa_e_sessionid"] = not out["params_required_extra"]
+    if out["params_required_extra"]:
+        fails.append("parâmetros obrigatórios além de sessionid_cliente/placa (o gerador deve derivá-los): "
+                     + ", ".join(out["params_required_extra"]))
     out["placa_param_required"] = "placa" in req
     # valores capturados literais (só contagem) fora de comentários
     code = code_without_comments(script)
