@@ -155,6 +155,13 @@ impl ProtocolAdapter for NaturalAjax {
         Ok(Decoded { parts })
     }
 
+    /// Operação `i` (inicialização) → "init"; nos demais casos nenhum rótulo
+    /// (a timeline usa o `event`).
+    fn label_hint(&self, decoded: &Decoded) -> Option<String> {
+        let op = decoded.parts.iter().find(|p| p.name == "op")?;
+        (op.value == "i").then(|| "init".to_string())
+    }
+
     fn encode(&self, decoded: &Decoded) -> Result<String> {
         let parts = &decoded.parts;
         let mut ops: Vec<Op> = Vec::new();

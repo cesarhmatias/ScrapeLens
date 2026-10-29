@@ -188,3 +188,39 @@ fn operation_limit_bounds_time_and_memory() {
     assert_eq!(grammar::parse(&ok).unwrap().len(), grammar::MAX_OPS);
     assert!(grammar::parse(&format!("{ok}l")).is_err());
 }
+
+#[test]
+fn label_hint_marks_only_the_init_operation() {
+    let head = |init: bool| grammar::Op::Head {
+        init,
+        fields: [
+            "S".into(),
+            "P".into(),
+            String::new(),
+            "M".into(),
+            "dummy".into(),
+            "PAGE".into(),
+            "cmd_x".into(),
+            "false".into(),
+        ],
+    };
+    let adapter = NaturalAjax;
+    let decode =
+        |ops: Vec<grammar::Op>| adapter.decode(&grammar::serialize(&ops).unwrap()).unwrap();
+    assert_eq!(
+        adapter.label_hint(&decode(vec![head(true), grammar::Op::Delta("dd".into())])),
+        Some("init".to_string())
+    );
+    assert_eq!(
+        adapter.label_hint(&decode(vec![head(false), grammar::Op::Delta("dd".into())])),
+        None
+    );
+    // Resposta (sem cabeçalho): nenhuma dica.
+    assert_eq!(
+        adapter.label_hint(&decode(vec![
+            grammar::Op::Clear,
+            grammar::Op::Delta("dd".into())
+        ])),
+        None
+    );
+}
