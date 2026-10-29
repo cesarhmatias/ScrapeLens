@@ -9,6 +9,7 @@
 //!   scrapelens-core origins <sessao> <requestId>
 //!   scrapelens-core chain <sessao> <requestId>
 //!   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
+//!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo]
 //!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
@@ -107,6 +108,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "origins" | "chain" => flow_command(&command, &args),
         "compare" => compare_command(&args),
         "assess" => assess_command(&args),
+        "export-priming" => export_priming_command(&args),
         "export-curl" => export_request(&args, true),
         "export-python" => export_request(&args, false),
         "sanitize" => {
@@ -208,6 +210,37 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
             priming_chain(&lazy.session, &source, &args[1], &options).map_err(|e| e.to_string())?;
         print_json(&chain)
     }
+}
+
+/// `export-priming <sessao> <requestId> [--out f]`: gera o script, sem executá-lo.
+fn export_priming_command(args: &[String]) -> Result<(), String> {
+    if args.len() < 2 {
+        return Err(usage());
+    }
+    let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
+    let source = scrapelens_core::search::LazyBodies(&lazy);
+    let output = scrapelens_core::export::priming::to_python(
+        &lazy.session,
+        &source,
+        &args[1],
+        &scrapelens_core::export::priming::PrimingOptions::default(),
+    )
+    .map_err(|e| e.to_string())?;
+    for warning in &output.warnings {
+        eprintln!("aviso [{}]: {}", warning.code, warning.message);
+    }
+    match args.iter().position(|arg| arg == "--out") {
+        Some(index) => {
+            let out = args
+                .get(index + 1)
+                .ok_or_else(|| "--out exige um caminho".to_string())?;
+            std::fs::write(out, output.text).map_err(|e| format!("{out}: {e}"))?;
+            println!("{out}");
+        }
+        None => print!("{}", output.text),
+    }
+    Ok(())
 }
 
 /// `assess <sessao> [requestId] [--rules f.json]`. Sem `--rules`, usa

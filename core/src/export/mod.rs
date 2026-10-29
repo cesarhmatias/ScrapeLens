@@ -3,6 +3,7 @@
 //! dados não confiáveis.
 
 pub mod curl;
+pub mod priming;
 pub mod python;
 pub mod sanitize;
 

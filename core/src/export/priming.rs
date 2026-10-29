@@ -1,0 +1,1296 @@
+//! Script de priming em Python (docs/11-priming-sucesso.md §1).
+//!
+//! Gera um script `requests.Session` que recria a sessão: cada passo da
+//! cadeia (`flow::priming_chain`, só `steps`) é refeito na ordem, e os valores
+//! que têm origem observada são EXTRAÍDOS em runtime da resposta do produtor,
+//! pelo mesmo tipo de evidência. Se a extração não achar o valor, o script
+//! falha com mensagem clara; nunca cai no valor capturado.
+//!
+//! Segurança do código gerado: todo dado capturado entra só em literais
+//! Python escapados (ASCII, `\x`/`\u`/`\U`) ou em comentários feitos por
+//! [`super::comment`]. Nomes de parâmetros são saneados. O script não é
+//! executado pelo ScrapeLens.
+//!
+//! Heurísticas declaradas: valores que parecem entrada do usuário dentro de
+//! campos opacos sem origem (placa, CPF/CNPJ/RENAVAM após `v_cpf`, `v_cnpj`,
+//! `v_renavam`) viram parâmetros obrigatórios, sem padrão.
+
+use std::collections::{BTreeMap, HashSet};
+use std::fmt::Write as _;
+
+use crate::error::{CoreError, Result};
+use crate::flow::{
+    priming_chain, value_origins, ConsumedScope, Evidence, EvidenceKind, FlowOptions, OriginStatus,
+    ProducerScope, Role, ValueOrigin, ValueOrigins,
+};
+use crate::html::html_controls;
+use crate::model::{BodyState, LogicalRequest, SessionV1, Warning};
+use crate::search::BodySource;
+
+use super::{comment, is_header_token, is_safe_header_value, ExportOutput};
+
+#[derive(Debug, Clone, Default)]
+pub struct PrimingOptions {
+    pub flow: FlowOptions,
+}
+
+const CONTEXT_BEFORE: usize = 16;
+const CONTEXT_AFTER: usize = 6;
+const SKIP_HEADERS: &[&str] = &[
+    "cookie",
+    "content-length",
+    "host",
+    "connection",
+    "accept-encoding",
+    "authorization",
+    "proxy-authorization",
+    "transfer-encoding",
+    "te",
+    "upgrade",
+    "keep-alive",
+    "expect",
+];
+const SENSITIVE_WORDS: &[&str] = &[
+    "password",
+    "passwd",
+    "senha",
+    "secret",
+    "token",
+    "authorization",
+    "apikey",
+    "api_key",
+    "api-key",
+    "cpf",
+    "cnpj",
+    "renavam",
+    "cartao",
+    "credential",
+    "chave",
+];
+
+/// Literal Python ASCII com aspas simples; nada além de `[ -~]` sai cru.
+fn lit(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('\'');
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ' '..='~' => out.push(c),
+            c if (c as u32) <= 0xff => {
+                let _ = write!(out, "\\x{:02x}", c as u32);
+            }
+            c if (c as u32) <= 0xffff => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
+            c => {
+                let _ = write!(out, "\\U{:08x}", c as u32);
+            }
+        }
+    }
+    out.push('\'');
+    out
+}
+
+fn bytes_lit(bytes: &[u8]) -> String {
+    let mut out = String::from("b'");
+    for &b in bytes {
+        match b {
+            b'\\' => out.push_str("\\\\"),
+            b'\'' => out.push_str("\\'"),
+            b' '..=b'~' => out.push(b as char),
+            _ => {
+                let _ = write!(out, "\\x{b:02x}");
+            }
+        }
+    }
+    out.push('\'');
+    out
+}
+
+fn is_sensitive_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    SENSITIVE_WORDS.iter().any(|w| lower.contains(w))
+}
+
+fn is_plate_at(b: &[u8], i: usize) -> bool {
+    if i + 7 > b.len() {
+        return false;
+    }
+    let w = &b[i..i + 7];
+    let ok = w[..3].iter().all(u8::is_ascii_uppercase)
+        && w[3].is_ascii_digit()
+        && (w[4].is_ascii_digit() || w[4].is_ascii_uppercase())
+        && w[5].is_ascii_digit()
+        && w[6].is_ascii_digit();
+    let before_ok = i == 0 || !(b[i - 1].is_ascii_uppercase() || b[i - 1].is_ascii_digit());
+    let after_ok =
+        i + 7 == b.len() || !(b[i + 7].is_ascii_uppercase() || b[i + 7].is_ascii_digit());
+    ok && before_ok && after_ok
+}
+
+fn looks_sensitive_value(value: &str) -> bool {
+    value.contains("REDACTED") || (0..value.len()).any(|i| is_plate_at(value.as_bytes(), i))
+}
+
+/// Nome Python seguro para um parâmetro (`[a-z0-9_]`, não começa com dígito).
+fn sanitize_name(raw: &str) -> String {
+    let mut name: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    name = name.trim_matches('_').to_string();
+    if name.is_empty() || name.as_bytes()[0].is_ascii_digit() {
+        name = format!("param_{name}");
+    }
+    name.truncate(40);
+    if matches!(name.as_str(), "confirmar" | "base_url" | "help" | "h") {
+        name = format!("p_{name}");
+    }
+    name
+}
+
+#[derive(Debug, Clone)]
+struct Param {
+    name: String,
+    default: Option<String>,
+    captured: String,
+    note: String,
+}
+
+#[derive(Default)]
+struct Params {
+    list: Vec<Param>,
+    /// Trechos montados no cliente (valor capturado → expressão), para que o
+    /// mesmo trecho em campos opacos use o mesmo parâmetro.
+    client_parts: Vec<(String, String)>,
+}
+
+impl Params {
+    /// Registra (ou reaproveita) um parâmetro; devolve a expressão `P[...]`.
+    /// Mesmo nome com valor capturado diferente vira outro parâmetro (`_2`…).
+    fn get(&mut self, raw: &str, captured: &str, sensitive: bool, note: &str) -> String {
+        let base = sanitize_name(raw);
+        let mut name = base.clone();
+        let mut n = 1;
+        loop {
+            match self.list.iter().find(|p| p.name == name) {
+                Some(p) if p.captured == captured => break,
+                Some(_) => {
+                    n += 1;
+                    name = format!("{base}_{n}");
+                }
+                None => {
+                    let default = (!sensitive && !captured.is_empty() && captured.len() <= 200)
+                        .then(|| captured.to_string());
+                    self.list.push(Param {
+                        name: name.clone(),
+                        default,
+                        captured: captured.to_string(),
+                        note: note.to_string(),
+                    });
+                    break;
+                }
+            }
+        }
+        format!("P[{}]", lit(&name))
+    }
+}
+
+/// Peça de um valor montado: literal ou expressão Python.
+enum Piece {
+    Lit(String),
+    Expr(String),
+}
+
+fn pieces_expr(pieces: Vec<Piece>) -> String {
+    let parts: Vec<String> = pieces
+        .into_iter()
+        .filter_map(|p| match p {
+            Piece::Lit(s) if s.is_empty() => None,
+            Piece::Lit(s) => Some(lit(&s)),
+            Piece::Expr(e) => Some(e),
+        })
+        .collect();
+    match parts.len() {
+        0 => "''".to_string(),
+        1 => parts.into_iter().next().unwrap_or_default(),
+        _ => parts.join(" + "),
+    }
+}
+
+/// Separa de um trecho literal os valores que parecem entrada do usuário.
+fn scrub_literal(text: &str, params: &mut Params) -> Vec<Piece> {
+    let bytes = text.as_bytes();
+    let mut hits: Vec<(usize, usize, &str)> = Vec::new();
+    for i in 0..bytes.len() {
+        if is_plate_at(bytes, i) {
+            hits.push((i, i + 7, "placa"));
+        }
+    }
+    for (kw, name, min, max) in [
+        ("v_cpf", "cpf", 11usize, 11usize),
+        ("v_cnpj", "cnpj", 14, 14),
+        ("v_renavam", "renavam", 9, 11),
+    ] {
+        let mut from = 0;
+        while let Some(p) = text[from..].find(kw) {
+            let start = from + p + kw.len();
+            let digits = bytes[start..]
+                .iter()
+                .take_while(|b| b.is_ascii_digit())
+                .count();
+            if digits >= min {
+                let end = start + digits.min(max);
+                hits.push((start, end, name));
+            }
+            from = start;
+        }
+    }
+    let mut client: Vec<(usize, usize, String)> = Vec::new();
+    for (value, expr) in &params.client_parts {
+        let mut from = 0;
+        while let Some(p) = text[from..].find(value.as_str()) {
+            client.push((from + p, from + p + value.len(), expr.clone()));
+            from += p + value.len();
+        }
+    }
+    let mut marks: Vec<(usize, usize, Option<&str>, Option<String>)> = hits
+        .into_iter()
+        .map(|(a, b, n)| (a, b, Some(n), None))
+        .collect();
+    marks.extend(client.into_iter().map(|(a, b, e)| (a, b, None, Some(e))));
+    marks.sort_by_key(|m| m.0);
+    let mut out = Vec::new();
+    let mut at = 0;
+    for (start, end, name, expr) in marks {
+        if start < at {
+            continue;
+        }
+        out.push(Piece::Lit(text[at..start].to_string()));
+        match (name, expr) {
+            (Some(name), _) => out.push(Piece::Expr(params.get(
+                name,
+                &text[start..end],
+                true,
+                "entrada do usuário dentro de campo opaco",
+            ))),
+            (_, Some(expr)) => out.push(Piece::Expr(expr)),
+            _ => {}
+        }
+        at = end;
+    }
+    out.push(Piece::Lit(text[at..].to_string()));
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Decodificação de corpos capturados
+// ---------------------------------------------------------------------------
+
+fn percent_decode(raw: &str) -> String {
+    let b = raw.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < b.len()
+                && b[i + 1].is_ascii_hexdigit()
+                && b[i + 2].is_ascii_hexdigit() =>
+            {
+                let hex = std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or("00");
+                out.push(u8::from_str_radix(hex, 16).unwrap_or(b'%'));
+                i += 2;
+            }
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn form_pairs(text: &str) -> Vec<(String, String)> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    text.split('&')
+        .map(|part| match part.split_once('=') {
+            Some((k, v)) => (percent_decode(k), percent_decode(v)),
+            None => (percent_decode(part), String::new()),
+        })
+        .collect()
+}
+
+fn response_text(request: &LogicalRequest, source: &dyn BodySource) -> Option<String> {
+    if !matches!(
+        request.response_body.state,
+        BodyState::Captured | BodyState::Truncated
+    ) {
+        return None;
+    }
+    let loaded = source.load(request.response_body.attachment.as_deref()?)?;
+    Some(String::from_utf8_lossy(&loaded.bytes).into_owned())
+}
+
+fn char_floor(text: &str, mut i: usize) -> usize {
+    i = i.min(text.len());
+    while !text.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn char_ceil(text: &str, mut i: usize) -> usize {
+    i = i.min(text.len());
+    while !text.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
+// ---------------------------------------------------------------------------
+// Gerador
+// ---------------------------------------------------------------------------
+
+struct Gen<'a> {
+    session: &'a SessionV1,
+    source: &'a dyn BodySource,
+    step_ids: HashSet<String>,
+    params: Params,
+    warnings: Vec<Warning>,
+    /// Notas (viram comentários) do passo em construção.
+    notes: Vec<String>,
+}
+
+impl Gen<'_> {
+    fn warn(&mut self, code: &str, message: String) {
+        self.warnings.push(Warning::new(code, message));
+    }
+
+    fn who(step: &LogicalRequest, label: &str) -> String {
+        format!("{} ({})", label, step.id)
+    }
+
+    /// Texto bruto da resposta do produtor, para localizar contexto.
+    fn producer_request(&self, evidence: &Evidence) -> Option<&LogicalRequest> {
+        self.session.find_request(&evidence.request_id)
+    }
+
+    /// Expressão que extrai, em runtime, o valor de `origin` (ou do trecho
+    /// `value`) da resposta do produtor. `None` se não houver como.
+    fn source_expr(
+        &mut self,
+        origin: &ValueOrigin,
+        value: &str,
+        step: &LogicalRequest,
+        label: &str,
+    ) -> Option<String> {
+        let usable = |e: &&Evidence| self.step_ids.contains(&e.request_id);
+        let evidence = origin
+            .oldest
+            .and_then(|i| origin.evidences.get(i))
+            .filter(usable)
+            .or_else(|| {
+                origin
+                    .evidences
+                    .iter()
+                    .find(|e| e.role == Role::Produced && usable(e))
+            })?;
+        let producer = self.producer_request(evidence)?.clone();
+        let who = lit(&Self::who(step, label));
+        let rid = lit(&evidence.request_id);
+        let field = evidence.field.clone();
+        match evidence.scope {
+            ProducerScope::SetCookie => {
+                let name = field?;
+                Some(format!("get_cookie(S, {}, {who})", lit(&name)))
+            }
+            ProducerScope::ResponseHeader | ProducerScope::Location => {
+                let name = field.unwrap_or_else(|| "location".to_string());
+                Some(format!("get_header(R[{rid}], {}, {who})", lit(&name)))
+            }
+            ProducerScope::ResponseBody => {
+                let text = response_text(&producer, self.source)?;
+                let (container, container_text, whole) =
+                    self.body_container(&producer, &text, evidence, value, &rid, &who)?;
+                if whole {
+                    return Some(container);
+                }
+                let pos = locate(&container_text, value, evidence, &producer, &text)?;
+                let (before, after) = context_for(&container_text, pos, value.len());
+                Some(format!(
+                    "ctx_extract({container}, {}, {}, {who})",
+                    lit(&before),
+                    lit(&after)
+                ))
+            }
+        }
+    }
+
+    /// Onde procurar: controle HTML, campo form/JSON ou o corpo inteiro.
+    /// Devolve (expressão do contêiner, texto do contêiner, valor inteiro?).
+    fn body_container(
+        &self,
+        producer: &LogicalRequest,
+        text: &str,
+        evidence: &Evidence,
+        value: &str,
+        rid: &str,
+        who: &str,
+    ) -> Option<(String, String, bool)> {
+        if let Some(field) = evidence.field.as_deref() {
+            if evidence.html_control {
+                let controls = html_controls(text);
+                let offset = evidence.producer_offset.unwrap_or(0) as usize;
+                let chosen = controls
+                    .iter()
+                    .filter(|c| c.name == field)
+                    .enumerate()
+                    .find(|(_, c)| offset >= c.start && offset <= c.end)
+                    .map(|(i, c)| (i, c.value.clone()));
+                let (index, ctext) = chosen.or_else(|| {
+                    controls
+                        .iter()
+                        .filter(|c| c.name == field)
+                        .enumerate()
+                        .find(|(_, c)| c.value.contains(value))
+                        .map(|(i, c)| (i, c.value.clone()))
+                })?;
+                let expr = format!("html_control(R[{rid}], {}, {index}, {who})", lit(field));
+                let whole = ctext == value && evidence.kind == EvidenceKind::SameField;
+                return Some((expr, ctext, whole));
+            }
+            // Campo form/JSON; ou variável de script (nesse caso o corpo cru).
+            let fields = form_pairs(text);
+            if let Some((_, v)) = fields.iter().find(|(k, _)| k == field) {
+                let expr = format!("body_field(R[{rid}], {}, {who})", lit(field));
+                let whole = v == value && evidence.kind == EvidenceKind::SameField;
+                return Some((expr, v.clone(), whole));
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
+                if let Some(v) = json_find(&json, field) {
+                    let expr = format!("body_field(R[{rid}], {}, {who})", lit(field));
+                    let whole = v == value && evidence.kind == EvidenceKind::SameField;
+                    return Some((expr, v, whole));
+                }
+            }
+        }
+        let _ = producer;
+        Some((format!("R[{rid}].text"), text.to_string(), false))
+    }
+
+    /// Expressão de um valor escalar de `step` (campo de corpo, query ou header).
+    fn value_expr(
+        &mut self,
+        step: &LogicalRequest,
+        origin: Option<&ValueOrigin>,
+        origins: &ValueOrigins,
+        name: &str,
+        value: &str,
+        scope: ConsumedScope,
+    ) -> String {
+        let label = name.to_string();
+        let sensitive = is_sensitive_name(name) || looks_sensitive_value(value);
+        let Some(origin) = origin else {
+            return self.fallback_param(name, value, sensitive);
+        };
+        match origin.status {
+            OriginStatus::Redacted => {
+                self.notes.push(format!(
+                    "{name}: valor redigido na captura; informe pelo parâmetro"
+                ));
+                self.params.get(name, "", true, "redigido na captura")
+            }
+            OriginStatus::Origin | OriginStatus::Ambiguous => {
+                if let Some(expr) = self.source_expr(origin, value, step, &label) {
+                    let how = match origin.confidence {
+                        Some(crate::flow::Confidence::Strong) => "forte",
+                        _ => "possível",
+                    };
+                    let amb = if origin.status == OriginStatus::Ambiguous {
+                        "; ambíguo: usa o produtor mais antigo"
+                    } else {
+                        ""
+                    };
+                    self.notes
+                        .push(format!("{name}: extraído em runtime (origem {how}{amb})"));
+                    expr
+                } else {
+                    self.fallback_param(name, value, sensitive)
+                }
+            }
+            OriginStatus::Composite if scope == ConsumedScope::Body => {
+                self.opaque_expr(step, origins, name, value)
+            }
+            _ => {
+                if let Some(pc) = origin.partial_composition.first() {
+                    if let Some(expr) = self.partial_expr(step, name, value, pc) {
+                        return expr;
+                    }
+                }
+                self.fallback_param(name, value, sensitive)
+            }
+        }
+    }
+
+    fn fallback_param(&mut self, name: &str, value: &str, sensitive: bool) -> String {
+        if value.is_empty() {
+            return "''".to_string();
+        }
+        self.notes
+            .push(format!("{name}: sem origem observada; vira parâmetro"));
+        self.params
+            .get(name, value, sensitive, "sem origem observada")
+    }
+
+    /// `partialComposition`: parte extraída do produtor + parte montada no cliente.
+    fn partial_expr(
+        &mut self,
+        step: &LogicalRequest,
+        name: &str,
+        value: &str,
+        pc: &crate::flow::PartialComposition,
+    ) -> Option<String> {
+        let producer = self.session.find_request(&pc.producer_request_id)?.clone();
+        if !self.step_ids.contains(&producer.id) {
+            return None;
+        }
+        let end = pc.start + pc.length;
+        let piece = value.get(pc.start..end)?;
+        let text = response_text(&producer, self.source)?;
+        let pos = text.find(piece)?;
+        let rid = lit(&producer.id);
+        let who = lit(&Self::who(step, name));
+        let (cb, ca) = context_for(&text, pos, piece.len());
+        let extracted = format!(
+            "ctx_extract(R[{rid}].text, {}, {}, {who})",
+            lit(&cb),
+            lit(&ca)
+        );
+        let mut pieces = Vec::new();
+        let before = &value[..pc.start];
+        let after = &value[end..];
+        if !before.is_empty() {
+            pieces.push(Piece::Expr(self.params.get(
+                &format!("{name}_cliente_inicio"),
+                before,
+                false,
+                "montado no cliente",
+            )));
+        }
+        pieces.push(Piece::Expr(extracted));
+        if !after.is_empty() {
+            let expr = self.params.get(
+                &format!("{name}_cliente"),
+                after,
+                false,
+                "montado no cliente",
+            );
+            self.params
+                .client_parts
+                .push((after.to_string(), expr.clone()));
+            pieces.push(Piece::Expr(expr));
+        }
+        self.notes.push(format!(
+            "{name}: montado no cliente: complete aqui (parte inicial extraída do produtor {}; o resto é o parâmetro {}_cliente)",
+            pc.producer_request_id,
+            sanitize_name(name)
+        ));
+        Some(pieces_expr(pieces))
+    }
+
+    /// Campo opaco (`composite`): concatena trechos extraídos e literais.
+    fn opaque_expr(
+        &mut self,
+        step: &LogicalRequest,
+        origins: &ValueOrigins,
+        name: &str,
+        value: &str,
+    ) -> String {
+        let mut parts: Vec<&ValueOrigin> = origins
+            .values
+            .iter()
+            .filter(|v| v.scope == ConsumedScope::Body && v.parent.as_deref() == Some(name))
+            .filter(|v| v.offset.is_some())
+            .collect();
+        parts.sort_by_key(|v| v.offset.unwrap_or(0));
+        let mut pieces: Vec<Piece> = Vec::new();
+        let mut at = 0usize;
+        let mut dynamic = 0usize;
+        for part in parts {
+            let start = part.offset.unwrap_or(0) as usize;
+            let end = start + part.length;
+            if start < at
+                || end > value.len()
+                || !value.is_char_boundary(start)
+                || !value.is_char_boundary(end)
+            {
+                continue;
+            }
+            if start > at {
+                pieces.extend(scrub_literal(&value[at..start], &mut self.params));
+            }
+            let text = &value[start..end];
+            // Trecho só de letras/símbolos (sem dígitos) com origem apenas
+            // possível: coincidência com texto do produtor, provável
+            // constante do protocolo. Fica literal, com nota.
+            let constant_like = part.confidence != Some(crate::flow::Confidence::Strong)
+                && !text.bytes().any(|b| b.is_ascii_digit());
+            if constant_like
+                && matches!(part.status, OriginStatus::Origin | OriginStatus::Ambiguous)
+            {
+                self.notes.push(format!(
+                    "{name}: trecho {start}..{end} sem dígitos e origem só possível: tratado como constante do protocolo"
+                ));
+            }
+            let expr = (matches!(part.status, OriginStatus::Origin | OriginStatus::Ambiguous)
+                && !constant_like)
+                .then(|| self.source_expr(part, text, step, &format!("{name}[{start}]")))
+                .flatten();
+            match expr {
+                Some(e) => {
+                    dynamic += 1;
+                    let amb = if part.status == OriginStatus::Ambiguous {
+                        ", ambíguo"
+                    } else {
+                        ""
+                    };
+                    self.notes.push(format!(
+                        "{name}: trecho {start}..{end} extraído em runtime (origem possível{amb})"
+                    ));
+                    pieces.push(Piece::Expr(format!(
+                        "checked({e}, {}, {})",
+                        end - start,
+                        lit(&format!("{name}[{start}]"))
+                    )));
+                }
+                None => pieces.extend(scrub_literal(text, &mut self.params)),
+            }
+            at = end;
+        }
+        if at < value.len() {
+            pieces.extend(scrub_literal(&value[at..], &mut self.params));
+        }
+        if dynamic == 0 {
+            self.notes.push(format!(
+                "{name}: campo opaco sem trechos dinâmicos; mantido como capturado"
+            ));
+        }
+        pieces_expr(pieces)
+    }
+}
+
+/// Contexto mínimo (antes, depois) que identifica `container[pos..pos+len]`
+/// de forma única; começa curto para não amarrar o script a texto vizinho
+/// que muda (nomes de página, deltas). Antes vazio = início do texto; depois
+/// vazio = fim do texto.
+fn context_for(container: &str, pos: usize, len: usize) -> (String, String) {
+    let end = pos + len;
+    let b0 = char_ceil(container, pos.saturating_sub(CONTEXT_BEFORE));
+    let a1 = char_floor(container, end + CONTEXT_AFTER);
+    let before_full = &container[b0..pos];
+    let after_full = &container[end..a1];
+    let before_chars: Vec<usize> = before_full.char_indices().map(|(i, _)| i).collect();
+    let after_chars: Vec<usize> = after_full
+        .char_indices()
+        .map(|(i, c)| i + c.len_utf8())
+        .collect();
+    // Candidatos: do mais curto ao mais longo (mín. 4 antes, 1 depois).
+    let befores: Vec<&str> = if before_full.is_empty() {
+        vec![""]
+    } else {
+        let mut v: Vec<&str> = before_chars
+            .iter()
+            .rev()
+            .map(|&i| &before_full[i..])
+            .filter(|b| b.chars().count() >= 4.min(before_full.chars().count()))
+            .collect();
+        v.dedup();
+        v
+    };
+    let afters: Vec<&str> = if after_full.is_empty() {
+        vec![""]
+    } else {
+        after_chars.iter().map(|&i| &after_full[..i]).collect()
+    };
+    for b in &befores {
+        for a in &afters {
+            if simulate(container, b, a) == Some((pos, end)) {
+                return ((*b).to_string(), (*a).to_string());
+            }
+        }
+    }
+    (before_full.to_string(), after_full.to_string())
+}
+
+/// Reproduz `re.search(esc(b) + '(.+?)' + esc(a) or \\Z)`: onde o script
+/// extrairia (início, fim) neste texto. Antes vazio ancora no início.
+fn simulate(container: &str, before: &str, after: &str) -> Option<(usize, usize)> {
+    let starts: Vec<usize> = if before.is_empty() {
+        vec![0]
+    } else {
+        container
+            .match_indices(before)
+            .map(|(i, _)| i + before.len())
+            .collect()
+    };
+    for start in starts {
+        if start >= container.len() {
+            continue;
+        }
+        let first = start + container[start..].chars().next().map_or(1, char::len_utf8);
+        if after.is_empty() {
+            return Some((start, container.len()));
+        }
+        if let Some(i) = container[first..].find(after) {
+            return Some((start, first + i));
+        }
+    }
+    None
+}
+
+/// Posição de `value` no contêiner do produtor (por offset quando confere, senão por busca).
+fn locate(
+    container: &str,
+    value: &str,
+    evidence: &Evidence,
+    _producer: &LogicalRequest,
+    raw: &str,
+) -> Option<usize> {
+    if container == raw {
+        if let Some(off) = evidence.producer_offset {
+            let off = off as usize;
+            if raw.get(off..off + value.len()) == Some(value) {
+                return Some(off);
+            }
+        }
+    }
+    container.find(value)
+}
+
+fn json_find(value: &serde_json::Value, key: &str) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                if k == key {
+                    return Some(match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    });
+                }
+                if let Some(found) = json_find(v, key) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(|v| json_find(v, key)),
+        _ => None,
+    }
+}
+
+fn split_origin(url: &str) -> (&str, &str) {
+    let Some(scheme_end) = url.find("://") else {
+        return ("", url);
+    };
+    let rest = &url[scheme_end + 3..];
+    let cut = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    url.split_at(scheme_end + 3 + cut)
+}
+
+/// Recurso estático (script, css, imagem, fonte, mídia): nunca é passo.
+fn is_static(request: &LogicalRequest) -> bool {
+    let media = request
+        .response_headers
+        .first_value("content-type")
+        .or(request.response_body.content_type.as_deref())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let path = request
+        .url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    media.contains("javascript")
+        || media.contains("ecmascript")
+        || media.contains("text/css")
+        || media.starts_with("image/")
+        || media.starts_with("font/")
+        || media.starts_with("audio/")
+        || media.starts_with("video/")
+        || [
+            ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2",
+            ".ttf",
+        ]
+        .iter()
+        .any(|ext| path.ends_with(ext))
+}
+
+fn is_idempotent(method: &str) -> bool {
+    matches!(
+        method.to_ascii_uppercase().as_str(),
+        "GET" | "HEAD" | "OPTIONS"
+    )
+}
+
+/// Gera o script de priming para a requisição `target_request_id`.
+pub fn to_python(
+    session: &SessionV1,
+    source: &dyn BodySource,
+    target_request_id: &str,
+    opts: &PrimingOptions,
+) -> Result<ExportOutput> {
+    let chain = priming_chain(session, source, target_request_id, &opts.flow)?;
+    let target = session
+        .find_request(target_request_id)
+        .ok_or_else(|| CoreError::Export {
+            message: format!("requisição {target_request_id} não encontrada"),
+        })?;
+    // O alvo é o último passo; se a cadeia não o traz (sem dependências), inclui.
+    let mut step_reqs: Vec<(&LogicalRequest, Vec<String>, String)> = Vec::new();
+    for step in &chain.steps {
+        if let Some(r) = session.find_request(&step.request_id) {
+            if r.id != target.id && is_static(r) {
+                continue;
+            }
+            let reasons: Vec<String> = std::iter::once(step.reason.clone())
+                .chain(std::iter::once(format!(
+                    "confiança {}",
+                    match step.confidence {
+                        crate::flow::Confidence::Strong => "strong",
+                        crate::flow::Confidence::Possible => "possible",
+                    }
+                )))
+                .collect();
+            step_reqs.push((r, reasons, step.reason.clone()));
+        }
+    }
+    if !step_reqs.iter().any(|(r, _, _)| r.id == target.id) {
+        step_reqs.push((target, vec!["requisição alvo".to_string()], String::new()));
+    }
+
+    let mut gen = Gen {
+        session,
+        source,
+        step_ids: step_reqs.iter().map(|(r, _, _)| r.id.clone()).collect(),
+        params: Params::default(),
+        warnings: Vec::new(),
+        notes: Vec::new(),
+    };
+    let (captured_origin, _) = split_origin(&target.url);
+    let captured_origin = captured_origin.to_string();
+
+    let mut step_code = String::new();
+    let mut plan = String::new();
+    let mut unresolved_comments = String::new();
+    for u in &chain.unresolved {
+        let _ = write!(
+            unresolved_comments,
+            "{}",
+            comment(&format!(
+                "não resolvido: {} {} ({}){}",
+                u.request_id,
+                u.field,
+                u.label,
+                if u.partial_composition.is_empty() {
+                    ""
+                } else {
+                    " — montado no cliente: complete aqui"
+                }
+            ))
+        );
+    }
+
+    let mut has_unsafe = false;
+    for (n, (request, reasons, _)) in step_reqs.iter().enumerate() {
+        let n = n + 1;
+        gen.notes.clear();
+        let origins = value_origins(session, source, &request.id, &opts.flow)?;
+        has_unsafe |= !is_idempotent(&request.method);
+
+        let find_origin = |scope: ConsumedScope, field: &str, occ: usize| -> Option<&ValueOrigin> {
+            origins.values.iter().find(|v| {
+                v.scope == scope && v.parent.is_none() && v.field == field && v.occurrence == occ
+            })
+        };
+
+        // URL e query
+        let (url_base, query) = match request.url.split_once('?') {
+            Some((b, q)) => (
+                b.split('#').next().unwrap_or(b),
+                Some(q.split('#').next().unwrap_or(q)),
+            ),
+            None => (request.url.split('#').next().unwrap_or(&request.url), None),
+        };
+        let mut url_expr = format!("rebase({}, base)", lit(url_base));
+        if let Some(q) = query {
+            let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+            let mut items = Vec::new();
+            for (k, v) in form_pairs(q) {
+                let occ = seen.entry(k.clone()).or_default();
+                let origin = find_origin(ConsumedScope::Query, &k, *occ);
+                *occ += 1;
+                let e = gen.value_expr(request, origin, &origins, &k, &v, ConsumedScope::Query);
+                items.push(format!("({}, {})", lit(&k), e));
+            }
+            url_expr = format!(
+                "{url_expr} + '?' + urllib.parse.urlencode([{}])",
+                items.join(", ")
+            );
+        }
+
+        // Headers
+        let mut header_items = Vec::new();
+        for entry in request.request_headers.iter_all() {
+            let lname = entry.name.to_ascii_lowercase();
+            if entry.name.starts_with(':') {
+                continue;
+            }
+            if SKIP_HEADERS.contains(&lname.as_str()) {
+                if lname == "authorization" || lname == "proxy-authorization" {
+                    gen.notes
+                        .push(format!("header {lname} omitido (credencial)"));
+                }
+                continue;
+            }
+            if !is_header_token(&entry.name) || !is_safe_header_value(&entry.value) {
+                gen.warn(
+                    "priming.header_skipped",
+                    format!("passo {n}: header com nome/valor inválido omitido"),
+                );
+                continue;
+            }
+            let origin = find_origin(ConsumedScope::Header, &lname, 0);
+            let value = if matches!(lname.as_str(), "referer" | "origin") {
+                format!("rebase({}, base)", lit(&entry.value))
+            } else if origin.is_some_and(|o| matches!(o.status, OriginStatus::Origin)) {
+                gen.value_expr(
+                    request,
+                    origin,
+                    &origins,
+                    &lname,
+                    &entry.value,
+                    ConsumedScope::Header,
+                )
+            } else {
+                lit(&entry.value)
+            };
+            header_items.push(format!("{}: {}", lit(&entry.name), value));
+        }
+
+        // Corpo
+        let content_type = request
+            .request_headers
+            .first_value("content-type")
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let mut body_line = String::new();
+        if request.request_body.has_bytes() {
+            let bytes = request
+                .request_body
+                .attachment
+                .as_deref()
+                .and_then(|a| source.load(a))
+                .map(|l| l.bytes.into_owned());
+            match bytes {
+                Some(bytes) if content_type.contains("x-www-form-urlencoded") => {
+                    let text = String::from_utf8_lossy(&bytes).into_owned();
+                    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+                    let mut items = Vec::new();
+                    for (k, v) in form_pairs(&text) {
+                        let occ = seen.entry(k.clone()).or_default();
+                        let origin = find_origin(ConsumedScope::Body, &k, *occ);
+                        *occ += 1;
+                        let e =
+                            gen.value_expr(request, origin, &origins, &k, &v, ConsumedScope::Body);
+                        items.push(format!("({}, {})", lit(&k), e));
+                    }
+                    body_line = format!(
+                        "data = urllib.parse.urlencode([\n        {}\n    ])\n",
+                        items.join(",\n        ")
+                    );
+                }
+                Some(bytes) => {
+                    gen.warn(
+                        "priming.body_literal",
+                        format!(
+                            "passo {n}: corpo não form-urlencoded reenviado como capturado (valores dinâmicos não substituídos)"
+                        ),
+                    );
+                    gen.notes.push(
+                        "corpo reenviado como capturado: valores dinâmicos NÃO substituídos"
+                            .to_string(),
+                    );
+                    body_line = format!("data = {}\n", bytes_lit(&bytes));
+                }
+                None => {
+                    gen.warn(
+                        "priming.body_missing",
+                        format!("passo {n}: corpo da requisição indisponível; enviado vazio"),
+                    );
+                }
+            }
+        }
+
+        // Montagem do passo
+        let _ = write!(step_code, "\n\ndef step_{n}(S, R, P, base):\n");
+        for r in reasons {
+            for line in comment(&format!("passo {n}: {r}")).lines() {
+                let _ = writeln!(step_code, "    {line}");
+            }
+        }
+        for note in gen.notes.clone() {
+            for line in comment(&note).lines() {
+                let _ = writeln!(step_code, "    {line}");
+            }
+        }
+        let _ = writeln!(step_code, "    url = {url_expr}");
+        let _ = writeln!(step_code, "    headers = {{{}}}", header_items.join(", "));
+        let data_arg = if body_line.is_empty() {
+            String::new()
+        } else {
+            step_code.push_str("    ");
+            step_code.push_str(&body_line);
+            ", data=data".to_string()
+        };
+        let _ = writeln!(
+            step_code,
+            "    return S.request({}, url, headers=headers{data_arg}, timeout=30)",
+            lit(&request.method.to_ascii_uppercase())
+        );
+
+        let _ = writeln!(
+            plan,
+            "    ({}, {}, {}, {}, {}),",
+            lit(&request.id),
+            lit(&request.method.to_ascii_uppercase()),
+            lit(url_base),
+            lit(&reasons
+                .first()
+                .map(|r| r.chars().take(160).collect::<String>())
+                .unwrap_or_default()),
+            if is_idempotent(&request.method) {
+                "True"
+            } else {
+                "False"
+            }
+        );
+    }
+
+    // Parâmetros
+    let mut params_code = String::new();
+    for p in &gen.params.list {
+        let _ = writeln!(
+            params_code,
+            "    ({}, {}, {}),",
+            lit(&p.name),
+            p.default.as_deref().map_or("None".to_string(), lit),
+            lit(&p.note)
+        );
+    }
+
+    let mut text = String::new();
+    text.push_str("#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n");
+    for line in [
+        format!("Script de priming gerado pelo ScrapeLens para a requisição {target_request_id}."),
+        "Reprodução semântica: a ordem de headers e a fidelidade de transporte (TLS, HTTP/2, fingerprint) NÃO são garantidas.".to_string(),
+        "Não executado pelo ScrapeLens: quem roda é você, sob sua responsabilidade.".to_string(),
+        "Passos que alteram estado (POST/PUT/PATCH/DELETE) exigem --confirmar; sem ela o script imprime o plano e sai.".to_string(),
+        "Valores com origem observada são extraídos das respostas em runtime; nunca se usa o valor capturado no lugar de um extraído.".to_string(),
+        "Valores sensíveis ou redigidos são parâmetros obrigatórios, sem padrão.".to_string(),
+    ] {
+        text.push_str(&comment(&line));
+    }
+    text.push_str(&unresolved_comments);
+    text.push_str(PRELUDE);
+    let _ = writeln!(text, "CAPTURED_ORIGIN = {}", lit(&captured_origin));
+    let _ = writeln!(text, "TARGET = {}", lit(target_request_id));
+    let _ = writeln!(
+        text,
+        "HAS_STATE_CHANGE = {}",
+        if has_unsafe { "True" } else { "False" }
+    );
+    let _ = writeln!(text, "PLAN = [\n{plan}]");
+    let _ = writeln!(text, "PARAMS = [\n{params_code}]");
+    text.push_str(&step_code);
+    let _ = writeln!(
+        text,
+        "\n\nSTEPS = [{}]",
+        (1..=step_reqs.len())
+            .map(|n| format!("step_{n}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    text.push_str(MAIN);
+
+    let mut output = ExportOutput::new(text);
+    output.warnings = gen.warnings;
+    for w in &chain.warnings {
+        output
+            .warnings
+            .push(Warning::info("priming.chain", w.clone()));
+    }
+    Ok(output)
+}
+
+const PRELUDE: &str = r#"
+import argparse
+import html.parser
+import json
+import re
+import sys
+import urllib.parse
+
+
+def fail(message):
+    sys.exit('priming: ' + message)
+
+
+class _Controls(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.items = []
+        self._area = None
+
+    def handle_starttag(self, tag, attrs):
+        a = {k.lower(): (v if v is not None else '') for k, v in attrs}
+        if tag == 'input' and 'name' in a:
+            if a.get('type', '').lower() in ('checkbox', 'radio') and not any(k == 'checked' for k, _ in attrs):
+                return
+            self.items.append((a['name'], a.get('value', '')))
+        elif tag == 'textarea' and 'name' in a:
+            self._area = [a['name'], '']
+
+    def handle_data(self, data):
+        if self._area is not None:
+            self._area[1] += data
+
+    def handle_endtag(self, tag):
+        if tag == 'textarea' and self._area is not None:
+            self.items.append((self._area[0], self._area[1]))
+            self._area = None
+
+
+def html_control(resp, name, index, who):
+    parser = _Controls()
+    parser.feed(resp.text)
+    parser.close()
+    found = [v for k, v in parser.items if k == name]
+    if index >= len(found):
+        fail('controle HTML %r não encontrado na resposta de %s' % (name, who))
+    return found[index]
+
+
+def body_field(resp, name, who):
+    text = resp.text
+    try:
+        stack = [json.loads(text)]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if name in node:
+                    return node[name] if isinstance(node[name], str) else json.dumps(node[name])
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+    except ValueError:
+        pass
+    values = urllib.parse.parse_qs(text, keep_blank_values=True).get(name)
+    if values:
+        return values[0]
+    fail('campo %r não encontrado na resposta de %s' % (name, who))
+
+
+def get_cookie(session, name, who):
+    value = session.cookies.get(name)
+    if value is None:
+        fail('cookie %r não está no cookie jar (%s)' % (name, who))
+    return value
+
+
+def get_header(resp, name, who):
+    value = resp.headers.get(name)
+    if value is None:
+        fail('header %r ausente na resposta usada por %s' % (name, who))
+    return value
+
+
+def ctx_extract(text, before, after, who):
+    pattern = (re.escape(before) if before else r'\A') + '(.+?)' + (re.escape(after) if after else r'\Z')
+    match = re.search(pattern, text, re.S)
+    if not match:
+        fail('não achei o valor pelo contexto (%r ... %r) para %s' % (before, after, who))
+    return match.group(1)
+
+
+def checked(value, size, who):
+    if len(value) != size:
+        sys.stderr.write('priming: aviso: %s mudou de tamanho (%d -> %d); prefixos de comprimento do protocolo podem precisar de ajuste\n' % (who, size, len(value)))
+    return value
+
+
+def rebase(url, base):
+    if base and url.startswith(CAPTURED_ORIGIN):
+        return base.rstrip('/') + url[len(CAPTURED_ORIGIN):]
+    return url
+
+"#;
+
+const MAIN: &str = r#"
+
+def main():
+    parser = argparse.ArgumentParser(description='Script de priming (ScrapeLens)')
+    parser.add_argument('--confirmar', action='store_true', help='executa os passos que alteram estado')
+    parser.add_argument('--base-url', default=None, help='troca esquema/host/porta do alvo capturado (ex.: http://127.0.0.1:8791)')
+    for name, default, note in PARAMS:
+        parser.add_argument('--' + name.replace('_', '-'), dest='p_' + name, default=default,
+                            required=False, help=(note + (' (obrigatório)' if default is None else ' (padrão: valor capturado)')).replace('%', '%%'))
+    args = parser.parse_args()
+    P = {name: getattr(args, 'p_' + name) for name, _, _ in PARAMS}
+    base = args.base_url
+
+    print('Plano de priming para %s (%d passos):' % (TARGET, len(PLAN)))
+    for index, (rid, method, url, reason, idem) in enumerate(PLAN, 1):
+        print('  %d. %s %s [%s]%s' % (index, method, rebase(url, base), rid, '' if idem else ' (altera estado)'))
+        print('       %s' % reason)
+    if HAS_STATE_CHANGE and not args.confirmar:
+        print('Nada foi enviado: o plano tem passos que alteram estado. Use --confirmar para executar.')
+        return 0
+    missing = [name for name, default, _ in PARAMS if P[name] is None]
+    if missing:
+        fail('parâmetros obrigatórios ausentes: ' + ', '.join('--' + m.replace('_', '-') for m in missing))
+
+    try:
+        import requests
+    except ImportError:
+        fail('o pacote "requests" não está instalado (pip install requests)')
+    S = requests.Session()
+    R = {}
+    for index, (step, (rid, method, url, _, _)) in enumerate(zip(STEPS, PLAN), 1):
+        resp = step(S, R, P, base)
+        R[rid] = resp
+        print('  [%d/%d] %s %s -> HTTP %d' % (index, len(STEPS), method, rebase(url, base), resp.status_code))
+        try:
+            erro = html_control(resp, 'ERRORMESSAGE', 0, rid)
+        except SystemExit:
+            erro = ''
+        if erro.strip():
+            fail('a aplicação respondeu com ERRORMESSAGE no passo %d (%s): %s' % (index, rid, erro.strip()[:200]))
+    print('Cadeia concluída; último HTTP %d.' % R[PLAN[-1][0]].status_code)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+"#;

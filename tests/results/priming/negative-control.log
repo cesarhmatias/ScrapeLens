@@ -1,0 +1,1 @@
+POST com valores capturados -> HTTP 200; ERRORMESSAGE='sessão desconhecida (SESSIONID de outra sessão)'

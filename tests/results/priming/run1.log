@@ -1,0 +1,46 @@
+Plano de priming para har-0026 (13 passos):
+  1. GET http://127.0.0.1:8791/detran-portal-servicos/servlet/easynat-app [har-0001]
+       fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch); fornece XML a har-0017 (ValueMatch); fornece XML 
+  2. GET http://127.0.0.1:8791/detran-portal-servicos/cisnatural/NatLogon.html [har-0005]
+       fornece XML a har-0010 (ValueMatch)
+  3. GET http://127.0.0.1:8791/detran-portal-servicos/cisnatural/cscform.html [har-0008]
+       fornece STAMP a har-0022 (SameField); fornece STAMP a har-0015 (SameField); fornece XML a har-0010 (ValueMatch); fornece STAMP a har-0010 (SameField)
+  4. POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector [har-0010] (altera estado)
+       fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)
+  5. GET http://127.0.0.1:8791/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html [har-0012]
+       fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)
+  6. GET http://127.0.0.1:8791/detran-portal-servicos/UIC-SERVICOS/cscform.html [har-0014]
+       fornece XML a har-0017 (ValueMatch); fornece XML a har-0015 (ValueMatch)
+  7. POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector [har-0015] (altera estado)
+       fornece XML a har-0017 (ValueMatch); fornece STAMP a har-0017 (SameField)
+  8. POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector [har-0017] (altera estado)
+       fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)
+  9. GET http://127.0.0.1:8791/detran-portal-servicos/UIC-SERVICOS/VES0009X.html [har-0019]
+       fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)
+  10. GET http://127.0.0.1:8791/detran-portal-servicos/UIC-SERVICOS/cscform.html [har-0021]
+       fornece XML a har-0026 (ValueMatch); fornece XML a har-0024 (ValueMatch); fornece XML a har-0022 (ValueMatch)
+  11. POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector [har-0022] (altera estado)
+       fornece XML a har-0024 (ValueMatch); fornece STAMP a har-0024 (SameField)
+  12. POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector [har-0024] (altera estado)
+       fornece XML a har-0026 (ValueMatch); fornece STAMP a har-0026 (SameField)
+  13. POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector [har-0026] (altera estado)
+       requisição alvo
+  [1/13] GET http://127.0.0.1:8791/detran-portal-servicos/servlet/easynat-app -> HTTP 200
+  [2/13] GET http://127.0.0.1:8791/detran-portal-servicos/cisnatural/NatLogon.html -> HTTP 200
+  [3/13] GET http://127.0.0.1:8791/detran-portal-servicos/cisnatural/cscform.html -> HTTP 200
+  [4/13] POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector -> HTTP 200
+  [5/13] GET http://127.0.0.1:8791/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html -> HTTP 200
+  [6/13] GET http://127.0.0.1:8791/detran-portal-servicos/UIC-SERVICOS/cscform.html -> HTTP 200
+  [7/13] POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector -> HTTP 200
+  [8/13] POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector -> HTTP 200
+  [9/13] GET http://127.0.0.1:8791/detran-portal-servicos/UIC-SERVICOS/VES0009X.html -> HTTP 200
+  [10/13] GET http://127.0.0.1:8791/detran-portal-servicos/UIC-SERVICOS/cscform.html -> HTTP 200
+  [11/13] POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector -> HTTP 200
+  [12/13] POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector -> HTTP 200
+  [13/13] POST http://127.0.0.1:8791/detran-portal-servicos/servlet/Connector -> HTTP 200
+Cadeia concluída; último HTTP 200.
+priming: aviso: XML[222] mudou de tamanho (11 -> 15); prefixos de comprimento do protocolo podem precisar de ajuste
+priming: aviso: XML[497] mudou de tamanho (11 -> 15); prefixos de comprimento do protocolo podem precisar de ajuste
+priming: aviso: XML[222] mudou de tamanho (11 -> 15); prefixos de comprimento do protocolo podem precisar de ajuste
+priming: aviso: XML[185] mudou de tamanho (11 -> 15); prefixos de comprimento do protocolo podem precisar de ajuste
+priming: aviso: XML[239] mudou de tamanho (11 -> 15); prefixos de comprimento do protocolo podem precisar de ajuste

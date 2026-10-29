@@ -1,0 +1,51 @@
+{
+  "base": "http://127.0.0.1:8791",
+  "checks": {
+    "plan_only_without_confirmar": true,
+    "chain_completes_run1": true,
+    "chain_completes_run2": true,
+    "no_app_error_in_sim_notes": true,
+    "captured_values_rejected_by_simulator": true
+  },
+  "target": "har-0026",
+  "generation_warnings": [
+    "aviso [priming.chain]: o HAR não contém cookies (exportação do DevTools os remove); origem de cookies não avaliável — use captura ao vivo (CDP/NetLog)"
+  ],
+  "runs": [
+    {
+      "returncode": 0,
+      "requests": 13,
+      "connector_posts": 6,
+      "all_200": true,
+      "no_error_note": true,
+      "notes": [
+        "ok evento=init",
+        "ok evento=init",
+        "ok evento=on_interceptor",
+        "ok evento=init",
+        "ok evento=cmd_filtro",
+        "ok evento=cmd_consultar_placa"
+      ]
+    },
+    {
+      "returncode": 0,
+      "requests": 13,
+      "connector_posts": 6,
+      "all_200": true,
+      "no_error_note": true,
+      "notes": [
+        "ok evento=init",
+        "ok evento=init",
+        "ok evento=on_interceptor",
+        "ok evento=init",
+        "ok evento=cmd_filtro",
+        "ok evento=cmd_consultar_placa"
+      ]
+    }
+  ],
+  "negative_control": {
+    "http": 200,
+    "ERRORMESSAGE": "sessão desconhecida (SESSIONID de outra sessão)"
+  },
+  "ok": true
+}
