@@ -57,7 +57,11 @@ pub fn decode_entities(raw: &str, base: usize) -> (String, Vec<usize>) {
 
 fn entity_at(raw: &str, at: usize) -> Option<(char, usize)> {
     let rest = &raw[at + 1..];
-    let end = rest.find(';').filter(|e| *e <= 10)?;
+    // Entidade tem no máximo 10 bytes de corpo (`#x10FFFF` = 8). Procurar o
+    // `;` no resto do texto a cada `&` tornaria a decodificação quadrática
+    // (um `&` nu varria o documento inteiro); a janela limita a 11 bytes.
+    let window = rest.as_bytes().get(..rest.len().min(11))?;
+    let end = window.iter().position(|b| *b == b';')?;
     let body = &rest[..end];
     let ch = if let Some(num) = body.strip_prefix('#') {
         let code = if let Some(hex) = num.strip_prefix(['x', 'X']) {
@@ -402,6 +406,33 @@ mod tests {
             v("<input name=a value='&#+65;&#x+41;&#65;'>"),
             "&#+65;&#x+41;A"
         );
+    }
+
+    #[test]
+    fn entities_without_semicolon_stay_linear() {
+        let limit = if cfg!(debug_assertions) { 5.0 } else { 1.0 };
+        for unit in ["&#x41", "&"] {
+            let raw = unit.repeat(500_000);
+            let t = std::time::Instant::now();
+            let (decoded, map) = decode_entities(&raw, 0);
+            assert_eq!(decoded, raw, "sem `;` a entidade fica literal");
+            assert_eq!(map.len(), raw.len() + 1);
+            assert!(
+                t.elapsed().as_secs_f64() < limit,
+                "decode_entities {unit}: {:?}",
+                t.elapsed()
+            );
+            let html = format!("<input name=a value=\"{raw}\">");
+            let t = std::time::Instant::now();
+            let c = html_controls(&html);
+            assert_eq!(c.len(), 1);
+            assert_eq!(c[0].value, raw);
+            assert!(
+                t.elapsed().as_secs_f64() < limit,
+                "tokenizador {unit}: {:?}",
+                t.elapsed()
+            );
+        }
     }
 
     #[test]
