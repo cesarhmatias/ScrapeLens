@@ -108,3 +108,9 @@ Outros:
   fechar a validação, a não ser que o usuário peça para guardá-la.
 - check_priming_injection exige rc e POSTs > 0 por variante (ou a falha
   esperada no passo declarado).
+- Decisão final sobre `plan.hash` (2026-10-29): uma só implementação, no
+  core (`validate::plan_hash`, FNV-1a 64 sobre a `priming_chain` sem host, o
+  alvo e os nomes dos parâmetros em minúsculas, ordenados). O gerador do
+  script a chama NA GERAÇÃO e grava a constante, sem cálculo em runtime nem
+  `hashlib`. O validate recalcula e avisa "plano não confere". As mensagens
+  anteriores com definições diferentes ficam sem efeito.
