@@ -18,6 +18,9 @@ pub struct HtmlControl {
     /// Intervalo do valor no texto original.
     pub start: usize,
     pub end: usize,
+    /// `hidden` (input) — única forma de controle que a página define como
+    /// valor de protocolo; os demais são pré-preenchimentos.
+    pub hidden: bool,
 }
 
 const MAX_CONTROLS: usize = 20_000;
@@ -217,6 +220,7 @@ fn control(name: &str, raw: &str, start: usize) -> Option<HtmlControl> {
         map,
         start,
         end: start + raw.len(),
+        hidden: false,
     })
 }
 
@@ -259,8 +263,13 @@ pub fn html_controls(text: &str) -> Vec<HtmlControl> {
                 if matches!(kind.as_str(), "checkbox" | "radio") && !has_attr(&tag, "checked") {
                     continue;
                 }
+                // Botões nunca são produtores de valor.
+                if matches!(kind.as_str(), "submit" | "button" | "image" | "reset") {
+                    continue;
+                }
                 let (raw, start) = attr(&tag, "value").unwrap_or(("", tag.end - 1));
-                if let Some(c) = control(name, raw, start) {
+                if let Some(mut c) = control(name, raw, start) {
+                    c.hidden = kind == "hidden";
                     out.push(c);
                 }
             }
@@ -362,7 +371,12 @@ mod tests {
             let html = unit.repeat(50_000);
             let t = std::time::Instant::now();
             assert!(html_controls(&html).is_empty());
-            assert!(t.elapsed().as_secs_f64() < 1.0, "{unit}: {:?}", t.elapsed());
+            let limit = if cfg!(debug_assertions) { 5.0 } else { 1.0 };
+            assert!(
+                t.elapsed().as_secs_f64() < limit,
+                "{unit}: {:?}",
+                t.elapsed()
+            );
         }
     }
 }

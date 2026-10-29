@@ -4,8 +4,8 @@
 use scrapelens_core::compare::{compare_sessions, CompareOptions, RequestRange};
 use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
 use scrapelens_core::flow::{
-    priming_chain, value_origins, Confidence, EvidenceKind, FlowOptions, OriginStatus, StepClass,
-    ValueOrigin, ValueOrigins,
+    priming_chain, value_origins, Confidence, EvidenceKind, FlowOptions, OriginStatus, Role,
+    StepClass, Strength, ValueOrigin, ValueOrigins,
 };
 use scrapelens_core::model::{BodyState, SessionBundle};
 use scrapelens_core::parse::cdp::{build_cdp_session, parse_cdp_jsonl};
@@ -1057,4 +1057,58 @@ fn partial_composition_hint_also_on_repeated_values_and_in_unresolved() {
         .expect("pendência");
     assert_eq!(u.partial_composition.len(), 1);
     assert!(u.label.contains("provável composição no cliente"));
+}
+
+#[test]
+fn r6_single_producer_is_not_ambiguous_and_buttons_are_not_producers() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/app/page",
+        "GET",
+        R {
+            resp: Some(
+                "<html><form><input type=hidden name=h value=VALUE12345678>\
+                 <input type=hidden name=x value=VALUE12345678>\
+                 <input type=submit name=acao value=Consultar>\
+                 <input type=text name=nome value=Maria>\
+                 <input type=image name=img value=ImageVal></form></html>",
+            ),
+            ..Default::default()
+        },
+    );
+    s.req(
+        "1.2",
+        2.0,
+        "https://x.test/app/post",
+        "POST",
+        R {
+            body: Some("x=VALUE12345678&acao=Consultar&nome=Maria&img=ImageVal"),
+            resp: Some("<html></html>"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    let o = origins(&b, "1.2");
+    let x = entry(&o, "x");
+    // `h` e `x` com o mesmo valor: o same-field `x` basta; nunca ambíguo por duplicata
+    assert_eq!(x.status, OriginStatus::Origin, "{x:?}");
+    assert_eq!(
+        x.evidences
+            .iter()
+            .filter(|e| e.role == Role::Produced)
+            .count(),
+        1
+    );
+    // botão não é produtor
+    let acao = entry(&o, "acao");
+    assert!(acao.evidences.is_empty(), "{acao:?}");
+    assert_eq!(entry(&o, "img").evidences.len(), 0);
+    // text pré-preenchido: no máximo média
+    let nome = entry(&o, "nome");
+    assert!(nome
+        .evidences
+        .iter()
+        .all(|e| e.strength != Strength::Strong));
 }

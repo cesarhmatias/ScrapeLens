@@ -298,6 +298,8 @@ struct Item {
     named: bool,
     /// Controle de formulário HTML (`input`/`textarea`/`select`).
     html: bool,
+    /// Controle pré-preenchido que não é `hidden`: no máximo evidência média.
+    soft: bool,
 }
 
 #[derive(Debug)]
@@ -569,6 +571,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                 offset: None,
                 named: true,
                 html: false,
+                soft: false,
             });
         }
     }
@@ -587,6 +590,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                 offset: None,
                 named: false,
                 html: false,
+                soft: false,
             });
             for (name, value) in query_pairs(&entry.value) {
                 data.items.push(Item {
@@ -596,6 +600,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                     offset: None,
                     named: true,
                     html: false,
+                    soft: false,
                 });
             }
         } else if !is_protocol_header(&lower) {
@@ -606,6 +611,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                 offset: None,
                 named: true,
                 html: false,
+                soft: false,
             });
         }
     }
@@ -631,6 +637,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                     offset: Some(c.start as u64),
                     named: true,
                     html: true,
+                    soft: !c.hidden,
                 });
             }
         }
@@ -652,6 +659,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                         offset,
                         named: true,
                         html: false,
+                        soft: false,
                     });
                 }
             }
@@ -664,6 +672,7 @@ fn producer_data(attempt: &Attempt, source: &dyn BodySource, min: usize) -> Prod
                         offset: Some(offset),
                         named: false,
                         html: false,
+                        soft: false,
                     });
                 }
             }
@@ -1118,7 +1127,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 };
                 if let Some(kind) = kind {
                     let strength = if kind == EvidenceKind::SameField
-                        && (is_generic_name(&value.field) || value.value.len() < 4)
+                        && (is_generic_name(&value.field) || value.value.len() < 4 || item.soft)
                     {
                         Strength::Medium
                     } else {
@@ -1330,6 +1339,36 @@ fn finish_entry(
     _earlier: &[Pos],
 ) -> ValueOrigin {
     raw.sort_by_key(|(rank, _)| *rank);
+    // Mesmos bytes lidos por dois caminhos (controle HTML + literal `value="…"`)
+    // são um produtor só: dedupe por (tentativa, intervalo sobreposto).
+    let width = value.value.len() as u64;
+    let rank_of = |e: &Evidence| {
+        let s = match e.strength {
+            Strength::Strong => 2,
+            Strength::Medium => 1,
+            Strength::Complement => 0,
+        };
+        (s, e.html_control)
+    };
+    let mut deduped: Vec<(usize, Evidence)> = Vec::new();
+    for (r, e) in raw {
+        let dup = e.producer_offset.and_then(|o| {
+            deduped.iter().position(|(_, d)| {
+                d.attempt_id == e.attempt_id
+                    && d.producer_offset
+                        .is_some_and(|d_o| d_o.abs_diff(o) < width.max(1))
+            })
+        });
+        match dup {
+            Some(i) => {
+                if rank_of(&e) > rank_of(&deduped[i].1) {
+                    deduped[i] = (r, e);
+                }
+            }
+            None => deduped.push((r, e)),
+        }
+    }
+    let mut raw = deduped;
     // Recurso estático só dá contexto: value-match estático nunca é produtor.
     let mut context: Vec<ContextNote> = Vec::new();
     let is_static_ev = |e: &Evidence| {
@@ -1710,6 +1749,7 @@ fn partial_entries(
                 offset,
                 named: true,
                 html,
+                soft: false,
             };
             raw.push((
                 rank[&pos],
