@@ -105,3 +105,35 @@ esperados, marcador de proteção) e `verdict`: `app-ok`,
   trecho extraído muda de tamanho, o script avisa em stderr, mas não recalcula
   o prefixo. Um servidor real pode rejeitar. Recalcular exige conhecer o
   protocolo (fora do core; candidato a extensão/plugin).
+
+## Revisão da rodada 7 (2026-10-29) — decisões
+
+Veredito: parcial, com 1 falha alta.
+- Redirect: o script usa `allow_redirects=False`. Um 3xx só é seguido se o
+  Location for do MESMO origin da base (esquema+host+porta), e o redirect
+  conta como passo verificado. Location para outro origin vira
+  `fail("priming: passo N: redirect para outro origin (<host>) recusado")`.
+  Nenhum corpo, parâmetro ou header sai para outro origin.
+- Origins: com `--base-url`, todo passo cujo origin capturado difere do origin
+  do alvo é recusado na geração (com lista) ou exige
+  `--allow-origin <host>` explícito. A reescrita compara origin exato, sem
+  `startswith` sem fronteira.
+- Dados de sessão/PII nunca viram literal nem padrão: parâmetros de caminho
+  (`;nome=valor`) são tratados como dados; a lista de nomes sensíveis inclui
+  nome, email, telefone/celular, endereço, nascimento, rg, token, sid,
+  session e callback (JSONP). Constante estrutural só para o caminho e o
+  valor de query de navegação que não sejam PII e não tenham cara de ID
+  dinâmico (dígitos longos, hex ou base64).
+- Extração em runtime linear: `str.find` dos contextos antes/depois, nunca
+  regex com `.+?` sobre a resposta.
+- assess: rejeição (F5) só com ausência dos controles esperados da rota (ou
+  sem expectativa e sem controles). Um 200 com XML/STAMP presentes é app-ok,
+  mesmo citando "Request Rejected". Na rota de proteção, 403/429 continuam
+  `blocked?` (evidência explícita); 200 de handshake é `não-avaliado`.
+- Saída de erro do script: o texto vindo da resposta é sanitizado (controles,
+  ESC, bidi), com `repr` ou filtro.
+- Regras JSON: `schema` obrigatório, chaves desconhecidas recusadas, e um
+  aviso quando as regras desligam todas as detecções ou marcam `/` como
+  proteção.
+- App: `blocked?` não é "falha da aplicação". A contagem e o filtro ficam
+  separados ("falhas da aplicação" × "possíveis bloqueios").
