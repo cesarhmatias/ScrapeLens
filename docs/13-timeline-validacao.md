@@ -72,3 +72,39 @@ eventos da aplicação. CLI: `timeline <sessao>` (JSON) e, no natural-core,
 4. O trace tem 0600 e o aviso; sanitize sobre a sessão do trace remove
    SESSIONID/cookies/placa.
 5. Bateria sem regressão.
+
+## Revisão da rodada 9 (2026-10-29) — decisões
+
+Veredito: reprovado para fechar; o trace é seguro, mas o `validate` dá
+falso "equivalente". Princípios do validate:
+- Proveniência equivalente: para cada campo que na captura tinha origem na
+  resposta R_k, o valor no trace tem de estar na resposta pareada de R_k
+  dentro do trace. Valor igual ao capturado com produtor diferente no trace
+  → "diverge (valor congelado)". Valor vindo de outra resposta → "diverge
+  (origem diferente)".
+- Completude: o script grava `target` (o requestId do alvo na captura) e
+  `complete` (bool). O validate exige o alvo pareado e `complete=true`; senão
+  dá "incompleta".
+- `parameters` só vale para campos SEM origem na captura e que não sejam
+  constantes. Um campo com origem ou constante declarado como parâmetro é
+  ignorado e gera aviso "parâmetro inválido". O script também grava a
+  impressão do plano (hash dos passos e nomes dos parâmetros); o validate
+  recalcula a partir da captura e avisa quando não confere.
+- "Identificador gerado no cliente" só quando a captura marca o campo como
+  sem origem com composição/cliente; uma constante (repetida na captura ou
+  estática) que muda é divergência.
+- Mapeamento automático de origem só para loopback (127.0.0.1, ::1,
+  localhost). Outro host exige `--map-origin` explícito, e o resumo cita o
+  mapeamento.
+Outros:
+- Timeline com custo O(n log n): 4 mil requisições < 2 s, e a sessão grande
+  de 20 mil termina.
+- Script: erro de transporte grava o trace com `error` no passo; `--trace ""`
+  é erro; argv inválido falha antes de rodar.
+- import-trace: limite de 20 mil passos e de headers por passo, e memória
+  reduzida. Corpo de requisição em base64 é aceito. URL/`startedAt` são
+  validados.
+- App: a sessão importada do trace vive em pasta temporária apagada ao
+  fechar a validação, a não ser que o usuário peça para guardá-la.
+- check_priming_injection exige rc e POSTs > 0 por variante (ou a falha
+  esperada no passo declarado).
