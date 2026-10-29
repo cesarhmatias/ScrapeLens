@@ -119,6 +119,23 @@ def check_origins_chain(core, session, label, e, cookies_warning):
     check(not set(ch["never_steps"]) & set(steps), f"{label} chain: não pode ser passo {sorted(set(ch['never_steps']) & set(steps))}")
     check(not set(ch["never_steps"][:2]) & set(pages), f"{label} chain: scripts estáticos não são páginas")
     check(not set(prot) & set(steps), f"{label} chain: proteção dentro de steps")
+    # iniciador (core 1869721): pages = exatamente as 4; frames auxiliares fora de pages e (JLIBS/aboutBlank) fora de steps
+    aux = [s["requestId"] for s in c.get("auxiliaryPages", [])]
+    check("auxiliaryPages" in c, f"{label} chain: grupo `auxiliaryPages` ausente")
+    check(sorted(pages) == sorted(ch["pages_exact"]), f"{label} chain: pages deveria ser exatamente {ch['pages_exact']}; obtido {pages}")
+    check(set(ch["auxiliary_include"]) <= set(aux), f"{label} chain: auxiliaryPages faltando {sorted(set(ch['auxiliary_include']) - set(aux))}")
+    check(not set(aux) & set(pages), f"{label} chain: frame auxiliar também em pages {sorted(set(aux) & set(pages))}")
+    check(not set(ch["frames_never_steps"]) & set(steps), f"{label} chain: frame JLIBS/aboutBlank em steps {sorted(set(ch['frames_never_steps']) & set(steps))}")
+    check(not set(ch["auxiliary_not_on_path"]) & set(aux), f"{label} chain: frame fora do caminho de Referer em auxiliaryPages")
+    for rid, prods in e["init_stamp"].items():
+        io = run_json(core, "origins", session, rid)
+        st = vals(io, scope="body", field="STAMP", parent=None) if io else []
+        sj = json.loads((Path(session) / "session.json").read_text())
+        url_of = {r["id"]: r["attempts"][0]["url"] for r in sj["requests"]}
+        # o INIT é idêntico em todas as rodadas: o produtor pode ser a cscform de rodada anterior (mais antigo); basta ser cscform
+        ok = bool(st) and st[0]["status"] == "origin" and produced(st[0]) and all("cscform.html" in url_of.get(p, "") for p in produced(st[0])) \
+            and all(x["kind"] == "same-field" for x in st[0]["evidences"] if x["role"] == "produced")
+        check(ok, f"{label} STAMP INIT de {rid}: esperado same-field da cscform {prods}; obtido {[(v['status'], produced(v)) for v in st]}")
     check(not [r for st in c["steps"] for r in st.get("reasons", []) if r.get("field") == "SESSIONID"],
           f"{label} chain: nenhum passo pode existir por causa do SESSIONID (cobertura parcial não é origem)")
     check(steps == sorted(steps), f"{label} chain: passos fora da ordem do fluxo")
@@ -183,6 +200,9 @@ def check_compare(core, a, b, e):
     for want, klass in (("SESSIONID", "dinâmico"), ("STAMP", "dinâmico"), ("PAGEINITPARAM", "estático")):
         got = {f["label"] for p in cons for f in p["fields"] if f["scope"] == "body" and f["field"] == want}
         check(klass in got, f"compare {want}: esperado {klass} em algum POST pareado, obtido {got}")
+    stamp_init = {f["label"] for p in cons for f in p["fields"] if f["scope"] == "body" and f["field"] == "STAMP"
+                  and f.get("a") == "INIT"}
+    check(not stamp_init or stamp_init == {"estático"}, f"compare: STAMP=INIT deve ser estático; obtido {stamp_init}")
 
 
 def main():

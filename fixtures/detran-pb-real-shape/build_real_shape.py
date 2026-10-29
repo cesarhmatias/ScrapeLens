@@ -32,6 +32,30 @@ MODELS = {"logon": "SA90001_CSAN00000", "sim": "SA90002_CSAN00000", "ves": "SA90
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
 START_MS = 1_793_132_400_000  # 2026-10-27T23:00:00Z, fixo
 STEP_MS = 250
+# Forma do `_initiator` do DevTools (conferida só pela estrutura nos HARs reais):
+#   other  -> {type}                          (navegação/entrada, POST de formulário)
+#   parser -> {type, url, lineNumber}         (recurso/frame iniciado pelo parser HTML da página `url`)
+#   script -> {type, stack:{callFrames:[{functionName,scriptId,url,lineNumber,columnNumber}]}}
+INIT_OTHER = {"type": "other"}
+
+
+def init_parser(url: str, line: int = 12) -> dict:
+    return {"type": "parser", "url": url, "lineNumber": line}
+
+
+def init_script(url: str) -> dict:
+    return {"type": "script", "stack": {"callFrames": [{"functionName": "_load", "scriptId": "88", "url": url,
+                                                         "lineNumber": 41, "columnNumber": 7}]}}
+
+
+def csc_html(model: str) -> str:
+    """Frame auxiliar cscform: formulário do cliente com o STAMP inicial (INIT)."""
+    return (f'<!doctype html>\n<html><body>\n<form name="cscform" method="post" data-model="{model}">\n'
+            '<input type="hidden" name="STAMP" id="STAMP" value="INIT">\n</form>\n</body></html>\n')
+
+
+def jlibs_html(model: str) -> str:
+    return f"<!doctype html>\n<html><body><script>/* {model}_JLIBS: frame de bibliotecas fictício */</script></body></html>\n"
 
 
 def fake_guard_script(seed: int, size: int = 9700) -> str:
@@ -83,7 +107,7 @@ class Har:
         self.entries, self.t, self.ids = [], 0, {}
         self.creator = creator
 
-    def add(self, key, method, url, status, mime, body, resource_type, referer, post=None, protection=False):
+    def add(self, key, method, url, status, mime, body, resource_type, referer, post=None, protection=False, initiator=None):
         self.t += STEP_MS
         n = len(self.entries) + 1
         self.ids[key] = f"har-{n:04d}"
@@ -111,7 +135,8 @@ class Har:
         self.entries.append({
             "startedDateTime": time_iso(START_MS + self.t), "time": 100.0, "request": req, "response": resp, "cache": {},
             "timings": {"blocked": 1.0, "dns": -1, "connect": -1, "ssl": -1, "send": 0.4, "wait": 80.0, "receive": 10.0},
-            "serverIPAddress": "198.51.100.10", "connection": "412", "_resourceType": resource_type})
+            "serverIPAddress": "198.51.100.10", "connection": "412", "_resourceType": resource_type,
+            "_initiator": initiator or INIT_OTHER})
 
     def doc(self):
         return {"log": {"version": "1.2", "creator": {"name": self.creator, "version": "537.36"},
@@ -125,7 +150,23 @@ def time_iso(ms: int) -> str:
 
 def tspd(h: Har, tag: str, referer: str, kind: int = 9):
     h.add(f"tspd:{tag}", "GET", f"{BASE}/TSPD/0000SYNTHGUARD?type={kind}", 200, "text/javascript",
-          "/* synthetic guard noise */\n", "script", referer, protection=True)
+          "/* synthetic guard noise */\n", "script", referer, protection=True, initiator=init_script(referer))
+
+
+def frame(h: Har, k: str, name: str, page_url: str, base: str, title: str, model: str, blank: bool = False):
+    """Frames auxiliares (iniciados pelo parser) da página `page_url`: *_JLIBS.html e cscform.html
+    (com <input hidden STAMP value=INIT>); opcionalmente aboutBlank.html. Referer = a página."""
+    jl, csc = f"{base}/{title}_JLIBS.html", f"{base}/cscform.html?page={title}"
+    h.add(f"{k}:jlibs_{name}", "GET", jl, 200, "text/html;charset=UTF-8", jlibs_html(title), "document", page_url,
+          initiator=init_parser(page_url, 21))
+    h.add(f"{k}:csc_{name}", "GET", csc, 200, "text/html;charset=UTF-8", csc_html(model), "document", page_url,
+          initiator=init_parser(page_url, 22))
+    bl = None
+    if blank:
+        bl = f"{base}/aboutBlank.html"
+        h.add(f"{k}:blank_{name}", "GET", bl, 200, "text/html;charset=UTF-8", "<!doctype html><html><body></body></html>\n",
+              "document", page_url, initiator=init_parser(page_url, 23))
+    return jl, csc, bl
 
 
 def round_flow(h: Har, r: dict, seed: int) -> dict:
@@ -159,43 +200,46 @@ def round_flow(h: Har, r: dict, seed: int) -> dict:
         return new_stamp, new_delta
 
     h.add(f"{k}:easynat", "GET", f"{APP}/servlet/easynat-app?op=S37", 200, "text/html;charset=UTF-8",
-          page_html("DETRAN-PB", MODELS["logon"], r["head"], pid, "op=S37&xciParameters.natsession=acesso"), "document", None)
+          page_html("DETRAN-PB", MODELS["logon"], r["head"], pid, "op=S37&xciParameters.natsession=acesso"), "document", None, initiator=INIT_OTHER)
     tspd(h, f"{k}1", f"{APP}/servlet/easynat-app?op=S37", 18)
-    h.add(f"{k}:static_jquery", "GET", f"{APP}/cisnatural/jquery-ui.min.js", 200, "application/javascript", static_js("jquery-ui"), "script", f"{APP}/servlet/easynat-app?op=S37")
-    h.add(f"{k}:static_cis", "GET", f"{APP}/ciscentral/CIS_V1_SYNTH.js", 200, "application/javascript", static_js("cis"), "script", f"{APP}/servlet/easynat-app?op=S37")
-    h.add(f"{k}:page_logon", "GET", logon_url, 200, "text/html;charset=UTF-8", page_html("NatLogon", MODELS["logon"], None, None), "document", f"{APP}/servlet/easynat-app?op=S37")
+    h.add(f"{k}:static_jquery", "GET", f"{APP}/cisnatural/jquery-ui.min.js", 200, "application/javascript", static_js("jquery-ui"), "script", f"{APP}/servlet/easynat-app?op=S37", initiator=init_parser(f"{APP}/servlet/easynat-app?op=S37", 7))
+    h.add(f"{k}:static_cis", "GET", f"{APP}/ciscentral/CIS_V1_SYNTH.js", 200, "application/javascript", static_js("cis"), "script", f"{APP}/servlet/easynat-app?op=S37", initiator=init_parser(f"{APP}/servlet/easynat-app?op=S37", 8))
+    h.add(f"{k}:page_logon", "GET", logon_url, 200, "text/html;charset=UTF-8", page_html("NatLogon", MODELS["logon"], None, None), "document", f"{APP}/servlet/easynat-app?op=S37", initiator=init_script(f"{APP}/cisnatural/jquery-ui.min.js"))
     tspd(h, f"{k}2", logon_url)
-    post("init_logon", logon_url, "/cisnatural/NatLogon.html", MODELS["logon"], "",
+    jl_logon, csc_logon, blank = frame(h, k, "logon", logon_url, f"{APP}/cisnatural", "NatLogon", MODELS["logon"], blank=True)
+    post("init_logon", csc_logon, "/cisnatural/NatLogon.html", MODELS["logon"], "",
          {"pageInitParam": "op=S37", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"},
          [("nextPage", "/UIC-SERVICOS/SIM1000X.html")], init=True)
     tspd(h, f"{k}3", logon_url, 17)
-    h.add(f"{k}:page_sim", "GET", sim_url, 200, "text/html;charset=UTF-8", page_html("SIM1000X", MODELS["sim"], None, None), "document", logon_url)
-    post("init_sim", sim_url, "/UIC-SERVICOS/SIM1000X.html", MODELS["sim"], "",
+    h.add(f"{k}:page_sim", "GET", sim_url, 200, "text/html;charset=UTF-8", page_html("SIM1000X", MODELS["sim"], None, None), "document", logon_url, initiator=init_script(f"{APP}/ciscentral/CIS_V1_SYNTH.js"))
+    jl_sim, csc_sim, _ = frame(h, k, "sim", sim_url, f"{APP}/UIC-SERVICOS", "SIM1000X", MODELS["sim"])
+    post("init_sim", csc_sim, "/UIC-SERVICOS/SIM1000X.html", MODELS["sim"], "",
          {"pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"},
          [("nextPage", "/UIC-SERVICOS/SIM1000X.html")], init=True)
     tspd(h, f"{k}4", sim_url, 17)
     props = {"interceptor_is_active": "false"}
     props.update({f"interceptor_params.items[{i}].interceptor_value": "S37" if i == 1 else "" for i in range(6)})
-    post("on_interceptor", sim_url, "/UIC-SERVICOS/SIM1000X.html", MODELS["sim"], "on_interceptor", props,
+    post("on_interceptor", jl_sim, "/UIC-SERVICOS/SIM1000X.html", MODELS["sim"], "on_interceptor", props,
          [("nextPage", "/UIC-SERVICOS/VES0009X.html")])
     tspd(h, f"{k}5", sim_url)
-    h.add(f"{k}:page_ves", "GET", ves_url, 200, "text/html;charset=UTF-8", page_html("VES0009X", MODELS["ves"], None, None), "document", sim_url)
-    post("init_ves", ves_url, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "",
+    h.add(f"{k}:page_ves", "GET", ves_url, 200, "text/html;charset=UTF-8", page_html("VES0009X", MODELS["ves"], None, None), "document", sim_url, initiator=init_script(f"{APP}/ciscentral/CIS_V1_SYNTH.js"))
+    jl_ves, csc_ves, _ = frame(h, k, "ves", ves_url, f"{APP}/UIC-SERVICOS", "VES0009X", MODELS["ves"])
+    post("init_ves", csc_ves, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "",
          {"pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"},
          [("nextPage", "/UIC-SERVICOS/VES0009X.html")], init=True)
     tspd(h, f"{k}6", ves_url, 17)
-    post("cmd_filtro", ves_url, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "cmd_filtro",
+    post("cmd_filtro", jl_ves, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "cmd_filtro",
          {"v_filtro_sel": "2.0", "#f12_selected": "2.0"}, [("v_filtro_sel", "2.0")])
     tspd(h, f"{k}7", ves_url, 17)
-    post("consultar1", ves_url, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "cmd_consultar_placa",
+    post("consultar1", jl_ves, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "cmd_consultar_placa",
          {"v_filtro_error": "", "v_placa": r["plates"][0], "v_cpf": r["cpfs"][0], "#f12_selected": "2.0"},
          [("v_placa", r["plates"][0]), ("v_cpf", r["cpfs"][0]), ("v_situacao_atual", "Apreendido & Liberado <ok>"),
           ("vp_situacao_atual", "true"), ("v_tmp", "x")])
     tspd(h, f"{k}8", ves_url, 17)
-    post("cmd_nova", ves_url, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "cmd_nova",
+    post("cmd_nova", jl_ves, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "cmd_nova",
          {"#f12_selected": "2.0"}, [("v_situacao_atual", "")])
     tspd(h, f"{k}9", ves_url, 17)
-    post("consultar2", ves_url, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "cmd_consultar_placa",
+    post("consultar2", jl_ves, "/UIC-SERVICOS/VES0009X.html", MODELS["ves"], "cmd_consultar_placa",
          {"v_filtro_error": "", "v_placa": r["plates"][1], "v_cpf": r["cpfs"][1], "v_renavam": "12", "#f12_selected": "2.0"},
          [("v_placa", r["plates"][1]), ("v_cpf", r["cpfs"][1]), ("vp_situacao_atual", "true"), ("v_tmp", "y")])
     out = {key.split(":", 1)[1]: v for key, v in h.ids.items() if key.startswith(k + ":")}
@@ -260,7 +304,13 @@ def build():
                 "protection_include": sorted(v for k, v in ids.items() if k.startswith("tspd:") and v < ids["consultar1"]),
                 "never_steps": [ids["static_jquery"], ids["static_cis"], ids["consultar1"], ids["cmd_nova"], ids["consultar2"]],
                 "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`",
+                "pages_exact": [ids["easynat"], ids["page_logon"], ids["page_sim"], ids["page_ves"]],
+                "auxiliary_include": [ids["csc_logon"], ids["csc_sim"], ids["csc_ves"], ids["jlibs_sim"], ids["jlibs_ves"]],
+                "auxiliary_not_on_path": [ids["jlibs_logon"], ids["blank_logon"]],
+                "frames_never_steps": [ids["jlibs_logon"], ids["jlibs_sim"], ids["jlibs_ves"], ids["blank_logon"]],
+                "note_cscform": "cscform entra em steps SÓ como produtor do STAMP=INIT (same-field); JLIBS/aboutBlank nunca",
             },
+            "init_stamp": {ids["init_logon"]: [ids["csc_logon"]], ids["init_sim"]: [ids["csc_sim"]], ids["init_ves"]: [ids["csc_ves"]]},
         }
 
     def tspd_of(h, tag):

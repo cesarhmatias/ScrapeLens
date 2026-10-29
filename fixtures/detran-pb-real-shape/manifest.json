@@ -25,8 +25,8 @@
   "get_without_postdata": "todos os GETs"
  },
  "counts": {
-  "1round": 23,
-  "2rounds": 46,
+  "1round": 30,
+  "2rounds": 60,
   "connector_posts_per_round": 8
  },
  "rounds": {
@@ -36,36 +36,43 @@
     "static_jquery": "har-0003",
     "static_cis": "har-0004",
     "page_logon": "har-0005",
-    "init_logon": "har-0007",
-    "page_sim": "har-0009",
-    "init_sim": "har-0010",
-    "on_interceptor": "har-0012",
-    "page_ves": "har-0014",
-    "init_ves": "har-0015",
-    "cmd_filtro": "har-0017",
-    "consultar1": "har-0019",
-    "cmd_nova": "har-0021",
-    "consultar2": "har-0023",
+    "jlibs_logon": "har-0007",
+    "csc_logon": "har-0008",
+    "blank_logon": "har-0009",
+    "init_logon": "har-0010",
+    "page_sim": "har-0012",
+    "jlibs_sim": "har-0013",
+    "csc_sim": "har-0014",
+    "init_sim": "har-0015",
+    "on_interceptor": "har-0017",
+    "page_ves": "har-0019",
+    "jlibs_ves": "har-0020",
+    "csc_ves": "har-0021",
+    "init_ves": "har-0022",
+    "cmd_filtro": "har-0024",
+    "consultar1": "har-0026",
+    "cmd_nova": "har-0028",
+    "consultar2": "har-0030",
     "tspd:a11": "har-0002",
     "tspd:a12": "har-0006",
-    "tspd:a13": "har-0008",
-    "tspd:a14": "har-0011",
-    "tspd:a15": "har-0013",
-    "tspd:a16": "har-0016",
-    "tspd:a17": "har-0018",
-    "tspd:a18": "har-0020",
-    "tspd:a19": "har-0022"
+    "tspd:a13": "har-0011",
+    "tspd:a14": "har-0016",
+    "tspd:a15": "har-0018",
+    "tspd:a16": "har-0023",
+    "tspd:a17": "har-0025",
+    "tspd:a18": "har-0027",
+    "tspd:a19": "har-0029"
    },
    "tspd": [
     "har-0002",
     "har-0006",
-    "har-0008",
     "har-0011",
-    "har-0013",
     "har-0016",
     "har-0018",
-    "har-0020",
-    "har-0022"
+    "har-0023",
+    "har-0025",
+    "har-0027",
+    "har-0029"
    ]
   },
   "b1": {
@@ -74,74 +81,88 @@
     "static_jquery": "har-0003",
     "static_cis": "har-0004",
     "page_logon": "har-0005",
-    "init_logon": "har-0007",
-    "page_sim": "har-0009",
-    "init_sim": "har-0010",
-    "on_interceptor": "har-0012",
-    "page_ves": "har-0014",
-    "init_ves": "har-0015",
-    "cmd_filtro": "har-0017",
-    "consultar1": "har-0019",
-    "cmd_nova": "har-0021",
-    "consultar2": "har-0023",
+    "jlibs_logon": "har-0007",
+    "csc_logon": "har-0008",
+    "blank_logon": "har-0009",
+    "init_logon": "har-0010",
+    "page_sim": "har-0012",
+    "jlibs_sim": "har-0013",
+    "csc_sim": "har-0014",
+    "init_sim": "har-0015",
+    "on_interceptor": "har-0017",
+    "page_ves": "har-0019",
+    "jlibs_ves": "har-0020",
+    "csc_ves": "har-0021",
+    "init_ves": "har-0022",
+    "cmd_filtro": "har-0024",
+    "consultar1": "har-0026",
+    "cmd_nova": "har-0028",
+    "consultar2": "har-0030",
     "tspd:b11": "har-0002",
     "tspd:b12": "har-0006",
-    "tspd:b13": "har-0008",
-    "tspd:b14": "har-0011",
-    "tspd:b15": "har-0013",
-    "tspd:b16": "har-0016",
-    "tspd:b17": "har-0018",
-    "tspd:b18": "har-0020",
-    "tspd:b19": "har-0022"
+    "tspd:b13": "har-0011",
+    "tspd:b14": "har-0016",
+    "tspd:b15": "har-0018",
+    "tspd:b16": "har-0023",
+    "tspd:b17": "har-0025",
+    "tspd:b18": "har-0027",
+    "tspd:b19": "har-0029"
    },
    "tspd": [
     "har-0002",
     "har-0006",
-    "har-0008",
     "har-0011",
-    "har-0013",
     "har-0016",
     "har-0018",
-    "har-0020",
-    "har-0022"
+    "har-0023",
+    "har-0025",
+    "har-0027",
+    "har-0029"
    ]
   },
   "b2": {
    "ids": {
-    "easynat": "har-0024",
-    "static_jquery": "har-0026",
-    "static_cis": "har-0027",
-    "page_logon": "har-0028",
-    "init_logon": "har-0030",
-    "page_sim": "har-0032",
-    "init_sim": "har-0033",
-    "on_interceptor": "har-0035",
-    "page_ves": "har-0037",
-    "init_ves": "har-0038",
-    "cmd_filtro": "har-0040",
-    "consultar1": "har-0042",
-    "cmd_nova": "har-0044",
-    "consultar2": "har-0046",
-    "tspd:b21": "har-0025",
-    "tspd:b22": "har-0029",
-    "tspd:b23": "har-0031",
-    "tspd:b24": "har-0034",
-    "tspd:b25": "har-0036",
-    "tspd:b26": "har-0039",
-    "tspd:b27": "har-0041",
-    "tspd:b28": "har-0043",
-    "tspd:b29": "har-0045"
+    "easynat": "har-0031",
+    "static_jquery": "har-0033",
+    "static_cis": "har-0034",
+    "page_logon": "har-0035",
+    "jlibs_logon": "har-0037",
+    "csc_logon": "har-0038",
+    "blank_logon": "har-0039",
+    "init_logon": "har-0040",
+    "page_sim": "har-0042",
+    "jlibs_sim": "har-0043",
+    "csc_sim": "har-0044",
+    "init_sim": "har-0045",
+    "on_interceptor": "har-0047",
+    "page_ves": "har-0049",
+    "jlibs_ves": "har-0050",
+    "csc_ves": "har-0051",
+    "init_ves": "har-0052",
+    "cmd_filtro": "har-0054",
+    "consultar1": "har-0056",
+    "cmd_nova": "har-0058",
+    "consultar2": "har-0060",
+    "tspd:b21": "har-0032",
+    "tspd:b22": "har-0036",
+    "tspd:b23": "har-0041",
+    "tspd:b24": "har-0046",
+    "tspd:b25": "har-0048",
+    "tspd:b26": "har-0053",
+    "tspd:b27": "har-0055",
+    "tspd:b28": "har-0057",
+    "tspd:b29": "har-0059"
    },
    "tspd": [
-    "har-0025",
-    "har-0029",
-    "har-0031",
-    "har-0034",
+    "har-0032",
     "har-0036",
-    "har-0039",
     "har-0041",
-    "har-0043",
-    "har-0045"
+    "har-0046",
+    "har-0048",
+    "har-0053",
+    "har-0055",
+    "har-0057",
+    "har-0059"
    ]
   }
  },
@@ -209,21 +230,21 @@
   },
   "aceite_1_origins_chain": {
    "A": {
-    "target": "har-0019",
+    "target": "har-0026",
     "origins": {
      "STAMP": {
       "status": "origin",
       "label": "origem observada",
       "kind": "same-field",
       "strength": "strong",
-      "producer": "har-0017",
+      "producer": "har-0024",
       "note": "<input type=hidden name=STAMP> da resposta HTML anterior"
      },
      "delta": {
       "parent": "XML",
       "value_prefix": "DLTC",
       "kind": "value-match",
-      "producer": "har-0017",
+      "producer": "har-0024",
       "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"
      },
      "SESSIONID": {
@@ -250,52 +271,87 @@
     "chain": {
      "steps_include": [
       "har-0001",
-      "har-0007",
       "har-0010",
-      "har-0012",
       "har-0015",
-      "har-0017"
+      "har-0017",
+      "har-0022",
+      "har-0024"
      ],
      "pages_include": [
       "har-0005",
-      "har-0009",
-      "har-0014"
+      "har-0012",
+      "har-0019"
      ],
      "protection_include": [
       "har-0002",
       "har-0006",
-      "har-0008",
       "har-0011",
-      "har-0013",
       "har-0016",
-      "har-0018"
+      "har-0018",
+      "har-0023",
+      "har-0025"
      ],
      "never_steps": [
       "har-0003",
       "har-0004",
-      "har-0019",
-      "har-0021",
-      "har-0023"
+      "har-0026",
+      "har-0028",
+      "har-0030"
      ],
-     "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`"
+     "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`",
+     "pages_exact": [
+      "har-0001",
+      "har-0005",
+      "har-0012",
+      "har-0019"
+     ],
+     "auxiliary_include": [
+      "har-0008",
+      "har-0014",
+      "har-0021",
+      "har-0013",
+      "har-0020"
+     ],
+     "auxiliary_not_on_path": [
+      "har-0007",
+      "har-0009"
+     ],
+     "frames_never_steps": [
+      "har-0007",
+      "har-0013",
+      "har-0020",
+      "har-0009"
+     ],
+     "note_cscform": "cscform entra em steps SÓ como produtor do STAMP=INIT (same-field); JLIBS/aboutBlank nunca"
+    },
+    "init_stamp": {
+     "har-0010": [
+      "har-0008"
+     ],
+     "har-0015": [
+      "har-0014"
+     ],
+     "har-0022": [
+      "har-0021"
+     ]
     }
    },
    "B_round2": {
-    "target": "har-0042",
+    "target": "har-0056",
     "origins": {
      "STAMP": {
       "status": "origin",
       "label": "origem observada",
       "kind": "same-field",
       "strength": "strong",
-      "producer": "har-0040",
+      "producer": "har-0054",
       "note": "<input type=hidden name=STAMP> da resposta HTML anterior"
      },
      "delta": {
       "parent": "XML",
       "value_prefix": "DLTE",
       "kind": "value-match",
-      "producer": "har-0040",
+      "producer": "har-0054",
       "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"
      },
      "SESSIONID": {
@@ -308,7 +364,7 @@
        "head_len": 9,
        "separator": "_",
        "tail_len": 12,
-       "head_source": "har-0024 (literal m_currentSessionId)",
+       "head_source": "har-0031 (literal m_currentSessionId)",
        "tail_source": null
       },
       "justification_composite": "regra do valor composto: campo nomeado < 40 B só ganha origem por decomposição se coberto POR INTEIRO por >= 2 valores de produtores + separadores (_ - . : |); prefixo parcial não vale. No real o SESSIONID = literal de 9 chars do easynat-app + '_' + 12 dígitos sem fonte observada: cobertura parcial => 'sem origem observada' (o prefixo de 9 chars não vale como origem do campo).",
@@ -321,35 +377,70 @@
     },
     "chain": {
      "steps_include": [
-      "har-0024",
-      "har-0030",
-      "har-0033",
-      "har-0035",
-      "har-0038",
-      "har-0040"
+      "har-0031",
+      "har-0040",
+      "har-0045",
+      "har-0047",
+      "har-0052",
+      "har-0054"
      ],
      "pages_include": [
-      "har-0028",
-      "har-0032",
-      "har-0037"
+      "har-0035",
+      "har-0042",
+      "har-0049"
      ],
      "protection_include": [
-      "har-0025",
-      "har-0029",
-      "har-0031",
-      "har-0034",
+      "har-0032",
       "har-0036",
-      "har-0039",
-      "har-0041"
+      "har-0041",
+      "har-0046",
+      "har-0048",
+      "har-0053",
+      "har-0055"
      ],
      "never_steps": [
-      "har-0026",
-      "har-0027",
-      "har-0042",
-      "har-0044",
-      "har-0046"
+      "har-0033",
+      "har-0034",
+      "har-0056",
+      "har-0058",
+      "har-0060"
      ],
-     "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`"
+     "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`",
+     "pages_exact": [
+      "har-0031",
+      "har-0035",
+      "har-0042",
+      "har-0049"
+     ],
+     "auxiliary_include": [
+      "har-0038",
+      "har-0044",
+      "har-0051",
+      "har-0043",
+      "har-0050"
+     ],
+     "auxiliary_not_on_path": [
+      "har-0037",
+      "har-0039"
+     ],
+     "frames_never_steps": [
+      "har-0037",
+      "har-0043",
+      "har-0050",
+      "har-0039"
+     ],
+     "note_cscform": "cscform entra em steps SÓ como produtor do STAMP=INIT (same-field); JLIBS/aboutBlank nunca"
+    },
+    "init_stamp": {
+     "har-0040": [
+      "har-0038"
+     ],
+     "har-0045": [
+      "har-0044"
+     ],
+     "har-0052": [
+      "har-0051"
+     ]
     }
    }
   },
