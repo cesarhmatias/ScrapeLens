@@ -5,6 +5,7 @@
 //! `encode`, que o script de priming inclui.
 
 pub mod adapter;
+pub mod extract;
 pub mod grammar;
 pub mod python;
 

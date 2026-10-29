@@ -16,7 +16,9 @@ ScrapeLens. Vive fora do core: depende de `scrapelens-core` só pelo trait
   equivalentes ao Rust (testados lado a lado).
 - `natural-core`: wrapper do CLI do core com o adaptador registrado
   (`export-priming`; os outros subcomandos vão ao `scrapelens-core`).
-  `--sem-adaptador` gera o script pelo caminho por trechos (controle).
+  O adaptador só vale com `--adapter natural-ajax`; sem a flag, o script sai
+  pelo caminho por trechos (controle). `adapter-roundtrip <sessao>` imprime
+  `{"fields", "divergences", "divergenceKinds", ...}` (só agregados).
 
 Testes: `cargo test` (round-trip nas fixtures e, se existirem, nos 3 HARs
 reais, só agregados), `python3 scripts/prove_strict.py` (detran-sim em modo

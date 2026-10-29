@@ -55,7 +55,7 @@ def main():
         subprocess.run([str(CORE), "import-har", str(HAR), "--out", str(sess), "--label", "synthetic-fixture"], check=True, capture_output=True)
         man = json.loads((ROOT / "fixtures/detran-pb-real-shape/manifest.json").read_text())
         target = man["expectations"]["aceite_1_origins_chain"]["A"]["target"]
-        for label, extra in (("com_adaptador", []), ("controle_sem_adaptador", ["--sem-adaptador"])):
+        for label, extra in (("com_adaptador", ["--adapter", "natural-ajax"]), ("controle_sem_adaptador", [])):
             script = tmp / f"{label}.py"
             g = subprocess.run([str(NATURAL), "export-priming", str(sess), target, "--out", str(script), *extra],
                                capture_output=True, text=True, env=env)
