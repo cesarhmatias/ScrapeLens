@@ -76,7 +76,7 @@ impl ProtocolAdapter for LenPrefix {
 
 fn lp(delta: &str, plate: &str) -> String {
     format!(
-        "LP!{:02}delta{:02}{delta}07v_placa{:02}{plate}02id0812345678",
+        "LP!{:02}delta{:02}{delta}07v_placa{:02}{plate}02id081234567804flag08ABCDEFGH",
         5,
         delta.len(),
         plate.len()
@@ -344,5 +344,6 @@ fn generic_last_component_of_adapter_part_is_only_possible() {
     let o = value_origins(&b.session, &b, &logical(&b, "2.1"), &registry()).unwrap();
     let get = |f: &str| o.values.iter().find(|v| v.field == f).unwrap();
     assert_eq!(get("XML.p.id").confidence, Some(Confidence::Possible));
+    assert_eq!(get("XML.p.flag").confidence, Some(Confidence::Possible));
     assert_eq!(get("XML.delta").confidence, Some(Confidence::Strong));
 }

@@ -1173,7 +1173,7 @@ impl<'a> FlowContext<'a> {
 /// Nomes de campo genéricos: `same-field` com eles é só evidência média.
 const GENERIC_NAMES: &[&str] = &[
     "id", "value", "data", "page", "type", "lang", "name", "key", "code", "state", "status",
-    "action", "op", "mode", "format", "limit", "offset", "q", "query", "v", "t", "ts",
+    "action", "op", "mode", "format", "limit", "offset", "q", "query", "v", "t", "ts", "flag",
 ];
 
 fn is_generic_name(name: &str) -> bool {
