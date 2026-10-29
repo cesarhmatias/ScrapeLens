@@ -9,6 +9,7 @@
 //!   scrapelens-core search <sessao> <texto> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
 //!   scrapelens-core origins <sessao> <requestId>
 //!   scrapelens-core chain <sessao> <requestId>
+//!   scrapelens-core timeline <sessao>
 //!   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
 //!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
 //!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
@@ -117,6 +118,20 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "origins" | "chain" => flow_command(&command, &args),
         "compare" => compare_command(&args),
         "assess" => assess_command(&args),
+        "timeline" => {
+            if args.len() != 1 {
+                return Err(usage());
+            }
+            let (lazy, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+                .map_err(|e| e.to_string())?;
+            let source = scrapelens_core::search::LazyBodies(&lazy);
+            let result = scrapelens_core::timeline::timeline(
+                &lazy.session,
+                &source,
+                &scrapelens_core::timeline::TimelineOptions::default(),
+            );
+            print_json(&result)
+        }
         "export-priming" => export_priming_command(&args),
         "export-curl" => export_request(&args, true),
         "export-python" => export_request(&args, false),
@@ -471,6 +486,7 @@ fn usage() -> String {
   scrapelens-core search <sessao> <texto> [--scope <escopo>]... [--case-sensitive]
   scrapelens-core origins <sessao> <requestId>
   scrapelens-core chain <sessao> <requestId>
+  scrapelens-core timeline <sessao>
   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]

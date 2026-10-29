@@ -134,3 +134,23 @@ fn large_trace_is_linear() {
     assert_eq!(imported.bundle.session.requests.len(), 5000);
     assert!(started.elapsed().as_secs() < 20, "{:?}", started.elapsed());
 }
+
+#[test]
+fn compare_assess_and_sanitize_work_on_the_imported_session() {
+    use scrapelens_core::assess::{assess_session, AssessRules};
+    use scrapelens_core::compare::{compare_sessions, CompareOptions};
+    use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
+    let mut s = step(1);
+    s["requestHeaders"] = json!([["Cookie", "JSESSIONID=SECRETCOOKIE0001"]]);
+    let a = import_trace(&trace(vec![s.clone(), step(2)]))
+        .unwrap()
+        .bundle;
+    let b = import_trace(&trace(vec![s, step(2)])).unwrap().bundle;
+    let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
+    assert_eq!(r.pairs.len(), 2);
+    let outcomes = assess_session(&a.session, &a, &AssessRules::default());
+    assert_eq!(outcomes.len(), 2);
+    let export = sanitize_bundle(&a, &SanitizeOptions::default());
+    let text = serde_json::to_string(&export.bundle.session).unwrap();
+    assert!(!text.contains("SECRETCOOKIE0001"));
+}

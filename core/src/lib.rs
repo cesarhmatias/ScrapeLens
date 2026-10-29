@@ -29,6 +29,7 @@ pub mod normalize;
 pub mod parse;
 pub mod search;
 pub mod store;
+pub mod timeline;
 
 pub use error::{CoreError, Result};
 pub use model::{

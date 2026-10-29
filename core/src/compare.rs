@@ -328,26 +328,26 @@ pub(crate) fn split_url(url: &str) -> (String, String) {
 }
 
 #[derive(Clone)]
-struct Entry {
-    index: usize,
-    id: String,
-    method: String,
-    url: String,
-    base: String,
+pub(crate) struct Entry {
+    pub(crate) index: usize,
+    pub(crate) id: String,
+    pub(crate) method: String,
+    pub(crate) url: String,
+    pub(crate) base: String,
     model: String,
-    kind: EntryKind,
+    pub(crate) kind: EntryKind,
     /// Documento (GET com resposta HTML) da aplicação.
-    document: bool,
+    pub(crate) document: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EntryKind {
+pub(crate) enum EntryKind {
     App,
     Protection,
     Static,
 }
 
-fn entries(ctx: &FlowContext<'_>) -> Vec<Entry> {
+pub(crate) fn entries(ctx: &FlowContext<'_>) -> Vec<Entry> {
     let mut out = Vec::new();
     for (index, request) in ctx.session.requests.iter().enumerate() {
         let Some(pos) = ctx.find(&request.id) else {
@@ -686,7 +686,7 @@ pub fn compare_sessions(
 
 /// Modelo (`método|host|caminho`) do primeiro documento da aplicação que se
 /// repete; deve existir nos dois lados.
-fn entry_base(ea: &[Entry], eb: &[Entry]) -> Option<String> {
+pub(crate) fn entry_base(ea: &[Entry], eb: &[Entry]) -> Option<String> {
     let repeated = |list: &[Entry]| -> Vec<String> {
         let mut counts: HashMap<&str, usize> = HashMap::new();
         for e in list.iter().filter(|e| e.document) {
@@ -707,7 +707,7 @@ fn entry_base(ea: &[Entry], eb: &[Entry]) -> Option<String> {
         .or_else(|| repeated(eb).into_iter().find(|base| has(ea, base)))
 }
 
-fn split_rounds(list: &[Entry], entry: Option<&str>) -> Vec<Vec<Entry>> {
+pub(crate) fn split_rounds(list: &[Entry], entry: Option<&str>) -> Vec<Vec<Entry>> {
     let Some(entry) = entry else {
         return vec![list.to_vec()];
     };

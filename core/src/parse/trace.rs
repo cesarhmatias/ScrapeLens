@@ -45,6 +45,17 @@ use crate::parse::{ImportReport, ImportedSession};
 
 pub const TRACE_SCHEMA: &str = "scrapelens.trace/1";
 pub const TRACE_LABEL: &str = "script-trace";
+type BodyParts = (Map<String, Value>, bool, Option<u64>);
+/// (req truncado, tamanho real, resp truncado, tamanho real, checks ruins, erro)
+type StepNotes = (
+    bool,
+    Option<u64>,
+    bool,
+    Option<u64>,
+    Vec<String>,
+    Option<String>,
+);
+
 pub const MAX_STEPS: usize = 100_000;
 
 fn bad(message: impl Into<String>) -> CoreError {
@@ -85,11 +96,7 @@ fn headers_of(step: &Value, key: &str, index: usize) -> Result<Vec<Value>> {
 }
 
 /// `(content/postData em forma HAR, truncado, tamanho real)`
-fn body_of(
-    step: &Value,
-    key: &str,
-    index: usize,
-) -> Result<Option<(Map<String, Value>, bool, Option<u64>)>> {
+fn body_of(step: &Value, key: &str, index: usize) -> Result<Option<BodyParts>> {
     let Some(body) = step.get(key).filter(|v| !v.is_null()) else {
         return Ok(None);
     };
@@ -158,14 +165,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
 
     let mut entries = Vec::with_capacity(steps.len());
     // (índice, request truncado, response truncado, tamanhos reais, verificações ruins, erro)
-    let mut notes: Vec<(
-        bool,
-        Option<u64>,
-        bool,
-        Option<u64>,
-        Vec<String>,
-        Option<String>,
-    )> = Vec::with_capacity(steps.len());
+    let mut notes: Vec<StepNotes> = Vec::with_capacity(steps.len());
     for (index, step) in steps.iter().enumerate() {
         if !step.is_object() {
             return Err(bad(format!("steps[{index}] não é objeto")));
