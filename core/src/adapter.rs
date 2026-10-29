@@ -65,6 +65,11 @@ pub trait ProtocolAdapter: Send + Sync {
     fn decode(&self, value: &str) -> Result<Decoded>;
     /// Recodifica, recalculando o que o protocolo exigir (ex. comprimentos).
     fn encode(&self, decoded: &Decoded) -> Result<String>;
+    /// Nome curto da operação para rótulos (timeline), quando as partes comuns
+    /// não bastam (ex. a operação do cabeçalho). Padrão: nenhum.
+    fn label_hint(&self, _decoded: &Decoded) -> Option<String> {
+        None
+    }
 }
 
 /// Lista ordenada de adaptadores; o primeiro que reivindica o campo vence.

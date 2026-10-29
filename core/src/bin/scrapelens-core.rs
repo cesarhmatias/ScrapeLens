@@ -10,9 +10,10 @@
 //!   scrapelens-core origins <sessao> <requestId>
 //!   scrapelens-core chain <sessao> <requestId>
 //!   scrapelens-core timeline <sessao>
+//!   scrapelens-core validate <captura> <sessao-trace> [--map-origin <origem-captura>=<origem-trace>]
 //!   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
 //!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
-//!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
+//!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all] [--map-origin <origem-A>=<origem-B>]
 //!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
 //!   scrapelens-core sanitize <sessao> <saida>
@@ -118,6 +119,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "origins" | "chain" => flow_command(&command, &args),
         "compare" => compare_command(&args),
         "assess" => assess_command(&args),
+        "validate" => validate_command(&args),
         "timeline" => {
             if args.len() != 1 {
                 return Err(usage());
@@ -199,6 +201,15 @@ fn compare_command(args: &[String]) -> Result<(), String> {
             "--all" => options.include_all = true,
             "--a-range" => options.a_range = Some(range("--a-range")?),
             "--b-range" => options.b_range = Some(range("--b-range")?),
+            "--map-origin" => {
+                let value = rest.next().ok_or_else(|| {
+                    "--map-origin exige <origem-captura>=<origem-trace>".to_string()
+                })?;
+                options.map_origin = Some(
+                    scrapelens_core::compare::OriginMap::parse(value)
+                        .ok_or_else(|| format!("--map-origin inválido: {value:?}"))?,
+                );
+            }
             other => return Err(format!("argumento desconhecido: {other}\n\n{}", usage())),
         }
     }
@@ -214,6 +225,43 @@ fn compare_command(args: &[String]) -> Result<(), String> {
         &options,
     );
     print_json(&result)
+}
+
+fn validate_command(args: &[String]) -> Result<(), String> {
+    use scrapelens_core::validate::{validate, ValidateOptions};
+    if args.len() < 2 {
+        return Err(usage());
+    }
+    let mut options = ValidateOptions::default();
+    let mut rest = args[2..].iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--map-origin" => {
+                let value = rest.next().ok_or_else(|| {
+                    "--map-origin exige <origem-captura>=<origem-trace>".to_string()
+                })?;
+                options.compare.map_origin = Some(
+                    scrapelens_core::compare::OriginMap::parse(value)
+                        .ok_or_else(|| format!("--map-origin inválido: {value:?}"))?,
+                );
+            }
+            other => return Err(format!("argumento desconhecido: {other}\n\n{}", usage())),
+        }
+    }
+    let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
+        .map_err(|e| e.to_string())?;
+    let (b, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[1]))
+        .map_err(|e| e.to_string())?;
+    let result = validate(
+        &a.session,
+        &scrapelens_core::search::LazyBodies(&a),
+        &b.session,
+        &scrapelens_core::search::LazyBodies(&b),
+        &options,
+    );
+    print_json(&result)?;
+    eprintln!("{}", result.summary);
+    Ok(())
 }
 
 fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
@@ -487,9 +535,10 @@ fn usage() -> String {
   scrapelens-core origins <sessao> <requestId>
   scrapelens-core chain <sessao> <requestId>
   scrapelens-core timeline <sessao>
+  scrapelens-core validate <captura> <sessao-trace> [--map-origin <origem-captura>=<origem-trace>]
   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
-  scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all]
+  scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all] [--map-origin <origem-A>=<origem-B>]
   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
   scrapelens-core sanitize <sessao> <saida>

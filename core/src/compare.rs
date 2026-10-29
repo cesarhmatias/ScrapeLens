@@ -64,6 +64,38 @@ pub struct CompareOptions {
     pub a_range: Option<RequestRange>,
     #[serde(default)]
     pub b_range: Option<RequestRange>,
+    /// Trata dois hosts como o mesmo ao alinhar (`--map-origin A=B`): `from` e
+    /// `to` são origens (`https://host[:porta]`). Sem isto, se uma das sessões
+    /// tem o rótulo `script-trace` e cada lado tem uma só origem de aplicação,
+    /// o mapeamento é aplicado sozinho, com aviso.
+    #[serde(default)]
+    pub map_origin: Option<OriginMap>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginMap {
+    pub from: String,
+    pub to: String,
+}
+
+impl OriginMap {
+    /// `"https://a.test=http://127.0.0.1:8791"`.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (from, to) = text.split_once('=')?;
+        let (from, to) = (from.trim(), to.trim());
+        (host_of_origin(from).is_some() && host_of_origin(to).is_some()).then(|| Self {
+            from: from.to_string(),
+            to: to.to_string(),
+        })
+    }
+}
+
+/// `host[:porta]` em minúsculas de uma origem (ou URL).
+fn host_of_origin(origin: &str) -> Option<String> {
+    let rest = origin.split_once("://")?.1;
+    let host = rest.split(['/', '?', '#']).next()?;
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -289,6 +321,9 @@ pub struct SessionComparison {
     pub parts_counts: PartsCounts,
     pub redacted_fields: usize,
     pub warnings: Vec<String>,
+    /// Mapeamento de origem aplicado (explícito ou automático).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mapped_origin: Option<OriginMap>,
 }
 
 const OPAQUE_MIN: usize = crate::flow::OPAQUE_CONSUMER_MIN;
@@ -347,14 +382,20 @@ pub(crate) enum EntryKind {
     Static,
 }
 
-pub(crate) fn entries(ctx: &FlowContext<'_>) -> Vec<Entry> {
+pub(crate) fn entries(ctx: &FlowContext<'_>, map: Option<&OriginMap>) -> Vec<Entry> {
+    let map_hosts = map.and_then(|m| Some((host_of_origin(&m.from)?, host_of_origin(&m.to)?)));
     let mut out = Vec::new();
     for (index, request) in ctx.session.requests.iter().enumerate() {
         let Some(pos) = ctx.find(&request.id) else {
             continue;
         };
         let attempt = ctx.attempt_ref(pos);
-        let (host, path) = split_url(&attempt.url);
+        let (mut host, path) = split_url(&attempt.url);
+        if let Some((from, to)) = &map_hosts {
+            if host == *from {
+                host = to.clone();
+            }
+        }
         let base = format!("{}|{host}|{path}", attempt.method.to_ascii_uppercase());
         let mut names: Vec<String> = ctx
             .consumed_for(pos)
@@ -508,6 +549,51 @@ fn diff_regions(a: &[u8], b: &[u8], cap: usize) -> Vec<(usize, usize, usize, usi
         .collect()
 }
 
+/// Origem única de aplicação de uma sessão (`scheme://host`), se for uma só.
+fn single_app_origin(ctx: &FlowContext<'_>) -> Option<String> {
+    let mut found: Option<String> = None;
+    for e in entries(ctx, None) {
+        if e.kind != EntryKind::App {
+            continue;
+        }
+        let rest = e.url.split_once("://")?;
+        let origin = format!(
+            "{}://{}",
+            rest.0.to_ascii_lowercase(),
+            host_of_origin(&e.url)?
+        );
+        match &found {
+            Some(prev) if *prev != origin => return None,
+            _ => found = Some(origin),
+        }
+    }
+    found
+}
+
+/// Mapeamento automático captura → trace (ver [`CompareOptions::map_origin`]).
+fn auto_map(ctx_a: &FlowContext<'_>, ctx_b: &FlowContext<'_>) -> Option<(OriginMap, String)> {
+    let is_trace = |c: &FlowContext<'_>| {
+        c.session
+            .session
+            .labels
+            .iter()
+            .any(|l| l == crate::parse::trace::TRACE_LABEL)
+    };
+    let (a_trace, b_trace) = (is_trace(ctx_a), is_trace(ctx_b));
+    if a_trace == b_trace {
+        return None;
+    }
+    let (oa, ob) = (single_app_origin(ctx_a)?, single_app_origin(ctx_b)?);
+    if host_of_origin(&oa) == host_of_origin(&ob) {
+        return None;
+    }
+    let (from, to) = if b_trace { (oa, ob) } else { (ob, oa) };
+    let why = format!(
+        "origens de aplicação diferentes ({from} × {to}); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)"
+    );
+    Some((OriginMap { from, to }, why))
+}
+
 pub fn compare_sessions(
     a: &SessionV1,
     a_source: &dyn BodySource,
@@ -531,9 +617,18 @@ pub fn compare_sessions(
         parts_counts: PartsCounts::default(),
         redacted_fields: 0,
         warnings: Vec::new(),
+        mapped_origin: None,
     };
-    let mut all_a = entries(&ctx_a);
-    let mut all_b = entries(&ctx_b);
+    let map = options.map_origin.clone().or_else(|| {
+        let note = auto_map(&ctx_a, &ctx_b);
+        note.map(|(m, why)| {
+            result.warnings.push(why);
+            m
+        })
+    });
+    result.mapped_origin = map.clone();
+    let mut all_a = entries(&ctx_a, map.as_ref());
+    let mut all_b = entries(&ctx_b, map.as_ref());
     for (list, range, session, side) in [
         (&mut all_a, &options.a_range, a, "A"),
         (&mut all_b, &options.b_range, b, "B"),

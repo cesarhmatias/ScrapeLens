@@ -30,6 +30,7 @@ pub mod parse;
 pub mod search;
 pub mod store;
 pub mod timeline;
+pub mod validate;
 
 pub use error::{CoreError, Result};
 pub use model::{

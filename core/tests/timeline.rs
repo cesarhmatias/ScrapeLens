@@ -62,6 +62,12 @@ impl ProtocolAdapter for LenPrefix {
         }
         Ok(Decoded { parts })
     }
+    fn label_hint(&self, d: &Decoded) -> Option<String> {
+        d.parts
+            .iter()
+            .any(|p| p.name == "p.event" && p.value.is_empty())
+            .then(|| "init".to_string())
+    }
     fn encode(&self, d: &Decoded) -> Result<String> {
         let mut out = String::from("LP!");
         for p in &d.parts {
@@ -156,8 +162,8 @@ fn session() -> SessionBundle {
             "POST",
             "https://x.test/app/Connector",
             "text/html",
-            Some(format!("XML={}&STAMP=1", lp("init", "NatLogon", "x"))),
-            format!("XML={}&STAMP=7", lp("init", "NatLogon", &d)),
+            Some(format!("XML={}&STAMP=1", lp("", "NatLogon", "x"))),
+            format!("XML={}&STAMP=7", lp("", "NatLogon", &d)),
         );
         step(
             "POST",

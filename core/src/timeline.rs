@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::adapter::AdapterContext;
 use crate::assess::{assess_session, AssessRules, VerdictKind};
 use crate::compare::{entries, entry_base, split_rounds, EntryKind};
 use crate::flow::{origins_in, FlowContext, FlowOptions, OriginStatus};
@@ -93,7 +94,7 @@ pub fn timeline(
     options: &TimelineOptions,
 ) -> Timeline {
     let ctx = FlowContext::new(session, source, &options.flow);
-    let all = entries(&ctx);
+    let all = entries(&ctx, None);
     let app: Vec<_> = all
         .iter()
         .filter(|e| e.kind == EntryKind::App)
@@ -118,7 +119,14 @@ pub fn timeline(
     let mut labels: BTreeMap<String, String> = BTreeMap::new();
     for e in &app {
         let Some(pos) = ctx.find(&e.id) else { continue };
-        let (mut event, mut page) = (None, None);
+        let (mut event, mut page, mut hint) = (None, None, None);
+        let attempt = ctx.attempt_ref(pos);
+        let actx = AdapterContext {
+            url: &attempt.url,
+            method: &attempt.method,
+            request: true,
+            media: None,
+        };
         for c in ctx.consumed_for(pos).iter() {
             if c.part_of.is_some() {
                 match c.field.rsplit('.').next() {
@@ -126,10 +134,24 @@ pub fn timeline(
                     Some("page") if page.is_none() => page = Some(c.value.clone()),
                     _ => {}
                 }
+            } else if c.adapted && hint.is_none() {
+                // o adaptador pode dar o nome da operação (ex. `init`) quando o event vem vazio
+                hint = options
+                    .flow
+                    .adapters
+                    .claim(&c.field, &c.value, &actx)
+                    .and_then(|a| a.decode(&c.value).ok().and_then(|d| a.label_hint(&d)));
             }
         }
-        if let (Some(event), Some(page)) = (event, page) {
-            labels.insert(e.id.clone(), format!("{event} @ {page}"));
+        let name = hint.or(event);
+        match (name, page) {
+            (Some(n), Some(p)) => {
+                labels.insert(e.id.clone(), format!("{n} @ {p}"));
+            }
+            (Some(n), None) => {
+                labels.insert(e.id.clone(), n);
+            }
+            _ => {}
         }
         let Ok(origins) = origins_in(&ctx, &e.id) else {
             continue;
