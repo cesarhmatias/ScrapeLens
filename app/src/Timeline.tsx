@@ -97,6 +97,29 @@ export function TimelineView({
   );
 }
 
+/** Classe da diferença, a partir do prefixo do motivo devolvido pelo core. */
+const NOTE_CLASSES: [string, string, "ok" | "bad" | "info"][] = [
+  ["parâmetro do usuário", "parâmetro do usuário", "info"],
+  ["esperado (parâmetro do usuário)", "parâmetro do usuário", "info"],
+  ["valor congelado", "valor congelado", "bad"],
+  ["origem diferente", "origem diferente", "bad"],
+  ["valor sem origem no trace", "sem origem no trace", "bad"],
+];
+function noteClass(reason: string): { label: string; tone: "ok" | "bad" | "info" } | null {
+  const hit = NOTE_CLASSES.find(([prefix]) => reason.includes(prefix));
+  return hit ? { label: hit[1], tone: hit[2] } : null;
+}
+function NoteItem({ n }: { n: { scope: string; field: string; reason: string } }) {
+  const cls = noteClass(n.reason);
+  return (
+    <li>
+      <span className="mono">{n.scope}:{n.field}</span>{" "}
+      {cls && <span className={`chip ${cls.tone === "bad" ? "v-none" : "v-partial"}`}>{cls.label}</span>}{" "}
+      <span className="dim">{n.reason}</span>
+    </li>
+  );
+}
+
 const verdictClass: Record<string, string> = {
   equivalent: "notice-success",
   diverges: "notice-error",
@@ -111,14 +134,18 @@ export function ValidationView({
   onBack,
   onSanitizeTrace,
   onKept,
+  onRevalidate,
 }: {
   result: ValidationResultDto;
   tracePath: string;
   onBack: () => void;
   onSanitizeTrace: () => void;
   onKept: (path: string) => void;
+  onRevalidate: (mapOrigin: string) => void;
 }) {
   const v = result.validation;
+  const [mapText, setMapText] = useState("");
+  const needsMap = v.verdict !== "equivalent" && (v.reason ?? "").includes("--map-origin");
   const [kept, setKept] = useState<string | null>(null);
   const [keepError, setKeepError] = useState<string | null>(null);
   const keep = async () => {
@@ -158,9 +185,31 @@ export function ValidationView({
       {v.mappedOrigin && (
         <p className="dim">Origem mapeada: <span className="mono">{v.mappedOrigin.from}</span> → <span className="mono">{v.mappedOrigin.to}</span> (a troca de host da execução não conta como diferença).</p>
       )}
-      {v.warnings.map((w, i) => (
-        <div className="notice notice-info" key={i}><span className="notice-icon">i</span><span>{w}</span></div>
-      ))}
+      {v.warnings.map((w, i) => {
+        const invalid = w.startsWith("parâmetro inválido");
+        return (
+          <div className={`notice ${invalid ? "notice-error" : "notice-info"}`} key={i}>
+            <span className="notice-icon">{invalid ? "!" : "i"}</span>
+            <span>{invalid ? <><strong>Parâmetro ignorado.</strong> {w}</> : w}</span>
+          </div>
+        );
+      })}
+      {needsMap && (
+        <div className="notice notice-info">
+          <span className="notice-icon">i</span>
+          <span>
+            O host da execução não é loopback e não foi mapeado automaticamente. Informe <span className="mono">origem-da-captura=origem-do-trace</span>:{" "}
+            <input
+              className="mono"
+              style={{ minWidth: 320 }}
+              value={mapText}
+              placeholder="https://sistema.gov.br=https://staging.exemplo.com"
+              onChange={(e) => setMapText(e.target.value)}
+            />{" "}
+            <button className="btn" disabled={!mapText.trim()} onClick={() => onRevalidate(mapText.trim())}>Revalidar com este mapeamento</button>
+          </span>
+        </div>
+      )}
       {v.missingInTrace.length > 0 && (
         <div className="notice notice-error"><span className="notice-icon">!</span><span>Passos da captura sem par no trace: <span className="mono">{v.missingInTrace.join(", ")}</span></span></div>
       )}
@@ -171,7 +220,7 @@ export function ValidationView({
         </thead>
         <tbody>
           {v.steps.map((s) => (
-            <tr key={s.step} className={s.problem ? "row-problem" : undefined}>
+            <tr key={s.step} className={s.problem || (v.verdict === "incomplete" && v.step === s.step) ? "row-problem" : undefined}>
               <td>{s.step}</td>
               <td>
                 <span className="mono">{s.captureRequestId ?? "— (passo extra)"} → {s.traceRequestId}</span>
@@ -189,7 +238,7 @@ export function ValidationView({
                   <details open>
                     <summary>inesperadas ({s.unexpected.length})</summary>
                     <ul className="chain-list">
-                      {s.unexpected.map((n, i) => <li key={i}><span className="mono">{n.scope}:{n.field}</span> <span className="dim">{n.reason}</span></li>)}
+                      {s.unexpected.map((n, i) => <NoteItem key={i} n={n} />)}
                     </ul>
                   </details>
                 )}
@@ -197,17 +246,14 @@ export function ValidationView({
                   <details open={s.expected.some((n) => n.reason.includes("parâmetro do usuário"))}>
                     <summary>esperadas ({s.expected.length})</summary>
                     <ul className="chain-list">
-                      {s.expected.map((n, i) => (
-                        <li key={i}>
-                          <span className="mono">{n.scope}:{n.field}</span>{" "}
-                          {n.reason.includes("parâmetro do usuário") && <span className="chip v-partial">parâmetro do usuário</span>}{" "}
-                          <span className="dim">{n.reason}</span>
-                        </li>
-                      ))}
+                      {s.expected.map((n, i) => <NoteItem key={i} n={n} />)}
                     </ul>
                   </details>
                 )}
-                {!s.problem && s.unexpected.length === 0 && s.expected.length === 0 && <span className="dim">sem diferenças</span>}
+                {!s.problem && v.verdict === "incomplete" && v.step === s.step && (
+                  <div className="body-flag flag-truncated"><strong>Incompleta: parou aqui</strong><span>{v.reason}</span></div>
+                )}
+                {!s.problem && !(v.verdict === "incomplete" && v.step === s.step) && s.unexpected.length === 0 && s.expected.length === 0 && <span className="dim">sem diferenças</span>}
               </td>
             </tr>
           ))}

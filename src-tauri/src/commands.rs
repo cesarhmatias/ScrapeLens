@@ -809,6 +809,12 @@ fn validate_execution_blocking(
     let trace = cached_session(&dir)?;
     let mut options = ValidateOptions { rules, ..Default::default() };
     options.compare.flow = crate::adapters::flow_options();
+    // mesmas opções do script exportado (adaptador e codificador) para recalcular o `plan.hash`
+    options.priming = scrapelens_core::export::priming::PrimingOptions {
+        flow: crate::adapters::flow_options(),
+        adapter_encoders: crate::adapters::priming_encoders(),
+        ..Default::default()
+    };
     options.compare.map_origin = map;
     let validation = validate(
         &capture.session,

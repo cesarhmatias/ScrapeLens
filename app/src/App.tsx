@@ -1507,14 +1507,14 @@ export default function App() {
     }
   }, []);
 
-  const validateExecution = useCallback(async () => {
+  const validateExecution = useCallback(async (again?: { tracePath: string; mapOrigin: string }) => {
     if (!desktop || !loaded.session.sourcePath) return;
     const dir = loaded.session.sourcePath;
     try {
-      const tracePath = await bridge.pickTraceFile();
+      const tracePath = again?.tracePath ?? (await bridge.pickTraceFile());
       if (!tracePath) return;
       setBusy("Importando o trace e validando…");
-      const result = await bridge.validateExecution(dir, tracePath);
+      const result = await bridge.validateExecution(dir, tracePath, again?.mapOrigin);
       if (validationRef.current && !validationRef.current.kept) void bridge.discardValidation(validationRef.current.result.traceDir).catch(() => {});
       setValidation({ result, tracePath });
       setView("validate");
@@ -2342,6 +2342,7 @@ export default function App() {
             onBack={closeValidation}
             onSanitizeTrace={() => setSanitizeTraceDir(validation.result.traceDir)}
             onKept={() => setValidation((v) => (v ? { ...v, kept: true } : v))}
+            onRevalidate={(mapOrigin) => void validateExecution({ tracePath: validation.tracePath, mapOrigin })}
           />
         )}
 
