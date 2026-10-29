@@ -2839,6 +2839,7 @@ name = "scrapelens"
 version = "0.1.0"
 dependencies = [
  "scrapelens-core",
+ "scrapelens-natural-ajax",
  "serde",
  "serde_json",
  "tauri",
@@ -2857,6 +2858,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "scrapelens-natural-ajax"
+version = "0.1.0"
+dependencies = [
+ "scrapelens-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

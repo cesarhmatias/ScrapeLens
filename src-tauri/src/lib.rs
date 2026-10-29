@@ -5,6 +5,7 @@
 //! (dependência crate, sem sidecar); a fixture sintética existe apenas para o
 //! modo demo do navegador e chega rotulada como `synthetic: true`.
 
+pub mod adapters;
 pub mod capture;
 pub mod chrome;
 pub mod commands;
@@ -54,6 +55,7 @@ pub fn run() {
             commands::request_origins,
             commands::request_chain,
             commands::assess_session,
+            commands::adapter_view,
             commands::compare_open,
             commands::compare_page,
             commands::compare_fields,

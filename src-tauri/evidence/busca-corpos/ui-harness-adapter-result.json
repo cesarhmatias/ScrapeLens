@@ -1,0 +1,39 @@
+{
+  "originFields": [
+    "header x-requested-with XMLHttpRequest sem origem observada (já circulava) neutro: pode ser constante, entrada do usuário ou valor gerado no",
+    "corpo XML v2232001705027000195CSAN00011_700000000011SYNTHPID000000000000000000000011SA90003_CSAN00000dummy/UIC-SERVICOS/VES0009X.htmlcmd_con",
+    "↳ corpo XML.sid offset 20 CSAN00011_700000000011 sem origem observada (já circulava) neutro: pode ser constante, entrada do usuário ou valor",
+    "↳ corpo XML.pid offset 42 SYNTHPID000000000000000000000011 possível origem (value-match) har-0001 value-match · média produziu em responseBo",
+    "↳ corpo XML.model offset 74 SA90003_CSAN00000 possível origem (value-match), ambíguo (mais antigo: har-0019)ambíguo: 2 candidatos har-0019 v",
+    "↳ corpo XML.page offset 96 /UIC-SERVICOS/VES0009X.html possível origem (value-match) har-0017 value-match · média controle de formulário HTM",
+    "↳ corpo XML.event offset 123 cmd_consultar_placa sem origem observada neutro: pode ser constante, entrada do usuário ou valor gerado no clie",
+    "↳ corpo XML.p.v_placa offset 184 TST0T10 sem origem observada neutro: pode ser constante, entrada do usuário ou valor gerado no cliente ",
+    "↳ corpo XML.p.v_cpf offset 204 00000000191 sem origem observada neutro: pode ser constante, entrada do usuário ou valor gerado no cliente ",
+    "↳ corpo XML.p.#f12_selected offset 236 2.0 sem origem observada (já circulava) neutro: pode ser constante, entrada do usuário ou valor gerad",
+    "↳ corpo XML.delta offset 242 DLTC0005 origem observada har-0024 same-field · forte controle de formulário HTML (XML.delta) produziu em respo"
+  ],
+  "viewHeading": "Visão do adaptador Natural (derivada)",
+  "viewRows": [
+    "XML.op estrutura v",
+    "XML.sid valor CSAN00011_700000000011",
+    "XML.pid valor SYNTHPID000000000000000000000011",
+    "XML.empty estrutura ",
+    "XML.model valor SA90003_CSAN00000",
+    "XML.dummy estrutura dummy",
+    "XML.page valor /UIC-SERVICOS/VES0009X.html",
+    "XML.event valor cmd_consultar_placa",
+    "XML.flag estrutura false",
+    "XML.op estrutura pv_filtro_error",
+    "XML.p.v_filtro_error valor ",
+    "XML.op estrutura pv_placa",
+    "XML.p.v_placa valor TST0T10",
+    "XML.op estrutura pv_cpf",
+    "XML.p.v_cpf valor 00000000191",
+    "XML.op estrutura p#f12_selected",
+    "XML.p.#f12_selected valor 2.0",
+    "XML.delta delta DLTC0005"
+  ],
+  "primingNote": "i\nScript de priming com o codificador do adaptador de protocolo (natural-ajax): os comprimentos do campo reivindicado são recalculados em UTF-16, em vez de trocar trechos.",
+  "primingHasEncoder": true,
+  "pageErrors": []
+}

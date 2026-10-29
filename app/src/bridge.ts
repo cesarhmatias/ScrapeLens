@@ -50,13 +50,27 @@ export interface ExportPreview {
   requestUrl: string;
   protocol: string;
   headerVerification: "verified" | "partial" | "unverified";
-  format: "curl" | "python";
+  format: "curl" | "python" | "priming";
   text: string;
   warnings: WarningDto[];
   skippedHeaders: string[];
   bodyIncluded: boolean;
   bodyNote?: string;
   bodyState: string;
+  /** Adaptador de protocolo cujo codificador entrou no script de priming. */
+  adapter?: string;
+}
+
+export interface AdapterViewDto {
+  side: "request" | "response";
+  fields: {
+    field: string;
+    adapterId: string;
+    raw: string;
+    error?: string | null;
+    parts: { name: string; role: string; value: string; offset: number; len: number }[];
+  }[];
+  note?: string | null;
 }
 
 export interface SavedFile {
@@ -269,7 +283,7 @@ export const bridge = {
   async exportRequest(
     sessionDir: string,
     requestId: string,
-    format: "curl" | "python",
+    format: "curl" | "python" | "priming",
     annotateOrigins = false,
   ): Promise<ExportPreview> {
     return invoke("export_request", { sessionDir, requestId, format, annotateOrigins });
@@ -277,6 +291,10 @@ export const bridge = {
 
   async requestOrigins(sessionDir: string, requestId: string): Promise<ValueOrigins> {
     return invoke("request_origins", { sessionDir, requestId });
+  },
+
+  async adapterView(sessionDir: string, requestId: string, side: "request" | "response"): Promise<AdapterViewDto> {
+    return invoke("adapter_view", { sessionDir, requestId, side });
   },
 
   async assessSession(sessionDir: string): Promise<AssessResult> {

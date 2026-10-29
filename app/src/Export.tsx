@@ -121,7 +121,7 @@ export function ExportDialog({
   onClose: () => void;
 }) {
   const sessionDir = session.sourcePath;
-  const [format, setFormat] = useState<"curl" | "python">("curl");
+  const [format, setFormat] = useState<"curl" | "python" | "priming">("curl");
   const [annotate, setAnnotate] = useState(false);
   const [preview, setPreview] = useState<ExportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +178,7 @@ export function ExportDialog({
     setSaving(true);
     setError(null);
     setStatus(null);
-    const name = `${safeFileName(request.id)}.${preview.format === "python" ? "py" : "sh"}`;
+    const name = `${safeFileName(request.id)}.${preview.format === "curl" ? "sh" : "py"}`;
     try {
       // O texto salvo é o mesmo objeto mostrado na prévia; nada é regenerado.
       const result = await bridge.saveExport(name, preview.text);
@@ -228,7 +228,7 @@ export function ExportDialog({
       }
     >
       <div className="export-tabs" role="tablist" aria-label="Formato da exportação">
-        {(["curl", "python"] as const).map((id) => (
+        {(["curl", "python", "priming"] as const).map((id) => (
           <button
             key={id}
             role="tab"
@@ -236,10 +236,10 @@ export function ExportDialog({
             className={format === id ? "tab active" : "tab"}
             onClick={() => setFormat(id)}
           >
-            {id === "curl" ? "cURL" : "Python"}
+            {id === "curl" ? "cURL" : id === "python" ? "Python" : "Script de priming"}
           </button>
         ))}
-        <label className="annotate-opt" title="Comentários com a origem observada de cada valor; o comando gerado não muda">
+        <label className="annotate-opt" hidden={format === "priming"} title="Comentários com a origem observada de cada valor; o comando gerado não muda">
           <input type="checkbox" checked={annotate} onChange={(e) => setAnnotate(e.target.checked)} /> anotar origens
         </label>
         <span className="grow" />
@@ -250,6 +250,17 @@ export function ExportDialog({
         )}
         {preview && <span className="tag">{preview.protocol.toUpperCase()}</span>}
       </div>
+
+      {format === "priming" && preview && (
+        <div className="notice notice-info">
+          <span className="notice-icon">i</span>
+          <span>
+            {preview.adapter
+              ? `Script de priming com o codificador do adaptador de protocolo (${preview.adapter}): os comprimentos do campo reivindicado são recalculados em UTF-16, em vez de trocar trechos.`
+              : "Script de priming sem adaptador de protocolo: nenhum campo reivindicado, os valores são trocados por trechos."}
+          </span>
+        </div>
+      )}
 
       <p className="export-disclaimer">
         A exportação reproduz a requisição no nível HTTP. Ela <strong>não</strong> replica TLS, JA3/JA4, ordem de

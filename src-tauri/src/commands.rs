@@ -664,7 +664,7 @@ pub async fn request_origins(
             &lazy.session,
             &scrapelens_core::search::LazyBodies(&lazy),
             &request_id,
-            &scrapelens_core::flow::FlowOptions::default(),
+            &crate::adapters::flow_options(),
         )
         .map_err(|error| format!("não foi possível calcular as origens: {error}"))
     })
@@ -684,12 +684,33 @@ pub async fn request_chain(
             &lazy.session,
             &scrapelens_core::search::LazyBodies(&lazy),
             &request_id,
-            &scrapelens_core::flow::FlowOptions::default(),
+            &crate::adapters::flow_options(),
         )
         .map_err(|error| format!("não foi possível calcular a cadeia: {error}"))
     })
     .await
     .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
+}
+
+/// Visão estruturada (derivada) dos campos do corpo que um adaptador de protocolo reivindica.
+#[tauri::command]
+pub async fn adapter_view(
+    session_dir: String,
+    request_id: String,
+    side: String,
+) -> Result<crate::adapters::AdapterView, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lazy = cached_session(Path::new(&session_dir))?;
+        let request = lazy
+            .session
+            .requests
+            .iter()
+            .find(|r| r.id == request_id)
+            .ok_or_else(|| format!("requisição {request_id} não encontrada na sessão"))?;
+        crate::adapters::view(&lazy, request, &side)
+    })
+    .await
+    .map_err(|error| format!("a leitura foi interrompida: {error}"))?
 }
 
 /// Sucesso da aplicação × HTTP (`assess::assess_session`). Regras opcionais em
@@ -936,6 +957,7 @@ fn compare_options(
         include_all,
         a_range: range("A", a_range)?,
         b_range: range("B", b_range)?,
+        flow: crate::adapters::flow_options(),
         ..Default::default()
     })
 }
@@ -1007,6 +1029,47 @@ fn open_comparison_with(
     Ok(summary)
 }
 
+/// Script de priming (cadeia completa até a requisição); usa o codificador do adaptador
+/// de protocolo quando ele reivindica o campo e informa isso na prévia.
+fn priming_preview(dir: &Path, request_id: &str) -> Result<crate::export::ExportPreview, String> {
+    let lazy = cached_session(dir)?;
+    let request = lazy
+        .session
+        .requests
+        .iter()
+        .find(|r| r.id == request_id)
+        .ok_or_else(|| format!("requisição {request_id} não encontrada na sessão"))?;
+    let options = scrapelens_core::export::priming::PrimingOptions {
+        flow: crate::adapters::flow_options(),
+        adapter_encoders: crate::adapters::priming_encoders(),
+        ..Default::default()
+    };
+    let output = scrapelens_core::export::priming::to_python(
+        &lazy.session,
+        &scrapelens_core::search::LazyBodies(&lazy),
+        request_id,
+        &options,
+    )
+    .map_err(|error| format!("não foi possível gerar o script de priming: {error}"))?;
+    let adapter = crate::adapters::script_uses_adapter(&output.text).map(str::to_string);
+    Ok(crate::export::ExportPreview {
+        session_id: lazy.session.session.id.clone(),
+        request_id: request.id.clone(),
+        request_method: request.method.clone(),
+        request_url: request.url.clone(),
+        protocol: request.protocol.as_str().to_string(),
+        header_verification: request.request_headers.verification().as_str().to_string(),
+        format: "priming".to_string(),
+        text: output.text,
+        warnings: output.warnings,
+        skipped_headers: output.skipped_headers,
+        body_included: output.body_included,
+        body_note: output.body_note,
+        body_state: request.request_body.state.as_str().to_string(),
+        adapter,
+    })
+}
+
 /// Prévia de exportação; com `annotate` calcula as origens (cache LazySession).
 fn export_preview(
     dir: &Path,
@@ -1014,13 +1077,16 @@ fn export_preview(
     format: &str,
     annotate: bool,
 ) -> Result<crate::export::ExportPreview, String> {
+    if format == "priming" {
+        return priming_preview(dir, request_id);
+    }
     let origins = annotate.then(|| {
         cached_session(dir).and_then(|lazy| {
             scrapelens_core::flow::value_origins(
                 &lazy.session,
                 &scrapelens_core::search::LazyBodies(&lazy),
                 request_id,
-                &scrapelens_core::flow::FlowOptions::default(),
+                &crate::adapters::flow_options(),
             )
             .map_err(|error| error.to_string())
         })
@@ -1502,6 +1568,73 @@ mod tests {
         assert!(all.include_all && all.groups.is_empty());
         fs::remove_dir_all(a).ok();
         fs::remove_dir_all(b).ok();
+    }
+
+    fn real_shape_session(name: &str) -> PathBuf {
+        let har = fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/detran-pb-real-shape/real-shape-1round.har")).unwrap();
+        let imported = scrapelens_core::parse::import_har(&har).unwrap();
+        let dir = temp_session_dir(name);
+        fs::remove_dir_all(&dir).ok();
+        store::write_session_dir(&imported.bundle, &dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn natural_adapter_names_view_and_priming_encoder() {
+        let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = real_shape_session("natural");
+        let d = dir.to_str().unwrap();
+        let lazy = cached_session(&dir).unwrap();
+        // origens usam nomes internos do adaptador
+        let origins = scrapelens_core::flow::value_origins(
+            &lazy.session,
+            &scrapelens_core::search::LazyBodies(&lazy),
+            "har-0026",
+            &crate::adapters::flow_options(),
+        )
+        .unwrap();
+        let json = serde_json::to_string(&origins).unwrap();
+        assert!(json.contains("XML.delta") || json.contains("XML.p."), "sem nomes internos do adaptador");
+        // visão estruturada: bruto + partes nomeadas
+        let request = lazy.session.requests.iter().find(|r| r.id == "har-0026").unwrap();
+        let view = crate::adapters::view(&lazy, request, "request").unwrap();
+        assert!(!view.fields.is_empty() && view.fields[0].error.is_none());
+        assert!(view.fields[0].parts.iter().any(|p| p.name == "delta" || p.name.starts_with("p.")));
+        assert!(!view.fields[0].raw.is_empty());
+        assert!(crate::adapters::view(&lazy, request, "lado").is_err());
+        // script de priming usa o codificador do adaptador e a prévia diz isso
+        let preview = export_preview(&dir, "har-0026", "priming", false).unwrap();
+        assert_eq!(preview.format, "priming");
+        assert_eq!(preview.adapter.as_deref(), Some("natural-ajax"));
+        let _ = d;
+        fs::remove_dir_all(dir).ok();
+    }
+
+    /// Dados reais (adaptador Natural registrado) para o harness de UI:
+    /// `SL_SESSION=<pasta> SL_DUMP=<dir> cargo test -- --ignored dump_adapter_evidence`.
+    #[test]
+    #[ignore]
+    fn dump_adapter_evidence() {
+        let dir = std::env::var("SL_SESSION").expect("SL_SESSION");
+        let out = PathBuf::from(std::env::var("SL_DUMP").expect("SL_DUMP"));
+        fs::create_dir_all(&out).unwrap();
+        let lazy = cached_session(Path::new(&dir)).unwrap();
+        let source = scrapelens_core::search::LazyBodies(&lazy);
+        let opts = crate::adapters::flow_options();
+        for request in &lazy.session.requests {
+            let id = &request.id;
+            let write = |name: &str, value: serde_json::Value| fs::write(out.join(format!("{id}.{name}.json")), serde_json::to_string(&value).unwrap()).unwrap();
+            if let Ok(o) = scrapelens_core::flow::value_origins(&lazy.session, &source, id, &opts) { write("origins", serde_json::to_value(o).unwrap()); }
+            if let Ok(c) = scrapelens_core::flow::priming_chain(&lazy.session, &source, id, &opts) { write("chain", serde_json::to_value(c).unwrap()); }
+            for side in ["request", "response"] {
+                if let Ok(v) = crate::adapters::view(&lazy, request, side) {
+                    if !v.fields.is_empty() { write(side, serde_json::to_value(v).unwrap()); }
+                }
+            }
+        }
+        for id in ["har-0026"] {
+            if let Ok(p) = priming_preview(Path::new(&dir), id) { fs::write(out.join(format!("{id}.priming.json")), serde_json::to_string(&p).unwrap()).unwrap(); }
+        }
     }
 
     /// Prévia real da sanitização para o harness de UI:

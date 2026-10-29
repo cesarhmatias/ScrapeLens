@@ -65,6 +65,9 @@ pub struct ExportPreview {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_note: Option<String>,
     pub body_state: String,
+    /// Adaptador de protocolo cujo codificador entrou no script de priming.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -220,6 +223,7 @@ pub fn preview_with(
         body_included: output.body_included,
         body_note: output.body_note,
         body_state: request.request_body.state.as_str().to_string(),
+        adapter: None,
     })
 }
 

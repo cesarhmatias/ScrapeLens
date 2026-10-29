@@ -21,5 +21,6 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 scrapelens-core = { path = "../core" }
+scrapelens-natural-ajax = { path = "../adapters/natural-ajax" }
 tungstenite = "0.28"
 thiserror = "2"

@@ -18,6 +18,7 @@ import { matchRanges } from "./highlight";
 import { classifyTransforms } from "./transforms";
 import { OriginsTab } from "./Origins";
 import { CaptureCompareView } from "./CaptureCompare";
+import { AdapterViewPanel } from "./AdapterView";
 import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
@@ -962,6 +963,7 @@ function DetailView({
           {tab === "payload" && (
             <>
               <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("requestBody", effectivePayload)} highlightNeedle={needle} />
+              <AdapterViewPanel sessionDir={session.sourcePath} requestId={req.id} side="request" />
               <BodyContext req={req} />
               <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
             </>
@@ -969,6 +971,7 @@ function DetailView({
           {tab === "response" && (
             <>
               <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
+              <AdapterViewPanel sessionDir={session.sourcePath} requestId={req.id} side="response" />
               <BodyContext req={req} />
             </>
           )}
