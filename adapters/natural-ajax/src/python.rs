@@ -74,10 +74,13 @@ _NATURAL_HEAD = (('sid', 'V'), ('pid', 'V'), ('empty', 'S'), ('model', 'V'), ('d
 
 
 def natural_ajax_decode(text):
+    if len(text.encode('utf-8', 'surrogatepass')) > 8 * 1024 * 1024:
+        fail('protocolo Natural: limite excedido: mensagem grande demais')
     raw = text.encode('utf-16-le', 'surrogatepass')
     s = ''.join(chr(int.from_bytes(raw[i:i + 2], 'little')) for i in range(0, len(raw), 2))
     state = {'pos': 0}
-    parts, stack, names = [], [], {}
+    parts, marks, names = [], [], {}
+    prefix = ''
 
     def uni(v):
         return v.encode('utf-16-le', 'surrogatepass').decode('utf-16-le', 'surrogatepass')
@@ -86,6 +89,10 @@ def natural_ajax_decode(text):
         if n < 0 or state['pos'] + n > len(s):
             fail('protocolo Natural: mensagem truncada')
         value = s[state['pos']:state['pos'] + n]
+        # Corte no meio de um par substituto: erro, como no Rust.
+        for cut in (state['pos'], state['pos'] + n):
+            if 0 < cut < len(s) and '\ud800' <= s[cut - 1] <= '\udbff' and '\udc00' <= s[cut] <= '\udfff':
+                fail('protocolo Natural: comprimento corta um par substituto UTF-16')
         state['pos'] += n
         return value
 
@@ -109,6 +116,8 @@ def natural_ajax_decode(text):
             n, m = number(1), number(2)
             key = uni(take(n))
             name = uni(take(m))
+            if len(names) >= 10000 and key not in names:
+                fail('protocolo Natural: limite excedido: chaves de dicionário demais')
             names[key] = name
             parts.append(('op', 'S', 's' + key))
             parts.append(('s.' + key, 'N', name))
@@ -122,15 +131,20 @@ def natural_ajax_decode(text):
                     fail('protocolo Natural: referência de campo desconhecida')
                 resolved = names[key]
             parts.append(('op', 'S', op + key))
-            parts.append(('p.' + '.'.join(stack + [resolved]), 'V', value))
+            parts.append(('p.' + prefix + resolved, 'V', value))
         elif op == 'b':
             scope = uni(take(number(2)))
-            stack.append(scope)
+            if len(marks) >= 32:
+                fail('protocolo Natural: limite excedido: escopos aninhados demais')
+            marks.append(len(prefix))
+            prefix += scope + '.'
+            if len(prefix) > 512:
+                fail('protocolo Natural: limite excedido: caminho de escopos longo demais')
             parts.append(('op', 'S', 'b' + scope))
         elif op == 'c':
-            if not stack:
+            if not marks:
                 fail('protocolo Natural: escopo inválido')
-            stack.pop()
+            prefix = prefix[:marks.pop()]
             parts.append(('op', 'S', 'c'))
         elif op == 'x':
             parts.append(('delta', 'D', uni(take(number(2)))))
@@ -138,5 +152,7 @@ def natural_ajax_decode(text):
             parts.append(('op', 'S', 'k' + uni(take(number(2)))))
         else:
             fail('protocolo Natural: opcode não suportado: %r' % op)
+    if marks:
+        fail('protocolo Natural: escopo inválido')
     return parts
 "#;

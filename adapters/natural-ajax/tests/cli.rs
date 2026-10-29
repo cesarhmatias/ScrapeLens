@@ -116,3 +116,17 @@ fn flow_commands_show_internal_names_only_with_the_adapter() {
     assert!(j["fields"].as_u64().unwrap() > 0);
     assert!(j["divergenceKinds"].is_object());
 }
+
+#[test]
+fn wrapper_never_recurses_when_core_bin_points_to_itself() {
+    let Some(core) = core_binary() else { return };
+    let me = env!("CARGO_BIN_EXE_natural-core");
+    let out = Command::new(me)
+        .env("SCRAPELENS_CORE_BIN", me)
+        .arg("--help")
+        .output()
+        .unwrap();
+    // Cai no core vizinho (ou em erro limpo), nunca em recursão de processos.
+    let _ = core;
+    assert!(out.status.code().is_some());
+}

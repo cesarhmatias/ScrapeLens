@@ -284,3 +284,115 @@ fn pii_inside_the_structure_goes_through_the_final_filter() {
     }
     let _ = Path::new("");
 }
+
+fn bundle_with_xml(xml: &str) -> SessionBundle {
+    let encoded: String = xml
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    let body = format!("SESSIONID=SID1&STAMP=INIT&XML={encoded}");
+    let har = serde_json::json!({"log": {"version": "1.2", "creator": {"name": "t", "version": "1"},
+    "entries": [{
+        "startedDateTime": "2026-10-27T12:00:00.000Z", "time": 1,
+        "request": {"method": "POST", "url": "https://h.example.test/Connector",
+            "httpVersion": "HTTP/1.1",
+            "headers": [{"name": "Content-Type", "value": "application/x-www-form-urlencoded"}],
+            "queryString": [], "cookies": [], "headersSize": -1, "bodySize": body.len(),
+            "postData": {"mimeType": "application/x-www-form-urlencoded", "text": body}},
+        "response": {"status": 200, "statusText": "", "httpVersion": "HTTP/1.1", "headers": [],
+            "cookies": [], "headersSize": -1, "bodySize": 2, "redirectURL": "",
+            "content": {"size": 2, "mimeType": "text/html", "text": "ok"}},
+        "cache": {}, "timings": {"send": 0, "wait": 1, "receive": 0}
+    }]}});
+    import_har(har.to_string().as_bytes()).unwrap().bundle
+}
+
+#[test]
+fn sensitive_part_names_become_required_parameters() {
+    let head = grammar::Op::Head {
+        init: false,
+        fields: [
+            "SID1".into(),
+            "PID1".into(),
+            String::new(),
+            "MODEL".into(),
+            "dummy".into(),
+            "PAGE".into(),
+            "ev".into(),
+            "false".into(),
+        ],
+    };
+    let secrets = [
+        ("v_senha", "HUNTER2hunter2"),
+        ("v_token", "TOKENVALUE777"),
+        ("v_nome", "Maria Silva"),
+        ("v_nome_mae", "Ana Souza"),
+        ("v_endereco", "Rua das Flores 12"),
+        ("v_nasc", "01/02/1990"),
+        ("v_email", "maria.silva(at)example.test"),
+    ];
+    let mut ops = vec![head];
+    ops.push(grammar::Op::Begin("items".into()));
+    for (name, value) in secrets {
+        ops.push(grammar::Op::Lit {
+            op: 'p',
+            key: name.into(),
+            value: value.into(),
+        });
+    }
+    ops.push(grammar::Op::End);
+    ops.push(grammar::Op::Lit {
+        op: 'p',
+        key: "v_constante".into(),
+        value: "abc".into(),
+    });
+    ops.push(grammar::Op::Delta("dd".into()));
+    let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
+    let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
+    for (_, value) in secrets {
+        assert!(!out.text.contains(value), "{value} vazou:\n{}", out.text);
+    }
+    for param in [
+        "senha", "token", "nome", "nome_mae", "endereco", "nasc", "email",
+    ] {
+        assert!(
+            out.text.contains(&format!("('{param}', None,")),
+            "{param} deveria ser obrigatório:\n{}",
+            out.text
+        );
+    }
+    python_ast_ok(&out.text);
+}
+
+#[test]
+fn adapter_never_worsens_coverage_on_second_round_targets() {
+    // Todo alvo que o gerador sem adaptador completa também sai com adaptador.
+    let bundle = fixture("real-shape-2rounds.har");
+    let mut compared = 0;
+    for request in bundle
+        .session
+        .requests
+        .iter()
+        .filter(|r| r.method == "POST" && r.url.contains("Connector"))
+    {
+        let plain = to_python(
+            &bundle.session,
+            &bundle,
+            &request.id,
+            &PrimingOptions::default(),
+        );
+        if plain.is_err() {
+            continue;
+        }
+        let with = to_python(&bundle.session, &bundle, &request.id, &options());
+        assert!(with.is_ok(), "{}: {:?}", request.id, with.err());
+        compared += 1;
+    }
+    assert!(compared >= 4, "poucos alvos comparados: {compared}");
+}

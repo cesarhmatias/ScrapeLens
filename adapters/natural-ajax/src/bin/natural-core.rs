@@ -17,12 +17,19 @@ use scrapelens_natural_ajax::{
 };
 
 fn core_binary() -> PathBuf {
+    // Nunca devolve o próprio wrapper (um SCRAPELENS_CORE_BIN apontando para
+    // ele geraria recursão infinita de processos).
+    let me = std::env::current_exe().and_then(|p| p.canonicalize()).ok();
+    let is_me = |path: &PathBuf| path.canonicalize().ok().is_some_and(|p| Some(p) == me);
     if let Some(path) = std::env::var_os("SCRAPELENS_CORE_BIN") {
-        return PathBuf::from(path);
+        let path = PathBuf::from(path);
+        if !is_me(&path) {
+            return path;
+        }
     }
     let sibling =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../core/target/release/scrapelens-core");
-    if sibling.is_file() {
+    if sibling.is_file() && !is_me(&sibling) {
         sibling
     } else {
         PathBuf::from("scrapelens-core")

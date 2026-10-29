@@ -473,12 +473,34 @@ fn adapter_field_expr(
                         "v_renavam" => Some("renavam"),
                         _ => None,
                     };
+                    // Último componente do nome (`items[0].v_senha` → `v_senha`),
+                    // com as mesmas listas do caminho sem adaptador.
+                    let last = prop
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or(prop)
+                        .split('[')
+                        .next()
+                        .unwrap_or(prop);
+                    let sensitive_part = is_sensitive_name(last) || is_pii_name(last);
                     match business {
                         Some(label) => {
                             gen.notes
                                 .push(format!("{full}: dado do usuário; parâmetro obrigatório"));
                             gen.params
                                 .get(label, &part.value, true, "dado do usuário", false)
+                        }
+                        None if sensitive_part && !part.value.is_empty() => {
+                            gen.notes.push(format!(
+                                "{full}: nome sensível; parâmetro obrigatório, sem padrão"
+                            ));
+                            gen.params.get(
+                                last.trim_start_matches("v_"),
+                                &part.value,
+                                true,
+                                "dado sensível",
+                                false,
+                            )
                         }
                         None => match adapter_chain_expr(
                             gen,
@@ -2020,6 +2042,7 @@ fn is_pii_name(name: &str) -> bool {
         "endereco",
         "endereço",
         "nascimento",
+        "nasc",
         "cartao",
         "password",
         "passwd",
@@ -2368,7 +2391,16 @@ pub fn to_python(
     target_request_id: &str,
     opts: &PrimingOptions,
 ) -> Result<ExportOutput> {
-    let chain = priming_chain(session, source, target_request_id, &opts.flow)?;
+    // Os passos vêm da cadeia sem adaptador: partes de um campo reivindicado
+    // têm origens de granularidade fina (inclusive em rodadas anteriores) que
+    // não devem puxar passos extras nem recusar uma cadeia que o gerador sem
+    // adaptador completa. As origens das partes (com adaptador) só decidem
+    // COMO cada valor é obtido.
+    let chain_flow = FlowOptions {
+        adapters: Default::default(),
+        ..opts.flow.clone()
+    };
+    let chain = priming_chain(session, source, target_request_id, &chain_flow)?;
     let missing = missing_body_dependencies(&chain);
     if !missing.is_empty() && !opts.allow_incomplete {
         return Err(incomplete_chain_error(&missing));

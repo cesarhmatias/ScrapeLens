@@ -56,12 +56,9 @@ impl ProtocolAdapter for NaturalAjax {
     }
 
     fn detect(&self, field: &str, value: &str, _ctx: &AdapterContext<'_>) -> bool {
-        field == "XML"
-            && value
-                .chars()
-                .next()
-                .is_some_and(|c| "ivlspqzwbckx".contains(c))
-            && grammar::parse(value).is_ok()
+        // Barato: só o cabeçalho; `decode` valida o resto (e o core volta ao
+        // comportamento sem adaptador se ele falhar).
+        field == "XML" && grammar::quick_check(value)
     }
 
     fn decode(&self, value: &str) -> Result<Decoded> {

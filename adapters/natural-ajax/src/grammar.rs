@@ -26,7 +26,18 @@ pub enum Error {
     },
     /// Operação fora de lugar (cabeçalho fora do início).
     Misplaced(char),
+    /// Escopos aninhados demais, caminho longo demais ou dicionário grande demais.
+    Limit(&'static str),
 }
+
+/// Profundidade máxima de escopos.
+pub const MAX_DEPTH: usize = 32;
+/// Chaves distintas máximas no dicionário (`s`).
+pub const MAX_KEYS: usize = 10_000;
+/// Comprimento máximo (em `char`) do caminho de escopos de uma propriedade.
+pub const MAX_PATH: usize = 512;
+/// Tamanho máximo do texto reivindicado/decodificado (bytes).
+pub const MAX_INPUT: usize = 8 * 1024 * 1024;
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -40,6 +51,7 @@ impl fmt::Display for Error {
                 write!(f, "{what} excede o máximo de {max} unidades UTF-16")
             }
             Error::Misplaced(c) => write!(f, "operação fora de lugar: {c:?}"),
+            Error::Limit(what) => write!(f, "limite excedido: {what}"),
         }
     }
 }
@@ -155,13 +167,40 @@ pub fn jslen(text: &str) -> usize {
     text.encode_utf16().count()
 }
 
+/// Verificação barata para `detect`: só o cabeçalho da primeira operação,
+/// sem percorrer a mensagem.
+pub fn quick_check(text: &str) -> bool {
+    let b = text.as_bytes();
+    if b.is_empty() || b.len() > MAX_INPUT {
+        return false;
+    }
+    let digits = |from: usize, n: usize| {
+        b.len() >= from + n && b[from..from + n].iter().all(u8::is_ascii_digit)
+    };
+    match b[0] {
+        b'i' | b'v' => digits(1, HEAD_WIDTHS.iter().sum()),
+        b'l' | b'c' => true,
+        b's' => digits(1, 3),
+        b'p' | b'q' => digits(1, 7),
+        b'z' | b'w' => digits(1, 12),
+        b'b' | b'k' | b'x' => digits(1, 2),
+        _ => false,
+    }
+}
+
 /// Decodifica a mensagem em operações. Custo linear no tamanho do texto.
 pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
     let units = Units::new(text);
     let mut cur = Cursor { u: &units, pos: 0 };
     let mut out: Vec<Item> = Vec::new();
-    let mut stack: Vec<String> = Vec::new();
-    let mut names: Vec<(String, String)> = Vec::new();
+    if text.len() > MAX_INPUT {
+        return Err(Error::Limit("mensagem grande demais"));
+    }
+    // Pilha de escopos: `prefix` guarda "a.b." e `marks` o tamanho antes de
+    // cada escopo, então o caminho de uma propriedade custa O(|caminho|).
+    let mut prefix = String::new();
+    let mut marks: Vec<usize> = Vec::new();
+    let mut names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     if let Some(&first) = units.units.first() {
         if first == u16::from(b'i') || first == u16::from(b'v') {
@@ -200,8 +239,10 @@ pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
                 let m = cur.number(2)?;
                 let (key, _, _) = cur.take(n)?;
                 let (name, v0, v1) = cur.take(m)?;
-                names.retain(|(k, _)| k != &key);
-                names.push((key.clone(), name.clone()));
+                if names.len() >= MAX_KEYS && !names.contains_key(&key) {
+                    return Err(Error::Limit("chaves de dicionário demais"));
+                }
+                names.insert(key.clone(), name.clone());
                 (Op::Dict { key, name }, None, v0, v1)
             }
             'p' | 'q' | 'z' | 'w' => {
@@ -210,18 +251,12 @@ pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
                 let (key, _, _) = cur.take(n)?;
                 let (value, v0, v1) = cur.take(m)?;
                 let resolved = if matches!(op, 'q' | 'w') {
-                    names
-                        .iter()
-                        .find(|(k, _)| k == &key)
-                        .map(|(_, name)| name.clone())
-                        .ok_or(Error::InvalidLength)?
+                    names.get(&key).cloned().ok_or(Error::InvalidLength)?
                 } else {
                     key.clone()
                 };
-                let mut path = stack.join(".");
-                if !path.is_empty() {
-                    path.push('.');
-                }
+                let mut path = String::with_capacity(prefix.len() + resolved.len());
+                path.push_str(&prefix);
                 path.push_str(&resolved);
                 let op = if matches!(op, 'q' | 'w') {
                     Op::Ref { op, key, value }
@@ -233,12 +268,21 @@ pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
             'b' => {
                 let n = cur.number(2)?;
                 let (scope, v0, v1) = cur.take(n)?;
-                stack.push(scope.clone());
+                if marks.len() >= MAX_DEPTH {
+                    return Err(Error::Limit("escopos aninhados demais"));
+                }
+                marks.push(prefix.len());
+                prefix.push_str(&scope);
+                prefix.push('.');
+                if prefix.chars().count() > MAX_PATH {
+                    return Err(Error::Limit("caminho de escopos longo demais"));
+                }
                 (Op::Begin(scope), None, v0, v1)
             }
             'c' => {
-                if stack.pop().is_none() {
-                    return Err(Error::UnbalancedScope);
+                match marks.pop() {
+                    Some(mark) => prefix.truncate(mark),
+                    None => return Err(Error::UnbalancedScope),
                 }
                 (Op::End, None, start, start + 1)
             }
@@ -269,7 +313,7 @@ pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
             path: item.1,
         });
     }
-    if !stack.is_empty() {
+    if !marks.is_empty() {
         return Err(Error::UnbalancedScope);
     }
     Ok(out)
