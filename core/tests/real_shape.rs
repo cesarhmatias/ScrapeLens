@@ -1809,3 +1809,37 @@ fn r8_js_member_assignment_literal_is_a_candidate() {
     assert_eq!(x.evidences[0].kind, EvidenceKind::ValueMatch);
     assert_eq!(x.evidences[0].request_id, lid(&b, "1.1"));
 }
+
+/// Item 4 da revisão 8: nome de negócio colado a uma letra, no meio de um token
+/// de campo opaco e seguido de valor no formato (`…aplacaQWE1234`), vazava sem
+/// redação nem aviso. Agora redige e conta, como no `v_placa`.
+#[test]
+fn r8_business_name_glued_to_letters_is_redacted() {
+    let mut s = S::default();
+    s.req(
+        "1.1",
+        1.0,
+        "https://x.test/a",
+        "POST",
+        R {
+            body: Some("XML=aaaaaplacaQWE1234&STAMP=2004"),
+            resp: Some("ok"),
+            ..Default::default()
+        },
+    );
+    let b = s.build();
+    assert!(all_text(&b).contains("QWE1234"));
+    let export = sanitize_bundle(&b, &SanitizeOptions::default());
+    let after = all_text(&export.bundle);
+    assert!(!after.contains("QWE1234"), "placa colada vazou: {after}");
+    assert!(
+        export
+            .redactions
+            .get("business:placa")
+            .copied()
+            .unwrap_or(0)
+            >= 1,
+        "contagem: {:?}",
+        export.redactions
+    );
+}

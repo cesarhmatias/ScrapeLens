@@ -1092,6 +1092,13 @@ fn scan_business_plain(
                 && &lower.as_bytes()[at - 2..at] == b"v_"
                 && (at == 2 || !lower.as_bytes()[at - 3].is_ascii_alphabetic());
             if prev.is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_') && !natural_var {
+                // Exceto quando o nome está no meio de um token alfanumérico e
+                // vem seguido do valor no formato (`…aplacaQWE1234`): é
+                // vazamento, então redige e conta em vez de ignorar.
+                if let Some(len) = text.get(end..).and_then(|rest| kind.match_len(rest)) {
+                    covered.push((at, end + len));
+                    hits.push((end, len, kind));
+                }
                 continue;
             }
             match text.get(end..).and_then(|rest| kind.match_len(rest)) {
