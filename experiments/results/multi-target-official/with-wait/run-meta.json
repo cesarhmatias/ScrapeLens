@@ -1,0 +1,7 @@
+{
+  "pageUrl": "http://127.0.0.1:9781/multi/",
+  "source": "testserver/",
+  "multi_route": "ok",
+  "variant": "with-wait",
+  "waitForDebuggerOnStart": true
+}

@@ -112,7 +112,9 @@ def cdp_by_marker(events: list[dict], sessions: dict) -> dict[str, list[dict]]:
 def server_markers(server_log: list[dict]) -> set[str]:
     out = set()
     for row in server_log:
-        mk = row.get("marker") or marker_from_url(row.get("target", ""))
+        mk = row.get("marker") or row.get("m")
+        if not mk:
+            mk = marker_from_url(row.get("target", "") or row.get("path", ""))
         if mk:
             out.add(mk)
     return out
@@ -123,13 +125,13 @@ def classify_marker(mk: str) -> str:
         return "popup"
     if mk.startswith("blank"):
         return "target_blank"
-    if mk.startswith("oophif"):
+    if mk.startswith("oopif") or mk.startswith("oophif"):
         return "oophif"
     if mk.startswith("worker"):
         return "dedicated_worker"
-    if mk.startswith("sw-"):
+    if mk.startswith("sw-") or mk.startswith("sw_"):
         return "service_worker"
-    if mk.startswith("page"):
+    if mk.startswith("page") or mk.startswith("main"):
         return "page"
     return "other"
 

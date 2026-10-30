@@ -1,0 +1,171 @@
+{
+  "waitForDebuggerOnStart": true,
+  "sessions": [
+    {
+      "sessionId": "9F1161C697FD222A7579309B0AE587A8",
+      "targetId": "0E20D7ADCFD7ABF42888FA5D377DA0D8",
+      "type": "page",
+      "url": "http://127.0.0.1:9781/multi/",
+      "title": "127.0.0.1:9781/multi/",
+      "attachedAt": 57
+    },
+    {
+      "sessionId": "C2F5EF7C1A4EF2165CEE8675958B3D0A",
+      "targetId": "2150F61E56C22F5DC5704E5146BFD7C4",
+      "type": "browser_ui",
+      "url": "chrome://omnibox-popup.top-chrome/omnibox_popup_aim.html",
+      "title": "Omnibox Popup",
+      "attachedAt": 57
+    },
+    {
+      "sessionId": "B74D1FB4B79757EDEEE57C7CC712FFBB",
+      "targetId": "7DFDA4996FF57D556E079BBC996EFC34",
+      "type": "browser_ui",
+      "url": "chrome://omnibox-popup.top-chrome/",
+      "title": "Omnibox Popup",
+      "attachedAt": 58
+    },
+    {
+      "sessionId": "0B9A4031D9F3053A4D7C9C1500DA0ACA",
+      "targetId": "0E20D7ADCFD7ABF42888FA5D377DA0D8",
+      "type": "page",
+      "url": "http://127.0.0.1:9781/multi/",
+      "title": "127.0.0.1:9781/multi/",
+      "attachedAt": 70
+    },
+    {
+      "sessionId": "71DBBEE389AA54259DD6DA1B84CC436B",
+      "targetId": "904F1BEB9AB7BE73F7A4CC69CC3B7D46",
+      "type": "page",
+      "url": "http://127.0.0.1:9781/multi/popup.html?m=popup-1",
+      "title": "127.0.0.1:9781/multi/popup.html?m=popup-1",
+      "attachedAt": 608
+    },
+    {
+      "sessionId": "F669375BBCBF969A20F0FA2C22A1462D",
+      "targetId": "A9D9EE086F1E786708E0F083E5EACEF0",
+      "type": "iframe",
+      "url": "http://localhost:9781/multi/iframe.html?m=oopif-1",
+      "title": "http://localhost:9781/multi/iframe.html?m=oopif-1",
+      "attachedAt": 709
+    },
+    {
+      "sessionId": "DDB7F6B62A35A8A1B429747EDAB9C1A5",
+      "targetId": "AC5AB6E2797A92A8E0EA84DF89F06EDC",
+      "type": "worker",
+      "url": "http://127.0.0.1:9781/multi/worker.js",
+      "title": "http://127.0.0.1:9781/multi/worker.js",
+      "attachedAt": 750
+    },
+    {
+      "sessionId": "54FF2A7263FE51CAE9F7AEFADC9863E7",
+      "targetId": "AC5AB6E2797A92A8E0EA84DF89F06EDC",
+      "type": "worker",
+      "url": "http://127.0.0.1:9781/multi/worker.js",
+      "title": "http://127.0.0.1:9781/multi/worker.js",
+      "attachedAt": 750
+    },
+    {
+      "sessionId": "9396F81CF5F90A74337E3E04A4CC40CF",
+      "targetId": "21BEDA4E5BED9698222167D90D4C4CF8",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9781/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9781/multi/sw.js",
+      "attachedAt": 754
+    },
+    {
+      "sessionId": "375B6DDB30BAFBCFF032278010FCD77F",
+      "targetId": "21BEDA4E5BED9698222167D90D4C4CF8",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9781/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9781/multi/sw.js",
+      "attachedAt": 754
+    },
+    {
+      "sessionId": "CA54D33A9D65CB4411FAB36002342132",
+      "targetId": "21BEDA4E5BED9698222167D90D4C4CF8",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9781/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9781/multi/sw.js",
+      "attachedAt": 754
+    },
+    {
+      "sessionId": "274FEAB28406C0B4AAC6E84686E7E265",
+      "targetId": "21BEDA4E5BED9698222167D90D4C4CF8",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9781/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9781/multi/sw.js",
+      "attachedAt": 754
+    },
+    {
+      "sessionId": "9020355F442A991D8979B139ED018F60",
+      "targetId": "A9D9EE086F1E786708E0F083E5EACEF0",
+      "type": "iframe",
+      "url": "http://localhost:9781/multi/iframe.html?m=oopif-1",
+      "title": "http://localhost:9781/multi/iframe.html?m=oopif-1",
+      "attachedAt": 761
+    },
+    {
+      "sessionId": "2CD497C66469FFCD54874B2E5F0BA8BF",
+      "targetId": "F98927FF882077828ED5FB3C9BB830C3",
+      "type": "page",
+      "url": "",
+      "title": "",
+      "attachedAt": 893
+    },
+    {
+      "sessionId": "A9CB55A71ADAC51C26AA45B1B8145C5F",
+      "targetId": "21BEDA4E5BED9698222167D90D4C4CF8",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9781/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9781/multi/sw.js",
+      "attachedAt": 927
+    }
+  ],
+  "sessionCount": 15,
+  "eventCount": 242,
+  "networkEventCount": 115,
+  "requestIdCollisions": [
+    {
+      "requestId": "AAEEB4BAC289BD86226F78B91819798A",
+      "sessions": 2
+    },
+    {
+      "requestId": "25614.2",
+      "sessions": 2
+    },
+    {
+      "requestId": "25614.3",
+      "sessions": 2
+    },
+    {
+      "requestId": "91BA64EB2DB6FE2EDD8CC96343DACB0B",
+      "sessions": 2
+    },
+    {
+      "requestId": "25614.4",
+      "sessions": 2
+    },
+    {
+      "requestId": "AC5AB6E2797A92A8E0EA84DF89F06EDC",
+      "sessions": 2
+    },
+    {
+      "requestId": "25613.2",
+      "sessions": 2
+    },
+    {
+      "requestId": "25613.3",
+      "sessions": 2
+    },
+    {
+      "requestId": "25613.4",
+      "sessions": 2
+    }
+  ],
+  "requestIdCollisionPairs": 9,
+  "elapsedMs": 32765,
+  "pageUrl": "http://127.0.0.1:9781/multi/",
+  "browser": "Chrome/156.0.8078.74",
+  "protocolVersion": "1.3"
+}

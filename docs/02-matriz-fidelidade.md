@@ -221,42 +221,42 @@ Contrato: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`.
 |---|---|
 | Navegador | Chrome `156.0.8078.74`, `headless=new`, perfil temporário dedicado |
 | CDP | `Target.setDiscoverTargets` + `Target.setAutoAttach {autoAttach, flatten, waitForDebuggerOnStart}` recursivo; `Network.enable` antes de `Runtime.runIfWaitingForDebugger` |
-| Página de teste | **`testserver` `GET /multi/` — ainda não publicada**; smoke local em `experiments/multi_target/smoke_server.py` |
-| Evidência | `experiments/results/multi-target-smoke/` (`analysis.json`, `with-wait/`, `no-wait/`) |
+| Página de teste | `testserver` `GET /multi/` (WIP Testes no working tree); smoke auxiliar em `experiments/multi_target/smoke_server.py` |
+| Evidência | `experiments/results/multi-target-official/` (run contra testserver local) + `results/multi-target-smoke/` |
 
 ### Tabela por tipo de alvo (marcador `?m=`)
 
-Medição **preliminar** (smoke). Célula **não verificado** = sem evidência nesta execução ou página oficial ausente.
+Medição **2026-10-29** com harness `run_multi.py --testserver` (página `/multi/` do testserver local). Célula **não verificado** = script não chegou ao marcador nesta execução (~33 s, `waitForDebuggerOnStart` true).
 
-| Tipo de alvo | Servidor JSONL | NetLog | CDP (sessão filha) | ExtraInfo | Corpos (`getRequestPostData` / `getResponseBody`) | Notas SW |
+| Tipo de alvo | Servidor `multi.jsonl` | NetLog | CDP (sessão filha) | ExtraInfo | Corpos CDP | Notas SW |
 |---|---|---|---|---|---|---|
-| Popup (`window.open`) | ✓ | ✓ | ✓ (target `page` filho) | ✓ | parcial | — |
-| Aba `_blank` | não verificado | não verificado | não verificado | não verificado | não verificado | click sintético não disparou no smoke headless |
-| OOPIF (outra porta `127.0.0.1`) | ✓ | ✓ | ✓ (sessão do iframe) | ✓ | ✓ (oophif-first) | — |
-| Worker dedicado | não verificado | não verificado | ~ (execução anterior: ✓ sessão `worker`) | não verificado | não verificado | smoke com wait não concluiu script a tempo |
-| SW (intercept + fetch) | não verificado | não verificado | ~ (execução anterior: eventos na **página**, não no target SW) | não verificado | não verificado | `fromServiceWorker`/`serviceWorkerResponseSource`: não verificado |
-| Documento principal | não verificado | ✓ | ~ (execução anterior: ✓) | não verificado | não verificado | — |
+| Documento principal (`main-*`) | ✓ | ✓ | ✓ | ✓ | ✓ GET+POST | — |
+| Popup (`popup-*`) | ✓ | ✓ | ✓ (sessão `page` do popup) | ✓ | ✓ | — |
+| OOPIF (`oopif-*`) | parcial (`oopif-1` doc iframe no NetLog/CDP; subrequests não verificados) | ✓ | ✓ (documento iframe) | parcial | parcial | — |
+| Aba `_blank` (`blank-*`) | não verificado | não verificado | não verificado | não verificado | não verificado | auto-click 200 ms: não verificado nesta execução |
+| Worker dedicado | não verificado | não verificado | não verificado | não verificado | não verificado | — |
+| SW (intercept + fetch próprio) | não verificado | não verificado | não verificado | não verificado | não verificado | `fromServiceWorker`/`serviceWorkerResponseSource`: não verificado |
 
 ### `waitForDebuggerOnStart`
 
 | Variante | Efeito observado (smoke) |
 |---|---|
-| **com** wait | Popups/OOPIF capturados; script da página principal pode **não terminar** antes do timeout (~33 s nesta execução) — risco de perder worker/SW/page-main no CDP |
-| **sem** wait | Navegação `/multi/` ok; popups abrem (`Page.windowOpen`); análise incompleta nesta execução (log servidor resetado); execução anterior mostrou mais marcadores no CDP |
+| **com** wait | `main-*`, `popup-*` e documento OOPIF no CDP; worker/SW/`blank-*` **não** concluíram no tempo (~33 s) |
+| **sem** wait | `main-*` GET/POST no CDP; popups/worker/SW: não verificado nesta execução |
 
-Primeira requisição do alvo novo perdida **sem** wait: **não verificado** (repetir com `testserver` `/multi/`).
+Primeira requisição do alvo novo perdida **sem** wait: **não verificado** (aumentar janela ou isolar um marcador por run).
 
 ### Colisão de `requestId`
 
-O mesmo `requestId` aparece em **várias sessões** (ex.: 3 pares com wait, 1 sem wait). Tratar chave CDP como **`(sessionId, requestId)`**, nunca `requestId` sozinho.
+O mesmo `requestId` aparece em **várias sessões** (9 pares com wait no run testserver). Chave CDP: **`(sessionId, requestId)`**.
 
-### Custo (smoke, variante com wait)
+### Custo (testserver, variante com wait)
 
 | Sessões CDP | Eventos CDP | Eventos Network.* | Tempo |
 |---:|---:|---:|---:|
-| 11 | 135 | 50 | ~33 s |
+| 15 | 242 | 115 | ~33 s |
 
-Reprodução: `cd experiments && python3 multi_target/run_multi.py --smoke --out results/multi-target-smoke`.
+Reprodução: `cd experiments && python3 multi_target/run_multi.py --testserver --port 9781 --out results/multi-target-official`.
 
 **Recomendação:** auto-attach com wait + chave `(sessionId, requestId)`; alvo sem sessão CDP permanece só NetLog; **repetir** contra `testserver` `/multi/` antes de alterar `src-tauri`/core.
 

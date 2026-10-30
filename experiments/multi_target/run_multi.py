@@ -110,8 +110,11 @@ def main() -> None:
             if server_proc:
                 server_proc.terminate()
             sys.exit(2)
+        multi_log = evidence_dir / "multi.jsonl"
         h1_log = evidence_dir / "h1.jsonl"
-        if h1_log.exists():
+        if multi_log.exists():
+            shutil.copy(multi_log, server_log)
+        elif h1_log.exists():
             shutil.copy(h1_log, server_log)
     else:
         meta["source"] = "external"
@@ -176,6 +179,13 @@ def main() -> None:
 
         if args.smoke and server_log.exists():
             shutil.copy(server_log, run_dir / "server.jsonl")
+        if args.testserver:
+            ml = evidence_dir / "multi.jsonl"
+            if not ml.exists():
+                nested = list(evidence_dir.glob("*/multi.jsonl"))
+                ml = nested[0] if nested else ml
+            if ml.exists():
+                shutil.copy(ml, run_dir / "server.jsonl")
 
         run_meta = run_dir / "run-meta.json"
         run_meta.write_text(json.dumps({**meta, "variant": variant, "waitForDebuggerOnStart": wait}, indent=2) + "\n")

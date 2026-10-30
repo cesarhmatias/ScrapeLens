@@ -1,0 +1,205 @@
+{
+  "with_wait": {
+    "run_dir": "results/multi-target-official/with-wait",
+    "waitForDebuggerOnStart": true,
+    "sessionCount": 15,
+    "eventCount": 242,
+    "networkEventCount": 115,
+    "elapsedMs": 32765,
+    "requestIdCollisionPairs": 9,
+    "rows": [
+      {
+        "marker": "main-1",
+        "target_kind": "page",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "9F1161C6",
+            "type": "page",
+            "requestId": "25614.2"
+          },
+          {
+            "sessionId": "0B9A4031",
+            "type": "page",
+            "requestId": "25614.2"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "main-post-1",
+        "target_kind": "page",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "9F1161C6",
+            "type": "page",
+            "requestId": "25614.3"
+          },
+          {
+            "sessionId": "0B9A4031",
+            "type": "page",
+            "requestId": "25614.3"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "oopif-1",
+        "target_kind": "oophif",
+        "server": false,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "9F1161C6",
+            "type": "page",
+            "requestId": "91BA64EB2DB6FE2EDD8CC96343DACB0B"
+          },
+          {
+            "sessionId": "0B9A4031",
+            "type": "page",
+            "requestId": "91BA64EB2DB6FE2EDD8CC96343DACB0B"
+          }
+        ],
+        "headers_extra_info": "não",
+        "header_order_vs_server": "não verificado",
+        "bodies_cdp": false,
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "popup-1",
+        "target_kind": "popup",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "71DBBEE3",
+            "type": "page",
+            "requestId": "B00DF85D0B7EF161559FAA80DE60C362"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "popup-get-1",
+        "target_kind": "popup",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "71DBBEE3",
+            "type": "page",
+            "requestId": "25614.6"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "popup-post-1",
+        "target_kind": "popup",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "71DBBEE3",
+            "type": "page",
+            "requestId": "25614.7"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      }
+    ]
+  },
+  "without_wait": {
+    "run_dir": "results/multi-target-official/no-wait",
+    "waitForDebuggerOnStart": false,
+    "sessionCount": 5,
+    "eventCount": 101,
+    "networkEventCount": 41,
+    "elapsedMs": 32445,
+    "requestIdCollisionPairs": 3,
+    "rows": [
+      {
+        "marker": "main-1",
+        "target_kind": "page",
+        "server": false,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "CDB689D9",
+            "type": "page",
+            "requestId": "25981.2"
+          },
+          {
+            "sessionId": "EEECFE9F",
+            "type": "page",
+            "requestId": "25981.2"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "main-post-1",
+        "target_kind": "page",
+        "server": false,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "CDB689D9",
+            "type": "page",
+            "requestId": "25981.3"
+          },
+          {
+            "sessionId": "EEECFE9F",
+            "type": "page",
+            "requestId": "25981.3"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      }
+    ]
+  },
+  "variant_compare": {
+    "cdp_lost_without_wait": [],
+    "first_request_lost_without_wait": []
+  }
+}
