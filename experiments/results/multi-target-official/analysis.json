@@ -3,10 +3,86 @@
     "run_dir": "results/multi-target-official/with-wait",
     "waitForDebuggerOnStart": true,
     "sessionCount": 15,
-    "eventCount": 242,
-    "networkEventCount": 115,
-    "elapsedMs": 32765,
-    "requestIdCollisionPairs": 9,
+    "eventCount": 239,
+    "networkEventCount": 113,
+    "elapsedMs": 58199,
+    "requestIdCollisionPairs": 8,
+    "expected_markers": [
+      "main-1",
+      "main-post-1",
+      "popup-1",
+      "popup-get-1",
+      "popup-post-1",
+      "blank-1",
+      "blank-get-1",
+      "blank-post-1",
+      "oopif-1",
+      "oopif-get-1",
+      "oopif-post-1",
+      "worker-get-1",
+      "worker-post-1",
+      "sw-intercept-1",
+      "sw-own-1",
+      "sw-own-post-1"
+    ],
+    "coverage": {
+      "server": {
+        "main-1": true,
+        "main-post-1": true,
+        "popup-1": true,
+        "popup-get-1": true,
+        "popup-post-1": true,
+        "blank-1": false,
+        "blank-get-1": false,
+        "blank-post-1": false,
+        "oopif-1": true,
+        "oopif-get-1": true,
+        "oopif-post-1": true,
+        "worker-get-1": false,
+        "worker-post-1": false,
+        "sw-intercept-1": false,
+        "sw-own-1": false,
+        "sw-own-post-1": false
+      },
+      "cdp": {
+        "main-1": true,
+        "main-post-1": true,
+        "popup-1": true,
+        "popup-get-1": true,
+        "popup-post-1": true,
+        "blank-1": false,
+        "blank-get-1": false,
+        "blank-post-1": false,
+        "oopif-1": true,
+        "oopif-get-1": true,
+        "oopif-post-1": true,
+        "worker-get-1": false,
+        "worker-post-1": false,
+        "sw-intercept-1": false,
+        "sw-own-1": false,
+        "sw-own-post-1": false
+      },
+      "server_missing": [
+        "blank-1",
+        "blank-get-1",
+        "blank-post-1",
+        "worker-get-1",
+        "worker-post-1",
+        "sw-intercept-1",
+        "sw-own-1",
+        "sw-own-post-1"
+      ],
+      "cdp_missing": [
+        "blank-1",
+        "blank-get-1",
+        "blank-post-1",
+        "worker-get-1",
+        "worker-post-1",
+        "sw-intercept-1",
+        "sw-own-1",
+        "sw-own-post-1"
+      ]
+    },
     "rows": [
       {
         "marker": "main-1",
@@ -16,14 +92,14 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "9F1161C6",
+            "sessionId": "E7B57C52",
             "type": "page",
-            "requestId": "25614.2"
+            "requestId": "37424.2"
           },
           {
-            "sessionId": "0B9A4031",
+            "sessionId": "5E39E509",
             "type": "page",
-            "requestId": "25614.2"
+            "requestId": "37424.2"
           }
         ],
         "headers_extra_info": "sim",
@@ -40,14 +116,14 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "9F1161C6",
+            "sessionId": "E7B57C52",
             "type": "page",
-            "requestId": "25614.3"
+            "requestId": "37424.3"
           },
           {
-            "sessionId": "0B9A4031",
+            "sessionId": "5E39E509",
             "type": "page",
-            "requestId": "25614.3"
+            "requestId": "37424.3"
           }
         ],
         "headers_extra_info": "sim",
@@ -59,25 +135,73 @@
       {
         "marker": "oopif-1",
         "target_kind": "oophif",
-        "server": false,
+        "server": true,
         "netlog": true,
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "9F1161C6",
+            "sessionId": "E7B57C52",
             "type": "page",
-            "requestId": "91BA64EB2DB6FE2EDD8CC96343DACB0B"
+            "requestId": "DC27597AEBD77FB080EEE820E8A025B9"
           },
           {
-            "sessionId": "0B9A4031",
+            "sessionId": "5E39E509",
             "type": "page",
-            "requestId": "91BA64EB2DB6FE2EDD8CC96343DACB0B"
+            "requestId": "DC27597AEBD77FB080EEE820E8A025B9"
           }
         ],
-        "headers_extra_info": "não",
-        "header_order_vs_server": "não verificado",
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
         "bodies_cdp": false,
-        "fromServiceWorker": null,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "oopif-get-1",
+        "target_kind": "oophif",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "EE4D4CC2",
+            "type": "iframe",
+            "requestId": "37423.2"
+          },
+          {
+            "sessionId": "6012306A",
+            "type": "iframe",
+            "requestId": "37423.2"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "oopif-post-1",
+        "target_kind": "oophif",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "EE4D4CC2",
+            "type": "iframe",
+            "requestId": "37423.3"
+          },
+          {
+            "sessionId": "6012306A",
+            "type": "iframe",
+            "requestId": "37423.3"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
       },
       {
@@ -88,9 +212,9 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "71DBBEE3",
+            "sessionId": "0C66C137",
             "type": "page",
-            "requestId": "B00DF85D0B7EF161559FAA80DE60C362"
+            "requestId": "B6DF82FB517B4D050E8EC9787F2D885C"
           }
         ],
         "headers_extra_info": "sim",
@@ -107,9 +231,9 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "71DBBEE3",
+            "sessionId": "0C66C137",
             "type": "page",
-            "requestId": "25614.6"
+            "requestId": "37424.6"
           }
         ],
         "headers_extra_info": "sim",
@@ -126,9 +250,9 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "71DBBEE3",
+            "sessionId": "0C66C137",
             "type": "page",
-            "requestId": "25614.7"
+            "requestId": "37424.7"
           }
         ],
         "headers_extra_info": "sim",
@@ -143,27 +267,109 @@
     "run_dir": "results/multi-target-official/no-wait",
     "waitForDebuggerOnStart": false,
     "sessionCount": 5,
-    "eventCount": 101,
-    "networkEventCount": 41,
-    "elapsedMs": 32445,
+    "eventCount": 96,
+    "networkEventCount": 36,
+    "elapsedMs": 57303,
     "requestIdCollisionPairs": 3,
+    "expected_markers": [
+      "main-1",
+      "main-post-1",
+      "popup-1",
+      "popup-get-1",
+      "popup-post-1",
+      "blank-1",
+      "blank-get-1",
+      "blank-post-1",
+      "oopif-1",
+      "oopif-get-1",
+      "oopif-post-1",
+      "worker-get-1",
+      "worker-post-1",
+      "sw-intercept-1",
+      "sw-own-1",
+      "sw-own-post-1"
+    ],
+    "coverage": {
+      "server": {
+        "main-1": true,
+        "main-post-1": true,
+        "popup-1": true,
+        "popup-get-1": true,
+        "popup-post-1": true,
+        "blank-1": false,
+        "blank-get-1": false,
+        "blank-post-1": false,
+        "oopif-1": true,
+        "oopif-get-1": true,
+        "oopif-post-1": true,
+        "worker-get-1": false,
+        "worker-post-1": false,
+        "sw-intercept-1": false,
+        "sw-own-1": false,
+        "sw-own-post-1": false
+      },
+      "cdp": {
+        "main-1": true,
+        "main-post-1": true,
+        "popup-1": false,
+        "popup-get-1": false,
+        "popup-post-1": false,
+        "blank-1": false,
+        "blank-get-1": false,
+        "blank-post-1": false,
+        "oopif-1": false,
+        "oopif-get-1": false,
+        "oopif-post-1": false,
+        "worker-get-1": false,
+        "worker-post-1": false,
+        "sw-intercept-1": false,
+        "sw-own-1": false,
+        "sw-own-post-1": false
+      },
+      "server_missing": [
+        "blank-1",
+        "blank-get-1",
+        "blank-post-1",
+        "worker-get-1",
+        "worker-post-1",
+        "sw-intercept-1",
+        "sw-own-1",
+        "sw-own-post-1"
+      ],
+      "cdp_missing": [
+        "popup-1",
+        "popup-get-1",
+        "popup-post-1",
+        "blank-1",
+        "blank-get-1",
+        "blank-post-1",
+        "oopif-1",
+        "oopif-get-1",
+        "oopif-post-1",
+        "worker-get-1",
+        "worker-post-1",
+        "sw-intercept-1",
+        "sw-own-1",
+        "sw-own-post-1"
+      ]
+    },
     "rows": [
       {
         "marker": "main-1",
         "target_kind": "page",
-        "server": false,
+        "server": true,
         "netlog": true,
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "CDB689D9",
+            "sessionId": "6D4B7B8A",
             "type": "page",
-            "requestId": "25981.2"
+            "requestId": "37782.2"
           },
           {
-            "sessionId": "EEECFE9F",
+            "sessionId": "180B4511",
             "type": "page",
-            "requestId": "25981.2"
+            "requestId": "37782.2"
           }
         ],
         "headers_extra_info": "sim",
@@ -175,19 +381,19 @@
       {
         "marker": "main-post-1",
         "target_kind": "page",
-        "server": false,
+        "server": true,
         "netlog": true,
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "CDB689D9",
+            "sessionId": "6D4B7B8A",
             "type": "page",
-            "requestId": "25981.3"
+            "requestId": "37782.3"
           },
           {
-            "sessionId": "EEECFE9F",
+            "sessionId": "180B4511",
             "type": "page",
-            "requestId": "25981.3"
+            "requestId": "37782.3"
           }
         ],
         "headers_extra_info": "sim",
@@ -195,11 +401,101 @@
         "bodies_cdp": true,
         "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "oopif-1",
+        "target_kind": "oophif",
+        "server": true,
+        "netlog": false,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "não verificado",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "oopif-get-1",
+        "target_kind": "oophif",
+        "server": true,
+        "netlog": false,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "não verificado",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "oopif-post-1",
+        "target_kind": "oophif",
+        "server": true,
+        "netlog": false,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "não verificado",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "popup-1",
+        "target_kind": "popup",
+        "server": true,
+        "netlog": false,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "não verificado",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "popup-get-1",
+        "target_kind": "popup",
+        "server": true,
+        "netlog": false,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "não verificado",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "popup-post-1",
+        "target_kind": "popup",
+        "server": true,
+        "netlog": false,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "não verificado",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
       }
     ]
   },
   "variant_compare": {
-    "cdp_lost_without_wait": [],
-    "first_request_lost_without_wait": []
+    "cdp_lost_without_wait": [
+      "oopif-1",
+      "oopif-get-1",
+      "oopif-post-1",
+      "popup-1",
+      "popup-get-1",
+      "popup-post-1"
+    ],
+    "first_request_lost_without_wait": [
+      "popup-1",
+      "oopif-1",
+      "popup-get-1",
+      "oopif-get-1"
+    ]
   }
 }

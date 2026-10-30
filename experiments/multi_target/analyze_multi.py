@@ -11,6 +11,25 @@ from urllib.parse import parse_qs, urlparse
 
 MARKER_RE = re.compile(r"[?&]m=([^&#]+)")
 
+EXPECTED_MARKERS = [
+    "main-1",
+    "main-post-1",
+    "popup-1",
+    "popup-get-1",
+    "popup-post-1",
+    "blank-1",
+    "blank-get-1",
+    "blank-post-1",
+    "oopif-1",
+    "oopif-get-1",
+    "oopif-post-1",
+    "worker-get-1",
+    "worker-post-1",
+    "sw-intercept-1",
+    "sw-own-1",
+    "sw-own-post-1",
+]
+
 
 def marker_from_url(url: str) -> str | None:
     m = MARKER_RE.search(url)
@@ -214,6 +233,8 @@ def analyze_run(run_dir: pathlib.Path) -> dict:
             }
         )
 
+    srv = server_markers(server_log)
+    cdp_m = {mk for mk, rs in cdp.items() if rs}
     return {
         "run_dir": str(run_dir),
         "waitForDebuggerOnStart": sessions_meta.get("waitForDebuggerOnStart"),
@@ -222,6 +243,13 @@ def analyze_run(run_dir: pathlib.Path) -> dict:
         "networkEventCount": sessions_meta.get("networkEventCount"),
         "elapsedMs": sessions_meta.get("elapsedMs"),
         "requestIdCollisionPairs": sessions_meta.get("requestIdCollisionPairs"),
+        "expected_markers": EXPECTED_MARKERS,
+        "coverage": {
+            "server": {m: m in srv for m in EXPECTED_MARKERS},
+            "cdp": {m: m in cdp_m for m in EXPECTED_MARKERS},
+            "server_missing": [m for m in EXPECTED_MARKERS if m not in srv],
+            "cdp_missing": [m for m in EXPECTED_MARKERS if m not in cdp_m],
+        },
         "rows": rows,
     }
 
@@ -236,7 +264,7 @@ def compare_variants(with_wait: dict, without_wait: dict) -> dict:
         if other and row["cdp"] and not other["cdp"]:
             lost.append(mk)
     first_only = []
-    for kind in ("popup-first", "blank-first", "oophif-first"):
+    for kind in ("popup-1", "blank-1", "oopif-1", "popup-get-1", "blank-get-1", "oopif-get-1"):
         w = next((r for r in with_wait["rows"] if r["marker"] == kind), None)
         n = next((r for r in without_wait["rows"] if r["marker"] == kind), None)
         if w and w["cdp"] and n and not n["cdp"]:

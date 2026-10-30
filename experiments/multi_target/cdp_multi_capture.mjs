@@ -216,7 +216,8 @@ async function main() {
   while (Date.now() < doneDeadline) {
     try {
       const probe = await S("Runtime.evaluate", {
-        expression: "Boolean(window.__multiDone)",
+        expression:
+          "(() => { const st = window.__scrapelensMulti?.steps || []; return st.some((s) => s[0] === 'sw-fetch'); })()",
         returnByValue: true,
       });
       if (probe.result.value === true) break;

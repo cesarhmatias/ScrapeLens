@@ -124,7 +124,7 @@ def main() -> None:
     plan_base = {
         "pageUrl": page_url,
         "settleMs": 12000,
-        "waitForDoneMs": 20000,
+        "waitForDoneMs": 45000,
         "navTimeoutMs": 45000,
         "bypassServiceWorker": False,
         "fetchAllBodies": True,
@@ -139,6 +139,12 @@ def main() -> None:
         def _build_args_with_popups(*a, **k):
             args = _build_args_orig(*a, **k)
             args.insert(1, "--disable-popup-blocking")
+            for i, item in enumerate(args):
+                if item.startswith("--host-resolver-rules="):
+                    args[i] = (
+                        "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"
+                    )
+                    break
             return args
 
         _build_args_with_popups._multi_popup_patch = True  # type: ignore[attr-defined]
@@ -193,19 +199,11 @@ def main() -> None:
     if server_proc and server_proc.poll() is None:
         server_proc.terminate()
 
-    analyze = subprocess.run(
-        [
-            PY,
-            str(HERE / "analyze_multi.py"),
-            "--run",
-            str(out / "with-wait"),
-            "--run-no-wait",
-            str(out / "no-wait"),
-            "--out",
-            str(out / "analysis.json"),
-        ],
-        check=False,
-    )
+    analyze_cmd = [PY, str(HERE / "analyze_multi.py"), "--run", str(out / "with-wait"), "--out", str(out / "analysis.json")]
+    if not args.only_wait and (out / "no-wait" / "cdp-sessions.json").exists():
+        analyze_cmd.insert(-2, str(out / "no-wait"))
+        analyze_cmd.insert(-3, "--run-no-wait")
+    analyze = subprocess.run(analyze_cmd, check=False)
     (out / "README-snippet.txt").write_text(
         f"page={page_url}\nsource={meta['source']}\nanalyze exit={analyze.returncode}\n"
     )
