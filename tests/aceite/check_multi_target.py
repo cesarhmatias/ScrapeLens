@@ -284,9 +284,21 @@ def session_requests(session_dir: Path, core: str) -> dict:
 
 
 def request_key(req: dict) -> tuple:
-    sid = deep_find(req, ("sessionId", "cdpSessionId"))
-    rid = deep_find(req, ("requestId",))
+    """(sessionId, requestId) do modelo (Core 2f1cc1b: `cdp.sessionId`)."""
+    cdp = req.get("cdp") or {}
+    sid = cdp.get("sessionId") or deep_find(req, ("sessionId", "cdpSessionId"))
+    rid = cdp.get("requestId") or deep_find(req, ("requestId",))
     return (str(sid) if sid is not None else None, str(rid) if rid is not None else None)
+
+
+def target_kind(req: dict, targets: dict) -> str | None:
+    """Tipo do alvo: `target.kind` do modelo; senão o evento Target.attachedToTarget."""
+    kind = (req.get("target") or {}).get("kind")
+    if kind and kind not in ("other", ""):
+        return kind
+    cdp = req.get("cdp") or {}
+    info = targets.get(str(cdp.get("sessionId"))) or {}
+    return info.get("type") or kind
 
 
 def url_marker(req: dict) -> str | None:
@@ -329,23 +341,30 @@ def analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
     unexpected_missing = (set(EXPECTED) - cdp_markers) - CDP_EXCEPTION
     check(not unexpected_missing, f"cdp: marcadores ausentes além da exceção blank-1: {sorted(unexpected_missing)}")
 
-    # (3) tipo de alvo por marcador
+    # (3) tipo de alvo por marcador (modelo `target.kind`; eventos Target.* em falta como pista)
     targets = cdp_targets(events)
+    session_by_marker = {url_marker(r): r for r in requests if url_marker(r)}
     typed: dict[str, list[str]] = {}
     for r in reqs:
         if not r["marker"]:
             continue
         t = targets.get(str(r["sessionId"])) or {}
         typed.setdefault(r["marker"], []).append(t.get("type") or "?")
+    model_types = {m: target_kind(req, targets) for m, req in session_by_marker.items()}
     INFO["targets"] = {"sessions": len(targets),
-                       "por_marcador": {k: sorted(set(v)) for k, v in sorted(typed.items())}}
-    if not targets:
-        check(False, "cdp: nenhum evento Target.attachedToTarget — sem proveniência de alvo")
+                       "eventos": {k: sorted(set(v)) for k, v in sorted(typed.items())},
+                       "modelo": {k: v for k, v in sorted(model_types.items())}}
+    if not targets and not any(model_types.values()):
+        check(False, "cdp: sem eventos Target.attachedToTarget e sem target.kind no modelo — sem proveniência de alvo")
     for marker, want in TYPES.items():
         got = set(typed.get(marker, []))
-        if marker in CDP_EXCEPTION and not got:
+        kind = model_types.get(marker)
+        if kind and kind not in ("other", ""):
+            check(kind == want, f"tipo do alvo {marker}: modelo diz {kind}, esperado {want}")
+        elif marker in CDP_EXCEPTION and not got:
             continue
-        check(want in got, f"tipo do alvo {marker}: esperado {want}, veio {sorted(got) or 'ausente'}")
+        else:
+            check(want in got, f"tipo do alvo {marker}: esperado {want}, veio {sorted(got) or 'ausente'}")
 
     # (4) corpos de POST iguais ao body_sha256 do servidor
     idx = body_index(bodies)
@@ -401,29 +420,38 @@ def analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
     else:
         check(False, "requestId: nenhuma colisão entre sessões observada — a captura não exercitou a chave (sessionId, requestId)")
 
-    # (6) service worker: uma requisição lógica ou ambiguidade explícita
+    # (6) service worker: `links` ligados com evidência ou ambiguidade explícita
     sw = [r for r in requests if url_marker(r) in ("sw-intercept-1", "sw-own-1", "sw-own-post-1")]
     sw_intercept = [r for r in sw if url_marker(r) == "sw-intercept-1"]
     info_sw = {"requests": len(sw), "intercept": []}
     warnings = [w.get("code") if isinstance(w, dict) else str(w) for w in (session.get("warnings") or [])]
+    ids = {r.get("id") for r in requests}
     for r in sw_intercept:
+        links = [l for l in (r.get("links") or []) if (l.get("kind") or "") == "service_worker"]
+        linked = [l for l in links if (l.get("resolution") or "") == "linked" and l.get("request") in ids]
+        ambiguous = [l for l in links if (l.get("resolution") or "") == "ambiguous"]
         attempts = r.get("attempts") or []
         sids = {deep_find(a, ("sessionId", "cdpSessionId")) for a in attempts}
         sids.discard(None)
-        merged = len(attempts) > 1 and len(sids) > 1
-        ambiguous = (r.get("match") == "ambiguous") or any("ambiguous" in str(w) for w in warnings)
-        info_sw["intercept"].append({"id": r.get("id"), "sessions": sorted(str(s) for s in sids),
-                                     "attempts": len(attempts), "match": r.get("match"),
-                                     "merged": merged, "ambiguous": ambiguous})
+        info_sw["intercept"].append({
+            "id": r.get("id"),
+            "target_kind": (r.get("target") or {}).get("kind"),
+            "sessions": sorted(str(s) for s in sids),
+            "attempts": len(attempts),
+            "links": [{"request": l.get("request"), "resolution": l.get("resolution"),
+                       "evidence": l.get("evidence")} for l in links],
+            "linked": bool(linked),
+            "ambiguous": bool(ambiguous) or "cdp.service_worker_ambiguous" in warnings,
+        })
     INFO["service_worker"] = info_sw
     if len(sw_intercept) == 0:
         check(False, "service worker: nenhuma requisição /multi/sw-fetch na sessão")
     elif len(sw_intercept) == 1:
-        check(info_sw["intercept"][0]["sessions"] and (info_sw["intercept"][0]["merged"] or info_sw["intercept"][0]["ambiguous"]),
-              f"service worker: uma requisição sem duas observações ligadas: {info_sw['intercept'][0]}")
+        ok = info_sw["intercept"][0]["linked"] or info_sw["intercept"][0]["ambiguous"]
+        check(ok, f"service worker: uma requisição sem link ligado nem ambiguidade: {info_sw['intercept'][0]}")
     else:
-        check(any(i["ambiguous"] for i in info_sw["intercept"]),
-              f"service worker: {len(sw_intercept)} requisições duplicadas sem ambiguidade explícita: {info_sw['intercept']}")
+        check(any(i["linked"] or i["ambiguous"] for i in info_sw["intercept"]),
+              f"service worker: {len(sw_intercept)} requisições duplicadas sem link/ambiguidade: {info_sw['intercept']}")
 
     INFO["session_warnings"] = warnings[:20]
 
