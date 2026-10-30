@@ -1073,30 +1073,6 @@ impl Cdp {
             else {
                 continue;
             };
-            if let Some(prev) = self.configured_target_primary.get(&target_id).cloned() {
-                if prev != session_id && self.configured_sessions.contains(&prev) {
-                    let spare = AttachedTarget {
-                        session_id: session_id.clone(),
-                        target_id: target_id.clone(),
-                        target_type: "page".to_string(),
-                    };
-                    self.log_target_session_decision(
-                        &spare,
-                        "opener_kept_configured_auto_attach",
-                        Some(prev.as_str()),
-                        None,
-                    );
-                    let _ = self.send(
-                        socket,
-                        "Target.detachFromTarget",
-                        json!({ "sessionId": session_id }),
-                        None,
-                        Duration::from_secs(5),
-                    );
-                    self.detached_sessions.insert(session_id);
-                    continue;
-                }
-            }
             if let Some(prev) = self
                 .configured_target_primary
                 .insert(target_id.clone(), session_id.clone())
