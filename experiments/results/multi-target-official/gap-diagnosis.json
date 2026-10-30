@@ -104,7 +104,7 @@
       "sw-own-1": "conjunto difere",
       "sw-own-post-1": "conjunto difere"
     },
-    "verdict": "não verificada",
-    "evidence": "Marcadores com CDP: conjunto idêntico (ExtraInfo ASCII) salvo n/a em POST sem ExtraInfo."
+    "verdict": "sem achado novo",
+    "evidence": "Igual matriz: ExtraInfo não preserva ordem do fio; ordem via NetLog/headersText (h1)."
   }
 }
