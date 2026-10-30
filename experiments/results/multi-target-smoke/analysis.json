@@ -1,0 +1,89 @@
+{
+  "with_wait": {
+    "run_dir": "results/multi-target-smoke/with-wait",
+    "waitForDebuggerOnStart": true,
+    "sessionCount": 11,
+    "eventCount": 135,
+    "networkEventCount": 50,
+    "elapsedMs": 32999,
+    "requestIdCollisionPairs": 3,
+    "rows": [
+      {
+        "marker": "oophif-first",
+        "target_kind": "oophif",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "E67B8F33",
+            "type": "page",
+            "requestId": "E25DFB96A901E7C50F84FCD3E45DFB4F"
+          },
+          {
+            "sessionId": "964D351A",
+            "type": "page",
+            "requestId": "E25DFB96A901E7C50F84FCD3E45DFB4F"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "popup-first",
+        "target_kind": "popup",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "67FBE0E7",
+            "type": "page",
+            "requestId": "19134.3"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": false,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "popup-nav",
+        "target_kind": "popup",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "67FBE0E7",
+            "type": "page",
+            "requestId": "04F3BB2BC95BCCD31318EF9D02789874"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "ExtraInfo presente",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      }
+    ]
+  },
+  "without_wait": {
+    "run_dir": "results/multi-target-smoke/no-wait",
+    "waitForDebuggerOnStart": false,
+    "sessionCount": 5,
+    "eventCount": 58,
+    "networkEventCount": 15,
+    "elapsedMs": 77310,
+    "requestIdCollisionPairs": 1,
+    "rows": []
+  },
+  "variant_compare": {
+    "cdp_lost_without_wait": [],
+    "first_request_lost_without_wait": []
+  }
+}

@@ -4,7 +4,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Process-wide sequence so records from several sinks (h3 listens on two UDP
@@ -40,6 +40,8 @@ pub struct Record {
     pub stream: Option<u64>,
     pub method: String,
     pub target: String,
+    /// `?m=` value of the request target (multi-target probe pages, round 10).
+    pub marker: Option<String>,
     pub authority: Option<String>,
     /// Decoded header list in order; duplicates preserved. Pseudo-headers are
     /// included at their decoded position (HTTP/2 and HTTP/3 only).
@@ -63,6 +65,79 @@ pub struct Evidence {
     proto: &'static str,
     path: PathBuf,
     writer: Mutex<BufWriter<File>>,
+}
+
+/// Optional compact log for the multi-target probes (`/multi/...`).
+static MULTI_LOG: OnceLock<Mutex<Option<BufWriter<File>>>> = OnceLock::new();
+
+/// Turn on `{dir}/multi.jsonl`: one compact line per `/multi/` request, with the
+/// `?m=` marker first so the capture experiment can grep by marker.
+pub fn set_multi_log(dir: &Path) {
+    let _ = std::fs::create_dir_all(dir);
+    let path = dir.join("multi.jsonl");
+    let writer = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .ok()
+        .map(BufWriter::new);
+    let _ = MULTI_LOG.set(Mutex::new(writer));
+}
+
+/// First `m=` value of a query string (`?m=popup-1&x=1` → `popup-1`).
+pub fn marker_of(target: &str) -> Option<String> {
+    let query = target.split_once('?')?.1;
+    for part in query.split('&') {
+        if let Some(v) = part.strip_prefix("m=") {
+            let v = v.split('&').next().unwrap_or(v);
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn write_multi(server: &str, req: &Req, resp: &Resp, marker: Option<&str>) {
+    let Some(log) = MULTI_LOG.get() else { return };
+    if !req.path().starts_with("/multi") {
+        return;
+    }
+    let body_text = std::str::from_utf8(&req.body).ok().map(str::to_string);
+    let header_json: Vec<serde_json::Value> = req
+        .headers
+        .iter()
+        .map(|(n, v)| serde_json::json!([n, v]))
+        .collect();
+    let response_text = std::str::from_utf8(&resp.body)
+        .ok()
+        .filter(|_| resp.body.len() <= 1024 && resp.body.first() == Some(&b'{'))
+        .map(str::to_string);
+    let rec = serde_json::json!({
+        "schema": "scrapelens.testserver.multi/1",
+        "ts_rfc3339": now().0,
+        "marker": marker,
+        "server": server,
+        "conn": req.conn,
+        "method": req.method,
+        "target": req.target,
+        "headers": header_json,
+        "body_b64": if req.body.is_empty() { None } else { Some(b64(&req.body)) },
+        "body_text": body_text,
+        "body_len": req.body.len(),
+        "response": {
+            "status": resp.status,
+            "body_len": resp.body.len(),
+            "body": response_text,
+        },
+    });
+    let mut line = rec.to_string();
+    line.push('\n');
+    let mut guard = log.lock().expect("multi log mutex poisoned");
+    if let Some(w) = guard.as_mut() {
+        let _ = w.write_all(line.as_bytes());
+        let _ = w.flush();
+    }
 }
 
 fn now() -> (String, u128) {
@@ -111,6 +186,8 @@ impl Evidence {
     pub fn record(&self, server: &str, req: &Req, resp: &Resp) -> std::io::Result<()> {
         let (ts_rfc3339, ts_unix_ms) = now();
         let seq = SEQ.fetch_add(1, Ordering::SeqCst);
+        let marker = marker_of(&req.target);
+        write_multi(server, req, resp, marker.as_deref());
         let rec = Record {
             schema: SCHEMA,
             seq,
@@ -124,6 +201,7 @@ impl Evidence {
             stream: req.stream,
             method: req.method.clone(),
             target: req.target.clone(),
+            marker,
             authority: req.authority.clone(),
             headers: req.headers.clone(),
             pseudoheaders: req.pseudoheaders(),

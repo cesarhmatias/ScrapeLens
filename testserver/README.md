@@ -45,6 +45,7 @@ com os servidores ainda rodando.
 | `POST /echo` | eco byte a byte do corpo (até 5 MiB; acima disso marca `body_truncated`) |
 | `GET /page` | HTML sintético que dispara: cookies via JS + servidor, fetch com headers repetidos, duas requisições simultâneas idênticas, cadeia de redirect, POST pequeno e POST de 128 KiB, e um segundo fetch já com cookies |
 | `GET /redirect?n=N` | `N` respostas 302 (`location: /redirect?n=N-1`) e depois 200 |
+| `GET /multi/` | página multi-alvo (popup, `target=_blank`, OOPIF, worker, service worker); ver seção própria abaixo |
 | `GET /healthz` | `ok` |
 
 Respostas também trazem `server`, `content-length`, `cache-control: no-store`
@@ -89,6 +90,9 @@ Campos principais:
   Duas requisições idênticas e simultâneas aparecem como dois registros com
   `conn`/`stream` distintos; nada é associado por URL ou horário.
 - `decode_point`: frase exata do ponto de observação daquele protocolo.
+- `marker`: valor de `?m=` do target, quando existe (páginas `/multi/`); nos
+  demais registros é `null`. O mesmo registro também vai para o `multi.jsonl`
+  compacto — ver "Páginas multi-alvo".
 
 ## Certificado (fixtures/tls/)
 
@@ -190,3 +194,69 @@ Iguais em h1/h2/h3. `serve` grava os corpos recebidos por `/sink` em `<evidence>
 | `GET /zero` | 200 com `Content-Length: 0` |
 
 Teste: `cargo test h1_body_routes` (binário/6 MiB/gzip/302/307/204/sink).
+
+## Páginas multi-alvo (rodada 10, docs/14-captura-multi-alvo.md)
+
+Página de referência para o experimento de captura multi-alvo do CDP. Cada ação
+dispara requisições com um marcador único `?m=`; o servidor grava o marcador no
+JSONL normal e um log compacto `multi.jsonl` por run.
+
+```sh
+cargo run --release -- serve --only h1 --h1 127.0.0.1:8781
+# abra http://127.0.0.1:8781/multi/ num Chrome (popup bloqueado? use
+# --disable-popup-blocking, ou chame window.__scrapelensMulti.openPopup() via CDP)
+./scripts/multi-probe.sh            # sobe o h1, abre /multi/ no Chrome headless
+                                    # e confere os 16 marcadores; falha se faltar algum
+```
+
+URLs (todas em `testserver/`, só loopback):
+
+| URL | Alvo que exercita |
+|---|---|
+| `GET /multi/` | página principal (top-level) |
+| `GET /multi/popup.html?m=popup-1` | popup aberto com `window.open` |
+| `GET /multi/blank.html?m=blank-1` | link `target=_blank` (auto-clicado aos 200 ms; também clicável por CDP) |
+| `GET /multi/iframe.html?m=oopif-1` | iframe de **outra origem** (`http://localhost:<porta>` × `http://127.0.0.1:<porta>`), OOPIF |
+| `GET /multi/worker.js` | worker dedicado (`Worker`) |
+| `GET /multi/sw.js` | service worker com escopo `/multi/` |
+| `GET /multi/beacon?m=...` | GET de sondagem; JSON determinístico com marcador, headers e corpo |
+| `POST /multi/ping?m=...` | POST de sondagem (corpo conhecido); JSON com `body_text` e `body_sha256` |
+| `GET /multi/sw-fetch?m=sw-intercept-1` | requisição interceptada pelo service worker (ele faz o `fetch` de rede) |
+
+Marcadores que o `multi.jsonl` mostra ao abrir `/multi/` (`?auto=0` desliga o
+disparo automático):
+
+| Tipo de alvo | Marcadores | Corpo POST conhecido |
+|---|---|---|
+| página principal | `main-1`, `main-post-1` | `main-post-body-1` |
+| popup (`window.open`) | `popup-1` (navegação), `popup-get-1`, `popup-post-1` | `popup-post-body-1` |
+| `target=_blank` | `blank-1` (navegação), `blank-get-1`, `blank-post-1` | `blank-post-body-1` |
+| iframe OOPIF (outra origem) | `oopif-1` (navegação), `oopif-get-1`, `oopif-post-1` | `oopif-post-body-1` |
+| worker dedicado | `worker-get-1`, `worker-post-1` | `worker-post-body-1` |
+| service worker | `sw-intercept-1` (encaminhada), `sw-own-1`, `sw-own-post-1` | `sw-own-post-body-1` |
+
+O iframe usa `http://localhost:<porta>` por padrão (mesma porta do servidor,
+origem e site diferentes, força OOPIF). Para apontar para outra origem, use
+`/multi/?oopif=http://127.0.0.1:PORT`. A página só é prática no servidor h1
+(HTTP em texto claro); em h2/h3 o iframe precisa de um `?oopif=` explícito.
+
+O service worker intercepta `/multi/sw-fetch`, faz o `fetch` próprio
+(`sw-own-1`, `sw-own-post-1`) e encaminha a requisição interceptada à rede como
+`/multi/sw-fetch?m=sw-intercept-1&passthrough=1`. AMP opcional: a primeira carga
+não é controlada até `clients.claim()`; a página espera o controller antes do
+fetch, e um reload também resolve.
+
+`multi.jsonl` (`scrapelens.testserver.multi/1`), uma linha por requisição em
+`/multi/...`:
+
+```json
+{"schema":"scrapelens.testserver.multi/1","ts_rfc3339":"...","marker":"worker-post-1",
+ "server":"127.0.0.1:8781","conn":"c7","method":"POST","target":"/multi/ping?m=worker-post-1",
+ "headers":[["Host","127.0.0.1:8781"],["Content-Length","20"],["..."],["..."],
+ "body_b64":"d29ya2VyLXBvc3QtYm9keS0x","body_text":"worker-post-body-1","body_len":20,
+ "response":{"status":200,"body_len":1255,"body":"{...}"}}
+```
+
+`headers` é a lista ordenada recebida (duplicatas preservadas, nunca um mapa);
+a linha também sai no `h1.jsonl`/`h2.jsonl`/`h3.jsonl` normal, com o campo
+`marker`. Teste: `cargo test multi_target_page_marks_every_request_kind`.

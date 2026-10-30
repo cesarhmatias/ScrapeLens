@@ -1,0 +1,7 @@
+{
+  "pageUrl": "http://127.0.0.1:9881/multi/",
+  "source": "experiments/multi_target/smoke_server.py",
+  "smoke_info": "{\"h1\": \"127.0.0.1:9881\", \"oophif\": \"127.0.0.1:9882\"}",
+  "variant": "no-wait",
+  "waitForDebuggerOnStart": false
+}

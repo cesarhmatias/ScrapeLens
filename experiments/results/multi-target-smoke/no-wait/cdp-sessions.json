@@ -1,0 +1,59 @@
+{
+  "waitForDebuggerOnStart": false,
+  "sessions": [
+    {
+      "sessionId": "7828614C60F0D5D7FB4FCD3AE6D0DDA6",
+      "targetId": "A13B1A7ED23B7230C56CF6C3A5007334",
+      "type": "browser_ui",
+      "url": "chrome://omnibox-popup.top-chrome/",
+      "title": "Omnibox Popup",
+      "attachedAt": 84
+    },
+    {
+      "sessionId": "09DF76ADFB550579DF25BB1384DC70BF",
+      "targetId": "A6CD525FC3634279407B8CBB1D5BD134",
+      "type": "browser_ui",
+      "url": "chrome://omnibox-popup.top-chrome/omnibox_popup_aim.html",
+      "title": "Omnibox Popup",
+      "attachedAt": 85
+    },
+    {
+      "sessionId": "F6CFE8AD90EA56AB8A652AA295D5F5CD",
+      "targetId": "BA032FA615268DC6C966821E3B7BCF0A",
+      "type": "page",
+      "url": "http://127.0.0.1:9881/multi/",
+      "title": "127.0.0.1:9881/multi/",
+      "attachedAt": 85
+    },
+    {
+      "sessionId": "0367C43F6F9618EC3B72FCB71D865C0C",
+      "targetId": "BA032FA615268DC6C966821E3B7BCF0A",
+      "type": "page",
+      "url": "http://127.0.0.1:9881/multi/",
+      "title": "127.0.0.1:9881/multi/",
+      "attachedAt": 88
+    },
+    {
+      "sessionId": "B697A9788EAB28BCB7E3E35D9A0DA1C9",
+      "targetId": "E74F240C2B436769467FB63A6F82BE3C",
+      "type": "page",
+      "url": "",
+      "title": "",
+      "attachedAt": 235
+    }
+  ],
+  "sessionCount": 5,
+  "eventCount": 58,
+  "networkEventCount": 15,
+  "requestIdCollisions": [
+    {
+      "requestId": "191545FBB5BEF29F1EE3542A83C8F6A4",
+      "sessions": 2
+    }
+  ],
+  "requestIdCollisionPairs": 1,
+  "elapsedMs": 77310,
+  "pageUrl": "http://127.0.0.1:9881/multi/",
+  "browser": "Chrome/156.0.8078.74",
+  "protocolVersion": "1.3"
+}

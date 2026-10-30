@@ -1,0 +1,115 @@
+{
+  "waitForDebuggerOnStart": true,
+  "sessions": [
+    {
+      "sessionId": "E67B8F3395BC0ECDAF75C74F8DAA42F1",
+      "targetId": "0E118EBEF8C38EFBE6969AC47EFB3123",
+      "type": "page",
+      "url": "http://127.0.0.1:9881/multi/",
+      "title": "127.0.0.1:9881/multi/",
+      "attachedAt": 68
+    },
+    {
+      "sessionId": "0D58D6683ECAA9FA29287ADD42D485F8",
+      "targetId": "5105A25410ECB09410FFC7D782761539",
+      "type": "browser_ui",
+      "url": "chrome://omnibox-popup.top-chrome/omnibox_popup_aim.html",
+      "title": "Omnibox Popup",
+      "attachedAt": 69
+    },
+    {
+      "sessionId": "C60E965C1D43B6E5A16D0FB112CCDFF5",
+      "targetId": "F2135D5D6E1341D85400475758649563",
+      "type": "browser_ui",
+      "url": "chrome://omnibox-popup.top-chrome/",
+      "title": "Omnibox Popup",
+      "attachedAt": 70
+    },
+    {
+      "sessionId": "964D351A4313C78CCFE48C2DC16B08F2",
+      "targetId": "0E118EBEF8C38EFBE6969AC47EFB3123",
+      "type": "page",
+      "url": "http://127.0.0.1:9881/multi/",
+      "title": "127.0.0.1:9881/multi/",
+      "attachedAt": 72
+    },
+    {
+      "sessionId": "67FBE0E7AFA0D25D0FE247791F4A8CDC",
+      "targetId": "ADC65BC973FB41E7B4FA7764E3280A44",
+      "type": "page",
+      "url": "http://127.0.0.1:9881/multi/popup?m=popup-nav",
+      "title": "127.0.0.1:9881/multi/popup?m=popup-nav",
+      "attachedAt": 592
+    },
+    {
+      "sessionId": "D620904EC80AD34294BB13DE7EA2D424",
+      "targetId": "9346FA0859E2CAE8B6986DC7E933ECE5",
+      "type": "page",
+      "url": "",
+      "title": "",
+      "attachedAt": 634
+    },
+    {
+      "sessionId": "40EC45BD7D3F61AC7F142FBFEA0B434E",
+      "targetId": "1ED292DE04B66C4A808DD8B7B33A76B5",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9881/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9881/multi/sw.js",
+      "attachedAt": 712
+    },
+    {
+      "sessionId": "B84C37EF11EC2303C48D32F5E502310C",
+      "targetId": "1ED292DE04B66C4A808DD8B7B33A76B5",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9881/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9881/multi/sw.js",
+      "attachedAt": 712
+    },
+    {
+      "sessionId": "5353AFB5C276B4D1A33A25D51A110EBC",
+      "targetId": "1ED292DE04B66C4A808DD8B7B33A76B5",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9881/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9881/multi/sw.js",
+      "attachedAt": 712
+    },
+    {
+      "sessionId": "E1EDA6D25040B35803433E30C8AA114C",
+      "targetId": "1ED292DE04B66C4A808DD8B7B33A76B5",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9881/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9881/multi/sw.js",
+      "attachedAt": 712
+    },
+    {
+      "sessionId": "0C8993F6FF71D7698B24D8B89701D20A",
+      "targetId": "1ED292DE04B66C4A808DD8B7B33A76B5",
+      "type": "service_worker",
+      "url": "http://127.0.0.1:9881/multi/sw.js",
+      "title": "Service Worker http://127.0.0.1:9881/multi/sw.js",
+      "attachedAt": 712
+    }
+  ],
+  "sessionCount": 11,
+  "eventCount": 135,
+  "networkEventCount": 50,
+  "requestIdCollisions": [
+    {
+      "requestId": "2254C351DAD1EF769C232756E629FB5D",
+      "sessions": 2
+    },
+    {
+      "requestId": "E25DFB96A901E7C50F84FCD3E45DFB4F",
+      "sessions": 2
+    },
+    {
+      "requestId": "19134.6",
+      "sessions": 2
+    }
+  ],
+  "requestIdCollisionPairs": 3,
+  "elapsedMs": 32999,
+  "pageUrl": "http://127.0.0.1:9881/multi/",
+  "browser": "Chrome/156.0.8078.74",
+  "protocolVersion": "1.3"
+}

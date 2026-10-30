@@ -67,7 +67,7 @@ fn usage() {
          \x20                                      ordered h3 request (trusts fixtures/tls CA)\n\
          \n\
          Endpoints (all protocols): GET /echo-order, GET /setcookie, POST /echo,\n\
-         GET /page, GET /redirect?n=N, GET /healthz\n\
+         GET /page, GET /redirect?n=N, GET /healthz, GET /multi/ (multi-target probes)\n\
          \n\
          serve options:\n\
          \x20 --evidence DIR      evidence root (default: fixtures/evidence)\n\
@@ -183,6 +183,7 @@ fn serve(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let run_dir = evidence_root.join(&run_id);
     std::fs::create_dir_all(&run_dir)?;
     scrapelens_testserver::endpoints::set_body_dir(run_dir.join("bodies"));
+    scrapelens_testserver::evidence::set_multi_log(&run_dir);
 
     let want = |name: &str| only.iter().any(|s| s == name);
 
@@ -272,7 +273,7 @@ fn serve(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("Endpoints: /echo-order /setcookie /echo /page /redirect /healthz");
+    println!("Endpoints: /echo-order /setcookie /echo /page /redirect /healthz /multi/");
     println!("Press Ctrl+C to stop. Evidence is flushed per request.");
     for h in handles {
         let _ = h.join();

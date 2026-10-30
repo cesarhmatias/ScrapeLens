@@ -456,3 +456,84 @@ fn h1_body_routes_serve_expected_bytes_and_sink_writes_file() {
     let file = v["file"].as_str().expect("sink file");
     assert_eq!(std::fs::read(file).unwrap(), payload);
 }
+
+/// Round 10 (docs/14-captura-multi-alvo.md): `/multi/` fires one request per
+/// target kind, each with a unique `?m=` marker, and the server keeps the
+/// marker in the normal evidence plus the compact `multi.jsonl` log.
+#[test]
+fn multi_target_page_marks_every_request_kind() {
+    let dir = evidence_dir("multi");
+    scrapelens_testserver::evidence::set_multi_log(&dir);
+    let (addr, evdir) = start_h1("multi-h1");
+    thread::sleep(Duration::from_millis(100));
+
+    let page = h1_request(
+        addr,
+        b"GET /multi/ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+    );
+    let html = String::from_utf8_lossy(&page.body);
+    assert_eq!(page.status, 200);
+    for needle in [
+        "window.open('/multi/popup.html?m=popup-1'",
+        "blank.html?m=blank-1",
+        "iframe.html?m=oopif-1",
+        "new Worker('/multi/worker.js')",
+        "serviceWorker.register('/multi/sw.js'",
+        "/multi/sw-fetch?m=sw-intercept-1",
+    ] {
+        assert!(html.contains(needle), "page sem {needle}");
+    }
+
+    let js = h1_request(
+        addr,
+        b"GET /multi/worker.js HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+    );
+    assert_eq!(js.status, 200);
+    assert!(js
+        .headers
+        .iter()
+        .any(|(n, v)| n.eq_ignore_ascii_case("content-type") && v.starts_with("text/javascript")));
+    assert!(String::from_utf8_lossy(&js.body).contains("worker-post-body-1"));
+
+    let sw = h1_request(
+        addr,
+        b"GET /multi/sw.js HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+    );
+    let sw_js = String::from_utf8_lossy(&sw.body);
+    assert!(sw_js.contains("sw-own-1") && sw_js.contains("sw-intercept-1"));
+
+    let beacon = h1_request(
+        addr,
+        b"GET /multi/beacon?m=main-1 HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+    );
+    let v: Value = serde_json::from_slice(&beacon.body).unwrap();
+    assert_eq!(v["marker"], "main-1");
+    assert_eq!(v["method"], "GET");
+    assert_eq!(v["schema"], "scrapelens.testserver.multi/1");
+
+    let post_body = "main-post-body-1";
+    let raw = format!(
+        "POST /multi/ping?m=main-post-1 HTTP/1.1\r\nHost: x\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{post_body}",
+        post_body.len()
+    );
+    let ping = h1_request(addr, raw.as_bytes());
+    let v: Value = serde_json::from_slice(&ping.body).unwrap();
+    assert_eq!(v["marker"], "main-post-1");
+    assert_eq!(v["method"], "POST");
+    assert_eq!(v["body_text"], post_body);
+    assert_eq!(
+        v["body_sha256"],
+        "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572"
+    );
+
+    // Evidence keeps the marker; the compact multi.jsonl has it first.
+    let rows = read_evidence(&evdir, "h1.jsonl");
+    let marked: Vec<&Value> = rows.iter().filter(|r| r["marker"] == "main-post-1").collect();
+    assert_eq!(marked.len(), 1, "marker no JSONL de evidência");
+    assert_eq!(marked[0]["method"], "POST");
+    let multi = read_evidence(&dir, "multi.jsonl");
+    assert!(multi.iter().any(|r| r["marker"] == "main-post-1" && r["body_text"] == post_body));
+    assert!(multi.iter().any(|r| r["marker"] == "main-1"));
+    // Page/asset requests have no marker but are still logged.
+    assert!(multi.iter().any(|r| r["target"] == "/multi/" && r["marker"].is_null()));
+}
