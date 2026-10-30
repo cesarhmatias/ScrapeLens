@@ -26,6 +26,20 @@ pub struct HtmlControl {
 const MAX_CONTROLS: usize = 20_000;
 const MAX_RUNAWAY_TAGS: usize = 64;
 
+// Bytes varridos pelo tokenizador, só nos testes: prova de custo linear sem
+// depender do relógio da máquina.
+#[cfg(test)]
+thread_local! {
+    static SCANNED_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn note_scan(bytes: usize) {
+    #[cfg(test)]
+    SCANNED_BYTES.with(|count| count.set(count.get() + bytes as u64));
+    #[cfg(not(test))]
+    let _ = bytes;
+}
+
 /// Decodifica entidades HTML com mapa de offsets (base = deslocamento do
 /// trecho no texto original). Entidade desconhecida fica literal.
 pub fn decode_entities(raw: &str, base: usize) -> (String, Vec<usize>) {
@@ -173,10 +187,12 @@ fn parse_tag<'a>(text: &'a str, at: usize, no_close: &mut [usize; 3]) -> Option<
                     return None;
                 }
                 let Some(e) = text[v_start..].find(q as char) else {
+                    note_scan(text.len() - v_start);
                     no_close[slot] = no_close[slot].min(v_start);
                     no_close[2] += 1;
                     return None;
                 };
+                note_scan(e + 1);
                 let v_end = v_start + e;
                 attrs.push((attr, &text[v_start..v_end], v_start));
                 i = v_end + 1;
@@ -236,14 +252,18 @@ fn control(name: &str, raw: &str, start: usize) -> Option<HtmlControl> {
 
 /// Extrai os controles com nome de um documento HTML.
 pub fn html_controls(text: &str) -> Vec<HtmlControl> {
+    #[cfg(test)]
+    SCANNED_BYTES.with(|count| count.set(0));
     let bytes = text.as_bytes();
     let mut out: Vec<HtmlControl> = Vec::new();
     let mut no_close = [usize::MAX, usize::MAX, 0];
     let mut i = 0;
     while i < bytes.len() && out.len() < MAX_CONTROLS {
         let Some(rel) = text[i..].find('<') else {
+            note_scan(text.len() - i);
             break;
         };
+        note_scan(rel + 1);
         let at = i + rel;
         if text[at..].starts_with("<!--") {
             // HTML5: `<!-->` e `<!--->` fecham na hora.
@@ -437,16 +457,28 @@ mod tests {
 
     #[test]
     fn unclosed_quotes_stay_linear() {
-        for unit in ["<a b=\"", "<a b='", "<input name=\"x\" value='"] {
-            let html = unit.repeat(50_000);
-            let t = std::time::Instant::now();
-            assert!(html_controls(&html).is_empty());
-            let limit = if cfg!(debug_assertions) { 5.0 } else { 1.0 };
+        // Custo linear sem medir relógio: conta os bytes varridos. O
+        // tokenizador quadrático antigo reescaneava o resto do texto a cada tag
+        // sem aspas; aqui o total fica limitado a um fator do tamanho e 4× o
+        // texto não pode varrer ~16×.
+        let scanned = |html: &str| {
+            assert!(html_controls(html).is_empty());
+            SCANNED_BYTES.with(|count| count.get())
+        };
+        // `<a b=` (sem aspas) é o caso que era quadrático no tokenizador antigo:
+        // cada tag sem `>` relia até o fim do texto. As aspas sem par entram como
+        // regressão do mesmo caminho.
+        for unit in ["<a b=\"", "<a b='", "<input name=\"x\" value='", "<a b="] {
+            let small = unit.repeat(2_500);
+            let large = unit.repeat(10_000);
+            let s1 = scanned(&small);
+            let s4 = scanned(&large);
             assert!(
-                t.elapsed().as_secs_f64() < limit,
-                "{unit}: {:?}",
-                t.elapsed()
+                s4 <= large.len() as u64 * 80,
+                "{unit}: varreu {s4} bytes para {} de texto",
+                large.len()
             );
+            assert!(s4 <= s1 * 6, "{unit}: 1× varreu {s1} bytes; 4× varreu {s4}");
         }
     }
 }

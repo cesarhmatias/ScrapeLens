@@ -332,3 +332,63 @@ fn old_cdp_file_without_session_id_is_one_implicit_session() {
         .iter()
         .any(|warning| warning.code == "cdp.target_unknown"));
 }
+
+#[test]
+fn old_live_session_without_session_id_has_no_target_provenance() {
+    // Bruto real anterior à rodada 10 (campo `session`, não `sessionId`):
+    // sessão implícita, sem alvo e sem cdp.target_unknown.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../experiments/results/h1-plain/cdp-events.jsonl");
+    let jsonl = std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    let capture = parse_cdp_jsonl(&jsonl).unwrap();
+    assert!(!capture.requests.is_empty());
+    let (session, _) = build_cdp_session(&capture);
+    assert_eq!(session.requests.len(), 2, "h1-plain tem 2 requisições");
+    assert!(
+        session
+            .requests
+            .iter()
+            .all(|request| request.cdp.as_ref().unwrap().session_id.is_none()),
+        "{:?}",
+        session.requests
+    );
+    assert!(session
+        .requests
+        .iter()
+        .all(|request| request.target.is_none()));
+    assert!(!session
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "cdp.target_unknown"));
+}
+
+#[test]
+fn capture_setup_timeout_is_a_warning_naming_the_command() {
+    let jsonl = [
+        request_event("S1", "r1", "https://a.test/x", 1.0),
+        event(
+            "S1",
+            "Capture.targetSetupTimeout",
+            serde_json::json!({"command": "Target.setAutoAttach", "targetId": "T2"}),
+        ),
+    ]
+    .join("\n");
+    let capture = parse_cdp_jsonl(jsonl.as_bytes()).unwrap();
+    let (session, _) = build_cdp_session(&capture);
+    let warning = session
+        .warnings
+        .iter()
+        .find(|warning| warning.code == "cdp.target_setup_timeout")
+        .unwrap_or_else(|| panic!("{:?}", session.warnings));
+    assert!(
+        warning
+            .message
+            .contains("configuração incompleta: Target.setAutoAttach sem resposta"),
+        "{}",
+        warning.message
+    );
+    assert!(!session
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "cdp.target_attach_failed"));
+}

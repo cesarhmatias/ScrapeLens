@@ -577,6 +577,24 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 }
                 capture.events_used += 1;
             }
+            "Capture.targetSetupTimeout" => {
+                let Some(params) = params else { continue };
+                let command = params
+                    .get("command")
+                    .or_else(|| params.get("method"))
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("<comando desconhecido>");
+                let mut warning = Warning::new(
+                    "cdp.target_setup_timeout",
+                    format!(
+                        "configuração incompleta: {command} sem resposta; a rede pode estar incompleta neste alvo"
+                    ),
+                );
+                warning.severity = crate::model::WarningSeverity::Warning;
+                capture.warnings.push(warning);
+                capture.events_used += 1;
+            }
             "Target.attachFailed" => {
                 let Some(params) = params else { continue };
                 let target_id = params
@@ -585,7 +603,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .unwrap_or("?");
                 let mut warning = Warning::new(
                     "cdp.target_attach_failed",
-                    format!("alvo {target_id} não anexou; fica só com o NetLog (sem headers/corpos CDP)"),
+                    format!("alvo {target_id} não anexou (attachFailed); a rede deste alvo pode estar incompleta"),
                 );
                 warning.severity = crate::model::WarningSeverity::Warning;
                 capture.warnings.push(warning);
@@ -899,9 +917,10 @@ fn extra_info_message(event: &str, session_id: &str, request_id: &str) -> String
 }
 
 fn session_of(event: &Value) -> String {
+    // Só `sessionId` é a chave multi-alvo. O antigo `session` dos arquivos
+    // anteriores à rodada 10 é uma sessão implícita: não gera alvo nem aviso.
     event
         .get("sessionId")
-        .or_else(|| event.get("session"))
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string()
