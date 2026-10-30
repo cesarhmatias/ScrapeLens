@@ -211,6 +211,7 @@ fn explicit_pair_resolves_ambiguity() {
     let options = CorrelationOptions {
         explicit_pairs: vec![ExplicitPair {
             cdp_request_id: "R1".to_string(),
+            cdp_session_id: None,
             netlog_source_id: 32,
             note: Some("fixture".to_string()),
         }],

@@ -1,10 +1,11 @@
 //! Corpos CDP (`cdp-bodies.jsonl`, contrato em `docs/08-corpos-busca.md` §1).
 //!
-//! Cada linha é mapeada **só** por `requestId` + `attemptIndex` para a tentativa
-//! que o importador CDP já numerou. Linha sem requisição/tentativa
-//! correspondente vira aviso; nunca há associação por URL ou horário. Os bytes
-//! de `data` não são reinterpretados: `utf8` vira os bytes da string, `base64`
-//! é decodificado.
+//! Cada linha é mapeada **só** por `sessionId` + `requestId` + `attemptIndex`
+//! para a tentativa que o importador CDP já numerou (arquivo antigo sem
+//! `sessionId` casa por `requestId` apenas quando ele é único; colisão vira
+//! aviso, nunca adivinhação). Linha sem requisição/tentativa correspondente
+//! vira aviso; nunca há associação por URL ou horário. Os bytes de `data` não
+//! são reinterpretados: `utf8` vira os bytes da string, `base64` é decodificado.
 
 use std::collections::BTreeMap;
 
@@ -24,6 +25,9 @@ pub const BODIES_FILE_NAME: &str = "cdp-bodies.jsonl";
 struct BodyLine {
     #[serde(default)]
     v: u32,
+    /// Sessão CDP (chave `(sessionId, requestId)`); ausente em arquivo antigo.
+    #[serde(default)]
+    session_id: Option<String>,
     request_id: String,
     attempt_index: u32,
     kind: String,
@@ -99,19 +103,25 @@ pub fn apply_cdp_bodies_with_capture(
     let mut outcome = BodiesOutcome::default();
     // (índice lógico, índice da tentativa, kind) -> linha escolhida.
     let mut chosen: BTreeMap<(usize, usize, bool), BodyLine> = BTreeMap::new();
-    let by_request: BTreeMap<&str, usize> = {
-        let mut map = BTreeMap::new();
-        for (index, request) in session.requests.iter().enumerate() {
-            if let Some(id) = request
+    // Chave exata: (sessionId, requestId). Sem sessão na linha (arquivo
+    // antigo), só casa quando o requestId é único — colisão vira aviso.
+    let mut by_key: BTreeMap<(&str, &str), usize> = BTreeMap::new();
+    let mut by_request: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (index, request) in session.requests.iter().enumerate() {
+        if let Some(id) = request
+            .cdp
+            .as_ref()
+            .and_then(|cdp| cdp.request_id.as_deref())
+        {
+            let session_id = request
                 .cdp
                 .as_ref()
-                .and_then(|cdp| cdp.request_id.as_deref())
-            {
-                map.entry(id).or_insert(index);
-            }
+                .and_then(|cdp| cdp.session_id.as_deref())
+                .unwrap_or("");
+            by_key.entry((session_id, id)).or_insert(index);
+            by_request.entry(id).or_default().push(index);
         }
-        map
-    };
+    }
     let mut resolved: Vec<((usize, usize, bool), BodyLine)> = Vec::new();
     for (number, raw) in String::from_utf8_lossy(jsonl).lines().enumerate() {
         if raw.trim().is_empty() {
@@ -153,15 +163,32 @@ pub fn apply_cdp_bodies_with_capture(
                 continue;
             }
         };
-        let slot = by_request
-            .get(line.request_id.as_str())
-            .and_then(|&request| {
-                session.requests[request]
-                    .attempts
-                    .iter()
-                    .position(|attempt| attempt.index == line.attempt_index)
-                    .map(|attempt| (request, attempt, is_request))
-            });
+        let request_index = match line.session_id.as_deref() {
+            Some(session_id) => by_key.get(&(session_id, line.request_id.as_str())).copied(),
+            None => match by_request.get(line.request_id.as_str()) {
+                Some(candidates) if candidates.len() == 1 => Some(candidates[0]),
+                Some(candidates) if !candidates.is_empty() => {
+                    outcome.orphans += 1;
+                    outcome.warnings.push(warn(
+                        "cdp.body_ambiguous",
+                        format!(
+                            "corpo antigo sem sessionId e requestId {} aparece em {} sessões; não associado",
+                            line.request_id,
+                            candidates.len()
+                        ),
+                    ));
+                    continue;
+                }
+                _ => None,
+            },
+        };
+        let slot = request_index.and_then(|request| {
+            session.requests[request]
+                .attempts
+                .iter()
+                .position(|attempt| attempt.index == line.attempt_index)
+                .map(|attempt| (request, attempt, is_request))
+        });
         let Some(slot) = slot else {
             outcome.orphans += 1;
             outcome.warnings.push(warn(
@@ -352,7 +379,16 @@ fn mark_bodyless_requests(session: &mut SessionV1, capture: &super::cdp::CdpCapt
         let Some(cdp_id) = request.cdp.as_ref().and_then(|cdp| cdp.request_id.clone()) else {
             continue;
         };
-        let Some(source) = capture.requests.iter().find(|r| r.request_id == cdp_id) else {
+        let cdp_session = request
+            .cdp
+            .as_ref()
+            .and_then(|cdp| cdp.session_id.clone())
+            .unwrap_or_default();
+        let Some(source) = capture
+            .requests
+            .iter()
+            .find(|r| r.request_id == cdp_id && r.session_id == cdp_session)
+        else {
             continue;
         };
         for attempt in &mut request.attempts {

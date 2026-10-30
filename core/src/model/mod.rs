@@ -11,8 +11,8 @@ pub use cookies::{
 };
 pub use entities::{
     Attempt, AttemptOutcome, CdpRef, Connection, HeaderEvidence, HeaderRole, Initiator,
-    LogicalRequest, MatchCandidate, MatchState, NetlogRefs, Protocol, Redirect, Span,
-    StreamSession, Timings,
+    LogicalRequest, MatchCandidate, MatchState, NetlogRefs, Protocol, Redirect, RequestLink, Span,
+    StreamSession, TargetKind, TargetProvenance, Timings,
 };
 pub use headers::{HeaderEntry, HeaderView, OrderState};
 pub use provenance::{policy, Provenance, Source, Verification};

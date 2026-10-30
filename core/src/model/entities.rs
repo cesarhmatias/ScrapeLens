@@ -139,6 +139,92 @@ impl Initiator {
     }
 }
 
+/// Tipo do alvo CDP que originou uma requisição (`Target.targetInfo.type`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetKind {
+    Page,
+    Iframe,
+    Worker,
+    ServiceWorker,
+    SharedWorker,
+    #[default]
+    Other,
+}
+
+impl TargetKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TargetKind::Page => "page",
+            TargetKind::Iframe => "iframe",
+            TargetKind::Worker => "worker",
+            TargetKind::ServiceWorker => "service_worker",
+            TargetKind::SharedWorker => "shared_worker",
+            TargetKind::Other => "other",
+        }
+    }
+
+    pub fn from_type(raw: &str) -> Self {
+        match raw {
+            "page" => TargetKind::Page,
+            "iframe" => TargetKind::Iframe,
+            "worker" => TargetKind::Worker,
+            "service_worker" => TargetKind::ServiceWorker,
+            "shared_worker" => TargetKind::SharedWorker,
+            _ => TargetKind::Other,
+        }
+    }
+}
+
+/// Proveniência do alvo CDP de uma requisição, vinda dos eventos `Target.*`.
+/// Ausente em arquivos antigos (uma sessão implícita) e em requisições que só
+/// o NetLog viu (tipo desconhecido).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetProvenance {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+    #[serde(default)]
+    pub kind: TargetKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opener_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    /// `false` = o alvo foi visto e não anexou (aviso, não erro).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attached: Option<bool>,
+}
+
+impl TargetProvenance {
+    pub fn is_empty(&self) -> bool {
+        self.target_id.is_none()
+            && self.kind == TargetKind::Other
+            && self.url.is_none()
+            && self.opener_id.is_none()
+            && self.parent_session_id.is_none()
+            && self.attached.is_none()
+    }
+}
+
+/// Duas observações da mesma requisição lógica (ex.: fetch interceptado pelo
+/// service worker visto na sessão do SW e na página). Só existe com evidência
+/// explícita; sem ela, as observações ficam separadas e a ambiguidade é
+/// registrada em `resolution: "ambiguous"` e em aviso.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestLink {
+    /// `service_worker` por enquanto.
+    pub kind: String,
+    /// `id` lógico da outra observação.
+    pub request: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<String>,
+    /// `linked` (evidência suficiente) ou `ambiguous`.
+    pub resolution: String,
+}
+
 /// Referência a um evento CDP; IDs não são equivalentes aos do NetLog.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -437,6 +523,12 @@ pub struct LogicalRequest {
     pub resource_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cdp: Option<CdpRef>,
+    /// Alvo CDP de onde a requisição veio (page, iframe, worker, service worker…).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetProvenance>,
+    /// Observações irmãs da mesma requisição lógica (service worker).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<RequestLink>,
     #[serde(default)]
     pub netlog: NetlogRefs,
     #[serde(default)]
@@ -476,6 +568,8 @@ impl LogicalRequest {
             status: None,
             resource_type: None,
             cdp: None,
+            target: None,
+            links: Vec::new(),
             netlog: NetlogRefs::default(),
             attempts: Vec::new(),
             redirects: Vec::new(),

@@ -23,6 +23,9 @@ use crate::parse::netlog::{NetlogAttempt, NetlogCapture, NetlogHeaderEvent, Netl
 #[serde(rename_all = "camelCase")]
 pub struct ExplicitPair {
     pub cdp_request_id: String,
+    /// Sessão CDP; ausente = par antigo, casa só pelo requestId.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cdp_session_id: Option<String>,
     pub netlog_source_id: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -95,12 +98,19 @@ pub fn attach_netlog(
 
     for request in &mut session.requests {
         let cdp_request_id = request.cdp.as_ref().and_then(|cdp| cdp.request_id.clone());
+        let cdp_session_id = request.cdp.as_ref().and_then(|cdp| cdp.session_id.clone());
         let mut request_has_ambiguous = false;
         let mut request_all_matched = !request.attempts.is_empty();
 
         for attempt in &mut request.attempts {
-            let candidates =
-                find_candidates(attempt, cdp_request_id.as_deref(), netlog, options, &used);
+            let candidates = find_candidates(
+                attempt,
+                cdp_request_id.as_deref(),
+                cdp_session_id.as_deref(),
+                netlog,
+                options,
+                &used,
+            );
 
             match candidates.len() {
                 0 => {
@@ -210,6 +220,7 @@ pub fn attach_netlog(
 fn find_candidates<'a>(
     attempt: &Attempt,
     cdp_request_id: Option<&str>,
+    cdp_session_id: Option<&str>,
     netlog: &'a NetlogCapture,
     options: &CorrelationOptions,
     used: &BTreeSet<String>,
@@ -218,7 +229,13 @@ fn find_candidates<'a>(
         options
             .explicit_pairs
             .iter()
-            .find(|pair| pair.cdp_request_id == request_id)
+            .find(|pair| {
+                pair.cdp_request_id == request_id
+                    && pair
+                        .cdp_session_id
+                        .as_deref()
+                        .map_or(true, |session| Some(session) == cdp_session_id)
+            })
             .map(|pair| pair.netlog_source_id)
     });
 

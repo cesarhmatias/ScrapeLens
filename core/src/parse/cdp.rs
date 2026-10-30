@@ -5,6 +5,18 @@
 //! `responseReceivedExtraInfo.headersText` (h1) é a exceção verificada.
 //! Cada bloco preserva a origem; a visão primária pode vir do NetLog na
 //! correlação, sem apagar o original CDP.
+//!
+//! Captura multi-alvo (docs/14): toda linha de `cdp-events.jsonl` pode trazer
+//! `sessionId` (a sessão da página inicial também tem a sua; arquivo antigo sem
+//! o campo é uma sessão implícita). A chave de requisição é
+//! `(sessionId, requestId)` — `requestId` colide entre sessões e nunca é usado
+//! sozinho. Os eventos `Target.attachedToTarget`, `Target.detachedFromTarget`,
+//! `Target.targetInfoChanged` e `Target.attachFailed` são lidos para dar a cada
+//! requisição a proveniência do alvo (`targetId`, tipo, URL, `openerId`, sessão
+//! pai e se anexou). Observações da mesma requisição em sessões diferentes
+//! (service worker) só são ligadas com `fromServiceWorker`; sem essa evidência
+//! ficam separadas e a ambiguidade é registrada em `links[].resolution` e em
+//! aviso.
 
 use std::collections::BTreeMap;
 
@@ -14,8 +26,8 @@ use crate::error::{CoreError, Result};
 use crate::model::{
     policy, Attempt, AttemptOutcome, Body, BrowserInfo, CdpRef, Completeness, Connection,
     CookieField, HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, OrderState, Protocol,
-    Provenance, Redirect, SessionBundle, SessionMeta, SessionV1, Source, Timings, Verification,
-    Warning,
+    Provenance, Redirect, RequestLink, SessionBundle, SessionMeta, SessionV1, Source, TargetKind,
+    TargetProvenance, Timings, Verification, Warning,
 };
 use crate::parse::netlog::epoch_ms_to_iso;
 use crate::parse::{ImportReport, ImportedSession, InputFormat};
@@ -28,6 +40,8 @@ pub struct CdpCapture {
     pub unhandled_events: usize,
     pub unhandled_samples: Vec<String>,
     pub sessions: Vec<String>,
+    /// Sessão CDP → alvo, a partir dos eventos `Target.*`.
+    pub targets: BTreeMap<String, TargetProvenance>,
     pub requests: Vec<CdpRequest>,
     pub warnings: Vec<Warning>,
 }
@@ -35,12 +49,17 @@ pub struct CdpCapture {
 #[derive(Debug, Clone, Default)]
 pub struct CdpRequest {
     pub request_id: String,
+    /// Sessão CDP do evento; vazio em arquivos antigos (sessão implícita).
+    pub session_id: String,
     pub loader_id: Option<String>,
     pub frame_id: Option<String>,
     pub resource_type: Option<String>,
     pub attempts: Vec<CdpAttempt>,
     pub redirects: Vec<CdpRedirect>,
     pub failure: Option<String>,
+    /// Só `responseReceived` (sem `requestWillBeSent`): documento `_blank` ou
+    /// resposta sem pedido observado; headers de requisição ausentes.
+    pub response_only: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -70,6 +89,10 @@ pub struct CdpAttempt {
     pub redirect_url: Option<String>,
     pub redirect_status: Option<u16>,
     pub failure: Option<String>,
+    /// `response.fromServiceWorker` do CDP (evidência de interceptação).
+    pub from_service_worker: bool,
+    /// `response.serviceWorkerResponseSource`, quando presente.
+    pub service_worker_response_source: Option<String>,
     pub outcome: AttemptOutcome,
     pub cdp: CdpRef,
 }
@@ -87,9 +110,10 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
         message: format!("cdp-events.jsonl não é UTF-8: {error}"),
     })?;
     let mut capture = CdpCapture::default();
-    let mut requests: BTreeMap<String, CdpRequest> = BTreeMap::new();
-    let mut request_extra: BTreeMap<String, Vec<(HeaderView, usize)>> = BTreeMap::new();
-    let mut response_extra: BTreeMap<String, Vec<(HeaderView, Option<u16>)>> = BTreeMap::new();
+    // Chave CDP: (sessionId, requestId). Arquivo antigo sem `sessionId` usa "".
+    let mut requests: BTreeMap<RequestKey, CdpRequest> = BTreeMap::new();
+    let mut request_extra: BTreeMap<RequestKey, Vec<(HeaderView, usize)>> = BTreeMap::new();
+    let mut response_extra: BTreeMap<RequestKey, Vec<(HeaderView, Option<u16>)>> = BTreeMap::new();
     let mut unhandled: BTreeMap<String, usize> = BTreeMap::new();
 
     for (line_index, line) in text.lines().enumerate() {
@@ -110,11 +134,9 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 continue;
             }
         };
-        let session = event.get("session").and_then(Value::as_str);
-        if let Some(session) = session {
-            if !capture.sessions.iter().any(|known| known == session) {
-                capture.sessions.push(session.to_string());
-            }
+        let session = session_of(&event);
+        if !session.is_empty() && !capture.sessions.iter().any(|known| known == &session) {
+            capture.sessions.push(session.clone());
         }
         let method = event.get("method").and_then(Value::as_str).unwrap_or("");
         let params = event.get("params").and_then(Value::as_object);
@@ -124,12 +146,13 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 let Some(request_id) = params.get("requestId").and_then(Value::as_str) else {
                     continue;
                 };
+                let key = (session.clone(), request_id.to_string());
                 let request = params.get("request").and_then(Value::as_object);
                 let timestamp = params.get("timestamp").and_then(Value::as_f64);
                 let wall_time = params.get("wallTime").and_then(Value::as_f64);
-                let cdp = cdp_ref(params, request_id, session);
+                let cdp = cdp_ref(params, request_id, &session);
 
-                if let Some(restart) = requests.get_mut(request_id) {
+                if let Some(restart) = requests.get_mut(&key) {
                     // Redirect: fecha a tentativa anterior com redirectResponse.
                     if let Some(redirect) =
                         params.get("redirectResponse").and_then(Value::as_object)
@@ -138,7 +161,8 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                             .get("status")
                             .and_then(Value::as_u64)
                             .map(|status| status as u16);
-                        let redirect_view = redirect_view(redirect, request_id, session, timestamp);
+                        let redirect_view =
+                            redirect_view(redirect, request_id, Some(&session), timestamp);
                         let location = redirect_view.first_value("location").map(str::to_string);
                         if let Some(last) = restart.attempts.last_mut() {
                             last.response_headers = redirect_view;
@@ -234,7 +258,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         view: attempt.request_headers.clone(),
                     });
                 }
-                if let Some(extras) = request_extra.remove(request_id) {
+                if let Some(extras) = request_extra.remove(&key) {
                     for (view, blocked) in extras {
                         apply_request_extra(&mut attempt, view, blocked, request_id);
                     }
@@ -245,8 +269,9 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     &blink_provenance,
                 );
 
-                let request_entry = requests.entry(request_id.to_string()).or_default();
+                let request_entry = requests.entry(key).or_default();
                 request_entry.request_id = request_id.to_string();
+                request_entry.session_id = session.clone();
                 request_entry.loader_id = cdp.loader_id.clone();
                 request_entry.frame_id = cdp.frame_id.clone();
                 request_entry.resource_type = params
@@ -261,6 +286,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 let Some(request_id) = params.get("requestId").and_then(Value::as_str) else {
                     continue;
                 };
+                let key = (session.clone(), request_id.to_string());
                 let timestamp = params.get("timestamp").and_then(Value::as_f64);
                 let provenance = policy::provenance_for(
                     Source::Cdp,
@@ -300,17 +326,14 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .unwrap_or(0);
 
                 let mut applied = false;
-                if let Some(request) = requests.get_mut(request_id) {
+                if let Some(request) = requests.get_mut(&key) {
                     if let Some(attempt) = find_request_extra_attempt(request) {
                         apply_request_extra(attempt, view.clone(), blocked, request_id);
                         applied = true;
                     }
                 }
                 if !applied {
-                    request_extra
-                        .entry(request_id.to_string())
-                        .or_default()
-                        .push((view, blocked));
+                    request_extra.entry(key).or_default().push((view, blocked));
                 }
                 capture.events_used += 1;
             }
@@ -319,6 +342,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 let Some(request_id) = params.get("requestId").and_then(Value::as_str) else {
                     continue;
                 };
+                let key = (session.clone(), request_id.to_string());
                 let response = params.get("response").and_then(Value::as_object);
                 let timestamp = params.get("timestamp").and_then(Value::as_f64);
                 let protocol = response
@@ -342,6 +366,14 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     response_headers: view,
                     timestamp,
                     ended_at: timestamp,
+                    from_service_worker: response
+                        .and_then(|response| response.get("fromServiceWorker"))
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    service_worker_response_source: response
+                        .and_then(|response| response.get("serviceWorkerResponseSource"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
                     outcome: if status.is_some() {
                         AttemptOutcome::Completed
                     } else {
@@ -385,7 +417,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .and_then(|response| response.get("url"))
                     .and_then(Value::as_str)
                     .map(str::to_string);
-                if let Some(request) = requests.get_mut(request_id) {
+                if let Some(request) = requests.get_mut(&key) {
                     let index = response_url
                         .and_then(|url| {
                             request
@@ -403,22 +435,26 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         current.remote_port = attempt.remote_port;
                         current.ended_at = attempt.ended_at;
                         current.outcome = attempt.outcome;
+                        current.from_service_worker =
+                            current.from_service_worker || attempt.from_service_worker;
+                        if attempt.service_worker_response_source.is_some() {
+                            current.service_worker_response_source =
+                                attempt.service_worker_response_source;
+                        }
                         current.set_cookies = attempt.set_cookies;
                         current.header_evidence.extend(attempt.header_evidence);
                     } else {
-                        requests
-                            .entry(request_id.to_string())
-                            .or_default()
-                            .attempts
-                            .push(attempt);
+                        requests.entry(key).or_default().attempts.push(attempt);
                     }
                 } else {
                     let mut entry = CdpRequest {
                         request_id: request_id.to_string(),
+                        session_id: session.clone(),
+                        response_only: true,
                         ..Default::default()
                     };
                     entry.attempts.push(attempt);
-                    requests.insert(request_id.to_string(), entry);
+                    requests.insert(key, entry);
                 }
                 capture.events_used += 1;
             }
@@ -427,6 +463,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 let Some(request_id) = params.get("requestId").and_then(Value::as_str) else {
                     continue;
                 };
+                let key = (session.clone(), request_id.to_string());
                 let timestamp = params.get("timestamp").and_then(Value::as_f64);
                 let status = params
                     .get("statusCode")
@@ -434,17 +471,14 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .map(|status| status as u16);
                 let (view, event) = response_view_from_extra(params, request_id, timestamp, status);
                 let mut applied = false;
-                if let Some(request) = requests.get_mut(request_id) {
+                if let Some(request) = requests.get_mut(&key) {
                     if let Some(attempt) = find_response_extra_attempt(request, status) {
                         apply_response_extra(attempt, view.clone(), event, status, request_id);
                         applied = true;
                     }
                 }
                 if !applied {
-                    response_extra
-                        .entry(request_id.to_string())
-                        .or_default()
-                        .push((view, status));
+                    response_extra.entry(key).or_default().push((view, status));
                 }
                 capture.events_used += 1;
             }
@@ -453,8 +487,9 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 let Some(request_id) = params.get("requestId").and_then(Value::as_str) else {
                     continue;
                 };
+                let key = (session.clone(), request_id.to_string());
                 let timestamp = params.get("timestamp").and_then(Value::as_f64);
-                if let Some(request) = requests.get_mut(request_id) {
+                if let Some(request) = requests.get_mut(&key) {
                     if let Some(attempt) = request.attempts.last_mut() {
                         attempt.ended_at = timestamp;
                         if attempt.status.is_some() {
@@ -479,7 +514,8 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
                 let failure = format!("{error}{}", if canceled { " (cancelado)" } else { "" });
-                if let Some(request) = requests.get_mut(request_id) {
+                let key = (session.clone(), request_id.to_string());
+                if let Some(request) = requests.get_mut(&key) {
                     request.failure = Some(failure.clone());
                     if let Some(attempt) = request.attempts.last_mut() {
                         attempt.failure = Some(failure);
@@ -491,6 +527,68 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                         };
                     }
                 }
+                capture.events_used += 1;
+            }
+            "Target.attachedToTarget" => {
+                let Some(params) = params else { continue };
+                let child = params
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| session.clone());
+                let parent = event
+                    .get("parentSessionId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .or_else(|| {
+                        let outer = event.get("sessionId").and_then(Value::as_str)?;
+                        (outer != child).then(|| outer.to_string())
+                    });
+                let info = params.get("targetInfo").and_then(Value::as_object);
+                let target = target_from_info(info, parent, Some(true));
+                if !child.is_empty() {
+                    capture.targets.insert(child, target);
+                }
+                capture.events_used += 1;
+            }
+            "Target.targetInfoChanged" => {
+                let Some(params) = params else { continue };
+                let info = params.get("targetInfo").and_then(Value::as_object);
+                let target_id = info
+                    .and_then(|t| t.get("targetId"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                let Some(target_id) = target_id else { continue };
+                for target in capture.targets.values_mut() {
+                    if target.target_id.as_deref() == Some(target_id.as_str()) {
+                        let parent = target.parent_session_id.clone();
+                        let attached = target.attached;
+                        *target = target_from_info(info, parent, attached);
+                    }
+                }
+                capture.events_used += 1;
+            }
+            "Target.detachedFromTarget" => {
+                let Some(params) = params else { continue };
+                if let Some(session_id) = params.get("sessionId").and_then(Value::as_str) {
+                    if let Some(target) = capture.targets.get_mut(session_id) {
+                        target.attached = Some(false);
+                    }
+                }
+                capture.events_used += 1;
+            }
+            "Target.attachFailed" => {
+                let Some(params) = params else { continue };
+                let target_id = params
+                    .get("targetId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("?");
+                let mut warning = Warning::new(
+                    "cdp.target_attach_failed",
+                    format!("alvo {target_id} não anexou; fica só com o NetLog (sem headers/corpos CDP)"),
+                );
+                warning.severity = crate::model::WarningSeverity::Warning;
+                capture.warnings.push(warning);
                 capture.events_used += 1;
             }
             other => {
@@ -506,11 +604,11 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
 
     // ExtraInfo que chegou antes/depois do request: distribui por tentativa na
     // ordem da cadeia (o status discrimina respostas de redirect).
-    for (request_id, extras) in request_extra {
-        let Some(request) = requests.get_mut(&request_id) else {
+    for ((session_id, request_id), extras) in request_extra {
+        let Some(request) = requests.get_mut(&(session_id.clone(), request_id.clone())) else {
             capture.warnings.push(Warning::new(
                 "cdp.extra_info_without_request",
-                format!("requestWillBeSentExtraInfo sem requestWillBeSent: {request_id}"),
+                extra_info_message("requestWillBeSentExtraInfo", &session_id, &request_id),
             ));
             continue;
         };
@@ -521,16 +619,16 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 }
                 None => capture.warnings.push(Warning::new(
                     "cdp.extra_info_unmatched",
-                    format!("requestWillBeSentExtraInfo sem tentativa disponível: {request_id}"),
+                    extra_info_message("requestWillBeSentExtraInfo", &session_id, &request_id),
                 )),
             }
         }
     }
-    for (request_id, extras) in response_extra {
-        let Some(request) = requests.get_mut(&request_id) else {
+    for ((session_id, request_id), extras) in response_extra {
+        let Some(request) = requests.get_mut(&(session_id.clone(), request_id.clone())) else {
             capture.warnings.push(Warning::new(
                 "cdp.response_extra_without_request",
-                format!("responseReceivedExtraInfo sem request: {request_id}"),
+                extra_info_message("responseReceivedExtraInfo", &session_id, &request_id),
             ));
             continue;
         };
@@ -547,7 +645,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 }
                 None => capture.warnings.push(Warning::new(
                     "cdp.response_extra_unmatched",
-                    format!("responseReceivedExtraInfo sem tentativa disponível: {request_id}"),
+                    extra_info_message("responseReceivedExtraInfo", &session_id, &request_id),
                 )),
             }
         }
@@ -691,12 +789,155 @@ fn apply_response_extra(
     });
 }
 
-fn cdp_ref(params: &Map<String, Value>, request_id: &str, session: Option<&str>) -> CdpRef {
+/// Liga observações da mesma requisição lógica entre sessões (service worker).
+/// Só `fromServiceWorker` conta como evidência explícita; mesma URL/método e
+/// janela de tempo são pistas. Sem evidência, a ligação fica `ambiguous` e um
+/// aviso é emitido — nunca há fusão silenciosa.
+fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLink>>, Vec<Warning>) {
+    const WINDOW_S: f64 = 0.050;
+    let mut links: BTreeMap<usize, Vec<RequestLink>> = BTreeMap::new();
+    let mut warnings = Vec::new();
+    let requests = &capture.requests;
+    for i in 0..requests.len() {
+        let Some(start) = requests[i]
+            .attempts
+            .first()
+            .and_then(|attempt| attempt.timestamp)
+        else {
+            continue;
+        };
+        let kind_i = capture
+            .targets
+            .get(&requests[i].session_id)
+            .map(|target| target.kind);
+        for j in (i + 1)..requests.len() {
+            if requests[i].session_id == requests[j].session_id
+                || requests[i].attempts.first().map(|a| a.method.as_str())
+                    != requests[j].attempts.first().map(|a| a.method.as_str())
+                || requests[i].attempts.first().map(|a| a.url.as_str())
+                    != requests[j].attempts.first().map(|a| a.url.as_str())
+            {
+                continue;
+            }
+            let Some(start_j) = requests[j]
+                .attempts
+                .first()
+                .and_then(|attempt| attempt.timestamp)
+            else {
+                continue;
+            };
+            let delta = (start_j - start).abs();
+            if delta > WINDOW_S {
+                continue;
+            }
+            let kind_j = capture
+                .targets
+                .get(&requests[j].session_id)
+                .map(|target| target.kind);
+            let involved_sw = kind_i == Some(TargetKind::ServiceWorker)
+                || kind_j == Some(TargetKind::ServiceWorker);
+            let from_sw = requests[i]
+                .attempts
+                .iter()
+                .any(|attempt| attempt.from_service_worker)
+                || requests[j]
+                    .attempts
+                    .iter()
+                    .any(|attempt| attempt.from_service_worker);
+            if !involved_sw && !from_sw {
+                continue;
+            }
+            let mut evidence = vec!["mesma URL/método".to_string()];
+            if from_sw {
+                evidence.push("fromServiceWorker na resposta".to_string());
+            }
+            if kind_i == Some(TargetKind::ServiceWorker)
+                || kind_j == Some(TargetKind::ServiceWorker)
+            {
+                evidence.push("sessão do service worker".to_string());
+            }
+            evidence.push(format!("Δt={:.0} ms (pista)", delta * 1000.0));
+            let resolution = if from_sw { "linked" } else { "ambiguous" };
+            let from = format!("cdp-r{:04}", i + 1);
+            let to = format!("cdp-r{:04}", j + 1);
+            links.entry(i).or_default().push(RequestLink {
+                kind: "service_worker".to_string(),
+                request: to.clone(),
+                evidence: evidence.clone(),
+                resolution: resolution.to_string(),
+            });
+            links.entry(j).or_default().push(RequestLink {
+                kind: "service_worker".to_string(),
+                request: from.clone(),
+                evidence,
+                resolution: resolution.to_string(),
+            });
+            if resolution == "ambiguous" {
+                let warning = Warning::new(
+                    "cdp.service_worker_ambiguous",
+                    format!(
+                        "duas observações da mesma requisição ({from} × {to}) sem evidência explícita de service worker; não fundidas"
+                    ),
+                )
+                .with_detail(serde_json::json!({
+                    "requests": [from, to],
+                    "reason": "sem fromServiceWorker; mesma URL/método e janela de tempo são pista, não prova",
+                }));
+                warnings.push(warning);
+            }
+        }
+    }
+    (links, warnings)
+}
+
+fn extra_info_message(event: &str, session_id: &str, request_id: &str) -> String {
+    if session_id.is_empty() {
+        format!("{event} sem par (requestId {request_id})")
+    } else {
+        format!("{event} sem par (sessão {session_id}, requestId {request_id})")
+    }
+}
+
+fn session_of(event: &Value) -> String {
+    event
+        .get("sessionId")
+        .or_else(|| event.get("session"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn target_from_info(
+    info: Option<&Map<String, Value>>,
+    parent_session_id: Option<String>,
+    attached: Option<bool>,
+) -> TargetProvenance {
+    let info = info.cloned().unwrap_or_default();
+    let text = |key: &str| {
+        info.get(key)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    TargetProvenance {
+        target_id: text("targetId"),
+        kind: TargetKind::from_type(text("type").as_deref().unwrap_or("")),
+        url: text("url"),
+        opener_id: text("openerId"),
+        parent_session_id,
+        attached,
+    }
+}
+
+/// Chave CDP: (sessão, requestId). Arquivo antigo sem `sessionId` usa "".
+type RequestKey = (String, String);
+
+fn cdp_ref(params: &Map<String, Value>, request_id: &str, session: &str) -> CdpRef {
     CdpRef {
         session_id: params
             .get("sessionId")
             .and_then(Value::as_str)
-            .or(session)
+            .or_else(|| (!session.is_empty()).then_some(session))
             .map(str::to_string),
         request_id: Some(request_id.to_string()),
         loader_id: params
@@ -926,6 +1167,32 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         report.warn(warning.clone());
     }
 
+    let (links_by_request, mut link_warnings) = service_worker_links(capture);
+    for warning in link_warnings.drain(..) {
+        session.add_warning(warning.clone());
+        report.warn(warning);
+    }
+    // Sessões com tráfego CDP mas sem Target.attachedToTarget: alvo desconhecido
+    // (nunca inventado). Arquivo antigo (sem sessionId) não gera aviso.
+    for session_id in &capture.sessions {
+        if !session_id.is_empty()
+            && !capture.targets.contains_key(session_id)
+            && capture
+                .requests
+                .iter()
+                .any(|request| &request.session_id == session_id)
+        {
+            let warning = Warning::new(
+                "cdp.target_unknown",
+                format!(
+                    "sessão {session_id}: sem Target.attachedToTarget; tipo do alvo desconhecido"
+                ),
+            );
+            session.add_warning(warning.clone());
+            report.warn(warning);
+        }
+    }
+
     let mut connections: BTreeMap<String, String> = BTreeMap::new();
     for (index, request) in capture.requests.iter().enumerate() {
         let logical_id = format!("cdp-r{:04}", index + 1);
@@ -939,14 +1206,24 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         );
         logical.resource_type = request.resource_type.clone();
         logical.cdp = Some(CdpRef {
-            session_id: None,
+            session_id: (!request.session_id.is_empty()).then(|| request.session_id.clone()),
             request_id: Some(request.request_id.clone()),
             loader_id: request.loader_id.clone(),
             frame_id: request.frame_id.clone(),
         });
+        logical.target = capture.targets.get(&request.session_id).cloned();
+        if let Some(links) = links_by_request.get(&index) {
+            logical.links = links.clone();
+        }
         logical.provenance = Provenance::new(Source::Cdp, "Network.*", Verification::Unverified)
             .with_source_id(request.request_id.clone())
             .with_note("estrutura vinda do CDP; verificação por informação");
+        if request.response_only {
+            logical.provenance.notes.push(
+                "só responseReceived (sem requestWillBeSent): headers de requisição ausentes; parcial"
+                    .to_string(),
+            );
+        }
         if let Some(first) = request.attempts.first() {
             if let Some(timestamp) = first.timestamp {
                 logical.provenance = logical.provenance.clone().with_timestamp(timestamp);
