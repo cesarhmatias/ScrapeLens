@@ -157,7 +157,7 @@ fn run_inner(
         match socket.read() {
             Ok(Message::Text(text)) => {
                 if let Ok(value) = serde_json::from_str::<Value>(text.as_str()) {
-                    cdp.record(&value, text.as_str());
+                    cdp.record(&mut socket, &value);
                     cdp.flush_outbox(&mut socket);
                 }
             }
@@ -189,7 +189,7 @@ fn run_inner(
     let _ = socket.close(None);
     let exit = wait_or_kill(&mut child, Duration::from_secs(20));
     let shutdown = ShutdownReport {
-        browser_close: close_result.map(|_| ()).map_err(|error| error),
+        browser_close: close_result.map(|_| ()),
         exit,
         waited_ms: close_started.elapsed().as_millis() as u64,
     };
@@ -229,6 +229,11 @@ fn run_inner(
     )
     .map_err(|error| format!("O core não conseguiu importar a captura: {error}"))?;
     mark_incomplete(&mut imported.bundle.session, &netlog_status, &shutdown);
+    for warning in cdp.attach_warnings_for_import() {
+        imported.bundle.session.warnings.push(
+            scrapelens_core::model::Warning::new("capture.target_attach", warning),
+        );
+    }
     // Metadados da captura são do pipeline, não do parser: o core monta o
     // documento a partir do CDP e não sabe que este fluxo também gravou NetLog.
     match imported.bundle.session.session.capture.as_mut() {
@@ -295,6 +300,9 @@ fn spawn_chrome(config: &CaptureConfig, profile: &Path, netlog: &Path) -> Result
             .to_string(),
         "--enable-quic".to_string(),
         "--allow-insecure-localhost".to_string(),
+        "--disable-popup-blocking".to_string(),
+        "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"
+            .to_string(),
         "about:blank".to_string(),
     ];
     if config.headless {
@@ -354,7 +362,7 @@ fn wait_for_devtools(
 #[derive(Debug, Clone)]
 enum ChromeExit {
     /// O processo saiu sozinho depois de `Browser.close`.
-    Graceful(Option<i32>),
+    Graceful(#[allow(dead_code)] Option<i32>),
     /// Estourou o prazo e foi morto por este módulo (NetLog pode ficar truncado).
     Killed,
     Unknown,
@@ -384,15 +392,35 @@ fn wait_or_kill(child: &mut Child, timeout: Duration) -> ChromeExit {
     }
 }
 
+const CDP_TARGET_METHODS: &[&str] = &[
+    "Target.attachedToTarget",
+    "Target.detachedFromTarget",
+    "Target.targetInfoChanged",
+];
+
+fn cdp_records_method(method: &str) -> bool {
+    method.starts_with("Network.") || CDP_TARGET_METHODS.contains(&method)
+}
+
+#[derive(Debug, Clone)]
+struct AttachedTarget {
+    session_id: String,
+    target_id: String,
+    target_type: String,
+}
+
 struct Cdp {
     next_id: u64,
-    session_id: String,
+    page_session_id: String,
     events: Vec<String>,
     status: Arc<Mutex<CaptureStatus>>,
-    bodies: BodyCollector,
+    bodies_by_session: HashMap<String, BodyCollector>,
     bodies_file: std::fs::File,
-    in_flight: HashMap<u64, BodyTag>,
-    outbox: Vec<String>,
+    in_flight: HashMap<u64, (String, BodyTag)>,
+    outbox: Vec<(String, String)>,
+    setup_done: HashMap<String, AttachedTarget>,
+    attach_warnings: Vec<String>,
+    wait_for_debugger: bool,
 }
 
 impl Cdp {
@@ -413,16 +441,19 @@ impl Cdp {
                         socket,
                         Self {
                             next_id: 0,
-                            session_id: String::new(),
+                            page_session_id: String::new(),
                             events: Vec::new(),
                             status,
-                            bodies: BodyCollector::default(),
+                            bodies_by_session: HashMap::new(),
                             bodies_file: match bodies_file.try_clone() {
                                 Ok(file) => file,
                                 Err(error) => return Err(format!("cdp-bodies.jsonl: {error}")),
                             },
                             in_flight: HashMap::new(),
                             outbox: Vec::new(),
+                            setup_done: HashMap::new(),
+                            attach_warnings: Vec::new(),
+                            wait_for_debugger: true,
                         },
                     ));
                 }
@@ -437,43 +468,85 @@ impl Cdp {
         ))
     }
 
-    fn setup(
+    fn auto_attach_params(&self) -> Value {
+        json!({
+            "autoAttach": true,
+            "flatten": true,
+            "waitForDebuggerOnStart": self.wait_for_debugger,
+        })
+    }
+
+    fn bodies_for(&mut self, session_id: &str) -> &mut BodyCollector {
+        self.bodies_by_session
+            .entry(session_id.to_string())
+            .or_default()
+    }
+
+    fn push_event_line(&mut self, session_id: &str, method: &str, params: &Value) {
+        let line = json!({
+            "sessionId": session_id,
+            "method": method,
+            "params": params,
+        });
+        self.events.push(line.to_string());
+        if let Ok(mut guard) = self.status.lock() {
+            guard.events = self.events.len();
+        }
+    }
+
+    fn skip_target_setup(target_type: &str) -> bool {
+        matches!(target_type, "browser_ui" | "other")
+    }
+
+    fn recurse_auto_attach(target_type: &str) -> bool {
+        matches!(
+            target_type,
+            "page" | "iframe" | "worker" | "service_worker"
+        )
+    }
+
+    fn setup_attached_target(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
-        start_url: &str,
+        attached: AttachedTarget,
+        waiting_for_debugger: bool,
     ) -> Result<(), String> {
-        let created = self.send(
-            socket,
-            "Target.createTarget",
-            json!({ "url": "about:blank" }),
-            None,
-            Duration::from_secs(10),
-        )?;
-        let target = created
-            .get("targetId")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "CDP não devolveu targetId".to_string())?
-            .to_string();
-        let attached = self.send(
-            socket,
-            "Target.attachToTarget",
-            json!({ "targetId": target, "flatten": true }),
-            None,
-            Duration::from_secs(10),
-        )?;
-        self.session_id = attached
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "CDP não devolveu sessionId".to_string())?
-            .to_string();
-        let session = Some(self.session_id.clone());
-        self.send(
-            socket,
-            "Page.enable",
-            json!({}),
-            session.as_deref(),
-            Duration::from_secs(10),
-        )?;
+        if self.setup_done.contains_key(&attached.session_id) {
+            if self.wait_for_debugger && waiting_for_debugger {
+                let _ = self.send(
+                    socket,
+                    "Runtime.runIfWaitingForDebugger",
+                    json!({}),
+                    Some(&attached.session_id),
+                    Duration::from_secs(5),
+                );
+            }
+            return Ok(());
+        }
+        let target_type = attached.target_type.clone();
+        self.setup_done
+            .insert(attached.session_id.clone(), attached.clone());
+        if Self::skip_target_setup(&target_type) {
+            if self.wait_for_debugger && waiting_for_debugger {
+                let _ = self.send(
+                    socket,
+                    "Runtime.runIfWaitingForDebugger",
+                    json!({}),
+                    Some(&attached.session_id),
+                    Duration::from_secs(5),
+                );
+            }
+            return Ok(());
+        }
+        if Self::recurse_auto_attach(&target_type) {
+            self.send(
+                socket,
+                "Target.setAutoAttach",
+                self.auto_attach_params(),
+                Some(&attached.session_id),
+                Duration::from_secs(10),
+            )?;
+        }
         self.send(
             socket,
             "Network.enable",
@@ -482,32 +555,184 @@ impl Cdp {
                 "maxResourceBufferSize": 50_000_000,
                 "maxPostDataSize": MAX_BODY_BYTES
             }),
-            session.as_deref(),
+            Some(&attached.session_id),
+            Duration::from_secs(10),
+        )?;
+        if target_type == "page" || target_type == "iframe" {
+            let _ = self.send(
+                socket,
+                "Page.enable",
+                json!({}),
+                Some(&attached.session_id),
+                Duration::from_secs(5),
+            );
+        }
+        let _ = self.send(
+            socket,
+            "Runtime.enable",
+            json!({}),
+            Some(&attached.session_id),
+            Duration::from_secs(5),
+        );
+        if self.wait_for_debugger && waiting_for_debugger {
+            self.send(
+                socket,
+                "Runtime.runIfWaitingForDebugger",
+                json!({}),
+                Some(&attached.session_id),
+                Duration::from_secs(10),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn handle_incoming_event(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        value: &Value,
+    ) {
+        let Some(method) = value.get("method").and_then(Value::as_str) else {
+            return;
+        };
+        if method == "Target.attachedToTarget" {
+            if let Some(params) = value.get("params").and_then(Value::as_object) {
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let target = params.get("targetInfo").and_then(Value::as_object);
+                let target_id = target
+                    .and_then(|t| t.get("targetId"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let target_type = target
+                    .and_then(|t| t.get("type"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string();
+                let waiting = params
+                    .get("waitingForDebugger")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let attached = AttachedTarget {
+                    session_id: session_id.clone(),
+                    target_id,
+                    target_type,
+                };
+                if let Err(error) =
+                    self.setup_attached_target(socket, attached, waiting)
+                {
+                    self.attach_warnings.push(format!(
+                        "falha ao preparar sessão CDP {session_id}: {error}"
+                    ));
+                }
+            }
+        }
+        if !cdp_records_method(method) {
+            return;
+        }
+        let params = value.get("params").cloned().unwrap_or(Value::Null);
+        let session_id = if method == "Target.attachedToTarget" {
+            params
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        } else {
+            value
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        }
+        .to_string();
+        self.push_event_line(&session_id, method, &params);
+        if method.starts_with("Network.") {
+            for command in self.bodies_for(&session_id).on_event(method, &params) {
+                let id = self.next_id;
+                self.next_id += 1;
+                let message =
+                    json!({ "id": id, "method": command.method, "params": command.params });
+                self.in_flight
+                    .insert(id, (session_id.clone(), command.tag));
+                self.outbox
+                    .push((session_id.clone(), message.to_string()));
+            }
+            self.write_body_lines();
+        }
+    }
+
+    fn setup(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        start_url: &str,
+    ) -> Result<(), String> {
+        self.send(
+            socket,
+            "Target.setDiscoverTargets",
+            json!({ "discover": true }),
+            None,
+            Duration::from_secs(10),
+        )?;
+        self.send(
+            socket,
+            "Target.setAutoAttach",
+            self.auto_attach_params(),
+            None,
+            Duration::from_secs(10),
+        )?;
+        let url = if start_url.trim().is_empty() {
+            "about:blank".to_string()
+        } else {
+            start_url.to_string()
+        };
+        let created = self.send(
+            socket,
+            "Target.createTarget",
+            json!({ "url": url }),
+            None,
+            Duration::from_secs(15),
+        )?;
+        let main_target = created
+            .get("targetId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "CDP não devolveu targetId".to_string())?
+            .to_string();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            if self
+                .setup_done
+                .values()
+                .any(|t| t.target_id == main_target && t.target_type == "page")
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(80));
+        }
+        self.page_session_id = self
+            .setup_done
+            .values()
+            .find(|t| t.target_id == main_target)
+            .map(|t| t.session_id.clone())
+            .ok_or_else(|| {
+                "A página inicial não anexou via autoAttach (Target.attachedToTarget ausente)"
+                    .to_string()
+            })?;
+        let page_session = self.page_session_id.clone();
+        self.send(
+            socket,
+            "Target.setAutoAttach",
+            self.auto_attach_params(),
+            Some(&page_session),
             Duration::from_secs(10),
         )?;
         self.send(
             socket,
             "Network.setCacheDisabled",
             json!({ "cacheDisabled": true }),
-            session.as_deref(),
+            Some(&page_session),
             Duration::from_secs(5),
         )?;
-        self.send(
-            socket,
-            "Network.setBypassServiceWorker",
-            json!({ "bypass": true }),
-            session.as_deref(),
-            Duration::from_secs(5),
-        )?;
-        if !start_url.trim().is_empty() && start_url != "about:blank" {
-            self.send(
-                socket,
-                "Page.navigate",
-                json!({ "url": start_url }),
-                session.as_deref(),
-                Duration::from_secs(10),
-            )?;
-        }
         Ok(())
     }
 
@@ -543,7 +768,7 @@ impl Cdp {
                         }
                         return Ok(value.get("result").cloned().unwrap_or(Value::Null));
                     }
-                    self.record(&value, text.as_str());
+                    self.record(socket, &value);
                     self.flush_outbox(socket);
                 }
                 Ok(Message::Ping(payload)) => {
@@ -558,11 +783,13 @@ impl Cdp {
         }
     }
 
-    fn record(&mut self, value: &Value, raw: &str) {
-        // Resposta a um comando de corpo que o loop de eventos enviou sem
-        // esperar: roteada por id, nunca descartada.
+    fn record(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        value: &Value,
+    ) {
         if let Some(id) = value.get("id").and_then(Value::as_u64) {
-            if let Some(tag) = self.in_flight.remove(&id) {
+            if let Some((session_id, tag)) = self.in_flight.remove(&id) {
                 let outcome = match value.get("error") {
                     Some(error) => Err(error
                         .get("message")
@@ -571,47 +798,34 @@ impl Cdp {
                         .unwrap_or_else(|| error.to_string())),
                     None => Ok(value.get("result").cloned().unwrap_or(Value::Null)),
                 };
-                self.bodies.on_result(tag, outcome);
+                self.bodies_for(&session_id).on_result(tag, outcome);
                 self.write_body_lines();
             }
             return;
         }
-        let Some(method) = value.get("method").and_then(Value::as_str) else {
-            return;
-        };
-        if !method.starts_with("Network.") {
-            return;
-        }
-        self.events.push(raw.to_string());
-        if let Ok(mut guard) = self.status.lock() {
-            guard.events = self.events.len();
-        }
-        let params = value.get("params").unwrap_or(&Value::Null);
-        for command in self.bodies.on_event(method, params) {
-            let id = self.next_id;
-            self.next_id += 1;
-            let mut message =
-                json!({ "id": id, "method": command.method, "params": command.params });
-            if !self.session_id.is_empty() {
-                message["sessionId"] = json!(self.session_id);
-            }
-            self.in_flight.insert(id, command.tag);
-            self.outbox.push(message.to_string());
-        }
-        self.write_body_lines();
+        self.handle_incoming_event(socket, value);
     }
 
     /// Envia sem esperar resposta os comandos de corpo enfileirados por
     /// `record`. Falha de envio vira `unavailable` na hora.
     fn flush_outbox(&mut self, socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>) {
-        for message in std::mem::take(&mut self.outbox) {
+        for (session_id, message) in std::mem::take(&mut self.outbox) {
             let id = serde_json::from_str::<Value>(&message)
                 .ok()
                 .and_then(|value| value.get("id").and_then(Value::as_u64));
-            if let Err(error) = socket.send(Message::Text(message.into())) {
-                if let Some(tag) = id.and_then(|id| self.in_flight.remove(&id)) {
-                    self.bodies
-                        .on_result(tag, Err(format!("falha ao enviar comando ao CDP: {error}")));
+            let mut payload: Value = serde_json::from_str(&message).unwrap_or(Value::Null);
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert("sessionId".to_string(), json!(session_id));
+            }
+            let wire = payload.to_string();
+            if let Err(error) = socket.send(Message::Text(wire.into())) {
+                if let Some(id) = id {
+                    if let Some((sid, tag)) = self.in_flight.remove(&id) {
+                        self.bodies_for(&sid).on_result(
+                            tag,
+                            Err(format!("falha ao enviar comando ao CDP: {error}")),
+                        );
+                    }
                 }
             }
         }
@@ -629,7 +843,7 @@ impl Cdp {
             match socket.read() {
                 Ok(Message::Text(text)) => {
                     if let Ok(value) = serde_json::from_str::<Value>(text.as_str()) {
-                        self.record(&value, text.as_str());
+                        self.record(socket, &value);
                         self.flush_outbox(socket);
                     }
                 }
@@ -647,30 +861,43 @@ impl Cdp {
 
     /// Fecha a coleta: nada fica sem linha.
     fn finish_bodies(&mut self) {
-        let leftover: Vec<BodyTag> = self.in_flight.drain().map(|(_, tag)| tag).collect();
-        for tag in leftover {
-            self.bodies.on_result(
+        let leftover: Vec<(String, BodyTag)> =
+            self.in_flight.drain().map(|(_, pair)| pair).collect();
+        for (session_id, tag) in leftover {
+            self.bodies_for(&session_id).on_result(
                 tag,
                 Err("captura encerrada antes de o CDP responder ao comando de corpo".to_string()),
             );
         }
-        self.bodies.finish();
+        for collector in self.bodies_by_session.values_mut() {
+            collector.finish();
+        }
         self.write_body_lines();
         let _ = self.bodies_file.sync_all();
     }
 
     fn write_body_lines(&mut self) {
-        for line in self.bodies.take_lines() {
-            let result = self
-                .bodies_file
-                .write_all(line.as_bytes())
-                .and_then(|_| self.bodies_file.write_all(b"\n"));
-            if let Err(error) = result {
-                if let Ok(mut guard) = self.status.lock() {
-                    guard.last_error = Some(format!("cdp-bodies.jsonl: {error}"));
+        for (session_id, collector) in &mut self.bodies_by_session {
+            for line in collector.take_lines() {
+                let mut value: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
+                if let Some(map) = value.as_object_mut() {
+                    map.insert("sessionId".to_string(), json!(session_id));
+                }
+                let out = format!("{}\n", value);
+                let result = self
+                    .bodies_file
+                    .write_all(out.as_bytes());
+                if let Err(error) = result {
+                    if let Ok(mut guard) = self.status.lock() {
+                        guard.last_error = Some(format!("cdp-bodies.jsonl: {error}"));
+                    }
                 }
             }
         }
+    }
+
+    fn attach_warnings_for_import(&self) -> Vec<String> {
+        self.attach_warnings.clone()
     }
 
     fn events_text(&self) -> String {
