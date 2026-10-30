@@ -99,3 +99,7 @@ REAL do produto (não o harness do experimento):
   resultado (aceites existentes verdes).
 
 Interface (App) fica para a onda 3: filtro/coluna de alvo e aviso de limite.
+
+## Teste manual do usuário (2026-10-30)
+
+Captura de várias abas no bundle final 02e6ef30… (HEAD 8cfe828, commit 18cbb01): APROVADO pelo usuário ("aprovado").
