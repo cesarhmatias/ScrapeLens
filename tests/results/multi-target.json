@@ -1,11 +1,11 @@
 {
  "artifacts": {
-  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-lksfog22/session",
-  "cdp_events": 95,
-  "cdp_bodies": 17,
-  "netlog_bytes": 499075,
+  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-hctfxa44/session",
+  "cdp_events": 167,
+  "cdp_bodies": 26,
+  "netlog_bytes": 663833,
   "server_lines": 19,
-  "session_requests": 13,
+  "session_requests": 21,
   "driver": {
    "driver_rc": 0
   }
@@ -33,10 +33,11 @@
  },
  "cdp": {
   "markers": [
+   "blank-get-1",
+   "blank-post-1",
    "main-1",
    "main-post-1",
    "oopif-1",
-   "oopif-post-1",
    "sw-intercept-1",
    "sw-own-1",
    "sw-own-post-1",
@@ -45,17 +46,22 @@
   ],
   "missing": [
    "blank-1",
-   "blank-get-1",
-   "blank-post-1",
    "oopif-get-1",
+   "oopif-post-1",
    "popup-1",
    "popup-get-1",
    "popup-post-1"
   ]
  },
  "targets": {
-  "sessions": 6,
+  "sessions": 13,
   "eventos": {
+   "blank-get-1": [
+    "page"
+   ],
+   "blank-post-1": [
+    "page"
+   ],
    "main-1": [
     "page"
    ],
@@ -64,9 +70,6 @@
    ],
    "oopif-1": [
     "page"
-   ],
-   "oopif-post-1": [
-    "iframe"
    ],
    "sw-intercept-1": [
     "page",
@@ -86,11 +89,12 @@
    ]
   },
   "modelo": {
+   "blank-get-1": "page",
+   "blank-post-1": "page",
    "main-1": "page",
    "main-post-1": "page",
    "oopif-1": "page",
-   "oopif-post-1": "iframe",
-   "sw-intercept-1": "service_worker",
+   "sw-intercept-1": "page",
    "sw-own-1": "service_worker",
    "sw-own-post-1": "service_worker",
    "worker-get-1": "worker",
@@ -101,91 +105,194 @@
   "main-post-1": {
    "esperado_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
    "cdp_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
-   "esperado_resp": "9156b23016d7e64957722d715733a8231d117345f78f55e4a82efd015621241a",
-   "cdp_resp": "9156b23016d7e64957722d715733a8231d117345f78f55e4a82efd015621241a"
+   "esperado_resp": "aa47b7e7ed88517e4a74b20949150f78c95bb61096de4fdf4883e8d094f8e4ab",
+   "cdp_resp": "aa47b7e7ed88517e4a74b20949150f78c95bb61096de4fdf4883e8d094f8e4ab"
   },
   "popup-post-1": {
    "cdp": "ausente"
   },
   "blank-post-1": {
-   "cdp": "ausente"
+   "esperado_req": "0d2d398326a90c06e24f30bef291e070a19c52c275d61666e0d1a90bcabdb1e4",
+   "cdp_req": "0d2d398326a90c06e24f30bef291e070a19c52c275d61666e0d1a90bcabdb1e4",
+   "esperado_resp": "33ffecbfcf8f60429347656c81d5f0ffe2e3897755cbdd417de402282bd99ca8",
+   "cdp_resp": "33ffecbfcf8f60429347656c81d5f0ffe2e3897755cbdd417de402282bd99ca8"
   },
   "oopif-post-1": {
-   "esperado_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
-   "cdp_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
-   "esperado_resp": "3f4c09a20e60ae4078f20cfb667cf4e168dd7be53d0efa0a76691c5f20f82584",
-   "cdp_resp": "3f4c09a20e60ae4078f20cfb667cf4e168dd7be53d0efa0a76691c5f20f82584"
+   "cdp": "ausente"
   },
   "worker-post-1": {
    "esperado_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
    "cdp_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
-   "esperado_resp": "1059d4ea2d4e6334e5537a6c1e2e399e3ba4c7266d6b352261665bb596ba41c0",
-   "cdp_resp": "1059d4ea2d4e6334e5537a6c1e2e399e3ba4c7266d6b352261665bb596ba41c0"
+   "esperado_resp": "f2089ec443aba123420993e9f8b500631a04c4ec290a2d18deb06330ff8c683a",
+   "cdp_resp": "f2089ec443aba123420993e9f8b500631a04c4ec290a2d18deb06330ff8c683a"
   },
   "sw-own-post-1": {
    "esperado_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
    "cdp_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
-   "esperado_resp": "2d88d7d36b7af1d9eea7609c49a3ef34575774e9f6350575a85369b8b1f13030",
-   "cdp_resp": "2d88d7d36b7af1d9eea7609c49a3ef34575774e9f6350575a85369b8b1f13030"
+   "esperado_resp": "1706abedc48fcb95f9885340944966ba34bbb9f1428c6dbdfafb8e55061caf31",
+   "cdp_resp": "1706abedc48fcb95f9885340944966ba34bbb9f1428c6dbdfafb8e55061caf31"
   }
  },
  "request_id_collisions": {
-  "total": 0,
-  "exemplos": {}
+  "total": 3,
+  "exemplos": {
+   "14523.5": [
+    "1D720F30ACCD0FBCB21CFE24D313A1A9",
+    "893738899C4866B23D6A2EF3B31E9361",
+    "8C03AFBB34762FF2B1281CB5B46638AB"
+   ],
+   "14523.6": [
+    "1D720F30ACCD0FBCB21CFE24D313A1A9",
+    "893738899C4866B23D6A2EF3B31E9361",
+    "8C03AFBB34762FF2B1281CB5B46638AB"
+   ],
+   "14523.7": [
+    "1D720F30ACCD0FBCB21CFE24D313A1A9",
+    "893738899C4866B23D6A2EF3B31E9361",
+    "8C03AFBB34762FF2B1281CB5B46638AB"
+   ]
+  }
  },
  "merge": {
-  "pares_distintos": 13,
-  "requisicoes": 13,
-  "colisoes": "nenhuma nesta captura (não exercitado)"
+  "pares_distintos": 21,
+  "requisicoes": 21
  },
  "service_worker": {
-  "requests": 4,
+  "requests": 10,
   "intercept": [
    {
-    "id": "cdp-r0002",
-    "target_kind": "page",
-    "sessions": [
-     "270B12DFEE73CC72E34738BA8B9E7178"
-    ],
-    "attempts": 1,
-    "links": [],
-    "linked": false,
-    "ambiguous": false
-   },
-   {
-    "id": "cdp-r0013",
+    "id": "cdp-r0005",
     "target_kind": "service_worker",
     "sessions": [
-     "C07853DDBE2F2A4401169AA6C8CC0E4A"
+     "1D720F30ACCD0FBCB21CFE24D313A1A9"
+    ],
+    "attempts": 1,
+    "links": [
+     {
+      "request": "cdp-r0009",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     },
+     {
+      "request": "cdp-r0012",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     }
+    ],
+    "linked": false,
+    "ambiguous": true
+   },
+   {
+    "id": "cdp-r0009",
+    "target_kind": "service_worker",
+    "sessions": [
+     "893738899C4866B23D6A2EF3B31E9361"
+    ],
+    "attempts": 1,
+    "links": [
+     {
+      "request": "cdp-r0005",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     },
+     {
+      "request": "cdp-r0012",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     }
+    ],
+    "linked": false,
+    "ambiguous": true
+   },
+   {
+    "id": "cdp-r0012",
+    "target_kind": "service_worker",
+    "sessions": [
+     "8C03AFBB34762FF2B1281CB5B46638AB"
+    ],
+    "attempts": 1,
+    "links": [
+     {
+      "request": "cdp-r0005",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     },
+     {
+      "request": "cdp-r0009",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     }
+    ],
+    "linked": false,
+    "ambiguous": true
+   },
+   {
+    "id": "cdp-r0014",
+    "target_kind": "page",
+    "sessions": [
+     "941125FCE52F1640D1F2A35541BFE4EF"
     ],
     "attempts": 1,
     "links": [],
     "linked": false,
-    "ambiguous": false
+    "ambiguous": true
    }
   ]
  },
  "session_warnings": [
+  "cdp.target_attach_failed",
+  "cdp.target_attach_failed",
   "cdp.extra_info_without_request",
   "cdp.extra_info_without_request",
   "cdp.response_extra_without_request",
   "cdp.response_extra_without_request",
   "cdp.unhandled_events",
+  "cdp.service_worker_ambiguous",
+  "cdp.service_worker_ambiguous",
+  "cdp.service_worker_ambiguous",
+  "cdp.service_worker_ambiguous",
+  "cdp.service_worker_ambiguous",
+  "cdp.service_worker_ambiguous",
+  "cdp.service_worker_ambiguous",
+  "cdp.service_worker_ambiguous",
+  "cdp.service_worker_ambiguous",
   "netlog.time_unit_detected",
   "correlate.netlog_unmatched",
   "correlate.unmatched"
  ],
  "fails": [
-  "cdp: 9/16 marcadores (faltam ['blank-1', 'blank-get-1', 'blank-post-1', 'oopif-get-1', 'popup-1', 'popup-get-1', 'popup-post-1'])",
-  "cdp: marcadores ausentes além da exceção blank-1: ['blank-get-1', 'blank-post-1', 'oopif-get-1', 'popup-1', 'popup-get-1', 'popup-post-1']",
+  "cdp: 10/16 marcadores (faltam ['blank-1', 'oopif-get-1', 'oopif-post-1', 'popup-1', 'popup-get-1', 'popup-post-1'])",
+  "cdp: marcadores ausentes além da exceção blank-1: ['oopif-get-1', 'oopif-post-1', 'popup-1', 'popup-get-1', 'popup-post-1']",
   "tipo do alvo popup-1: esperado page, veio ausente",
   "tipo do alvo popup-get-1: esperado page, veio ausente",
   "tipo do alvo popup-post-1: esperado page, veio ausente",
-  "tipo do alvo blank-get-1: esperado page, veio ausente",
-  "tipo do alvo blank-post-1: esperado page, veio ausente",
   "tipo do alvo oopif-get-1: esperado iframe, veio ausente",
+  "tipo do alvo oopif-post-1: esperado iframe, veio ausente",
   "post popup-post-1: requisição ausente no CDP",
-  "post blank-post-1: requisição ausente no CDP",
-  "service worker: 2 requisições duplicadas sem link/ambiguidade: [{'id': 'cdp-r0002', 'target_kind': 'page', 'sessions': ['270B12DFEE73CC72E34738BA8B9E7178'], 'attempts': 1, 'links': [], 'linked': False, 'ambiguous': False}, {'id': 'cdp-r0013', 'target_kind': 'service_worker', 'sessions': ['C07853DDBE2F2A4401169AA6C8CC0E4A'], 'attempts': 1, 'links': [], 'linked': False, 'ambiguous': False}]"
+  "post oopif-post-1: requisição ausente no CDP"
  ]
 }
