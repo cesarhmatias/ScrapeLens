@@ -187,6 +187,8 @@ fn run_inner(
         }
     }
 
+    // Janela extra para beacons tardios (_blank, SW) após o sinal de parada.
+    cdp.pump_socket(&mut socket, Duration::from_secs(4));
     // Dá uma janela curta para os getResponseBody/getRequestPostData em voo
     // voltarem antes de fechar; o que não voltar vira linha `unavailable`.
     cdp.drain_bodies(&mut socket, Duration::from_secs(3));
@@ -438,6 +440,7 @@ const CDP_TARGET_METHODS: &[&str] = &[
     "Target.attachFailed",
     "Capture.sessionSetup",
     "Capture.targetSetupTimeout",
+    "Capture.targetSessionDecision",
 ];
 
 /// Código de aviso importado pelo core (`cdp.target_setup_timeout`).
@@ -468,6 +471,7 @@ struct Cdp {
     configured_sessions: std::collections::HashSet<String>,
     configured_target_primary: HashMap<String, String>,
     detached_sessions: std::collections::HashSet<String>,
+    setup_in_progress: std::collections::HashSet<String>,
     wait_for_debugger: bool,
     /// Durante `setup()`, só grava Target.*; evita setup aninhado que bloqueia respostas CDP.
     setup_phase: bool,
@@ -514,6 +518,7 @@ impl Cdp {
                             configured_sessions: std::collections::HashSet::new(),
                             configured_target_primary: HashMap::new(),
                             detached_sessions: std::collections::HashSet::new(),
+                            setup_in_progress: std::collections::HashSet::new(),
                             wait_for_debugger: true,
                             setup_phase: false,
                             pending_setup: Vec::new(),
@@ -705,6 +710,7 @@ impl Cdp {
         parent_session_id: Option<&str>,
     ) {
         self.detached_sessions.insert(attached.session_id.clone());
+        self.setup_in_progress.remove(&attached.session_id);
         self.drop_recorded_network_for_session(&attached.session_id);
         if self.configured_target_primary.get(&attached.target_id) == Some(&attached.session_id)
             && !self.configured_sessions.contains(&attached.session_id)
@@ -758,6 +764,27 @@ impl Cdp {
         )
     }
 
+    fn log_target_session_decision(
+        &mut self,
+        attached: &AttachedTarget,
+        decision: &str,
+        primary_session_id: Option<&str>,
+        parent_session_id: Option<&str>,
+    ) {
+        self.push_event_line(
+            &attached.session_id,
+            "Capture.targetSessionDecision",
+            &json!({
+                "targetId": attached.target_id,
+                "type": attached.target_type,
+                "sessionId": attached.session_id,
+                "decision": decision,
+                "primarySessionId": primary_session_id,
+            }),
+            parent_session_id,
+        );
+    }
+
     fn setup_duplicate_target_session(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
@@ -765,6 +792,16 @@ impl Cdp {
         waiting_for_debugger: bool,
         parent_session_id: Option<&str>,
     ) -> Result<(), String> {
+        let primary = self
+            .configured_target_primary
+            .get(&attached.target_id)
+            .cloned();
+        self.log_target_session_decision(
+            &attached,
+            "duplicate_detach",
+            primary.as_deref(),
+            parent_session_id,
+        );
         if self.wait_for_debugger && waiting_for_debugger {
             let _ = self.send(
                 socket,
@@ -809,23 +846,23 @@ impl Cdp {
     ) -> Result<(), String> {
         match self.configured_target_primary.get(&attached.target_id) {
             Some(primary) if primary != &attached.session_id => {
-                if self.configured_sessions.contains(primary) {
-                    return self.setup_duplicate_target_session(
-                        socket,
-                        attached,
-                        waiting_for_debugger,
-                        parent_session_id,
-                    );
-                }
-                self.configured_target_primary.insert(
-                    attached.target_id.clone(),
-                    attached.session_id.clone(),
+                return self.setup_duplicate_target_session(
+                    socket,
+                    attached,
+                    waiting_for_debugger,
+                    parent_session_id,
                 );
             }
             None => {
                 self.configured_target_primary.insert(
                     attached.target_id.clone(),
                     attached.session_id.clone(),
+                );
+                self.log_target_session_decision(
+                    &attached,
+                    "primary_reserve",
+                    Some(attached.session_id.as_str()),
+                    parent_session_id,
                 );
             }
             Some(_) => {}
@@ -842,6 +879,10 @@ impl Cdp {
             }
             return Ok(());
         }
+        self.setup_in_progress
+            .insert(attached.session_id.clone());
+        self.setup_seen
+            .insert(attached.session_id.clone(), attached.clone());
         let target_type = attached.target_type.clone();
         let mut resumed = false;
         if Self::skip_target_setup(&target_type) {
@@ -857,10 +898,9 @@ impl Cdp {
             }
             self.setup_done
                 .insert(attached.session_id.clone(), attached.clone());
-            self.setup_seen
-                .insert(attached.session_id.clone(), attached.clone());
             self.configured_sessions
                 .insert(attached.session_id.clone());
+            self.setup_in_progress.remove(&attached.session_id);
             self.push_event_line(
                 &attached.session_id,
                 "Capture.sessionSetup",
@@ -961,10 +1001,15 @@ impl Cdp {
         }
         self.setup_done
             .insert(attached.session_id.clone(), attached.clone());
-        self.setup_seen
-            .insert(attached.session_id.clone(), attached.clone());
         self.configured_sessions
             .insert(attached.session_id.clone());
+        self.setup_in_progress.remove(&attached.session_id);
+        self.log_target_session_decision(
+            &attached,
+            "primary_configured",
+            Some(attached.session_id.as_str()),
+            parent_session_id,
+        );
         self.push_event_line(
             &attached.session_id,
             "Capture.sessionSetup",
@@ -1033,6 +1078,20 @@ impl Cdp {
                 .insert(target_id.clone(), session_id.clone())
             {
                 if prev != session_id {
+                    let ghost = AttachedTarget {
+                        session_id: prev.clone(),
+                        target_id: target_id.clone(),
+                        target_type: "page".to_string(),
+                    };
+                    self.log_target_session_decision(
+                        &ghost,
+                        "opener_replaced_auto_attach",
+                        Some(session_id.as_str()),
+                        None,
+                    );
+                    self.configured_sessions.remove(&prev);
+                    self.setup_done.remove(&prev);
+                    self.setup_in_progress.remove(&prev);
                     let _ = self.send(
                         socket,
                         "Target.detachFromTarget",
