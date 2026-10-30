@@ -10,3 +10,11 @@ results/bodies/session/
 results/bodies/server/
 results/bodies/tmp/
 results/bodies/stop
+
+# multi-target: brutos locais (só analysis/summary commitados)
+results/multi-target-*/**/cdp-events.jsonl
+results/multi-target-*/**/cdp-bodies.jsonl
+results/multi-target-*/**/chrome-netlog.json
+results/multi-target-*/**/chrome-profile/
+results/multi-target-*/testserver-evidence/
+results/multi-target-*/**/server.jsonl

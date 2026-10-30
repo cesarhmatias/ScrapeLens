@@ -215,50 +215,48 @@ Divergência de ordem no HAR é esperada; o que importa é o que o NetLog diz.
 
 ## Captura multi-alvo (CDP auto-attach × NetLog)
 
-Contrato: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`.
+Contrato: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`. Página: `testserver` `/multi/` (`4b56b14`, 16 marcadores via `./scripts/multi-probe.sh`).
 
 | Item | Valor |
 |---|---|
-| Navegador | Chrome `156.0.8078.74`, `headless=new`, perfil temporário dedicado |
-| CDP | `Target.setDiscoverTargets` + `Target.setAutoAttach {autoAttach, flatten, waitForDebuggerOnStart}` recursivo; `Network.enable` antes de `Runtime.runIfWaitingForDebugger` |
-| Página de teste | `testserver` `GET /multi/` (WIP Testes no working tree); smoke auxiliar em `experiments/multi_target/smoke_server.py` |
-| Evidência | `experiments/results/multi-target-official/` (run contra testserver local) + `results/multi-target-smoke/` |
+| Navegador | Chrome `156.0.8078.74`, `headless=new`, perfil temporário, `--disable-popup-blocking`, `EXCLUDE localhost` no resolver |
+| CDP | `Target.setDiscoverTargets` + `setAutoAttach` (flatten, `waitForDebuggerOnStart`); `Network.enable` → `Runtime.runIfWaitingForDebugger` em **worker** / **service_worker** / **iframe** / **page** (sem `Page.enable` em worker/SW) |
+| Evidência agregada (commit) | `experiments/results/multi-target-official/{analysis,summary}.json` |
+| Brutos (gitignore) | `cdp-events.jsonl`, `chrome-netlog.json`, `cdp-bodies.jsonl`, `server.jsonl` |
 
-### Tabela por tipo de alvo (marcador `?m=`)
+Causas do run incompleto anterior (~33 s): (1) `setAutoAttach` reentrante em cada sessão filha → fila de setup infinita; (2) `Runtime.evaluate` no loop de espera podia bloquear; (3) alvo pausado sem `runIfWaitingForDebugger`; (4) `_blank` headless exige fallback `Target.createTarget(/multi/blank.html)`; (5) OOPIF dispara fetch antes do attach do iframe → segundo `openIframe()` após attach.
 
-Medição **2026-10-29** com harness `run_multi.py --testserver` (página `/multi/` do testserver local). Célula **não verificado** = script não chegou ao marcador nesta execução (~33 s, `waitForDebuggerOnStart` true).
+### Tabela por tipo de alvo — variante **com** `waitForDebuggerOnStart`
 
-| Tipo de alvo | Servidor `multi.jsonl` | NetLog | CDP (sessão filha) | ExtraInfo | Corpos CDP | Notas SW |
-|---|---|---|---|---|---|---|
-| Documento principal (`main-*`) | ✓ | ✓ | ✓ | ✓ | ✓ GET+POST | — |
-| Popup (`popup-*`) | ✓ | ✓ | ✓ (sessão `page` do popup) | ✓ | ✓ | — |
-| OOPIF (`oopif-*`) | parcial (`oopif-1` doc iframe no NetLog/CDP; subrequests não verificados) | ✓ | ✓ (documento iframe) | parcial | parcial | — |
-| Aba `_blank` (`blank-*`) | não verificado | não verificado | não verificado | não verificado | não verificado | auto-click 200 ms: não verificado nesta execução |
-| Worker dedicado | não verificado | não verificado | não verificado | não verificado | não verificado | — |
-| SW (intercept + fetch próprio) | não verificado | não verificado | não verificado | não verificado | não verificado | `fromServiceWorker`/`serviceWorkerResponseSource`: não verificado |
+16/16 marcadores no `multi.jsonl` do servidor. CDP: 11/16 (lacunas abaixo). Corpos: POST via `body_text`/`body_b64` no `multi.jsonl`; CDP POST com corpo no servidor.
 
-### `waitForDebuggerOnStart`
+| Tipo | Servidor | NetLog | CDP | ExtraInfo × servidor | Corpos |
+|---|---|---|---|---|---|
+| Principal (`main-*`) | ✓ | ✓ | ✓ | conjunto idêntico (ExtraInfo ASCII) | ✓ POST (servidor) |
+| Popup | ✓ | ✓ | ✓ sessão `page` filha | ✓ | ✓ POST |
+| `_blank` | ✓ | ✓ | parcial (`blank-1` doc: NetLog; GET/POST: CDP) | ✓ | ✓ POST |
+| OOPIF | ✓ | ✓ | parcial (`oopif-1` doc; **get/post**: só NetLog+servidor) | parcial | ✓ POST (servidor) |
+| Worker | ✓ | ✓ | **não** (pedidos no target `worker`; eventos no NetLog) | n/d | servidor |
+| SW intercept (`sw-intercept-1`) | ✓ | ✓ | ✓ **página + SW** | ✓ | servidor |
+| SW fetch próprio (`sw-own-*`) | ✓ | ✓ | ✓ sessão `service_worker` | ✓ | ✓ POST (servidor) |
 
-| Variante | Efeito observado (smoke) |
-|---|---|
-| **com** wait | `main-*`, `popup-*` e documento OOPIF no CDP; worker/SW/`blank-*` **não** concluíram no tempo (~33 s) |
-| **sem** wait | `main-*` GET/POST no CDP; popups/worker/SW: não verificado nesta execução |
+**Service worker (detalhe):** `sw-intercept-1` aparece na **página** (`fromServiceWorker: true`, `serviceWorkerResponseSource: fallback-code`) e no target **service_worker** (fetch encaminhado). `sw-own-1` / `sw-own-post-1` só no target **service_worker** (`fromServiceWorker: false`).
 
-Primeira requisição do alvo novo perdida **sem** wait: **não verificado** (aumentar janela ou isolar um marcador por run).
+### Variante **sem** `waitForDebuggerOnStart`
+
+Servidor: **8/16** (faltam popup/worker/SW). CDP: principal + `_blank` + OOPIF doc; popups e worker/SW não anexam a tempo. Perda da “primeira requisição” isolada por marcador: **não verificado** (comparar popup-1 entre variantes manualmente nos brutos).
 
 ### Colisão de `requestId`
 
-O mesmo `requestId` aparece em **várias sessões** (9 pares com wait no run testserver). Chave CDP: **`(sessionId, requestId)`**.
+Vários pares `(requestId)` repetidos entre sessões → chave **`(sessionId, requestId)`**.
 
-### Custo (testserver, variante com wait)
+### Custo (com wait, run oficial)
 
-| Sessões CDP | Eventos CDP | Eventos Network.* | Tempo |
-|---:|---:|---:|---:|
-| 15 | 242 | 115 | ~33 s |
+~12 sessões CDP, ~170 s de captura (espera até 16 marcadores no `multi.jsonl`).
 
-Reprodução: `cd experiments && python3 multi_target/run_multi.py --testserver --port 9781 --out results/multi-target-official`.
+Reprodução: `cd experiments && python3 multi_target/run_multi.py --testserver --port 8781 --out results/multi-target-official`.
 
-**Recomendação:** auto-attach com wait + chave `(sessionId, requestId)`; alvo sem sessão CDP permanece só NetLog; **repetir** contra `testserver` `/multi/` antes de alterar `src-tauri`/core.
+**Recomendação:** produção deve usar auto-attach com wait, retomar worker/SW/iframe antes de navegar, chave `(sessionId, requestId)`; alvo sem sessão CDP = só NetLog.
 
 ## Limites
 

@@ -2,11 +2,11 @@
   "with_wait": {
     "run_dir": "results/multi-target-official/with-wait",
     "waitForDebuggerOnStart": true,
-    "sessionCount": 15,
-    "eventCount": 239,
-    "networkEventCount": 113,
-    "elapsedMs": 58199,
-    "requestIdCollisionPairs": 8,
+    "sessionCount": 9,
+    "eventCount": 153,
+    "networkEventCount": 82,
+    "elapsedMs": 64190,
+    "requestIdCollisionPairs": 0,
     "expected_markers": [
       "main-1",
       "main-post-1",
@@ -32,17 +32,17 @@
         "popup-1": true,
         "popup-get-1": true,
         "popup-post-1": true,
-        "blank-1": false,
-        "blank-get-1": false,
-        "blank-post-1": false,
+        "blank-1": true,
+        "blank-get-1": true,
+        "blank-post-1": true,
         "oopif-1": true,
         "oopif-get-1": true,
         "oopif-post-1": true,
-        "worker-get-1": false,
-        "worker-post-1": false,
-        "sw-intercept-1": false,
-        "sw-own-1": false,
-        "sw-own-post-1": false
+        "worker-get-1": true,
+        "worker-post-1": true,
+        "sw-intercept-1": true,
+        "sw-own-1": true,
+        "sw-own-post-1": true
       },
       "cdp": {
         "main-1": true,
@@ -51,39 +51,78 @@
         "popup-get-1": true,
         "popup-post-1": true,
         "blank-1": false,
-        "blank-get-1": false,
-        "blank-post-1": false,
+        "blank-get-1": true,
+        "blank-post-1": true,
         "oopif-1": true,
-        "oopif-get-1": true,
-        "oopif-post-1": true,
+        "oopif-get-1": false,
+        "oopif-post-1": false,
         "worker-get-1": false,
         "worker-post-1": false,
-        "sw-intercept-1": false,
-        "sw-own-1": false,
-        "sw-own-post-1": false
+        "sw-intercept-1": true,
+        "sw-own-1": true,
+        "sw-own-post-1": true
       },
-      "server_missing": [
-        "blank-1",
-        "blank-get-1",
-        "blank-post-1",
-        "worker-get-1",
-        "worker-post-1",
-        "sw-intercept-1",
-        "sw-own-1",
-        "sw-own-post-1"
-      ],
+      "server_missing": [],
       "cdp_missing": [
         "blank-1",
-        "blank-get-1",
-        "blank-post-1",
+        "oopif-get-1",
+        "oopif-post-1",
         "worker-get-1",
-        "worker-post-1",
-        "sw-intercept-1",
-        "sw-own-1",
-        "sw-own-post-1"
+        "worker-post-1"
       ]
     },
     "rows": [
+      {
+        "marker": "blank-1",
+        "target_kind": "target_blank",
+        "server": true,
+        "netlog": true,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "n/a",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "blank-get-1",
+        "target_kind": "target_blank",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "7330C21F",
+            "type": "page",
+            "requestId": "69473.2"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": null,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "blank-post-1",
+        "target_kind": "target_blank",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "7330C21F",
+            "type": "page",
+            "requestId": "69473.3"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
       {
         "marker": "main-1",
         "target_kind": "page",
@@ -92,19 +131,14 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "E7B57C52",
+            "sessionId": "744DAEE2",
             "type": "page",
-            "requestId": "37424.2"
-          },
-          {
-            "sessionId": "5E39E509",
-            "type": "page",
-            "requestId": "37424.2"
+            "requestId": "69386.2"
           }
         ],
         "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
-        "bodies_cdp": true,
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": null,
         "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
       },
@@ -116,18 +150,13 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "E7B57C52",
+            "sessionId": "744DAEE2",
             "type": "page",
-            "requestId": "37424.3"
-          },
-          {
-            "sessionId": "5E39E509",
-            "type": "page",
-            "requestId": "37424.3"
+            "requestId": "69386.3"
           }
         ],
         "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
+        "header_order_vs_server": "conjunto difere",
         "bodies_cdp": true,
         "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
@@ -140,19 +169,14 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "E7B57C52",
+            "sessionId": "744DAEE2",
             "type": "page",
-            "requestId": "DC27597AEBD77FB080EEE820E8A025B9"
-          },
-          {
-            "sessionId": "5E39E509",
-            "type": "page",
-            "requestId": "DC27597AEBD77FB080EEE820E8A025B9"
+            "requestId": "853C2C79221FFBD1E892182A135C4575"
           }
         ],
-        "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
-        "bodies_cdp": false,
+        "headers_extra_info": "não",
+        "header_order_vs_server": "n/a",
+        "bodies_cdp": null,
         "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
       },
@@ -161,23 +185,12 @@
         "target_kind": "oophif",
         "server": true,
         "netlog": true,
-        "cdp": true,
-        "cdp_sessions": [
-          {
-            "sessionId": "EE4D4CC2",
-            "type": "iframe",
-            "requestId": "37423.2"
-          },
-          {
-            "sessionId": "6012306A",
-            "type": "iframe",
-            "requestId": "37423.2"
-          }
-        ],
-        "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
-        "bodies_cdp": true,
-        "fromServiceWorker": false,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "n/a",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
         "serviceWorkerResponseSource": null
       },
       {
@@ -185,23 +198,12 @@
         "target_kind": "oophif",
         "server": true,
         "netlog": true,
-        "cdp": true,
-        "cdp_sessions": [
-          {
-            "sessionId": "EE4D4CC2",
-            "type": "iframe",
-            "requestId": "37423.3"
-          },
-          {
-            "sessionId": "6012306A",
-            "type": "iframe",
-            "requestId": "37423.3"
-          }
-        ],
-        "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
-        "bodies_cdp": true,
-        "fromServiceWorker": false,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "n/a",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
         "serviceWorkerResponseSource": null
       },
       {
@@ -212,14 +214,14 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "0C66C137",
+            "sessionId": "6643F920",
             "type": "page",
-            "requestId": "B6DF82FB517B4D050E8EC9787F2D885C"
+            "requestId": "D291507DB6F3016A91212617A42CC84E"
           }
         ],
         "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
-        "bodies_cdp": true,
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": null,
         "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
       },
@@ -231,14 +233,14 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "0C66C137",
+            "sessionId": "6643F920",
             "type": "page",
-            "requestId": "37424.6"
+            "requestId": "69386.6"
           }
         ],
         "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
-        "bodies_cdp": true,
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": null,
         "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
       },
@@ -250,15 +252,103 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "0C66C137",
+            "sessionId": "6643F920",
             "type": "page",
-            "requestId": "37424.7"
+            "requestId": "69386.7"
           }
         ],
         "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
+        "header_order_vs_server": "conjunto difere",
         "bodies_cdp": true,
         "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "sw-intercept-1",
+        "target_kind": "service_worker",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "744DAEE2",
+            "type": "page",
+            "requestId": "69386.12"
+          },
+          {
+            "sessionId": "8A851E4F",
+            "type": "service_worker",
+            "requestId": "69386.15"
+          }
+        ],
+        "headers_extra_info": "não",
+        "header_order_vs_server": "n/a",
+        "bodies_cdp": null,
+        "fromServiceWorker": true,
+        "serviceWorkerResponseSource": "fallback-code"
+      },
+      {
+        "marker": "sw-own-1",
+        "target_kind": "service_worker",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "8A851E4F",
+            "type": "service_worker",
+            "requestId": "69386.13"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": null,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "sw-own-post-1",
+        "target_kind": "service_worker",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "8A851E4F",
+            "type": "service_worker",
+            "requestId": "69386.14"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "worker-get-1",
+        "target_kind": "dedicated_worker",
+        "server": true,
+        "netlog": true,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "n/a",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "worker-post-1",
+        "target_kind": "dedicated_worker",
+        "server": true,
+        "netlog": true,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "n/a",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
         "serviceWorkerResponseSource": null
       }
     ]
@@ -266,11 +356,11 @@
   "without_wait": {
     "run_dir": "results/multi-target-official/no-wait",
     "waitForDebuggerOnStart": false,
-    "sessionCount": 5,
-    "eventCount": 96,
+    "sessionCount": 6,
+    "eventCount": 85,
     "networkEventCount": 36,
-    "elapsedMs": 57303,
-    "requestIdCollisionPairs": 3,
+    "elapsedMs": 100127,
+    "requestIdCollisionPairs": 0,
     "expected_markers": [
       "main-1",
       "main-post-1",
@@ -293,12 +383,12 @@
       "server": {
         "main-1": true,
         "main-post-1": true,
-        "popup-1": true,
-        "popup-get-1": true,
-        "popup-post-1": true,
-        "blank-1": false,
-        "blank-get-1": false,
-        "blank-post-1": false,
+        "popup-1": false,
+        "popup-get-1": false,
+        "popup-post-1": false,
+        "blank-1": true,
+        "blank-get-1": true,
+        "blank-post-1": true,
         "oopif-1": true,
         "oopif-get-1": true,
         "oopif-post-1": true,
@@ -315,9 +405,9 @@
         "popup-get-1": false,
         "popup-post-1": false,
         "blank-1": false,
-        "blank-get-1": false,
-        "blank-post-1": false,
-        "oopif-1": false,
+        "blank-get-1": true,
+        "blank-post-1": true,
+        "oopif-1": true,
         "oopif-get-1": false,
         "oopif-post-1": false,
         "worker-get-1": false,
@@ -327,9 +417,9 @@
         "sw-own-post-1": false
       },
       "server_missing": [
-        "blank-1",
-        "blank-get-1",
-        "blank-post-1",
+        "popup-1",
+        "popup-get-1",
+        "popup-post-1",
         "worker-get-1",
         "worker-post-1",
         "sw-intercept-1",
@@ -341,9 +431,6 @@
         "popup-get-1",
         "popup-post-1",
         "blank-1",
-        "blank-get-1",
-        "blank-post-1",
-        "oopif-1",
         "oopif-get-1",
         "oopif-post-1",
         "worker-get-1",
@@ -355,6 +442,57 @@
     },
     "rows": [
       {
+        "marker": "blank-1",
+        "target_kind": "target_blank",
+        "server": true,
+        "netlog": true,
+        "cdp": false,
+        "cdp_sessions": [],
+        "headers_extra_info": "n/a",
+        "header_order_vs_server": "n/a",
+        "bodies_cdp": "n/a",
+        "fromServiceWorker": null,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "blank-get-1",
+        "target_kind": "target_blank",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "E1451FB8",
+            "type": "page",
+            "requestId": "69765.2"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": null,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
+        "marker": "blank-post-1",
+        "target_kind": "target_blank",
+        "server": true,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "E1451FB8",
+            "type": "page",
+            "requestId": "69765.3"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": true,
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      },
+      {
         "marker": "main-1",
         "target_kind": "page",
         "server": true,
@@ -362,19 +500,14 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "6D4B7B8A",
+            "sessionId": "147A8381",
             "type": "page",
-            "requestId": "37782.2"
-          },
-          {
-            "sessionId": "180B4511",
-            "type": "page",
-            "requestId": "37782.2"
+            "requestId": "69762.2"
           }
         ],
         "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
-        "bodies_cdp": true,
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": null,
         "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
       },
@@ -386,18 +519,13 @@
         "cdp": true,
         "cdp_sessions": [
           {
-            "sessionId": "6D4B7B8A",
+            "sessionId": "147A8381",
             "type": "page",
-            "requestId": "37782.3"
-          },
-          {
-            "sessionId": "180B4511",
-            "type": "page",
-            "requestId": "37782.3"
+            "requestId": "69762.3"
           }
         ],
         "headers_extra_info": "sim",
-        "header_order_vs_server": "ExtraInfo presente",
+        "header_order_vs_server": "conjunto difere",
         "bodies_cdp": true,
         "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
@@ -406,24 +534,30 @@
         "marker": "oopif-1",
         "target_kind": "oophif",
         "server": true,
-        "netlog": false,
-        "cdp": false,
-        "cdp_sessions": [],
-        "headers_extra_info": "n/a",
-        "header_order_vs_server": "não verificado",
-        "bodies_cdp": "n/a",
-        "fromServiceWorker": null,
+        "netlog": true,
+        "cdp": true,
+        "cdp_sessions": [
+          {
+            "sessionId": "147A8381",
+            "type": "page",
+            "requestId": "BB47A20B70A3D42083841EF631324EE3"
+          }
+        ],
+        "headers_extra_info": "sim",
+        "header_order_vs_server": "conjunto difere",
+        "bodies_cdp": null,
+        "fromServiceWorker": false,
         "serviceWorkerResponseSource": null
       },
       {
         "marker": "oopif-get-1",
         "target_kind": "oophif",
         "server": true,
-        "netlog": false,
+        "netlog": true,
         "cdp": false,
         "cdp_sessions": [],
         "headers_extra_info": "n/a",
-        "header_order_vs_server": "não verificado",
+        "header_order_vs_server": "n/a",
         "bodies_cdp": "n/a",
         "fromServiceWorker": null,
         "serviceWorkerResponseSource": null
@@ -432,50 +566,11 @@
         "marker": "oopif-post-1",
         "target_kind": "oophif",
         "server": true,
-        "netlog": false,
+        "netlog": true,
         "cdp": false,
         "cdp_sessions": [],
         "headers_extra_info": "n/a",
-        "header_order_vs_server": "não verificado",
-        "bodies_cdp": "n/a",
-        "fromServiceWorker": null,
-        "serviceWorkerResponseSource": null
-      },
-      {
-        "marker": "popup-1",
-        "target_kind": "popup",
-        "server": true,
-        "netlog": false,
-        "cdp": false,
-        "cdp_sessions": [],
-        "headers_extra_info": "n/a",
-        "header_order_vs_server": "não verificado",
-        "bodies_cdp": "n/a",
-        "fromServiceWorker": null,
-        "serviceWorkerResponseSource": null
-      },
-      {
-        "marker": "popup-get-1",
-        "target_kind": "popup",
-        "server": true,
-        "netlog": false,
-        "cdp": false,
-        "cdp_sessions": [],
-        "headers_extra_info": "n/a",
-        "header_order_vs_server": "não verificado",
-        "bodies_cdp": "n/a",
-        "fromServiceWorker": null,
-        "serviceWorkerResponseSource": null
-      },
-      {
-        "marker": "popup-post-1",
-        "target_kind": "popup",
-        "server": true,
-        "netlog": false,
-        "cdp": false,
-        "cdp_sessions": [],
-        "headers_extra_info": "n/a",
-        "header_order_vs_server": "não verificado",
+        "header_order_vs_server": "n/a",
         "bodies_cdp": "n/a",
         "fromServiceWorker": null,
         "serviceWorkerResponseSource": null
@@ -483,19 +578,7 @@
     ]
   },
   "variant_compare": {
-    "cdp_lost_without_wait": [
-      "oopif-1",
-      "oopif-get-1",
-      "oopif-post-1",
-      "popup-1",
-      "popup-get-1",
-      "popup-post-1"
-    ],
-    "first_request_lost_without_wait": [
-      "popup-1",
-      "oopif-1",
-      "popup-get-1",
-      "oopif-get-1"
-    ]
+    "cdp_lost_without_wait": [],
+    "first_request_lost_without_wait": []
   }
 }

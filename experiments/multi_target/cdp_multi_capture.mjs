@@ -2,10 +2,6 @@
 /**
  * CDP multi-alvo: Target.setDiscoverTargets + setAutoAttach recursivo,
  * Network.enable antes de Runtime.runIfWaitingForDebugger em cada sessão.
- *
- * Uso:
- *   node cdp_multi_capture.mjs --port 9222 --outdir results/multi/wait \
- *     --plan plan.json [--no-wait-debugger]
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -62,14 +58,104 @@ async function main() {
   let nextId = 0;
   const pending = new Map();
   const sessions = new Map();
+  const sessionsByTarget = new Map();
   const requestKeys = new Map();
   let eventCount = 0;
   let networkEventCount = 0;
+  let pendingSetups = 0;
 
   const logEvent = (row) => {
     fs.appendFileSync(eventsPath, `${JSON.stringify(row)}\n`);
     eventCount += 1;
     if (NETWORK_METHODS.has(row.method)) networkEventCount += 1;
+  };
+
+  function send(method, params = {}, sessionId) {
+    const id = ++nextId;
+    const payload = { id, method, params };
+    if (sessionId) payload.sessionId = sessionId;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      ws.send(JSON.stringify(payload));
+    });
+  }
+
+  const setupChild = async (sessionId, targetInfo, waitingForDebugger) => {
+    const existing = [...sessions.values()].find((s) => s.targetId === targetInfo.targetId);
+    if (existing && existing.sessionId !== sessionId) {
+      if (waitingForDebugger && waitDebugger) {
+        await send("Runtime.runIfWaitingForDebugger", {}, sessionId).catch(() => {});
+      }
+      return;
+    }
+    if (sessions.has(sessionId)) {
+      if (waitingForDebugger && waitDebugger) {
+        await send("Runtime.runIfWaitingForDebugger", {}, sessionId).catch(() => {});
+      }
+      return;
+    }
+    const type = targetInfo.type ?? "unknown";
+    sessions.set(sessionId, {
+      sessionId,
+      targetId: targetInfo.targetId,
+      type,
+      url: targetInfo.url ?? "",
+      title: targetInfo.title ?? "",
+      attachedAt: Date.now() - t0,
+      resumedDebugger: false,
+    });
+    sessionsByTarget.set(targetInfo.targetId, sessionId);
+
+    await send(
+      "Network.enable",
+      {
+        maxTotalBufferSize: 100_000_000,
+        maxResourceBufferSize: 50_000_000,
+        maxPostDataSize: 5_000_000,
+      },
+      sessionId
+    );
+    if (type === "page" || type === "iframe") {
+      await send("Page.enable", {}, sessionId).catch(() => {});
+    }
+    await send("Runtime.enable", {}, sessionId).catch(() => {});
+    const mustResume = waitDebugger && (waitingForDebugger !== false);
+    if (mustResume) {
+      await send("Runtime.runIfWaitingForDebugger", {}, sessionId);
+      sessions.get(sessionId).resumedDebugger = true;
+    }
+  };
+
+  const drainSetups = async () => {
+    for (let i = 0; i < 200 && pendingSetups > 0; i += 1) {
+      await sleep(50);
+    }
+  };
+
+  const onAttached = (params, parentSession) => {
+    pendingSetups += 1;
+    setupChild(params.sessionId, params.targetInfo, params.waitingForDebugger)
+      .then(() => {
+        const { sessionId, waitingForDebugger, targetInfo } = params;
+        logEvent({
+          session: sessionId,
+          method: "__session_attached",
+          params: {
+            parentSession,
+            waitingForDebugger,
+            targetId: targetInfo.targetId,
+            type: targetInfo.type,
+            url: targetInfo.url,
+            resumed: sessions.get(sessionId)?.resumedDebugger ?? false,
+          },
+        });
+      })
+      .catch((err) => {
+        logEvent({ session: null, method: "__error", params: { phase: "setup", message: String(err) } });
+      })
+      .finally(() => {
+        pendingSetups -= 1;
+      });
   };
 
   ws.addEventListener("message", (ev) => {
@@ -84,9 +170,7 @@ async function main() {
     if (msg.method) {
       logEvent({ session: msg.sessionId ?? null, method: msg.method, params: msg.params });
       if (msg.method === "Target.attachedToTarget") {
-        onAttached(msg.params, msg.sessionId ?? null).catch((err) => {
-          logEvent({ session: null, method: "__error", params: { phase: "attached", message: String(err) } });
-        });
+        onAttached(msg.params, msg.sessionId ?? null);
       }
       if (msg.method === "Target.targetInfoChanged" && msg.params?.targetInfo) {
         const info = msg.params.targetInfo;
@@ -100,63 +184,6 @@ async function main() {
     }
   });
 
-  function send(method, params = {}, sessionId) {
-    const id = ++nextId;
-    const payload = { id, method, params };
-    if (sessionId) payload.sessionId = sessionId;
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
-      ws.send(JSON.stringify(payload));
-    });
-  }
-
-  const setupChild = async (sessionId, targetInfo) => {
-    if (sessions.has(sessionId)) return;
-    sessions.set(sessionId, {
-      sessionId,
-      targetId: targetInfo.targetId,
-      type: targetInfo.type,
-      url: targetInfo.url ?? "",
-      title: targetInfo.title ?? "",
-      attachedAt: Date.now() - t0,
-    });
-    await send(
-      "Target.setAutoAttach",
-      { autoAttach: true, flatten: true, waitForDebuggerOnStart: waitDebugger },
-      sessionId
-    );
-    await send(
-      "Network.enable",
-      {
-        maxTotalBufferSize: 100_000_000,
-        maxResourceBufferSize: 50_000_000,
-        maxPostDataSize: 5_000_000,
-      },
-      sessionId
-    );
-    await send("Page.enable", {}, sessionId);
-    await send("Runtime.enable", {}, sessionId);
-    if (waitDebugger) {
-      await send("Runtime.runIfWaitingForDebugger", {}, sessionId);
-    }
-  };
-
-  const onAttached = async (params, parentSession) => {
-    const { sessionId, waitingForDebugger, targetInfo } = params;
-    await setupChild(sessionId, targetInfo);
-    logEvent({
-      session: sessionId,
-      method: "__session_attached",
-      params: {
-        parentSession,
-        waitingForDebugger,
-        targetId: targetInfo.targetId,
-        type: targetInfo.type,
-        url: targetInfo.url,
-      },
-    });
-  };
-
   await send("Target.setDiscoverTargets", { discover: true });
   await send("Target.setAutoAttach", {
     autoAttach: true,
@@ -164,22 +191,22 @@ async function main() {
     waitForDebuggerOnStart: waitDebugger,
   });
 
-  const targets = await fetch(`http://127.0.0.1:${args.port}/json/list`).then((r) => r.json());
-  let pageTarget = targets.find((t) => t.type === "page" && !t.url.startsWith("chrome-extension"));
-  if (!pageTarget) {
-    const { targetId } = await send("Target.createTarget", { url: "about:blank" });
-    pageTarget = { id: targetId };
+  const pageUrl = plan.pageUrl;
+  const { targetId: mainTargetId } = await send("Target.createTarget", { url: pageUrl });
+  await drainSetups();
+  await sleep(300);
+
+  let rootSession = sessionsByTarget.get(mainTargetId);
+  if (!rootSession) {
+    for (let i = 0; i < 50 && !rootSession; i += 1) {
+      await sleep(100);
+      await setupChain;
+      rootSession = sessionsByTarget.get(mainTargetId);
+    }
   }
-  const { sessionId: rootSession } = await send("Target.attachToTarget", {
-    targetId: pageTarget.id ?? pageTarget.targetId,
-    flatten: true,
-  });
-  await setupChild(rootSession, {
-    targetId: pageTarget.id ?? pageTarget.targetId,
-    type: "page",
-    url: pageTarget.url ?? "about:blank",
-    title: pageTarget.title ?? "",
-  });
+  if (!rootSession) {
+    throw new Error(`sessão principal não anexada para target ${mainTargetId}`);
+  }
 
   const S = (method, params) => send(method, params, rootSession);
 
@@ -190,52 +217,52 @@ async function main() {
   await S("Network.clearBrowserCache");
   await S("Network.clearBrowserCookies");
 
-  let loaded = null;
-  const waitLoad = () =>
-    new Promise((resolve) => {
-      loaded = resolve;
-      setTimeout(resolve, plan.navTimeoutMs ?? 45000);
-    });
+  const expectedMarkers = plan.expectedMarkers ?? 16;
+  const multiLogPath = plan.multiLogPath ? path.resolve(plan.multiLogPath) : null;
 
-  const navListener = (msg) => {
-    if (msg.sessionId !== rootSession) return;
-    if (msg.method === "Page.loadEventFired") {
-      loaded?.();
-      loaded = null;
+  const serverMarkerCount = () => {
+    if (!multiLogPath || !fs.existsSync(multiLogPath)) return 0;
+    const seen = new Set();
+    for (const line of fs.readFileSync(multiLogPath, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const mk = JSON.parse(line).marker;
+        if (mk) seen.add(mk);
+      } catch {
+        /* ignore */
+      }
     }
+    return seen.size;
   };
-  ws.addEventListener("message", (ev) => {
-    const msg = JSON.parse(typeof ev.data === "string" ? ev.data : ev.data.toString());
-    if (msg.method) navListener(msg);
-  });
 
-  const pageUrl = plan.pageUrl;
-  await S("Page.navigate", { url: pageUrl });
-  await waitLoad();
-  const doneDeadline = Date.now() + (plan.waitForDoneMs ?? 20000);
+  await sleep(2500);
+  try {
+    await S("Runtime.evaluate", {
+      expression: "window.__scrapelensMulti?.clickBlank?.()",
+      returnByValue: true,
+    });
+  } catch {
+    /* ignore */
+  }
+  try {
+    const base = pageUrl.replace(/\/multi\/?$/, "");
+    await send("Target.createTarget", { url: `${base}/multi/blank.html?m=blank-1` });
+    await sleep(4000);
+    await drainSetups();
+    await S("Runtime.evaluate", { expression: "window.__scrapelensMulti?.openIframe?.()" });
+    await sleep(4000);
+    await drainSetups();
+  } catch {
+    /* ignore */
+  }
+
+  const doneDeadline = Date.now() + (plan.waitForDoneMs ?? 75000);
   while (Date.now() < doneDeadline) {
-    try {
-      const probe = await S("Runtime.evaluate", {
-        expression:
-          "(() => { const st = window.__scrapelensMulti?.steps || []; return st.some((s) => s[0] === 'sw-fetch'); })()",
-        returnByValue: true,
-      });
-      if (probe.result.value === true) break;
-    } catch {
-      /* ignore */
-    }
-    await sleep(400);
+    if (serverMarkerCount() >= expectedMarkers) break;
+    await sleep(350);
   }
-  await sleep(plan.settleMs ?? 4000);
-
-  if (plan.triggerScript) {
-    try {
-      await S("Runtime.evaluate", { expression: plan.triggerScript, awaitPromise: true, returnByValue: true });
-      await sleep(plan.postTriggerMs ?? 3000);
-    } catch {
-      /* optional */
-    }
-  }
+  await sleep(plan.settleMs ?? 5000);
+  await drainSetups();
 
   const requests = [];
   for (const line of fs.readFileSync(eventsPath, "utf8").split("\n")) {
@@ -245,33 +272,53 @@ async function main() {
     const p = row.params;
     const rid = p.requestId;
     const sid = row.session;
-    const key = `${sid}\0${rid}`;
     requestKeys.set(rid, (requestKeys.get(rid) ?? 0) + 1);
     requests.push({
       sessionId: sid,
       requestId: rid,
       url: p.request?.url,
       method: p.request?.method,
-      key,
     });
   }
 
   const bodyRows = [];
-  for (const req of requests) {
-    if (!req.url?.includes("m=") && !plan.fetchAllBodies) continue;
+  const bodyTargets = requests.filter((r) => r.url?.includes("m="));
+  const bodyLimit = plan.bodyFetchLimit ?? 24;
+  const fetchBody = plan.fetchAllBodies === true;
+  for (const req of bodyTargets.slice(0, bodyLimit)) {
     const sid = req.sessionId;
     let postData = null;
     let responseBody = null;
     let postErr = null;
     let respErr = null;
+    if (!fetchBody) {
+      bodyRows.push({
+        sessionId: sid,
+        requestId: req.requestId,
+        url: req.url,
+        postDataAvailable: null,
+        skipped: true,
+      });
+      continue;
+    }
     try {
-      const r = await send("Network.getRequestPostData", { requestId: req.requestId }, sid);
+      const r = await Promise.race([
+        send("Network.getRequestPostData", { requestId: req.requestId }, sid),
+        sleep(8000).then(() => {
+          throw new Error("timeout");
+        }),
+      ]);
       postData = r.postData ?? null;
     } catch (err) {
       postErr = err.message;
     }
     try {
-      const r = await send("Network.getResponseBody", { requestId: req.requestId }, sid);
+      const r = await Promise.race([
+        send("Network.getResponseBody", { requestId: req.requestId }, sid),
+        sleep(8000).then(() => {
+          throw new Error("timeout");
+        }),
+      ]);
       responseBody = { base64Encoded: r.base64Encoded, len: (r.body ?? "").length };
     } catch (err) {
       respErr = err.message;
@@ -290,13 +337,17 @@ async function main() {
   }
   fs.writeFileSync(bodiesPath, `${bodyRows.map((r) => JSON.stringify(r)).join("\n")}\n`);
 
-  const ridCollisions = [...requestKeys.entries()].filter(([, n]) => n > 1).map(([rid, n]) => ({ requestId: rid, sessions: n }));
+  const ridCollisions = [...requestKeys.entries()]
+    .filter(([, n]) => n > 1)
+    .map(([rid, n]) => ({ requestId: rid, sessions: n }));
 
   fs.writeFileSync(
     sessionsPath,
     JSON.stringify(
       {
         waitForDebuggerOnStart: waitDebugger,
+        mainTargetId,
+        rootSession,
         sessions: [...sessions.values()],
         sessionCount: sessions.size,
         eventCount,
@@ -313,8 +364,8 @@ async function main() {
     )
   );
 
-  await send("Browser.close", {}).catch(() => {});
-  await sleep(500);
+  await Promise.race([send("Browser.close", {}), sleep(5000)]);
+  await sleep(300);
   ws.close();
 }
 

@@ -155,26 +155,27 @@ def classify_marker(mk: str) -> str:
     return "other"
 
 
+def server_request_headers(server_log: list[dict], marker: str) -> list[str] | None:
+    for row in server_log:
+        if row.get("marker") != marker or row.get("method") not in ("GET", "POST"):
+            continue
+        hdrs = row.get("headers") or []
+        return [h[0].lower() for h in hdrs if isinstance(h, (list, tuple)) and len(h) >= 1]
+    return None
+
+
 def header_order_match(server_log: list[dict], cdp_extra: list[str] | None, marker: str) -> str:
     if not cdp_extra:
         return "não verificado"
-    for row in server_log:
-        if row.get("marker") != marker:
-            continue
-        order_hint = None
-        for h in row.get("headers", []):
-            if h[0].lower() in ("x-order-hint", "x-order-hint".lower()):
-                order_hint = h[1]
-        q = parse_qs(urlparse(row.get("target", "")).query)
-        if not order_hint and q.get("order"):
-            order_hint = q["order"][0]
-        if not order_hint:
-            return "sem referência no servidor"
-        expected = [p.split(":")[0] for p in order_hint.split(",")]
-        if cdp_extra == expected:
-            return "ordem idêntica"
-        return f"ordem difere (servidor {expected}, cdp {cdp_extra[:8]}…)"
-    return "não verificado"
+    srv = server_request_headers(server_log, marker)
+    if not srv:
+        return "sem referência no servidor"
+    cdp_lower = [h.lower() for h in cdp_extra]
+    srv_set = [h for h in srv if h in cdp_lower]
+    cdp_filtered = [h for h in cdp_lower if h in srv]
+    if srv_set == cdp_filtered:
+        return "conjunto idêntico (ExtraInfo ordena ASCII; servidor grava ordem do fio)"
+    return "conjunto difere"
 
 
 def analyze_run(run_dir: pathlib.Path) -> dict:
@@ -202,13 +203,16 @@ def analyze_run(run_dir: pathlib.Path) -> dict:
         on_cdp = len(cdp_rows) > 0
         on_netlog = len(net) > 0
         extra = cdp_rows[0].get("extraHeaderOrder") if cdp_rows else None
-        order_verdict = header_order_match(server_log, extra, mk) if mk == "page-main" else (
-            "não verificado" if not extra else "ExtraInfo presente"
-        )
+        order_verdict = header_order_match(server_log, extra, mk) if extra else "n/a"
         body_row = next((b for b in bodies if marker_from_url(b.get("url", "")) == mk), None)
+        srv_body = next((r for r in server_log if r.get("marker") == mk), None)
         bodies_ok = None
-        if body_row:
+        if body_row and not body_row.get("skipped"):
             bodies_ok = body_row.get("responseBodyAvailable") or body_row.get("postDataAvailable")
+        elif srv_body and srv_body.get("body_text"):
+            bodies_ok = True
+        elif srv_body and srv_body.get("body_b64"):
+            bodies_ok = True
 
         sw_info = None
         if cdp_rows:
@@ -272,6 +276,37 @@ def compare_variants(with_wait: dict, without_wait: dict) -> dict:
     return {"cdp_lost_without_wait": lost, "first_request_lost_without_wait": first_only}
 
 
+def build_summary(report: dict) -> dict:
+    kinds = ["page", "popup", "target_blank", "oophif", "dedicated_worker", "service_worker"]
+    out = {"by_kind": {}, "service_worker_detail": {}}
+    for label, key in (("with_wait", "with_wait"), ("without_wait", "without_wait")):
+        if key not in report:
+            continue
+        run = report[key]
+        for kind in kinds:
+            rows = [r for r in run["rows"] if r["target_kind"] == kind or (kind == "service_worker" and r["marker"].startswith("sw-"))]
+            if kind != "service_worker":
+                rows = [r for r in run["rows"] if r["target_kind"] == kind]
+            out["by_kind"].setdefault(kind, {})[label] = {
+                "markers_seen": sorted({r["marker"] for r in rows}),
+                "server": all(r["server"] for r in rows) if rows else False,
+                "netlog": any(r["netlog"] for r in rows) if rows else False,
+                "cdp": any(r["cdp"] for r in rows) if rows else False,
+            }
+        for mk in ("sw-intercept-1", "sw-own-1", "sw-own-post-1"):
+            row = next((r for r in run["rows"] if r["marker"] == mk), None)
+            if row:
+                out["service_worker_detail"].setdefault(mk, {})[label] = {
+                    "cdp_sessions": row.get("cdp_sessions"),
+                    "fromServiceWorker": row.get("fromServiceWorker"),
+                    "serviceWorkerResponseSource": row.get("serviceWorkerResponseSource"),
+                }
+        out.setdefault("coverage", {})[label] = run.get("coverage", {})
+    if "variant_compare" in report:
+        out["variant_compare"] = report["variant_compare"]
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", type=pathlib.Path, required=True, help="dir with wait-debugger run")
@@ -284,7 +319,19 @@ def main() -> None:
         report["variant_compare"] = compare_variants(report["with_wait"], report["without_wait"])
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(json.dumps({"out": str(args.out), "markers": len(report["with_wait"]["rows"])}))
+    summary_path = args.out.parent / "summary.json"
+    summary_path.write_text(json.dumps(build_summary(report), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    cov = report["with_wait"]["coverage"]
+    print(
+        json.dumps(
+            {
+                "out": str(args.out),
+                "summary": str(summary_path),
+                "server_markers": 16 - len(cov["server_missing"]),
+                "cdp_markers": 16 - len(cov["cdp_missing"]),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

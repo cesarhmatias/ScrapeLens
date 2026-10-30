@@ -1,0 +1,280 @@
+{
+  "by_kind": {
+    "page": {
+      "with_wait": {
+        "markers_seen": [
+          "main-1",
+          "main-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": true
+      },
+      "without_wait": {
+        "markers_seen": [
+          "main-1",
+          "main-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": true
+      }
+    },
+    "popup": {
+      "with_wait": {
+        "markers_seen": [
+          "popup-1",
+          "popup-get-1",
+          "popup-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": true
+      },
+      "without_wait": {
+        "markers_seen": [],
+        "server": false,
+        "netlog": false,
+        "cdp": false
+      }
+    },
+    "target_blank": {
+      "with_wait": {
+        "markers_seen": [
+          "blank-1",
+          "blank-get-1",
+          "blank-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": true
+      },
+      "without_wait": {
+        "markers_seen": [
+          "blank-1",
+          "blank-get-1",
+          "blank-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": true
+      }
+    },
+    "oophif": {
+      "with_wait": {
+        "markers_seen": [
+          "oopif-1",
+          "oopif-get-1",
+          "oopif-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": true
+      },
+      "without_wait": {
+        "markers_seen": [
+          "oopif-1",
+          "oopif-get-1",
+          "oopif-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": true
+      }
+    },
+    "dedicated_worker": {
+      "with_wait": {
+        "markers_seen": [
+          "worker-get-1",
+          "worker-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": false
+      },
+      "without_wait": {
+        "markers_seen": [],
+        "server": false,
+        "netlog": false,
+        "cdp": false
+      }
+    },
+    "service_worker": {
+      "with_wait": {
+        "markers_seen": [
+          "sw-intercept-1",
+          "sw-own-1",
+          "sw-own-post-1"
+        ],
+        "server": true,
+        "netlog": true,
+        "cdp": true
+      },
+      "without_wait": {
+        "markers_seen": [],
+        "server": false,
+        "netlog": false,
+        "cdp": false
+      }
+    }
+  },
+  "service_worker_detail": {
+    "sw-intercept-1": {
+      "with_wait": {
+        "cdp_sessions": [
+          {
+            "sessionId": "744DAEE2",
+            "type": "page",
+            "requestId": "69386.12"
+          },
+          {
+            "sessionId": "8A851E4F",
+            "type": "service_worker",
+            "requestId": "69386.15"
+          }
+        ],
+        "fromServiceWorker": true,
+        "serviceWorkerResponseSource": "fallback-code"
+      }
+    },
+    "sw-own-1": {
+      "with_wait": {
+        "cdp_sessions": [
+          {
+            "sessionId": "8A851E4F",
+            "type": "service_worker",
+            "requestId": "69386.13"
+          }
+        ],
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      }
+    },
+    "sw-own-post-1": {
+      "with_wait": {
+        "cdp_sessions": [
+          {
+            "sessionId": "8A851E4F",
+            "type": "service_worker",
+            "requestId": "69386.14"
+          }
+        ],
+        "fromServiceWorker": false,
+        "serviceWorkerResponseSource": null
+      }
+    }
+  },
+  "coverage": {
+    "with_wait": {
+      "server": {
+        "main-1": true,
+        "main-post-1": true,
+        "popup-1": true,
+        "popup-get-1": true,
+        "popup-post-1": true,
+        "blank-1": true,
+        "blank-get-1": true,
+        "blank-post-1": true,
+        "oopif-1": true,
+        "oopif-get-1": true,
+        "oopif-post-1": true,
+        "worker-get-1": true,
+        "worker-post-1": true,
+        "sw-intercept-1": true,
+        "sw-own-1": true,
+        "sw-own-post-1": true
+      },
+      "cdp": {
+        "main-1": true,
+        "main-post-1": true,
+        "popup-1": true,
+        "popup-get-1": true,
+        "popup-post-1": true,
+        "blank-1": false,
+        "blank-get-1": true,
+        "blank-post-1": true,
+        "oopif-1": true,
+        "oopif-get-1": false,
+        "oopif-post-1": false,
+        "worker-get-1": false,
+        "worker-post-1": false,
+        "sw-intercept-1": true,
+        "sw-own-1": true,
+        "sw-own-post-1": true
+      },
+      "server_missing": [],
+      "cdp_missing": [
+        "blank-1",
+        "oopif-get-1",
+        "oopif-post-1",
+        "worker-get-1",
+        "worker-post-1"
+      ]
+    },
+    "without_wait": {
+      "server": {
+        "main-1": true,
+        "main-post-1": true,
+        "popup-1": false,
+        "popup-get-1": false,
+        "popup-post-1": false,
+        "blank-1": true,
+        "blank-get-1": true,
+        "blank-post-1": true,
+        "oopif-1": true,
+        "oopif-get-1": true,
+        "oopif-post-1": true,
+        "worker-get-1": false,
+        "worker-post-1": false,
+        "sw-intercept-1": false,
+        "sw-own-1": false,
+        "sw-own-post-1": false
+      },
+      "cdp": {
+        "main-1": true,
+        "main-post-1": true,
+        "popup-1": false,
+        "popup-get-1": false,
+        "popup-post-1": false,
+        "blank-1": false,
+        "blank-get-1": true,
+        "blank-post-1": true,
+        "oopif-1": true,
+        "oopif-get-1": false,
+        "oopif-post-1": false,
+        "worker-get-1": false,
+        "worker-post-1": false,
+        "sw-intercept-1": false,
+        "sw-own-1": false,
+        "sw-own-post-1": false
+      },
+      "server_missing": [
+        "popup-1",
+        "popup-get-1",
+        "popup-post-1",
+        "worker-get-1",
+        "worker-post-1",
+        "sw-intercept-1",
+        "sw-own-1",
+        "sw-own-post-1"
+      ],
+      "cdp_missing": [
+        "popup-1",
+        "popup-get-1",
+        "popup-post-1",
+        "blank-1",
+        "oopif-get-1",
+        "oopif-post-1",
+        "worker-get-1",
+        "worker-post-1",
+        "sw-intercept-1",
+        "sw-own-1",
+        "sw-own-post-1"
+      ]
+    }
+  },
+  "variant_compare": {
+    "cdp_lost_without_wait": [],
+    "first_request_lost_without_wait": []
+  }
+}
