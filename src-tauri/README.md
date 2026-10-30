@@ -62,8 +62,20 @@ pending      true quando o core/ ainda não executou a etapa
   `127.0.0.1:<porta efêmera>` aceita qualquer Origin durante a captura. O risco
   é limitado ao loopback, à porta aleatória e à janela da sessão; ainda assim,
   não navegue em páginas não confiáveis no Chrome inspecionado enquanto grava.
-- Corpos CDP não são baixados para anexos nesta versão; aparecem como
-  `unavailable` com nota, nunca inventados.
+- Corpos CDP são gravados em `cdp-bodies.jsonl` e importados na sessão ao vivo:
+  payload de requisição (`Network.getRequestPostData`) e corpo de resposta
+  (`Network.getResponseBody` ao `loadingFinished`), em `attachments/`. Cada
+  corpo para em **5 MiB** (`truncated`, com tamanho original e só o prefixo);
+  a sessão tem orçamento de **256 MiB** (`discarded` acima disso). O
+  `Network.enable` pede `maxTotalBufferSize` 100 MB, `maxResourceBufferSize`
+  50 MB e `maxPostDataSize` 5 MiB. Ficam `unavailable` com nota: SSE/streaming
+  e WebSocket (sem corpo HTTP), resposta de redirect, resposta sem
+  `loadingFinished`/`loadingFailed` antes do encerramento (3 s de drenagem),
+  erro de `getResponseBody`/`getRequestPostData`, base64 inválido e 0 bytes sem
+  evidência de vazio. Texto vem decodificado pelo Chrome (`chrome-decoded`,
+  com `charset:x->utf-8` quando não é UTF-8) e `lossy-postData` marca payload
+  sem prova de bytes preservados; esses corpos ficam com verificação parcial.
+  Corpo sem linha correspondente vira aviso, nunca associação por URL.
 - A captura acompanha um target/página; abas abertas manualmente depois do
   início não entram na mesma sessão.
 - Sem assinatura Apple/notarização; arm64 compilado e testado, Intel não.

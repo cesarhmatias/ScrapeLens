@@ -85,8 +85,13 @@ promete reproduzir TLS, fingerprint ou transporte do Chrome.
 - Chrome 156.0.8078.48 foi medido em HTTP/1.1, h2 e h3 locais. HTTP/3 foi
   observado com aioquic; o cenário quiche ficou bloqueado. QUIC não é
   desabilitado por padrão. Veja a [matriz](docs/02-matriz-fidelidade.md).
-- Captura acompanha um target/página. Corpos CDP não são baixados e ficam
-  `unavailable`; importações podem trazer corpos em anexos.
+- Captura acompanha um target/página (a multi-alvo é a rodada 10). Corpos de
+  requisição e de resposta são gravados ao vivo em `cdp-bodies.jsonl` e viram
+  anexos da sessão: limite de 5 MiB por corpo (`truncated`, com o tamanho
+  original) e 256 MiB por sessão (`discarded`). Ficam `unavailable` com nota
+  streaming/SSE, WebSocket, resposta de redirect, erro do CDP ou captura
+  encerrada antes de `loadingFinished`; importações também podem trazer corpos
+  em anexos.
 - CDP usa loopback e porta efêmera, com `--remote-allow-origins=*`; o endpoint
   aceita qualquer Origin durante a captura. Zero eventos CDP gera erro
   explícito; sessões com eventos parciais são preservadas como parciais.

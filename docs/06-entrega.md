@@ -68,7 +68,8 @@ O hash identifica este artefato, não garante build byte a byte reproduzível.
 Sessão nova: 11 requisições, complete, cdp+netlog, 154 entradas de headers
 verificadas via NetLog h1, 9 matched, 2 ambíguas (2 candidatos cada), zero
 unmatched, 2 redirects, 8 linhas Set-Cookie, Cookie sc_dup preservado.
-Diretório 0700, arquivos 0600. Corpos CDP unavailable com nota.
+Diretório 0700, arquivos 0600. Corpos CDP unavailable com nota (build
+anterior à gravação de corpos ao vivo).
 
 Nova captura do harness: 27 requisições, h1/h2/h3, evidência estável em
 `tests/results/capture-latest/run.json`. A matriz histórica mede Chrome
@@ -97,7 +98,11 @@ a rodada seguinte, também pela interface (resultado em `docs/07-exportacao-ui.m
    fixtures e correlação 13/13 não comprovam essas funções da interface.
 2. Completar avisos/licenças transitivas para redistribuição. Código próprio
    MIT e lockfiles presentes; inventário completo não auditado.
-3. Captura só um target; não baixa corpos CDP; zero eventos gera erro em vez
+3. Captura só um target/página (multi-alvo é a rodada 10); corpos de
+   requisição e de resposta são gravados em `cdp-bodies.jsonl` com limite de
+   5 MiB por corpo e 256 MiB por sessão, e ficam `unavailable` com nota nos
+   casos sem corpo (SSE/WebSocket, redirect, erro do CDP, captura encerrada
+   antes de `loadingFinished`); zero eventos gera erro em vez
    de sessão vazia; Origin CDP aberto por --remote-allow-origins=* durante a
    sessão local. Sanitização continua heurística, com omissão de anexos/eventos
    não sanitizáveis; exportação não garante fingerprint/transporte.
