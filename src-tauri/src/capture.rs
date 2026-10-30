@@ -154,12 +154,8 @@ fn run_inner(
     loop {
         if !flushed_pending {
             cdp.flush_pending_setups(&mut socket);
-            cdp.flush_opener_pages(&mut socket);
-            cdp.flush_opener_setups(&mut socket);
             flushed_pending = true;
         }
-        cdp.flush_opener_pages(&mut socket);
-        cdp.flush_opener_setups(&mut socket);
         if !cdp.pending_setup.is_empty() {
             cdp.flush_pending_setups(&mut socket);
         }
@@ -187,8 +183,6 @@ fn run_inner(
         }
     }
 
-    // Janela extra para beacons tardios (_blank, SW) após o sinal de parada.
-    cdp.pump_socket(&mut socket, Duration::from_secs(4));
     // Dá uma janela curta para os getResponseBody/getRequestPostData em voo
     // voltarem antes de fechar; o que não voltar vira linha `unavailable`.
     cdp.drain_bodies(&mut socket, Duration::from_secs(3));
@@ -440,7 +434,6 @@ const CDP_TARGET_METHODS: &[&str] = &[
     "Target.attachFailed",
     "Capture.sessionSetup",
     "Capture.targetSetupTimeout",
-    "Capture.targetSessionDecision",
 ];
 
 /// Código de aviso importado pelo core (`cdp.target_setup_timeout`).
@@ -478,10 +471,6 @@ struct Cdp {
     pending_setup: Vec<(AttachedTarget, bool)>,
     /// Alvos vistos via auto-attach durante `setup_phase` (antes de configurar).
     setup_seen: HashMap<String, AttachedTarget>,
-    /// targetId de popups/`target=_blank` já tratados com attach explícito.
-    opener_pages_attached: std::collections::HashSet<String>,
-    pending_opener_pages: Vec<String>,
-    pending_opener_setups: Vec<(AttachedTarget, bool)>,
     /// Profundidade de `send()` aguardando resposta (evita setup aninhado).
     command_depth: u32,
 }
@@ -523,9 +512,6 @@ impl Cdp {
                             setup_phase: false,
                             pending_setup: Vec::new(),
                             setup_seen: HashMap::new(),
-                            opener_pages_attached: std::collections::HashSet::new(),
-                            pending_opener_pages: Vec::new(),
-                            pending_opener_setups: Vec::new(),
                             command_depth: 0,
                         },
                     ));
@@ -764,27 +750,6 @@ impl Cdp {
         )
     }
 
-    fn log_target_session_decision(
-        &mut self,
-        attached: &AttachedTarget,
-        decision: &str,
-        primary_session_id: Option<&str>,
-        parent_session_id: Option<&str>,
-    ) {
-        self.push_event_line(
-            &attached.session_id,
-            "Capture.targetSessionDecision",
-            &json!({
-                "targetId": attached.target_id,
-                "type": attached.target_type,
-                "sessionId": attached.session_id,
-                "decision": decision,
-                "primarySessionId": primary_session_id,
-            }),
-            parent_session_id,
-        );
-    }
-
     fn setup_duplicate_target_session(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
@@ -792,16 +757,6 @@ impl Cdp {
         waiting_for_debugger: bool,
         parent_session_id: Option<&str>,
     ) -> Result<(), String> {
-        let primary = self
-            .configured_target_primary
-            .get(&attached.target_id)
-            .cloned();
-        self.log_target_session_decision(
-            &attached,
-            "duplicate_detach",
-            primary.as_deref(),
-            parent_session_id,
-        );
         if self.wait_for_debugger && waiting_for_debugger {
             let _ = self.send(
                 socket,
@@ -819,7 +774,6 @@ impl Cdp {
             Duration::from_secs(5),
         );
         self.detached_sessions.insert(attached.session_id.clone());
-        self.drop_recorded_network_for_session(&attached.session_id);
         self.configured_sessions
             .insert(attached.session_id.clone());
         self.push_event_line(
@@ -844,28 +798,15 @@ impl Cdp {
         waiting_for_debugger: bool,
         parent_session_id: Option<&str>,
     ) -> Result<(), String> {
-        match self.configured_target_primary.get(&attached.target_id) {
-            Some(primary) if primary != &attached.session_id => {
-                return self.setup_duplicate_target_session(
-                    socket,
-                    attached,
-                    waiting_for_debugger,
-                    parent_session_id,
-                );
-            }
-            None => {
-                self.configured_target_primary.insert(
-                    attached.target_id.clone(),
-                    attached.session_id.clone(),
-                );
-                self.log_target_session_decision(
-                    &attached,
-                    "primary_reserve",
-                    Some(attached.session_id.as_str()),
-                    parent_session_id,
-                );
-            }
-            Some(_) => {}
+        if self.configured_target_primary.get(&attached.target_id).is_some_and(|primary| {
+            primary != &attached.session_id
+        }) {
+            return self.setup_duplicate_target_session(
+                socket,
+                attached,
+                waiting_for_debugger,
+                parent_session_id,
+            );
         }
         if self.configured_sessions.contains(&attached.session_id) {
             if self.wait_for_debugger && waiting_for_debugger {
@@ -1004,12 +945,6 @@ impl Cdp {
         self.configured_sessions
             .insert(attached.session_id.clone());
         self.setup_in_progress.remove(&attached.session_id);
-        self.log_target_session_decision(
-            &attached,
-            "primary_configured",
-            Some(attached.session_id.as_str()),
-            parent_session_id,
-        );
         self.push_event_line(
             &attached.session_id,
             "Capture.sessionSetup",
@@ -1024,105 +959,6 @@ impl Cdp {
             parent_session_id,
         );
         Ok(())
-    }
-
-    fn note_opener_page(&mut self, params: &Value) {
-        let Some(info) = params.get("targetInfo").and_then(Value::as_object) else {
-            return;
-        };
-        let target_id = info
-            .get("targetId")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        if target_id.is_empty() || self.opener_pages_attached.contains(target_id) {
-            return;
-        }
-        let target_type = info.get("type").and_then(Value::as_str).unwrap_or("");
-        let attached = info.get("attached").and_then(Value::as_bool).unwrap_or(false);
-        let has_opener = info.get("openerId").and_then(Value::as_str).is_some();
-        if target_type != "page" || attached || !has_opener {
-            return;
-        }
-        if !self.pending_opener_pages.contains(&target_id.to_string()) {
-            self.pending_opener_pages.push(target_id.to_string());
-        }
-    }
-
-    fn flush_opener_pages(
-        &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
-    ) {
-        for target_id in std::mem::take(&mut self.pending_opener_pages) {
-            if self.opener_pages_attached.contains(&target_id) {
-                continue;
-            }
-            self.opener_pages_attached.insert(target_id.clone());
-            let Ok(result) = self.send(
-                socket,
-                "Target.attachToTarget",
-                json!({ "targetId": target_id, "flatten": true }),
-                None,
-                Duration::from_secs(10),
-            ) else {
-                continue;
-            };
-            let Some(session_id) = result
-                .get("sessionId")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-            else {
-                continue;
-            };
-            if let Some(prev) = self
-                .configured_target_primary
-                .insert(target_id.clone(), session_id.clone())
-            {
-                if prev != session_id {
-                    let ghost = AttachedTarget {
-                        session_id: prev.clone(),
-                        target_id: target_id.clone(),
-                        target_type: "page".to_string(),
-                    };
-                    self.log_target_session_decision(
-                        &ghost,
-                        "opener_replaced_auto_attach",
-                        Some(session_id.as_str()),
-                        None,
-                    );
-                    self.configured_sessions.remove(&prev);
-                    self.setup_done.remove(&prev);
-                    self.setup_in_progress.remove(&prev);
-                    let _ = self.send(
-                        socket,
-                        "Target.detachFromTarget",
-                        json!({ "sessionId": prev }),
-                        None,
-                        Duration::from_secs(5),
-                    );
-                    self.detached_sessions.insert(prev);
-                }
-            }
-            let attached = AttachedTarget {
-                session_id,
-                target_id: target_id.clone(),
-                target_type: "page".to_string(),
-            };
-            self.pending_opener_setups
-                .push((attached, false));
-        }
-    }
-
-    fn flush_opener_setups(
-        &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
-    ) {
-        for (attached, waiting) in std::mem::take(&mut self.pending_opener_setups) {
-            if let Err(error) =
-                self.setup_attached_target(socket, attached.clone(), waiting, None)
-            {
-                self.push_target_setup_timeout(&attached, error, None);
-            }
-        }
     }
 
     fn session_for_recorded_event(
@@ -1166,11 +1002,6 @@ impl Cdp {
         let Some(method) = value.get("method").and_then(Value::as_str) else {
             return;
         };
-        if method == "Target.targetInfoChanged" {
-            if let Some(params) = value.get("params") {
-                self.note_opener_page(params);
-            }
-        }
         if method == "Target.attachedToTarget" {
             if let Some(params) = value.get("params").and_then(Value::as_object) {
                 let session_id = params
@@ -1199,7 +1030,25 @@ impl Cdp {
                     target_type: target_type.clone(),
                 };
                 let parent_wire = value.get("sessionId").and_then(Value::as_str);
-                if self.setup_phase {
+                if !Self::skip_target_setup(&target_type)
+                    && !self.configured_target_primary.contains_key(&target_id)
+                {
+                    self.configured_target_primary.insert(
+                        target_id.clone(),
+                        session_id.clone(),
+                    );
+                }
+                let duplicate = self.configured_target_primary.get(&target_id).is_some_and(
+                    |primary| primary != &session_id,
+                );
+                if duplicate {
+                    let _ = self.setup_duplicate_target_session(
+                        socket,
+                        attached.clone(),
+                        waiting,
+                        parent_wire,
+                    );
+                } else if self.setup_phase {
                     self.setup_seen
                         .insert(session_id.clone(), attached.clone());
                     if self.command_depth == 0 {
@@ -1214,13 +1063,15 @@ impl Cdp {
                     } else {
                         self.pending_setup.push((attached, waiting));
                     }
-                } else if let Err(error) = self.setup_attached_target(
-                    socket,
-                    attached.clone(),
-                    waiting,
-                    parent_wire,
-                ) {
-                    self.push_target_setup_timeout(&attached, error, parent_wire);
+                } else if !duplicate {
+                    if let Err(error) = self.setup_attached_target(
+                        socket,
+                        attached.clone(),
+                        waiting,
+                        parent_wire,
+                    ) {
+                        self.push_target_setup_timeout(&attached, error, parent_wire);
+                    }
                 }
             }
         }
