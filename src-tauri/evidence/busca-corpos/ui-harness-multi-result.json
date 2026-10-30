@@ -1,18 +1,18 @@
 {
-  "sessionDir": "/Users/cesar/Projects/scrapelens/src-tauri/evidence/busca-corpos/multi-alvo-session",
+  "sessionDir": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793354428495",
   "targetFilters": [
-    "todos os alvos33",
-    "página7",
+    "todos os alvos34",
+    "página19",
     "popup6",
     "iframe2",
     "worker3",
-    "service worker15"
+    "service worker4"
   ],
   "targetColumn": 1,
-  "popupTarget": "Alvo\nTipo\npopup\nURL do alvo\nhttp://127.0.0.1:8911/multi/popup.html?m=popup-1\nAberto por\n1BEE2C7F0319BEC240B8C90CD824FA1F\nSessão pai\n—\ntargetId\n8178AAC540B374093A27C7823DD96D1B\nAnexado\nsim",
-  "swPanel": "Alvo\nTipo\nservice worker\nURL do alvo\nhttp://127.0.0.1:8911/multi/sw.js\nAberto por\n— (página principal ou sem opener)\nSessão pai\n30C0CA61A5F61336387F69012A09E7C2\ntargetId\n6E7B59BF7A9749044484FE54F9BC2729\nAnexado\nsim\nObservações ligadas (service worker)\n\nA mesma requisição lógica pode aparecer na página e no service worker. Navegue entre as observações; ambiguidade nunca vira duplicata silenciosa.\n\nambíguacdp-r0010 · mesma URL/método · sessão do service worker · Δt=0 ms (pista)\nambíguacdp-r0026 · mesma URL/método · sessão do service worker · Δt=0 ms (pista)\nambíguacdp-r0030 · mesma URL/método · sessão do service worker · Δt=0 ms (pista)",
-  "swLinks": 3,
-  "limits": "SESSÃO REAL · Captura ao vivo\nLimites desta captura\nvisível em todas as abas\nHeaders sem evento correspondente aparecem como “não verificada”, nunca como fato.\nCorpo omitido, truncado ou descartado mostra o motivo — nada é reconstruído.\nHTML capturado nunca é executado como interface; o contrato é o v1 do core.\nDocumento de aba target=_blank pode vir só do NetLog (sem requestWillBeSent na sessão filha); a UI marca “alvo desconhecido (só NetLog)” e não inventa headers CDP.\nAlvos acompanhados nesta captura:\niframe /multi/beacon?m=oopif-get-1 (2 req.)\npágina http://127.0.0.1:8911/multi/ (7 req.)\npopup /multi/beacon?m=blank-get-1 (3 req.)\npopup http://127.0.0.1:8911/multi/popup.html?m=popup-1 (3 req.)\nservice worker http://127.0.0.1:8911/multi/sw.js (15 req.)\nworker http://127.0.0.1:8911/multi/worker.js (3 req.)\nFalhas ao anexar alvo (2):\ncdp.target_attach_failed alvo 6E7B59BF7A9749044484FE54F9BC2729 não anexou; fica só com o NetLog (sem headers/corpos CDP)\ncdp.target_attach_failed alvo CA30D607BDF119AAA99C954BCC0A447A não anexou; fica só com o NetLog (sem headers/corpos CDP)\nCaptura local: sem telemetria; os anexos ficam na pasta da sessão.",
+  "popupTarget": "Alvo\nTipo\npopup\nURL do alvo\nhttp://127.0.0.1:8911/multi/popup.html?m=popup-1\nAberto por\n0EAC666494B34CBA84715DFE62CC417E\nSessão pai\n—\ntargetId\n2B2E46C258CF6EFA420D8E911F897976\nAnexado\nsim",
+  "swPanel": "Alvo\nTipo\nservice worker\nURL do alvo\nhttp://127.0.0.1:8911/multi/sw.js\nAberto por\n— (página principal ou sem opener)\nSessão pai\n—\ntargetId\n664A46BD2E245FB3A128785292879AE0\nAnexado\nsim\nObservações ligadas (service worker)\n\nA mesma requisição lógica pode aparecer na página e no service worker. Navegue entre as observações; ambiguidade nunca vira duplicata silenciosa.\n\nambíguacdp-r0027 · fromServiceWorker na resposta · sessão do service worker · mesma origem · início na janela requestWillBeSent→responseReceived · tempo e origem são pista, não prova",
+  "swLinks": 1,
+  "limits": "SESSÃO REAL · Captura ao vivo\nLimites desta captura\nvisível em todas as abas\nHeaders sem evento correspondente aparecem como “não verificada”, nunca como fato.\nCorpo omitido, truncado ou descartado mostra o motivo — nada é reconstruído.\nHTML capturado nunca é executado como interface; o contrato é o v1 do core.\nDocumento de aba target=_blank pode vir só do NetLog (sem requestWillBeSent na sessão filha); a UI marca “alvo desconhecido (só NetLog)” e não inventa headers CDP.\nAlvos acompanhados nesta captura:\niframe http://localhost:8911/multi/iframe.html?m=oopif-1 (2 req.)\npágina http://127.0.0.1:8911/multi/ (8 req.)\npágina http://127.0.0.1:8911/multi/ (11 req.)\npopup /multi/beacon?m=blank-get-1 (3 req.)\npopup http://127.0.0.1:8911/multi/popup.html?m=popup-1 (3 req.)\nservice worker http://127.0.0.1:8911/multi/sw.js (4 req.)\nworker http://127.0.0.1:8911/multi/worker.js (3 req.)\nCaptura local: sem telemetria; os anexos ficam na pasta da sessão.",
   "pageErrors": [],
   "ignoredStubErrors": 0
 }
