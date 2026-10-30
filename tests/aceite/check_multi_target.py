@@ -274,13 +274,23 @@ def find_body(idx: dict, sid, rid, kind="request") -> dict | None:
 
 
 def session_requests(session_dir: Path, core: str) -> dict:
+    """`scrapelens-core inspect` = {"session": {"session": {...}, "requests": [...], "warnings": [...]}, "report": ...}."""
     proc = sh([core, "inspect", session_dir])
     if proc.returncode != 0:
-        return {"error": proc.stderr.strip()[:300]}
+        return {"error": proc.stderr.strip()[:300], "requests": [], "warnings": []}
     try:
-        return json.loads(proc.stdout)
+        data = json.loads(proc.stdout)
     except json.JSONDecodeError:
-        return {"error": "inspect devolveu JSON inválido"}
+        return {"error": "inspect devolveu JSON inválido", "requests": [], "warnings": []}
+    inner = data.get("session") or {}
+    if not isinstance(inner, dict):
+        return {"error": "inspect: 'session' não é objeto", "requests": [], "warnings": []}
+    return {
+        "requests": inner.get("requests") or [],
+        "warnings": inner.get("warnings") or [],
+        "report": data.get("report") or {},
+        "session": inner.get("session") or {},
+    }
 
 
 def request_key(req: dict) -> tuple:
@@ -325,9 +335,13 @@ def analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
     }
     if session.get("error"):
         INFO["artifacts"]["inspect_error"] = session["error"]
-
     # (1) NetLog: 16/16
     netlog_markers = markers_in(netlog_text)
+    # Erro explícito: sessão importada vazia não pode reprovar os critérios por consequência.
+    if not requests:
+        check(False, "sessão importada sem requisições (inspect.session.requests vazio) com "
+                     f"{len(netlog_markers)}/16 marcadores no NetLog — importação/formato quebrados")
+        INFO["session_vazia"] = True
     INFO["netlog"] = {"markers": sorted(netlog_markers), "missing": sorted(set(EXPECTED) - netlog_markers)}
     check(len(netlog_markers & set(EXPECTED)) == len(EXPECTED),
           f"netlog: {len(netlog_markers & set(EXPECTED))}/16 marcadores (faltam {INFO['netlog']['missing']})")
@@ -405,6 +419,11 @@ def analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
                          f"(sessionId={found['sessionId']}, requestId={found['requestId']})")
 
     # (5) nenhuma fusão entre sessões por requestId
+    if not requests:
+        INFO["merge"] = "ignorado: sessão importada vazia"
+        INFO["service_worker"] = "ignorado: sessão importada vazia"
+        INFO["session_warnings"] = []
+        return
     by_rid: dict[str, set] = {}
     for r in reqs:
         by_rid.setdefault(str(r["requestId"]), set()).add(str(r["sessionId"]))
