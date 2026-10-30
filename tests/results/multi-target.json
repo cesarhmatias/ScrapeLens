@@ -1,7 +1,191 @@
 {
- "driver_log": "   Compiling scrapelens v0.1.0 (/Users/cesar/Projects/scrapelens/src-tauri)\n    Finished `release` profile [optimized] target(s) in 7.86s\n     Running unittests src/lib.rs (target/release/deps/scrapelens_lib-187647c4b8f52233)\n\nrunning 1 test\n\nthread 'capture::tests::live_bodies_cycle' (255418107) panicked at src/capture.rs:2399:14:\ncaptura iniciou: \"CDP timeout aguardando Target.setAutoAttach\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest capture::tests::live_bodies_cycle ... FAILED\n\nfailures:\n\nfailures:\n    capture::tests::live_bodies_cycle\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 55 filtered out; finished in 11.51s\n\nerror: test failed, to rerun pass `--lib`\n",
- "tmp": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-60cdd_f5",
+ "artifacts": {
+  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-lksfog22/session",
+  "cdp_events": 95,
+  "cdp_bodies": 17,
+  "netlog_bytes": 499075,
+  "server_lines": 19,
+  "session_requests": 13,
+  "driver": {
+   "driver_rc": 0
+  }
+ },
+ "netlog": {
+  "markers": [
+   "blank-1",
+   "blank-get-1",
+   "blank-post-1",
+   "main-1",
+   "main-post-1",
+   "oopif-1",
+   "oopif-get-1",
+   "oopif-post-1",
+   "popup-1",
+   "popup-get-1",
+   "popup-post-1",
+   "sw-intercept-1",
+   "sw-own-1",
+   "sw-own-post-1",
+   "worker-get-1",
+   "worker-post-1"
+  ],
+  "missing": []
+ },
+ "cdp": {
+  "markers": [
+   "main-1",
+   "main-post-1",
+   "oopif-1",
+   "oopif-post-1",
+   "sw-intercept-1",
+   "sw-own-1",
+   "sw-own-post-1",
+   "worker-get-1",
+   "worker-post-1"
+  ],
+  "missing": [
+   "blank-1",
+   "blank-get-1",
+   "blank-post-1",
+   "oopif-get-1",
+   "popup-1",
+   "popup-get-1",
+   "popup-post-1"
+  ]
+ },
+ "targets": {
+  "sessions": 6,
+  "eventos": {
+   "main-1": [
+    "page"
+   ],
+   "main-post-1": [
+    "page"
+   ],
+   "oopif-1": [
+    "page"
+   ],
+   "oopif-post-1": [
+    "iframe"
+   ],
+   "sw-intercept-1": [
+    "page",
+    "service_worker"
+   ],
+   "sw-own-1": [
+    "service_worker"
+   ],
+   "sw-own-post-1": [
+    "service_worker"
+   ],
+   "worker-get-1": [
+    "worker"
+   ],
+   "worker-post-1": [
+    "worker"
+   ]
+  },
+  "modelo": {
+   "main-1": "page",
+   "main-post-1": "page",
+   "oopif-1": "page",
+   "oopif-post-1": "iframe",
+   "sw-intercept-1": "service_worker",
+   "sw-own-1": "service_worker",
+   "sw-own-post-1": "service_worker",
+   "worker-get-1": "worker",
+   "worker-post-1": "worker"
+  }
+ },
+ "post_bodies": {
+  "main-post-1": {
+   "esperado_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
+   "cdp_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
+   "esperado_resp": "9156b23016d7e64957722d715733a8231d117345f78f55e4a82efd015621241a",
+   "cdp_resp": "9156b23016d7e64957722d715733a8231d117345f78f55e4a82efd015621241a"
+  },
+  "popup-post-1": {
+   "cdp": "ausente"
+  },
+  "blank-post-1": {
+   "cdp": "ausente"
+  },
+  "oopif-post-1": {
+   "esperado_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
+   "cdp_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
+   "esperado_resp": "3f4c09a20e60ae4078f20cfb667cf4e168dd7be53d0efa0a76691c5f20f82584",
+   "cdp_resp": "3f4c09a20e60ae4078f20cfb667cf4e168dd7be53d0efa0a76691c5f20f82584"
+  },
+  "worker-post-1": {
+   "esperado_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
+   "cdp_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
+   "esperado_resp": "1059d4ea2d4e6334e5537a6c1e2e399e3ba4c7266d6b352261665bb596ba41c0",
+   "cdp_resp": "1059d4ea2d4e6334e5537a6c1e2e399e3ba4c7266d6b352261665bb596ba41c0"
+  },
+  "sw-own-post-1": {
+   "esperado_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
+   "cdp_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
+   "esperado_resp": "2d88d7d36b7af1d9eea7609c49a3ef34575774e9f6350575a85369b8b1f13030",
+   "cdp_resp": "2d88d7d36b7af1d9eea7609c49a3ef34575774e9f6350575a85369b8b1f13030"
+  }
+ },
+ "request_id_collisions": {
+  "total": 0,
+  "exemplos": {}
+ },
+ "merge": {
+  "pares_distintos": 13,
+  "requisicoes": 13,
+  "colisoes": "nenhuma nesta captura (não exercitado)"
+ },
+ "service_worker": {
+  "requests": 4,
+  "intercept": [
+   {
+    "id": "cdp-r0002",
+    "target_kind": "page",
+    "sessions": [
+     "270B12DFEE73CC72E34738BA8B9E7178"
+    ],
+    "attempts": 1,
+    "links": [],
+    "linked": false,
+    "ambiguous": false
+   },
+   {
+    "id": "cdp-r0013",
+    "target_kind": "service_worker",
+    "sessions": [
+     "C07853DDBE2F2A4401169AA6C8CC0E4A"
+    ],
+    "attempts": 1,
+    "links": [],
+    "linked": false,
+    "ambiguous": false
+   }
+  ]
+ },
+ "session_warnings": [
+  "cdp.extra_info_without_request",
+  "cdp.extra_info_without_request",
+  "cdp.response_extra_without_request",
+  "cdp.response_extra_without_request",
+  "cdp.unhandled_events",
+  "netlog.time_unit_detected",
+  "correlate.netlog_unmatched",
+  "correlate.unmatched"
+ ],
  "fails": [
-  "captura: /var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-60cdd_f5/session/session.json ausente (drv rc=101)"
+  "cdp: 9/16 marcadores (faltam ['blank-1', 'blank-get-1', 'blank-post-1', 'oopif-get-1', 'popup-1', 'popup-get-1', 'popup-post-1'])",
+  "cdp: marcadores ausentes além da exceção blank-1: ['blank-get-1', 'blank-post-1', 'oopif-get-1', 'popup-1', 'popup-get-1', 'popup-post-1']",
+  "tipo do alvo popup-1: esperado page, veio ausente",
+  "tipo do alvo popup-get-1: esperado page, veio ausente",
+  "tipo do alvo popup-post-1: esperado page, veio ausente",
+  "tipo do alvo blank-get-1: esperado page, veio ausente",
+  "tipo do alvo blank-post-1: esperado page, veio ausente",
+  "tipo do alvo oopif-get-1: esperado iframe, veio ausente",
+  "post popup-post-1: requisição ausente no CDP",
+  "post blank-post-1: requisição ausente no CDP",
+  "service worker: 2 requisições duplicadas sem link/ambiguidade: [{'id': 'cdp-r0002', 'target_kind': 'page', 'sessions': ['270B12DFEE73CC72E34738BA8B9E7178'], 'attempts': 1, 'links': [], 'linked': False, 'ambiguous': False}, {'id': 'cdp-r0013', 'target_kind': 'service_worker', 'sessions': ['C07853DDBE2F2A4401169AA6C8CC0E4A'], 'attempts': 1, 'links': [], 'linked': False, 'ambiguous': False}]"
  ]
 }
