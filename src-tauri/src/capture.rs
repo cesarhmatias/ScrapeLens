@@ -147,7 +147,12 @@ fn run_inner(
 
     // Loop de gravação: todo evento Network.* é preservado na ordem do Chrome.
     let started = Instant::now();
+    let mut flushed_pending = false;
     loop {
+        if !flushed_pending {
+            cdp.flush_pending_setups(&mut socket);
+            flushed_pending = true;
+        }
         if matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
             break;
         }
@@ -416,6 +421,9 @@ struct Cdp {
     outbox: Vec<(String, String)>,
     setup_done: HashMap<String, AttachedTarget>,
     wait_for_debugger: bool,
+    /// Durante `setup()`, só grava Target.*; evita setup aninhado que bloqueia respostas CDP.
+    setup_phase: bool,
+    pending_setup: Vec<(AttachedTarget, bool)>,
 }
 
 impl Cdp {
@@ -448,6 +456,8 @@ impl Cdp {
                             outbox: Vec::new(),
                             setup_done: HashMap::new(),
                             wait_for_debugger: true,
+                            setup_phase: false,
+                            pending_setup: Vec::new(),
                         },
                     ));
                 }
@@ -462,12 +472,37 @@ impl Cdp {
         ))
     }
 
-    fn auto_attach_params(&self) -> Value {
+    fn auto_attach_params(&self, wait_on_start: bool) -> Value {
         json!({
             "autoAttach": true,
             "flatten": true,
-            "waitForDebuggerOnStart": self.wait_for_debugger,
+            "waitForDebuggerOnStart": wait_on_start && self.wait_for_debugger,
         })
+    }
+
+    fn pump_socket(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        window: Duration,
+    ) {
+        let deadline = Instant::now() + window;
+        while Instant::now() < deadline {
+            match socket.read() {
+                Ok(Message::Text(text)) => {
+                    if let Ok(value) = serde_json::from_str::<Value>(text.as_str()) {
+                        self.record(socket, &value);
+                        self.flush_outbox(socket);
+                    }
+                }
+                Ok(Message::Ping(payload)) => {
+                    let _ = socket.send(Message::Pong(payload));
+                }
+                Ok(Message::Close(_)) | Ok(_) => break,
+                Err(tungstenite::Error::Io(error))
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Err(_) => break,
+            }
+        }
     }
 
     fn bodies_for(&mut self, session_id: &str) -> &mut BodyCollector {
@@ -545,7 +580,7 @@ impl Cdp {
             self.send(
                 socket,
                 "Target.setAutoAttach",
-                self.auto_attach_params(),
+                self.auto_attach_params(true),
                 Some(&attached.session_id),
                 Duration::from_secs(10),
             )?;
@@ -625,7 +660,16 @@ impl Cdp {
                     target_type,
                 };
                 let parent_wire = value.get("sessionId").and_then(Value::as_str);
-                if let Err(error) = self.setup_attached_target(socket, attached, waiting) {
+                if self.setup_phase {
+                    self.setup_done
+                        .entry(session_id.clone())
+                        .or_insert(attached.clone());
+                    if !Self::skip_target_setup(&attached.target_type) {
+                        self.pending_setup.push((attached, waiting));
+                    }
+                } else if let Err(error) =
+                    self.setup_attached_target(socket, attached.clone(), waiting)
+                {
                     self.push_event_line(
                         &session_id,
                         "Target.attachFailed",
@@ -676,7 +720,38 @@ impl Cdp {
         }
     }
 
+    fn flush_pending_setups(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+    ) {
+        for (attached, waiting) in std::mem::take(&mut self.pending_setup) {
+            if let Err(error) = self.setup_attached_target(socket, attached.clone(), waiting) {
+                self.push_event_line(
+                    &attached.session_id,
+                    "Target.attachFailed",
+                    &json!({
+                        "targetId": attached.target_id,
+                        "sessionId": attached.session_id,
+                        "error": error,
+                    }),
+                    None,
+                );
+            }
+        }
+    }
+
     fn setup(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        start_url: &str,
+    ) -> Result<(), String> {
+        self.setup_phase = true;
+        let setup_result = self.setup_inner(socket, start_url);
+        self.setup_phase = false;
+        setup_result
+    }
+
+    fn setup_inner(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
         start_url: &str,
@@ -688,13 +763,6 @@ impl Cdp {
             None,
             Duration::from_secs(10),
         )?;
-        self.send(
-            socket,
-            "Target.setAutoAttach",
-            self.auto_attach_params(),
-            None,
-            Duration::from_secs(10),
-        )?;
         let url = if start_url.trim().is_empty() {
             "about:blank".to_string()
         } else {
@@ -703,7 +771,7 @@ impl Cdp {
         let created = self.send(
             socket,
             "Target.createTarget",
-            json!({ "url": url }),
+            json!({ "url": "about:blank" }),
             None,
             Duration::from_secs(15),
         )?;
@@ -712,31 +780,49 @@ impl Cdp {
             .and_then(Value::as_str)
             .ok_or_else(|| "CDP não devolveu targetId".to_string())?
             .to_string();
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while Instant::now() < deadline {
-            if self
-                .setup_done
-                .values()
-                .any(|t| t.target_id == main_target && t.target_type == "page")
-            {
-                break;
-            }
-            thread::sleep(Duration::from_millis(80));
-        }
-        self.page_session_id = self
-            .setup_done
-            .values()
-            .find(|t| t.target_id == main_target)
-            .map(|t| t.session_id.clone())
-            .ok_or_else(|| {
-                "A página inicial não anexou via autoAttach (Target.attachedToTarget ausente)"
-                    .to_string()
-            })?;
+        let attached = self.send(
+            socket,
+            "Target.attachToTarget",
+            json!({ "targetId": main_target, "flatten": true }),
+            None,
+            Duration::from_secs(15),
+        )?;
+        self.page_session_id = attached
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "CDP não devolveu sessionId".to_string())?
+            .to_string();
+        self.setup_done.insert(
+            self.page_session_id.clone(),
+            AttachedTarget {
+                session_id: self.page_session_id.clone(),
+                target_id: main_target.clone(),
+                target_type: "page".to_string(),
+            },
+        );
         let page_session = self.page_session_id.clone();
         self.send(
             socket,
             "Target.setAutoAttach",
-            self.auto_attach_params(),
+            self.auto_attach_params(true),
+            Some(&page_session),
+            Duration::from_secs(20),
+        )?;
+        self.send(
+            socket,
+            "Page.enable",
+            json!({}),
+            Some(&page_session),
+            Duration::from_secs(10),
+        )?;
+        self.send(
+            socket,
+            "Network.enable",
+            json!({
+                "maxTotalBufferSize": 100_000_000,
+                "maxResourceBufferSize": 50_000_000,
+                "maxPostDataSize": MAX_BODY_BYTES
+            }),
             Some(&page_session),
             Duration::from_secs(10),
         )?;
@@ -747,6 +833,16 @@ impl Cdp {
             Some(&page_session),
             Duration::from_secs(5),
         )?;
+        if url != "about:blank" {
+            self.send(
+                socket,
+                "Page.navigate",
+                json!({ "url": url }),
+                Some(&page_session),
+                Duration::from_secs(15),
+            )?;
+        }
+        self.pump_socket(socket, Duration::from_millis(800));
         Ok(())
     }
 
