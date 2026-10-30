@@ -228,17 +228,27 @@ Causas do run incompleto anterior (~33 s): (1) `setAutoAttach` reentrante em cad
 
 ### Tabela por tipo de alvo — variante **com** `waitForDebuggerOnStart`
 
-16/16 marcadores no `multi.jsonl` do servidor. CDP: 11/16 (lacunas abaixo). Corpos: POST via `body_text`/`body_b64` no `multi.jsonl`; CDP POST com corpo no servidor.
+16/16 marcadores no `multi.jsonl` do servidor. CDP (`requestWillBeSent` + `?m=`): 11/16. Diagnóstico: `experiments/multi_target/diagnose_gaps.py` → `gap-diagnosis.json`. Corpos: POST via `body_text`/`body_b64` no `multi.jsonl`.
+
+#### Lacunas CDP (com wait) — hipótese testada
+
+| Marcador | Veredito | Evidência (run oficial, Chrome 156.0.8078.74) |
+|---|---|---|
+| `blank-1` (documento) | **Limite Chrome + corr. harness** | `Page.windowOpen` (clickBlank) + auto-attach; `Network.responseReceived` (Document) na sessão filha **antes** de `Network.enable`/resume; **sem** `requestWillBeSent` para o documento. Subrecursos `blank-get/post` ok na mesma sessão. |
+| `oopif-get-1` / `oopif-post-1` | **Limite Chrome + harness** | Target `iframe` criado, **nunca** `attachedToTarget` (`attached:false`); `Page.frameDetached` `reason=swap` (OOPIF). Fetches do iframe não aparecem na sessão da página; doc `oopif-1` só na raiz (127.0.0.1 vs `localhost`). Run sem site isolation: **não verificado** (opcional). |
+| `worker-get-1` / `worker-post-1` | **Limite Chrome** | Target `worker` criado, **0** attach; `worker.js` na sessão **page**; fetches do worker dedicado ausentes em todas as sessões CDP (NetLog/servidor ✓). |
+| Ordem headers (alvos com CDP) | **Fechada (ordem ≠ fio)** | Para marcadores com `requestWillBeSentExtraInfo`, o **conjunto** de nomes coincide com `multi.jsonl`; a **ordem** do ExtraInfo é lexicográfica ASCII no CDP, **não** a ordem transmitida no fio (servidor). |
+| Metadados de run (`cdp-sessions`, `plan`, `run-meta`) | **Fechada** | Saída de execução → `experiments/.gitignore`; removidos do índice git (commit agrega só `analysis.json`, `summary.json`, `gap-diagnosis.json`). |
 
 | Tipo | Servidor | NetLog | CDP | ExtraInfo × servidor | Corpos |
 |---|---|---|---|---|---|
-| Principal (`main-*`) | ✓ | ✓ | ✓ | conjunto idêntico (ExtraInfo ASCII) | ✓ POST (servidor) |
-| Popup | ✓ | ✓ | ✓ sessão `page` filha | ✓ | ✓ POST |
-| `_blank` | ✓ | ✓ | parcial (`blank-1` doc: NetLog; GET/POST: CDP) | ✓ | ✓ POST |
-| OOPIF | ✓ | ✓ | parcial (`oopif-1` doc; **get/post**: só NetLog+servidor) | parcial | ✓ POST (servidor) |
-| Worker | ✓ | ✓ | **não** (pedidos no target `worker`; eventos no NetLog) | n/d | servidor |
-| SW intercept (`sw-intercept-1`) | ✓ | ✓ | ✓ **página + SW** | ✓ | servidor |
-| SW fetch próprio (`sw-own-*`) | ✓ | ✓ | ✓ sessão `service_worker` | ✓ | ✓ POST (servidor) |
+| Principal (`main-*`) | ✓ | ✓ | ✓ | mesmo conjunto; ordem ExtraInfo ≠ fio | ✓ POST (servidor) |
+| Popup | ✓ | ✓ | ✓ sessão `page` filha | mesmo conjunto; ordem ≠ fio | ✓ POST |
+| `_blank` | ✓ | ✓ | parcial (`blank-1` doc: ver lacuna; GET/POST: CDP) | GET/POST: conjunto ok | ✓ POST |
+| OOPIF | ✓ | ✓ | parcial (`oopif-1` doc; get/post: lacuna) | doc: n/a | ✓ POST (servidor) |
+| Worker | ✓ | ✓ | **não** (lacuna get/post) | n/d | servidor |
+| SW intercept (`sw-intercept-1`) | ✓ | ✓ | ✓ **página + SW** | n/a (SW path) | servidor |
+| SW fetch próprio (`sw-own-*`) | ✓ | ✓ | ✓ sessão `service_worker` | conjunto ok | ✓ POST (servidor) |
 
 **Service worker (detalhe):** `sw-intercept-1` aparece na **página** (`fromServiceWorker: true`, `serviceWorkerResponseSource: fallback-code`) e no target **service_worker** (fetch encaminhado). `sw-own-1` / `sw-own-post-1` só no target **service_worker** (`fromServiceWorker: false`).
 

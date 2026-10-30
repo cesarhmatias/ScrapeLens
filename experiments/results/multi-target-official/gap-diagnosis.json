@@ -1,0 +1,110 @@
+{
+  "run_dir": "experiments/results/multi-target-official/with-wait",
+  "browser": "Chrome/156.0.8078.74",
+  "cdp_gaps": {
+    "blank-1": {
+      "hypothesis": "documento _blank antes de Network.enable+resume; click vs createTarget",
+      "page_window_open_count": 2,
+      "blank_page_sessions": [
+        {
+          "sessionId": "7330C21F",
+          "url": "http://127.0.0.1:8781/multi/blank.html?m=blank-1"
+        }
+      ],
+      "document_responseReceived": [
+        {
+          "line": 132,
+          "session": "7330C21F4D7F03656429BAFB3A86A68B",
+          "requestId": "492330BD8268001B082E87BDB25A6185"
+        }
+      ],
+      "document_requestWillBeSent": [],
+      "session_attached_blank": [
+        {
+          "line": 150,
+          "session": "7330C21F4D7F03656429BAFB3A86A68B",
+          "resumed": true
+        }
+      ],
+      "document_response_before_resume": true,
+      "verdict": "limite Chrome (corr. harness)",
+      "evidence": "responseReceived Document na sessão filha antes de __session_attached/resumed; sem requestWillBeSent para blank-1 (contagem analyze_multi só usa WillBeSent). Page.windowOpen presente (clickBlank); createTarget também usado no harness."
+    },
+    "oopif-get-1": {
+      "hypothesis": "OOPIF: Network.enable na sessão iframe antes do resume; eventos no sessionId do iframe",
+      "iframe_target_created": 1,
+      "iframe_target_ever_attached": 0,
+      "iframe_sessions_with_network": [],
+      "oopif_get_post_requestWillBeSent_any_session": [],
+      "oopif_doc_on_root_session": true,
+      "site_isolation_signal": true,
+      "verdict": "limite Chrome + harness",
+      "evidence": "target type=iframe criado mas attached=false em todo o run; frameDetached reason=swap (OOPIF). Pedidos oopif-get/post ausentes em todas as sessões CDP; documento oopif-1 na sessão da página (127.0.0.1 vs localhost). Sem run --disable-site-isolation (só diagnóstico pendente opcional).",
+      "marker": "oopif-get-1"
+    },
+    "oopif-post-1": {
+      "hypothesis": "OOPIF: Network.enable na sessão iframe antes do resume; eventos no sessionId do iframe",
+      "iframe_target_created": 1,
+      "iframe_target_ever_attached": 0,
+      "iframe_sessions_with_network": [],
+      "oopif_get_post_requestWillBeSent_any_session": [],
+      "oopif_doc_on_root_session": true,
+      "site_isolation_signal": true,
+      "verdict": "limite Chrome + harness",
+      "evidence": "target type=iframe criado mas attached=false em todo o run; frameDetached reason=swap (OOPIF). Pedidos oopif-get/post ausentes em todas as sessões CDP; documento oopif-1 na sessão da página (127.0.0.1 vs localhost). Sem run --disable-site-isolation (só diagnóstico pendente opcional).",
+      "marker": "oopif-post-1"
+    },
+    "worker-get-1": {
+      "hypothesis": "fetch do dedicated worker na sessão page vs worker",
+      "chrome": "Chrome/156.0.8078.74",
+      "worker_targets_created": [
+        "D26D9131833E5177FEB5102E681C3B59"
+      ],
+      "worker_attached_count": 0,
+      "worker_session": null,
+      "worker_js_request_on_page_session": true,
+      "worker_get_post_events": {
+        "page_session": [],
+        "worker_session": []
+      },
+      "verdict": "limite Chrome",
+      "evidence": "Chrome Chrome/156.0.8078.74: target worker criado, nunca Target.attachedToTarget; worker.js via Network na sessão da página; worker-get/post ausentes em todo cdp-events.jsonl (NetLog/servidor ok). Exige attach+Network.enable na sessão worker.",
+      "marker": "worker-get-1"
+    },
+    "worker-post-1": {
+      "hypothesis": "fetch do dedicated worker na sessão page vs worker",
+      "chrome": "Chrome/156.0.8078.74",
+      "worker_targets_created": [
+        "D26D9131833E5177FEB5102E681C3B59"
+      ],
+      "worker_attached_count": 0,
+      "worker_session": null,
+      "worker_js_request_on_page_session": true,
+      "worker_get_post_events": {
+        "page_session": [],
+        "worker_session": []
+      },
+      "verdict": "limite Chrome",
+      "evidence": "Chrome Chrome/156.0.8078.74: target worker criado, nunca Target.attachedToTarget; worker.js via Network na sessão da página; worker-get/post ausentes em todo cdp-events.jsonl (NetLog/servidor ok). Exige attach+Network.enable na sessão worker.",
+      "marker": "worker-post-1"
+    }
+  },
+  "headers_cdp_covered": {
+    "hypothesis": "ExtraInfo header order vs multi.jsonl for CDP-covered markers",
+    "by_marker": {
+      "blank-get-1": "conjunto difere",
+      "blank-post-1": "conjunto difere",
+      "main-1": "conjunto difere",
+      "main-post-1": "conjunto difere",
+      "oopif-1": "n/a",
+      "popup-1": "conjunto difere",
+      "popup-get-1": "conjunto difere",
+      "popup-post-1": "conjunto difere",
+      "sw-intercept-1": "n/a",
+      "sw-own-1": "conjunto difere",
+      "sw-own-post-1": "conjunto difere"
+    },
+    "verdict": "não verificada",
+    "evidence": "Marcadores com CDP: conjunto idêntico (ExtraInfo ASCII) salvo n/a em POST sem ExtraInfo."
+  }
+}

@@ -18,3 +18,6 @@ results/multi-target-*/**/chrome-netlog.json
 results/multi-target-*/**/chrome-profile/
 results/multi-target-*/testserver-evidence/
 results/multi-target-*/**/server.jsonl
+results/multi-target-*/**/cdp-sessions.json
+results/multi-target-*/**/plan.json
+results/multi-target-*/**/run-meta.json

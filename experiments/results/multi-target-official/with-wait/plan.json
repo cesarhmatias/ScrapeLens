@@ -1,9 +1,0 @@
-{
-  "pageUrl": "http://127.0.0.1:9781/multi/",
-  "settleMs": 12000,
-  "waitForDoneMs": 20000,
-  "navTimeoutMs": 45000,
-  "bypassServiceWorker": false,
-  "fetchAllBodies": true,
-  "waitForDebuggerOnStart": true
-}
