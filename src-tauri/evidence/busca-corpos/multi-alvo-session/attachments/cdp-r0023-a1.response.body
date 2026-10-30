@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ScrapeLens popup probe</title></head>
+<body>
+<h1>popup probe</h1>
+<pre id="log">running...</pre>
+<script>
+const log = document.getElementById('log');
+const lines = [];
+function note(s) { lines.push(s); log.textContent = lines.join('\n'); document.title = 'popup ' + lines.length; }
+async function run() {
+  try {
+    const g = await fetch('/multi/beacon?m=popup-get-1');
+    note('get ' + g.status + ' (' + (await g.text()).length + ' bytes)');
+  } catch (e) { note('get ERR ' + e); }
+  try {
+    const p = await fetch('/multi/ping?m=popup-post-1', {
+      method: 'POST',
+      headers: {'content-type': 'text/plain; charset=utf-8', 'x-scrapelens-marker': 'popup-1'},
+      body: 'popup-post-body-1',
+    });
+    note('post ' + p.status + ' (' + (await p.text()).length + ' bytes)');
+  } catch (e) { note('post ERR ' + e); }
+}
+run();
+</script>
+</body>
+</html>

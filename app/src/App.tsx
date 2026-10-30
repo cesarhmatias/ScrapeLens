@@ -35,6 +35,19 @@ import type {
   Verification,
   VerificationKey,
 } from "./types";
+import {
+  TARGET_FILTERS,
+  attachFailureWarnings,
+  captureTargets,
+  linkResolutionLabel,
+  matchesTargetFilter,
+  sessionShowsTargets,
+  shortTargetUrl,
+  targetBadge,
+  targetFilterCount,
+  targetKindLabel,
+  type TargetFilter,
+} from "./target";
 
 type View = "session" | "detail" | "compare" | "capture-compare" | "timeline" | "validate";
 type Theme = "light" | "dark";
@@ -504,6 +517,65 @@ function bodyState(body: BodyInfo) {
   return availabilityLabels[body.availability];
 }
 
+function CaptureLimits({
+  session,
+  requests,
+}: {
+  session: SessionRecord;
+  requests: RequestRecord[];
+}) {
+  const showTargets = sessionShowsTargets(requests, session.warnings);
+  const targets = showTargets ? captureTargets(requests) : [];
+  const attachFails = attachFailureWarnings(session.warnings);
+  const uniqueFails = [...new Map(attachFails.map((w) => [w.message, w])).values()];
+  return (
+    <ul>
+      <li>Headers sem evento correspondente aparecem como “não verificada”, nunca como fato.</li>
+      <li>Corpo omitido, truncado ou descartado mostra o motivo — nada é reconstruído.</li>
+      <li>HTML capturado nunca é executado como interface; o contrato é o v1 do core.</li>
+      <li>
+        Documento de aba <span className="mono">target=_blank</span> pode vir só do NetLog (sem{" "}
+        <span className="mono">requestWillBeSent</span> na sessão filha); a UI marca “alvo desconhecido
+        (só NetLog)” e não inventa headers CDP.
+      </li>
+      {showTargets && targets.length > 0 && (
+        <li>
+          Alvos acompanhados nesta captura:
+          <ul className="limits-targets">
+            {targets.map((t) => (
+              <li key={`${t.kind}-${t.url}`}>
+                <span className="chip tag">{t.kind}</span>{" "}
+                <span className="mono">{t.url}</span>
+                {t.attached === false ? (
+                  <span className="chip v-partial">não anexado</span>
+                ) : null}{" "}
+                <span className="dim">({t.count} req.)</span>
+              </li>
+            ))}
+          </ul>
+        </li>
+      )}
+      {uniqueFails.length > 0 && (
+        <li>
+          Falhas ao anexar alvo ({uniqueFails.length}):
+          <ul className="limits-targets">
+            {uniqueFails.map((w) => (
+              <li key={w.message}>
+                <span className="chip v-partial">{w.code}</span> {w.message}
+              </li>
+            ))}
+          </ul>
+        </li>
+      )}
+      <li>
+        {session.synthetic
+          ? "Sessão sintética: nenhum byte saiu do computador — sem telemetria, sem rede."
+          : "Captura local: sem telemetria; os anexos ficam na pasta da sessão."}
+      </li>
+    </ul>
+  );
+}
+
 function VerificationPanel({
   req,
   onOpenEvent,
@@ -725,8 +797,91 @@ function DetailView({
           </span>
           <span className="dot">·</span>
           <span>{req.domain}</span>
+          {(() => {
+            const badge = targetBadge(req);
+            return badge ? (
+              <>
+                <span className="dot">·</span>
+                <span className="chip tag target-chip" title="Alvo CDP desta requisição">
+                  {badge}
+                </span>
+              </>
+            ) : null;
+          })()}
         </div>
       </header>
+
+      {(req.target || req.netlogOnlyUnknownTarget || req.links.length > 0) && (
+        <section className="target-panel" aria-label="Alvo da requisição">
+          <h3>Alvo</h3>
+          {req.netlogOnlyUnknownTarget && !req.target ? (
+            <p className="notice notice-info">
+              <span className="notice-icon">i</span>
+              <span>
+                Alvo desconhecido (só NetLog): esta requisição não tem proveniência CDP. Documento de aba{" "}
+                <span className="mono">target=_blank</span> pode aparecer só no NetLog.
+              </span>
+            </p>
+          ) : null}
+          {req.target && (
+            <dl className="kv target-kv">
+              <dt>Tipo</dt>
+              <dd>{targetKindLabel(req.target)}</dd>
+              <dt>URL do alvo</dt>
+              <dd className="mono">
+                {req.target.url ?? (
+                  <span className="dim" title={req.url}>
+                    não informada no Target.* · requisição {shortTargetUrl(req.url) || req.path}
+                  </span>
+                )}
+              </dd>
+              <dt>Aberto por</dt>
+              <dd className="mono">{req.target.openerId ?? "— (página principal ou sem opener)"}</dd>
+              <dt>Sessão pai</dt>
+              <dd className="mono">{req.target.parentSessionId ?? "—"}</dd>
+              <dt>targetId</dt>
+              <dd className="mono">{req.target.targetId ?? "—"}</dd>
+              <dt>Anexado</dt>
+              <dd>
+                {req.target.attached === true
+                  ? "sim"
+                  : req.target.attached === false
+                    ? "não (fica só com o NetLog)"
+                    : "não informado"}
+              </dd>
+            </dl>
+          )}
+          {req.links.length > 0 && (
+            <div className="target-links">
+              <h4>Observações ligadas (service worker)</h4>
+              <p className="dim">
+                A mesma requisição lógica pode aparecer na página e no service worker. Navegue entre as
+                observações; ambiguidade nunca vira duplicata silenciosa.
+              </p>
+              <ul className="link-list">
+                {req.links.map((link) => (
+                  <li key={`${link.request}-${link.resolution}`}>
+                    <span className={`chip ${link.resolution === "linked" ? "v-ok" : "v-partial"}`}>
+                      {linkResolutionLabel(link)}
+                    </span>
+                    <button
+                      type="button"
+                      className="link mono"
+                      onClick={() => onOpenRequest(link.request)}
+                      title="Abrir a outra observação"
+                    >
+                      {link.request}
+                    </button>
+                    {link.evidence.length > 0 && (
+                      <span className="dim"> · {link.evidence.join(" · ")}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       {matches.length > 0 && (
         <section className="match-box" aria-label="Achados da busca">
@@ -1132,16 +1287,7 @@ function DetailView({
               <h3>Limites desta captura</h3>
               <span className="hint">visível em todas as abas</span>
             </div>
-            <ul>
-              <li>Headers sem evento correspondente aparecem como “não verificada”, nunca como fato.</li>
-              <li>Corpo omitido, truncado ou descartado mostra o motivo — nada é reconstruído.</li>
-              <li>HTML capturado nunca é executado como interface; o contrato é o v1 do core.</li>
-              <li>
-                {session.synthetic
-                  ? "Sessão sintética: nenhum byte saiu do computador — sem telemetria, sem rede."
-                  : "Captura local: sem telemetria; os anexos ficam na pasta da sessão."}
-              </li>
-            </ul>
+            <CaptureLimits session={session} requests={session.requests} />
           </section>
         </div>
 
@@ -1391,6 +1537,7 @@ export default function App() {
   const [query, setQuery] = useState(params.get("q") ?? "");
   const initialFilter = (params.get("filter") as TypeFilter | null) ?? "all";
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(initialFilter);
+  const [targetFilter, setTargetFilter] = useState<TargetFilter>("all");
   const [failFilter, setFailFilter] = useState(false);
   const [blockFilter, setBlockFilter] = useState(false);
   const [protocol, setProtocol] = useState<"all" | Protocol>("all");
@@ -1748,6 +1895,11 @@ export default function App() {
   }, [searchResult]);
   const payloadSearch = Boolean(searchKey);
 
+  const showTargetColumn = useMemo(
+    () => sessionShowsTargets(requests, session.warnings),
+    [requests, session.warnings],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return requests.filter((r) => {
@@ -1755,6 +1907,7 @@ export default function App() {
       if (typeFilter === "document" && r.type !== "document") return false;
       if (typeFilter === "media" && !(r.type === "image" || r.type === "font")) return false;
       if (typeFilter === "error" && r.status < 400) return false;
+      if (showTargetColumn && !matchesTargetFilter(r, targetFilter)) return false;
       if (failFilter || blockFilter) {
         const o = outcomes.get(r.id);
         if (!((failFilter && isAppFailure(o)) || (blockFilter && isPossibleBlock(o)))) return false;
@@ -1777,7 +1930,19 @@ export default function App() {
         String(r.status).includes(q)
       );
     });
-  }, [requests, query, typeFilter, failFilter, blockFilter, protocol, payloadSearch, matchesById, outcomes]);
+  }, [
+    requests,
+    query,
+    typeFilter,
+    targetFilter,
+    showTargetColumn,
+    failFilter,
+    blockFilter,
+    protocol,
+    payloadSearch,
+    matchesById,
+    outcomes,
+  ]);
 
   const errors = requests.filter((r) => r.status >= 400).length;
   const counts = {
@@ -1808,7 +1973,9 @@ export default function App() {
   useEffect(() => {
     setScrollTop(0);
     if (tableRef.current) tableRef.current.scrollTop = 0;
-  }, [query, typeFilter, failFilter, blockFilter, protocol]);
+  }, [query, typeFilter, targetFilter, failFilter, blockFilter, protocol]);
+
+  const colCount = showTargetColumn ? 10 : 9;
 
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endIndex = Math.min(filtered.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
@@ -2124,6 +2291,23 @@ export default function App() {
                   <span className="count">{blockCount}</span>
                 </button>
               </div>
+              {showTargetColumn && (
+                <div className="filters target-filters" aria-label="Filtro por tipo de alvo">
+                  {TARGET_FILTERS.filter(
+                    (f) => f.id === "all" || targetFilterCount(requests, f.id) > 0,
+                  ).map((f) => (
+                    <button
+                      key={f.id}
+                      className={targetFilter === f.id ? "chip-filter active" : "chip-filter"}
+                      onClick={() => setTargetFilter(f.id)}
+                      title="Filtrar pela proveniência do alvo CDP"
+                    >
+                      {f.label}
+                      <span className="count">{targetFilterCount(requests, f.id)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <label className="proto-select">
                 <span>Protocolo</span>
                 <select value={protocol} onChange={(e) => setProtocol(e.target.value as typeof protocol)}>
@@ -2207,6 +2391,7 @@ export default function App() {
                     <th className="col-method">Método</th>
                     <th className="col-domain">Domínio</th>
                     <th className="col-path">Caminho</th>
+                    {showTargetColumn && <th className="col-target">Alvo</th>}
                     <th className="col-status">Status</th>
                     <th className="col-app" title="Sucesso da aplicação (≠ status HTTP)">Aplicação</th>
                     <th className="col-proto">Protocolo</th>
@@ -2217,10 +2402,12 @@ export default function App() {
                 <tbody>
                   {startIndex > 0 && (
                     <tr className="spacer" aria-hidden="true">
-                      <td colSpan={9} style={{ height: startIndex * ROW_HEIGHT }} />
+                      <td colSpan={colCount} style={{ height: startIndex * ROW_HEIGHT }} />
                     </tr>
                   )}
-                  {visibleRows.map((r, i) => (
+                  {visibleRows.map((r, i) => {
+                    const badge = showTargetColumn ? targetBadge(r) : null;
+                    return (
                     <tr
                       key={r.id}
                       className={selected?.id === r.id ? "selected" : undefined}
@@ -2233,6 +2420,18 @@ export default function App() {
                       </td>
                       <td className="domain">{r.domain}</td>
                       <td className="mono path">{r.path}</td>
+                      {showTargetColumn && (
+                        <td className="target-cell">
+                          <span
+                            className={`chip tag target-chip${
+                              !badge || r.netlogOnlyUnknownTarget ? " v-partial" : ""
+                            }`}
+                            title={badge ?? "alvo desconhecido (só NetLog)"}
+                          >
+                            {badge ?? "alvo desconhecido (só NetLog)"}
+                          </span>
+                        </td>
+                      )}
                       <td>
                         <span className={`status ${statusClass(r.status)}`}>{fmtStatus(r.status)}</span>
                       </td>
@@ -2248,18 +2447,29 @@ export default function App() {
                         <span className="time-val">{fmtDuration(r)}</span>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   {endIndex < filtered.length && (
                     <tr className="spacer" aria-hidden="true">
-                      <td colSpan={9} style={{ height: (filtered.length - endIndex) * ROW_HEIGHT }} />
+                      <td colSpan={colCount} style={{ height: (filtered.length - endIndex) * ROW_HEIGHT }} />
                     </tr>
                   )}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={colCount}>
                         <div className="empty">
                           Nenhuma requisição corresponde a “{query}” com os filtros atuais.
-                          <button className="link" onClick={() => { setQuery(""); setTypeFilter("all"); setFailFilter(false); setBlockFilter(false); setProtocol("all"); }}>
+                          <button
+                            className="link"
+                            onClick={() => {
+                              setQuery("");
+                              setTypeFilter("all");
+                              setTargetFilter("all");
+                              setFailFilter(false);
+                              setBlockFilter(false);
+                              setProtocol("all");
+                            }}
+                          >
                             Limpar busca e filtros
                           </button>
                         </div>
@@ -2324,6 +2534,7 @@ export default function App() {
         {view === "timeline" && (
           <TimelineView
             sessionDir={session.sourcePath}
+            requests={requests}
             onBack={() => setView("session")}
             onOpenRequest={(id) => {
               if (requests.some((r) => r.id === id)) {

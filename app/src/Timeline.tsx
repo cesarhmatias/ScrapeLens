@@ -1,19 +1,29 @@
 // Linha do tempo da aplicação (core: timeline::timeline) e validação da execução do script
 // (core: validate::validate, esquema scrapelens.validate/1). A UI só apresenta o que o core
 // devolve; rótulos (`event @ page`) e vereditos são texto do core, renderizados escapados.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { bridge, type TimelineDto, type ValidationResultDto } from "./bridge";
 import { VerdictKindChip } from "./assess";
+import type { RequestRecord } from "./types";
+import { timelineTargetBadge } from "./target";
 
 export function TimelineView({
   sessionDir,
+  requests,
   onOpenRequest,
   onBack,
 }: {
   sessionDir?: string;
+  /** Para selo de alvo (fora da página principal); o core da timeline não envia target. */
+  requests?: RequestRecord[];
   onOpenRequest: (id: string) => void;
   onBack: () => void;
 }) {
+  const byId = useMemo(() => {
+    const map = new Map<string, RequestRecord>();
+    for (const r of requests ?? []) map.set(r.id, r);
+    return map;
+  }, [requests]);
   const [data, setData] = useState<TimelineDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -77,10 +87,19 @@ export function TimelineView({
                 }
                 const header = item.round !== round;
                 round = item.round;
+                const targetLabel = timelineTargetBadge(byId.get(item.requestId));
                 return (
                   <tr key={i} className="clickable" onClick={() => onOpenRequest(item.requestId)} title={`${item.method} ${item.url}`}>
                     <td>{header ? `rodada ${item.round}` : ""}</td>
-                    <td><strong className="mono">{item.label}</strong> <span className="dim mono">{item.requestId}</span></td>
+                    <td>
+                      <strong className="mono">{item.label}</strong>{" "}
+                      <span className="dim mono">{item.requestId}</span>
+                      {targetLabel ? (
+                        <span className="chip tag target-chip" title="Alvo CDP (≠ página principal)">
+                          {targetLabel}
+                        </span>
+                      ) : null}
+                    </td>
                     <td><span className="chip tag">{item.kind}</span></td>
                     <td className="mono">{item.status ?? "—"}</td>
                     <td><VerdictKindChip kind={item.verdictKind} title={item.verdict} /></td>

@@ -1,0 +1,80 @@
+{
+  "body_len": 17,
+  "body_sha256": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
+  "body_text": "oopif-post-body-1",
+  "headers": [
+    [
+      "Host",
+      "localhost:8911"
+    ],
+    [
+      "Connection",
+      "keep-alive"
+    ],
+    [
+      "Content-Length",
+      "17"
+    ],
+    [
+      "x-scrapelens-marker",
+      "oopif-1"
+    ],
+    [
+      "sec-ch-ua-platform",
+      "\"macOS\""
+    ],
+    [
+      "User-Agent",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+    ],
+    [
+      "sec-ch-ua",
+      "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\", \"Google Chrome\";v=\"156\""
+    ],
+    [
+      "content-type",
+      "text/plain; charset=utf-8"
+    ],
+    [
+      "sec-ch-ua-mobile",
+      "?0"
+    ],
+    [
+      "Accept",
+      "*/*"
+    ],
+    [
+      "Origin",
+      "http://localhost:8911"
+    ],
+    [
+      "Sec-Fetch-Site",
+      "same-origin"
+    ],
+    [
+      "Sec-Fetch-Mode",
+      "cors"
+    ],
+    [
+      "Sec-Fetch-Dest",
+      "empty"
+    ],
+    [
+      "Referer",
+      "http://localhost:8911/multi/iframe.html?m=oopif-1"
+    ],
+    [
+      "Accept-Encoding",
+      "gzip, deflate, br, zstd"
+    ],
+    [
+      "Accept-Language",
+      "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+    ]
+  ],
+  "marker": "oopif-post-1",
+  "method": "POST",
+  "schema": "scrapelens.testserver.multi/1",
+  "synthetic": true,
+  "target": "/multi/ping?m=oopif-post-1"
+}

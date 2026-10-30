@@ -179,6 +179,30 @@ export interface Attempt {
   provenance: Provenance;
 }
 
+export type TargetKind =
+  | "page"
+  | "iframe"
+  | "worker"
+  | "service_worker"
+  | "shared_worker"
+  | "other";
+
+export interface TargetProvenance {
+  targetId?: string;
+  kind?: TargetKind;
+  url?: string;
+  openerId?: string;
+  parentSessionId?: string;
+  attached?: boolean;
+}
+
+export interface RequestLink {
+  kind: string;
+  request: string;
+  evidence?: string[];
+  resolution: string;
+}
+
 export interface LogicalRequest {
   id: string;
   url: string;
@@ -187,6 +211,10 @@ export interface LogicalRequest {
   status?: number;
   resourceType?: string;
   cdp?: CdpRef;
+  /** Alvo CDP (page/iframe/worker/…); ausente em arquivo antigo e NetLog-only. */
+  target?: TargetProvenance;
+  /** Observações irmãs (service worker); `linked` ou `ambiguous`. */
+  links?: RequestLink[];
   netlog?: NetlogRefs;
   attempts: Attempt[];
   redirects?: Redirect[];

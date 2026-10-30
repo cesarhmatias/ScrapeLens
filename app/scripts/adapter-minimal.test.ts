@@ -196,4 +196,35 @@ assert.equal(byVerdict.indeterminado, 19);
 assert.equal(byVerdict["not-assessed"], 3);
 assert.equal((byVerdict as Record<string, number>).NotAssessed, undefined);
 assert.deepEqual(verdictCounts(undefined), { "app-ok": 0, "app-error": 0, blocked: 0, indeterminado: 0, "not-assessed": 0 });
+// Multi-alvo (docs/14): target/links; sessão antiga sem target não inventa coluna.
+import { sessionShowsTargets, targetBadge, timelineTargetBadge } from "../src/target";
+const withTarget = structuredClone(minimal) as any;
+withTarget.requests[0].target = {
+  kind: "page",
+  url: "http://127.0.0.1:8911/multi/popup.html?m=popup-1",
+  openerId: "OP",
+  attached: true,
+};
+withTarget.requests[0].links = [
+  { kind: "service_worker", request: "cdp-r0002", evidence: ["mesma URL/método"], resolution: "ambiguous" },
+];
+const trTarget = adaptSession(withTarget).session.requests[0];
+assert.equal(trTarget.target?.kind, "page");
+assert.equal(trTarget.target?.openerId, "OP");
+assert.equal(trTarget.links.length, 1);
+assert.equal(trTarget.links[0].resolution, "ambiguous");
+assert.match(targetBadge(trTarget) ?? "", /^popup · /);
+assert.match(timelineTargetBadge(trTarget) ?? "", /^popup · /);
+assert.equal(sessionShowsTargets([trTarget], []), true);
+const legacy = run(minimal);
+assert.equal(legacy.target, undefined);
+assert.equal(legacy.links.length, 0);
+assert.equal(legacy.netlogOnlyUnknownTarget, false);
+assert.equal(sessionShowsTargets([legacy], []), false);
+assert.equal(targetBadge(legacy), null);
+const netOnly = structuredClone(minimal) as any;
+netOnly.requests[0].provenance = { source: "netlog", method: "import", verification: "partial" };
+const nr = adaptSession(netOnly).session.requests[0];
+assert.equal(nr.netlogOnlyUnknownTarget, true);
+assert.equal(targetBadge(nr), "alvo desconhecido (só NetLog)");
 console.log("adapter-minimal: ok");

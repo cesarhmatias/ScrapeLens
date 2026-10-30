@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ScrapeLens multi-target probe</title>
+<style>body{font:13px ui-monospace,Menlo,monospace;margin:1.2rem;max-width:62rem}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+<h1>ScrapeLens multi-target probe</h1>
+<p>Every request carries a unique <code>?m=</code> marker. Synthetic, local only.
+Open with <code>/multi/?auto=1</code> (default) to fire everything, or
+<code>?auto=0</code> and call <code>window.__scrapelensMulti.*</code> from CDP.</p>
+<p><a id="blank-link" href="/multi/blank.html?m=blank-1" target="_blank" rel="noopener">target=_blank link (auto-clicked after 200 ms)</a></p>
+<pre id="log">running...</pre>
+<iframe id="oopif" width="420" height="140" title="oopif"></iframe>
+<script>
+const params = new URLSearchParams(location.search);
+const auto = params.get('auto') !== '0';
+const oopifBase = params.get('oopif') || (location.protocol + '//localhost:' + (location.port || '80'));
+const steps = [];
+const logEl = document.getElementById('log');
+function note(label, value) {
+  steps.push([label, value]);
+  logEl.textContent = steps.map(([a, b]) => a + ': ' + b).join('\n');
+  document.title = 'scrapelens multi ' + steps.length;
+}
+async function probe(label, url, init) {
+  try {
+    const r = await fetch(url, init);
+    const t = await r.text();
+    note(label, r.status + ' (' + t.length + ' bytes)');
+    return t;
+  } catch (e) {
+    note(label, 'ERR ' + e);
+    return null;
+  }
+}
+const post = (marker, body) => ({
+  method: 'POST',
+  headers: {'content-type': 'text/plain; charset=utf-8', 'x-scrapelens-marker': marker},
+  body,
+});
+async function mainProbe() {
+  await probe('main-get', '/multi/beacon?m=main-1');
+  await probe('main-post', '/multi/ping?m=main-post-1', post('main-post-1', 'main-post-body-1'));
+}
+function openPopup() {
+  window.__slPopup = window.open('/multi/popup.html?m=popup-1', 'sl-popup', 'width=480,height=360');
+  note('popup', window.__slPopup ? 'opened' : 'blocked');
+  return !!window.__slPopup;
+}
+function clickBlank() {
+  const link = document.getElementById('blank-link');
+  link.click();
+  note('blank', 'clicked');
+  return true;
+}
+function openIframe() {
+  const frame = document.getElementById('oopif');
+  frame.src = oopifBase + '/multi/iframe.html?m=oopif-1';
+  note('oopif', frame.src);
+  return frame.src;
+}
+function startWorker() {
+  try {
+    const w = new Worker('/multi/worker.js');
+    w.onmessage = (e) => note('worker', e.data && e.data.status);
+    w.onerror = (e) => note('worker', 'ERR ' + (e.message || 'error'));
+    w.postMessage({get: 'worker-get-1', post: 'worker-post-1', body: 'worker-post-body-1'});
+    window.__slWorker = w;
+    note('worker', 'started');
+    return true;
+  } catch (e) {
+    note('worker', 'ERR ' + e);
+    return false;
+  }
+}
+async function startServiceWorker() {
+  if (!('serviceWorker' in navigator)) { note('sw', 'unsupported'); return false; }
+  try {
+    const reg = await navigator.serviceWorker.register('/multi/sw.js', {scope: '/multi/'});
+    await navigator.serviceWorker.ready;
+    note('sw', 'ready ' + !!(reg.active || reg.waiting || reg.installing));
+    for (let i = 0; i < 50 && !navigator.serviceWorker.controller; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    note('sw', 'controller ' + !!navigator.serviceWorker.controller);
+    const t = await probe('sw-fetch', '/multi/sw-fetch?m=sw-intercept-1');
+    return t;
+  } catch (e) {
+    note('sw', 'ERR ' + e);
+    return null;
+  }
+}
+window.__scrapelensMulti = {
+  steps, mainProbe, openPopup, clickBlank, openIframe, startWorker, startServiceWorker,
+  oopifBase: () => oopifBase,
+  marker: (name) => '/multi/beacon?m=' + name,
+};
+(async () => {
+  await mainProbe();
+  if (!auto) { note('auto', 'off'); return; }
+  openPopup();
+  setTimeout(clickBlank, 200);
+  openIframe();
+  startWorker();
+  startServiceWorker();
+})();
+</script>
+</body>
+</html>

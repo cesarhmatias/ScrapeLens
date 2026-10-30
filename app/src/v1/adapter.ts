@@ -9,11 +9,14 @@ import type {
   Protocol,
   ReceivedCookie,
   RedirectHop,
+  RequestLinkView,
   RequestRecord,
   ResourceType,
   SessionRecord,
   SessionOrigin,
   SourceId,
+  TargetKind,
+  TargetView,
   Verification,
   VerificationKey,
   WarningView,
@@ -24,9 +27,55 @@ import type {
   HeaderView,
   LogicalRequest,
   Provenance,
+  RequestLink,
   SessionV1,
+  TargetProvenance,
   Timings,
 } from "./types";
+
+const TARGET_KINDS = new Set<TargetKind>([
+  "page",
+  "iframe",
+  "worker",
+  "service_worker",
+  "shared_worker",
+  "other",
+]);
+
+function mapTarget(raw: TargetProvenance | undefined): TargetView | undefined {
+  if (!raw) return undefined;
+  const kind = TARGET_KINDS.has((raw.kind ?? "other") as TargetKind)
+    ? ((raw.kind ?? "other") as TargetKind)
+    : "other";
+  // Proveniência vazia (serde default) não vira coluna confusa.
+  if (
+    !raw.targetId &&
+    kind === "other" &&
+    !raw.url &&
+    !raw.openerId &&
+    !raw.parentSessionId &&
+    raw.attached === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    targetId: raw.targetId,
+    kind,
+    url: raw.url,
+    openerId: raw.openerId,
+    parentSessionId: raw.parentSessionId,
+    attached: raw.attached,
+  };
+}
+
+function mapLinks(raw: RequestLink[] | undefined): RequestLinkView[] {
+  return (raw ?? []).map((link) => ({
+    kind: link.kind,
+    request: link.request,
+    evidence: link.evidence ?? [],
+    resolution: link.resolution,
+  }));
+}
 
 const protocolLabel = (p: string): Protocol =>
   p === "h1" ? "HTTP/1.1" : p === "h2" ? "HTTP/2" : p === "h3" ? "HTTP/3" : "desconhecido";
@@ -438,6 +487,8 @@ export function adaptSession(
       bodyPreview.reason = bodyPreview.reason ?? "prévia sintética não incluída";
     }
 
+    const target = mapTarget(request.target);
+    const primarySource = sourceLabel(request.provenance.source);
     return {
       id: request.id,
       url: request.url,
@@ -453,6 +504,9 @@ export function adaptSession(
         : "other",
       startedAt: startedAtOf(request, raw),
       durationMs: durationOf(request),
+      target,
+      links: mapLinks(request.links),
+      netlogOnlyUnknownTarget: !target && primarySource === "netlog",
       requestHeaders,
       responseHeaders,
       cookiesSent: request.cookie.pairs.map((pair, index) => ({
@@ -471,7 +525,7 @@ export function adaptSession(
       attempts,
       match: matchOf(request),
       warnings: ownWarnings,
-      primarySource: sourceLabel(request.provenance.source),
+      primarySource,
       verification,
     };
   });

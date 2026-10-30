@@ -1,0 +1,38 @@
+// Service worker probe: intercepts a page fetch, does its own GET and POST,
+// and forwards the intercepted request to the network with its own marker.
+const OWN_GET = '/multi/beacon?m=sw-own-1';
+const OWN_POST = '/multi/ping?m=sw-own-post-1';
+const FORWARD = '/multi/sw-fetch?m=sw-intercept-1&passthrough=1';
+
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+async function jsonOrText(response) {
+  const text = await response.text();
+  try { return JSON.parse(text); } catch (e) { return {raw: text}; }
+}
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.pathname !== '/multi/sw-fetch') return;
+  event.respondWith((async () => {
+    const ownGet = await jsonOrText(await fetch(OWN_GET, {
+      cache: 'no-store',
+      headers: {'x-scrapelens-marker': 'sw-own'},
+    }));
+    const ownPost = await jsonOrText(await fetch(OWN_POST, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {'content-type': 'text/plain; charset=utf-8', 'x-scrapelens-marker': 'sw-own-post'},
+      body: 'sw-own-post-body-1',
+    }));
+    const forwarded = await jsonOrText(await fetch(FORWARD, {cache: 'no-store'}));
+    return new Response(JSON.stringify({
+      schema: 'scrapelens.testserver.multi-sw/1',
+      intercepted: true,
+      own_get: ownGet,
+      own_post: ownPost,
+      forwarded,
+    }), {status: 200, headers: {'content-type': 'application/json; charset=utf-8', 'x-service-worker': 'scrapelens-multi'}});
+  })());
+});

@@ -76,8 +76,10 @@ pending      true quando o core/ ainda não executou a etapa
   com `charset:x->utf-8` quando não é UTF-8) e `lossy-postData` marca payload
   sem prova de bytes preservados; esses corpos ficam com verificação parcial.
   Corpo sem linha correspondente vira aviso, nunca associação por URL.
-- A captura acompanha um target/página; abas abertas manualmente depois do
-  início não entram na mesma sessão.
+- A captura acompanha página, popup, aba `target=_blank`, iframe de outra
+  origem (OOPIF), worker e service worker (auto-attach recursivo). Documento
+  de aba `_blank` pode vir só do NetLog (limite do Chrome). Alvo que falha ao
+  anexar fica registrado como aviso, sem headers/corpos CDP inventados.
 - Sem assinatura Apple/notarização; arm64 compilado e testado, Intel não.
 - Captura com zero eventos CDP falha com erro explícito em vez de gravar uma
   sessão vazia; sessões com eventos parciais são preservadas como `partial`.

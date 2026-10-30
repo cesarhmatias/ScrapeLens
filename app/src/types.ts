@@ -119,6 +119,33 @@ export interface WarningView {
   entity?: string;
 }
 
+/** Tipo do alvo CDP (`Target.targetInfo.type`), espelho do core. */
+export type TargetKind =
+  | "page"
+  | "iframe"
+  | "worker"
+  | "service_worker"
+  | "shared_worker"
+  | "other";
+
+/** Proveniência do alvo CDP; ausente em sessões antigas e em NetLog-only. */
+export interface TargetView {
+  targetId?: string;
+  kind: TargetKind;
+  url?: string;
+  openerId?: string;
+  parentSessionId?: string;
+  attached?: boolean;
+}
+
+/** Observação irmã (service worker): `linked` ou `ambiguous`. */
+export interface RequestLinkView {
+  kind: string;
+  request: string;
+  evidence: string[];
+  resolution: string;
+}
+
 export interface RequestRecord {
   id: string;
   url: string;
@@ -132,6 +159,15 @@ export interface RequestRecord {
   startedAt: string;
   durationMs: number;
   initiator?: string;
+  /** Alvo CDP; ausente = sessão antiga ou só NetLog. */
+  target?: TargetView;
+  /** Observações ligadas (SW); nunca duplicata sem este campo. */
+  links: RequestLinkView[];
+  /**
+   * Sem proveniência de alvo e fonte NetLog: marcar "alvo desconhecido (só NetLog)".
+   * Em sessões antigas (sem coluna Alvo) este selo não aparece.
+   */
+  netlogOnlyUnknownTarget: boolean;
   requestHeaders: HeaderPair[];
   responseHeaders: HeaderPair[];
   cookiesSent: CookiePair[];

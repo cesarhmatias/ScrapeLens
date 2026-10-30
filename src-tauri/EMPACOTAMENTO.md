@@ -119,7 +119,8 @@ manual pelo `NSSavePanel` não foi automatizada nesta rodada.
 - Sem assinatura Apple Developer ID e sem notarização; distribuição fora desta
   máquina exige `xattr -d com.apple.quarantine` ou assinatura/notarização reais.
 - Apenas arm64 compilado e testado; Intel não validado.
-- Captura cobre um target/página por sessão.
+- Captura multi-alvo: página, popup, `_blank`, OOPIF, worker e service worker;
+  documento `_blank` pode vir só do NetLog.
 - Corpos vindos do CDP ficam `unavailable` (não são baixados); a UI mostra o
   motivo em vez de inventar conteúdo. Nenhuma sessão capturada nesta máquina
   tem corpo; só o teste unitário cobre o caso `captured`.
