@@ -695,13 +695,17 @@ impl Cdp {
         error: String,
         parent_session_id: Option<&str>,
     ) {
-        self.detached_sessions.insert(attached.session_id.clone());
+        let is_primary = self.configured_target_primary.get(&attached.target_id)
+            == Some(&attached.session_id);
         self.setup_in_progress.remove(&attached.session_id);
-        self.drop_recorded_network_for_session(&attached.session_id);
-        if self.configured_target_primary.get(&attached.target_id) == Some(&attached.session_id)
-            && !self.configured_sessions.contains(&attached.session_id)
-        {
-            self.configured_target_primary.remove(&attached.target_id);
+        if is_primary {
+            self.configured_sessions
+                .insert(attached.session_id.clone());
+            self.setup_done
+                .insert(attached.session_id.clone(), attached.clone());
+        } else {
+            self.detached_sessions.insert(attached.session_id.clone());
+            self.drop_recorded_network_for_session(&attached.session_id);
         }
         let command = Self::command_from_setup_error(&error);
         self.push_event_line(
@@ -798,15 +802,22 @@ impl Cdp {
         waiting_for_debugger: bool,
         parent_session_id: Option<&str>,
     ) -> Result<(), String> {
-        if self.configured_target_primary.get(&attached.target_id).is_some_and(|primary| {
-            primary != &attached.session_id
-        }) {
-            return self.setup_duplicate_target_session(
-                socket,
-                attached,
-                waiting_for_debugger,
-                parent_session_id,
-            );
+        match self.configured_target_primary.get(&attached.target_id) {
+            Some(primary) if primary != &attached.session_id => {
+                return self.setup_duplicate_target_session(
+                    socket,
+                    attached,
+                    waiting_for_debugger,
+                    parent_session_id,
+                );
+            }
+            None if !Self::skip_target_setup(&attached.target_type) => {
+                self.configured_target_primary.insert(
+                    attached.target_id.clone(),
+                    attached.session_id.clone(),
+                );
+            }
+            _ => {}
         }
         if self.configured_sessions.contains(&attached.session_id) {
             if self.wait_for_debugger && waiting_for_debugger {
@@ -1029,26 +1040,13 @@ impl Cdp {
                     target_id: target_id.clone(),
                     target_type: target_type.clone(),
                 };
-                let parent_wire = value.get("sessionId").and_then(Value::as_str);
-                if !Self::skip_target_setup(&target_type)
-                    && !self.configured_target_primary.contains_key(&target_id)
-                {
-                    self.configured_target_primary.insert(
-                        target_id.clone(),
-                        session_id.clone(),
-                    );
+                if !Self::skip_target_setup(&target_type) {
+                    self.configured_target_primary
+                        .entry(target_id.clone())
+                        .or_insert(session_id.clone());
                 }
-                let duplicate = self.configured_target_primary.get(&target_id).is_some_and(
-                    |primary| primary != &session_id,
-                );
-                if duplicate {
-                    let _ = self.setup_duplicate_target_session(
-                        socket,
-                        attached.clone(),
-                        waiting,
-                        parent_wire,
-                    );
-                } else if self.setup_phase {
+                let parent_wire = value.get("sessionId").and_then(Value::as_str);
+                if self.setup_phase {
                     self.setup_seen
                         .insert(session_id.clone(), attached.clone());
                     if self.command_depth == 0 {
@@ -1063,15 +1061,13 @@ impl Cdp {
                     } else {
                         self.pending_setup.push((attached, waiting));
                     }
-                } else if !duplicate {
-                    if let Err(error) = self.setup_attached_target(
-                        socket,
-                        attached.clone(),
-                        waiting,
-                        parent_wire,
-                    ) {
-                        self.push_target_setup_timeout(&attached, error, parent_wire);
-                    }
+                } else if let Err(error) = self.setup_attached_target(
+                    socket,
+                    attached.clone(),
+                    waiting,
+                    parent_wire,
+                ) {
+                    self.push_target_setup_timeout(&attached, error, parent_wire);
                 }
             }
         }
