@@ -372,7 +372,9 @@ def analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
         check(False, "cdp: sem eventos Target.attachedToTarget e sem target.kind no modelo — sem proveniência de alvo")
     # O documento do iframe OOPIF é reportado na sessão do alvo PAI (frame), então
     # "page" também é aceitável para oopif-1; as subrequisições têm de ser iframe.
-    ACEITA = {"oopif-1": {"iframe", "page"}}
+    # O fetch interceptado pelo SW existe nas duas sessões: a observação da página
+    # é "page" e a do SW é "service_worker" — as duas são corretas.
+    ACEITA = {"oopif-1": {"iframe", "page"}, "sw-intercept-1": {"service_worker", "page"}}
     for marker, want in TYPES.items():
         got = set(typed.get(marker, []))
         kind = model_types.get(marker)
