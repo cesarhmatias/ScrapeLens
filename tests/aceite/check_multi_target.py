@@ -522,10 +522,29 @@ def _analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
     for marker, group in sw_groups.items():
         sids = [p[0] for r in group for p in sorted(model_pairs(r))]
         kinds = sorted({(r.get("target") or {}).get("kind") or "?" for r in group})
-        info_sw["grupos"][marker] = {"requisicoes": len(group), "tipos": kinds, "sessoes": sorted(set(sids))}
+        # Duplicata é contada por targetId: o mesmo alvo pode ser anexado em várias
+        # sessões (attach repetido) e cada cópia grava a mesma requisição.
+        targets_of = [(r.get("target") or {}).get("targetId") for r in group]
+        sess_of = [(r.get("cdp") or {}).get("sessionId") for r in group]
+        por_alvo = collections.Counter(tid for tid in targets_of if tid)
+        dup_alvo = {tid: n for tid, n in por_alvo.items() if n > 1}
+        sessoes_por_alvo = collections.defaultdict(set)
+        for tid, sid in zip(targets_of, sess_of):
+            if tid and sid:
+                sessoes_por_alvo[tid].add(str(sid))
+        multi_sessao = {tid: sorted(v) for tid, v in sessoes_por_alvo.items() if len(v) > 1}
+        info_sw["grupos"][marker] = {"requisicoes": len(group), "tipos": kinds, "sessoes": sorted(set(sids)),
+                                     "alvos": dict(por_alvo), "duplicata_por_alvo": dup_alvo,
+                                     "alvos_com_varias_sessoes": multi_sessao}
         check(len(group) > 0, f"service worker: nenhuma requisição para {marker}")
         check(len(sids) == len(set(sids)),
               f"service worker {marker}: {len(sids) - len(set(sids))} duplicata(s) na mesma sessão")
+        check(not dup_alvo,
+              f"service worker {marker}: {sum(dup_alvo.values()) - len(dup_alvo)} observação(ões) repetida(s) no mesmo alvo "
+              f"(targetId): {dict(list(dup_alvo.items())[:3])} — attach repetido, não duas observações")
+        check(not multi_sessao,
+              f"service worker {marker}: alvo com mais de uma sessão gravando rede: "
+              f"{dict(list(multi_sessao.items())[:3])}")
     intercept = sw_groups.get("sw-intercept-1") or []
     ids_intercept = {r.get("id") for r in intercept}
     links_ok, warned = [], []
@@ -660,6 +679,23 @@ def _mut_alter_body(capture: Path) -> str:
     return "alterou o corpo de resposta de main-post-1"
 
 
+def _mut_duplicate_sw_other_session(capture: Path) -> str:
+    sp, _, _ = _session_paths(capture)
+    session = _load(sp)
+    src = _find_by_marker(session, "sw-own-1")
+    if not src:
+        raise RuntimeError("sem sw-own-1 para duplicar em outra sessão")
+    base = src[0]
+    dup = json.loads(json.dumps(base))
+    dup["id"] = (dup.get("id") or "cdp") + "-dup-sess"
+    dup.setdefault("cdp", {})["sessionId"] = "SELFTEST0000000000000000000000FF"
+    for attempt in dup.get("attempts") or []:
+        attempt.setdefault("cdp", {})["sessionId"] = "SELFTEST0000000000000000000000FF"
+    session["requests"].append(dup)
+    _dump(sp, session)
+    return f"duplicou {base.get('id')} numa segunda sessão do targetId {(base.get('target') or {}).get('targetId')}"
+
+
 def _mut_duplicate_sw(capture: Path) -> str:
     sp, _, _ = _session_paths(capture)
     session = _load(sp)
@@ -688,6 +724,7 @@ def self_test(capture: Path, server_log: Path, core: str, tmp: Path) -> dict:
         ("kind de alvo trocado", _mut_swap_kind),
         ("corpo alterado", _mut_alter_body),
         ("cópia duplicada de requisição SW", _mut_duplicate_sw),
+        ("cópia SW em outra sessão do mesmo targetId", _mut_duplicate_sw_other_session),
     ]
     out = []
     for i, (name, fn) in enumerate(mutations):
