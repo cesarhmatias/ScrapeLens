@@ -21,3 +21,8 @@ results/multi-target-*/**/server.jsonl
 results/multi-target-*/**/cdp-sessions.json
 results/multi-target-*/**/plan.json
 results/multi-target-*/**/run-meta.json
+results/multi-target-attach-probe/**/cdp-events.jsonl
+results/multi-target-attach-probe/**/commands.jsonl
+results/multi-target-attach-probe/**/chrome-netlog.json
+results/multi-target-attach-probe/**/chrome-profile/
+results/multi-target-attach-probe/testserver-evidence/

@@ -38,8 +38,8 @@
       "oopif_get_post_requestWillBeSent_any_session": [],
       "oopif_doc_on_root_session": true,
       "site_isolation_signal": true,
-      "verdict": "limite Chrome + harness",
-      "evidence": "target type=iframe criado mas attached=false em todo o run; frameDetached reason=swap (OOPIF). Pedidos oopif-get/post ausentes em todas as sessões CDP; documento oopif-1 na sessão da página (127.0.0.1 vs localhost). Sem run --disable-site-isolation (só diagnóstico pendente opcional).",
+      "verdict": "fechada (harness)",
+      "evidence": "Run oficial: setAutoAttach só na raiz browser. Prova recursiva (attach-probe): iframe attached; oopif-get/post no sessionId iframe (headless+headful 156.0.8078.74).",
       "marker": "oopif-get-1"
     },
     "oopif-post-1": {
@@ -50,8 +50,8 @@
       "oopif_get_post_requestWillBeSent_any_session": [],
       "oopif_doc_on_root_session": true,
       "site_isolation_signal": true,
-      "verdict": "limite Chrome + harness",
-      "evidence": "target type=iframe criado mas attached=false em todo o run; frameDetached reason=swap (OOPIF). Pedidos oopif-get/post ausentes em todas as sessões CDP; documento oopif-1 na sessão da página (127.0.0.1 vs localhost). Sem run --disable-site-isolation (só diagnóstico pendente opcional).",
+      "verdict": "fechada (harness)",
+      "evidence": "Idem oopif-get-1.",
       "marker": "oopif-post-1"
     },
     "worker-get-1": {
@@ -67,8 +67,8 @@
         "page_session": [],
         "worker_session": []
       },
-      "verdict": "limite Chrome",
-      "evidence": "Chrome Chrome/156.0.8078.74: target worker criado, nunca Target.attachedToTarget; worker.js via Network na sessão da página; worker-get/post ausentes em todo cdp-events.jsonl (NetLog/servidor ok). Exige attach+Network.enable na sessão worker.",
+      "verdict": "fechada (harness)",
+      "evidence": "Prova recursiva: worker attached; worker-get/post na sessão worker após Network.enable+resume (headless+headful).",
       "marker": "worker-get-1"
     },
     "worker-post-1": {
@@ -84,8 +84,8 @@
         "page_session": [],
         "worker_session": []
       },
-      "verdict": "limite Chrome",
-      "evidence": "Chrome Chrome/156.0.8078.74: target worker criado, nunca Target.attachedToTarget; worker.js via Network na sessão da página; worker-get/post ausentes em todo cdp-events.jsonl (NetLog/servidor ok). Exige attach+Network.enable na sessão worker.",
+      "verdict": "fechada (harness)",
+      "evidence": "Idem worker-get-1.",
       "marker": "worker-post-1"
     }
   },

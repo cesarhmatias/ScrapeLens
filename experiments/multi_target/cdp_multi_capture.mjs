@@ -80,6 +80,14 @@ async function main() {
     });
   }
 
+  const autoAttachParams = {
+    autoAttach: true,
+    flatten: true,
+    waitForDebuggerOnStart: waitDebugger,
+  };
+  const RECURSE_TYPES = new Set(["page", "iframe", "worker", "service_worker"]);
+  const SKIP_SETUP_TYPES = new Set(["browser_ui", "other"]);
+
   const setupChild = async (sessionId, targetInfo, waitingForDebugger) => {
     const existing = [...sessions.values()].find((s) => s.targetId === targetInfo.targetId);
     if (existing && existing.sessionId !== sessionId) {
@@ -106,6 +114,15 @@ async function main() {
     });
     sessionsByTarget.set(targetInfo.targetId, sessionId);
 
+    if (SKIP_SETUP_TYPES.has(type)) {
+      if (waitDebugger && waitingForDebugger) {
+        await send("Runtime.runIfWaitingForDebugger", {}, sessionId).catch(() => {});
+      }
+      return;
+    }
+    if (RECURSE_TYPES.has(type)) {
+      await send("Target.setAutoAttach", autoAttachParams, sessionId);
+    }
     await send(
       "Network.enable",
       {
@@ -126,6 +143,18 @@ async function main() {
     }
   };
 
+  const setupChain = new Map();
+  const enqueueSetup = (sessionId, targetInfo, waitingForDebugger) => {
+    const prev = setupChain.get(sessionId) ?? Promise.resolve();
+    const job = prev
+      .then(() => setupChild(sessionId, targetInfo, waitingForDebugger))
+      .catch((err) => {
+        logEvent({ session: sessionId, method: "__error", params: { phase: "setup", message: String(err) } });
+      });
+    setupChain.set(sessionId, job);
+    return job;
+  };
+
   const drainSetups = async () => {
     for (let i = 0; i < 200 && pendingSetups > 0; i += 1) {
       await sleep(50);
@@ -134,7 +163,7 @@ async function main() {
 
   const onAttached = (params, parentSession) => {
     pendingSetups += 1;
-    setupChild(params.sessionId, params.targetInfo, params.waitingForDebugger)
+    enqueueSetup(params.sessionId, params.targetInfo, params.waitingForDebugger)
       .then(() => {
         const { sessionId, waitingForDebugger, targetInfo } = params;
         logEvent({
@@ -149,9 +178,6 @@ async function main() {
             resumed: sessions.get(sessionId)?.resumedDebugger ?? false,
           },
         });
-      })
-      .catch((err) => {
-        logEvent({ session: null, method: "__error", params: { phase: "setup", message: String(err) } });
       })
       .finally(() => {
         pendingSetups -= 1;
@@ -185,11 +211,7 @@ async function main() {
   });
 
   await send("Target.setDiscoverTargets", { discover: true });
-  await send("Target.setAutoAttach", {
-    autoAttach: true,
-    flatten: true,
-    waitForDebuggerOnStart: waitDebugger,
-  });
+  await send("Target.setAutoAttach", autoAttachParams);
 
   const pageUrl = plan.pageUrl;
   const { targetId: mainTargetId } = await send("Target.createTarget", { url: pageUrl });
@@ -210,6 +232,7 @@ async function main() {
 
   const S = (method, params) => send(method, params, rootSession);
 
+  await send("Target.setAutoAttach", autoAttachParams, rootSession);
   await S("Network.setCacheDisabled", { cacheDisabled: true });
   if (plan.bypassServiceWorker) {
     await S("Network.setBypassServiceWorker", { bypass: true });
@@ -263,6 +286,7 @@ async function main() {
   }
   await sleep(plan.settleMs ?? 5000);
   await drainSetups();
+  await Promise.race([Promise.all(setupChain.values()), sleep(10000)]);
 
   const requests = [];
   for (const line of fs.readFileSync(eventsPath, "utf8").split("\n")) {

@@ -220,11 +220,15 @@ Contrato: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`.
 | Item | Valor |
 |---|---|
 | Navegador | Chrome `156.0.8078.74`, `headless=new`, perfil temporário, `--disable-popup-blocking`, `EXCLUDE localhost` no resolver |
-| CDP | `Target.setDiscoverTargets` + `setAutoAttach` (flatten, `waitForDebuggerOnStart`); `Network.enable` → `Runtime.runIfWaitingForDebugger` em **worker** / **service_worker** / **iframe** / **page** (sem `Page.enable` em worker/SW) |
+| CDP | `Target.setDiscoverTargets` + `setAutoAttach` na **conexão browser**, de novo na **sessão da página** e **recursivo** em cada filho (`iframe`/`worker`/`service_worker`/`page`) em `Target.attachedToTarget`; depois `Network.enable` → `Runtime.runIfWaitingForDebugger` (sem `Page.enable` em worker/SW; pular `browser_ui`) |
 | Evidência agregada (commit) | `experiments/results/multi-target-official/{analysis,summary}.json` |
 | Brutos (gitignore) | `cdp-events.jsonl`, `chrome-netlog.json`, `cdp-bodies.jsonl`, `server.jsonl` |
 
-Causas do run incompleto anterior (~33 s): (1) `setAutoAttach` reentrante em cada sessão filha → fila de setup infinita; (2) `Runtime.evaluate` no loop de espera podia bloquear; (3) alvo pausado sem `runIfWaitingForDebugger`; (4) `_blank` headless exige fallback `Target.createTarget(/multi/blank.html)`; (5) OOPIF dispara fetch antes do attach do iframe → segundo `openIframe()` após attach.
+Prova mínima (só `/multi/`, sem popup/blank): `python3 multi_target/run_attach_probe.py` → `results/multi-target-attach-probe/compare.json` (Chrome **156.0.8078.74**, headless **e** headful). Com `setAutoAttach` na sessão da página + recursivo nos filhos: `attachedToTarget` **iframe** e **worker**; `oopif-get/post` no `sessionId` do iframe; `worker-get/post` no `sessionId` do worker (`commands.jsonl` + `cdp-events.jsonl` locais).
+
+Run oficial `678f289` (11/16 CDP) usava só `setAutoAttach` na raiz browser — explica iframe/worker sem attach. Correção aplicada em `cdp_multi_capture.mjs` (fila serializada; ignora `browser_ui`; evita deadlock do autoAttach cego em UI).
+
+Causas históricas (~33 s / timeout): (1) autoAttach recursivo **sem** filtrar `browser_ui`; (2) `Runtime.evaluate` no loop de espera; (3) alvo pausado sem resume; (4) `_blank` headless + `createTarget`; (5) segundo `openIframe()` após attach.
 
 ### Tabela por tipo de alvo — variante **com** `waitForDebuggerOnStart`
 
@@ -235,18 +239,18 @@ Causas do run incompleto anterior (~33 s): (1) `setAutoAttach` reentrante em cad
 | Marcador | Veredito | Evidência (run oficial, Chrome 156.0.8078.74) |
 |---|---|---|
 | `blank-1` (documento) | **Limite Chrome + corr. harness** | `Page.windowOpen` (clickBlank) + auto-attach; `Network.responseReceived` (Document) na sessão filha **antes** de `Network.enable`/resume; **sem** `requestWillBeSent` para o documento. Subrecursos `blank-get/post` ok na mesma sessão. |
-| `oopif-get-1` / `oopif-post-1` | **Limite Chrome + harness** | Target `iframe` criado, **nunca** `attachedToTarget` (`attached:false`); `Page.frameDetached` `reason=swap` (OOPIF). Fetches do iframe não aparecem na sessão da página; doc `oopif-1` só na raiz (127.0.0.1 vs `localhost`). Run sem site isolation: **não verificado** (opcional). |
-| `worker-get-1` / `worker-post-1` | **Limite Chrome** | Target `worker` criado, **0** attach; `worker.js` na sessão **page**; fetches do worker dedicado ausentes em todas as sessões CDP (NetLog/servidor ✓). |
-| Ordem headers (alvos com CDP) | **Fechada (ordem ≠ fio)** | Para marcadores com `requestWillBeSentExtraInfo`, o **conjunto** de nomes coincide com `multi.jsonl`; a **ordem** do ExtraInfo é lexicográfica ASCII no CDP, **não** a ordem transmitida no fio (servidor). |
+| `oopif-get-1` / `oopif-post-1` | **Fechada (harness)** | Run oficial: sem attach iframe. Prova recursiva: `attachedToTarget` type=iframe (`parentSession`=page); `Network.requestWillBeSent` get/post no **mesmo sessionId** (headless + headful). |
+| `worker-get-1` / `worker-post-1` | **Fechada (harness)** | Run oficial: 0 attach worker. Prova recursiva: attach worker; get/post na sessão worker após `Network.enable` + `runIfWaitingForDebugger` (headless + headful). |
+| Ordem headers (alvos com CDP) | **Sem achado novo** | Igual matriz geral: ExtraInfo **não** preserva ordem do fio; ordem transmitida → NetLog / `headersText` (h1). Conjunto de nomes alinhado ao servidor. |
 | Metadados de run (`cdp-sessions`, `plan`, `run-meta`) | **Fechada** | Saída de execução → `experiments/.gitignore`; removidos do índice git (commit agrega só `analysis.json`, `summary.json`, `gap-diagnosis.json`). |
 
 | Tipo | Servidor | NetLog | CDP | ExtraInfo × servidor | Corpos |
 |---|---|---|---|---|---|
 | Principal (`main-*`) | ✓ | ✓ | ✓ | mesmo conjunto; ordem ExtraInfo ≠ fio | ✓ POST (servidor) |
 | Popup | ✓ | ✓ | ✓ sessão `page` filha | mesmo conjunto; ordem ≠ fio | ✓ POST |
-| `_blank` | ✓ | ✓ | parcial (`blank-1` doc: ver lacuna; GET/POST: CDP) | GET/POST: conjunto ok | ✓ POST |
-| OOPIF | ✓ | ✓ | parcial (`oopif-1` doc; get/post: lacuna) | doc: n/a | ✓ POST (servidor) |
-| Worker | ✓ | ✓ | **não** (lacuna get/post) | n/d | servidor |
+| `_blank` | ✓ | ✓ | parcial (`blank-1` doc: limite CDP; NetLog ✓; GET/POST: CDP) | GET/POST: conjunto ok | ✓ POST |
+| OOPIF | ✓ | ✓ | get/post **ok com harness recursivo** (run oficial 11/16 até re-medir) | doc: n/a | ✓ POST (servidor) |
+| Worker | ✓ | ✓ | get/post **ok com harness recursivo** (run oficial pendente re-medir) | n/d | servidor |
 | SW intercept (`sw-intercept-1`) | ✓ | ✓ | ✓ **página + SW** | n/a (SW path) | servidor |
 | SW fetch próprio (`sw-own-*`) | ✓ | ✓ | ✓ sessão `service_worker` | conjunto ok | ✓ POST (servidor) |
 
@@ -266,7 +270,7 @@ Vários pares `(requestId)` repetidos entre sessões → chave **`(sessionId, re
 
 Reprodução: `cd experiments && python3 multi_target/run_multi.py --testserver --port 8781 --out results/multi-target-official`.
 
-**Recomendação:** produção deve usar auto-attach com wait, retomar worker/SW/iframe antes de navegar, chave `(sessionId, requestId)`; alvo sem sessão CDP = só NetLog.
+**Recomendação:** auto-attach com wait na **página** + recursivo em iframe/worker/SW; retomar antes de navegar; chave `(sessionId, requestId)`; documento `_blank` sem `requestWillBeSent` → NetLog; ordem de headers → NetLog, não ExtraInfo.
 
 ## Limites
 

@@ -1,0 +1,276 @@
+{
+  "headless": {
+    "browser": "Chrome/156.0.8078.74",
+    "protocolVersion": "1.3",
+    "waitForDebuggerOnStart": true,
+    "pageUrl": "http://127.0.0.1:8782/multi/",
+    "attachCount": 12,
+    "attachByType": {
+      "page": 4,
+      "browser_ui": 2,
+      "iframe": 1,
+      "worker": 1,
+      "service_worker": 4
+    },
+    "attaches": [
+      {
+        "ms": 119,
+        "sessionId": "1C3716424BBC2C2C0B7AB4205B08490B",
+        "type": "page",
+        "url": "about:blank",
+        "parentSession": null,
+        "waitingForDebugger": false
+      },
+      {
+        "ms": 120,
+        "sessionId": "4ABFC298A5015D8D5E5BFF57B0F72E0E",
+        "type": "browser_ui",
+        "url": "chrome://omnibox-popup.top-chrome/",
+        "parentSession": null,
+        "waitingForDebugger": false
+      },
+      {
+        "ms": 121,
+        "sessionId": "7E6A7B3E541001A33BD56B981EE4AEEB",
+        "type": "browser_ui",
+        "url": "chrome://omnibox-popup.top-chrome/omnibox_popup_aim.html",
+        "parentSession": null,
+        "waitingForDebugger": false
+      },
+      {
+        "ms": 214,
+        "sessionId": "03C86CEB30B9A630006D0022A98FA44D",
+        "type": "page",
+        "url": "http://127.0.0.1:8782/multi/",
+        "parentSession": null,
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 450,
+        "sessionId": "F56D5DA39B5A1D719D5D014479AFF324",
+        "type": "page",
+        "url": "",
+        "parentSession": null,
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 531,
+        "sessionId": "CD250EB02BCCCD6BB2BE80E4548ED4FE",
+        "type": "iframe",
+        "url": "",
+        "parentSession": "03C86CEB30B9A630006D0022A98FA44D",
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 560,
+        "sessionId": "D0B5711668AB5CB7AF39E766D3F05BB5",
+        "type": "worker",
+        "url": "http://127.0.0.1:8782/multi/worker.js",
+        "parentSession": "03C86CEB30B9A630006D0022A98FA44D",
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 579,
+        "sessionId": "5C3D299D921C8AB69BC4A9470987B9D0",
+        "type": "service_worker",
+        "url": "http://127.0.0.1:8782/multi/sw.js",
+        "parentSession": null,
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 579,
+        "sessionId": "4AC6F18745ACA8F8A851E38B8D6FC20F",
+        "type": "service_worker",
+        "url": "http://127.0.0.1:8782/multi/sw.js",
+        "parentSession": "03C86CEB30B9A630006D0022A98FA44D",
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 579,
+        "sessionId": "A27A068FA52B864068BF6B36EA3D8ABD",
+        "type": "service_worker",
+        "url": "http://127.0.0.1:8782/multi/sw.js",
+        "parentSession": "F56D5DA39B5A1D719D5D014479AFF324",
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 714,
+        "sessionId": "ECB61CAA3CF2FC3945F16F7AE4AE1DD3",
+        "type": "page",
+        "url": "",
+        "parentSession": null,
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 734,
+        "sessionId": "710DAE06DD7FE67E4CBC668A4EF9A824",
+        "type": "service_worker",
+        "url": "http://127.0.0.1:8782/multi/sw.js",
+        "parentSession": "ECB61CAA3CF2FC3945F16F7AE4AE1DD3",
+        "waitingForDebugger": false
+      }
+    ],
+    "networkMarkers": {
+      "oopif-1": {
+        "sessionId": "03C86CEB30B9A630006D0022A98FA44D",
+        "url": "http://localhost:8782/multi/iframe.html?m=oopif-1"
+      },
+      "worker-get-1": {
+        "sessionId": "D0B5711668AB5CB7AF39E766D3F05BB5",
+        "url": "http://127.0.0.1:8782/multi/beacon?m=worker-get-1"
+      },
+      "oopif-get-1": {
+        "sessionId": "CD250EB02BCCCD6BB2BE80E4548ED4FE",
+        "url": "http://localhost:8782/multi/beacon?m=oopif-get-1"
+      },
+      "worker-post-1": {
+        "sessionId": "D0B5711668AB5CB7AF39E766D3F05BB5",
+        "url": "http://127.0.0.1:8782/multi/ping?m=worker-post-1"
+      },
+      "oopif-post-1": {
+        "sessionId": "CD250EB02BCCCD6BB2BE80E4548ED4FE",
+        "url": "http://localhost:8782/multi/ping?m=oopif-post-1"
+      }
+    },
+    "iframeAttached": true,
+    "workerAttached": true,
+    "elapsedMs": 10838
+  },
+  "headful": {
+    "browser": "Chrome/156.0.8078.74",
+    "protocolVersion": "1.3",
+    "waitForDebuggerOnStart": true,
+    "pageUrl": "http://127.0.0.1:8782/multi/",
+    "attachCount": 12,
+    "attachByType": {
+      "browser_ui": 2,
+      "page": 4,
+      "iframe": 1,
+      "service_worker": 4,
+      "worker": 1
+    },
+    "attaches": [
+      {
+        "ms": 257,
+        "sessionId": "C79356CF41AED1A843440B0F466B323F",
+        "type": "browser_ui",
+        "url": "chrome://omnibox-popup.top-chrome/omnibox_popup_aim.html",
+        "parentSession": null,
+        "waitingForDebugger": false
+      },
+      {
+        "ms": 258,
+        "sessionId": "CF010A84A89B8ABAD3E99C0DA3431D61",
+        "type": "browser_ui",
+        "url": "chrome://omnibox-popup.top-chrome/",
+        "parentSession": null,
+        "waitingForDebugger": false
+      },
+      {
+        "ms": 259,
+        "sessionId": "23F57CA888A1B8B1E92F13143B3FA74C",
+        "type": "page",
+        "url": "about:blank",
+        "parentSession": null,
+        "waitingForDebugger": false
+      },
+      {
+        "ms": 283,
+        "sessionId": "E0D4C56DC9913D200B72E2A555F0BD17",
+        "type": "page",
+        "url": "http://127.0.0.1:8782/multi/",
+        "parentSession": null,
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 577,
+        "sessionId": "EEEB31D3F4A5CC732BFC768354221F50",
+        "type": "page",
+        "url": "",
+        "parentSession": null,
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 668,
+        "sessionId": "E84DCF540F80F686D8871B8BB44F05BD",
+        "type": "iframe",
+        "url": "",
+        "parentSession": "E0D4C56DC9913D200B72E2A555F0BD17",
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 681,
+        "sessionId": "865C1C6B1694D63DDBD3EB9F422DB393",
+        "type": "service_worker",
+        "url": "http://127.0.0.1:8782/multi/sw.js",
+        "parentSession": null,
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 682,
+        "sessionId": "9F92FCA49EDDD15A0F3884C73F124E7C",
+        "type": "service_worker",
+        "url": "http://127.0.0.1:8782/multi/sw.js",
+        "parentSession": "E0D4C56DC9913D200B72E2A555F0BD17",
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 682,
+        "sessionId": "E2A5E5BB610BA365805680DD6A2CD866",
+        "type": "service_worker",
+        "url": "http://127.0.0.1:8782/multi/sw.js",
+        "parentSession": "EEEB31D3F4A5CC732BFC768354221F50",
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 683,
+        "sessionId": "7115F5BF637412D76F879B3D1B139556",
+        "type": "worker",
+        "url": "http://127.0.0.1:8782/multi/worker.js",
+        "parentSession": "E0D4C56DC9913D200B72E2A555F0BD17",
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 808,
+        "sessionId": "FBDC20C2248D44DAFCF4956B18358774",
+        "type": "page",
+        "url": "",
+        "parentSession": null,
+        "waitingForDebugger": true
+      },
+      {
+        "ms": 849,
+        "sessionId": "FDCB36959E0254ECC2AEA11AA9132F3E",
+        "type": "service_worker",
+        "url": "http://127.0.0.1:8782/multi/sw.js",
+        "parentSession": "FBDC20C2248D44DAFCF4956B18358774",
+        "waitingForDebugger": false
+      }
+    ],
+    "networkMarkers": {
+      "oopif-1": {
+        "sessionId": "E0D4C56DC9913D200B72E2A555F0BD17",
+        "url": "http://localhost:8782/multi/iframe.html?m=oopif-1"
+      },
+      "worker-get-1": {
+        "sessionId": "7115F5BF637412D76F879B3D1B139556",
+        "url": "http://127.0.0.1:8782/multi/beacon?m=worker-get-1"
+      },
+      "worker-post-1": {
+        "sessionId": "7115F5BF637412D76F879B3D1B139556",
+        "url": "http://127.0.0.1:8782/multi/ping?m=worker-post-1"
+      },
+      "oopif-get-1": {
+        "sessionId": "E84DCF540F80F686D8871B8BB44F05BD",
+        "url": "http://localhost:8782/multi/beacon?m=oopif-get-1"
+      },
+      "oopif-post-1": {
+        "sessionId": "E84DCF540F80F686D8871B8BB44F05BD",
+        "url": "http://localhost:8782/multi/ping?m=oopif-post-1"
+      }
+    },
+    "iframeAttached": true,
+    "workerAttached": true,
+    "elapsedMs": 10855
+  }
+}
