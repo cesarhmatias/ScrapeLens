@@ -229,11 +229,6 @@ fn run_inner(
     )
     .map_err(|error| format!("O core não conseguiu importar a captura: {error}"))?;
     mark_incomplete(&mut imported.bundle.session, &netlog_status, &shutdown);
-    for warning in cdp.attach_warnings_for_import() {
-        imported.bundle.session.warnings.push(
-            scrapelens_core::model::Warning::new("capture.target_attach", warning),
-        );
-    }
     // Metadados da captura são do pipeline, não do parser: o core monta o
     // documento a partir do CDP e não sabe que este fluxo também gravou NetLog.
     match imported.bundle.session.session.capture.as_mut() {
@@ -396,6 +391,7 @@ const CDP_TARGET_METHODS: &[&str] = &[
     "Target.attachedToTarget",
     "Target.detachedFromTarget",
     "Target.targetInfoChanged",
+    "Target.attachFailed",
 ];
 
 fn cdp_records_method(method: &str) -> bool {
@@ -419,7 +415,6 @@ struct Cdp {
     in_flight: HashMap<u64, (String, BodyTag)>,
     outbox: Vec<(String, String)>,
     setup_done: HashMap<String, AttachedTarget>,
-    attach_warnings: Vec<String>,
     wait_for_debugger: bool,
 }
 
@@ -452,7 +447,6 @@ impl Cdp {
                             in_flight: HashMap::new(),
                             outbox: Vec::new(),
                             setup_done: HashMap::new(),
-                            attach_warnings: Vec::new(),
                             wait_for_debugger: true,
                         },
                     ));
@@ -482,12 +476,21 @@ impl Cdp {
             .or_default()
     }
 
-    fn push_event_line(&mut self, session_id: &str, method: &str, params: &Value) {
-        let line = json!({
+    fn push_event_line(
+        &mut self,
+        session_id: &str,
+        method: &str,
+        params: &Value,
+        parent_session_id: Option<&str>,
+    ) {
+        let mut line = json!({
             "sessionId": session_id,
             "method": method,
             "params": params,
         });
+        if let Some(parent) = parent_session_id.filter(|p| !p.is_empty() && *p != session_id) {
+            line["parentSessionId"] = json!(parent);
+        }
         self.events.push(line.to_string());
         if let Ok(mut guard) = self.status.lock() {
             guard.events = self.events.len();
@@ -618,15 +621,21 @@ impl Cdp {
                     .unwrap_or(false);
                 let attached = AttachedTarget {
                     session_id: session_id.clone(),
-                    target_id,
+                    target_id: target_id.clone(),
                     target_type,
                 };
-                if let Err(error) =
-                    self.setup_attached_target(socket, attached, waiting)
-                {
-                    self.attach_warnings.push(format!(
-                        "falha ao preparar sessão CDP {session_id}: {error}"
-                    ));
+                let parent_wire = value.get("sessionId").and_then(Value::as_str);
+                if let Err(error) = self.setup_attached_target(socket, attached, waiting) {
+                    self.push_event_line(
+                        &session_id,
+                        "Target.attachFailed",
+                        &json!({
+                            "targetId": target_id,
+                            "sessionId": session_id,
+                            "error": error,
+                        }),
+                        parent_wire,
+                    );
                 }
             }
         }
@@ -646,7 +655,12 @@ impl Cdp {
                 .unwrap_or("")
         }
         .to_string();
-        self.push_event_line(&session_id, method, &params);
+        let parent_session_id = if method == "Target.attachedToTarget" {
+            value.get("sessionId").and_then(Value::as_str)
+        } else {
+            None
+        };
+        self.push_event_line(&session_id, method, &params, parent_session_id);
         if method.starts_with("Network.") {
             for command in self.bodies_for(&session_id).on_event(method, &params) {
                 let id = self.next_id;
@@ -894,10 +908,6 @@ impl Cdp {
                 }
             }
         }
-    }
-
-    fn attach_warnings_for_import(&self) -> Vec<String> {
-        self.attach_warnings.clone()
     }
 
     fn events_text(&self) -> String {
