@@ -523,10 +523,55 @@ impl Cdp {
         Ok(id)
     }
 
-    fn secondary_page_session(&self, attached: &AttachedTarget) -> bool {
-        attached.target_type == "page"
-            && !attached.session_id.is_empty()
-            && attached.session_id != self.page_session_id
+    fn wait_for_wired_commands(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        ids: &[u64],
+        timeout: Duration,
+    ) -> Result<(), String> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let mut pending: std::collections::HashSet<u64> = ids.iter().copied().collect();
+        let deadline = Instant::now() + timeout;
+        while !pending.is_empty() {
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "CDP timeout aguardando {} comando(s) em pipeline",
+                    pending.len()
+                ));
+            }
+            match socket.read() {
+                Ok(Message::Text(text)) => {
+                    let value: Value = serde_json::from_str(text.as_str())
+                        .map_err(|error| format!("CDP JSON inválido: {error}"))?;
+                    if let Some(id) = value.get("id").and_then(Value::as_u64) {
+                        if pending.remove(&id) {
+                            if value.get("error").is_some() {
+                                return Err(format!(
+                                    "CDP erro na pipeline (id {id}): {}",
+                                    value.get("error").unwrap_or(&Value::Null)
+                                ));
+                            }
+                            continue;
+                        }
+                    }
+                    self.record(socket, &value);
+                    self.flush_outbox(socket);
+                }
+                Ok(Message::Ping(payload)) => {
+                    let _ = socket.send(Message::Pong(payload));
+                }
+                Ok(Message::Close(_)) => {
+                    return Err("CDP fechou durante pipeline de setup".to_string());
+                }
+                Ok(_) => {}
+                Err(tungstenite::Error::Io(error))
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Err(error) => return Err(format!("CDP read pipeline: {error}")),
+            }
+        }
+        Ok(())
     }
 
     fn pump_socket(
@@ -644,62 +689,85 @@ impl Cdp {
             );
             return Ok(());
         }
-        if Self::recurse_auto_attach(&target_type) {
-            let params = self.auto_attach_params(true);
-            if self.secondary_page_session(&attached) {
-                let _ = self.wire_command(
+        let sid = attached.session_id.as_str();
+        let network_params = json!({
+            "maxTotalBufferSize": 100_000_000,
+            "maxResourceBufferSize": 50_000_000,
+            "maxPostDataSize": MAX_BODY_BYTES
+        });
+        let pipelined = self.wait_for_debugger && waiting_for_debugger;
+        if pipelined {
+            let mut wired = Vec::new();
+            wired.push(self.wire_command(
+                socket,
+                "Network.enable",
+                network_params,
+                Some(sid),
+            )?);
+            if target_type == "page" || target_type == "iframe" {
+                wired.push(self.wire_command(
                     socket,
-                    "Target.setAutoAttach",
-                    params,
-                    Some(&attached.session_id),
-                );
-            } else {
-                self.send(
-                    socket,
-                    "Target.setAutoAttach",
-                    params,
-                    Some(&attached.session_id),
-                    Duration::from_secs(15),
-                )?;
+                    "Page.enable",
+                    json!({}),
+                    Some(sid),
+                )?);
             }
-        }
-        if self.wait_for_debugger && waiting_for_debugger {
-            self.send(
+            wired.push(self.wire_command(
+                socket,
+                "Runtime.enable",
+                json!({}),
+                Some(sid),
+            )?);
+            if Self::recurse_auto_attach(&target_type) {
+                wired.push(self.wire_command(
+                    socket,
+                    "Target.setAutoAttach",
+                    self.auto_attach_params(true),
+                    Some(sid),
+                )?);
+            }
+            wired.push(self.wire_command(
                 socket,
                 "Runtime.runIfWaitingForDebugger",
                 json!({}),
-                Some(&attached.session_id),
+                Some(sid),
+            )?);
+            self.wait_for_wired_commands(socket, &wired, Duration::from_secs(20))?;
+            resumed = true;
+        } else {
+            if Self::recurse_auto_attach(&target_type) {
+                self.send(
+                    socket,
+                    "Target.setAutoAttach",
+                    self.auto_attach_params(true),
+                    Some(sid),
+                    Duration::from_secs(15),
+                )?;
+            }
+            self.send(
+                socket,
+                "Network.enable",
+                network_params,
+                Some(sid),
                 Duration::from_secs(10),
             )?;
-            resumed = true;
-        }
-        self.send(
-            socket,
-            "Network.enable",
-            json!({
-                "maxTotalBufferSize": 100_000_000,
-                "maxResourceBufferSize": 50_000_000,
-                "maxPostDataSize": MAX_BODY_BYTES
-            }),
-            Some(&attached.session_id),
-            Duration::from_secs(10),
-        )?;
-        if target_type == "page" || target_type == "iframe" {
+            if target_type == "page" || target_type == "iframe" {
+                let _ = self.send(
+                    socket,
+                    "Page.enable",
+                    json!({}),
+                    Some(sid),
+                    Duration::from_secs(5),
+                );
+            }
             let _ = self.send(
                 socket,
-                "Page.enable",
+                "Runtime.enable",
                 json!({}),
-                Some(&attached.session_id),
+                Some(sid),
                 Duration::from_secs(5),
             );
         }
-        let _ = self.send(
-            socket,
-            "Runtime.enable",
-            json!({}),
-            Some(&attached.session_id),
-            Duration::from_secs(5),
-        );
         self.setup_done
             .insert(attached.session_id.clone(), attached.clone());
         self.setup_seen
@@ -714,6 +782,7 @@ impl Cdp {
                 "type": target_type,
                 "waitingForDebugger": waiting_for_debugger,
                 "resumedDebugger": resumed,
+                "pipelinedSetup": pipelined,
                 "recursiveAutoAttach": Self::recurse_auto_attach(&target_type),
             }),
             parent_session_id,
@@ -798,17 +867,6 @@ impl Cdp {
                 );
             }
         }
-    }
-
-    fn session_for_network_event(&self, wire_session: &str, params: &Value) -> String {
-        if let Some(frame_id) = params.get("frameId").and_then(Value::as_str) {
-            for attached in self.setup_done.values() {
-                if attached.target_type == "iframe" && attached.target_id == frame_id {
-                    return attached.session_id.clone();
-                }
-            }
-        }
-        wire_session.to_string()
     }
 
     fn session_for_recorded_event(
@@ -932,10 +990,7 @@ impl Cdp {
             return;
         }
         let params = value.get("params").cloned().unwrap_or(Value::Null);
-        let mut session_id = self.session_for_recorded_event(method, value, &params);
-        if method.starts_with("Network.") {
-            session_id = self.session_for_network_event(&session_id, &params);
-        }
+        let session_id = self.session_for_recorded_event(method, value, &params);
         let parent_session_id = if method == "Target.attachedToTarget" {
             value.get("sessionId").and_then(Value::as_str)
         } else {
@@ -1158,7 +1213,7 @@ impl Cdp {
         }
         })();
         if setup_result.is_ok() && self.setup_phase {
-            let _ = self.flush_pending_setups(socket);
+            self.flush_pending_setups(socket);
         }
         self.command_depth = self.command_depth.saturating_sub(1);
         setup_result
