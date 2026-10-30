@@ -152,3 +152,8 @@ desde a re-revisão:
 Bundle de referência: d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f
 (HEAD 7410fa4). Residuais aceitos: sid/SESSIONID congelado só detectado na
 execução; plano antigo ou sem hash equivalente com aviso; M2; L1.
+
+Teste manual do usuário (2026-10-29), bundle d1136cbb…: roteiro de 7 passos
+(HAR pelo seletor nativo, busca/Payload/adaptador, script de priming, linha do
+tempo e voltar à sessão, validar ok/403/incompleta, guardar execução,
+reabrir, comparar, captura ao vivo, limpeza na partida): APROVADO ("tudo ok").
