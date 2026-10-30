@@ -512,7 +512,8 @@ def _analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
     check(not missing, f"fusão: pares do bruto sem requisição distinta no modelo: {missing[:5]}")
     check(not extra, f"fusão: modelo tem pares que não existem no bruto: {extra[:5]}")
     check(dups == 0, f"fusão: {dups} par(es) (sessionId, requestId) repetidos no modelo")
-    check(bool(coll), "fusão: nenhuma colisão real de requestId entre sessões no bruto — critério não exercitado")
+    if not coll:
+        INFO["merge"]["colisao_exercitada"] = "não exercitada nesta captura (legítimo após o dedupe por targetId)"
 
     # (6) service worker: cada grupo com as duas observações e link/aviso DAQUELE grupo
     warnings = session.get("warnings") or []
@@ -679,6 +680,63 @@ def _mut_alter_body(capture: Path) -> str:
     return "alterou o corpo de resposta de main-post-1"
 
 
+def _pick_two_sessions(session: dict):
+    """Duas requisições com sessionId distintos (de preferência targetId distintos)."""
+    reqs = [r for r in session.get("requests") or []
+            if (r.get("cdp") or {}).get("sessionId") and (r.get("cdp") or {}).get("requestId")]
+    for i, a in enumerate(reqs):
+        for b in reqs[i + 1:]:
+            if (a["cdp"]["sessionId"] != b["cdp"]["sessionId"]
+                    and (a.get("target") or {}).get("targetId") != (b.get("target") or {}).get("targetId")):
+                return a, b
+    for i, a in enumerate(reqs):
+        for b in reqs[i + 1:]:
+            if a["cdp"]["sessionId"] != b["cdp"]["sessionId"]:
+                return a, b
+    raise RuntimeError("sem duas requisições de sessões diferentes")
+
+
+def _inject_collision(capture: Path, fuse: bool) -> str:
+    """Injeta no bruto e no modelo o mesmo requestId em dois alvos distintos.
+
+    `fuse=False`: o modelo mantém as duas observações separadas (o check tem de PASSAR,
+    provando que a colisão foi exercitada sem fusão).
+    `fuse=True`: o modelo junta os dois pares numa requisição (o check tem de FALHAR).
+    """
+    sp, ep, _ = _session_paths(capture)
+    session = _load(sp)
+    a, b = _pick_two_sessions(session)
+    rid = a["cdp"]["requestId"]
+    sid_b = b["cdp"]["sessionId"]
+    events = [json.loads(line) for line in ep.read_text(encoding="utf-8").splitlines() if line.strip()]
+    events.append({
+        "sessionId": sid_b,
+        "method": "Network.requestWillBeSent",
+        "params": {"requestId": rid, "request": {"url": b.get("url"), "method": b.get("method")}},
+    })
+    ep.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in events) + "\n", encoding="utf-8")
+    clone = json.loads(json.dumps(b))
+    clone["id"] = (b.get("id") or "cdp") + "-col"
+    clone.setdefault("cdp", {})["requestId"] = rid
+    for attempt in clone.get("attempts") or []:
+        attempt.setdefault("cdp", {})["requestId"] = rid
+    session["requests"].append(clone)
+    if fuse:
+        a["attempts"] = (a.get("attempts") or []) + (clone.get("attempts") or [])
+        session["requests"] = [r for r in session["requests"] if r is not clone]
+    _dump(sp, session)
+    return (f"requestId {rid} repetido em {a['cdp']['sessionId']} e {sid_b}"
+            + (" com os pares FUNDIDOS numa requisição" if fuse else " mantidos separados"))
+
+
+def _mut_collision_injected(capture: Path) -> str:
+    return _inject_collision(capture, fuse=False)
+
+
+def _mut_collision_fused(capture: Path) -> str:
+    return _inject_collision(capture, fuse=True)
+
+
 def _mut_duplicate_sw_other_session(capture: Path) -> str:
     sp, _, _ = _session_paths(capture)
     session = _load(sp)
@@ -719,26 +777,35 @@ def self_test(capture: Path, server_log: Path, core: str, tmp: Path) -> dict:
     check(not fails, f"autoteste: a sessão sem mutação deveria passar; falhou em {fails[:3]}")
 
     mutations = [
-        ("fusão de dois pares (sessionId, requestId)", _mut_fuse_two_pairs),
-        ("links do service worker removidos", _mut_remove_sw_links),
-        ("kind de alvo trocado", _mut_swap_kind),
-        ("corpo alterado", _mut_alter_body),
-        ("cópia duplicada de requisição SW", _mut_duplicate_sw),
-        ("cópia SW em outra sessão do mesmo targetId", _mut_duplicate_sw_other_session),
+        ("fusão de dois pares (sessionId, requestId)", _mut_fuse_two_pairs, "fail"),
+        ("links do service worker removidos", _mut_remove_sw_links, "fail"),
+        ("kind de alvo trocado", _mut_swap_kind, "fail"),
+        ("corpo alterado", _mut_alter_body, "fail"),
+        ("cópia duplicada de requisição SW", _mut_duplicate_sw, "fail"),
+        ("cópia SW em outra sessão do mesmo targetId", _mut_duplicate_sw_other_session, "fail"),
+        # colisão de requestId entre alvos: injetada no bruto; separada tem de PASSAR,
+        # fundida tem de FALHAR.
+        ("colisão injetada entre alvos (observações separadas)", _mut_collision_injected, "pass"),
+        ("colisão injetada entre alvos (pares fundidos)", _mut_collision_fused, "fail"),
     ]
     out = []
-    for i, (name, fn) in enumerate(mutations):
+    for i, (name, fn, expected) in enumerate(mutations):
         work = tmp / f"self-test-{i}"
         _copy_capture(capture, work)
         try:
             detail = fn(work)
         except Exception as error:  # mutação não aplicável = falha do autoteste
-            out.append({"mutacao": name, "aplicada": False, "erro": str(error)[:200], "falhas": []})
+            out.append({"mutacao": name, "esperado": expected, "aplicada": False,
+                        "erro": str(error)[:200], "falhas": []})
             check(False, f"autoteste: não consegui aplicar '{name}': {error}")
             continue
         mut_fails = analyze(work, server_log, core, {})
-        out.append({"mutacao": name, "aplicada": True, "detalhe": detail, "falhas": mut_fails[:4]})
-        check(bool(mut_fails), f"autoteste: mutação '{name}' NÃO falhou (o check não detecta)")
+        out.append({"mutacao": name, "esperado": expected, "aplicada": True, "detalhe": detail,
+                    "falhas": mut_fails[:4]})
+        if expected == "fail":
+            check(bool(mut_fails), f"autoteste: mutação '{name}' NÃO falhou (o check não detecta)")
+        else:
+            check(not mut_fails, f"autoteste: mutação '{name}' deveria continuar passando: {mut_fails[:3]}")
     FAILS, INFO = saved_fails, saved_info
     return {"mutacoes": out}
 
