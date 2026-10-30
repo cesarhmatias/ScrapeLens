@@ -157,6 +157,9 @@ fn run_inner(
         }
         cdp.flush_opener_pages(&mut socket);
         cdp.flush_opener_setups(&mut socket);
+        if !cdp.pending_setup.is_empty() {
+            cdp.flush_pending_setups(&mut socket);
+        }
         if matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
             break;
         }
@@ -401,6 +404,7 @@ const CDP_TARGET_METHODS: &[&str] = &[
     "Target.detachedFromTarget",
     "Target.targetInfoChanged",
     "Target.attachFailed",
+    "Capture.sessionSetup",
 ];
 
 fn cdp_records_method(method: &str) -> bool {
@@ -436,6 +440,8 @@ struct Cdp {
     opener_pages_attached: std::collections::HashSet<String>,
     pending_opener_pages: Vec<String>,
     pending_opener_setups: Vec<(AttachedTarget, bool)>,
+    /// Profundidade de `send()` aguardando resposta (evita setup aninhado).
+    command_depth: u32,
 }
 
 impl Cdp {
@@ -475,6 +481,7 @@ impl Cdp {
                             opener_pages_attached: std::collections::HashSet::new(),
                             pending_opener_pages: Vec::new(),
                             pending_opener_setups: Vec::new(),
+                            command_depth: 0,
                         },
                     ));
                 }
@@ -495,6 +502,31 @@ impl Cdp {
             "flatten": true,
             "waitForDebuggerOnStart": wait_on_start && self.wait_for_debugger,
         })
+    }
+
+    fn wire_command(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+    ) -> Result<u64, String> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut message = json!({ "id": id, "method": method, "params": params });
+        if let Some(session) = session {
+            message["sessionId"] = json!(session);
+        }
+        socket
+            .send(Message::Text(message.to_string().into()))
+            .map_err(|error| format!("CDP send {method}: {error}"))?;
+        Ok(id)
+    }
+
+    fn secondary_page_session(&self, attached: &AttachedTarget) -> bool {
+        attached.target_type == "page"
+            && !attached.session_id.is_empty()
+            && attached.session_id != self.page_session_id
     }
 
     fn pump_socket(
@@ -565,6 +597,7 @@ impl Cdp {
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
         attached: AttachedTarget,
         waiting_for_debugger: bool,
+        parent_session_id: Option<&str>,
     ) -> Result<(), String> {
         if self.configured_sessions.contains(&attached.session_id) {
             if self.wait_for_debugger && waiting_for_debugger {
@@ -579,10 +612,7 @@ impl Cdp {
             return Ok(());
         }
         let target_type = attached.target_type.clone();
-        self.setup_done
-            .insert(attached.session_id.clone(), attached.clone());
-        self.configured_sessions
-            .insert(attached.session_id.clone());
+        let mut resumed = false;
         if Self::skip_target_setup(&target_type) {
             if self.wait_for_debugger && waiting_for_debugger {
                 let _ = self.send(
@@ -592,8 +622,46 @@ impl Cdp {
                     Some(&attached.session_id),
                     Duration::from_secs(5),
                 );
+                resumed = true;
             }
+            self.setup_done
+                .insert(attached.session_id.clone(), attached.clone());
+            self.setup_seen
+                .insert(attached.session_id.clone(), attached.clone());
+            self.configured_sessions
+                .insert(attached.session_id.clone());
+            self.push_event_line(
+                &attached.session_id,
+                "Capture.sessionSetup",
+                &json!({
+                    "targetId": attached.target_id,
+                    "type": target_type,
+                    "waitingForDebugger": waiting_for_debugger,
+                    "resumedDebugger": resumed,
+                    "skippedNetwork": true,
+                }),
+                parent_session_id,
+            );
             return Ok(());
+        }
+        if Self::recurse_auto_attach(&target_type) {
+            let params = self.auto_attach_params(true);
+            if self.secondary_page_session(&attached) {
+                let _ = self.wire_command(
+                    socket,
+                    "Target.setAutoAttach",
+                    params,
+                    Some(&attached.session_id),
+                );
+            } else {
+                self.send(
+                    socket,
+                    "Target.setAutoAttach",
+                    params,
+                    Some(&attached.session_id),
+                    Duration::from_secs(15),
+                )?;
+            }
         }
         if self.wait_for_debugger && waiting_for_debugger {
             self.send(
@@ -603,16 +671,7 @@ impl Cdp {
                 Some(&attached.session_id),
                 Duration::from_secs(10),
             )?;
-        }
-        let main_page = attached.session_id == self.page_session_id;
-        if Self::recurse_auto_attach(&target_type) && (target_type != "page" || main_page) {
-            self.send(
-                socket,
-                "Target.setAutoAttach",
-                self.auto_attach_params(true),
-                Some(&attached.session_id),
-                Duration::from_secs(10),
-            )?;
+            resumed = true;
         }
         self.send(
             socket,
@@ -640,6 +699,24 @@ impl Cdp {
             json!({}),
             Some(&attached.session_id),
             Duration::from_secs(5),
+        );
+        self.setup_done
+            .insert(attached.session_id.clone(), attached.clone());
+        self.setup_seen
+            .insert(attached.session_id.clone(), attached.clone());
+        self.configured_sessions
+            .insert(attached.session_id.clone());
+        self.push_event_line(
+            &attached.session_id,
+            "Capture.sessionSetup",
+            &json!({
+                "targetId": attached.target_id,
+                "type": target_type,
+                "waitingForDebugger": waiting_for_debugger,
+                "resumedDebugger": resumed,
+                "recursiveAutoAttach": Self::recurse_auto_attach(&target_type),
+            }),
+            parent_session_id,
         );
         Ok(())
     }
@@ -706,7 +783,9 @@ impl Cdp {
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
     ) {
         for (attached, waiting) in std::mem::take(&mut self.pending_opener_setups) {
-            if let Err(error) = self.setup_attached_target(socket, attached.clone(), waiting) {
+            if let Err(error) =
+                self.setup_attached_target(socket, attached.clone(), waiting, None)
+            {
                 self.push_event_line(
                     &attached.session_id,
                     "Target.attachFailed",
@@ -719,6 +798,17 @@ impl Cdp {
                 );
             }
         }
+    }
+
+    fn session_for_network_event(&self, wire_session: &str, params: &Value) -> String {
+        if let Some(frame_id) = params.get("frameId").and_then(Value::as_str) {
+            for attached in self.setup_done.values() {
+                if attached.target_type == "iframe" && attached.target_id == frame_id {
+                    return attached.session_id.clone();
+                }
+            }
+        }
+        wire_session.to_string()
     }
 
     fn session_for_recorded_event(
@@ -795,22 +885,36 @@ impl Cdp {
                     target_type: target_type.clone(),
                 };
                 let parent_wire = value.get("sessionId").and_then(Value::as_str);
-                let opener_child = target
-                    .and_then(|t| t.get("openerId"))
-                    .and_then(Value::as_str)
-                    .is_some()
-                    && target_type == "page";
-                if opener_child {
-                    self.pending_opener_setups.push((attached, waiting));
-                } else if self.setup_phase {
+                if self.setup_phase {
                     self.setup_seen
                         .insert(session_id.clone(), attached.clone());
-                    if !Self::skip_target_setup(&attached.target_type) {
+                    if self.command_depth == 0 {
+                        if let Err(error) = self.setup_attached_target(
+                            socket,
+                            attached,
+                            waiting,
+                            parent_wire,
+                        ) {
+                            self.push_event_line(
+                                &session_id,
+                                "Target.attachFailed",
+                                &json!({
+                                    "targetId": target_id,
+                                    "sessionId": session_id,
+                                    "error": error,
+                                }),
+                                parent_wire,
+                            );
+                        }
+                    } else {
                         self.pending_setup.push((attached, waiting));
                     }
-                } else if let Err(error) =
-                    self.setup_attached_target(socket, attached.clone(), waiting)
-                {
+                } else if let Err(error) = self.setup_attached_target(
+                    socket,
+                    attached.clone(),
+                    waiting,
+                    parent_wire,
+                ) {
                     self.push_event_line(
                         &session_id,
                         "Target.attachFailed",
@@ -828,7 +932,10 @@ impl Cdp {
             return;
         }
         let params = value.get("params").cloned().unwrap_or(Value::Null);
-        let session_id = self.session_for_recorded_event(method, value, &params);
+        let mut session_id = self.session_for_recorded_event(method, value, &params);
+        if method.starts_with("Network.") {
+            session_id = self.session_for_network_event(&session_id, &params);
+        }
         let parent_session_id = if method == "Target.attachedToTarget" {
             value.get("sessionId").and_then(Value::as_str)
         } else {
@@ -854,18 +961,26 @@ impl Cdp {
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
     ) {
-        for (attached, waiting) in std::mem::take(&mut self.pending_setup) {
-            if let Err(error) = self.setup_attached_target(socket, attached.clone(), waiting) {
-                self.push_event_line(
-                    &attached.session_id,
-                    "Target.attachFailed",
-                    &json!({
-                        "targetId": attached.target_id,
-                        "sessionId": attached.session_id,
-                        "error": error,
-                    }),
-                    None,
-                );
+        for _ in 0..32 {
+            let batch = std::mem::take(&mut self.pending_setup);
+            if batch.is_empty() {
+                break;
+            }
+            for (attached, waiting) in batch {
+                if let Err(error) =
+                    self.setup_attached_target(socket, attached.clone(), waiting, None)
+                {
+                    self.push_event_line(
+                        &attached.session_id,
+                        "Target.attachFailed",
+                        &json!({
+                            "targetId": attached.target_id,
+                            "sessionId": attached.session_id,
+                            "error": error,
+                        }),
+                        None,
+                    );
+                }
             }
         }
     }
@@ -884,8 +999,8 @@ impl Cdp {
         setup_result
     }
 
-    /// Bootstrap da página principal (attach explícito + Network antes de
-    /// navegar); filhos entram via auto-attach recursivo na sessão da página.
+    /// Receita `cdp_multi_capture.mjs` (da972ef): auto-attach na raiz, fila de
+    /// setup por sessão, `setAutoAttach` recursivo na página antes de navegar.
     fn setup_inner(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
@@ -898,6 +1013,14 @@ impl Cdp {
             None,
             Duration::from_secs(10),
         )?;
+        self.send(
+            socket,
+            "Target.setAutoAttach",
+            self.auto_attach_params(true),
+            None,
+            Duration::from_secs(25),
+        )?;
+        self.flush_pending_setups(socket);
         let url = if start_url.trim().is_empty() {
             "about:blank".to_string()
         } else {
@@ -915,77 +1038,74 @@ impl Cdp {
             .and_then(Value::as_str)
             .ok_or_else(|| "CDP não devolveu targetId".to_string())?
             .to_string();
-        let attached = self.send(
-            socket,
-            "Target.attachToTarget",
-            json!({ "targetId": main_target, "flatten": true }),
-            None,
-            Duration::from_secs(15),
-        )?;
-        self.page_session_id = attached
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "CDP não devolveu sessionId".to_string())?
-            .to_string();
-        let page_session = self.page_session_id.clone();
-        self.setup_done.insert(
-            page_session.clone(),
-            AttachedTarget {
-                session_id: page_session.clone(),
-                target_id: main_target.clone(),
-                target_type: "page".to_string(),
-            },
-        );
-        self.configured_sessions.insert(page_session.clone());
-        self.send(
-            socket,
-            "Target.setAutoAttach",
-            self.auto_attach_params(true),
-            Some(&page_session),
-            Duration::from_secs(20),
-        )?;
-        self.send(
-            socket,
-            "Page.enable",
-            json!({}),
-            Some(&page_session),
-            Duration::from_secs(10),
-        )?;
-        self.send(
-            socket,
-            "Network.enable",
-            json!({
-                "maxTotalBufferSize": 100_000_000,
-                "maxResourceBufferSize": 50_000_000,
-                "maxPostDataSize": MAX_BODY_BYTES
-            }),
-            Some(&page_session),
-            Duration::from_secs(10),
-        )?;
-        self.send(
-            socket,
-            "Runtime.enable",
-            json!({}),
-            Some(&page_session),
-            Duration::from_secs(5),
-        )?;
-        self.send(
-            socket,
-            "Network.setCacheDisabled",
-            json!({ "cacheDisabled": true }),
-            Some(&page_session),
-            Duration::from_secs(5),
-        )?;
-        if url != "about:blank" {
-            self.send(
-                socket,
-                "Page.navigate",
-                json!({ "url": url }),
-                Some(&page_session),
-                Duration::from_secs(30),
-            )?;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            self.flush_pending_setups(socket);
+            if let Some(page_session) = self
+                .setup_seen
+                .values()
+                .find(|t| t.target_id == main_target && t.target_type == "page")
+                .map(|t| t.session_id.clone())
+            {
+                self.page_session_id = page_session.clone();
+                if !self.configured_sessions.contains(&page_session) {
+                    let main_waiting = self
+                        .pending_setup
+                        .iter()
+                        .find(|(t, _)| t.session_id == page_session)
+                        .map(|(_, w)| *w)
+                        .unwrap_or(false);
+                    self.pending_setup
+                        .retain(|(t, _)| t.session_id != page_session);
+                    self.setup_attached_target(
+                        socket,
+                        AttachedTarget {
+                            session_id: page_session.clone(),
+                            target_id: main_target.clone(),
+                            target_type: "page".to_string(),
+                        },
+                        main_waiting,
+                        None,
+                    )?;
+                }
+                self.send(
+                    socket,
+                    "Target.setAutoAttach",
+                    self.auto_attach_params(true),
+                    Some(&page_session),
+                    Duration::from_secs(15),
+                )?;
+                self.send(
+                    socket,
+                    "Network.setCacheDisabled",
+                    json!({ "cacheDisabled": true }),
+                    Some(&page_session),
+                    Duration::from_secs(5),
+                )?;
+                if url != "about:blank" {
+                    self.send(
+                        socket,
+                        "Page.navigate",
+                        json!({ "url": url }),
+                        Some(&page_session),
+                        Duration::from_secs(30),
+                    )?;
+                }
+                break;
+            }
+            self.pump_socket(socket, Duration::from_millis(100));
         }
-        self.pump_socket(socket, Duration::from_millis(800));
+        if self.page_session_id.is_empty() {
+            return Err(
+                "A página inicial não anexou após createTarget (Target.attachedToTarget)"
+                    .to_string(),
+            );
+        }
+        let settle = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < settle {
+            self.flush_pending_setups(socket);
+            self.pump_socket(socket, Duration::from_millis(100));
+        }
         Ok(())
     }
 
@@ -1006,6 +1126,8 @@ impl Cdp {
         socket
             .send(Message::Text(message.to_string().into()))
             .map_err(|error| format!("CDP send {method}: {error}"))?;
+        self.command_depth += 1;
+        let setup_result = (|| {
         let deadline = Instant::now() + timeout;
         loop {
             if Instant::now() >= deadline {
@@ -1034,6 +1156,12 @@ impl Cdp {
                 Err(error) => return Err(format!("CDP read {method}: {error}")),
             }
         }
+        })();
+        if setup_result.is_ok() && self.setup_phase {
+            let _ = self.flush_pending_setups(socket);
+        }
+        self.command_depth = self.command_depth.saturating_sub(1);
+        setup_result
     }
 
     fn record(
