@@ -18,7 +18,7 @@
 //! ficam separadas e a ambiguidade é registrada em `links[].resolution` e em
 //! aviso.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
@@ -813,9 +813,131 @@ fn apply_response_extra(
 /// aviso é emitido — nunca há fusão silenciosa.
 fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLink>>, Vec<Warning>) {
     const WINDOW_S: f64 = 0.050;
+    let requests = &capture.requests;
+    let kind = |index: usize| {
+        capture
+            .targets
+            .get(&requests[index].session_id)
+            .map(|target| target.kind)
+    };
+    let id = |index: usize| format!("cdp-r{:04}", index + 1);
     let mut links: BTreeMap<usize, Vec<RequestLink>> = BTreeMap::new();
     let mut warnings = Vec::new();
-    let requests = &capture.requests;
+    let mut paired: BTreeSet<(usize, usize)> = BTreeSet::new();
+
+    let add = |i: usize,
+               j: usize,
+               mut evidence: Vec<String>,
+               links: &mut BTreeMap<usize, Vec<RequestLink>>,
+               warnings: &mut Vec<Warning>| {
+        let (from, to) = (id(i), id(j));
+        evidence.push("tempo e origem são pista, não prova".to_string());
+        links.entry(i).or_default().push(RequestLink {
+            kind: "service_worker".to_string(),
+            request: to.clone(),
+            evidence: evidence.clone(),
+            resolution: "ambiguous".to_string(),
+        });
+        links.entry(j).or_default().push(RequestLink {
+            kind: "service_worker".to_string(),
+            request: from.clone(),
+            evidence,
+            resolution: "ambiguous".to_string(),
+        });
+        warnings.push(
+            Warning::new(
+                "cdp.service_worker_ambiguous",
+                format!(
+                    "observações da mesma requisição ({from} × {to}) ligadas como ambíguas; sem evidência explícita do CDP"
+                ),
+            )
+            .with_entity(to),
+        );
+    };
+
+    // (1) Página com `fromServiceWorker`: candidatos nas sessões de service
+    // worker da mesma origem, começando entre o requestWillBeSent e o
+    // responseReceived da página. A regra antiga de mesma URL/método continua
+    // valendo como candidato.
+    for i in 0..requests.len() {
+        if kind(i) == Some(TargetKind::ServiceWorker) {
+            continue;
+        }
+        let Some(page) = requests[i]
+            .attempts
+            .iter()
+            .find(|attempt| attempt.from_service_worker)
+        else {
+            continue;
+        };
+        let Some(start) = requests[i]
+            .attempts
+            .first()
+            .and_then(|attempt| attempt.timestamp)
+        else {
+            continue;
+        };
+        let end = page.ended_at.or(page.timestamp).unwrap_or(start).max(start);
+        let origin = url_origin(&page.url);
+        let mut candidates: Vec<usize> = Vec::new();
+        for j in 0..requests.len() {
+            if j == i || requests[j].session_id == requests[i].session_id {
+                continue;
+            }
+            let Some(first) = requests[j].attempts.first() else {
+                continue;
+            };
+            let Some(start_j) = first.timestamp else {
+                continue;
+            };
+            let sw = kind(j) == Some(TargetKind::ServiceWorker);
+            let same_origin = url_origin(&first.url) == origin;
+            let same_url = first.url == page.url && first.method == page.method;
+            let in_sw_window = sw && same_origin && start_j >= start && start_j <= end;
+            let old_rule = same_url
+                && (sw
+                    || requests[j]
+                        .attempts
+                        .iter()
+                        .any(|attempt| attempt.from_service_worker))
+                && (start_j - start).abs() <= WINDOW_S;
+            if in_sw_window || old_rule {
+                candidates.push(j);
+            }
+        }
+        if candidates.is_empty() {
+            warnings.push(
+                Warning::new(
+                    "cdp.service_worker_unidentified",
+                    "interceptada pelo service worker; a requisição correspondente no SW não foi identificada",
+                )
+                .with_entity(id(i)),
+            );
+            continue;
+        }
+        let single = candidates.len() == 1;
+        for j in candidates {
+            let mut evidence = vec![
+                "fromServiceWorker na resposta".to_string(),
+                "sessão do service worker".to_string(),
+            ];
+            if single {
+                evidence.push("candidato único na janela do SW".to_string());
+            }
+            if url_origin(&requests[j].attempts[0].url) == origin {
+                evidence.push("mesma origem".to_string());
+            }
+            evidence.push("início na janela requestWillBeSent→responseReceived".to_string());
+            if requests[j].attempts[0].url == page.url {
+                evidence.push("mesma URL/método".to_string());
+            }
+            paired.insert((i.min(j), i.max(j)));
+            add(i, j, evidence, &mut links, &mut warnings);
+        }
+    }
+
+    // (2) Cópias da mesma requisição entre sessões (service worker anexado mais
+    // de uma vez): mesma URL/método e janela curta, sempre como ambíguo.
     for i in 0..requests.len() {
         let Some(start) = requests[i]
             .attempts
@@ -824,12 +946,9 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
         else {
             continue;
         };
-        let kind_i = capture
-            .targets
-            .get(&requests[i].session_id)
-            .map(|target| target.kind);
         for j in (i + 1)..requests.len() {
             if requests[i].session_id == requests[j].session_id
+                || paired.contains(&(i, j))
                 || requests[i].attempts.first().map(|a| a.method.as_str())
                     != requests[j].attempts.first().map(|a| a.method.as_str())
                 || requests[i].attempts.first().map(|a| a.url.as_str())
@@ -848,64 +967,41 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
             if delta > WINDOW_S {
                 continue;
             }
-            let kind_j = capture
-                .targets
-                .get(&requests[j].session_id)
-                .map(|target| target.kind);
-            let involved_sw = kind_i == Some(TargetKind::ServiceWorker)
-                || kind_j == Some(TargetKind::ServiceWorker);
-            let from_sw = requests[i]
-                .attempts
-                .iter()
-                .any(|attempt| attempt.from_service_worker)
+            let involved_sw = kind(i) == Some(TargetKind::ServiceWorker)
+                || kind(j) == Some(TargetKind::ServiceWorker)
+                || requests[i]
+                    .attempts
+                    .iter()
+                    .any(|attempt| attempt.from_service_worker)
                 || requests[j]
                     .attempts
                     .iter()
                     .any(|attempt| attempt.from_service_worker);
-            if !involved_sw && !from_sw {
+            if !involved_sw {
                 continue;
             }
+            paired.insert((i, j));
             let mut evidence = vec!["mesma URL/método".to_string()];
-            if from_sw {
-                evidence.push("fromServiceWorker na resposta".to_string());
-            }
-            if kind_i == Some(TargetKind::ServiceWorker)
-                || kind_j == Some(TargetKind::ServiceWorker)
+            if kind(i) == Some(TargetKind::ServiceWorker)
+                || kind(j) == Some(TargetKind::ServiceWorker)
             {
                 evidence.push("sessão do service worker".to_string());
             }
             evidence.push(format!("Δt={:.0} ms (pista)", delta * 1000.0));
-            let resolution = if from_sw { "linked" } else { "ambiguous" };
-            let from = format!("cdp-r{:04}", i + 1);
-            let to = format!("cdp-r{:04}", j + 1);
-            links.entry(i).or_default().push(RequestLink {
-                kind: "service_worker".to_string(),
-                request: to.clone(),
-                evidence: evidence.clone(),
-                resolution: resolution.to_string(),
-            });
-            links.entry(j).or_default().push(RequestLink {
-                kind: "service_worker".to_string(),
-                request: from.clone(),
-                evidence,
-                resolution: resolution.to_string(),
-            });
-            if resolution == "ambiguous" {
-                let warning = Warning::new(
-                    "cdp.service_worker_ambiguous",
-                    format!(
-                        "duas observações da mesma requisição ({from} × {to}) sem evidência explícita de service worker; não fundidas"
-                    ),
-                )
-                .with_detail(serde_json::json!({
-                    "requests": [from, to],
-                    "reason": "sem fromServiceWorker; mesma URL/método e janela de tempo são pista, não prova",
-                }));
-                warnings.push(warning);
-            }
+            add(i, j, evidence, &mut links, &mut warnings);
         }
     }
     (links, warnings)
+}
+
+fn url_origin(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    let authority = rest
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(rest)
+        .to_ascii_lowercase();
+    Some(format!("{}://{}", scheme.to_ascii_lowercase(), authority))
 }
 
 fn extra_info_message(event: &str, session_id: &str, request_id: &str) -> String {

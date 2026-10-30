@@ -258,56 +258,116 @@ fn bodies_are_mapped_by_session_and_request_id() {
     assert_eq!(body("/y"), "worker-body");
 }
 
+fn sw_session(from_sw: bool, sw: &[(&str, f64)]) -> scrapelens_core::model::SessionV1 {
+    let page = "https://a.test/sw-fetch?m=sw-intercept-1";
+    let mut lines = vec![
+        attached("S1", "T1", "page", "https://a.test/", None),
+        request_event("S1", "req-1", page, 20.0),
+        response_event("S1", "req-1", page, 20.1, from_sw),
+    ];
+    for (n, (url, start)) in sw.iter().enumerate() {
+        let session = format!("SW{n}");
+        lines.push(attached(
+            &session,
+            &format!("TSW{n}"),
+            "service_worker",
+            "https://a.test/sw.js",
+            Some("S1"),
+        ));
+        lines.push(request_event(&session, "req-x", url, *start));
+        lines.push(response_event(&session, "req-x", url, start + 0.01, false));
+    }
+    let capture = parse_cdp_jsonl(lines.join("\n").as_bytes()).unwrap();
+    build_cdp_session(&capture).0
+}
+
 #[test]
-fn service_worker_observations_link_only_with_evidence() {
-    let doc = |from_sw: bool| {
-        [
-            attached("S1", "T1", "page", "https://a.test/", None),
-            attached(
-                "S2",
-                "T2",
-                "service_worker",
-                "https://a.test/sw.js",
-                Some("S1"),
-            ),
-            request_event("S1", "req-1", "https://a.test/marker", 20.0),
-            request_event("S2", "req-2", "https://a.test/marker", 20.005),
-            response_event("S1", "req-1", "https://a.test/marker", 20.01, from_sw),
-            response_event("S2", "req-2", "https://a.test/marker", 20.02, from_sw),
-        ]
-        .join("\n")
-    };
-    let capture = parse_cdp_jsonl(doc(true).as_bytes()).unwrap();
-    let (session, _) = build_cdp_session(&capture);
-    assert_eq!(session.requests.len(), 2);
-    assert!(
-        session.requests.iter().all(|request| {
-            request
-                .links
-                .iter()
-                .any(|link| link.resolution == "linked" && link.kind == "service_worker")
-        }),
-        "{:#?}\n---\n{:?}",
-        session.requests,
-        session.warnings
+fn page_response_from_sw_links_one_candidate_as_ambiguous() {
+    // URL difere (passthrough), mas o início do fetch do SW está na janela.
+    let session = sw_session(
+        true,
+        &[("https://a.test/sw-fetch?m=1&passthrough=1", 20.05)],
     );
+    let page = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("sw-intercept-1"))
+        .unwrap();
+    assert_eq!(page.links.len(), 1, "{:#?}", page.links);
+    let link = &page.links[0];
+    assert_eq!(link.resolution, "ambiguous");
+    assert_eq!(link.kind, "service_worker");
+    assert!(
+        link.evidence
+            .iter()
+            .any(|e| e == "candidato único na janela do SW"),
+        "{:?}",
+        link.evidence
+    );
+    let sw = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("passthrough=1"))
+        .unwrap();
+    assert_eq!(sw.links.len(), 1);
+    assert_eq!(sw.links[0].resolution, "ambiguous");
+}
+
+#[test]
+fn page_response_from_sw_links_all_candidates_as_ambiguous() {
+    let session = sw_session(
+        true,
+        &[
+            ("https://a.test/sw-fetch?m=1&passthrough=1", 20.02),
+            ("https://a.test/sw-fetch?m=1&passthrough=2", 20.08),
+        ],
+    );
+    let page = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("sw-intercept-1"))
+        .unwrap();
+    assert_eq!(page.links.len(), 2, "{:#?}", page.links);
+    assert!(page.links.iter().all(|link| link.resolution == "ambiguous"));
+}
+
+#[test]
+fn service_worker_candidate_outside_the_window_warns() {
+    let session = sw_session(true, &[("https://a.test/sw-fetch?m=1&passthrough=1", 20.5)]);
+    let page = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("sw-intercept-1"))
+        .unwrap();
+    assert!(page.links.is_empty(), "{:#?}", page.links);
+    let warning = session
+        .warnings
+        .iter()
+        .find(|warning| warning.code == "cdp.service_worker_unidentified")
+        .unwrap_or_else(|| panic!("{:?}", session.warnings));
+    assert_eq!(
+        warning.message,
+        "interceptada pelo service worker; a requisição correspondente no SW não foi identificada"
+    );
+    assert_eq!(warning.entity.as_deref(), Some(page.id.as_str()));
+}
+
+#[test]
+fn page_without_from_service_worker_gets_no_link() {
+    let session = sw_session(
+        false,
+        &[("https://a.test/sw-fetch?m=1&passthrough=1", 20.05)],
+    );
+    let page = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("sw-intercept-1"))
+        .unwrap();
+    assert!(page.links.is_empty(), "{:#?}", page.links);
     assert!(!session
         .warnings
         .iter()
-        .any(|warning| warning.code == "cdp.service_worker_ambiguous"));
-
-    let capture = parse_cdp_jsonl(doc(false).as_bytes()).unwrap();
-    let (session, _) = build_cdp_session(&capture);
-    assert!(session.requests.iter().all(|request| {
-        request
-            .links
-            .iter()
-            .any(|link| link.resolution == "ambiguous")
-    }));
-    assert!(session
-        .warnings
-        .iter()
-        .any(|warning| warning.code == "cdp.service_worker_ambiguous"));
+        .any(|warning| warning.code == "cdp.service_worker_unidentified"));
 }
 
 #[test]
