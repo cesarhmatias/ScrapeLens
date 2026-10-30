@@ -26,4 +26,6 @@ results/multi-target-attach-probe/**/commands.jsonl
 results/multi-target-attach-probe/**/chrome-netlog.json
 results/multi-target-attach-probe/**/chrome-profile/
 results/multi-target-attach-probe/testserver-evidence/
+results/multi-target-attach-probe/headless/
+results/multi-target-attach-probe/headful/
 results/multi-target-official/README-snippet.txt
