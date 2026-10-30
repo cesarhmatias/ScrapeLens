@@ -43,3 +43,59 @@ em `experiments/`. Nenhuma alteração em `src-tauri/` ou `core/` nesta onda.
 - Alvo não acompanhado continua visível só pelo NetLog, marcado como tal,
   nunca com headers inventados.
 - O desenho final (core/app) só é fixado depois da tabela da onda 1.
+
+## Resultado da onda 1 (Captura, 9a6021d/5d46a8a)
+
+Chrome 156.0.8078.74, headless e headful, receita: `Target.setAutoAttach
+{autoAttach, waitForDebuggerOnStart, flatten}` na sessão da página E em cada
+sessão filha recebida em `Target.attachedToTarget`, depois `Network.enable`
+nela e `Runtime.runIfWaitingForDebugger`. Resultado: página, popup, OOPIF,
+worker dedicado e service worker com rede CDP no `sessionId` do alvo. Limite
+do Chrome: documento de aba aberta por `target=_blank` só tem
+`responseReceived` na sessão filha (sem `requestWillBeSent`); o NetLog cobre.
+Sem `waitForDebuggerOnStart` perde-se metade dos marcadores. `requestId`
+colide entre sessões. Ordem do ExtraInfo não é a do fio (sem mudança na
+matriz).
+
+## Onda 2 — contrato de implementação (decisão do líder)
+
+Gravação (`src-tauri/src/capture.rs`, dono: Captura):
+- Receita acima, recursiva, com fila de comandos por sessão; `browser_ui` e
+  alvos não-rede ignorados. Alvo que não anexar fica registrado como tal.
+- `cdp-events.jsonl`: toda linha ganha `sessionId` (string; a sessão da
+  página inicial também tem o seu). Os eventos `Target.attachedToTarget`,
+  `Target.detachedFromTarget` e `Target.targetInfoChanged` são gravados.
+- `cdp-bodies.jsonl`: cada linha ganha `sessionId`.
+- Captura sem eventos de nenhum alvo continua erro; alvo que falhou ao anexar
+  vira aviso, não erro.
+
+Modelo e importação (`core/`, dono: Core):
+- Chave da requisição CDP: (`sessionId`, `requestId`); corpos mapeados por
+  (`sessionId`, `requestId`, `attemptIndex`). Arquivo antigo sem `sessionId`
+  = uma sessão implícita (compatível com as sessões já gravadas).
+- Proveniência por requisição: `targetId`, tipo (`page`, `iframe`, `worker`,
+  `service_worker`, `shared_worker`, outro), URL do alvo e `openerId`
+  /sessão pai, a partir dos eventos Target.
+- Requisição interceptada pelo service worker aparece em duas sessões: as
+  duas observações ficam ligadas como a mesma requisição lógica só com
+  evidência explícita (ex.: `fromServiceWorker`, mesma URL/método e
+  janela de tempo como pista, nunca prova); sem evidência suficiente,
+  ambiguidade registrada.
+- Correlação com NetLog: a requisição do NetLog sem par CDP continua
+  NetLog-only, com o tipo do alvo desconhecido; o documento do `_blank`
+  (só `responseReceived`) liga ao NetLog se a evidência permitir, senão
+  fica parcial com nota.
+
+Aceite (`tests/`, dono: Testes), sobre `testserver /multi/` com a captura
+REAL do produto (não o harness do experimento):
+- 16/16 marcadores no NetLog; ≥ 15/16 com CDP (exceção esperada: documento
+  `blank-1`), cada um com o tipo de alvo certo;
+- POSTs com corpo de requisição e resposta iguais ao `body_sha256` do
+  servidor, por tipo de alvo;
+- nenhuma requisição fundida entre sessões por `requestId` igual;
+- sw-intercept: duas observações ligadas ou ambiguidade explícita, nunca
+  duplicata silenciosa;
+- sessões ao vivo antigas e fixtures atuais importam sem mudança de
+  resultado (aceites existentes verdes).
+
+Interface (App) fica para a onda 3: filtro/coluna de alvo e aviso de limite.
