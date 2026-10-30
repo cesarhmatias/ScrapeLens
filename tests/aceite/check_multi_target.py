@@ -171,6 +171,14 @@ def start_server(port: int, evidence: Path) -> subprocess.Popen:
     sys.exit(f"testserver não subiu em 127.0.0.1:{port}")
 
 
+def build_capture_test() -> None:
+    """Compila o binário de teste antes de dirigir a captura (build frio pode passar de 3 min)."""
+    proc = sh(["cargo", "test", "--release", "--offline", "--no-run", "live_bodies_cycle"],
+              cwd=SRC_TAURI, timeout=1800)
+    if proc.returncode != 0:
+        sys.exit(f"build do teste de captura falhou: {proc.stderr[-600:]}")
+
+
 def drive_capture(tmp: Path, port: int) -> tuple[Path, dict]:
     """Roda a captura REAL do produto (capture::run) contra /multi/ e devolve a sessão."""
     session_dir = tmp / "session"
@@ -188,7 +196,7 @@ def drive_capture(tmp: Path, port: int) -> tuple[Path, dict]:
         cwd=SRC_TAURI, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     seen: set[str] = set()
-    deadline = time.time() + 75
+    deadline = time.time() + 120
     try:
         while time.time() < deadline:
             if proc.poll() is not None:
@@ -202,7 +210,7 @@ def drive_capture(tmp: Path, port: int) -> tuple[Path, dict]:
     finally:
         stop_file.write_text("stop\n", encoding="utf-8")
     try:
-        out, _ = proc.communicate(timeout=180)
+        out, _ = proc.communicate(timeout=300)
     except subprocess.TimeoutExpired:
         proc.kill()
         out, _ = proc.communicate()
@@ -506,6 +514,7 @@ def main() -> int:
             driver = {}
         else:
             ensure_server_bin()
+            build_capture_test()
             server = start_server(a.port, tmp / "evidence")
             time.sleep(0.3)
             capture, driver = drive_capture(tmp, a.port)
