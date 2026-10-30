@@ -1,0 +1,7 @@
+{
+ "driver_log": "   Compiling scrapelens v0.1.0 (/Users/cesar/Projects/scrapelens/src-tauri)\n    Finished `release` profile [optimized] target(s) in 7.86s\n     Running unittests src/lib.rs (target/release/deps/scrapelens_lib-187647c4b8f52233)\n\nrunning 1 test\n\nthread 'capture::tests::live_bodies_cycle' (255418107) panicked at src/capture.rs:2399:14:\ncaptura iniciou: \"CDP timeout aguardando Target.setAutoAttach\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ntest capture::tests::live_bodies_cycle ... FAILED\n\nfailures:\n\nfailures:\n    capture::tests::live_bodies_cycle\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 55 filtered out; finished in 11.51s\n\nerror: test failed, to rerun pass `--lib`\n",
+ "tmp": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-60cdd_f5",
+ "fails": [
+  "captura: /var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-60cdd_f5/session/session.json ausente (drv rc=101)"
+ ]
+}

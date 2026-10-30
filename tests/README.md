@@ -14,6 +14,7 @@ python3 tests/capture/app_validate.py --run-dir tests/capture/runs/app-<id> \
   --capture-id capture-<ts> --har-id har-<id> --netlog-id netlog-<id> \
   --screenshot tests/results/app-latest/screenshot-app-live.png
 python3 tests/aceite/run_acceptance.py --capture tests/capture/runs/<id>
+python3 tests/aceite/check_multi_target.py        # captura real multi-alvo (popup, blank, OOPIF, worker, SW)
 ```
 
 Resultados: `tests/results/aceite.json` e o relatório `tests/RELATORIO.md`
@@ -25,6 +26,7 @@ Resultados: `tests/results/aceite.json` e o relatório `tests/RELATORIO.md`
 |---|---|
 | `aceite/fixtures.py` | gerador das fixtures sintéticas (HAR, NetLog, CDP e sessões v1) |
 | `aceite/run_acceptance.py` | os 10 critérios, asserções e geração do relatório |
+| `aceite/check_multi_target.py` | aceite da captura multi-alvo (rodada 10): captura real contra `testserver /multi/`, 16 marcadores, tipos de alvo, corpos e service worker |
 | `capture/capture_cycle.mjs` | Chrome dedicado + CDP + NetLog; sem certificado instalado, QUIC intacto |
 | `capture/run-cycle.sh` | sobe testserver, captura h1/h2/h3, importa com o core e resume |
 | `capture/summarize.py` | métricas da captura real em `run.json` |

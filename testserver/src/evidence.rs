@@ -113,6 +113,10 @@ fn write_multi(server: &str, req: &Req, resp: &Resp, marker: Option<&str>) {
         .ok()
         .filter(|_| resp.body.len() <= 1024 && resp.body.first() == Some(&b'{'))
         .map(str::to_string);
+    let response_sha = {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(&resp.body).iter().map(|b| format!("{b:02x}")).collect::<String>()
+    };
     let rec = serde_json::json!({
         "schema": "scrapelens.testserver.multi/1",
         "ts_rfc3339": now().0,
@@ -128,6 +132,7 @@ fn write_multi(server: &str, req: &Req, resp: &Resp, marker: Option<&str>) {
         "response": {
             "status": resp.status,
             "body_len": resp.body.len(),
+            "body_sha256": response_sha,
             "body": response_text,
         },
     });

@@ -1,6 +1,6 @@
 # Relatório de aceite — ScrapeLens MVP
 
-Execução: 2026-10-29T19:39:46Z · binário do core `a1c261399863` (3716432 bytes) · commit `bf0a41b`
+Execução: 2026-10-30T02:58:26Z · binário do core `cf74071dd511` (3805568 bytes) · commit `2f1cc1b`
 
 Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
 
@@ -35,7 +35,7 @@ Evidência:
 - `scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`
 - asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte
 
-Asserções: 29 passaram, 0 falharam (0.09 s).
+Asserções: 29 passaram, 0 falharam (0.45 s).
 
 ## 2. HAR e NetLog válidos, incompletos e com eventos desconhecidos — aprovado
 
@@ -50,7 +50,7 @@ Evidência:
 
 > Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos.
 
-Asserções: 26 passaram, 0 falharam (0.17 s).
+Asserções: 26 passaram, 0 falharam (0.19 s).
 
 ## 3. Requisições simultâneas idênticas sem associação falsa — aprovado
 
@@ -107,7 +107,7 @@ Evidência:
 
 > Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK).
 
-Asserções: 23 passaram, 0 falharam (0.17 s).
+Asserções: 23 passaram, 0 falharam (0.20 s).
 
 ## 8. Sanitização incluindo eventos brutos — aprovado
 
@@ -119,7 +119,7 @@ Evidência:
 
 > Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso.
 
-Asserções: 19 passaram, 0 falharam (0.04 s).
+Asserções: 19 passaram, 0 falharam (0.05 s).
 
 ## 9. Ciclo real de captura no macOS — aprovado
 
@@ -140,24 +140,24 @@ Evidência:
 
 > As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-5` e `netlog-1704043c442dcbd1-5`), agora pela UI: o usuário selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão.
 
-Asserções: 118 passaram, 0 falharam (0.12 s).
+Asserções: 118 passaram, 0 falharam (0.15 s).
 
 ## 10. Importação grande com tamanho documentado — aprovado
 
 Evidência:
 
-- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.20 s, pico 819 MiB RSS
+- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.37 s, pico 823 MiB RSS
 - sessão gravada: session.json 236.3 MiB
-- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.08 s, pico 1597 MiB RSS
+- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.45 s, pico 1599 MiB RSS
 - complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB
 
 > HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).
 
-> `inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1597 MiB vem da serialização, não do parser.
+> `inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1599 MiB vem da serialização, não do parser.
 
 > Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.
 
-Asserções: 7 passaram, 0 falharam (9.96 s).
+Asserções: 7 passaram, 0 falharam (14.08 s).
 
 ## Como reproduzir
 
