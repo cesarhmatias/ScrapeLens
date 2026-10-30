@@ -151,8 +151,12 @@ fn run_inner(
     loop {
         if !flushed_pending {
             cdp.flush_pending_setups(&mut socket);
+            cdp.flush_opener_pages(&mut socket);
+            cdp.flush_opener_setups(&mut socket);
             flushed_pending = true;
         }
+        cdp.flush_opener_pages(&mut socket);
+        cdp.flush_opener_setups(&mut socket);
         if matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
             break;
         }
@@ -420,10 +424,18 @@ struct Cdp {
     in_flight: HashMap<u64, (String, BodyTag)>,
     outbox: Vec<(String, String)>,
     setup_done: HashMap<String, AttachedTarget>,
+    /// Sessões que já passaram por `setup_attached_target` (distinto de visto em setup_phase).
+    configured_sessions: std::collections::HashSet<String>,
     wait_for_debugger: bool,
     /// Durante `setup()`, só grava Target.*; evita setup aninhado que bloqueia respostas CDP.
     setup_phase: bool,
     pending_setup: Vec<(AttachedTarget, bool)>,
+    /// Alvos vistos via auto-attach durante `setup_phase` (antes de configurar).
+    setup_seen: HashMap<String, AttachedTarget>,
+    /// targetId de popups/`target=_blank` já tratados com attach explícito.
+    opener_pages_attached: std::collections::HashSet<String>,
+    pending_opener_pages: Vec<String>,
+    pending_opener_setups: Vec<(AttachedTarget, bool)>,
 }
 
 impl Cdp {
@@ -455,9 +467,14 @@ impl Cdp {
                             in_flight: HashMap::new(),
                             outbox: Vec::new(),
                             setup_done: HashMap::new(),
+                            configured_sessions: std::collections::HashSet::new(),
                             wait_for_debugger: true,
                             setup_phase: false,
                             pending_setup: Vec::new(),
+                            setup_seen: HashMap::new(),
+                            opener_pages_attached: std::collections::HashSet::new(),
+                            pending_opener_pages: Vec::new(),
+                            pending_opener_setups: Vec::new(),
                         },
                     ));
                 }
@@ -549,7 +566,7 @@ impl Cdp {
         attached: AttachedTarget,
         waiting_for_debugger: bool,
     ) -> Result<(), String> {
-        if self.setup_done.contains_key(&attached.session_id) {
+        if self.configured_sessions.contains(&attached.session_id) {
             if self.wait_for_debugger && waiting_for_debugger {
                 let _ = self.send(
                     socket,
@@ -564,6 +581,8 @@ impl Cdp {
         let target_type = attached.target_type.clone();
         self.setup_done
             .insert(attached.session_id.clone(), attached.clone());
+        self.configured_sessions
+            .insert(attached.session_id.clone());
         if Self::skip_target_setup(&target_type) {
             if self.wait_for_debugger && waiting_for_debugger {
                 let _ = self.send(
@@ -576,7 +595,17 @@ impl Cdp {
             }
             return Ok(());
         }
-        if Self::recurse_auto_attach(&target_type) {
+        if self.wait_for_debugger && waiting_for_debugger {
+            self.send(
+                socket,
+                "Runtime.runIfWaitingForDebugger",
+                json!({}),
+                Some(&attached.session_id),
+                Duration::from_secs(10),
+            )?;
+        }
+        let main_page = attached.session_id == self.page_session_id;
+        if Self::recurse_auto_attach(&target_type) && (target_type != "page" || main_page) {
             self.send(
                 socket,
                 "Target.setAutoAttach",
@@ -612,16 +641,117 @@ impl Cdp {
             Some(&attached.session_id),
             Duration::from_secs(5),
         );
-        if self.wait_for_debugger && waiting_for_debugger {
-            self.send(
-                socket,
-                "Runtime.runIfWaitingForDebugger",
-                json!({}),
-                Some(&attached.session_id),
-                Duration::from_secs(10),
-            )?;
-        }
         Ok(())
+    }
+
+    fn note_opener_page(&mut self, params: &Value) {
+        let Some(info) = params.get("targetInfo").and_then(Value::as_object) else {
+            return;
+        };
+        let target_id = info
+            .get("targetId")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if target_id.is_empty() || self.opener_pages_attached.contains(target_id) {
+            return;
+        }
+        let target_type = info.get("type").and_then(Value::as_str).unwrap_or("");
+        let attached = info.get("attached").and_then(Value::as_bool).unwrap_or(false);
+        let has_opener = info.get("openerId").and_then(Value::as_str).is_some();
+        if target_type != "page" || attached || !has_opener {
+            return;
+        }
+        if !self.pending_opener_pages.contains(&target_id.to_string()) {
+            self.pending_opener_pages.push(target_id.to_string());
+        }
+    }
+
+    fn flush_opener_pages(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+    ) {
+        for target_id in std::mem::take(&mut self.pending_opener_pages) {
+            if self.opener_pages_attached.contains(&target_id) {
+                continue;
+            }
+            self.opener_pages_attached.insert(target_id.clone());
+            let Ok(result) = self.send(
+                socket,
+                "Target.attachToTarget",
+                json!({ "targetId": target_id, "flatten": true }),
+                None,
+                Duration::from_secs(10),
+            ) else {
+                continue;
+            };
+            let Some(session_id) = result
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            let attached = AttachedTarget {
+                session_id,
+                target_id: target_id.clone(),
+                target_type: "page".to_string(),
+            };
+            self.pending_opener_setups
+                .push((attached, false));
+        }
+    }
+
+    fn flush_opener_setups(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+    ) {
+        for (attached, waiting) in std::mem::take(&mut self.pending_opener_setups) {
+            if let Err(error) = self.setup_attached_target(socket, attached.clone(), waiting) {
+                self.push_event_line(
+                    &attached.session_id,
+                    "Target.attachFailed",
+                    &json!({
+                        "targetId": attached.target_id,
+                        "sessionId": attached.session_id,
+                        "error": error,
+                    }),
+                    None,
+                );
+            }
+        }
+    }
+
+    fn session_for_recorded_event(
+        &self,
+        method: &str,
+        wire: &Value,
+        params: &Value,
+    ) -> String {
+        if method == "Target.attachedToTarget" {
+            return params
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+        }
+        if method == "Target.targetInfoChanged" {
+            if let Some(target_id) = params
+                .get("targetInfo")
+                .and_then(|info| info.get("targetId"))
+                .and_then(Value::as_str)
+            {
+                for attached in self.setup_done.values().chain(self.setup_seen.values()) {
+                    if attached.target_id == target_id {
+                        return attached.session_id.clone();
+                    }
+                }
+            }
+        }
+        wire
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
     }
 
     fn handle_incoming_event(
@@ -632,6 +762,11 @@ impl Cdp {
         let Some(method) = value.get("method").and_then(Value::as_str) else {
             return;
         };
+        if method == "Target.targetInfoChanged" {
+            if let Some(params) = value.get("params") {
+                self.note_opener_page(params);
+            }
+        }
         if method == "Target.attachedToTarget" {
             if let Some(params) = value.get("params").and_then(Value::as_object) {
                 let session_id = params
@@ -657,13 +792,19 @@ impl Cdp {
                 let attached = AttachedTarget {
                     session_id: session_id.clone(),
                     target_id: target_id.clone(),
-                    target_type,
+                    target_type: target_type.clone(),
                 };
                 let parent_wire = value.get("sessionId").and_then(Value::as_str);
-                if self.setup_phase {
-                    self.setup_done
-                        .entry(session_id.clone())
-                        .or_insert(attached.clone());
+                let opener_child = target
+                    .and_then(|t| t.get("openerId"))
+                    .and_then(Value::as_str)
+                    .is_some()
+                    && target_type == "page";
+                if opener_child {
+                    self.pending_opener_setups.push((attached, waiting));
+                } else if self.setup_phase {
+                    self.setup_seen
+                        .insert(session_id.clone(), attached.clone());
                     if !Self::skip_target_setup(&attached.target_type) {
                         self.pending_setup.push((attached, waiting));
                     }
@@ -687,18 +828,7 @@ impl Cdp {
             return;
         }
         let params = value.get("params").cloned().unwrap_or(Value::Null);
-        let session_id = if method == "Target.attachedToTarget" {
-            params
-                .get("sessionId")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-        } else {
-            value
-                .get("sessionId")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-        }
-        .to_string();
+        let session_id = self.session_for_recorded_event(method, value, &params);
         let parent_session_id = if method == "Target.attachedToTarget" {
             value.get("sessionId").and_then(Value::as_str)
         } else {
@@ -748,9 +878,14 @@ impl Cdp {
         self.setup_phase = true;
         let setup_result = self.setup_inner(socket, start_url);
         self.setup_phase = false;
+        if setup_result.is_ok() {
+            self.pump_socket(socket, Duration::from_millis(400));
+        }
         setup_result
     }
 
+    /// Bootstrap da página principal (attach explícito + Network antes de
+    /// navegar); filhos entram via auto-attach recursivo na sessão da página.
     fn setup_inner(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
@@ -792,15 +927,16 @@ impl Cdp {
             .and_then(Value::as_str)
             .ok_or_else(|| "CDP não devolveu sessionId".to_string())?
             .to_string();
+        let page_session = self.page_session_id.clone();
         self.setup_done.insert(
-            self.page_session_id.clone(),
+            page_session.clone(),
             AttachedTarget {
-                session_id: self.page_session_id.clone(),
+                session_id: page_session.clone(),
                 target_id: main_target.clone(),
                 target_type: "page".to_string(),
             },
         );
-        let page_session = self.page_session_id.clone();
+        self.configured_sessions.insert(page_session.clone());
         self.send(
             socket,
             "Target.setAutoAttach",
@@ -828,6 +964,13 @@ impl Cdp {
         )?;
         self.send(
             socket,
+            "Runtime.enable",
+            json!({}),
+            Some(&page_session),
+            Duration::from_secs(5),
+        )?;
+        self.send(
+            socket,
             "Network.setCacheDisabled",
             json!({ "cacheDisabled": true }),
             Some(&page_session),
@@ -839,7 +982,7 @@ impl Cdp {
                 "Page.navigate",
                 json!({ "url": url }),
                 Some(&page_session),
-                Duration::from_secs(15),
+                Duration::from_secs(30),
             )?;
         }
         self.pump_socket(socket, Duration::from_millis(800));
