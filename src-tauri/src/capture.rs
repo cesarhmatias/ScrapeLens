@@ -107,17 +107,18 @@ fn run_inner(
     let bodies_file =
         open_private(&bodies_path).map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
 
-    let mut chrome = ChromeProcess(spawn_chrome(config, &profile, &netlog_path)?);
+    let mut chrome = ChromeProcess::new(spawn_chrome(config, &profile, &netlog_path)?);
     if let Ok(mut guard) = status.lock() {
-        guard.chrome_pid = Some(chrome.0.id());
+        guard.chrome_pid = Some(chrome.child_mut().id());
         guard.page_url = config.start_url.clone();
     }
 
-    let ws_url = match wait_for_devtools(&mut chrome.0, &profile, Duration::from_secs(25)) {
+    let ws_url = match wait_for_devtools(chrome.child_mut(), &profile, Duration::from_secs(25)) {
         Ok(url) => url,
         Err(error) => {
-            let _ = chrome.0.kill();
-            let _ = chrome.0.wait();
+            let _ = chrome.child_mut().kill();
+            let _ = chrome.child_mut().wait();
+            chrome.disarm();
             let _ = std::fs::remove_dir_all(&profile);
             let _ = ready.send(Err(error.clone()));
             return Err(error);
@@ -127,8 +128,9 @@ fn run_inner(
     let (mut socket, mut cdp) = match Cdp::connect(&ws_url, status.clone(), bodies_file) {
         Ok(pair) => pair,
         Err(error) => {
-            let _ = chrome.0.kill();
-            let _ = chrome.0.wait();
+            let _ = chrome.child_mut().kill();
+            let _ = chrome.child_mut().wait();
+            chrome.disarm();
             let _ = std::fs::remove_dir_all(&profile);
             let _ = ready.send(Err(error.clone()));
             return Err(error);
@@ -137,8 +139,9 @@ fn run_inner(
 
     let setup = cdp.setup(&mut socket, &config.start_url);
     if let Err(error) = setup {
-        let _ = chrome.0.kill();
-        let _ = chrome.0.wait();
+        let _ = chrome.child_mut().kill();
+        let _ = chrome.child_mut().wait();
+        chrome.disarm();
         let _ = std::fs::remove_dir_all(&profile);
         let _ = ready.send(Err(error.clone()));
         return Err(error);
@@ -199,7 +202,8 @@ fn run_inner(
         Duration::from_secs(2),
     );
     let _ = socket.close(None);
-    let exit = wait_or_kill(&mut chrome.0, Duration::from_secs(20));
+    let exit = wait_or_kill(chrome.child_mut(), Duration::from_secs(20));
+    chrome.disarm();
     let shutdown = ShutdownReport {
         browser_close: close_result.map(|_| ()),
         exit,
@@ -382,13 +386,31 @@ struct ShutdownReport {
     waited_ms: u64,
 }
 
-/// Encerra o Chrome se `run_inner` sair por erro, timeout ou panic no thread.
-struct ChromeProcess(Child);
+/// Rede de segurança: só mata o Chrome se `run_inner` sair sem `disarm` (erro/panic).
+struct ChromeProcess(Option<Child>);
+
+impl ChromeProcess {
+    fn new(child: Child) -> Self {
+        Self(Some(child))
+    }
+
+    fn child_mut(&mut self) -> &mut Child {
+        self.0
+            .as_mut()
+            .expect("ChromeProcess já liberado após encerramento gracioso")
+    }
+
+    fn disarm(&mut self) {
+        self.0 = None;
+    }
+}
 
 impl Drop for ChromeProcess {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -1006,6 +1028,22 @@ impl Cdp {
             else {
                 continue;
             };
+            if let Some(prev) = self
+                .configured_target_primary
+                .insert(target_id.clone(), session_id.clone())
+            {
+                if prev != session_id {
+                    let _ = self.send(
+                        socket,
+                        "Target.detachFromTarget",
+                        json!({ "sessionId": prev }),
+                        None,
+                        Duration::from_secs(5),
+                    );
+                    self.drop_recorded_network_for_session(&prev);
+                    self.detached_sessions.insert(prev);
+                }
+            }
             let attached = AttachedTarget {
                 session_id,
                 target_id: target_id.clone(),
