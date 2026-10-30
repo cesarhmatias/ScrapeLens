@@ -25,6 +25,7 @@ Captura (sessionId/Target.*) e o Core (proveniência/ambiguidade) entregarem; na
 from __future__ import annotations
 
 import argparse
+import collections
 import base64
 import hashlib
 import json
@@ -309,6 +310,42 @@ def request_key(req: dict) -> tuple:
     return (str(sid) if sid is not None else None, str(rid) if rid is not None else None)
 
 
+SW_MARKERS = ("sw-intercept-1", "sw-own-1", "sw-own-post-1")
+
+
+def raw_cdp_pairs(events: list[dict]) -> list[tuple]:
+    """(sessionId, requestId) de cada Network.requestWillBeSent do bruto."""
+    pairs = []
+    for ev in events:
+        if ev.get("method") != "Network.requestWillBeSent":
+            continue
+        params = ev.get("params") or {}
+        sid = ev.get("sessionId") or params.get("sessionId")
+        rid = params.get("requestId")
+        if sid is not None and rid is not None:
+            pairs.append((str(sid), str(rid)))
+    return pairs
+
+
+def is_partial(req: dict) -> bool:
+    """Requisição só com `responseReceived` (sem requestWillBeSent): parcial declarada no modelo."""
+    blob = json.dumps(req.get("provenance") or {}, ensure_ascii=False) + json.dumps(req.get("attempts") or [], ensure_ascii=False)
+    return "responseReceived" in blob and ("sem requestWillBeSent" in blob or "parcial" in blob)
+
+
+def model_pairs(req: dict) -> set:
+    """Pares (sessionId, requestId) que a requisição do modelo representa (cdp + attempts)."""
+    pairs = set()
+    cdp = req.get("cdp") or {}
+    if cdp.get("sessionId") is not None and cdp.get("requestId") is not None:
+        pairs.add((str(cdp["sessionId"]), str(cdp["requestId"])))
+    for attempt in req.get("attempts") or []:
+        acdp = attempt.get("cdp") or {}
+        if acdp.get("sessionId") is not None and acdp.get("requestId") is not None:
+            pairs.add((str(acdp["sessionId"]), str(acdp["requestId"])))
+    return pairs
+
+
 def target_kind(req: dict, targets: dict) -> str | None:
     """Tipo do alvo: `target.kind` do modelo; senão o evento Target.attachedToTarget."""
     kind = (req.get("target") or {}).get("kind")
@@ -324,7 +361,16 @@ def url_marker(req: dict) -> str | None:
     return m.group(1) if m and m.group(1) in EXPECTED else None
 
 
-def analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
+def analyze(capture: Path, server_log: Path, core: str, driver: dict) -> list[str]:
+    """Zera o estado e roda a análise; devolve as falhas (usado também pelo autoteste)."""
+    global FAILS, INFO
+    FAILS = []
+    INFO = {}
+    _analyze(capture, server_log, core, driver)
+    return list(FAILS)
+
+
+def _analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
     events = read_jsonl(capture / "cdp-events.jsonl")
     bodies = read_jsonl(capture / "cdp-bodies.jsonl")
     netlog_text = (capture / "netlog.json").read_text(errors="replace") if (capture / "netlog.json").exists() else ""
@@ -432,63 +478,232 @@ def analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
             check(False, f"post {marker}: cdp-bodies.jsonl sem {'request' if req_body is None else 'response'} "
                          f"(sessionId={found['sessionId']}, requestId={found['requestId']})")
 
-    # (5) nenhuma fusão entre sessões por requestId
-    if not requests:
-        INFO["merge"] = "ignorado: sessão importada vazia"
-        INFO["service_worker"] = "ignorado: sessão importada vazia"
-        INFO["session_warnings"] = []
-        return
-    by_rid: dict[str, set] = {}
-    for r in reqs:
-        by_rid.setdefault(str(r["requestId"]), set()).add(str(r["sessionId"]))
-    collisions = {rid: sorted(sids) for rid, sids in by_rid.items() if len(sids) > 1}
-    INFO["request_id_collisions"] = {"total": len(collisions), "exemplos": dict(list(collisions.items())[:5])}
-    pairs = [request_key(r) for r in requests if request_key(r)[1]]
-    distinct_pairs = {p for p in pairs if p[0]}
-    INFO["merge"] = {"pares_distintos": len(distinct_pairs), "requisicoes": len(pairs)}
-    if collisions:
-        check(len(distinct_pairs) >= len(collisions),
-              "fusão: requestId repetido entre sessões não virou requisições distintas "
-              f"({len(distinct_pairs)} pares para {len(collisions)} colisões)")
-    else:
-        # Sem colisão real (Chrome pode gerar ids únicos por sessão), não há como
-        # exercitar a fusão nesta captura; a chave é coberta em core/tests/cdp.rs.
-        INFO["merge"]["colisoes"] = "nenhuma nesta captura (não exercitado)"
+    # (5) sem fusão — comparado com os eventos CDP BRUTOS, não com o próprio modelo
+    raw = raw_cdp_pairs(events)
+    raw_set = set(raw)
+    coll = {}
+    for sid, rid in raw_set:
+        coll.setdefault(rid, set()).add(sid)
+    coll = {rid: sorted(sids) for rid, sids in coll.items() if len(sids) > 1}
+    INFO["request_id_collisions"] = {"total": len(coll), "exemplos": dict(list(coll.items())[:5])}
+    model = [model_pairs(r) for r in requests]
+    joined = [(r.get("id"), sorted(pairs)) for r, pairs in zip(requests, model) if len(pairs) > 1]
+    # Observação só com `responseReceived` (sem requestWillBeSent) é parcial declarada
+    # pelo contrato: não prova par do bruto e não entra nas contagens de fusão.
+    partial = [r for r in requests if is_partial(r)]
+    flat = [pair for r, pairs in zip(requests, model) if not is_partial(r) for pair in pairs]
+    missing = sorted(raw_set - set(flat))
+    extra = sorted(set(flat) - raw_set)
+    dups = len(flat) - len(set(flat))
+    INFO["merge"] = {
+        "bruto_pares": len(raw_set),
+        "modelo_pares": len(flat),
+        "requisicoes_com_dois_pares": [j[0] for j in joined][:5],
+        "faltando_no_modelo": missing[:5],
+        "inventados_no_modelo": extra[:5],
+        "pares_repetidos": dups,
+        "pares_repetidos_exemplos": [ (pair, [r.get("id") for r, ps in zip(requests, model) if pair in ps]) for pair in [p for p, n in collections.Counter(flat).items() if n > 1][:3] ],
+        "colisoes": len(coll),
+        "parciais_sem_request": [r.get("id") for r in partial][:5],
+    }
+    if not check(bool(raw), "fusão: nenhum Network.requestWillBeSent no cdp-events.jsonl bruto"):
+        pass
+    check(not joined, f"fusão: requisição do modelo junta mais de um par (sessionId, requestId): {joined[:3]}")
+    check(not missing, f"fusão: pares do bruto sem requisição distinta no modelo: {missing[:5]}")
+    check(not extra, f"fusão: modelo tem pares que não existem no bruto: {extra[:5]}")
+    check(dups == 0, f"fusão: {dups} par(es) (sessionId, requestId) repetidos no modelo")
+    check(bool(coll), "fusão: nenhuma colisão real de requestId entre sessões no bruto — critério não exercitado")
 
-    # (6) service worker: `links` ligados com evidência ou ambiguidade explícita
-    sw = [r for r in requests if url_marker(r) in ("sw-intercept-1", "sw-own-1", "sw-own-post-1")]
-    sw_intercept = [r for r in sw if url_marker(r) == "sw-intercept-1"]
-    info_sw = {"requests": len(sw), "intercept": []}
-    warnings = [w.get("code") if isinstance(w, dict) else str(w) for w in (session.get("warnings") or [])]
+    # (6) service worker: cada grupo com as duas observações e link/aviso DAQUELE grupo
+    warnings = session.get("warnings") or []
     ids = {r.get("id") for r in requests}
-    for r in sw_intercept:
-        links = [l for l in (r.get("links") or []) if (l.get("kind") or "") == "service_worker"]
-        linked = [l for l in links if (l.get("resolution") or "") == "linked" and l.get("request") in ids]
-        ambiguous = [l for l in links if (l.get("resolution") or "") == "ambiguous"]
-        attempts = r.get("attempts") or []
-        sids = {deep_find(a, ("sessionId", "cdpSessionId")) for a in attempts}
-        sids.discard(None)
-        info_sw["intercept"].append({
-            "id": r.get("id"),
-            "target_kind": (r.get("target") or {}).get("kind"),
-            "sessions": sorted(str(s) for s in sids),
-            "attempts": len(attempts),
-            "links": [{"request": l.get("request"), "resolution": l.get("resolution"),
-                       "evidence": l.get("evidence")} for l in links],
-            "linked": bool(linked),
-            "ambiguous": bool(ambiguous) or "cdp.service_worker_ambiguous" in warnings,
-        })
+    sw_groups = {m: [r for r in requests if url_marker(r) == m] for m in SW_MARKERS}
+    info_sw = {"grupos": {}, "por_requisicao": []}
+    for marker, group in sw_groups.items():
+        sids = [p[0] for r in group for p in sorted(model_pairs(r))]
+        kinds = sorted({(r.get("target") or {}).get("kind") or "?" for r in group})
+        info_sw["grupos"][marker] = {"requisicoes": len(group), "tipos": kinds, "sessoes": sorted(set(sids))}
+        check(len(group) > 0, f"service worker: nenhuma requisição para {marker}")
+        check(len(sids) == len(set(sids)),
+              f"service worker {marker}: {len(sids) - len(set(sids))} duplicata(s) na mesma sessão")
+    intercept = sw_groups.get("sw-intercept-1") or []
+    ids_intercept = {r.get("id") for r in intercept}
+    links_ok, warned = [], []
+    for r in intercept:
+        for l in (r.get("links") or []):
+            if (l.get("kind") or "") != "service_worker":
+                continue
+            if (l.get("resolution") or "") in ("linked", "ambiguous") and l.get("request") in ids_intercept:
+                links_ok.append({"request": r.get("id"), "to": l.get("request"),
+                                 "resolution": l.get("resolution"), "evidence": l.get("evidence")})
+                break
+        for w in warnings:
+            blob = json.dumps(w, ensure_ascii=False) if isinstance(w, dict) else str(w)
+            if "sw-intercept-1" in blob or any(i and i in blob for i in ids_intercept):
+                warned.append({"request": r.get("id"), "warning": blob[:160]})
+                break
+    kinds_intercept = set((r.get("target") or {}).get("kind") or "" for r in intercept)
+    has_both = {"page", "service_worker"} <= kinds_intercept
+    info_sw.update({"intercept": {"requisicoes": len(intercept), "tipos": sorted(kinds_intercept),
+                                  "links_ok": links_ok, "avisos_do_grupo": warned},
+                    "por_requisicao": [{"id": r.get("id"),
+                                        "kind": (r.get("target") or {}).get("kind"),
+                                        "links": [{"request": l.get("request"), "resolution": l.get("resolution")}
+                                                  for l in (r.get("links") or [])]} for r in intercept]})
     INFO["service_worker"] = info_sw
-    if len(sw_intercept) == 0:
-        check(False, "service worker: nenhuma requisição /multi/sw-fetch na sessão")
-    elif len(sw_intercept) == 1:
-        ok = info_sw["intercept"][0]["linked"] or info_sw["intercept"][0]["ambiguous"]
-        check(ok, f"service worker: uma requisição sem link ligado nem ambiguidade: {info_sw['intercept'][0]}")
-    else:
-        check(any(i["linked"] or i["ambiguous"] for i in info_sw["intercept"]),
-              f"service worker: {len(sw_intercept)} requisições duplicadas sem link/ambiguidade: {info_sw['intercept']}")
+    check(len(intercept) >= 2, f"service worker sw-intercept-1: esperadas as observações da página e do SW; há {len(intercept)}")
+    check(has_both,
+          f"service worker sw-intercept-1: faltam as duas observações; tipos vistos {sorted(kinds_intercept)}")
+    check(bool(links_ok),
+          "service worker sw-intercept-1: sem link (linked/ambiguous) entre as observações da página e do SW"
+          + (f" (aviso do grupo presente: {warned[:1]})" if warned else ""))
 
-    INFO["session_warnings"] = warnings[:20]
+    INFO["session_warnings"] = [w.get("code") if isinstance(w, dict) else str(w) for w in warnings][:20]
+
+
+def _copy_capture(src: Path, dst: Path) -> None:
+    dst.mkdir(parents=True, exist_ok=True)
+    for name in ("session.json", "cdp-events.jsonl", "cdp-bodies.jsonl", "netlog.json"):
+        if (src / name).exists():
+            shutil.copy2(src / name, dst / name)
+
+
+def _session_paths(capture: Path) -> tuple[Path, Path, Path]:
+    return capture / "session.json", capture / "cdp-events.jsonl", capture / "cdp-bodies.jsonl"
+
+
+def _load(path: Path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _dump(path: Path, obj) -> None:
+    path.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+
+
+def _req_pair(req: dict) -> tuple:
+    cdp = req.get("cdp") or {}
+    return (str(cdp.get("sessionId")), str(cdp.get("requestId")))
+
+
+def _find_by_marker(session: dict, marker: str) -> list[dict]:
+    out = []
+    for r in session.get("requests") or []:
+        m = MARKER_RX.search(r.get("url") or "")
+        if m and m.group(1) == marker:
+            out.append(r)
+    return out
+
+
+def _mut_fuse_two_pairs(capture: Path) -> str:
+    sp, _, _ = _session_paths(capture)
+    session = _load(sp)
+    by_rid: dict[str, list[dict]] = {}
+    for r in session.get("requests") or []:
+        rid = (r.get("cdp") or {}).get("requestId")
+        if rid:
+            by_rid.setdefault(str(rid), []).append(r)
+    group = next((g for g in by_rid.values()
+                  if len({(x.get("cdp") or {}).get("sessionId") for x in g}) > 1), None)
+    if not group:
+        raise RuntimeError("sem requestId repetido entre sessões para fundir")
+    keep, drop = group[0], group[1]
+    keep["attempts"] = (keep.get("attempts") or []) + (drop.get("attempts") or [])
+    session["requests"] = [r for r in session["requests"] if r is not drop]
+    _dump(sp, session)
+    return f"fundiu {drop.get('id')} em {keep.get('id')} (requestId {keep['cdp']['requestId']})"
+
+
+def _mut_remove_sw_links(capture: Path) -> str:
+    sp, _, _ = _session_paths(capture)
+    session = _load(sp)
+    n = 0
+    for r in session.get("requests") or []:
+        m = MARKER_RX.search(r.get("url") or "")
+        if m and m.group(1) in SW_MARKERS and r.get("links"):
+            r["links"] = []
+            n += 1
+    _dump(sp, session)
+    return f"removeu links de {n} requisição(ões) sw-*"
+
+
+def _mut_swap_kind(capture: Path) -> str:
+    sp, _, _ = _session_paths(capture)
+    session = _load(sp)
+    for r in _find_by_marker(session, "oopif-get-1"):
+        r.setdefault("target", {})["kind"] = "page"
+        _dump(sp, session)
+        return f"trocou kind de {r.get('id')} (oopif-get-1) para page"
+    raise RuntimeError("sem oopif-get-1 para trocar o kind")
+
+
+def _mut_alter_body(capture: Path) -> str:
+    sp, _, bp = _session_paths(capture)
+    session = _load(sp)
+    target = _find_by_marker(session, "main-post-1")
+    if not target:
+        raise RuntimeError("sem main-post-1 para alterar o corpo")
+    cdp = target[0].get("cdp") or {}
+    rows = []
+    changed = 0
+    for line in bp.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        if (e.get("requestId") == cdp.get("requestId") and e.get("kind") == "response"
+                and (e.get("sessionId") in (None, cdp.get("sessionId")))):
+            e["data"] = (e.get("data") or "") + " "
+            changed += 1
+        rows.append(json.dumps(e, ensure_ascii=False))
+    bp.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    if not changed:
+        raise RuntimeError("sem corpo de resposta de main-post-1 no cdp-bodies")
+    return "alterou o corpo de resposta de main-post-1"
+
+
+def _mut_duplicate_sw(capture: Path) -> str:
+    sp, _, _ = _session_paths(capture)
+    session = _load(sp)
+    src = _find_by_marker(session, "sw-own-1")
+    if not src:
+        raise RuntimeError("sem sw-own-1 para duplicar")
+    dup = json.loads(json.dumps(src[0]))
+    dup["id"] = (dup.get("id") or "cdp") + "-dup"
+    session["requests"].append(dup)
+    _dump(sp, session)
+    return f"duplicou {src[0].get('id')} na mesma sessão"
+
+
+def self_test(capture: Path, server_log: Path, core: str, tmp: Path) -> dict:
+    """Mutações que o check TEM de reprovar. Cada uma roda sobre uma cópia da sessão gravada."""
+    global FAILS, INFO
+    saved_fails, saved_info = list(FAILS), json.loads(json.dumps(INFO, ensure_ascii=False, default=str))
+    base = tmp / "self-test-base"
+    _copy_capture(capture, base)
+    fails = analyze(base, server_log, core, {})
+    check(not fails, f"autoteste: a sessão sem mutação deveria passar; falhou em {fails[:3]}")
+
+    mutations = [
+        ("fusão de dois pares (sessionId, requestId)", _mut_fuse_two_pairs),
+        ("links do service worker removidos", _mut_remove_sw_links),
+        ("kind de alvo trocado", _mut_swap_kind),
+        ("corpo alterado", _mut_alter_body),
+        ("cópia duplicada de requisição SW", _mut_duplicate_sw),
+    ]
+    out = []
+    for i, (name, fn) in enumerate(mutations):
+        work = tmp / f"self-test-{i}"
+        _copy_capture(capture, work)
+        try:
+            detail = fn(work)
+        except Exception as error:  # mutação não aplicável = falha do autoteste
+            out.append({"mutacao": name, "aplicada": False, "erro": str(error)[:200], "falhas": []})
+            check(False, f"autoteste: não consegui aplicar '{name}': {error}")
+            continue
+        mut_fails = analyze(work, server_log, core, {})
+        out.append({"mutacao": name, "aplicada": True, "detalhe": detail, "falhas": mut_fails[:4]})
+        check(bool(mut_fails), f"autoteste: mutação '{name}' NÃO falhou (o check não detecta)")
+    FAILS, INFO = saved_fails, saved_info
+    return {"mutacoes": out}
 
 
 def main() -> int:
@@ -497,6 +712,8 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=8911)
     ap.add_argument("--capture-dir", help="sessão já capturada (pula o driver)")
     ap.add_argument("--server-log", help="multi.jsonl do servidor (com --capture-dir)")
+    ap.add_argument("--self-test", action="store_true",
+                    help="aplica mutações na sessão capturada e exige FAIL em cada uma")
     ap.add_argument("--keep", action="store_true")
     a = ap.parse_args()
 
@@ -525,6 +742,8 @@ def main() -> int:
             INFO["driver_log"] = driver.get("driver_log", "")[-1500:]
         else:
             analyze(capture, server_log, core, driver)
+        if a.self_test and (capture / "session.json").exists():
+            INFO["self_test"] = self_test(capture, server_log, core, tmp)
     finally:
         if server is not None:
             server.terminate()
