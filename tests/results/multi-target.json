@@ -1,11 +1,11 @@
 {
  "artifacts": {
-  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-hctfxa44/session",
-  "cdp_events": 167,
-  "cdp_bodies": 26,
-  "netlog_bytes": 663833,
+  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-3ma31e64/session",
+  "cdp_events": 230,
+  "cdp_bodies": 41,
+  "netlog_bytes": 700086,
   "server_lines": 19,
-  "session_requests": 21,
+  "session_requests": 33,
   "driver": {
    "driver_rc": 0
   }
@@ -33,29 +33,31 @@
  },
  "cdp": {
   "markers": [
+   "blank-1",
    "blank-get-1",
    "blank-post-1",
    "main-1",
    "main-post-1",
    "oopif-1",
+   "oopif-get-1",
+   "oopif-post-1",
+   "popup-1",
+   "popup-get-1",
+   "popup-post-1",
    "sw-intercept-1",
    "sw-own-1",
    "sw-own-post-1",
    "worker-get-1",
    "worker-post-1"
   ],
-  "missing": [
-   "blank-1",
-   "oopif-get-1",
-   "oopif-post-1",
-   "popup-1",
-   "popup-get-1",
-   "popup-post-1"
-  ]
+  "missing": []
  },
  "targets": {
   "sessions": 13,
   "eventos": {
+   "blank-1": [
+    "page"
+   ],
    "blank-get-1": [
     "page"
    ],
@@ -69,6 +71,21 @@
     "page"
    ],
    "oopif-1": [
+    "page"
+   ],
+   "oopif-get-1": [
+    "iframe"
+   ],
+   "oopif-post-1": [
+    "iframe"
+   ],
+   "popup-1": [
+    "page"
+   ],
+   "popup-get-1": [
+    "page"
+   ],
+   "popup-post-1": [
     "page"
    ],
    "sw-intercept-1": [
@@ -89,12 +106,18 @@
    ]
   },
   "modelo": {
+   "blank-1": "page",
    "blank-get-1": "page",
    "blank-post-1": "page",
    "main-1": "page",
    "main-post-1": "page",
    "oopif-1": "page",
-   "sw-intercept-1": "page",
+   "oopif-get-1": "iframe",
+   "oopif-post-1": "iframe",
+   "popup-1": "page",
+   "popup-get-1": "page",
+   "popup-post-1": "page",
+   "sw-intercept-1": "service_worker",
    "sw-own-1": "service_worker",
    "sw-own-post-1": "service_worker",
    "worker-get-1": "worker",
@@ -105,71 +128,85 @@
   "main-post-1": {
    "esperado_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
    "cdp_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
-   "esperado_resp": "aa47b7e7ed88517e4a74b20949150f78c95bb61096de4fdf4883e8d094f8e4ab",
-   "cdp_resp": "aa47b7e7ed88517e4a74b20949150f78c95bb61096de4fdf4883e8d094f8e4ab"
+   "esperado_resp": "343f7251bee7bd3848e4609ad08ecb86f6149a4c159be6fd4bd253fa67d41059",
+   "cdp_resp": "343f7251bee7bd3848e4609ad08ecb86f6149a4c159be6fd4bd253fa67d41059"
   },
   "popup-post-1": {
-   "cdp": "ausente"
+   "esperado_req": "f49394287ba9c4e7b8774238a32e7dbb6af55e3efcc5c931cc69f9d48559f57b",
+   "cdp_req": "f49394287ba9c4e7b8774238a32e7dbb6af55e3efcc5c931cc69f9d48559f57b",
+   "esperado_resp": "1b68634de2e608e8ba85a4c3490382dc2b55e5e9366eecff6360199a02c0eb95",
+   "cdp_resp": "1b68634de2e608e8ba85a4c3490382dc2b55e5e9366eecff6360199a02c0eb95"
   },
   "blank-post-1": {
    "esperado_req": "0d2d398326a90c06e24f30bef291e070a19c52c275d61666e0d1a90bcabdb1e4",
    "cdp_req": "0d2d398326a90c06e24f30bef291e070a19c52c275d61666e0d1a90bcabdb1e4",
-   "esperado_resp": "33ffecbfcf8f60429347656c81d5f0ffe2e3897755cbdd417de402282bd99ca8",
-   "cdp_resp": "33ffecbfcf8f60429347656c81d5f0ffe2e3897755cbdd417de402282bd99ca8"
+   "esperado_resp": "abe2c503498623b6fbf19d00a7444fd7dc1d53b91703d7f214dde8a2b5cb5abe",
+   "cdp_resp": "abe2c503498623b6fbf19d00a7444fd7dc1d53b91703d7f214dde8a2b5cb5abe"
   },
   "oopif-post-1": {
-   "cdp": "ausente"
+   "esperado_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
+   "cdp_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
+   "esperado_resp": "dbac1159ea2a7763357b41d34e274f26162e7904ec5bddbc493269572860e3cf",
+   "cdp_resp": "dbac1159ea2a7763357b41d34e274f26162e7904ec5bddbc493269572860e3cf"
   },
   "worker-post-1": {
    "esperado_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
    "cdp_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
-   "esperado_resp": "f2089ec443aba123420993e9f8b500631a04c4ec290a2d18deb06330ff8c683a",
-   "cdp_resp": "f2089ec443aba123420993e9f8b500631a04c4ec290a2d18deb06330ff8c683a"
+   "esperado_resp": "65dfd12e1cfa87515a2f4fb14aaedcfa848c692562a2f267227a154cad542fb8",
+   "cdp_resp": "65dfd12e1cfa87515a2f4fb14aaedcfa848c692562a2f267227a154cad542fb8"
   },
   "sw-own-post-1": {
    "esperado_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
    "cdp_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
-   "esperado_resp": "1706abedc48fcb95f9885340944966ba34bbb9f1428c6dbdfafb8e55061caf31",
-   "cdp_resp": "1706abedc48fcb95f9885340944966ba34bbb9f1428c6dbdfafb8e55061caf31"
+   "esperado_resp": "f48f4d0f804964d9fdc996d81c03768a0e160aeed1fd9195d5b8e218bd90dd94",
+   "cdp_resp": "f48f4d0f804964d9fdc996d81c03768a0e160aeed1fd9195d5b8e218bd90dd94"
   }
  },
  "request_id_collisions": {
-  "total": 3,
+  "total": 4,
   "exemplos": {
-   "14523.5": [
-    "1D720F30ACCD0FBCB21CFE24D313A1A9",
-    "893738899C4866B23D6A2EF3B31E9361",
-    "8C03AFBB34762FF2B1281CB5B46638AB"
+   "E37BBF8ED83E150EB0CB18F43F940371": [
+    "535AD2D7EF94147300DD486997F46861",
+    "7718739F74DD4FB5C81CC1FFD079D0F0",
+    "DD030F4EBE377A2E29405CE978211FE2"
    ],
-   "14523.6": [
-    "1D720F30ACCD0FBCB21CFE24D313A1A9",
-    "893738899C4866B23D6A2EF3B31E9361",
-    "8C03AFBB34762FF2B1281CB5B46638AB"
+   "59231.5": [
+    "048A5F2459B6D2823DF8663E90E61DCF",
+    "535AD2D7EF94147300DD486997F46861",
+    "7718739F74DD4FB5C81CC1FFD079D0F0",
+    "DD030F4EBE377A2E29405CE978211FE2"
    ],
-   "14523.7": [
-    "1D720F30ACCD0FBCB21CFE24D313A1A9",
-    "893738899C4866B23D6A2EF3B31E9361",
-    "8C03AFBB34762FF2B1281CB5B46638AB"
+   "59231.6": [
+    "048A5F2459B6D2823DF8663E90E61DCF",
+    "535AD2D7EF94147300DD486997F46861",
+    "7718739F74DD4FB5C81CC1FFD079D0F0",
+    "DD030F4EBE377A2E29405CE978211FE2"
+   ],
+   "59231.7": [
+    "048A5F2459B6D2823DF8663E90E61DCF",
+    "535AD2D7EF94147300DD486997F46861",
+    "7718739F74DD4FB5C81CC1FFD079D0F0",
+    "DD030F4EBE377A2E29405CE978211FE2"
    ]
   }
  },
  "merge": {
-  "pares_distintos": 21,
-  "requisicoes": 21
+  "pares_distintos": 33,
+  "requisicoes": 33
  },
  "service_worker": {
-  "requests": 10,
+  "requests": 13,
   "intercept": [
    {
-    "id": "cdp-r0005",
+    "id": "cdp-r0003",
     "target_kind": "service_worker",
     "sessions": [
-     "1D720F30ACCD0FBCB21CFE24D313A1A9"
+     "048A5F2459B6D2823DF8663E90E61DCF"
     ],
     "attempts": 1,
     "links": [
      {
-      "request": "cdp-r0009",
+      "request": "cdp-r0011",
       "resolution": "ambiguous",
       "evidence": [
        "mesma URL/método",
@@ -178,7 +215,16 @@
       ]
      },
      {
-      "request": "cdp-r0012",
+      "request": "cdp-r0015",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     },
+     {
+      "request": "cdp-r0029",
       "resolution": "ambiguous",
       "evidence": [
        "mesma URL/método",
@@ -191,15 +237,15 @@
     "ambiguous": true
    },
    {
-    "id": "cdp-r0009",
+    "id": "cdp-r0011",
     "target_kind": "service_worker",
     "sessions": [
-     "893738899C4866B23D6A2EF3B31E9361"
+     "535AD2D7EF94147300DD486997F46861"
     ],
     "attempts": 1,
     "links": [
      {
-      "request": "cdp-r0005",
+      "request": "cdp-r0003",
       "resolution": "ambiguous",
       "evidence": [
        "mesma URL/método",
@@ -208,7 +254,16 @@
       ]
      },
      {
-      "request": "cdp-r0012",
+      "request": "cdp-r0015",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     },
+     {
+      "request": "cdp-r0029",
       "resolution": "ambiguous",
       "evidence": [
        "mesma URL/método",
@@ -221,15 +276,15 @@
     "ambiguous": true
    },
    {
-    "id": "cdp-r0012",
+    "id": "cdp-r0015",
     "target_kind": "service_worker",
     "sessions": [
-     "8C03AFBB34762FF2B1281CB5B46638AB"
+     "7718739F74DD4FB5C81CC1FFD079D0F0"
     ],
     "attempts": 1,
     "links": [
      {
-      "request": "cdp-r0005",
+      "request": "cdp-r0003",
       "resolution": "ambiguous",
       "evidence": [
        "mesma URL/método",
@@ -238,7 +293,16 @@
       ]
      },
      {
-      "request": "cdp-r0009",
+      "request": "cdp-r0011",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     },
+     {
+      "request": "cdp-r0029",
       "resolution": "ambiguous",
       "evidence": [
        "mesma URL/método",
@@ -251,19 +315,62 @@
     "ambiguous": true
    },
    {
-    "id": "cdp-r0014",
+    "id": "cdp-r0017",
     "target_kind": "page",
     "sessions": [
-     "941125FCE52F1640D1F2A35541BFE4EF"
+     "83E76326F793E518A87BFC7CF17D1063"
     ],
     "attempts": 1,
     "links": [],
+    "linked": false,
+    "ambiguous": true
+   },
+   {
+    "id": "cdp-r0029",
+    "target_kind": "service_worker",
+    "sessions": [
+     "DD030F4EBE377A2E29405CE978211FE2"
+    ],
+    "attempts": 1,
+    "links": [
+     {
+      "request": "cdp-r0003",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     },
+     {
+      "request": "cdp-r0011",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     },
+     {
+      "request": "cdp-r0015",
+      "resolution": "ambiguous",
+      "evidence": [
+       "mesma URL/método",
+       "sessão do service worker",
+       "Δt=0 ms (pista)"
+      ]
+     }
+    ],
     "linked": false,
     "ambiguous": true
    }
   ]
  },
  "session_warnings": [
+  "cdp.target_attach_failed",
+  "cdp.target_attach_failed",
+  "cdp.target_attach_failed",
+  "cdp.target_attach_failed",
   "cdp.target_attach_failed",
   "cdp.target_attach_failed",
   "cdp.extra_info_without_request",
@@ -279,20 +386,7 @@
   "cdp.service_worker_ambiguous",
   "cdp.service_worker_ambiguous",
   "cdp.service_worker_ambiguous",
-  "cdp.service_worker_ambiguous",
-  "netlog.time_unit_detected",
-  "correlate.netlog_unmatched",
-  "correlate.unmatched"
+  "cdp.service_worker_ambiguous"
  ],
- "fails": [
-  "cdp: 10/16 marcadores (faltam ['blank-1', 'oopif-get-1', 'oopif-post-1', 'popup-1', 'popup-get-1', 'popup-post-1'])",
-  "cdp: marcadores ausentes além da exceção blank-1: ['oopif-get-1', 'oopif-post-1', 'popup-1', 'popup-get-1', 'popup-post-1']",
-  "tipo do alvo popup-1: esperado page, veio ausente",
-  "tipo do alvo popup-get-1: esperado page, veio ausente",
-  "tipo do alvo popup-post-1: esperado page, veio ausente",
-  "tipo do alvo oopif-get-1: esperado iframe, veio ausente",
-  "tipo do alvo oopif-post-1: esperado iframe, veio ausente",
-  "post popup-post-1: requisição ausente no CDP",
-  "post oopif-post-1: requisição ausente no CDP"
- ]
+ "fails": []
 }

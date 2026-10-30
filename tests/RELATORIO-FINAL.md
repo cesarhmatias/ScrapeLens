@@ -59,6 +59,60 @@ recusaram (rc 1); depois de `cargo build --release` a bateria inteira foi repeti
 
 Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captura ao vivo de 2026-10-29 (`live-final`); não foi refeita nesta rodada.
 
+## Rodada 10 — captura multi-alvo
+
+- **HEAD testado:** d60c1ae (`Pipeline CDP setup for paused targets before runIfWaitingForDebugger`)
+- **Data:** 2026-10-30
+- **Build:** worktree limpo em d60c1ae; `core`, `testserver` e `adapters/natural-ajax` recompilados em release.
+- **Dados:** sintéticos; HARs reais (H1–H3) só em agregados.
+
+### Aceite multi-alvo — 5 rodadas
+
+`python3 tests/aceite/check_multi_target.py --port 891N` numa captura real do produto
+(`capture::run` via `live_bodies_cycle`, Chrome headless, página `testserver /multi/`).
+
+| Rodada | Porta | NetLog | CDP | `blank-1` no CDP | `oopif-get`/`oopif-post` | Colisões de `requestId` | Requisições | Falhas |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 8912 | 16/16 | 16/16 | ✓ (com `requestWillBeSent`) | iframe / iframe | 4 | 30 | 0 |
+| 2 | 8913 | 16/16 | 16/16 | ✓ | iframe / iframe | 4 | 30 | 0 |
+| 3 | 8914 | 16/16 | 16/16 | ✓ | iframe / iframe | 4 | 33 | 0 |
+| 4 | 8915 | 16/16 | 16/16 | ✓ | iframe / iframe | 4 | 33 | 0 |
+| 5 | 8916 | 16/16 | 16/16 | ✓ | iframe / iframe | 4 | 33 | 0 |
+
+- `blank-1` só entra na contagem porque tem `Network.requestWillBeSent` real — o check não conta
+  `responseReceived` nem NetLog para o critério do CDP.
+- `oopif-1` (documento do iframe) é reportado na sessão do alvo pai e o check aceita
+  `page`/`iframe`; `oopif-get-1` e `oopif-post-1` vêm com `target.kind = iframe`, sem
+  reatribuição por frameId.
+- Colisão de `requestId` entre sessões existe nas 5 rodadas (4 ids em 3 sessões cada); as
+  observações continuam requisições distintas no modelo.
+- Service worker: duas observações ligadas por `links` com `resolution: "ambiguous"` e
+  evidência registrada (mesma URL/método, sessão do SW, Δt=0 como pista); nada de duplicata
+  silenciosa.
+- O driver do check agora compila o binário de teste antes (`cargo test --no-run`) e espera
+  até 120 s pelos marcadores / 300 s pelo fim da captura; sem isso um build frio estourava o
+  prazo e matava a captura antes de começar.
+
+### Bateria completa (nada regrediu)
+
+| Bateria | Resultado |
+|---|---|
+| run_acceptance (10 critérios) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 asserções) |
+| check_bodies_search / check_chain_compare / check_real_shape | OK (5 casos / OK / OK) |
+| check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
+| check_priming_injection | OK |
+| check_natural_adapter (sim `strict`) | OK |
+| check_timeline_validacao | OK |
+| prove_strict (adapters/natural-ajax) | OK, `fails: []` |
+| tests/exportacao | 19 passaram, 0 falhas |
+| cargo test core / src-tauri / natural-ajax | 302 / 48 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
+| check_real_detran (H1–H3) | OK |
+| check_real_priming sem / com `--wrapper` (H1–H3) | OK / OK |
+| ciclo real de uma aba (`live_bodies_cycle`) | OK: 3030 eventos CDP+NetLog, sessão importada com 5 avisos |
+
+Resultado: **tudo verde, 0 falhas.** Saída por rodada em
+`tests/results/multi-target-rodada10.json`; última captura em `tests/results/multi-target.json`.
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)

@@ -1,0 +1,78 @@
+{
+ "schema": "scrapelens.multi-target.runs/1",
+ "head": "d60c1ae",
+ "data": "2026-10-30",
+ "corridas": [
+  {
+   "run": 1,
+   "rc": 0,
+   "netlog": 16,
+   "cdp": 16,
+   "cdp_blank_1": true,
+   "oopif_get": "iframe",
+   "oopif_post": "iframe",
+   "requestId_colisoes": 4,
+   "requisicoes": 30,
+   "cdp_eventos": 213,
+   "cdp_corpos": 37,
+   "fails": 0
+  },
+  {
+   "run": 2,
+   "rc": 0,
+   "netlog": 16,
+   "cdp": 16,
+   "cdp_blank_1": true,
+   "oopif_get": "iframe",
+   "oopif_post": "iframe",
+   "requestId_colisoes": 4,
+   "requisicoes": 30,
+   "cdp_eventos": 211,
+   "cdp_corpos": 37,
+   "fails": 0
+  },
+  {
+   "run": 3,
+   "rc": 0,
+   "netlog": 16,
+   "cdp": 16,
+   "cdp_blank_1": true,
+   "oopif_get": "iframe",
+   "oopif_post": "iframe",
+   "requestId_colisoes": 4,
+   "requisicoes": 33,
+   "cdp_eventos": 229,
+   "cdp_corpos": 41,
+   "fails": 0
+  },
+  {
+   "run": 4,
+   "rc": 0,
+   "netlog": 16,
+   "cdp": 16,
+   "cdp_blank_1": true,
+   "oopif_get": "iframe",
+   "oopif_post": "iframe",
+   "requestId_colisoes": 4,
+   "requisicoes": 33,
+   "cdp_eventos": 231,
+   "cdp_corpos": 41,
+   "fails": 0
+  },
+  {
+   "run": 5,
+   "rc": 0,
+   "netlog": 16,
+   "cdp": 16,
+   "cdp_blank_1": true,
+   "oopif_get": "iframe",
+   "oopif_post": "iframe",
+   "requestId_colisoes": 4,
+   "requisicoes": 33,
+   "cdp_eventos": 230,
+   "cdp_corpos": 41,
+   "fails": 0
+  }
+ ],
+ "observacoes": "5/5 OK; blank-1 com requestWillBeSent (so entra na contagem via requestWillBeSent); oopif-get/post com target.kind iframe; colisões de requestId entre sessões em todas."
+}
