@@ -150,15 +150,7 @@ fn run_inner(
 
     // Loop de gravação: todo evento Network.* é preservado na ordem do Chrome.
     let started = Instant::now();
-    let mut flushed_pending = false;
     loop {
-        if !flushed_pending {
-            cdp.flush_pending_setups(&mut socket);
-            flushed_pending = true;
-        }
-        if !cdp.pending_setup.is_empty() {
-            cdp.flush_pending_setups(&mut socket);
-        }
         if matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
             break;
         }
@@ -185,6 +177,10 @@ fn run_inner(
 
     // Dá uma janela curta para os getResponseBody/getRequestPostData em voo
     // voltarem antes de fechar; o que não voltar vira linha `unavailable`.
+    // Antes de fechar: dá uma janela curta para ACKs atrasados do setup e só
+    // então transforma o que continua sem resposta em aviso.
+    cdp.pump_until_setup_settled(&mut socket, Duration::from_millis(1500));
+    cdp.finalize_pending_setups();
     cdp.drain_bodies(&mut socket, Duration::from_secs(3));
     cdp.finish_bodies();
 
@@ -435,6 +431,7 @@ const CDP_TARGET_METHODS: &[&str] = &[
     "Capture.sessionSetup",
     "Capture.targetSetupTimeout",
     "Capture.targetSetupAborted",
+    "Capture.targetSetupError",
     "Target.targetDestroyed",
 ];
 
@@ -462,22 +459,51 @@ struct Cdp {
     in_flight: HashMap<u64, (String, BodyTag)>,
     outbox: Vec<(String, String)>,
     setup_done: HashMap<String, AttachedTarget>,
-    /// Sessões que já passaram por `setup_attached_target` (distinto de visto em setup_phase).
+    /// Sessões que já passaram por `setup_attached_target` (comandos enviados).
     configured_sessions: std::collections::HashSet<String>,
     configured_target_primary: HashMap<String, String>,
     detached_sessions: std::collections::HashSet<String>,
-    setup_in_progress: std::collections::HashSet<String>,
     wait_for_debugger: bool,
-    /// Durante `setup()`, só grava Target.*; evita setup aninhado que bloqueia respostas CDP.
-    setup_phase: bool,
-    pending_setup: Vec<(AttachedTarget, bool)>,
-    /// Alvos vistos via auto-attach durante `setup_phase` (antes de configurar).
+    /// Alvos vistos via auto-attach (qualquer momento), por sessão.
     setup_seen: HashMap<String, AttachedTarget>,
-    /// Profundidade de `send()` aguardando resposta (evita setup aninhado).
-    command_depth: u32,
+    /// Comandos de setup enviados e ainda sem resposta, por id CDP. O setup
+    /// nunca bloqueia: a resposta é tratada por `record` na ordem de chegada,
+    /// por quem estiver lendo o socket.
+    setup_pending: HashMap<u64, PendingSetupCommand>,
+}
+
+/// Comando de configuração de alvo aguardando ACK.
+#[derive(Debug, Clone)]
+struct PendingSetupCommand {
+    target: AttachedTarget,
+    method: String,
+    sent_at: Instant,
+    parent_session_id: Option<String>,
 }
 
 impl Cdp {
+    fn new(status: Arc<Mutex<CaptureStatus>>, bodies_file: std::fs::File) -> Result<Self, String> {
+        Ok(Self {
+            next_id: 0,
+            page_session_id: String::new(),
+            events: Vec::new(),
+            status,
+            bodies_by_session: HashMap::new(),
+            bodies_file: bodies_file
+                .try_clone()
+                .map_err(|error| format!("cdp-bodies.jsonl: {error}"))?,
+            in_flight: HashMap::new(),
+            outbox: Vec::new(),
+            setup_done: HashMap::new(),
+            configured_sessions: std::collections::HashSet::new(),
+            configured_target_primary: HashMap::new(),
+            detached_sessions: std::collections::HashSet::new(),
+            wait_for_debugger: true,
+            setup_seen: HashMap::new(),
+            setup_pending: HashMap::new(),
+        })
+    }
+
     fn connect(
         url: &str,
         status: Arc<Mutex<CaptureStatus>>,
@@ -491,32 +517,7 @@ impl Cdp {
                     if let MaybeTlsStream::Plain(stream) = socket.get_ref() {
                         let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
                     }
-                    return Ok((
-                        socket,
-                        Self {
-                            next_id: 0,
-                            page_session_id: String::new(),
-                            events: Vec::new(),
-                            status,
-                            bodies_by_session: HashMap::new(),
-                            bodies_file: match bodies_file.try_clone() {
-                                Ok(file) => file,
-                                Err(error) => return Err(format!("cdp-bodies.jsonl: {error}")),
-                            },
-                            in_flight: HashMap::new(),
-                            outbox: Vec::new(),
-                            setup_done: HashMap::new(),
-                            configured_sessions: std::collections::HashSet::new(),
-                            configured_target_primary: HashMap::new(),
-                            detached_sessions: std::collections::HashSet::new(),
-                            setup_in_progress: std::collections::HashSet::new(),
-                            wait_for_debugger: true,
-                            setup_phase: false,
-                            pending_setup: Vec::new(),
-                            setup_seen: HashMap::new(),
-                            command_depth: 0,
-                        },
-                    ));
+                    return Self::new(status, bodies_file).map(|cdp| (socket, cdp));
                 }
                 Err(error) => {
                     last_error = error.to_string();
@@ -556,73 +557,6 @@ impl Cdp {
         Ok(id)
     }
 
-    fn wait_for_wired_commands(
-        &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
-        wired: &[(u64, &str)],
-        timeout: Duration,
-    ) -> Result<(), String> {
-        if wired.is_empty() {
-            return Ok(());
-        }
-        self.command_depth += 1;
-        let pipeline_result = self.wait_for_wired_commands_inner(socket, wired, timeout);
-        self.command_depth = self.command_depth.saturating_sub(1);
-        self.flush_pending_setups(socket);
-        pipeline_result
-    }
-
-    fn wait_for_wired_commands_inner(
-        &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
-        wired: &[(u64, &str)],
-        timeout: Duration,
-    ) -> Result<(), String> {
-        let id_to_method: HashMap<u64, &str> = wired.iter().copied().collect();
-        let mut pending: std::collections::HashSet<u64> = id_to_method.keys().copied().collect();
-        let deadline = Instant::now() + timeout;
-        while !pending.is_empty() {
-            if Instant::now() >= deadline {
-                let stuck = wired
-                    .iter()
-                    .find(|(id, _)| pending.contains(id))
-                    .map(|(_, method)| *method)
-                    .unwrap_or("?");
-                return Err(format!("CDP timeout aguardando {stuck} (pipeline)"));
-            }
-            match socket.read() {
-                Ok(Message::Text(text)) => {
-                    let value: Value = serde_json::from_str(text.as_str())
-                        .map_err(|error| format!("CDP JSON inválido: {error}"))?;
-                    if let Some(id) = value.get("id").and_then(Value::as_u64) {
-                        if pending.remove(&id) {
-                            if value.get("error").is_some() {
-                                return Err(format!(
-                                    "CDP erro na pipeline (id {id}): {}",
-                                    value.get("error").unwrap_or(&Value::Null)
-                                ));
-                            }
-                            continue;
-                        }
-                    }
-                    self.record(socket, &value);
-                    self.flush_outbox(socket);
-                }
-                Ok(Message::Ping(payload)) => {
-                    let _ = socket.send(Message::Pong(payload));
-                }
-                Ok(Message::Close(_)) => {
-                    return Err("CDP fechou durante pipeline de setup".to_string());
-                }
-                Ok(_) => {}
-                Err(tungstenite::Error::Io(error))
-                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
-                Err(error) => return Err(format!("CDP read pipeline: {error}")),
-            }
-        }
-        Ok(())
-    }
-
     fn pump_socket(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
@@ -654,39 +588,99 @@ impl Cdp {
             .or_default()
     }
 
-    fn command_from_setup_error(error: &str) -> String {
-        if let Some(rest) = error.strip_prefix("CDP timeout aguardando ") {
-            if let Some(method) = rest.strip_suffix(" (pipeline)") {
-                return method.to_string();
-            }
-            return rest.to_string();
-        }
-        if let Some(rest) = error.strip_prefix("CDP send ") {
-            if let Some((method, _)) = rest.split_once(':') {
-                return method.to_string();
-            }
-        }
-        if let Some(rest) = error.strip_prefix("CDP ") {
-            if let Some((method, _)) = rest.split_once(':') {
-                return method.to_string();
-            }
-        }
-        error.to_string()
+    /// Envia um comando de setup sem esperar a resposta e registra-o como
+    /// pendente. Resposta atrasada não gera aviso: só o que continuar sem ACK
+    /// no encerramento vira `Capture.targetSetupTimeout`.
+    fn wire_setup_command(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        target: &AttachedTarget,
+        method: &str,
+        params: Value,
+        parent_session_id: Option<&str>,
+    ) -> Result<(), String> {
+        let id = self.wire_command(socket, method, params, Some(&target.session_id))?;
+        self.register_setup_command(id, target, method, parent_session_id);
+        Ok(())
     }
 
-    fn drop_recorded_network_for_session(&mut self, session_id: &str) {
-        self.events.retain(|line| {
-            let Ok(value) = serde_json::from_str::<Value>(line) else {
-                return true;
-            };
-            if value.get("sessionId").and_then(Value::as_str) != Some(session_id) {
-                return true;
-            }
-            !value
-                .get("method")
+    fn register_setup_command(
+        &mut self,
+        id: u64,
+        target: &AttachedTarget,
+        method: &str,
+        parent_session_id: Option<&str>,
+    ) {
+        self.setup_pending.insert(
+            id,
+            PendingSetupCommand {
+                target: target.clone(),
+                method: method.to_string(),
+                sent_at: Instant::now(),
+                parent_session_id: parent_session_id.map(str::to_string),
+            },
+        );
+    }
+
+    /// Trata o ACK de um comando de setup. Devolve `true` se o id era de setup.
+    /// ACK atrasado só remove o pendente; erro de comando essencial vira
+    /// `Capture.targetSetupError` (diferente de "sem resposta").
+    fn on_setup_response(&mut self, id: u64, value: &Value) -> bool {
+        let Some(pending) = self.setup_pending.remove(&id) else {
+            return false;
+        };
+        if let Some(error) = value.get("error") {
+            let text = error
+                .get("message")
                 .and_then(Value::as_str)
-                .is_some_and(|method| method.starts_with("Network."))
-        });
+                .map(str::to_string)
+                .unwrap_or_else(|| error.to_string());
+            let gone = text.contains("not found") || text.contains("Target closed");
+            if gone {
+                self.push_target_setup_aborted(&pending.target, pending.parent_session_id.as_deref());
+            } else if matches!(
+                pending.method.as_str(),
+                "Network.enable" | "Target.setAutoAttach" | "Runtime.runIfWaitingForDebugger"
+            ) {
+                self.push_event_line(
+                    &pending.target.session_id,
+                    "Capture.targetSetupError",
+                    &json!({
+                        "targetId": pending.target.target_id,
+                        "sessionId": pending.target.session_id,
+                        "type": pending.target.target_type,
+                        "command": pending.method,
+                        "error": text,
+                    }),
+                    pending.parent_session_id.as_deref(),
+                );
+            }
+        }
+        true
+    }
+
+    /// Alvo desanexado ou destruído: comandos pendentes dele não viram timeout.
+    fn on_target_gone(&mut self, session_id: Option<&str>, target_id: Option<&str>) {
+        let gone: Vec<u64> = self
+            .setup_pending
+            .iter()
+            .filter(|(_, p)| {
+                session_id.is_some_and(|s| p.target.session_id == s)
+                    || target_id.is_some_and(|t| p.target.target_id == t)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        for id in gone {
+            if let Some(pending) = self.setup_pending.remove(&id) {
+                if seen.insert(pending.target.session_id.clone()) {
+                    self.push_target_setup_aborted(
+                        &pending.target,
+                        pending.parent_session_id.as_deref(),
+                    );
+                }
+            }
+        }
     }
 
     fn push_target_setup_aborted(
@@ -694,9 +688,6 @@ impl Cdp {
         attached: &AttachedTarget,
         parent_session_id: Option<&str>,
     ) {
-        if !self.setup_in_progress.remove(&attached.session_id) {
-            return;
-        }
         self.push_event_line(
             &attached.session_id,
             "Capture.targetSetupAborted",
@@ -710,68 +701,38 @@ impl Cdp {
         );
     }
 
-    fn push_target_setup_timeout(
+    /// Encerramento (antes do `Browser.close`): todo comando de setup ainda sem
+    /// ACK, em qualquer sessão (inclusive a primária), vira aviso real.
+    fn finalize_pending_setups(&mut self) {
+        let mut pending: Vec<(u64, PendingSetupCommand)> = self.setup_pending.drain().collect();
+        pending.sort_by_key(|(id, _)| *id);
+        for (_, p) in pending {
+            self.push_event_line(
+                &p.target.session_id,
+                "Capture.targetSetupTimeout",
+                &json!({
+                    "targetId": p.target.target_id,
+                    "sessionId": p.target.session_id,
+                    "type": p.target.target_type,
+                    "command": p.method,
+                    "pendingMs": p.sent_at.elapsed().as_millis() as u64,
+                    "warningCode": CDP_TARGET_SETUP_TIMEOUT_WARNING,
+                }),
+                p.parent_session_id.as_deref(),
+            );
+        }
+    }
+
+    /// Lê o socket até não restar setup pendente ou esgotar `window`.
+    fn pump_until_setup_settled(
         &mut self,
-        attached: &AttachedTarget,
-        error: String,
-        parent_session_id: Option<&str>,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        window: Duration,
     ) {
-        if !self.setup_in_progress.contains(&attached.session_id) {
-            return;
+        let deadline = Instant::now() + window;
+        while !self.setup_pending.is_empty() && Instant::now() < deadline {
+            self.pump_socket(socket, Duration::from_millis(100));
         }
-        let is_primary = self.configured_target_primary.get(&attached.target_id)
-            == Some(&attached.session_id);
-        self.setup_in_progress.remove(&attached.session_id);
-        if is_primary {
-            self.configured_sessions
-                .insert(attached.session_id.clone());
-            self.setup_done
-                .insert(attached.session_id.clone(), attached.clone());
-        } else {
-            self.detached_sessions.insert(attached.session_id.clone());
-            self.drop_recorded_network_for_session(&attached.session_id);
-        }
-        let command = Self::command_from_setup_error(&error);
-        if !Self::should_record_setup_timeout(
-            is_primary,
-            &error,
-            self.session_has_recorded_network(&attached.session_id),
-        ) {
-            return;
-        }
-        self.push_event_line(
-            &attached.session_id,
-            "Capture.targetSetupTimeout",
-            &json!({
-                "targetId": attached.target_id,
-                "sessionId": attached.session_id,
-                "command": command,
-                "error": error,
-                "warningCode": CDP_TARGET_SETUP_TIMEOUT_WARNING,
-            }),
-            parent_session_id,
-        );
-    }
-
-    fn should_record_setup_timeout(
-        is_primary: bool,
-        error: &str,
-        session_has_network: bool,
-    ) -> bool {
-        !(is_primary && (error.contains("(pipeline)") || session_has_network))
-    }
-
-    fn session_has_recorded_network(&self, session_id: &str) -> bool {
-        self.events.iter().any(|line| {
-            let Ok(value) = serde_json::from_str::<Value>(line) else {
-                return false;
-            };
-            value.get("sessionId").and_then(Value::as_str) == Some(session_id)
-                && value
-                    .get("method")
-                    .and_then(Value::as_str)
-                    .is_some_and(|method| method.starts_with("Network."))
-        })
     }
 
     fn push_event_line(
@@ -813,22 +774,22 @@ impl Cdp {
         waiting_for_debugger: bool,
         parent_session_id: Option<&str>,
     ) -> Result<(), String> {
+        // Sessão extra do mesmo alvo: retoma (se pausada) e desanexa, sem rede.
+        // Os ACKs não importam: nada aqui é setup de captura.
         if self.wait_for_debugger && waiting_for_debugger {
-            let _ = self.send(
+            self.wire_command(
                 socket,
                 "Runtime.runIfWaitingForDebugger",
                 json!({}),
                 Some(&attached.session_id),
-                Duration::from_secs(5),
-            );
+            )?;
         }
-        let _ = self.send(
+        self.wire_command(
             socket,
             "Target.detachFromTarget",
             json!({ "sessionId": attached.session_id }),
             None,
-            Duration::from_secs(5),
-        );
+        )?;
         self.detached_sessions.insert(attached.session_id.clone());
         self.configured_sessions
             .insert(attached.session_id.clone());
@@ -847,6 +808,12 @@ impl Cdp {
         Ok(())
     }
 
+    /// Configura um alvo anexado sem bloquear: envia os comandos em pipeline,
+    /// na mesma sessão, e deixa os ACKs para quem ler o socket (`record`).
+    /// Alvo pausado: Network.enable → Page/Runtime.enable → setAutoAttach →
+    /// runIfWaitingForDebugger (a rede já está ligada quando ele retoma, e o
+    /// resume não espera resposta). Alvo não pausado: ordem do harness
+    /// (setAutoAttach → Network.enable → Page/Runtime.enable).
     fn setup_attached_target(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
@@ -872,39 +839,26 @@ impl Cdp {
             _ => {}
         }
         if self.configured_sessions.contains(&attached.session_id) {
-            if self.wait_for_debugger && waiting_for_debugger {
-                let _ = self.send(
-                    socket,
-                    "Runtime.runIfWaitingForDebugger",
-                    json!({}),
-                    Some(&attached.session_id),
-                    Duration::from_secs(5),
-                );
-            }
             return Ok(());
         }
-        self.setup_in_progress
+        // Marca antes de enviar: evita reentrada se o envio falhar.
+        self.configured_sessions
             .insert(attached.session_id.clone());
         self.setup_seen
             .insert(attached.session_id.clone(), attached.clone());
         let target_type = attached.target_type.clone();
-        let mut resumed = false;
+        let resume = self.wait_for_debugger && waiting_for_debugger;
         if Self::skip_target_setup(&target_type) {
-            if self.wait_for_debugger && waiting_for_debugger {
-                let _ = self.send(
+            if resume {
+                self.wire_command(
                     socket,
                     "Runtime.runIfWaitingForDebugger",
                     json!({}),
                     Some(&attached.session_id),
-                    Duration::from_secs(5),
-                );
-                resumed = true;
+                )?;
             }
             self.setup_done
                 .insert(attached.session_id.clone(), attached.clone());
-            self.configured_sessions
-                .insert(attached.session_id.clone());
-            self.setup_in_progress.remove(&attached.session_id);
             self.push_event_line(
                 &attached.session_id,
                 "Capture.sessionSetup",
@@ -912,102 +866,48 @@ impl Cdp {
                     "targetId": attached.target_id,
                     "type": target_type,
                     "waitingForDebugger": waiting_for_debugger,
-                    "resumedDebugger": resumed,
+                    "resumedDebugger": resume,
                     "skippedNetwork": true,
                 }),
                 parent_session_id,
             );
             return Ok(());
         }
-        let sid = attached.session_id.as_str();
         let network_params = json!({
             "maxTotalBufferSize": 100_000_000,
             "maxResourceBufferSize": 50_000_000,
             "maxPostDataSize": MAX_BODY_BYTES
         });
-        let pipelined = self.wait_for_debugger && waiting_for_debugger;
-        if pipelined {
-            let mut wired: Vec<(u64, &str)> = Vec::new();
-            wired.push((
-                self.wire_command(
-                    socket,
-                    "Network.enable",
-                    network_params.clone(),
-                    Some(sid),
-                )?,
-                "Network.enable",
-            ));
-            if target_type == "page" || target_type == "iframe" {
-                wired.push((
-                    self.wire_command(socket, "Page.enable", json!({}), Some(sid))?,
-                    "Page.enable",
-                ));
+        let recurse = Self::recurse_auto_attach(&target_type);
+        let page_like = target_type == "page" || target_type == "iframe";
+        let parent = parent_session_id;
+        let auto_attach = self.auto_attach_params(true);
+        let mut commands: Vec<(&str, Value)> = Vec::new();
+        if resume {
+            commands.push(("Network.enable", network_params));
+            if page_like {
+                commands.push(("Page.enable", json!({})));
             }
-            wired.push((
-                self.wire_command(socket, "Runtime.enable", json!({}), Some(sid))?,
-                "Runtime.enable",
-            ));
-            if Self::recurse_auto_attach(&target_type) {
-                wired.push((
-                    self.wire_command(
-                        socket,
-                        "Target.setAutoAttach",
-                        self.auto_attach_params(true),
-                        Some(sid),
-                    )?,
-                    "Target.setAutoAttach",
-                ));
+            commands.push(("Runtime.enable", json!({})));
+            if recurse {
+                commands.push(("Target.setAutoAttach", auto_attach));
             }
-            wired.push((
-                self.wire_command(
-                    socket,
-                    "Runtime.runIfWaitingForDebugger",
-                    json!({}),
-                    Some(sid),
-                )?,
-                "Runtime.runIfWaitingForDebugger",
-            ));
-            self.wait_for_wired_commands(socket, &wired, Duration::from_secs(20))?;
-            resumed = true;
+            commands.push(("Runtime.runIfWaitingForDebugger", json!({})));
         } else {
-            if Self::recurse_auto_attach(&target_type) {
-                self.send(
-                    socket,
-                    "Target.setAutoAttach",
-                    self.auto_attach_params(true),
-                    Some(sid),
-                    Duration::from_secs(15),
-                )?;
+            if recurse {
+                commands.push(("Target.setAutoAttach", auto_attach));
             }
-            self.send(
-                socket,
-                "Network.enable",
-                network_params,
-                Some(sid),
-                Duration::from_secs(10),
-            )?;
-            if target_type == "page" || target_type == "iframe" {
-                let _ = self.send(
-                    socket,
-                    "Page.enable",
-                    json!({}),
-                    Some(sid),
-                    Duration::from_secs(5),
-                );
+            commands.push(("Network.enable", network_params));
+            if page_like {
+                commands.push(("Page.enable", json!({})));
             }
-            let _ = self.send(
-                socket,
-                "Runtime.enable",
-                json!({}),
-                Some(sid),
-                Duration::from_secs(5),
-            );
+            commands.push(("Runtime.enable", json!({})));
+        }
+        for (method, params) in commands {
+            self.wire_setup_command(socket, &attached, method, params, parent)?;
         }
         self.setup_done
             .insert(attached.session_id.clone(), attached.clone());
-        self.configured_sessions
-            .insert(attached.session_id.clone());
-        self.setup_in_progress.remove(&attached.session_id);
         self.push_event_line(
             &attached.session_id,
             "Capture.sessionSetup",
@@ -1015,9 +915,9 @@ impl Cdp {
                 "targetId": attached.target_id,
                 "type": target_type,
                 "waitingForDebugger": waiting_for_debugger,
-                "resumedDebugger": resumed,
-                "pipelinedSetup": pipelined,
-                "recursiveAutoAttach": Self::recurse_auto_attach(&target_type),
+                "resumedDebugger": resume,
+                "pipelinedSetup": true,
+                "recursiveAutoAttach": recurse,
             }),
             parent_session_id,
         );
@@ -1066,18 +966,18 @@ impl Cdp {
             return;
         };
         if method == "Target.detachedFromTarget" {
-            if let Some(params) = value.get("params").and_then(Value::as_object) {
-                let session_id = params
-                    .get("sessionId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                if let Some(attached) = self.setup_seen.get(session_id).cloned() {
-                    if self.setup_in_progress.contains(session_id) {
-                        let parent = value.get("sessionId").and_then(Value::as_str);
-                        self.push_target_setup_aborted(&attached, parent);
-                    }
-                }
-            }
+            let session_id = value
+                .get("params")
+                .and_then(|p| p.get("sessionId"))
+                .and_then(Value::as_str);
+            self.on_target_gone(session_id, None);
+        }
+        if method == "Target.targetDestroyed" {
+            let target_id = value
+                .get("params")
+                .and_then(|p| p.get("targetId"))
+                .and_then(Value::as_str);
+            self.on_target_gone(None, target_id);
         }
         if method == "Target.attachedToTarget" {
             if let Some(params) = value.get("params").and_then(Value::as_object) {
@@ -1112,33 +1012,11 @@ impl Cdp {
                         .or_insert(session_id.clone());
                 }
                 let parent_wire = value.get("sessionId").and_then(Value::as_str);
-                if self.setup_phase {
-                    self.setup_seen
-                        .insert(session_id.clone(), attached.clone());
-                    if self.command_depth == 0 {
-                        if let Err(error) = self.setup_attached_target(
-                            socket,
-                            attached.clone(),
-                            waiting,
-                            parent_wire,
-                        ) {
-                            self.push_target_setup_timeout(&attached, error, parent_wire);
-                        }
-                    } else {
-                        self.pending_setup.push((attached, waiting));
-                    }
-                } else if self.command_depth == 0 {
-                    if let Err(error) = self.setup_attached_target(
-                        socket,
-                        attached.clone(),
-                        waiting,
-                        parent_wire,
-                    ) {
-                        self.push_target_setup_timeout(&attached, error, parent_wire);
-                    }
-                } else {
-                    self.pending_setup.push((attached, waiting));
-                }
+                self.setup_seen
+                    .insert(session_id.clone(), attached.clone());
+                // Não bloqueia: só envia os comandos. Falha de envio (socket)
+                // aparece como erro de leitura no laço de captura.
+                let _ = self.setup_attached_target(socket, attached, waiting, parent_wire);
             }
         }
         if !cdp_records_method(method) {
@@ -1170,33 +1048,12 @@ impl Cdp {
         }
     }
 
-    fn flush_pending_setups(
-        &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
-    ) {
-        for _ in 0..32 {
-            let batch = std::mem::take(&mut self.pending_setup);
-            if batch.is_empty() {
-                break;
-            }
-            for (attached, waiting) in batch {
-                if let Err(error) =
-                    self.setup_attached_target(socket, attached.clone(), waiting, None)
-                {
-                    self.push_target_setup_timeout(&attached, error, None);
-                }
-            }
-        }
-    }
-
     fn setup(
         &mut self,
         socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
         start_url: &str,
     ) -> Result<(), String> {
-        self.setup_phase = true;
         let setup_result = self.setup_inner(socket, start_url);
-        self.setup_phase = false;
         if setup_result.is_ok() {
             self.pump_socket(socket, Duration::from_millis(400));
         }
@@ -1224,7 +1081,6 @@ impl Cdp {
             None,
             Duration::from_secs(25),
         )?;
-        self.flush_pending_setups(socket);
         let url = if start_url.trim().is_empty() {
             "about:blank".to_string()
         } else {
@@ -1244,7 +1100,6 @@ impl Cdp {
             .to_string();
         let deadline = Instant::now() + Duration::from_secs(20);
         while Instant::now() < deadline {
-            self.flush_pending_setups(socket);
             if let Some(page_session) = self
                 .setup_seen
                 .values()
@@ -1253,14 +1108,8 @@ impl Cdp {
             {
                 self.page_session_id = page_session.clone();
                 if !self.configured_sessions.contains(&page_session) {
-                    let main_waiting = self
-                        .pending_setup
-                        .iter()
-                        .find(|(t, _)| t.session_id == page_session)
-                        .map(|(_, w)| *w)
-                        .unwrap_or(false);
-                    self.pending_setup
-                        .retain(|(t, _)| t.session_id != page_session);
+                    // O handler normalmente já configurou a página no attach;
+                    // este ramo cobre só um attach que o handler não viu.
                     self.setup_attached_target(
                         socket,
                         AttachedTarget {
@@ -1268,7 +1117,7 @@ impl Cdp {
                             target_id: main_target.clone(),
                             target_type: "page".to_string(),
                         },
-                        main_waiting,
+                        false,
                         None,
                     )?;
                 }
@@ -1307,7 +1156,6 @@ impl Cdp {
         }
         let settle = Instant::now() + Duration::from_secs(5);
         while Instant::now() < settle {
-            self.flush_pending_setups(socket);
             self.pump_socket(socket, Duration::from_millis(100));
         }
         Ok(())
@@ -1330,8 +1178,6 @@ impl Cdp {
         socket
             .send(Message::Text(message.to_string().into()))
             .map_err(|error| format!("CDP send {method}: {error}"))?;
-        self.command_depth += 1;
-        let setup_result = (|| {
         let deadline = Instant::now() + timeout;
         loop {
             if Instant::now() >= deadline {
@@ -1360,12 +1206,6 @@ impl Cdp {
                 Err(error) => return Err(format!("CDP read {method}: {error}")),
             }
         }
-        })();
-        if setup_result.is_ok() && self.setup_phase {
-            self.flush_pending_setups(socket);
-        }
-        self.command_depth = self.command_depth.saturating_sub(1);
-        setup_result
     }
 
     fn record(
@@ -1374,6 +1214,9 @@ impl Cdp {
         value: &Value,
     ) {
         if let Some(id) = value.get("id").and_then(Value::as_u64) {
+            if self.on_setup_response(id, value) {
+                return;
+            }
             if let Some((session_id, tag)) = self.in_flight.remove(&id) {
                 let outcome = match value.get("error") {
                     Some(error) => Err(error
@@ -2340,39 +2183,108 @@ mod tests {
         json!({ "requestId": id, "timestamp": 11.0 })
     }
 
-    #[test]
-    fn setup_timeout_warning_policy() {
-        assert!(!Cdp::should_record_setup_timeout(
-            true,
-            "CDP timeout aguardando Network.enable (pipeline)",
-            false,
+    fn test_cdp() -> Cdp {
+        let path = std::env::temp_dir().join(format!(
+            "scrapelens-setup-test-{}-{}.jsonl",
+            std::process::id(),
+            unix_millis()
         ));
-        assert!(!Cdp::should_record_setup_timeout(
-            true,
-            "CDP timeout aguardando Target.setAutoAttach",
-            true,
-        ));
-        assert!(Cdp::should_record_setup_timeout(
-            false,
-            "CDP timeout aguardando Network.enable (pipeline)",
-            false,
-        ));
-        assert!(Cdp::should_record_setup_timeout(
-            true,
-            "CDP send Network.enable: closed",
-            false,
-        ));
+        let file = open_private(&path).unwrap();
+        let cdp = Cdp::new(Arc::new(Mutex::new(CaptureStatus::default())), file).unwrap();
+        let _ = std::fs::remove_file(&path);
+        cdp
+    }
+
+    fn sw_target() -> AttachedTarget {
+        AttachedTarget {
+            session_id: "S1".into(),
+            target_id: "T1".into(),
+            target_type: "service_worker".into(),
+        }
+    }
+
+    fn event_methods(cdp: &Cdp) -> Vec<String> {
+        cdp.events
+            .iter()
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .filter_map(|v| v.get("method").and_then(Value::as_str).map(str::to_string))
+            .collect()
     }
 
     #[test]
-    fn setup_error_maps_to_command_name() {
+    fn late_setup_ack_produces_no_warning() {
+        let mut cdp = test_cdp();
+        cdp.register_setup_command(7, &sw_target(), "Network.enable", None);
+        // ACK chega depois (atrasado), antes do encerramento.
+        assert!(cdp.on_setup_response(7, &json!({ "id": 7, "result": {} })));
+        cdp.finalize_pending_setups();
+        assert!(event_methods(&cdp).is_empty(), "{:?}", event_methods(&cdp));
+        // Id desconhecido não é de setup.
+        assert!(!cdp.on_setup_response(99, &json!({ "id": 99, "result": {} })));
+    }
+
+    #[test]
+    fn missing_ack_at_shutdown_warns_even_on_primary_session() {
+        let mut cdp = test_cdp();
+        let target = sw_target();
+        cdp.configured_target_primary
+            .insert(target.target_id.clone(), target.session_id.clone());
+        cdp.register_setup_command(3, &target, "Target.setAutoAttach", Some("ROOT"));
+        cdp.register_setup_command(4, &target, "Network.enable", None);
+        assert!(cdp.on_setup_response(4, &json!({ "id": 4, "result": {} })));
+        cdp.finalize_pending_setups();
+        let lines: Vec<Value> = cdp
+            .events
+            .iter()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["method"], "Capture.targetSetupTimeout");
+        assert_eq!(lines[0]["params"]["command"], "Target.setAutoAttach");
+        assert_eq!(lines[0]["params"]["type"], "service_worker");
+        assert!(lines[0]["params"]["pendingMs"].is_u64());
+        assert_eq!(lines[0]["parentSessionId"], "ROOT");
+        assert!(cdp.setup_pending.is_empty());
+    }
+
+    #[test]
+    fn target_destroyed_before_ack_is_aborted_not_timeout() {
+        let mut cdp = test_cdp();
+        let target = sw_target();
+        cdp.register_setup_command(1, &target, "Network.enable", None);
+        cdp.register_setup_command(2, &target, "Runtime.enable", None);
+        cdp.on_target_gone(Some("S1"), None);
+        cdp.finalize_pending_setups();
+        assert_eq!(event_methods(&cdp), vec!["Capture.targetSetupAborted"]);
+        let line: Value = serde_json::from_str(&cdp.events[0]).unwrap();
         assert_eq!(
-            Cdp::command_from_setup_error("CDP timeout aguardando Network.enable (pipeline)"),
-            "Network.enable"
+            line["params"]["reason"],
+            "alvo encerrado durante a configuração"
         );
+
+        let mut cdp = test_cdp();
+        cdp.register_setup_command(1, &target, "Network.enable", None);
+        cdp.on_target_gone(None, Some("T1"));
+        cdp.finalize_pending_setups();
+        assert_eq!(event_methods(&cdp), vec!["Capture.targetSetupAborted"]);
+    }
+
+    #[test]
+    fn setup_command_error_is_not_reported_as_no_response() {
+        let mut cdp = test_cdp();
+        let target = sw_target();
+        // Page.enable não suportado: ignorado. Network.enable com erro real: evento próprio.
+        cdp.register_setup_command(1, &target, "Page.enable", None);
+        cdp.register_setup_command(2, &target, "Network.enable", None);
+        cdp.register_setup_command(3, &target, "Runtime.enable", None);
+        assert!(cdp.on_setup_response(1, &json!({ "id": 1, "error": { "message": "'Page.enable' wasn't found" } })));
+        assert!(cdp.on_setup_response(2, &json!({ "id": 2, "error": { "message": "boom" } })));
+        // Sessão sumiu: aborto, não timeout.
+        assert!(cdp.on_setup_response(3, &json!({ "id": 3, "error": { "message": "Session with given id not found." } })));
+        cdp.finalize_pending_setups();
         assert_eq!(
-            Cdp::command_from_setup_error("CDP timeout aguardando Target.setAutoAttach"),
-            "Target.setAutoAttach"
+            event_methods(&cdp),
+            vec!["Capture.targetSetupError", "Capture.targetSetupAborted"]
         );
     }
 
