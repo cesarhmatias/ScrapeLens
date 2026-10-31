@@ -77,8 +77,19 @@ fn confirmation_from(result: Result<Option<ConfirmStart>, ElicitationError>) -> 
 
 fn reply(result: ToolResult) -> CallToolResult {
     match result {
-        Ok(value) => CallToolResult::structured(value),
-        Err(error) => CallToolResult::structured_error(error.to_value()),
+        Ok(mut value) => {
+            // Saída revelada de propósito (`revealed: true`) passa intacta; todo o
+            // resto passa pela rede de segurança de query sensível.
+            if value.get("revealed") != Some(&serde_json::Value::Bool(true)) {
+                tools::scrub_output(&mut value);
+            }
+            CallToolResult::structured(value)
+        }
+        Err(error) => {
+            let mut value = error.to_value();
+            tools::scrub_output(&mut value);
+            CallToolResult::structured_error(value)
+        }
     }
 }
 

@@ -307,7 +307,10 @@ impl Manager {
              Marque \"confirmo\" para autorizar. Sem isso nada é aberto.",
             list(allowlist.allowed_hosts()),
             list(allowlist.third_party_hosts()),
-            start_url.as_deref().unwrap_or("(nenhuma)"),
+            start_url
+                .as_deref()
+                .map(strip_query)
+                .unwrap_or_else(|| "(nenhuma)".to_string()),
             if expose_cdp { "SIM" } else { "não" },
             if headless {
                 "sem janela (headless)"

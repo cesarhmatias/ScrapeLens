@@ -1451,3 +1451,26 @@ pub fn site_profile(ctx: &Ctx, params: SiteProfileParams) -> ToolResult {
     }
     Ok(value)
 }
+
+/// Rede de segurança final de TODA saída sem `reveal`: em qualquer string, o
+/// valor de parâmetro de query com nome sensível vira `[REDACTED]`. Roda sobre
+/// o JSON inteiro, não só sobre campos conhecidos. Defesa em profundidade: o
+/// sanitizador do core já cobre os campos do modelo.
+pub fn scrub_output(value: &mut Value) {
+    fn walk(value: &mut Value, options: &scrapelens_core::export::sanitize::SanitizeOptions) {
+        match value {
+            Value::String(text) => {
+                if text.contains('?') {
+                    *text = scrapelens_core::export::sanitize::sanitize_text(text, options);
+                }
+            }
+            Value::Array(list) => list.iter_mut().for_each(|item| walk(item, options)),
+            Value::Object(map) => map.values_mut().for_each(|item| walk(item, options)),
+            _ => {}
+        }
+    }
+    walk(
+        value,
+        &scrapelens_core::export::sanitize::SanitizeOptions::default(),
+    );
+}

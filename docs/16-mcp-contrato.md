@@ -90,6 +90,18 @@ Com `reveal=false`:
   exportação sanitizada. O servidor aplica `sanitize_url` de novo nesses
   campos e nas URLs de `trace_value` (defesa em profundidade, coberta por
   teste próprio).
+- **Texto cru com query** (rodada 11, correção de vazamento): o sanitizador do
+  core redige o valor de parâmetro de query com nome sensível também em
+  `startLine` de requisição (`GET /p?token=… HTTP/1.1`), em qualquer valor de
+  header que não seja URL conhecida (`Refresh`, `X-Original-Url`,
+  `Content-Security-Policy` `report-uri`…), em `view.notes`, notas de
+  proveniência, `failure`, evidências de ligação, razões de correlação e
+  mensagens de aviso; a propagação por valor também varre `startLine`, notas,
+  `target.url` e `initiator.url`. Além disso, **toda saída sem `revealed: true`
+  de qualquer ferramenta** passa por uma última varredura do JSON inteiro
+  (`scrub_output`), não só dos campos conhecidos. Limite herdado do core:
+  parâmetros cujo **nome** não é sensível (ex.: `k=…`) não são redigidos nas
+  URLs; nas saídas de captura a query inteira some (`?…`).
 - **Custo**: a primeira chamada mascarada de uma sessão a carrega inteira em
   memória para sanitizá-la (cópia guardada em cache). Sessões muito grandes
   podem levar segundos e responder `too_large` se o core recusar o carregamento.
