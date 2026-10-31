@@ -6,6 +6,7 @@ Conflito zero: cada agente só escreve no que é seu.
 |---|---|
 | Captura/protocolos | `experiments/`, `docs/02-matriz-fidelidade.md` (linhas de evidência) |
 | Testes/servidores | `testserver/`, `fixtures/` |
+| Core e importadores | `core/`, `mcp/` (servidor MCP de leitura), `docs/16-mcp-contrato.md` |
 | Líder | `docs/00-plano.md`, `docs/01-decisoes.md`, `docs/03-contratos.md` |
 
 Compartilhado (nunca editar sem combinar): `README.md`, lockfiles, raiz.

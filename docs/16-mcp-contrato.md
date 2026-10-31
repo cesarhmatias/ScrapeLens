@@ -63,6 +63,8 @@ Stdout é o canal JSON-RPC; todo log vai para stderr. Transporte: stdio.
 
 `reveal` (booleano, padrão `false`) existe em toda ferramenta que devolve
 valores. `reveal=true` exige `--allow-reveal` no servidor.
+**Decisão do líder (rodada 11):** a trava é dupla — parâmetro por chamada
+*e* `--allow-reveal` ao iniciar o servidor; o agente não revela sozinho.
 
 Com `reveal=false`:
 
@@ -81,9 +83,11 @@ Com `reveal=false`:
 - **Metadados de corpo** (`state`, `bytes`, `contentType`, `hasRequestBody`/
   `hasResponseBody`) saem da sessão original mesmo na visão mascarada, para a
   máscara não esconder que existe um corpo; só o conteúdo é retido.
-- **`target` e `initiator`**: o sanitizador do core não cobre as URLs desses
-  campos; o servidor aplica `sanitize_url` (query e fragmento) nelas. URLs em
-  `trace_value` passam pelo mesmo filtro.
+- **`target` e `initiator`**: o sanitizador do core mascara `target.url`,
+  `initiator.url` e a URL do topo do stack (query e fragmento) em toda
+  exportação sanitizada. O servidor aplica `sanitize_url` de novo nesses
+  campos e nas URLs de `trace_value` (defesa em profundidade, coberta por
+  teste próprio).
 - **Custo**: a primeira chamada mascarada de uma sessão a carrega inteira em
   memória para sanitizá-la (cópia guardada em cache). Sessões muito grandes
   podem levar segundos e responder `too_large` se o core recusar o carregamento.
