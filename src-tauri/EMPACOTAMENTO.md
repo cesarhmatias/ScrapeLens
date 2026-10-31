@@ -9,12 +9,12 @@ mesmas condições.
 | Item | Valor |
 |---|---|
 | Repositório | `/Users/cesar/Projects/scrapelens` |
-| Commit do app no momento do build | `8fd4f6d` (HEAD de origem; `feat(capture): marcador de captura e cleanup_orphans`) + setup Tauri chama limpeza em thread |
+| Commit do app no momento do build | `0ddd387` (HEAD de origem) + identidade local `ScrapeLens Local Signing` no `tauri.conf.json` |
 | Commits de exportação incluídos | `eaf5471` (shell Tauri), `0a6e696` (UI), `0446f18`/`12457cd` (formatação), `3a3c676` (ajuste da prévia) |
 | Contrato da rodada | `4c97bc9` (`docs/07-exportacao-ui.md`); multi-alvo `docs/14-captura-multi-alvo.md` + UI `9a06463` |
 | Core | path `scrapelens-core`; inclui `715cdea`/`66e97e3` (SW “não confirmada”, `target.notes`, `cdp.target_setup_error`) |
-| Data do build | 2026-10-31 ~11:25 (UTC−03) |
-| Working tree | base `8fd4f6d` + `cleanup_orphans_on_start` no setup Tauri (thread) + teste de marcador com PID morto |
+| Data do build | 2026-10-31 ~13:30 (UTC−03) |
+| Working tree | assinatura estável com certificado autoassinado no login keychain (não ad-hoc) |
 
 Não há sidecar, processo auxiliar nem runtime Node/Python no produto.
 
@@ -29,15 +29,72 @@ cd ../core && cargo test                  # 55 passam, 1 ignorado
 cd ../src-tauri && cargo test             # 59 passam, 8 ignorados; 0 falhas
 cd ../src-tauri && cargo clippy --all-targets
 cd .. && ./app/node_modules/.bin/tauri build --bundles app
-
-# assinatura ad-hoc do bundle (o linker já deixa o binário ad-hoc; este passo
-# cria _CodeSignature/CodeResources para que `codesign --verify` valide)
+# tauri.conf.json → bundle.macOS.signingIdentity = "ScrapeLens Local Signing"
+# (o Tauri assina sozinho; re-sign manual equivalente:)
 cd src-tauri/target/release/bundle/macos
-codesign --force --deep --sign - ScrapeLens.app
+codesign --force --deep --options runtime --sign "ScrapeLens Local Signing" ScrapeLens.app
 codesign --verify --deep --strict ScrapeLens.app
+codesign -dr - ScrapeLens.app   # DR estável: certificate root, não cdhash
 ```
 
 Ferramentas usadas: rustc 1.98.1, Node 26.8.1, macOS 26.5.2 (arm64).
+
+## Identidade local de Code Signing
+
+**Não é Developer ID.** Não serve para distribuição, Gatekeeper nem notarização.
+É só um certificado autoassinado no login keychain do desenvolvedor, para o
+designated requirement do bundle citar o certificado (estável entre builds)
+em vez do cdhash ad-hoc (que muda a cada re-sign e quebra o TCC / App Management).
+
+| Item | Valor |
+|---|---|
+| Nome / CN | `ScrapeLens Local Signing` |
+| Keychain | login (`~/Library/Keychains/login.keychain-db`) |
+| Designated requirement | `identifier "app.scrapelens.desktop" and certificate root = H"d0a53befa59a447043abc9e58a3381addbbf1751"` |
+| Estabilidade | igual em dois `tauri build` seguidos (conferido) |
+
+### Como recriar (máquina nova / keychain limpa)
+
+Arquivos temporários só em `/tmp`; apagar a chave e o `.p12` depois do import.
+Nunca versionar a chave privada.
+
+```sh
+TMP=$(mktemp -d /tmp/scrapelens-codesign.XXXXXX)
+cat > "$TMP/codesign.cnf" <<'EOF'
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_codesign
+prompt = no
+[req_distinguished_name]
+CN = ScrapeLens Local Signing
+O = ScrapeLens Local
+C = BR
+[v3_codesign]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature
+extendedKeyUsage = critical,codeSigning
+subjectKeyIdentifier = hash
+EOF
+openssl req -new -x509 -days 3650 -nodes -newkey rsa:2048 \
+  -keyout "$TMP/scrapelens.key" -out "$TMP/scrapelens.crt" -config "$TMP/codesign.cnf"
+P12PASS=$(openssl rand -base64 24)
+openssl pkcs12 -export -inkey "$TMP/scrapelens.key" -in "$TMP/scrapelens.crt" \
+  -out "$TMP/scrapelens.p12" -name "ScrapeLens Local Signing" -passout "pass:${P12PASS}"
+security import "$TMP/scrapelens.p12" -k ~/Library/Keychains/login.keychain-db \
+  -f pkcs12 -P "$P12PASS" -T /usr/bin/codesign -T /usr/bin/security
+unset P12PASS
+security add-trusted-cert -r trustRoot -p codeSign \
+  -k ~/Library/Keychains/login.keychain-db "$TMP/scrapelens.crt"
+# Opcional (pede a senha do login keychain se a sessão não estiver desbloqueada):
+# security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+#   -D "ScrapeLens Local Signing" -t private ~/Library/Keychains/login.keychain-db
+rm -f "$TMP/scrapelens.key" "$TMP/scrapelens.p12" "$TMP/scrapelens.crt" "$TMP/codesign.cnf"
+rmdir "$TMP"
+security find-identity -v -p codesigning   # deve listar "ScrapeLens Local Signing"
+```
+
+Se `security import` ou `set-key-partition-list` pedirem a senha do Keychain, rode o
+comando no Terminal (não grave a senha em arquivo nem no chat).
 
 ## Artefato
 
@@ -47,14 +104,15 @@ Ferramentas usadas: rustc 1.98.1, Node 26.8.1, macOS 26.5.2 (arm64).
 | Executável | `ScrapeLens.app/Contents/MacOS/scrapelens` |
 | Arquitetura | `Mach-O 64-bit executable arm64`, thin (sem universal binary) |
 | Tamanho do bundle | 16.924 KiB (~16,5 MiB, `du -sk`) |
-| Tamanho do executável | 16.576.048 bytes |
-| SHA-256 do executável | `b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157` |
+| Tamanho do executável | 16.576.128 bytes |
+| SHA-256 do executável | `1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a` |
 | Identificador | `app.scrapelens.desktop` |
-| Assinatura | ad-hoc (`flags=0x2(adhoc)`, `TeamIdentifier=not set`) |
+| Assinatura | `ScrapeLens Local Signing` (`flags=0x10000(runtime)`, `TeamIdentifier=not set`) — **não** Developer ID |
+| Designated requirement | `identifier "app.scrapelens.desktop" and certificate root = H"d0a53befa59a447043abc9e58a3381addbbf1751"` |
 | `codesign --verify --deep --strict` | exit 0 (valid on disk, satisfaz o Designated Requirement) |
 | `spctl -a` | rejeitado — esperado: sem Developer ID e sem notarização |
 
-Rodada 10 limpeza órfãos (HEAD de origem 8fd4f6d, 2026-10-31; setup Tauri chama `capture::cleanup_orphans` em thread; teste `startup_removes_orphan_capture_with_dead_owner`; hash anterior `7a46fa4c…`). Antes: rodada 10 definitiva (HEAD de origem 66e97e3, 2026-10-31; UI `target.notes` + `cdp.target_setup_error`/`timeout` em Limites; captura `/multi/` com “não confirmada” no sw-intercept e Limites sem aviso de setup; print 44; hash anterior `02e6ef30…`). Antes: rodada 10 final (HEAD de origem 8cfe828, 2026-10-30; Captura 1716d39–8cfe828 + Core df421cf/7892303; SW sem cópias na lista, sw-intercept ligado como ambígua, Limites sem “não anexou” falso; sessão antiga sem sessionId sem coluna Alvo; prints 42/44/47; hash anterior `77cf7355…`). Antes: rodada 10 (HEAD de origem 881fa0d, 2026-10-30; bundle com captura multi-alvo d60c1ae+, UI Alvo `9a06463`, aceite das Testes; captura ao vivo `/multi/` pelo `.app` com coluna Alvo e filtro de alvos; evidência `evidence/busca-corpos/46-multi-alvo-bundle.png`; hash anterior `d1136cbb…`). Antes: rodada 9, onda B, 3ª vez (HEAD de origem 7410fa4, 2026-10-29; bundle com `plan.parameters` isento só com plano verificado — versão atual, hash e alvo conferidos; correção só de core, traces e tela sem mudança; hash anterior `a4fe000a…`). Antes: rodada 9, onda B, 2ª vez (HEAD de origem 39410bf, 2026-10-29; bundle recompilado com a isenção de `parameters` restrita ao par (name, part) do plano — correção só de core, traces e tela sem mudança; hash anterior `860c2008…`). Antes: rodada 9, onda B (HEAD de origem 31bcaa9, 2026-10-29; plan.version 2 no trace, traces ok/403/incompleta regenerados contra o detran-sim e validação sem avisos espúrios na trace fiel; inclui o cleanup_on_start de 4a81cb0 e o plan.parameters de d83d620; hash anterior `bdce5796…`). Antes: rodada 9, 3ª vez (HEAD de origem a37cd60, 2026-10-29; temporária do trace com guardar/descartar, limite de 64 MiB, vereditos novos do validate com plan.hash do core; hash anterior `0b49ba0c…`). Antes: rodada 9, 2ª vez (HEAD de origem 2a5c533, 2026-10-29; validate com adaptador e classe "parâmetro do usuário"; hash anterior `48e1ab6d…`). Antes: rodada 9 (HEAD de origem 744df02, 2026-10-29; linha do tempo, "Validar execução…" com import-trace em pasta nova e validate; hash anterior `bda06a2d…`). Antes: build final que encerra a rodada 8 (HEAD de origem dc14ac3, 2026-10-29; estrito como padrão nas partes do adaptador; opção avançada "partes tolerantes" (`lenient_parts`) no script de priming, desligada por padrão; hash anterior `0eb5632a…`). Antes: build final da rodada 8, 2ª vez (HEAD de origem c07b514, 2026-10-29; inclui b4511fb e c07b514 da Captura; hash anterior `bee5f6d6…`). Antes: build final da rodada 8 (HEAD de origem 5d2c6e6, 2026-10-29; inclui 391db16, 5d2c6e6 da Captura, 3ba9486 do Core e o corte de partes da visão do adaptador; hash anterior `53009655…`). Antes: rebuild final da rodada 8 (HEAD de origem b0ce0f0, 2026-10-29; inclui limites da gramática da Captura, core c61d407 e o limite por campo da visão do adaptador; hash anterior `9aec2199…`). Antes: rebuild da rodada 8 (HEAD de origem aab8559, 2026-10-29; adaptador `natural-ajax` por dependência de path em origins/chain/compare/priming, visão estruturada e aba "Script de priming"; hash anterior `6e301e70…`). Antes: rebuild final (HEAD de origem 4b16b0e, 2026-10-29; inclui cf015b2 initiator do CDP e 6a85676 detectores do priming; hash anterior `1a097cd0…`). Antes: rebuild 7e (leitura de `assess-rules.json` só como arquivo regular sem symlink, até 256 KiB, erro de parse sem eco; hash anterior `56514c8b…`). Antes: rebuild 7d (avisos de `AssessRules::warnings()` devolvidos por `assess_session` e mostrados na lista e na aba Aplicação; hash anterior `0dba0476…`). Antes: rebuild 7c (filtros separados "Falhas da aplicação" = app-error e "Possíveis bloqueios?" = blocked?, combináveis; hash anterior `aa066f1a…`). Antes: rebuild 7b-2 (`counts` do assess com `VerdictKind::count_key()`, chaves kebab-case iguais ao `verdictKind`; hash anterior `83d67718…`). Antes: rebuild do ajuste 7b (verdict `not-assessed` neutro; hash anterior `0f6d04bf…`). Antes: rebuild da onda 7b (comando `assess_session`, coluna/filtro/aba "Aplicação", veredito na cadeia e no compare; hash anterior `4f7ca2aa…`). Antes: rebuild com frames auxiliares e iniciador (hash anterior `1697321d…`). Antes: rebuild da onda 6b (controle HTML, contexto estático, páginas de contexto, avisos de HAR sem cookies, compare por rodadas com opções, sanitização de negócio; hash anterior `f777988f…`). Antes: rebuild da dica de reordenação ligada a `SessionComparison.reordered` (hash anterior `21824159…`). Antes: rebuild do ajuste de layout do compare (chips quebram linha; dica de reordenação opcional); hash anterior `ac7213b2…`. Antes: rebuild com os rótulos do core (possível origem) e fixtures regeneradas; hash anterior `31ec27c3…`. Antes: rebuild das correções da revisão da rodada 5 (possível origem, confiança por passo, comparação paginada, caminhos canônicos, partsCounts; hash anterior `c1783a57…`). Antes: rebuild da onda 5b (aba Origem, cadeia de priming, comparação A × B, exportação com origens anotadas; hash anterior `2f08150d…`). Antes: rebuild do acabamento da rodada 4 (legenda de realce só quando há tracejado, nota discreta para `chrome-decoded`, aviso para `charset:*`/`lossy-postData`); hash anterior `0e2754f4…`. Antes: rebuild com busca preguiçosa do core (LazySession + search_lazy), realce sólido/tracejado e texto da fixture sintética; hash anterior `f9c0acec…`. Antes: rebuild das correções da revisão 4b (rótulos de origem, realce pelo intervalo do core, cache do bundle de busca, recusa de symlink em anexos, `transformed`; hash anterior `56ee754b…`). Antes: rebuild da onda 4b (busca no payload e painel de corpos: commands `search_session` e `read_body`, UI; 28+2 ignorados em src-tauri, 16/16 em tests/exportacao, `npm run test:adapter` ok; evidência em `evidence/busca-corpos/`). Hash anterior `9c04b98b…` substituído. Histórico: rebuild de 0d4dbab (`fix(app)`: adapter tolera campos omitidos que o core aceita via serde default; teste `npm run test:adapter` com a fixture mínima; 15+1 ignorado Tauri, 16/16 regressões tests/exportacao). Hash anterior `5934556c…` (16015a1) substituído. Antes: rebuild com validação de todos os ancestrais do destino (F1/F2): o hash acima é deste build. O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
+Rodada 10 assinatura estável (HEAD de origem 0ddd387, 2026-10-31; cert local `ScrapeLens Local Signing`; DR por certificate root, estável em 2 builds; hash anterior `b3e12edc…`). Antes: rodada 10 limpeza órfãos (HEAD de origem 8fd4f6d, 2026-10-31; setup Tauri chama `capture::cleanup_orphans` em thread; teste `startup_removes_orphan_capture_with_dead_owner`; hash anterior `7a46fa4c…`). Antes: rodada 10 definitiva (HEAD de origem 66e97e3, 2026-10-31; UI `target.notes` + `cdp.target_setup_error`/`timeout` em Limites; captura `/multi/` com “não confirmada” no sw-intercept e Limites sem aviso de setup; print 44; hash anterior `02e6ef30…`). Antes: rodada 10 final (HEAD de origem 8cfe828, 2026-10-30; Captura 1716d39–8cfe828 + Core df421cf/7892303; SW sem cópias na lista, sw-intercept ligado como ambígua, Limites sem “não anexou” falso; sessão antiga sem sessionId sem coluna Alvo; prints 42/44/47; hash anterior `77cf7355…`). Antes: rodada 10 (HEAD de origem 881fa0d, 2026-10-30; bundle com captura multi-alvo d60c1ae+, UI Alvo `9a06463`, aceite das Testes; captura ao vivo `/multi/` pelo `.app` com coluna Alvo e filtro de alvos; evidência `evidence/busca-corpos/46-multi-alvo-bundle.png`; hash anterior `d1136cbb…`). Antes: rodada 9, onda B, 3ª vez (HEAD de origem 7410fa4, 2026-10-29; bundle com `plan.parameters` isento só com plano verificado — versão atual, hash e alvo conferidos; correção só de core, traces e tela sem mudança; hash anterior `a4fe000a…`). Antes: rodada 9, onda B, 2ª vez (HEAD de origem 39410bf, 2026-10-29; bundle recompilado com a isenção de `parameters` restrita ao par (name, part) do plano — correção só de core, traces e tela sem mudança; hash anterior `860c2008…`). Antes: rodada 9, onda B (HEAD de origem 31bcaa9, 2026-10-29; plan.version 2 no trace, traces ok/403/incompleta regenerados contra o detran-sim e validação sem avisos espúrios na trace fiel; inclui o cleanup_on_start de 4a81cb0 e o plan.parameters de d83d620; hash anterior `bdce5796…`). Antes: rodada 9, 3ª vez (HEAD de origem a37cd60, 2026-10-29; temporária do trace com guardar/descartar, limite de 64 MiB, vereditos novos do validate com plan.hash do core; hash anterior `0b49ba0c…`). Antes: rodada 9, 2ª vez (HEAD de origem 2a5c533, 2026-10-29; validate com adaptador e classe "parâmetro do usuário"; hash anterior `48e1ab6d…`). Antes: rodada 9 (HEAD de origem 744df02, 2026-10-29; linha do tempo, "Validar execução…" com import-trace em pasta nova e validate; hash anterior `bda06a2d…`). Antes: build final que encerra a rodada 8 (HEAD de origem dc14ac3, 2026-10-29; estrito como padrão nas partes do adaptador; opção avançada "partes tolerantes" (`lenient_parts`) no script de priming, desligada por padrão; hash anterior `0eb5632a…`). Antes: build final da rodada 8, 2ª vez (HEAD de origem c07b514, 2026-10-29; inclui b4511fb e c07b514 da Captura; hash anterior `bee5f6d6…`). Antes: build final da rodada 8 (HEAD de origem 5d2c6e6, 2026-10-29; inclui 391db16, 5d2c6e6 da Captura, 3ba9486 do Core e o corte de partes da visão do adaptador; hash anterior `53009655…`). Antes: rebuild final da rodada 8 (HEAD de origem b0ce0f0, 2026-10-29; inclui limites da gramática da Captura, core c61d407 e o limite por campo da visão do adaptador; hash anterior `9aec2199…`). Antes: rebuild da rodada 8 (HEAD de origem aab8559, 2026-10-29; adaptador `natural-ajax` por dependência de path em origins/chain/compare/priming, visão estruturada e aba "Script de priming"; hash anterior `6e301e70…`). Antes: rebuild final (HEAD de origem 4b16b0e, 2026-10-29; inclui cf015b2 initiator do CDP e 6a85676 detectores do priming; hash anterior `1a097cd0…`). Antes: rebuild 7e (leitura de `assess-rules.json` só como arquivo regular sem symlink, até 256 KiB, erro de parse sem eco; hash anterior `56514c8b…`). Antes: rebuild 7d (avisos de `AssessRules::warnings()` devolvidos por `assess_session` e mostrados na lista e na aba Aplicação; hash anterior `0dba0476…`). Antes: rebuild 7c (filtros separados "Falhas da aplicação" = app-error e "Possíveis bloqueios?" = blocked?, combináveis; hash anterior `aa066f1a…`). Antes: rebuild 7b-2 (`counts` do assess com `VerdictKind::count_key()`, chaves kebab-case iguais ao `verdictKind`; hash anterior `83d67718…`). Antes: rebuild do ajuste 7b (verdict `not-assessed` neutro; hash anterior `0f6d04bf…`). Antes: rebuild da onda 7b (comando `assess_session`, coluna/filtro/aba "Aplicação", veredito na cadeia e no compare; hash anterior `4f7ca2aa…`). Antes: rebuild com frames auxiliares e iniciador (hash anterior `1697321d…`). Antes: rebuild da onda 6b (controle HTML, contexto estático, páginas de contexto, avisos de HAR sem cookies, compare por rodadas com opções, sanitização de negócio; hash anterior `f777988f…`). Antes: rebuild da dica de reordenação ligada a `SessionComparison.reordered` (hash anterior `21824159…`). Antes: rebuild do ajuste de layout do compare (chips quebram linha; dica de reordenação opcional); hash anterior `ac7213b2…`. Antes: rebuild com os rótulos do core (possível origem) e fixtures regeneradas; hash anterior `31ec27c3…`. Antes: rebuild das correções da revisão da rodada 5 (possível origem, confiança por passo, comparação paginada, caminhos canônicos, partsCounts; hash anterior `c1783a57…`). Antes: rebuild da onda 5b (aba Origem, cadeia de priming, comparação A × B, exportação com origens anotadas; hash anterior `2f08150d…`). Antes: rebuild do acabamento da rodada 4 (legenda de realce só quando há tracejado, nota discreta para `chrome-decoded`, aviso para `charset:*`/`lossy-postData`); hash anterior `0e2754f4…`. Antes: rebuild com busca preguiçosa do core (LazySession + search_lazy), realce sólido/tracejado e texto da fixture sintética; hash anterior `f9c0acec…`. Antes: rebuild das correções da revisão 4b (rótulos de origem, realce pelo intervalo do core, cache do bundle de busca, recusa de symlink em anexos, `transformed`; hash anterior `56ee754b…`). Antes: rebuild da onda 4b (busca no payload e painel de corpos: commands `search_session` e `read_body`, UI; 28+2 ignorados em src-tauri, 16/16 em tests/exportacao, `npm run test:adapter` ok; evidência em `evidence/busca-corpos/`). Hash anterior `9c04b98b…` substituído. Histórico: rebuild de 0d4dbab (`fix(app)`: adapter tolera campos omitidos que o core aceita via serde default; teste `npm run test:adapter` com a fixture mínima; 15+1 ignorado Tauri, 16/16 regressões tests/exportacao). Hash anterior `5934556c…` (16015a1) substituído. Antes: rebuild com validação de todos os ancestrais do destino (F1/F2): o hash acima é deste build. O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
 produz um binário byte-diferente (o linker assina antes do bundle), por isso o
 hash identifica este artefato, não a saída de qualquer build. O build anterior
 desta mesma rodada, sem o ajuste `3a3c676`, tinha
