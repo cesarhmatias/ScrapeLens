@@ -230,6 +230,14 @@ pub fn request_summary(request: &LogicalRequest, original: &LogicalRequest) -> V
     if let Some(ms) = request.timings.total_ms {
         object.insert("totalMs".into(), json!(ms));
     }
+    if let Some(start) = request
+        .attempts
+        .iter()
+        .filter_map(|a| a.started_at)
+        .reduce(f64::min)
+    {
+        object.insert("startedAt".into(), json!(start));
+    }
     object.insert("attempts".into(), json!(request.attempts.len()));
     object.insert("redirects".into(), json!(request.redirects.len()));
     object.insert("sources".into(), json!(sources_of(request)));

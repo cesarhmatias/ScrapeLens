@@ -169,8 +169,10 @@ cursor?, limit?, reveal? }`.
 Saída: `{ sessionId, total, hasMore, nextCursor?, items: [ { requestId, method,
 url, host, status?, resourceType?, protocol, totalMs?, attempts, redirects,
 sources[] ("cdp"|"netlog"|"har"|...), match, targetType? , hasRequestBody,
-hasResponseBody, warnings? } ] }` na ordem da sessão. Resumo apenas: sem headers
-nem corpos.
+hasResponseBody, startedAt?, warnings? } ] }` na **ordem da sessão, que não é
+cronológica** em capturas reais (medido: a lista vem por id; `cdp-r0004` pode ser a
+primeira requisição no tempo). `startedAt` (segundos da fonte, menor tempo entre
+as tentativas) permite ordenar. Resumo apenas: sem headers nem corpos.
 
 ### 5.4 `get_request`
 
@@ -274,6 +276,9 @@ De onde vem um cookie ou token e onde é usado. Três modos (exatamente um):
   `evidences`, `strength`, `confidence`, `unobservable`, `context`).
 
 Comuns: `limit?` (padrão 50, máximo 200 por lista), `reveal?`.
+Os modos `cookie` e `value` ordenam as requisições por `startedAt` (menor tempo
+entre as tentativas) quando todas têm tempo; senão usam a ordem da sessão e
+isso vai em `notes`. "Primeiro" e "depois" sempre se referem a essa ordem.
 
 Saída (cookie): `{ mode:"cookie", cookie, firstSetter?: {requestId, attemptId,
 url, startedAt?, source, attributes{...}}, setters[], users: [ {requestId,

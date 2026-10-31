@@ -1124,6 +1124,38 @@ pub fn trace_value(ctx: &Ctx, params: TraceValueParams) -> ToolResult {
     Ok(Value::Object(out))
 }
 
+/// Requisições em ordem cronológica. `session.requests` não é cronológica em
+/// capturas reais (vem por id); ordena por `Attempt.started_at` quando todas as
+/// requisições têm tempo, senão mantém a ordem da sessão. O booleano diz se a
+/// ordem é cronológica.
+fn chronological<'a>(view: &View<'a>) -> (Vec<&'a LogicalRequest>, bool) {
+    let mut list: Vec<&LogicalRequest> = view.session.requests.iter().collect();
+    let start = |r: &LogicalRequest| {
+        r.attempts
+            .iter()
+            .filter_map(|a| a.started_at)
+            .reduce(f64::min)
+    };
+    if list.iter().all(|r| start(r).is_some()) {
+        list.sort_by(|a, b| {
+            start(a)
+                .partial_cmp(&start(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        (list, true)
+    } else {
+        (list, false)
+    }
+}
+
+fn order_note(chronological: bool) -> &'static str {
+    if chronological {
+        "ordem cronológica por startedAt (session.requests não é cronológica em capturas reais)"
+    } else {
+        "sem startedAt em todas as requisições: usada a ordem da sessão, que pode não ser cronológica"
+    }
+}
+
 /// Mascara tokens de query/fragmento em todo campo `url` de um objeto JSON.
 fn mask_url_fields(value: &mut Value) {
     match value {
@@ -1161,7 +1193,8 @@ fn trace_cookie(view: &View<'_>, name: &str, limit: usize, reveal: bool) -> Map<
     let mut first_value: Option<String> = None;
     let mut setters_total = 0;
     let mut users_total = 0;
-    for request in &view.session.requests {
+    let (ordered, chrono) = chronological(view);
+    for request in ordered {
         for attempt in &request.attempts {
             for record in &attempt.set_cookies {
                 let Some(parsed) = record.parsed.as_ref().filter(|p| p.name == name) else {
@@ -1214,9 +1247,7 @@ fn trace_cookie(view: &View<'_>, name: &str, limit: usize, reveal: bool) -> Map<
             }
         }
     }
-    let mut notes = vec![
-        "ordem = ordem das requisições na sessão; startedAt vem da fonte e pode ter base de tempo diferente entre CDP e NetLog".to_string(),
-    ];
+    let mut notes = vec![order_note(chrono).to_string()];
     if setters_total == 0 {
         notes.push("nenhuma resposta observada define este cookie; ele pode vir de document.cookie, do perfil do navegador ou de captura incompleta — a origem não é afirmada".to_string());
     }
@@ -1266,9 +1297,8 @@ fn trace_literal(
     };
     let source = view.source();
     let result = search_with(view.session, &source, &query);
-    let index: std::collections::HashMap<&str, usize> = view
-        .session
-        .requests
+    let (ordered, chrono) = chronological(view);
+    let index: std::collections::HashMap<&str, usize> = ordered
         .iter()
         .enumerate()
         .map(|(i, r)| (r.id.as_str(), i))
@@ -1301,7 +1331,7 @@ fn trace_literal(
     };
     let producers: Vec<&_> = matches.iter().filter(|m| is_producer(m.scope)).collect();
     let consumers: Vec<&_> = matches.iter().filter(|m| !is_producer(m.scope)).collect();
-    let mut warnings = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
     if value.chars().count() < 8 {
         warnings.push("valor curto (< 8 caracteres): coincidências podem ser acaso".to_string());
     }
@@ -1345,6 +1375,7 @@ fn trace_literal(
         json!(producers.len() > limit || consumers.len() > limit || result.limit_reached),
     );
     out.insert("warnings".into(), json!(warnings));
+    out.insert("notes".into(), json!([order_note(chrono)]));
     Ok(out)
 }
 

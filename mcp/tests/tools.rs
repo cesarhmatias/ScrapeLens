@@ -897,3 +897,70 @@ fn masked_request_hides_tokens_in_target_and_initiator_urls() {
         text(&open).contains("SECRET-TARGET-TOKEN") && text(&open).contains("SECRET-INIT-TOKEN")
     );
 }
+
+/// Sessão nativa com `startedAt` e `requests` fora de ordem (como numa captura
+/// real, onde a lista vem por id e não por tempo).
+fn shuffled_native(env: &Env) {
+    let work = tempfile::tempdir().unwrap();
+    let dir = work.path().join("shuffled");
+    let har = env.write("shuf.har", &flow_har(""));
+    let imported = scrapelens_core::import_har(&std::fs::read(har).unwrap()).unwrap();
+    let mut session = serde_json::to_value(&imported.bundle.session).unwrap();
+    let requests = session["requests"].as_array_mut().unwrap();
+    for (i, request) in requests.iter_mut().enumerate() {
+        for attempt in request["attempts"].as_array_mut().unwrap() {
+            attempt["startedAt"] = json!(100.0 + i as f64);
+        }
+    }
+    requests.reverse();
+    scrapelens_core::store::write_session_dir(
+        &scrapelens_core::SessionBundle {
+            session: serde_json::from_value(session).unwrap(),
+            ..imported.bundle.clone()
+        },
+        &dir,
+    )
+    .unwrap();
+    import_session(
+        &env.ctx,
+        p(json!({"path": dir.to_str().unwrap(), "name": "shuffled"})),
+    )
+    .unwrap();
+}
+
+#[test]
+fn trace_uses_chronological_order_not_session_order() {
+    let env = Env::new(false);
+    shuffled_native(&env);
+    // A lista segue a ordem da sessão (invertida), mas expõe startedAt.
+    let list = list_requests(&env.ctx, p(json!({"session_id": "shuffled"}))).unwrap();
+    assert_eq!(list["items"][0]["requestId"], "har-0005");
+    assert_eq!(list["items"][0]["startedAt"], 104.0);
+
+    let trace = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "shuffled", "cookie": "sid"})),
+    )
+    .unwrap();
+    assert_eq!(trace["firstSetter"]["requestId"], "har-0001");
+    let users: Vec<_> = trace["users"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|u| u["requestId"].as_str().unwrap())
+        .collect();
+    assert_eq!(users, ["har-0002", "har-0003"]);
+    assert!(trace["users"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|u| u["afterFirstSetter"] == true));
+    assert!(text(&trace["notes"]).contains("cronológica"));
+
+    let literal = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "shuffled", "value": "TOKEN-ABCDEFGH-0123"})),
+    )
+    .unwrap();
+    assert_eq!(literal["firstProducer"]["requestId"], "har-0002");
+}
