@@ -159,6 +159,20 @@ Os demais achados são altos, médios ou baixos.
 - **B8. IP literal na allowlist é aceito, mas nunca carrega.** `resolver_rules` pula IPs (`allowlist.rs:219`) e `MAP * ~NOTFOUND` nega o acesso, o que dá `ERR_NAME_NOT_RESOLVED`. Contradiz o §2.2.
 - **B9. Cookie só no pedido dá `media`.** Um cookie que aparece só na requisição, e que pode vir de `document.cookie`, dá `media` para DataDome e HUMAN.
 
+## Adendo: confirmações tardias da frente de filesystem e CDP
+
+Estes resultados chegaram depois do commit `f7cb0fa`.
+
+- **M4 ficou mais amplo (Médio, CONFIRMADO):**
+  - **Locais:** o mesmo padrão aparece em `core/src/store.rs:59-78` (`write_atomic`) e em `capture/src/lib.rs:1903-1917` (`open_private`). Os dois abrem um nome fixo com create+truncate, sem `O_NOFOLLOW`/`O_EXCL`.
+  - **Efeito:** com um symlink plantado no diretório da sessão, os eventos CDP da captura ao vivo (4745 B) e o `session.json` completo foram gravados fora do `--sessions-dir`.
+  - **Evidência:** `poc-fs/poc_capture_symlink.py`.
+- **B6 sobe para Baixo/Médio (CONFIRMADO):** a porta DevTools fica acessível desde o lançamento, antes do portão (`capture/src/lib.rs:435-437`).
+  - **Teste:** `curl 127.0.0.1:<porta>/json/version` devolveu `webSocketDebuggerUrl` antes de `Network.enable`/autoAttach.
+  - **Efeito:** qualquer processo local, inclusive de outro usuário do sistema, pode varrer a porta efêmera e controlar o navegador. O portão impede só que o *MCP* entregue o endereço cedo; ele não impede acesso direto à porta.
+  - **Contrato:** o §4.1 do 16b se apoia no perfil 0700, que não protege a porta.
+- **P2 confirmado (Baixo):** o teste em `poc-fs/poc_cancel.py` cancela a confirmação e depois aceita. A captura abre, o cliente nunca recebe `capture_id` e todo `start_capture` seguinte devolve `capture_already_running`. O comentário em `server.rs:44-46` diz que o slot é liberado no cancelamento, mas o rmcp 3.8 não descarta o handler.
+
 ## Achados plausíveis (só leitura)
 
 - **P1 (Médio).** `stop_capture.warnings` traz a URL crua da violação.
