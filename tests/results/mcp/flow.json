@@ -1,0 +1,204 @@
+{
+ "port": 61148,
+ "host": "localhost:61148",
+ "tools": [
+  "capture_status",
+  "diff_requests",
+  "diff_sessions",
+  "get_body",
+  "get_request",
+  "import_session",
+  "list_requests",
+  "list_sessions",
+  "navigate",
+  "search_bodies",
+  "site_profile",
+  "start_capture",
+  "stop_capture",
+  "trace_value"
+ ],
+ "sessionId": "capture-1793480565778",
+ "header_order": [
+  "Host",
+  "Connection",
+  "Pragma",
+  "Cache-Control",
+  "sec-ch-ua",
+  "sec-ch-ua-mobile",
+  "sec-ch-ua-platform",
+  "Upgrade-Insecure-Requests",
+  "User-Agent",
+  "Accept",
+  "Sec-Fetch-Site",
+  "Sec-Fetch-Mode",
+  "Sec-Fetch-User",
+  "Sec-Fetch-Dest",
+  "Accept-Encoding",
+  "Accept-Language",
+  "Cookie"
+ ],
+ "netlog_header_order": [
+  "Host",
+  "Connection",
+  "Pragma",
+  "Cache-Control",
+  "sec-ch-ua",
+  "sec-ch-ua-mobile",
+  "sec-ch-ua-platform",
+  "Upgrade-Insecure-Requests",
+  "User-Agent",
+  "Accept",
+  "Sec-Fetch-Site",
+  "Sec-Fetch-Mode",
+  "Sec-Fetch-User",
+  "Sec-Fetch-Dest",
+  "Accept-Encoding",
+  "Accept-Language",
+  "Cookie"
+ ],
+ "checks": [
+  {
+   "name": "handshake",
+   "ok": true,
+   "detail": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"result\": {\"protocolVersion\": \"2025-06-18\", \"capabilities\": {\"tools\": {}}, \"serverInfo\": {\"name\": \"scrapelens-mcp\", \"version\": \"0.1.0\"}, \"instructions\": \"ScrapeLens: captur"
+  },
+  {
+   "name": "14 ferramentas anunciadas",
+   "ok": true,
+   "detail": "14: ['capture_status', 'diff_requests', 'diff_sessions', 'get_body', 'get_request', 'import_session', 'list_requests', 'list_sessions', 'navigate', 'search_bodies', 'site_profile', 'start_capture', 'stop_capture', 'trace_value']"
+  },
+  {
+   "name": "start_capture sem parâmetro de confirmação",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "start_capture aceito (elicitação)",
+   "ok": true,
+   "detail": "{\"warnings\": [], \"chromePid\": 87262, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
+  },
+  {
+   "name": "elicitação exibida ao usuário",
+   "ok": true,
+   "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:61148\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:61148/\\nC"
+  },
+  {
+   "name": "Chrome real iniciado",
+   "ok": true,
+   "detail": "{\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, lik"
+  },
+  {
+   "name": "navigate fora da allowlist recusado",
+   "ok": true,
+   "detail": "{\"error\": {\"code\": \"url_not_allowed\", \"message\": \"host fora da allowlist: 127.0.0.1\"}}"
+  },
+  {
+   "name": "navigate fora da allowlist não chegou ao servidor local",
+   "ok": true,
+   "detail": "[]"
+  },
+  {
+   "name": "navigate permitido carregou",
+   "ok": true,
+   "detail": "{\"frameId\": \"C08BC2CCEF32F7011B0A4B85E31C4F7C\", \"loaderId\": \"B9B3BF4228BD0DE0C83034BA25B11AD2\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-df51a37130f9c561\"}"
+  },
+  {
+   "name": "capture_status em gravação",
+   "ok": true,
+   "detail": "{\"recording\": true, \"events\": 38, \"chromePid\": 87262, \"sessionId\": \"capture-1793480565778\", \"pageUrl\": \"http://localhost:61148/\", \"startedAt\": \"\", \"captureId\": \"cap-df51a37130f9c561\"}"
+  },
+  {
+   "name": "stop_capture gracioso",
+   "ok": true,
+   "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 202, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-df51a37130f9c561\", \"sessionId\": \"capture-1793480565778\", \"readable\": true}"
+  },
+  {
+   "name": "NetLog completo",
+   "ok": true,
+   "detail": "complete"
+  },
+  {
+   "name": "list_requests devolve a sessão",
+   "ok": true,
+   "detail": "total=3"
+  },
+  {
+   "name": "/page2 na sessão",
+   "ok": true,
+   "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:61148/\", \"host\": \"localhost:61148\", \"status\": 200, \"resourceType\": \"Document\", \"protocol\": \"h1\", \"totalMs\": 6.675000302493572, \"st"
+  },
+  {
+   "name": "token da query fora da listagem",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "get_request devolve headers de requisição em ordem",
+   "ok": true,
+   "detail": "17 headers"
+  },
+  {
+   "name": "ordem dos headers = ordem recebida pelo servidor local",
+   "ok": true,
+   "detail": "mcp=['Host', 'Connection', 'Pragma', 'Cache-Control', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'Upgrade-Insecure-Requests', 'User-Agent', 'Accept', 'Sec-Fetch-Site', 'Sec-Fetch-Mode', 'Sec-Fetch-User', 'Sec-Fetch-Dest', 'Accept-Encoding', 'Accept-Language', 'Cookie'] servidor=['Host', "
+  },
+  {
+   "name": "ordem dos headers do MCP = um bloco bruto do NetLog na mesma ordem",
+   "ok": true,
+   "detail": "blocos=[16, 17] mcp=['Host', 'Connection', 'Pragma', 'Cache-Control', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'Upgrade-Insecure-Requests', 'User-Agent', 'Accept', 'Sec-Fetch-Site', 'Sec-Fetch-Mode', 'Sec-Fetch-User', 'Sec-Fetch-Dest', 'Accept-Encoding', 'Accept-Language', 'Cookie']"
+  },
+  {
+   "name": "cookie chegou ao servidor na segunda requisição",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "trace_value do cookie sem erro",
+   "ok": true,
+   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0001\", \"attemptId\": \"cdp-r0001-a1\", \"url\": \"http://localhost:61148/\", \"startedAt\": 6070060.480115, \"source\": \"netlog\", \"verificat"
+  },
+  {
+   "name": "trace_value do cookie mascarado",
+   "ok": true,
+   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0001\", \"attemptId\": \"cdp-r0001-a1\", \"url\": \"http://localhost:61148/\", \"startedAt\": 6070060.480115, \"source\": \"netlog\", \"verificat"
+  },
+  {
+   "name": "site_profile sem erro",
+   "ok": true,
+   "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793480565778\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:61148\": [\"h1"
+  },
+  {
+   "name": "reveal=true recusado sem --allow-reveal",
+   "ok": true,
+   "detail": "{\"error\": {\"code\": \"reveal_disabled\", \"message\": \"reveal=true exige iniciar o servidor com --allow-reveal\"}}"
+  },
+  {
+   "name": "servidor sai limpo no EOF",
+   "ok": true,
+   "detail": "rc=0"
+  },
+  {
+   "name": "elicitação recusada: start_capture falha",
+   "ok": true,
+   "detail": "{\"error\": {\"code\": \"confirmation_denied\", \"message\": \"o usu\\u00e1rio n\\u00e3o confirmou: o usu\\u00e1rio recusou. Nada foi aberto.\"}}"
+  },
+  {
+   "name": "elicitação recusada: nenhum Chrome da captura criado",
+   "ok": true,
+   "detail": "antes=1 depois=1"
+  },
+  {
+   "name": "elicitação recusada: pedido de confirmação foi feito",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "nenhum valor de cookie/token na saída inteira do MCP (sem reveal)",
+   "ok": false,
+   "detail": "saída[6] <segredo-sintetico-omitido>: ...\"matched\", \"source\": \"cdp\"}], \"redirects\": [], \"request\": {\"startLine\": \"GET /page2?token=<segredo-sintetico-omitido> HTTP/1.1\", \"orderSt... | saída[19] <segredo-sintetico-omitido>: ...hed\\\",\\\"source\\\":\\\"cdp\\\"}],\\\"redirects\\\":[],\\\"request\\\":{\\\"startLine\\\":\\\"G"
+  }
+ ],
+ "ok": false,
+ "passed": 27,
+ "failed": 1
+}

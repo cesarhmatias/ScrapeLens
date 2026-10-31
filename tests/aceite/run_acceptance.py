@@ -1177,6 +1177,67 @@ def rel(path: pathlib.Path) -> str:
 
 # ------------------------------------------------------------------ execution
 
+def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
+    """MCP (rodada 11): testes dos crates, testes vivos e fluxo completo como cliente stdio."""
+    import re as _re
+    rows: list[dict] = []
+    evidence: list[str] = []
+    notes: list[str] = []
+    out_dir = RESULTS / "mcp"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    commands: list[dict] = []
+
+    def run_cmd(label: str, argv: list[str], cwd: pathlib.Path, timeout: int = 1500) -> dict:
+        started = time.time()
+        proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        output = proc.stdout + proc.stderr
+        passed = sum(int(m.group(1)) for m in _re.finditer(r"(\d+) passed", output))
+        failed = sum(int(m.group(1)) for m in _re.finditer(r"(\d+) failed", output))
+        entry = {"label": label, "cmd": " ".join(argv), "cwd": rel(cwd), "rc": proc.returncode,
+                 "passed": passed, "failed": failed, "seconds": round(time.time() - started, 2),
+                 "tail": output[-800:]}
+        commands.append(entry)
+        rows.append({"ok": proc.returncode == 0,
+                     "label": f"MCP {label}: rc={proc.returncode}, {passed} passaram, {failed} falharam"})
+        return entry
+
+    run_cmd("cargo test mcp", ["cargo", "test", "--offline"], ROOT / "mcp")
+    run_cmd("cargo test capture", ["cargo", "test", "--offline"], ROOT / "capture")
+    run_cmd("cargo test recon", ["cargo", "test", "--offline"], ROOT / "recon")
+    run_cmd("vivo mcp e2e_live", ["cargo", "test", "--offline", "--test", "e2e_live", "--", "--ignored"],
+            ROOT / "mcp")
+    run_cmd("vivo recon live_e2e.sh", ["sh", "scripts/live_e2e.sh"], ROOT / "recon")
+
+    started = time.time()
+    full = subprocess.run([sys.executable, "-I", str(ROOT / "tests" / "aceite" / "mcp_flow.py")],
+                          cwd=ROOT, capture_output=True, text=True, timeout=900)
+    try:
+        flow_json = json.loads(full.stdout)
+    except json.JSONDecodeError:
+        flow_json = {"ok": False, "checks": [{"name": "saída do fluxo é JSON", "ok": False,
+                                             "detail": (full.stdout + full.stderr)[-300:]}]}
+    commands.append({"label": "fluxo stdio (cliente independente)", "cmd": "python3 -I tests/aceite/mcp_flow.py",
+                     "rc": full.returncode, "passed": flow_json.get("passed"), "failed": flow_json.get("failed"),
+                     "seconds": round(time.time() - started, 2), "tail": full.stderr[-400:]})
+    rows.append({"ok": full.returncode == 0 and bool(flow_json.get("ok")),
+                 "label": f"MCP fluxo stdio: rc={full.returncode}, {flow_json.get('passed')} passaram, "
+                          f"{flow_json.get('failed')} falharam"})
+    for check_row in flow_json.get("checks", []):
+        rows.append({"ok": bool(check_row.get("ok")),
+                     "label": f"fluxo: {check_row.get('name')}"
+                              + ("" if check_row.get("ok") else f" — {check_row.get('detail', '')}")})
+
+    (out_dir / "flow.json").write_text(json.dumps(flow_json, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    run_json = {"generatedAt": now_iso(), "commands": commands,
+                "flow": {"ok": flow_json.get("ok"), "passed": flow_json.get("passed"),
+                         "failed": flow_json.get("failed"), "checks": flow_json.get("checks", [])}}
+    (out_dir / "run.json").write_text(json.dumps(run_json, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    evidence.append(f"`{rel(out_dir / 'run.json')}` e `{rel(out_dir / 'flow.json')}` (saídas dos comandos e do fluxo)")
+    notes.append("Cliente do fluxo: `tests/aceite/mcp_flow.py`, JSON-RPC por stdio em Python, sem o harness Rust; "
+                 "servidor HTTP local em 127.0.0.1, Chrome real headless, nada externo.")
+    return rows, evidence, notes
+
+
 ITEMS = [
     (1, "Headers repetidos e cookies preservados nas fixtures", item_1),
     (2, "HAR e NetLog válidos, incompletos e com eventos desconhecidos", item_2),
@@ -1188,6 +1249,7 @@ ITEMS = [
     (8, "Sanitização incluindo eventos brutos", item_8),
     (9, "Ciclo real de captura no macOS", item_9),
     (10, "Importação grande com tamanho documentado", item_10),
+    (11, "MCP: testes dos crates, vivos e fluxo completo por stdio", item_11),
 ]
 
 

@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-31T16:33:44Z",
+ "generatedAt": "2026-10-31T21:02:55Z",
  "coreSha256": "a3380e22cc4d6adf54bf49b433450299fd8f6c92f5a8dd651a88763c197d2263",
  "coreBytes": 3817472,
- "gitCommit": "c2d2b8f",
+ "gitCommit": "8616c1b",
  "macos": "26.5.2",
  "machine": "arm64",
  "python": "3.14.8",
@@ -137,7 +137,7 @@
     "asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte"
    ],
    "notes": [],
-   "seconds": 0.06
+   "seconds": 0.12
   },
   {
    "item": 2,
@@ -158,7 +158,7 @@
     },
     {
      "ok": true,
-     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'har.missing_response', 'session.netlog_missing', 'session.cdp_missing', 'har.cookies_absent'}"
+     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'har.missing_response', 'session.cdp_missing', 'har.cookies_absent', 'session.netlog_missing'}"
     },
     {
      "ok": true,
@@ -178,7 +178,7 @@
     },
     {
      "ok": true,
-     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'har.cookies_absent', 'session.netlog_missing', 'session.cdp_missing', 'har.unknown_encoding'}"
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'session.netlog_missing', 'session.cdp_missing', 'har.cookies_absent', 'har.unknown_encoding'}"
     },
     {
      "ok": true,
@@ -202,7 +202,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'netlog.time_unit_assumed', 'session.cdp_missing', 'netlog.unknown_event_type'}"
+     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'netlog.unknown_event_type', 'session.cdp_missing', 'netlog.time_unit_assumed'}"
     },
     {
      "ok": true,
@@ -234,7 +234,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'netlog.header_line_invalid', 'netlog.time_unit_assumed', 'session.cdp_missing'}"
+     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'netlog.header_line_invalid', 'session.cdp_missing', 'netlog.time_unit_assumed'}"
     },
     {
      "ok": true,
@@ -261,7 +261,7 @@
     "HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.",
     "Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos."
    ],
-   "seconds": 0.15
+   "seconds": 0.18
   },
   {
    "item": 3,
@@ -489,7 +489,7 @@
     },
     {
      "ok": true,
-     "label": "todos os cinco estados aparecem na fixture: esperado {'truncated', 'empty', 'unavailable', 'captured', 'discarded'}, obtido {'truncated', 'empty', 'unavailable', 'captured', 'discarded'}"
+     "label": "todos os cinco estados aparecem na fixture: esperado {'truncated', 'captured', 'empty', 'unavailable', 'discarded'}, obtido {'truncated', 'captured', 'empty', 'unavailable', 'discarded'}"
     }
    ],
    "passed": 16,
@@ -500,7 +500,7 @@
    "notes": [
     "`empty` só é usado quando a fonte afirma zero bytes; ausência vira `unavailable` com nota."
    ],
-   "seconds": 0.0
+   "seconds": 0.01
   },
   {
    "item": 6,
@@ -682,7 +682,7 @@
    "notes": [
     "Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK)."
    ],
-   "seconds": 0.13
+   "seconds": 0.15
   },
   {
    "item": 8,
@@ -781,7 +781,7 @@
   {
    "item": 9,
    "title": "Ciclo real de captura no macOS",
-   "status": "falhou",
+   "status": "aprovado",
    "assertions": [
     {
      "ok": true,
@@ -992,8 +992,8 @@
      "label": "app: codesign --verify --deep --strict passou (/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app: valid on disk\n/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app: satisfies its Designated Requirement)"
     },
     {
-     "ok": false,
-     "label": "app: codesign --verify --deep --strict recalculado em disco (/nao/existe/x: No such file or directory)"
+     "ok": true,
+     "label": "app: codesign --verify --deep --strict recalculado em disco ()"
     },
     {
      "ok": true,
@@ -1004,8 +1004,16 @@
      "label": "app: executável é o bundle final documentado (SHA-256): esperado '1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a', obtido '1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a'"
     },
     {
-     "ok": false,
-     "label": "app: executável existe em disco (/nao/existe/x/y/z/scrapelens)"
+     "ok": true,
+     "label": "app: executável existe em disco (/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens)"
+    },
+    {
+     "ok": true,
+     "label": "app: SHA-256 do executável em disco = EXPECTED_APP_SHA256: esperado '1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a', obtido '1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a'"
+    },
+    {
+     "ok": true,
+     "label": "app: SHA-256 do executável em disco = o registrado no run.json: esperado '1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a', obtido '1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a'"
     },
     {
      "ok": true,
@@ -1268,8 +1276,8 @@
      "label": "app: print da sessão importada pela UI capturado"
     }
    ],
-   "passed": 119,
-   "failed": 2,
+   "passed": 123,
+   "failed": 0,
    "evidence": [
     "execução real: `tests/capture/runs/live-final` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`",
     "app empacotado: `ScrapeLens.app` 16.52 MiB, arm64, assinatura local-identity, binário único, executável `1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a`; captura ao vivo capture-1793464319852 (11 req, 154 headers verificados, 2 ambíguas); importação HAR pela UI `har-3dbc391c02a985c5-9` (24 req, ['h1', 'h2'], 24 sourceEvents); importação NetLog pela UI `netlog-1704043c442dcbd1-9` (32 req, ['h1', 'h2', 'h3', 'unknown'], 15 StreamSessions, 5354 sourceEvents).",
@@ -1283,7 +1291,7 @@
     "Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`1901f3b499bb`, compilado em `c2d2b8f`, assinatura local estável, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.",
     "As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-9` e `netlog-1704043c442dcbd1-9`), agora pela UI: o harness escolheu os arquivos por cliques do mouse no painel nativo (o teclado não chega ao seletor; na rodada 10 final foi em primeiro plano). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). Importações repetidas dos mesmos arquivos (sufixos `-N` em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`) têm `session.json` idêntico, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão."
    ],
-   "seconds": 0.11
+   "seconds": 0.18
   },
   {
    "item": 10,
@@ -1304,35 +1312,187 @@
     },
     {
      "ok": true,
-     "label": "import-har abaixo de 60 s (1.01 s)"
+     "label": "import-har abaixo de 60 s (1.08 s)"
     },
     {
      "ok": true,
-     "label": "pico do import abaixo de 1,5 GiB (823 MiB)"
+     "label": "pico do import abaixo de 1,5 GiB (822 MiB)"
     },
     {
      "ok": true,
-     "label": "inspect abaixo de 60 s (2.91 s)"
+     "label": "inspect abaixo de 60 s (3.21 s)"
     },
     {
      "ok": true,
-     "label": "inspect com pico abaixo de 3,5 GiB (1597 MiB)"
+     "label": "inspect com pico abaixo de 3,5 GiB (1596 MiB)"
     }
    ],
    "passed": 7,
    "failed": 0,
    "evidence": [
-    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.01 s, pico 823 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.08 s, pico 822 MiB RSS",
     "sessão gravada: session.json 236.3 MiB",
-    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.91 s, pico 1597 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.21 s, pico 1596 MiB RSS",
     "complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB"
    ],
    "notes": [
     "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
-    "`inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1597 MiB vem da serialização, não do parser.",
+    "`inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1596 MiB vem da serialização, não do parser.",
     "Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo."
    ],
-   "seconds": 9.45
+   "seconds": 10.32
+  },
+  {
+   "item": 11,
+   "title": "MCP: testes dos crates, vivos e fluxo completo por stdio",
+   "status": "falhou",
+   "assertions": [
+    {
+     "ok": true,
+     "label": "MCP cargo test mcp: rc=0, 36 passaram, 0 falharam"
+    },
+    {
+     "ok": true,
+     "label": "MCP cargo test capture: rc=0, 41 passaram, 0 falharam"
+    },
+    {
+     "ok": true,
+     "label": "MCP cargo test recon: rc=0, 23 passaram, 0 falharam"
+    },
+    {
+     "ok": true,
+     "label": "MCP vivo mcp e2e_live: rc=0, 1 passaram, 0 falharam"
+    },
+    {
+     "ok": true,
+     "label": "MCP vivo recon live_e2e.sh: rc=0, 4 passaram, 0 falharam"
+    },
+    {
+     "ok": false,
+     "label": "MCP fluxo stdio: rc=1, 27 passaram, 1 falharam"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: handshake"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: 14 ferramentas anunciadas"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: start_capture sem parâmetro de confirmação"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: start_capture aceito (elicitação)"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: elicitação exibida ao usuário"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: Chrome real iniciado"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: navigate fora da allowlist recusado"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: navigate fora da allowlist não chegou ao servidor local"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: navigate permitido carregou"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: capture_status em gravação"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: stop_capture gracioso"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: NetLog completo"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: list_requests devolve a sessão"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: /page2 na sessão"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: token da query fora da listagem"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: get_request devolve headers de requisição em ordem"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: ordem dos headers = ordem recebida pelo servidor local"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: ordem dos headers do MCP = um bloco bruto do NetLog na mesma ordem"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: cookie chegou ao servidor na segunda requisição"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: trace_value do cookie sem erro"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: trace_value do cookie mascarado"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: site_profile sem erro"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: reveal=true recusado sem --allow-reveal"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: servidor sai limpo no EOF"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: elicitação recusada: start_capture falha"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: elicitação recusada: nenhum Chrome da captura criado"
+    },
+    {
+     "ok": true,
+     "label": "fluxo: elicitação recusada: pedido de confirmação foi feito"
+    },
+    {
+     "ok": false,
+     "label": "fluxo: nenhum valor de cookie/token na saída inteira do MCP (sem reveal) — saída[6] <segredo-sintetico-omitido>: ...\"matched\", \"source\": \"cdp\"}], \"redirects\": [], \"request\": {\"startLine\": \"GET /page2?token=<segredo-sintetico-omitido> HTTP/1.1\", \"orderSt... | saída[19] <segredo-sintetico-omitido>: ...hed\\\",\\\"source\\\":\\\"cdp\\\"}],\\\"redirects\\\":[],\\\"request\\\":{\\\"startLine\\\":\\\"G"
+    }
+   ],
+   "passed": 32,
+   "failed": 2,
+   "evidence": [
+    "`tests/results/mcp/run.json` e `tests/results/mcp/flow.json` (saídas dos comandos e do fluxo)"
+   ],
+   "notes": [
+    "Cliente do fluxo: `tests/aceite/mcp_flow.py`, JSON-RPC por stdio em Python, sem o harness Rust; servidor HTTP local em 127.0.0.1, Chrome real headless, nada externo."
+   ],
+   "seconds": 81.33
   }
  ],
  "scope": [
