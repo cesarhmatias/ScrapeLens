@@ -43,7 +43,7 @@ REPORT = ROOT / "tests" / "RELATORIO.md"
 # lugares juntos, para que a bateria nunca aprove um artefato não documentado.
 APP_EXECUTABLE = pathlib.Path(os.environ.get("SL_APP_EXECUTABLE") or (
     pathlib.Path(__file__).resolve().parents[2] / "src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
-EXPECTED_APP_SHA256 = "7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c"
+EXPECTED_APP_SHA256 = "b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157"
 
 SECRETS = [
     "SECRET-AUTH-TOKEN",
@@ -977,7 +977,7 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                         f"· prints `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}` e "
                         f"`{rel(pathlib.Path(app.get('gui', {}).get('importsScreenshot') or ''))}`")
         notes.append("Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final "
-                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em `0d98615` a partir de `66e97e3`, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.")
+                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em `b684c1a`, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.")
         notes.append("As importações HAR e NetLog também foram refeitas no bundle final "
                      f"(`{har_import.get('id')}` e `{netlog_import.get('id')}`), agora pela UI: o harness "
                      "escolheu os arquivos por cliques do mouse no painel nativo (o teclado não chega "

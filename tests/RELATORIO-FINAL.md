@@ -119,6 +119,11 @@ Captura `capture-1793454692088`: 11 requisições, `complete`, `cdp+netlog`, 2 a
 **Incidente:** com o Brave do usuário em primeiro plano, alguns cliques de tela meus (coordenadas de desktop) caíram nele e navegaram uma aba para uma página do Ratos de IA;
 nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas temporárias em `~/Desktop` removidas. Prints em `tests/results/app-latest/`.
 
+
+### Bundle final (fechamento)
+
+- **Bundle final:** `b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157` (App b684c1a, `capture::cleanup_orphans` no setup), HEAD de origem b684c1a; `EXPECTED_APP_SHA256` e `app-latest` atualizados; o item 9 recalcula o hash em disco. Ciclo real refeito só por AX e teclado, sem cliques de desktop (`capture-1793456763837`: 11 req, complete, cdp+netlog; HAR `-8` 24 req complete; NetLog `-8` 32 req partial). run_acceptance 10/10 (item 9: 121 asserções), check_multi_target --self-test OK (9/9 mutações como esperado, 0 avisos de setup), cargo test core 316 / src-tauri 59 / natural-ajax 32, 0 falhas.
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)

@@ -16,9 +16,9 @@
   "h3_qpack_max_table_capacity": 0,
   "note": "synthetic local test data only; no telemetry, no external network",
   "os": "macos",
-  "run_id": "app-20261031a",
+  "run_id": "app-20261031b",
   "schema": "scrapelens.testserver.run/1",
-  "started_at": "2026-10-31T13:51:17.494Z",
+  "started_at": "2026-10-31T14:25:40.272Z",
   "tls": {
     "cert_pem": "/Users/cesar/Projects/scrapelens/testserver/../fixtures/tls/scrapelens-test-localhost.crt.pem",
     "key_pem": "/Users/cesar/Projects/scrapelens/testserver/../fixtures/tls/scrapelens-test-localhost.key.pem",
