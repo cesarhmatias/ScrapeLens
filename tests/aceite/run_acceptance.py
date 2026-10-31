@@ -41,6 +41,8 @@ REPORT = ROOT / "tests" / "RELATORIO.md"
 # SHA-256 do executável do bundle final aceito nesta rodada, documentado em
 # `src-tauri/EMPACOTAMENTO.md`. Um rebuild legítimo muda o hash: atualize os dois
 # lugares juntos, para que a bateria nunca aprove um artefato não documentado.
+APP_EXECUTABLE = pathlib.Path(os.environ.get("SL_APP_EXECUTABLE") or (
+    pathlib.Path(__file__).resolve().parents[2] / "src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
 EXPECTED_APP_SHA256 = "7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c"
 
 SECRETS = [
@@ -835,6 +837,15 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                f"app: bundle com {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB")
         exp.eq(bundle.get("executableSha256"), EXPECTED_APP_SHA256,
                "app: executável é o bundle final documentado (SHA-256)")
+        # Recomputa em disco: o run.json sozinho não prova que o bundle existe.
+        real_exe = APP_EXECUTABLE
+        exp.ok(real_exe.is_file(), f"app: executável existe em disco ({real_exe})")
+        if real_exe.is_file():
+            disk = sha256(real_exe)
+            exp.eq(disk, EXPECTED_APP_SHA256,
+                   "app: SHA-256 do executável em disco = EXPECTED_APP_SHA256")
+            exp.eq(disk, bundle.get("executableSha256"),
+                   "app: SHA-256 do executável em disco = o registrado no run.json")
         exp.ok((bundle.get("executableBytes") or 0) > 0,
                f"app: executável com {bundle.get('executableBytes')} bytes")
 
