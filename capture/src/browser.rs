@@ -29,6 +29,7 @@ pub(crate) struct Endpoint {
     pub http: Option<String>,
     pub browser_ws: String,
     pub chrome_pid: u32,
+    pub page_target_id: Option<String>,
     pub product: Option<String>,
     pub user_agent: Option<String>,
 }
@@ -100,6 +101,8 @@ impl std::error::Error for StartError {}
 pub struct CdpAccess {
     pub http: Option<String>,
     pub browser_ws: String,
+    /// A aba da captura (a que `navigate` usa): o agente anexa a esta.
+    pub page_target_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -220,6 +223,7 @@ impl BrowserCapture {
             allowlist: Some(allowlist.clone()),
             control: Some(control_rx),
             endpoint: Some(endpoint.clone()),
+            require_initial_target_ready: true,
         };
         let thread_status = status.clone();
         let join = thread::spawn(move || {
@@ -260,6 +264,7 @@ impl BrowserCapture {
             cdp: config.expose_cdp.then(|| CdpAccess {
                 http: endpoint.http.clone(),
                 browser_ws: endpoint.browser_ws.clone(),
+                page_target_id: endpoint.page_target_id.clone(),
             }),
             sensitive_notice: SENSITIVE_NOTICE,
             warnings: Vec::new(),
@@ -935,6 +940,81 @@ mod tests {
             assert!(report.graceful, "{scenario}");
             println!("{scenario}: {} requisições; servidor viu {:?}", report.requests, site.seen_paths());
         }
+    }
+
+    /// O endereço CDP só é entregue com o nosso cliente ligado no alvo inicial:
+    /// a PRIMEIRA ação de um agente externo (anexar à aba da captura e navegar,
+    /// sem esperar nada) já é vista pela nossa captura, com os eventos `Network.*`
+    /// da própria aba. Exigência do líder, derivada do achado 5 de
+    /// `docs/16b-mcp-navegador.md` §3.5.
+    #[test]
+    #[ignore]
+    fn agent_first_action_is_captured() {
+        let site = TestSite::start(|_m, path| {
+            if path.starts_with("/first") {
+                Reply::html("<html><body><img src='/sub.png?m=agent-sub'></body></html>")
+            } else {
+                Reply::html("x")
+            }
+        });
+        let port = site.port;
+        let config = live_config(vec![format!("localhost:{port}")], "agent-first", true);
+        let (capture, info) = BrowserCapture::start(config).expect("start");
+        let access = info.cdp.expect("cdp exposto");
+        let target_id = access.page_target_id.clone().expect("aba da captura");
+
+        // Ação imediata do agente: anexa à aba da captura e navega.
+        let (mut socket, _) = tungstenite::connect(access.browser_ws.as_str()).expect("agente");
+        let mut call = |method: &str, params: Value, session: Option<&str>| -> Value {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static NEXT: AtomicU64 = AtomicU64::new(1);
+            let id = NEXT.fetch_add(1, Ordering::SeqCst);
+            let mut msg = json!({ "id": id, "method": method, "params": params });
+            if let Some(s) = session {
+                msg["sessionId"] = json!(s);
+            }
+            socket.send(tungstenite::Message::Text(msg.to_string().into())).expect("send");
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while Instant::now() < deadline {
+                if let Ok(tungstenite::Message::Text(t)) = socket.read() {
+                    if let Ok(v) = serde_json::from_str::<Value>(&t) {
+                        if v["id"].as_u64() == Some(id) {
+                            return v;
+                        }
+                    }
+                }
+            }
+            panic!("sem resposta de {method}");
+        };
+        let attached = call(
+            "Target.attachToTarget",
+            json!({ "targetId": target_id, "flatten": true }),
+            None,
+        );
+        let session = attached["result"]["sessionId"].as_str().expect("sessão do agente").to_string();
+        let nav = call(
+            "Page.navigate",
+            json!({ "url": format!("http://localhost:{port}/first?m=agent-first") }),
+            Some(&session),
+        );
+        assert!(nav["result"]["errorText"].is_null(), "{nav}");
+        thread::sleep(Duration::from_millis(2000));
+        drop(socket);
+
+        let report = capture.stop().expect("stop");
+        assert!(report.graceful);
+        let cdp_events = std::fs::read_to_string(
+            std::path::Path::new(&report.session_dir).join("cdp-events.jsonl"),
+        )
+        .expect("cdp-events.jsonl");
+        let seen_in_cdp = |needle: &str| {
+            cdp_events
+                .lines()
+                .any(|l| l.contains("\"Network.requestWillBeSent\"") && l.contains(needle))
+        };
+        assert!(seen_in_cdp("m=agent-first"), "a navegação do agente não está no CDP da captura");
+        assert!(seen_in_cdp("m=agent-sub"), "o subrecurso não está no CDP da captura");
+        println!("servidor viu: {:?}", site.seen_paths());
     }
 
     #[test]

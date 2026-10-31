@@ -137,7 +137,7 @@ servidor MCP, que guarda o `BrowserCapture` num mapa):
   "chromePid": 1234,
   "browser": { "path": "…", "version": "Chrome/156.0.…", "userAgent": "…" },
   "allowlist": { "allowedHosts": [], "thirdPartyHosts": [], "resolverRules": "MAP * ~NOTFOUND, EXCLUDE …" },
-  "cdp": null | { "http": "http://127.0.0.1:PORT", "browserWs": "ws://127.0.0.1:PORT/devtools/browser/…" },
+  "cdp": null | { "http": "http://127.0.0.1:PORT", "browserWs": "ws://127.0.0.1:PORT/devtools/browser/…", "pageTargetId": "…" },
   "sensitiveNotice": "…",
   "warnings": []
 }
@@ -147,8 +147,10 @@ Erros (`code`): `allowlist_required`, `allowlist_too_broad`, `allowlist_invalid`
 `start_url_not_allowed`, `browser_start_failed` (inclui binário inexistente),
 `session_dir`; `capture_already_running` é do servidor MCP.
 
-`cdp` só aparece com `expose_cdp:true` (a porta existe sempre, em loopback, como
-já é hoje; `expose_cdp` controla apenas se o endereço é entregue ao agente).
+`cdp` só aparece com `expose_cdp:true` e só depois do portão de §4.1 (a porta
+existe sempre, em loopback, como já é hoje; `expose_cdp` controla apenas se o
+endereço é entregue ao agente). `pageTargetId` é a aba da captura (a que
+`navigate` usa): o agente anexa a ela.
 
 ### 3.2 `navigate`
 
@@ -208,34 +210,72 @@ conecta no meio da sessão, anexa à aba, faz `Target.setAutoAttach
 | B. segundo cliente pede `waitForDebuggerOnStart` e **nunca** retoma | idêntico: o **nosso** `runIfWaitingForDebugger` libera o alvo (a retomada vale para o alvo, não para a sessão); nada trava |
 
 Limites da medição: uma execução de cada (repetida 3× sem divergência), um tipo
-de alvo (worker dedicado), cliente escrito por nós. **Não medido:** o agente
-retomar o alvo *antes* do nosso `Network.enable` chegar (corrida: o início da
-rede do alvo pode ficar fora da nossa captura; ficou dentro nos testes) e
-clientes que usam `Fetch` ou depuração com pausa. Consequência de produto: a
+de alvo (worker dedicado), cliente escrito por nós. **Fechado por
+desenho (§4.1):** o agente só recebe o endereço depois que o nosso
+`Network.enable` e o auto-attach estão ativos na aba inicial; alvos criados
+depois (workers, popups) seguem o pipeline de setup medido acima. **Não
+medido:** clientes que usam `Fetch` ou depuração com pausa, e a corrida em
+alvos filhos criados *depois*, em que o agente retoma antes do nosso
+`Network.enable` chegar (ficou dentro nos testes). Consequência de produto: a
 nossa retomada também libera alvos que o agente quisesse manter pausados.
 
-## 4. API Rust (para o servidor MCP)
+## 4. Crate `scrapelens-capture` e API pública (para o servidor MCP)
 
-Em `src-tauri/src/capture.rs`, sem alterar `run`, `CaptureConfig` nem
-`CaptureStatus` (usados pelo App):
+A captura vive em **`capture/`** (crate `scrapelens-capture`, **sem Tauri**:
+`cargo tree` mostra só `scrapelens-core`, `serde`, `serde_json` e `tungstenite`;
+0 ocorrências de `tauri`). `src-tauri/src/capture.rs` e `chrome.rs` são
+adaptadores finos do App (`SessionPayload`, `CaptureSession`, `run()` com o
+mesmo comportamento e a mesma `CaptureConfig`). O servidor MCP depende de
+`capture/` sem puxar a janela.
+
+API pública (`use scrapelens_capture::…`):
 
 ```text
-pub struct Allowlist                      // new(allowed, third_party) -> Result<_, AllowlistError>
+// captura comum (a do App)
+CaptureConfig { chrome, session_dir, start_url, headless, ignore_cert }
+CaptureStatus { recording, events, chrome_pid, session_id, session_dir, started_at, page_url, last_error }
+CaptureOutcome { session: Value, session_dir: PathBuf, notice: String }
+run(config, status: Arc<Mutex<CaptureStatus>>, stop: Receiver<()>, ready: Sender<Result<(),String>>)
+    -> Result<CaptureOutcome, String>
+default_state_root() -> PathBuf          // marcadores de captura (órfãos)
+cleanup_orphans(&Path) -> OrphanCleanup  // chamada pelo App na partida
+chrome::{detect, normalize_binary_path, candidates, ChromeInfo}
+
+// captura controlada (MCP)
+allowlist::Allowlist                      // new(allowed, third_party) -> Result<_, AllowlistError>
   permits_url(&str) -> Result<AllowedUrl, UrlDenied>
   host_allowed(&str) -> bool
   resolver_rules() -> String
   report(&SessionV1) -> AllowlistReport   // blockedHosts + violations
-pub struct BrowserCaptureConfig { chrome, session_dir, start_url, headless,
-                                  allowed_hosts, third_party_hosts, expose_cdp }
-pub struct BrowserCapture
+browser::BrowserCaptureConfig { chrome, session_dir, start_url, headless,
+                                allowed_hosts, third_party_hosts, expose_cdp }
+browser::BrowserCapture
   start(config) -> Result<(BrowserCapture, StartInfo), StartError>
   navigate(&self, url, wait_load, timeout) -> Result<NavigateResult, NavigateError>
   status(&self) -> CaptureStatus
-  stop(self) -> Result<StopReport, String>
+  stop(self) -> Result<StopReport, String>     // StopReport.outcome: Option<CaptureOutcome>
+browser::{StartInfo, CdpAccess, NavigateResult, StopReport, StartError, NavigateError, SENSITIVE_NOTICE}
 ```
 
 A thread de captura continua dona do soquete CDP; `navigate` e `stop` são
 mensagens num canal consumido pelo laço de gravação (latência ≤ ~250 ms).
+
+### 4.1 Portão do CDP exposto
+
+`start` com `expose_cdp:true` só devolve `cdp` (`http`, `browserWs`,
+`pageTargetId`) **depois** que o nosso cliente está ligado na aba inicial:
+`Network.enable` e `Target.setAutoAttach` com **ACK de sucesso**, sessão
+configurada e nenhum comando de setup pendente nela. Se isso não acontecer em
+15 s, `start` falha (`browser_start_failed`) e o Chrome é encerrado; o
+endereço nunca é entregue. Assim o agente não consegue agir (nem retomar alvos
+pausados) antes de nós. Cobertura: testes unitários do portão
+(`initial_target_gate_*`), teste vivo `agent_first_action_is_captured` (a
+primeira ação do agente, anexar à aba da captura e navegar sem esperar, aparece
+em `Network.requestWillBeSent` na nossa sessão) e um controle por mutação (com o
+portão forçado a fechar, `start` falha e nada é entregue). Limite: o endereço
+da porta existe no `DevToolsActivePort` do perfil temporário (0700) desde o
+lançamento; um processo local do mesmo usuário que o leia contorna o portão, e
+isso está fora do modelo (qualquer processo do usuário já alcança o loopback).
 
 ## 5. `site_profile`
 
@@ -440,25 +480,26 @@ Só loopback e fixtures sintéticas; nada de site real de terceiros.
   `live_allowlist_cycle` (`navigate` permitido/recusado, subrecurso de host não
   listado e IP literal em `blockedHosts`, outra porta em `violations`,
   encerramento gracioso com NetLog completo), `second_cdp_client_cooperative` e
-  `second_cdp_client_never_resumes`, e a cadeia captura → importação →
+  `second_cdp_client_never_resumes`, `agent_first_action_is_captured`, e a cadeia captura → importação →
   `site_profile` (`recon/scripts/live_e2e.sh`: três servidores em loopback que
   imitam sinais documentados da Cloudflare: site comum, desafio sem solução,
   desafio resolvido no navegador).
 
 ## 9. Resultados e decisões abertas
 
-Placar (2026-10-31, macOS arm64, Chrome 156.0.8078.74):
+Placar (2026-10-31, macOS arm64, Chrome 156.0.8078.74), depois da extração da
+crate `capture/` e do portão do CDP exposto:
 
 | Suíte | Resultado |
 |---|---|
-| `cargo test --lib` (src-tauri) | 70 passed, 12 ignored (vivos); `clippy --all-targets -D warnings` limpo |
+| `capture/` `cargo test` | 41 passed, 5 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: 0 ocorrências de `tauri` |
 | `Allowlist` (7 testes) | esquemas, userinfo, barra invertida, `%`, ponto final, IPv4 curto/decimal/hex/octal, curinga, porta, terceiros, regras do resolvedor, relatório |
-| `BrowserCapture` (4 testes) | `start` sem allowlist/larga/inválida/URL fora/binário inexistente |
-| `live_allowlist_cycle` (Chrome headless) | passou: camada 2 recusa 5 URLs sem nada chegar ao servidor; nome e 4 formas de IP literal bloqueados pelo resolvedor; outra porta escapa e é reportada; encerramento gracioso, NetLog `complete` |
-| `second_cdp_client_*` | passaram (A e B, §3.5) |
-| `recon` (`cargo test`) | 23 passed: tabela = §6.1 (28 assinaturas, todas com fonte), uma fixture sintética por assinatura, confiança por fonte/peso, recomendação nos 4 valores, redação, ordem no tempo |
-| `recon/scripts/live_e2e.sh` | 3 passed: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
-| `check_multi_target.py` (regressão da captura comum) | OK: 16/16 NetLog, ≥15/16 CDP |
+| `BrowserCapture` + portão | `start` sem allowlist/larga/inválida/URL fora/binário inexistente; `initial_target_gate_*` (2 testes) |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `second_cdp_client_cooperative`, `second_cdp_client_never_resumes`, `agent_first_action_is_captured`: 4/4; mais `live_recon_scenarios` (usado pelo `live_e2e.sh`) |
+| `recon/` `cargo test` | 23 passed (tabela = §6.1: 28 assinaturas com fonte, uma fixture sintética por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo); clippy limpo |
+| `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
+| `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |
+| `tests/aceite/check_multi_target.py` (captura comum, via `live_bodies_cycle` do App) | OK: 16/16 NetLog, ≥15/16 CDP |
 
 Achados que mudaram o contrato: (1) o resolvedor do Chrome 156 **também nega IP
 literal** (§2.2); (2) a lacuna real é a **porta**; (3) `session.requests` não é

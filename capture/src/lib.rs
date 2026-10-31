@@ -85,6 +85,11 @@ pub(crate) struct RunOptions {
     pub control: Option<Receiver<browser::Control>>,
     /// Preenchido antes de `ready`: endereço de depuração e versão.
     pub endpoint: Option<Arc<Mutex<Option<browser::Endpoint>>>>,
+    /// Só avisa `ready` (e só publica o endereço CDP) depois que o nosso
+    /// cliente está ligado no alvo inicial: `Network.enable` e
+    /// `Target.setAutoAttach` com ACK de sucesso e nada pendente nele. Assim um
+    /// cliente externo que receba o endereço não consegue agir antes de nós.
+    pub require_initial_target_ready: bool,
 }
 
 /// Dados do encerramento que o App não usa, mas o modo controlado devolve.
@@ -198,6 +203,17 @@ fn run_inner(
         let _ = ready.send(Err(error.clone()));
         return Err(error);
     }
+    if opts.require_initial_target_ready {
+        if let Err(reason) = cdp.wait_initial_target_ready(&mut socket, Duration::from_secs(15)) {
+            let error = format!("o cliente de captura não ficou ligado na aba inicial: {reason}");
+            let _ = chrome.child_mut().kill();
+            let _ = chrome.child_mut().wait();
+            chrome.disarm();
+            let _ = std::fs::remove_dir_all(&profile);
+            let _ = ready.send(Err(error.clone()));
+            return Err(error);
+        }
+    }
     if let Some(endpoint) = &opts.endpoint {
         // Versão do navegador e endereço de depuração, antes de avisar `ready`.
         let version = cdp
@@ -214,6 +230,10 @@ fn run_inner(
                 http: port_from_ws_url(&ws_url).map(|p| format!("http://127.0.0.1:{p}")),
                 browser_ws: ws_url.clone(),
                 chrome_pid: chrome.child_mut().id(),
+                page_target_id: cdp
+                    .setup_seen
+                    .get(&cdp.page_session_id)
+                    .map(|t| t.target_id.clone()),
                 product: version
                     .as_ref()
                     .and_then(|v| v.get("product"))
@@ -830,6 +850,8 @@ struct Cdp {
     setup_pending: HashMap<u64, PendingSetupCommand>,
     /// `Page.loadEventFired` vistos na sessão da página principal.
     page_load_events: u64,
+    /// ACKs de sucesso de comandos de setup, por (sessão, método).
+    setup_acked: std::collections::HashSet<(String, String)>,
 }
 
 /// Comando de configuração de alvo aguardando ACK.
@@ -862,6 +884,7 @@ impl Cdp {
             setup_seen: HashMap::new(),
             setup_pending: HashMap::new(),
             page_load_events: 0,
+            setup_acked: std::collections::HashSet::new(),
         })
     }
 
@@ -990,6 +1013,10 @@ impl Cdp {
         let Some(pending) = self.setup_pending.remove(&id) else {
             return false;
         };
+        if value.get("error").is_none() {
+            self.setup_acked
+                .insert((pending.target.session_id.clone(), pending.method.clone()));
+        }
         if let Some(error) = value.get("error") {
             let text = error
                 .get("message")
@@ -1018,6 +1045,44 @@ impl Cdp {
             }
         }
         true
+    }
+
+    /// O nosso cliente está ligado no alvo inicial? (`Network.enable` e
+    /// `Target.setAutoAttach` com ACK de sucesso, nenhum comando de setup
+    /// pendente e a sessão configurada.) Erro = o que ainda falta.
+    pub(crate) fn initial_target_gate(&self) -> Result<(), String> {
+        let page = &self.page_session_id;
+        if page.is_empty() {
+            return Err("a aba inicial ainda não anexou".to_string());
+        }
+        if !self.configured_sessions.contains(page) {
+            return Err("a aba inicial ainda não foi configurada".to_string());
+        }
+        if let Some(pending) = self.setup_pending.values().find(|p| &p.target.session_id == page) {
+            return Err(format!("{} ainda sem resposta na aba inicial", pending.method));
+        }
+        for method in ["Network.enable", "Target.setAutoAttach"] {
+            if !self.setup_acked.contains(&(page.clone(), method.to_string())) {
+                return Err(format!("{method} sem confirmação na aba inicial"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Lê o soquete até o portão abrir ou o prazo acabar.
+    fn wait_initial_target_ready(
+        &mut self,
+        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.initial_target_gate() {
+                Ok(()) => return Ok(()),
+                Err(reason) if Instant::now() >= deadline => return Err(reason),
+                Err(_) => self.pump_socket(socket, Duration::from_millis(100)),
+            }
+        }
     }
 
     /// Alvo desanexado ou destruído: comandos pendentes dele não viram timeout.
@@ -2576,6 +2641,52 @@ mod tests {
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
             .filter_map(|v| v.get("method").and_then(Value::as_str).map(str::to_string))
             .collect()
+    }
+
+    #[test]
+    fn initial_target_gate_requires_acked_network_enable_and_auto_attach() {
+        let target = |session: &str| AttachedTarget {
+            session_id: session.into(),
+            target_id: format!("T-{session}"),
+            target_type: "page".into(),
+        };
+        let mut cdp = test_cdp();
+        assert!(cdp.initial_target_gate().unwrap_err().contains("não anexou"));
+        cdp.page_session_id = "P".into();
+        assert!(cdp.initial_target_gate().unwrap_err().contains("não foi configurada"));
+        cdp.configured_sessions.insert("P".into());
+        assert!(cdp
+            .initial_target_gate()
+            .unwrap_err()
+            .contains("Network.enable sem confirmação"));
+        // Comandos enviados, ACK ainda não chegou: portão fechado.
+        cdp.register_setup_command(1, &target("P"), "Network.enable", None);
+        cdp.register_setup_command(2, &target("P"), "Target.setAutoAttach", None);
+        assert!(cdp.initial_target_gate().unwrap_err().contains("ainda sem resposta"));
+        cdp.on_setup_response(1, &json!({ "id": 1, "result": {} }));
+        assert!(cdp.initial_target_gate().is_err(), "falta o setAutoAttach");
+        // Pendência de OUTRA sessão não segura o portão.
+        cdp.register_setup_command(3, &target("W"), "Network.enable", None);
+        cdp.on_setup_response(2, &json!({ "id": 2, "result": {} }));
+        assert_eq!(cdp.initial_target_gate(), Ok(()));
+    }
+
+    #[test]
+    fn initial_target_gate_stays_closed_when_network_enable_fails() {
+        let target = AttachedTarget {
+            session_id: "P".into(),
+            target_id: "T".into(),
+            target_type: "page".into(),
+        };
+        let mut cdp = test_cdp();
+        cdp.page_session_id = "P".into();
+        cdp.configured_sessions.insert("P".into());
+        cdp.register_setup_command(1, &target, "Network.enable", None);
+        cdp.register_setup_command(2, &target, "Target.setAutoAttach", None);
+        cdp.on_setup_response(1, &json!({ "id": 1, "error": { "message": "boom" } }));
+        cdp.on_setup_response(2, &json!({ "id": 2, "result": {} }));
+        let reason = cdp.initial_target_gate().unwrap_err();
+        assert!(reason.contains("Network.enable sem confirmação"), "{reason}");
     }
 
     #[test]
