@@ -14,7 +14,7 @@ pub mod menu;
 pub mod prefs;
 pub mod validation;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use tauri::Manager;
@@ -24,6 +24,25 @@ pub struct AppState {
     pub chrome_path: Mutex<Option<PathBuf>>,
     pub last_session_dir: Mutex<Option<PathBuf>>,
     pub capture: Mutex<Option<capture::CaptureSession>>,
+}
+
+/// Partida do app: limpa Chrome/perfil de capturas cujo dono morreu (ex.: SIGKILL).
+/// Nunca propaga erro — falha vira log. Pode rodar fora da thread de UI.
+pub fn cleanup_orphans_on_start(state_root: &Path) {
+    let report = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        capture::cleanup_orphans(state_root)
+    }));
+    match report {
+        Ok(report) => {
+            eprintln!(
+                "scrapelens: cleanup_orphans markers_removed={} processes_killed={} profiles_removed={}",
+                report.markers_removed, report.processes_killed, report.profiles_removed
+            );
+        }
+        Err(_) => {
+            eprintln!("scrapelens: cleanup_orphans falhou (ignorado; a abertura do app segue)");
+        }
+    }
 }
 
 pub fn run() {
@@ -41,6 +60,10 @@ pub fn run() {
             if let Ok(data) = app.path().app_data_dir() {
                 validation::cleanup_on_start(&data);
             }
+            // Chrome/perfil órfãos após SIGKILL do app — uma vez, fora da thread de UI.
+            std::thread::spawn(|| {
+                cleanup_orphans_on_start(&capture::default_state_root());
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -83,4 +106,63 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn millis() -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    }
+
+    fn dead_pid() -> u32 {
+        let mut child = Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        pid
+    }
+
+    /// Espelha o contrato do marcador da Captura (ownerPid morto → limpeza).
+    #[test]
+    fn startup_removes_orphan_capture_with_dead_owner() {
+        let tag = format!("app-startup-{}-{}", std::process::id(), millis());
+        let root = std::env::temp_dir().join(format!("scrapelens-capture-state-test-{tag}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        let profile = std::env::temp_dir().join(format!(
+            "scrapelens-chrome-test-{tag}"
+        ));
+        let _ = fs::remove_dir_all(&profile);
+        fs::create_dir_all(profile.join("Default")).unwrap();
+        fs::write(profile.join("Default/Prefs"), b"{}").unwrap();
+
+        let marker = root.join(format!("capture-{tag}.json"));
+        let body = serde_json::json!({
+            "ownerPid": dead_pid(),
+            "chromePid": dead_pid(),
+            "profile": profile.display().to_string(),
+            "port": 9999,
+        });
+        fs::write(&marker, body.to_string()).unwrap();
+        assert!(marker.exists());
+        assert!(profile.exists());
+
+        // mesma entrada que o setup do Tauri chama (aqui síncrono, como cleanup_on_start)
+        cleanup_orphans_on_start(&root);
+
+        assert!(root.is_dir(), "a raiz de estado continua");
+        assert!(!marker.exists(), "marcador de PID morto foi removido");
+        assert!(!profile.exists(), "perfil dedicado do marcador foi removido");
+
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&profile);
+    }
 }
