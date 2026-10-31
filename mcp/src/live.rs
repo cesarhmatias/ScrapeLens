@@ -233,6 +233,7 @@ pub struct Manager {
     /// `backend.start` em andamento (o Chrome pode existir antes de a captura
     /// ser registrada).
     starts_in_flight: AtomicUsize,
+    stops_in_flight: AtomicUsize,
 }
 
 fn new_id() -> String {
@@ -258,6 +259,7 @@ impl Manager {
             slots: Mutex::new(HashMap::new()),
             shutting_down: AtomicBool::new(false),
             starts_in_flight: AtomicUsize::new(0),
+            stops_in_flight: AtomicUsize::new(0),
         }
     }
 
@@ -562,6 +564,9 @@ impl Manager {
     /// Encerra a captura (gracioso), grava a sessão e devolve o relatório
     /// mascarado. A captura sai do mapa em qualquer caso.
     pub fn stop(&self, ctx: &Ctx, capture_id: &str) -> Result<Value, ToolError> {
+        // Conta o stop ANTES de a captura sair do mapa: o encerramento do
+        // servidor espera este stop terminar e gravar a sessão (R10).
+        let _in_flight = InFlight::new(&self.stops_in_flight);
         let running = self.running(capture_id)?;
         self.lock().remove(capture_id);
         let cap = running
@@ -610,10 +615,14 @@ impl Manager {
         // O Chrome que ainda sobe: `start` o encerra ao terminar. O limite é o
         // prazo de início da própria captura (90 s) com folga.
         let deadline = std::time::Instant::now() + Duration::from_secs(120);
-        while self.starts_in_flight.load(Ordering::SeqCst) > 0
+        while (self.starts_in_flight.load(Ordering::SeqCst) > 0
+            || self.stops_in_flight.load(Ordering::SeqCst) > 0)
             && std::time::Instant::now() < deadline
         {
             std::thread::sleep(Duration::from_millis(50));
+        }
+        if self.stops_in_flight.load(Ordering::SeqCst) > 0 {
+            eprintln!("scrapelens-mcp: um stop_capture não terminou a tempo; a sessão pode não ter sido gravada");
         }
         if self.starts_in_flight.load(Ordering::SeqCst) > 0 {
             eprintln!("scrapelens-mcp: um início de captura não terminou a tempo; o Chrome pode ter ficado ativo");
@@ -628,6 +637,22 @@ impl Manager {
 
     pub fn active(&self) -> usize {
         self.lock().len()
+    }
+}
+
+/// Contador de operações em andamento, decrementado ao sair do escopo.
+struct InFlight<'a>(&'a AtomicUsize);
+
+impl<'a> InFlight<'a> {
+    fn new(counter: &'a AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter)
+    }
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 

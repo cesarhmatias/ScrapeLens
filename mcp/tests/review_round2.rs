@@ -152,3 +152,43 @@ fn scrub_output_masks_fragment_matrix_userinfo_bare_and_nested_forms() {
     }
     assert_eq!(value["h"], "ok sem segredo: page=2");
 }
+
+// ---- R10: SIGTERM durante o stop não perde o session.json ------------------------------
+
+#[test]
+fn sigterm_during_stop_still_writes_the_session() {
+    let work = tempfile::tempdir().unwrap();
+    let sessions = work.path().join("sessions");
+    let mut client = Client::start_env(
+        &fake_server(),
+        &["--sessions-dir", sessions.to_str().unwrap()],
+        Elicit::Accept,
+        &[("FAKE_STOP_DELAY_MS", "1500")],
+    );
+    client.handshake();
+    let (_, started) = client.tool(
+        "start_capture",
+        json!({"allowed_hosts": ["site.invalid.test"], "headless": true}),
+    );
+    let id = started["captureId"].as_str().unwrap().to_string();
+    client.call_nowait("stop_capture", json!({"capture_id": id}));
+    std::thread::sleep(std::time::Duration::from_millis(300)); // o stop está em andamento
+    let status = std::process::Command::new("kill")
+        .args(["-TERM", &client.child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let exit = client.child.wait().unwrap();
+    assert!(exit.success(), "{exit:?}");
+    let dirs: Vec<_> = std::fs::read_dir(&sessions)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|path| path.file_name().is_some_and(|n| n.to_string_lossy().starts_with("capture-")))
+        .collect();
+    assert_eq!(dirs.len(), 1, "{dirs:?}");
+    assert!(
+        dirs[0].join("session.json").is_file(),
+        "o stop em andamento terminou e gravou antes de sair"
+    );
+}

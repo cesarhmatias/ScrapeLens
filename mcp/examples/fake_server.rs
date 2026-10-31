@@ -97,6 +97,13 @@ impl LiveCapture for FakeLive {
     }
 
     fn stop(self: Box<Self>) -> Result<StopReport, String> {
+        // Teste de SIGTERM durante o stop: o encerramento demora a gravar.
+        if let Some(ms) = std::env::var("FAKE_STOP_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            std::thread::sleep(Duration::from_millis(ms));
+        }
         let pages = self.pages.lock().unwrap().clone();
         let imported =
             scrapelens_core::import_har(&synthetic_har(&pages)).map_err(|e| e.to_string())?;

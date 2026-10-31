@@ -296,7 +296,11 @@ De onde vem um cookie ou token e onde é usado. Três modos (exatamente um):
   IGUAL a um valor inteiro** (valor de header, de cookie, de parâmetro de URL —
   query, fragmento ou matriz — ou campo de corpo JSON/formulário); nunca um
   pedaço, para a ferramenta não servir de oráculo de substring. Corpos não
-  estruturados (HTML, texto, binário) não são pesquisados sem reveal. Com
+  estruturados (HTML, texto, binário) não são pesquisados sem reveal. Contra
+  força bruta, sem `reveal` o valor precisa ter **ao menos 16 caracteres**
+  (`value_too_short`), a resposta não traz comprimento nem outro dado derivado
+  do valor, e há um **teto de 50 consultas por sessão** durante a vida do
+  servidor (`value_query_limit`; recusas por tamanho não contam). Com
   `reveal`, a busca é por substring literal (evidência `literal-match`).
 - `{ session_id, request_id, field? }` — **origem dos valores consumidos por
   uma requisição** (`flow::value_origins` do core, com as mesmas
