@@ -597,6 +597,47 @@ fn sanitize_bytes(
     }
 }
 
+/// Número "óbvio" que pode ficar visível sob uma chave sensível: 0 e 1, ou
+/// qualquer número cuja chave descreve um tempo/contagem/tipo (`jwtExpiresIn`,
+/// `tokenType`...).
+fn number_may_stay_visible(key: &str, number: &serde_json::Number) -> bool {
+    let compact: String = key
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
+    const BENIGN: [&str; 14] = [
+        "expiresin", "expires", "expiry", "expiration", "ttl", "type", "length", "size", "count",
+        "seconds", "enabled", "required", "valid", "version",
+    ];
+    matches!(number.as_i64(), Some(0 | 1))
+        || BENIGN.iter().any(|suffix| compact.ends_with(suffix))
+}
+
+/// Sob uma chave de credencial: textos viram placeholder, booleanos e números
+/// "óbvios" ficam, objetos e listas são percorridos.
+fn redact_credential_value(value: &mut Value, key: &str, options: &SanitizeOptions) {
+    match value {
+        Value::String(_) => *value = Value::String(options.placeholder.clone()),
+        Value::Number(number) => {
+            if !number_may_stay_visible(key, number) {
+                *value = Value::String(options.placeholder.clone());
+            }
+        }
+        Value::Object(object) => {
+            for (inner_key, inner) in object.iter_mut() {
+                redact_credential_value(inner, inner_key, options);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_credential_value(item, key, options);
+            }
+        }
+        Value::Bool(_) | Value::Null => {}
+    }
+}
+
 fn sanitize_json(
     value: &mut Value,
     options: &SanitizeOptions,
@@ -606,7 +647,9 @@ fn sanitize_json(
         Value::Object(object) => {
             for (key, value) in object.iter_mut() {
                 if is_sensitive_key(key) {
-                    *value = Value::String(options.placeholder.clone());
+                    // Só texto e números não óbvios são credencial: `pin: true` e
+                    // `jwtExpiresIn: 3600` ficam legíveis; strings aninhadas são redigidas.
+                    redact_credential_value(value, key, options);
                     *counts.entry("json-key".to_string()).or_default() += 1;
                 } else if is_business_key(key, &business_fields()) {
                     business_count(BusinessKind::of(key).label());
@@ -641,6 +684,12 @@ fn sanitize_json(
                 *text = redacted;
                 *counts.entry("json-auth-scheme".to_string()).or_default() += 1;
             }
+            // `nome=valor` sensível, fragmento, matriz, userinfo e URL aninhada dentro do texto.
+            let scrubbed = sanitize_text(text, options);
+            if scrubbed != *text {
+                *text = scrubbed;
+                *counts.entry("json-text".to_string()).or_default() += 1;
+            }
         }
         _ => {}
     }
@@ -657,6 +706,8 @@ fn sanitize_form(text: &str, options: &SanitizeOptions) -> String {
                 } else if is_business_key(&decoded, &fields) {
                     business_count(BusinessKind::of(&decoded).label());
                     format!("{name}={}", options.placeholder)
+                } else if let Some(nested) = sanitize_nested_value(value, options, 0) {
+                    format!("{name}={nested}")
                 } else if value.len() >= 12 {
                     // campo opaco: nome de negócio + valor no formato dentro do valor
                     format!(
@@ -673,32 +724,43 @@ fn sanitize_form(text: &str, options: &SanitizeOptions) -> String {
         .join("&")
 }
 
-fn redact_auth_scheme(value: &str, options: &SanitizeOptions) -> Option<String> {
-    const SCHEMES: [&str; 11] = [
-        "Bearer",
-        "Basic",
-        "Digest",
-        "Token",
-        "ApiKey",
-        "OAuth",
-        "SharedKey",
-        "Negotiate",
-        "NTLM",
-        "AWS4-HMAC-SHA256",
-        "Hawk",
-    ];
-    for scheme in SCHEMES {
+const AUTH_SCHEMES: [&str; 11] = [
+    "Bearer",
+    "Basic",
+    "Digest",
+    "Token",
+    "ApiKey",
+    "OAuth",
+    "SharedKey",
+    "Negotiate",
+    "NTLM",
+    "AWS4-HMAC-SHA256",
+    "Hawk",
+];
+
+/// Separa `<esquema><espaço em branco><credencial>` (esquema sem diferenciar
+/// caixa; qualquer espaço em branco, inclusive TAB). Fatiamento seguro em UTF-8.
+pub fn split_auth_scheme(value: &str) -> Option<(&str, &str)> {
+    for scheme in AUTH_SCHEMES {
         let Some(prefix) = value.get(..scheme.len()) else {
             continue;
         };
-        if prefix.eq_ignore_ascii_case(scheme) && value[scheme.len()..].starts_with(' ') {
-            let rest = value[scheme.len() + 1..].trim_start();
+        if !prefix.eq_ignore_ascii_case(scheme) {
+            continue;
+        }
+        let tail = &value[scheme.len()..];
+        if tail.chars().next().is_some_and(char::is_whitespace) {
+            let rest = tail.trim_start();
             if !rest.is_empty() {
-                return Some(format!("{prefix} {}", options.placeholder));
+                return Some((prefix, rest));
             }
         }
     }
     None
+}
+
+fn redact_auth_scheme(value: &str, options: &SanitizeOptions) -> Option<String> {
+    split_auth_scheme(value).map(|(scheme, _)| format!("{scheme} {}", options.placeholder))
 }
 
 /// Sanitiza URL absoluta ou referência relativa (Location/Referer/:path).
@@ -816,7 +878,30 @@ fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
 /// O valor vai até um terminador (espaço, aspas, `<`, `>`, `(`, `)`, `,`, `;`,
 /// `#`, `\\`) ou `&`. O resto do texto passa intacto.
 pub fn sanitize_text(text: &str, options: &SanitizeOptions) -> String {
-    if !text.contains('=') && !text.contains("%3") && !text.contains('@') {
+    sanitize_text_depth(text, options, 0)
+}
+
+/// Profundidade máxima de URLs aninhadas com percent-encoding
+/// (`?next=%2Fcb%3Ftoken%3D...`).
+const MAX_NESTED_DEPTH: usize = 4;
+
+/// Redige URL/consulta aninhada em um valor percent-encoded. `None` = nada a
+/// mudar. Decodifica, aplica as mesmas regras de [`sanitize_text`] (recursivo,
+/// com limite de profundidade) e recodifica só se algo foi redigido.
+fn sanitize_nested_value(value: &str, options: &SanitizeOptions, depth: usize) -> Option<String> {
+    if depth >= MAX_NESTED_DEPTH || !value.contains('%') {
+        return None;
+    }
+    let decoded = percent_decode(value);
+    if decoded == value || !decoded.contains(['?', '&', '=', '#', ';', '@']) {
+        return None;
+    }
+    let sanitized = sanitize_text_depth(&decoded, options, depth + 1);
+    (sanitized != decoded).then(|| percent_encode_with(&sanitized, "-._~", false))
+}
+
+fn sanitize_text_depth(text: &str, options: &SanitizeOptions, depth: usize) -> String {
+    if !text.contains('=') && !text.contains('%') && !text.contains('@') {
         return text.to_string();
     }
     let text = redact_userinfo_in_text(text, options);
@@ -851,7 +936,12 @@ pub fn sanitize_text(text: &str, options: &SanitizeOptions) -> String {
             } else if let Some(value_part) = after.strip_prefix('=') {
                 (candidate, value_part, "=")
             } else {
-                out.push_str(candidate);
+                // Sem `=`: pode ser um pedaço aninhado inteiro codificado
+                // (`x%3D1%26token%3DSEC`).
+                match sanitize_nested_value(candidate, options, depth) {
+                    Some(nested) => out.push_str(&nested),
+                    None => out.push_str(candidate),
+                }
                 rest = after;
                 at_boundary = false;
                 continue;
@@ -860,8 +950,26 @@ pub fn sanitize_text(text: &str, options: &SanitizeOptions) -> String {
                 && (is_sensitive_key(&percent_decode(name))
                     || is_business_key(&percent_decode(name), &options.business_fields));
             if !sensitive {
-                out.push_str(candidate);
-                rest = after;
+                if eq_text == "=" {
+                    // `nome=valor` comum: o valor pode ser uma URL aninhada codificada.
+                    let value_len = value_part
+                        .find(|c: char| is_end(c) || c == '&')
+                        .unwrap_or(value_part.len());
+                    let (value, tail) = value_part.split_at(value_len);
+                    out.push_str(candidate);
+                    out.push('=');
+                    match sanitize_nested_value(value, options, depth) {
+                        Some(nested) => out.push_str(&nested),
+                        None => out.push_str(value),
+                    }
+                    rest = tail;
+                } else {
+                    match sanitize_nested_value(candidate, options, depth) {
+                        Some(nested) => out.push_str(&nested),
+                        None => out.push_str(candidate),
+                    }
+                    rest = after;
+                }
                 at_boundary = false;
                 continue;
             }
@@ -923,7 +1031,10 @@ fn sanitize_query(query: &str, options: &SanitizeOptions) -> String {
                 if is_sensitive_key(&decoded) || is_business_key(&decoded, &business_fields()) {
                     format!("{name}={placeholder}")
                 } else {
-                    pair.to_string()
+                    match sanitize_nested_value(_value, options, 0) {
+                        Some(nested) => format!("{name}={nested}"),
+                        None => pair.to_string(),
+                    }
                 }
             }
             None => pair.to_string(),
@@ -1139,7 +1250,7 @@ fn is_sensitive_key(name: &str) -> bool {
             "pwd" | "otp" | "pin" | "ticket" | "mfa" | "totp"
         )
         || compact.ends_with("pwd")
-        || compact.ends_with("otp")
+        || matches!(compact.as_str(), "totp" | "hotp" | "smsotp" | "emailotp")
         || compact.contains("csrf")
         || compact.contains("xsrf")
         || compact.ends_with("sessionid")
@@ -1724,10 +1835,8 @@ fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
                 continue; // cobertos pelos pares/registros de cookie
             }
             if is_sensitive_header(&lower) {
-                let value = ["Bearer ", "Basic ", "Digest ", "Token "]
-                    .iter()
-                    .find_map(|scheme| entry.value.strip_prefix(scheme))
-                    .unwrap_or(&entry.value);
+                let value = split_auth_scheme(&entry.value)
+                    .map_or(entry.value.as_str(), |(_, rest)| rest);
                 out.push(SensitiveValue {
                     origin: "header",
                     value: value.to_string(),
@@ -2374,5 +2483,32 @@ mod tests {
         assert!(is_sensitive_key("user[email]"));
         assert!(!is_sensitive_key("page"));
         assert!(!is_sensitive_key("monkey"));
+    }
+
+    #[test]
+    fn round2_nested_url_tab_after_scheme_and_obvious_values() {
+        let o = SanitizeOptions::default();
+        // R6: URL aninhada com percent-encoding (também em dois níveis).
+        let out = sanitize_text("GET /cb?redirect_uri=https%3A%2F%2Fa.test%2Fx%3Ftoken%3DSEGMARC1 HTTP/1.1", &o);
+        assert!(!out.contains("SEGMARC1"), "{out}");
+        let out = sanitize_url("https://a.test/c?next=%2Fcb%3Fnext%3D%252Fz%253Ftoken%253DSEGMARC2", &o);
+        assert!(!out.contains("SEGMARC2"), "{out}");
+        // R8: TAB (e qualquer espaço) depois do esquema; UTF-8 sem panic.
+        assert_eq!(split_auth_scheme("Bearer\tSEGMARC3").map(|(_, r)| r), Some("SEGMARC3"));
+        assert!(redact_auth_scheme("bearer \t SEGMARC3", &o).is_some_and(|v| !v.contains("SEGMARC3")));
+        assert!(split_auth_scheme("Béarer xyz").is_none());
+        assert!(split_auth_scheme("日本語日本語日本語").is_none());
+        // R13: booleano/número óbvio visível; string redigida; objeto-rótulo percorrido.
+        let mut v: Value = serde_json::from_str(
+            r#"{"pin":true,"ticket":{"id":"SEGMARC4x","open":false},"jwtExpiresIn":3600,"otp":"123456","password":"SEGMARC5","pinCount":3}"#,
+        ).unwrap();
+        sanitize_json(&mut v, &o, &mut BTreeMap::new());
+        let text = v.to_string();
+        assert_eq!(v["pin"], Value::Bool(true));
+        assert_eq!(v["jwtExpiresIn"], 3600);
+        assert_eq!(v["ticket"]["open"], Value::Bool(false));
+        for secret in ["SEGMARC4x", "123456", "SEGMARC5"] {
+            assert!(!text.contains(secret), "{secret} em {text}");
+        }
     }
 }
