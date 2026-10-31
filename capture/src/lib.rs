@@ -365,7 +365,7 @@ fn run_inner(
     let allowlist_report = opts
         .allowlist
         .as_ref()
-        .map(|list| list.report(&imported.bundle.session));
+        .map(|list| list.report_from_events(&cdp.events, &imported.bundle.session));
     let mut report_warnings: Vec<String> = Vec::new();
     if let Some(report) = &allowlist_report {
         for blocked in &report.blocked_hosts {
@@ -380,8 +380,9 @@ fn run_inner(
             report_warnings.push(message);
         }
         for violation in &report.violations {
+            // `violation.url` já vem sem consulta, fragmento, `;params` e userinfo.
             let message = format!(
-                "requisição fora da allowlist sem falha de resolução: {} ({})",
+                "requisição fora da allowlist: {} ({})",
                 violation.url, violation.reason
             );
             imported.bundle.session.add_warning(

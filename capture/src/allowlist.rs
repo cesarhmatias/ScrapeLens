@@ -1,23 +1,32 @@
 //! Allowlist de hosts da captura controlada (`docs/16b-mcp-navegador.md` §2.2).
 //!
+//! **Semântica oficial:** o navegador impõe o **host** (todas as portas); a
+//! **porta** só é imposta em `navigate`. O Chrome não conhece porta na regra
+//! do resolvedor, e não vamos interceptar a rede (`Fetch`) para impô-la, porque
+//! isso altera a fidelidade da captura. Medido (Chrome 156): com
+//! `localhost:P1` aprovado, a página alcança `localhost:P2` por 302, JS
+//! `location`, meta refresh, `window.open`, iframe, fetch, WebSocket e host em
+//! maiúsculas. Por isso a porta fora da lista é **reportada**, nunca bloqueada:
+//! [`Allowlist::report_from_events`] varre os eventos CDP (não a sessão
+//! importada, que perde WebSocket) e lista cada requisição, redirect, iframe,
+//! popup e WebSocket para host/porta fora da lista.
+//!
 //! Duas camadas com a MESMA decisão de host:
 //! 1. o Chrome recebe `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE …"` e
-//!    não resolve nenhum nome fora da lista (vale para qualquer aba, iframe,
-//!    worker ou cliente CDP);
-//! 2. `permits_url` recusa antes de enviar `Page.navigate` (esquema, host, IP
-//!    literal, porta, userinfo).
+//!    não resolve nenhum nome nem IPv4 literal fora da lista (medido:
+//!    `127.0.0.1`, `127.1`, `2130706433`, `[::1]`); vale para qualquer aba,
+//!    iframe, worker ou cliente CDP;
+//! 2. `permits_url` recusa antes de enviar `Page.navigate` (esquema, host,
+//!    porta, userinfo).
 //!
 //! O analisador de URL é **mais estrito que o do Chrome de propósito**: tudo o
 //! que for ambíguo (barra invertida, espaço, `@`, `%` no host, ponto final,
 //! não-ASCII, IPv4 fora da forma canônica) é recusado, para que o que passa
 //! aqui seja lido da mesma forma pelo Chrome. Sem a crate `url`, para não mexer
-//! no `Cargo.toml` compartilhado.
-//!
-//! Limites declarados: a regra do resolvedor não vale para IP literal e não
-//! conhece porta; por isso a porta só é imposta pela camada 2 e pelo relatório
-//! pós-captura ([`Allowlist::report`]).
+//! no `Cargo.toml` compartilhado. IPv6 literal não é aceito na lista (o
+//! resolvedor não o trata de forma confiável).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::Serialize;
 
@@ -70,6 +79,8 @@ pub enum AllowlistError {
     TooBroad(String),
     /// Texto que não é um host (esquema, caminho, `@`, espaço…).
     Invalid(String),
+    /// IPv6 literal: o resolvedor do Chrome não o trata de forma confiável.
+    Unsupported(String),
 }
 
 impl AllowlistError {
@@ -78,6 +89,7 @@ impl AllowlistError {
             AllowlistError::Empty => "allowlist_required",
             AllowlistError::TooBroad(_) => "allowlist_too_broad",
             AllowlistError::Invalid(_) => "allowlist_invalid",
+            AllowlistError::Unsupported(_) => "allowlist_unsupported",
         }
     }
 }
@@ -90,6 +102,10 @@ impl std::fmt::Display for AllowlistError {
             }
             AllowlistError::TooBroad(p) => write!(f, "padrão largo demais: {p:?}"),
             AllowlistError::Invalid(p) => write!(f, "host inválido na allowlist: {p:?}"),
+            AllowlistError::Unsupported(p) => write!(
+                f,
+                "IPv6 literal não é suportado na allowlist: {p:?} (use o nome do host ou um IPv4)"
+            ),
         }
     }
 }
@@ -210,15 +226,12 @@ impl Allowlist {
         self.third_party.iter().map(HostPattern::text).collect()
     }
 
-    /// Valor de `--host-resolver-rules`: nega tudo, exceto os nomes listados
-    /// (IP literal não passa por resolução e fica de fora das regras).
+    /// Valor de `--host-resolver-rules`: nega tudo (nomes e IP literal),
+    /// exceto o que está listado. A regra conhece só o host, nunca a porta.
     pub fn resolver_rules(&self) -> String {
         let mut rules = vec!["MAP * ~NOTFOUND".to_string()];
         let mut seen: Vec<String> = Vec::new();
         for pattern in self.allowed.iter().chain(self.third_party.iter()) {
-            if is_ip_literal(&pattern.host) {
-                continue;
-            }
             let name = if pattern.wildcard {
                 format!("*.{}", pattern.host)
             } else {
@@ -278,12 +291,50 @@ impl Allowlist {
         }
     }
 
-    /// Relatório pós-captura sobre a sessão importada.
+    /// Classifica uma URL já acontecida: `Blocked` (o resolvedor negou) ou
+    /// `Violation` (host/porta fora da lista que NÃO falhou na resolução).
+    fn classify(&self, url: &str, failure: Option<&str>, top_level: bool) -> Option<Classified> {
+        let (scheme, host, port) = lenient_http_parts(url)?;
+        let port = port.unwrap_or(if scheme == "https" || scheme == "wss" { 443 } else { 80 });
+        let unresolved = failure.map(|f| f.contains("ERR_NAME_NOT_RESOLVED")).unwrap_or(false);
+        match self.decide_any(&host, port) {
+            Decision::Allowed => {
+                // Host aprovado só como origem de subrecursos não é destino de
+                // navegação de topo.
+                if top_level
+                    && decide(&self.allowed, &host, port) != Decision::Allowed
+                    && decide(&self.third_party, &host, port) == Decision::Allowed
+                {
+                    return Some(Classified::Violation {
+                        host,
+                        reason: "navegação de topo para host aprovado só como terceiro (subrecursos)"
+                            .to_string(),
+                    });
+                }
+                None
+            }
+            _ if unresolved => Some(Classified::Blocked { host }),
+            _ => {
+                let reason = if self.host_allowed(&host) {
+                    format!(
+                        "porta {port} fora da allowlist (o navegador impõe o host, não a porta; só `navigate` a impõe)"
+                    )
+                } else if is_ip_literal(&host) {
+                    "IP literal fora da allowlist".to_string()
+                } else {
+                    "host fora da allowlist sem falha de resolução".to_string()
+                };
+                Some(Classified::Violation { host, reason })
+            }
+        }
+    }
+
+    /// Relatório pós-captura sobre a sessão importada. Perde o que a
+    /// importação não guarda (WebSocket); a captura usa
+    /// [`Allowlist::report_from_events`].
     pub fn report(&self, session: &SessionV1) -> AllowlistReport {
-        let mut blocked: BTreeMap<String, BlockedHost> = BTreeMap::new();
-        let mut violations: Vec<Violation> = Vec::new();
+        let mut out = ReportBuilder::default();
         for request in &session.requests {
-            // Cada tentativa tem a sua URL (redirects): olha todas.
             let mut urls: Vec<(&str, Option<&str>)> = Vec::new();
             if request.attempts.is_empty() {
                 urls.push((request.url.as_str(), None));
@@ -292,47 +343,169 @@ impl Allowlist {
                 urls.push((attempt.url.as_str(), attempt.failure.as_deref()));
             }
             for (url, failure) in urls {
-                let Some((scheme, host, port)) = lenient_http_parts(url) else {
-                    continue;
-                };
-                let port = port.unwrap_or(if scheme == "https" || scheme == "wss" { 443 } else { 80 });
-                match self.decide_any(&host, port) {
-                    Decision::Allowed => {}
-                    Decision::HostDenied | Decision::PortDenied => {
-                        let unresolved = failure
-                            .map(|f| f.contains("ERR_NAME_NOT_RESOLVED"))
-                            .unwrap_or(false);
-                        if unresolved {
-                            let entry = blocked.entry(host.clone()).or_insert_with(|| BlockedHost {
-                                host: host.clone(),
-                                requests: 0,
-                                example_url: url.to_string(),
-                            });
-                            entry.requests += 1;
-                        } else {
-                            let reason = if self.host_allowed(&host) {
-                                format!("porta {port} fora da allowlist")
-                            } else if is_ip_literal(&host) {
-                                "IP literal fora da allowlist (a regra do resolvedor não cobre IP)"
-                                    .to_string()
-                            } else {
-                                "host fora da allowlist sem falha de resolução".to_string()
-                            };
-                            violations.push(Violation {
-                                request_id: request.id.clone(),
-                                url: url.to_string(),
-                                host,
-                                reason,
-                            });
-                        }
-                    }
+                if let Some(c) = self.classify(url, failure, false) {
+                    out.add(c, url, &request.id);
                 }
             }
         }
-        AllowlistReport {
-            blocked_hosts: blocked.into_values().collect(),
-            violations,
+        out.finish()
+    }
+
+    /// Relatório a partir dos eventos CDP gravados (`cdp-events.jsonl`): cada
+    /// `Network.requestWillBeSent` (inclui cada salto de redirect, iframe e
+    /// popup, que têm sessão própria) e cada `Network.webSocketCreated`. É a
+    /// fonte completa; os ids viram os da sessão importada quando a requisição
+    /// existe nela (`cdp.sessionId` + `cdp.requestId`), senão `cdp:<sessão>/<id>`.
+    pub fn report_from_events(&self, events: &[String], session: &SessionV1) -> AllowlistReport {
+        use serde_json::Value;
+        // (sessionId, requestId) -> id lógico da sessão importada.
+        let mut logical: HashMap<(String, String), String> = HashMap::new();
+        for r in &session.requests {
+            let refs = r.cdp.iter().chain(r.attempts.iter().filter_map(|a| a.cdp.as_ref()));
+            for c in refs {
+                if let (Some(sid), Some(rid)) = (&c.session_id, &c.request_id) {
+                    logical.entry((sid.clone(), rid.clone())).or_insert_with(|| r.id.clone());
+                }
+            }
         }
+        struct Hop {
+            key: (String, String),
+            url: String,
+            top_level: bool,
+        }
+        let mut targets: HashMap<String, (String, String)> = HashMap::new(); // sessão -> (targetId, tipo)
+        let mut hops: Vec<Hop> = Vec::new();
+        let mut last_url: HashMap<(String, String), String> = HashMap::new();
+        let mut failures: HashMap<(String, String), String> = HashMap::new();
+        let mut seen: HashSet<(String, String, String)> = HashSet::new();
+        for line in events {
+            let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+            let sid = v.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
+            let params = v.get("params").cloned().unwrap_or(Value::Null);
+            let text = |p: &Value, k: &str| p.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+            match v.get("method").and_then(Value::as_str).unwrap_or("") {
+                "Target.attachedToTarget" => {
+                    let info = params.get("targetInfo").cloned().unwrap_or(Value::Null);
+                    targets.insert(
+                        text(&params, "sessionId"),
+                        (text(&info, "targetId"), text(&info, "type")),
+                    );
+                }
+                "Network.requestWillBeSent" => {
+                    let rid = text(&params, "requestId");
+                    let url = params
+                        .get("request")
+                        .map(|r| text(r, "url"))
+                        .unwrap_or_default();
+                    let top_level = text(&params, "type") == "Document"
+                        && targets
+                            .get(&sid)
+                            .map(|(tid, ty)| ty == "page" && *tid == text(&params, "frameId"))
+                            .unwrap_or(false);
+                    if seen.insert((sid.clone(), rid.clone(), url.clone())) {
+                        last_url.insert((sid.clone(), rid.clone()), url.clone());
+                        hops.push(Hop { key: (sid, rid), url, top_level });
+                    }
+                }
+                "Network.webSocketCreated" => {
+                    let rid = text(&params, "requestId");
+                    let url = text(&params, "url");
+                    if seen.insert((sid.clone(), rid.clone(), url.clone())) {
+                        last_url.insert((sid.clone(), rid.clone()), url.clone());
+                        hops.push(Hop { key: (sid, rid), url, top_level: false });
+                    }
+                }
+                "Network.loadingFailed" => {
+                    failures.insert((sid, text(&params, "requestId")), text(&params, "errorText"));
+                }
+                _ => {}
+            }
+        }
+        let mut out = ReportBuilder::default();
+        for hop in hops {
+            // A falha vale para o último salto do requestId.
+            let failure = if last_url.get(&hop.key) == Some(&hop.url) {
+                failures.get(&hop.key).map(String::as_str)
+            } else {
+                None
+            };
+            if let Some(c) = self.classify(&hop.url, failure, hop.top_level) {
+                let id = logical
+                    .get(&hop.key)
+                    .cloned()
+                    .unwrap_or_else(|| format!("cdp:{}/{}", hop.key.0, hop.key.1));
+                out.add(c, &hop.url, &id);
+            }
+        }
+        out.finish()
+    }
+}
+
+enum Classified {
+    Blocked { host: String },
+    Violation { host: String, reason: String },
+}
+
+#[derive(Default)]
+struct ReportBuilder {
+    blocked: BTreeMap<String, BlockedHost>,
+    violations: Vec<Violation>,
+}
+
+impl ReportBuilder {
+    fn add(&mut self, c: Classified, url: &str, request_id: &str) {
+        match c {
+            Classified::Blocked { host } => {
+                let entry = self.blocked.entry(host.clone()).or_insert_with(|| BlockedHost {
+                    host,
+                    requests: 0,
+                    example_url: redact_url(url),
+                });
+                entry.requests += 1;
+            }
+            Classified::Violation { host, reason } => self.violations.push(Violation {
+                request_id: request_id.to_string(),
+                url: redact_url(url),
+                host,
+                reason,
+            }),
+        }
+    }
+
+    fn finish(self) -> AllowlistReport {
+        AllowlistReport {
+            blocked_hosts: self.blocked.into_values().collect(),
+            violations: self.violations,
+        }
+    }
+}
+
+/// URL sem credenciais, consulta, fragmento nem parâmetros de caminho
+/// (`;jsessionid=…`): o que pode ir para avisos e relatórios sem vazar segredo.
+pub fn redact_url(url: &str) -> String {
+    let cut = url.find(['?', '#']).unwrap_or(url.len());
+    let had_tail = cut < url.len();
+    let base = &url[..cut];
+    let cleaned = match base.split_once("://") {
+        Some((scheme, rest)) => {
+            let (authority, path) = match rest.find('/') {
+                Some(i) => (&rest[..i], &rest[i..]),
+                None => (rest, ""),
+            };
+            let authority = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+            let path = path
+                .split('/')
+                .map(|segment| segment.split(';').next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("/");
+            format!("{scheme}://{authority}{path}")
+        }
+        None => base.split(';').next().unwrap_or("").to_string(),
+    };
+    if had_tail {
+        format!("{cleaned}?…")
+    } else {
+        cleaned
     }
 }
 
@@ -420,7 +593,10 @@ fn parse_pattern(raw: &str) -> Result<HostPattern, AllowlistError> {
         return Err(invalid());
     }
     let lower = text.to_ascii_lowercase();
-    // Separa a porta (e trata IPv6 entre colchetes).
+    if lower.starts_with('[') || lower.starts_with("*.[") || lower.matches(':').count() > 1 {
+        return Err(AllowlistError::Unsupported(raw.to_string()));
+    }
+    // Separa a porta.
     let (host_part, port) = if let Some(rest) = lower.strip_prefix('[') {
         let end = rest.find(']').ok_or_else(invalid)?;
         let host = &rest[..end];
@@ -634,6 +810,11 @@ mod tests {
             let err = Allowlist::new(&list(&[broad]), &[]).unwrap_err();
             assert_eq!(err.code(), "allowlist_too_broad", "{broad}");
         }
+        for v6 in ["::1", "[::1]", "*.[::1]", "[::1]:8080", "[fe80::1]"] {
+            let err = Allowlist::new(&list(&[v6]), &[]).unwrap_err();
+            assert_eq!(err.code(), "allowlist_unsupported", "{v6}: {err:?}");
+            assert!(err.to_string().contains("IPv6"), "{err}");
+        }
         for bad in [
             "http://exemplo.com",
             "exemplo.com/caminho",
@@ -649,8 +830,6 @@ mod tests {
             "0x7f.0.0.1",
             "256.1.1.1",
             "01.2.3.4",
-            "::1",
-            "*.[::1]",
             "exémplo.com",
             "-a.com",
             "a..com",
@@ -662,7 +841,7 @@ mod tests {
 
     #[test]
     fn exact_wildcard_and_port_matching() {
-        let a = al(&["exemplo.com", "*.api.exemplo.com", "loja.test:8443", "127.0.0.1:9000", "[::1]"], &[]);
+        let a = al(&["exemplo.com", "*.api.exemplo.com", "loja.test:8443", "127.0.0.1:9000"], &[]);
         assert!(a.permits_url("https://exemplo.com/").is_ok());
         assert!(a.permits_url("HTTPS://EXEMPLO.COM/x?y=1#z").is_ok());
         assert!(a.permits_url("http://exemplo.com:8080/").is_ok(), "sem porta na regra = qualquer porta");
@@ -682,8 +861,8 @@ mod tests {
         );
         assert!(a.permits_url("http://127.0.0.1:9000/").is_ok());
         assert!(a.permits_url("http://127.0.0.1:9001/").is_err());
-        assert!(a.permits_url("http://[::1]/").is_ok());
-        assert!(a.permits_url("http://[::2]/").is_err());
+        // IPv6 literal nunca está na lista.
+        assert!(a.permits_url("http://[::1]/").is_err());
     }
 
     #[test]
@@ -751,10 +930,14 @@ mod tests {
     }
 
     #[test]
-    fn resolver_rules_skip_ip_literals_and_dedupe() {
-        let a = al(&["127.0.0.1:8080", "exemplo.com", "exemplo.com:8443", "[::1]"], &["exemplo.com"]);
-        assert_eq!(a.resolver_rules(), "MAP * ~NOTFOUND, EXCLUDE exemplo.com");
-        assert_eq!(a.allowed_hosts(), vec!["127.0.0.1:8080", "exemplo.com", "exemplo.com:8443", "[::1]"]);
+    fn resolver_rules_include_ipv4_literals_and_dedupe() {
+        let a = al(&["127.0.0.1:8080", "exemplo.com", "exemplo.com:8443"], &["exemplo.com"]);
+        // IPv4 literal precisa de EXCLUDE: sem ele `MAP * ~NOTFOUND` o nega (medido).
+        assert_eq!(
+            a.resolver_rules(),
+            "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE exemplo.com"
+        );
+        assert_eq!(a.allowed_hosts(), vec!["127.0.0.1:8080", "exemplo.com", "exemplo.com:8443"]);
     }
 
     #[test]
@@ -789,5 +972,100 @@ mod tests {
         assert_eq!(ids, vec!["r4", "r5", "r8"]);
         assert!(report.violations[0].reason.contains("IP literal"));
         assert!(report.violations[1].reason.contains("porta"));
+    }
+
+    fn event(sid: &str, method: &str, params: serde_json::Value) -> String {
+        serde_json::json!({ "sessionId": sid, "method": method, "params": params }).to_string()
+    }
+
+    fn will_be_sent(sid: &str, rid: &str, url: &str, kind: &str, frame: &str) -> String {
+        event(
+            sid,
+            "Network.requestWillBeSent",
+            serde_json::json!({ "requestId": rid, "type": kind, "frameId": frame, "request": { "url": url } }),
+        )
+    }
+
+    fn failed(sid: &str, rid: &str, text: &str) -> String {
+        event(sid, "Network.loadingFailed", serde_json::json!({ "requestId": rid, "errorText": text }))
+    }
+
+    #[test]
+    fn port_gap_is_reported_for_every_path_from_cdp_events() {
+        use scrapelens_core::model::{BrowserInfo, CdpRef, LogicalRequest, SessionMeta, SessionV1};
+        let a = al(&["localhost:1000"], &["cdn.test"]);
+        let events = vec![
+            event("P", "Target.attachedToTarget", serde_json::json!({ "sessionId": "P", "targetInfo": { "targetId": "T1", "type": "page" } })),
+            will_be_sent("P", "r1", "http://localhost:1000/", "Document", "T1"),
+            // 302 / location= / meta refresh: novo documento (ou salto) em outra porta.
+            will_be_sent("P", "r1", "http://localhost:2000/redirected-top-level", "Document", "T1"),
+            will_be_sent("P", "r9", "http://localhost:2000/meta-refresh", "Document", "T1"),
+            // iframe em sessão própria, host em maiúsculas.
+            event("I", "Target.attachedToTarget", serde_json::json!({ "sessionId": "I", "targetInfo": { "targetId": "TI", "type": "iframe" } })),
+            will_be_sent("I", "r3", "http://LOCALHOST:2000/iframe-other-port", "Document", "TI"),
+            // popup: página nova em outra sessão.
+            event("W", "Target.attachedToTarget", serde_json::json!({ "sessionId": "W", "targetInfo": { "targetId": "TW", "type": "page" } })),
+            will_be_sent("W", "r4", "http://localhost:2000/popup-other-port", "Document", "TW"),
+            // fetch e WebSocket (este último nunca entra na sessão importada).
+            will_be_sent("P", "r5", "http://localhost:2000/fetch-other-port", "Fetch", "T1"),
+            event("P", "Network.webSocketCreated", serde_json::json!({ "requestId": "r6", "url": "ws://localhost:2000/ws-other-port" })),
+            // consulta, fragmento, ;params e userinfo nunca saem.
+            will_be_sent("P", "r7", "http://u:senha@localhost:2000/p;jsessionid=SEGREDO?token=X#frag", "Fetch", "T1"),
+            // resolvedor: nome e IP literal negados => blockedHosts, não violações.
+            will_be_sent("P", "r10", "https://blocked.test/a.js", "Script", "T1"),
+            failed("P", "r10", "net::ERR_NAME_NOT_RESOLVED"),
+            will_be_sent("P", "r11", "http://10.0.0.1:9/x", "Image", "T1"),
+            failed("P", "r11", "net::ERR_NAME_NOT_RESOLVED"),
+            // terceiro aprovado: subrecurso ok, navegação de topo é violação.
+            will_be_sent("P", "r12", "https://cdn.test/app.js", "Script", "T1"),
+            will_be_sent("P", "r13", "https://cdn.test/landing", "Document", "T1"),
+        ];
+        let mut session = SessionV1::new(SessionMeta::new("s", "2026-10-31T00:00:00Z", BrowserInfo::default()));
+        let mut mapped = LogicalRequest::new("cdp-r0007", "http://localhost:2000/redirected-top-level", "GET");
+        mapped.cdp = Some(CdpRef { session_id: Some("P".into()), request_id: Some("r1".into()), ..CdpRef::default() });
+        session.requests.push(mapped);
+        let report = a.report_from_events(&events, &session);
+        let urls: Vec<&str> = report.violations.iter().map(|v| v.url.as_str()).collect();
+        for expected in [
+            "http://localhost:2000/redirected-top-level",
+            "http://localhost:2000/meta-refresh",
+            "http://LOCALHOST:2000/iframe-other-port",
+            "http://localhost:2000/popup-other-port",
+            "http://localhost:2000/fetch-other-port",
+            "ws://localhost:2000/ws-other-port",
+            "http://localhost:2000/p?…",
+            "https://cdn.test/landing",
+        ] {
+            assert!(urls.contains(&expected), "faltou {expected}: {urls:?}");
+        }
+        assert_eq!(urls.len(), 8, "{urls:?}");
+        for v in &report.violations {
+            assert!(!v.url.contains("SEGREDO") && !v.url.contains("senha") && !v.url.contains("frag"), "{}", v.url);
+        }
+        let by_url = |u: &str| report.violations.iter().find(|v| v.url == u).unwrap();
+        assert!(by_url("http://localhost:2000/fetch-other-port").reason.contains("porta 2000"));
+        assert!(by_url("https://cdn.test/landing").reason.contains("terceiro"));
+        // O salto do redirect usa o id lógico da sessão; o WebSocket, o id CDP.
+        assert_eq!(by_url("http://localhost:2000/redirected-top-level").request_id, "cdp-r0007");
+        assert_eq!(by_url("ws://localhost:2000/ws-other-port").request_id, "cdp:P/r6");
+        let blocked: Vec<&str> = report.blocked_hosts.iter().map(|b| b.host.as_str()).collect();
+        assert_eq!(blocked, vec!["10.0.0.1", "blocked.test"]);
+        // O que está dentro da lista não aparece.
+        assert!(!urls.iter().any(|u| *u == "http://localhost:1000/" || u.contains("cdn.test/app.js")));
+    }
+
+    #[test]
+    fn host_without_port_in_the_list_allows_every_port_and_redact_url_cleans() {
+        let a = al(&["localhost"], &[]);
+        let events = vec![will_be_sent("P", "r1", "http://localhost:31337/x", "Fetch", "T")];
+        let session = scrapelens_core::model::SessionV1::new(scrapelens_core::model::SessionMeta::new(
+            "s",
+            "2026-10-31T00:00:00Z",
+            scrapelens_core::model::BrowserInfo::default(),
+        ));
+        assert!(a.report_from_events(&events, &session).violations.is_empty());
+        assert_eq!(redact_url("https://a:b@x.test:8443/p/q;jsessionid=Z/r?t=1#f"), "https://x.test:8443/p/q/r?…");
+        assert_eq!(redact_url("https://x.test/a"), "https://x.test/a");
+        assert_eq!(redact_url("https://x.test/a#access_token=Z"), "https://x.test/a?…");
     }
 }

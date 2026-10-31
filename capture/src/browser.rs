@@ -1043,6 +1043,86 @@ mod tests {
         println!("servidor viu: {:?}", site.seen_paths());
     }
 
+    /// Os 8 caminhos do PoC da revisão (`/tmp/rev25/poc-allow`): com
+    /// `localhost:P1` aprovado, a página alcança `localhost:P2` por 302 de
+    /// topo, `location=`, meta refresh, `window.open`, iframe, fetch,
+    /// WebSocket e host em maiúsculas. Semântica oficial (docs/16b §2.2): o
+    /// navegador impõe o HOST; a porta é só reportada. Cada um dos 8 precisa
+    /// aparecer em `allowlist.violations`.
+    #[test]
+    #[ignore]
+    fn live_port_gap_is_reported_on_all_paths() {
+        use std::sync::atomic::{AtomicU16, Ordering};
+        static P2: AtomicU16 = AtomicU16::new(0);
+        let site2 = TestSite::start(|_m, _p| Reply::html("outra porta"));
+        P2.store(site2.port, Ordering::SeqCst);
+        let site = TestSite::start(|_m, path| {
+            let p2 = P2.load(Ordering::SeqCst);
+            match path {
+                "/" => Reply::html(&format!(
+                    "<html><body>ok\
+                     <img src='http://LOCALHOST:{p2}/upper.png'>\
+                     <iframe src='http://localhost:{p2}/iframe-other-port'></iframe>\
+                     <script>try{{new WebSocket('ws://localhost:{p2}/ws-other-port')}}catch(e){{}}\
+                     fetch('http://localhost:{p2}/fetch-other-port',{{mode:'no-cors'}});\
+                     window.open('http://localhost:{p2}/popup-other-port');</script></body></html>"
+                )),
+                "/redir" => Reply::html("x")
+                    .status(302)
+                    .header("Location", &format!("http://localhost:{p2}/redirected-top-level")),
+                "/jsloc" => Reply::html(&format!(
+                    "<script>location='http://localhost:{p2}/js-location'</script>"
+                )),
+                "/meta" => Reply::html(&format!(
+                    "<meta http-equiv=refresh content='0;url=http://localhost:{p2}/meta-refresh'>"
+                )),
+                _ => Reply::html("x"),
+            }
+        });
+        let p1 = site.port;
+        let config = live_config(vec![format!("localhost:{p1}")], "port-gap", false);
+        let (capture, _info) = BrowserCapture::start(config).expect("start");
+        for path in ["/", "/redir", "/jsloc", "/meta"] {
+            let _ = capture.navigate(&format!("http://localhost:{p1}{path}"), true, Duration::from_secs(10));
+            thread::sleep(Duration::from_millis(1500));
+        }
+        let report = capture.stop().expect("stop");
+        let p2 = site2.port;
+        println!("P2 viu: {:?}", site2.seen_paths());
+        println!("violações: {:#?}", report.allowlist.violations.iter().map(|v| (&v.url, &v.reason)).collect::<Vec<_>>());
+        let urls: Vec<String> = report.allowlist.violations.iter().map(|v| v.url.clone()).collect();
+        for path in [
+            "redirected-top-level",
+            "js-location",
+            "meta-refresh",
+            "popup-other-port",
+            "iframe-other-port",
+            "fetch-other-port",
+            "ws-other-port",
+            "upper.png",
+        ] {
+            let scheme = if path == "ws-other-port" { "ws" } else { "http" };
+            let expected = format!("{scheme}://localhost:{p2}/{path}");
+            assert!(urls.contains(&expected), "caminho {path} não foi reportado: {urls:?}");
+            let v = report.allowlist.violations.iter().find(|v| v.url == expected).unwrap();
+            assert!(v.reason.contains(&format!("porta {p2}")), "{}", v.reason);
+        }
+        // A lacuna é real e documentada: o navegador deixou chegar (host liberado).
+        for path in ["/redirected-top-level", "/js-location", "/meta-refresh", "/fetch-other-port", "/upper.png"] {
+            assert!(
+                site2.seen_paths().iter().any(|p| p == &format!("GET {path}")),
+                "o PoC esperava que {path} chegasse a P2: {:?}",
+                site2.seen_paths()
+            );
+        }
+        // O que está na porta aprovada não é violação; avisos da sessão não vazam consulta.
+        assert!(!urls.iter().any(|u| u.contains(&format!("localhost:{p1}"))));
+        assert!(report.warnings.iter().all(|w| !w.contains('?') || w.contains("?…")));
+        let session_json =
+            std::fs::read_to_string(std::path::Path::new(&report.session_dir).join("session.json")).unwrap();
+        assert!(session_json.contains("capture.allowlist_violation"));
+    }
+
     #[test]
     fn test_site_serves_and_records() {
         let site = TestSite::start(|_m, path| Reply::html(&format!("<p>{path}</p>")).header("X-T", "1"));
