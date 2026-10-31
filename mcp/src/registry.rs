@@ -156,7 +156,11 @@ impl Ctx {
                     continue;
                 }
                 let path = entry.path();
-                if !path.join("session.json").is_file() {
+                // `session.json` precisa ser arquivo regular (nunca symlink).
+                if !std::fs::symlink_metadata(path.join("session.json"))
+                    .map(|meta| meta.file_type().is_file())
+                    .unwrap_or(false)
+                {
                     continue;
                 }
                 let Ok(canonical) = path.canonicalize() else {

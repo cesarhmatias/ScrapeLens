@@ -52,6 +52,7 @@ pub async fn run(config: Config, backend: Arc<dyn CaptureBackend>) -> i32 {
         }
     );
     let server = ScrapeLensServer::new(Ctx::new(config), backend);
+    server.startup();
     let service = match server.clone().serve(rmcp::transport::stdio()).await {
         Ok(service) => service,
         Err(error) => {

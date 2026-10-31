@@ -166,3 +166,76 @@ fn live_cycle_with_real_chrome() {
     let (ok, stderr) = client.finish();
     assert!(ok, "{stderr}");
 }
+
+fn chrome_left_for(server_pid: u32) -> (usize, Vec<String>) {
+    let pattern = format!("scrapelens-chrome-{server_pid}-");
+    let procs = std::process::Command::new("pgrep")
+        .args(["-f", &pattern])
+        .output()
+        .unwrap();
+    let count = String::from_utf8_lossy(&procs.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count();
+    let profiles = std::fs::read_dir(std::env::temp_dir())
+        .map(|d| {
+            d.flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| n.starts_with(&pattern))
+                .collect()
+        })
+        .unwrap_or_default();
+    (count, profiles)
+}
+
+fn end_during_start(sigterm: bool) {
+    let work = tempfile::tempdir().unwrap();
+    let sessions = work.path().join("sessions");
+    let program = std::path::PathBuf::from(env!("CARGO_BIN_EXE_scrapelens-mcp"));
+    let mut client = Client::start(
+        &program,
+        &["--sessions-dir", sessions.to_str().unwrap()],
+        Elicit::Accept,
+    );
+    client.handshake();
+    let pid = client.child.id();
+    client.call_nowait(
+        "start_capture",
+        json!({"allowed_hosts": ["localhost:9"], "headless": true}),
+    );
+    client.answer_next_elicitation();
+    // A confirmação foi dada e o Chrome está subindo: encerra o servidor agora.
+    if sigterm {
+        let status = std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let exit = client.child.wait().unwrap();
+        assert!(exit.success(), "{exit:?}");
+    } else {
+        client.close_stdin();
+        let (ok, stderr) = client.finish();
+        assert!(ok, "{stderr}");
+        // Prova de que o teste pegou a janela: o Chrome subia e foi parado pelo servidor.
+        assert!(
+            stderr.contains("que subia durante o encerramento foi parada"),
+            "{stderr}"
+        );
+    }
+    let (procs, profiles) = chrome_left_for(pid);
+    assert_eq!(procs, 0, "Chrome órfão depois de encerrar durante o início");
+    assert!(profiles.is_empty(), "perfil sobrando: {profiles:?}");
+}
+
+#[test]
+#[ignore = "usa Chrome real (headless)"]
+fn live_eof_during_start_leaves_no_chrome_or_profile() {
+    end_during_start(false);
+}
+
+#[test]
+#[ignore = "usa Chrome real (headless)"]
+fn live_sigterm_during_start_leaves_no_chrome_or_profile() {
+    end_during_start(true);
+}

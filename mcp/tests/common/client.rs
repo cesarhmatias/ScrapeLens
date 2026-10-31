@@ -20,6 +20,14 @@ pub enum Elicit {
     AcceptUnchecked,
     /// Declara e responde `decline`.
     Decline,
+    /// Declara e responde com um erro JSON-RPC ("User rejected").
+    RpcError,
+    /// Declara e responde `accept` com `content: {}` (caixa ausente).
+    AcceptEmpty,
+    /// Declara e responde `accept` com `confirmo: "true"` (string, não booleano).
+    AcceptString,
+    /// Declara e responde `accept` com `confirmo: 1`.
+    AcceptNumber,
 }
 
 pub struct Client {
@@ -51,8 +59,18 @@ pub fn fake_server() -> PathBuf {
 
 impl Client {
     pub fn start(program: &std::path::Path, args: &[&str], policy: Elicit) -> Self {
+        Self::start_env(program, args, policy, &[])
+    }
+
+    pub fn start_env(
+        program: &std::path::Path,
+        args: &[&str],
+        policy: Elicit,
+        env: &[(&str, &str)],
+    ) -> Self {
         let mut child = Command::new(program)
             .args(args)
+            .envs(env.iter().copied())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -95,7 +113,14 @@ impl Client {
         let result = match self.policy {
             Elicit::Accept => json!({"action": "accept", "content": {"confirmo": true}}),
             Elicit::AcceptUnchecked => json!({"action": "accept", "content": {"confirmo": false}}),
+            Elicit::AcceptEmpty => json!({"action": "accept", "content": {}}),
+            Elicit::AcceptString => json!({"action": "accept", "content": {"confirmo": "true"}}),
+            Elicit::AcceptNumber => json!({"action": "accept", "content": {"confirmo": 1}}),
             Elicit::Decline | Elicit::Unsupported => json!({"action": "decline"}),
+            Elicit::RpcError => {
+                self.send(json!({"jsonrpc": "2.0", "id": message["id"], "error": {"code": -1, "message": "User rejected"}}));
+                return;
+            }
         };
         self.send(json!({"jsonrpc": "2.0", "id": message["id"], "result": result}));
     }
@@ -161,6 +186,30 @@ impl Client {
         let mut stderr = String::new();
         std::io::Read::read_to_string(&mut self.child.stderr.take().unwrap(), &mut stderr).unwrap();
         (status.success(), stderr)
+    }
+
+    /// Envia um `tools/call` sem esperar a resposta; devolve o id da chamada.
+    pub fn call_nowait(&mut self, name: &str, arguments: Value) -> u64 {
+        self.next_id += 1;
+        let id = self.next_id;
+        self.send(json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": name, "arguments": arguments}}));
+        id
+    }
+
+    /// Lê até chegar a próxima elicitação do servidor e a responde pela política.
+    pub fn answer_next_elicitation(&mut self) {
+        loop {
+            let line = self
+                .lines
+                .recv_timeout(Duration::from_secs(60))
+                .expect("sem elicitação");
+            self.seen.push(line.clone());
+            let message: Value = serde_json::from_str(&line).unwrap();
+            if message["method"] == "elicitation/create" {
+                self.answer_elicitation(&message);
+                return;
+            }
+        }
     }
 
     pub fn close_stdin(&mut self) {

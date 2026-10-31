@@ -8,11 +8,41 @@ use common::client::{fake_server, Client, Elicit};
 use common::*;
 use scrapelens_core::model::entities::{Initiator, InitiatorFrame};
 use scrapelens_core::model::{
-    HeaderEntry, Provenance, Source, TargetKind, TargetProvenance, Verification, Warning,
+    Body, HeaderEntry, Provenance, SetCookieRecord, Source, TargetKind, TargetProvenance,
+    Verification, Warning,
 };
 use serde_json::{json, Value};
 
 const MARK: &str = "SEGREDO-MARCADO-7";
+
+/// Um marcador único por forma de vazamento (revisão: fragmento, matriz,
+/// userinfo, `nome=` sem `?`, nomes de credencial, corpos, parseError...).
+const FORMS: [&str; 24] = [
+    "MK-FRAG-LOCATION",
+    "MK-FRAG-REFRESH",
+    "MK-BARE-REFRESH",
+    "MK-USERINFO",
+    "MK-MATRIX",
+    "MK-APIM-HEADER",
+    "MK-APPKEY-HEADER",
+    "MK-SECRET-HEADER",
+    "MK-TOKEN-HEADER",
+    "MK-APIKEY-HEADER",
+    "MK-LOWER-BEARER",
+    "MK-Q-JWT",
+    "MK-Q-SENHA",
+    "MK-Q-PWD",
+    "MK-Q-OTP",
+    "MK-Q-PASSCODE",
+    "MK-PARSE-ERROR",
+    "MK-B-JWT",
+    "MK-B-PWD",
+    "MK-B-OTP",
+    "MK-B-PASSCODE",
+    "MK-B-SENHA",
+    "MK-F-SENHA",
+    "MK-ENC-TOKEN",
+];
 
 fn prov() -> Provenance {
     Provenance::new(Source::NetLog, "test", Verification::Verified)
@@ -23,6 +53,7 @@ fn poisoned_session(dir: &std::path::Path) {
     let imported = scrapelens_core::import_har(flow_har("").as_bytes()).unwrap();
     let mut bundle = imported.bundle;
     let q = format!("?token={MARK}");
+    let mut bundle_attachments: Vec<(String, Vec<u8>)> = Vec::new();
     let session = &mut bundle.session;
     for (n, request) in session.requests.iter_mut().enumerate() {
         request.url = format!("{}{q}", request.url.split('?').next().unwrap());
@@ -61,10 +92,53 @@ fn poisoned_session(dir: &std::path::Path) {
                     ("Location", format!("/next{q}")),
                     ("Origin", format!("https://x.invalid{q}")),
                     ("Refresh", format!("0; url=/go{q}")),
+                    ("Location", "/cb#access_token=MK-FRAG-LOCATION".to_string()),
+                    (
+                        "Refresh",
+                        "0; url=/x#access_token=MK-FRAG-REFRESH".to_string(),
+                    ),
+                    ("Refresh", "5; token=MK-BARE-REFRESH".to_string()),
+                    (
+                        "X-Original-Url",
+                        "https://admin:MK-USERINFO@x.invalid/p".to_string(),
+                    ),
+                    (
+                        "Referer",
+                        "https://x.invalid/h;jsessionid=MK-MATRIX?x=1".to_string(),
+                    ),
+                    ("Ocp-Apim-Subscription-Key", "MK-APIM-HEADER".to_string()),
+                    ("X-Vtex-Api-Appkey", "MK-APPKEY-HEADER".to_string()),
+                    ("X-Foo-Secret", "MK-SECRET-HEADER".to_string()),
+                    ("X-Client-Token", "MK-TOKEN-HEADER".to_string()),
+                    ("X-Foo-Api-Key", "MK-APIKEY-HEADER".to_string()),
+                    ("Authorization", "bearer MK-LOWER-BEARER".to_string()),
+                    ("X-Enc", "/r?a=1&token%3DMK-ENC-TOKEN".to_string()),
                 ] {
                     view.headers.push(HeaderEntry::new(name, value, &prov()));
                 }
             }
+        }
+        let extra =
+            "&jwt=MK-Q-JWT&senha=MK-Q-SENHA&pwd=MK-Q-PWD&otp=MK-Q-OTP&passcode=MK-Q-PASSCODE";
+        request.url.push_str(extra);
+        for attempt in &mut request.attempts {
+            attempt.url.push_str(extra);
+            let record = SetCookieRecord::from_raw("NAMELESS-MK-PARSE-ERROR; Path=/", &prov());
+            attempt.set_cookies.push(record);
+        }
+        if n == 1 {
+            let json_body = br#"{"jwt":"MK-B-JWT","pwd":"MK-B-PWD","otp":"MK-B-OTP","passcode":"MK-B-PASSCODE","senha":"MK-B-SENHA","ok":1}"#;
+            let form_body = b"senha=MK-F-SENHA&page=2";
+            bundle_attachments.push(("poison-json".to_string(), json_body.to_vec()));
+            bundle_attachments.push(("poison-form".to_string(), form_body.to_vec()));
+            let json = Body::captured("poison-json", json_body.len() as u64, &prov())
+                .with_content_type("application/json");
+            let form = Body::captured("poison-form", form_body.len() as u64, &prov())
+                .with_content_type("application/x-www-form-urlencoded");
+            request.attempts[0].request_body = json.clone();
+            request.attempts[0].response_body = form.clone();
+            request.request_body = json;
+            request.response_body = form;
         }
         request.request_headers = request.attempts[0].request_headers.clone();
         request.response_headers = request.attempts[0].response_headers.clone();
@@ -73,6 +147,9 @@ fn poisoned_session(dir: &std::path::Path) {
         "x.aviso",
         format!("falha ao carregar https://x.invalid/w{q}"),
     ));
+    for (name, bytes) in bundle_attachments {
+        bundle.insert_attachment(name, bytes);
+    }
     scrapelens_core::store::write_session_dir(&bundle, dir).unwrap();
 }
 
@@ -198,14 +275,23 @@ fn marked_query_secret_never_leaves_any_of_the_14_tools() {
     assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 14);
 
     // Varre o JSON inteiro de cada saída, as linhas brutas do stdout e as elicitações.
-    for output in outputs.borrow().iter() {
-        assert!(!output.to_string().contains(MARK), "vazou em: {output}");
-    }
-    for line in &client.seen {
-        assert!(!line.contains(MARK), "vazou no stdout: {line}");
-    }
-    for message in &client.elicitations {
-        assert!(!message.contains(MARK), "vazou na elicitação: {message}");
+    let all_marks: Vec<&str> = std::iter::once(MARK).chain(FORMS).collect();
+    for mark in &all_marks {
+        for output in outputs.borrow().iter() {
+            assert!(
+                !output.to_string().contains(mark),
+                "{mark} vazou em: {output}"
+            );
+        }
+        for line in &client.seen {
+            assert!(!line.contains(mark), "{mark} vazou no stdout: {line}");
+        }
+        for message in &client.elicitations {
+            assert!(
+                !message.contains(mark),
+                "{mark} vazou na elicitação: {message}"
+            );
+        }
     }
     // A sessão original continua intacta (o segredo existe nela): sem reveal ele não sai.
     let original = std::fs::read_to_string(extra.join("poison/session.json")).unwrap();

@@ -117,7 +117,9 @@ impl LiveCapture for FakeLive {
             graceful: true,
             waited_ms: 1,
             allowlist: report,
-            warnings: vec![],
+            warnings: vec![
+                "violação: http://site.invalid.test:9/p;jsessionid=SEGREDO-VIOL?x=1&k=SEGREDO-VIOLQ#access_token=SEGREDO-VIOLF fora da allowlist".into(),
+            ],
             outcome: None,
         })
     }
@@ -134,6 +136,13 @@ impl CaptureBackend for FakeBackend {
     ) -> Result<(Box<dyn LiveCapture>, StartInfo), StartError> {
         let allowlist = Allowlist::new(&config.allowed_hosts, &config.third_party_hosts)
             .map_err(StartError::Allowlist)?;
+        // Teste de encerramento durante o início: o "Chrome" demora a subir.
+        if let Some(ms) = std::env::var("FAKE_START_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            std::thread::sleep(Duration::from_millis(ms));
+        }
         if let Some(url) = config.start_url.as_deref() {
             allowlist
                 .permits_url(url)

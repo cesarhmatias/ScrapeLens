@@ -32,6 +32,11 @@ impl ScrapeLensServer {
         }
     }
 
+    /// Limpeza de órfãos de execuções anteriores (ao iniciar o servidor).
+    pub fn startup(&self) {
+        self.captures.startup();
+    }
+
     /// Encerra com elegância as capturas ativas (fim do servidor).
     pub async fn shutdown_captures(&self) -> usize {
         let (ctx, captures) = (self.ctx.clone(), self.captures.clone());
@@ -57,7 +62,12 @@ impl Drop for SlotGuard {
     }
 }
 
-fn confirmation_from(result: Result<Option<ConfirmStart>, ElicitationError>) -> Confirmation {
+/// Converte a resposta da elicitação na decisão do usuário. Só "o cliente não
+/// declarou o recurso" é `Unavailable`: qualquer outro problema (erro JSON-RPC,
+/// resposta malformada, `confirmo` que não seja o booleano `true`, prazo
+/// esgotado, conexão caída) é negativa, nunca confirmação. Isso vale também
+/// com `--allow-unconfirmed-capture`.
+pub fn confirmation_from(result: Result<Option<ConfirmStart>, ElicitationError>) -> Confirmation {
     use rmcp::service::ServiceError;
     match result {
         Ok(Some(form)) if form.confirmo => Confirmation::Accepted,
@@ -71,7 +81,10 @@ fn confirmation_from(result: Result<Option<ConfirmStart>, ElicitationError>) -> 
             Confirmation::Unavailable("o cliente não declarou o recurso de elicitação".into())
         }
         Err(ElicitationError::Service(ServiceError::Timeout { .. })) => Confirmation::Cancelled,
-        Err(other) => Confirmation::Unavailable(other.to_string()),
+        Err(ElicitationError::ParseError { .. }) => {
+            Confirmation::Declined("resposta de confirmação malformada".into())
+        }
+        Err(other) => Confirmation::Declined(format!("a confirmação falhou: {other}")),
     }
 }
 

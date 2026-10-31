@@ -738,7 +738,7 @@ fn trace_literal_value_and_request_origins() {
     let env = Env::new(true);
     env.import_flow("flow", "");
     let trace = trace_value(&env.ctx, p(json!({"session_id": "flow", "value": TOKEN}))).unwrap();
-    assert_eq!(trace["evidence"], "literal-match");
+    assert_eq!(trace["evidence"], "exact-value-match");
     assert_eq!(trace["firstProducer"]["requestId"], "har-0002");
     assert_eq!(trace["firstProducer"]["scope"], "responseBody");
     assert!(trace["consumers"]

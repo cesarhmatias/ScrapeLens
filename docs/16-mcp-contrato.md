@@ -90,6 +90,14 @@ Com `reveal=false`:
   exportação sanitizada. O servidor aplica `sanitize_url` de novo nesses
   campos e nas URLs de `trace_value` (defesa em profundidade, coberta por
   teste próprio).
+- **Formas de URL e nomes** (revisão, docs/17): o sanitizador cobre também
+  fragmento (`#access_token=`), parâmetros de matriz (`;jsessionid=`), userinfo
+  (`user:senha@`), `nome=valor` sem `?` (Refresh, Location, texto livre), `%3D`,
+  esquemas de autenticação sem caixa exata (`bearer`, `ApiKey`, `OAuth`…), os
+  nomes `jwt`, `senha`, `pwd`, `otp`, `passcode`, `pin`, `ticket`,
+  `SAMLResponse`, `*-api-key`, `*-appkey`, `*-secret`, `*-token`,
+  `*-subscription-key`, `*csrf*`/`*xsrf*`, e o `parseError` de Set-Cookie não
+  repete o valor cru.
 - **Texto cru com query** (rodada 11, correção de vazamento): o sanitizador do
   core redige o valor de parâmetro de query com nome sensível também em
   `startLine` de requisição (`GET /p?token=… HTTP/1.1`), em qualquer valor de
@@ -283,8 +291,13 @@ De onde vem um cookie ou token e onde é usado. Três modos (exatamente um):
 
 - `{ session_id, cookie }` — **cookie por nome**: respostas que o definem
   (`Set-Cookie`, em ordem de tempo), requisições que o enviam.
-- `{ session_id, value }` — **valor literal** (token, id): onde aparece, com
-  produtor mais antigo e consumidores posteriores.
+- `{ session_id, value }` — **valor** (token, id): onde aparece, com produtor
+  mais antigo e consumidores posteriores. **Sem `reveal`, o valor só casa se for
+  IGUAL a um valor inteiro** (valor de header, de cookie, de parâmetro de URL —
+  query, fragmento ou matriz — ou campo de corpo JSON/formulário); nunca um
+  pedaço, para a ferramenta não servir de oráculo de substring. Corpos não
+  estruturados (HTML, texto, binário) não são pesquisados sem reveal. Com
+  `reveal`, a busca é por substring literal (evidência `literal-match`).
 - `{ session_id, request_id, field? }` — **origem dos valores consumidos por
   uma requisição** (`flow::value_origins` do core, com as mesmas
   `evidences`, `strength`, `confidence`, `unobservable`, `context`).
@@ -308,9 +321,9 @@ consumers[], truncated, warnings[] }` onde cada ocorrência é `{requestId,
 attemptId, scope, field?, byteOffset?, position}`. Produtor = ocorrência em
 resposta (headers, `Set-Cookie`, corpo); consumidor = URL, headers da requisição,
 cookies enviados, corpo da requisição, depois do produtor. Valores com menos de
-8 caracteres geram aviso (coincidência pode ser acaso). A relação é **igualdade
-literal de texto**, sinalizada como `evidence: "literal-match"`; não prova
-causalidade.
+8 caracteres geram aviso (coincidência pode ser acaso). Sem `reveal` a relação
+é **igualdade de valor inteiro** (`evidence: "exact-value-match"`); com `reveal`,
+igualdade de substring (`"literal-match"`). Nenhuma das duas prova causalidade.
 
 Saída (requisição): o `ValueOrigins` do core; a prévia `value` de cada entrada
 é `"[REDACTED]"` salvo `reveal=true` (comprimento, campo, escopo e evidências
@@ -359,10 +372,13 @@ Regras do servidor:
   caixa `confirmo`), mostrando `allowed_hosts`, `third_party_hosts`, URL inicial,
   `expose_cdp`, modo, binário do Chrome e `SENSITIVE_NOTICE`. Nenhum parâmetro
   `confirmed` existe no esquema. Só `accept` com a caixa marcada abre o Chrome;
-  recusa, cancelamento, caixa desmarcada ou prazo (5 min) → `confirmation_denied`,
-  e **nada é aberto**, mesmo com a flag. Se o cliente não suporta elicitação (ou
-  ela falha) → `confirmation_unavailable`, a menos que o servidor tenha sido
-  iniciado com `--allow-unconfirmed-capture` (dupla trava, como o reveal).
+  recusa, cancelamento, erro JSON-RPC, resposta malformada, `confirmo` que não
+  seja o booleano `true`, prazo (5 min) ou conexão caída → `confirmation_denied`,
+  e **nada é aberto**, mesmo com a flag. Só quando o cliente **não declara**
+  suporte a elicitação → `confirmation_unavailable`, a menos que o servidor
+  tenha sido iniciado com `--allow-unconfirmed-capture` (dupla trava, como o
+  reveal). O texto da confirmação avisa que **a porta só é verificada no
+  `navigate`** e que a página alcança qualquer porta dos hosts listados.
   Pedidos inválidos (allowlist vazia/larga/inválida, `start_url` fora) são
   recusados **antes** da confirmação, sem incomodar o usuário.
 - **Mapa de capturas**: `capture_id` → captura, em memória; ids opacos
@@ -370,12 +386,21 @@ Regras do servidor:
   (`capture_already_running`, inclusive enquanto a confirmação está pendente).
   Depois de `stop_capture` o id deixa de existir (`capture_not_found`).
 - **Encerramento**: stdin fechado, SIGTERM ou SIGINT param todas as capturas
-  ativas de forma graciosa (a sessão é gravada) antes de sair.
+  ativas de forma graciosa (a sessão é gravada) antes de sair. Um Chrome que
+  ainda está subindo (`start_capture` em andamento) é esperado e parado assim
+  que fica pronto (até 120 s); o servidor só sai depois. Ao iniciar, o servidor
+  chama `cleanup_orphans` (órfãos de execuções que morreram).
 - **Diretório da sessão**: `--sessions-dir/capture-<ms>`; o Chrome escreve só
   ali (perfil temporário próprio fica com o `capture/`).
+- **Spill de corpos** (`get_body`): diretórios e arquivo temporário únicos
+  criados sem seguir symlink (`create_new`); um componente que seja symlink é
+  recusado (`outside_allowed_dir`) antes de qualquer `mkdir`/`chmod`; o arquivo
+  sai 0600; handles que o `slug` fundiria (`x.y`, `x-y`) usam diretórios
+  distintos (hash no nome); `session.json` que seja symlink não lista a sessão.
 - **Sem caminhos nas saídas** (`sessionDir` removido). Nas saídas de captura
-  (`pageUrl`, `exampleUrl`, `violations[].url`) a **query e o fragmento são
-  trocados por `?…`**: não há como saber qual parâmetro é segredo.
+  (`pageUrl`, `exampleUrl`, `violations[].url`) e em qualquer texto delas
+  (`warnings[]`) a **query, o fragmento e os parâmetros de matriz somem**
+  (`…`): não há como saber qual parâmetro é segredo.
 - Anotações: `start_capture` e `navigate` têm `readOnlyHint: false` e
   `openWorldHint: true` (tráfego para os hosts listados); `stop_capture`
   `readOnlyHint: false` (grava a sessão); `capture_status` e `site_profile` são

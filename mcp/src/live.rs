@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -43,6 +44,10 @@ pub trait LiveCapture: Send {
 }
 
 pub trait CaptureBackend: Send + Sync {
+    /// Chamado uma vez ao iniciar o servidor (limpeza de capturas órfãs de
+    /// execuções anteriores que morreram sem encerrar o Chrome).
+    fn startup(&self) {}
+
     /// Chrome que seria usado (`binary_path` explícito ou detecção).
     fn resolve_chrome(&self, binary_path: Option<&str>) -> Result<PathBuf, ToolError>;
     fn start(
@@ -73,6 +78,16 @@ impl LiveCapture for BrowserCapture {
 }
 
 impl CaptureBackend for RealBackend {
+    fn startup(&self) {
+        let report = scrapelens_capture::cleanup_orphans(&scrapelens_capture::default_state_root());
+        if report.processes_killed + report.profiles_removed + report.markers_removed > 0 {
+            eprintln!(
+                "scrapelens-mcp: órfãos de execuções anteriores limpos (processos {}, perfis {}, marcadores {})",
+                report.processes_killed, report.profiles_removed, report.markers_removed
+            );
+        }
+    }
+
     fn resolve_chrome(&self, binary_path: Option<&str>) -> Result<PathBuf, ToolError> {
         use scrapelens_capture::chrome;
         let explicit = match binary_path.filter(|p| !p.trim().is_empty()) {
@@ -219,6 +234,12 @@ pub struct Prepared {
 pub struct Manager {
     backend: Arc<dyn CaptureBackend>,
     slots: Mutex<HashMap<String, Slot>>,
+    /// O servidor está encerrando: nada novo abre, e o que ainda estiver
+    /// subindo é encerrado assim que o navegador responder.
+    shutting_down: AtomicBool,
+    /// `backend.start` em andamento (o Chrome pode existir antes de a captura
+    /// ser registrada).
+    starts_in_flight: AtomicUsize,
 }
 
 fn new_id() -> String {
@@ -242,6 +263,8 @@ impl Manager {
         Self {
             backend,
             slots: Mutex::new(HashMap::new()),
+            shutting_down: AtomicBool::new(false),
+            starts_in_flight: AtomicUsize::new(0),
         }
     }
 
@@ -266,6 +289,12 @@ impl Manager {
         let expose_cdp = params.expose_cdp.unwrap_or(false);
 
         let mut slots = self.lock();
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err(ToolError::new(
+                "shutting_down",
+                "o servidor está encerrando",
+            ));
+        }
         if !slots.is_empty() {
             return Err(ToolError::new(
                 "capture_already_running",
@@ -303,6 +332,7 @@ impl Manager {
              CDP entregue ao agente (controle do navegador): {}\n\
              Modo: {}\n\
              Binário do Chrome: {}\n\n\
+             ATENÇÃO sobre portas: a porta só é verificada quando o agente usa navigate. Depois de carregada, a página pode alcançar QUALQUER porta dos hosts listados (por exemplo outros serviços locais em localhost). Liste só hosts em que isso seja aceitável.\n\n\
              {}\n\n\
              Marque \"confirmo\" para autorizar. Sem isso nada é aberto.",
             list(allowlist.allowed_hosts()),
@@ -341,7 +371,9 @@ impl Manager {
         self.lock().remove(capture_id);
     }
 
-    /// Abre o navegador (bloqueante) e registra a captura.
+    /// Abre o navegador (bloqueante) e registra a captura. Se o servidor
+    /// começar a encerrar enquanto o Chrome sobe, a captura é encerrada aqui
+    /// mesmo (o Chrome nunca fica órfão).
     pub fn start(&self, prepared: Prepared, how: &'static str) -> Result<Value, ToolError> {
         let Prepared {
             capture_id,
@@ -349,14 +381,53 @@ impl Manager {
             config,
             ..
         } = prepared;
+        self.starts_in_flight.fetch_add(1, Ordering::SeqCst);
+        let result = self.start_inner(&capture_id, &session_handle, config, how);
+        self.starts_in_flight.fetch_sub(1, Ordering::SeqCst);
+        if result.is_err() {
+            self.release(&capture_id);
+        }
+        result
+    }
+
+    fn start_inner(
+        &self,
+        capture_id: &str,
+        session_handle: &str,
+        config: BrowserCaptureConfig,
+        how: &'static str,
+    ) -> Result<Value, ToolError> {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err(ToolError::new(
+                "shutting_down",
+                "o servidor está encerrando",
+            ));
+        }
         match self.backend.start(config) {
             Ok((cap, info)) => {
+                let mut slots = self.lock();
+                if self.shutting_down.load(Ordering::SeqCst) {
+                    drop(slots);
+                    // Subiu durante o encerramento: para agora, com a sessão gravada.
+                    match cap.stop() {
+                        Ok(_) => eprintln!(
+                            "scrapelens-mcp: a captura que subia durante o encerramento foi parada"
+                        ),
+                        Err(error) => {
+                            eprintln!("scrapelens-mcp: ao encerrar a captura que subia: {error}")
+                        }
+                    }
+                    return Err(ToolError::new(
+                        "shutting_down",
+                        "o servidor encerrou durante o início; a captura foi parada",
+                    ));
+                }
                 let running = Arc::new(Running {
                     cap: Mutex::new(Some(cap)),
-                    session_handle: session_handle.clone(),
+                    session_handle: session_handle.to_string(),
                 });
-                self.lock()
-                    .insert(capture_id.clone(), Slot::Running(running));
+                slots.insert(capture_id.to_string(), Slot::Running(running));
+                drop(slots);
                 let mut object = match serde_json::to_value(&info) {
                     Ok(Value::Object(map)) => map,
                     _ => Map::new(),
@@ -367,10 +438,7 @@ impl Manager {
                 object.insert("confirmation".into(), json!(how));
                 Ok(Value::Object(object))
             }
-            Err(error) => {
-                self.release(&capture_id);
-                Err(ToolError::new(error.code(), error.to_string()))
-            }
+            Err(error) => Err(ToolError::new(error.code(), error.to_string())),
         }
     }
 
@@ -468,8 +536,11 @@ impl Manager {
         Ok(value)
     }
 
-    /// Para todas as capturas (encerramento do servidor). Devolve quantas.
+    /// Para todas as capturas (encerramento do servidor) e espera as que ainda
+    /// estão subindo, que se encerram sozinhas ao ficar prontas. Devolve quantas
+    /// foram paradas. Bloqueante.
     pub fn stop_all(&self, ctx: &Ctx) -> usize {
+        self.shutting_down.store(true, Ordering::SeqCst);
         let ids: Vec<String> = self
             .lock()
             .iter()
@@ -483,7 +554,23 @@ impl Manager {
                 Err(error) => eprintln!("scrapelens-mcp: ao encerrar {id}: {error}"),
             }
         }
+        // O Chrome que ainda sobe: `start` o encerra ao terminar. O limite é o
+        // prazo de início da própria captura (90 s) com folga.
+        let deadline = std::time::Instant::now() + Duration::from_secs(120);
+        while self.starts_in_flight.load(Ordering::SeqCst) > 0
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if self.starts_in_flight.load(Ordering::SeqCst) > 0 {
+            eprintln!("scrapelens-mcp: um início de captura não terminou a tempo; o Chrome pode ter ficado ativo");
+        }
         stopped
+    }
+
+    /// Chamado pelo servidor ao iniciar.
+    pub fn startup(&self) {
+        self.backend.startup();
     }
 
     pub fn active(&self) -> usize {
@@ -500,21 +587,51 @@ pub fn strip_query(url: &str) -> String {
     }
 }
 
-/// Tira a query de todo campo de URL (`url`, `exampleUrl`, `pageUrl`).
+/// Texto livre sem query nem fragmento: depois de redigir o que o core
+/// reconhece como credencial, todo `?…` e `#…` até um terminador vira `?…`/`#…`.
+pub fn strip_text(text: &str) -> String {
+    let text = scrapelens_core::export::sanitize::sanitize_text(
+        text,
+        &scrapelens_core::export::sanitize::SanitizeOptions::default(),
+    );
+    let is_end = |ch: char| {
+        ch.is_whitespace() || matches!(ch, '"' | '\'' | '<' | '>' | '(' | ')' | ',' | '\\')
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while !rest.is_empty() {
+        let end = rest.find(is_end).unwrap_or(rest.len());
+        if end == 0 {
+            let ch = rest.chars().next().unwrap();
+            out.push(ch);
+            rest = &rest[ch.len_utf8()..];
+            continue;
+        }
+        let (token, after) = rest.split_at(end);
+        // Token que parece URL ou caminho: corta no primeiro `?`, `#` ou `;`
+        // (query, fragmento, parâmetro de matriz); sobra só o caminho.
+        let urlish = token.contains("://") || token.starts_with('/');
+        match token.find(['?', '#', ';']).filter(|_| urlish) {
+            Some(at) => {
+                out.push_str(&token[..at]);
+                out.push('…');
+            }
+            None => out.push_str(token),
+        }
+        rest = after;
+    }
+    out
+}
+
+/// Nas saídas de captura nenhuma string guarda query ou fragmento (campos de
+/// URL, avisos e mensagens de erro).
 fn mask_urls(value: &mut Value) {
     match value {
-        Value::Object(map) => {
-            for (key, item) in map.iter_mut() {
-                if matches!(key.as_str(), "url" | "exampleUrl" | "pageUrl") {
-                    if let Some(url) = item.as_str() {
-                        *item = json!(strip_query(url));
-                    }
-                } else {
-                    mask_urls(item);
-                }
-            }
-        }
+        Value::Object(map) => map.values_mut().for_each(mask_urls),
         Value::Array(list) => list.iter_mut().for_each(mask_urls),
+        Value::String(text) if text.contains(['?', '#', '=']) || text.contains("://") => {
+            *text = strip_text(text);
+        }
         _ => {}
     }
 }
