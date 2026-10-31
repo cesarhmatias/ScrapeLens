@@ -231,3 +231,119 @@ Estes resultados chegaram depois do commit `f7cb0fa`.
 - Proxy do sistema e WebRTC contornando o resolvedor do Chrome.
 - Se a confiança do site_profile considera a procedência da evidência (HAR × CDP/NetLog).
 - O teste ponta a ponta de P1 com uma violação real.
+
+---
+
+## Adendo 2: confirmação das correções (Rodada 11)
+
+- **HEAD:** a revisão foi feita no clone novo `/tmp/rev26/repo`, em `eb66afa`, que inclui as correções:
+  - core: `3bcbd20`, `7637bac`, `b0c0596`, `dd6cf7a`, `6840670`, `3939881`, `071d132`;
+  - captura: `485f6a3`, `d3f194f`, `3e6ad05`, `3c7e4af`, `8e0e575`, `eb66afa`.
+- **Evidências:**
+  - testes de reprodução e saídas em `/tmp/rev26/poc-secrets`, `/tmp/rev26/poc-fs` e `/tmp/rev26/poc-allow`;
+  - relatórios parciais em `/tmp/rev26/{secrets,fs-cdp-chrome,allow-recon}.md`.
+- **Restrições respeitadas:** o Chrome só rodou contra 127.0.0.1 e localhost. As cópias do Chrome.app ficaram em `/tmp`, e `/Applications` não foi alterado.
+
+### Veredito: REPROVADO
+
+Todos os achados anteriores estão corrigidos ou passaram a ser reportados como previsto no contrato. Mesmo assim, a nova validação "só Chrome estável" tem **dois contornos altos confirmados**, e o texto da elicitação não traz o aviso do §2.5 que o 16b exige.
+
+### Estado dos testes de reprodução anteriores
+
+| Achado | Estado | Evidência |
+|---|---|---|
+| C1 oráculo do `trace_value` | Corrigido | O prefixo para após 62 chamadas e a saída diz `exact-value-match`. O oráculo de substring está fechado: partes de JWT, itens de `a=b; c=d` e variação de caixa não casam. |
+| A1 elicitação com erro ou malformada | Corrigido | Com e sem a flag, só `confirmo:true` abre; o resto dá `confirmation_denied`. |
+| A2 fragmento, matriz, userinfo, `token=` sem `?`, `%3D` | Corrigido | Os marcadores saem mascarados (ex.: `;JSESSIONID=%5BREDACTED%5D`). |
+| M5 nomes de credencial | Corrigido | Os 20 marcadores saem mascarados. |
+| M6 `parseError` de Set-Cookie | Corrigido | Sai mascarado. |
+| B5 esquemas de autenticação | Corrigido, com exceção | Um TAB depois do esquema ainda escapa (R6). |
+| P1 avisos do `stop_capture` | Corrigido | O aviso sai sem query. |
+| M1 Chrome órfão por EOF ou SIGTERM no start | Corrigido | Não sobra nenhum processo, perfil ou marcador. |
+| M4 escrita por symlink (spill, `write_atomic`, `open_private`) | Corrigido | Os arquivos de fora ficam intactos; o NetLog ainda vaza (R3). |
+| B1–B4 (chmod antes do `is_within`, corrida, `session.json` por symlink, colisão de slug) | Corrigido | 400 chamadas concorrentes sem nenhum erro; o slug ganhou sufixo de hash. |
+| B6 porta DevTools e `remote-allow-origins=*` | Corrigido com o pipe | Com `expose_cdp=false` não há porta. Com `expose_cdp=true`, a porta responde antes do portão (aos 0,78 s; o start retorna aos 6,52 s), um risco aceito. Origin forjado recebe 403. |
+| P2 cancelar e depois aceitar | Corrigido | O slot é liberado e o aceite tardio é ignorado. |
+| SIGKILL do servidor | Corrigido com o pipe | O Chrome sai em menos de 1 s. No modo porta, ele fica vivo até o próximo start limpar. |
+| M3 `binary_path=/bin/echo` | Corrigido | `NotABundle`. Os contornos novos estão em R1 e R2. |
+| M7–M10 e B9 (confiança do site_profile) | Corrigido | Os sinais fracos saem com `Baixa`, e `resolvedLater=false` nos casos (a) e (b). |
+| B7 WebSocket fora da sessão | Corrigido | Agora entra em `violations`. |
+| B8 IP literal | Corrigido | `EXCLUDE 127.0.0.1` está nas regras e o navigate carrega. |
+| M2 porta (8 vetores) e P3 | Permitido pelo contrato e reportado | Os 8 vetores, inclusive WS, iframe, fetch e `window.open`, e a navegação de topo para um terceiro aparecem em `violations`. |
+
+### Achados que restam
+
+#### Alto
+
+**R1. A validação de assinatura é enganada por uma quebra de linha no caminho (CONFIRMADO de ponta a ponta).**
+- **Local:** `capture/src/chrome.rs:287-306` lê `Identifier=` e `TeamIdentifier=` da primeira linha que casa na saída de `codesign -dv`, e a linha `Executable=<caminho>` vem antes delas. O `codesign --verify` não checa nenhum requisito (`-R`).
+- **Cenário:** um bundle assinado ad hoc em `inj\nIdentifier=com.google.Chrome\nTeamIdentifier=EQHXZ8M8AV\nx/Google Chrome.app` passa pelo `validate_chrome`. Pelo `scrapelens-mcp` real, depois da confirmação, o binário marcador executou (`PWNED-inj argc=28`).
+- **Na elicitação:** o caminho também aparece sem escape (`mcp/src/live.rs:327/343`), e a quebra de linha injeta linhas falsas no texto.
+- **PLAUSÍVEL:** um certificado autoassinado com OU=EQHXZ8M8AV passaria mesmo sem a quebra de linha. Não testei, porque exigiria mudar o keychain.
+- **Sugestão:** `codesign --verify --deep --strict -R='anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"'`, sem fazer parse do `-dv`, e recusar caracteres de controle no caminho.
+
+**R2. Uma cópia assinada com um helper trocado passa, e o helper executa (CONFIRMADO).**
+- **Local:** `chrome.rs:277-281` verifica sem `--deep`, como o 16b §2.1 (linha 43) manda.
+- **Cenário:** uma cópia do Chrome.app em `/tmp` com `Helpers/Google Chrome Helper.app/.../Google Chrome Helper` trocado por um script passa na validação, e o script roda como processo do serviço de rede (marcador `PWNED-helper`). Com `--deep --strict`, a troca é detectada.
+- **Contrato:** a afirmação do 16b (linha 47) de que o script nunca roda é falsa nesse caso.
+- **Efeito colateral:** o crashpad da cópia apontou para a pasta Crashpad real do Chrome do usuário.
+
+#### Médio
+
+**R3. O Chrome escreve o NetLog através de um symlink (CONFIRMADO).**
+- **Local:** `capture/src/lib.rs:173` cria e fecha o `netlog.json`, depois o Chrome abre o arquivo pelo caminho (`lib.rs:479`, seguindo symlink); `lib.rs:366` o relê pelo caminho.
+- **Cenário:** com `poc_netlog_race.py`, um processo do mesmo usuário trocou o arquivo por um symlink. Um arquivo de fora, com modo 0644, recebeu 236.913 bytes de NetLog completo, com cookies e headers. É a classe M4 de novo, por outro caminho.
+
+**R4. O texto da elicitação não avisa da falta de autenticação no `expose_cdp=true`.**
+- **O que o contrato exige:** o 16b §2.5 diz "A porta não tem autenticação…" e "a elicitação deve mostrar este aviso" (linha 209).
+- **O que aparece:** o texto real só mostra "CDP entregue ao agente (controle do navegador): SIM", e não há aviso equivalente em `mcp/src`.
+- **Outras lacunas:** a linha 417 do 16 omite a falta de autenticação, e a tabela do 16b §2.3 cita o aviso do §2.4, mas não o do §2.5.
+- **Porta:** está clara no 16b §2.2, no 16 (linha 384) e no texto da elicitação (`live.rs:328`, "aprova, para a página, esse host em QUALQUER porta…"). Só falta dizer que as violações são reportadas, não bloqueadas, e que a navegação de topo para um terceiro é permitida.
+
+**R5. Força bruta do valor inteiro no `trace_value` (CONFIRMADO).**
+- **Local:** `mcp/src/tools.rs:1458` (`trace_exact`). Não há limite de taxa, e um acerto nomeia o campo.
+- **Cenário:** 10.000 palpites de 4 dígitos levaram 10,8 s (build debug) e acharam `4821@requestBody:pin` e `7351@cookies:sid`. Um código de 6 dígitos leva cerca de 18 min.
+- **Agravante:** `trace_value(cookie)` também expõe `valueLength` (`tools.rs:1272/1295`).
+
+**R6. URL aninhada com percent-encoding não é redigida (CONFIRMADO; lacuna antiga).**
+- **Local:** `core/src/export/sanitize.rs:818` e `:916`.
+- **Cenário:** `?next=%2Fcb%3Ftoken%3DNESTED01x` e `redirect_uri=…%23access_token%3DNESTED05x` vazam em `list_requests` e `get_request`; o mesmo vale para Location e `X-Note`. Esse é o formato normal de redirect_uri e returnTo no OAuth.
+
+#### Baixo
+
+- **R7. Panic de UTF-8 introduzido pela correção (CONFIRMADO).**
+  - **Local:** `mcp/src/tools.rs:1479` fatia `text[..scheme.len()]` por byte.
+  - **Cenário:** um header com caractere multibyte entre os bytes 6 e 7 (ex.: acento em pt-BR) faz todo `trace_value(value)` falhar naquela sessão. A mensagem do panic expõe 1 caractere cru.
+- **R8. TAB depois do esquema de autenticação escapa (CONFIRMADO).** Local: `sanitize.rs:694`. Exemplo: `Bearer\t…` em JSON ou num header.
+- **R9. Uso de file descriptors (CONFIRMADO).** Local: `lib.rs:540-555`. Os descriptors que o servidor herda de quem o lançou vazam para o Chrome; por exemplo, um fd 7 de `launcher-secret.log` aparece aberto no Chrome. Os fds do próprio servidor não vazam, e o Chrome só tem os pipes em 3 e 4.
+- **R10. SIGTERM durante `stop_capture` perde a sessão (CONFIRMADO 3/3).**
+  - **Local:** `mcp/src/live.rs:559` remove o slot antes, então `stop_all` (`:588`) não espera. Só sobram `cdp-bodies.jsonl` e `netlog.json`, sem `session.json`.
+  - **Mesma lacuna:** a thread de stop do `abandon()` (`live.rs:379`).
+  - **PLAUSÍVEL:** um Chrome órfão no modo porta.
+- **R11. Corrida entre a validação e a execução do binário (CONFIRMADO, 1 em 60).** Local: `browser.rs:212` e `lib.rs:534`. O R2 torna a corrida desnecessária.
+- **R12. Mensagens do pipe sem limite de tamanho, e timeout do navigate não imposto.**
+  - **Pipe:** `transport.rs:154` não tem teto; o WebSocket antigo tinha 64 MiB.
+  - **Navigate:** com o Chrome travado, `navigate(timeout_ms=3000)` levou 30,4 s.
+- **R13. Redação demais (CONFIRMADO).** Local: `sanitize.rs:1136-1142`. Um objeto `ticket` de suporte inteiro, `pin: true`, `jwtExpiresIn` e `shotp` são redigidos.
+- **R14. A varredura final `scrub_output` ficou para trás.** Local: `tools.rs:1809`; ela só olha strings com `?`. Nenhuma saída real depende dela hoje.
+- **Informativos:**
+  - os descriptors do pipe ficam sem CLOEXEC antes do dup2 (`transport.rs:242-258`). Isso pode vazar para um `codesign` concorrente, mas é PLAUSÍVEL e não confirmado no macOS;
+  - `ps` e `kill` ainda são achados pelo PATH (`lib.rs:715-741`).
+
+### Verificado e limpo
+
+- **Estados Starting, Opening e Running:**
+  - um start concorrente recebe `capture_already_running`;
+  - cancelar com o Chrome subindo libera o slot depois do open sem deixar Chrome;
+  - a flag de desligamento e o contador de starts em andamento estão ordenados corretamente.
+- **Transporte por pipe:**
+  - uma mensagem sem terminador ou um Chrome que morre no meio de uma mensagem encerram a captura limpa;
+  - com o Chrome parado por SIGSTOP, o stop termina em 22,5 s matando o processo;
+  - os processos auxiliares do Chrome não herdam os pipes.
+- **Chrome aceito na validação:**
+  - symlink para o `.app` ou para o binário resolve para `/Applications`;
+  - um caminho começando com `-` vira absoluto e não injeta argumento;
+  - `codesign` e `plutil` são chamados por caminho absoluto;
+  - Info.plist alterado, executável principal trocado e arquivo extra em MacOS são recusados;
+  - Beta, Canary, Chromium e Chrome for Testing são recusados pelo bundle ID exato (só por leitura de código, porque não estão instalados).
+- **`--remote-allow-origins=*` removido:** Origin forjado, `127.0.0.1` e `localhost` recebem 403, e `/json` não manda ACAO.
