@@ -103,3 +103,22 @@ Interface (App) fica para a onda 3: filtro/coluna de alvo e aviso de limite.
 ## Teste manual do usuário (2026-10-30)
 
 Captura de várias abas no bundle final 02e6ef30… (HEAD 8cfe828, commit 18cbb01): APROVADO pelo usuário ("aprovado").
+
+## Fechamento da rodada 10 (2026-10-31)
+
+APROVADA COM RESSALVAS BAIXAS (revisor, HEAD 9f4003b; /tmp/rev24/VEREDITO.md).
+Bundle de referência: 7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c
+(commit 0d98615). Aceite multi-alvo 5/5 (Testes) e 3/3 (revisor): 16/16 NetLog
+e CDP, 0 avisos de setup, SW sem cópias, ligação ao SW sempre "não confirmada"
+e só ao candidato de mesmo método/caminho; 9 mutações do autoteste reprovam.
+Decisões finais:
+- Primária = primeira sessão por targetId; duplicatas: resume + detach.
+- Setup em pipeline sem bloqueio; comando sem resposta só vira aviso no
+  encerramento, em qualquer sessão; erro de comando essencial = aviso
+  `cdp.target_setup_error`; alvo encerrado = nota, sem aviso.
+- Ligação página↔SW: sempre `ambiguous`, mesmo método, preferência por mesmo
+  caminho; `linked` só com evidência explícita do CDP.
+- Arquivo sem eventos Target.* = sem proveniência de alvo (sessões antigas).
+Ressalvas baixas em acompanhamento: run_acceptance não recomputa o hash do
+bundle em disco; Chrome/perfil órfão quando o processo pai é morto por SIGKILL
+(sem limpeza na partida).
