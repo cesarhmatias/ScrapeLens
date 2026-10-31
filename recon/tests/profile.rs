@@ -163,14 +163,6 @@ fn datadome_response_header_is_block_only_when_not_200() {
 }
 
 #[test]
-fn aws_waf_status_mismatch_is_noted_not_hidden() {
-    let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", 403).rh("x-amzn-waf-action", "captcha")]));
-    let f = finding(&p, "aw-001").unwrap();
-    assert_eq!(f.confidence, Confidence::Alta);
-    assert!(f.limits.iter().any(|l| l.contains("difere do documentado")), "{:?}", f.limits);
-}
-
-#[test]
 fn secrets_never_leave_in_evidence() {
     let secret = "TOKENSECRETO0987654321";
     let bundle = with_main(vec![
@@ -240,7 +232,7 @@ fn clearance_cookie_alone_resolves_a_challenge_on_another_route() {
     // O desafio é servido na rota /a; a liberação chega por cookie, depois.
     let bundle = build(vec![
         Req::doc("m", "https://app.test/", 200).resp_body("text/html", "<html></html>"),
-        Req::xhr("x1", "GET", "https://app.test/a", 403).rh("x-amzn-waf-action", "challenge"),
+        Req::xhr("x1", "GET", "https://app.test/a", 202).rh("x-amzn-waf-action", "challenge"),
         Req::xhr("x2", "GET", "https://app.test/b", 200).set_cookie("aws-waf-token=ZZZ; Path=/"),
     ]);
     let p = profile(&bundle);
@@ -453,4 +445,131 @@ fn output_is_camel_case_json_with_stable_ids() {
     assert!(v["findings"][0]["evidence"][0]["requestId"].is_string());
     assert_eq!(v["findings"][0]["confidence"], "alta");
     assert!(v["sample"]["appRequests"].is_number());
+}
+
+// --- Revisão de segurança (docs/17): confiança do site_profile -----------------------
+
+#[test]
+fn r1_presence_only_in_body_query_or_request_cookie_is_low() {
+    // Texto refletido numa página de busca.
+    let p = profile(&with_main(vec![Req::doc("s", "https://app.test/search?q=x", 200)
+        .resp_body("text/html", "<p>Resultados para: name=\"cf-turnstile-response\"</p>")]));
+    let f = finding(&p, "cf-008").unwrap();
+    assert_eq!(f.confidence, Confidence::Baixa);
+    assert!(f.limits.iter().any(|l| l.contains("indício só em response-body")), "{:?}", f.limits);
+    // Só na consulta de um link qualquer.
+    let p = profile(&with_main(vec![Req::xhr("q", "GET", "https://app.test/api?g-recaptcha-response=1", 200)]));
+    let f = finding(&p, "rc-003").unwrap();
+    assert_eq!(f.confidence, Confidence::Baixa);
+    assert!(f.evidence.iter().all(|e| e.scope == "query"));
+    // Cookie só no pedido (pode vir de `document.cookie`).
+    let p = profile(&with_main(vec![Req::xhr("c", "GET", "https://app.test/api", 200).cookie("datadome=x; _px3=y")]));
+    assert_eq!(finding(&p, "dd-001").unwrap().confidence, Confidence::Baixa);
+    assert_eq!(finding(&p, "hm-001").unwrap().confidence, Confidence::Baixa);
+    // O mesmo cookie vindo num Set-Cookie do servidor continua `media`.
+    let p = profile(&with_main(vec![Req::doc("d", "https://app.test/x", 200).set_cookie("datadome=x; Path=/")]));
+    assert_eq!(finding(&p, "dd-001").unwrap().confidence, Confidence::Media);
+    // Com um indício forte e independente do MESMO fornecedor (o script), sobe a `media`.
+    let p = profile(&with_main(vec![
+        Req::script("rcs", "https://www.google.com/recaptcha/api.js", 200),
+        Req::doc("s", "https://app.test/login", 200).resp_body("text/html", "<textarea name=\"g-recaptcha-response\"></textarea>"),
+    ]));
+    let f = finding(&p, "rc-003").unwrap();
+    assert_eq!(f.confidence, Confidence::Media);
+    assert!(f.limits.iter().any(|l| l.contains("corroborado por rc-001")), "{:?}", f.limits);
+}
+
+#[test]
+fn r2_aws_waf_challenge_needs_the_documented_status() {
+    // x-amzn-waf-action: challenge com 200 não é a ação documentada (202).
+    let p = profile(&with_main(vec![
+        Req::xhr("w", "GET", "https://app.test/api/x", 200).rh("x-amzn-waf-action", "challenge"),
+        Req::xhr("w2", "GET", "https://app.test/api/y", 200),
+    ]));
+    let f = finding(&p, "aw-001").unwrap();
+    assert_eq!(f.confidence, Confidence::Baixa);
+    assert_eq!(f.category, "protecao");
+    assert_eq!(f.resolved_later, None);
+    assert!(f.limits.iter().any(|l| l.contains("difere do documentado (202)")), "{:?}", f.limits);
+    assert_ne!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser);
+    assert!(p.findings.iter().all(|f| f.category != "desafio"));
+    // captcha com 403 (documentado: 405) também não.
+    let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", 403).rh("x-amzn-waf-action", "captcha")]));
+    assert_eq!(finding(&p, "aw-001").unwrap().confidence, Confidence::Baixa);
+    // Os pares documentados continuam `alta`.
+    for (value, status) in [("challenge", 202), ("captcha", 405)] {
+        let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", status).rh("x-amzn-waf-action", value)]));
+        let f = finding(&p, "aw-001").unwrap();
+        assert_eq!(f.confidence, Confidence::Alta, "{value}/{status}");
+        assert_eq!(f.category, "desafio");
+    }
+}
+
+#[test]
+fn r3_block_on_a_third_party_resource_does_not_decide_the_recommendation() {
+    let p = profile(&with_main(vec![
+        Req::new("i", "GET", "https://cdn.other.test/pixel.png", Some(403), "Image").rh("cf-mitigated", "challenge"),
+        Req::xhr("x1", "GET", "https://app.test/api/a", 200),
+        Req::xhr("x2", "GET", "https://app.test/api/b", 200),
+    ]));
+    let f = finding(&p, "cf-005").unwrap();
+    assert_eq!(f.confidence, Confidence::Baixa);
+    assert_eq!(f.category, "protecao", "sem bloqueio atribuído ao alvo");
+    assert!(f.evidence.iter().all(|e| e.third_party));
+    assert!(f.limits.iter().any(|l| l.contains("outro host") && l.contains("app.test")), "{:?}", f.limits);
+    assert_eq!(p.recommendation.value, RecommendationValue::ChromeNormalBasta, "{:#?}", p.recommendation);
+    // Cookie de proteção vindo só de outro host também não atribui.
+    let p = profile(&with_main(vec![Req::script("t", "https://cdn.other.test/x.js", 200).set_cookie("__cf_bm=z; Path=/")]));
+    let f = finding(&p, "cf-001").unwrap();
+    assert_eq!(f.confidence, Confidence::Baixa);
+    assert!(f.evidence.iter().all(|e| e.third_party));
+    // XHR 403 num host de terceiro: achado marcado, fora da recomendação.
+    let p = profile(&with_main(vec![
+        Req::xhr("a", "GET", "https://metrics.other.test/collect", 403),
+        Req::xhr("x1", "GET", "https://app.test/api/a", 200),
+    ]));
+    let f = p.findings.iter().find(|f| f.kind == "status").unwrap();
+    assert_eq!(f.confidence, Confidence::Baixa);
+    assert!(f.evidence.iter().all(|e| e.third_party));
+    assert_ne!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser);
+    // O mesmo bloqueio num subdomínio do site-alvo CONTA.
+    let p = profile(&with_main(vec![Req::xhr("a", "GET", "https://api.app.test/v1", 403).rh("cf-mitigated", "challenge")]));
+    let f = finding(&p, "cf-005").unwrap();
+    assert_eq!(f.confidence, Confidence::Alta);
+    assert!(f.evidence.iter().all(|e| !e.third_party));
+    assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser);
+    // Script de captcha de outro host é referência embutida pela página: continua atribuído.
+    let p = profile(&with_main(vec![Req::script("s", "https://challenges.cloudflare.com/turnstile/v0/api.js", 200)]));
+    assert_eq!(finding(&p, "cf-007").unwrap().confidence, Confidence::Media);
+}
+
+#[test]
+fn r4_a_redirect_or_a_cookie_from_another_host_does_not_resolve_a_challenge() {
+    // (a) 403 de desafio e depois 302 na MESMA rota (para a página de desafio).
+    let p = profile(&build(vec![
+        Req::doc("m1", "https://app.test/", 403).rh("cf-mitigated", "challenge").resp_body("text/html", "<html>c</html>"),
+        Req::doc("m2", "https://app.test/", 302).rh("location", "https://app.test/__challenge"),
+    ]));
+    assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(false));
+    assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser, "{:#?}", p.recommendation);
+    // (b) cf_clearance definido por OUTRO host.
+    let p = profile(&build(vec![
+        Req::doc("m1", "https://app.test/", 403).rh("cf-mitigated", "challenge").resp_body("text/html", "<html>c</html>"),
+        Req::script("t", "https://cdn.other.test/x.js", 200).set_cookie("cf_clearance=Z; Path=/"),
+    ]));
+    assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(false));
+    assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser, "{:#?}", p.recommendation);
+    // (c) o mesmo cookie vindo de um subdomínio do site-alvo libera.
+    let p = profile(&build(vec![
+        Req::doc("m1", "https://app.test/", 403).rh("cf-mitigated", "challenge").resp_body("text/html", "<html>c</html>"),
+        Req::xhr("x", "GET", "https://api.app.test/ok", 200).set_cookie("cf_clearance=Z; Path=/"),
+    ]));
+    assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(true));
+    assert_eq!(p.recommendation.value, RecommendationValue::PrecisaDePriming);
+    // (d) 2xx depois na mesma rota continua resolvendo.
+    let p = profile(&build(vec![
+        Req::doc("m1", "https://app.test/", 403).rh("cf-mitigated", "challenge").resp_body("text/html", "<html>c</html>"),
+        Req::doc("m2", "https://app.test/", 200).resp_body("text/html", "<html>ok</html>"),
+    ]));
+    assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(true));
 }

@@ -61,6 +61,9 @@ pub struct Evidence {
     pub status: Option<u16>,
     /// `cdp`, `netlog`, `har`… (proveniência do dado na Core).
     pub source: Option<String>,
+    /// A evidência vem de um recurso de OUTRO host que não os documentos do
+    /// site-alvo: não atribui a proteção ao alvo.
+    pub third_party: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

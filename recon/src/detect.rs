@@ -8,6 +8,7 @@ use scrapelens_core::flow::{
 };
 use scrapelens_core::model::{
     Attempt, Body, CookieField, HeaderView, LogicalRequest, Protocol, SessionV1, SetCookieRecord,
+    TargetKind,
 };
 use scrapelens_core::search::BodySource;
 
@@ -191,6 +192,7 @@ fn evidence(
         url: safe_url(v.url),
         status: v.status,
         source,
+        third_party: false,
     }
 }
 
@@ -211,6 +213,9 @@ struct Hit {
     block: bool,
     view_index: usize,
     blocked_by_allowlist: bool,
+    /// O valor era de bloqueio, mas o status HTTP observado não é o documentado
+    /// (observado, documentado).
+    status_mismatch: Option<(u16, u16)>,
 }
 
 fn name_in(names: &[String], prefixes: &[String], name: &str) -> bool {
@@ -226,9 +231,20 @@ fn header_hits(sig: &Signature, v: &View<'_>, response: bool) -> Vec<Hit> {
         if !sig.values.is_empty() && !sig.values.contains(&value) {
             continue;
         }
-        let block = sig.weight == Weight::Block
+        let mut block = sig.weight == Weight::Block
             && (sig.block_values.contains(&value)
                 || (!sig.block_unless.is_empty() && !sig.block_unless.contains(&value)));
+        // A documentação fixa o status que acompanha o valor (AWS WAF: 202 para
+        // challenge, 405 para captcha). Outro status não é essa ação.
+        let mut status_mismatch = None;
+        if block {
+            if let (Some(expected), Some(observed)) = (sig.value_status.get(&value), v.status) {
+                if *expected != observed {
+                    block = false;
+                    status_mismatch = Some((observed, *expected));
+                }
+            }
+        }
         let known = sig.values.contains(&value)
             || sig.block_values.contains(&value)
             || sig.block_unless.contains(&value);
@@ -254,6 +270,7 @@ fn header_hits(sig: &Signature, v: &View<'_>, response: bool) -> Vec<Hit> {
             block,
             view_index: v.index,
             blocked_by_allowlist: false,
+            status_mismatch,
         });
     }
     hits
@@ -276,6 +293,7 @@ fn cookie_hits(sig: &Signature, v: &View<'_>) -> Vec<Hit> {
                 block: false,
                 view_index: v.index,
                 blocked_by_allowlist: false,
+                status_mismatch: None,
             });
         }
     }
@@ -292,6 +310,7 @@ fn cookie_hits(sig: &Signature, v: &View<'_>) -> Vec<Hit> {
                 block: false,
                 view_index: v.index,
                 blocked_by_allowlist: false,
+                status_mismatch: None,
             });
         }
     }
@@ -329,6 +348,7 @@ fn host_hit(sig: &Signature, v: &View<'_>) -> Option<Hit> {
             .failure
             .map(|f| f.contains("ERR_NAME_NOT_RESOLVED"))
             .unwrap_or(false),
+        status_mismatch: None,
     })
 }
 
@@ -340,6 +360,7 @@ fn path_hit(sig: &Signature, v: &View<'_>) -> Option<Hit> {
         block: false,
         view_index: v.index,
         blocked_by_allowlist: false,
+                status_mismatch: None,
     })
 }
 
@@ -365,6 +386,7 @@ fn form_hits(sig: &Signature, v: &View<'_>, bodies: &dyn BodySource, limit: usiz
                 block: false,
                 view_index: v.index,
                 blocked_by_allowlist: false,
+                status_mismatch: None,
             });
         }
     }
@@ -375,6 +397,7 @@ fn form_hits(sig: &Signature, v: &View<'_>, bodies: &dyn BodySource, limit: usiz
                 block: false,
                 view_index: v.index,
                 blocked_by_allowlist: false,
+                status_mismatch: None,
             });
         }
     }
@@ -392,6 +415,7 @@ fn form_hits(sig: &Signature, v: &View<'_>, bodies: &dyn BodySource, limit: usiz
                     block: false,
                     view_index: v.index,
                     blocked_by_allowlist: false,
+                status_mismatch: None,
                 });
             }
         }
@@ -410,27 +434,66 @@ fn signature_hits(sig: &Signature, v: &View<'_>, bodies: &dyn BodySource, limit:
     }
 }
 
+fn host_of(url: &str) -> String {
+    url_parts(url).map(|(_, host, _)| host).unwrap_or_default()
+}
+
+/// Mesmo site, de forma conservadora: igual ou um é subdomínio do outro. Não há
+/// lista de sufixos públicos aqui (limite declarado).
+fn same_site(a: &str, b: &str) -> bool {
+    !a.is_empty() && !b.is_empty() && (a == b || a.ends_with(&format!(".{b}")) || b.ends_with(&format!(".{a}")))
+}
+
+/// Hosts dos documentos de topo (os do site-alvo). Iframes de terceiros não
+/// entram: um iframe de captcha não torna o host do captcha "o site".
+fn target_hosts(vs: &[View<'_>]) -> BTreeSet<String> {
+    vs.iter()
+        .filter(|v| {
+            is_document(v.req)
+                && v.req.target.as_ref().map(|t| t.kind != TargetKind::Iframe).unwrap_or(true)
+        })
+        .map(|v| host_of(v.url))
+        .filter(|h| !h.is_empty())
+        .collect()
+}
+
+fn is_foreign(url: &str, targets: &BTreeSet<String>) -> bool {
+    if targets.is_empty() {
+        return false;
+    }
+    let host = host_of(url);
+    !targets.iter().any(|t| same_site(&host, t))
+}
+
+/// Só 2xx resolve um desafio: um 3xx pode ser o redirecionamento para o próprio
+/// desafio.
+fn is_ok2xx(status: Option<u16>) -> bool {
+    matches!(status, Some(200..=299))
+}
+
 fn is_success(status: Option<u16>) -> bool {
     matches!(status, Some(200..=399))
 }
 
-/// Houve resposta bem-sucedida DEPOIS, na mesma rota, ou cookie de liberação
-/// definido depois?
+/// Houve resposta 2xx DEPOIS na mesma rota, ou cookie de liberação definido
+/// DEPOIS pelo mesmo site? Redirecionamento (3xx) não resolve (pode levar ao
+/// próprio desafio) e cookie de outro host não libera este.
 fn resolved_after(
     vs: &[View<'_>],
     sigs: &SignatureSet,
     hit: &Hit,
 ) -> bool {
     let route = route_key(&hit.evidence.url);
+    let hit_host = host_of(&hit.evidence.url);
     let later_same_route = vs.iter().any(|v| {
-        v.index > hit.view_index && route_key(v.url) == route && is_success(v.status)
+        v.index > hit.view_index && route_key(v.url) == route && is_ok2xx(v.status)
     });
     if later_same_route {
         return true;
     }
     sigs.signatures.iter().filter(|s| s.clearance).any(|s| {
         vs.iter()
-            .filter(|v| v.index > hit.view_index)
+            .filter(|v| v.index > hit.view_index && same_site(&host_of(v.url), &hit_host))
             .any(|v| v.set_cookies.iter().any(|r| {
                 cookie_set_name(r)
                     .map(|n| name_in(&s.names, &s.prefixes, &n))
@@ -448,11 +511,18 @@ fn confidence_of(sig: &Signature, block: bool) -> Confidence {
     }
 }
 
+fn is_weak_scope(scope: &str) -> bool {
+    // Texto refletido, consulta controlável por quem cria o link, e cookie que
+    // só aparece no pedido (pode vir de `document.cookie`): indício fraco.
+    matches!(scope, "query" | "request-body" | "response-body" | "request-cookie")
+}
+
 fn signature_findings(
     vs: &[View<'_>],
     bodies: &dyn BodySource,
     opts: &ProfileOptions,
     sigs: &SignatureSet,
+    targets: &BTreeSet<String>,
 ) -> Vec<Finding> {
     let mut findings: Vec<Finding> = Vec::new();
     for sig in &sigs.signatures {
@@ -463,11 +533,33 @@ fn signature_findings(
         if hits.is_empty() {
             continue;
         }
-        let any_block = hits.iter().any(|h| h.block);
-        let used: Vec<&Hit> = if any_block {
-            hits.iter().filter(|h| h.block).collect()
+        // Cookie, cabeçalho e caminho vistos num recurso de OUTRO host não
+        // atribuem a proteção ao site-alvo (script/campo de formulário são
+        // referências embutidas pela própria página e ficam fora desta regra).
+        if matches!(
+            sig.kind,
+            SigKind::Cookie | SigKind::ResponseHeader | SigKind::RequestHeader | SigKind::Path
+        ) {
+            for h in &mut hits {
+                if is_foreign(&h.evidence.url, targets) {
+                    h.evidence.third_party = true;
+                    h.block = false;
+                    h.status_mismatch = None;
+                }
+            }
+        }
+        let own_exists = hits.iter().any(|h| !h.evidence.third_party);
+        let pool: Vec<&Hit> = if own_exists {
+            hits.iter().filter(|h| !h.evidence.third_party).collect()
         } else {
             hits.iter().collect()
+        };
+        let foreign_only = !own_exists;
+        let any_block = pool.iter().any(|h| h.block);
+        let used: Vec<&Hit> = if any_block {
+            pool.iter().copied().filter(|h| h.block).collect()
+        } else {
+            pool.clone()
         };
         let occurrences = used.len();
         let mut limits: Vec<String> = Vec::new();
@@ -486,19 +578,35 @@ fn signature_findings(
         if sig.kind == SigKind::Path {
             limits.push("citação do caminho sozinha não indica bloqueio".to_string());
         }
-        // Status documentado × observado.
-        if any_block && !sig.value_status.is_empty() {
-            for h in &used {
-                if let (Some(value), Some(status)) = (&h.evidence.value, h.evidence.status) {
-                    if let Some(expected) = sig.value_status.get(&value.to_ascii_lowercase()) {
-                        if *expected != status {
-                            limits.push(format!(
-                                "status observado {status} difere do documentado ({expected}) para {value}"
-                            ));
-                        }
-                    }
-                }
-            }
+        let mut confidence = confidence_of(sig, any_block);
+        if foreign_only {
+            let hosts: BTreeSet<String> =
+                used.iter().map(|h| host_of(&h.evidence.url)).collect();
+            limits.push(format!(
+                "visto só em recurso de outro host ({}), não nos documentos do site-alvo ({}): não atribui a proteção ao alvo",
+                hosts.into_iter().collect::<Vec<_>>().join(", "),
+                targets.iter().cloned().collect::<Vec<_>>().join(", ")
+            ));
+            confidence = Confidence::Baixa;
+        }
+        // Status observado diferente do documentado (AWS WAF: 202/405): não é a
+        // ação documentada, então não é desafio.
+        let mismatches: Vec<(u16, u16)> = used.iter().filter_map(|h| h.status_mismatch).collect();
+        if !any_block && !mismatches.is_empty() {
+            let (seen, expected) = mismatches[0];
+            limits.push(format!(
+                "status observado {seen} difere do documentado ({expected}) para este valor: presença do produto, não desafio servido"
+            ));
+            confidence = Confidence::Baixa;
+        }
+        // Presença só em corpo, consulta ou cookie do pedido: baixa.
+        if !foreign_only && used.iter().all(|h| is_weak_scope(&h.evidence.scope)) {
+            let scopes: BTreeSet<&str> = used.iter().map(|h| h.evidence.scope.as_str()).collect();
+            limits.push(format!(
+                "indício só em {}: pode ser texto refletido, consulta controlável por terceiros ou cookie criado pelo JavaScript da página",
+                scopes.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+            confidence = Confidence::Baixa;
         }
         let resolved_later = any_block.then(|| used.iter().all(|h| resolved_after(vs, sigs, h)));
         let evidence_list: Vec<Evidence> = used
@@ -518,7 +626,7 @@ fn signature_findings(
             kind: sig.kind.as_str().to_string(),
             signature_id: Some(sig.id.clone()),
             summary: sig.summary.clone(),
-            confidence: confidence_of(sig, any_block),
+            confidence,
             occurrences,
             evidence: evidence_list,
             source: Some(SourceRef {
@@ -529,11 +637,32 @@ fn signature_findings(
             limits,
         });
     }
+    // Campo de formulário só em corpo/consulta sobe para `media` quando o
+    // MESMO fornecedor tem um indício independente e forte (script, cabeçalho
+    // ou cookie de fonte do fornecedor, no site-alvo).
+    let strong_vendors: BTreeMap<String, String> = findings
+        .iter()
+        .filter(|f| {
+            f.kind != "form-field"
+                && f.confidence >= Confidence::Media
+                && f.source.as_ref().map(|s| s.kind.as_str()) == Some("fornecedor")
+                && f.evidence.iter().any(|e| !e.third_party || f.kind == "script-host")
+        })
+        .filter_map(|f| Some((f.vendor.clone()?, f.signature_id.clone()?)))
+        .collect();
+    for f in &mut findings {
+        if f.kind == "form-field" && f.confidence == Confidence::Baixa {
+            if let Some(other) = f.vendor.as_ref().and_then(|v| strong_vendors.get(v)) {
+                f.confidence = Confidence::Media;
+                f.limits.push(format!("corroborado por {other} do mesmo fornecedor"));
+            }
+        }
+    }
     // Dois ou mais indícios independentes de fonte secundária do mesmo
     // fornecedor sobem para `media`.
     let mut secondary: BTreeMap<String, usize> = BTreeMap::new();
     for f in &findings {
-        if f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria") {
+        if f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria") && f.limits.iter().all(|l| !l.contains("outro host")) {
             if let Some(v) = &f.vendor {
                 *secondary.entry(v.clone()).or_default() += 1;
             }
@@ -545,7 +674,11 @@ fn signature_findings(
             .as_ref()
             .map(|v| secondary.get(v).copied().unwrap_or(0) >= 2)
             .unwrap_or(false);
-        if multi && f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria") && f.confidence == Confidence::Baixa {
+        if multi
+            && f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria")
+            && f.confidence == Confidence::Baixa
+            && f.limits.iter().all(|l| !l.contains("outro host") && !l.contains("indício só em"))
+        {
             f.confidence = Confidence::Media;
             f.limits.push("dois ou mais indícios de fonte secundária do mesmo fornecedor".to_string());
         }
@@ -555,18 +688,25 @@ fn signature_findings(
 
 // --- achados genéricos ------------------------------------------------------
 
-fn status_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOptions) -> Vec<Finding> {
-    let mut by_status: BTreeMap<u16, Vec<&View<'_>>> = BTreeMap::new();
+fn status_findings(
+    vs: &[View<'_>],
+    sigs: &SignatureSet,
+    opts: &ProfileOptions,
+    targets: &BTreeSet<String>,
+) -> Vec<Finding> {
+    // (status, de outro host?) -> respostas. Bloqueio num recurso de outro host
+    // não é bloqueio do site-alvo.
+    let mut by_status: BTreeMap<(u16, bool), Vec<&View<'_>>> = BTreeMap::new();
     for v in vs {
         if let Some(s @ (403 | 429 | 503)) = v.status {
             if is_app(v.req) {
-                by_status.entry(s).or_default().push(v);
+                by_status.entry((s, is_foreign(v.url, targets))).or_default().push(v);
             }
         }
     }
     let first_doc = vs.iter().find(|v| is_document(v.req)).map(|v| v.req.id.clone());
     let mut out = Vec::new();
-    for (status, list) in by_status {
+    for ((status, foreign), list) in by_status {
         let mut unresolved = 0usize;
         let mut hits_for_resolution = Vec::new();
         for v in &list {
@@ -575,6 +715,7 @@ fn status_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOptions) 
                 block: true,
                 view_index: v.index,
                 blocked_by_allowlist: false,
+                status_mismatch: None,
             };
             if !resolved_after(vs, sigs, &hit) {
                 unresolved += 1;
@@ -583,7 +724,9 @@ fn status_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOptions) 
         }
         let main_blocked = list.iter().any(|v| Some(&v.req.id) == first_doc.as_ref());
         let app_unresolved = unresolved > 0;
-        let confidence = if app_unresolved && (main_blocked || list.iter().any(|v| is_document(v.req) || is_xhr_like(v.req))) {
+        let confidence = if foreign {
+            Confidence::Baixa
+        } else if app_unresolved && (main_blocked || list.iter().any(|v| is_document(v.req) || is_xhr_like(v.req))) {
             Confidence::Alta
         } else {
             Confidence::Media
@@ -602,6 +745,11 @@ fn status_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOptions) 
             }
         }
         evidence_list.truncate(opts.max_evidence * 2);
+        if foreign {
+            for e in &mut evidence_list {
+                e.third_party = true;
+            }
+        }
         let label = match status {
             403 => "403 (proibido)",
             429 => "429 (limite de requisições)",
@@ -613,18 +761,29 @@ fn status_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOptions) 
             vendor: None,
             kind: "status".to_string(),
             signature_id: None,
-            summary: format!(
-                "{} resposta(s) {} em rota da aplicação{}",
-                list.len(),
-                label,
-                if main_blocked { ", incluindo o documento principal" } else { "" }
-            ),
+            summary: if foreign {
+                format!("{} resposta(s) {} em recurso de outro host", list.len(), label)
+            } else {
+                format!(
+                    "{} resposta(s) {} em rota da aplicação{}",
+                    list.len(),
+                    label,
+                    if main_blocked { ", incluindo o documento principal" } else { "" }
+                )
+            },
             confidence,
             occurrences: list.len(),
             evidence: evidence_list,
             source: None,
-            resolved_later: Some(!app_unresolved),
-            limits: vec!["o status sozinho não diz quem bloqueou; vale para esta captura".to_string()],
+            resolved_later: if foreign { None } else { Some(!app_unresolved) },
+            limits: if foreign {
+                vec![format!(
+                    "recurso de outro host que os documentos do site-alvo ({}): não conta como bloqueio do site",
+                    targets.iter().cloned().collect::<Vec<_>>().join(", ")
+                )]
+            } else {
+                vec!["o status sozinho não diz quem bloqueou; vale para esta captura".to_string()]
+            },
         });
     }
     out
@@ -703,6 +862,7 @@ fn protocol_findings(session: &SessionV1, vs: &[View<'_>], opts: &ProfileOptions
                 url: safe_url(&r.url),
                 status: r.status,
                 source: None,
+                third_party: false,
             })
             .collect();
         out.push(Finding {
@@ -888,6 +1048,7 @@ fn token_findings(
                         url: safe_url(producer.url),
                         status: producer.status,
                         source: None,
+                        third_party: false,
                     },
                 ],
                 source: None,
@@ -957,8 +1118,9 @@ pub(crate) fn detect(
 ) -> Vec<Finding> {
     let vs = views(session);
     let mut findings = Vec::new();
-    findings.extend(signature_findings(&vs, bodies, opts, sigs));
-    findings.extend(status_findings(&vs, sigs, opts));
+    let targets = target_hosts(&vs);
+    findings.extend(signature_findings(&vs, bodies, opts, sigs, &targets));
+    findings.extend(status_findings(&vs, sigs, opts, &targets));
     findings.extend(blocked_host_findings(session));
     findings.extend(protocol_findings(session, &vs, opts));
     findings.extend(cookie_flow_findings(&vs, sigs, opts));
