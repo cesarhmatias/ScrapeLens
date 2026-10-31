@@ -22,7 +22,7 @@ pub struct Entry {
     pub read_only: bool,
     pub lazy: LazySession,
     stamp: (SystemTime, u64),
-    masked: OnceLock<Result<SessionBundle, String>>,
+    masked: OnceLock<Result<SessionBundle, (&'static str, String)>>,
 }
 
 impl Entry {
@@ -30,13 +30,21 @@ impl Entry {
     pub fn masked(&self) -> Result<&SessionBundle, ToolError> {
         let result = self.masked.get_or_init(|| {
             let imported = scrapelens_core::import_session_dir(&self.dir).map_err(|error| {
-                format!("não foi possível carregar a sessão para mascarar: {error}")
+                let code = if matches!(error, scrapelens_core::CoreError::LimitExceeded { .. }) {
+                    "too_large"
+                } else {
+                    "io"
+                };
+                (
+                    code,
+                    format!("não foi possível carregar a sessão para mascarar: {error}"),
+                )
             })?;
             Ok(sanitize_bundle(&imported.bundle, &SanitizeOptions::default()).bundle)
         });
         result
             .as_ref()
-            .map_err(|message| ToolError::new("too_large", message.clone()))
+            .map_err(|(code, message)| ToolError::new(code, message.clone()))
     }
 }
 

@@ -2,6 +2,7 @@
 name = "scrapelens-mcp"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 license = "MIT"
 description = "ScrapeLens MCP: servidor local, somente leitura, sobre sessões já capturadas"
 publish = false
