@@ -56,7 +56,25 @@ pub fn ensure_private_dir(path: &Path) -> Result<()> {
     set_mode(path, 0o700)
 }
 
+/// Recusa symlink (e qualquer coisa que não seja arquivo regular) no destino.
+fn refuse_non_regular_destination(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(CoreError::LimitExceeded {
+            message: format!("{} é um link simbólico; recusado", path.display()),
+        }),
+        Ok(meta) if !meta.is_file() => Err(CoreError::LimitExceeded {
+            message: format!(
+                "{} existe e não é um arquivo regular; recusado",
+                path.display()
+            ),
+        }),
+        _ => Ok(()),
+    }
+}
+
 fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let file_name = path
         .file_name()
@@ -64,10 +82,22 @@ fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
         .ok_or_else(|| CoreError::InvalidAttachmentPath {
             name: path.to_string_lossy().to_string(),
         })?;
-    let tmp = parent.join(format!(".{file_name}.tmp-{}", std::process::id()));
+    // O destino nunca pode ser um symlink (a escrita sairia do diretório).
+    refuse_non_regular_destination(path)?;
+    // Temporário com nome imprevisível e criado com O_EXCL (`create_new`): se o
+    // nome existir, mesmo como symlink, a abertura falha em vez de seguir o link.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = parent.join(format!(
+        ".{file_name}.tmp-{}-{nanos}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    ));
 
     let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -76,17 +106,28 @@ fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
     let mut file = options
         .open(&tmp)
         .map_err(|error| CoreError::io(&tmp, error))?;
-    file.write_all(bytes)
-        .map_err(|error| CoreError::io(&tmp, error))?;
-    if sync_data {
-        file.sync_all()
-            .map_err(|error| CoreError::io(&tmp, error))?;
-    } else {
-        file.flush().map_err(|error| CoreError::io(&tmp, error))?;
-    }
+    let written = file
+        .write_all(bytes)
+        .map_err(|error| CoreError::io(&tmp, error))
+        .and_then(|()| {
+            if sync_data {
+                file.sync_all().map_err(|error| CoreError::io(&tmp, error))
+            } else {
+                file.flush().map_err(|error| CoreError::io(&tmp, error))
+            }
+        });
     drop(file);
+    if let Err(error) = written {
+        let _ = fs::remove_file(&tmp);
+        return Err(error);
+    }
 
     set_mode(&tmp, 0o600)?;
+    // Confere de novo logo antes do rename: o destino pode ter virado symlink.
+    if let Err(error) = refuse_non_regular_destination(path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(error);
+    }
     fs::rename(&tmp, path).map_err(|error| {
         let _ = fs::remove_file(&tmp);
         CoreError::io(path, error)
@@ -116,8 +157,36 @@ fn sync_dir(_path: &Path) -> Result<()> {
 /// "artefatos/anexos antes do documento" para não deixar referência quebrada.
 pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     ensure_private_dir(dir)?;
+    // Daqui em diante tudo é gravado sob o diretório canonicalizado: nenhum
+    // componente do caminho pode ser trocado por symlink no meio da escrita.
+    let dir = &dir
+        .canonicalize()
+        .map_err(|error| CoreError::io(dir, error))?;
     let attachments_dir = dir.join(ATTACHMENTS_DIR);
+    // `attachments/` é criado por nós dentro da sessão: um symlink ali é recusado
+    // antes de qualquer mkdir/chmod.
+    if let Ok(meta) = fs::symlink_metadata(&attachments_dir) {
+        if meta.file_type().is_symlink() {
+            return Err(CoreError::LimitExceeded {
+                message: format!(
+                    "{} é um link simbólico; recusado",
+                    attachments_dir.display()
+                ),
+            });
+        }
+    }
     ensure_private_dir(&attachments_dir)?;
+    let canonical_attachments = attachments_dir
+        .canonicalize()
+        .map_err(|error| CoreError::io(&attachments_dir, error))?;
+    if canonical_attachments.parent() != Some(dir.as_path()) {
+        return Err(CoreError::LimitExceeded {
+            message: format!(
+                "{} resolve para fora da sessão; recusado",
+                attachments_dir.display()
+            ),
+        });
+    }
 
     // Artefatos/anexos primeiro; session.json por último, para nunca deixar um
     // documento apontando para arquivos que ainda não existem.
