@@ -124,6 +124,19 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
                 target.url = Some(sanitize_url(url, options));
             }
         }
+        for note in &mut request.provenance.notes {
+            *note = sanitize_text(note, options);
+        }
+        for link in &mut request.links {
+            for line in &mut link.evidence {
+                *line = sanitize_text(line, options);
+            }
+        }
+        for candidate in &mut request.match_candidates {
+            for reason in &mut candidate.reasons {
+                *reason = sanitize_text(reason, options);
+            }
+        }
         for redirect in &mut request.redirects {
             redirect.from_url = sanitize_url(&redirect.from_url, options);
             if let Some(to_url) = &redirect.to_url {
@@ -162,6 +175,17 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
 
         for attempt in &mut request.attempts {
             attempt.url = sanitize_url(&attempt.url, options);
+            if let Some(failure) = &mut attempt.failure {
+                *failure = sanitize_text(failure, options);
+            }
+            for note in &mut attempt.provenance.notes {
+                *note = sanitize_text(note, options);
+            }
+            for candidate in &mut attempt.match_candidates {
+                for reason in &mut candidate.reasons {
+                    *reason = sanitize_text(reason, options);
+                }
+            }
             if let Some(initiator) = &mut attempt.initiator {
                 if let Some(url) = &initiator.url {
                     initiator.url = Some(sanitize_url(url, options));
@@ -217,6 +241,10 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
             .to_string(),
     );
 
+    // Mensagens de aviso podem trazer URLs com query.
+    for warning in &mut session.warnings {
+        warning.message = sanitize_text(&warning.message, options);
+    }
     // Detalhes de avisos podem repetir linhas cruas de header.
     for warning in &mut session.warnings {
         if warning.detail.take().is_some() {
@@ -328,6 +356,17 @@ fn sanitize_header_view(
                 *redactions.entry("header:url".to_string()).or_default() += 1;
             }
         }
+        // Qualquer outro valor que carregue uma query (Refresh, X-Original-Url,
+        // report-uri...): redige só os parâmetros sensíveis.
+        if !is_url_header(&lower) && entry.name != ":path" {
+            let sanitized = sanitize_text(&entry.value, options);
+            if sanitized != entry.value {
+                entry.value = sanitized;
+                *redactions
+                    .entry("header:text-query".to_string())
+                    .or_default() += 1;
+            }
+        }
         if entry.name == ":path" {
             let sanitized = sanitize_path_and_query(&entry.value, options);
             if sanitized != entry.value {
@@ -337,6 +376,18 @@ fn sanitize_header_view(
                     .or_default() += 1;
             }
         }
+    }
+    if let Some(line) = &view.start_line {
+        let sanitized = sanitize_text(line, options);
+        if sanitized != *line {
+            view.start_line = Some(sanitized);
+            *redactions
+                .entry("header:startLine".to_string())
+                .or_default() += 1;
+        }
+    }
+    for note in &mut view.notes {
+        *note = sanitize_text(note, options);
     }
     if view.raw_block.is_some() {
         view.raw_block = None;
@@ -678,6 +729,73 @@ pub fn sanitize_path_and_query(value: &str, options: &SanitizeOptions) -> String
         Some((path, query)) => format!("{path}?{}", sanitize_query(query, options)),
         None => value.to_string(),
     }
+}
+
+/// Redige, em texto livre (linha de requisição, notas, mensagens, valores de
+/// header que não são URL), o valor de cada parâmetro de query com nome
+/// sensível. Um parâmetro só conta depois de um `?` e até um terminador
+/// (espaço, aspas, `<`, `>`, `(`, `)`, `,`, `;`, `#`, `\\`). O resto do texto
+/// passa intacto.
+pub fn sanitize_text(text: &str, options: &SanitizeOptions) -> String {
+    if !text.contains('?') {
+        return text.to_string();
+    }
+    let is_end = |ch: char| {
+        ch.is_whitespace()
+            || matches!(
+                ch,
+                '"' | '\'' | '<' | '>' | '(' | ')' | ',' | ';' | '#' | '\\'
+            )
+    };
+    let placeholder = url_placeholder(options);
+    let mut out = String::with_capacity(text.len());
+    let mut in_query = false;
+    let mut rest = text;
+    while let Some(ch) = rest.chars().next() {
+        if ch == '?' {
+            in_query = true;
+            out.push(ch);
+            rest = &rest[1..];
+            continue;
+        }
+        if !in_query {
+            out.push(ch);
+            rest = &rest[ch.len_utf8()..];
+            continue;
+        }
+        if is_end(ch) {
+            in_query = false;
+            out.push(ch);
+            rest = &rest[ch.len_utf8()..];
+            continue;
+        }
+        if ch == '&' {
+            out.push(ch);
+            rest = &rest[1..];
+            continue;
+        }
+        // um par `nome[=valor]`
+        let name_len = rest
+            .find(|c: char| is_end(c) || c == '&' || c == '=')
+            .unwrap_or(rest.len());
+        let (name, after) = rest.split_at(name_len);
+        out.push_str(name);
+        rest = after;
+        if let Some(value_part) = rest.strip_prefix('=') {
+            let value_len = value_part
+                .find(|c: char| is_end(c) || c == '&')
+                .unwrap_or(value_part.len());
+            let decoded = percent_decode(name);
+            out.push('=');
+            if is_sensitive_key(&decoded) || is_business_key(&decoded, &options.business_fields) {
+                out.push_str(&placeholder);
+            } else {
+                out.push_str(&value_part[..value_len]);
+            }
+            rest = &value_part[value_len..];
+        }
+    }
+    out
 }
 
 fn sanitize_query(query: &str, options: &SanitizeOptions) -> String {
@@ -1583,6 +1701,12 @@ impl Propagator<'_> {
     }
 
     fn view(&mut self, view: &mut HeaderView) {
+        if let Some(line) = &mut view.start_line {
+            self.apply(line);
+        }
+        for note in &mut view.notes {
+            self.apply(note);
+        }
         for entry in view
             .pseudo_headers
             .iter_mut()
@@ -1670,6 +1794,11 @@ fn propagate_sensitive_values(
 
     for request in &mut session.requests {
         propagator.apply(&mut request.url);
+        if let Some(target) = &mut request.target {
+            if let Some(url) = &mut target.url {
+                propagator.apply(url);
+            }
+        }
         for redirect in &mut request.redirects {
             propagator.apply(&mut redirect.from_url);
             if let Some(to) = &mut redirect.to_url {
@@ -1686,6 +1815,16 @@ fn propagate_sensitive_values(
         propagator.body(&mut request.response_body);
         for attempt in &mut request.attempts {
             propagator.apply(&mut attempt.url);
+            if let Some(initiator) = &mut attempt.initiator {
+                if let Some(url) = &mut initiator.url {
+                    propagator.apply(url);
+                }
+                if let Some(frame) = &mut initiator.stack_top {
+                    if let Some(url) = &mut frame.url {
+                        propagator.apply(url);
+                    }
+                }
+            }
             if let Some(failure) = &mut attempt.failure {
                 propagator.apply(failure);
             }
