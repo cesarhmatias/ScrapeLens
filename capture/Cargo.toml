@@ -1,0 +1,17 @@
+[package]
+name = "scrapelens-capture"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+description = "Captura ao vivo do ScrapeLens: Chrome com perfil dedicado, CDP + NetLog, allowlist, captura controlada (sem Tauri)"
+publish = false
+
+[dependencies]
+scrapelens-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tungstenite = "0.28"
+
+# Crate independente: sem Tauri, sem janela. O App (src-tauri) e o servidor MCP a consomem.
+[workspace]

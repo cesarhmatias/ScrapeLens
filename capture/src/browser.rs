@@ -18,8 +18,7 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::WebSocket;
 
 use super::allowlist::{Allowlist, AllowlistError, AllowlistReport, UrlDenied};
-use super::{run_with_options, CaptureConfig, CaptureStatus, Cdp, RunOptions, RunReport};
-use crate::commands::SessionPayload;
+use super::{run_with_options, CaptureConfig, CaptureOutcome, CaptureStatus, Cdp, RunOptions, RunReport};
 
 /// Texto fixo que o servidor MCP mostra na confirmação de `start_capture`.
 pub const SENSITIVE_NOTICE: &str = "Esta captura grava cookies, cabeçalhos de autorização e corpos de requisição e resposta (NetLog em modo Everything + CDP). Os dados ficam na pasta da sessão; as ferramentas de leitura mascaram valores por padrão. Não digite credenciais no navegador da captura.";
@@ -173,9 +172,9 @@ pub struct StopReport {
     pub waited_ms: u64,
     pub allowlist: AllowlistReport,
     pub warnings: Vec<String>,
-    /// Sessão importada, para o chamador (a Core registra o handle).
+    /// Sessão importada, para o chamador (o servidor MCP registra o handle).
     #[serde(skip)]
-    pub payload: Option<SessionPayload>,
+    pub outcome: Option<CaptureOutcome>,
 }
 
 pub struct BrowserCapture {
@@ -183,7 +182,7 @@ pub struct BrowserCapture {
     session_dir: PathBuf,
     control: Sender<Control>,
     stop: Sender<()>,
-    join: Option<JoinHandle<Result<(SessionPayload, RunReport), String>>>,
+    join: Option<JoinHandle<Result<(CaptureOutcome, RunReport), String>>>,
     status: Arc<Mutex<CaptureStatus>>,
 }
 
@@ -321,7 +320,7 @@ impl BrowserCapture {
             .join
             .take()
             .ok_or_else(|| "captura já encerrada".to_string())?;
-        let (payload, report) = join
+        let (outcome, report) = join
             .join()
             .map_err(|_| "a thread de captura falhou".to_string())??;
         Ok(StopReport {
@@ -332,7 +331,7 @@ impl BrowserCapture {
             waited_ms: report.waited_ms,
             allowlist: report.allowlist.unwrap_or_default(),
             warnings: report.warnings,
-            payload: Some(payload),
+            outcome: Some(outcome),
         })
     }
 }
