@@ -18,6 +18,7 @@ use crate::{Confidence, Evidence, Finding, ProfileOptions, Sample, SourceRef};
 /// detecção lê.
 struct View<'a> {
     index: usize,
+    started: Option<f64>,
     req: &'a LogicalRequest,
     attempt_id: Option<&'a str>,
     url: &'a str,
@@ -37,6 +38,7 @@ fn views(session: &SessionV1) -> Vec<View<'_>> {
         if req.attempts.is_empty() {
             out.push(View {
                 index,
+                started: req.timings.request_time,
                 req,
                 attempt_id: None,
                 url: &req.url,
@@ -55,12 +57,26 @@ fn views(session: &SessionV1) -> Vec<View<'_>> {
             out.push(attempt_view(index, req, attempt));
         }
     }
+    // A ordem de `session.requests` não é cronológica (a Core ordena por id).
+    // "Antes/depois" usa o início da tentativa quando TODAS têm tempo (mesmo
+    // relógio de captura); senão vale a ordem da sessão.
+    if !out.is_empty() && out.iter().all(|v| v.started.is_some()) {
+        out.sort_by(|a, b| {
+            a.started
+                .partial_cmp(&b.started)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    for (i, v) in out.iter_mut().enumerate() {
+        v.index = i;
+    }
     out
 }
 
 fn attempt_view<'a>(index: usize, req: &'a LogicalRequest, a: &'a Attempt) -> View<'a> {
     View {
         index,
+        started: a.started_at.or(req.timings.request_time),
         req,
         attempt_id: Some(&a.id),
         url: &a.url,

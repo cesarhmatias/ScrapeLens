@@ -339,7 +339,8 @@ fn cookie_flow_is_observed_and_never_called_mandatory() {
 }
 
 #[test]
-fn protection_cookie_reused_means_priming() {
+fn presence_cookie_reused_is_noted_but_clearance_cookie_reused_means_priming() {
+    // `datadome` é cookie de presença/identificação: observação, não gatilho.
     let bundle = build(vec![
         Req::doc("m", "https://app.test/", 200).set_cookie("datadome=ABCDEFGH; Path=/"),
         Req::xhr("x1", "GET", "https://app.test/a", 200).cookie("datadome=ABCDEFGH"),
@@ -347,6 +348,15 @@ fn protection_cookie_reused_means_priming() {
     let p = profile(&bundle);
     let f = p.findings.iter().find(|f| f.kind == "cookie-flow").unwrap();
     assert_eq!(f.vendor.as_deref(), Some("datadome"));
+    assert_eq!(p.recommendation.value, RecommendationValue::ChromeNormalBasta);
+    assert!(p.recommendation.reasons.iter().any(|r| r.contains("obrigatoriedade não foi provada")));
+
+    // `aws-waf-token` é cookie de liberação: reutilizado => priming (media).
+    let bundle = build(vec![
+        Req::doc("m", "https://app.test/", 200).set_cookie("aws-waf-token=ABCDEFGH; Path=/"),
+        Req::xhr("x1", "GET", "https://app.test/a", 200).cookie("aws-waf-token=ABCDEFGH"),
+    ]);
+    let p = profile(&bundle);
     assert_eq!(p.recommendation.value, RecommendationValue::PrecisaDePriming);
     assert_eq!(p.recommendation.confidence, Confidence::Media);
 }

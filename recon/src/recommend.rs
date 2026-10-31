@@ -14,7 +14,7 @@ pub(crate) fn recommend(
     sample: &Sample,
     partial: bool,
     findings: &[Finding],
-    _sigs: &SignatureSet,
+    sigs: &SignatureSet,
 ) -> Recommendation {
     let mut limits = vec![
         format!(
@@ -102,9 +102,28 @@ pub(crate) fn recommend(
         .filter(|f| f.category == "desafio" && f.resolved_later == Some(true))
         .collect();
     let tokens: Vec<&Finding> = findings.iter().filter(|f| f.kind == "token-origin").collect();
-    let protection_cookie_flow: Vec<&Finding> = findings
+    // Só cookie de LIBERAÇÃO (cf_clearance, aws-waf-token) reutilizado conta como
+    // priming. Cookie de presença (`__cf_bm`, `datadome`, `_px3`, `bm_sv`…) é
+    // reenviado por qualquer cliente com cookie jar: vira observação, não gatilho.
+    let is_clearance = |f: &Finding| {
+        f.kind == "cookie-flow"
+            && f.evidence
+                .first()
+                .and_then(|e| e.field.as_deref())
+                .map(|name| {
+                    sigs.signatures.iter().any(|s| {
+                        s.clearance
+                            && (s.names.iter().any(|n| n == name)
+                                || s.prefixes.iter().any(|p| name.starts_with(p.as_str())))
+                    })
+                })
+                .unwrap_or(false)
+    };
+    let protection_cookie_flow: Vec<&Finding> =
+        findings.iter().filter(|f| is_clearance(f)).collect();
+    let passive_cookie_flow: Vec<&Finding> = findings
         .iter()
-        .filter(|f| f.kind == "cookie-flow" && f.vendor.is_some())
+        .filter(|f| f.kind == "cookie-flow" && f.vendor.is_some() && !is_clearance(f))
         .collect();
     let mut priming: Vec<&Finding> = Vec::new();
     priming.extend(&resolved_challenges);
@@ -161,6 +180,13 @@ pub(crate) fn recommend(
         reasons.push(format!(
             "há proteção presente de forma passiva ({} achado(s)), sem bloqueio nesta captura",
             protections.len()
+        ));
+    }
+    for f in &passive_cookie_flow {
+        reasons.push(format!(
+            "cookie de proteção ({}) reenviado pelo navegador ({}): observado; um cliente com cookie jar o reenvia sozinho e a obrigatoriedade não foi provada",
+            f.vendor.as_deref().unwrap_or("?"),
+            f.id
         ));
     }
     Recommendation {
