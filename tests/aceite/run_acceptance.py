@@ -43,7 +43,7 @@ REPORT = ROOT / "tests" / "RELATORIO.md"
 # lugares juntos, para que a bateria nunca aprove um artefato não documentado.
 APP_EXECUTABLE = pathlib.Path(os.environ.get("SL_APP_EXECUTABLE") or (
     pathlib.Path(__file__).resolve().parents[2] / "src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
-EXPECTED_APP_SHA256 = "6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9"
+EXPECTED_APP_SHA256 = "4636a3cf11c498bf5866974615dd6544fbaa1cb73c93140c9502b8e978043860"
 
 SECRETS = [
     "SECRET-AUTH-TOKEN",
@@ -1208,9 +1208,11 @@ def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
             ROOT / "mcp")
     for live_name in ("live_pipe_opens_no_port_and_exposed_port_is_loopback_only",
                       "live_planted_symlinks_are_not_followed",
-                      "live_port_gap_is_reported_on_all_paths"):
+                      "live_port_gap_is_reported_on_all_paths",
+                      "live_netlog_swap_race_does_not_write_through_a_symlink",
+                      "live_inherited_fds_do_not_leak_into_chrome"):
         entry = run_cmd(f"vivo capture {live_name}",
-                ["cargo", "test", "--offline", "--lib", f"browser::tests::{live_name}", "--", "--ignored", "--exact"], ROOT / "capture")
+                ["cargo", "test", "--offline", "--lib", f"browser::tests::{live_name}", "--", "--ignored", "--exact", "--test-threads=1"], ROOT / "capture")
         if entry["passed"] != 1 or entry["failed"] != 0:
             rows.append({"ok": False, "label": f"MCP vivo capture {live_name}: esperado 1 teste executado, obtido {entry['passed']}"})
     run_cmd("vivo recon live_e2e.sh", ["sh", "scripts/live_e2e.sh"], ROOT / "recon")

@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-31T22:33:03Z",
+ "generatedAt": "2026-10-31T23:57:16Z",
  "coreSha256": "5c11a0c9c89e7e8cf78d207087d90581ca9719ee94f378f1d64408c0313775dd",
  "coreBytes": 3817360,
- "gitCommit": "eb66afa",
+ "gitCommit": "d6af514",
  "macos": "26.5.2",
  "machine": "arm64",
  "python": "3.14.8",
@@ -158,7 +158,7 @@
     },
     {
      "ok": true,
-     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'session.netlog_missing', 'har.missing_response', 'session.cdp_missing', 'har.cookies_absent'}"
+     "label": "HAR incompleto: aviso explícito har.missing_response: 'har.missing_response' presente em {'har.cookies_absent', 'session.cdp_missing', 'har.missing_response', 'session.netlog_missing'}"
     },
     {
      "ok": true,
@@ -178,7 +178,7 @@
     },
     {
      "ok": true,
-     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'session.netlog_missing', 'session.cdp_missing', 'har.unknown_encoding', 'har.cookies_absent'}"
+     "label": "HAR com encoding desconhecido: aviso: 'har.unknown_encoding' presente em {'har.unknown_encoding', 'har.cookies_absent', 'session.cdp_missing', 'session.netlog_missing'}"
     },
     {
      "ok": true,
@@ -202,7 +202,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'netlog.unknown_event_type', 'netlog.time_unit_assumed', 'session.cdp_missing'}"
+     "label": "NetLog: aviso netlog.unknown_event_type: 'netlog.unknown_event_type' presente em {'netlog.unknown_event_type', 'session.cdp_missing', 'netlog.time_unit_assumed'}"
     },
     {
      "ok": true,
@@ -234,7 +234,7 @@
     },
     {
      "ok": true,
-     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'netlog.header_line_invalid', 'netlog.time_unit_assumed', 'session.cdp_missing'}"
+     "label": "NetLog: aviso de linha sem separador: 'netlog.header_line_invalid' presente em {'netlog.header_line_invalid', 'session.cdp_missing', 'netlog.time_unit_assumed'}"
     },
     {
      "ok": true,
@@ -261,7 +261,7 @@
     "HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.",
     "Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos."
    ],
-   "seconds": 0.18
+   "seconds": 0.16
   },
   {
    "item": 3,
@@ -420,7 +420,7 @@
    "notes": [
     "O redirect é um elo entre tentativas, não uma requisição separada."
    ],
-   "seconds": 0.06
+   "seconds": 0.05
   },
   {
    "item": 5,
@@ -489,7 +489,7 @@
     },
     {
      "ok": true,
-     "label": "todos os cinco estados aparecem na fixture: esperado {'discarded', 'empty', 'unavailable', 'truncated', 'captured'}, obtido {'discarded', 'empty', 'unavailable', 'truncated', 'captured'}"
+     "label": "todos os cinco estados aparecem na fixture: esperado {'captured', 'empty', 'unavailable', 'discarded', 'truncated'}, obtido {'captured', 'empty', 'unavailable', 'discarded', 'truncated'}"
     }
    ],
    "passed": 16,
@@ -682,7 +682,7 @@
    "notes": [
     "Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK)."
    ],
-   "seconds": 0.15
+   "seconds": 0.14
   },
   {
    "item": 8,
@@ -781,7 +781,7 @@
   {
    "item": 9,
    "title": "Ciclo real de captura no macOS",
-   "status": "aprovado",
+   "status": "falhou",
    "assertions": [
     {
      "ok": true,
@@ -837,11 +837,11 @@
     },
     {
      "ok": true,
-     "label": "h1h2: protocolo h2 presente: 'h2' presente em {'h2', 'h1'}"
+     "label": "h1h2: protocolo h2 presente: 'h2' presente em {'h1', 'h2'}"
     },
     {
      "ok": true,
-     "label": "h1h2: nenhum protocolo divergente: 'h2' presente em {'h2', 'h1'}"
+     "label": "h1h2: nenhum protocolo divergente: 'h2' presente em {'h1', 'h2'}"
     },
     {
      "ok": true,
@@ -1000,8 +1000,8 @@
      "label": "app: bundle com 16.94 MiB"
     },
     {
-     "ok": true,
-     "label": "app: executável é o bundle final documentado (SHA-256): esperado '6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9', obtido '6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9'"
+     "ok": false,
+     "label": "app: executável é o bundle final documentado (SHA-256): esperado '4636a3cf11c498bf5866974615dd6544fbaa1cb73c93140c9502b8e978043860', obtido '6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9'"
     },
     {
      "ok": true,
@@ -1009,11 +1009,11 @@
     },
     {
      "ok": true,
-     "label": "app: SHA-256 do executável em disco = EXPECTED_APP_SHA256: esperado '6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9', obtido '6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9'"
+     "label": "app: SHA-256 do executável em disco = EXPECTED_APP_SHA256: esperado '4636a3cf11c498bf5866974615dd6544fbaa1cb73c93140c9502b8e978043860', obtido '4636a3cf11c498bf5866974615dd6544fbaa1cb73c93140c9502b8e978043860'"
     },
     {
-     "ok": true,
-     "label": "app: SHA-256 do executável em disco = o registrado no run.json: esperado '6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9', obtido '6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9'"
+     "ok": false,
+     "label": "app: SHA-256 do executável em disco = o registrado no run.json: esperado '6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9', obtido '4636a3cf11c498bf5866974615dd6544fbaa1cb73c93140c9502b8e978043860'"
     },
     {
      "ok": true,
@@ -1276,8 +1276,8 @@
      "label": "app: print da sessão importada pela UI capturado"
     }
    ],
-   "passed": 123,
-   "failed": 0,
+   "passed": 121,
+   "failed": 2,
    "evidence": [
     "execução real: `tests/capture/runs/live-final` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`",
     "app empacotado: `ScrapeLens.app` 16.94 MiB, arm64, assinatura local-identity, binário único, executável `6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9`; captura ao vivo capture-1793485447342 (11 req, 154 headers verificados, 2 ambíguas); importação HAR pela UI `har-3dbc391c02a985c5-10` (24 req, ['h1', 'h2'], 24 sourceEvents); importação NetLog pela UI `netlog-1704043c442dcbd1-10` (32 req, ['h1', 'h2', 'h3', 'unknown'], 15 StreamSessions, 5354 sourceEvents).",
@@ -1288,10 +1288,10 @@
     "A página real `/page` exercitou redirects e POSTs.",
     "O HAR do ciclo é reconstruído do CDP (`experiments/har_from_cdp.mjs`), porque o Chrome 156 não expõe `Network.getHAR`; o creator declara a origem e a ordem não é comprovada (unverified).",
     "O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.",
-    "Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`6c0092c3c73c`, compilado em `c2d2b8f`, assinatura local estável, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.",
+    "Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final (`4636a3cf11c4`, compilado em `c2d2b8f`, assinatura local estável, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.",
     "As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-10` e `netlog-1704043c442dcbd1-10`), agora pela UI: o harness escolheu os arquivos por cliques do mouse no painel nativo (o teclado não chega ao seletor; na rodada 10 final foi em primeiro plano). A verificação é independente da confirmação do usuário: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). Importações repetidas dos mesmos arquivos (sufixos `-N` em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`) têm `session.json` idêntico, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão."
    ],
-   "seconds": 0.28
+   "seconds": 0.17
   },
   {
    "item": 10,
@@ -1312,7 +1312,7 @@
     },
     {
      "ok": true,
-     "label": "import-har abaixo de 60 s (1.02 s)"
+     "label": "import-har abaixo de 60 s (1.08 s)"
     },
     {
      "ok": true,
@@ -1320,27 +1320,27 @@
     },
     {
      "ok": true,
-     "label": "inspect abaixo de 60 s (3.24 s)"
+     "label": "inspect abaixo de 60 s (3.72 s)"
     },
     {
      "ok": true,
-     "label": "inspect com pico abaixo de 3,5 GiB (1597 MiB)"
+     "label": "inspect com pico abaixo de 3,5 GiB (1501 MiB)"
     }
    ],
    "passed": 7,
    "failed": 0,
    "evidence": [
-    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.02 s, pico 823 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 1.08 s, pico 823 MiB RSS",
     "sessão gravada: session.json 236.3 MiB",
-    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.24 s, pico 1597 MiB RSS",
+    "`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 3.72 s, pico 1501 MiB RSS",
     "complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB"
    ],
    "notes": [
     "HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).",
-    "`inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1597 MiB vem da serialização, não do parser.",
+    "`inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1501 MiB vem da serialização, não do parser.",
     "Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo."
    ],
-   "seconds": 10.49
+   "seconds": 11.41
   },
   {
    "item": 11,
@@ -1349,11 +1349,11 @@
    "assertions": [
     {
      "ok": true,
-     "label": "MCP cargo test mcp: rc=0, 51 passaram, 0 falharam"
+     "label": "MCP cargo test mcp: rc=0, 58 passaram, 0 falharam"
     },
     {
      "ok": true,
-     "label": "MCP cargo test capture: rc=0, 53 passaram, 0 falharam"
+     "label": "MCP cargo test capture: rc=0, 62 passaram, 0 falharam"
     },
     {
      "ok": true,
@@ -1374,6 +1374,14 @@
     {
      "ok": true,
      "label": "MCP vivo capture live_port_gap_is_reported_on_all_paths: rc=0, 1 passaram, 0 falharam"
+    },
+    {
+     "ok": true,
+     "label": "MCP vivo capture live_netlog_swap_race_does_not_write_through_a_symlink: rc=0, 1 passaram, 0 falharam"
+    },
+    {
+     "ok": true,
+     "label": "MCP vivo capture live_inherited_fds_do_not_leak_into_chrome: rc=0, 1 passaram, 0 falharam"
     },
     {
      "ok": true,
@@ -1496,7 +1504,7 @@
      "label": "fluxo: nenhum valor de cookie/token na saída inteira do MCP (sem reveal)"
     }
    ],
-   "passed": 37,
+   "passed": 39,
    "failed": 0,
    "evidence": [
     "`tests/results/mcp/run.json` e `tests/results/mcp/flow.json` (saídas dos comandos e do fluxo)"
@@ -1504,7 +1512,7 @@
    "notes": [
     "Cliente do fluxo: `tests/aceite/mcp_flow.py`, JSON-RPC por stdio em Python, sem o harness Rust; servidor HTTP local em 127.0.0.1, Chrome real headless, nada externo."
    ],
-   "seconds": 123.0
+   "seconds": 301.49
   }
  ],
  "scope": [
