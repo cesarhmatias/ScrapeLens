@@ -1,0 +1,16 @@
+[package]
+name = "scrapelens-recon"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+description = "Reconhecimento do site (site_profile) para o ScrapeLens: proteções anti-bot, bloqueios e exigências, com evidência"
+publish = false
+
+[dependencies]
+scrapelens-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Crate independente do core e do src-tauri (o core não conhece fornecedor algum).
+[workspace]
