@@ -59,74 +59,65 @@ recusaram (rc 1); depois de `cargo build --release` a bateria inteira foi repeti
 
 Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captura ao vivo de 2026-10-29 (`live-final`); não foi refeita nesta rodada.
 
-## Rodada 10 — captura multi-alvo (rodada oficial final)
+## Rodada 10 — captura multi-alvo (rodada oficial final, bundle definitivo)
 
-- **HEAD testado:** c503dd0 (código de captura em 8cfe828; bundle em 18cbb01)
-- **Data:** 2026-10-30/31
-- **Build:** `core`, `testserver` e `adapters/natural-ajax` recompilados em release antes da bateria; `src-tauri` pelo `cargo test --release`.
-- **Bundle aceito:** `02e6ef30265a6226edbfd290e60bff70c0f27086f6cccd5424635106dfffef76` (16.502.896 bytes, arm64, ad-hoc, binário único),
-  conferido por `shasum -a 256` no executável do `.app` e no processo em execução; `EXPECTED_APP_SHA256` em `tests/aceite/run_acceptance.py` aponta o mesmo hash.
+- **HEAD testado:** 0d98615 (captura em f1493ab, core em 66e97e3, bundle em 0d98615)
+- **Data:** 2026-10-31
+- **Build:** `core`, `testserver` e `adapters/natural-ajax` recompilados em release antes da bateria.
+- **Bundle aceito:** `7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c` (16.582.144 bytes, arm64, ad-hoc, binário único),
+  conferido por `shasum -a 256` e pelo caminho do processo em execução; `EXPECTED_APP_SHA256` em `tests/aceite/run_acceptance.py` aponta o mesmo hash.
 - **Dados:** sintéticos; HARs reais (H1–H3) só em agregados.
 
 ### Aceite multi-alvo — 5 rodadas com `--self-test`
 
-`python3 tests/aceite/check_multi_target.py --port 894N --self-test`, captura real do produto (`capture::run` via `live_bodies_cycle`, Chrome headless, `testserver /multi/`).
+`python3 tests/aceite/check_multi_target.py --port 896N --self-test` (captura real do produto, Chrome headless, `testserver /multi/`).
 
-| Rodada | NetLog | CDP | Requisições | SW por `targetId` | Link página↔SW | `attachFailed` | `target_setup_timeout` | Autoteste (8 mutações) | Falhas |
+| Rodada | NetLog | CDP | Requisições | SW por `targetId` | Link página↔SW | `attachFailed` | avisos `target_setup_timeout`/`setup_error` | Autoteste | Falhas |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | 16/16 | 16/16 | 22 | 1 + 1 (2 alvos, sem duplicata) | `ambiguous` (cdp-r0008 ↔ cdp-r0016) | 0 | 1 | 8/8 como esperado | 0 |
-| 2 | 16/16 | 16/16 | 22 | 1 + 1 | `ambiguous` (cdp-r0003 ↔ cdp-r0016) | 0 | 2 | 8/8 | 0 |
-| 3 | 16/16 | 16/16 | 22 | 1 + 1 | `ambiguous` (cdp-r0007 ↔ cdp-r0019) | 0 | 1 | 8/8 | 0 |
-| 4 | 16/16 | 16/16 | 22 | 1 + 1 | `ambiguous` (cdp-r0012 ↔ cdp-r0016) | 0 | 1 | 8/8 | 0 |
-| 5 | 16/16 | 16/16 | 22 | 1 + 1 | `ambiguous` (cdp-r0003 ↔ cdp-r0008) | 0 | 1 | 8/8 | 0 |
+| 1 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0014 ↔ cdp-r0016 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
+| 2 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0004 ↔ cdp-r0013 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
+| 3 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0010 ↔ cdp-r0016 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
+| 4 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0014 ↔ cdp-r0019 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
+| 5 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0012 ↔ cdp-r0018 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
 
-- `blank-1` com `requestWillBeSent` real e `oopif-get-1`/`oopif-post-1` com `target.kind = iframe` nas 5; colisão de `requestId` entre alvos: 0 naturais
-  (legítimo após o dedupe), exercitada pelo autoteste.
-- Mutações do autoteste (esperado → obtido, iguais nas 5 rodadas): fusão de dois pares FAIL→FAIL; links do SW removidos FAIL→FAIL; `kind` trocado FAIL→FAIL;
-  corpo alterado FAIL→FAIL; cópia de SW na mesma sessão FAIL→FAIL; cópia de SW em outra sessão do mesmo `targetId` FAIL→FAIL;
-  colisão injetada com observações separadas PASS→PASS; colisão injetada com pares fundidos FAIL→FAIL.
-- Observação para a Captura: o aviso `cdp.target_setup_timeout` aparece em toda captura (1–2 por rodada); a rede da primária foi preservada
-  (16/16 CDP), mas o aviso não some.
-- **`d60c1ae` reprova pelo SW duplicado** (confirmado, worktree em `d60c1ae` com o `core` e o `src-tauri` daquele commit, check atual):
-  6 falhas — `sw-intercept-1`, `sw-own-1` e `sw-own-post-1` com o mesmo `targetId` em 3 sessões (observações repetidas no alvo e "alvo com mais de uma sessão gravando rede").
-  Em 8cfe828 as três rotas passam.
-
-**Correções no meu harness feitas nesta rodada (sem elas o 5/5 não valia):**
-1. As falhas do `--self-test` eram descartadas (`analyze` zera `FAILS`), então uma mutação não detectada saía com rc=0. Agora ficam em `falhas_autoteste` e entram no código de saída.
-2. `_mut_fuse_two_pairs` e a colisão injetada escolhiam requisições parciais (só `responseReceived`) ou do SW por acaso; fusão de uma parcial não é detectável por desenho
-   e a colisão com SW disparava os critérios de duplicata. Agora escolhem pares não parciais, fora do SW, em sessões distintas, de forma determinística.
-3. Uma primeira bateria de 5 rodadas, antes dessas correções, teve a rodada 1 sem `session.json` (`CDP`/Chrome não ficou pronto em 30 s, `rc=101`), uma fusão não detectada e uma colisão
-   reprovando por escolha ruim da mutação; foi descartada e refeita (5/5 acima, nenhuma flutuação de captura nas 5).
+- **Critério 6 endurecido:** o `sw-intercept-1` da página tem de estar ligado ao candidato de mesmo método e mesmo caminho (`/multi/sw-fetch`) e a nenhum `sw-own-*`;
+  link para `sw-own-*` reprova (`links_para_sw_own` registrado). Nas 5 rodadas: `links_para_sw_own` vazio e o link é só com o `sw-fetch` do SW
+  (evidência "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada").
+- **Critério novo:** qualquer aviso `cdp.target_setup_timeout`, `setup_error` ou `setup_aborted` na captura ao vivo reprova. As 5 rodadas: 0 avisos (nas anteriores eram 1–2 por rodada).
+- **9 mutações do autoteste** (esperado → obtido, iguais nas 5): fusão de dois pares FAIL→FAIL; links do SW removidos FAIL→FAIL; `kind` trocado FAIL→FAIL; corpo alterado FAIL→FAIL;
+  cópia de SW na mesma sessão FAIL→FAIL; cópia de SW em outra sessão do mesmo `targetId` FAIL→FAIL; **`sw-intercept` ligado a `sw-own-*` FAIL→FAIL (nova)**;
+  colisão injetada separada PASS→PASS; colisão injetada fundida FAIL→FAIL.
+- **Defeito meu achado pelo próprio autoteste:** a primeira versão do critério endurecido parava no primeiro link válido (`break`) e deixava passar um segundo link para `sw-own-*`;
+  o autoteste reprovou nas 5 rodadas ("NÃO falhou"), corrigi o laço e refiz as 5.
+- **Rodada 1 descartada uma vez:** um `testserver` órfão na porta 8961 (de uma execução que eu interrompi) respondeu no lugar do servidor da rodada ("POST não chegou ao servidor");
+  foi causa do harness, não da captura. Servidor morto, rodada refeita em outra porta: OK.
 
 Saída por rodada em `tests/results/multi-target-rodada10-final.json`; última captura em `tests/results/multi-target.json`.
 
-### Bateria completa (HEAD c503dd0)
+### Bateria completa (HEAD 0d98615)
 
 | Bateria | Resultado |
 |---|---|
 | run_acceptance (10 critérios, com `app-latest` do bundle novo) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 asserções, 0 falhas) |
 | check_bodies_search / check_chain_compare / check_real_shape | OK (5 casos / OK / OK) |
-| check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
-| check_priming_injection | OK |
-| check_natural_adapter (sim `strict`) | OK, round-trip 0 divergências |
-| check_timeline_validacao | OK |
-| prove_strict (adapters/natural-ajax) | OK |
+| check_priming_sim / check_priming_injection | OK / OK |
+| check_natural_adapter (sim `strict`) / check_timeline_validacao / prove_strict | OK / OK / OK |
 | tests/exportacao | 19 passaram, 0 falhas |
-| cargo test core / src-tauri / natural-ajax | 307 / 49 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
+| cargo test core / src-tauri / natural-ajax | 316 / 52 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
 | check_real_detran (H1–H3) | OK |
 | check_real_priming sem / com `--wrapper` (H1–H3) | OK / OK |
-| ciclo real de uma aba (`live_bodies_cycle`) | OK, exercitado 5× pelo check multi-alvo |
+| ciclo real de uma aba (`live_bodies_cycle`) | OK, exercitado 5× (+1) pelo check multi-alvo |
 
 Resultado: **tudo verde, 0 falhas.**
 
-### Ciclo real no bundle final
+### Ciclo real no bundle definitivo
 
-`ScrapeLens.app` (`02e6ef30…ffef76`, pid conferido pelo caminho do executável): **Iniciar sessão** → `testserver` h1 em `127.0.0.1:8781/page` → **Encerrar**.
-Captura `capture-1793416197833`: 11 requisições, `complete`, `cdp+netlog`, 2 ambíguas, 154 headers verificados, 14 linhas no testserver h1
-(`tests/results/app-latest/testserver/app-20261030b`). HAR e NetLog reimportados pela UI (`har-3dbc391c02a985c5-6`, 24 requisições, `complete`;
-`netlog-1704043c442dcbd1-6`, 32 requisições, `partial`). Uma primeira captura/importação no mesmo bundle (`capture-1793415936457`, imports `-6`)
-foi feita antes do print ao vivo; a segunda é a registrada em `run.json`. O painel nativo "Open" não recebe teclado sintético; os arquivos foram escolhidos por cliques do mouse
-em primeiro plano (cópias temporárias sintéticas em `~/Desktop`, removidas). Prints em `tests/results/app-latest/screenshot-app-live.png` e `screenshot-app-imports.png`.
+`ScrapeLens.app` (`7a46fa4c…05d2b7c`): **Iniciar sessão** → `testserver` h1 em `127.0.0.1:8781/page` → **Encerrar**.
+Captura `capture-1793454692088`: 11 requisições, `complete`, `cdp+netlog`, 2 ambíguas, 154 headers verificados, 14 linhas no testserver h1
+(`tests/results/app-latest/testserver/app-20261031a`). HAR e NetLog reimportados pela UI (`har-3dbc391c02a985c5-7`, 24 requisições, `complete`;
+`netlog-1704043c442dcbd1-7`, 32 requisições, `partial`). O painel nativo "Open" é instável sob automação; o HAR foi escolhido por clique e o NetLog por teclado (seta + Return).
+**Incidente:** com o Brave do usuário em primeiro plano, alguns cliques de tela meus (coordenadas de desktop) caíram nele e navegaram uma aba para uma página do Ratos de IA;
+nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas temporárias em `~/Desktop` removidas. Prints em `tests/results/app-latest/`.
 
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 

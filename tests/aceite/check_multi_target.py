@@ -548,15 +548,23 @@ def _analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
               f"{dict(list(multi_sessao.items())[:3])}")
     intercept = sw_groups.get("sw-intercept-1") or []
     ids_intercept = {r.get("id") for r in intercept}
-    links_ok, warned = [], []
+    links_ok, warned, links_bad = [], [], []
+    by_id = {r.get("id"): r for r in requests}
+    from urllib.parse import urlsplit
+    def _path(r):
+        return urlsplit(r.get("url") or "").path
     for r in intercept:
         for l in (r.get("links") or []):
             if (l.get("kind") or "") != "service_worker":
                 continue
-            if (l.get("resolution") or "") in ("linked", "ambiguous") and l.get("request") in ids_intercept:
+            tgt = by_id.get(l.get("request")) or {}
+            if url_marker(tgt) in ("sw-own-1", "sw-own-post-1"):
+                links_bad.append({"request": r.get("id"), "to": l.get("request"), "marker": url_marker(tgt)})
+                continue
+            if (l.get("resolution") or "") in ("linked", "ambiguous") and l.get("request") in ids_intercept \
+                    and _path(tgt) == _path(r) and tgt.get("method") == r.get("method"):
                 links_ok.append({"request": r.get("id"), "to": l.get("request"),
                                  "resolution": l.get("resolution"), "evidence": l.get("evidence")})
-                break
         for w in warnings:
             blob = json.dumps(w, ensure_ascii=False) if isinstance(w, dict) else str(w)
             if "sw-intercept-1" in blob or any(i and i in blob for i in ids_intercept):
@@ -565,7 +573,7 @@ def _analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
     kinds_intercept = set((r.get("target") or {}).get("kind") or "" for r in intercept)
     has_both = {"page", "service_worker"} <= kinds_intercept
     info_sw.update({"intercept": {"requisicoes": len(intercept), "tipos": sorted(kinds_intercept),
-                                  "links_ok": links_ok, "avisos_do_grupo": warned},
+                                  "links_ok": links_ok, "links_para_sw_own": links_bad, "avisos_do_grupo": warned},
                     "por_requisicao": [{"id": r.get("id"),
                                         "kind": (r.get("target") or {}).get("kind"),
                                         "links": [{"request": l.get("request"), "resolution": l.get("resolution")}
@@ -574,9 +582,16 @@ def _analyze(capture: Path, server_log: Path, core: str, driver: dict) -> None:
     check(len(intercept) >= 2, f"service worker sw-intercept-1: esperadas as observações da página e do SW; há {len(intercept)}")
     check(has_both,
           f"service worker sw-intercept-1: faltam as duas observações; tipos vistos {sorted(kinds_intercept)}")
+    check(not links_bad,
+          f"service worker sw-intercept-1: ligado a sw-own-* (deve ligar só ao candidato de mesmo caminho): {links_bad[:2]}")
     check(bool(links_ok),
-          "service worker sw-intercept-1: sem link (linked/ambiguous) entre as observações da página e do SW"
+          "service worker sw-intercept-1: sem link (linked/ambiguous) com o candidato de mesmo método e caminho"
           + (f" (aviso do grupo presente: {warned[:1]})" if warned else ""))
+
+    setup_w = [(w.get("code") if isinstance(w, dict) else str(w)) for w in warnings]
+    setup_w = [c for c in setup_w if c and ("target_setup_timeout" in c or "setup_error" in c or "setup_aborted" in c)]
+    INFO["setup_warnings"] = setup_w
+    check(not setup_w, f"setup de alvo: avisos de timeout/erro na captura ao vivo: {setup_w[:4]}")
 
     INFO["session_warnings"] = [w.get("code") if isinstance(w, dict) else str(w) for w in warnings][:20]
 
@@ -739,6 +754,19 @@ def _mut_collision_fused(capture: Path) -> str:
     return _inject_collision(capture, fuse=True)
 
 
+def _mut_link_intercept_to_own(capture: Path) -> str:
+    sp, _, _ = _session_paths(capture)
+    session = _load(sp)
+    page = next((r for r in _find_by_marker(session, "sw-intercept-1") if (r.get("target") or {}).get("kind") == "page"), None)
+    own = next(iter(_find_by_marker(session, "sw-own-1")), None)
+    if not page or not own:
+        raise RuntimeError("sem sw-intercept-1 (página) ou sw-own-1")
+    page.setdefault("links", []).append({"kind": "service_worker", "request": own.get("id"),
+                                         "resolution": "ambiguous", "evidence": ["autoteste"]})
+    _dump(sp, session)
+    return f"ligou {page.get('id')} (sw-intercept-1) a {own.get('id')} (sw-own-1)"
+
+
 def _mut_duplicate_sw_other_session(capture: Path) -> str:
     sp, _, _ = _session_paths(capture)
     session = _load(sp)
@@ -787,6 +815,7 @@ def self_test(capture: Path, server_log: Path, core: str, tmp: Path) -> dict:
         ("corpo alterado", _mut_alter_body, "fail"),
         ("cópia duplicada de requisição SW", _mut_duplicate_sw, "fail"),
         ("cópia SW em outra sessão do mesmo targetId", _mut_duplicate_sw_other_session, "fail"),
+        ("sw-intercept ligado a sw-own-*", _mut_link_intercept_to_own, "fail"),
         # colisão de requestId entre alvos: injetada no bruto; separada tem de PASSAR,
         # fundida tem de FALHAR.
         ("colisão injetada entre alvos (observações separadas)", _mut_collision_injected, "pass"),

@@ -1,10 +1,10 @@
 {
  "artifacts": {
-  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-z_dahcml/session",
+  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-w8lvobk6/session",
   "cdp_events": 171,
   "cdp_bodies": 27,
-  "netlog_bytes": 694575,
-  "server_lines": 19,
+  "netlog_bytes": 582959,
+  "server_lines": 20,
   "session_requests": 22,
   "driver": {
    "driver_rc": 0
@@ -128,38 +128,38 @@
   "main-post-1": {
    "esperado_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
    "cdp_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
-   "esperado_resp": "17f555745be022ecb7b0b5b33627beb2c8df2b719a8e801c3d4627c7ef396ffd",
-   "cdp_resp": "17f555745be022ecb7b0b5b33627beb2c8df2b719a8e801c3d4627c7ef396ffd"
+   "esperado_resp": "35145921f93c7a8a9128b43cef2a89963011d47716ea7b3493d4a002b30fb322",
+   "cdp_resp": "35145921f93c7a8a9128b43cef2a89963011d47716ea7b3493d4a002b30fb322"
   },
   "popup-post-1": {
    "esperado_req": "f49394287ba9c4e7b8774238a32e7dbb6af55e3efcc5c931cc69f9d48559f57b",
    "cdp_req": "f49394287ba9c4e7b8774238a32e7dbb6af55e3efcc5c931cc69f9d48559f57b",
-   "esperado_resp": "bc037d7d5dc22c1feee753ed2bc79b358c960f3c9fbe358820f58458d1b33884",
-   "cdp_resp": "bc037d7d5dc22c1feee753ed2bc79b358c960f3c9fbe358820f58458d1b33884"
+   "esperado_resp": "372dc4f4d14e2413a9bdf616e9281afae7a6889aef8620bdbee7562da67f8681",
+   "cdp_resp": "372dc4f4d14e2413a9bdf616e9281afae7a6889aef8620bdbee7562da67f8681"
   },
   "blank-post-1": {
    "esperado_req": "0d2d398326a90c06e24f30bef291e070a19c52c275d61666e0d1a90bcabdb1e4",
    "cdp_req": "0d2d398326a90c06e24f30bef291e070a19c52c275d61666e0d1a90bcabdb1e4",
-   "esperado_resp": "cc6f46b18b2b470e5cebba5a0692a88f009a11345e57f80f5ff6a19c042b0066",
-   "cdp_resp": "cc6f46b18b2b470e5cebba5a0692a88f009a11345e57f80f5ff6a19c042b0066"
+   "esperado_resp": "7c9b773b493f8f24f54e8834a47440488528dbd8604e1ed9a6c34091d5d24eae",
+   "cdp_resp": "7c9b773b493f8f24f54e8834a47440488528dbd8604e1ed9a6c34091d5d24eae"
   },
   "oopif-post-1": {
    "esperado_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
    "cdp_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
-   "esperado_resp": "a2095f35469531727275f1aae8c024896aca5a87df80933692d59ceba76cd5e4",
-   "cdp_resp": "a2095f35469531727275f1aae8c024896aca5a87df80933692d59ceba76cd5e4"
+   "esperado_resp": "a479e183b4faf1cd104d312f43c18ce4ebf8952337d41e83b183834bddfc78c7",
+   "cdp_resp": "a479e183b4faf1cd104d312f43c18ce4ebf8952337d41e83b183834bddfc78c7"
   },
   "worker-post-1": {
    "esperado_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
    "cdp_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
-   "esperado_resp": "271fb72cb06fbc6c33901741d264a777458c6337a587f58bda14dfd3d6b33c1f",
-   "cdp_resp": "271fb72cb06fbc6c33901741d264a777458c6337a587f58bda14dfd3d6b33c1f"
+   "esperado_resp": "06f6f605fd1e67fa8e7467ed81d2fbc9d37331f821b00c238c629979d6025227",
+   "cdp_resp": "06f6f605fd1e67fa8e7467ed81d2fbc9d37331f821b00c238c629979d6025227"
   },
   "sw-own-post-1": {
    "esperado_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
    "cdp_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
-   "esperado_resp": "a15f43b6e18bfb8063f36901dd4bdc09275c80968a6eb754fb5d8891512b83f7",
-   "cdp_resp": "a15f43b6e18bfb8063f36901dd4bdc09275c80968a6eb754fb5d8891512b83f7"
+   "esperado_resp": "ca6173d47ba854529dc25ebcb1b3bd8055d88674c7fa1bb68e98c78ebc78f2d9",
+   "cdp_resp": "ca6173d47ba854529dc25ebcb1b3bd8055d88674c7fa1bb68e98c78ebc78f2d9"
   }
  },
  "request_id_collisions": {
@@ -176,7 +176,7 @@
   "pares_repetidos_exemplos": [],
   "colisoes": 0,
   "parciais_sem_request": [
-   "cdp-r0007"
+   "cdp-r0006"
   ],
   "colisao_exercitada": "não exercitada nesta captura (legítimo após o dedupe por targetId)"
  },
@@ -189,12 +189,12 @@
      "service_worker"
     ],
     "sessoes": [
-     "0710FDB448F609A157B04A622128AFE6",
-     "95C534A0CE521AB88EA8A3B6D5F22697"
+     "7E140FACF149F1B6A987841B9DAF0B20",
+     "ED504DF7602404085196C1B46012BCEE"
     ],
     "alvos": {
-     "851F62AC2B8FB693A05AD2CE765C1B1F": 1,
-     "633970E6C4FB4B791CB53BB07D516DE1": 1
+     "7E3CC299AE07FB13364DCBC8C80066C2": 1,
+     "9E4D1CE025C29909D48C0DE209C6A9CA": 1
     },
     "duplicata_por_alvo": {},
     "alvos_com_varias_sessoes": {}
@@ -205,10 +205,10 @@
      "service_worker"
     ],
     "sessoes": [
-     "0710FDB448F609A157B04A622128AFE6"
+     "7E140FACF149F1B6A987841B9DAF0B20"
     ],
     "alvos": {
-     "851F62AC2B8FB693A05AD2CE765C1B1F": 1
+     "7E3CC299AE07FB13364DCBC8C80066C2": 1
     },
     "duplicata_por_alvo": {},
     "alvos_com_varias_sessoes": {}
@@ -219,10 +219,10 @@
      "service_worker"
     ],
     "sessoes": [
-     "0710FDB448F609A157B04A622128AFE6"
+     "7E140FACF149F1B6A987841B9DAF0B20"
     ],
     "alvos": {
-     "851F62AC2B8FB693A05AD2CE765C1B1F": 1
+     "7E3CC299AE07FB13364DCBC8C80066C2": 1
     },
     "duplicata_por_alvo": {},
     "alvos_com_varias_sessoes": {}
@@ -230,29 +230,21 @@
   },
   "por_requisicao": [
    {
-    "id": "cdp-r0003",
+    "id": "cdp-r0012",
     "kind": "service_worker",
     "links": [
      {
-      "request": "cdp-r0008",
+      "request": "cdp-r0018",
       "resolution": "ambiguous"
      }
     ]
    },
    {
-    "id": "cdp-r0008",
+    "id": "cdp-r0018",
     "kind": "page",
     "links": [
      {
-      "request": "cdp-r0001",
-      "resolution": "ambiguous"
-     },
-     {
-      "request": "cdp-r0002",
-      "resolution": "ambiguous"
-     },
-     {
-      "request": "cdp-r0003",
+      "request": "cdp-r0012",
       "resolution": "ambiguous"
      }
     ]
@@ -266,53 +258,44 @@
    ],
    "links_ok": [
     {
-     "request": "cdp-r0003",
-     "to": "cdp-r0008",
+     "request": "cdp-r0012",
+     "to": "cdp-r0018",
      "resolution": "ambiguous",
      "evidence": [
       "fromServiceWorker na resposta",
-      "sessão do service worker",
-      "mesma origem",
-      "início na janela requestWillBeSent→responseReceived",
-      "tempo e origem são pista, não prova"
+      "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada"
      ]
     },
     {
-     "request": "cdp-r0008",
-     "to": "cdp-r0003",
+     "request": "cdp-r0018",
+     "to": "cdp-r0012",
      "resolution": "ambiguous",
      "evidence": [
       "fromServiceWorker na resposta",
-      "sessão do service worker",
-      "mesma origem",
-      "início na janela requestWillBeSent→responseReceived",
-      "tempo e origem são pista, não prova"
+      "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada"
      ]
     }
    ],
+   "links_para_sw_own": [],
    "avisos_do_grupo": [
     {
-     "request": "cdp-r0003",
-     "warning": "{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"observações da mesma requisição (cdp-r0008 × cdp-r0001) ligadas como ambíguas; sem evidência explícita do C"
+     "request": "cdp-r0012",
+     "warning": "{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"possível correspondência entre observações (cdp-r0018 × cdp-r0012) ligadas como ambíguas; não confirmada, s"
     },
     {
-     "request": "cdp-r0008",
-     "warning": "{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"observações da mesma requisição (cdp-r0008 × cdp-r0001) ligadas como ambíguas; sem evidência explícita do C"
+     "request": "cdp-r0018",
+     "warning": "{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"possível correspondência entre observações (cdp-r0018 × cdp-r0012) ligadas como ambíguas; não confirmada, s"
     }
    ]
   }
  },
+ "setup_warnings": [],
  "session_warnings": [
-  "cdp.target_setup_timeout",
   "cdp.extra_info_without_request",
   "cdp.extra_info_without_request",
-  "cdp.extra_info_without_request",
-  "cdp.response_extra_without_request",
   "cdp.response_extra_without_request",
   "cdp.response_extra_without_request",
   "cdp.unhandled_events",
-  "cdp.service_worker_ambiguous",
-  "cdp.service_worker_ambiguous",
   "cdp.service_worker_ambiguous",
   "netlog.time_unit_detected",
   "correlate.netlog_unmatched",
@@ -324,25 +307,25 @@
     "mutacao": "fusão de dois pares (sessionId, requestId)",
     "esperado": "fail",
     "aplicada": true,
-    "detalhe": "fundiu cdp-r0009 (requestId 15536.2) em cdp-r0005 (requestId 15536.10)",
+    "detalhe": "fundiu cdp-r0004 (requestId 71470.10) em cdp-r0001 (requestId 3FEA4031E860B95A37452C54FE2A4BAB)",
     "falhas": [
-     "fusão: requisição do modelo junta mais de um par (sessionId, requestId): [('cdp-r0005', [('34F3DDC9FB1B2E0DF3F90471B0E01D6D', '15536.10'), ('95C534A0CE521AB88EA8A3B6D5F22697', '15536.2')])]"
+     "fusão: requisição do modelo junta mais de um par (sessionId, requestId): [('cdp-r0001', [('3F283C2F9A83537213FEC65F7D9B2872', '3FEA4031E860B95A37452C54FE2A4BAB'), ('4CB93337B562DDA0B0216DBDE6560833', '71470.10')])]"
     ]
    },
    {
     "mutacao": "links do service worker removidos",
     "esperado": "fail",
     "aplicada": true,
-    "detalhe": "removeu links de 4 requisição(ões) sw-*",
+    "detalhe": "removeu links de 2 requisição(ões) sw-*",
     "falhas": [
-     "service worker sw-intercept-1: sem link (linked/ambiguous) entre as observações da página e do SW (aviso do grupo presente: [{'request': 'cdp-r0003', 'warning': '{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"observações da mesma requisição (cdp-r0008 × cdp-r0001) ligadas como ambíguas; sem evidência explícita do C'}])"
+     "service worker sw-intercept-1: sem link (linked/ambiguous) com o candidato de mesmo método e caminho (aviso do grupo presente: [{'request': 'cdp-r0012', 'warning': '{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"possível correspondência entre observações (cdp-r0018 × cdp-r0012) ligadas como ambíguas; não confirmada, s'}])"
     ]
    },
    {
     "mutacao": "kind de alvo trocado",
     "esperado": "fail",
     "aplicada": true,
-    "detalhe": "trocou kind de cdp-r0018 (oopif-get-1) para page",
+    "detalhe": "trocou kind de cdp-r0014 (oopif-get-1) para page",
     "falhas": [
      "tipo do alvo oopif-get-1: modelo diz page, esperado iframe"
     ]
@@ -353,45 +336,54 @@
     "aplicada": true,
     "detalhe": "alterou o corpo de resposta de main-post-1",
     "falhas": [
-     "post main-post-1: corpo da resposta 92e9db7b50010dfa6116be693688aae9334ba27505a040dac99b3a852df4135b != servidor 17f555745be022ecb7b0b5b33627beb2c8df2b719a8e801c3d4627c7ef396ffd"
+     "post main-post-1: corpo da resposta 4fb6fc763d4feb4ec2cbe29f4f17c05e787f72180a57b5c8e81d618cc5710221 != servidor 35145921f93c7a8a9128b43cef2a89963011d47716ea7b3493d4a002b30fb322"
     ]
    },
    {
     "mutacao": "cópia duplicada de requisição SW",
     "esperado": "fail",
     "aplicada": true,
-    "detalhe": "duplicou cdp-r0001 na mesma sessão",
+    "detalhe": "duplicou cdp-r0010 na mesma sessão",
     "falhas": [
      "fusão: 1 par(es) (sessionId, requestId) repetidos no modelo",
      "service worker sw-own-1: 1 duplicata(s) na mesma sessão",
-     "service worker sw-own-1: 1 observação(ões) repetida(s) no mesmo alvo (targetId): {'851F62AC2B8FB693A05AD2CE765C1B1F': 2} — attach repetido, não duas observações"
+     "service worker sw-own-1: 1 observação(ões) repetida(s) no mesmo alvo (targetId): {'7E3CC299AE07FB13364DCBC8C80066C2': 2} — attach repetido, não duas observações"
     ]
    },
    {
     "mutacao": "cópia SW em outra sessão do mesmo targetId",
     "esperado": "fail",
     "aplicada": true,
-    "detalhe": "duplicou cdp-r0001 numa segunda sessão do targetId 851F62AC2B8FB693A05AD2CE765C1B1F",
+    "detalhe": "duplicou cdp-r0010 numa segunda sessão do targetId 7E3CC299AE07FB13364DCBC8C80066C2",
     "falhas": [
-     "fusão: modelo tem pares que não existem no bruto: [('SELFTEST0000000000000000000000FF', '15540.5')]",
-     "service worker sw-own-1: 1 observação(ões) repetida(s) no mesmo alvo (targetId): {'851F62AC2B8FB693A05AD2CE765C1B1F': 2} — attach repetido, não duas observações",
-     "service worker sw-own-1: alvo com mais de uma sessão gravando rede: {'851F62AC2B8FB693A05AD2CE765C1B1F': ['0710FDB448F609A157B04A622128AFE6', 'SELFTEST0000000000000000000000FF']}"
+     "fusão: modelo tem pares que não existem no bruto: [('SELFTEST0000000000000000000000FF', '71470.13')]",
+     "service worker sw-own-1: 1 observação(ões) repetida(s) no mesmo alvo (targetId): {'7E3CC299AE07FB13364DCBC8C80066C2': 2} — attach repetido, não duas observações",
+     "service worker sw-own-1: alvo com mais de uma sessão gravando rede: {'7E3CC299AE07FB13364DCBC8C80066C2': ['7E140FACF149F1B6A987841B9DAF0B20', 'SELFTEST0000000000000000000000FF']}"
+    ]
+   },
+   {
+    "mutacao": "sw-intercept ligado a sw-own-*",
+    "esperado": "fail",
+    "aplicada": true,
+    "detalhe": "ligou cdp-r0018 (sw-intercept-1) a cdp-r0010 (sw-own-1)",
+    "falhas": [
+     "service worker sw-intercept-1: ligado a sw-own-* (deve ligar só ao candidato de mesmo caminho): [{'request': 'cdp-r0018', 'to': 'cdp-r0010', 'marker': 'sw-own-1'}]"
     ]
    },
    {
     "mutacao": "colisão injetada entre alvos (observações separadas)",
     "esperado": "pass",
     "aplicada": true,
-    "detalhe": "requestId 15536.10 repetido em 34F3DDC9FB1B2E0DF3F90471B0E01D6D e 95C534A0CE521AB88EA8A3B6D5F22697 mantidos separados",
+    "detalhe": "requestId 3FEA4031E860B95A37452C54FE2A4BAB repetido em 3F283C2F9A83537213FEC65F7D9B2872 e 4CB93337B562DDA0B0216DBDE6560833 mantidos separados",
     "falhas": []
    },
    {
     "mutacao": "colisão injetada entre alvos (pares fundidos)",
     "esperado": "fail",
     "aplicada": true,
-    "detalhe": "requestId 15536.10 repetido em 34F3DDC9FB1B2E0DF3F90471B0E01D6D e 95C534A0CE521AB88EA8A3B6D5F22697 com os pares FUNDIDOS numa requisição",
+    "detalhe": "requestId 3FEA4031E860B95A37452C54FE2A4BAB repetido em 3F283C2F9A83537213FEC65F7D9B2872 e 4CB93337B562DDA0B0216DBDE6560833 com os pares FUNDIDOS numa requisição",
     "falhas": [
-     "fusão: requisição do modelo junta mais de um par (sessionId, requestId): [('cdp-r0005', [('34F3DDC9FB1B2E0DF3F90471B0E01D6D', '15536.10'), ('95C534A0CE521AB88EA8A3B6D5F22697', '15536.10')])]"
+     "fusão: requisição do modelo junta mais de um par (sessionId, requestId): [('cdp-r0001', [('3F283C2F9A83537213FEC65F7D9B2872', '3FEA4031E860B95A37452C54FE2A4BAB'), ('4CB93337B562DDA0B0216DBDE6560833', '3FEA4031E860B95A37452C54FE2A4BAB')])]"
     ]
    }
   ],

@@ -41,7 +41,7 @@ REPORT = ROOT / "tests" / "RELATORIO.md"
 # SHA-256 do executável do bundle final aceito nesta rodada, documentado em
 # `src-tauri/EMPACOTAMENTO.md`. Um rebuild legítimo muda o hash: atualize os dois
 # lugares juntos, para que a bateria nunca aprove um artefato não documentado.
-EXPECTED_APP_SHA256 = "02e6ef30265a6226edbfd290e60bff70c0f27086f6cccd5424635106dfffef76"
+EXPECTED_APP_SHA256 = "7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c"
 
 SECRETS = [
     "SECRET-AUTH-TOKEN",
@@ -966,7 +966,7 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                         f"· prints `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}` e "
                         f"`{rel(pathlib.Path(app.get('gui', {}).get('importsScreenshot') or ''))}`")
         notes.append("Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final "
-                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em `18cbb01` a partir de `8cfe828`, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.")
+                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em `0d98615` a partir de `66e97e3`, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.")
         notes.append("As importações HAR e NetLog também foram refeitas no bundle final "
                      f"(`{har_import.get('id')}` e `{netlog_import.get('id')}`), agora pela UI: o harness "
                      "escolheu os arquivos por cliques do mouse no painel nativo (o teclado não chega "
