@@ -31,6 +31,9 @@ use scrapelens_core::{correlate::CorrelationOptions, import_capture_labeled, sto
 
 use crate::commands::SessionPayload;
 
+pub mod allowlist;
+pub mod browser;
+
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureStatus {
@@ -69,7 +72,41 @@ pub fn run(
     stop: Receiver<()>,
     ready: Sender<Result<(), String>>,
 ) -> Result<SessionPayload, String> {
-    let outcome = run_inner(&config, &status, stop, &ready);
+    run_with_options(config, status, stop, ready, &RunOptions::default()).map(|(payload, _)| payload)
+}
+
+/// Opções da captura controlada (`browser::BrowserCapture`). O padrão é a
+/// captura comum do App, sem alteração de comportamento.
+#[derive(Default)]
+pub(crate) struct RunOptions {
+    /// Allowlist obrigatória no modo controlado: troca a regra fixa de
+    /// loopback do resolvedor pelas regras da lista.
+    pub allowlist: Option<allowlist::Allowlist>,
+    /// Comandos (navegar) consumidos pelo laço de gravação.
+    pub control: Option<Receiver<browser::Control>>,
+    /// Preenchido antes de `ready`: endereço de depuração e versão.
+    pub endpoint: Option<Arc<Mutex<Option<browser::Endpoint>>>>,
+}
+
+/// Dados do encerramento que o App não usa, mas o modo controlado devolve.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RunReport {
+    pub allowlist: Option<allowlist::AllowlistReport>,
+    pub requests: usize,
+    pub netlog: String,
+    pub graceful: bool,
+    pub waited_ms: u64,
+    pub warnings: Vec<String>,
+}
+
+pub(crate) fn run_with_options(
+    config: CaptureConfig,
+    status: Arc<Mutex<CaptureStatus>>,
+    stop: Receiver<()>,
+    ready: Sender<Result<(), String>>,
+    opts: &RunOptions,
+) -> Result<(SessionPayload, RunReport), String> {
+    let outcome = run_inner(&config, &status, stop, &ready, opts);
     if let Err(error) = &outcome {
         if let Ok(mut guard) = status.lock() {
             guard.last_error = Some(error.clone());
@@ -86,7 +123,8 @@ fn run_inner(
     status: &Arc<Mutex<CaptureStatus>>,
     stop: Receiver<()>,
     ready: &Sender<Result<(), String>>,
-) -> Result<SessionPayload, String> {
+    opts: &RunOptions,
+) -> Result<(SessionPayload, RunReport), String> {
     let profile = std::env::temp_dir().join(format!(
         "scrapelens-chrome-{}-{}",
         std::process::id(),
@@ -107,7 +145,13 @@ fn run_inner(
     let bodies_file =
         open_private(&bodies_path).map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
 
-    let mut chrome = ChromeProcess::new(spawn_chrome(config, &profile, &netlog_path)?);
+    let resolver_rules = opts.allowlist.as_ref().map(allowlist::Allowlist::resolver_rules);
+    let mut chrome = ChromeProcess::new(spawn_chrome(
+        config,
+        &profile,
+        &netlog_path,
+        resolver_rules.as_deref(),
+    )?);
     // Marcador para limpar órfãos se este processo morrer por SIGKILL; o Drop
     // o remove em qualquer saída normal (sucesso, erro ou panic).
     let marker = OrphanMarker::create(
@@ -155,6 +199,35 @@ fn run_inner(
         let _ = ready.send(Err(error.clone()));
         return Err(error);
     }
+    if let Some(endpoint) = &opts.endpoint {
+        // Versão do navegador e endereço de depuração, antes de avisar `ready`.
+        let version = cdp
+            .send(
+                &mut socket,
+                "Browser.getVersion",
+                json!({}),
+                None,
+                Duration::from_secs(5),
+            )
+            .ok();
+        if let Ok(mut guard) = endpoint.lock() {
+            *guard = Some(browser::Endpoint {
+                http: port_from_ws_url(&ws_url).map(|p| format!("http://127.0.0.1:{p}")),
+                browser_ws: ws_url.clone(),
+                chrome_pid: chrome.child_mut().id(),
+                product: version
+                    .as_ref()
+                    .and_then(|v| v.get("product"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                user_agent: version
+                    .as_ref()
+                    .and_then(|v| v.get("userAgent"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            });
+        }
+    }
     let _ = ready.send(Ok(()));
 
     // Loop de gravação: todo evento Network.* é preservado na ordem do Chrome.
@@ -165,6 +238,11 @@ fn run_inner(
         }
         if started.elapsed() > Duration::from_secs(30 * 60) {
             break;
+        }
+        if let Some(control) = &opts.control {
+            while let Ok(message) = control.try_recv() {
+                cdp.handle_control(&mut socket, message);
+            }
         }
         match socket.read() {
             Ok(Message::Text(text)) => {
@@ -263,6 +341,37 @@ fn run_inner(
             });
         }
     }
+    // Allowlist: o que o resolvedor negou e o que escapou dela vira aviso da
+    // sessão (visível para quem só lê a sessão) e relatório do `stop_capture`.
+    let allowlist_report = opts
+        .allowlist
+        .as_ref()
+        .map(|list| list.report(&imported.bundle.session));
+    let mut report_warnings: Vec<String> = Vec::new();
+    if let Some(report) = &allowlist_report {
+        for blocked in &report.blocked_hosts {
+            let message = format!(
+                "a página tentou carregar {} ({} requisição(ões)); bloqueado pela allowlist; a proteção ou o recurso pode estar escondido",
+                blocked.host, blocked.requests
+            );
+            imported.bundle.session.add_warning(
+                scrapelens_core::model::Warning::info("capture.third_party_blocked", message.clone())
+                    .with_detail(json!({ "host": blocked.host, "requests": blocked.requests })),
+            );
+            report_warnings.push(message);
+        }
+        for violation in &report.violations {
+            let message = format!(
+                "requisição fora da allowlist sem falha de resolução: {} ({})",
+                violation.url, violation.reason
+            );
+            imported.bundle.session.add_warning(
+                scrapelens_core::model::Warning::new("capture.allowlist_violation", message.clone())
+                    .with_entity(violation.request_id.clone()),
+            );
+            report_warnings.push(message);
+        }
+    }
     store::write_session_dir(&imported.bundle, &config.session_dir)
         .map_err(|error| format!("Não foi possível gravar a sessão: {error}"))?;
 
@@ -271,19 +380,39 @@ fn run_inner(
     let requests = imported.report.source_events_used;
     let warnings = imported.report.warnings.len();
 
-    Ok(SessionPayload {
-        session: session_value,
-        session_dir: Some(config.session_dir.display().to_string()),
-        synthetic: false,
-        notice: Some(format!(
-            "Sessão capturada e importada: {} evento(s) CDP+NetLog usados, {} aviso(s).",
-            requests, warnings
-        )),
-        pending: false,
-    })
+    let report = RunReport {
+        allowlist: allowlist_report,
+        requests: imported.bundle.session.requests.len(),
+        netlog: match &netlog_status {
+            NetlogStatus::Complete => "complete".to_string(),
+            NetlogStatus::Repaired { .. } => "repaired".to_string(),
+            NetlogStatus::Unusable { .. } => "unusable".to_string(),
+        },
+        graceful: matches!(shutdown.exit, ChromeExit::Graceful(_)) && shutdown.browser_close.is_ok(),
+        waited_ms: shutdown.waited_ms,
+        warnings: report_warnings,
+    };
+    Ok((
+        SessionPayload {
+            session: session_value,
+            session_dir: Some(config.session_dir.display().to_string()),
+            synthetic: false,
+            notice: Some(format!(
+                "Sessão capturada e importada: {} evento(s) CDP+NetLog usados, {} aviso(s).",
+                requests, warnings
+            )),
+            pending: false,
+        },
+        report,
+    ))
 }
 
-fn spawn_chrome(config: &CaptureConfig, profile: &Path, netlog: &Path) -> Result<Child, String> {
+fn spawn_chrome(
+    config: &CaptureConfig,
+    profile: &Path,
+    netlog: &Path,
+    resolver_rules: Option<&str>,
+) -> Result<Child, String> {
     let mut args: Vec<String> = vec![
         format!("--user-data-dir={}", profile.display()),
         "--remote-debugging-port=0".to_string(),
@@ -311,12 +440,23 @@ fn spawn_chrome(config: &CaptureConfig, profile: &Path, netlog: &Path) -> Result
         "--disable-features=Translate,MediaRouter,OptimizationHints,InterestFeedContentSuggestions"
             .to_string(),
         "--enable-quic".to_string(),
-        "--allow-insecure-localhost".to_string(),
         "--disable-popup-blocking".to_string(),
-        "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"
-            .to_string(),
         "about:blank".to_string(),
     ];
+    match resolver_rules {
+        // Captura controlada: só os hosts da allowlist resolvem; nenhum
+        // relaxamento de certificado.
+        Some(rules) => args.insert(args.len() - 1, format!("--host-resolver-rules={rules}")),
+        // Captura comum do App (testes em loopback): comportamento de sempre.
+        None => {
+            args.insert(args.len() - 1, "--allow-insecure-localhost".to_string());
+            args.insert(
+                args.len() - 1,
+                "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"
+                    .to_string(),
+            );
+        }
+    }
     if config.headless {
         args.push("--headless=new".to_string());
     }
@@ -691,6 +831,8 @@ struct Cdp {
     /// nunca bloqueia: a resposta é tratada por `record` na ordem de chegada,
     /// por quem estiver lendo o socket.
     setup_pending: HashMap<u64, PendingSetupCommand>,
+    /// `Page.loadEventFired` vistos na sessão da página principal.
+    page_load_events: u64,
 }
 
 /// Comando de configuração de alvo aguardando ACK.
@@ -722,6 +864,7 @@ impl Cdp {
             wait_for_debugger: true,
             setup_seen: HashMap::new(),
             setup_pending: HashMap::new(),
+            page_load_events: 0,
         })
     }
 
@@ -1192,6 +1335,12 @@ impl Cdp {
                 .and_then(|p| p.get("sessionId"))
                 .and_then(Value::as_str);
             self.on_target_gone(session_id, None);
+        }
+        if method == "Page.loadEventFired"
+            && !self.page_session_id.is_empty()
+            && value.get("sessionId").and_then(Value::as_str) == Some(self.page_session_id.as_str())
+        {
+            self.page_load_events += 1;
         }
         if method == "Target.targetDestroyed" {
             let target_id = value
