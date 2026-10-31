@@ -298,9 +298,8 @@ fn page_response_from_sw_links_one_candidate_as_ambiguous() {
     assert_eq!(link.resolution, "ambiguous");
     assert_eq!(link.kind, "service_worker");
     assert!(
-        link.evidence
-            .iter()
-            .any(|e| e == "candidato único na janela do SW"),
+        link.evidence.iter().any(|e| e
+            == "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada"),
         "{:?}",
         link.evidence
     );
@@ -329,6 +328,143 @@ fn page_response_from_sw_links_all_candidates_as_ambiguous() {
         .unwrap();
     assert_eq!(page.links.len(), 2, "{:#?}", page.links);
     assert!(page.links.iter().all(|link| link.resolution == "ambiguous"));
+}
+
+fn sw_session_with(sw: &[(&str, &str, f64)]) -> scrapelens_core::model::SessionV1 {
+    let page = "https://a.test/multi/sw-fetch?m=sw-intercept-1";
+    let mut lines = vec![
+        attached("S1", "T1", "page", "https://a.test/", None),
+        request_event("S1", "req-1", page, 20.0),
+        response_event("S1", "req-1", page, 20.1, true),
+    ];
+    for (n, (method, url, start)) in sw.iter().enumerate() {
+        let session = format!("SW{n}");
+        lines.push(attached(
+            &session,
+            &format!("TSW{n}"),
+            "service_worker",
+            "https://a.test/sw.js",
+            Some("S1"),
+        ));
+        lines.push(event(
+            &session,
+            "Network.requestWillBeSent",
+            serde_json::json!({
+                "requestId": "req-x", "timestamp": start, "wallTime": 1.0, "type": "Fetch",
+                "request": {"url": url, "method": method, "headers": {}},
+            }),
+        ));
+        lines.push(response_event(&session, "req-x", url, start + 0.01, false));
+    }
+    let capture = parse_cdp_jsonl(lines.join("\n").as_bytes()).unwrap();
+    build_cdp_session(&capture).0
+}
+
+#[test]
+fn sw_candidates_with_same_path_win_over_others_in_the_window() {
+    let session = sw_session_with(&[
+        (
+            "GET",
+            "https://a.test/multi/sw-fetch?m=1&passthrough=1",
+            20.02,
+        ),
+        ("GET", "https://a.test/multi/sw-own?m=sw-own-1", 20.04),
+        (
+            "GET",
+            "https://a.test/multi/sw-own-post?m=sw-own-post-1",
+            20.06,
+        ),
+    ]);
+    let page = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("sw-intercept-1"))
+        .unwrap();
+    assert_eq!(page.links.len(), 1, "{:#?}", page.links);
+    let link = &page.links[0];
+    assert_eq!(link.resolution, "ambiguous");
+    let linked = session
+        .requests
+        .iter()
+        .find(|request| request.id == link.request)
+        .unwrap();
+    assert!(linked.url.contains("passthrough=1"), "{}", linked.url);
+    assert!(link.evidence.iter().any(|e| e
+        == "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada"));
+    for warning in session
+        .warnings
+        .iter()
+        .filter(|w| w.code == "cdp.service_worker_ambiguous")
+    {
+        assert!(
+            !warning.message.contains("mesma requisição"),
+            "{}",
+            warning.message
+        );
+        assert!(
+            warning.message.contains("não confirmada"),
+            "{}",
+            warning.message
+        );
+    }
+}
+
+#[test]
+fn sw_candidates_without_same_path_stay_all_ambiguous_without_path_hint() {
+    let session = sw_session_with(&[
+        ("GET", "https://a.test/multi/sw-own?m=sw-own-1", 20.04),
+        ("GET", "https://a.test/multi/other?m=2", 20.06),
+    ]);
+    let page = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("sw-intercept-1"))
+        .unwrap();
+    assert_eq!(page.links.len(), 2, "{:#?}", page.links);
+    assert!(page.links.iter().all(|link| link.resolution == "ambiguous"
+        && link.evidence.iter().any(|e| e
+            == "possível correspondência no service worker (pista: janela de tempo, origem); não confirmada")));
+}
+
+#[test]
+fn sw_candidate_with_different_method_is_left_out() {
+    let session = sw_session_with(&[
+        (
+            "POST",
+            "https://a.test/multi/sw-fetch?m=1&passthrough=1",
+            20.02,
+        ),
+        ("GET", "https://a.test/multi/sw-own?m=sw-own-1", 20.04),
+    ]);
+    let page = session
+        .requests
+        .iter()
+        .find(|request| request.url.contains("sw-intercept-1"))
+        .unwrap();
+    assert_eq!(page.links.len(), 1, "{:#?}", page.links);
+    let linked = session
+        .requests
+        .iter()
+        .find(|request| request.id == page.links[0].request)
+        .unwrap();
+    assert!(linked.url.contains("sw-own"), "{}", linked.url);
+
+    // Só candidatos com método diferente: nenhum link, aviso por requisição.
+    let only_post = sw_session_with(&[(
+        "POST",
+        "https://a.test/multi/sw-fetch?m=1&passthrough=1",
+        20.02,
+    )]);
+    let page = only_post
+        .requests
+        .iter()
+        .find(|request| request.url.contains("sw-intercept-1"))
+        .unwrap();
+    assert!(page.links.is_empty());
+    assert!(only_post
+        .warnings
+        .iter()
+        .any(|w| w.code == "cdp.service_worker_unidentified"));
 }
 
 #[test]
@@ -451,4 +587,55 @@ fn capture_setup_timeout_is_a_warning_naming_the_command() {
         .warnings
         .iter()
         .any(|warning| warning.code == "cdp.target_attach_failed"));
+}
+
+#[test]
+fn session_id_without_any_target_event_has_no_target_provenance() {
+    // Bruto ao vivo anterior à rodada 10: `sessionId` presente, nenhum `Target.*`.
+    let jsonl = [
+        r#"{"sessionId":"S0","method":"Network.requestWillBeSent","params":{"requestId":"1","timestamp":1.0,"wallTime":1.0,"request":{"url":"https://x.test/a","method":"GET","headers":{}}}}"#,
+        r#"{"sessionId":"S0","method":"Network.responseReceived","params":{"requestId":"1","timestamp":1.1,"response":{"url":"https://x.test/a","status":200,"headers":{},"protocol":"http/1.1"}}}"#,
+    ]
+    .join("\n");
+    let capture = parse_cdp_jsonl(jsonl.as_bytes()).unwrap();
+    let (session, _) = build_cdp_session(&capture);
+    assert_eq!(session.requests.len(), 1);
+    assert!(session.requests[0].target.is_none());
+    assert!(!session
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "cdp.target_unknown"));
+}
+
+#[test]
+fn real_old_live_capture_with_session_id_has_no_target_unknown() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/old-live-session-id.jsonl");
+    let jsonl = std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    let capture = parse_cdp_jsonl(&jsonl).unwrap();
+    assert!(!capture.target_events_seen);
+    let (session, _) = build_cdp_session(&capture);
+    assert!(!session.requests.is_empty());
+    assert!(session.requests.iter().all(|r| r.target.is_none()));
+    assert!(!session
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "cdp.target_unknown"));
+}
+
+#[test]
+fn target_events_still_flag_unknown_sessions() {
+    // Com algum Target.*, uma sessão sem attachedToTarget continua avisando.
+    let jsonl = [
+        attached("S1", "T1", "page", "https://x.test/", None),
+        request_event("S1", "r1", "https://x.test/a", 1.0),
+        request_event("S9", "r2", "https://x.test/b", 1.0),
+    ]
+    .join("\n");
+    let capture = parse_cdp_jsonl(jsonl.as_bytes()).unwrap();
+    let (session, _) = build_cdp_session(&capture);
+    assert!(session
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "cdp.target_unknown" && warning.message.contains("S9")));
 }

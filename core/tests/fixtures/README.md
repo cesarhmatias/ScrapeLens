@@ -16,3 +16,6 @@ apenas `.invalid` (RFC 2606) e endereços de documentação.
 Os testes também leem, **sem modificar**, as capturas reais em
 `../experiments/results/h1-page` e `h2-page` para validar a fidelidade contra a
 matriz.
+- `old-live-session-id.jsonl` — recorte (2 requisições) de um bruto ao vivo
+  anterior à rodada 10: `sessionId` em toda linha e nenhum evento `Target.*`.
+  Vem de um servidor de teste local (127.0.0.1), sem dados reais.

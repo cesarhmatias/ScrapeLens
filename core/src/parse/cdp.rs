@@ -42,6 +42,9 @@ pub struct CdpCapture {
     pub sessions: Vec<String>,
     /// Sessão CDP → alvo, a partir dos eventos `Target.*`.
     pub targets: BTreeMap<String, TargetProvenance>,
+    /// Algum evento `Target.*` apareceu no arquivo. Sem nenhum, o arquivo é de
+    /// antes da captura multi-alvo: sem proveniência de alvo nem `target_unknown`.
+    pub target_events_seen: bool,
     pub requests: Vec<CdpRequest>,
     pub warnings: Vec<Warning>,
 }
@@ -139,6 +142,9 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
             capture.sessions.push(session.clone());
         }
         let method = event.get("method").and_then(Value::as_str).unwrap_or("");
+        if method.starts_with("Target.") {
+            capture.target_events_seen = true;
+        }
         let params = event.get("params").and_then(Value::as_object);
         match method {
             "Network.requestWillBeSent" => {
@@ -827,11 +833,10 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
 
     let add = |i: usize,
                j: usize,
-               mut evidence: Vec<String>,
+               evidence: Vec<String>,
                links: &mut BTreeMap<usize, Vec<RequestLink>>,
                warnings: &mut Vec<Warning>| {
         let (from, to) = (id(i), id(j));
-        evidence.push("tempo e origem são pista, não prova".to_string());
         links.entry(i).or_default().push(RequestLink {
             kind: "service_worker".to_string(),
             request: to.clone(),
@@ -848,7 +853,7 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
             Warning::new(
                 "cdp.service_worker_ambiguous",
                 format!(
-                    "observações da mesma requisição ({from} × {to}) ligadas como ambíguas; sem evidência explícita do CDP"
+                    "possível correspondência entre observações ({from} × {to}) ligadas como ambíguas; não confirmada, sem evidência explícita do CDP"
                 ),
             )
             .with_entity(to),
@@ -901,9 +906,22 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
                         .iter()
                         .any(|attempt| attempt.from_service_worker))
                 && (start_j - start).abs() <= WINDOW_S;
-            if in_sw_window || old_rule {
+            // Método diferente nunca é a mesma requisição.
+            let same_method = first.method == page.method;
+            if (in_sw_window || old_rule) && same_method {
                 candidates.push(j);
             }
+        }
+        // Com algum candidato de mesmo caminho (sem query), só esses ficam.
+        let page_path = url_path(&page.url);
+        let same_path: Vec<usize> = candidates
+            .iter()
+            .copied()
+            .filter(|&j| url_path(&requests[j].attempts[0].url) == page_path)
+            .collect();
+        let by_path = !same_path.is_empty();
+        if by_path {
+            candidates = same_path;
         }
         if candidates.is_empty() {
             warnings.push(
@@ -915,19 +933,16 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
             );
             continue;
         }
-        let single = candidates.len() == 1;
         for j in candidates {
             let mut evidence = vec![
                 "fromServiceWorker na resposta".to_string(),
-                "sessão do service worker".to_string(),
+                if by_path {
+                    "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada"
+                } else {
+                    "possível correspondência no service worker (pista: janela de tempo, origem); não confirmada"
+                }
+                .to_string(),
             ];
-            if single {
-                evidence.push("candidato único na janela do SW".to_string());
-            }
-            if url_origin(&requests[j].attempts[0].url) == origin {
-                evidence.push("mesma origem".to_string());
-            }
-            evidence.push("início na janela requestWillBeSent→responseReceived".to_string());
             if requests[j].attempts[0].url == page.url {
                 evidence.push("mesma URL/método".to_string());
             }
@@ -992,6 +1007,13 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
         }
     }
     (links, warnings)
+}
+
+/// Caminho da URL, sem esquema, autoridade, query nem fragmento.
+fn url_path(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let path = rest.find('/').map_or("", |index| &rest[index..]);
+    path.split(['?', '#']).next().unwrap_or("").to_string()
 }
 
 fn url_origin(url: &str) -> Option<String> {
@@ -1288,9 +1310,11 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         report.warn(warning);
     }
     // Sessões com tráfego CDP mas sem Target.attachedToTarget: alvo desconhecido
-    // (nunca inventado). Arquivo antigo (sem sessionId) não gera aviso.
+    // (nunca inventado). Arquivo antigo (sem sessionId ou sem nenhum evento
+    // `Target.*`) não gera aviso.
     for session_id in &capture.sessions {
-        if !session_id.is_empty()
+        if capture.target_events_seen
+            && !session_id.is_empty()
             && !capture.targets.contains_key(session_id)
             && capture
                 .requests
