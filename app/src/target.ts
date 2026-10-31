@@ -41,7 +41,11 @@ export function sessionShowsTargets(
   requests: RequestRecord[],
   warnings: { code: string }[],
 ): boolean {
-  if (warnings.some((w) => /target_attach|target_unknown|service_worker/.test(w.code))) {
+  if (
+    warnings.some((w) =>
+      /target_attach|target_unknown|target_setup|service_worker/.test(w.code),
+    )
+  ) {
     return true;
   }
   return requests.some((r) => r.target || r.netlogOnlyUnknownTarget || r.links.length > 0);
@@ -153,6 +157,15 @@ export function attachFailureWarnings(
       w.code === "cdp.target_attach_failed" ||
       w.code === "capture.target_attach" ||
       w.code.includes("target_attach"),
+  );
+}
+
+/** Timeout e erro de configuração CDP do alvo — mesmo bloco em Limites. */
+export function targetSetupWarnings(
+  warnings: { code: string; message: string }[],
+): { code: string; message: string }[] {
+  return warnings.filter(
+    (w) => w.code === "cdp.target_setup_timeout" || w.code === "cdp.target_setup_error",
   );
 }
 

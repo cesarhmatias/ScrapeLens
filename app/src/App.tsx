@@ -46,6 +46,7 @@ import {
   targetBadge,
   targetFilterCount,
   targetKindLabel,
+  targetSetupWarnings,
   type TargetFilter,
 } from "./target";
 
@@ -528,6 +529,8 @@ function CaptureLimits({
   const targets = showTargets ? captureTargets(requests) : [];
   const attachFails = attachFailureWarnings(session.warnings);
   const uniqueFails = [...new Map(attachFails.map((w) => [w.message, w])).values()];
+  const setupWarns = targetSetupWarnings(session.warnings);
+  const uniqueSetup = [...new Map(setupWarns.map((w) => [w.message, w])).values()];
   return (
     <ul>
       <li>Headers sem evento correspondente aparecem como “não verificada”, nunca como fato.</li>
@@ -560,6 +563,18 @@ function CaptureLimits({
           Falhas ao anexar alvo ({uniqueFails.length}):
           <ul className="limits-targets">
             {uniqueFails.map((w) => (
+              <li key={w.message}>
+                <span className="chip v-partial">{w.code}</span> {w.message}
+              </li>
+            ))}
+          </ul>
+        </li>
+      )}
+      {uniqueSetup.length > 0 && (
+        <li>
+          Avisos de configuração de alvo ({uniqueSetup.length}):
+          <ul className="limits-targets">
+            {uniqueSetup.map((w) => (
               <li key={w.message}>
                 <span className="chip v-partial">{w.code}</span> {w.message}
               </li>
@@ -849,6 +864,18 @@ function DetailView({
                     ? "não (fica só com o NetLog)"
                     : "não informado"}
               </dd>
+              {req.target.notes.length > 0 && (
+                <>
+                  <dt>Notas</dt>
+                  <dd>
+                    <ul className="target-notes">
+                      {req.target.notes.map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                  </dd>
+                </>
+              )}
             </dl>
           )}
           {req.links.length > 0 && (

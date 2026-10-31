@@ -510,6 +510,12 @@ kbd {
 .target-panel h3 { margin: 0 0 8px; font-size: 12px; color: var(--fg-strong); }
 .target-panel h4 { margin: 10px 0 4px; font-size: 11px; color: var(--fg-strong); }
 .target-kv { margin: 0; }
+.target-notes {
+  margin: 0;
+  padding-left: 1.1em;
+  list-style: disc;
+}
+.target-notes li { margin: 0.15em 0; }
 .target-links .link-list {
   margin: 6px 0 0;
   padding: 0;

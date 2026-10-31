@@ -194,6 +194,8 @@ export interface TargetProvenance {
   openerId?: string;
   parentSessionId?: string;
   attached?: boolean;
+  /** Notas informativas (ex.: alvo encerrado durante a configuração). */
+  notes?: string[];
 }
 
 export interface RequestLink {

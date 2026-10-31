@@ -47,6 +47,7 @@ function mapTarget(raw: TargetProvenance | undefined): TargetView | undefined {
   const kind = TARGET_KINDS.has((raw.kind ?? "other") as TargetKind)
     ? ((raw.kind ?? "other") as TargetKind)
     : "other";
+  const notes = raw.notes ?? [];
   // Proveniência vazia (serde default) não vira coluna confusa.
   if (
     !raw.targetId &&
@@ -54,7 +55,8 @@ function mapTarget(raw: TargetProvenance | undefined): TargetView | undefined {
     !raw.url &&
     !raw.openerId &&
     !raw.parentSessionId &&
-    raw.attached === undefined
+    raw.attached === undefined &&
+    notes.length === 0
   ) {
     return undefined;
   }
@@ -65,6 +67,7 @@ function mapTarget(raw: TargetProvenance | undefined): TargetView | undefined {
     openerId: raw.openerId,
     parentSessionId: raw.parentSessionId,
     attached: raw.attached,
+    notes,
   };
 }
 

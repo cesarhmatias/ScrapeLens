@@ -136,6 +136,8 @@ export interface TargetView {
   openerId?: string;
   parentSessionId?: string;
   attached?: boolean;
+  /** Notas informativas do core (ex.: "alvo encerrado durante a configuração"). */
+  notes: string[];
 }
 
 /** Observação irmã (service worker): `linked` ou `ambiguous`. */
