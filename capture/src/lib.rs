@@ -142,13 +142,10 @@ fn run_inner(
         std::process::id(),
         unix_nanos()
     ));
-    std::fs::create_dir_all(&profile).map_err(|error| format!("perfil temporário: {error}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o700));
-    }
-
+    // O perfil é criado por nós, 0700 desde a criação, e conferido depois de
+    // aberto. Fica fora da pasta da sessão de propósito: o Chrome grava o NetLog
+    // aqui dentro (R3), nunca num caminho que outro processo possa trocar.
+    create_private_dir_new(&profile).map_err(|error| format!("perfil temporário: {error}"))?;
     // A pasta da sessão não pode ser um symlink: tudo que gravamos nela iria
     // para o alvo do link.
     if std::fs::symlink_metadata(&config.session_dir)
@@ -163,14 +160,20 @@ fn run_inner(
     }
     store::ensure_private_dir(&config.session_dir)
         .map_err(|error| format!("diretório da sessão: {error}"))?;
-    let netlog_path = config.session_dir.join("netlog.json");
+    // Conferido depois de aberto (sem seguir link): é um diretório nosso, 0700.
+    if let Err(error) = verify_private_dir(&config.session_dir) {
+        let _ = std::fs::remove_dir_all(&profile);
+        return Err(format!("diretório da sessão: {error}"));
+    }
+    // NetLog: o Chrome o cria e escreve DENTRO do perfil privado (0700, nosso,
+    // fresco). Só depois do encerramento ele é lido sem seguir link e copiado
+    // para a pasta da sessão por `write_private` (rename atômico).
+    let netlog_path = profile.join("netlog.json");
+    let netlog_final = config.session_dir.join("netlog.json");
     let cdp_path = config.session_dir.join("cdp-events.jsonl");
     let bodies_path = config.session_dir.join("cdp-bodies.jsonl");
     let bodies_file =
         open_private(&bodies_path).map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
-    // O Chrome escreve o NetLog sozinho: cria o arquivo antes (0600, sem seguir
-    // um symlink plantado) para ele abrir um arquivo nosso, não o alvo do link.
-    drop(open_private(&netlog_path).map_err(|error| format!("netlog.json: {error}"))?);
 
     let resolver_rules = opts.allowlist.as_ref().map(allowlist::Allowlist::resolver_rules);
     let mut pipe_ends = match opts.transport {
@@ -350,6 +353,9 @@ fn run_inner(
         waited_ms: close_started.elapsed().as_millis() as u64,
     };
     eprintln!("capture shutdown: {shutdown:?}");
+    // O Chrome já saiu: lê o NetLog do perfil privado (sem seguir link, só
+    // arquivo regular nosso) antes de apagar o perfil.
+    let netlog_raw = read_private_regular(&netlog_path).filter(|bytes| !bytes.is_empty());
     let _ = std::fs::remove_dir_all(&profile);
 
     let cdp_bytes = cdp.events_text().into_bytes();
@@ -363,9 +369,12 @@ fn run_inner(
     // passo que possa falhar (um NetLog ruim nunca descarta a captura).
     write_private(&cdp_path, &cdp_bytes).map_err(|error| format!("cdp-events.jsonl: {error}"))?;
 
-    let netlog_raw = std::fs::read(&netlog_path)
-        .ok()
-        .filter(|bytes| !bytes.is_empty());
+    if let Some(raw) = &netlog_raw {
+        // Cópia fiel do que o Chrome gravou (o parseado/reparado vem depois).
+        if let Err(error) = write_private(&netlog_final, raw) {
+            eprintln!("netlog.json: {error}");
+        }
+    }
     let (netlog, netlog_status) = prepare_netlog(netlog_raw.as_deref());
     if let NetlogStatus::Repaired { .. } | NetlogStatus::Unusable { .. } = &netlog_status {
         // Preserva o arquivo original do Chrome ao lado da sessão.
@@ -537,18 +546,30 @@ fn spawn_chrome(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null());
-    if let Some(ends) = pipe {
+    {
         use std::os::fd::AsRawFd;
         use std::os::unix::process::CommandExt;
-        let (read_fd, write_fd) = (ends.child_read.as_raw_fd(), ends.child_write.as_raw_fd());
-        // SAFETY: entre o fork e o exec só chama `dup2`, que é async-signal-safe.
-        // Os fds de origem são >= 10, então não colidem com o 3 e o 4 de destino;
-        // `dup2` limpa o FD_CLOEXEC nos destinos (o resto fecha no exec).
+        // Com pipe: o fd 3 (lê) e o 4 (escreve) são do CDP; sem pipe, nenhum.
+        let ends = pipe.map(|e| (e.child_read.as_raw_fd(), e.child_write.as_raw_fd()));
+        // SAFETY: entre o fork e o exec só chama `dup2`, `fcntl` e `getdtablesize`,
+        // todas async-signal-safe, sem alocar. Os fds de origem do pipe são >= 10,
+        // então não colidem com o 3 e o 4; `dup2` limpa o FD_CLOEXEC nos destinos.
+        // Todo outro fd >= 3 (R9) recebe FD_CLOEXEC e fecha no exec: nada que o
+        // lançador tenha herdado (log, socket, segredo) chega ao Chrome. Marcar
+        // em vez de fechar preserva o pipe interno que a std usa para relatar
+        // falha do exec.
         unsafe {
             command.pre_exec(move || {
-                if libc::dup2(read_fd, 3) < 0 || libc::dup2(write_fd, 4) < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
+                let first_other = match ends {
+                    Some((read_fd, write_fd)) => {
+                        if libc::dup2(read_fd, 3) < 0 || libc::dup2(write_fd, 4) < 0 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        5
+                    }
+                    None => 3,
+                };
+                mark_fds_cloexec(first_other);
                 Ok(())
             });
         }
@@ -561,6 +582,26 @@ fn spawn_chrome(
                 config.chrome.display()
             )
         })
+}
+
+/// Teto da varredura de descritores no filho: cobre qualquer limite prático
+/// (`ulimit -n` padrão do macOS é 256) sem varrer milhões de números.
+const MAX_FD_SWEEP: libc::c_int = 65_536;
+
+/// Marca FD_CLOEXEC em todo descritor aberto `>= first` (async-signal-safe;
+/// roda no filho entre o fork e o exec). Descritores acima de `MAX_FD_SWEEP`
+/// não são varridos: lacuna documentada em docs/16b §2.1.
+fn mark_fds_cloexec(first: libc::c_int) {
+    // SAFETY: `getdtablesize` e `fcntl` só leem/alteram flags de descritores.
+    unsafe {
+        let limit = libc::getdtablesize().clamp(first, MAX_FD_SWEEP);
+        for fd in first..limit {
+            let flags = libc::fcntl(fd, libc::F_GETFD);
+            if flags >= 0 && flags & libc::FD_CLOEXEC == 0 {
+                libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
+            }
+        }
+    }
 }
 
 fn wait_for_devtools(
@@ -1946,6 +1987,76 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     result
 }
 
+/// Cria um diretório NOVO 0700 (falha se o nome existir, inclusive como
+/// symlink) e confere, já aberto, que é um diretório nosso, não um link, 0700.
+fn create_private_dir_new(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().recursive(false).mode(0o700).create(path)?;
+        verify_private_dir(path)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir(path)
+    }
+}
+
+/// Abre o diretório sem seguir link final e confere pelo descritor aberto:
+/// é um diretório, é do nosso usuário e o modo é exatamente 0700.
+#[cfg(unix)]
+fn verify_private_dir(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let dir = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+        .open(path)?;
+    let meta = dir.metadata()?;
+    // SAFETY: `geteuid` não tem pré-condições.
+    let euid = unsafe { libc::geteuid() };
+    if !meta.is_dir() || meta.uid() != euid || meta.mode() & 0o777 != 0o700 {
+        return Err(std::io::Error::new(
+            ErrorKind::PermissionDenied,
+            format!(
+                "{} não é um diretório 0700 nosso (modo {:o}, dono {})",
+                path.display(),
+                meta.mode() & 0o7777,
+                meta.uid()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Lê um arquivo sem seguir symlink: só aceita arquivo regular do nosso
+/// usuário (conferido no descritor aberto). `None` se ausente ou recusado.
+fn read_private_regular(path: &Path) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path).ok()?;
+    let meta = file.metadata().ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // SAFETY: `geteuid` não tem pré-condições.
+        if meta.uid() != unsafe { libc::geteuid() } {
+            return None;
+        }
+    }
+    if !meta.is_file() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
 fn unix_nanos() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2756,6 +2867,54 @@ mod tests {
         symlink(dir.join("nao-existe"), &dangling).unwrap();
         assert!(open_new_private(&dangling).is_err(), "O_NOFOLLOW/O_EXCL recusa symlink");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_dir_is_created_new_0700_and_verified_after_open() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let base = scratch_dir("privdir");
+        // Novo: 0700 desde a criação.
+        let fresh = base.join("novo");
+        create_private_dir_new(&fresh).unwrap();
+        assert_eq!(std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777, 0o700);
+        // Nome já existente (diretório): recusa, não reaproveita.
+        assert!(create_private_dir_new(&fresh).is_err());
+        // Symlink plantado no nome (mesmo para um diretório de verdade): recusa.
+        let real = base.join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = base.join("link");
+        symlink(&real, &link).unwrap();
+        assert!(create_private_dir_new(&link).is_err());
+        assert!(verify_private_dir(&link).is_err(), "link no último componente");
+        // Modo diferente de 0700 não passa na conferência.
+        let loose = base.join("solto");
+        std::fs::create_dir(&loose).unwrap();
+        std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(verify_private_dir(&loose).is_err());
+        std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o700)).unwrap();
+        verify_private_dir(&loose).unwrap();
+        // Arquivo comum não é diretório.
+        let file = base.join("arquivo");
+        std::fs::write(&file, "x").unwrap();
+        assert!(verify_private_dir(&file).is_err());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_private_regular_refuses_symlinks_and_non_files() {
+        use std::os::unix::fs::symlink;
+        let base = scratch_dir("readreg");
+        let target = base.join("alvo");
+        std::fs::write(&target, "segredo").unwrap();
+        let link = base.join("netlog.json");
+        symlink(&target, &link).unwrap();
+        assert_eq!(read_private_regular(&target).as_deref(), Some(&b"segredo"[..]));
+        assert_eq!(read_private_regular(&link), None, "não segue symlink");
+        assert_eq!(read_private_regular(&base), None, "diretório não é arquivo");
+        assert_eq!(read_private_regular(&base.join("ausente")), None);
+        let _ = std::fs::remove_dir_all(base);
     }
 
     #[cfg(unix)]

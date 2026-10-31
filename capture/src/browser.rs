@@ -1174,6 +1174,78 @@ mod tests {
         let _ = std::fs::remove_dir_all(outside);
     }
 
+    /// PoC da revisão (`poc_netlog_race.py`, R3): um processo do mesmo usuário
+    /// troca `netlog.json` da pasta da sessão por um symlink durante a captura.
+    /// O Chrome agora grava o NetLog no perfil privado, então o alvo do link não
+    /// pode receber nenhum byte, e o `netlog.json` final é um arquivo regular.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_netlog_swap_race_does_not_write_through_a_symlink() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
+        let port = site.port;
+        let config = live_config(vec![format!("localhost:{port}")], "netlog-race", false);
+        let dir = config.session_dir.clone();
+        std::fs::create_dir_all(&dir).unwrap();
+        let outside = std::env::temp_dir().join(format!("scrapelens-netlog-race-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        let victim = outside.join("VICTIM.txt");
+        std::fs::write(&victim, "ORIGINAL\n").unwrap();
+        std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let done = Arc::new(AtomicBool::new(false));
+        let swaps = Arc::new(AtomicUsize::new(0));
+        let attacker = {
+            let (dir, victim, done, swaps) = (dir.clone(), victim.clone(), done.clone(), swaps.clone());
+            thread::spawn(move || {
+                let path = dir.join("netlog.json");
+                while !done.load(Ordering::SeqCst) {
+                    // O golpe do PoC, nas duas formas: o arquivo existe e não é
+                    // link -> troca; o nome está livre -> planta o link (um
+                    // Chrome que abrisse esse caminho gravaria no alvo).
+                    match std::fs::symlink_metadata(&path) {
+                        Ok(m) if !m.file_type().is_symlink() => {
+                            if std::fs::remove_file(&path).is_ok() && symlink(&victim, &path).is_ok() {
+                                swaps.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::NotFound
+                                && symlink(&victim, &path).is_ok() =>
+                        {
+                            swaps.fetch_add(1, Ordering::SeqCst);
+                        }
+                        _ => {}
+                    }
+                    thread::sleep(Duration::from_millis(2));
+                }
+            })
+        };
+        let (capture, _info) = BrowserCapture::start(config).expect("start");
+        let _ = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10));
+        thread::sleep(Duration::from_millis(800));
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "ORIGINAL\n",
+            "o NetLog vazou para o alvo do link DURANTE a captura"
+        );
+        // O atacante age durante a captura (como o PoC); depois do `stop` ele
+        // só poderia fazer a gravação final falhar (recusa de link), nunca vazar.
+        done.store(true, Ordering::SeqCst);
+        attacker.join().unwrap();
+        let report = capture.stop().expect("stop");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "alvo alterado");
+        assert_eq!(std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777, 0o644);
+        let meta = std::fs::symlink_metadata(dir.join("netlog.json")).unwrap();
+        assert!(meta.file_type().is_file(), "netlog.json final deve ser arquivo regular");
+        assert!(meta.len() > 1000, "o NetLog chegou à sessão ({} bytes)", meta.len());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert!(report.requests >= 1);
+        eprintln!("swaps tentados pelo atacante: {}", swaps.load(Ordering::SeqCst));
+        let _ = std::fs::remove_dir_all(outside);
+    }
+
     fn lsof_listen(pid: u32) -> String {
         let out = std::process::Command::new("/usr/sbin/lsof")
             .args(["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", &pid.to_string()])
@@ -1251,6 +1323,62 @@ mod tests {
         assert!(!evil.contains("101"), "página web conseguiu o WebSocket: {evil}");
         assert!(plain.contains("101"), "cliente sem Origin deve conectar: {plain}");
         let _ = capture.stop().expect("stop");
+    }
+
+    /// R9: um descritor herdado do lançador, SEM CLOEXEC, não pode chegar ao
+    /// Chrome (nem ao processo principal nem aos helpers), com pipe ou com porta;
+    /// no modo pipe, só o 3 e o 4 do CDP existem.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_inherited_fds_do_not_leak_into_chrome() {
+        use std::ffi::CString;
+        let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
+        let port = site.port;
+        let secret = std::env::temp_dir().join(format!("launcher-secret-{}.log", std::process::id()));
+        let c_path = CString::new(secret.to_str().unwrap()).unwrap();
+        // SAFETY: `open` direto, sem O_CLOEXEC: reproduz o fd 7 do PoC.
+        let leaked = unsafe { libc::open(c_path.as_ptr(), libc::O_WRONLY | libc::O_CREAT, 0o600) };
+        assert!(leaked >= 0);
+        // Número alto e sem CLOEXEC (F_DUPFD), longe do 3 e do 4 do pipe.
+        // SAFETY: `fcntl`/`close` sobre o fd recém-aberto.
+        let leaked = unsafe {
+            let high = libc::fcntl(leaked, libc::F_DUPFD, 20);
+            libc::close(leaked);
+            high
+        };
+        assert!(leaked >= 20);
+        let children = |expose: bool, tag: &str| {
+            let (capture, info) =
+                BrowserCapture::start(live_config(vec![format!("localhost:{port}")], tag, expose)).expect("start");
+            let nav = capture
+                .navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10))
+                .expect("navigate");
+            assert!(nav.loaded);
+            // Processo principal e descendentes (helpers).
+            let ps = std::process::Command::new("/bin/ps").args(["-axo", "pid=,ppid="]).output().unwrap();
+            let ps = String::from_utf8_lossy(&ps.stdout).to_string();
+            let mut pids = vec![info.chrome_pid];
+            for line in ps.lines() {
+                let mut it = line.split_whitespace().map(|v| v.parse::<u32>().unwrap_or(0));
+                if let (Some(pid), Some(ppid)) = (it.next(), it.next()) {
+                    if ppid == info.chrome_pid {
+                        pids.push(pid);
+                    }
+                }
+            }
+            for pid in &pids {
+                let out = std::process::Command::new("/usr/sbin/lsof").args(["-n", "-P", "-p", &pid.to_string()]).output().unwrap();
+                let text = String::from_utf8_lossy(&out.stdout).to_string();
+                assert!(!text.contains("launcher-secret"), "fd vazou para o pid {pid} ({tag}):\n{text}");
+            }
+            let _ = capture.stop().expect("stop");
+        };
+        children(false, "fds-pipe");
+        children(true, "fds-port");
+        // SAFETY: fecha o fd aberto acima.
+        unsafe { libc::close(leaked) };
+        let _ = std::fs::remove_file(secret);
     }
 
     #[test]

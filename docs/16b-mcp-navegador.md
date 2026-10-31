@@ -76,6 +76,19 @@ agente e nunca o substitui), não com `normalize_binary_path`/`detect`, que
 aceitam qualquer arquivo; até lá `start` ainda recusa com `browser_invalid`,
 mas só depois da elicitação.
 
+**Descritores herdados (R9).** O Chrome é lançado com todo descritor `>= 3`
+marcado `FD_CLOEXEC` no filho (`fcntl` entre o fork e o exec; com pipe, só o 3
+e o 4 do CDP ficam abertos). Um log ou socket que o lançador do servidor
+herdou sem CLOEXEC não chega ao Chrome nem aos helpers. A varredura vai até
+`min(getdtablesize(), 65536)`; um fd acima disso não é coberto (nenhum valor
+prático). Teste vivo `live_inherited_fds_do_not_leak_into_chrome` (pipe e porta,
+processo principal e helpers; sem a correção o fd vaza). Os descritores do pipe
+são criados com `F_DUPFD_CLOEXEC`, mas entre o `pipe()` e a duplicação há uma
+janela mínima sem CLOEXEC (o macOS não tem `pipe2`): um `plutil`/`codesign`
+lançado por outra thread nesse instante poderia herdar uma ponta do pipe. Não
+medi nem reproduzi; o filho é de vida curta e só segura a ponta até sair.
+Informativo, sem correção.
+
 ### 2.2 Allowlist obrigatória, em duas camadas
 
 `start_capture` **sem `allowed_hosts` não vazio é erro** (`allowlist_required`).
@@ -172,8 +185,27 @@ arquivos que a captura grava (`cdp-bodies.jsonl`, `netlog.json`,
 `O_NOFOLLOW` + `create_new` (0600); um nome já existente, inclusive um symlink
 plantado, tem o **nome** removido e recriado, nunca o alvo escrito;
 `cdp-events.jsonl` e o marcador são gravados num temporário novo e trocados por
-`rename`, que substitui o próprio link; o NetLog é pré-criado por nós antes do
-Chrome; uma pasta de sessão que é symlink é recusada. Teste vivo
+`rename`, que substitui o próprio link; uma pasta de sessão que é symlink é
+recusada, e depois de `ensure_private_dir` ela é conferida **já aberta**
+(`O_NOFOLLOW|O_DIRECTORY`, dono = nosso usuário, modo exatamente 0700).
+
+**NetLog (R3).** O Chrome abre o `--log-net-log` pelo caminho, seguindo
+symlink; pré-criar o arquivo na pasta da sessão deixava uma janela para um
+processo do mesmo usuário trocá-lo por um link (PoC `poc_netlog_race.py`: 236 KB
+de NetLog completo, com cookies, num arquivo de fora). Agora o NetLog é gravado
+**dentro do perfil temporário**, que criamos 0700 desde a criação
+(`DirBuilder`, sem `recursive`, falha se o nome existir) e conferimos aberto
+(dono, 0700, não-link), com nome `scrapelens-chrome-<pid>-<ns>` em `$TMPDIR`
+(por usuário no macOS). Só depois que o Chrome sai o ScrapeLens o lê com
+`O_NOFOLLOW` (só arquivo regular do nosso usuário, conferido no descritor) e o
+grava em `<sessão>/netlog.json` por `write_private` (temporário `create_new` +
+`rename`, que substitui um link plantado sem escrever no alvo). Teste vivo
+`live_netlog_swap_race_does_not_write_through_a_symlink`: um atacante planta ou
+troca `netlog.json` por um link durante a captura e o alvo fica intacto. **Lacuna
+que resta:** um processo do **mesmo usuário** que ache o perfil pelo nome ainda
+pode mexer nele (mesmo uid; fora do modelo, como a porta do `expose_cdp`). Um
+`SIGKILL` do servidor deixa o NetLog parcial só no perfil, que a limpeza de
+órfãos apaga: não sobra `netlog.json` parcial na pasta da sessão. Teste vivo
 `live_planted_symlinks_are_not_followed` (o PoC da revisão: links para
 `netlog.json`, `cdp-bodies.jsonl` e `cdp-events.jsonl`; nenhum alvo recebe dado
 nem muda de modo). **Fora desta crate:** `core/src/store.rs::write_atomic`
