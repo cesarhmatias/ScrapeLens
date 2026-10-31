@@ -317,6 +317,7 @@ impl Manager {
                 hosts.join(", ")
             }
         };
+        let list = |hosts: Vec<String>| escape_display(&list(hosts));
         let message = format!(
             "Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\n\
              Hosts permitidos (navegar e agir): {}\n\
@@ -330,17 +331,23 @@ impl Manager {
              Marque \"confirmo\" para autorizar. Sem isso nada é aberto.",
             list(allowlist.allowed_hosts()),
             list(allowlist.third_party_hosts()),
-            start_url
-                .as_deref()
-                .map(strip_query)
-                .unwrap_or_else(|| "(nenhuma)".to_string()),
-            if expose_cdp { "SIM" } else { "não" },
+            escape_display(
+                &start_url
+                    .as_deref()
+                    .map(strip_query)
+                    .unwrap_or_else(|| "(nenhuma)".to_string())
+            ),
+            if expose_cdp {
+                "SIM — ATENÇÃO: a porta CDP não tem autenticação; qualquer processo local pode controlar o Chrome inteiro (todas as abas, cookies, sessões abertas)"
+            } else {
+                "não"
+            },
             if headless {
                 "sem janela (headless)"
             } else {
                 "com janela"
             },
-            chrome.display(),
+            escape_display(&chrome.display().to_string()),
             SENSITIVE_NOTICE
         );
         Ok(Prepared {
@@ -622,6 +629,23 @@ impl Manager {
     pub fn active(&self) -> usize {
         self.lock().len()
     }
+}
+
+/// Texto exibido na confirmação: caracteres de controle e de formatação
+/// (quebra de linha, bidi, largura zero) viram `\u{XXXX}` literal, para que um
+/// valor controlado pelo agente não injete linhas falsas no texto.
+pub fn escape_display(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        let hidden = ch.is_control()
+            || matches!(ch as u32, 0x200B..=0x200F | 0x2028..=0x202E | 0x2060..=0x2069 | 0xFEFF);
+        if hidden {
+            out.push_str(&format!("\\u{{{:04X}}}", ch as u32));
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 /// URL sem query nem fragmento (trocados por `?…`): nas saídas de captura não

@@ -752,9 +752,15 @@ fn trace_literal_value_and_request_origins() {
     );
     assert!(!text(&trace).contains(TOKEN));
 
-    let short = trace_value(&env.ctx, p(json!({"session_id": "flow", "value": "zzq"}))).unwrap();
-    assert!(text(&short["warnings"]).contains("curto"));
-    assert!(short["firstProducer"].is_null());
+    let short = trace_value(&env.ctx, p(json!({"session_id": "flow", "value": "zzq"})));
+    assert_eq!(err_code(short), "value_too_short");
+    let unknown = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "flow", "value": "zzq-not-in-session-0123"})),
+    )
+    .unwrap();
+    assert!(unknown["firstProducer"].is_null());
+    assert!(unknown.get("length").is_none() && unknown.get("valueLength").is_none());
 
     // Modo requisição: origens do core, prévias mascaradas.
     let origins = trace_value(

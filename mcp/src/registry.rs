@@ -118,14 +118,33 @@ impl<'a> View<'a> {
 pub struct Ctx {
     pub cfg: Config,
     cache: Mutex<HashMap<String, Arc<Entry>>>,
+    value_queries: Mutex<HashMap<String, u32>>,
 }
+
+/// Teto de consultas `trace_value(value)` sem reveal por sessão, na vida do servidor.
+pub const MAX_VALUE_QUERIES: u32 = 50;
 
 impl Ctx {
     pub fn new(cfg: Config) -> Self {
         Self {
             cfg,
             cache: Mutex::new(HashMap::new()),
+            value_queries: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Conta uma consulta de valor inteiro sem reveal; recusa depois do teto.
+    pub fn charge_value_query(&self, handle: &str) -> Result<(), ToolError> {
+        let mut map = self.value_queries.lock().unwrap_or_else(|e| e.into_inner());
+        let used = map.entry(handle.to_string()).or_insert(0);
+        if *used >= MAX_VALUE_QUERIES {
+            return Err(ToolError::new(
+                "value_query_limit",
+                format!("limite de {MAX_VALUE_QUERIES} consultas por valor sem reveal nesta sessão atingido"),
+            ));
+        }
+        *used += 1;
+        Ok(())
     }
 
     pub fn check_reveal(&self, reveal: bool) -> Result<(), ToolError> {

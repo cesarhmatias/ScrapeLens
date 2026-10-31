@@ -20,12 +20,19 @@ fn total(out: &Value) -> u64 {
 fn trace_value_without_reveal_matches_only_whole_values() {
     let env = Env::new(true);
     env.import_flow("flow", "");
-    let trace = |value: &str, reveal: bool| {
+    // Sem reveal, valores < 16 caracteres são recusados (`value_too_short`) e
+    // contam como "nada achado" para esta checagem de oráculo.
+    let try_trace = |value: &str, reveal: bool| {
         trace_value(
             &env.ctx,
             p(json!({"session_id": "flow", "value": value, "reveal": reveal})),
         )
-        .unwrap()
+    };
+    let trace = |value: &str, reveal: bool| {
+        try_trace(value, reveal).unwrap_or_else(|error| {
+            assert_eq!(error.code, "value_too_short", "{value}");
+            json!({"producersTotal": 0, "consumersTotal": 0})
+        })
     };
     // Valor inteiro: casa (header Authorization sem o esquema, e campo JSON da resposta).
     let whole = trace(TOKEN, false);

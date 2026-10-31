@@ -1143,6 +1143,9 @@ pub struct TraceValueParams {
     pub reveal: Option<bool>,
 }
 
+/// Tamanho mínimo de `value` sem reveal (anti-força-bruta).
+const MIN_EXACT_VALUE_CHARS: usize = 16;
+
 pub fn trace_value(ctx: &Ctx, params: TraceValueParams) -> ToolResult {
     let modes = [
         params.cookie.is_some(),
@@ -1171,6 +1174,13 @@ pub fn trace_value(ctx: &Ctx, params: TraceValueParams) -> ToolResult {
         if reveal {
             trace_literal(&view, value, limit, reveal)?
         } else {
+            if value.chars().count() < MIN_EXACT_VALUE_CHARS {
+                return Err(ToolError::new(
+                    "value_too_short",
+                    format!("sem reveal, value exige ao menos {MIN_EXACT_VALUE_CHARS} caracteres (valor inteiro de header, cookie, parâmetro ou campo)"),
+                ));
+            }
+            ctx.charge_value_query(&entry.handle)?;
             trace_exact(&view, value, limit)?
         }
     } else {
@@ -1475,12 +1485,8 @@ fn trace_exact(
     let mut hits: Vec<Hit> = Vec::new();
     let mut unstructured = 0usize;
     let strip_scheme = |text: &str| -> String {
-        for scheme in ["Bearer ", "Basic ", "Digest ", "Token "] {
-            if text.len() > scheme.len() && text[..scheme.len()].eq_ignore_ascii_case(scheme) {
-                return text[scheme.len()..].to_string();
-            }
-        }
-        text.to_string()
+        scrapelens_core::export::sanitize::split_auth_scheme(text)
+            .map_or_else(|| text.to_string(), |(_, rest)| rest.to_string())
     };
     for (index, request) in ordered.iter().enumerate() {
         for attempt in &request.attempts {
@@ -1582,9 +1588,6 @@ fn trace_exact(
     let mut warnings: Vec<String> = vec![
         "sem reveal o valor só casa com um valor INTEIRO (header, cookie, parâmetro ou campo JSON/formulário), nunca com um pedaço".to_string(),
     ];
-    if value.chars().count() < 8 {
-        warnings.push("valor curto (< 8 caracteres): coincidências podem ser acaso".to_string());
-    }
     if unstructured > 0 {
         warnings.push(format!(
             "{unstructured} corpo(s) não estruturado(s) (HTML, texto, binário) não são pesquisados sem reveal"
@@ -1595,7 +1598,6 @@ fn trace_exact(
     }
     let mut out = Map::new();
     out.insert("mode".into(), json!("value"));
-    out.insert("length".into(), json!(value.chars().count()));
     out.insert("evidence".into(), json!("exact-value-match"));
     out.insert(
         "firstProducer".into(),
@@ -1678,9 +1680,6 @@ fn trace_literal(
     let producers: Vec<&_> = matches.iter().filter(|m| is_producer(m.scope)).collect();
     let consumers: Vec<&_> = matches.iter().filter(|m| !is_producer(m.scope)).collect();
     let mut warnings: Vec<String> = Vec::new();
-    if value.chars().count() < 8 {
-        warnings.push("valor curto (< 8 caracteres): coincidências podem ser acaso".to_string());
-    }
     if first_producer.is_none() {
         warnings.push("nenhuma resposta observada contém este valor: ele pode ter sido gerado no cliente, vir de um corpo não capturado ou de captura incompleta".to_string());
     }
