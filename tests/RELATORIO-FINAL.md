@@ -146,6 +146,8 @@ nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas t
 - **Achado da rodada 11 anterior:** `get_request` vazava o token da query em `request.startLine` sem reveal; corrigido no core `e37d42d` e no mcp `6cca5aa`, reproduzido e verificado de novo aqui.
 - **Evidência:** `tests/results/mcp/run.json` (comandos) e `tests/results/mcp/flow.json` (checagens do fluxo, sem o valor do segredo).
 
+- **Bundle eb66afa (CDP por pipe):** `ScrapeLens.app` SHA `6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9` (assinatura local), `EXPECTED_APP_SHA256` e `app-latest` atualizados; ciclo real só por AX e teclado (`capture-1793485447342`: 11 req, complete; HAR `-10` 24 req complete; NetLog `-10` 32 req partial); `lsof` durante a captura: o Chrome da captura não tem socket TCP nem LISTEN; `run_acceptance` 11/11 com os três vivos de capture/ (1 teste cada) e `e2e_live` 3/3; `cargo test` mcp 51/0. Evidência: `tests/results/app-latest/lsof-captura-r11.txt`.
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)

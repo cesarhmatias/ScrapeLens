@@ -1,0 +1,15 @@
+Verificação de portas TCP durante a captura do app (rodada 11, bundle 6c0092c3…4759e9).
+Captura do app: capture-1793485447342 (Iniciar sessão → testserver h1 127.0.0.1:8781/page → Encerrar).
+Chrome da captura (pai = app pid 56136): pid 56630, perfil scrapelens-chrome-56136-…, sem --remote-debugging-port.
+
+$ lsof -nP -a -p 56630 -iTCP -sTCP:LISTEN
+(saída vazia: nenhum socket em LISTEN no Chrome da captura)
+
+$ lsof -nP -a -p 56630 -iTCP
+(saída vazia: o Chrome da captura não tem nenhum socket TCP; o CDP vai por pipe)
+
+$ lsof -nP -iTCP -sTCP:LISTEN   (todo o sistema, filtrado por Chrome/Google)
+COMMAND   PID  USER  FD  TYPE   DEVICE  SIZE/OFF NODE NAME
+Google   8911 cesar 47u IPv4 …      0t0  TCP 127.0.0.1:61048 (LISTEN)
+
+Leitura: o único LISTEN do Chrome é o PID 8911, sessão de teste anterior (perfil scrapelens-chrome-8902), que não faz parte da captura do app e não foi encerrado (pedido do líder).

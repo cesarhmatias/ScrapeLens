@@ -1,6 +1,6 @@
 {
  "runId": "app-latest",
- "generatedAt": "2026-10-31T16:33:23Z",
+ "generatedAt": "2026-10-31T22:26:47Z",
  "gui": {
   "startedFrom": "ScrapeLens.app (release, pid capturado pela janela)",
   "startButton": "Iniciar sessão",
@@ -14,9 +14,9 @@
  "bundle": {
   "path": "/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app",
   "exists": true,
-  "sizeBytes": 17324826,
-  "executableSha256": "1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a",
-  "executableBytes": 16576128,
+  "sizeBytes": 17763306,
+  "executableSha256": "6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9",
+  "executableBytes": 17014608,
   "binaries": [
    "scrapelens"
   ],
@@ -30,9 +30,9 @@
  },
  "appSessionsDir": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions",
  "capture": {
-  "id": "capture-1793464319852",
-  "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793464319852",
-  "sha256": "7e9616c86154a27f6ed1ddd48d28baeadd92e86e95c862698e32188cf7003218",
+  "id": "capture-1793485447342",
+  "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793485447342",
+  "sha256": "dc5e0d6d770b8e2cefc724ed52ec2852b6333d227a85f6c31ab009d6f8f7f2b6",
   "mode": "cdp+netlog",
   "labels": [
    "live-capture"
@@ -45,8 +45,8 @@
    "redirects": 2,
    "connections": 1,
    "streamSessions": 0,
-   "sourceEvents": 2796,
-   "sourceEventsUsed": 2796,
+   "sourceEvents": 2861,
+   "sourceEventsUsed": 2861,
    "sourceEventsUnknown": 0,
    "warnings": 5
   },
@@ -117,25 +117,25 @@
   "rawArtifacts": {
    "session.json": {
     "exists": true,
-    "bytes": 870694,
+    "bytes": 873427,
     "mode": "0o600"
    },
    "cdp-events.jsonl": {
     "exists": true,
-    "bytes": 385560,
+    "bytes": 385950,
     "mode": "0o600"
    },
    "netlog.json": {
     "exists": true,
-    "bytes": 1027825,
+    "bytes": 1037808,
     "mode": "0o600"
    }
   },
   "reload": {
    "requestsOnDisk": 11,
    "requestsFromInspect": 11,
-   "sha256BeforeInspect": "7e9616c86154a27f6ed1ddd48d28baeadd92e86e95c862698e32188cf7003218",
-   "sha256AfterInspect": "7e9616c86154a27f6ed1ddd48d28baeadd92e86e95c862698e32188cf7003218",
+   "sha256BeforeInspect": "dc5e0d6d770b8e2cefc724ed52ec2852b6333d227a85f6c31ab009d6f8f7f2b6",
+   "sha256AfterInspect": "dc5e0d6d770b8e2cefc724ed52ec2852b6333d227a85f6c31ab009d6f8f7f2b6",
    "unchangedAfterInspect": true
   },
   "attachments": [
@@ -156,8 +156,8 @@
  },
  "imports": {
   "har": {
-   "id": "har-3dbc391c02a985c5-9",
-   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-9",
+   "id": "har-3dbc391c02a985c5-10",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-10",
    "sha256": "bdd092195f2ea204eabbef2a8bdb849499fba3bfe3eb5b5a6ec213ceb6ee0460",
    "mode": "har-import",
    "labels": [
@@ -254,12 +254,13 @@
     "har-3dbc391c02a985c5-5",
     "har-3dbc391c02a985c5-6",
     "har-3dbc391c02a985c5-7",
-    "har-3dbc391c02a985c5-8"
+    "har-3dbc391c02a985c5-8",
+    "har-3dbc391c02a985c5-9"
    ]
   },
   "netlog": {
-   "id": "netlog-1704043c442dcbd1-9",
-   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-1704043c442dcbd1-9",
+   "id": "netlog-1704043c442dcbd1-10",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-1704043c442dcbd1-10",
    "sha256": "49253b2a971711f4ff64a033255ef96c957008f846ad839ef826b7b4bf0a9b0a",
    "mode": "netlog-import",
    "labels": [
@@ -366,12 +367,13 @@
     "netlog-1704043c442dcbd1-5",
     "netlog-1704043c442dcbd1-6",
     "netlog-1704043c442dcbd1-7",
-    "netlog-1704043c442dcbd1-8"
+    "netlog-1704043c442dcbd1-8",
+    "netlog-1704043c442dcbd1-9"
    ]
   }
  },
  "testserver": {
-  "dir": "tests/results/app-latest/testserver/app-20261031c",
+  "dir": "tests/results/app-latest/testserver/app-20261031d",
   "h1Lines": 14
  },
  "certificateInstalled": false,

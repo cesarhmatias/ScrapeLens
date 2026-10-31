@@ -1,45 +1,75 @@
 {
- "generatedAt": "2026-10-31T21:14:49Z",
+ "generatedAt": "2026-10-31T22:33:03Z",
  "commands": [
   {
    "label": "cargo test mcp",
    "cmd": "cargo test --offline",
    "cwd": "mcp",
    "rc": 0,
-   "passed": 37,
+   "passed": 51,
    "failed": 0,
-   "seconds": 4.0,
-   "tail": "iled; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_mcp-16b6d42ac73b8b7a)\n     Running unittests src/main.rs (target/debug/deps/scrapelens_mcp-3b94a88ff02ec382)\n     Running tests/e2e_capture.rs (target/debug/deps/e2e_capture-1a5733ba5bb05419)\n     Running tests/e2e_live.rs (target/debug/deps/e2e_live-7a8e924aeccfb56d)\n     Running tests/e2e_secrets.rs (target/debug/deps/e2e_secrets-6f690a0ee1d4911c)\n     Running tests/e2e_stdio.rs (target/debug/deps/e2e_stdio-bdf059c1934947b9)\n     Running tests/live.rs (target/debug/deps/live-7b3982cd7734be5a)\n     Running tests/tools.rs (target/debug/deps/tools-df83cceb02163637)\n   Doc-tests scrapelens_mcp\n"
+   "seconds": 7.29,
+   "tail": "rofile [unoptimized + debuginfo] target(s) in 0.24s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_mcp-547eca00fa011c73)\n     Running unittests src/main.rs (target/debug/deps/scrapelens_mcp-5472f2f11de6eed7)\n     Running tests/e2e_capture.rs (target/debug/deps/e2e_capture-62ebb7e30e76503e)\n     Running tests/e2e_live.rs (target/debug/deps/e2e_live-81194ead479547d2)\n     Running tests/e2e_secrets.rs (target/debug/deps/e2e_secrets-50de0a7da6a06dec)\n     Running tests/e2e_stdio.rs (target/debug/deps/e2e_stdio-06cb2a086c98ddf5)\n     Running tests/live.rs (target/debug/deps/live-4dfbcae8e25ae9f6)\n     Running tests/review_fixes.rs (target/debug/deps/review_fixes-6ade3de835e462a8)\n     Running tests/tools.rs (target/debug/deps/tools-64e5d778a32502f2)\n   Doc-tests scrapelens_mcp\n"
   },
   {
    "label": "cargo test capture",
    "cmd": "cargo test --offline",
    "cwd": "capture",
    "rc": 0,
-   "passed": 41,
+   "passed": 53,
    "failed": 0,
-   "seconds": 33.74,
-   "tail": "h_dead_pids_is_cleaned ... ok\ntest tests::live_pid_using_the_dedicated_profile_is_terminated ... ok\ntest tests::truncated_netlog_is_repaired_and_still_imports ... ok\ntest tests::response_over_limit_is_truncated_with_original_size ... ok\n\ntest result: ok. 41 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.92s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n   Compiling scrapelens-core v0.1.0 (/Users/cesar/Projects/scrapelens/core)\n   Compiling scrapelens-capture v0.1.0 (/Users/cesar/Projects/scrapelens/capture)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.30s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-79a4969501a2e82e)\n   Doc-tests scrapelens_capture\n"
+   "seconds": 30.18,
+   "tail": " ok\ntest tests::live_pid_using_the_dedicated_profile_is_terminated ... ok\ntest chrome::tests::validate_accepts_the_installed_chrome_and_reads_its_version ... ok\ntest transport::tests::pipe_frames_messages_with_nul_in_both_directions_and_closes_on_eof ... ok\ntest tests::truncated_netlog_is_repaired_and_still_imports ... ok\ntest tests::response_over_limit_is_truncated_with_original_size ... ok\n\ntest result: ok. 53 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 1.04s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n   Doc-tests scrapelens_capture\n"
   },
   {
    "label": "cargo test recon",
    "cmd": "cargo test --offline",
    "cwd": "recon",
    "rc": 0,
-   "passed": 23,
+   "passed": 26,
    "failed": 0,
-   "seconds": 5.11,
-   "tail": "ed_means_priming ... ok\ntest every_signature_has_a_synthetic_fixture_that_triggers_it ... ok\n\ntest result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n   Compiling scrapelens-core v0.1.0 (/Users/cesar/Projects/scrapelens/core)\n   Compiling scrapelens-recon v0.1.0 (/Users/cesar/Projects/scrapelens/recon)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.03s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_recon-30b9530c221c4dd9)\n     Running tests/live_e2e.rs (target/debug/deps/live_e2e-ec85e6018f3e6e63)\n     Running tests/profile.rs (target/debug/deps/profile-6f22ff424cea2bff)\n   Doc-tests scrapelens_recon\n"
+   "seconds": 0.61,
+   "tail": "source_does_not_decide_the_recommendation ... ok\ntest r1_presence_only_in_body_query_or_request_cookie_is_low ... ok\ntest r2_aws_waf_challenge_needs_the_documented_status ... ok\ntest every_signature_has_a_synthetic_fixture_that_triggers_it ... ok\n\ntest result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_recon-30b9530c221c4dd9)\n     Running tests/live_e2e.rs (target/debug/deps/live_e2e-ec85e6018f3e6e63)\n     Running tests/profile.rs (target/debug/deps/profile-6f22ff424cea2bff)\n   Doc-tests scrapelens_recon\n"
   },
   {
    "label": "vivo mcp e2e_live",
    "cmd": "cargo test --offline --test e2e_live -- --ignored",
    "cwd": "mcp",
    "rc": 0,
+   "passed": 3,
+   "failed": 0,
+   "seconds": 10.7,
+   "tail": "\nrunning 3 tests\ntest live_sigterm_during_start_leaves_no_chrome_or_profile ... ok\ntest live_eof_during_start_leaves_no_chrome_or_profile ... ok\ntest live_cycle_with_real_chrome ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.29s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.37s\n     Running tests/e2e_live.rs (target/debug/deps/e2e_live-81194ead479547d2)\n"
+  },
+  {
+   "label": "vivo capture live_pipe_opens_no_port_and_exposed_port_is_loopback_only",
+   "cmd": "cargo test --offline --lib browser::tests::live_pipe_opens_no_port_and_exposed_port_is_loopback_only -- --ignored --exact",
+   "cwd": "capture",
+   "rc": 0,
    "passed": 1,
    "failed": 0,
-   "seconds": 10.68,
-   "tail": "\nrunning 1 test\ntest live_cycle_with_real_chrome ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.43s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s\n     Running tests/e2e_live.rs (target/debug/deps/e2e_live-7a8e924aeccfb56d)\n"
+   "seconds": 14.3,
+   "tail": "\nrunning 1 test\ntest browser::tests::live_pipe_opens_no_port_and_exposed_port_is_loopback_only ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 14.19s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
+  },
+  {
+   "label": "vivo capture live_planted_symlinks_are_not_followed",
+   "cmd": "cargo test --offline --lib browser::tests::live_planted_symlinks_are_not_followed -- --ignored --exact",
+   "cwd": "capture",
+   "rc": 0,
+   "passed": 1,
+   "failed": 0,
+   "seconds": 7.56,
+   "tail": "\nrunning 1 test\ntest browser::tests::live_planted_symlinks_are_not_followed ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 7.44s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
+  },
+  {
+   "label": "vivo capture live_port_gap_is_reported_on_all_paths",
+   "cmd": "cargo test --offline --lib browser::tests::live_port_gap_is_reported_on_all_paths -- --ignored --exact",
+   "cwd": "capture",
+   "rc": 0,
+   "passed": 1,
+   "failed": 0,
+   "seconds": 14.28,
+   "tail": "\nrunning 1 test\ntest browser::tests::live_port_gap_is_reported_on_all_paths ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 14.17s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
   },
   {
    "label": "vivo recon live_e2e.sh",
@@ -48,8 +78,8 @@
    "rc": 0,
    "passed": 4,
    "failed": 0,
-   "seconds": 27.12,
-   "tail": "t result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s\n\nsessões em /var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T//sl-recon-e2e.G6nGsB\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s\n     Running unittests src/lib.rs (capture/target/debug/deps/scrapelens_capture-79a4969501a2e82e)\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 210 }\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 210 }\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 100 }\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s\n     Running tests/live_e2e.rs (recon/target/debug/deps/live_e2e-ec85e6018f3e6e63)\n"
+   "seconds": 27.15,
+   "tail": " finished in 0.02s\n\nsessões em /var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T//sl-recon-e2e.r1aR19\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s\n     Running unittests src/lib.rs (capture/target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 103 }\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 100 }\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 100 }\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s\n     Running tests/live_e2e.rs (recon/target/debug/deps/live_e2e-ec85e6018f3e6e63)\n"
   },
   {
    "label": "fluxo stdio (cliente independente)",
@@ -57,7 +87,7 @@
    "rc": 0,
    "passed": 28,
    "failed": 0,
-   "seconds": 10.44,
+   "seconds": 10.92,
    "tail": ""
   }
  ],
@@ -84,12 +114,12 @@
    {
     "name": "start_capture aceito (elicitação)",
     "ok": true,
-    "detail": "{\"warnings\": [], \"chromePid\": 95288, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
+    "detail": "{\"warnings\": [], \"chromePid\": 69277, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
    },
    {
     "name": "elicitação exibida ao usuário",
     "ok": true,
-    "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:54039\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:54039/\\nC"
+    "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:50280\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:50280/\\nC"
    },
    {
     "name": "Chrome real iniciado",
@@ -109,17 +139,17 @@
    {
     "name": "navigate permitido carregou",
     "ok": true,
-    "detail": "{\"frameId\": \"3B591828724E1D5800023DE118F5CD0B\", \"loaderId\": \"A9A2EFA4E8AB183E07C61593359DD9E3\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-1ff4b5f5333d9c00\"}"
+    "detail": "{\"frameId\": \"A28820CBB399B3320826E50CE5595D5A\", \"loaderId\": \"AE90CACEE50373B21F95BE840D4C1509\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-1a85e841cd2ddea4\"}"
    },
    {
     "name": "capture_status em gravação",
     "ok": true,
-    "detail": "{\"recording\": true, \"events\": 38, \"chromePid\": 95288, \"sessionId\": \"capture-1793481279088\", \"pageUrl\": \"http://localhost:54039/\", \"startedAt\": \"\", \"captureId\": \"cap-1ff4b5f5333d9c00\"}"
+    "detail": "{\"recording\": true, \"events\": 40, \"chromePid\": 69277, \"sessionId\": \"capture-1793485973131\", \"pageUrl\": \"http://localhost:50280/\", \"startedAt\": \"\", \"captureId\": \"cap-1a85e841cd2ddea4\"}"
    },
    {
     "name": "stop_capture gracioso",
     "ok": true,
-    "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 102, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-1ff4b5f5333d9c00\", \"sessionId\": \"capture-1793481279088\", \"readable\": true}"
+    "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 103, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-1a85e841cd2ddea4\", \"sessionId\": \"capture-1793485973131\", \"readable\": true}"
    },
    {
     "name": "NetLog completo",
@@ -134,7 +164,7 @@
    {
     "name": "/page2 na sessão",
     "ok": true,
-    "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:54039/favicon.ico\", \"host\": \"localhost:54039\", \"status\": 404, \"resourceType\": \"Other\", \"protocol\": \"h1\", \"totalMs\": 7.902999408543"
+    "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:50280/favicon.ico\", \"host\": \"localhost:50280\", \"status\": 404, \"resourceType\": \"Other\", \"protocol\": \"h1\", \"totalMs\": 6.540999747812"
    },
    {
     "name": "token da query fora da listagem",
@@ -164,17 +194,17 @@
    {
     "name": "trace_value do cookie sem erro",
     "ok": true,
-    "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:54039/\", \"startedAt\": 6070773.792218, \"source\": \"netlog\", \"verificat"
+    "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:50280/\", \"startedAt\": 6075467.82288, \"source\": \"netlog\", \"verificati"
    },
    {
     "name": "trace_value do cookie mascarado",
     "ok": true,
-    "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:54039/\", \"startedAt\": 6070773.792218, \"source\": \"netlog\", \"verificat"
+    "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:50280/\", \"startedAt\": 6075467.82288, \"source\": \"netlog\", \"verificati"
    },
    {
     "name": "site_profile sem erro",
     "ok": true,
-    "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793481279088\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:54039\": [\"h1"
+    "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793485973131\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:50280\": [\"h1"
    },
    {
     "name": "reveal=true recusado sem --allow-reveal",
@@ -194,7 +224,7 @@
    {
     "name": "elicitação recusada: nenhum Chrome da captura criado",
     "ok": true,
-    "detail": "antes=1 depois=1"
+    "detail": "antes=2 depois=2"
    },
    {
     "name": "elicitação recusada: pedido de confirmação foi feito",
