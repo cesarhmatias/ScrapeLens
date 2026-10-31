@@ -1032,6 +1032,8 @@ fn is_listed_sensitive_header(name: &str) -> bool {
         || name.contains("signature")
         || name.contains("api-key")
         || name.contains("apikey")
+        || name.contains("csrf")
+        || name.contains("xsrf")
         || name.contains("appkey")
         || name.contains("app-key")
         || name.contains("subscription-key")
