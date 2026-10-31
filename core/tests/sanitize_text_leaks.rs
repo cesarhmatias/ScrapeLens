@@ -34,8 +34,9 @@ fn sanitize_text_masks_only_sensitive_query_params() {
         t("\"https://a.test/p?token=ABC\" falhou"),
         "\"https://a.test/p?token=%5BREDACTED%5D\" falhou"
     );
-    // Sem '?' ou sem nome sensível: intacto.
-    assert_eq!(t("token=ABC sem query"), "token=ABC sem query");
+    // Sem '?': `nome=valor` sensível também é redigido; nome não sensível, não.
+    assert_eq!(t("token=ABC sem query"), "token=%5BREDACTED%5D sem query");
+    assert_eq!(t("max-age=60; code_x=1"), "max-age=60; code_x=1");
     assert_eq!(t("/p?page=2&q=abc"), "/p?page=2&q=abc");
     assert_eq!(t("HTTP/1.1 200 OK"), "HTTP/1.1 200 OK");
     // Acentos e texto depois do terminador.
@@ -96,6 +97,21 @@ fn marked_secret_in_query_survives_nowhere_in_the_sanitized_session() {
                 ("Location", format!("/next{q}")),
                 ("Origin", format!("https://x.invalid{q}")),
                 ("Refresh", format!("0; url=/go{q}")),
+                ("Refresh", format!("0; url=/go#access_token={MARK}")),
+                ("Location", format!("/cb#access_token={MARK}")),
+                ("Refresh", format!("5; token={MARK}")),
+                (
+                    "X-Original-Url",
+                    format!("https://admin:{MARK}@x.invalid/p"),
+                ),
+                (
+                    "Referer",
+                    format!("https://x.invalid/h;jsessionid={MARK}?x=1"),
+                ),
+                ("Ocp-Apim-Subscription-Key", MARK.to_string()),
+                ("X-Vtex-Api-Appkey", MARK.to_string()),
+                ("Authorization", format!("bearer {MARK}")),
+                ("X-Other", format!("ApiKey {MARK}")),
                 ("X-Original-Url", format!("/orig{q}")),
                 (
                     "Content-Security-Policy",
@@ -123,4 +139,97 @@ fn marked_secret_in_query_survives_nowhere_in_the_sanitized_session() {
     );
     // O que não é segredo continua legível.
     assert!(json.contains("/page?token=%5BREDACTED%5D"));
+}
+
+#[test]
+fn every_url_form_is_redacted_in_text_and_in_references() {
+    use scrapelens_core::export::sanitize::{sanitize_url, sanitize_url_reference};
+    let o = SanitizeOptions::default();
+    let t = |s: &str| sanitize_text(s, &o);
+    let r = |s: &str| sanitize_url_reference(s, &o);
+    // fragmento
+    assert!(!r("/cb#access_token=ZZ1").contains("ZZ1"));
+    assert!(!r("https://a.test/cb#access_token=ZZ2").contains("ZZ2"));
+    assert!(!t("0; url=/x#access_token=ZZ3").contains("ZZ3"));
+    // parâmetro de matriz
+    assert!(!r("/home;jsessionid=ZZ4?x=1").contains("ZZ4"));
+    assert!(!sanitize_url("https://a.test/a;jsessionid=ZZ5/b?x=1", &o).contains("ZZ5"));
+    assert!(
+        r("/home;jsessionid=ZZ4?x=1").ends_with("?x=1"),
+        "o resto da URL fica"
+    );
+    // userinfo em texto livre
+    let u = t("X-Original-Url: https://admin:ZZ6@host.test/p");
+    assert!(!u.contains("ZZ6") && u.contains("@host.test/p"), "{u}");
+    // `nome=` sem `?`, `%3D` e separadores variados
+    assert!(!t("Refresh: 0; token=ZZ7").contains("ZZ7"));
+    assert!(!t("/cb?x=1&token%3DZZ8").contains("ZZ8"));
+    assert!(!t("u=a,access_token=ZZ9,b=2").contains("ZZ9"));
+    // nomes de credencial
+    for name in [
+        "jwt",
+        "senha",
+        "pwd",
+        "otp",
+        "passcode",
+        "pin",
+        "auth_key",
+        "ticket",
+        "SAMLResponse",
+        "x-api-key",
+        "client_secret",
+        "csrf_token",
+        "Ocp-Apim-Subscription-Key",
+        "X-VTEX-API-AppKey",
+        "minha-senha",
+        "user_pwd",
+    ] {
+        let out = t(&format!("a=1&{name}=ZZVALOR"));
+        assert!(!out.contains("ZZVALOR"), "{name}: {out}");
+    }
+}
+
+#[test]
+fn credential_header_names_and_schemes_are_redacted() {
+    use scrapelens_core::export::sanitize::is_sensitive_header;
+    for name in [
+        "Ocp-Apim-Subscription-Key",
+        "X-VTEX-API-AppKey",
+        "X-Foo-Api-Key",
+        "X-Client-Secret",
+        "X-Csrf-Token",
+        "X-Senha",
+        "X-Passcode",
+        "X-Jwt",
+    ] {
+        assert!(is_sensitive_header(name), "{name}");
+    }
+    assert!(!is_sensitive_header("Accept"));
+    assert!(!is_sensitive_header(":authority"));
+}
+
+#[test]
+fn set_cookie_parse_error_does_not_carry_the_raw_value() {
+    let har = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../fixtures/aceite/sanitize/secret.har"),
+    )
+    .unwrap();
+    let mut imported = scrapelens_core::import_har(&har).unwrap();
+    let record = scrapelens_core::model::SetCookieRecord::from_raw("NAMELESSZZ10; Path=/", &prov());
+    assert!(
+        record
+            .parse_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("NAMELESSZZ10"),
+        "pré-condição"
+    );
+    imported.bundle.session.requests[0].attempts[0]
+        .set_cookies
+        .push(record.clone());
+    imported.bundle.session.requests[0].set_cookies.push(record);
+    let export = sanitize_bundle(&imported.bundle, &SanitizeOptions::default());
+    let json = serde_json::to_string(&export.bundle.session).unwrap();
+    assert!(!json.contains("NAMELESSZZ10"), "{json}");
 }

@@ -429,6 +429,10 @@ fn sanitize_set_cookie(
     redactions: &mut BTreeMap<String, usize>,
 ) {
     record.raw = options.placeholder.clone();
+    // A mensagem de erro de parse repete o valor cru.
+    if record.parse_error.is_some() {
+        record.parse_error = Some("Set-Cookie inválido (detalhe redigido)".to_string());
+    }
     if let Some(parsed) = &mut record.parsed {
         parsed.value = options.placeholder.clone();
         for (name, value) in &mut parsed.extensions {
@@ -670,10 +674,27 @@ fn sanitize_form(text: &str, options: &SanitizeOptions) -> String {
 }
 
 fn redact_auth_scheme(value: &str, options: &SanitizeOptions) -> Option<String> {
-    for scheme in ["Bearer ", "Basic ", "Digest ", "Token "] {
-        if let Some(rest) = value.strip_prefix(scheme) {
+    const SCHEMES: [&str; 11] = [
+        "Bearer",
+        "Basic",
+        "Digest",
+        "Token",
+        "ApiKey",
+        "OAuth",
+        "SharedKey",
+        "Negotiate",
+        "NTLM",
+        "AWS4-HMAC-SHA256",
+        "Hawk",
+    ];
+    for scheme in SCHEMES {
+        let Some(prefix) = value.get(..scheme.len()) else {
+            continue;
+        };
+        if prefix.eq_ignore_ascii_case(scheme) && value[scheme.len()..].starts_with(' ') {
+            let rest = value[scheme.len() + 1..].trim_start();
             if !rest.is_empty() {
-                return Some(format!("{scheme}{}", options.placeholder));
+                return Some(format!("{prefix} {}", options.placeholder));
             }
         }
     }
@@ -725,21 +746,80 @@ pub fn sanitize_url(url: &str, options: &SanitizeOptions) -> String {
 }
 
 pub fn sanitize_path_and_query(value: &str, options: &SanitizeOptions) -> String {
-    match value.split_once('?') {
-        Some((path, query)) => format!("{path}?{}", sanitize_query(query, options)),
-        None => value.to_string(),
+    let (before_fragment, fragment) = match value.split_once('#') {
+        Some((left, right)) => (left, Some(right)),
+        None => (value, None),
+    };
+    let (path, query) = match before_fragment.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (before_fragment, None),
+    };
+    let mut out = sanitize_matrix(path, options);
+    if let Some(query) = query {
+        out.push('?');
+        out.push_str(&sanitize_query(query, options));
     }
+    match fragment {
+        Some(fragment) if !fragment.is_empty() => {
+            out.push('#');
+            if options.redact_fragments {
+                out.push_str(&url_placeholder(options));
+            } else {
+                out.push_str(&sanitize_query(fragment, options));
+            }
+        }
+        Some(_) => out.push('#'),
+        None => {}
+    }
+    out
+}
+
+/// Parâmetros de matriz de caminho (`/a;jsessionid=X/b`): redige o valor
+/// quando o nome é sensível.
+fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
+    if !path.contains(';') {
+        return path.to_string();
+    }
+    let placeholder = url_placeholder(options);
+    path.split('/')
+        .map(|segment| {
+            let mut parts = segment.split(';');
+            let head = parts.next().unwrap_or("");
+            let mut out = head.to_string();
+            for param in parts {
+                out.push(';');
+                match param.split_once('=') {
+                    Some((name, _))
+                        if is_sensitive_key(&percent_decode(name))
+                            || is_business_key(&percent_decode(name), &options.business_fields) =>
+                    {
+                        out.push_str(name);
+                        out.push('=');
+                        out.push_str(&placeholder);
+                    }
+                    _ => out.push_str(param),
+                }
+            }
+            out
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Redige, em texto livre (linha de requisição, notas, mensagens, valores de
-/// header que não são URL), o valor de cada parâmetro de query com nome
-/// sensível. Um parâmetro só conta depois de um `?` e até um terminador
-/// (espaço, aspas, `<`, `>`, `(`, `)`, `,`, `;`, `#`, `\\`). O resto do texto
-/// passa intacto.
+/// header que não são URL conhecida, avisos), em qualquer posição:
+/// - o valor de `nome=valor` (e `nome%3Dvalor`) quando o nome é sensível, com
+///   ou sem `?` antes (query, fragmento `#access_token=`, parâmetro de matriz
+///   `;jsessionid=`, `Refresh: token=...`);
+/// - o userinfo de URLs absolutas (`https://usuario:senha@host`).
+///
+/// O valor vai até um terminador (espaço, aspas, `<`, `>`, `(`, `)`, `,`, `;`,
+/// `#`, `\\`) ou `&`. O resto do texto passa intacto.
 pub fn sanitize_text(text: &str, options: &SanitizeOptions) -> String {
-    if !text.contains('?') {
+    if !text.contains('=') && !text.contains("%3") && !text.contains('@') {
         return text.to_string();
     }
+    let text = redact_userinfo_in_text(text, options);
     let is_end = |ch: char| {
         ch.is_whitespace()
             || matches!(
@@ -747,54 +827,89 @@ pub fn sanitize_text(text: &str, options: &SanitizeOptions) -> String {
                 '"' | '\'' | '<' | '>' | '(' | ')' | ',' | ';' | '#' | '\\'
             )
     };
+    let is_boundary = |ch: char| {
+        ch.is_whitespace()
+            || matches!(
+                ch,
+                '?' | '&' | ';' | ',' | '#' | '/' | '"' | '\'' | '(' | '<' | '[' | '{' | '|'
+            )
+    };
+    let is_name = |ch: char| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '%');
     let placeholder = url_placeholder(options);
     let mut out = String::with_capacity(text.len());
-    let mut in_query = false;
-    let mut rest = text;
+    let mut at_boundary = true;
+    let mut rest = text.as_str();
     while let Some(ch) = rest.chars().next() {
-        if ch == '?' {
-            in_query = true;
-            out.push(ch);
-            rest = &rest[1..];
-            continue;
-        }
-        if !in_query {
-            out.push(ch);
-            rest = &rest[ch.len_utf8()..];
-            continue;
-        }
-        if is_end(ch) {
-            in_query = false;
-            out.push(ch);
-            rest = &rest[ch.len_utf8()..];
-            continue;
-        }
-        if ch == '&' {
-            out.push(ch);
-            rest = &rest[1..];
-            continue;
-        }
-        // um par `nome[=valor]`
-        let name_len = rest
-            .find(|c: char| is_end(c) || c == '&' || c == '=')
-            .unwrap_or(rest.len());
-        let (name, after) = rest.split_at(name_len);
-        out.push_str(name);
-        rest = after;
-        if let Some(value_part) = rest.strip_prefix('=') {
+        if at_boundary && is_name(ch) {
+            // um possível `nome=` / `nome%3D`
+            let name_len = rest.find(|c: char| !is_name(c)).unwrap_or(rest.len());
+            let (candidate, after) = rest.split_at(name_len);
+            // `nome%3Dvalor`: o `%` é caractere de nome, então o candidato inclui o valor.
+            let encoded_eq = candidate.to_ascii_uppercase().find("%3D");
+            let (name, value_part, eq_text) = if let Some(i) = encoded_eq {
+                (&candidate[..i], &rest[i + 3..], "%3D")
+            } else if let Some(value_part) = after.strip_prefix('=') {
+                (candidate, value_part, "=")
+            } else {
+                out.push_str(candidate);
+                rest = after;
+                at_boundary = false;
+                continue;
+            };
+            let sensitive = !name.is_empty()
+                && (is_sensitive_key(&percent_decode(name))
+                    || is_business_key(&percent_decode(name), &options.business_fields));
+            if !sensitive {
+                out.push_str(candidate);
+                rest = after;
+                at_boundary = false;
+                continue;
+            }
             let value_len = value_part
                 .find(|c: char| is_end(c) || c == '&')
                 .unwrap_or(value_part.len());
-            let decoded = percent_decode(name);
-            out.push('=');
-            if is_sensitive_key(&decoded) || is_business_key(&decoded, &options.business_fields) {
-                out.push_str(&placeholder);
-            } else {
-                out.push_str(&value_part[..value_len]);
-            }
+            out.push_str(name);
+            out.push_str(eq_text);
+            out.push_str(&placeholder);
             rest = &value_part[value_len..];
+            at_boundary = false;
+            continue;
         }
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+        at_boundary = is_boundary(ch);
     }
+    out
+}
+
+/// Troca o userinfo de toda URL absoluta no texto (`esquema://user:pass@host`).
+fn redact_userinfo_in_text(text: &str, options: &SanitizeOptions) -> String {
+    if !text.contains("://") {
+        return text.to_string();
+    }
+    let placeholder = url_placeholder(options);
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("://") {
+        let (head, tail) = rest.split_at(at + 3);
+        out.push_str(head);
+        let authority_len = tail
+            .find(|c: char| {
+                c.is_whitespace() || matches!(c, '/' | '?' | '#' | '"' | '\'' | '<' | '>')
+            })
+            .unwrap_or(tail.len());
+        let (authority, after) = tail.split_at(authority_len);
+        match authority.rsplit_once('@') {
+            Some((_userinfo, host)) => {
+                out.push_str(&placeholder);
+                out.push('@');
+                out.push_str(host);
+            }
+            None => out.push_str(authority),
+        }
+        rest = after;
+    }
+    out.push_str(rest);
     out
 }
 
@@ -917,7 +1032,15 @@ fn is_listed_sensitive_header(name: &str) -> bool {
         || name.contains("signature")
         || name.contains("api-key")
         || name.contains("apikey")
+        || name.contains("appkey")
+        || name.contains("app-key")
+        || name.contains("subscription-key")
+        || name.contains("auth-key")
+        || name.contains("passcode")
+        || name.contains("senha")
         || name.ends_with("-password")
+        || name.ends_with("-pwd")
+        || name.ends_with("-otp")
         || name == "x-session-id"
 }
 
@@ -1002,6 +1125,19 @@ fn is_sensitive_key(name: &str) -> bool {
         || compact.contains("signature")
         || compact.contains("credential")
         || compact.contains("accesskey")
+        || compact.contains("appkey")
+        || compact.contains("subscriptionkey")
+        || compact.contains("authkey")
+        || compact.contains("passcode")
+        || compact.contains("senha")
+        || compact.contains("samlresponse")
+        || compact.contains("jwt")
+        || matches!(
+            compact.as_str(),
+            "pwd" | "otp" | "pin" | "ticket" | "mfa" | "totp"
+        )
+        || compact.ends_with("pwd")
+        || compact.ends_with("otp")
         || compact.contains("csrf")
         || compact.contains("xsrf")
         || compact.ends_with("sessionid")
@@ -1463,8 +1599,46 @@ fn collect_query(query: &str, out: &mut Vec<SensitiveValue>) {
 }
 
 fn collect_url(url: &str, out: &mut Vec<SensitiveValue>) {
-    if let Some((_, query)) = url.split_once('?') {
+    let (before_fragment, fragment) = match url.split_once('#') {
+        Some((left, right)) => (left, Some(right)),
+        None => (url, None),
+    };
+    if let Some((_, query)) = before_fragment.split_once('?') {
         collect_query(query, out);
+    }
+    // Fragmento com parâmetros (`#access_token=...`).
+    if let Some(fragment) = fragment {
+        collect_query(fragment, out);
+    }
+    let path_part = before_fragment.split('?').next().unwrap_or("");
+    // Parâmetros de matriz (`;jsessionid=...`) e senha do userinfo.
+    let (authority, path) = match path_part.split_once("://") {
+        Some((_, rest)) => match rest.split_once('/') {
+            Some((authority, path)) => (Some(authority), path),
+            None => (Some(rest), ""),
+        },
+        None => (None, path_part),
+    };
+    if let Some(authority) = authority {
+        if let Some((userinfo, _)) = authority.rsplit_once('@') {
+            let password = userinfo.split_once(':').map_or(userinfo, |(_, pass)| pass);
+            out.push(SensitiveValue {
+                origin: "urlUserinfo",
+                value: percent_decode(password),
+            });
+        }
+    }
+    for segment in path.split('/') {
+        for param in segment.split(';').skip(1) {
+            if let Some((name, value)) = param.split_once('=') {
+                if is_propagating_key(&percent_decode(name)) {
+                    out.push(SensitiveValue {
+                        origin: "urlMatrix",
+                        value: percent_decode(value),
+                    });
+                }
+            }
+        }
     }
 }
 
