@@ -434,6 +434,8 @@ const CDP_TARGET_METHODS: &[&str] = &[
     "Target.attachFailed",
     "Capture.sessionSetup",
     "Capture.targetSetupTimeout",
+    "Capture.targetSetupAborted",
+    "Target.targetDestroyed",
 ];
 
 /// Código de aviso importado pelo core (`cdp.target_setup_timeout`).
@@ -566,9 +568,7 @@ impl Cdp {
         self.command_depth += 1;
         let pipeline_result = self.wait_for_wired_commands_inner(socket, wired, timeout);
         self.command_depth = self.command_depth.saturating_sub(1);
-        if pipeline_result.is_ok() {
-            self.flush_pending_setups(socket);
-        }
+        self.flush_pending_setups(socket);
         pipeline_result
     }
 
@@ -689,12 +689,36 @@ impl Cdp {
         });
     }
 
+    fn push_target_setup_aborted(
+        &mut self,
+        attached: &AttachedTarget,
+        parent_session_id: Option<&str>,
+    ) {
+        if !self.setup_in_progress.remove(&attached.session_id) {
+            return;
+        }
+        self.push_event_line(
+            &attached.session_id,
+            "Capture.targetSetupAborted",
+            &json!({
+                "targetId": attached.target_id,
+                "sessionId": attached.session_id,
+                "type": attached.target_type,
+                "reason": "alvo encerrado durante a configuração",
+            }),
+            parent_session_id,
+        );
+    }
+
     fn push_target_setup_timeout(
         &mut self,
         attached: &AttachedTarget,
         error: String,
         parent_session_id: Option<&str>,
     ) {
+        if !self.setup_in_progress.contains(&attached.session_id) {
+            return;
+        }
         let is_primary = self.configured_target_primary.get(&attached.target_id)
             == Some(&attached.session_id);
         self.setup_in_progress.remove(&attached.session_id);
@@ -708,6 +732,13 @@ impl Cdp {
             self.drop_recorded_network_for_session(&attached.session_id);
         }
         let command = Self::command_from_setup_error(&error);
+        if !Self::should_record_setup_timeout(
+            is_primary,
+            &error,
+            self.session_has_recorded_network(&attached.session_id),
+        ) {
+            return;
+        }
         self.push_event_line(
             &attached.session_id,
             "Capture.targetSetupTimeout",
@@ -720,6 +751,27 @@ impl Cdp {
             }),
             parent_session_id,
         );
+    }
+
+    fn should_record_setup_timeout(
+        is_primary: bool,
+        error: &str,
+        session_has_network: bool,
+    ) -> bool {
+        !(is_primary && (error.contains("(pipeline)") || session_has_network))
+    }
+
+    fn session_has_recorded_network(&self, session_id: &str) -> bool {
+        self.events.iter().any(|line| {
+            let Ok(value) = serde_json::from_str::<Value>(line) else {
+                return false;
+            };
+            value.get("sessionId").and_then(Value::as_str) == Some(session_id)
+                && value
+                    .get("method")
+                    .and_then(Value::as_str)
+                    .is_some_and(|method| method.starts_with("Network."))
+        })
     }
 
     fn push_event_line(
@@ -1013,6 +1065,20 @@ impl Cdp {
         let Some(method) = value.get("method").and_then(Value::as_str) else {
             return;
         };
+        if method == "Target.detachedFromTarget" {
+            if let Some(params) = value.get("params").and_then(Value::as_object) {
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if let Some(attached) = self.setup_seen.get(session_id).cloned() {
+                    if self.setup_in_progress.contains(session_id) {
+                        let parent = value.get("sessionId").and_then(Value::as_str);
+                        self.push_target_setup_aborted(&attached, parent);
+                    }
+                }
+            }
+        }
         if method == "Target.attachedToTarget" {
             if let Some(params) = value.get("params").and_then(Value::as_object) {
                 let session_id = params
@@ -1061,13 +1127,17 @@ impl Cdp {
                     } else {
                         self.pending_setup.push((attached, waiting));
                     }
-                } else if let Err(error) = self.setup_attached_target(
-                    socket,
-                    attached.clone(),
-                    waiting,
-                    parent_wire,
-                ) {
-                    self.push_target_setup_timeout(&attached, error, parent_wire);
+                } else if self.command_depth == 0 {
+                    if let Err(error) = self.setup_attached_target(
+                        socket,
+                        attached.clone(),
+                        waiting,
+                        parent_wire,
+                    ) {
+                        self.push_target_setup_timeout(&attached, error, parent_wire);
+                    }
+                } else {
+                    self.pending_setup.push((attached, waiting));
                 }
             }
         }
@@ -2268,6 +2338,30 @@ mod tests {
 
     fn finish_event(id: &str) -> Value {
         json!({ "requestId": id, "timestamp": 11.0 })
+    }
+
+    #[test]
+    fn setup_timeout_warning_policy() {
+        assert!(!Cdp::should_record_setup_timeout(
+            true,
+            "CDP timeout aguardando Network.enable (pipeline)",
+            false,
+        ));
+        assert!(!Cdp::should_record_setup_timeout(
+            true,
+            "CDP timeout aguardando Target.setAutoAttach",
+            true,
+        ));
+        assert!(Cdp::should_record_setup_timeout(
+            false,
+            "CDP timeout aguardando Network.enable (pipeline)",
+            false,
+        ));
+        assert!(Cdp::should_record_setup_timeout(
+            true,
+            "CDP send Network.enable: closed",
+            false,
+        ));
     }
 
     #[test]
