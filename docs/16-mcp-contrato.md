@@ -78,6 +78,15 @@ Com `reveal=false`:
   segurança** (política do core): `get_body` devolve o descritor com
   `masked: "unsupported"` e sem conteúdo; `search_bodies` não os varre e conta
   em `skippedMasked`. Para lê-los é preciso `reveal=true`.
+- **Metadados de corpo** (`state`, `bytes`, `contentType`, `hasRequestBody`/
+  `hasResponseBody`) saem da sessão original mesmo na visão mascarada, para a
+  máscara não esconder que existe um corpo; só o conteúdo é retido.
+- **`target` e `initiator`**: o sanitizador do core não cobre as URLs desses
+  campos; o servidor aplica `sanitize_url` (query e fragmento) nelas. URLs em
+  `trace_value` passam pelo mesmo filtro.
+- **Custo**: a primeira chamada mascarada de uma sessão a carrega inteira em
+  memória para sanitizá-la (cópia guardada em cache). Sessões muito grandes
+  podem levar segundos e responder `too_large` se o core recusar o carregamento.
 - **Valores de segredo nunca aparecem em `trace_value`** sem `reveal`: a
   ferramenta calcula sobre a sessão original (precisa dos valores reais para
   casar produtor e consumidor) e devolve apenas nomes, comprimentos,
@@ -105,7 +114,9 @@ traz `revealed: true`.
   `nextCursor` (ausente quando acabou). Saídas paginadas trazem `total` e
   `hasMore`.
 - Erros: resultado com `isError: true` e `structuredContent`
-  `{"error":{"code","message"}}`. Códigos: `invalid_argument`, `not_found`
+  `{"error":{"code","message"}}`. Parâmetros que não casam com o esquema
+  (campo obrigatório ausente, tipo errado) são recusados pelo SDK com
+  `isError: true` e texto livre dizendo o campo, sem `structuredContent`. Códigos: `invalid_argument`, `not_found`
   (sessão ou requisição), `outside_allowed_dir`, `reveal_disabled`,
   `import_failed`, `too_large`, `exists`, `io`.
 - Corpos: nunca texto gigante na resposta. Limite inline `maxInlineBytes`
