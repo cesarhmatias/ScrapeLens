@@ -898,7 +898,7 @@ mod tests {
                         body: "{\"itens\":[1,2,3]}".to_string(),
                     },
                     ("unsolved", "/", _) => Reply::html(
-                        "<html><body>Verificando…<script src='https://challenges.cloudflare.com/turnstile/v0/api.js'></script></body></html>",
+                        "<html><body>Verificando…<script src='https://turnstile.blocked.invalid.test/api.js'></script></body></html>",
                     )
                     .status(403)
                     .header("cf-mitigated", "challenge")

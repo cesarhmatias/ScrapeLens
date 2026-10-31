@@ -359,7 +359,7 @@ site visto só com a allowlist usada, ausência de interação humana, e que
 Regra: **só entra na tabela entregue assinatura com fonte consultada**
 (documentação do fornecedor, ou fonte secundária citável, ou fixture do
 projeto). Sem fonte confirmada: fora, listada em §6.2. Fontes consultadas em
-2026-10-31 (leitura de documentação pública; nenhum site de terceiro foi
+2026-10-31 (leitura de documentação pública, cada página aberta diretamente; nenhum site de terceiro foi
 testado nem contatado para detectar proteção).
 
 ### 6.1 Entregues
@@ -467,7 +467,7 @@ cronológica (§5.2); (4) cookie de presença reutilizado não é priming (§5.3
 
 Limites desta entrega: as sessões do `live_e2e` vêm de servidores que **imitam**
 os sinais; elas provam o detector, não a presença de proteção em site algum.
-Nenhum site real de terceiros foi acessado. As assinaturas de fornecedor vêm de
+Nenhum site real de terceiros foi acessado: os servidores são loopback e o script de terceiro do cenário "desafio sem solução" aponta para um host fictício (`turnstile.blocked.invalid.test`), que a allowlist nega. As assinaturas de fornecedor vêm de
 documentação lida em 2026-10-31; os fornecedores mudam sinais sem aviso. O
 `site_profile` ainda não está registrado como ferramenta do servidor MCP (é da
 Core/servidor), e o encadeamento `start_capture`→`navigate`→`stop_capture` ainda

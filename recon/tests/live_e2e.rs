@@ -46,9 +46,9 @@ fn live_unsolved_challenge_is_cloakbrowser_candidate() {
     let cf = p.findings.iter().find(|f| f.signature_id.as_deref() == Some("cf-005")).expect("cf-mitigated");
     assert_eq!(cf.confidence, Confidence::Alta);
     assert_eq!(cf.resolved_later, Some(false));
-    // O Turnstile não carregou (allowlist): fica a tentativa e o achado de terceiro.
-    assert!(p.findings.iter().any(|f| f.category == "terceiro-bloqueado" && f.summary.contains("challenges.cloudflare.com")));
-    assert!(p.findings.iter().any(|f| f.signature_id.as_deref() == Some("cf-007")));
+    // O script de terceiro (host fictício `.invalid.test`, nenhum site real) não
+    // carregou por causa da allowlist: fica o achado de terceiro bloqueado.
+    assert!(p.findings.iter().any(|f| f.category == "terceiro-bloqueado" && f.summary.contains("turnstile.blocked.invalid.test")));
     assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser, "{:#?}", p.recommendation);
     assert!(p.recommendation.limits.iter().any(|l| l.contains("allowlist")));
 }
