@@ -1176,7 +1176,7 @@ fn mask_url_fields(value: &mut Value) {
 }
 
 /// URL como aparece na saída: tokens de query/fragmento mascarados sem reveal.
-fn shown_url(url: &str, reveal: bool) -> String {
+pub(crate) fn shown_url(url: &str, reveal: bool) -> String {
     if reveal {
         url.to_string()
     } else {
@@ -1412,4 +1412,42 @@ fn trace_request(
     };
     out.insert("mode".into(), json!("request"));
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// site_profile
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiteProfileParams {
+    pub session_id: String,
+    /// Requisição cujos tokens serão rastreados (padrão: as últimas XHR/fetch
+    /// bem-sucedidas da aplicação).
+    pub target_request_id: Option<String>,
+}
+
+/// Reconhecimento do site (proteções, bloqueios, cookies e tokens) com
+/// evidência. A função do `recon` já redige valores (`[redigido, N bytes]`) e
+/// tira a query das URLs, então roda sobre a sessão original (precisa dos
+/// valores reais para rastrear tokens) sem vazar; as URLs passam por
+/// `sanitize_url` mesmo assim.
+pub fn site_profile(ctx: &Ctx, params: SiteProfileParams) -> ToolResult {
+    let entry = ctx.open(&params.session_id)?;
+    if let Some(id) = &params.target_request_id {
+        entry.lazy.session.find_request(id).ok_or_else(|| {
+            ToolError::not_found(format!("requisição {id:?} não encontrada na sessão"))
+        })?;
+    }
+    let options = scrapelens_recon::ProfileOptions {
+        target_request_id: params.target_request_id.clone(),
+        ..scrapelens_recon::ProfileOptions::default()
+    };
+    let source = scrapelens_core::search::LazyBodies(&entry.lazy);
+    let profile = scrapelens_recon::site_profile(&entry.lazy.session, &source, &options);
+    let mut value = to_value(&profile)?;
+    mask_url_fields(&mut value);
+    if let Value::Object(map) = &mut value {
+        map.insert("sessionId".into(), json!(entry.handle));
+    }
+    Ok(value)
 }

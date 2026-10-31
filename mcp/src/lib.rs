@@ -3,8 +3,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod app;
+pub mod cli;
 pub mod config;
 pub mod error;
+pub mod live;
 pub mod project;
 pub mod registry;
 pub mod server;

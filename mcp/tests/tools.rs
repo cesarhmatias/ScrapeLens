@@ -964,3 +964,21 @@ fn trace_uses_chronological_order_not_session_order() {
     .unwrap();
     assert_eq!(literal["firstProducer"]["requestId"], "har-0002");
 }
+
+#[test]
+fn capture_outputs_drop_the_query_entirely() {
+    // Nas saídas de captura nenhum parâmetro de URL é mostrado (não há como
+    // saber quais são segredo): query e fragmento viram "?…".
+    assert_eq!(
+        scrapelens_mcp::live::strip_query("http://a.test/p?k=SEGREDO#frag"),
+        "http://a.test/p?…"
+    );
+    assert_eq!(
+        scrapelens_mcp::live::strip_query("http://a.test/p#frag"),
+        "http://a.test/p?…"
+    );
+    assert_eq!(
+        scrapelens_mcp::live::strip_query("http://a.test/p"),
+        "http://a.test/p"
+    );
+}

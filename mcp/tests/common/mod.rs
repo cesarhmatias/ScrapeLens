@@ -1,6 +1,8 @@
 //! Apoio dos testes: HAR sintético com fluxo de cookie/token/CSRF e helpers.
 #![allow(dead_code)]
 
+pub mod client;
+
 use std::path::{Path, PathBuf};
 
 use scrapelens_mcp::{Config, Ctx};
@@ -236,4 +238,43 @@ pub fn assert_no_secrets(value: &Value, what: &str) {
     for secret in MASKED_SECRETS {
         assert!(!text.contains(secret), "{what}: vazou {secret}\n{text}");
     }
+}
+
+/// HAR sintético com sinais inventados de Cloudflare (domínio `.invalid`).
+pub const CF_SECRET: &str = "SEGREDO-BM-1";
+
+pub fn cf_har() -> String {
+    let entry = |when: &str, url: &str, status: u16, resp: Vec<(&str, &str)>| {
+        json!({
+            "startedDateTime": when, "time": 10.0,
+            "request": {"method": "GET", "url": url, "httpVersion": "HTTP/1.1",
+                "headers": [{"name": "Accept", "value": "text/html"}],
+                "queryString": [], "cookies": [], "headersSize": -1, "bodySize": 0},
+            "response": {"status": status, "statusText": "", "httpVersion": "HTTP/1.1",
+                "headers": resp.iter().map(|(n, v)| json!({"name": n, "value": v})).collect::<Vec<_>>(),
+                "cookies": [], "redirectURL": "", "headersSize": -1, "bodySize": 0,
+                "content": {"mimeType": "text/html", "size": 2, "text": "ok"}},
+            "cache": {}, "timings": {"send": 0, "wait": 8, "receive": 2},
+        })
+    };
+    let set_cookie = format!("__cf_bm={CF_SECRET}; Path=/; HttpOnly");
+    let entries = vec![
+        entry(
+            "2026-10-31T10:00:00.000Z",
+            "http://site.invalid.test/?utm=SEGREDO-QUERY-1",
+            200,
+            vec![
+                ("content-type", "text/html"),
+                ("cf-ray", "abc-GRU"),
+                ("set-cookie", &set_cookie),
+            ],
+        ),
+        entry(
+            "2026-10-31T10:00:01.000Z",
+            "http://site.invalid.test/area",
+            403,
+            vec![("content-type", "text/html"), ("cf-mitigated", "challenge")],
+        ),
+    ];
+    json!({"log": {"version": "1.2", "creator": {"name": "t", "version": "1"}, "pages": [], "entries": entries}}).to_string()
 }

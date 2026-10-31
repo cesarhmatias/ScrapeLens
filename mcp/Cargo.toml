@@ -8,12 +8,14 @@ description = "ScrapeLens MCP: servidor local, somente leitura, sobre sessões j
 publish = false
 
 [dependencies]
-rmcp = { version = "3.8.0", features = ["server", "transport-io", "macros", "schemars"] }
+rmcp = { version = "3.8.0", features = ["server", "transport-io", "macros", "schemars", "elicitation"] }
 schemars = "1.2.3"
 scrapelens-core = { path = "../core" }
+scrapelens-capture = { path = "../capture" }
+scrapelens-recon = { path = "../recon" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread", "io-std"] }
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread", "io-std", "signal", "time"] }
 
 [dev-dependencies]
 tempfile = "3"
@@ -25,3 +27,8 @@ path = "src/lib.rs"
 [[bin]]
 name = "scrapelens-mcp"
 path = "src/main.rs"
+
+# Servidor com navegador falso para os testes ponta a ponta (não faz parte do produto).
+[[example]]
+name = "fake_server"
+path = "examples/fake_server.rs"

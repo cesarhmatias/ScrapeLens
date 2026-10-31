@@ -17,6 +17,8 @@ pub struct Config {
     /// Diretórios de sessões só para leitura (canônicos).
     pub extra_dirs: Vec<PathBuf>,
     pub allow_reveal: bool,
+    /// Aceita `start_capture` sem elicitação quando o cliente não a suporta.
+    pub allow_unconfirmed_capture: bool,
     pub max_import_bytes: u64,
 }
 
@@ -52,6 +54,7 @@ impl Config {
             out_dir,
             extra_dirs: extras,
             allow_reveal,
+            allow_unconfirmed_capture: false,
             max_import_bytes,
         })
     }

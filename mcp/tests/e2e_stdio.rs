@@ -2,112 +2,34 @@
 
 mod common;
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{channel, Receiver};
-use std::time::Duration;
+use std::process::Command;
 
+use common::client::{Client as C, Elicit};
 use common::*;
-use serde_json::{json, Value};
+use serde_json::json;
 
-struct Client {
-    child: Child,
-    stdin: Option<ChildStdin>,
-    lines: Receiver<String>,
-    next_id: u64,
-    /// Toda linha de stdout recebida (precisa ser JSON-RPC).
-    seen: Vec<String>,
+fn program() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_scrapelens-mcp"))
 }
+
+struct Client(C);
 
 impl Client {
     fn start(args: &[&str]) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_scrapelens-mcp"))
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let (tx, lines) = channel();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                if tx.send(line).is_err() {
-                    break;
-                }
-            }
-        });
-        let stdin = child.stdin.take();
-        Self {
-            child,
-            stdin,
-            lines,
-            next_id: 0,
-            seen: Vec::new(),
-        }
+        Client(C::start(&program(), args, Elicit::Unsupported))
     }
-
-    fn send(&mut self, value: Value) {
-        let stdin = self.stdin.as_mut().unwrap();
-        writeln!(stdin, "{value}").unwrap();
-        stdin.flush().unwrap();
+    fn handshake(&mut self) -> serde_json::Value {
+        self.0.handshake()
     }
-
-    fn request(&mut self, method: &str, params: Value) -> Value {
-        self.next_id += 1;
-        let id = self.next_id;
-        self.send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
-        loop {
-            let line = self
-                .lines
-                .recv_timeout(Duration::from_secs(60))
-                .expect("o servidor não respondeu a tempo");
-            self.seen.push(line.clone());
-            let message: Value = serde_json::from_str(&line)
-                .unwrap_or_else(|e| panic!("stdout não é JSON ({e}): {line}"));
-            assert_eq!(
-                message["jsonrpc"], "2.0",
-                "stdout só pode trazer JSON-RPC: {line}"
-            );
-            if message["id"] == json!(id) {
-                return message;
-            }
-        }
+    fn request(&mut self, method: &str, params: serde_json::Value) -> serde_json::Value {
+        self.0.request(method, params)
     }
-
-    fn handshake(&mut self) -> Value {
-        let init = self.request(
-            "initialize",
-            json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "0"}}),
-        );
-        self.send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
-        init
+    fn tool(&mut self, name: &str, arguments: serde_json::Value) -> (bool, serde_json::Value) {
+        self.0.tool(name, arguments)
     }
-
-    /// Chama uma ferramenta e devolve (isError, structuredContent).
-    fn tool(&mut self, name: &str, arguments: Value) -> (bool, Value) {
-        let reply = self.request("tools/call", json!({"name": name, "arguments": arguments}));
-        let result = &reply["result"];
-        assert!(result.is_object(), "sem result: {reply}");
-        // O texto repete o structuredContent.
-        let text: Value =
-            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
-        assert_eq!(text, result["structuredContent"], "{name}");
-        (
-            result["isError"] == json!(true),
-            result["structuredContent"].clone(),
-        )
-    }
-
-    fn finish(mut self) -> String {
-        drop(self.stdin.take());
-        let status = self.child.wait().unwrap();
-        assert!(
-            status.success(),
-            "o servidor deveria sair limpo no EOF: {status:?}"
-        );
-        let mut stderr = String::new();
-        std::io::Read::read_to_string(&mut self.child.stderr.take().unwrap(), &mut stderr).unwrap();
+    fn finish(self) -> String {
+        let (ok, stderr) = self.0.finish();
+        assert!(ok, "o servidor deveria sair limpo no EOF");
         stderr
     }
 }
@@ -132,7 +54,7 @@ fn full_session_over_stdio() {
     assert_eq!(init["result"]["serverInfo"]["name"], "scrapelens-mcp");
     assert!(init["result"]["capabilities"]["tools"].is_object());
 
-    // tools/list: as nove ferramentas, com esquema e anotações.
+    // tools/list: as catorze ferramentas, com esquema e anotações.
     let listed = client.request("tools/list", json!({}));
     let tools = listed["result"]["tools"].as_array().unwrap();
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -140,6 +62,7 @@ fn full_session_over_stdio() {
     assert_eq!(
         names,
         [
+            "capture_status",
             "diff_requests",
             "diff_sessions",
             "get_body",
@@ -147,13 +70,23 @@ fn full_session_over_stdio() {
             "import_session",
             "list_requests",
             "list_sessions",
+            "navigate",
             "search_bodies",
+            "site_profile",
+            "start_capture",
+            "stop_capture",
             "trace_value"
         ]
     );
     for tool in tools {
         assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
-        let writes = tool["name"] == "import_session";
+        let writes = [
+            "import_session",
+            "start_capture",
+            "navigate",
+            "stop_capture",
+        ]
+        .contains(&tool["name"].as_str().unwrap());
         assert_eq!(
             tool["annotations"]["readOnlyHint"],
             json!(!writes),
@@ -240,7 +173,7 @@ fn full_session_over_stdio() {
         .contains("request_id"));
 
     // Nada além de JSON-RPC em stdout (cada linha foi validada em request()).
-    assert!(!client.seen.is_empty());
+    assert!(!client.0.seen.is_empty());
     let stderr = client.finish();
     assert!(
         stderr.contains("scrapelens-mcp"),

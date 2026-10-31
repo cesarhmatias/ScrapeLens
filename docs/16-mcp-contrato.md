@@ -6,20 +6,22 @@ documento vem antes do código; mudanças de contrato passam pelo líder.
 
 ## 1. O que é
 
-Servidor MCP **local e somente leitura** sobre sessões já capturadas. Um agente
+Servidor MCP **local** sobre sessões já capturadas (leitura) e, desde a onda 2,
+com captura controlada de navegador (§6b). Um agente
 de IA o usa para entender a configuração de um site (cadeia de requisições,
 headers na ordem original, cookies, tokens, corpos) a partir de sessões do
-ScrapeLens. Fica fora do escopo: lançar navegador, capturar, navegar, executar
-scripts, CloakBrowser (adiado por decisão do usuário), HTTP/streamable (só
-stdio nesta onda).
+ScrapeLens. Fica fora do escopo: agir no navegador (`act`), executar scripts,
+CloakBrowser (adiado por decisão do usuário), HTTP/streamable (só stdio nesta
+onda).
 
 Princípios:
 
 - Reaproveita o core (`scrapelens-core`): nenhum parser, correlação, diff ou
   busca é reimplementado. O crate só traduz parâmetros, aplica a política de
   segurança e formata saídas.
-- Não abre conexões de rede (o core também não; o crate não depende de cliente
-  HTTP). Sem telemetria.
+- Não abre conexões de rede por conta própria (o core também não; o crate não
+  depende de cliente HTTP). O único tráfego é o do Chrome da captura controlada,
+  restrito à allowlist confirmada (§6b), e a porta CDP em loopback. Sem telemetria.
 - Fidelidade acima de conveniência: headers voltam como **arrays ordenados de
   pares** com duplicatas, pseudoheaders separados e `orderState`; nunca viram
   mapa nem são ordenados. Cada visão carrega a fonte e o estado de verificação.
@@ -317,8 +319,69 @@ ficam).
   `tools/call` para cada ferramenta), com asserção de que stdout só traz
   JSON-RPC.
 
+## 6b. Navegador e perfil do site (rodada 11, onda 2)
+
+Cinco ferramentas ligam `scrapelens-capture` (`capture/`) e `scrapelens-recon`
+(`recon/`) ao servidor, com os esquemas de `docs/16b-mcp-navegador.md` (§3, §4,
+§5). Dependências por path; o servidor não reimplementa nada da captura.
+
+- `start_capture {allowed_hosts[], third_party_hosts?[], start_url?,
+  binary_path?, headless?, expose_cdp?}` → `StartInfo` (sem caminhos) +
+  `captureId`, `sessionId` (nome do diretório que a sessão terá em
+  `--sessions-dir`) e `confirmation` (`elicited` | `unconfirmed-flag`).
+- `navigate {capture_id, url, wait?=load|none, timeout_ms?}` → `NavigateResult`.
+  A allowlist recusa antes de enviar (`url_not_allowed`).
+- `capture_status {capture_id}` → `recording`, `events`, `pageUrl`, `lastError`.
+- `stop_capture {capture_id}` → `StopReport` (sem caminhos) + `sessionId`
+  legível pelas ferramentas de leitura (`readable: true`), com
+  `allowlist.blockedHosts` e `violations`.
+- `site_profile {session_id, target_request_id?}` → `scrapelens.site-profile/1`
+  (achados com evidência, recomendação). Os ids de evidência resolvem em
+  `get_request`. Roda sobre a sessão original (precisa dos valores para
+  rastrear tokens); o `recon` já redige valores (`[redigido, N bytes]`) e tira a
+  query das URLs, e o servidor passa as URLs pelo filtro mesmo assim.
+
+Regras do servidor:
+
+- **Confirmação**: `start_capture` SEMPRE pede elicitação MCP (formulário com a
+  caixa `confirmo`), mostrando `allowed_hosts`, `third_party_hosts`, URL inicial,
+  `expose_cdp`, modo, binário do Chrome e `SENSITIVE_NOTICE`. Nenhum parâmetro
+  `confirmed` existe no esquema. Só `accept` com a caixa marcada abre o Chrome;
+  recusa, cancelamento, caixa desmarcada ou prazo (5 min) → `confirmation_denied`,
+  e **nada é aberto**, mesmo com a flag. Se o cliente não suporta elicitação (ou
+  ela falha) → `confirmation_unavailable`, a menos que o servidor tenha sido
+  iniciado com `--allow-unconfirmed-capture` (dupla trava, como o reveal).
+  Pedidos inválidos (allowlist vazia/larga/inválida, `start_url` fora) são
+  recusados **antes** da confirmação, sem incomodar o usuário.
+- **Mapa de capturas**: `capture_id` → captura, em memória; ids opacos
+  (`cap-<16 hex>`), nunca caminhos. **Uma captura ativa por vez**
+  (`capture_already_running`, inclusive enquanto a confirmação está pendente).
+  Depois de `stop_capture` o id deixa de existir (`capture_not_found`).
+- **Encerramento**: stdin fechado, SIGTERM ou SIGINT param todas as capturas
+  ativas de forma graciosa (a sessão é gravada) antes de sair.
+- **Diretório da sessão**: `--sessions-dir/capture-<ms>`; o Chrome escreve só
+  ali (perfil temporário próprio fica com o `capture/`).
+- **Sem caminhos nas saídas** (`sessionDir` removido). Nas saídas de captura
+  (`pageUrl`, `exampleUrl`, `violations[].url`) a **query e o fragmento são
+  trocados por `?…`**: não há como saber qual parâmetro é segredo.
+- Anotações: `start_capture` e `navigate` têm `readOnlyHint: false` e
+  `openWorldHint: true` (tráfego para os hosts listados); `stop_capture`
+  `readOnlyHint: false` (grava a sessão); `capture_status` e `site_profile` são
+  só leitura.
+- `expose_cdp=true` entrega o endereço CDP em loopback ao agente (depois do
+  portão de `16b` §4.1). As ações do agente por esse CDP **não** passam por esta
+  confirmação; o que as limita é a allowlist de rede aplicada pelo Chrome.
+
+Testes: `mcp/tests/live.rs` (política e mapa, backend contado),
+`mcp/tests/e2e_capture.rs` (servidor real com navegador falso do exemplo
+`fake_server`: elicitação aceita/recusada/ausente, navigate fora da allowlist,
+stop → `list_requests`/`site_profile`, encerramento por EOF e SIGTERM) e
+`mcp/tests/e2e_live.rs` (`#[ignore]`, Chrome real + servidor em loopback). O
+exemplo `fake_server` só é construído por `cargo test` (sem filtro) ou
+`cargo build --examples`.
+
 ## 7. Fora desta onda
 
 HTTP local, resources (`scrapelens://...`), regex em `search_bodies`,
-ferramentas de ação (`browser_*`, `generate_priming_script`, `validate_run`),
-elicitation. Entram em onda própria, com o líder.
+ferramenta de ação do agente no navegador (`act`; o agente usa o CDP exposto),
+`generate_priming_script`, `validate_run`. Entram em onda própria, com o líder.
