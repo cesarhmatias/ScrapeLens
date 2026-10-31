@@ -33,3 +33,29 @@ A divisão do campo `cookie` no fio é um fato observado; o modelo de dados pres
 ## D5 — Commits
 
 Conventional Commits contínuos, regra do usuário registrada no canal.
+
+## D6 — Navegadores de terceiros (CloakBrowser) e agente de IA
+
+Data: 2026-10-31. Decisão do líder, após a fase A de viabilidade
+(`docs/15-mcp-cloakbrowser.md`, seção "Viabilidade CloakBrowser (fase A)").
+
+1. **Proxy MITM continua vetado.** Vale para qualquer navegador, inclusive o
+   CloakBrowser. A fidelidade de headers HTTPS vem do NetLog; nenhum certificado
+   próprio é instalado e o QUIC não é desabilitado (D1).
+2. **O ScrapeLens nunca embute nem redistribui o binário do CloakBrowser.** Só
+   aponta para um binário que o próprio usuário instalou, como já faz com o
+   Chrome. A licença do binário proíbe redistribuição e exige licença OEM/SaaS
+   para oferecê-lo a terceiros (`BINARY-LICENSE.md`; resumo no doc 15, item 1).
+3. **Navegador compartilhado entre o agente de IA e o ScrapeLens:** o ScrapeLens
+   lança o navegador e expõe a porta de depuração **somente em loopback**
+   (`127.0.0.1`). O agente se conecta a essa porta; o ScrapeLens não depende de
+   o agente lançar o navegador.
+4. **Vetados no lançamento e na instalação de qualquer navegador de terceiros:**
+   - `--no-sandbox` (o wrapper do CloakBrowser o passa por padrão, inclusive no
+     macOS);
+   - `xattr -cr` ou qualquer outro contorno do Gatekeeper/quarentena;
+   - o wrapper `pip`/`npm` do CloakBrowser (traria atualização em segundo plano,
+     validação de licença e o contorno do Gatekeeper acima).
+5. **Estado:** download e execução do CloakBrowser (fases B1 e B2 do doc 15)
+   **não estão autorizados**. Dependem de autorização expressa do usuário,
+   repassada pelo líder.
