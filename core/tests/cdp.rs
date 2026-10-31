@@ -639,3 +639,93 @@ fn target_events_still_flag_unknown_sessions() {
         .iter()
         .any(|warning| warning.code == "cdp.target_unknown" && warning.message.contains("S9")));
 }
+
+#[test]
+fn setup_timeout_uses_type_and_pending_ms_when_present() {
+    let jsonl = [
+        attached("S1", "T1", "page", "https://a.test/", None),
+        event(
+            "S1",
+            "Capture.targetSetupTimeout",
+            serde_json::json!({
+                "command": "Network.enable", "type": "service_worker", "pendingMs": 1500,
+                "targetId": "T1", "sessionId": "S1",
+            }),
+        ),
+    ]
+    .join("\n");
+    let capture = parse_cdp_jsonl(jsonl.as_bytes()).unwrap();
+    let (session, _) = build_cdp_session(&capture);
+    let warning = session
+        .warnings
+        .iter()
+        .find(|warning| warning.code == "cdp.target_setup_timeout")
+        .unwrap();
+    assert_eq!(
+        warning.message,
+        "configuração incompleta: Network.enable sem resposta; a rede pode estar incompleta neste alvo (tipo: service_worker; pendente há 1500 ms)"
+    );
+    let detail = warning.detail.as_ref().unwrap();
+    assert_eq!(detail["targetId"], "T1");
+    assert_eq!(detail["sessionId"], "S1");
+    assert_eq!(detail["pendingMs"], 1500);
+}
+
+#[test]
+fn setup_error_is_a_network_loss_warning_linked_to_the_target() {
+    let jsonl = [
+        attached("S1", "T1", "iframe", "https://a.test/f", None),
+        event(
+            "S1",
+            "Capture.targetSetupError",
+            serde_json::json!({
+                "command": "Network.enable", "error": "Permission denied",
+                "type": "iframe", "targetId": "T1", "sessionId": "S1",
+            }),
+        ),
+    ]
+    .join("\n");
+    let capture = parse_cdp_jsonl(jsonl.as_bytes()).unwrap();
+    assert_eq!(capture.unhandled_events, 0);
+    let (session, _) = build_cdp_session(&capture);
+    let warning = session
+        .warnings
+        .iter()
+        .find(|warning| warning.code == "cdp.target_setup_error")
+        .unwrap_or_else(|| panic!("{:?}", session.warnings));
+    assert_eq!(
+        warning.message,
+        "configuração falhou: Network.enable respondeu erro (Permission denied); a rede deste alvo pode estar ausente ou incompleta"
+    );
+    let detail = warning.detail.as_ref().unwrap();
+    assert_eq!(detail["targetId"], "T1");
+    assert_eq!(detail["sessionId"], "S1");
+    assert_eq!(detail["command"], "Network.enable");
+}
+
+#[test]
+fn setup_aborted_is_an_info_note_on_the_target_not_a_warning() {
+    let jsonl = [
+        attached("S1", "T1", "page", "https://a.test/", None),
+        request_event("S1", "r1", "https://a.test/x", 1.0),
+        event(
+            "S1",
+            "Capture.targetSetupAborted",
+            serde_json::json!({
+                "targetId": "T1", "sessionId": "S1", "type": "page",
+                "reason": "alvo encerrado durante a configuração",
+            }),
+        ),
+    ]
+    .join("\n");
+    let capture = parse_cdp_jsonl(jsonl.as_bytes()).unwrap();
+    assert_eq!(capture.unhandled_events, 0);
+    let (session, _) = build_cdp_session(&capture);
+    assert!(
+        !session.warnings.iter().any(|w| w.code.contains("setup")),
+        "{:?}",
+        session.warnings
+    );
+    let target = session.requests[0].target.as_ref().unwrap();
+    assert_eq!(target.notes, vec!["alvo encerrado durante a configuração"]);
+}

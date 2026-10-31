@@ -45,6 +45,9 @@ pub struct CdpCapture {
     /// Algum evento `Target.*` apareceu no arquivo. Sem nenhum, o arquivo é de
     /// antes da captura multi-alvo: sem proveniência de alvo nem `target_unknown`.
     pub target_events_seen: bool,
+    /// Notas informativas por sessão (`Capture.targetSetupAborted`); aplicadas
+    /// aos alvos no fim do parse.
+    pub target_notes: BTreeMap<String, Vec<String>>,
     pub requests: Vec<CdpRequest>,
     pub warnings: Vec<Warning>,
 }
@@ -591,14 +594,65 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .and_then(Value::as_str)
                     .filter(|value| !value.is_empty())
                     .unwrap_or("<comando desconhecido>");
+                let target_type = non_empty_str(params, "type");
+                let pending_ms = params.get("pendingMs").and_then(Value::as_u64);
+                let mut extras: Vec<String> = Vec::new();
+                if let Some(kind) = target_type {
+                    extras.push(format!("tipo: {kind}"));
+                }
+                if let Some(ms) = pending_ms {
+                    extras.push(format!("pendente há {ms} ms"));
+                }
+                let suffix = if extras.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", extras.join("; "))
+                };
                 let mut warning = Warning::new(
                     "cdp.target_setup_timeout",
                     format!(
-                        "configuração incompleta: {command} sem resposta; a rede pode estar incompleta neste alvo"
+                        "configuração incompleta: {command} sem resposta; a rede pode estar incompleta neste alvo{suffix}"
                     ),
-                );
+                )
+                .with_detail(setup_detail(params, &session, command));
                 warning.severity = crate::model::WarningSeverity::Warning;
                 capture.warnings.push(warning);
+                capture.events_used += 1;
+            }
+            "Capture.targetSetupError" => {
+                let Some(params) = params else { continue };
+                let command = params
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("<comando desconhecido>");
+                let error = params
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("erro desconhecido");
+                let mut warning = Warning::new(
+                    "cdp.target_setup_error",
+                    format!(
+                        "configuração falhou: {command} respondeu erro ({error}); a rede deste alvo pode estar ausente ou incompleta"
+                    ),
+                )
+                .with_detail(setup_detail(params, &session, command));
+                warning.severity = crate::model::WarningSeverity::Warning;
+                capture.warnings.push(warning);
+                capture.events_used += 1;
+            }
+            "Capture.targetSetupAborted" => {
+                // Nota informativa no alvo; não é perda de rede.
+                let Some(params) = params else { continue };
+                let target_session = non_empty_str(params, "sessionId")
+                    .map(str::to_string)
+                    .unwrap_or_else(|| session.clone());
+                capture
+                    .target_notes
+                    .entry(target_session)
+                    .or_default()
+                    .push("alvo encerrado durante a configuração".to_string());
                 capture.events_used += 1;
             }
             "Target.attachFailed" => {
@@ -715,6 +769,17 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
             continue;
         }
         capture.requests.push(request.clone());
+    }
+    for (session_id, notes) in std::mem::take(&mut capture.target_notes) {
+        if let Some(target) = capture.targets.get_mut(&session_id) {
+            for note in notes {
+                if !target.notes.contains(&note) {
+                    target.notes.push(note);
+                }
+            }
+        } else {
+            capture.target_notes.insert(session_id, notes);
+        }
     }
     Ok(capture)
 }
@@ -1044,6 +1109,32 @@ fn session_of(event: &Value) -> String {
         .to_string()
 }
 
+fn non_empty_str<'a>(params: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+}
+
+/// Liga o aviso de setup ao alvo: `targetId`/`sessionId` (do evento ou da linha).
+fn setup_detail(params: &Map<String, Value>, session: &str, command: &str) -> Value {
+    let mut detail = Map::new();
+    detail.insert("command".to_string(), Value::from(command));
+    for key in ["targetId", "type", "error"] {
+        if let Some(value) = non_empty_str(params, key) {
+            detail.insert(key.to_string(), Value::from(value));
+        }
+    }
+    let session_id = non_empty_str(params, "sessionId").unwrap_or(session);
+    if !session_id.is_empty() {
+        detail.insert("sessionId".to_string(), Value::from(session_id));
+    }
+    if let Some(ms) = params.get("pendingMs").and_then(Value::as_u64) {
+        detail.insert("pendingMs".to_string(), Value::from(ms));
+    }
+    Value::Object(detail)
+}
+
 fn target_from_info(
     info: Option<&Map<String, Value>>,
     parent_session_id: Option<String>,
@@ -1063,6 +1154,7 @@ fn target_from_info(
         opener_id: text("openerId"),
         parent_session_id,
         attached,
+        notes: Vec::new(),
     }
 }
 

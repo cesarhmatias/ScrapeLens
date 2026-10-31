@@ -195,6 +195,10 @@ pub struct TargetProvenance {
     /// `false` = o alvo foi visto e não anexou (aviso, não erro).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attached: Option<bool>,
+    /// Notas informativas sobre o alvo (ex.: encerrado durante a configuração).
+    /// Não são avisos de rede.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 impl TargetProvenance {
@@ -205,6 +209,7 @@ impl TargetProvenance {
             && self.opener_id.is_none()
             && self.parent_session_id.is_none()
             && self.attached.is_none()
+            && self.notes.is_empty()
     }
 }
 
