@@ -108,6 +108,14 @@ fn run_inner(
         open_private(&bodies_path).map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
 
     let mut chrome = ChromeProcess::new(spawn_chrome(config, &profile, &netlog_path)?);
+    // Marcador para limpar órfãos se este processo morrer por SIGKILL; o Drop
+    // o remove em qualquer saída normal (sucesso, erro ou panic).
+    let marker = OrphanMarker::create(
+        &default_state_root(),
+        chrome.child_mut().id(),
+        &profile,
+        None,
+    );
     if let Ok(mut guard) = status.lock() {
         guard.chrome_pid = Some(chrome.child_mut().id());
         guard.page_url = config.start_url.clone();
@@ -125,6 +133,7 @@ fn run_inner(
         }
     };
 
+    marker.set_port(port_from_ws_url(&ws_url));
     let (mut socket, mut cdp) = match Cdp::connect(&ws_url, status.clone(), bodies_file) {
         Ok(pair) => pair,
         Err(error) => {
@@ -404,6 +413,218 @@ impl Drop for ChromeProcess {
             let _ = child.wait();
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Órfãos: Chrome e perfil temporário deixados por um SIGKILL do app.
+// ---------------------------------------------------------------------------
+
+const MARKER_PREFIX: &str = "capture-";
+const PROFILE_PREFIX: &str = "scrapelens-chrome-";
+
+/// Raiz de estado dos marcadores de captura (por usuário; o `temp_dir` do macOS
+/// já é privado ao usuário). O App chama `cleanup_orphans(&default_state_root())`.
+pub fn default_state_root() -> PathBuf {
+    std::env::temp_dir().join("scrapelens-capture-state")
+}
+
+fn port_from_ws_url(url: &str) -> Option<u16> {
+    let rest = url.split("://").nth(1)?;
+    let host_port = rest.split('/').next()?;
+    host_port.rsplit(':').next()?.parse().ok()
+}
+
+/// Marcador 0600 com o que é preciso para limpar uma captura abandonada.
+struct OrphanMarker {
+    path: Option<PathBuf>,
+    chrome_pid: u32,
+    profile: PathBuf,
+}
+
+impl OrphanMarker {
+    fn create(root: &Path, chrome_pid: u32, profile: &Path, port: Option<u16>) -> Self {
+        let mut marker = Self {
+            path: None,
+            chrome_pid,
+            profile: profile.to_path_buf(),
+        };
+        if store::ensure_private_dir(root).is_ok() {
+            let path = root.join(format!(
+                "{MARKER_PREFIX}{}-{}.json",
+                std::process::id(),
+                unix_millis()
+            ));
+            marker.path = Some(path);
+            marker.write(port);
+        }
+        marker
+    }
+
+    fn write(&self, port: Option<u16>) {
+        let Some(path) = &self.path else { return };
+        let body = json!({
+            "ownerPid": std::process::id(),
+            "chromePid": self.chrome_pid,
+            "profile": self.profile.display().to_string(),
+            "port": port,
+        });
+        let _ = write_private(path, body.to_string().as_bytes());
+    }
+
+    fn set_port(&self, port: Option<u16>) {
+        self.write(port);
+    }
+}
+
+impl Drop for OrphanMarker {
+    fn drop(&mut self) {
+        if let Some(path) = self.path.take() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// Linha de comando do processo, ou `None` se ele não existe.
+fn process_command(pid: u32) -> Option<String> {
+    let output = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !text.is_empty()).then_some(text)
+}
+
+fn process_exists(pid: u32) -> bool {
+    Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "pid="])
+        .output()
+        .map(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn signal(pid: u32, name: &str) {
+    let _ = Command::new("kill")
+        .args([name, &pid.to_string()])
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// Pids cuja linha de comando contém exatamente `--user-data-dir=<profile>`
+/// (o Chrome dedicado e seus auxiliares).
+fn pids_using_profile(profile_flag: &str) -> Vec<u32> {
+    let Ok(output) = Command::new("ps").args(["-axo", "pid=,command="]).output() else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim_start();
+            let (pid, command) = line.split_once(char::is_whitespace)?;
+            let pid: u32 = pid.parse().ok()?;
+            (command.contains(profile_flag) && pid != std::process::id()).then_some(pid)
+        })
+        .collect()
+}
+
+/// Só apaga perfis que este módulo cria: dentro do `temp_dir` e com o prefixo
+/// do app. Um marcador adulterado não consegue apontar para outro diretório.
+fn is_app_profile(profile: &Path) -> bool {
+    profile.parent() == Some(std::env::temp_dir().as_path())
+        && profile
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(PROFILE_PREFIX))
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct OrphanCleanup {
+    /// Marcadores de capturas abandonadas que foram removidos.
+    pub markers_removed: usize,
+    /// Processos Chrome encerrados (só os que ainda usavam o perfil do marcador).
+    pub processes_killed: usize,
+    /// Perfis temporários apagados.
+    pub profiles_removed: usize,
+}
+
+/// Limpa capturas abandonadas por um app que morreu sem encerrar o Chrome.
+/// Para cada marcador em `state_root` cujo processo dono não existe mais:
+/// encerra o Chrome do marcador somente se a linha de comando do PID ainda
+/// contém o perfil dedicado (nunca um PID reaproveitado ou o Chrome do
+/// usuário), apaga o perfil temporário do app e o marcador. Marcador de dono
+/// vivo (inclusive este processo) não é tocado.
+pub fn cleanup_orphans(state_root: &Path) -> OrphanCleanup {
+    let mut report = OrphanCleanup::default();
+    let Ok(entries) = std::fs::read_dir(state_root) else {
+        return report;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_marker = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(MARKER_PREFIX) && n.ends_with(".json"));
+        if !is_marker || path.is_symlink() {
+            continue;
+        }
+        let Some(value) = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        else {
+            continue;
+        };
+        let (Some(owner), Some(chrome_pid), Some(profile)) = (
+            value.get("ownerPid").and_then(Value::as_u64),
+            value.get("chromePid").and_then(Value::as_u64),
+            value.get("profile").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        let (owner, chrome_pid, profile) = (owner as u32, chrome_pid as u32, PathBuf::from(profile));
+        if process_exists(owner) {
+            continue;
+        }
+        if !is_app_profile(&profile) {
+            // Marcador que não é nosso: some só o marcador, nada mais é tocado.
+            let _ = std::fs::remove_file(&path);
+            report.markers_removed += 1;
+            continue;
+        }
+        let profile_flag = format!("--user-data-dir={}", profile.display());
+        let ours = |pid: u32| process_command(pid).is_some_and(|c| c.contains(&profile_flag));
+        let mut targets: Vec<u32> = Vec::new();
+        if ours(chrome_pid) {
+            targets.push(chrome_pid);
+        }
+        // Auxiliares do mesmo Chrome (renderers etc.) só entram se o principal era nosso.
+        if !targets.is_empty() {
+            for pid in pids_using_profile(&profile_flag) {
+                if !targets.contains(&pid) {
+                    targets.push(pid);
+                }
+            }
+        }
+        for pid in &targets {
+            if ours(*pid) {
+                signal(*pid, "-TERM");
+            }
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline && targets.iter().any(|p| ours(*p)) {
+            thread::sleep(Duration::from_millis(100));
+        }
+        for pid in &targets {
+            if ours(*pid) {
+                signal(*pid, "-KILL");
+            }
+        }
+        report.processes_killed += targets.len();
+        if profile.exists() && std::fs::remove_dir_all(&profile).is_ok() {
+            report.profiles_removed += 1;
+        }
+        let _ = std::fs::remove_file(&path);
+        report.markers_removed += 1;
+    }
+    report
 }
 
 fn wait_or_kill(child: &mut Child, timeout: Duration) -> ChromeExit {
@@ -2286,6 +2507,161 @@ mod tests {
             event_methods(&cdp),
             vec!["Capture.targetSetupError", "Capture.targetSetupAborted"]
         );
+    }
+
+    // --- limpeza de órfãos -------------------------------------------------
+
+    fn orphan_root(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "scrapelens-orphan-test-{tag}-{}-{}",
+            std::process::id(),
+            unix_millis()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn app_profile(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "{PROFILE_PREFIX}test-{tag}-{}-{}",
+            std::process::id(),
+            unix_millis()
+        ));
+        std::fs::create_dir_all(dir.join("Default")).unwrap();
+        dir
+    }
+
+    fn dead_pid() -> u32 {
+        let mut child = Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        assert!(!process_exists(pid));
+        pid
+    }
+
+    fn write_marker(root: &Path, name: &str, owner: u32, chrome: u32, profile: &Path) -> PathBuf {
+        let path = root.join(format!("{MARKER_PREFIX}{name}.json"));
+        let body = json!({
+            "ownerPid": owner,
+            "chromePid": chrome,
+            "profile": profile.display().to_string(),
+            "port": 9999,
+        });
+        write_private(&path, body.to_string().as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn orphan_with_dead_pids_is_cleaned() {
+        let root = orphan_root("dead");
+        let profile = app_profile("dead");
+        let marker = write_marker(&root, "a", dead_pid(), dead_pid(), &profile);
+        let report = cleanup_orphans(&root);
+        assert_eq!(report.markers_removed, 1);
+        assert_eq!(report.processes_killed, 0);
+        assert!(!profile.exists());
+        assert!(!marker.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn live_pid_with_foreign_command_line_is_not_touched() {
+        let root = orphan_root("foreign");
+        let profile = app_profile("foreign");
+        // Processo vivo cuja linha de comando NÃO contém o perfil (PID "reaproveitado").
+        let mut other = Command::new("sleep").arg("30").spawn().unwrap();
+        let marker = write_marker(&root, "b", dead_pid(), other.id(), &profile);
+        let report = cleanup_orphans(&root);
+        assert_eq!(report.processes_killed, 0);
+        assert!(
+            other.try_wait().unwrap().is_none(),
+            "processo alheio foi encerrado"
+        );
+        assert!(process_exists(other.id()));
+        // O perfil e o marcador do app são limpos mesmo assim.
+        assert!(!profile.exists());
+        assert!(!marker.exists());
+        let _ = other.kill();
+        let _ = other.wait();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn live_pid_using_the_dedicated_profile_is_terminated() {
+        let root = orphan_root("ours");
+        let profile = app_profile("ours");
+        // Stand-in do Chrome: a linha de comando carrega o perfil dedicado.
+        let mut fake = Command::new("sh")
+            .args(["-c", "sleep 30; true", "fake-chrome"])
+            .arg(format!("--user-data-dir={}", profile.display()))
+            .spawn()
+            .unwrap();
+        let marker = write_marker(&root, "c", dead_pid(), fake.id(), &profile);
+        let report = cleanup_orphans(&root);
+        assert!(report.processes_killed >= 1);
+        let exited = (0..30).any(|_| {
+            if fake.try_wait().unwrap().is_some() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(100));
+            false
+        });
+        assert!(exited, "o Chrome do perfil dedicado devia ter sido encerrado");
+        assert!(!profile.exists());
+        assert!(!marker.exists());
+        let _ = fake.kill();
+        let _ = fake.wait();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn marker_of_a_live_owner_is_left_alone() {
+        let root = orphan_root("alive");
+        let profile = app_profile("alive");
+        let marker = write_marker(&root, "d", std::process::id(), dead_pid(), &profile);
+        let report = cleanup_orphans(&root);
+        assert_eq!(report, OrphanCleanup::default());
+        assert!(profile.exists());
+        assert!(marker.exists());
+        let _ = std::fs::remove_dir_all(&profile);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn marker_pointing_outside_app_profiles_never_deletes_the_directory() {
+        let root = orphan_root("foreign-dir");
+        let victim = orphan_root("victim");
+        std::fs::write(victim.join("keep.txt"), b"x").unwrap();
+        let marker = write_marker(&root, "e", dead_pid(), dead_pid(), &victim);
+        cleanup_orphans(&root);
+        assert!(victim.join("keep.txt").exists());
+        assert!(!marker.exists());
+        let _ = std::fs::remove_dir_all(&victim);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn orphan_marker_is_private_and_removed_on_drop() {
+        let root = orphan_root("marker");
+        let profile = app_profile("marker");
+        let marker = OrphanMarker::create(&root, 4242, &profile, None);
+        marker.set_port(Some(9222));
+        let path = marker.path.clone().unwrap();
+        let value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["chromePid"], 4242);
+        assert_eq!(value["port"], 9222);
+        assert_eq!(value["ownerPid"], std::process::id());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+        drop(marker);
+        assert!(!path.exists());
+        assert_eq!(port_from_ws_url("ws://127.0.0.1:41234/devtools/browser/abc"), Some(41234));
+        let _ = std::fs::remove_dir_all(&profile);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
