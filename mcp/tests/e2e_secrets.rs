@@ -17,7 +17,7 @@ const MARK: &str = "SEGREDO-MARCADO-7";
 
 /// Um marcador único por forma de vazamento (revisão: fragmento, matriz,
 /// userinfo, `nome=` sem `?`, nomes de credencial, corpos, parseError...).
-const FORMS: [&str; 24] = [
+const FORMS: [&str; 27] = [
     "MK-FRAG-LOCATION",
     "MK-FRAG-REFRESH",
     "MK-BARE-REFRESH",
@@ -42,6 +42,9 @@ const FORMS: [&str; 24] = [
     "MK-B-SENHA",
     "MK-F-SENHA",
     "MK-ENC-TOKEN",
+    "MK-NESTED-REDIRECT",
+    "MK-TAB-BEARER",
+    "MK-NESTED-FORM",
 ];
 
 fn prov() -> Provenance {
@@ -113,6 +116,16 @@ fn poisoned_session(dir: &std::path::Path) {
                     ("X-Foo-Api-Key", "MK-APIKEY-HEADER".to_string()),
                     ("Authorization", "bearer MK-LOWER-BEARER".to_string()),
                     ("X-Enc", "/r?a=1&token%3DMK-ENC-TOKEN".to_string()),
+                    (
+                        "Referer",
+                        "https://x.invalid/cb?redirect_uri=https%3A%2F%2Fa.invalid%2Fx%3Ftoken%3DMK-NESTED-REDIRECT"
+                            .to_string(),
+                    ),
+                    ("Proxy-Authorization", "Bearer\tMK-TAB-BEARER".to_string()),
+                    (
+                        "Link",
+                        "<https://x.invalid/n?next=%2Fcb%3Fjwt%3DMK-NESTED-FORM>; rel=next".to_string(),
+                    ),
                 ] {
                     view.headers.push(HeaderEntry::new(name, value, &prov()));
                 }

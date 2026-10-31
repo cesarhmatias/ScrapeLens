@@ -1804,9 +1804,12 @@ pub fn site_profile(ctx: &Ctx, params: SiteProfileParams) -> ToolResult {
 pub fn scrub_output(value: &mut Value) {
     fn walk(value: &mut Value, options: &scrapelens_core::export::sanitize::SanitizeOptions) {
         match value {
+            // Mesmas regras do sanitizador (query, fragmento, matriz, userinfo,
+            // `nome=valor`, URL aninhada), em toda string; é defesa em profundidade.
             Value::String(text) => {
-                if text.contains('?') {
-                    *text = scrapelens_core::export::sanitize::sanitize_text(text, options);
+                let scrubbed = scrapelens_core::export::sanitize::sanitize_text(text, options);
+                if scrubbed != *text {
+                    *text = scrubbed;
                 }
             }
             Value::Array(list) => list.iter_mut().for_each(|item| walk(item, options)),

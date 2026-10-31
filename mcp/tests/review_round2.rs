@@ -131,3 +131,24 @@ fn trace_value_does_not_panic_on_multibyte_header_values() {
     }
     let _: Value = Value::Null;
 }
+
+// ---- R14: scrub_output cobre todas as formas, em toda string ----------------------------
+
+#[test]
+fn scrub_output_masks_fragment_matrix_userinfo_bare_and_nested_forms() {
+    let mut value = json!({
+        "a": "GET /p?x=1#access_token=SEG-FRAG",
+        "b": "https://admin:SEG-USERINFO@x.invalid/p",
+        "c": "/h;jsessionid=SEG-MATRIX/y",
+        "d": "5; token=SEG-BARE",
+        "e": "/cb?redirect_uri=https%3A%2F%2Fa.invalid%2Fx%3Ftoken%3DSEG-NESTED",
+        "f": ["texto jwt=SEG-JWT fim", {"g": "senha=SEG-SENHA&page=2"}],
+        "h": "ok sem segredo: page=2",
+    });
+    scrub_output(&mut value);
+    let out = value.to_string();
+    for secret in ["SEG-FRAG", "SEG-USERINFO", "SEG-MATRIX", "SEG-BARE", "SEG-NESTED", "SEG-JWT", "SEG-SENHA"] {
+        assert!(!out.contains(secret), "{secret} em {out}");
+    }
+    assert_eq!(value["h"], "ok sem segredo: page=2");
+}
