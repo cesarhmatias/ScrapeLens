@@ -59,3 +59,8 @@ Data: 2026-10-31. Decisão do líder, após a fase A de viabilidade
 5. **Estado:** download e execução do CloakBrowser (fases B1 e B2 do doc 15)
    **não estão autorizados**. Dependem de autorização expressa do usuário,
    repassada pelo líder.
+6. **B1 adiada; o CloakBrowser só entra se o reconhecimento mostrar que é
+   necessário.** O fluxo é: um agente de IA usa o MCP do ScrapeLens com o Chrome
+   normal para entender a configuração de um site (`site_profile`,
+   `docs/16b-mcp-navegador.md`); a recomendação "candidato a CloakBrowser" é o
+   gatilho para voltar ao assunto.
