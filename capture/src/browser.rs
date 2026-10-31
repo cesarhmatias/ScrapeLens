@@ -18,6 +18,7 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::WebSocket;
 
 use super::allowlist::{Allowlist, AllowlistError, AllowlistReport, UrlDenied};
+use super::chrome::{validate_chrome, ChromeError};
 use super::{run_with_options, CaptureConfig, CaptureOutcome, CaptureStatus, Cdp, RunOptions, RunReport};
 
 /// Texto fixo que o servidor MCP mostra na confirmação de `start_capture`.
@@ -67,6 +68,8 @@ pub struct BrowserCaptureConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartError {
     Allowlist(AllowlistError),
+    /// O navegador não é o Chrome estável da Google (`chrome::validate_chrome`).
+    BrowserInvalid(ChromeError),
     StartUrlNotAllowed(UrlDenied),
     SessionDir(String),
     BrowserStart(String),
@@ -76,6 +79,7 @@ impl StartError {
     pub fn code(&self) -> &'static str {
         match self {
             StartError::Allowlist(e) => e.code(),
+            StartError::BrowserInvalid(e) => e.code(),
             StartError::StartUrlNotAllowed(_) => "start_url_not_allowed",
             StartError::SessionDir(_) => "session_dir",
             StartError::BrowserStart(_) => "browser_start_failed",
@@ -87,6 +91,7 @@ impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StartError::Allowlist(e) => write!(f, "{e}"),
+            StartError::BrowserInvalid(e) => write!(f, "{e}"),
             StartError::StartUrlNotAllowed(e) => write!(f, "start_url: {e}"),
             StartError::SessionDir(e) => write!(f, "diretório da sessão: {e}"),
             StartError::BrowserStart(e) => write!(f, "{e}"),
@@ -203,8 +208,11 @@ impl BrowserCapture {
             }
             None => String::new(),
         };
+        // Só o Chrome estável da Google, lido do bundle e da assinatura, sem
+        // executar nada. O caminho validado (symlinks resolvidos) é o que roda.
+        let validated = validate_chrome(&config.chrome).map_err(StartError::BrowserInvalid)?;
         let capture_config = CaptureConfig {
-            chrome: config.chrome.clone(),
+            chrome: validated.binary.clone(),
             session_dir: config.session_dir.clone(),
             start_url,
             headless: config.headless,
@@ -252,8 +260,8 @@ impl BrowserCapture {
             session_dir: config.session_dir.display().to_string(),
             chrome_pid: endpoint.chrome_pid,
             browser: BrowserInfo {
-                path: config.chrome.display().to_string(),
-                version: endpoint.product.clone(),
+                path: validated.binary.display().to_string(),
+                version: endpoint.product.clone().or(Some(validated.version.clone())),
                 user_agent: endpoint.user_agent.clone(),
             },
             allowlist: AllowlistInfo {
@@ -531,6 +539,7 @@ pub(crate) mod testsite {
 mod tests {
     use super::testsite::{Reply, TestSite};
     use super::*;
+    use std::path::Path;
 
     fn config(allowed: &[&str], start_url: Option<&str>) -> BrowserCaptureConfig {
         BrowserCaptureConfig {
@@ -569,12 +578,29 @@ mod tests {
     }
 
     #[test]
-    fn missing_browser_binary_is_browser_start_failed() {
-        // Allowlist válida, binário inexistente: falha ao iniciar, sem pendurar.
-        let err = BrowserCapture::start(config(&["a.test"], Some("http://a.test/")))
-            .err()
-            .expect("erro");
-        assert_eq!(err.code(), "browser_start_failed");
+    fn start_refuses_anything_that_is_not_the_stable_chrome() {
+        // Inexistente, binário do sistema e script falso: `browser_invalid`, nada roda.
+        let dir = std::env::temp_dir().join(format!("scrapelens-fakechrome-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("chrome");
+        std::fs::write(&script, "#!/bin/sh\ntouch /tmp/sl-start-ran\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        for path in [
+            PathBuf::from("/nao/existe/chrome"),
+            PathBuf::from("/bin/echo"),
+            script.clone(),
+        ] {
+            let mut cfg = config(&["a.test"], Some("http://a.test/"));
+            cfg.chrome = path.clone();
+            let err = BrowserCapture::start(cfg).err().expect("erro");
+            assert_eq!(err.code(), "browser_invalid", "{path:?}: {err}");
+        }
+        assert!(!Path::new("/tmp/sl-start-ran").exists(), "o script falso não pode ter rodado");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     fn chrome_or_skip() -> PathBuf {
