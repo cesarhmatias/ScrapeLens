@@ -143,6 +143,72 @@ as ferramentas de leitura e `site_profile` **redigem por padrão** valores de
 cookie e de cabeçalhos (nomes, URLs, status e tamanhos aparecem; valores viram
 `[redigido, N bytes]`), com opt-in explícito pela Core.
 
+Escritas na pasta da sessão **não seguem symlink** (revisão, achado F2): os
+arquivos que a captura grava (`cdp-bodies.jsonl`, `netlog.json`,
+`cdp-events.jsonl`, `netlog.original.json`, marcador de órfãos) usam
+`O_NOFOLLOW` + `create_new` (0600); um nome já existente, inclusive um symlink
+plantado, tem o **nome** removido e recriado, nunca o alvo escrito;
+`cdp-events.jsonl` e o marcador são gravados num temporário novo e trocados por
+`rename`, que substitui o próprio link; o NetLog é pré-criado por nós antes do
+Chrome; uma pasta de sessão que é symlink é recusada. Teste vivo
+`live_planted_symlinks_are_not_followed` (o PoC da revisão: links para
+`netlog.json`, `cdp-bodies.jsonl` e `cdp-events.jsonl`; nenhum alvo recebe dado
+nem muda de modo). **Fora desta crate:** `core/src/store.rs::write_atomic`
+(chamado por `write_session_dir` no fim da captura) usa um temporário de nome
+previsível (`.session.json.tmp-<pid>`) sem `O_EXCL`/`O_NOFOLLOW`; o segundo
+vetor do PoC da revisão passa por ali e é da Core.
+
+### 2.5 Porta de depuração: pipe por padrão, porta só com `expose_cdp`
+
+Revisão de segurança (docs/17, achado F3): a porta DevTools aceitava conexão
+de qualquer processo local desde o lançamento, antes de `Network.enable`.
+Decisão do líder e estado atual:
+
+- **Sem `expose_cdp` (padrão): `--remote-debugging-pipe`.** O Chrome herda dois
+  descritores (lê comandos no fd 3, escreve no fd 4, mensagens JSON terminadas
+  em NUL) e **não abre porta alguma**: nenhum outro processo, do mesmo usuário
+  ou não, consegue falar com ele; não existe `DevToolsActivePort`. Teste
+  `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`: a linha de
+  comando tem `--remote-debugging-pipe` e não tem `--remote-debugging-port`, e
+  `lsof -iTCP -sTCP:LISTEN` no processo do navegador não lista nada. Vale também
+  para `BrowserCapture::start` e para o `run()` do App (ver abaixo).
+- **Fidelidade medida antes de trocar** (`tests/aceite/check_multi_target.py`,
+  que roda a captura real do App contra `testserver /multi/`; Chrome 156,
+  macOS arm64; a escolha vai por `SCRAPELENS_CDP_TRANSPORT=pipe|port`):
+
+  | Transporte | Corridas | NetLog | CDP | Alvos por marcador | Service worker | Avisos de setup |
+  |---|---|---|---|---|---|---|
+  | porta (antes) | 2 | 16/16 | 16/16 | page, iframe, worker, service_worker | página + SW ligados, sem duplicata | 0 |
+  | **pipe** | **6** | **16/16** | **16/16** | **idênticos** (13 sessões; mesmos tipos por marcador) | **página + SW ligados, sem duplicata** | **0** |
+
+  Todas as corridas passaram o aceite completo (16/16 NetLog, ≥15/16 CDP, tipos,
+  corpos, sem fusão, SW ligado). Sem perda de fidelidade, então **o `run()` do
+  App passou a usar o pipe por padrão** (`SCRAPELENS_CDP_TRANSPORT=port` volta ao
+  WebSocket); o resto do App não mudou, e os testes do `src-tauri` seguem
+  verdes. Os testes vivos de `capture/` sem `expose_cdp` (allowlist por eventos,
+  8 caminhos de porta, symlinks, cenários do `site_profile`) também rodam em
+  pipe.
+- **Com `expose_cdp: true` a porta é inerente ao recurso.** Fica assim: porta
+  efêmera, `--remote-debugging-address=127.0.0.1` e **sem
+  `--remote-allow-origins`**. O `lsof` do mesmo teste mostra o `LISTEN` só em
+  `127.0.0.1:<porta>` (nada em `*` nem `[::]`). Um WebSocket com
+  `Origin: https://evil.example` recebe **403**; sem `Origin` (nós, Playwright,
+  Chrome DevTools MCP) recebe **101**. Páginas web, portanto, não alcançam a
+  porta.
+- **Risco que fica com `expose_cdp:true` (documentado, não mitigável aqui).** A
+  porta não tem autenticação. Qualquer processo que alcance
+  `127.0.0.1:<porta>`, **do mesmo usuário ou de outro usuário da mesma
+  máquina**, lê `GET /json/version` (que devolve a URL do WebSocket do
+  navegador) e passa a controlar o Chrome inteiro: executar JavaScript nas
+  páginas, ler cookies e corpos da sessão, navegar dentro da allowlist (a rede
+  continua limitada aos hosts aprovados, mas o processo age com a sessão
+  aberta). A janela vai do lançamento ao `stop_capture`; o número da porta fica
+  visível em `ps`, em varredura de portas e no `DevToolsActivePort` do perfil
+  temporário (0700). O portão do §4.1 protege contra o agente, não contra
+  terceiros locais. Recomendação: `expose_cdp:true` só em máquina de um único
+  usuário, por capturas curtas, e a elicitação deve mostrar este aviso. Sem
+  `expose_cdp` não há porta e o risco não existe.
+
 ## 3. Ferramentas
 
 Convenções: JSON; erros `{ "error": { "code", "message", "details"? } }`;
@@ -184,9 +250,9 @@ Erros (`code`): `allowlist_required`, `allowlist_too_broad`, `allowlist_invalid`
 `binary_path` não é o Chrome estável, §2.1), `browser_start_failed`,
 `session_dir`; `capture_already_running` é do servidor MCP.
 
-`cdp` só aparece com `expose_cdp:true` e só depois do portão de §4.1 (a porta
-existe sempre, em loopback, como já é hoje; `expose_cdp` controla apenas se o
-endereço é entregue ao agente). `pageTargetId` é a aba da captura (a que
+`cdp` só aparece com `expose_cdp:true` e só depois do portão de §4.1. Sem
+`expose_cdp` o Chrome nem abre a porta (pipe, §2.5); com ele a porta escuta só
+em `127.0.0.1` e tem o risco descrito em §2.5. `pageTargetId` é a aba da captura (a que
 `navigate` usa): o agente anexa a ela.
 
 ### 3.2 `navigate`
@@ -280,6 +346,7 @@ default_state_root() -> PathBuf          // marcadores de captura (órfãos)
 cleanup_orphans(&Path) -> OrphanCleanup  // chamada pelo App na partida
 chrome::{detect, normalize_binary_path, candidates, ChromeInfo}   // do App, permissivos
 chrome::{validate_chrome, resolve_stable_chrome, ValidatedChrome, ChromeError}  // estritos (§2.1)
+transport::CdpTransport { Port, Pipe }     // pipe por padrão; SCRAPELENS_CDP_TRANSPORT=port|pipe
 
 // captura controlada (MCP)
 allowlist::Allowlist                      // new(allowed, third_party) -> Result<_, AllowlistError>
@@ -312,10 +379,11 @@ pausados) antes de nós. Cobertura: testes unitários do portão
 (`initial_target_gate_*`), teste vivo `agent_first_action_is_captured` (a
 primeira ação do agente, anexar à aba da captura e navegar sem esperar, aparece
 em `Network.requestWillBeSent` na nossa sessão) e um controle por mutação (com o
-portão forçado a fechar, `start` falha e nada é entregue). Limite: o endereço
-da porta existe no `DevToolsActivePort` do perfil temporário (0700) desde o
-lançamento; um processo local do mesmo usuário que o leia contorna o portão, e
-isso está fora do modelo (qualquer processo do usuário já alcança o loopback).
+portão forçado a fechar, `start` falha e nada é entregue). Limite: com
+`expose_cdp:true` a porta existe desde o lançamento (também no
+`DevToolsActivePort` do perfil temporário, 0700); um processo local que a
+encontre contorna o portão. O risco é o de §2.5 e fica fora do modelo; sem
+`expose_cdp` não há porta (pipe).
 
 ## 5. `site_profile`
 
@@ -548,8 +616,8 @@ revisão de segurança (M2, M3, R1 a R4):
 
 | Suíte | Resultado |
 |---|---|
-| `capture/` `cargo test` | 48 passed, 6 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: 0 ocorrências de `tauri` |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `second_cdp_client_*`, `agent_first_action_is_captured`; `live_recon_scenarios` (usado pelo `live_e2e.sh`) |
+| `capture/` `cargo test` | 53 passed, 8 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: só `scrapelens-core`, `serde`, `serde_json`, `tungstenite` e `libc` (0 `tauri`) |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
 | `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
 | `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |

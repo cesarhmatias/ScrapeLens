@@ -2854,6 +2854,7 @@ dependencies = [
 name = "scrapelens-capture"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "scrapelens-core",
  "serde",
  "serde_json",

@@ -14,8 +14,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use tungstenite::stream::MaybeTlsStream;
-use tungstenite::WebSocket;
+use super::transport::{CdpTransport, Transport};
 
 use super::allowlist::{Allowlist, AllowlistError, AllowlistReport, UrlDenied};
 use super::chrome::{validate_chrome, ChromeError};
@@ -232,6 +231,13 @@ impl BrowserCapture {
             control: Some(control_rx),
             endpoint: Some(endpoint.clone()),
             require_initial_target_ready: true,
+            // Sem agente conectado, o Chrome não abre porta nenhuma (pipe); com
+            // `expose_cdp` a porta, só em 127.0.0.1, é inerente ao recurso.
+            transport: if config.expose_cdp {
+                CdpTransport::Port
+            } else {
+                CdpTransport::Pipe
+            },
         };
         let thread_status = status.clone();
         let join = thread::spawn(move || {
@@ -364,7 +370,7 @@ impl Cdp {
     /// Atende uma mensagem de controle dentro do laço de gravação.
     pub(super) fn handle_control(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         message: Control,
     ) {
         match message {
@@ -382,7 +388,7 @@ impl Cdp {
 
     fn navigate_page(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         url: &str,
         wait_load: bool,
         timeout: Duration,
@@ -761,11 +767,11 @@ mod tests {
         let (ready_tx, ready_rx) = channel::<()>();
         let client = thread::spawn(move || {
             let (mut socket, _) = tungstenite::connect(ws.as_str()).expect("segundo cliente");
-            if let MaybeTlsStream::Plain(stream) = socket.get_ref() {
+            if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_ref() {
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
             }
             let mut next = 0u64;
-            let mut send = |socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+            let mut send = |socket: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
                             method: &str,
                             params: Value,
                             session: Option<&str>| {
@@ -1166,6 +1172,85 @@ mod tests {
         assert!(std::fs::metadata(dir.join("netlog.json")).unwrap().len() > 1000);
         assert!(report.requests >= 1);
         let _ = std::fs::remove_dir_all(outside);
+    }
+
+    fn lsof_listen(pid: u32) -> String {
+        let out = std::process::Command::new("/usr/sbin/lsof")
+            .args(["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", &pid.to_string()])
+            .output()
+            .expect("lsof");
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    fn process_args(pid: u32) -> String {
+        let out = std::process::Command::new("/bin/ps")
+            .args(["-o", "command=", "-p", &pid.to_string()])
+            .output()
+            .expect("ps");
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    /// Item 5 da revisão: sem `expose_cdp` o Chrome não abre porta nenhuma
+    /// (`--remote-debugging-pipe`); com `expose_cdp` a porta escuta SÓ em
+    /// 127.0.0.1 e recusa WebSocket de página web (Origin presente).
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_pipe_opens_no_port_and_exposed_port_is_loopback_only() {
+        use std::io::{Read, Write};
+        let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
+        let port = site.port;
+        // 1. Pipe: nenhuma porta, nenhum --remote-debugging-port.
+        let (capture, info) =
+            BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "pipe", false)).expect("start");
+        assert!(info.cdp.is_none());
+        let args = process_args(info.chrome_pid);
+        assert!(args.contains("--remote-debugging-pipe"), "{args}");
+        assert!(!args.contains("--remote-debugging-port"), "{args}");
+        assert!(lsof_listen(info.chrome_pid).trim().is_empty(), "o Chrome abriu porta: {}", lsof_listen(info.chrome_pid));
+        let nav = capture
+            .navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10))
+            .expect("navigate");
+        assert!(nav.loaded);
+        let report = capture.stop().expect("stop");
+        assert!(report.graceful && report.netlog == "complete");
+        // 2. Porta exposta: só 127.0.0.1, sem --remote-allow-origins.
+        let (capture, info) =
+            BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "port", true)).expect("start");
+        let access = info.cdp.clone().expect("cdp exposto");
+        let args = process_args(info.chrome_pid);
+        assert!(args.contains("--remote-debugging-address=127.0.0.1"), "{args}");
+        assert!(!args.contains("--remote-allow-origins"), "{args}");
+        assert!(!args.contains("--remote-debugging-pipe"), "{args}");
+        let listen = lsof_listen(info.chrome_pid);
+        println!("lsof:\n{listen}");
+        let names: Vec<&str> = listen.lines().skip(1).filter_map(|l| l.split_whitespace().nth(8)).collect();
+        assert!(!names.is_empty(), "esperava uma porta de depuração: {listen}");
+        for n in &names {
+            assert!(n.starts_with("127.0.0.1:"), "escuta fora do loopback: {n}");
+        }
+        // WebSocket de uma página web (Origin) é recusado; sem Origin é aceito.
+        let ws_path = access.browser_ws.split_once("127.0.0.1:").unwrap().1;
+        let (port_s, path) = ws_path.split_once('/').unwrap();
+        let handshake = |origin: Option<&str>| -> String {
+            let mut s = std::net::TcpStream::connect(format!("127.0.0.1:{port_s}")).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let origin_line = origin.map(|o| format!("Origin: {o}\r\n")).unwrap_or_default();
+            write!(
+                s,
+                "GET /{path} HTTP/1.1\r\nHost: 127.0.0.1:{port_s}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n{origin_line}\r\n"
+            )
+            .unwrap();
+            let mut buf = [0u8; 256];
+            let n = s.read(&mut buf).unwrap_or(0);
+            String::from_utf8_lossy(&buf[..n]).lines().next().unwrap_or("").to_string()
+        };
+        let evil = handshake(Some("https://evil.example"));
+        let plain = handshake(None);
+        println!("com Origin: {evil:?}; sem Origin: {plain:?}");
+        assert!(!evil.contains("101"), "página web conseguiu o WebSocket: {evil}");
+        assert!(plain.contains("101"), "cliente sem Origin deve conectar: {plain}");
+        let _ = capture.stop().expect("stop");
     }
 
     #[test]

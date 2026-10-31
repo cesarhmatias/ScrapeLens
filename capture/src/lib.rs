@@ -2,16 +2,14 @@
 //!
 //! Regras:
 //! - perfil temporário próprio (nunca o perfil pessoal), removido no fim;
-//! - depuração apenas em 127.0.0.1, porta efêmera;
+//! - o nosso cliente fala com o Chrome por **pipe** (`--remote-debugging-pipe`,
+//!   nenhuma porta aberta) por padrão; só com `expose_cdp` (agente externo) o
+//!   Chrome abre a porta de depuração, **apenas em 127.0.0.1**, porta efêmera
+//!   (ver `docs/16b-mcp-navegador.md` §2.5 para o risco);
 //! - encerra somente o processo que este módulo iniciou;
 //! - o NetLog é gravado no diretório da sessão e importado pelo core;
-//! - nenhuma rede além da depuração local; nenhum certificado é instalado.
-//!
-//! Limitação conhecida: `--remote-allow-origins=*` é necessário para o
-//! WebSocket do CDP; durante a captura, o endpoint em
-//! `127.0.0.1:<porta efêmera>` aceita qualquer Origin. O risco fica limitado à
-//! janela da captura e ao loopback, mas a sessão do Chrome inspecionado não deve
-//! ser usada para navegar em páginas não confiáveis enquanto grava.
+//! - nenhuma rede além da depuração local; nenhum certificado é instalado;
+//! - nada é gravado seguindo symlink (`O_NOFOLLOW` + `create_new`).
 
 use std::collections::HashMap;
 use std::io::{ErrorKind, Write};
@@ -24,14 +22,15 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use tungstenite::stream::MaybeTlsStream;
-use tungstenite::{connect, Message, WebSocket};
+
+use transport::{CdpTransport, Incoming, ReadError, Transport};
 
 use scrapelens_core::{correlate::CorrelationOptions, import_capture_labeled, store};
 
 pub mod allowlist;
 pub mod browser;
 pub mod chrome;
+pub mod transport;
 
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -71,7 +70,13 @@ pub fn run(
     stop: Receiver<()>,
     ready: Sender<Result<(), String>>,
 ) -> Result<CaptureOutcome, String> {
-    run_with_options(config, status, stop, ready, &RunOptions::default()).map(|(outcome, _)| outcome)
+    let opts = RunOptions {
+        // Pipe por padrão (nenhuma porta aberta); `SCRAPELENS_CDP_TRANSPORT=port`
+        // volta ao WebSocket. Medido igual em docs/16b §2.5.
+        transport: CdpTransport::from_env(CdpTransport::Pipe),
+        ..RunOptions::default()
+    };
+    run_with_options(config, status, stop, ready, &opts).map(|(outcome, _)| outcome)
 }
 
 /// Opções da captura controlada (`browser::BrowserCapture`). O padrão é a
@@ -90,6 +95,8 @@ pub(crate) struct RunOptions {
     /// `Target.setAutoAttach` com ACK de sucesso e nada pendente nele. Assim um
     /// cliente externo que receba o endereço não consegue agir antes de nós.
     pub require_initial_target_ready: bool,
+    /// Como o nosso cliente fala com o Chrome (porta ou pipe).
+    pub transport: CdpTransport,
 }
 
 /// Dados do encerramento que o App não usa, mas o modo controlado devolve.
@@ -129,6 +136,7 @@ fn run_inner(
     ready: &Sender<Result<(), String>>,
     opts: &RunOptions,
 ) -> Result<(CaptureOutcome, RunReport), String> {
+    eprintln!("capture transport: {:?}", opts.transport);
     let profile = std::env::temp_dir().join(format!(
         "scrapelens-chrome-{}-{}",
         std::process::id(),
@@ -165,11 +173,18 @@ fn run_inner(
     drop(open_private(&netlog_path).map_err(|error| format!("netlog.json: {error}"))?);
 
     let resolver_rules = opts.allowlist.as_ref().map(allowlist::Allowlist::resolver_rules);
+    let mut pipe_ends = match opts.transport {
+        CdpTransport::Pipe => Some(
+            transport::make_pipe_ends().map_err(|error| format!("pipe do CDP: {error}"))?,
+        ),
+        CdpTransport::Port => None,
+    };
     let mut chrome = ChromeProcess::new(spawn_chrome(
         config,
         &profile,
         &netlog_path,
         resolver_rules.as_deref(),
+        pipe_ends.as_ref(),
     )?);
     // Marcador para limpar órfãos se este processo morrer por SIGKILL; o Drop
     // o remove em qualquer saída normal (sucesso, erro ou panic).
@@ -184,29 +199,39 @@ fn run_inner(
         guard.page_url = config.start_url.clone();
     }
 
-    let ws_url = match wait_for_devtools(chrome.child_mut(), &profile, Duration::from_secs(25)) {
-        Ok(url) => url,
-        Err(error) => {
-            let _ = chrome.child_mut().kill();
-            let _ = chrome.child_mut().wait();
-            chrome.disarm();
-            let _ = std::fs::remove_dir_all(&profile);
-            let _ = ready.send(Err(error.clone()));
-            return Err(error);
+    let fail_start = |chrome: &mut ChromeProcess, error: String| -> String {
+        let _ = chrome.child_mut().kill();
+        let _ = chrome.child_mut().wait();
+        chrome.disarm();
+        let _ = std::fs::remove_dir_all(&profile);
+        let _ = ready.send(Err(error.clone()));
+        error
+    };
+    // Porta: lê DevToolsActivePort e abre o WebSocket em 127.0.0.1. Pipe: o
+    // Chrome herdou os fds 3 e 4; fechamos aqui as pontas dele e falamos só por
+    // elas (nenhuma porta existe).
+    let (mut socket, ws_url): (Transport, Option<String>) = match pipe_ends.take() {
+        None => {
+            let ws_url = match wait_for_devtools(chrome.child_mut(), &profile, Duration::from_secs(25)) {
+                Ok(url) => url,
+                Err(error) => return Err(fail_start(&mut chrome, error)),
+            };
+            marker.set_port(port_from_ws_url(&ws_url));
+            match Transport::connect_ws(&ws_url) {
+                Ok(socket) => (socket, Some(ws_url)),
+                Err(error) => return Err(fail_start(&mut chrome, error)),
+            }
+        }
+        Some(ends) => {
+            let transport::PipeEnds { child_read, child_write, parent_write, parent_read } = ends;
+            drop(child_read);
+            drop(child_write);
+            (Transport::pipe(parent_write, parent_read), None)
         }
     };
-
-    marker.set_port(port_from_ws_url(&ws_url));
-    let (mut socket, mut cdp) = match Cdp::connect(&ws_url, status.clone(), bodies_file) {
-        Ok(pair) => pair,
-        Err(error) => {
-            let _ = chrome.child_mut().kill();
-            let _ = chrome.child_mut().wait();
-            chrome.disarm();
-            let _ = std::fs::remove_dir_all(&profile);
-            let _ = ready.send(Err(error.clone()));
-            return Err(error);
-        }
+    let mut cdp = match Cdp::new(status.clone(), bodies_file) {
+        Ok(cdp) => cdp,
+        Err(error) => return Err(fail_start(&mut chrome, error)),
     };
 
     let setup = cdp.setup(&mut socket, &config.start_url);
@@ -242,8 +267,11 @@ fn run_inner(
             .ok();
         if let Ok(mut guard) = endpoint.lock() {
             *guard = Some(browser::Endpoint {
-                http: port_from_ws_url(&ws_url).map(|p| format!("http://127.0.0.1:{p}")),
-                browser_ws: ws_url.clone(),
+                http: ws_url
+                    .as_deref()
+                    .and_then(port_from_ws_url)
+                    .map(|p| format!("http://127.0.0.1:{p}")),
+                browser_ws: ws_url.clone().unwrap_or_default(),
                 chrome_pid: chrome.child_mut().id(),
                 page_target_id: cdp
                     .setup_seen
@@ -279,19 +307,18 @@ fn run_inner(
             }
         }
         match socket.read() {
-            Ok(Message::Text(text)) => {
+            Ok(Incoming::Text(text)) => {
                 if let Ok(value) = serde_json::from_str::<Value>(text.as_str()) {
                     cdp.record(&mut socket, &value);
                     cdp.flush_outbox(&mut socket);
                 }
             }
-            Ok(Message::Close(_)) => break,
-            Ok(Message::Ping(payload)) => {
-                let _ = socket.send(Message::Pong(payload));
+            Ok(Incoming::Close) => break,
+            Ok(Incoming::Ping(payload)) => {
+                socket.pong(payload);
             }
             Ok(_) => {}
-            Err(tungstenite::Error::Io(error))
-                if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+            Err(ReadError::WouldBlock) => {}
             Err(_) => break,
         }
     }
@@ -314,7 +341,7 @@ fn run_inner(
         None,
         Duration::from_secs(2),
     );
-    let _ = socket.close(None);
+    socket.close();
     let exit = wait_or_kill(chrome.child_mut(), Duration::from_secs(20));
     chrome.disarm();
     let shutdown = ShutdownReport {
@@ -445,12 +472,10 @@ fn spawn_chrome(
     profile: &Path,
     netlog: &Path,
     resolver_rules: Option<&str>,
+    pipe: Option<&transport::PipeEnds>,
 ) -> Result<Child, String> {
     let mut args: Vec<String> = vec![
         format!("--user-data-dir={}", profile.display()),
-        "--remote-debugging-port=0".to_string(),
-        "--remote-debugging-address=127.0.0.1".to_string(),
-        "--remote-allow-origins=*".to_string(),
         format!("--log-net-log={}", netlog.display()),
         "--net-log-capture-mode=Everything".to_string(),
         "--no-first-run".to_string(),
@@ -476,6 +501,16 @@ fn spawn_chrome(
         "--disable-popup-blocking".to_string(),
         "about:blank".to_string(),
     ];
+    if pipe.is_some() {
+        // Sem porta nenhuma: o Chrome lê comandos no fd 3 e escreve no fd 4.
+        args.insert(args.len() - 1, "--remote-debugging-pipe".to_string());
+    } else {
+        // Porta efêmera SÓ em 127.0.0.1. Sem `--remote-allow-origins`: clientes
+        // CDP (nós, Playwright, DevTools MCP) não mandam Origin; uma página web
+        // que tente o WebSocket (Origin presente) é recusada pelo Chrome.
+        args.insert(args.len() - 1, "--remote-debugging-port=0".to_string());
+        args.insert(args.len() - 1, "--remote-debugging-address=127.0.0.1".to_string());
+    }
     match resolver_rules {
         // Captura controlada: só os hosts da allowlist resolvem; nenhum
         // relaxamento de certificado.
@@ -496,11 +531,29 @@ fn spawn_chrome(
     if config.ignore_cert {
         args.push("--ignore-certificate-errors".to_string());
     }
-    Command::new(&config.chrome)
+    let mut command = Command::new(&config.chrome);
+    command
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .stdin(Stdio::null())
+        .stdin(Stdio::null());
+    if let Some(ends) = pipe {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::process::CommandExt;
+        let (read_fd, write_fd) = (ends.child_read.as_raw_fd(), ends.child_write.as_raw_fd());
+        // SAFETY: entre o fork e o exec só chama `dup2`, que é async-signal-safe.
+        // Os fds de origem são >= 10, então não colidem com o 3 e o 4 de destino;
+        // `dup2` limpa o FD_CLOEXEC nos destinos (o resto fecha no exec).
+        unsafe {
+            command.pre_exec(move || {
+                if libc::dup2(read_fd, 3) < 0 || libc::dup2(write_fd, 4) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    command
         .spawn()
         .map_err(|error| {
             format!(
@@ -904,32 +957,6 @@ impl Cdp {
         })
     }
 
-    fn connect(
-        url: &str,
-        status: Arc<Mutex<CaptureStatus>>,
-        bodies_file: std::fs::File,
-    ) -> Result<(WebSocket<MaybeTlsStream<std::net::TcpStream>>, Self), String> {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let mut last_error = String::new();
-        while Instant::now() < deadline {
-            match connect(url) {
-                Ok((socket, _response)) => {
-                    if let MaybeTlsStream::Plain(stream) = socket.get_ref() {
-                        let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
-                    }
-                    return Self::new(status, bodies_file).map(|cdp| (socket, cdp));
-                }
-                Err(error) => {
-                    last_error = error.to_string();
-                    thread::sleep(Duration::from_millis(120));
-                }
-            }
-        }
-        Err(format!(
-            "Não foi possível conectar ao CDP local: {last_error}"
-        ))
-    }
-
     fn auto_attach_params(&self, wait_on_start: bool) -> Value {
         json!({
             "autoAttach": true,
@@ -940,7 +967,7 @@ impl Cdp {
 
     fn wire_command(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         method: &str,
         params: Value,
         session: Option<&str>,
@@ -952,31 +979,30 @@ impl Cdp {
             message["sessionId"] = json!(session);
         }
         socket
-            .send(Message::Text(message.to_string().into()))
+            .send_text(message.to_string())
             .map_err(|error| format!("CDP send {method}: {error}"))?;
         Ok(id)
     }
 
     fn pump_socket(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         window: Duration,
     ) {
         let deadline = Instant::now() + window;
         while Instant::now() < deadline {
             match socket.read() {
-                Ok(Message::Text(text)) => {
+                Ok(Incoming::Text(text)) => {
                     if let Ok(value) = serde_json::from_str::<Value>(text.as_str()) {
                         self.record(socket, &value);
                         self.flush_outbox(socket);
                     }
                 }
-                Ok(Message::Ping(payload)) => {
-                    let _ = socket.send(Message::Pong(payload));
+                Ok(Incoming::Ping(payload)) => {
+                    socket.pong(payload);
                 }
-                Ok(Message::Close(_)) | Ok(_) => break,
-                Err(tungstenite::Error::Io(error))
-                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Ok(Incoming::Close) | Ok(Incoming::Other) => break,
+                Err(ReadError::WouldBlock) => {}
                 Err(_) => break,
             }
         }
@@ -993,7 +1019,7 @@ impl Cdp {
     /// no encerramento vira `Capture.targetSetupTimeout`.
     fn wire_setup_command(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         target: &AttachedTarget,
         method: &str,
         params: Value,
@@ -1088,7 +1114,7 @@ impl Cdp {
     /// Lê o soquete até o portão abrir ou o prazo acabar.
     fn wait_initial_target_ready(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         timeout: Duration,
     ) -> Result<(), String> {
         let deadline = Instant::now() + timeout;
@@ -1168,7 +1194,7 @@ impl Cdp {
     /// Lê o socket até não restar setup pendente ou esgotar `window`.
     fn pump_until_setup_settled(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         window: Duration,
     ) {
         let deadline = Instant::now() + window;
@@ -1211,7 +1237,7 @@ impl Cdp {
 
     fn setup_duplicate_target_session(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         attached: AttachedTarget,
         waiting_for_debugger: bool,
         parent_session_id: Option<&str>,
@@ -1258,7 +1284,7 @@ impl Cdp {
     /// (setAutoAttach → Network.enable → Page/Runtime.enable).
     fn setup_attached_target(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         attached: AttachedTarget,
         waiting_for_debugger: bool,
         parent_session_id: Option<&str>,
@@ -1401,7 +1427,7 @@ impl Cdp {
 
     fn handle_incoming_event(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         value: &Value,
     ) {
         let Some(method) = value.get("method").and_then(Value::as_str) else {
@@ -1498,7 +1524,7 @@ impl Cdp {
 
     fn setup(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         start_url: &str,
     ) -> Result<(), String> {
         let setup_result = self.setup_inner(socket, start_url);
@@ -1512,7 +1538,7 @@ impl Cdp {
     /// setup por sessão, `setAutoAttach` recursivo na página antes de navegar.
     fn setup_inner(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         start_url: &str,
     ) -> Result<(), String> {
         self.send(
@@ -1611,7 +1637,7 @@ impl Cdp {
 
     fn send(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         method: &str,
         params: Value,
         session: Option<&str>,
@@ -1624,7 +1650,7 @@ impl Cdp {
             message["sessionId"] = json!(session);
         }
         socket
-            .send(Message::Text(message.to_string().into()))
+            .send_text(message.to_string())
             .map_err(|error| format!("CDP send {method}: {error}"))?;
         let deadline = Instant::now() + timeout;
         loop {
@@ -1632,7 +1658,7 @@ impl Cdp {
                 return Err(format!("CDP timeout aguardando {method}"));
             }
             match socket.read() {
-                Ok(Message::Text(text)) => {
+                Ok(Incoming::Text(text)) => {
                     let value: Value = serde_json::from_str(text.as_str())
                         .map_err(|error| format!("CDP JSON inválido: {error}"))?;
                     if value.get("id").and_then(Value::as_u64) == Some(id) {
@@ -1644,21 +1670,20 @@ impl Cdp {
                     self.record(socket, &value);
                     self.flush_outbox(socket);
                 }
-                Ok(Message::Ping(payload)) => {
-                    let _ = socket.send(Message::Pong(payload));
+                Ok(Incoming::Ping(payload)) => {
+                    socket.pong(payload);
                 }
-                Ok(Message::Close(_)) => return Err(format!("CDP fechou durante {method}")),
+                Ok(Incoming::Close) => return Err(format!("CDP fechou durante {method}")),
                 Ok(_) => {}
-                Err(tungstenite::Error::Io(error))
-                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
-                Err(error) => return Err(format!("CDP read {method}: {error}")),
+                Err(ReadError::WouldBlock) => {}
+                Err(ReadError::Fatal(error)) => return Err(format!("CDP read {method}: {error}")),
             }
         }
     }
 
     fn record(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         value: &Value,
     ) {
         if let Some(id) = value.get("id").and_then(Value::as_u64) {
@@ -1684,7 +1709,7 @@ impl Cdp {
 
     /// Envia sem esperar resposta os comandos de corpo enfileirados por
     /// `record`. Falha de envio vira `unavailable` na hora.
-    fn flush_outbox(&mut self, socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>) {
+    fn flush_outbox(&mut self, socket: &mut Transport) {
         for (session_id, message) in std::mem::take(&mut self.outbox) {
             let id = serde_json::from_str::<Value>(&message)
                 .ok()
@@ -1694,7 +1719,7 @@ impl Cdp {
                 obj.insert("sessionId".to_string(), json!(session_id));
             }
             let wire = payload.to_string();
-            if let Err(error) = socket.send(Message::Text(wire.into())) {
+            if let Err(error) = socket.send_text(wire) {
                 if let Some(id) = id {
                     if let Some((sid, tag)) = self.in_flight.remove(&id) {
                         self.bodies_for(&sid).on_result(
@@ -1711,25 +1736,24 @@ impl Cdp {
     /// Aguarda (até `window`) as respostas de corpo em voo.
     fn drain_bodies(
         &mut self,
-        socket: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>,
+        socket: &mut Transport,
         window: Duration,
     ) {
         let deadline = Instant::now() + window;
         while !self.in_flight.is_empty() && Instant::now() < deadline {
             match socket.read() {
-                Ok(Message::Text(text)) => {
+                Ok(Incoming::Text(text)) => {
                     if let Ok(value) = serde_json::from_str::<Value>(text.as_str()) {
                         self.record(socket, &value);
                         self.flush_outbox(socket);
                     }
                 }
-                Ok(Message::Ping(payload)) => {
-                    let _ = socket.send(Message::Pong(payload));
+                Ok(Incoming::Ping(payload)) => {
+                    socket.pong(payload);
                 }
-                Ok(Message::Close(_)) => break,
+                Ok(Incoming::Close) => break,
                 Ok(_) => {}
-                Err(tungstenite::Error::Io(error))
-                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Err(ReadError::WouldBlock) => {}
                 Err(_) => break,
             }
         }
