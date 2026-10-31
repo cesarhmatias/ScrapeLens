@@ -39,23 +39,33 @@ nunca é passado.
 
 | Camada | Mecanismo | O que cobre | O que não cobre |
 |---|---|---|---|
-| 1. Navegador | `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE h1, EXCLUDE h2…"` com `allowed_hosts` + `third_party_hosts` | qualquer host por nome, em qualquer aba, iframe, worker ou cliente CDP, inclusive redirects | **host por IP literal** (a regra só atua em resolução de nome) |
+| 1. Navegador | `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE h1, EXCLUDE h2…"` com `allowed_hosts` + `third_party_hosts` | qualquer host por nome **e IP literal** (medido: `127.0.0.1`, `127.1`, `2130706433` e `[::1]` falharam com `ERR_NAME_NOT_RESOLVED` no Chrome 156), em qualquer aba, iframe, worker ou cliente CDP, inclusive redirects | **a porta**: a regra conhece só o nome. Outra porta de um host permitido passa pelo resolvedor (medido: um subrecurso `localhost:OUTRA_PORTA` chegou ao segundo servidor) |
 | 2. API | `navigate` recusa antes de enviar; mesma função de decisão (`Allowlist::permits_url`) | esquema, host (incl. IP literal), porta, userinfo (`http://permitido@outro/`) | navegação feita por script ou clique da página/agente |
 
 Além disso, `stop_capture` traz `allowlist.violations`: toda requisição da
-sessão cujo host não está na lista e **não falhou na resolução** (exemplo:
-IP literal). Lacuna conhecida e declarada: um IP literal alcançado por redirect
-não é bloqueado, só **reportado**.
+sessão cujo host/porta não está na lista e **não falhou na resolução** (hoje, na
+prática, **porta diferente** de um host permitido; IP literal também, se uma
+versão futura do Chrome deixar de cobri-lo). A lacuna é **declarada**: o que
+passa por ela é reportado e vira aviso `capture.allowlist_violation` na própria
+sessão, não bloqueado. A regra de porta (`host:porta`) só vale na camada 2 e no
+relatório; as regras do resolvedor ignoram porta.
 
 Regras de `allowed_hosts` e `third_party_hosts` (strings):
 - nome exato (`exemplo.com`), curinga de subdomínio (`*.exemplo.com`, não casa
   `exemplo.com`), IPv4/IPv6 literal só se escrito de forma explícita; porta
   opcional (`exemplo.com:8443`; sem porta = qualquer porta do host);
-- sem esquema, sem caminho; maiúsculas normalizadas; ponto final removido;
-  punycode comparado em ASCII; `*` sozinho, `*.com`/sufixo público e lista
-  vazia são rejeitados (`allowlist_too_broad`);
+- sem esquema, sem caminho; maiúsculas normalizadas; entrada com ponto final,
+  `%`, espaço, barra invertida ou não ASCII é **inválida** (`allowlist_invalid`;
+  punycode só em ASCII); `*` sozinho, `*.com` e IPs com curinga são
+  `allowlist_too_broad`; lista vazia é `allowlist_required`. IPv4 só na forma
+  `a.b.c.d` canônica (`127.1`, `2130706433`, `0x7f.0.0.1` são recusados). Não há
+  lista de sufixos públicos: `*.co.uk` passa, e o operador responde por isso;
 - só `http` e `https` navegam; `file:`, `data:`, `javascript:`, `chrome:`,
-  `blob:`, `about:` (exceto `about:blank`) são recusados.
+  `blob:`, `view-source:`, `about:` (exceto `about:blank`) são recusados. O
+  analisador de URL é **mais estrito que o do Chrome de propósito** (recusa
+  barra invertida, controle, não ASCII, `%` no host, host com ponto final,
+  qualquer `@` na autoridade, IPv4 fora da forma canônica) para que o que passa
+  seja lido igual pelo Chrome.
 
 `allowed_hosts` = alvos onde o agente pode **navegar/agir** (consentidos pelo
 usuário na confirmação de `start_capture`). `third_party_hosts` = hosts
@@ -105,6 +115,8 @@ Convenções: JSON; erros `{ "error": { "code", "message", "details"? } }`;
 
 ### 3.1 `start_capture`
 
+Entrada (snake_case, como as ferramentas da Core):
+
 ```json
 {
   "allowed_hosts": ["exemplo.local:8080"],      // obrigatório, >= 1
@@ -116,23 +128,24 @@ Convenções: JSON; erros `{ "error": { "code", "message", "details"? } }`;
 }
 ```
 
-Resposta:
+Saída (`StartInfo`, camelCase como as saídas da Core; o `capture_id` é do
+servidor MCP, que guarda o `BrowserCapture` num mapa):
 
 ```json
 {
-  "capture_id": "cap-…",
-  "session_dir": "/…/session",
-  "chrome_pid": 1234,
-  "browser": { "path": "…", "version": "156.0.…" },
-  "allowlist": { "allowed_hosts": [], "third_party_hosts": [], "resolver_rules": "MAP * ~NOTFOUND, EXCLUDE …" },
-  "cdp": null | { "http": "http://127.0.0.1:PORT", "browser_ws": "ws://127.0.0.1:PORT/devtools/browser/…" },
-  "sensitive_notice": "…",
+  "sessionDir": "/…/session",
+  "chromePid": 1234,
+  "browser": { "path": "…", "version": "Chrome/156.0.…", "userAgent": "…" },
+  "allowlist": { "allowedHosts": [], "thirdPartyHosts": [], "resolverRules": "MAP * ~NOTFOUND, EXCLUDE …" },
+  "cdp": null | { "http": "http://127.0.0.1:PORT", "browserWs": "ws://127.0.0.1:PORT/devtools/browser/…" },
+  "sensitiveNotice": "…",
   "warnings": []
 }
 ```
 
-Erros: `allowlist_required`, `allowlist_too_broad`, `start_url_not_allowed`,
-`browser_not_found`, `capture_already_running`, `browser_start_failed`.
+Erros (`code`): `allowlist_required`, `allowlist_too_broad`, `allowlist_invalid`,
+`start_url_not_allowed`, `browser_start_failed` (inclui binário inexistente),
+`session_dir`; `capture_already_running` é do servidor MCP.
 
 `cdp` só aparece com `expose_cdp:true` (a porta existe sempre, em loopback, como
 já é hoje; `expose_cdp` controla apenas se o endereço é entregue ao agente).
@@ -140,48 +153,66 @@ já é hoje; `expose_cdp` controla apenas se o endereço é entregue ao agente).
 ### 3.2 `navigate`
 
 ```json
-{ "capture_id": "…", "url": "http://exemplo.local:8080/p", "wait": "load", "timeout_ms": 15000 }
+{ "url": "http://exemplo.local:8080/p", "wait": "load", "timeout_ms": 15000 }
 ```
 
 Navega a **aba principal** da captura (`Page.navigate`). `wait`: `"load"`
-(padrão; espera `Page.loadEventFired` ou o prazo) ou `"none"`. Resposta:
-`{ "frame_id", "loader_id", "loaded": true|false, "error_text": null|"net::ERR_…" }`.
-Erros: `url_not_allowed` (com o motivo), `capture_not_found`,
-`capture_stopped`, `navigate_failed`. `loaded:false` não é erro (prazo).
+(padrão; espera `Page.loadEventFired` ou o prazo) ou `"none"`. Saída
+(`NavigateResult`): `{ "frameId", "loaderId", "loaded": true|false, "errorText": null|"net::ERR_…" }`.
+Erros: `url_not_allowed` (com o motivo), `capture_stopped`, `navigate_failed`.
+`loaded:false` não é erro (prazo ou navegação sem evento de carga).
 
 ### 3.3 `capture_status`
 
-`{ "capture_id" } → { "recording": bool, "events": n, "page_url": "…", "last_error": null|"…" }` (reuso de `CaptureStatus`).
+`BrowserCapture::status() → CaptureStatus` (`recording`, `events`, `pageUrl`,
+`lastError`): reuso do tipo do App.
 
 ### 3.4 `stop_capture`
 
-`{ "capture_id" } →`
+Saída (`StopReport`):
 
 ```json
 {
-  "session_dir": "…",
+  "sessionDir": "…",
   "requests": 31,
   "netlog": "complete" | "repaired" | "unusable",
-  "shutdown": { "graceful": true, "waited_ms": 812 },
-  "allowlist": { "blocked_hosts": ["challenges.exemplo.net"], "violations": [] },
+  "graceful": true,
+  "waitedMs": 105,
+  "allowlist": {
+    "blockedHosts": [ { "host": "challenges.exemplo.net", "requests": 2, "exampleUrl": "…" } ],
+    "violations": [ { "requestId": "cdp-r0007", "url": "…", "host": "…", "reason": "porta 9000 fora da allowlist" } ]
+  },
   "warnings": ["…"]
 }
 ```
 
 Encerramento gracioso (`Browser.close` + espera + NetLog fechado); se não for
-gracioso, a sessão sai marcada incompleta (comportamento atual). Idempotente.
-A sessão importada fica em `session_dir` para as ferramentas da Core
-(`list_sessions`/`import_capture`).
+gracioso, a sessão sai marcada incompleta (comportamento atual). A sessão
+importada fica em `sessionDir`, com `capture.third_party_blocked` (informativo)
+e `capture.allowlist_violation` (aviso) nos `warnings` do `session.json`, para
+as ferramentas da Core e para `site_profile`. Se o chamador descartar o
+`BrowserCapture` sem `stop`, o `Drop` encerra o Chrome do mesmo modo.
 
-### 3.5 Segundo cliente CDP (a medir, não assumido)
+### 3.5 Segundo cliente CDP
 
-Com `expose_cdp:true`, o agente conectará seu próprio cliente ao mesmo Chrome. O
-nosso dedupe por `targetId` só vale para a nossa conexão. **Não se sabe** se dois
-clientes com `Target.setAutoAttach {waitForDebuggerOnStart:true}` coexistem
-(quem retoma o alvo; alvo pausado por um cliente que nunca retoma). Teste
-ignorado em loopback (`second_cdp_client_*`, §8) mede os cenários: (A) segundo
-cliente cooperativo, (B) segundo cliente com `waitForDebuggerOnStart` que nunca
-retoma. Resultado entra na seção 9 deste documento depois da medição.
+Com `expose_cdp:true`, o agente conectará seu próprio cliente ao mesmo Chrome.
+O nosso dedupe por `targetId` só vale para a nossa conexão. Medido em loopback
+(testes ignorados `second_cdp_client_cooperative` e
+`second_cdp_client_never_resumes`, Chrome 156, headless): o segundo cliente
+conecta no meio da sessão, anexa à aba, faz `Target.setAutoAttach
+{flatten:true, waitForDebuggerOnStart:true}` e a página cria um worker.
+
+| Cenário | Resultado |
+|---|---|
+| A. segundo cliente retoma o alvo (`runIfWaitingForDebugger`) | worker recebido por **ambos** com `waitingForDebugger:true`; carga completa; worker chega ao servidor e entra na nossa sessão; encerramento gracioso |
+| B. segundo cliente pede `waitForDebuggerOnStart` e **nunca** retoma | idêntico: o **nosso** `runIfWaitingForDebugger` libera o alvo (a retomada vale para o alvo, não para a sessão); nada trava |
+
+Limites da medição: uma execução de cada (repetida 3× sem divergência), um tipo
+de alvo (worker dedicado), cliente escrito por nós. **Não medido:** o agente
+retomar o alvo *antes* do nosso `Network.enable` chegar (corrida: o início da
+rede do alvo pode ficar fora da nossa captura; ficou dentro nos testes) e
+clientes que usam `Fetch` ou depuração com pausa. Consequência de produto: a
+nossa retomada também libera alvos que o agente quisesse manter pausados.
 
 ## 4. API Rust (para o servidor MCP)
 
@@ -190,13 +221,15 @@ Em `src-tauri/src/capture.rs`, sem alterar `run`, `CaptureConfig` nem
 
 ```text
 pub struct Allowlist                      // new(allowed, third_party) -> Result<_, AllowlistError>
-  permits_url(&str) -> Result<Url, UrlDenied>
+  permits_url(&str) -> Result<AllowedUrl, UrlDenied>
   host_allowed(&str) -> bool
   resolver_rules() -> String
-pub struct BrowserCaptureConfig { chrome, session_dir, start_url, headless, allowlist, expose_cdp }
+  report(&SessionV1) -> AllowlistReport   // blockedHosts + violations
+pub struct BrowserCaptureConfig { chrome, session_dir, start_url, headless,
+                                  allowed_hosts, third_party_hosts, expose_cdp }
 pub struct BrowserCapture
-  start(config) -> Result<(BrowserCapture, StartInfo), String>
-  navigate(&self, url, wait, timeout) -> Result<NavigateResult, NavigateError>
+  start(config) -> Result<(BrowserCapture, StartInfo), StartError>
+  navigate(&self, url, wait_load, timeout) -> Result<NavigateResult, NavigateError>
   status(&self) -> CaptureStatus
   stop(self) -> Result<StopReport, String>
 ```
@@ -209,38 +242,41 @@ mensagens num canal consumido pelo laço de gravação (latência ≤ ~250 ms).
 Crate independente `recon/` (`scrapelens-recon`, depende só de
 `scrapelens-core`), com as assinaturas em **dados** (`recon/signatures.json`) e
 testes sem rede. Entrada: uma sessão capturada (`SessionV1` + `BodySource`
-para corpos HTML/JS) e opções. Saída:
+para corpos HTML/JS) e opções. Saída (camelCase, como a Core):
 
 ```json
 {
   "schema": "scrapelens.site-profile/1",
-  "session_id": "…",
-  "sample": { "requests": 31, "documents": 3, "app_requests": 12, "partial": false },
+  "sessionId": "…",
+  "sample": { "requests": 31, "documents": 3, "appRequests": 12, "partial": false,
+              "protocols": { "https://exemplo.test": ["h2"] } },
   "findings": [
     {
       "id": "F001",
-      "category": "protecao" | "bloqueio" | "captcha" | "cookie" | "token" | "protocolo" | "terceiro-bloqueado",
+      "category": "protecao" | "desafio" | "captcha" | "bloqueio" | "cookie" | "token" | "protocolo" | "terceiro-bloqueado",
       "vendor": "cloudflare" | null,
-      "kind": "cookie" | "response-header" | "request-header" | "script-host" | "form-field" | "path" | "status" | "protocol" | "token-origin" | "blocked-host",
-      "signature_id": "cf-005" | null,
+      "kind": "cookie" | "response-header" | "request-header" | "script-host" | "form-field" | "path" | "status" | "protocol" | "cookie-flow" | "token-origin" | "blocked-host",
+      "signatureId": "cf-005" | null,
       "summary": "texto PT-BR",
       "confidence": "alta" | "media" | "baixa",
       "occurrences": 3,
-      "evidence": [ { "request_id": "r0004", "attempt_id": "r0004.a1", "scope": "response_header", "field": "cf-mitigated", "value": "challenge", "url": "…", "status": 403, "source": "cdp|netlog" } ],
-      "source": { "kind": "fornecedor" | "secundaria" | "projeto", "url": "…" }
+      "evidence": [ { "requestId": "cdp-r0004", "attemptId": "cdp-r0004-a1", "scope": "response-header",
+                      "field": "cf-mitigated", "value": "challenge", "url": "…", "status": 403, "source": "netlog" } ],
+      "source": { "kind": "fornecedor" | "secundaria" | "projeto", "url": "…" } | null,
+      "resolvedLater": true | false | null,
+      "limits": ["…"]
     }
   ],
   "recommendation": {
     "value": "chrome-normal-basta" | "precisa-de-priming" | "candidato-a-cloakbrowser" | "indeterminado",
     "confidence": "alta" | "media" | "baixa",
-    "reasons": ["…"],
-    "limits": ["…"]
+    "reasons": ["…"], "limits": ["…"], "basedOn": ["F002"]
   },
   "warnings": []
 }
 ```
 
-- `evidence[].request_id`/`attempt_id` são os ids da Core (`LogicalRequest.id`,
+- `evidence[].requestId`/`attemptId` são os ids da Core (`LogicalRequest.id`,
   `Attempt.id`) e resolvem em `get_request`. Valores: nomes e URLs sempre;
   **valores de cookie/cabeçalho redigidos** (`"[redigido, 32 bytes]"`), salvo
   valores de enumeração documentados (`challenge`, `captcha`, `protected`,
@@ -269,12 +305,20 @@ bloqueio**.
   verificação da Core): "**observado**", não "exigido". Provar exigência
   precisaria de uma tentativa em h1 que falhasse; uma captura só não prova.
 - **Cookies definidos pelo servidor e reenviados** (`Set-Cookie` na resposta N
-  e `Cookie` com o mesmo nome em N+k): "cookie de sessão/guarda **observado**".
-  "Obrigatório" **não** é afirmável por uma captura (exige remover e testar,
-  `validate_run`): o achado diz isso em `limits`.
-- **Tokens dinâmicos e origem**: para requisições da aplicação, usa
-  `flow::value_origins` (Core) e relata valores de cabeçalho/cookie/corpo com
-  origem `strong`/`possible` em resposta anterior; nada é re-derivado aqui.
+  e `Cookie` com o mesmo nome depois): "cookie de sessão/guarda **observado**"
+  (até 10, os mais reenviados). "Obrigatório" **não** é afirmável por uma
+  captura (exige remover e testar, `validate_run`): o achado diz isso em `limits`.
+- **Tokens dinâmicos e origem**: para as últimas requisições XHR/fetch bem
+  sucedidas (até 5, ou o `target_request_id` dado), usa `flow::value_origins`
+  (Core) e relata valores de cabeçalho, consulta e corpo (≥ 8 bytes) com origem
+  em resposta anterior: `strong` → confiança `media`; `possible` (mesmo valor,
+  campo com outro nome) → `baixa`. Valores de cookie ficam de fora (já são o
+  achado de cookies). Nada é re-derivado aqui e o valor nunca sai.
+- **Ordem no tempo**: `session.requests` **não é cronológica** (a Core ordena
+  por id; medido numa sessão real: `cdp-r0004` era a primeira requisição). "Antes"
+  e "depois" usam o início da tentativa (`startedAt`) quando todas têm tempo, e a
+  ordem da sessão só como reserva. Sugestão à Core: documentar isso em
+  `docs/16-mcp-contrato.md` para quem lê `list_requests`.
 - **Hosts de terceiros bloqueados pela allowlist** (`ERR_NAME_NOT_RESOLVED`):
   achado `terceiro-bloqueado` (§2.2).
 
@@ -291,14 +335,20 @@ Determinística, por regras (ordem de avaliação):
    403/429/503 no documento principal). Quando só há script de CAPTCHA
    presente e a página carregou, **não** é candidato. O texto diz: "o Chrome
    normal foi barrado; isto **não prova** que o CloakBrowser passaria".
-3. `precisa-de-priming`: nada barrou o Chrome, mas há valores obrigatórios
-   gerados pelo servidor/proteção que a aplicação reenvia (`token-origin`
-   `strong`, ou cookie de proteção definido por uma requisição e enviado nas
-   seguintes), ou um desafio foi resolvido no próprio navegador (cookie de
-   liberação depois de resposta de desafio, ex.: `cf_clearance`).
-4. `chrome-normal-basta`: documento principal 2xx, nenhum bloqueio nas rotas da
-   aplicação e nenhum token de origem forte. Proteção presente passiva
-   (cookie/script) não muda isso, mas aparece nos achados.
+3. `precisa-de-priming`: nada barrou o Chrome, mas (a) um desafio foi servido e
+   **resolvido no próprio navegador** (resposta bem-sucedida depois na mesma
+   rota, ou cookie de liberação depois dele: `cf_clearance`, `aws-waf-token`) →
+   confiança `alta`; (b) um **cookie de liberação** definido por uma requisição
+   foi reenviado nas seguintes; (c) há **token dinâmico** com origem em resposta
+   anterior (`token-origin`). Confiança `media` com (b) ou token `strong`;
+   `baixa` se o único indício for "possível origem". Cookie de **presença**
+   (`__cf_bm`, `datadome`, `_px3`, `bm_sv`…) reenviado **não** dispara priming
+   (qualquer cliente com cookie jar o reenvia): vira linha em `reasons`.
+4. `chrome-normal-basta`: documento principal respondeu, nenhum bloqueio nas
+   rotas da aplicação, nenhum desafio resolvido e nenhum token. Proteção
+   presente passiva (cookie/script) não muda isso, mas aparece nos achados.
+   Confiança `media` com ≥ 5 requisições, senão `baixa`; **nunca `alta`** (uma
+   navegação não prova).
 
 Limites sempre declarados em `recommendation.limits`: amostra (uma navegação),
 site visto só com a allowlist usada, ausência de interação humana, e que
@@ -387,21 +437,49 @@ Só loopback e fixtures sintéticas; nada de site real de terceiros.
   regra "marcador sozinho não bloqueia", recomendação nos quatro valores,
   redação, sessões parciais.
 - Vivos (`#[ignore]`, Chrome headless, servidor loopback do próprio teste):
-  captura com allowlist (`navigate` permitido/recusado, subrecurso de host não
-  listado vira `blocked_hosts`, IP literal vira `violations`), encerramento
-  gracioso com NetLog fechado, cadeia completa
-  captura → importação → `site_profile` contra um servidor que imita cada
-  sinal; `second_cdp_client_cooperative` e `second_cdp_client_never_resumes`.
+  `live_allowlist_cycle` (`navigate` permitido/recusado, subrecurso de host não
+  listado e IP literal em `blockedHosts`, outra porta em `violations`,
+  encerramento gracioso com NetLog completo), `second_cdp_client_cooperative` e
+  `second_cdp_client_never_resumes`, e a cadeia captura → importação →
+  `site_profile` (`recon/scripts/live_e2e.sh`: três servidores em loopback que
+  imitam sinais documentados da Cloudflare: site comum, desafio sem solução,
+  desafio resolvido no navegador).
 
 ## 9. Resultados e decisões abertas
 
-(Preenchido depois da implementação: placar dos testes, comportamento de dois
-clientes CDP, lacunas.)
+Placar (2026-10-31, macOS arm64, Chrome 156.0.8078.74):
+
+| Suíte | Resultado |
+|---|---|
+| `cargo test --lib` (src-tauri) | 70 passed, 12 ignored (vivos); `clippy --all-targets -D warnings` limpo |
+| `Allowlist` (7 testes) | esquemas, userinfo, barra invertida, `%`, ponto final, IPv4 curto/decimal/hex/octal, curinga, porta, terceiros, regras do resolvedor, relatório |
+| `BrowserCapture` (4 testes) | `start` sem allowlist/larga/inválida/URL fora/binário inexistente |
+| `live_allowlist_cycle` (Chrome headless) | passou: camada 2 recusa 5 URLs sem nada chegar ao servidor; nome e 4 formas de IP literal bloqueados pelo resolvedor; outra porta escapa e é reportada; encerramento gracioso, NetLog `complete` |
+| `second_cdp_client_*` | passaram (A e B, §3.5) |
+| `recon` (`cargo test`) | 23 passed: tabela = §6.1 (28 assinaturas, todas com fonte), uma fixture sintética por assinatura, confiança por fonte/peso, recomendação nos 4 valores, redação, ordem no tempo |
+| `recon/scripts/live_e2e.sh` | 3 passed: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
+| `check_multi_target.py` (regressão da captura comum) | OK: 16/16 NetLog, ≥15/16 CDP |
+
+Achados que mudaram o contrato: (1) o resolvedor do Chrome 156 **também nega IP
+literal** (§2.2); (2) a lacuna real é a **porta**; (3) `session.requests` não é
+cronológica (§5.2); (4) cookie de presença reutilizado não é priming (§5.3);
+(5) a retomada do alvo por qualquer cliente libera o alvo (§3.5).
+
+Limites desta entrega: as sessões do `live_e2e` vêm de servidores que **imitam**
+os sinais; elas provam o detector, não a presença de proteção em site algum.
+Nenhum site real de terceiros foi acessado. As assinaturas de fornecedor vêm de
+documentação lida em 2026-10-31; os fornecedores mudam sinais sem aviso. O
+`site_profile` ainda não está registrado como ferramenta do servidor MCP (é da
+Core/servidor), e o encadeamento `start_capture`→`navigate`→`stop_capture` ainda
+não tem o servidor MCP que guarda o `capture_id` e faz a confirmação.
 
 Perguntas ao líder, com a recomendação da Captura:
 
-1. **Allowlist estrita vs. terceiros** (§2.2): manter estrita com 2 passadas.
-2. **`act`** fora desta onda (§1): manter assim.
+1. **Allowlist estrita vs. terceiros** (§2.2): manter estrita com 2 passadas
+   (`terceiro-bloqueado` indica o que liberar).
+2. **`act`** fora desta onda (§1): manter assim; o agente age pela porta CDP.
 3. **`indeterminado`** como quarto valor da recomendação: aceitar.
 4. **Crate novo `recon/`** fora de `src-tauri` e `core`: aceitar (testes rápidos,
    reaproveitável pelo servidor MCP sem puxar o Tauri).
+5. **Quem guarda o `capture_id` e confirma `start_capture`**: o servidor MCP
+   (Core ou outro agente a definir); a Captura entrega `BrowserCapture`.
