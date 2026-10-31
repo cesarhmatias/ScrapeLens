@@ -112,6 +112,8 @@ pub fn detect(saved: Option<&Path>) -> ChromeInfo {
 /// Identificador do bundle e Team ID da Google para o Chrome estável.
 const CHROME_BUNDLE_ID: &str = "com.google.Chrome";
 const CHROME_TEAM_ID: &str = "EQHXZ8M8AV";
+/// Requisito de código que o Chrome estável precisa satisfazer.
+pub const CHROME_REQUIREMENT: &str = "anchor apple generic and identifier \"com.google.Chrome\" and certificate leaf[subject.OU] = \"EQHXZ8M8AV\"";
 
 /// Chrome aceito para a captura controlada, lido sem executar o binário.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +131,9 @@ pub enum ChromeError {
     NotFound(String),
     /// Não é o binário dentro de um `.app` (ex.: `/bin/echo`, um script).
     NotABundle(String),
+    /// O caminho tem caractere de controle (quebra de linha, NUL, TAB...) ou não
+    /// é UTF-8: nunca é um Chrome legítimo e engana quem faz parse de texto.
+    UnsafePath(String),
     /// Bundle de outro produto (não é o Chrome estável).
     UnexpectedBundle(String),
     NoVersion,
@@ -149,6 +154,10 @@ impl std::fmt::Display for ChromeError {
             ChromeError::NotABundle(why) => write!(
                 f,
                 "só o Chrome estável instalado é aceito (um .app da Google); este caminho não é: {why}"
+            ),
+            ChromeError::UnsafePath(shown) => write!(
+                f,
+                "o caminho do navegador tem caractere de controle ou não é UTF-8 e foi recusado: {shown}"
             ),
             ChromeError::UnexpectedBundle(id) => write!(
                 f,
@@ -171,10 +180,21 @@ impl std::error::Error for ChromeError {}
 /// Aceita só o **Chrome estável** da Google: o binário precisa estar em
 /// `<X>.app/Contents/MacOS/<CFBundleExecutable>`, o `Info.plist` precisa ter o
 /// identificador `com.google.Chrome` e uma versão, e a assinatura de código
-/// precisa verificar (`codesign --verify`) com o Team ID da Google. Nada é
-/// executado: só `plutil` e `codesign` do sistema, por caminho absoluto, leem o
-/// bundle. Recusa `/bin/echo`, scripts e `.app` falsos (mesmo com `Info.plist`
-/// mentindo, a assinatura não confere).
+/// precisa satisfazer o requisito explícito [`CHROME_REQUIREMENT`] em
+/// `codesign --verify --deep` (o código de saída decide; nada da saída de texto
+/// é interpretado). Nada é executado: só `plutil` e `codesign` do sistema, por
+/// caminho absoluto, leem o bundle. Recusa `/bin/echo`, scripts, `.app` falsos
+/// (mesmo com `Info.plist` mentindo), caminhos com caractere de controle e
+/// cópias do Chrome com um Helper/framework trocado (o `--deep` cobre os
+/// aninhados). Sem `--strict`: o Chrome instalado tem atributos de Finder que
+/// ele rejeita. O resultado não é guardado em cache: cada chamada reverifica.
+///
+/// O `binary` devolvido é o caminho canônico validado e é exatamente o que deve
+/// ser executado. Sobra uma janela entre esta verificação e o `exec` (um
+/// processo do mesmo usuário com escrita no bundle poderia trocar um arquivo
+/// depois): `/Applications` é do grupo admin, e uma cópia em pasta do usuário é
+/// do próprio usuário, que já poderia executar qualquer coisa. Documentado em
+/// docs/16b §2.1.
 pub fn validate_chrome(chosen: &Path) -> Result<ValidatedChrome, ChromeError> {
     #[cfg(not(target_os = "macos"))]
     {
@@ -206,12 +226,25 @@ pub fn resolve_stable_chrome(explicit: Option<&Path>) -> Result<ValidatedChrome,
     Err(last)
 }
 
+/// Recusa caminho que não é UTF-8 ou tem caractere de controle (`\n`, `\r`,
+/// TAB, NUL, DEL, C1). Vale para o caminho dado e para o canônico.
+fn reject_unsafe_path(path: &Path) -> Result<(), ChromeError> {
+    match path.to_str() {
+        Some(text) if !text.chars().any(char::is_control) => Ok(()),
+        _ => Err(ChromeError::UnsafePath(
+            path.to_string_lossy().escape_debug().to_string(),
+        )),
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> {
     use std::process::Command;
 
+    reject_unsafe_path(chosen)?;
     let resolved = std::fs::canonicalize(chosen)
         .map_err(|_| ChromeError::NotFound(chosen.display().to_string()))?;
+    reject_unsafe_path(&resolved)?;
     // Aceita o `.app`, o binário dentro dele ou o diretório `Contents/MacOS`.
     let binary = if resolved.extension().and_then(|e| e.to_str()) == Some("app") {
         None
@@ -273,38 +306,34 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
     if version.trim().is_empty() {
         return Err(ChromeError::NoVersion);
     }
-    // Assinatura: verifica o selo e lê o Team ID.
+    // Assinatura: requisito explícito, com o código de saída como único
+    // veredito. `--deep` verifica também os bundles aninhados (Helpers,
+    // frameworks). O requisito ancora na CA da Apple e exige o identificador e
+    // o Team ID da Google no certificado folha, então um bundle assinado ad hoc
+    // ou por outro certificado não satisfaz. Nada da saída de texto é lido.
     let verify = Command::new("/usr/bin/codesign")
-        .arg("--verify")
+        .args(["--verify", "--deep"])
+        .arg(format!("-R={CHROME_REQUIREMENT}"))
+        .arg("--")
         .arg(&app)
         .output()
         .map_err(|e| ChromeError::BadSignature(format!("codesign: {e}")))?;
     if !verify.status.success() {
-        return Err(ChromeError::BadSignature(
-            String::from_utf8_lossy(&verify.stderr).trim().to_string(),
-        ));
-    }
-    let display = Command::new("/usr/bin/codesign")
-        .args(["-dv", "--verbose=2"])
-        .arg(&app)
-        .output()
-        .map_err(|e| ChromeError::BadSignature(format!("codesign: {e}")))?;
-    let details = String::from_utf8_lossy(&display.stderr).to_string();
-    let field = |name: &str| {
-        details
+        let stderr = String::from_utf8_lossy(&verify.stderr);
+        // Mostra só a primeira linha e sem controles: a mensagem vai ao agente.
+        let why: String = stderr
             .lines()
-            .find_map(|l| l.strip_prefix(name))
-            .unwrap_or("")
-            .trim()
-            .to_string()
-    };
-    let signed_id = field("Identifier=");
-    let team_id = field("TeamIdentifier=");
-    if signed_id != CHROME_BUNDLE_ID || team_id != CHROME_TEAM_ID {
+            .next()
+            .unwrap_or("assinatura inválida")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(200)
+            .collect();
         return Err(ChromeError::BadSignature(format!(
-            "identificador {signed_id:?}, Team ID {team_id:?} (esperado {CHROME_BUNDLE_ID} / {CHROME_TEAM_ID})"
+            "não satisfaz o requisito da Google ({CHROME_BUNDLE_ID} / {CHROME_TEAM_ID}): {why}"
         )));
     }
+    let team_id = CHROME_TEAM_ID.to_string();
     Ok(ValidatedChrome {
         binary,
         app,
@@ -347,6 +376,16 @@ mod tests {
         } else {
             assert!(!info.found);
             assert!(!info.candidates.is_empty());
+        }
+    }
+
+    trait TapCreate {
+        fn tap_create(self) -> PathBuf;
+    }
+    impl TapCreate for PathBuf {
+        fn tap_create(self) -> PathBuf {
+            std::fs::create_dir_all(&self).unwrap();
+            self
         }
     }
 
@@ -437,6 +476,148 @@ mod tests {
         .unwrap();
         let err = validate_chrome(&app).unwrap_err();
         assert!(matches!(err, ChromeError::UnexpectedBundle(ref id) if id == "org.exemplo.Outro"), "{err:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Monta um `.app` mínimo com o `Info.plist` do Chrome e um executável
+    /// copiado de `/usr/bin/true`, assinado AD HOC com o identificador do Chrome.
+    #[cfg(target_os = "macos")]
+    fn adhoc_chrome_bundle(dir: &Path) -> PathBuf {
+        let app = dir.join("Google Chrome.app");
+        std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
+        std::fs::write(
+            app.join("Contents/Info.plist"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.google.Chrome</string>
+<key>CFBundleExecutable</key><string>Google Chrome</string>
+<key>CFBundleShortVersionString</key><string>156.0.8078.74</string>
+</dict></plist>"#,
+        )
+        .unwrap();
+        let exe = app.join("Contents/MacOS/Google Chrome");
+        std::fs::copy("/usr/bin/true", &exe).unwrap();
+        make_executable(&exe);
+        let signed = std::process::Command::new("/usr/bin/codesign")
+            .args(["--force", "-s", "-", "--identifier", "com.google.Chrome"])
+            .arg(&app)
+            .output()
+            .unwrap();
+        assert!(signed.status.success(), "{}", String::from_utf8_lossy(&signed.stderr));
+        app
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn r1_adhoc_bundle_claiming_the_chrome_identity_is_refused() {
+        // Assinado (selo válido) e com o identificador do Chrome, mas ad hoc: o
+        // requisito exige a âncora Apple e o Team ID da Google no certificado.
+        let dir = scratch("adhoc");
+        let app = adhoc_chrome_bundle(&dir);
+        for chosen in [app.clone(), app.join("Contents/MacOS/Google Chrome")] {
+            let err = validate_chrome(&chosen).unwrap_err();
+            assert!(matches!(err, ChromeError::BadSignature(_)), "{err:?}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn r1_newline_in_the_path_cannot_forge_the_signature_fields() {
+        // PoC da revisão: o nome do diretório injeta linhas `Identifier=` e
+        // `TeamIdentifier=` falsas. Agora o caminho é recusado antes de qualquer
+        // leitura, e o resultado nunca depende de texto da saída do codesign.
+        let base = scratch("inj");
+        let evil = base.join(
+            "inj\nIdentifier=com.google.Chrome\nTeamIdentifier=EQHXZ8M8AV\nx",
+        );
+        std::fs::create_dir_all(&evil).unwrap();
+        let app = adhoc_chrome_bundle(&evil);
+        for chosen in [app.clone(), app.join("Contents/MacOS/Google Chrome")] {
+            let err = validate_chrome(&chosen).unwrap_err();
+            assert!(matches!(err, ChromeError::UnsafePath(_)), "{err:?}");
+            assert_eq!(err.code(), "browser_invalid");
+            assert!(!err.to_string().contains('\n'), "a mensagem não pode carregar a quebra de linha");
+        }
+        // Os outros controles também: TAB, CR, NUL (este nem chega ao sistema).
+        for bad in ["a\tb", "a\rb", "a\u{7f}b", "a\u{85}b"] {
+            let err = validate_chrome(Path::new(&format!("/Applications/{bad}.app"))).unwrap_err();
+            assert!(matches!(err, ChromeError::UnsafePath(_)), "{bad:?}: {err:?}");
+        }
+        // Mesmo um bundle ad hoc num caminho limpo continua recusado (BadSignature).
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn r2_a_signed_copy_with_a_swapped_helper_is_refused() {
+        let real = Path::new("/Applications/Google Chrome.app");
+        if !real.is_dir() {
+            eprintln!("Chrome não instalado: teste ignorado");
+            return;
+        }
+        let dir = scratch("helper");
+        let copy = dir.join("Google Chrome.app");
+        // `cp -c` clona no APFS (instantâneo, sem copiar dados). Sem clone, pula.
+        let cloned = std::process::Command::new("/bin/cp")
+            .arg("-cR")
+            .arg(real)
+            .arg(&copy)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !cloned {
+            eprintln!("clonefile indisponível: teste ignorado");
+            let _ = std::fs::remove_dir_all(dir);
+            return;
+        }
+        // Controle: a cópia intacta continua válida (assinatura da Google).
+        let control = validate_chrome(&copy).expect("a cópia intacta satisfaz o requisito");
+        assert_eq!(control.team_id, "EQHXZ8M8AV");
+        // Troca o executável do Helper por um script que deixaria um marcador.
+        let versions = copy.join("Contents/Frameworks/Google Chrome Framework.framework/Versions");
+        let version = std::fs::read_dir(&versions)
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|e| e.file_name() != "Current" && e.path().join("Helpers").is_dir())
+            .expect("pasta de versão do framework")
+            .path();
+        let helper = version.join("Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper");
+        assert!(helper.is_file(), "{}", helper.display());
+        let marker = dir.join("helper-ran");
+        std::fs::remove_file(&helper).unwrap();
+        std::fs::write(&helper, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+        make_executable(&helper);
+        let err = validate_chrome(&copy).unwrap_err();
+        assert!(matches!(err, ChromeError::BadSignature(_)), "{err:?}");
+        // E também pelo binário principal.
+        let err = validate_chrome(&copy.join("Contents/MacOS/Google Chrome")).unwrap_err();
+        assert!(matches!(err, ChromeError::BadSignature(_)), "{err:?}");
+        assert!(!marker.exists(), "o Helper trocado não pode ter rodado");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn r11_validation_is_not_cached_and_returns_the_canonical_path() {
+        let real = Path::new("/Applications/Google Chrome.app");
+        if !real.is_dir() {
+            return;
+        }
+        let dir = scratch("canon");
+        let link = dir.join("atalho");
+        std::os::unix::fs::symlink(real, &link).unwrap();
+        let first = validate_chrome(&link).unwrap();
+        // O que se executa é o caminho canônico, não o atalho dado.
+        assert_eq!(first.binary, std::fs::canonicalize(&first.binary).unwrap());
+        assert!(!first.binary.starts_with(&dir));
+        // Troca o alvo do atalho por um bundle falso: a próxima chamada refaz a
+        // verificação completa e recusa (sem cache entre chamadas).
+        let fake = adhoc_chrome_bundle(&dir.join("falso").tap_create());
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&fake, &link).unwrap();
+        assert!(matches!(validate_chrome(&link).unwrap_err(), ChromeError::BadSignature(_)));
         let _ = std::fs::remove_dir_all(dir);
     }
 

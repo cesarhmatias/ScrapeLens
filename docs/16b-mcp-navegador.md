@@ -38,13 +38,36 @@ Perfil dedicado e temporário: nunca o perfil pessoal; depuração só em
 (1) `CFBundleIdentifier = com.google.Chrome`, (2) o executável do bundle como
 `Contents/MacOS/<CFBundleExecutable>` (symlinks resolvidos, bit de execução),
 (3) `CFBundleShortVersionString` presente (a versão lida), e
-(4) `codesign --verify` válido com `Identifier=com.google.Chrome` e
-`TeamIdentifier=EQHXZ8M8AV` (Google LLC). Leitura por `plutil` e `codesign` do
-sistema, por caminho absoluto. Não usa `--strict`/`--deep`: o Chrome instalado
-nesta máquina tem atributos de Finder que o `--strict` rejeita, e o `--deep`
-levaria ~6 s. Recusados (testes): `/bin/echo`, `/bin/sh`, script executável
-chamado `chrome`, `.app` falso com `Info.plist` mentindo (a assinatura não
-confere e o script nunca roda), bundle de outro produto, caminho inexistente.
+(4) `codesign --verify --deep -R='anchor apple generic and identifier
+"com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"'` com
+**código de saída 0** (`chrome::CHROME_REQUIREMENT`). Nada da saída de texto do
+`codesign` é interpretado (o parse de `-dv` foi enganado por uma quebra de linha
+no caminho, R1 da revisão). O `--deep` cobre os bundles aninhados (Helpers,
+frameworks): uma cópia assinada pela Google com um Helper trocado é recusada
+(R2) e o Helper nunca roda. O requisito exige a âncora Apple e o Team ID da
+Google no certificado folha, então um bundle ad hoc com o identificador do
+Chrome também é recusado. **Não usa `--strict`**: o Chrome instalado nesta
+máquina tem atributos de Finder ("resource fork, Finder information, or similar
+detritus not allowed") que o `--strict` rejeita; sem ele, o `--deep` com o
+requisito explícito passa no Chrome real (exit 0, cerca de 9 s). **Sem cache**:
+cada `validate_chrome` refaz a verificação. Caminho com caractere de controle
+(`\n`, `\r`, TAB, NUL, DEL, C1) ou não UTF-8 é recusado (`UnsafePath`, código
+`browser_invalid`) antes de qualquer leitura, para o caminho dado e para o
+canônico. Leitura por `plutil` e `codesign` do sistema, por caminho absoluto.
+Recusados (testes): `/bin/echo`, `/bin/sh`, script executável chamado `chrome`,
+`.app` falso com `Info.plist` mentindo, bundle ad hoc com a identidade do
+Chrome, caminho com quebra de linha (PoC da revisão), cópia do Chrome com o
+Helper trocado, bundle de outro produto, caminho inexistente.
+
+**Execução do caminho validado (R11).** `BrowserCapture::start` valida e passa
+ao launcher exatamente `ValidatedChrome.binary` (caminho canônico, symlinks
+resolvidos), nunca o caminho que o agente informou. **Lacuna que resta:** entre a
+verificação e o `exec` há uma janela em que um processo do mesmo usuário, com
+escrita no bundle, poderia trocar um arquivo (TOCTOU). Em `/Applications` o
+bundle é do grupo `admin`; uma cópia em pasta do usuário é do próprio usuário,
+que já poderia executar qualquer coisa como ele. O `--deep` torna a janela
+pequena, mas não a fecha; fechá-la exigiria executar por descritor de arquivo,
+que o macOS não oferece para `.app`.
 Fora do macOS o erro é `UnsupportedPlatform`. O `chrome::detect` do App
 (escolha do usuário na interface) não mudou. O caminho de `StartInfo.browser`
 é o já resolvido. O servidor MCP deve escolher e mostrar o navegador na
