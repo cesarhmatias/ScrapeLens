@@ -126,6 +126,26 @@ nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas t
 
 - **Bundle com assinatura estável (c2d2b8f):** SHA `1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a`, identidade local "ScrapeLens Local Signing"; `EXPECTED_APP_SHA256` e `app-latest` atualizados. O item 9 aceita ad-hoc ou identidade local e exige `codesign --verify --deep --strict` (registrado no run.json e recalculado em disco). Ciclo real refeito por AX e teclado (`capture-1793464319852`: 11 req, complete; HAR `-9` 24 req; NetLog `-9` 32 req partial). run_acceptance 10/10 (item 9: 123 asserções).
 
+## Rodada 11 — MCP (item 11 do aceite)
+
+- **HEAD testado:** core `e37d42d` (sanitizador cobre `startLine`), mcp `6cca5aa`; testes em `tests/` a partir de `e8ea7f7`.
+- **Data:** 2026-10-31. Binários: `cargo test` sem filtro em `mcp/` (reconstrói `fake_server`), `core` em release.
+- **Placar `run_acceptance`:** 11/11 OK (itens 1–10 inalterados; item 11 com 34 asserções, 0 falhas).
+
+| Comando | rc | Resultado |
+|---|---|---|
+| `cargo test` mcp | 0 | 37 passaram, 0 falharam |
+| `cargo test` capture | 0 | 41 passaram, 0 falharam |
+| `cargo test` recon | 0 | 23 passaram, 0 falharam |
+| `cargo test --test e2e_live -- --ignored` (mcp, Chrome real) | 0 | 1 passou |
+| `recon/scripts/live_e2e.sh` | 0 | 4 passaram |
+| `tests/aceite/mcp_flow.py` (cliente stdio independente) | 0 | 28 checagens, 0 falharam |
+
+- **Fluxo:** start_capture (elicitação aceita) → navigate → stop_capture (NetLog completo) → list_requests → get_request (ordem dos headers = ordem recebida pelo servidor local = bloco bruto do NetLog) → trace_value do cookie mascarado → site_profile.
+- **Negativos:** elicitação recusada não cria Chrome da captura; navigate fora da allowlist recusado com `url_not_allowed` e sem chegar ao servidor; `reveal=true` sem `--allow-reveal` recusado; nenhum valor de cookie/token na saída inteira do MCP sem reveal.
+- **Achado da rodada 11 anterior:** `get_request` vazava o token da query em `request.startLine` sem reveal; corrigido no core `e37d42d` e no mcp `6cca5aa`, reproduzido e verificado de novo aqui.
+- **Evidência:** `tests/results/mcp/run.json` (comandos) e `tests/results/mcp/flow.json` (checagens do fluxo, sem o valor do segredo).
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)

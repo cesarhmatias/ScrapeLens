@@ -1,6 +1,6 @@
 {
- "port": 61148,
- "host": "localhost:61148",
+ "port": 54039,
+ "host": "localhost:54039",
  "tools": [
   "capture_status",
   "diff_requests",
@@ -17,7 +17,7 @@
   "stop_capture",
   "trace_value"
  ],
- "sessionId": "capture-1793480565778",
+ "sessionId": "capture-1793481279088",
  "header_order": [
   "Host",
   "Connection",
@@ -75,12 +75,12 @@
   {
    "name": "start_capture aceito (elicitação)",
    "ok": true,
-   "detail": "{\"warnings\": [], \"chromePid\": 87262, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
+   "detail": "{\"warnings\": [], \"chromePid\": 95288, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
   },
   {
    "name": "elicitação exibida ao usuário",
    "ok": true,
-   "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:61148\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:61148/\\nC"
+   "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:54039\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:54039/\\nC"
   },
   {
    "name": "Chrome real iniciado",
@@ -100,17 +100,17 @@
   {
    "name": "navigate permitido carregou",
    "ok": true,
-   "detail": "{\"frameId\": \"C08BC2CCEF32F7011B0A4B85E31C4F7C\", \"loaderId\": \"B9B3BF4228BD0DE0C83034BA25B11AD2\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-df51a37130f9c561\"}"
+   "detail": "{\"frameId\": \"3B591828724E1D5800023DE118F5CD0B\", \"loaderId\": \"A9A2EFA4E8AB183E07C61593359DD9E3\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-1ff4b5f5333d9c00\"}"
   },
   {
    "name": "capture_status em gravação",
    "ok": true,
-   "detail": "{\"recording\": true, \"events\": 38, \"chromePid\": 87262, \"sessionId\": \"capture-1793480565778\", \"pageUrl\": \"http://localhost:61148/\", \"startedAt\": \"\", \"captureId\": \"cap-df51a37130f9c561\"}"
+   "detail": "{\"recording\": true, \"events\": 38, \"chromePid\": 95288, \"sessionId\": \"capture-1793481279088\", \"pageUrl\": \"http://localhost:54039/\", \"startedAt\": \"\", \"captureId\": \"cap-1ff4b5f5333d9c00\"}"
   },
   {
    "name": "stop_capture gracioso",
    "ok": true,
-   "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 202, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-df51a37130f9c561\", \"sessionId\": \"capture-1793480565778\", \"readable\": true}"
+   "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 102, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-1ff4b5f5333d9c00\", \"sessionId\": \"capture-1793481279088\", \"readable\": true}"
   },
   {
    "name": "NetLog completo",
@@ -125,7 +125,7 @@
   {
    "name": "/page2 na sessão",
    "ok": true,
-   "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:61148/\", \"host\": \"localhost:61148\", \"status\": 200, \"resourceType\": \"Document\", \"protocol\": \"h1\", \"totalMs\": 6.675000302493572, \"st"
+   "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:54039/favicon.ico\", \"host\": \"localhost:54039\", \"status\": 404, \"resourceType\": \"Other\", \"protocol\": \"h1\", \"totalMs\": 7.902999408543"
   },
   {
    "name": "token da query fora da listagem",
@@ -155,17 +155,17 @@
   {
    "name": "trace_value do cookie sem erro",
    "ok": true,
-   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0001\", \"attemptId\": \"cdp-r0001-a1\", \"url\": \"http://localhost:61148/\", \"startedAt\": 6070060.480115, \"source\": \"netlog\", \"verificat"
+   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:54039/\", \"startedAt\": 6070773.792218, \"source\": \"netlog\", \"verificat"
   },
   {
    "name": "trace_value do cookie mascarado",
    "ok": true,
-   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0001\", \"attemptId\": \"cdp-r0001-a1\", \"url\": \"http://localhost:61148/\", \"startedAt\": 6070060.480115, \"source\": \"netlog\", \"verificat"
+   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:54039/\", \"startedAt\": 6070773.792218, \"source\": \"netlog\", \"verificat"
   },
   {
    "name": "site_profile sem erro",
    "ok": true,
-   "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793480565778\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:61148\": [\"h1"
+   "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793481279088\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:54039\": [\"h1"
   },
   {
    "name": "reveal=true recusado sem --allow-reveal",
@@ -194,11 +194,11 @@
   },
   {
    "name": "nenhum valor de cookie/token na saída inteira do MCP (sem reveal)",
-   "ok": false,
-   "detail": "saída[6] <segredo-sintetico-omitido>: ...\"matched\", \"source\": \"cdp\"}], \"redirects\": [], \"request\": {\"startLine\": \"GET /page2?token=<segredo-sintetico-omitido> HTTP/1.1\", \"orderSt... | saída[19] <segredo-sintetico-omitido>: ...hed\\\",\\\"source\\\":\\\"cdp\\\"}],\\\"redirects\\\":[],\\\"request\\\":{\\\"startLine\\\":\\\"G"
+   "ok": true,
+   "detail": ""
   }
  ],
- "ok": false,
- "passed": 27,
- "failed": 1
+ "ok": true,
+ "passed": 28,
+ "failed": 0
 }
