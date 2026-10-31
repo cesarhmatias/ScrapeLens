@@ -187,6 +187,25 @@ pub fn validate_chrome(chosen: &Path) -> Result<ValidatedChrome, ChromeError> {
     }
 }
 
+/// Resolve o Chrome estável para a captura controlada: o `explicit` (se
+/// houver) é validado e nunca substituído; sem ele, o primeiro candidato
+/// instalado que passa em [`validate_chrome`]. É o que o servidor MCP deve
+/// chamar para escolher e mostrar o navegador na confirmação.
+pub fn resolve_stable_chrome(explicit: Option<&Path>) -> Result<ValidatedChrome, ChromeError> {
+    if let Some(path) = explicit {
+        return validate_chrome(path);
+    }
+    let mut last = ChromeError::NotFound("Chrome estável instalado".to_string());
+    for candidate in candidates() {
+        match validate_chrome(Path::new(&candidate)) {
+            Ok(found) => return Ok(found),
+            Err(ChromeError::NotFound(_)) => {}
+            Err(other) => last = other,
+        }
+    }
+    Err(last)
+}
+
 #[cfg(target_os = "macos")]
 fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> {
     use std::process::Command;
@@ -440,5 +459,17 @@ mod tests {
         std::os::unix::fs::symlink(&ok.binary, &link).unwrap();
         assert_eq!(validate_chrome(&link).unwrap(), ok);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_stable_chrome_never_substitutes_an_explicit_path() {
+        let err = resolve_stable_chrome(Some(Path::new("/bin/echo"))).unwrap_err();
+        assert_eq!(err.code(), "browser_invalid");
+        #[cfg(target_os = "macos")]
+        if Path::new("/Applications/Google Chrome.app").is_dir() {
+            // Sem caminho explícito, acha o Chrome instalado e o valida.
+            let found = resolve_stable_chrome(None).expect("Chrome instalado");
+            assert!(found.binary.ends_with("Contents/MacOS/Google Chrome"));
+        }
     }
 }

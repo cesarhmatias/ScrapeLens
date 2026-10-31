@@ -27,33 +27,69 @@ que as limita é a allowlist de rede (§2.2), aplicada pelo próprio Chrome.
 
 ### 2.1 Perfil e processo
 
-Perfil dedicado e temporário (já é assim em `capture.rs`): nunca o perfil
-pessoal; depuração só em `127.0.0.1`; encerra somente o processo que o
-ScrapeLens iniciou (`ChromeProcess` + marcador de órfãos). Só Chrome estável
-instalado (detectado por `chrome.rs` ou `binary_path` explícito). `--no-sandbox`
-nunca é passado.
+Perfil dedicado e temporário: nunca o perfil pessoal; depuração só em
+`127.0.0.1`; encerra somente o processo que o ScrapeLens iniciou
+(`ChromeProcess` + marcador de órfãos). `--no-sandbox` nunca é passado.
+
+**Só o Chrome estável da Google** (revisão de segurança, achado M3). O
+`binary_path` do agente nunca vira o executável sem passar por
+`chrome::validate_chrome`, que **não executa o binário**: `start` recusa com
+`browser_invalid` tudo o que não for um `.app` com
+(1) `CFBundleIdentifier = com.google.Chrome`, (2) o executável do bundle como
+`Contents/MacOS/<CFBundleExecutable>` (symlinks resolvidos, bit de execução),
+(3) `CFBundleShortVersionString` presente (a versão lida), e
+(4) `codesign --verify` válido com `Identifier=com.google.Chrome` e
+`TeamIdentifier=EQHXZ8M8AV` (Google LLC). Leitura por `plutil` e `codesign` do
+sistema, por caminho absoluto. Não usa `--strict`/`--deep`: o Chrome instalado
+nesta máquina tem atributos de Finder que o `--strict` rejeita, e o `--deep`
+levaria ~6 s. Recusados (testes): `/bin/echo`, `/bin/sh`, script executável
+chamado `chrome`, `.app` falso com `Info.plist` mentindo (a assinatura não
+confere e o script nunca roda), bundle de outro produto, caminho inexistente.
+Fora do macOS o erro é `UnsupportedPlatform`. O `chrome::detect` do App
+(escolha do usuário na interface) não mudou. O caminho de `StartInfo.browser`
+é o já resolvido. O servidor MCP deve escolher e mostrar o navegador na
+confirmação com `chrome::resolve_stable_chrome(explícito)` (valida o caminho do
+agente e nunca o substitui), não com `normalize_binary_path`/`detect`, que
+aceitam qualquer arquivo; até lá `start` ainda recusa com `browser_invalid`,
+mas só depois da elicitação.
 
 ### 2.2 Allowlist obrigatória, em duas camadas
 
 `start_capture` **sem `allowed_hosts` não vazio é erro** (`allowlist_required`).
 
+**Semântica oficial (decisão do líder após a revisão de segurança, achado M2):
+o navegador impõe o HOST (todas as portas); a PORTA só é imposta no
+`navigate`.** Não interceptamos a rede (`Fetch`) para impor porta, porque isso
+altera a fidelidade da captura. Quem aprova `localhost:P1` aprova, para a
+página, `localhost` em qualquer porta (Redis local, admin, outros serviços): o
+servidor MCP deve dizer isso na elicitação.
+
 | Camada | Mecanismo | O que cobre | O que não cobre |
 |---|---|---|---|
-| 1. Navegador | `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE h1, EXCLUDE h2…"` com `allowed_hosts` + `third_party_hosts` | qualquer host por nome **e IP literal** (medido: `127.0.0.1`, `127.1`, `2130706433` e `[::1]` falharam com `ERR_NAME_NOT_RESOLVED` no Chrome 156), em qualquer aba, iframe, worker ou cliente CDP, inclusive redirects | **a porta**: a regra conhece só o nome. Outra porta de um host permitido passa pelo resolvedor (medido: um subrecurso `localhost:OUTRA_PORTA` chegou ao segundo servidor) |
-| 2. API | `navigate` recusa antes de enviar; mesma função de decisão (`Allowlist::permits_url`) | esquema, host (incl. IP literal), porta, userinfo (`http://permitido@outro/`) | navegação feita por script ou clique da página/agente |
+| 1. Navegador | `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE h1, EXCLUDE h2…"` com `allowed_hosts` + `third_party_hosts` (IPv4 literal da lista também ganha `EXCLUDE`) | qualquer host por nome **e IP literal** (medido: `127.0.0.1`, `127.1`, `2130706433` e `[::1]` falharam com `ERR_NAME_NOT_RESOLVED` no Chrome 156), em qualquer aba, iframe, worker ou cliente CDP, inclusive redirects | **a porta**: a regra conhece só o nome |
+| 2. API | `navigate` recusa antes de enviar; mesma função de decisão (`Allowlist::permits_url`) | esquema, host, **porta**, userinfo (`http://permitido@outro/`) | navegação feita por script ou clique da página/agente |
 
-Além disso, `stop_capture` traz `allowlist.violations`: toda requisição da
-sessão cujo host/porta não está na lista e **não falhou na resolução** (hoje, na
-prática, **porta diferente** de um host permitido; IP literal também, se uma
-versão futura do Chrome deixar de cobri-lo). A lacuna é **declarada**: o que
-passa por ela é reportado e vira aviso `capture.allowlist_violation` na própria
-sessão, não bloqueado. A regra de porta (`host:porta`) só vale na camada 2 e no
-relatório; as regras do resolvedor ignoram porta.
+Medido com o PoC da revisão (`live_port_gap_is_reported_on_all_paths`, Chrome
+156): com `localhost:P1` aprovado, a página alcançou `localhost:P2` por **8
+caminhos**: 302 de topo, `location=`, meta refresh, `window.open`, iframe,
+fetch, WebSocket e host em maiúsculas. **Todos os 8 aparecem em
+`stop_capture.allowlist.violations`** (e como aviso `capture.allowlist_violation`
+na sessão), porque o relatório vem dos **eventos CDP** (`Network.requestWillBeSent`
+de cada salto de redirect, de cada iframe e popup, e `Network.webSocketCreated`),
+não da sessão importada, que perde o WebSocket. Também é violação a navegação de
+topo para um host aprovado só em `third_party_hosts` (aprovado para subrecursos,
+não como destino). Regra de violação: host fora das duas listas sem falha de
+resolução, ou porta diferente da escrita no padrão (`host:porta`); padrão sem
+porta aceita qualquer porta. O que é reportado não é bloqueado. As URLs de
+violações, hosts bloqueados e avisos saem **sem consulta, fragmento,
+`;parâmetros` de caminho nem userinfo**.
 
 Regras de `allowed_hosts` e `third_party_hosts` (strings):
 - nome exato (`exemplo.com`), curinga de subdomínio (`*.exemplo.com`, não casa
-  `exemplo.com`), IPv4/IPv6 literal só se escrito de forma explícita; porta
-  opcional (`exemplo.com:8443`; sem porta = qualquer porta do host);
+  `exemplo.com`), IPv4 literal escrito de forma explícita (`127.0.0.1:8080`);
+  **IPv6 literal é recusado** (`allowlist_unsupported`): o resolvedor não o
+  trata de forma confiável; porta opcional (`exemplo.com:8443`; sem porta =
+  qualquer porta do host; a porta vale só no `navigate` e no relatório);
 - sem esquema, sem caminho; maiúsculas normalizadas; entrada com ponto final,
   `%`, espaço, barra invertida ou não ASCII é **inválida** (`allowlist_invalid`;
   punycode só em ASCII); `*` sozinho, `*.com` e IPs com curinga são
@@ -144,7 +180,8 @@ servidor MCP, que guarda o `BrowserCapture` num mapa):
 ```
 
 Erros (`code`): `allowlist_required`, `allowlist_too_broad`, `allowlist_invalid`,
-`start_url_not_allowed`, `browser_start_failed` (inclui binário inexistente),
+`allowlist_unsupported` (IPv6), `start_url_not_allowed`, `browser_invalid` (o
+`binary_path` não é o Chrome estável, §2.1), `browser_start_failed`,
 `session_dir`; `capture_already_running` é do servidor MCP.
 
 `cdp` só aparece com `expose_cdp:true` e só depois do portão de §4.1 (a porta
@@ -189,8 +226,10 @@ Saída (`StopReport`):
 ```
 
 Encerramento gracioso (`Browser.close` + espera + NetLog fechado); se não for
-gracioso, a sessão sai marcada incompleta (comportamento atual). A sessão
-importada fica em `sessionDir`, com `capture.third_party_blocked` (informativo)
+gracioso, a sessão sai marcada incompleta (comportamento atual).
+`allowlist.violations[].requestId` é o id lógico da sessão importada quando a
+requisição existe nela, senão `cdp:<sessão>/<requestId>` (ex.: WebSocket, que
+a importação não guarda). A sessão importada fica em `sessionDir`, com `capture.third_party_blocked` (informativo)
 e `capture.allowlist_violation` (aviso) nos `warnings` do `session.json`, para
 as ferramentas da Core e para `site_profile`. Se o chamador descartar o
 `BrowserCapture` sem `stop`, o `Drop` encerra o Chrome do mesmo modo.
@@ -239,7 +278,8 @@ run(config, status: Arc<Mutex<CaptureStatus>>, stop: Receiver<()>, ready: Sender
     -> Result<CaptureOutcome, String>
 default_state_root() -> PathBuf          // marcadores de captura (órfãos)
 cleanup_orphans(&Path) -> OrphanCleanup  // chamada pelo App na partida
-chrome::{detect, normalize_binary_path, candidates, ChromeInfo}
+chrome::{detect, normalize_binary_path, candidates, ChromeInfo}   // do App, permissivos
+chrome::{validate_chrome, resolve_stable_chrome, ValidatedChrome, ChromeError}  // estritos (§2.1)
 
 // captura controlada (MCP)
 allowlist::Allowlist                      // new(allowed, third_party) -> Result<_, AllowlistError>
@@ -301,7 +341,8 @@ para corpos HTML/JS) e opções. Saída (camelCase, como a Core):
       "confidence": "alta" | "media" | "baixa",
       "occurrences": 3,
       "evidence": [ { "requestId": "cdp-r0004", "attemptId": "cdp-r0004-a1", "scope": "response-header",
-                      "field": "cf-mitigated", "value": "challenge", "url": "…", "status": 403, "source": "netlog" } ],
+                      "field": "cf-mitigated", "value": "challenge", "url": "…", "status": 403, "source": "netlog",
+                      "thirdParty": false } ],
       "source": { "kind": "fornecedor" | "secundaria" | "projeto", "url": "…" } | null,
       "resolvedLater": true | false | null,
       "limits": ["…"]
@@ -332,9 +373,23 @@ bloqueio**.
 
 | Nível | Regra |
 |---|---|
-| `alta` | assinatura de **fonte do fornecedor** que, pela própria documentação, indica ação de proteção na resposta (ex.: `cf-mitigated: challenge`; `x-amzn-waf-action: challenge|captcha` com 202/405; `x-datadomeresponse` ≠ 200; resposta 403 com `x-datadome`) |
-| `media` | assinatura de fornecedor que mostra que o produto **está presente** (cookie, script, campo de formulário) sem prova de bloqueio; ou dois indícios independentes de fonte secundária |
-| `baixa` | um único indício de fonte secundária (ex.: cookie `bm_sz`, `incap_ses_*`), ou presença só no corpo |
+| `alta` | assinatura de **fonte do fornecedor** que, pela própria documentação, indica ação de proteção na resposta, **no site-alvo** e **com o status documentado** (ex.: `cf-mitigated: challenge`; `x-amzn-waf-action: challenge` com **202** ou `captcha` com **405**; `x-datadomeresponse` ≠ 200) |
+| `media` | assinatura de fornecedor que mostra que o produto **está presente** (cookie de `Set-Cookie`, script, cabeçalho) no site-alvo, sem prova de bloqueio; ou dois indícios independentes de fonte secundária; ou campo de formulário corroborado por script/cabeçalho/cookie do mesmo fornecedor |
+| `baixa` | um único indício de fonte secundária (ex.: `bm_sz`, `incap_ses_*`); **presença só em corpo, consulta ou cookie do pedido** (texto refletido, `?g-recaptcha-response=1`, cookie criado por `document.cookie`); **valor de bloqueio com status diferente do documentado** (ex.: AWS WAF `challenge` em 200: presença do produto, não desafio); **cookie, cabeçalho ou bloqueio visto só em recurso de outro host** |
+
+Regras da revisão de segurança (docs/17, R1 a R4), cada uma com teste em
+`recon/tests/profile.rs` (`r1_…` a `r4_…`):
+
+- **Site-alvo** = hosts dos documentos de topo da sessão (iframes de terceiros
+  não contam). Um host é do alvo se for igual ou subdomínio (ou domínio-pai) de
+  um desses; não há lista de sufixos públicos. Evidência de outro host sai com
+  `thirdParty: true`, o achado fica `baixa` com o limite escrito, e **não entra
+  na recomendação**. Script (`script-host`) e campo de formulário são
+  referências embutidas pela própria página e ficam fora desta regra.
+- **Desafio resolvido** só por resposta **2xx** depois, na mesma rota (um 3xx
+  pode levar ao próprio desafio), ou por cookie de liberação (`cf_clearance`,
+  `aws-waf-token`) definido depois **pelo mesmo site**; cookie de outro host não
+  libera.
 
 ### 5.2 Achados genéricos (sem nome de fornecedor)
 
@@ -488,15 +543,14 @@ Só loopback e fixtures sintéticas; nada de site real de terceiros.
 ## 9. Resultados e decisões abertas
 
 Placar (2026-10-31, macOS arm64, Chrome 156.0.8078.74), depois da extração da
-crate `capture/` e do portão do CDP exposto:
+crate `capture/`, do portão do CDP exposto e da correção dos achados da
+revisão de segurança (M2, M3, R1 a R4):
 
 | Suíte | Resultado |
 |---|---|
-| `capture/` `cargo test` | 41 passed, 5 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: 0 ocorrências de `tauri` |
-| `Allowlist` (7 testes) | esquemas, userinfo, barra invertida, `%`, ponto final, IPv4 curto/decimal/hex/octal, curinga, porta, terceiros, regras do resolvedor, relatório |
-| `BrowserCapture` + portão | `start` sem allowlist/larga/inválida/URL fora/binário inexistente; `initial_target_gate_*` (2 testes) |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `second_cdp_client_cooperative`, `second_cdp_client_never_resumes`, `agent_first_action_is_captured`: 4/4; mais `live_recon_scenarios` (usado pelo `live_e2e.sh`) |
-| `recon/` `cargo test` | 23 passed (tabela = §6.1: 28 assinaturas com fonte, uma fixture sintética por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo); clippy limpo |
+| `capture/` `cargo test` | 48 passed, 6 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: 0 ocorrências de `tauri` |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `second_cdp_client_*`, `agent_first_action_is_captured`; `live_recon_scenarios` (usado pelo `live_e2e.sh`) |
+| `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
 | `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |
 | `tests/aceite/check_multi_target.py` (captura comum, via `live_bodies_cycle` do App) | OK: 16/16 NetLog, ≥15/16 CDP |
