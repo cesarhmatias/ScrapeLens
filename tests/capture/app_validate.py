@@ -68,6 +68,7 @@ def bundle_facts(bundle: pathlib.Path) -> dict:
     file_info = run("file", str(executable)).stdout.strip() if executable.exists() else ""
     codesign = run("codesign", "-dv", "--verbose=2", str(bundle))
     signature_text = codesign.stderr + codesign.stdout
+    verify = run("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(bundle))
     size = sum(path.stat().st_size for path in bundle.rglob("*") if path.is_file())
     return {
         "path": str(bundle),
@@ -79,7 +80,11 @@ def bundle_facts(bundle: pathlib.Path) -> dict:
         "singleBinary": binaries == ["scrapelens"],
         "machO": file_info,
         "arm64": "arm64" in file_info,
-        "signature": "adhoc" if "adhoc" in signature_text else "unknown",
+        "signature": ("adhoc" if "adhoc" in signature_text
+                      else "local-identity" if "Authority=ScrapeLens Local Signing" in signature_text
+                      else "unknown"),
+        "codesignVerifyDeepStrict": verify.returncode == 0,
+        "codesignVerifyOutput": (verify.stderr + verify.stdout).strip()[-300:],
         "identifier": next((line.split("=", 1)[1] for line in signature_text.splitlines()
                             if line.startswith("Identifier=")), None),
     }

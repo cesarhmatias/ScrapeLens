@@ -124,6 +124,8 @@ nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas t
 
 - **Bundle final:** `b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157` (App b684c1a, `capture::cleanup_orphans` no setup), HEAD de origem b684c1a; `EXPECTED_APP_SHA256` e `app-latest` atualizados; o item 9 recalcula o hash em disco. Ciclo real refeito só por AX e teclado, sem cliques de desktop (`capture-1793456763837`: 11 req, complete, cdp+netlog; HAR `-8` 24 req complete; NetLog `-8` 32 req partial). run_acceptance 10/10 (item 9: 121 asserções), check_multi_target --self-test OK (9/9 mutações como esperado, 0 avisos de setup), cargo test core 316 / src-tauri 59 / natural-ajax 32, 0 falhas.
 
+- **Bundle com assinatura estável (c2d2b8f):** SHA `1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a`, identidade local "ScrapeLens Local Signing"; `EXPECTED_APP_SHA256` e `app-latest` atualizados. O item 9 aceita ad-hoc ou identidade local e exige `codesign --verify --deep --strict` (registrado no run.json e recalculado em disco). Ciclo real refeito por AX e teclado (`capture-1793464319852`: 11 req, complete; HAR `-9` 24 req; NetLog `-9` 32 req partial). run_acceptance 10/10 (item 9: 123 asserções).
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)

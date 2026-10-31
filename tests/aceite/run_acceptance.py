@@ -43,7 +43,7 @@ REPORT = ROOT / "tests" / "RELATORIO.md"
 # lugares juntos, para que a bateria nunca aprove um artefato não documentado.
 APP_EXECUTABLE = pathlib.Path(os.environ.get("SL_APP_EXECUTABLE") or (
     pathlib.Path(__file__).resolve().parents[2] / "src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
-EXPECTED_APP_SHA256 = "b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157"
+EXPECTED_APP_SHA256 = "1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a"
 
 SECRETS = [
     "SECRET-AUTH-TOKEN",
@@ -832,7 +832,14 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         exp.ok(bundle.get("arm64") is True, f"app: Mach-O arm64 ({bundle.get('machO', '')})")
         exp.ok(bundle.get("singleBinary") is True,
                f"app: binário único sem sidecar ({bundle.get('binaries')})")
-        exp.eq(bundle.get("signature"), "adhoc", "app: assinatura ad-hoc declarada (sem certificado Apple)")
+        exp.ok(bundle.get("signature") in ("adhoc", "local-identity"),
+               f"app: assinatura ad-hoc ou identidade local 'ScrapeLens Local Signing' (sem certificado Apple): {bundle.get('signature')}")
+        exp.ok(bundle.get("codesignVerifyDeepStrict") is True,
+               f"app: codesign --verify --deep --strict passou ({bundle.get('codesignVerifyOutput')})")
+        # Recomputa em disco, independente do run.json.
+        _cs = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(APP_EXECUTABLE.parents[2])],
+                             capture_output=True, text=True)
+        exp.ok(_cs.returncode == 0, f"app: codesign --verify --deep --strict recalculado em disco ({(_cs.stderr or _cs.stdout).strip()[-120:]})")
         exp.ok((bundle.get("sizeBytes") or 0) > 10 * 1024 * 1024,
                f"app: bundle com {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB")
         exp.eq(bundle.get("executableSha256"), EXPECTED_APP_SHA256,
@@ -963,7 +970,7 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                "app: print da sessão importada pela UI capturado")
         evidence.append(
             f"app empacotado: `ScrapeLens.app` {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB, "
-            f"arm64, ad-hoc, binário único, executável `{bundle.get('executableSha256')}`; "
+            f"arm64, assinatura {bundle.get('signature')}, binário único, executável `{bundle.get('executableSha256')}`; "
             f"captura ao vivo {live.get('id')} "
             f"({live.get('requests')} req, {live.get('verifiedHeaderEntries')} headers verificados, "
             f"{len(ambiguous)} ambíguas); importação HAR pela UI `{har_import.get('id')}` "
@@ -977,7 +984,7 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                         f"· prints `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}` e "
                         f"`{rel(pathlib.Path(app.get('gui', {}).get('importsScreenshot') or ''))}`")
         notes.append("Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final "
-                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em `b684c1a`, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.")
+                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em `c2d2b8f`, assinatura local estável, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.")
         notes.append("As importações HAR e NetLog também foram refeitas no bundle final "
                      f"(`{har_import.get('id')}` e `{netlog_import.get('id')}`), agora pela UI: o harness "
                      "escolheu os arquivos por cliques do mouse no painel nativo (o teclado não chega "
