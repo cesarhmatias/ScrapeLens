@@ -12,6 +12,7 @@ scrapelens-core = { path = "../core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tungstenite = "0.28"
+libc = "0.2"
 
 # Crate independente: sem Tauri, sem janela. O App (src-tauri) e o servidor MCP a consomem.
 [workspace]

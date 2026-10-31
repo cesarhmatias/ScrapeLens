@@ -132,7 +132,7 @@ fn run_inner(
     let profile = std::env::temp_dir().join(format!(
         "scrapelens-chrome-{}-{}",
         std::process::id(),
-        unix_millis()
+        unix_nanos()
     ));
     std::fs::create_dir_all(&profile).map_err(|error| format!("perfil temporário: {error}"))?;
     #[cfg(unix)]
@@ -141,6 +141,18 @@ fn run_inner(
         let _ = std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o700));
     }
 
+    // A pasta da sessão não pode ser um symlink: tudo que gravamos nela iria
+    // para o alvo do link.
+    if std::fs::symlink_metadata(&config.session_dir)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        let _ = std::fs::remove_dir_all(&profile);
+        return Err(format!(
+            "diretório da sessão é um symlink e foi recusado: {}",
+            config.session_dir.display()
+        ));
+    }
     store::ensure_private_dir(&config.session_dir)
         .map_err(|error| format!("diretório da sessão: {error}"))?;
     let netlog_path = config.session_dir.join("netlog.json");
@@ -148,6 +160,9 @@ fn run_inner(
     let bodies_path = config.session_dir.join("cdp-bodies.jsonl");
     let bodies_file =
         open_private(&bodies_path).map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
+    // O Chrome escreve o NetLog sozinho: cria o arquivo antes (0600, sem seguir
+    // um symlink plantado) para ele abrir um arquivo nosso, não o alvo do link.
+    drop(open_private(&netlog_path).map_err(|error| format!("netlog.json: {error}"))?);
 
     let resolver_rules = opts.allowlist.as_ref().map(allowlist::Allowlist::resolver_rules);
     let mut chrome = ChromeProcess::new(spawn_chrome(
@@ -610,7 +625,7 @@ impl OrphanMarker {
             let path = root.join(format!(
                 "{MARKER_PREFIX}{}-{}.json",
                 std::process::id(),
-                unix_millis()
+                unix_nanos()
             ));
             marker.path = Some(path);
             marker.write(port);
@@ -1886,10 +1901,59 @@ fn mark_incomplete(
         .push(scrapelens_core::model::Warning::new(code, message).with_detail(detail));
 }
 
+/// Escrita atômica e segura contra symlink: grava num arquivo novo de nome
+/// único (`create_new` + `O_NOFOLLOW`, 0600) na mesma pasta e troca o destino com
+/// `rename`, que substitui o próprio symlink (nunca escreve no alvo dele).
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let mut file = open_private(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("arquivo");
+    let tmp = path.with_file_name(format!(".{name}.tmp-{}-{}", std::process::id(), unix_nanos()));
+    let result = (|| {
+        let mut file = open_new_private(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+fn unix_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+}
+
+/// Cria um arquivo NOVO 0600 sem seguir symlink: `create_new` (O_EXCL) e
+/// `O_NOFOLLOW`. Falha se o nome já existir (inclusive como symlink).
+fn open_new_private(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    options.open(path)
+}
+
+/// Abre o arquivo para escrita como NOVO, sem seguir symlink. Se o nome já
+/// existir (arquivo antigo ou symlink plantado), REMOVE o nome (o link, nunca o
+/// alvo) e cria de novo; uma corrida em que alguém replante o nome faz o
+/// `create_new` falhar em vez de escrever fora.
+fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
+    match open_new_private(path) {
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+            std::fs::remove_file(path)?;
+            open_new_private(path)
+        }
+        other => other,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1900,23 +1964,6 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 const MAX_BODY_BYTES: usize = 5 * 1024 * 1024;
 /// Orçamento total de corpos gravados por sessão.
 const SESSION_BODY_BUDGET: usize = 256 * 1024 * 1024;
-
-fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let file = options.open(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    }
-    Ok(file)
-}
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -2581,6 +2628,7 @@ fn header_is_zero(headers: Option<&Value>) -> bool {
         .is_some_and(|value| value.trim() == "0")
 }
 
+#[cfg(test)]
 fn unix_millis() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2617,10 +2665,13 @@ mod tests {
     }
 
     fn test_cdp() -> Cdp {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
-            "scrapelens-setup-test-{}-{}.jsonl",
+            "scrapelens-setup-test-{}-{}-{}.jsonl",
             std::process::id(),
-            unix_millis()
+            unix_nanos(),
+            SEQ.fetch_add(1, Ordering::SeqCst)
         ));
         let file = open_private(&path).unwrap();
         let cdp = Cdp::new(Arc::new(Mutex::new(CaptureStatus::default())), file).unwrap();
@@ -2642,6 +2693,94 @@ mod tests {
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
             .filter_map(|v| v.get("method").and_then(Value::as_str).map(str::to_string))
             .collect()
+    }
+
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "scrapelens-fs-{tag}-{}-{}",
+            std::process::id(),
+            unix_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_private_does_not_follow_a_planted_symlink() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let dir = scratch_dir("open");
+        let outside = dir.join("FORA.txt");
+        std::fs::write(&outside, "ORIGINAL\n").unwrap();
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let link = dir.join("cdp-bodies.jsonl");
+        symlink(&outside, &link).unwrap();
+        let mut file = open_private(&link).unwrap();
+        file.write_all(b"DADOS\n").unwrap();
+        drop(file);
+        // O alvo do link não foi tocado nem teve o modo alterado.
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "ORIGINAL\n");
+        assert_eq!(std::fs::metadata(&outside).unwrap().permissions().mode() & 0o777, 0o644);
+        // O nome virou um arquivo regular 0600 com os dados.
+        let meta = std::fs::symlink_metadata(&link).unwrap();
+        assert!(meta.file_type().is_file() && !meta.file_type().is_symlink());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "DADOS\n");
+        // `create_new` puro recusa o nome existente (inclusive symlink).
+        assert!(open_new_private(&link).is_err());
+        let dangling = dir.join("pendurado");
+        symlink(dir.join("nao-existe"), &dangling).unwrap();
+        assert!(open_new_private(&dangling).is_err(), "O_NOFOLLOW/O_EXCL recusa symlink");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_private_replaces_a_symlink_without_touching_its_target() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let dir = scratch_dir("atomic");
+        let outside = dir.join("FORA.txt");
+        std::fs::write(&outside, "ORIGINAL\n").unwrap();
+        let dest = dir.join("cdp-events.jsonl");
+        symlink(&outside, &dest).unwrap();
+        write_private(&dest, b"{\"method\":\"x\"}\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "ORIGINAL\n");
+        let meta = std::fs::symlink_metadata(&dest).unwrap();
+        assert!(meta.file_type().is_file());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "{\"method\":\"x\"}\n");
+        // Nenhum temporário sobra.
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp-"))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_session_dir_that_is_a_symlink_is_refused_before_anything_runs() {
+        let dir = scratch_dir("sessiondir");
+        let real = dir.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        let link = dir.join("sessao");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let (_stop_tx, stop_rx) = std::sync::mpsc::channel();
+        let (ready_tx, _ready_rx) = std::sync::mpsc::channel();
+        let config = CaptureConfig {
+            chrome: PathBuf::from("/nao/roda/nada"),
+            session_dir: link,
+            start_url: String::new(),
+            headless: true,
+            ignore_cert: false,
+        };
+        let status = Arc::new(Mutex::new(CaptureStatus::default()));
+        let error = run(config, status, stop_rx, ready_tx).unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+        assert!(std::fs::read_dir(&real).unwrap().next().is_none(), "nada pode ter sido gravado");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

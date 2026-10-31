@@ -1123,6 +1123,51 @@ mod tests {
         assert!(session_json.contains("capture.allowlist_violation"));
     }
 
+    /// PoC da revisão (`/tmp/rev25/poc-fs/poc_capture_symlink.py`): symlinks
+    /// plantados na pasta da sessão, antes (`netlog.json`, `cdp-bodies.jsonl`) e
+    /// durante a captura (`cdp-events.jsonl`), apontando para arquivos fora dela.
+    /// Nenhum alvo pode receber dados nem mudar de modo.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_planted_symlinks_are_not_followed() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
+        let port = site.port;
+        let mut config = live_config(vec![format!("localhost:{port}")], "symlinks", false);
+        let dir = config.session_dir.clone();
+        std::fs::create_dir_all(&dir).unwrap();
+        let outside = std::env::temp_dir().join(format!("scrapelens-symlink-poc-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        let targets: Vec<PathBuf> = ["netlog", "bodies", "events"].iter().map(|n| outside.join(n)).collect();
+        for t in &targets {
+            std::fs::write(t, "ORIGINAL\n").unwrap();
+            std::fs::set_permissions(t, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        symlink(&targets[0], dir.join("netlog.json")).unwrap();
+        symlink(&targets[1], dir.join("cdp-bodies.jsonl")).unwrap();
+        config.session_dir = dir.clone();
+        let (capture, _info) = BrowserCapture::start(config).expect("start");
+        // Durante a captura: o arquivo final ainda não existe, planta o link.
+        symlink(&targets[2], dir.join("cdp-events.jsonl")).unwrap();
+        let _ = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10));
+        thread::sleep(Duration::from_millis(500));
+        let report = capture.stop().expect("stop");
+        for t in &targets {
+            assert_eq!(std::fs::read_to_string(t).unwrap(), "ORIGINAL\n", "{t:?} recebeu dados");
+            assert_eq!(std::fs::metadata(t).unwrap().permissions().mode() & 0o777, 0o644, "{t:?}");
+        }
+        for name in ["netlog.json", "cdp-bodies.jsonl", "cdp-events.jsonl"] {
+            let meta = std::fs::symlink_metadata(dir.join(name)).unwrap();
+            assert!(meta.file_type().is_file(), "{name} devia ser arquivo regular");
+        }
+        let events = std::fs::read_to_string(dir.join("cdp-events.jsonl")).unwrap();
+        assert!(events.contains("Network.requestWillBeSent"));
+        assert!(std::fs::metadata(dir.join("netlog.json")).unwrap().len() > 1000);
+        assert!(report.requests >= 1);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+
     #[test]
     fn test_site_serves_and_records() {
         let site = TestSite::start(|_m, path| Reply::html(&format!("<p>{path}</p>")).header("X-T", "1"));
