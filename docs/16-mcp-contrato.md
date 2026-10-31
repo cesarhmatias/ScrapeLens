@@ -380,8 +380,9 @@ Regras do servidor:
   reveal). Cancelar o pedido, deixar o prazo vencer ou desconectar abandona a
   confirmação: um aceite tardio é ignorado, nada abre e a vaga é sempre
   liberada; se o Chrome já estava subindo, ele é parado quando fica pronto. O
-  texto da confirmação avisa que **a porta só é verificada no
-  `navigate`** e que a página alcança qualquer porta dos hosts listados.
+  texto da confirmação segue a semântica oficial do 16b §2.2: o navegador
+  impõe o HOST em todas as portas, a **porta só é imposta no `navigate`**, e
+  aprovar `localhost:8080` aprova `localhost` em qualquer porta para a página.
   Pedidos inválidos (allowlist vazia/larga/inválida, `start_url` fora) são
   recusados **antes** da confirmação, sem incomodar o usuário.
 - **Mapa de capturas**: `capture_id` → captura, em memória; ids opacos

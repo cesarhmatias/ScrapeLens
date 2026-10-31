@@ -325,7 +325,7 @@ impl Manager {
              CDP entregue ao agente (controle do navegador): {}\n\
              Modo: {}\n\
              Binário do Chrome: {}\n\n\
-             ATENÇÃO sobre portas: a porta só é verificada quando o agente usa navigate. Depois de carregada, a página pode alcançar QUALQUER porta dos hosts listados (por exemplo outros serviços locais em localhost). Liste só hosts em que isso seja aceitável.\n\n\
+             ATENÇÃO sobre portas: o navegador impõe o HOST em todas as portas; a PORTA só é imposta quando o agente usa navigate. Aprovar um host com porta (ex.: localhost:8080) aprova, para a página, esse host em QUALQUER porta (Redis local, painéis de admin, outros serviços). Liste só hosts em que isso seja aceitável.\n\n\
              {}\n\n\
              Marque \"confirmo\" para autorizar. Sem isso nada é aberto.",
             list(allowlist.allowed_hosts()),

@@ -264,7 +264,8 @@ fn confirmation_text_warns_that_the_port_is_only_enforced_on_navigate() {
     client.tool("start_capture", start_args());
     let message = &client.elicitations[0];
     for needle in [
-        "porta só é verificada",
+        "impõe o HOST em todas as portas",
+        "PORTA só é imposta",
         "navigate",
         "QUALQUER porta",
         "localhost",
