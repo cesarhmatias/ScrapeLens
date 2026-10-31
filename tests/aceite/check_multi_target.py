@@ -615,22 +615,23 @@ def _find_by_marker(session: dict, marker: str) -> list[dict]:
 
 
 def _mut_fuse_two_pairs(capture: Path) -> str:
+    """Funde duas requisições de sessões distintas (ambas com requestWillBeSent, fora do SW)."""
     sp, _, _ = _session_paths(capture)
     session = _load(sp)
-    by_rid: dict[str, list[dict]] = {}
-    for r in session.get("requests") or []:
-        rid = (r.get("cdp") or {}).get("requestId")
-        if rid:
-            by_rid.setdefault(str(rid), []).append(r)
-    group = next((g for g in by_rid.values()
-                  if len({(x.get("cdp") or {}).get("sessionId") for x in g}) > 1), None)
-    if not group:
-        raise RuntimeError("sem requestId repetido entre sessões para fundir")
-    keep, drop = group[0], group[1]
-    keep["attempts"] = (keep.get("attempts") or []) + (drop.get("attempts") or [])
+    cands = [r for r in session.get("requests") or []
+             if (r.get("cdp") or {}).get("sessionId") and (r.get("cdp") or {}).get("requestId")
+             and not is_partial(r) and url_marker(r) and url_marker(r) not in SW_MARKERS]
+    pair = next(((a, b) for i, a in enumerate(cands) for b in cands[i + 1:]
+                 if a["cdp"]["sessionId"] != b["cdp"]["sessionId"]), None)
+    if not pair:
+        raise RuntimeError("sem duas requisições não parciais de sessões diferentes para fundir")
+    keep, drop = pair
+    moved = [dict(att, cdp=dict(att.get("cdp") or {}, **drop["cdp"])) for att in drop.get("attempts") or []]
+    keep["attempts"] = (keep.get("attempts") or []) + (moved or [{"cdp": dict(drop["cdp"])}])
     session["requests"] = [r for r in session["requests"] if r is not drop]
     _dump(sp, session)
-    return f"fundiu {drop.get('id')} em {keep.get('id')} (requestId {keep['cdp']['requestId']})"
+    return (f"fundiu {drop.get('id')} (requestId {drop['cdp']['requestId']}) em {keep.get('id')} "
+            f"(requestId {keep['cdp']['requestId']})")
 
 
 def _mut_remove_sw_links(capture: Path) -> str:
@@ -683,7 +684,8 @@ def _mut_alter_body(capture: Path) -> str:
 def _pick_two_sessions(session: dict):
     """Duas requisições com sessionId distintos (de preferência targetId distintos)."""
     reqs = [r for r in session.get("requests") or []
-            if (r.get("cdp") or {}).get("sessionId") and (r.get("cdp") or {}).get("requestId")]
+            if (r.get("cdp") or {}).get("sessionId") and (r.get("cdp") or {}).get("requestId")
+            and not is_partial(r) and url_marker(r) and url_marker(r) not in SW_MARKERS]
     for i, a in enumerate(reqs):
         for b in reqs[i + 1:]:
             if (a["cdp"]["sessionId"] != b["cdp"]["sessionId"]
@@ -771,10 +773,12 @@ def self_test(capture: Path, server_log: Path, core: str, tmp: Path) -> dict:
     """Mutações que o check TEM de reprovar. Cada uma roda sobre uma cópia da sessão gravada."""
     global FAILS, INFO
     saved_fails, saved_info = list(FAILS), json.loads(json.dumps(INFO, ensure_ascii=False, default=str))
+    st_fails: list[str] = []  # `analyze` zera FAILS a cada chamada; o autoteste acumula à parte
     base = tmp / "self-test-base"
     _copy_capture(capture, base)
     fails = analyze(base, server_log, core, {})
-    check(not fails, f"autoteste: a sessão sem mutação deveria passar; falhou em {fails[:3]}")
+    if fails:
+        st_fails.append(f"autoteste: a sessão sem mutação deveria passar; falhou em {fails[:3]}")
 
     mutations = [
         ("fusão de dois pares (sessionId, requestId)", _mut_fuse_two_pairs, "fail"),
@@ -797,17 +801,19 @@ def self_test(capture: Path, server_log: Path, core: str, tmp: Path) -> dict:
         except Exception as error:  # mutação não aplicável = falha do autoteste
             out.append({"mutacao": name, "esperado": expected, "aplicada": False,
                         "erro": str(error)[:200], "falhas": []})
-            check(False, f"autoteste: não consegui aplicar '{name}': {error}")
+            st_fails.append(f"autoteste: não consegui aplicar '{name}': {error}")
             continue
         mut_fails = analyze(work, server_log, core, {})
         out.append({"mutacao": name, "esperado": expected, "aplicada": True, "detalhe": detail,
                     "falhas": mut_fails[:4]})
         if expected == "fail":
-            check(bool(mut_fails), f"autoteste: mutação '{name}' NÃO falhou (o check não detecta)")
+            if not mut_fails:
+                st_fails.append(f"autoteste: mutação '{name}' NÃO falhou (o check não detecta)")
         else:
-            check(not mut_fails, f"autoteste: mutação '{name}' deveria continuar passando: {mut_fails[:3]}")
-    FAILS, INFO = saved_fails, saved_info
-    return {"mutacoes": out}
+            if mut_fails:
+                st_fails.append(f"autoteste: mutação '{name}' deveria continuar passando: {mut_fails[:3]}")
+    FAILS, INFO = saved_fails + st_fails, saved_info
+    return {"mutacoes": out, "falhas_autoteste": st_fails}
 
 
 def main() -> int:

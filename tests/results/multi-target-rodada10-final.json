@@ -1,0 +1,361 @@
+{
+ "head": "c503dd0",
+ "captura_src": "8cfe828",
+ "rodadas": [
+  {
+   "rodada": 1,
+   "porta": 8941,
+   "netlog": 16,
+   "cdp": 16,
+   "requisicoes": 22,
+   "sw_por_targetId": {
+    "42BDE696C75680DC2AAF626641F6CC18": 1,
+    "59E5443DAF81C8D2973B2B14AC02DF4E": 1
+   },
+   "sw_duplicata_por_alvo": {},
+   "link_pagina_sw": [
+    [
+     "cdp-r0008",
+     "cdp-r0016",
+     "ambiguous"
+    ],
+    [
+     "cdp-r0016",
+     "cdp-r0008",
+     "ambiguous"
+    ]
+   ],
+   "attachFailed": 0,
+   "target_setup_timeout": 1,
+   "colisoes_requestId": 0,
+   "falhas": 0,
+   "autoteste": [
+    {
+     "mutacao": "fusão de dois pares (sessionId, requestId)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "links do service worker removidos",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "kind de alvo trocado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "corpo alterado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia duplicada de requisição SW",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia SW em outra sessão do mesmo targetId",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (observações separadas)",
+     "esperado": "pass",
+     "obtido": "PASS"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (pares fundidos)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    }
+   ],
+   "autoteste_falhas": []
+  },
+  {
+   "rodada": 2,
+   "porta": 8942,
+   "netlog": 16,
+   "cdp": 16,
+   "requisicoes": 22,
+   "sw_por_targetId": {
+    "F76E4BDB32F02025FDB0B4107BF8F1B7": 1,
+    "E8CBC93C47A6A29385D33FFF3461922E": 1
+   },
+   "sw_duplicata_por_alvo": {},
+   "link_pagina_sw": [
+    [
+     "cdp-r0003",
+     "cdp-r0016",
+     "ambiguous"
+    ],
+    [
+     "cdp-r0016",
+     "cdp-r0003",
+     "ambiguous"
+    ]
+   ],
+   "attachFailed": 0,
+   "target_setup_timeout": 2,
+   "colisoes_requestId": 0,
+   "falhas": 0,
+   "autoteste": [
+    {
+     "mutacao": "fusão de dois pares (sessionId, requestId)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "links do service worker removidos",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "kind de alvo trocado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "corpo alterado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia duplicada de requisição SW",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia SW em outra sessão do mesmo targetId",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (observações separadas)",
+     "esperado": "pass",
+     "obtido": "PASS"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (pares fundidos)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    }
+   ],
+   "autoteste_falhas": []
+  },
+  {
+   "rodada": 3,
+   "porta": 8943,
+   "netlog": 16,
+   "cdp": 16,
+   "requisicoes": 22,
+   "sw_por_targetId": {
+    "E4DD83D83434DBD7ABFA4B86B922221F": 1,
+    "DB7E7183A512F3D80BC9296BB35BD977": 1
+   },
+   "sw_duplicata_por_alvo": {},
+   "link_pagina_sw": [
+    [
+     "cdp-r0007",
+     "cdp-r0019",
+     "ambiguous"
+    ],
+    [
+     "cdp-r0019",
+     "cdp-r0007",
+     "ambiguous"
+    ]
+   ],
+   "attachFailed": 0,
+   "target_setup_timeout": 1,
+   "colisoes_requestId": 0,
+   "falhas": 0,
+   "autoteste": [
+    {
+     "mutacao": "fusão de dois pares (sessionId, requestId)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "links do service worker removidos",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "kind de alvo trocado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "corpo alterado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia duplicada de requisição SW",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia SW em outra sessão do mesmo targetId",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (observações separadas)",
+     "esperado": "pass",
+     "obtido": "PASS"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (pares fundidos)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    }
+   ],
+   "autoteste_falhas": []
+  },
+  {
+   "rodada": 4,
+   "porta": 8944,
+   "netlog": 16,
+   "cdp": 16,
+   "requisicoes": 22,
+   "sw_por_targetId": {
+    "01614B68FC06D353024883020ECEB87A": 1,
+    "4C1B7E1235623BAC6C7F43EC5811B6DB": 1
+   },
+   "sw_duplicata_por_alvo": {},
+   "link_pagina_sw": [
+    [
+     "cdp-r0012",
+     "cdp-r0016",
+     "ambiguous"
+    ],
+    [
+     "cdp-r0016",
+     "cdp-r0012",
+     "ambiguous"
+    ]
+   ],
+   "attachFailed": 0,
+   "target_setup_timeout": 1,
+   "colisoes_requestId": 0,
+   "falhas": 0,
+   "autoteste": [
+    {
+     "mutacao": "fusão de dois pares (sessionId, requestId)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "links do service worker removidos",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "kind de alvo trocado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "corpo alterado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia duplicada de requisição SW",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia SW em outra sessão do mesmo targetId",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (observações separadas)",
+     "esperado": "pass",
+     "obtido": "PASS"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (pares fundidos)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    }
+   ],
+   "autoteste_falhas": []
+  },
+  {
+   "rodada": 5,
+   "porta": 8945,
+   "netlog": 16,
+   "cdp": 16,
+   "requisicoes": 22,
+   "sw_por_targetId": {
+    "851F62AC2B8FB693A05AD2CE765C1B1F": 1,
+    "633970E6C4FB4B791CB53BB07D516DE1": 1
+   },
+   "sw_duplicata_por_alvo": {},
+   "link_pagina_sw": [
+    [
+     "cdp-r0003",
+     "cdp-r0008",
+     "ambiguous"
+    ],
+    [
+     "cdp-r0008",
+     "cdp-r0003",
+     "ambiguous"
+    ]
+   ],
+   "attachFailed": 0,
+   "target_setup_timeout": 1,
+   "colisoes_requestId": 0,
+   "falhas": 0,
+   "autoteste": [
+    {
+     "mutacao": "fusão de dois pares (sessionId, requestId)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "links do service worker removidos",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "kind de alvo trocado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "corpo alterado",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia duplicada de requisição SW",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "cópia SW em outra sessão do mesmo targetId",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (observações separadas)",
+     "esperado": "pass",
+     "obtido": "PASS"
+    },
+    {
+     "mutacao": "colisão injetada entre alvos (pares fundidos)",
+     "esperado": "fail",
+     "obtido": "FAIL"
+    }
+   ],
+   "autoteste_falhas": []
+  }
+ ]
+}

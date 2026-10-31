@@ -41,7 +41,7 @@ REPORT = ROOT / "tests" / "RELATORIO.md"
 # SHA-256 do executável do bundle final aceito nesta rodada, documentado em
 # `src-tauri/EMPACOTAMENTO.md`. Um rebuild legítimo muda o hash: atualize os dois
 # lugares juntos, para que a bateria nunca aprove um artefato não documentado.
-EXPECTED_APP_SHA256 = "d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f"
+EXPECTED_APP_SHA256 = "02e6ef30265a6226edbfd290e60bff70c0f27086f6cccd5424635106dfffef76"
 
 SECRETS = [
     "SECRET-AUTH-TOKEN",
@@ -966,17 +966,15 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                         f"· prints `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}` e "
                         f"`{rel(pathlib.Path(app.get('gui', {}).get('importsScreenshot') or ''))}`")
         notes.append("Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final "
-                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em 2026-10-29 16:28 UTC−03 com o core até "
-                     "`7410fa4`, incluindo `ea03ee5`/`fa23279`/`f5ea46d`); a sessão ao vivo acima é nova, não reaproveitada.")
+                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em `18cbb01` a partir de `8cfe828`, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.")
         notes.append("As importações HAR e NetLog também foram refeitas no bundle final "
-                     f"(`{har_import.get('id')}` e `{netlog_import.get('id')}`), agora pela UI: o usuário "
-                     "selecionou os arquivos manualmente porque o painel nativo de arquivos não é alcançável "
-                     "por clique sintético neste ambiente (o TCC foi concedido; a limitação é do seletor). "
+                     f"(`{har_import.get('id')}` e `{netlog_import.get('id')}`), agora pela UI: o harness "
+                     "escolheu os arquivos por cliques do mouse no painel nativo (o teclado não chega "
+                     "ao seletor; na rodada 10 final foi em primeiro plano). "
                      "A verificação é independente da confirmação do usuário: o HAR gravado reproduz a "
                      "sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é "
-                     "byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). O usuário importou cada arquivo "
-                     "duas vezes; as cópias repetidas têm `session.json` idêntico e ficam em "
-                     "`har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`, sem efeito na validação. O NetLog "
+                     "byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). Importações repetidas dos mesmos "
+                     "arquivos (sufixos `-N` em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`) têm `session.json` idêntico, sem efeito na validação. O NetLog "
                      "isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog "
                      "não pode ser calibrada — a limitação fica explícita na sessão.")
     else:

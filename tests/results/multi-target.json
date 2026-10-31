@@ -1,11 +1,11 @@
 {
  "artifacts": {
-  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-3ma31e64/session",
-  "cdp_events": 230,
-  "cdp_bodies": 41,
-  "netlog_bytes": 700086,
+  "capture": "/var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T/sl-multi-target-z_dahcml/session",
+  "cdp_events": 171,
+  "cdp_bodies": 27,
+  "netlog_bytes": 694575,
   "server_lines": 19,
-  "session_requests": 33,
+  "session_requests": 22,
   "driver": {
    "driver_rc": 0
   }
@@ -117,7 +117,7 @@
    "popup-1": "page",
    "popup-get-1": "page",
    "popup-post-1": "page",
-   "sw-intercept-1": "service_worker",
+   "sw-intercept-1": "page",
    "sw-own-1": "service_worker",
    "sw-own-post-1": "service_worker",
    "worker-get-1": "worker",
@@ -128,265 +128,274 @@
   "main-post-1": {
    "esperado_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
    "cdp_req": "2a2c9f0adee25a25831065088dd4062b838a3c01d89c2b94d53da89a9ed9b572",
-   "esperado_resp": "343f7251bee7bd3848e4609ad08ecb86f6149a4c159be6fd4bd253fa67d41059",
-   "cdp_resp": "343f7251bee7bd3848e4609ad08ecb86f6149a4c159be6fd4bd253fa67d41059"
+   "esperado_resp": "17f555745be022ecb7b0b5b33627beb2c8df2b719a8e801c3d4627c7ef396ffd",
+   "cdp_resp": "17f555745be022ecb7b0b5b33627beb2c8df2b719a8e801c3d4627c7ef396ffd"
   },
   "popup-post-1": {
    "esperado_req": "f49394287ba9c4e7b8774238a32e7dbb6af55e3efcc5c931cc69f9d48559f57b",
    "cdp_req": "f49394287ba9c4e7b8774238a32e7dbb6af55e3efcc5c931cc69f9d48559f57b",
-   "esperado_resp": "1b68634de2e608e8ba85a4c3490382dc2b55e5e9366eecff6360199a02c0eb95",
-   "cdp_resp": "1b68634de2e608e8ba85a4c3490382dc2b55e5e9366eecff6360199a02c0eb95"
+   "esperado_resp": "bc037d7d5dc22c1feee753ed2bc79b358c960f3c9fbe358820f58458d1b33884",
+   "cdp_resp": "bc037d7d5dc22c1feee753ed2bc79b358c960f3c9fbe358820f58458d1b33884"
   },
   "blank-post-1": {
    "esperado_req": "0d2d398326a90c06e24f30bef291e070a19c52c275d61666e0d1a90bcabdb1e4",
    "cdp_req": "0d2d398326a90c06e24f30bef291e070a19c52c275d61666e0d1a90bcabdb1e4",
-   "esperado_resp": "abe2c503498623b6fbf19d00a7444fd7dc1d53b91703d7f214dde8a2b5cb5abe",
-   "cdp_resp": "abe2c503498623b6fbf19d00a7444fd7dc1d53b91703d7f214dde8a2b5cb5abe"
+   "esperado_resp": "cc6f46b18b2b470e5cebba5a0692a88f009a11345e57f80f5ff6a19c042b0066",
+   "cdp_resp": "cc6f46b18b2b470e5cebba5a0692a88f009a11345e57f80f5ff6a19c042b0066"
   },
   "oopif-post-1": {
    "esperado_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
    "cdp_req": "81dce6677cc73c4ea63e11a6b14360b6cb3c0d8a88482851bc75a623606c25d1",
-   "esperado_resp": "dbac1159ea2a7763357b41d34e274f26162e7904ec5bddbc493269572860e3cf",
-   "cdp_resp": "dbac1159ea2a7763357b41d34e274f26162e7904ec5bddbc493269572860e3cf"
+   "esperado_resp": "a2095f35469531727275f1aae8c024896aca5a87df80933692d59ceba76cd5e4",
+   "cdp_resp": "a2095f35469531727275f1aae8c024896aca5a87df80933692d59ceba76cd5e4"
   },
   "worker-post-1": {
    "esperado_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
    "cdp_req": "f8180102e6507e989e0eea950d6602085393a79f8e345c18879a8cf8bab43a56",
-   "esperado_resp": "65dfd12e1cfa87515a2f4fb14aaedcfa848c692562a2f267227a154cad542fb8",
-   "cdp_resp": "65dfd12e1cfa87515a2f4fb14aaedcfa848c692562a2f267227a154cad542fb8"
+   "esperado_resp": "271fb72cb06fbc6c33901741d264a777458c6337a587f58bda14dfd3d6b33c1f",
+   "cdp_resp": "271fb72cb06fbc6c33901741d264a777458c6337a587f58bda14dfd3d6b33c1f"
   },
   "sw-own-post-1": {
    "esperado_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
    "cdp_req": "f278bb5beba8ad8626a7bdb89eb8b89bd1e7ef3ec95b514d11768352e2180da2",
-   "esperado_resp": "f48f4d0f804964d9fdc996d81c03768a0e160aeed1fd9195d5b8e218bd90dd94",
-   "cdp_resp": "f48f4d0f804964d9fdc996d81c03768a0e160aeed1fd9195d5b8e218bd90dd94"
+   "esperado_resp": "a15f43b6e18bfb8063f36901dd4bdc09275c80968a6eb754fb5d8891512b83f7",
+   "cdp_resp": "a15f43b6e18bfb8063f36901dd4bdc09275c80968a6eb754fb5d8891512b83f7"
   }
  },
  "request_id_collisions": {
-  "total": 4,
-  "exemplos": {
-   "E37BBF8ED83E150EB0CB18F43F940371": [
-    "535AD2D7EF94147300DD486997F46861",
-    "7718739F74DD4FB5C81CC1FFD079D0F0",
-    "DD030F4EBE377A2E29405CE978211FE2"
+  "total": 0,
+  "exemplos": {}
+ },
+ "merge": {
+  "bruto_pares": 21,
+  "modelo_pares": 21,
+  "requisicoes_com_dois_pares": [],
+  "faltando_no_modelo": [],
+  "inventados_no_modelo": [],
+  "pares_repetidos": 0,
+  "pares_repetidos_exemplos": [],
+  "colisoes": 0,
+  "parciais_sem_request": [
+   "cdp-r0007"
+  ],
+  "colisao_exercitada": "não exercitada nesta captura (legítimo após o dedupe por targetId)"
+ },
+ "service_worker": {
+  "grupos": {
+   "sw-intercept-1": {
+    "requisicoes": 2,
+    "tipos": [
+     "page",
+     "service_worker"
+    ],
+    "sessoes": [
+     "0710FDB448F609A157B04A622128AFE6",
+     "95C534A0CE521AB88EA8A3B6D5F22697"
+    ],
+    "alvos": {
+     "851F62AC2B8FB693A05AD2CE765C1B1F": 1,
+     "633970E6C4FB4B791CB53BB07D516DE1": 1
+    },
+    "duplicata_por_alvo": {},
+    "alvos_com_varias_sessoes": {}
+   },
+   "sw-own-1": {
+    "requisicoes": 1,
+    "tipos": [
+     "service_worker"
+    ],
+    "sessoes": [
+     "0710FDB448F609A157B04A622128AFE6"
+    ],
+    "alvos": {
+     "851F62AC2B8FB693A05AD2CE765C1B1F": 1
+    },
+    "duplicata_por_alvo": {},
+    "alvos_com_varias_sessoes": {}
+   },
+   "sw-own-post-1": {
+    "requisicoes": 1,
+    "tipos": [
+     "service_worker"
+    ],
+    "sessoes": [
+     "0710FDB448F609A157B04A622128AFE6"
+    ],
+    "alvos": {
+     "851F62AC2B8FB693A05AD2CE765C1B1F": 1
+    },
+    "duplicata_por_alvo": {},
+    "alvos_com_varias_sessoes": {}
+   }
+  },
+  "por_requisicao": [
+   {
+    "id": "cdp-r0003",
+    "kind": "service_worker",
+    "links": [
+     {
+      "request": "cdp-r0008",
+      "resolution": "ambiguous"
+     }
+    ]
+   },
+   {
+    "id": "cdp-r0008",
+    "kind": "page",
+    "links": [
+     {
+      "request": "cdp-r0001",
+      "resolution": "ambiguous"
+     },
+     {
+      "request": "cdp-r0002",
+      "resolution": "ambiguous"
+     },
+     {
+      "request": "cdp-r0003",
+      "resolution": "ambiguous"
+     }
+    ]
+   }
+  ],
+  "intercept": {
+   "requisicoes": 2,
+   "tipos": [
+    "page",
+    "service_worker"
    ],
-   "59231.5": [
-    "048A5F2459B6D2823DF8663E90E61DCF",
-    "535AD2D7EF94147300DD486997F46861",
-    "7718739F74DD4FB5C81CC1FFD079D0F0",
-    "DD030F4EBE377A2E29405CE978211FE2"
+   "links_ok": [
+    {
+     "request": "cdp-r0003",
+     "to": "cdp-r0008",
+     "resolution": "ambiguous",
+     "evidence": [
+      "fromServiceWorker na resposta",
+      "sessão do service worker",
+      "mesma origem",
+      "início na janela requestWillBeSent→responseReceived",
+      "tempo e origem são pista, não prova"
+     ]
+    },
+    {
+     "request": "cdp-r0008",
+     "to": "cdp-r0003",
+     "resolution": "ambiguous",
+     "evidence": [
+      "fromServiceWorker na resposta",
+      "sessão do service worker",
+      "mesma origem",
+      "início na janela requestWillBeSent→responseReceived",
+      "tempo e origem são pista, não prova"
+     ]
+    }
    ],
-   "59231.6": [
-    "048A5F2459B6D2823DF8663E90E61DCF",
-    "535AD2D7EF94147300DD486997F46861",
-    "7718739F74DD4FB5C81CC1FFD079D0F0",
-    "DD030F4EBE377A2E29405CE978211FE2"
-   ],
-   "59231.7": [
-    "048A5F2459B6D2823DF8663E90E61DCF",
-    "535AD2D7EF94147300DD486997F46861",
-    "7718739F74DD4FB5C81CC1FFD079D0F0",
-    "DD030F4EBE377A2E29405CE978211FE2"
+   "avisos_do_grupo": [
+    {
+     "request": "cdp-r0003",
+     "warning": "{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"observações da mesma requisição (cdp-r0008 × cdp-r0001) ligadas como ambíguas; sem evidência explícita do C"
+    },
+    {
+     "request": "cdp-r0008",
+     "warning": "{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"observações da mesma requisição (cdp-r0008 × cdp-r0001) ligadas como ambíguas; sem evidência explícita do C"
+    }
    ]
   }
  },
- "merge": {
-  "pares_distintos": 33,
-  "requisicoes": 33
- },
- "service_worker": {
-  "requests": 13,
-  "intercept": [
-   {
-    "id": "cdp-r0003",
-    "target_kind": "service_worker",
-    "sessions": [
-     "048A5F2459B6D2823DF8663E90E61DCF"
-    ],
-    "attempts": 1,
-    "links": [
-     {
-      "request": "cdp-r0011",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     },
-     {
-      "request": "cdp-r0015",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     },
-     {
-      "request": "cdp-r0029",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     }
-    ],
-    "linked": false,
-    "ambiguous": true
-   },
-   {
-    "id": "cdp-r0011",
-    "target_kind": "service_worker",
-    "sessions": [
-     "535AD2D7EF94147300DD486997F46861"
-    ],
-    "attempts": 1,
-    "links": [
-     {
-      "request": "cdp-r0003",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     },
-     {
-      "request": "cdp-r0015",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     },
-     {
-      "request": "cdp-r0029",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     }
-    ],
-    "linked": false,
-    "ambiguous": true
-   },
-   {
-    "id": "cdp-r0015",
-    "target_kind": "service_worker",
-    "sessions": [
-     "7718739F74DD4FB5C81CC1FFD079D0F0"
-    ],
-    "attempts": 1,
-    "links": [
-     {
-      "request": "cdp-r0003",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     },
-     {
-      "request": "cdp-r0011",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     },
-     {
-      "request": "cdp-r0029",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     }
-    ],
-    "linked": false,
-    "ambiguous": true
-   },
-   {
-    "id": "cdp-r0017",
-    "target_kind": "page",
-    "sessions": [
-     "83E76326F793E518A87BFC7CF17D1063"
-    ],
-    "attempts": 1,
-    "links": [],
-    "linked": false,
-    "ambiguous": true
-   },
-   {
-    "id": "cdp-r0029",
-    "target_kind": "service_worker",
-    "sessions": [
-     "DD030F4EBE377A2E29405CE978211FE2"
-    ],
-    "attempts": 1,
-    "links": [
-     {
-      "request": "cdp-r0003",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     },
-     {
-      "request": "cdp-r0011",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     },
-     {
-      "request": "cdp-r0015",
-      "resolution": "ambiguous",
-      "evidence": [
-       "mesma URL/método",
-       "sessão do service worker",
-       "Δt=0 ms (pista)"
-      ]
-     }
-    ],
-    "linked": false,
-    "ambiguous": true
-   }
-  ]
- },
  "session_warnings": [
-  "cdp.target_attach_failed",
-  "cdp.target_attach_failed",
-  "cdp.target_attach_failed",
-  "cdp.target_attach_failed",
-  "cdp.target_attach_failed",
-  "cdp.target_attach_failed",
+  "cdp.target_setup_timeout",
   "cdp.extra_info_without_request",
   "cdp.extra_info_without_request",
+  "cdp.extra_info_without_request",
+  "cdp.response_extra_without_request",
   "cdp.response_extra_without_request",
   "cdp.response_extra_without_request",
   "cdp.unhandled_events",
   "cdp.service_worker_ambiguous",
   "cdp.service_worker_ambiguous",
   "cdp.service_worker_ambiguous",
-  "cdp.service_worker_ambiguous",
-  "cdp.service_worker_ambiguous",
-  "cdp.service_worker_ambiguous",
-  "cdp.service_worker_ambiguous",
-  "cdp.service_worker_ambiguous",
-  "cdp.service_worker_ambiguous"
+  "netlog.time_unit_detected",
+  "correlate.netlog_unmatched",
+  "correlate.unmatched"
  ],
+ "self_test": {
+  "mutacoes": [
+   {
+    "mutacao": "fusão de dois pares (sessionId, requestId)",
+    "esperado": "fail",
+    "aplicada": true,
+    "detalhe": "fundiu cdp-r0009 (requestId 15536.2) em cdp-r0005 (requestId 15536.10)",
+    "falhas": [
+     "fusão: requisição do modelo junta mais de um par (sessionId, requestId): [('cdp-r0005', [('34F3DDC9FB1B2E0DF3F90471B0E01D6D', '15536.10'), ('95C534A0CE521AB88EA8A3B6D5F22697', '15536.2')])]"
+    ]
+   },
+   {
+    "mutacao": "links do service worker removidos",
+    "esperado": "fail",
+    "aplicada": true,
+    "detalhe": "removeu links de 4 requisição(ões) sw-*",
+    "falhas": [
+     "service worker sw-intercept-1: sem link (linked/ambiguous) entre as observações da página e do SW (aviso do grupo presente: [{'request': 'cdp-r0003', 'warning': '{\"code\": \"cdp.service_worker_ambiguous\", \"message\": \"observações da mesma requisição (cdp-r0008 × cdp-r0001) ligadas como ambíguas; sem evidência explícita do C'}])"
+    ]
+   },
+   {
+    "mutacao": "kind de alvo trocado",
+    "esperado": "fail",
+    "aplicada": true,
+    "detalhe": "trocou kind de cdp-r0018 (oopif-get-1) para page",
+    "falhas": [
+     "tipo do alvo oopif-get-1: modelo diz page, esperado iframe"
+    ]
+   },
+   {
+    "mutacao": "corpo alterado",
+    "esperado": "fail",
+    "aplicada": true,
+    "detalhe": "alterou o corpo de resposta de main-post-1",
+    "falhas": [
+     "post main-post-1: corpo da resposta 92e9db7b50010dfa6116be693688aae9334ba27505a040dac99b3a852df4135b != servidor 17f555745be022ecb7b0b5b33627beb2c8df2b719a8e801c3d4627c7ef396ffd"
+    ]
+   },
+   {
+    "mutacao": "cópia duplicada de requisição SW",
+    "esperado": "fail",
+    "aplicada": true,
+    "detalhe": "duplicou cdp-r0001 na mesma sessão",
+    "falhas": [
+     "fusão: 1 par(es) (sessionId, requestId) repetidos no modelo",
+     "service worker sw-own-1: 1 duplicata(s) na mesma sessão",
+     "service worker sw-own-1: 1 observação(ões) repetida(s) no mesmo alvo (targetId): {'851F62AC2B8FB693A05AD2CE765C1B1F': 2} — attach repetido, não duas observações"
+    ]
+   },
+   {
+    "mutacao": "cópia SW em outra sessão do mesmo targetId",
+    "esperado": "fail",
+    "aplicada": true,
+    "detalhe": "duplicou cdp-r0001 numa segunda sessão do targetId 851F62AC2B8FB693A05AD2CE765C1B1F",
+    "falhas": [
+     "fusão: modelo tem pares que não existem no bruto: [('SELFTEST0000000000000000000000FF', '15540.5')]",
+     "service worker sw-own-1: 1 observação(ões) repetida(s) no mesmo alvo (targetId): {'851F62AC2B8FB693A05AD2CE765C1B1F': 2} — attach repetido, não duas observações",
+     "service worker sw-own-1: alvo com mais de uma sessão gravando rede: {'851F62AC2B8FB693A05AD2CE765C1B1F': ['0710FDB448F609A157B04A622128AFE6', 'SELFTEST0000000000000000000000FF']}"
+    ]
+   },
+   {
+    "mutacao": "colisão injetada entre alvos (observações separadas)",
+    "esperado": "pass",
+    "aplicada": true,
+    "detalhe": "requestId 15536.10 repetido em 34F3DDC9FB1B2E0DF3F90471B0E01D6D e 95C534A0CE521AB88EA8A3B6D5F22697 mantidos separados",
+    "falhas": []
+   },
+   {
+    "mutacao": "colisão injetada entre alvos (pares fundidos)",
+    "esperado": "fail",
+    "aplicada": true,
+    "detalhe": "requestId 15536.10 repetido em 34F3DDC9FB1B2E0DF3F90471B0E01D6D e 95C534A0CE521AB88EA8A3B6D5F22697 com os pares FUNDIDOS numa requisição",
+    "falhas": [
+     "fusão: requisição do modelo junta mais de um par (sessionId, requestId): [('cdp-r0005', [('34F3DDC9FB1B2E0DF3F90471B0E01D6D', '15536.10'), ('95C534A0CE521AB88EA8A3B6D5F22697', '15536.10')])]"
+    ]
+   }
+  ],
+  "falhas_autoteste": []
+ },
  "fails": []
 }
