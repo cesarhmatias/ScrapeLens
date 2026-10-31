@@ -215,6 +215,17 @@ vetor do PoC da revisão passa por ali e é da Core.
 
 ### 2.5 Porta de depuração: pipe por padrão, porta só com `expose_cdp`
 
+**Teto de mensagem do pipe (R12).** Uma mensagem do Chrome (JSON terminado em
+NUL) acima de `transport::MAX_PIPE_MESSAGE_BYTES` (128 MiB; o WebSocket antigo
+tinha 64 MiB e um corpo legítimo cabe, `maxResourceBufferSize` ≈ 67 MB) encerra
+o transporte sem nunca guardar mais que o teto: a captura fecha como se o
+Chrome tivesse morrido no meio da mensagem e a sessão sai marcada como
+incompleta. Testes `r12_read_frame_enforces_the_message_cap_without_buffering_past_it`
+e `r12_oversized_pipe_message_closes_the_transport_and_smaller_ones_still_pass`.
+A fila entre a thread de leitura e o laço continua **sem limite de contagem**
+de propósito: limitá-la bloquearia a leitura e travaria os dois lados do pipe
+(o laço escreve, o Chrome escreve), então a memória segue o ritmo do laço.
+
 Revisão de segurança (docs/17, achado F3): a porta DevTools aceitava conexão
 de qualquer processo local desde o lançamento, antes de `Network.enable`.
 Decisão do líder e estado atual:
@@ -319,8 +330,18 @@ em `127.0.0.1` e tem o risco descrito em §2.5. `pageTargetId` é a aba da captu
 Navega a **aba principal** da captura (`Page.navigate`). `wait`: `"load"`
 (padrão; espera `Page.loadEventFired` ou o prazo) ou `"none"`. Saída
 (`NavigateResult`): `{ "frameId", "loaderId", "loaded": true|false, "errorText": null|"net::ERR_…" }`.
-Erros: `url_not_allowed` (com o motivo), `capture_stopped`, `navigate_failed`.
+Erros: `url_not_allowed` (com o motivo), `capture_stopped`, `navigate_failed`,
+`navigate_timeout` (o navegador não respondeu no prazo; a captura continua).
 `loaded:false` não é erro (prazo ou navegação sem evento de carga).
+
+**Prazo (R12).** `timeout_ms` vale para o `navigate` inteiro (o comando
+`Page.navigate` e a espera da carga dividem um só prazo), com piso de 2 s e
+folga de 5 s para o chamador. Com o Chrome parado (`SIGSTOP`), o
+`navigate(timeout_ms=3000)` que levava 30,4 s agora volta em 3,3 s com
+`navigate_failed` ("CDP timeout aguardando Page.navigate"); `navigate_timeout`
+cobre o caso em que o próprio laço da captura não responde. Teste vivo
+`live_navigate_honours_its_timeout_when_chrome_is_frozen`. Efeito colateral: a
+espera da carga conta o tempo que o `Page.navigate` já gastou.
 
 ### 3.3 `capture_status`
 
@@ -672,7 +693,7 @@ revisão de segurança (M2, M3, R1 a R4):
 | Suíte | Resultado |
 |---|---|
 | `capture/` `cargo test` | 53 passed, 8 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: só `scrapelens-core`, `serde`, `serde_json`, `tungstenite` e `libc` (0 `tauri`) |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
 | `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
 | `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |

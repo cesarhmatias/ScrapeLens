@@ -135,6 +135,55 @@ impl Transport {
 enum PipeEvent {
     Text(String),
     Eof,
+    /// Uma mensagem passou do teto e a leitura parou (R12).
+    TooLarge,
+}
+
+/// Teto de uma mensagem do pipe, em bytes (R12). O WebSocket antigo tinha 64
+/// MiB; uma resposta legítima fica abaixo (`maxResourceBufferSize` ≈ 67 MB de
+/// base64 só no pior caso de corpo), então 128 MiB não corta nada real e impede
+/// que um Chrome com defeito, ou um alvo hostil, encha a memória com uma
+/// mensagem sem fim.
+pub(crate) const MAX_PIPE_MESSAGE_BYTES: usize = 128 * 1024 * 1024;
+
+enum Frame {
+    Message,
+    Eof,
+    TooLarge,
+}
+
+/// Lê uma mensagem terminada em NUL para `buf` sem nunca guardar mais de `max`
+/// bytes. Fim do fluxo no meio da mensagem descarta o pedaço (`Eof`).
+fn read_frame<R: BufRead>(reader: &mut R, buf: &mut Vec<u8>, max: usize) -> std::io::Result<Frame> {
+    buf.clear();
+    loop {
+        let available = match reader.fill_buf() {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        if available.is_empty() {
+            return Ok(Frame::Eof);
+        }
+        match available.iter().position(|&b| b == 0) {
+            Some(end) => {
+                if buf.len() + end > max {
+                    return Ok(Frame::TooLarge);
+                }
+                buf.extend_from_slice(&available[..end]);
+                reader.consume(end + 1);
+                return Ok(Frame::Message);
+            }
+            None => {
+                let len = available.len();
+                if buf.len() + len > max {
+                    return Ok(Frame::TooLarge);
+                }
+                buf.extend_from_slice(available);
+                reader.consume(len);
+            }
+        }
+    }
 }
 
 pub(crate) struct PipeTransport {
@@ -145,29 +194,30 @@ pub(crate) struct PipeTransport {
 
 impl PipeTransport {
     fn new(writer: File, reader: File) -> PipeTransport {
+        Self::with_limit(writer, reader, MAX_PIPE_MESSAGE_BYTES)
+    }
+
+    fn with_limit(writer: File, reader: File, max_message: usize) -> PipeTransport {
         let (tx, rx) = channel();
         thread::spawn(move || {
             let mut reader = BufReader::new(reader);
             let mut buf: Vec<u8> = Vec::new();
             loop {
-                buf.clear();
-                match reader.read_until(0, &mut buf) {
-                    Ok(0) | Err(_) => {
-                        let _ = tx.send(PipeEvent::Eof);
-                        return;
-                    }
-                    Ok(_) => {
-                        if buf.last() == Some(&0) {
-                            buf.pop();
-                        } else {
-                            // Fim do fluxo no meio de uma mensagem: descarta.
-                            let _ = tx.send(PipeEvent::Eof);
-                            return;
-                        }
+                match read_frame(&mut reader, &mut buf, max_message) {
+                    Ok(Frame::Message) => {
                         let text = String::from_utf8_lossy(&buf).to_string();
                         if tx.send(PipeEvent::Text(text)).is_err() {
                             return;
                         }
+                    }
+                    Ok(Frame::TooLarge) => {
+                        eprintln!("CDP: mensagem do pipe acima de {max_message} bytes; transporte encerrado");
+                        let _ = tx.send(PipeEvent::TooLarge);
+                        return;
+                    }
+                    Ok(Frame::Eof) | Err(_) => {
+                        let _ = tx.send(PipeEvent::Eof);
+                        return;
                     }
                 }
             }
@@ -185,7 +235,7 @@ impl PipeTransport {
         }
         match self.rx.recv_timeout(Duration::from_millis(250)) {
             Ok(PipeEvent::Text(text)) => Ok(Incoming::Text(text)),
-            Ok(PipeEvent::Eof) | Err(RecvTimeoutError::Disconnected) => {
+            Ok(PipeEvent::Eof | PipeEvent::TooLarge) | Err(RecvTimeoutError::Disconnected) => {
                 self.eof = true;
                 Ok(Incoming::Close)
             }
@@ -314,6 +364,64 @@ mod tests {
             }
         }
         panic!("sem mensagem");
+    }
+
+    #[test]
+    fn r12_read_frame_enforces_the_message_cap_without_buffering_past_it() {
+        use std::io::Cursor;
+        let mut buf = Vec::new();
+        // Dentro do teto, incluindo exatamente no limite.
+        let mut ok = Cursor::new(b"abcd\0ef\0".to_vec());
+        assert!(matches!(read_frame(&mut ok, &mut buf, 4).unwrap(), Frame::Message));
+        assert_eq!(buf, b"abcd");
+        assert!(matches!(read_frame(&mut ok, &mut buf, 4).unwrap(), Frame::Message));
+        assert_eq!(buf, b"ef");
+        assert!(matches!(read_frame(&mut ok, &mut buf, 4).unwrap(), Frame::Eof));
+        // Um byte acima do teto, com ou sem o NUL à vista.
+        let mut over = Cursor::new(b"abcde\0".to_vec());
+        assert!(matches!(read_frame(&mut over, &mut buf, 4).unwrap(), Frame::TooLarge));
+        assert!(buf.len() <= 4, "nunca guarda além do teto: {}", buf.len());
+        // Mensagem sem fim (sem NUL): para no teto, em vez de crescer.
+        let endless = vec![b'x'; 1_000_000];
+        let mut cursor = Cursor::new(endless);
+        let mut reader = BufReader::with_capacity(8, &mut cursor);
+        assert!(matches!(read_frame(&mut reader, &mut buf, 100).unwrap(), Frame::TooLarge));
+        assert!(buf.len() <= 100, "{}", buf.len());
+        // Fim do fluxo no meio de uma mensagem: descarta.
+        let mut cut = Cursor::new(b"parcial".to_vec());
+        assert!(matches!(read_frame(&mut cut, &mut buf, 100).unwrap(), Frame::Eof));
+    }
+
+    #[test]
+    fn r12_oversized_pipe_message_closes_the_transport_and_smaller_ones_still_pass() {
+        let ends = make_pipe_ends().unwrap();
+        let PipeEnds { child_read, child_write, parent_write, parent_read } = ends;
+        let mut t = Transport::Pipe(PipeTransport::with_limit(parent_write, parent_read, 64));
+        let handle = thread::spawn(move || {
+            let _keep_open = File::from(child_read);
+            let mut writer = File::from(child_write);
+            writer.write_all(b"{\"ok\":1}\0").unwrap();
+            // 200 bytes sem NUL: passa do teto de 64. Para na leitura; o Chrome
+            // de verdade recebe EPIPE ao escrever depois disso.
+            let _ = writer.write_all(&[b'y'; 200]);
+            let _ = writer.write_all(&[0]);
+        });
+        assert_eq!(next_text(&mut t), "{\"ok\":1}");
+        let mut closed = false;
+        for _ in 0..40 {
+            match t.read() {
+                Ok(Incoming::Close) => {
+                    closed = true;
+                    break;
+                }
+                Ok(Incoming::Text(text)) => panic!("mensagem acima do teto entregue: {} bytes", text.len()),
+                _ => {}
+            }
+        }
+        assert!(closed, "o transporte devia fechar ao passar do teto");
+        // Fechado de vez: continua fechado.
+        assert!(matches!(t.read(), Ok(Incoming::Close)));
+        handle.join().unwrap();
     }
 
     #[test]

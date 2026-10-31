@@ -7,7 +7,7 @@
 //! (elicitação MCP) acontece na camada do servidor, antes de chamar esta API.
 
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -144,6 +144,9 @@ pub enum NavigateError {
     UrlNotAllowed(UrlDenied),
     CaptureStopped,
     Failed(String),
+    /// O navegador não respondeu dentro do prazo do `navigate` (travado ou
+    /// parado). A captura continua; o agente pode tentar de novo ou encerrar.
+    TimedOut,
 }
 
 impl NavigateError {
@@ -152,6 +155,7 @@ impl NavigateError {
             NavigateError::UrlNotAllowed(_) => "url_not_allowed",
             NavigateError::CaptureStopped => "capture_stopped",
             NavigateError::Failed(_) => "navigate_failed",
+            NavigateError::TimedOut => "navigate_timeout",
         }
     }
 }
@@ -162,6 +166,10 @@ impl std::fmt::Display for NavigateError {
             NavigateError::UrlNotAllowed(e) => write!(f, "{e}"),
             NavigateError::CaptureStopped => write!(f, "a captura já foi encerrada"),
             NavigateError::Failed(e) => write!(f, "{e}"),
+            NavigateError::TimedOut => write!(
+                f,
+                "o navegador não respondeu ao navigate dentro do prazo (travado ou parado)"
+            ),
         }
     }
 }
@@ -191,6 +199,19 @@ pub struct BrowserCapture {
     stop: Sender<()>,
     join: Option<JoinHandle<Result<(CaptureOutcome, RunReport), String>>>,
     status: Arc<Mutex<CaptureStatus>>,
+}
+
+/// Piso do prazo de um `navigate`: o `Page.navigate` precisa de tempo para
+/// confirmar mesmo quando o agente pede `timeout_ms` muito curto.
+const MIN_NAVIGATE_BUDGET: Duration = Duration::from_secs(2);
+/// Teto do `Page.navigate` (o prazo pedido nunca o estende).
+const MAX_PAGE_NAVIGATE: Duration = Duration::from_secs(30);
+/// Folga entre o prazo do laço e o do chamador.
+const NAVIGATE_REPLY_MARGIN: Duration = Duration::from_secs(5);
+
+/// Prazo total (comando + espera da carga) de um `navigate`.
+fn navigate_budget(timeout: Duration) -> Duration {
+    timeout.max(MIN_NAVIGATE_BUDGET)
 }
 
 impl BrowserCapture {
@@ -316,11 +337,13 @@ impl BrowserCapture {
                 reply: reply_tx,
             })
             .map_err(|_| NavigateError::CaptureStopped)?;
-        // O laço atende em até ~250 ms; a resposta chega depois da carga.
-        match reply_rx.recv_timeout(timeout + Duration::from_secs(40)) {
+        // O laço atende em até ~250 ms e `navigate_page` respeita o prazo
+        // inteiro (R12); a margem cobre o atraso de uma tarefa em curso no laço.
+        match reply_rx.recv_timeout(navigate_budget(timeout) + NAVIGATE_REPLY_MARGIN) {
             Ok(Ok(result)) => Ok(result),
             Ok(Err(error)) => Err(NavigateError::Failed(error)),
-            Err(_) => Err(NavigateError::CaptureStopped),
+            Err(RecvTimeoutError::Timeout) => Err(NavigateError::TimedOut),
+            Err(RecvTimeoutError::Disconnected) => Err(NavigateError::CaptureStopped),
         }
     }
 
@@ -398,18 +421,22 @@ impl Cdp {
         }
         let page = self.page_session_id.clone();
         let before = self.page_load_events;
+        // Um só prazo para o comando e a espera da carga: com o Chrome travado,
+        // o `navigate(timeout_ms=3000)` volta em ~3 s, não em 30 s.
+        let budget = navigate_budget(timeout);
+        let started = Instant::now();
         let result = self.send(
             socket,
             "Page.navigate",
             json!({ "url": url }),
             Some(&page),
-            Duration::from_secs(30),
+            budget.min(MAX_PAGE_NAVIGATE),
         )?;
         let text = |key: &str| result.get(key).and_then(Value::as_str).map(str::to_string);
         let error_text = text("errorText");
         let mut loaded = false;
         if error_text.is_none() && wait_load {
-            let deadline = Instant::now() + timeout;
+            let deadline = started + budget;
             while Instant::now() < deadline {
                 if self.page_load_events > before {
                     loaded = true;
@@ -1379,6 +1406,41 @@ mod tests {
         // SAFETY: fecha o fd aberto acima.
         unsafe { libc::close(leaked) };
         let _ = std::fs::remove_file(secret);
+    }
+
+    #[test]
+    fn r12_navigate_budget_has_a_floor_and_never_adds_the_old_40_seconds() {
+        assert_eq!(navigate_budget(Duration::from_millis(100)), MIN_NAVIGATE_BUDGET);
+        assert_eq!(navigate_budget(Duration::from_secs(3)), Duration::from_secs(3));
+        assert!(
+            navigate_budget(Duration::from_secs(3)) + NAVIGATE_REPLY_MARGIN < Duration::from_secs(10),
+            "o PoC levava 30,4 s com timeout_ms=3000"
+        );
+        assert_eq!(NavigateError::TimedOut.code(), "navigate_timeout");
+    }
+
+    /// R12 (PoC `poc_sigstop`): com o Chrome PARADO (SIGSTOP), `navigate` com
+    /// `timeout_ms=3000` voltava em 30,4 s. Agora respeita o prazo.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_navigate_honours_its_timeout_when_chrome_is_frozen() {
+        let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
+        let port = site.port;
+        let (capture, info) =
+            BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "sigstop", false)).expect("start");
+        let pid = info.chrome_pid as i32;
+        // SAFETY: sinais para o processo que nós mesmos iniciamos.
+        unsafe { libc::kill(pid, libc::SIGSTOP) };
+        let started = Instant::now();
+        let result = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_millis(3000));
+        let elapsed = started.elapsed();
+        // SAFETY: idem; retoma antes de qualquer asserção, para o Chrome poder sair.
+        unsafe { libc::kill(pid, libc::SIGCONT) };
+        println!("navigate com Chrome parado: {result:?} em {elapsed:?}");
+        assert!(result.is_err(), "o navigate não podia dar certo com o Chrome parado");
+        assert!(elapsed < Duration::from_secs(9), "levou {elapsed:?}; o prazo era 3 s + folga");
+        let _ = capture.stop();
     }
 
     #[test]
