@@ -267,6 +267,61 @@ Consequência para o desenho (só hipóteses a medir, em ordem de preferência):
   em 22/02/2026; a faixa grátis para macOS não recebe o build atual. O ScrapeLens
   não deve depender dele: navegador **opcional**, com o Chrome como padrão.
 
+### 7. Confirmação dos pontos de `docs/15a-mercado-mcp.md`
+
+Complemento pedido pelo líder. Cada ponto da pesquisa de mercado foi conferido
+no clone `b860957` (e, para as issues, na API pública do GitHub, só leitura). As
+declarações de mantenedores abaixo são do **fornecedor**, não verificadas.
+
+| Ponto da pesquisa | Veredito | Evidência |
+|---|---|---|
+| O README diz que comandos CDP vazam sinais que o reCAPTCHA detecta | **Confirmado, com escopo menor**: fala de `page.wait_for_timeout()`, de `page.evaluate()` antes do desafio e do Puppeteer, não de `Network.enable` ou auto-attach | README.md:533, :1265-1300; CHANGELOG.md:603 ("replace `page.wait_for_timeout()` … to avoid timing leak") |
+| Build grátis no macOS = Chromium 145 | **Confirmado** (sem chave) | README.md:854-855; `config.py:28-29`; release `chromium-v145.0.7632.109.2` (04/03/2026) |
+| Da v148 em diante, chave de licença | **Confirmado, com uma ressalva importante**: a chave **grátis** (login no GitHub, 1 sessão) entrega o build mais novo; só a **fixação de versão** é paga | CHANGELOG.md:227, :259, :264 ("Pro license required; v146 stays free"); README.md:189; `download.py:236-241` ("Free tier always gets the latest build"); issue #614 (resposta: fixar versão é recurso pago) |
+| Validação em cloakbrowser.dev | **Confirmado** | `license.py:26-28`, `:404-409`; BINARY-LICENSE.md:140; saída 76-79 (`license.py:102-123`) |
+| Checagem de atualização automática | **Confirmado**; desligável | `download.py:1319-1330` (thread por hora), `:1182-1200`, `:1256-1283`; `CLOAKBROWSER_AUTO_UPDATE=false` (README.md:648). Sem o wrapper não roda |
+| Licença própria, sem redistribuição | **Confirmado** | BINARY-LICENSE.md:69-72, :93 |
+| Assinatura ad-hoc no macOS | **Confirmado** | README.md:860 ("ad-hoc signed … Gatekeeper will block it"); o wrapper roda `xattr -cr` (`download.py:1045-1056`) |
+| `--log-net-log` com captura de bytes funciona via args | **Não verificado, sem nenhuma evidência a favor ou contra**: nenhum arquivo do repositório contém `net-log`/`netlog` (busca sem resultado). O que existe é passagem de argumentos arbitrários: `build_args` repassa `args=` (`browser.py:1461-1466`) e o `cloakserve` os anexa à linha do binário (`bin/cloakserve:380-390`). É flag do Chromium e não há patch descrito na rede, então é provável, mas só a B1 prova | fase B, item B1.1 |
+| Issues #575, #614, #598, #611, #602, #632 | ver tabela abaixo | API pública do GitHub, consultada em 31/10 |
+
+Issues (todas abertas em 31/10; texto de mantenedor = alegação do fornecedor):
+
+| # | Assunto | O que a issue e o mantenedor dizem | Impacto para o ScrapeLens |
+|---|---|---|---|
+| 575 | **Crash no macOS arm64** | Build `154.0.8037.57.1` (Pro, chave grátis): o renderizador cai em ~1,5 s em todas as páginas do Google Maps (caminho de GPU); `--disable-gpu` evita. Mantenedor (06/10): "bug no nosso build 154"; correção "no próximo release do macOS". O relato confirma que o wrapper passa `--no-sandbox --fingerprint=… --fingerprint-platform=macos` | O manifesto do macOS lista `155.0.8059.39.1` (20/10), mas o `…39.2` (27/10) saiu só para Linux. **Ninguém confirmou na issue que o 155 corrige.** A B1 deve incluir uma página pesada de GPU/WebGL, além do loopback |
+| 614 | **Detecção** (Fingerprint.com: `ChromiumAutomation`) | Reproduzido em `155.0.8059.39.1`. Mantenedor: corrigido no `…39.3`, "sem release ainda, cerca de uma semana"; assinantes podem fixar; o grátis recebe automaticamente. Um usuário teve 404 ao pedir `…39.3` (22/10) | Detecção é corrida contínua e o grátis anda atrás do pago. O benefício anunciado tem prazo curto |
+| 598 | **Detecção** (Outlook, GitHub, Facebook) | Era registro de contas. Mantenedor: "não é caso de uso suportado", proibido pela licença (criação automática de contas) | Nada técnico. Reforça que o uso fica restrito a alvos próprios ou autorizados (BINARY-LICENSE.md:113-122) |
+| 611 | **Detecção** (Cloudflare) | Relato sem conteúdo (modelo vazio). Mantenedor pediu o fluxo "best-flow" com chave, proxy e canal `preview` | Sem evidência técnica |
+| 602 | **Detecção** (pixelscan "Masking detected") | Mantenedor: acompanha o recurso de ruído (`--fingerprint-noise`); com `--fingerprint-noise=false` some; correção "no próximo Preview" (18/10). A flag está documentada (README.md:708; CHANGELOG.md:409) | O ruído de fingerprint muda canvas/WebGL/áudio, não rede. Para a captura convém `--fingerprint-noise=false` para não somar variáveis |
+| 632 | **`Runtime.addBinding` não persiste após navegação** | Em Chrome for Testing 155 o binding continua após `reload`; no CloakBrowser (155 e 146) some. Mantenedor (29/10): "não é bug, é recurso … remove sinais de automação no nível do motor; **de propósito e não vai mudar**, porque manter hooks injetados por CDP entre navegações torna o navegador mais fácil de detectar". Contorno: adicionar de novo após cada navegação | **O CDP do binário diverge do Chrome por projeto.** O ScrapeLens não usa `Runtime.addBinding` (nenhuma ocorrência em `capture.rs`), mas isso prova que cada domínio que usamos (`Network.*`, `Target.*`, `Page.*`, corpos) precisa ser medido contra o Chrome, e que um agente/MCP que dependa de bindings quebra |
+
+#### O que se perde ao capturar só pelo NetLog (passivo)
+
+A hipótese da pesquisa é razoável **como modo para alvos protegidos**, com
+duas ressalvas: (a) o próprio agente de IA já falará CDP com o navegador (é
+assim que Playwright/MCP o dirige), então "sem CDP" só retira **o nosso**
+cliente, não o canal de controle; (b) sem `Browser.close` o NetLog só é
+finalizado se o Chrome encerrar de forma graciosa (o `cloakserve` usa SIGINT
+por isso, CHANGELOG.md:17); capturas parciais já são marcadas incompletas.
+Comparação, com base em `docs/02-matriz-fidelidade.md` e `docs/14`:
+
+| Item | Com CDP (hoje) | Só NetLog |
+|---|---|---|
+| Ordem, caixa e duplicatas de headers | NetLog é a fonte oficial; ExtraInfo **não** preserva a ordem do fio (matriz, linhas 63-76 e 244) | **igual**: nada se perde |
+| Alcance multi-alvo | CDP por `sessionId` (auto-attach recursivo), 16/16 | o NetLog vê o tráfego de todos os processos (`docs/14`, linha 8), mas **sem tipo de alvo, frame ou iniciador** |
+| Corpos de requisição e resposta | `Network.getResponseBody` / `getRequestPostData` (`cdp-bodies.jsonl`) | **perdidos** no produto atual. Em tese os bytes de socket do modo `Everything` carregam o conteúdo, mas decodificar quadros h2/h3 e descompactar é trabalho novo, hoje fora do escopo |
+| `requestId` e cadeia de redirecionamentos | presente | **ausente** (o evento do NetLog não traz o id do CDP, matriz linha 63); casar por URL, método e horário vira pista, não prova, e a ambiguidade aumenta |
+| `ExtraInfo` (cookies associados/bloqueados, endereço de IP, `resourceIPAddressSpace`) | presente | **perdido** (parte vem no NetLog como cabeçalho de fio) |
+| Tipo de recurso, `frameId`, `loaderId`, `initiator`, falhas com motivo | presente | motivo de rede existe no NetLog; o resto **perdido** |
+| Service workers: página × worker | duas observações ligadas | só o que passa pela rede, sem atribuição |
+
+Recomendação: o modo protegido deve ser **escalonado**, não binário: (1) só
+NetLog quando o alvo não puder ser tocado; (2) CDP reduzido (`Network.enable` +
+`Target.setAutoAttach`, sem `Runtime.enable` nem `Page.enable`) quando for
+possível; (3) CDP completo no resto. A B1 decide em quais condições o binário
+tolera cada nível.
+
 ## Fase B — proposta de medição (NÃO executada; depende de autorização do usuário)
 
 A fase B executa **binário de terceiros** e baixa dados da internet; por isso
