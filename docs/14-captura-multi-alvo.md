@@ -119,6 +119,6 @@ Decisões finais:
 - Ligação página↔SW: sempre `ambiguous`, mesmo método, preferência por mesmo
   caminho; `linked` só com evidência explícita do CDP.
 - Arquivo sem eventos Target.* = sem proveniência de alvo (sessões antigas).
-Ressalvas baixas em acompanhamento: run_acceptance não recomputa o hash do
+Ressalvas baixas FECHADAS: run_acceptance recalcula o hash do bundle em disco (05f586b); limpeza de Chrome/perfil órfão na partida (8fd4f6d, b684c1a). Bundle final b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157 (0be3bc0). Texto original: run_acceptance não recomputa o hash do
 bundle em disco; Chrome/perfil órfão quando o processo pai é morto por SIGKILL
 (sem limpeza na partida).
