@@ -377,7 +377,10 @@ Regras do servidor:
   e **nada é aberto**, mesmo com a flag. Só quando o cliente **não declara**
   suporte a elicitação → `confirmation_unavailable`, a menos que o servidor
   tenha sido iniciado com `--allow-unconfirmed-capture` (dupla trava, como o
-  reveal). O texto da confirmação avisa que **a porta só é verificada no
+  reveal). Cancelar o pedido, deixar o prazo vencer ou desconectar abandona a
+  confirmação: um aceite tardio é ignorado, nada abre e a vaga é sempre
+  liberada; se o Chrome já estava subindo, ele é parado quando fica pronto. O
+  texto da confirmação avisa que **a porta só é verificada no
   `navigate`** e que a página alcança qualquer porta dos hosts listados.
   Pedidos inválidos (allowlist vazia/larga/inválida, `start_url` fora) são
   recusados **antes** da confirmação, sem incomodar o usuário.
@@ -392,6 +395,11 @@ Regras do servidor:
   chama `cleanup_orphans` (órfãos de execuções que morreram).
 - **Diretório da sessão**: `--sessions-dir/capture-<ms>`; o Chrome escreve só
   ali (perfil temporário próprio fica com o `capture/`).
+- **Escrita de sessão** (`core::store::write_session_dir`/`write_atomic`):
+  destino que seja symlink é recusado; temporário com nome único e `create_new`
+  (um symlink plantado no nome previsível nunca é seguido); `attachments/` que
+  seja symlink é recusado antes de qualquer `mkdir`/`chmod`; tudo é gravado sob
+  o diretório canonicalizado.
 - **Spill de corpos** (`get_body`): diretórios e arquivo temporário únicos
   criados sem seguir symlink (`create_new`); um componente que seja symlink é
   recusado (`outside_allowed_dir`) antes de qualquer `mkdir`/`chmod`; o arquivo

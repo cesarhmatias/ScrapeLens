@@ -212,6 +212,37 @@ impl Client {
         }
     }
 
+    /// Lê até a próxima elicitação e a devolve SEM responder.
+    pub fn take_elicitation(&mut self) -> Value {
+        loop {
+            let line = self
+                .lines
+                .recv_timeout(Duration::from_secs(60))
+                .expect("sem elicitação");
+            self.seen.push(line.clone());
+            let message: Value = serde_json::from_str(&line).unwrap();
+            if message["method"] == "elicitation/create" {
+                self.elicitations.push(
+                    message["params"]["message"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                return message;
+            }
+        }
+    }
+
+    /// Cancela uma chamada em andamento (`notifications/cancelled`).
+    pub fn cancel(&mut self, request_id: u64) {
+        self.send(json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": request_id, "reason": "cliente desistiu"}}));
+    }
+
+    /// Responde uma elicitação com `accept` e `confirmo: true`.
+    pub fn accept_elicitation(&mut self, message: &Value) {
+        self.send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"action": "accept", "content": {"confirmo": true}}}));
+    }
+
     pub fn close_stdin(&mut self) {
         drop(self.stdin.take());
     }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::CallToolResult;
 use rmcp::service::ElicitationError;
-use rmcp::{tool, tool_handler, tool_router, Peer, RoleServer, ServerHandler};
+use rmcp::{tool, tool_handler, tool_router, RoleServer, ServerHandler};
 
 use crate::error::{ToolError, ToolResult};
 use crate::live::{
@@ -57,7 +57,7 @@ struct SlotGuard {
 impl Drop for SlotGuard {
     fn drop(&mut self) {
         if self.armed {
-            self.captures.release(&self.capture_id);
+            self.captures.abandon(&self.capture_id);
         }
     }
 }
@@ -254,8 +254,9 @@ impl ScrapeLensServer {
     async fn start_capture(
         &self,
         Parameters(p): Parameters<StartCaptureParams>,
-        peer: Peer<RoleServer>,
+        rc: rmcp::service::RequestContext<RoleServer>,
     ) -> CallToolResult {
+        let (peer, cancelled) = (rc.peer.clone(), rc.ct.clone());
         let (ctx, captures) = (self.ctx.clone(), self.captures.clone());
         let prepared = {
             let (ctx, captures) = (ctx.clone(), captures.clone());
@@ -273,23 +274,47 @@ impl ScrapeLensServer {
             capture_id: prepared.capture_id.clone(),
             armed: true,
         };
-        // Confirmação do usuário: sempre, antes de abrir qualquer coisa.
-        let confirmation = confirmation_from(
-            peer.elicit_with_timeout::<ConfirmStart>(
+        // Confirmação do usuário: sempre, antes de abrir qualquer coisa. Se o
+        // pedido for cancelado durante a espera, o formulário é abandonado e um
+        // aceite tardio não tem mais a quem responder (é ignorado).
+        let confirmation = tokio::select! {
+            () = cancelled.cancelled() => Confirmation::Cancelled,
+            answer = peer.elicit_with_timeout::<ConfirmStart>(
                 prepared.message.clone(),
                 Some(CONFIRM_TIMEOUT),
-            )
-            .await,
-        );
+            ) => confirmation_from(answer),
+        };
         let how = match decide(&confirmation, ctx.cfg.allow_unconfirmed_capture) {
             Ok(how) => how,
             Err(error) => return reply(Err(error)),
         };
+        if cancelled.is_cancelled() {
+            return reply(Err(ToolError::new(
+                "capture_cancelled",
+                "o pedido foi cancelado; nada foi aberto",
+            )));
+        }
         let captures_for_start = captures.clone();
         match tokio::task::spawn_blocking(move || captures_for_start.start(prepared, how)).await {
             Ok(result) => {
                 // `start` já registrou a captura ou liberou a vaga.
                 guard.armed = false;
+                if cancelled.is_cancelled() {
+                    // Cancelado enquanto o Chrome subia: ninguém vai receber o
+                    // capture_id; para a captura e libera a vaga.
+                    if let Ok(started) = &result {
+                        if let Some(id) = started["captureId"].as_str() {
+                            let (ctx, captures, id) =
+                                (ctx.clone(), captures.clone(), id.to_string());
+                            let _ =
+                                tokio::task::spawn_blocking(move || captures.stop(&ctx, &id)).await;
+                        }
+                    }
+                    return reply(Err(ToolError::new(
+                        "capture_cancelled",
+                        "o pedido foi cancelado enquanto o navegador subia; a captura foi parada",
+                    )));
+                }
                 reply(result)
             }
             Err(error) => reply(Err(ToolError::new("io", format!("falha interna: {error}")))),

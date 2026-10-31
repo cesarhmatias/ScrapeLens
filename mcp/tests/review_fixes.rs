@@ -500,3 +500,68 @@ fn binary_path_that_is_not_chrome_is_refused_before_asking_the_user() {
     );
     client.finish();
 }
+
+// ---- cancelamento e aceite tardio ------------------------------------------------------
+
+#[test]
+fn cancelling_then_accepting_late_opens_nothing_and_frees_the_slot() {
+    let work = tempfile::tempdir().unwrap();
+    let mut client = fake(work.path(), Elicit::Accept, &[], &[]);
+    let id = client.call_nowait("start_capture", start_args());
+    let late = client.take_elicitation();
+    client.cancel(id);
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    client.accept_elicitation(&late); // aceite tardio: ignorado
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    assert!(
+        session_dirs(work.path()).is_empty(),
+        "nada foi aberto: {:?}",
+        session_dirs(work.path())
+    );
+    // A vaga está livre: um novo pedido pergunta de novo e abre.
+    let (is_error, started) = client.tool("start_capture", start_args());
+    assert!(!is_error, "{started}");
+    assert_eq!(client.elicitations.len(), 2);
+    assert_eq!(session_dirs(work.path()).len(), 1);
+    let (ok, stderr) = client.finish();
+    assert!(ok, "{stderr}");
+}
+
+#[test]
+fn cancelling_while_the_browser_comes_up_stops_it_and_frees_the_slot() {
+    let work = tempfile::tempdir().unwrap();
+    let mut client = fake(
+        work.path(),
+        Elicit::Accept,
+        &[],
+        &[("FAKE_START_DELAY_MS", "1200")],
+    );
+    let id = client.call_nowait("start_capture", start_args());
+    client.answer_next_elicitation(); // confirmou; o "Chrome" demora a subir
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    client.cancel(id);
+    // Quando o navegador ficar pronto, a captura é parada e gravada; a vaga volta.
+    let mut started = None;
+    for _ in 0..40 {
+        let (is_error, out) = client.tool("start_capture", start_args());
+        if !is_error {
+            started = Some(out);
+            break;
+        }
+        assert_eq!(out["error"]["code"], "capture_already_running", "{out}");
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    assert!(started.is_some(), "a vaga nunca voltou");
+    let dirs = session_dirs(work.path());
+    assert_eq!(dirs.len(), 2, "{dirs:?}");
+    let stopped: Vec<_> = dirs
+        .iter()
+        .filter(|d| d.join("session.json").is_file())
+        .collect();
+    assert_eq!(
+        stopped.len(),
+        1,
+        "a primeira captura foi parada e gravada: {dirs:?}"
+    );
+    client.finish();
+}

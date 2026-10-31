@@ -206,7 +206,14 @@ struct Running {
 }
 
 enum Slot {
+    /// Reservada: validação feita, esperando a confirmação do usuário.
     Starting,
+    /// O navegador está subindo (`backend.start` em andamento). `abandoned`:
+    /// o chamador desistiu (cancelamento, prazo, desconexão); a captura que
+    /// ficar pronta é parada em vez de registrada.
+    Opening {
+        abandoned: bool,
+    },
     Running(Arc<Running>),
 }
 
@@ -352,6 +359,35 @@ impl Manager {
         })
     }
 
+    /// A chamada de `start_capture` terminou sem entregar o `capture_id` ao
+    /// cliente (cancelamento, prazo, desistência, negativa): qualquer aceite
+    /// tardio é ignorado e a vaga é sempre liberada. Se o navegador já está
+    /// subindo ou subiu, ele é parado.
+    pub fn abandon(&self, capture_id: &str) {
+        let mut slots = self.lock();
+        match slots.get_mut(capture_id) {
+            Some(Slot::Starting) => {
+                slots.remove(capture_id);
+            }
+            Some(Slot::Opening { abandoned }) => *abandoned = true,
+            Some(Slot::Running(_)) => {
+                if let Some(Slot::Running(running)) = slots.remove(capture_id) {
+                    drop(slots);
+                    let cap = running.cap.lock().unwrap_or_else(|e| e.into_inner()).take();
+                    if let Some(cap) = cap {
+                        // Em outra thread: parar espera o Chrome encerrar.
+                        std::thread::spawn(move || {
+                            if let Err(error) = cap.stop() {
+                                eprintln!("scrapelens-mcp: ao parar captura abandonada: {error}");
+                            }
+                        });
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+
     /// Libera a vaga reservada por `prepare` (confirmação negada ou falha).
     pub fn release(&self, capture_id: &str) {
         self.lock().remove(capture_id);
@@ -368,7 +404,26 @@ impl Manager {
             ..
         } = prepared;
         self.starts_in_flight.fetch_add(1, Ordering::SeqCst);
-        let result = self.start_inner(&capture_id, &session_handle, config, how);
+        // Só abre o navegador se a vaga ainda é desta chamada: cancelamento ou
+        // abandono antes daqui já a liberaram e nada abre.
+        let reserved = {
+            let mut slots = self.lock();
+            match slots.get_mut(&capture_id) {
+                Some(slot @ Slot::Starting) => {
+                    *slot = Slot::Opening { abandoned: false };
+                    true
+                }
+                _ => false,
+            }
+        };
+        let result = if reserved {
+            self.start_inner(&capture_id, &session_handle, config, how)
+        } else {
+            Err(ToolError::new(
+                "capture_cancelled",
+                "a chamada foi cancelada ou abandonada antes de abrir o navegador; nada foi aberto",
+            ))
+        };
         self.starts_in_flight.fetch_sub(1, Ordering::SeqCst);
         if result.is_err() {
             self.release(&capture_id);
@@ -392,9 +447,14 @@ impl Manager {
         match self.backend.start(config) {
             Ok((cap, info)) => {
                 let mut slots = self.lock();
-                if self.shutting_down.load(Ordering::SeqCst) {
+                let abandoned = matches!(
+                    slots.get(capture_id),
+                    Some(Slot::Opening { abandoned: true }) | None
+                );
+                if self.shutting_down.load(Ordering::SeqCst) || abandoned {
                     drop(slots);
-                    // Subiu durante o encerramento: para agora, com a sessão gravada.
+                    // Subiu depois do encerramento do servidor ou da desistência de
+                    // quem pediu: para agora, com a sessão gravada.
                     match cap.stop() {
                         Ok(_) => eprintln!(
                             "scrapelens-mcp: a captura que subia durante o encerramento foi parada"
@@ -404,8 +464,8 @@ impl Manager {
                         }
                     }
                     return Err(ToolError::new(
-                        "shutting_down",
-                        "o servidor encerrou durante o início; a captura foi parada",
+                        if abandoned { "capture_cancelled" } else { "shutting_down" },
+                        "a captura foi parada porque o pedido foi cancelado ou o servidor encerrou durante o início",
                     ));
                 }
                 let running = Arc::new(Running {
@@ -431,7 +491,7 @@ impl Manager {
     fn running(&self, capture_id: &str) -> Result<Arc<Running>, ToolError> {
         match self.lock().get(capture_id) {
             Some(Slot::Running(running)) => Ok(running.clone()),
-            Some(Slot::Starting) => Err(ToolError::new(
+            Some(Slot::Starting | Slot::Opening { .. }) => Err(ToolError::new(
                 "capture_not_ready",
                 "a captura ainda está sendo iniciada",
             )),
