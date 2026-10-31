@@ -2490,8 +2490,10 @@ mod tests {
 
     #[test]
     fn session_budget_discards_following_bodies() {
-        let mut c = BodyCollector::default();
-        c.used = SESSION_BODY_BUDGET - 4;
+        let mut c = BodyCollector {
+            used: SESSION_BODY_BUDGET - 4,
+            ..BodyCollector::default()
+        };
         c.on_event(
             "Network.requestWillBeSent",
             &will_be_sent("6.1", "POST", json!({ "postData": "abcd" }), false),
