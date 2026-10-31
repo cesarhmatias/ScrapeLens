@@ -119,6 +119,11 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
 
     for request in &mut session.requests {
         request.url = sanitize_url(&request.url, options);
+        if let Some(target) = &mut request.target {
+            if let Some(url) = &target.url {
+                target.url = Some(sanitize_url(url, options));
+            }
+        }
         for redirect in &mut request.redirects {
             redirect.from_url = sanitize_url(&redirect.from_url, options);
             if let Some(to_url) = &redirect.to_url {
@@ -157,6 +162,16 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
 
         for attempt in &mut request.attempts {
             attempt.url = sanitize_url(&attempt.url, options);
+            if let Some(initiator) = &mut attempt.initiator {
+                if let Some(url) = &initiator.url {
+                    initiator.url = Some(sanitize_url(url, options));
+                }
+                if let Some(frame) = &mut initiator.stack_top {
+                    if let Some(url) = &frame.url {
+                        frame.url = Some(sanitize_url(url, options));
+                    }
+                }
+            }
             sanitize_header_view(&mut attempt.request_headers, options, &mut redactions);
             sanitize_header_view(&mut attempt.response_headers, options, &mut redactions);
             sanitize_cookie_field(&mut attempt.cookie, options, &mut redactions);
