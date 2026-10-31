@@ -472,3 +472,31 @@ fn concurrent_spills_do_not_mix_bytes_and_distinct_handles_do_not_collide() {
         "handles distintos não compartilham diretório de spill"
     );
 }
+
+// ---- binary_path: só o Chrome estável (usa o validador do capture/) ---------------------
+
+#[test]
+fn binary_path_that_is_not_chrome_is_refused_before_asking_the_user() {
+    let work = tempfile::tempdir().unwrap();
+    let sessions = work.path().join("sessions");
+    let program = std::path::PathBuf::from(env!("CARGO_BIN_EXE_scrapelens-mcp"));
+    let mut client = Client::start(
+        &program,
+        &["--sessions-dir", sessions.to_str().unwrap()],
+        Elicit::Accept,
+    );
+    client.handshake();
+    for bad in ["/bin/echo", "/usr/bin/true", "/nao/existe"] {
+        let (is_error, out) = client.tool(
+            "start_capture",
+            json!({"allowed_hosts": ["site.invalid.test"], "binary_path": bad}),
+        );
+        assert!(is_error, "{bad}: {out}");
+        assert_eq!(out["error"]["code"], "browser_invalid", "{bad}: {out}");
+    }
+    assert!(
+        client.elicitations.is_empty(),
+        "nada foi perguntado ao usuário"
+    );
+    client.finish();
+}

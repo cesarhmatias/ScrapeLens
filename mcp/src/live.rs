@@ -89,28 +89,14 @@ impl CaptureBackend for RealBackend {
     }
 
     fn resolve_chrome(&self, binary_path: Option<&str>) -> Result<PathBuf, ToolError> {
-        use scrapelens_capture::chrome;
-        let explicit = match binary_path.filter(|p| !p.trim().is_empty()) {
-            Some(path) => Some(
-                chrome::normalize_binary_path(std::path::Path::new(path)).ok_or_else(|| {
-                    ToolError::new(
-                        "browser_start_failed",
-                        format!("binary_path não é um Chrome: {path}"),
-                    )
-                })?,
-            ),
-            None => None,
-        };
-        let info = chrome::detect(explicit.as_deref());
-        info.path
-            .filter(|_| info.found)
-            .map(PathBuf::from)
-            .ok_or_else(|| {
-                ToolError::new(
-                    "browser_start_failed",
-                    "Chrome estável não encontrado; informe binary_path",
-                )
-            })
+        // Só o Chrome estável (bundle, versão e assinatura da Google): um
+        // `binary_path` qualquer (`/bin/echo`, um script) é recusado.
+        let explicit = binary_path
+            .filter(|path| !path.trim().is_empty())
+            .map(std::path::Path::new);
+        scrapelens_capture::chrome::resolve_stable_chrome(explicit)
+            .map(|chrome| chrome.binary)
+            .map_err(|error| ToolError::new(error.code(), error.to_string()))
     }
 
     fn start(
