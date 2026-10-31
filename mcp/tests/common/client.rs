@@ -57,6 +57,24 @@ pub fn fake_server() -> PathBuf {
     path
 }
 
+/// O guarda do processo: o servidor nunca sobrevive ao `Client`, nem quando o
+/// teste falha ou entra em panic. Fecha o stdin (saída graciosa, que também
+/// encerra um Chrome em andamento) e, se o servidor não sair em 15 s, mata e espera.
+impl Drop for Client {
+    fn drop(&mut self) {
+        drop(self.stdin.take());
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while std::time::Instant::now() < deadline {
+            match self.child.try_wait() {
+                Ok(Some(_)) | Err(_) => return,
+                Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            }
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 impl Client {
     pub fn start(program: &std::path::Path, args: &[&str], policy: Elicit) -> Self {
         Self::start_env(program, args, policy, &[])
