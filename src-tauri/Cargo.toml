@@ -23,5 +23,4 @@ tauri-plugin-clipboard-manager = "2"
 scrapelens-core = { path = "../core" }
 scrapelens-capture = { path = "../capture" }
 scrapelens-natural-ajax = { path = "../adapters/natural-ajax" }
-tungstenite = "0.28"
 thiserror = "2"

@@ -2848,7 +2848,6 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "thiserror 2.0.21",
- "tungstenite",
 ]
 
 [[package]]
