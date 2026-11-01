@@ -11,7 +11,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::net::TcpStream;
 use std::os::fd::{FromRawFd, OwnedFd};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -116,6 +118,24 @@ impl Transport {
         }
     }
 
+    /// O transporte já fechou (EOF do pipe, teto estourado, WebSocket sem leitura)?
+    /// Quem espera por eventos usa isto para não girar até o prazo.
+    pub(crate) fn is_closed(&self) -> bool {
+        match self {
+            Transport::Ws(socket) => !socket.can_read(),
+            Transport::Pipe(pipe) => pipe.eof || pipe.too_large.load(Ordering::SeqCst),
+        }
+    }
+
+    /// Motivo do fechamento quando NÃO foi um fim normal: hoje só
+    /// `frame_too_large` (mensagem do pipe acima do teto).
+    pub(crate) fn abnormal_close_reason(&self) -> Option<&'static str> {
+        match self {
+            Transport::Pipe(pipe) if pipe.too_large.load(Ordering::SeqCst) => Some("frame_too_large"),
+            _ => None,
+        }
+    }
+
     pub(crate) fn pong(&mut self, payload: Vec<u8>) {
         if let Transport::Ws(socket) = self {
             let _ = socket.send(Message::Pong(payload.into()));
@@ -190,6 +210,9 @@ pub(crate) struct PipeTransport {
     writer: Option<File>,
     rx: Receiver<PipeEvent>,
     eof: bool,
+    /// Ligado pela thread de leitura assim que uma mensagem passa do teto, sem
+    /// depender de alguém consumir o evento (A3-B2).
+    too_large: Arc<AtomicBool>,
 }
 
 impl PipeTransport {
@@ -199,6 +222,8 @@ impl PipeTransport {
 
     fn with_limit(writer: File, reader: File, max_message: usize) -> PipeTransport {
         let (tx, rx) = channel();
+        let too_large = Arc::new(AtomicBool::new(false));
+        let flag = too_large.clone();
         thread::spawn(move || {
             let mut reader = BufReader::new(reader);
             let mut buf: Vec<u8> = Vec::new();
@@ -212,6 +237,7 @@ impl PipeTransport {
                     }
                     Ok(Frame::TooLarge) => {
                         eprintln!("CDP: mensagem do pipe acima de {max_message} bytes; transporte encerrado");
+                        flag.store(true, Ordering::SeqCst);
                         let _ = tx.send(PipeEvent::TooLarge);
                         return;
                     }
@@ -226,6 +252,7 @@ impl PipeTransport {
             writer: Some(writer),
             rx,
             eof: false,
+            too_large,
         }
     }
 
@@ -419,6 +446,9 @@ mod tests {
             }
         }
         assert!(closed, "o transporte devia fechar ao passar do teto");
+        // A3-B2: o motivo fica registrado e o transporte se declara fechado.
+        assert_eq!(t.abnormal_close_reason(), Some("frame_too_large"));
+        assert!(t.is_closed());
         // Fechado de vez: continua fechado.
         assert!(matches!(t.read(), Ok(Incoming::Close)));
         handle.join().unwrap();

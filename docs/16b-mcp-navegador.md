@@ -205,7 +205,21 @@ troca `netlog.json` por um link durante a captura e o alvo fica intacto. **Lacun
 que resta:** um processo do **mesmo usuário** que ache o perfil pelo nome ainda
 pode mexer nele (mesmo uid; fora do modelo, como a porta do `expose_cdp`). Um
 `SIGKILL` do servidor deixa o NetLog parcial só no perfil, que a limpeza de
-órfãos apaga: não sobra `netlog.json` parcial na pasta da sessão. Teste vivo
+órfãos apaga: não sobra `netlog.json` parcial na pasta da sessão.
+
+**Link plantado depois da cópia (A3-B3).** O `write_session_dir` do core
+regrava `cdp-events.jsonl`, `netlog.json` e `session.json` com `write_atomic`,
+que recusa symlink e derrubava o `stop_capture` (`stop_failed`, sem
+`session.json`) se um processo do mesmo usuário plantasse o link depois da nossa
+cópia. Agora `write_session_resilient` remove o **nome** do link (nunca o alvo),
+grava, e se o core ainda recusar por um link replantado na corrida, limpa e
+tenta de novo (3 tentativas). Cada remoção vira o aviso
+`capture.planted_symlink_removed` na sessão e uma linha em `warnings` do
+`stop_capture`; o stop não falha. Outros erros de gravação continuam sendo
+erro. Teste `a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop` (sem a
+correção o core recusa; com ela os 3 nomes viram arquivos regulares e o alvo
+fica intacto). Um atacante que replante o link nas 3 tentativas ainda faz o stop
+falhar: negação de serviço do mesmo usuário, fora do modelo. Teste vivo
 `live_planted_symlinks_are_not_followed` (o PoC da revisão: links para
 `netlog.json`, `cdp-bodies.jsonl` e `cdp-events.jsonl`; nenhum alvo recebe dado
 nem muda de modo). **Fora desta crate:** `core/src/store.rs::write_atomic`
@@ -218,10 +232,20 @@ vetor do PoC da revisão passa por ali e é da Core.
 **Teto de mensagem do pipe (R12).** Uma mensagem do Chrome (JSON terminado em
 NUL) acima de `transport::MAX_PIPE_MESSAGE_BYTES` (128 MiB; o WebSocket antigo
 tinha 64 MiB e um corpo legítimo cabe, `maxResourceBufferSize` ≈ 67 MB) encerra
-o transporte sem nunca guardar mais que o teto: a captura fecha como se o
-Chrome tivesse morrido no meio da mensagem e a sessão sai marcada como
-incompleta. Testes `r12_read_frame_enforces_the_message_cap_without_buffering_past_it`
-e `r12_oversized_pipe_message_closes_the_transport_and_smaller_ones_still_pass`.
+o transporte sem nunca guardar mais que o teto. O Chrome sai em seguida de forma
+graciosa e o NetLog parece completo, então o fechamento anormal é registrado à
+parte (A3-B2): `stop_capture` devolve `graceful:false` e o aviso
+`cdp_transport_closed: frame_too_large: …`; a sessão ganha o aviso
+`capture.cdp_transport_closed` e o motivo `capture.cdp_transport_closed:
+cdp_transport_closed: frame_too_large: …` em `completeness.reasons`, e
+`completeness.state` deixa de ser `complete`. O `navigate` em espera de carga
+percebe o canal fechado e volta na hora com `navigate_failed` ("o CDP fechou
+durante o navigate (frame_too_large)"), em vez de girar até o prazo (eram 60 s).
+Testes `r12_read_frame_enforces_the_message_cap_without_buffering_past_it`,
+`r12_oversized_pipe_message_closes_the_transport_and_smaller_ones_still_pass`,
+`a3_b2_closed_transport_marks_the_session_incomplete_with_an_explicit_reason` e o
+vivo `live_oversized_pipe_message_marks_the_capture_incomplete` (o PoC do
+`console.log` de 140 MB: `navigate` em 2,7 s, `graceful:false`, estado ≠ complete).
 A fila entre a thread de leitura e o laço continua **sem limite de contagem**
 de propósito: limitá-la bloquearia a leitura e travaria os dois lados do pipe
 (o laço escreve, o Chrome escreve), então a memória segue o ritmo do laço.
@@ -338,8 +362,8 @@ Erros: `url_not_allowed` (com o motivo), `capture_stopped`, `navigate_failed`,
 `Page.navigate` e a espera da carga dividem um só prazo), com piso de 2 s e
 folga de 5 s para o chamador. Com o Chrome parado (`SIGSTOP`), o
 `navigate(timeout_ms=3000)` que levava 30,4 s agora volta em 3,3 s com
-`navigate_failed` ("CDP timeout aguardando Page.navigate"); `navigate_timeout`
-cobre o caso em que o próprio laço da captura não responde. Teste vivo
+`navigate_timeout` (o `Page.navigate` sem resposta no prazo); `navigate_timeout`
+também cobre o caso em que o próprio laço da captura não responde. Teste vivo
 `live_navigate_honours_its_timeout_when_chrome_is_frozen`. Efeito colateral: a
 espera da carga conta o tempo que o `Page.navigate` já gastou.
 
@@ -693,7 +717,7 @@ revisão de segurança (M2, M3, R1 a R4):
 | Suíte | Resultado |
 |---|---|
 | `capture/` `cargo test` | 53 passed, 8 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: só `scrapelens-core`, `serde`, `serde_json`, `tungstenite` e `libc` (0 `tauri`) |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` (A3-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
 | `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
 | `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |

@@ -40,7 +40,7 @@ pub(crate) enum Control {
         url: String,
         wait_load: bool,
         timeout: Duration,
-        reply: Sender<Result<NavigateResult, String>>,
+        reply: Sender<Result<NavigateResult, NavigateError>>,
     },
 }
 
@@ -201,6 +201,9 @@ pub struct BrowserCapture {
     status: Arc<Mutex<CaptureStatus>>,
 }
 
+/// Início da mensagem de `Cdp::send` quando o prazo de uma resposta estoura.
+pub(crate) const CDP_TIMEOUT_PREFIX: &str = "CDP timeout aguardando";
+
 /// Piso do prazo de um `navigate`: o `Page.navigate` precisa de tempo para
 /// confirmar mesmo quando o agente pede `timeout_ms` muito curto.
 const MIN_NAVIGATE_BUDGET: Duration = Duration::from_secs(2);
@@ -341,7 +344,7 @@ impl BrowserCapture {
         // inteiro (R12); a margem cobre o atraso de uma tarefa em curso no laço.
         match reply_rx.recv_timeout(navigate_budget(timeout) + NAVIGATE_REPLY_MARGIN) {
             Ok(Ok(result)) => Ok(result),
-            Ok(Err(error)) => Err(NavigateError::Failed(error)),
+            Ok(Err(error)) => Err(error),
             Err(RecvTimeoutError::Timeout) => Err(NavigateError::TimedOut),
             Err(RecvTimeoutError::Disconnected) => Err(NavigateError::CaptureStopped),
         }
@@ -415,9 +418,9 @@ impl Cdp {
         url: &str,
         wait_load: bool,
         timeout: Duration,
-    ) -> Result<NavigateResult, String> {
+    ) -> Result<NavigateResult, NavigateError> {
         if self.page_session_id.is_empty() {
-            return Err("a aba principal não está pronta".to_string());
+            return Err(NavigateError::Failed("a aba principal não está pronta".to_string()));
         }
         let page = self.page_session_id.clone();
         let before = self.page_load_events;
@@ -431,7 +434,15 @@ impl Cdp {
             json!({ "url": url }),
             Some(&page),
             budget.min(MAX_PAGE_NAVIGATE),
-        )?;
+        )
+        .map_err(|error| {
+            // Prazo estourado (Chrome parado/travado) é `navigate_timeout`, não falha.
+            if error.starts_with(CDP_TIMEOUT_PREFIX) {
+                NavigateError::TimedOut
+            } else {
+                NavigateError::Failed(error)
+            }
+        })?;
         let text = |key: &str| result.get(key).and_then(Value::as_str).map(str::to_string);
         let error_text = text("errorText");
         let mut loaded = false;
@@ -443,6 +454,17 @@ impl Cdp {
                     break;
                 }
                 self.pump_socket(socket, Duration::from_millis(100));
+                // O canal fechou (Chrome saiu ou mensagem acima do teto): não há
+                // mais evento de carga a esperar; sem isto o laço gira até o prazo.
+                if socket.is_closed() && self.page_load_events <= before {
+                    let why = socket
+                        .abnormal_close_reason()
+                        .map(|r| format!(" ({r})"))
+                        .unwrap_or_default();
+                    return Err(NavigateError::Failed(format!(
+                        "o CDP fechou durante o navigate{why}; a captura terminou"
+                    )));
+                }
             }
             // Um último olhar: o evento pode ter chegado no último bombeamento.
             loaded = loaded || self.page_load_events > before;
@@ -1438,9 +1460,50 @@ mod tests {
         // SAFETY: idem; retoma antes de qualquer asserção, para o Chrome poder sair.
         unsafe { libc::kill(pid, libc::SIGCONT) };
         println!("navigate com Chrome parado: {result:?} em {elapsed:?}");
-        assert!(result.is_err(), "o navigate não podia dar certo com o Chrome parado");
+        assert!(
+            matches!(result, Err(NavigateError::TimedOut)),
+            "com o prazo estourado o código é navigate_timeout: {result:?}"
+        );
         assert!(elapsed < Duration::from_secs(9), "levou {elapsed:?}; o prazo era 3 s + folga");
         let _ = capture.stop();
+    }
+
+    /// A3-B2 (PoC `r12_cap.py`): uma página permitida faz `console.log` de 140 MB.
+    /// A mensagem passa do teto do pipe: a captura precisa sair INCOMPLETA com
+    /// motivo explícito, e o `navigate` não pode esperar o prazo todo.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_oversized_pipe_message_marks_the_capture_incomplete() {
+        let site = TestSite::start(|_m, path| {
+            if path == "/favicon.ico" {
+                return Reply::html("").status(404);
+            }
+            Reply::html("<html><body><script>console.log('x'.repeat(140e6))</script>ok</body></html>")
+        });
+        let port = site.port;
+        let (capture, _info) =
+            BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "oversize", false)).expect("start");
+        let started = Instant::now();
+        let nav = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(45));
+        let elapsed = started.elapsed();
+        println!("navigate: {nav:?} em {elapsed:?}");
+        assert!(elapsed < Duration::from_secs(40), "esperou o prazo todo: {elapsed:?}");
+        let report = capture.stop().expect("stop");
+        println!("stop: graceful={} netlog={} warnings={:?}", report.graceful, report.netlog, report.warnings);
+        assert!(!report.graceful);
+        assert!(
+            report.warnings.iter().any(|w| w.contains("cdp_transport_closed: frame_too_large")),
+            "{:?}",
+            report.warnings
+        );
+        let session_json =
+            std::fs::read_to_string(std::path::Path::new(&report.session_dir).join("session.json")).unwrap();
+        assert!(session_json.contains("cdp_transport_closed: frame_too_large"));
+        let doc: serde_json::Value = serde_json::from_str(&session_json).unwrap();
+        let state = doc["session"]["completeness"]["state"].as_str().unwrap_or("?").to_string();
+        println!("completeness.state = {state}");
+        assert_ne!(state, "complete", "a sessão não pode sair complete");
     }
 
     #[test]

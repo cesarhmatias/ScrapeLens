@@ -336,6 +336,7 @@ fn run_inner(
     cdp.finish_bodies();
 
     // Encerra o Chrome de forma graciosa para o NetLog ser finalizado.
+    let transport_closed = socket.abnormal_close_reason().map(str::to_string);
     let close_started = Instant::now();
     let close_result = cdp.send(
         &mut socket,
@@ -351,6 +352,7 @@ fn run_inner(
         browser_close: close_result.map(|_| ()),
         exit,
         waited_ms: close_started.elapsed().as_millis() as u64,
+        transport_closed,
     };
     eprintln!("capture shutdown: {shutdown:?}");
     // O Chrome já saiu: lê o NetLog do perfil privado (sem seguir link, só
@@ -418,6 +420,11 @@ fn run_inner(
         .as_ref()
         .map(|list| list.report_from_events(&cdp.events, &imported.bundle.session));
     let mut report_warnings: Vec<String> = Vec::new();
+    if let Some(reason) = &shutdown.transport_closed {
+        report_warnings.push(format!(
+            "cdp_transport_closed: {reason}: o canal do CDP fechou antes do pedido de parada; a captura está incompleta."
+        ));
+    }
     if let Some(report) = &allowlist_report {
         for blocked in &report.blocked_hosts {
             let message = format!(
@@ -443,8 +450,14 @@ fn run_inner(
             report_warnings.push(message);
         }
     }
-    store::write_session_dir(&imported.bundle, &config.session_dir)
-        .map_err(|error| format!("Não foi possível gravar a sessão: {error}"))?;
+    // A3-B3: um symlink plantado no nome de um arquivo da sessão depois da nossa
+    // cópia faz o `write_atomic` do core recusar e derrubaria o stop. O nome do
+    // link é removido (nunca o alvo), vira aviso, e a gravação segue.
+    for name in write_session_resilient(&mut imported.bundle, &config.session_dir)? {
+        report_warnings.push(format!(
+            "{name}: havia um link simbólico no lugar do arquivo da sessão; o link foi removido (o alvo não foi tocado) e o arquivo foi gravado normalmente."
+        ));
+    }
 
     let session_value = serde_json::to_value(&imported.bundle.session)
         .map_err(|error| format!("Sessão inválida após importação: {error}"))?;
@@ -652,6 +665,9 @@ struct ShutdownReport {
     browser_close: Result<(), String>,
     exit: ChromeExit,
     waited_ms: u64,
+    /// O transporte do CDP fechou por um motivo anormal (ex.: `frame_too_large`):
+    /// a captura acabou antes do pedido de parada e a sessão sai incompleta.
+    transport_closed: Option<String>,
 }
 
 /// Rede de segurança: só mata o Chrome se `run_inner` sair sem `disarm` (erro/panic).
@@ -1696,7 +1712,7 @@ impl Cdp {
         let deadline = Instant::now() + timeout;
         loop {
             if Instant::now() >= deadline {
-                return Err(format!("CDP timeout aguardando {method}"));
+                return Err(format!("{} {method}", browser::CDP_TIMEOUT_PREFIX));
             }
             match socket.read() {
                 Ok(Incoming::Text(text)) => {
@@ -1940,30 +1956,91 @@ fn mark_incomplete(
         "chromeExit": format!("{:?}", shutdown.exit),
         "waitedMs": shutdown.waited_ms,
         "netlog": format!("{netlog:?}"),
+        "transportClosed": shutdown.transport_closed,
     });
     let killed = matches!(shutdown.exit, ChromeExit::Killed);
-    let (code, message) = match netlog {
-        NetlogStatus::Complete if !killed => return,
-        NetlogStatus::Complete => (
+    let mut entries: Vec<(&str, String)> = Vec::new();
+    // A3-B2: o CDP fechou sozinho (mensagem acima do teto). O Chrome sai em
+    // seguida de forma graciosa e o NetLog parece completo, mas a captura parou
+    // antes do pedido de parada: o motivo explícito vem primeiro.
+    if let Some(reason) = &shutdown.transport_closed {
+        entries.push((
+            "capture.cdp_transport_closed",
+            format!(
+                "cdp_transport_closed: {reason}: o canal do CDP fechou antes do pedido de parada; os eventos depois desse ponto não foram capturados."
+            ),
+        ));
+    }
+    match netlog {
+        NetlogStatus::Complete if !killed => {}
+        NetlogStatus::Complete => entries.push((
             "capture.chrome_killed",
             "O Chrome não encerrou no prazo e foi finalizado à força; o NetLog pode não refletir o fim da captura.".to_string(),
-        ),
-        NetlogStatus::Repaired { original_bytes, kept_bytes } => (
+        )),
+        NetlogStatus::Repaired { original_bytes, kept_bytes } => entries.push((
             "capture.netlog_incomplete",
             format!("O NetLog do Chrome estava truncado ({original_bytes} bytes); a sessão usa só os eventos completos ({kept_bytes} bytes). O original está em netlog.original.json."),
-        ),
-        NetlogStatus::Unusable { reason } => (
+        )),
+        NetlogStatus::Unusable { reason } => entries.push((
             "capture.netlog_unusable",
             format!("{reason}: a sessão foi importada só com CDP e corpos, sem evidência de NetLog. O original (se existir) está em netlog.original.json."),
-        ),
-    };
-    document
-        .session
-        .completeness
-        .add_reason(format!("{code}: {message}"));
-    document
-        .warnings
-        .push(scrapelens_core::model::Warning::new(code, message).with_detail(detail));
+        )),
+    }
+    for (code, message) in entries {
+        document
+            .session
+            .completeness
+            .add_reason(format!("{code}: {message}"));
+        document
+            .warnings
+            .push(scrapelens_core::model::Warning::new(code, message).with_detail(detail.clone()));
+    }
+}
+
+/// Arquivos que `store::write_session_dir` grava no diretório da sessão.
+const SESSION_DIR_FILES: [&str; 3] = ["cdp-events.jsonl", "netlog.json", "session.json"];
+
+/// Remove, do diretório da sessão, os symlinks que ocupam o nome de um arquivo
+/// que vamos gravar. Remove só o NOME do link (`remove_file` não segue). Devolve
+/// os nomes removidos.
+fn remove_planted_links(dir: &Path) -> Vec<String> {
+    let mut removed = Vec::new();
+    for name in SESSION_DIR_FILES {
+        let path = dir.join(name);
+        let is_link = std::fs::symlink_metadata(&path)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false);
+        if is_link && std::fs::remove_file(&path).is_ok() {
+            removed.push(name.to_string());
+        }
+    }
+    removed
+}
+
+/// `store::write_session_dir` que não falha por symlink plantado depois da nossa
+/// cópia (A3-B3): limpa os links, grava e, se o core ainda recusar por um link
+/// replantado na corrida, limpa e tenta de novo (até 3 vezes). Cada remoção vira
+/// um aviso no documento. Qualquer outro erro continua sendo erro.
+fn write_session_resilient(
+    bundle: &mut scrapelens_core::SessionBundle,
+    dir: &Path,
+) -> Result<Vec<String>, String> {
+    let mut all_removed: Vec<String> = Vec::new();
+    for attempt in 0..3 {
+        for name in remove_planted_links(dir) {
+            bundle.session.add_warning(scrapelens_core::model::Warning::new(
+                "capture.planted_symlink_removed",
+                format!("{name} era um link simbólico no diretório da sessão; o link foi removido e o alvo não foi tocado."),
+            ));
+            all_removed.push(name);
+        }
+        match store::write_session_dir(bundle, dir) {
+            Ok(()) => return Ok(all_removed),
+            Err(error) if attempt < 2 && error.to_string().contains("link simbólico") => {}
+            Err(error) => return Err(format!("Não foi possível gravar a sessão: {error}")),
+        }
+    }
+    Err("Não foi possível gravar a sessão: link simbólico replantado repetidamente".to_string())
 }
 
 /// Escrita atômica e segura contra symlink: grava num arquivo novo de nome
@@ -3668,7 +3745,88 @@ mod tests {
             browser_close: Ok(()),
             exit,
             waited_ms: 1,
+            transport_closed: None,
         }
+    }
+
+    #[test]
+    fn a3_b2_closed_transport_marks_the_session_incomplete_with_an_explicit_reason() {
+        let cdp = fixture("cdp-events.jsonl");
+        let (netlog, status) = prepare_netlog(Some(&fixture("chrome-netlog.json")));
+        assert_eq!(status, NetlogStatus::Complete);
+        let mut imported = scrapelens_core::import_capture_with_bodies(
+            &cdp,
+            &netlog,
+            None,
+            CorrelationOptions::default(),
+        )
+        .unwrap();
+        let mut shutdown = quiet_shutdown(ChromeExit::Graceful(Some(0)));
+        shutdown.transport_closed = Some("frame_too_large".to_string());
+        mark_incomplete(&mut imported.bundle.session, &status, &shutdown);
+        let session = &imported.bundle.session;
+        // Mesmo com NetLog completo e Chrome gracioso, o motivo vem explícito.
+        assert!(session
+            .session
+            .completeness
+            .reasons
+            .iter()
+            .any(|r| r.contains("cdp_transport_closed: frame_too_large")), "{:?}", session.session.completeness);
+        assert!(session.warnings.iter().any(|w| w.code == "capture.cdp_transport_closed"));
+        // Combina com os outros motivos, sem trocá-los.
+        let mut both = quiet_shutdown(ChromeExit::Killed);
+        both.transport_closed = Some("frame_too_large".to_string());
+        mark_incomplete(&mut imported.bundle.session, &status, &both);
+        let codes: Vec<&str> = imported.bundle.session.warnings.iter().map(|w| w.code.as_str()).collect();
+        assert!(codes.contains(&"capture.chrome_killed"), "{codes:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let dir = scratch_dir("a3b3");
+        let victim = dir.join("VICTIM.txt");
+        std::fs::write(&victim, "ORIGINAL\n").unwrap();
+        std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let session_dir = dir.join("sessao");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        // O PoC plantou netlog.json; o core também recusaria os outros dois.
+        for name in SESSION_DIR_FILES {
+            symlink(&victim, session_dir.join(name)).unwrap();
+        }
+        let cdp = fixture("cdp-events.jsonl");
+        let (netlog, _status) = prepare_netlog(Some(&fixture("chrome-netlog.json")));
+        let mut imported = import_capture_labeled(
+            &cdp,
+            &netlog,
+            None,
+            &["live-capture".to_string()],
+            CorrelationOptions::default(),
+        )
+        .unwrap();
+        // Sem a correção, o core recusa ("é um link simbólico; recusado").
+        assert!(store::write_session_dir(&imported.bundle, &session_dir).is_err());
+        for name in SESSION_DIR_FILES {
+            let _ = std::fs::remove_file(session_dir.join(name));
+            symlink(&victim, session_dir.join(name)).unwrap();
+        }
+        let removed = write_session_resilient(&mut imported.bundle, &session_dir)
+            .expect("o stop não pode falhar por symlink plantado");
+        assert_eq!(removed.len(), 3, "{removed:?}");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "alvo tocado");
+        assert_eq!(std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777, 0o644);
+        for name in SESSION_DIR_FILES {
+            let meta = std::fs::symlink_metadata(session_dir.join(name)).unwrap();
+            assert!(meta.file_type().is_file(), "{name} devia ser arquivo regular");
+        }
+        assert!(imported
+            .bundle
+            .session
+            .warnings
+            .iter()
+            .any(|w| w.code == "capture.planted_symlink_removed"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
