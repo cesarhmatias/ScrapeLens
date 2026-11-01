@@ -553,3 +553,118 @@ O crescimento é linear nas 25 entradas adversariais: com 4× a entrada, o tempo
   - um valor JSON que começa com "Basic …" é redigido inteiro;
   - valores com codificação múltipla saem normalizados, sem bater com os bytes originais (não é vazamento).
 - **Textos novos:** as razões e os avisos de incompletude usam só strings fixas, sem URL, query ou conteúdo.
+
+---
+
+## Adendo 5: confirmação do adendo 4 (Rodada 11)
+
+- **HEAD:** `d8ad643`, num clone novo em `/tmp/rev29/repo`, que inclui as correções:
+  - core: `d12158b`, `d8ad643`, `c441634`;
+  - captura: `23bcba6`, `0997a3b`.
+- **Comparação:** o comportamento anterior é o do core `bacdc30`, compilado à parte (arquivos `*_bacdc30.out`). O `fake_server` em cache estava desatualizado e foi recompilado antes de qualquer teste de ponta a ponta.
+- **Evidências:**
+  - testes de reprodução e saídas em `/tmp/rev29/poc-secrets` e `/tmp/rev29/poc-cap`;
+  - relatórios parciais em `/tmp/rev29/{secrets,cap}.md`.
+
+### Veredito: REPROVADO
+
+Há dois achados **médios confirmados** e nenhum alto:
+- **A5-M1:** uma regressão de fidelidade introduzida pelo `d12158b`.
+- **A5-M2:** um vazamento parcial que já existia antes destas correções e que nenhuma revisão anterior tinha encontrado.
+
+Todos os itens do adendo 4 estão corrigidos.
+
+### Itens do adendo 4
+
+| Item | Estado | Evidência |
+|---|---|---|
+| A4-M1 (codificação mista) | Corrigido | `X-Note3`, `mix1`, `mix2` e `next=%2Fcb%3Ftoken=MIX1x` saem como `…token=%5BREDACTED%5D`. |
+| `a=b=token=X`, `;next=/cb%3Ftoken=X` e 5 a 8 níveis de codificação | Corrigido | Saem mascarados. A partir de 9 níveis ainda passa, porque o teto é de 8 rodadas (Info). |
+| A4-B1 (`length` no `trace_value`) | Corrigido | Saíram `length`, `offset`, `consumedOffset`, `consumedLength` e `start`. Ficou `evidences[].producerOffset`: a diferença entre duas posições no mesmo HTML revela o comprimento de um valor (Info). |
+| A4-I1 (`escape_display`) | Corrigido | Todos os pontos de código das duas listas saem escapados. Info: escapar todas as marcas `Mn` deixa ilegível texto em hebraico, árabe e línguas índicas. |
+| A4-B2 (mensagem grande no modo porta) | Corrigido | Debug e release: `navigate_failed …(frame_too_large)`; o stop termina com o aviso `cdp_transport_closed`; a sessão sai `partial`, sem panic; o status seguinte devolve `capture_not_found`. O teto age antes de alocar: 140 MB não passam de 18 MB de RSS. |
+| A4-B3 (symlink em `attachments`) | Corrigido | O stop termina com aviso; `attachments` vira diretório 0700; o `session.json` sai com 0600; a vítima fica intacta. |
+| A4-B5 (pasta da sessão trocada) | Corrigido | `stop_failed` informa o caminho do perfil de resgate. Nada é escrito no alvo da troca, os links não são tocados e a vítima segue com 0644. |
+| A4-B4 (link replantado em laço) | Risco aceito, ainda acontece | O stop falha em 3 de 3 tentativas e a vítima fica intacta. Documentado no 16b, linha 224. |
+| R1, R2, R3, R4, R9, R10, R12, A3-B2, A3-B3 e `navigate_timeout` | Passam | — |
+| Formas r25 a r28 | Nenhum valor mascarado antes vaza agora | Ver A5-M1 sobre fidelidade. |
+
+### Custo das 8 rodadas de decodificação (release, entrada de 4 MB)
+
+| Entrada | HEAD | bacdc30 |
+|---|---|---|
+| matriz `;a=%3Fb%3D` (pior caso) | 3,0 s | 204 ms |
+| matriz `;a=b=c` | 2,2 s | 348 ms |
+| `%25` aninhado | 1,4 s | 42 ms |
+| `a=%3Fb%3Dc&` | 1,2 s | 593 ms |
+| `a=` repetido | 1,0 s | 8,4 ms |
+| codificação com 4, 8 e 9 níveis | 457 / 315 / 172 ms | 250 / 88 / 84 ms |
+| aninhamento de 100 mil níveis | 50 ms | — |
+
+O custo cresce de forma linear em todas as entradas, sem panic e sem estouro de pilha. O pior caso é cerca de 3,6× o do r28. As 8 rodadas não são a causa do aumento; ele vem de três pontos:
+- a varredura recomeça a cada `=` (`sanitize.rs:1110`);
+- `effective_name` aloca memória para cada candidato;
+- a matriz passa duas vezes pelo texto.
+
+Gravidade: Baixo.
+
+### Achados que restam
+
+#### Médio
+
+**A5-M1. Regressão do `d12158b`: os segmentos do caminho depois de um parâmetro de matriz sensível somem (CONFIRMADO).**
+- **Local:** `core/src/export/sanitize.rs:874-875`. O `sanitize_matrix` roda o `sanitize_text` de novo sobre o caminho inteiro, e o valor sensível vai até um terminador ou `&` (`:1122`). A barra `/` não é nenhum dos dois.
+- **Exemplos:**
+
+  | Entrada | Saída |
+  |---|---|
+  | `/a;jsessionid=X/b/c?x=1` | `/a;jsessionid=%5BREDACTED%5D?x=1` (no `bacdc30`, `/b/c` ficava) |
+  | `/users;token=abc/profile/123` | perde `/profile/123` |
+  | `/a;v=2/session=keep/b` | perde `session=keep` e `/b` |
+
+- **Efeito:** nada vaza, mas as URLs que as ferramentas devolvem perdem segmentos sem nenhum aviso. Isso fere a fidelidade do que é exibido.
+
+**A5-M2. Vazamento parcial de um segredo com `+`, espaço, `&` ou `#` codificados dentro de uma URL aninhada (CONFIRMADO; já existia no `bacdc30`).**
+- **Local:** `sanitize.rs:1216` e `:977`. O `percent_decode` transforma `+` em espaço a cada rodada, e a decodificação se repete até estabilizar. O espaço passa então a terminar o valor.
+- **Exemplo:** `?redirect_uri=…%3Faccess_token%3DAAA%2BQPLUS2x` sai como `…%255BREDACTED%255D%20QPLUS2x`.
+- **Alcance:**
+  - num token base64, tudo depois do primeiro `+` vaza;
+  - o mesmo acontece com `%2520`, `%2526` e `%2523`;
+  - confirmado de ponta a ponta num header (`HDRPLUS6x`) e num corpo (`BODYPLUS9x`).
+
+#### Baixo
+
+- **A5-B1. Valor que começa com um terminador (CONFIRMADO; já existia).** Em `token="X"`, `token='X'`, `token=(X)` e `token= X`, só o valor vazio é mascarado. Confirmado de ponta a ponta (`HDRQUOT5x`, `BODYQUOT10x`).
+- **A5-B2. Troca da pasta durante a escrita final perde o resgate (CONFIRMADO, 9 de 13).**
+  - A escrita do core depois da última reconferência leva de 10 a 16 ms, não microssegundos.
+  - A troca nessa janela faz o rename falhar com ENOENT, e o erro segue o caminho genérico (`capture/src/lib.rs:479`). Com isso:
+    - o perfil é apagado;
+    - a mensagem não indica nenhum resgate;
+    - sobra um `.tmp-*`.
+  - Nada foi escrito no alvo da troca em 13 tentativas.
+- **A5-B3. O resgate mantém o perfil inteiro do Chrome sem limpeza (CONFIRMADO).**
+  - São 8,7 MB, incluindo Cookies, Login Data e History.
+  - As permissões estão corretas (0700/0600), e o caminho não pode ser plantado antes porque o diretório é criado novo.
+  - O marcador de órfão é removido no fim da captura, então o `cleanup_orphans` nunca apaga esse perfil. A única pista dele é a mensagem de erro.
+  - O `cdp-bodies.jsonl` não é resgatado.
+- **A5-B4. O `cdp-events.jsonl` vazio é criado seguindo symlink (PLAUSÍVEL; já existia).** Local: `capture/src/lib.rs:377`. Só acontece quando a captura termina com zero eventos CDP; nesse caso, truncaria o alvo do link.
+- **A5-B5. Excesso de redação (já existia).** `key=`, `tokens=5` e `{token=X}` são redigidos; neste último, o fechamento `}` some junto.
+- **Tentativas de contorno da nova lógica de fronteira:**
+  - mascarados corretamente: `token%3d`, `t%6Fken=`, `tok%00en=` e `token =x`;
+  - fora do contrato `nome=valor`: `token\t=X`, `token:=X` e `token&#61;X` passam;
+  - inconsistentes com a regra de texto: `;token%3DX` sem outro `=` no caminho, e `&token%3DX` na query;
+  - um CSRF de input oculto reaproveitado num header de nome neutro (`X-Form`) não é propagado.
+
+#### Informativo
+
+- Na porta, com o socket morto, o Chrome espera 20 s até ser morto.
+- Uma mensagem fragmentada pode chegar a cerca de 2× o teto.
+
+### Documentação do 16b §2.4
+
+| Item | Situação |
+|---|---|
+| A4-B4 | Claro na linha 224. |
+| TOCTOU entre a reconferência e o rename | Inexato. As linhas 245-248 falam em "janela de microssegundos", o que vale para a escrita no alvo da troca, mas a janela de perda do resgate tem cerca de 15 ms (A5-B2). A afirmação de que o `canonicalize` reduz a janela também não procede: ele resolve uma string, e as escritas seguintes resolvem o caminho de novo. |
+| Perfil | Contraditório. A linha 174 diz "perfil temporário descartado ao fim", e a linha 237 diz "perfil 0700, que não é apagado". Nenhuma das duas diz que os cookies ficam guardados, que nenhuma limpeza o remove ou que os corpos não são resgatados. |
+| Campo `device` | Aceito, como pedido. É o valor `"device":"dev-…-7319"` que fica visível no corpo JSON. |
