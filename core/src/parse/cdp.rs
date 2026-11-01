@@ -111,6 +111,10 @@ pub struct CdpRedirect {
     pub to_url: String,
 }
 
+/// Razão de uma sessão importada só do CDP (sem NetLog). Na captura conjunta ela é
+/// substituída pelo resultado da correlação e não é herdada.
+pub const REASON_CDP_WITHOUT_NETLOG: &str = "captura CDP sem NetLog correlacionado";
+
 pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
     let text = std::str::from_utf8(json).map_err(|error| CoreError::UnsupportedFormat {
         message: format!("cdp-events.jsonl não é UTF-8: {error}"),
@@ -1394,7 +1398,7 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         notes: Some("CDP: headers de objeto não comprovam sequência; use NetLog".to_string()),
         ..Default::default()
     });
-    meta.completeness = Completeness::partial("captura CDP sem NetLog correlacionado");
+    meta.completeness = Completeness::partial(REASON_CDP_WITHOUT_NETLOG);
     let mut session = SessionV1::new(meta);
     for warning in &capture.warnings {
         session.add_warning(warning.clone());

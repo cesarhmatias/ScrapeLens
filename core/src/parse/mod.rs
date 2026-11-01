@@ -169,7 +169,8 @@ pub fn import_capture_labeled(
     let netlog = netlog::parse_netlog_with_wall_clock(netlog_json, wall_clock)?;
     let mut report = ImportReport::new(InputFormat::Capture);
     let (session, mut cdp_report) = cdp::build_cdp_session(&cdp);
-    let (_netlog_session, netlog_report) = netlog::build_netlog_session(&netlog);
+    let (netlog_session, netlog_report) = netlog::build_netlog_session(&netlog);
+    let netlog_requests = netlog_session.requests.len();
     let mut session = session;
     // Avisos do arquivo NetLog (tipos desconhecidos, cadeia não resolvida) são
     // relevantes; avisos por requisição de background não são importados.
@@ -238,7 +239,25 @@ pub fn import_capture_labeled(
     let total_events = cdp.events_total + netlog.events_total;
     let unknown_events = netlog.events_unknown + cdp.events_invalid;
     let used_events = total_events.saturating_sub(unknown_events);
+    // As razões de completude de `build_cdp_session` (ex.: "nenhuma requisição CDP
+    // utilizável") e de `attach_netlog` sobrevivem: a captura conjunta só é
+    // `complete` se nenhuma fonte reportou lacuna. Só a razão "CDP sem NetLog"
+    // (válida para a importação isolada do CDP) é descartada: aqui a correlação
+    // com o NetLog acabou de ser feita.
+    let inherited_reasons = std::mem::take(&mut session.session.completeness.reasons);
     session.session.completeness = crate::model::Completeness::complete();
+    for reason in inherited_reasons
+        .into_iter()
+        .filter(|reason| reason != cdp::REASON_CDP_WITHOUT_NETLOG)
+    {
+        session.session.completeness.add_reason(reason);
+    }
+    if session.requests.is_empty() && (netlog_requests > 0 || netlog.events_total > 0) {
+        session.session.completeness.add_reason(format!(
+            "NetLog com {} evento(s) e {netlog_requests} requisição(ões) sem correspondência CDP: a captura não tem nenhuma requisição correlacionável",
+            netlog.events_total
+        ));
+    }
     session.session.completeness.counts.source_events = total_events;
     session.session.completeness.counts.source_events_used = used_events;
     session.session.completeness.counts.source_events_unknown = unknown_events;

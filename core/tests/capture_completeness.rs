@@ -2,6 +2,7 @@
 //! importação conjunta com o NetLog, e `Capture.sessionSetup` é um evento conhecido.
 
 use scrapelens_core::correlate::CorrelationOptions;
+use scrapelens_core::model::CompletenessState;
 use scrapelens_core::parse::cdp::parse_cdp_jsonl;
 use scrapelens_core::parse::import_capture;
 
@@ -28,7 +29,6 @@ fn setup_only() -> String {
     .join("\n")
 }
 
-#[allow(dead_code)]
 fn real_netlog() -> Vec<u8> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../experiments/results/h1-page/chrome-netlog.json");
@@ -56,5 +56,59 @@ fn session_setup_is_a_known_event_counted_as_used_without_warning() {
             .any(|w| w.code == "cdp.unhandled_events"),
         "{:?}",
         imported.bundle.session.warnings
+    );
+}
+
+#[test]
+fn capture_without_requests_is_partial_with_an_explicit_reason() {
+    let imported = import_capture(
+        setup_only().as_bytes(),
+        br#"{"constants":{},"events":[]}"#,
+        CorrelationOptions::default(),
+    )
+    .unwrap();
+    let session = &imported.bundle.session;
+    assert!(session.requests.is_empty());
+    assert_eq!(
+        session.session.completeness.state,
+        CompletenessState::Partial
+    );
+    assert!(
+        session
+            .session
+            .completeness
+            .reasons
+            .iter()
+            .any(|r| r.contains("nenhuma requisição CDP utilizável")),
+        "{:?}",
+        session.session.completeness.reasons
+    );
+}
+
+#[test]
+fn netlog_events_without_any_cdp_request_are_listed_as_a_reason() {
+    let imported = import_capture(
+        setup_only().as_bytes(),
+        &real_netlog(),
+        CorrelationOptions::default(),
+    )
+    .unwrap();
+    let session = &imported.bundle.session;
+    assert_eq!(
+        session.session.completeness.state,
+        CompletenessState::Partial
+    );
+    let reasons = &session.session.completeness.reasons;
+    assert!(
+        reasons
+            .iter()
+            .any(|r| r.contains("nenhuma requisição CDP utilizável")),
+        "{reasons:?}"
+    );
+    assert!(
+        reasons
+            .iter()
+            .any(|r| r.contains("NetLog") && r.contains("sem correspondência")),
+        "{reasons:?}"
     );
 }
