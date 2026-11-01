@@ -6,6 +6,7 @@ pub mod curl;
 pub mod priming;
 pub mod python;
 pub mod sanitize;
+mod scrub;
 
 use serde::{Deserialize, Serialize};
 

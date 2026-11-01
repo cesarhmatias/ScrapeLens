@@ -836,361 +836,91 @@ pub fn sanitize_path_and_query(value: &str, options: &SanitizeOptions) -> String
     out
 }
 
-/// Parâmetros de matriz de caminho (`/a;jsessionid=X/b`): redige o valor
-/// quando o nome é sensível.
+/// Parâmetros de matriz de caminho (`/a;jsessionid=X/b`): um parâmetro sensível
+/// redigido substitui SÓ o próprio valor (termina em `;` ou `/`); os segmentos
+/// seguintes do caminho ficam intactos. Parâmetro com valor aninhado
+/// (`;next=/cb%3Ftoken=X`) e segmento com `%` seguem as regras do texto.
 fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
-    if !path.contains(';') {
+    if !path.contains([';', '%']) {
         return path.to_string();
     }
     let placeholder = url_placeholder(options);
-    let sanitized = path
-        .split('/')
+    path.split('/')
         .map(|segment| {
             let mut parts = segment.split(';');
             let head = parts.next().unwrap_or("");
-            let mut out = head.to_string();
+            let mut out = if head.contains('%') {
+                sanitize_nested_value(head, options, 0).unwrap_or_else(|| head.to_string())
+            } else {
+                head.to_string()
+            };
             for param in parts {
                 out.push(';');
                 match param.split_once('=') {
                     Some((name, _))
-                        if is_sensitive_key(&effective_name(name))
-                            || is_business_key(&effective_name(name), &options.business_fields) =>
+                        if is_sensitive_key(percent_decode(name).trim())
+                            || is_business_key(
+                                percent_decode(name).trim(),
+                                &options.business_fields,
+                            ) =>
                     {
                         out.push_str(name);
                         out.push('=');
                         out.push_str(&placeholder);
                     }
-                    // Valor com `nome=…` aninhado (`next=/cb%3Ftoken=X`): mesmas regras do texto.
-                    Some(_) => out.push_str(&sanitize_text(param, options)),
-                    None => out.push_str(param),
+                    _ => out.push_str(
+                        &sanitize_nested_value(param, options, 0)
+                            .unwrap_or_else(|| param.to_string()),
+                    ),
                 }
             }
             out
         })
         .collect::<Vec<_>>()
-        .join("/");
-    // Parâmetro de matriz cujo valor contém `/` (`;next=/cb%3Ftoken=X`) atravessa
-    // segmentos: o restante passa pelas regras de texto.
-    if sanitized.contains('=') {
-        sanitize_text(&sanitized, options)
-    } else {
-        sanitized
-    }
+        .join("/")
 }
 
 /// Redige, em texto livre (linha de requisição, notas, mensagens, valores de
-/// header que não são URL conhecida, avisos), em qualquer posição:
-/// - o valor de `nome=valor` (e `nome%3Dvalor`) quando o nome é sensível, com
-///   ou sem `?` antes (query, fragmento `#access_token=`, parâmetro de matriz
-///   `;jsessionid=`, `Refresh: token=...`);
-/// - o userinfo de URLs absolutas (`https://usuario:senha@host`).
+/// header que não são URL conhecida, avisos, strings de JSON), em qualquer posição:
+/// - o valor de `nome=valor` quando o nome é sensível, com ou sem `?` antes
+///   (query, fragmento `#access_token=`, parâmetro de matriz `;jsessionid=`,
+///   `Refresh: token=...`), inclusive entre aspas/parênteses ou depois de espaço;
+/// - formas codificadas e aninhadas (`next=%2Fcb%3Ftoken=...`, `redirect=https%3A…`);
+/// - o userinfo de URLs absolutas e `Bearer`/`Basic` em qualquer caixa.
 ///
-/// O valor vai até um terminador (espaço, aspas, `<`, `>`, `(`, `)`, `,`, `;`,
-/// `#`, `\\`) ou `&`. O resto do texto passa intacto.
+/// Ver `scrub.rs`: um tokenizador por nível, que só produz edições no texto
+/// original (o que não é segredo não é reescrito).
 pub fn sanitize_text(text: &str, options: &SanitizeOptions) -> String {
-    sanitize_text_depth(&redact_auth_in_text(text, options), options, 0)
+    super::scrub::scrub(text, options).unwrap_or_else(|| text.to_string())
 }
 
-/// `Bearer <cred>` / `Basic <cred>` em texto livre: qualquer caixa e qualquer
-/// espaço em branco (TAB incluído) entre o esquema e a credencial. Só age quando
-/// o que segue parece credencial (dígito, símbolo, maiúscula depois da primeira
-/// letra ou 16+ caracteres), para não apagar prosa como "Basic authentication".
-fn redact_auth_in_text(text: &str, options: &SanitizeOptions) -> String {
-    let lower = text.to_ascii_lowercase();
-    if !lower.contains("bearer") && !lower.contains("basic") {
-        return text.to_string();
-    }
-    let looks_like_credential = |cred: &str| {
-        cred.chars().count() >= 16
-            || cred
-                .chars()
-                .any(|c| c.is_ascii_digit() || matches!(c, '.' | '_' | '~' | '+' | '/' | '=' | '-'))
-            || cred.chars().skip(1).any(|c| c.is_ascii_uppercase())
-    };
-    let is_cred_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '~' | '+' | '/' | '=' | '-');
-    let mut out = String::with_capacity(text.len());
-    let mut copied = 0; // bytes de `text` já copiados
-    let mut from = 0;
-    // Próxima ocorrência de cada esquema; só é recalculada quando ficou para trás
-    // (uma busca por rodada daria tempo quadrático em "bearer bearer bearer...").
-    let schemes = ["bearer", "basic"];
-    let mut found: [Option<usize>; 2] = [None, None];
-    let mut searched_from = [usize::MAX; 2];
-    loop {
-        for (i, scheme) in schemes.iter().enumerate() {
-            let stale = found[i].is_some_and(|at| at < from);
-            if searched_from[i] == usize::MAX || stale {
-                found[i] = lower[from..].find(scheme).map(|at| from + at);
-                searched_from[i] = from;
-            }
-        }
-        let next = found
-            .iter()
-            .enumerate()
-            .filter_map(|(i, at)| at.map(|at| (at, schemes[i].len())))
-            .min();
-        let Some((at, len)) = next else { break };
-        from = at + len;
-        let before_ok = text[..at]
-            .chars()
-            .next_back()
-            .map_or(true, |c| !(c.is_ascii_alphanumeric() || c == '_'));
-        if !before_ok {
-            continue;
-        }
-        let after = &text[at + len..];
-        let spaces = after.len() - after.trim_start().len();
-        if spaces == 0 || !after[..spaces].chars().all(char::is_whitespace) {
-            continue;
-        }
-        let cred_len = after[spaces..]
-            .find(|c: char| !is_cred_char(c))
-            .unwrap_or(after.len() - spaces);
-        let cred = &after[spaces..spaces + cred_len];
-        if cred.chars().count() < 4 || !looks_like_credential(cred) {
-            continue;
-        }
-        out.push_str(&text[copied..at + len]);
-        out.push(' ');
-        out.push_str(&options.placeholder);
-        copied = at + len + spaces + cred_len;
-        from = copied;
-    }
-    out.push_str(&text[copied..]);
-    out
-}
-
-/// Profundidade máxima de URLs aninhadas com percent-encoding
-/// (`?next=%2Fcb%3Ftoken%3D...`).
-const MAX_NESTED_DEPTH: usize = 4;
-
-/// Redige URL/consulta aninhada em um valor percent-encoded. `None` = nada a
-/// mudar. Decodifica, aplica as mesmas regras de [`sanitize_text`] (recursivo,
-/// com limite de profundidade) e recodifica só se algo foi redigido.
-fn sanitize_nested_value(value: &str, options: &SanitizeOptions, depth: usize) -> Option<String> {
-    if depth >= MAX_NESTED_DEPTH {
-        return None;
-    }
-    // Decodifica até estabilizar (codificação dupla/tripla), com limite de rodadas.
-    let mut decoded = value.to_string();
-    if value.contains(['%', '+']) {
-        for _ in 0..MAX_DECODE_ROUNDS {
-            let next = percent_decode(&decoded);
-            if next == decoded {
-                break;
-            }
-            decoded = next;
-        }
-    }
-    if !decoded.contains(['?', '&', '=', '#', ';', '@']) {
-        return None;
-    }
-    let sanitized = sanitize_text_depth(&decoded, options, depth + 1);
-    if sanitized == decoded {
-        return None;
-    }
-    Some(if decoded == value {
-        sanitized
-    } else {
-        percent_encode_with(&sanitized, "-._~", false)
-    })
-}
-
-/// Rodadas máximas de decodificação ao procurar segredo em valor aninhado.
-const MAX_DECODE_ROUNDS: usize = 8;
-
-/// Nome efetivo de um candidato `nome=`: decodifica até estabilizar e fica com o
-/// último segmento depois de um separador (`next%3Ftoken` → `token`), para que
-/// separadores codificados (`%3F`, `%26`, `%23`, `%3B`, `%2F`) valham como fronteira.
-fn effective_name(candidate: &str) -> String {
-    let mut decoded = candidate.to_string();
-    for _ in 0..MAX_DECODE_ROUNDS {
-        let next = percent_decode(&decoded);
-        if next == decoded {
-            break;
-        }
-        decoded = next;
-    }
-    let tail = decoded
-        .rsplit(['?', '&', '#', ';', '/', ',', '|', '='])
-        .next()
-        .unwrap_or("");
-    tail.trim().to_string()
-}
-
-fn sanitize_text_depth(text: &str, options: &SanitizeOptions, depth: usize) -> String {
-    if !text.contains('=') && !text.contains('%') && !text.contains('@') {
-        return text.to_string();
-    }
-    let text = redact_userinfo_in_text(text, options);
-    let is_end = |ch: char| {
-        ch.is_whitespace()
-            || matches!(
-                ch,
-                '"' | '\'' | '<' | '>' | '(' | ')' | ',' | ';' | '#' | '\\'
-            )
-    };
-    let is_boundary = |ch: char| {
-        ch.is_whitespace()
-            || matches!(
-                ch,
-                '?' | '&' | ';' | ',' | '#' | '/' | '"' | '\'' | '(' | '<' | '[' | '{' | '|' | '='
-            )
-    };
-    let is_name =
-        |ch: char| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '%' | '+');
-    let placeholder = url_placeholder(options);
-    let mut out = String::with_capacity(text.len());
-    let mut at_boundary = true;
-    let mut rest = text.as_str();
-    while let Some(ch) = rest.chars().next() {
-        if at_boundary && is_name(ch) {
-            // um possível `nome=` / `nome%3D`
-            let name_len = rest.find(|c: char| !is_name(c)).unwrap_or(rest.len());
-            let (candidate, after) = rest.split_at(name_len);
-            // `nome%3Dvalor`: o `%` é caractere de nome, então o candidato inclui o valor.
-            let encoded_eq = candidate.to_ascii_uppercase().find("%3D");
-            let (name, value_part, eq_text) = if let Some(i) = encoded_eq {
-                (&candidate[..i], &rest[i + 3..], "%3D")
-            } else if let Some(value_part) = after.strip_prefix('=') {
-                (candidate, value_part, "=")
-            } else if let Some(value_part) = after
-                .trim_start_matches(' ')
-                .strip_prefix('=')
-                .filter(|_| {
-                    let effective = effective_name(candidate);
-                    is_sensitive_key(&effective)
-                        || is_business_key(&effective, &options.business_fields)
-                })
-            {
-                // `token =valor` (o `+` de `token+%3Dvalor` decodifica para espaço)
-                (candidate, value_part.trim_start_matches(' '), "=")
-            } else {
-                // Sem `=`: pode ser um pedaço aninhado inteiro codificado
-                // (`x%3D1%26token%3DSEC`).
-                match sanitize_nested_value(candidate, options, depth) {
-                    Some(nested) => out.push_str(&nested),
-                    None => out.push_str(candidate),
-                }
-                rest = after;
-                at_boundary = false;
-                continue;
-            };
-            let sensitive = !name.is_empty() && {
-                let effective = effective_name(name);
-                is_sensitive_key(&effective)
-                    || is_business_key(&effective, &options.business_fields)
-            };
-            if !sensitive {
-                if eq_text == "=" {
-                    // `nome=valor` comum: o valor pode ser uma URL/consulta aninhada,
-                    // codificada ou não. Codificado: analisa o valor inteiro;
-                    // senão (ou se nada mudou) a varredura continua DENTRO do valor,
-                    // então `?pin=`/`&token=` aninhados são vistos.
-                    // O trecho analisado para no próximo `=`: cada byte entra em
-                    // uma única análise por nível (tempo linear).
-                    let value_len = value_part
-                        .find(|c: char| is_end(c) || c == '&' || c == '=')
-                        .unwrap_or(value_part.len());
-                    let (value, tail) = value_part.split_at(value_len);
-                    out.push_str(candidate);
-                    out.push('=');
-                    if value.contains('%') {
-                        if let Some(nested) = sanitize_nested_value(value, options, depth) {
-                            out.push_str(&nested);
-                            rest = tail;
-                            at_boundary = false;
-                            continue;
-                        }
-                    }
-                    // A varredura recomeça NO valor como início de palavra: assim
-                    // `a=b=token=X` e `next=%2Fcb%3Ftoken=X` (fronteira codificada,
-                    // tratada por `effective_name`) são vistos.
-                    rest = value_part;
-                    at_boundary = true;
-                    continue;
-                } else {
-                    match sanitize_nested_value(candidate, options, depth) {
-                        Some(nested) => out.push_str(&nested),
-                        None => out.push_str(candidate),
-                    }
-                    rest = after;
-                }
-                at_boundary = false;
-                continue;
-            }
-            let value_len = value_part
-                .find(|c: char| is_end(c) || c == '&')
-                .unwrap_or(value_part.len());
-            out.push_str(name);
-            out.push_str(eq_text);
-            out.push_str(&placeholder);
-            rest = &value_part[value_len..];
-            at_boundary = false;
-            continue;
-        }
-        out.push(ch);
-        rest = &rest[ch.len_utf8()..];
-        at_boundary = is_boundary(ch);
-    }
-    out
-}
-
-/// Troca o userinfo de toda URL absoluta no texto (`esquema://user:pass@host`).
-fn redact_userinfo_in_text(text: &str, options: &SanitizeOptions) -> String {
-    if !text.contains("://") {
-        return text.to_string();
-    }
-    let placeholder = url_placeholder(options);
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = rest.find("://") {
-        let (head, tail) = rest.split_at(at + 3);
-        out.push_str(head);
-        let authority_len = tail
-            .find(|c: char| {
-                c.is_whitespace() || matches!(c, '/' | '?' | '#' | '"' | '\'' | '<' | '>')
-            })
-            .unwrap_or(tail.len());
-        let (authority, after) = tail.split_at(authority_len);
-        match authority.rsplit_once('@') {
-            Some((_userinfo, host)) => {
-                out.push_str(&placeholder);
-                out.push('@');
-                out.push_str(host);
-            }
-            None => out.push_str(authority),
-        }
-        rest = after;
-    }
-    out.push_str(rest);
-    out
+/// Valor de parâmetro (query, formulário) com URL/consulta aninhada, codificada
+/// ou não. `None` = nada a mudar.
+fn sanitize_nested_value(value: &str, options: &SanitizeOptions, _depth: usize) -> Option<String> {
+    super::scrub::scrub(value, options)
 }
 
 fn sanitize_query(query: &str, options: &SanitizeOptions) -> String {
     let placeholder = url_placeholder(options);
+    let fields = business_fields();
     query
         .split('&')
-        .map(|pair| match pair.split_once('=') {
-            Some((name, value)) => {
+        .map(|pair| {
+            if let Some((name, _value)) = pair.split_once('=') {
                 let decoded = percent_decode(name);
-                if is_sensitive_key(&decoded) || is_business_key(&decoded, &business_fields()) {
-                    format!("{name}={placeholder}")
-                } else {
-                    match sanitize_nested_value(value, options, 0) {
-                        Some(nested) => format!("{name}={nested}"),
-                        None => pair.to_string(),
-                    }
+                if is_sensitive_key(&decoded) || is_business_key(&decoded, &fields) {
+                    return format!("{name}={placeholder}");
                 }
             }
-            None => pair.to_string(),
+            // `a=b=token=X`, `next=%2Fcb%3Ftoken=X`, `x%3Dtoken%3DX`: mesmas regras do texto
+            sanitize_nested_value(pair, options, 0).unwrap_or_else(|| pair.to_string())
         })
         .collect::<Vec<_>>()
         .join("&")
 }
 
 /// Placeholder percent-encoded para uso dentro de URL.
-fn url_placeholder(options: &SanitizeOptions) -> String {
+pub(super) fn url_placeholder(options: &SanitizeOptions) -> String {
     options
         .placeholder
         .chars()
@@ -1328,7 +1058,7 @@ fn is_url_header(name: &str) -> bool {
     )
 }
 
-fn is_sensitive_key(name: &str) -> bool {
+pub(super) fn is_sensitive_key(name: &str) -> bool {
     let name = name.trim().to_ascii_lowercase();
     let compact: String = name
         .chars()
@@ -1550,19 +1280,19 @@ fn shaped(b: &[u8], pattern: &[u8]) -> bool {
 }
 
 /// O nome do campo é (ou termina em) um campo de negócio configurado.
-fn is_business_key(name: &str, fields: &[String]) -> bool {
-    let lower = name.trim().to_ascii_lowercase();
-    !lower.is_empty()
+pub(super) fn is_business_key(name: &str, fields: &[String]) -> bool {
+    let name = name.trim();
+    !name.is_empty()
         && fields.iter().any(|field| {
-            let field = field.to_ascii_lowercase();
             if field.is_empty() {
                 return false;
             }
             // nome exato, ou sufixo depois de separador (`v_placa`, `x-cpf`)
-            lower == field
-                || lower
-                    .strip_suffix(field.as_str())
-                    .is_some_and(|head| head.ends_with(['_', '-', '.']))
+            name.eq_ignore_ascii_case(field)
+                || (name.len() > field.len()
+                    && name.is_char_boundary(name.len() - field.len())
+                    && name[name.len() - field.len()..].eq_ignore_ascii_case(field)
+                    && name[..name.len() - field.len()].ends_with(['_', '-', '.']))
         })
 }
 
