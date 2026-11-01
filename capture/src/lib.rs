@@ -162,8 +162,8 @@ fn run_inner(
         .map_err(|error| format!("diretório da sessão: {error}"))?;
     // Conferido depois de aberto (sem seguir link): é um diretório nosso, 0700.
     // A identidade (dev+inode) é reconferida no `stop` (A4-B5).
-    let session_identity = match verify_private_dir(&config.session_dir) {
-        Ok(identity) => identity,
+    let (session_handle, session_identity) = match verify_private_dir_handle(&config.session_dir) {
+        Ok(found) => found,
         Err(error) => {
             let _ = std::fs::remove_dir_all(&profile);
             return Err(format!("diretório da sessão: {error}"));
@@ -178,6 +178,11 @@ fn run_inner(
     let bodies_path = config.session_dir.join("cdp-bodies.jsonl");
     let bodies_file =
         open_private(&bodies_path).map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
+    // Só para o resgate (A5-B3): relê os corpos pelo descritor, mesmo que a
+    // pasta da sessão tenha sido trocada.
+    let mut bodies_reader = bodies_file
+        .try_clone()
+        .map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
 
     let resolver_rules = opts.allowlist.as_ref().map(allowlist::Allowlist::resolver_rules);
     let mut pipe_ends = match opts.transport {
@@ -370,15 +375,19 @@ fn run_inner(
     };
 
     let cdp_bytes = cdp.events_text().into_bytes();
-    if let Err(why) = recheck_session_dir(&config.session_dir, session_identity) {
-        return Err(rescue_in_profile(&mut profile_guard, &cdp_bytes, netlog_raw.as_deref(), &why));
-    }
     if cdp_bytes.is_empty() {
-        let _ = std::fs::write(&cdp_path, &cdp_bytes);
+        if recheck_session_dir(&config.session_dir, session_identity).is_ok() {
+            let _ = write_private(&cdp_path, &cdp_bytes);
+        }
         let error = "Nenhum evento CDP foi gravado. A sessão não foi criada; verifique se o Chrome permaneceu aberto durante a captura.".to_string();
         let _ = ready.send(Err(error.clone()));
         return Err(error);
     }
+    // Daqui em diante QUALQUER falha de gravação resgata os arquivos da captura
+    // (A5-B2) antes de o perfil ser apagado; o perfil só some quando a sessão foi
+    // gravada ou o resgate funcionou.
+    let finish = (|| -> Result<(CaptureOutcome, RunReport), String> {
+    recheck_session_dir(&config.session_dir, session_identity).map_err(session_dir_changed)?;
     // O CDP e os corpos já são evidência: ficam em disco antes de qualquer
     // passo que possa falhar (um NetLog ruim nunca descarta a captura).
     write_private(&cdp_path, &cdp_bytes).map_err(|error| format!("cdp-events.jsonl: {error}"))?;
@@ -473,9 +482,7 @@ fn run_inner(
                 ));
             }
         }
-        Err(SessionWriteError::DirChanged(why)) => {
-            return Err(rescue_in_profile(&mut profile_guard, &cdp_bytes, netlog_raw.as_deref(), &why));
-        }
+        Err(SessionWriteError::DirChanged(why)) => return Err(session_dir_changed(why)),
         Err(SessionWriteError::Other(message)) => return Err(message),
     }
 
@@ -507,6 +514,36 @@ fn run_inner(
         },
         report,
     ))
+    })();
+    match finish {
+        Ok(done) => Ok(done),
+        Err(message) => {
+            // Tira o `.tmp-*` que a gravação deixou, na pasta ORIGINAL (pelo
+            // descritor aberto no início), esteja ela ainda no lugar ou não.
+            remove_stale_tmp(&session_handle);
+            Err(match rescue_capture_files(
+                &default_state_root(),
+                &cdp_bytes,
+                netlog_raw.as_deref(),
+                &mut bodies_reader,
+                &message,
+            ) {
+                Ok(dir) => format!(
+                    "{message} Os arquivos da captura (eventos CDP, corpos e NetLog) ficaram na pasta de resgate {} (0700; apagada sozinha depois de {} dias).",
+                    dir.display(),
+                    RESCUE_TTL_DAYS
+                ),
+                Err(why) => {
+                    // Último recurso: sem resgate, o perfil fica (nunca perder os dados).
+                    profile_guard.keep();
+                    format!(
+                        "{message} O resgate falhou ({why}); os dados ficaram no perfil temporário {} (contém dados do Chrome; apague quando recuperar).",
+                        profile.display()
+                    )
+                }
+            })
+        }
+    }
 }
 
 fn spawn_chrome(
@@ -847,6 +884,9 @@ pub struct OrphanCleanup {
     pub processes_killed: usize,
     /// Perfis temporários apagados.
     pub profiles_removed: usize,
+    /// Pastas de resgate (sessões que não puderam ser gravadas) vencidas e
+    /// apagadas, com o marcador.
+    pub rescues_removed: usize,
 }
 
 /// Limpa capturas abandonadas por um app que morreu sem encerrar o Chrome.
@@ -862,6 +902,16 @@ pub fn cleanup_orphans(state_root: &Path) -> OrphanCleanup {
     };
     for entry in entries.flatten() {
         let path = entry.path();
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(RESCUE_PREFIX) && n.ends_with(".json"))
+        {
+            if !path.is_symlink() && cleanup_rescue_marker(state_root, &path) {
+                report.rescues_removed += 1;
+            }
+            continue;
+        }
         let is_marker = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -928,6 +978,42 @@ pub fn cleanup_orphans(state_root: &Path) -> OrphanCleanup {
         report.markers_removed += 1;
     }
     report
+}
+
+/// Apaga uma pasta de resgate vencida (`RESCUE_TTL_DAYS`) e o marcador. Só apaga
+/// uma pasta que é filha direta de `state_root`, com o nome do marcador, prefixo
+/// de resgate e que não é symlink: um marcador adulterado não aponta para fora.
+fn cleanup_rescue_marker(state_root: &Path, marker: &Path) -> bool {
+    let Some(value) = std::fs::read(marker)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+    else {
+        return false;
+    };
+    if value.get("kind").and_then(Value::as_str) != Some("rescue") {
+        return false;
+    }
+    let (Some(name), Some(created_ms)) = (
+        value.get("dir").and_then(Value::as_str),
+        value.get("createdMs").and_then(Value::as_u64),
+    ) else {
+        return false;
+    };
+    let name_ok = name.starts_with(RESCUE_PREFIX) && !name.contains('/') && !name.contains("..");
+    let now_ms = (unix_nanos() / 1_000_000) as u64;
+    let age_ms = now_ms.saturating_sub(created_ms);
+    if !name_ok || age_ms < RESCUE_TTL_DAYS * 24 * 3600 * 1000 {
+        return false;
+    }
+    let dir = state_root.join(name);
+    let is_real_dir = std::fs::symlink_metadata(&dir)
+        .map(|m| m.file_type().is_dir())
+        .unwrap_or(false);
+    if is_real_dir {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    let _ = std::fs::remove_file(marker);
+    true
 }
 
 fn wait_or_kill(child: &mut Child, timeout: Duration) -> ChromeExit {
@@ -2083,26 +2169,115 @@ fn write_session_resilient(
     ))
 }
 
-/// A pasta da sessão deixou de ser confiável (A4-B5): nada é gravado nela e nada
-/// fora dela é apagado. Os dados que temos (eventos CDP, NetLog) ficam no perfil
-/// temporário 0700, que não é apagado, e o erro diz onde.
-fn rescue_in_profile(
-    guard: &mut ProfileCleanup,
-    cdp_bytes: &[u8],
-    netlog: Option<&[u8]>,
-    why: &str,
-) -> String {
-    guard.keep();
-    if !cdp_bytes.is_empty() {
-        let _ = write_private(&guard.path.join("cdp-events.jsonl"), cdp_bytes);
-    }
-    if let Some(raw) = netlog {
-        let _ = write_private(&guard.path.join("netlog.json"), raw);
-    }
+/// Mensagem de erro quando a pasta da sessão deixou de ser confiável (A4-B5).
+fn session_dir_changed(why: String) -> String {
     format!(
-        "A pasta da sessão foi trocada ou deixou de ser nossa durante a captura ({why}); nada foi gravado nela e nada fora dela foi apagado. Os dados ficaram no perfil temporário {}",
-        guard.path.display()
+        "A pasta da sessão foi trocada ou deixou de ser nossa durante a captura ({why}); nada foi gravado nela e nada fora dela foi apagado."
     )
+}
+
+const RESCUE_PREFIX: &str = "rescue-";
+/// Idade a partir da qual `cleanup_orphans` apaga uma pasta de resgate.
+const RESCUE_TTL_DAYS: u64 = 7;
+
+/// Resgate (A5-B2, A5-B3): quando a sessão não pôde ser gravada, guarda SÓ os
+/// arquivos da captura (eventos CDP, corpos e NetLog) numa pasta 0700 nova dentro
+/// de `state_root`, com um marcador para o `cleanup_orphans` apagá-la depois de
+/// `RESCUE_TTL_DAYS`. O resto do perfil do Chrome (Cookies, Login Data, History)
+/// nunca é guardado. Devolve a pasta.
+fn rescue_capture_files(
+    state_root: &Path,
+    cdp: &[u8],
+    netlog: Option<&[u8]>,
+    bodies: &mut std::fs::File,
+    reason: &str,
+) -> Result<PathBuf, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    store::ensure_private_dir(state_root).map_err(|e| format!("pasta de estado: {e}"))?;
+    let name = format!("{RESCUE_PREFIX}{}-{}", std::process::id(), unix_nanos());
+    let dir = state_root.join(&name);
+    create_private_dir_new(&dir).map_err(|e| format!("pasta de resgate: {e}"))?;
+    let result = (|| -> std::io::Result<()> {
+        if !cdp.is_empty() {
+            write_private(&dir.join("cdp-events.jsonl"), cdp)?;
+        }
+        if let Some(raw) = netlog {
+            write_private(&dir.join("netlog.json"), raw)?;
+        }
+        let mut body_bytes = Vec::new();
+        if bodies.seek(SeekFrom::Start(0)).is_ok() && bodies.read_to_end(&mut body_bytes).is_ok() && !body_bytes.is_empty() {
+            write_private(&dir.join("cdp-bodies.jsonl"), &body_bytes)?;
+        }
+        write_private(&dir.join("motivo.txt"), reason.as_bytes())?;
+        let marker = json!({
+            "kind": "rescue",
+            "ownerPid": std::process::id(),
+            "dir": name,
+            "createdMs": unix_nanos() / 1_000_000,
+        });
+        write_private(
+            &state_root.join(format!("{name}.json")),
+            marker.to_string().as_bytes(),
+        )
+    })();
+    match result {
+        Ok(()) => Ok(dir),
+        Err(error) => {
+            // Resgate pela metade não serve: o chamador mantém o perfil.
+            let _ = std::fs::remove_dir_all(&dir);
+            let _ = std::fs::remove_file(state_root.join(format!("{name}.json")));
+            Err(error.to_string())
+        }
+    }
+}
+
+/// Remove os `.tmp-*` que `write_atomic` (core) e `write_private` deixam na pasta
+/// da sessão quando o `rename` falha. Trabalha pelo DESCRITOR do diretório (aberto
+/// no início): vale para a pasta original mesmo que o nome tenha sido trocado ou
+/// movido, e nunca segue um caminho. Só arquivos com o nome exato dos que
+/// gravamos (`.<arquivo>.tmp-…`).
+fn remove_stale_tmp(dir: &std::fs::File) {
+    use std::ffi::{CStr, CString};
+    use std::os::fd::AsRawFd;
+    const NAMES: [&str; 5] = [
+        "cdp-events.jsonl",
+        "netlog.json",
+        "netlog.original.json",
+        "session.json",
+        "cdp-bodies.jsonl",
+    ];
+    // SAFETY: `dup` do descritor aberto; `fdopendir` assume a cópia e `closedir`
+    // a fecha; `readdir` devolve entradas válidas até NULL; `unlinkat` só remove
+    // o nome (nunca segue symlink: AT_REMOVEDIR ausente remove o link em si).
+    unsafe {
+        let copy = libc::dup(dir.as_raw_fd());
+        if copy < 0 {
+            return;
+        }
+        let stream = libc::fdopendir(copy);
+        if stream.is_null() {
+            libc::close(copy);
+            return;
+        }
+        libc::rewinddir(stream);
+        let mut found: Vec<CString> = Vec::new();
+        loop {
+            let entry = libc::readdir(stream);
+            if entry.is_null() {
+                break;
+            }
+            let name = CStr::from_ptr((*entry).d_name.as_ptr());
+            let text = name.to_string_lossy();
+            let regular = (*entry).d_type == libc::DT_REG;
+            if regular && NAMES.iter().any(|n| text.starts_with(&format!(".{n}.tmp-"))) {
+                found.push(name.to_owned());
+            }
+        }
+        libc::closedir(stream);
+        for name in found {
+            libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0);
+        }
+    }
 }
 
 /// Escrita atômica e segura contra symlink: grava num arquivo novo de nome
@@ -2194,6 +2369,14 @@ fn create_private_dir_new(path: &Path) -> std::io::Result<()> {
 /// é um diretório, é do nosso usuário e o modo é exatamente 0700.
 #[cfg(unix)]
 fn verify_private_dir(path: &Path) -> std::io::Result<DirIdentity> {
+    verify_private_dir_handle(path).map(|(_, identity)| identity)
+}
+
+/// Como `verify_private_dir`, mas devolve também o descritor aberto do diretório:
+/// ele continua apontando para a MESMA pasta mesmo que o nome seja trocado, e
+/// serve para limpar o `.tmp-*` que a gravação deixou nela.
+#[cfg(unix)]
+fn verify_private_dir_handle(path: &Path) -> std::io::Result<(std::fs::File, DirIdentity)> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let dir = std::fs::OpenOptions::new()
         .read(true)
@@ -2213,10 +2396,13 @@ fn verify_private_dir(path: &Path) -> std::io::Result<DirIdentity> {
             ),
         ));
     }
-    Ok(DirIdentity {
-        dev: meta.dev(),
-        ino: meta.ino(),
-    })
+    Ok((
+        dir,
+        DirIdentity {
+            dev: meta.dev(),
+            ino: meta.ino(),
+        },
+    ))
 }
 
 /// Lê um arquivo sem seguir symlink: só aceita arquivo regular do nosso
@@ -2259,7 +2445,8 @@ fn unix_nanos() -> u128 {
 /// `O_NOFOLLOW`. Falha se o nome já existir (inclusive como symlink).
 fn open_new_private(path: &Path) -> std::io::Result<std::fs::File> {
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
+    // `read` também: o resgate relê os corpos pelo próprio descritor.
+    options.read(true).write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -3957,22 +4144,109 @@ mod tests {
     }
 
     #[test]
-    fn a4_b5_rescue_keeps_the_profile_with_the_data() {
+    fn a5_b3_rescue_keeps_only_the_capture_files_in_a_private_dir_with_a_marker() {
+        use std::os::unix::fs::PermissionsExt;
         let base = scratch_dir("rescue");
-        let mut guard = ProfileCleanup { path: base.join("perfil"), keep: false };
-        std::fs::create_dir_all(&guard.path).unwrap();
-        let message = rescue_in_profile(&mut guard, b"{\"a\":1}\n", Some(b"{\"constants\":{}}"), "teste");
-        assert!(message.contains("nada foi gravado nela") && message.contains("perfil temporário"), "{message}");
-        let path = guard.path.clone();
-        drop(guard);
-        assert!(path.join("cdp-events.jsonl").is_file(), "o perfil devia ter ficado");
-        assert!(path.join("netlog.json").is_file());
-        // Sem `keep()` o Drop apaga.
-        let gone = ProfileCleanup { path: base.join("outro"), keep: false };
-        std::fs::create_dir_all(&gone.path).unwrap();
-        let gone_path = gone.path.clone();
-        drop(gone);
-        assert!(!gone_path.exists());
+        let root = base.join("estado");
+        let mut bodies = open_private(&base.join("cdp-bodies.jsonl")).unwrap();
+        bodies.write_all(b"{\"corpo\":1}\n").unwrap();
+        let dir = rescue_capture_files(&root, b"{\"a\":1}\n", Some(b"{\"constants\":{}}"), &mut bodies, "motivo de teste")
+            .unwrap();
+        assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        // Só os arquivos da captura (+ o motivo): nada do perfil do Chrome.
+        assert_eq!(names, ["cdp-bodies.jsonl", "cdp-events.jsonl", "motivo.txt", "netlog.json"]);
+        assert_eq!(std::fs::read(dir.join("cdp-bodies.jsonl")).unwrap(), b"{\"corpo\":1}\n");
+        // Marcador no state root.
+        let marker = root.join(format!("{}.json", dir.file_name().unwrap().to_string_lossy()));
+        let value: Value = serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
+        assert_eq!(value["kind"], "rescue");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn a5_b3_cleanup_removes_only_expired_rescues_that_the_marker_really_names() {
+        let base = scratch_dir("rescue-ttl");
+        let root = base.join("estado");
+        std::fs::create_dir_all(&root).unwrap();
+        let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
+        let recent = rescue_capture_files(&root, b"x\n", None, &mut bodies, "recente").unwrap();
+        // Um vencido (marcador com data de 8 dias atrás), um adulterado (nome de
+        // fora) e uma pasta que não é de resgate.
+        let old_name = format!("{RESCUE_PREFIX}1-1");
+        let old = root.join(&old_name);
+        std::fs::create_dir_all(&old).unwrap();
+        let eight_days_ms = (unix_nanos() / 1_000_000) as u64 - 8 * 24 * 3600 * 1000;
+        std::fs::write(
+            root.join(format!("{old_name}.json")),
+            json!({"kind":"rescue","ownerPid":1,"dir":old_name,"createdMs":eight_days_ms}).to_string(),
+        )
+        .unwrap();
+        let outside = base.join("FORA");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("x"), "x").unwrap();
+        std::fs::write(
+            root.join(format!("{RESCUE_PREFIX}evil.json")),
+            json!({"kind":"rescue","ownerPid":1,"dir":"../FORA","createdMs":eight_days_ms}).to_string(),
+        )
+        .unwrap();
+        let report = cleanup_orphans(&root);
+        assert_eq!(report.rescues_removed, 1, "{report:?}");
+        assert!(!old.exists(), "o vencido devia sumir");
+        assert!(!root.join(format!("{old_name}.json")).exists());
+        assert!(recent.exists(), "o recente fica");
+        assert!(outside.join("x").exists(), "marcador adulterado não apaga fora");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a5_b2_remove_stale_tmp_cleans_the_original_dir_even_after_it_was_moved() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = scratch_dir("staletmp");
+        let dir = base.join("sessao");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let (handle, _id) = verify_private_dir_handle(&dir).unwrap();
+        for name in [".session.json.tmp-1-2-0", ".cdp-events.jsonl.tmp-9-9-3", "session.json", ".outro.tmp-1", "notas.txt"] {
+            std::fs::write(dir.join(name), "x").unwrap();
+        }
+        // A pasta é trocada de lugar (e o nome vira outra coisa): o descritor
+        // continua apontando para a original.
+        let moved = base.join("sessao.moved");
+        std::fs::rename(&dir, &moved).unwrap();
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join(".session.json.tmp-7-7-7"), "do novo, não é nosso").unwrap();
+        remove_stale_tmp(&handle);
+        let list = |p: &Path| {
+            let mut v: Vec<String> = std::fs::read_dir(p)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+                .collect();
+            v.sort();
+            v
+        };
+        assert_eq!(list(&moved), [".outro.tmp-1", "notas.txt", "session.json"]);
+        assert_eq!(list(&dir), [".session.json.tmp-7-7-7"], "o diretório novo não é tocado");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a5_b4_empty_cdp_file_is_not_created_through_a_symlink() {
+        use std::os::unix::fs::symlink;
+        let base = scratch_dir("a5b4");
+        let victim = base.join("VICTIM.txt");
+        std::fs::write(&victim, "ORIGINAL\n").unwrap();
+        let link = base.join("cdp-events.jsonl");
+        symlink(&victim, &link).unwrap();
+        write_private(&link, b"").unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "alvo truncado");
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_file());
         let _ = std::fs::remove_dir_all(base);
     }
 

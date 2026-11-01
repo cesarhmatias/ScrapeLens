@@ -172,7 +172,7 @@ aplicar:
 
 O NetLog (`--net-log-capture-mode=Everything`) e o CDP guardam **cookies,
 cabeçalhos de autorização e corpos**. Por isso: perfil temporário descartado ao
-fim; `start_capture` devolve `sensitive_notice` (texto fixo) que o servidor MCP
+fim (exceto o resgate de arquivos da captura descrito abaixo, que NÃO é o perfil); `start_capture` devolve `sensitive_notice` (texto fixo) que o servidor MCP
 deve mostrar; **o agente nunca digita credenciais** (não há `act`; se o agente
 usar o CDP exposto para digitar, o valor aparece no corpo POST capturado);
 as ferramentas de leitura e `site_profile` **redigem por padrão** valores de
@@ -228,30 +228,67 @@ apagar a pasta). Nenhum alvo é escrito e nada é removido além do nome do link
 
 **Pasta da sessão reconferida no stop (A4-B5).** No início guardamos a
 identidade (dispositivo + inode) da pasta, lida no descritor aberto sem seguir
-link. No `stop`, antes de gravar qualquer coisa e antes de cada tentativa de
+link (a identidade não aparece em nenhuma saída; o descritor fica aberto até o
+fim). No `stop`, antes de gravar qualquer coisa e antes de cada tentativa de
 gravação, `recheck_session_dir` reabre a pasta (`O_NOFOLLOW|O_DIRECTORY`) e exige:
 diretório, nosso, 0700 e a MESMA identidade. Trocada por um link, por outro
 diretório (mesmo que 0700 e nosso) ou com o modo afrouxado, o stop **falha** com
 "A pasta da sessão foi trocada ou deixou de ser nossa durante a captura (…);
-nada foi gravado nela e nada fora dela foi apagado. Os dados ficaram no perfil
-temporário <caminho>": os eventos CDP e o NetLog são gravados lá (perfil 0700,
-que não é apagado) e `remove_planted_links` nunca roda na pasta trocada (antes,
-o link `session.json` de dentro do destino trocado era removido). Os corpos
-(`cdp-bodies.jsonl`) e o NetLog são lidos sem seguir link. Testes
-`a4_b5_swapped_session_dir_is_detected_and_nothing_is_written_or_removed`,
-`a4_b5_rescue_keeps_the_profile_with_the_data` e o vivo
-`live_swapped_session_dir_fails_the_stop_without_touching_outside` (o PoC: a
-pasta vira um link para OUT; OUT fica com os mesmos 3 nomes, os links
-intactos e o alvo igual). **Lacuna que resta:** entre a reconferência e o
-`rename` de cada arquivo há uma janela de microssegundos (TOCTOU) que só um
-processo do mesmo usuário, com muita sorte, acerta; o `write_session_dir` do
-core canonicaliza a pasta antes de gravar, o que a reduz mais. Teste vivo
+nada foi gravado nela e nada fora dela foi apagado." e a indicação da pasta de
+resgate (abaixo). `remove_planted_links` nunca roda na pasta trocada. Os corpos
+(`cdp-bodies.jsonl`) e o NetLog são lidos sem seguir link.
+
+**Resgate quando a sessão não pôde ser gravada (A5-B2, A5-B3).** *Toda* falha
+depois do encerramento do Chrome (pasta trocada, o core recusar um arquivo,
+`rename` com ENOENT, falha de importação) resgata os arquivos da captura **antes**
+de o perfil temporário ser apagado:
+- **O que fica:** só `cdp-events.jsonl`, `cdp-bodies.jsonl` (relido pelo
+  descritor, mesmo com a pasta trocada), `netlog.json` e `motivo.txt` (a mensagem
+  de erro, que pode ter o caminho da sessão), numa pasta **0700 nova**
+  `scrapelens-capture-state/rescue-<pid>-<ns>/` dentro do `TMPDIR`, com um
+  marcador `rescue-<pid>-<ns>.json` ao lado. O erro do `stop_capture` cita a
+  pasta. Esses arquivos **contêm cookies, cabeçalhos e corpos** (são a captura
+  crua, como o NetLog `Everything`): trate a pasta como sensível.
+- **O que NÃO fica:** o resto do perfil do Chrome (Cookies, Login Data, History,
+  Local State...) é apagado como sempre. Antes o perfil inteiro (8,7 MB) ficava.
+- **Limpeza:** `cleanup_orphans` (no início do App e do servidor MCP) apaga a
+  pasta de resgate e o marcador depois de **7 dias** (`createdMs` do marcador),
+  só se o nome é filho direto do `state_root` com prefixo `rescue-` e não é
+  symlink; um marcador adulterado não apaga nada fora. Vale para o dono vivo ou
+  morto: o resgate não some antes do prazo. `OrphanCleanup.rescues_removed` conta.
+- **Último recurso:** se nem o resgate puder ser criado, o perfil temporário é
+  mantido (com os dados do Chrome) e o erro diz isso e pede para apagá-lo.
+- **`.tmp-*`:** o temporário que a gravação deixa (`.session.json.tmp-…`,
+  `.netlog.json.tmp-…`…) é removido pelo descritor da pasta ORIGINAL aberto no
+  início, esteja ela no lugar ou movida pelo atacante; só nomes exatos nossos.
+Testes `a4_b5_swapped_session_dir_is_detected_and_nothing_is_written_or_removed`,
+`a5_b3_rescue_keeps_only_the_capture_files_in_a_private_dir_with_a_marker`,
+`a5_b3_cleanup_removes_only_expired_rescues_that_the_marker_really_names`,
+`a5_b2_remove_stale_tmp_cleans_the_original_dir_even_after_it_was_moved` e os
+vivos `live_swapped_session_dir_fails_the_stop_without_touching_outside` (o PoC:
+a pasta vira um link para OUT; OUT fica com os mesmos 3 nomes, links intactos e
+alvo igual) e `live_any_write_failure_rescues_the_capture_files` (um diretório no
+nome de `session.json`: resgate com os 4 arquivos, sem `.tmp-*`, com marcador).
+`n_toctou.py` do Revisor, contra o binário atual com atrasos de 0 a 8 ms: o
+stop falha e **cada vez** há pasta de resgate com `cdp-events.jsonl`,
+`netlog.json` e `motivo.txt`, nada em OUT e nenhum `.tmp-*` (com 12 ms o `rename`
+já passou e a sessão fica na pasta movida).
+
+**Lacuna que resta (TOCTOU, cerca de 15 ms).** O `write_session_dir` do core
+leva **cerca de 15 ms** (10 a 16 ms medidos) entre a última reconferência e o
+fim da gravação. Se o mesmo usuário trocar a pasta nesse intervalo, a gravação
+falha com ENOENT e o resgate guarda os dados (acima); em nenhum teste algo foi
+escrito fora (0/13 do Revisor). Escrever através da troca exigiria acertar o
+intervalo ENTRE dois `write_atomic` seguidos, aí sim de microssegundos. O
+`canonicalize` que o core faz **não reduz** a janela: ele resolve a string do
+caminho uma vez e cada gravação seguinte resolve o caminho de novo; só gravar
+relativo a um descritor de diretório (`openat`) a fecharia, e isso é do core.
+
+**Links plantados antes da captura (F2).** Teste vivo
 `live_planted_symlinks_are_not_followed` (o PoC da revisão: links para
 `netlog.json`, `cdp-bodies.jsonl` e `cdp-events.jsonl`; nenhum alvo recebe dado
-nem muda de modo). **Fora desta crate:** `core/src/store.rs::write_atomic`
-(chamado por `write_session_dir` no fim da captura) usa um temporário de nome
-previsível (`.session.json.tmp-<pid>`) sem `O_EXCL`/`O_NOFOLLOW`; o segundo
-vetor do PoC da revisão passa por ali e é da Core.
+nem muda de modo). O temporário previsível do `write_atomic` do core, que era o
+segundo vetor desse PoC, foi corrigido pela Core (commit 3939881).
 
 ### 2.5 Porta de depuração: pipe por padrão, porta só com `expose_cdp`
 
@@ -751,7 +788,7 @@ revisão de segurança (M2, M3, R1 a R4):
 | Suíte | Resultado |
 |---|---|
 | `capture/` `cargo test` | 53 passed, 8 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: só `scrapelens-core`, `serde`, `serde_json`, `tungstenite` e `libc` (0 `tauri`) |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_swapped_session_dir_fails_the_stop_without_touching_outside` (A4-B5), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` e `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_swapped_session_dir_fails_the_stop_without_touching_outside` (A4-B5), `live_any_write_failure_rescues_the_capture_files` (A5-B2), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` e `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
 | `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
 | `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |

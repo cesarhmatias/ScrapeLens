@@ -1551,7 +1551,7 @@ mod tests {
         println!("erro: {error}");
         assert!(error.contains("pasta da sessão foi trocada"), "{error}");
         assert!(error.contains("agora é um link simbólico"), "{error}");
-        assert!(error.contains("perfil temporário"), "{error}");
+        assert!(error.contains("pasta de resgate"), "{error}");
         // OUT intacto: mesmos 3 nomes, links não removidos, alvo igual.
         let mut names: Vec<String> = std::fs::read_dir(&out)
             .unwrap()
@@ -1563,15 +1563,78 @@ mod tests {
             assert!(std::fs::symlink_metadata(out.join(name)).unwrap().file_type().is_symlink(), "{name} mexido");
         }
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n");
-        // Os dados ficaram no perfil temporário citado no erro.
-        let profile = error.rsplit("perfil temporário ").next().unwrap().trim().to_string();
-        let profile = std::path::PathBuf::from(profile);
-        assert!(profile.join("cdp-events.jsonl").is_file(), "sem cdp-events em {}", profile.display());
-        assert!(profile.join("netlog.json").is_file());
-        let _ = std::fs::remove_dir_all(profile);
+        // Os dados ficaram na pasta de resgate citada no erro: só os arquivos da
+        // captura, nada do perfil do Chrome.
+        let rescue = rescue_dir_from(&error);
+        assert!(rescue.join("cdp-events.jsonl").is_file(), "sem cdp-events em {}", rescue.display());
+        assert!(rescue.join("netlog.json").is_file());
+        assert_no_chrome_profile_data(&rescue);
+        let _ = std::fs::remove_dir_all(&rescue);
+        let _ = std::fs::remove_file(rescue.with_extension("json"));
         let _ = std::fs::remove_dir_all(out);
         let _ = std::fs::remove_dir_all(moved);
         let _ = std::fs::remove_file(dir);
+    }
+
+    /// Pasta de resgate citada no erro do stop.
+    fn rescue_dir_from(error: &str) -> PathBuf {
+        let after = error.split("pasta de resgate ").nth(1).expect("erro cita a pasta de resgate");
+        PathBuf::from(after.split(" (0700").next().unwrap().trim())
+    }
+
+    /// O resgate só tem os arquivos da captura: nenhum dado do perfil do Chrome.
+    fn assert_no_chrome_profile_data(dir: &std::path::Path) {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        for name in &names {
+            assert!(
+                ["cdp-bodies.jsonl", "cdp-events.jsonl", "motivo.txt", "netlog.json"].contains(&name.as_str()),
+                "arquivo inesperado no resgate: {name} (todos: {names:?})"
+            );
+        }
+        for forbidden in ["Cookies", "Login Data", "History", "Default", "Local State"] {
+            assert!(!names.iter().any(|n| n == forbidden), "{forbidden} no resgate");
+        }
+    }
+
+    /// A5-B2: uma falha de gravação com a pasta ainda nossa (aqui, um DIRETÓRIO no
+    /// nome de `session.json`, que o core recusa) também resgata os dados, não
+    /// apaga o perfil antes, e não deixa `.tmp-*` na pasta da sessão.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_any_write_failure_rescues_the_capture_files() {
+        let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
+        let port = site.port;
+        let config = live_config(vec![format!("localhost:{port}")], "writefail", false);
+        let dir = config.session_dir.clone();
+        let (capture, _info) = BrowserCapture::start(config).expect("start");
+        let _ = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10));
+        std::fs::create_dir(dir.join("session.json")).unwrap();
+        let error = capture.stop().expect_err("o core recusa um diretório no lugar de session.json");
+        println!("erro: {error}");
+        assert!(error.contains("pasta de resgate"), "{error}");
+        let rescue = rescue_dir_from(&error);
+        assert!(rescue.join("cdp-events.jsonl").is_file());
+        assert!(rescue.join("netlog.json").is_file());
+        assert!(rescue.join("cdp-bodies.jsonl").is_file(), "os corpos também são resgatados");
+        assert!(rescue.join("motivo.txt").is_file());
+        assert_no_chrome_profile_data(&rescue);
+        // Sem `.tmp-*` perdido na pasta da sessão.
+        let strays: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains(".tmp-"))
+            .collect();
+        assert!(strays.is_empty(), "{strays:?}");
+        // Marcador do resgate existe no state root.
+        let marker = rescue.with_extension("json");
+        assert!(marker.is_file(), "sem marcador {}", marker.display());
+        let _ = std::fs::remove_dir_all(&rescue);
+        let _ = std::fs::remove_file(marker);
     }
 
     #[test]
