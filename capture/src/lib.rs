@@ -521,27 +521,15 @@ fn run_inner(
             // Tira o `.tmp-*` que a gravação deixou, na pasta ORIGINAL (pelo
             // descritor aberto no início), esteja ela ainda no lugar ou não.
             remove_stale_tmp(&session_handle);
-            Err(match rescue_capture_files(
+            Err(rescue_or_adopt(
+                &message,
                 &default_state_root(),
+                &profile,
+                &mut profile_guard,
                 &cdp_bytes,
                 netlog_raw.as_deref(),
                 &mut bodies_reader,
-                &message,
-            ) {
-                Ok(dir) => format!(
-                    "{message} Os arquivos da captura (eventos CDP, corpos e NetLog) ficaram na pasta de resgate {} (0700; apagada sozinha depois de {} dias).",
-                    dir.display(),
-                    RESCUE_TTL_DAYS
-                ),
-                Err(why) => {
-                    // Último recurso: sem resgate, o perfil fica (nunca perder os dados).
-                    profile_guard.keep();
-                    format!(
-                        "{message} O resgate falhou ({why}); os dados ficaram no perfil temporário {} (contém dados do Chrome; apague quando recuperar).",
-                        profile.display()
-                    )
-                }
-            })
+            ))
         }
     }
 }
@@ -980,9 +968,13 @@ pub fn cleanup_orphans(state_root: &Path) -> OrphanCleanup {
     report
 }
 
-/// Apaga uma pasta de resgate vencida (`RESCUE_TTL_DAYS`) e o marcador. Só apaga
-/// uma pasta que é filha direta de `state_root`, com o nome do marcador, prefixo
-/// de resgate e que não é symlink: um marcador adulterado não aponta para fora.
+/// Apaga uma pasta de resgate vencida (`RESCUE_TTL_DAYS`) e o marcador. A idade
+/// vem do PRÓPRIO diretório de resgate (mtime, que muda só quando entradas são
+/// criadas/removidas nele), nunca do conteúdo do marcador (A6-B7): um marcador
+/// forjado não faz um resgate recente parecer vencido. O marcador só vale se o
+/// nome do arquivo for `<dir>.json` e `dir` for filho direto de `state_root`, com
+/// prefixo de resgate e sem ser symlink; um marcador adulterado não aponta para
+/// outro lugar.
 fn cleanup_rescue_marker(state_root: &Path, marker: &Path) -> bool {
     let Some(value) = std::fs::read(marker)
         .ok()
@@ -993,25 +985,32 @@ fn cleanup_rescue_marker(state_root: &Path, marker: &Path) -> bool {
     if value.get("kind").and_then(Value::as_str) != Some("rescue") {
         return false;
     }
-    let (Some(name), Some(created_ms)) = (
-        value.get("dir").and_then(Value::as_str),
-        value.get("createdMs").and_then(Value::as_u64),
-    ) else {
+    let Some(name) = value.get("dir").and_then(Value::as_str) else {
         return false;
     };
     let name_ok = name.starts_with(RESCUE_PREFIX) && !name.contains('/') && !name.contains("..");
-    let now_ms = (unix_nanos() / 1_000_000) as u64;
-    let age_ms = now_ms.saturating_sub(created_ms);
-    if !name_ok || age_ms < RESCUE_TTL_DAYS * 24 * 3600 * 1000 {
+    let bound = marker.file_name().and_then(|n| n.to_str()) == Some(&format!("{name}.json"));
+    if !name_ok || !bound {
         return false;
     }
     let dir = state_root.join(name);
-    let is_real_dir = std::fs::symlink_metadata(&dir)
-        .map(|m| m.file_type().is_dir())
-        .unwrap_or(false);
-    if is_real_dir {
-        let _ = std::fs::remove_dir_all(&dir);
+    let Ok(meta) = std::fs::symlink_metadata(&dir) else {
+        // Resgate já apagado: o marcador sobrou, remove só ele.
+        let _ = std::fs::remove_file(marker);
+        return false;
+    };
+    if !meta.file_type().is_dir() {
+        return false;
     }
+    let age = meta
+        .modified()
+        .ok()
+        .and_then(|t| SystemTime::now().duration_since(t).ok())
+        .unwrap_or_default();
+    if age < Duration::from_secs(RESCUE_TTL_DAYS * 24 * 3600) {
+        return false;
+    }
+    let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_file(marker);
     true
 }
@@ -2192,41 +2191,159 @@ fn rescue_capture_files(
     bodies: &mut std::fs::File,
     reason: &str,
 ) -> Result<PathBuf, String> {
-    use std::io::{Read, Seek, SeekFrom};
+    #[cfg(test)]
+    if FORCE_PRIMARY_RESCUE_FAILURE.with(std::cell::Cell::get) {
+        return Err("falha forçada (teste)".to_string());
+    }
     store::ensure_private_dir(state_root).map_err(|e| format!("pasta de estado: {e}"))?;
     let name = format!("{RESCUE_PREFIX}{}-{}", std::process::id(), unix_nanos());
     let dir = state_root.join(&name);
     create_private_dir_new(&dir).map_err(|e| format!("pasta de resgate: {e}"))?;
-    let result = (|| -> std::io::Result<()> {
-        if !cdp.is_empty() {
-            write_private(&dir.join("cdp-events.jsonl"), cdp)?;
-        }
-        if let Some(raw) = netlog {
-            write_private(&dir.join("netlog.json"), raw)?;
-        }
-        let mut body_bytes = Vec::new();
-        if bodies.seek(SeekFrom::Start(0)).is_ok() && bodies.read_to_end(&mut body_bytes).is_ok() && !body_bytes.is_empty() {
-            write_private(&dir.join("cdp-bodies.jsonl"), &body_bytes)?;
-        }
-        write_private(&dir.join("motivo.txt"), reason.as_bytes())?;
-        let marker = json!({
-            "kind": "rescue",
-            "ownerPid": std::process::id(),
-            "dir": name,
-            "createdMs": unix_nanos() / 1_000_000,
-        });
-        write_private(
-            &state_root.join(format!("{name}.json")),
-            marker.to_string().as_bytes(),
-        )
-    })();
+    let result = fill_rescue_dir(&dir, cdp, netlog, bodies, reason)
+        .and_then(|()| write_rescue_marker(state_root, &name));
     match result {
         Ok(()) => Ok(dir),
         Err(error) => {
-            // Resgate pela metade não serve: o chamador mantém o perfil.
+            // Resgate pela metade não serve: o chamador tenta o plano B.
             let _ = std::fs::remove_dir_all(&dir);
             let _ = std::fs::remove_file(state_root.join(format!("{name}.json")));
             Err(error.to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Teste: faz o resgate normal falhar NESTA thread (o plano B entra em ação).
+    static FORCE_PRIMARY_RESCUE_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Grava os arquivos da captura (e o motivo) numa pasta de resgate.
+fn fill_rescue_dir(
+    dir: &Path,
+    cdp: &[u8],
+    netlog: Option<&[u8]>,
+    bodies: &mut std::fs::File,
+    reason: &str,
+) -> std::io::Result<()> {
+    use std::io::{Read, Seek, SeekFrom};
+    if !cdp.is_empty() {
+        write_private(&dir.join("cdp-events.jsonl"), cdp)?;
+    }
+    if let Some(raw) = netlog {
+        write_private(&dir.join("netlog.json"), raw)?;
+    }
+    let mut body_bytes = Vec::new();
+    if bodies.seek(SeekFrom::Start(0)).is_ok()
+        && bodies.read_to_end(&mut body_bytes).is_ok()
+        && !body_bytes.is_empty()
+    {
+        write_private(&dir.join("cdp-bodies.jsonl"), &body_bytes)?;
+    }
+    write_private(&dir.join("motivo.txt"), reason.as_bytes())
+}
+
+/// Marcador `<nome>.json` ao lado da pasta de resgate. A idade NÃO vem dele.
+fn write_rescue_marker(state_root: &Path, name: &str) -> std::io::Result<()> {
+    let marker = json!({
+        "kind": "rescue",
+        "ownerPid": std::process::id(),
+        "dir": name,
+    });
+    write_private(
+        &state_root.join(format!("{name}.json")),
+        marker.to_string().as_bytes(),
+    )
+}
+
+/// Plano B do resgate (A6-B6), quando a pasta de resgate normal não pôde ser
+/// criada (ex.: ENOSPC): o PRÓPRIO perfil temporário vira o resgate. Apaga tudo o
+/// que não é da captura (Cookies, Login Data, History..., o que também libera
+/// espaço), grava nele os eventos CDP, os corpos e o motivo, e o move para
+/// `state_root` com um marcador, entrando no mesmo prazo de 7 dias. Se não puder
+/// movê-lo ou marcá-lo, ele fica onde está, já limpo e com os eventos, e o
+/// retorno diz que não há prazo automático.
+struct AdoptedProfile {
+    dir: PathBuf,
+    has_ttl: bool,
+}
+
+fn adopt_profile_as_rescue(
+    state_root: &Path,
+    profile: &Path,
+    cdp: &[u8],
+    netlog: Option<&[u8]>,
+    bodies: &mut std::fs::File,
+    reason: &str,
+) -> Result<AdoptedProfile, String> {
+    // 1. Só os arquivos da captura sobrevivem no perfil.
+    let keep_netlog = netlog.is_none() && profile.join("netlog.json").is_file();
+    for entry in std::fs::read_dir(profile).map_err(|e| format!("perfil: {e}"))?.flatten() {
+        let path = entry.path();
+        if keep_netlog && entry.file_name() == "netlog.json" {
+            continue;
+        }
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let _ = if is_dir {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+    }
+    // 2. Os eventos, os corpos e o motivo.
+    fill_rescue_dir(profile, cdp, netlog, bodies, reason).map_err(|e| format!("perfil: {e}"))?;
+    // 3. Move para o state root e marca (mesmo prazo).
+    let name = format!("{RESCUE_PREFIX}{}-{}", std::process::id(), unix_nanos());
+    let target = state_root.join(&name);
+    let moved = store::ensure_private_dir(state_root)
+        .ok()
+        .and_then(|()| std::fs::rename(profile, &target).ok());
+    if moved.is_some() && write_rescue_marker(state_root, &name).is_ok() {
+        return Ok(AdoptedProfile { dir: target, has_ttl: true });
+    }
+    Ok(AdoptedProfile {
+        dir: if moved.is_some() { target } else { profile.to_path_buf() },
+        has_ttl: false,
+    })
+}
+
+/// Resgata os arquivos da captura depois de uma falha de gravação e devolve o
+/// erro final para o `stop_capture`: pasta de resgate normal; se falhar, o plano B
+/// (o perfil vira o resgate); se tudo falhar, o perfil fica.
+fn rescue_or_adopt(
+    message: &str,
+    state_root: &Path,
+    profile: &Path,
+    profile_guard: &mut ProfileCleanup,
+    cdp_bytes: &[u8],
+    netlog_raw: Option<&[u8]>,
+    bodies: &mut std::fs::File,
+) -> String {
+    match rescue_capture_files(state_root, cdp_bytes, netlog_raw, bodies, message) {
+        Ok(dir) => format!(
+            "{message} Os arquivos da captura (eventos CDP, corpos e NetLog) ficaram na pasta de resgate {} (0700; apagada sozinha depois de {} dias).",
+            dir.display(),
+            RESCUE_TTL_DAYS
+        ),
+        Err(why) => {
+            // Plano B: o perfil vira o resgate (limpo, com os eventos e, se
+            // possível, com marcador e prazo). Nunca perder os dados.
+            profile_guard.keep();
+            match adopt_profile_as_rescue(state_root, profile, cdp_bytes, netlog_raw, bodies, message) {
+                Ok(adopted) if adopted.has_ttl => format!(
+                    "{message} O resgate normal falhou ({why}); os arquivos da captura (eventos CDP, corpos e NetLog) ficaram em {} (0700; apagada sozinha depois de {} dias).",
+                    adopted.dir.display(),
+                    RESCUE_TTL_DAYS
+                ),
+                Ok(adopted) => format!(
+                    "{message} O resgate normal falhou ({why}); os arquivos da captura (eventos CDP, corpos e NetLog) ficaram em {}, SEM prazo automático (não foi possível marcá-la): apague quando recuperar.",
+                    adopted.dir.display()
+                ),
+                Err(second) => format!(
+                    "{message} O resgate falhou ({why}) e o plano B também ({second}); o perfil temporário {} foi mantido e pode estar incompleto (contém dados do Chrome; apague quando recuperar).",
+                    profile.display()
+                ),
+            }
         }
     }
 }
@@ -4168,6 +4285,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(base);
     }
 
+    /// Põe a data de modificação do diretório `days` dias no passado.
+    fn age_dir(dir: &Path, days: u64) {
+        let old = SystemTime::now() - Duration::from_secs(days * 24 * 3600 + 60);
+        std::fs::File::open(dir).unwrap().set_modified(old).unwrap();
+    }
+
     #[test]
     fn a5_b3_cleanup_removes_only_expired_rescues_that_the_marker_really_names() {
         let base = scratch_dir("rescue-ttl");
@@ -4175,31 +4298,123 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
         let recent = rescue_capture_files(&root, b"x\n", None, &mut bodies, "recente").unwrap();
-        // Um vencido (marcador com data de 8 dias atrás), um adulterado (nome de
-        // fora) e uma pasta que não é de resgate.
-        let old_name = format!("{RESCUE_PREFIX}1-1");
-        let old = root.join(&old_name);
-        std::fs::create_dir_all(&old).unwrap();
-        let eight_days_ms = (unix_nanos() / 1_000_000) as u64 - 8 * 24 * 3600 * 1000;
-        std::fs::write(
-            root.join(format!("{old_name}.json")),
-            json!({"kind":"rescue","ownerPid":1,"dir":old_name,"createdMs":eight_days_ms}).to_string(),
-        )
-        .unwrap();
+        // Um vencido pela IDADE DO DIRETÓRIO (8 dias), um marcador adulterado
+        // apontando para fora e uma pasta que não é de resgate.
+        let old = rescue_capture_files(&root, b"y\n", None, &mut bodies, "vencido").unwrap();
+        age_dir(&old, 8);
         let outside = base.join("FORA");
         std::fs::create_dir_all(&outside).unwrap();
         std::fs::write(outside.join("x"), "x").unwrap();
+        age_dir(&outside, 30);
         std::fs::write(
             root.join(format!("{RESCUE_PREFIX}evil.json")),
-            json!({"kind":"rescue","ownerPid":1,"dir":"../FORA","createdMs":eight_days_ms}).to_string(),
+            json!({"kind":"rescue","ownerPid":1,"dir":"../FORA"}).to_string(),
         )
         .unwrap();
         let report = cleanup_orphans(&root);
         assert_eq!(report.rescues_removed, 1, "{report:?}");
         assert!(!old.exists(), "o vencido devia sumir");
-        assert!(!root.join(format!("{old_name}.json")).exists());
         assert!(recent.exists(), "o recente fica");
         assert!(outside.join("x").exists(), "marcador adulterado não apaga fora");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A6-B7: a idade vem do diretório, não do marcador. Um marcador forjado
+    /// com `createdMs` antigo (ou com o nome de OUTRA pasta) não apaga um resgate
+    /// recente.
+    #[test]
+    fn a6_b7_forged_marker_cannot_delete_a_recent_rescue() {
+        let base = scratch_dir("rescue-forged");
+        let root = base.join("estado");
+        std::fs::create_dir_all(&root).unwrap();
+        let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
+        let recent = rescue_capture_files(&root, b"x\n", None, &mut bodies, "recente").unwrap();
+        let recent_name = recent.file_name().unwrap().to_string_lossy().to_string();
+        // 1. O PoC do Revisor: arquivo com outro nome, `dir` do resgate recente e
+        //    `createdMs: 0`.
+        std::fs::write(
+            root.join(format!("{RESCUE_PREFIX}evil.json")),
+            json!({"kind":"rescue","ownerPid":1,"dir":recent_name,"createdMs":0}).to_string(),
+        )
+        .unwrap();
+        // 2. Sobrescreve o marcador verdadeiro com `createdMs: 0`.
+        std::fs::write(
+            root.join(format!("{recent_name}.json")),
+            json!({"kind":"rescue","ownerPid":1,"dir":recent_name,"createdMs":0}).to_string(),
+        )
+        .unwrap();
+        let report = cleanup_orphans(&root);
+        assert_eq!(report.rescues_removed, 0, "{report:?}");
+        assert!(recent.join("cdp-events.jsonl").is_file(), "o resgate recente foi apagado");
+        // Quando o diretório envelhece de verdade, o marcador verdadeiro apaga.
+        age_dir(&recent, 8);
+        assert_eq!(cleanup_orphans(&root).rescues_removed, 1);
+        assert!(!recent.exists());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A6-B6: se o resgate normal falha, o perfil vira o resgate: sem Cookies,
+    /// com os eventos CDP, marcador e o mesmo prazo.
+    #[test]
+    fn a6_b6_fallback_adopts_the_profile_with_events_and_a_ttl_marker() {
+        let base = scratch_dir("rescue-fallback");
+        let root = base.join("estado");
+        let profile = base.join("scrapelens-chrome-1-2");
+        std::fs::create_dir_all(profile.join("Default")).unwrap();
+        for f in ["Default/Cookies", "Default/History", "Local State", "netlog.json"] {
+            std::fs::write(profile.join(f), "dados do chrome").unwrap();
+        }
+        let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
+        bodies.write_all(b"{\"corpo\":1}\n").unwrap();
+        let mut guard = ProfileCleanup { path: profile.clone(), keep: false };
+        FORCE_PRIMARY_RESCUE_FAILURE.with(|f| f.set(true));
+        let message = rescue_or_adopt("falhou", &root, &profile, &mut guard, b"{\"ev\":1}\n", Some(b"{\"constants\":{}}"), &mut bodies);
+        FORCE_PRIMARY_RESCUE_FAILURE.with(|f| f.set(false));
+        assert!(message.contains("resgate normal falhou") && message.contains("7 dias"), "{message}");
+        drop(guard); // keep() foi chamado: não apaga
+        assert!(!profile.exists(), "o perfil foi movido para o state root");
+        let dirs: Vec<PathBuf> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.is_dir())
+            .collect();
+        assert_eq!(dirs.len(), 1, "{dirs:?}");
+        let rescue = &dirs[0];
+        let mut names: Vec<String> = std::fs::read_dir(rescue)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        // Só os arquivos da captura: nada de Cookies/History/Local State/Default.
+        assert_eq!(names, ["cdp-bodies.jsonl", "cdp-events.jsonl", "motivo.txt", "netlog.json"]);
+        assert_eq!(std::fs::read(rescue.join("cdp-events.jsonl")).unwrap(), b"{\"ev\":1}\n");
+        // Com marcador: expira pelo mesmo prazo.
+        let name = rescue.file_name().unwrap().to_string_lossy().to_string();
+        assert!(root.join(format!("{name}.json")).is_file());
+        age_dir(rescue, 8);
+        assert_eq!(cleanup_orphans(&root).rescues_removed, 1);
+        assert!(!rescue.exists());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A6-B6, último degrau: sem como mover/marcar (state root inutilizável) o
+    /// perfil fica no lugar, já limpo e com os eventos, e a mensagem diz que não há
+    /// prazo automático.
+    #[test]
+    fn a6_b6_fallback_keeps_events_in_place_when_it_cannot_be_moved() {
+        let base = scratch_dir("rescue-fallback2");
+        let root = base.join("estado-arquivo");
+        std::fs::write(&root, "sou um arquivo, não uma pasta").unwrap();
+        let profile = base.join("scrapelens-chrome-3-4");
+        std::fs::create_dir_all(profile.join("Default")).unwrap();
+        std::fs::write(profile.join("Default/Cookies"), "x").unwrap();
+        let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
+        let mut guard = ProfileCleanup { path: profile.clone(), keep: false };
+        let message = rescue_or_adopt("falhou", &root, &profile, &mut guard, b"{\"ev\":1}\n", None, &mut bodies);
+        assert!(message.contains("SEM prazo automático"), "{message}");
+        drop(guard);
+        assert!(profile.join("cdp-events.jsonl").is_file(), "os eventos ficam no perfil mantido");
+        assert!(!profile.join("Default").exists(), "dados do Chrome removidos");
         let _ = std::fs::remove_dir_all(base);
     }
 
