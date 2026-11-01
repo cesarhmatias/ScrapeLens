@@ -656,6 +656,12 @@ impl Drop for InFlight<'_> {
     }
 }
 
+/// Marcas combinantes (U+0300–036F e blocos estendidos): empilham sobre o caractere
+/// anterior e podem apagar o que vem antes do rótulo.
+fn is_combining_mark(ch: char) -> bool {
+    matches!(ch as u32, 0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F)
+}
+
 /// Texto exibido na confirmação: caracteres de controle e de formatação
 /// (quebra de linha, bidi, largura zero) viram `\u{XXXX}` literal, para que um
 /// valor controlado pelo agente não injete linhas falsas no texto.
@@ -663,7 +669,12 @@ pub fn escape_display(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         let hidden = ch.is_control()
-            || matches!(ch as u32, 0x200B..=0x200F | 0x2028..=0x202E | 0x2060..=0x2069 | 0xFEFF);
+            || matches!(
+                ch as u32,
+                0x00A0 | 0x00AD | 0x061C | 0x180E | 0x2000..=0x200F | 0x2028..=0x202F
+                    | 0x205F..=0x206F | 0x2800 | 0x3000 | 0x3164 | 0xFEFF | 0xFFFC
+                    | 0xE0000..=0xE007F
+            ) || is_combining_mark(ch);
         if hidden {
             out.push_str(&format!("\\u{{{:04X}}}", ch as u32));
         } else {

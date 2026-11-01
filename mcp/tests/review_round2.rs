@@ -160,3 +160,22 @@ fn sigterm_during_stop_still_writes_the_session() {
         "o stop em andamento terminou e gravou antes de sair"
     );
 }
+
+// ---- A3-B: mensagens de erro e caracteres invisíveis -------------------------------------
+
+#[test]
+fn error_messages_escape_bidi_and_invisible_characters() {
+    let env = Env::new(true);
+    let hostile = "sess\u{202E}ao\n\u{200B}x\u{061C}y\u{2800}z\u{E0041}";
+    let error = open_failure(&env, hostile);
+    let shown = error.to_value().to_string();
+    for ch in ['\u{202E}', '\u{200B}', '\u{061C}', '\u{2800}', '\u{E0041}'] {
+        assert!(!shown.contains(ch), "{ch:?} em {shown}");
+    }
+    assert!(!shown.contains("\\n\\u200b"), "{shown}");
+    assert_eq!(escape_display("A\u{0301}"), "A\\u{0301}");
+}
+
+fn open_failure(env: &Env, handle: &str) -> scrapelens_mcp::error::ToolError {
+    list_requests(&env.ctx, p(json!({"session_id": handle}))).unwrap_err()
+}

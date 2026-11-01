@@ -25,7 +25,8 @@ impl ToolError {
     }
 
     pub fn to_value(&self) -> Value {
-        json!({"error": {"code": self.code, "message": self.message}})
+        // A mensagem pode ecoar texto do agente (ids, caminhos): sem controle nem bidi.
+        json!({"error": {"code": self.code, "message": crate::live::escape_display(&self.message)}})
     }
 }
 
