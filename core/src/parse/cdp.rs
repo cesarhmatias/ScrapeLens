@@ -642,6 +642,11 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 capture.warnings.push(warning);
                 capture.events_used += 1;
             }
+            "Capture.sessionSetup" => {
+                // Marcador sintético da captura (início da configuração de um alvo):
+                // evento conhecido, sem efeito na rede e sem aviso.
+                capture.events_used += 1;
+            }
             "Capture.targetSetupAborted" => {
                 // Nota informativa no alvo; não é perda de rede.
                 let Some(params) = params else { continue };
