@@ -161,10 +161,14 @@ fn run_inner(
     store::ensure_private_dir(&config.session_dir)
         .map_err(|error| format!("diretório da sessão: {error}"))?;
     // Conferido depois de aberto (sem seguir link): é um diretório nosso, 0700.
-    if let Err(error) = verify_private_dir(&config.session_dir) {
-        let _ = std::fs::remove_dir_all(&profile);
-        return Err(format!("diretório da sessão: {error}"));
-    }
+    // A identidade (dev+inode) é reconferida no `stop` (A4-B5).
+    let session_identity = match verify_private_dir(&config.session_dir) {
+        Ok(identity) => identity,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&profile);
+            return Err(format!("diretório da sessão: {error}"));
+        }
+    };
     // NetLog: o Chrome o cria e escreve DENTRO do perfil privado (0700, nosso,
     // fresco). Só depois do encerramento ele é lido sem seguir link e copiado
     // para a pasta da sessão por `write_private` (rename atômico).
@@ -358,9 +362,17 @@ fn run_inner(
     // O Chrome já saiu: lê o NetLog do perfil privado (sem seguir link, só
     // arquivo regular nosso) antes de apagar o perfil.
     let netlog_raw = read_private_regular(&netlog_path).filter(|bytes| !bytes.is_empty());
-    let _ = std::fs::remove_dir_all(&profile);
+    // O perfil só é apagado quando a sessão foi gravada: se a pasta de destino
+    // não for mais confiável (A4-B5), os dados ficam aqui.
+    let mut profile_guard = ProfileCleanup {
+        path: profile.clone(),
+        keep: false,
+    };
 
     let cdp_bytes = cdp.events_text().into_bytes();
+    if let Err(why) = recheck_session_dir(&config.session_dir, session_identity) {
+        return Err(rescue_in_profile(&mut profile_guard, &cdp_bytes, netlog_raw.as_deref(), &why));
+    }
     if cdp_bytes.is_empty() {
         let _ = std::fs::write(&cdp_path, &cdp_bytes);
         let error = "Nenhum evento CDP foi gravado. A sessão não foi criada; verifique se o Chrome permaneceu aberto durante a captura.".to_string();
@@ -386,7 +398,7 @@ fn run_inner(
     }
 
     // Sem o arquivo de corpos (falha de gravação), o core avisa uma vez por sessão.
-    let bodies_bytes = std::fs::read(&bodies_path).ok();
+    let bodies_bytes = read_private_regular(&bodies_path);
     let mut imported = import_capture_labeled(
         &cdp_bytes,
         &netlog,
@@ -453,10 +465,18 @@ fn run_inner(
     // A3-B3: um symlink plantado no nome de um arquivo da sessão depois da nossa
     // cópia faz o `write_atomic` do core recusar e derrubaria o stop. O nome do
     // link é removido (nunca o alvo), vira aviso, e a gravação segue.
-    for name in write_session_resilient(&mut imported.bundle, &config.session_dir)? {
-        report_warnings.push(format!(
-            "{name}: havia um link simbólico no lugar do arquivo da sessão; o link foi removido (o alvo não foi tocado) e o arquivo foi gravado normalmente."
-        ));
+    match write_session_resilient(&mut imported.bundle, &config.session_dir, session_identity) {
+        Ok(removed) => {
+            for name in removed {
+                report_warnings.push(format!(
+                    "{name}: havia um link simbólico no lugar do arquivo da sessão; o link foi removido (o alvo não foi tocado) e o arquivo foi gravado normalmente."
+                ));
+            }
+        }
+        Err(SessionWriteError::DirChanged(why)) => {
+            return Err(rescue_in_profile(&mut profile_guard, &cdp_bytes, netlog_raw.as_deref(), &why));
+        }
+        Err(SessionWriteError::Other(message)) => return Err(message),
     }
 
     let session_value = serde_json::to_value(&imported.bundle.session)
@@ -1997,15 +2017,18 @@ fn mark_incomplete(
     }
 }
 
-/// Arquivos que `store::write_session_dir` grava no diretório da sessão.
+/// Nomes que `store::write_session_dir` grava (arquivos) ou cria (`attachments`)
+/// no diretório da sessão e que o core recusa se forem symlink.
+#[cfg(test)]
 const SESSION_DIR_FILES: [&str; 3] = ["cdp-events.jsonl", "netlog.json", "session.json"];
+const SESSION_DIR_LINK_NAMES: [&str; 4] =
+    ["cdp-events.jsonl", "netlog.json", "session.json", "attachments"];
 
-/// Remove, do diretório da sessão, os symlinks que ocupam o nome de um arquivo
-/// que vamos gravar. Remove só o NOME do link (`remove_file` não segue). Devolve
-/// os nomes removidos.
+/// Remove, do diretório da sessão, os symlinks que ocupam um desses nomes.
+/// Remove só o NOME do link (`remove_file` não segue). Devolve os nomes removidos.
 fn remove_planted_links(dir: &Path) -> Vec<String> {
     let mut removed = Vec::new();
-    for name in SESSION_DIR_FILES {
+    for name in SESSION_DIR_LINK_NAMES {
         let path = dir.join(name);
         let is_link = std::fs::symlink_metadata(&path)
             .map(|m| m.file_type().is_symlink())
@@ -2017,16 +2040,27 @@ fn remove_planted_links(dir: &Path) -> Vec<String> {
     removed
 }
 
+enum SessionWriteError {
+    /// A pasta da sessão não é mais a do início (trocada, link, outro dono/modo).
+    DirChanged(String),
+    Other(String),
+}
+
 /// `store::write_session_dir` que não falha por symlink plantado depois da nossa
-/// cópia (A3-B3): limpa os links, grava e, se o core ainda recusar por um link
-/// replantado na corrida, limpa e tenta de novo (até 3 vezes). Cada remoção vira
-/// um aviso no documento. Qualquer outro erro continua sendo erro.
+/// cópia (A3-B3, A4-B3 para `attachments`): limpa os links, grava e, se o core
+/// ainda recusar por um link replantado na corrida, limpa e tenta de novo (até 3
+/// vezes). Cada remoção vira um aviso no documento. Antes de CADA tentativa a
+/// pasta é reconferida (A4-B5): trocada, nada é gravado nem removido nela. Outros
+/// erros continuam sendo erro. Replantar o link em laço vence as 3 tentativas:
+/// negação de serviço do mesmo usuário, aceita e documentada (16b §2.4).
 fn write_session_resilient(
     bundle: &mut scrapelens_core::SessionBundle,
     dir: &Path,
-) -> Result<Vec<String>, String> {
+    identity: DirIdentity,
+) -> Result<Vec<String>, SessionWriteError> {
     let mut all_removed: Vec<String> = Vec::new();
     for attempt in 0..3 {
+        recheck_session_dir(dir, identity).map_err(SessionWriteError::DirChanged)?;
         for name in remove_planted_links(dir) {
             bundle.session.add_warning(scrapelens_core::model::Warning::new(
                 "capture.planted_symlink_removed",
@@ -2037,10 +2071,38 @@ fn write_session_resilient(
         match store::write_session_dir(bundle, dir) {
             Ok(()) => return Ok(all_removed),
             Err(error) if attempt < 2 && error.to_string().contains("link simbólico") => {}
-            Err(error) => return Err(format!("Não foi possível gravar a sessão: {error}")),
+            Err(error) => {
+                return Err(SessionWriteError::Other(format!(
+                    "Não foi possível gravar a sessão: {error}"
+                )))
+            }
         }
     }
-    Err("Não foi possível gravar a sessão: link simbólico replantado repetidamente".to_string())
+    Err(SessionWriteError::Other(
+        "Não foi possível gravar a sessão: link simbólico replantado repetidamente".to_string(),
+    ))
+}
+
+/// A pasta da sessão deixou de ser confiável (A4-B5): nada é gravado nela e nada
+/// fora dela é apagado. Os dados que temos (eventos CDP, NetLog) ficam no perfil
+/// temporário 0700, que não é apagado, e o erro diz onde.
+fn rescue_in_profile(
+    guard: &mut ProfileCleanup,
+    cdp_bytes: &[u8],
+    netlog: Option<&[u8]>,
+    why: &str,
+) -> String {
+    guard.keep();
+    if !cdp_bytes.is_empty() {
+        let _ = write_private(&guard.path.join("cdp-events.jsonl"), cdp_bytes);
+    }
+    if let Some(raw) = netlog {
+        let _ = write_private(&guard.path.join("netlog.json"), raw);
+    }
+    format!(
+        "A pasta da sessão foi trocada ou deixou de ser nossa durante a captura ({why}); nada foi gravado nela e nada fora dela foi apagado. Os dados ficaram no perfil temporário {}",
+        guard.path.display()
+    )
 }
 
 /// Escrita atômica e segura contra symlink: grava num arquivo novo de nome
@@ -2064,6 +2126,55 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     result
 }
 
+/// Identidade de um diretório (dispositivo + inode) lida no descritor aberto.
+/// Serve para o `stop` reconhecer que a pasta da sessão é a MESMA do início.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DirIdentity {
+    dev: u64,
+    ino: u64,
+}
+
+/// Reconfere a pasta da sessão no `stop` (A4-B5): aberta sem seguir link, nossa,
+/// 0700 e com a identidade (dev+inode) do início. Trocar a pasta por um symlink,
+/// ou por outro diretório, faz o stop falhar sem gravar nada nela.
+fn recheck_session_dir(dir: &Path, expected: DirIdentity) -> Result<(), String> {
+    match verify_private_dir(dir) {
+        Ok(found) if found == expected => Ok(()),
+        Ok(_) => Err("é outro diretório que não o do início da captura".to_string()),
+        Err(error) => {
+            let is_link = std::fs::symlink_metadata(dir)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false);
+            Err(if is_link {
+                "agora é um link simbólico".to_string()
+            } else {
+                error.to_string()
+            })
+        }
+    }
+}
+
+/// Apaga o perfil temporário ao sair, a menos que `keep()` tenha sido chamado
+/// (a sessão ficou lá porque a pasta de destino não era confiável).
+struct ProfileCleanup {
+    path: PathBuf,
+    keep: bool,
+}
+
+impl ProfileCleanup {
+    fn keep(&mut self) {
+        self.keep = true;
+    }
+}
+
+impl Drop for ProfileCleanup {
+    fn drop(&mut self) {
+        if !self.keep {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
 /// Cria um diretório NOVO 0700 (falha se o nome existir, inclusive como
 /// symlink) e confere, já aberto, que é um diretório nosso, não um link, 0700.
 fn create_private_dir_new(path: &Path) -> std::io::Result<()> {
@@ -2071,7 +2182,7 @@ fn create_private_dir_new(path: &Path) -> std::io::Result<()> {
     {
         use std::os::unix::fs::DirBuilderExt;
         std::fs::DirBuilder::new().recursive(false).mode(0o700).create(path)?;
-        verify_private_dir(path)
+        verify_private_dir(path).map(|_| ())
     }
     #[cfg(not(unix))]
     {
@@ -2082,7 +2193,7 @@ fn create_private_dir_new(path: &Path) -> std::io::Result<()> {
 /// Abre o diretório sem seguir link final e confere pelo descritor aberto:
 /// é um diretório, é do nosso usuário e o modo é exatamente 0700.
 #[cfg(unix)]
-fn verify_private_dir(path: &Path) -> std::io::Result<()> {
+fn verify_private_dir(path: &Path) -> std::io::Result<DirIdentity> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let dir = std::fs::OpenOptions::new()
         .read(true)
@@ -2102,7 +2213,10 @@ fn verify_private_dir(path: &Path) -> std::io::Result<()> {
             ),
         ));
     }
-    Ok(())
+    Ok(DirIdentity {
+        dev: meta.dev(),
+        ino: meta.ino(),
+    })
 }
 
 /// Lê um arquivo sem seguir symlink: só aceita arquivo regular do nosso
@@ -3783,6 +3897,87 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn a4_b5_swapped_session_dir_is_detected_and_nothing_is_written_or_removed() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let base = scratch_dir("a4b5");
+        let session_dir = base.join("capture-X");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        std::fs::set_permissions(&session_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let identity = verify_private_dir(&session_dir).unwrap();
+        recheck_session_dir(&session_dir, identity).expect("intacto passa");
+
+        // 1. Trocada por um symlink para OUT, cheio de links (o PoC do Revisor).
+        let out = base.join("OUT");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let victim = base.join("VICTIM.txt");
+        std::fs::write(&victim, "ORIGINAL\n").unwrap();
+        for name in SESSION_DIR_FILES {
+            symlink(&victim, out.join(name)).unwrap();
+        }
+        let moved = base.join("capture-X.orig");
+        std::fs::rename(&session_dir, &moved).unwrap();
+        symlink(&out, &session_dir).unwrap();
+        let err = recheck_session_dir(&session_dir, identity).unwrap_err();
+        assert!(err.contains("link simbólico"), "{err}");
+        let cdp = fixture("cdp-events.jsonl");
+        let (netlog, _s) = prepare_netlog(Some(&fixture("chrome-netlog.json")));
+        let mut imported = import_capture_labeled(
+            &cdp,
+            &netlog,
+            None,
+            &["live-capture".to_string()],
+            CorrelationOptions::default(),
+        )
+        .unwrap();
+        match write_session_resilient(&mut imported.bundle, &session_dir, identity) {
+            Err(SessionWriteError::DirChanged(_)) => {}
+            other => panic!("devia recusar a pasta trocada, veio {:?}", other.map(|_| ()).err().map(|_| "outro erro")),
+        }
+        // Nada foi gravado em OUT e os links de OUT NÃO foram removidos.
+        for name in SESSION_DIR_FILES {
+            let meta = std::fs::symlink_metadata(out.join(name)).unwrap();
+            assert!(meta.file_type().is_symlink(), "{name} em OUT foi mexido");
+        }
+        assert_eq!(std::fs::read_dir(&out).unwrap().count(), 3);
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n");
+
+        // 2. Trocada por OUTRO diretório de verdade (0700, nosso): a identidade difere.
+        std::fs::remove_file(&session_dir).unwrap();
+        std::fs::create_dir(&session_dir).unwrap();
+        std::fs::set_permissions(&session_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(recheck_session_dir(&session_dir, identity).unwrap_err().contains("outro diretório"));
+        // 3. Modo afrouxado.
+        std::fs::remove_dir(&session_dir).unwrap();
+        std::fs::rename(&moved, &session_dir).unwrap();
+        recheck_session_dir(&session_dir, identity).expect("o original de volta passa");
+        std::fs::set_permissions(&session_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(recheck_session_dir(&session_dir, identity).is_err());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn a4_b5_rescue_keeps_the_profile_with_the_data() {
+        let base = scratch_dir("rescue");
+        let mut guard = ProfileCleanup { path: base.join("perfil"), keep: false };
+        std::fs::create_dir_all(&guard.path).unwrap();
+        let message = rescue_in_profile(&mut guard, b"{\"a\":1}\n", Some(b"{\"constants\":{}}"), "teste");
+        assert!(message.contains("nada foi gravado nela") && message.contains("perfil temporário"), "{message}");
+        let path = guard.path.clone();
+        drop(guard);
+        assert!(path.join("cdp-events.jsonl").is_file(), "o perfil devia ter ficado");
+        assert!(path.join("netlog.json").is_file());
+        // Sem `keep()` o Drop apaga.
+        let gone = ProfileCleanup { path: base.join("outro"), keep: false };
+        std::fs::create_dir_all(&gone.path).unwrap();
+        let gone_path = gone.path.clone();
+        drop(gone);
+        assert!(!gone_path.exists());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop() {
         use std::os::unix::fs::{symlink, PermissionsExt};
         let dir = scratch_dir("a3b3");
@@ -3811,9 +4006,29 @@ mod tests {
             let _ = std::fs::remove_file(session_dir.join(name));
             symlink(&victim, session_dir.join(name)).unwrap();
         }
-        let removed = write_session_resilient(&mut imported.bundle, &session_dir)
+        // A4-B3: `attachments` também pode ser um link para um diretório de fora.
+        let outside_dir = dir.join("DIR-FORA");
+        std::fs::create_dir_all(&outside_dir).unwrap();
+        std::fs::write(outside_dir.join("intacto.txt"), "ORIGINAL\n").unwrap();
+        let _ = std::fs::remove_dir_all(session_dir.join("attachments"));
+        symlink(&outside_dir, session_dir.join("attachments")).unwrap();
+        assert!(store::write_session_dir(&imported.bundle, &session_dir).is_err(), "o core recusa attachments link");
+        for name in SESSION_DIR_FILES {
+            let _ = std::fs::remove_file(session_dir.join(name));
+            symlink(&victim, session_dir.join(name)).unwrap();
+        }
+        let _ = std::fs::remove_file(session_dir.join("attachments"));
+        symlink(&outside_dir, session_dir.join("attachments")).unwrap();
+        let identity = verify_private_dir(&session_dir).unwrap();
+        let removed = write_session_resilient(&mut imported.bundle, &session_dir, identity)
+            .ok()
             .expect("o stop não pode falhar por symlink plantado");
-        assert_eq!(removed.len(), 3, "{removed:?}");
+        assert_eq!(removed.len(), 4, "{removed:?}");
+        assert!(removed.contains(&"attachments".to_string()));
+        assert_eq!(std::fs::read_dir(&outside_dir).unwrap().count(), 1, "diretório de fora tocado");
+        assert_eq!(std::fs::read_to_string(outside_dir.join("intacto.txt")).unwrap(), "ORIGINAL\n");
+        let att = std::fs::symlink_metadata(session_dir.join("attachments")).unwrap();
+        assert!(att.file_type().is_dir(), "attachments devia ser diretório de verdade");
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "alvo tocado");
         assert_eq!(std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777, 0o644);
         for name in SESSION_DIR_FILES {

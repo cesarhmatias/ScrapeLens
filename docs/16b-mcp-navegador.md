@@ -207,19 +207,45 @@ pode mexer nele (mesmo uid; fora do modelo, como a porta do `expose_cdp`). Um
 `SIGKILL` do servidor deixa o NetLog parcial só no perfil, que a limpeza de
 órfãos apaga: não sobra `netlog.json` parcial na pasta da sessão.
 
-**Link plantado depois da cópia (A3-B3).** O `write_session_dir` do core
-regrava `cdp-events.jsonl`, `netlog.json` e `session.json` com `write_atomic`,
-que recusa symlink e derrubava o `stop_capture` (`stop_failed`, sem
-`session.json`) se um processo do mesmo usuário plantasse o link depois da nossa
-cópia. Agora `write_session_resilient` remove o **nome** do link (nunca o alvo),
-grava, e se o core ainda recusar por um link replantado na corrida, limpa e
-tenta de novo (3 tentativas). Cada remoção vira o aviso
-`capture.planted_symlink_removed` na sessão e uma linha em `warnings` do
-`stop_capture`; o stop não falha. Outros erros de gravação continuam sendo
-erro. Teste `a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop` (sem a
-correção o core recusa; com ela os 3 nomes viram arquivos regulares e o alvo
-fica intacto). Um atacante que replante o link nas 3 tentativas ainda faz o stop
-falhar: negação de serviço do mesmo usuário, fora do modelo. Teste vivo
+**Link plantado depois da cópia (A3-B3, A4-B3).** O `write_session_dir` do core
+regrava `cdp-events.jsonl`, `netlog.json` e `session.json` com `write_atomic`, e
+cria `attachments/`; ambos recusam symlink e derrubavam o `stop_capture`
+(`stop_failed`, sem `session.json`) se um processo do mesmo usuário plantasse o
+link depois da nossa cópia. Agora `write_session_resilient` remove o **nome** do
+link (nunca o alvo; vale para os 3 arquivos **e para `attachments`**), grava, e se
+o core ainda recusar por um link replantado na corrida, limpa e tenta de novo
+(3 tentativas). Cada remoção vira o aviso `capture.planted_symlink_removed` na
+sessão e uma linha em `warnings` do `stop_capture`; o stop não falha. Outros
+erros de gravação continuam sendo erro. Teste
+`a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop` (sem a correção o
+core recusa; com ela os 4 nomes são limpos, o diretório de fora fica intacto e
+`attachments` vira um diretório de verdade).
+
+**A4-B4 (aceito, documentado).** Um laço que replante o link nas 3 tentativas
+ainda faz o stop falhar com "link simbólico replantado repetidamente": negação
+de serviço do mesmo usuário, fora do modelo (o mesmo usuário também poderia
+apagar a pasta). Nenhum alvo é escrito e nada é removido além do nome do link.
+
+**Pasta da sessão reconferida no stop (A4-B5).** No início guardamos a
+identidade (dispositivo + inode) da pasta, lida no descritor aberto sem seguir
+link. No `stop`, antes de gravar qualquer coisa e antes de cada tentativa de
+gravação, `recheck_session_dir` reabre a pasta (`O_NOFOLLOW|O_DIRECTORY`) e exige:
+diretório, nosso, 0700 e a MESMA identidade. Trocada por um link, por outro
+diretório (mesmo que 0700 e nosso) ou com o modo afrouxado, o stop **falha** com
+"A pasta da sessão foi trocada ou deixou de ser nossa durante a captura (…);
+nada foi gravado nela e nada fora dela foi apagado. Os dados ficaram no perfil
+temporário <caminho>": os eventos CDP e o NetLog são gravados lá (perfil 0700,
+que não é apagado) e `remove_planted_links` nunca roda na pasta trocada (antes,
+o link `session.json` de dentro do destino trocado era removido). Os corpos
+(`cdp-bodies.jsonl`) e o NetLog são lidos sem seguir link. Testes
+`a4_b5_swapped_session_dir_is_detected_and_nothing_is_written_or_removed`,
+`a4_b5_rescue_keeps_the_profile_with_the_data` e o vivo
+`live_swapped_session_dir_fails_the_stop_without_touching_outside` (o PoC: a
+pasta vira um link para OUT; OUT fica com os mesmos 3 nomes, os links
+intactos e o alvo igual). **Lacuna que resta:** entre a reconferência e o
+`rename` de cada arquivo há uma janela de microssegundos (TOCTOU) que só um
+processo do mesmo usuário, com muita sorte, acerta; o `write_session_dir` do
+core canonicaliza a pasta antes de gravar, o que a reduz mais. Teste vivo
 `live_planted_symlinks_are_not_followed` (o PoC da revisão: links para
 `netlog.json`, `cdp-bodies.jsonl` e `cdp-events.jsonl`; nenhum alvo recebe dado
 nem muda de modo). **Fora desta crate:** `core/src/store.rs::write_atomic`
@@ -725,7 +751,7 @@ revisão de segurança (M2, M3, R1 a R4):
 | Suíte | Resultado |
 |---|---|
 | `capture/` `cargo test` | 53 passed, 8 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: só `scrapelens-core`, `serde`, `serde_json`, `tungstenite` e `libc` (0 `tauri`) |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` e `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_swapped_session_dir_fails_the_stop_without_touching_outside` (A4-B5), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` e `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
 | `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
 | `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |

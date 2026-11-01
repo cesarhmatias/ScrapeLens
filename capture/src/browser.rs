@@ -1519,6 +1519,61 @@ mod tests {
         assert_ne!(state, "complete", "a sessão não pode sair complete");
     }
 
+    /// A4-B5 (PoC `n_newsurface.py`, dirswap): a pasta da sessão é trocada por um
+    /// symlink para OUT durante a captura. O stop falha com erro claro, nada é
+    /// gravado em OUT, os links de OUT não são removidos e os dados ficam no
+    /// perfil temporário.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_swapped_session_dir_fails_the_stop_without_touching_outside() {
+        use std::os::unix::fs::symlink;
+        let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
+        let port = site.port;
+        let config = live_config(vec![format!("localhost:{port}")], "dirswap", false);
+        let dir = config.session_dir.clone();
+        let (capture, _info) = BrowserCapture::start(config).expect("start");
+        let _ = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10));
+        // Troca a pasta por um link para OUT (que contém links para um alvo).
+        let out = std::env::temp_dir().join(format!("scrapelens-dirswap-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out);
+        std::fs::create_dir_all(&out).unwrap();
+        let victim = out.join("VICTIM.txt");
+        std::fs::write(&victim, "ORIGINAL\n").unwrap();
+        for name in ["netlog.json", "session.json"] {
+            symlink(&victim, out.join(name)).unwrap();
+        }
+        let moved = dir.with_file_name(format!("{}-orig", dir.file_name().unwrap().to_string_lossy()));
+        std::fs::rename(&dir, &moved).unwrap();
+        symlink(&out, &dir).unwrap();
+        let result = capture.stop();
+        let error = result.expect_err("o stop devia falhar com a pasta trocada");
+        println!("erro: {error}");
+        assert!(error.contains("pasta da sessão foi trocada"), "{error}");
+        assert!(error.contains("agora é um link simbólico"), "{error}");
+        assert!(error.contains("perfil temporário"), "{error}");
+        // OUT intacto: mesmos 3 nomes, links não removidos, alvo igual.
+        let mut names: Vec<String> = std::fs::read_dir(&out)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["VICTIM.txt", "netlog.json", "session.json"]);
+        for name in ["netlog.json", "session.json"] {
+            assert!(std::fs::symlink_metadata(out.join(name)).unwrap().file_type().is_symlink(), "{name} mexido");
+        }
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n");
+        // Os dados ficaram no perfil temporário citado no erro.
+        let profile = error.rsplit("perfil temporário ").next().unwrap().trim().to_string();
+        let profile = std::path::PathBuf::from(profile);
+        assert!(profile.join("cdp-events.jsonl").is_file(), "sem cdp-events em {}", profile.display());
+        assert!(profile.join("netlog.json").is_file());
+        let _ = std::fs::remove_dir_all(profile);
+        let _ = std::fs::remove_dir_all(out);
+        let _ = std::fs::remove_dir_all(moved);
+        let _ = std::fs::remove_file(dir);
+    }
+
     #[test]
     fn test_site_serves_and_records() {
         let site = TestSite::start(|_m, path| Reply::html(&format!("<p>{path}</p>")).header("X-T", "1"));
