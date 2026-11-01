@@ -460,3 +460,96 @@ A exceção é a **linha 222**, que é inexata (ver A3-B2).
   - SIGTERM, SIGTERM e SIGINT durante o stop esperam a sessão ser gravada.
 - **Perfil:** é removido depois do stop.
 - **Desempenho:** o sanitizador fica linear com 1 MB de entrada adversarial (pior caso 715 ms).
+
+---
+
+## Adendo 4: confirmação do adendo 3 (Rodada 11)
+
+- **HEAD revisado:** `61ad875`, num clone novo em `/tmp/rev28/repo`.
+- **Correções conferidas:** `419c207`, `d2a0ca6`, `4c5aed0`, `61ad875` e `62afa63`.
+- **Evidências:**
+  - PoCs e saídas em `/tmp/rev28/poc-secrets` e `/tmp/rev28/poc-cap`;
+  - relatórios parciais em `/tmp/rev28/{secrets,cap}.md`.
+- **Restrições respeitadas:** Chrome só em loopback; `/Applications` intacto.
+
+### Veredito: REPROVADO
+
+Há uma **regressão média confirmada** (A4-M1), introduzida pelo `d2a0ca6`. Os demais itens estão corrigidos ou foram aceitos. A3-B5, o `"device":"dev-…-7319"` e os riscos do 16b não foram reavaliados, porque foram aceitos.
+
+### Itens do adendo 3
+
+| Item | Estado | Evidência |
+|---|---|---|
+| A3-M1 (força bruta no `trace_value`) | Corrigido | Sem reveal, `trace_value(value)` sempre devolve `reveal_required`, inclusive depois de reimportar; a força bruta do r27 (10.000 consultas, 200 reimportações) não achou nada. Com `reveal=true` sem `--allow-reveal`, devolve `reveal_disabled`. O modo cookie não traz mais `valueLength`. |
+| A3-M2 (regressão do `5cdac78`) | Corrigido nos casos relatados | Sai `Refresh: 0;url=/d?pin=%5BREDACTED%5D&page=2`. Também saem mascarados o redirect do X-Note, `next=/cb?token=` em JSON e em texto livre, `?next=/cb?token=URL1x` e o Location. |
+| A3-B1 (codificação dupla) | Corrigido | `%253F`, codificação tripla e quádrupla, `token+%3D`, `token%20%3D` e `token%2B%3D` saem mascarados. Com 5 níveis de codificação ainda passa, porque o teto é de 4 rodadas (informativo). |
+| A3-B2 (mensagem grande no pipe) | Corrigido no modo pipe | O navigate falha em 2,6 s com `frame_too_large`, a sessão sai `partial` e a razão é `capture.cdp_transport_closed`. |
+| A3-B3 (symlink no `netlog.json`) | Corrigido para os 3 nomes | O stop termina com o aviso "havia um link simbólico", grava o `netlog.json` como arquivo regular 0600 a partir da memória, e o arquivo vítima fica intacto. |
+| A3-B4 (Bearer/Basic em texto livre) | Corrigido | `bearer\t`, `BEARER  x`, `Basic` seguido de U+3000 e `basic` minúsculo saem mascarados. |
+| navigate_timeout | Corrigido | Com o Chrome parado por SIGSTOP, devolve `navigate_timeout` em 3,3 s. |
+| escape_display | Parcial | Ver A4-I1. |
+| Regressões de r25/r26/r26b e R1–R12 | Sem regressão | Saídas comparadas com o r27; R1, R2, R3, R4, R9, R10 e R12 passam. Não há redação demais em `page`, `opinion`, `ticket_type`, `sort` e `q`. |
+
+### Custo da recursão nova
+
+O crescimento é linear nas 25 entradas adversariais: com 4× a entrada, o tempo fica cerca de 4×. Não houve panic nem estouro de pilha, porque há teto de 4 níveis de aninhamento e de 4 rodadas de decodificação. Tempos no build release:
+
+| Entrada | 1 MB | 4 MB |
+|---|---|---|
+| `a=%3Fb%3Dc&` (pior caso) | 147 ms | 602 ms |
+| `a=/?a=` | 144 ms | 528 ms |
+| `%253F` aninhado | 89 ms | 352 ms |
+| aninhamento de 10k níveis | 5 ms | — |
+
+### Achados que restam
+
+#### Médio
+
+**A4-M1. Regressão do `d2a0ca6`: valor com codificação mista vaza (CONFIRMADO).**
+- **Local:** `core/src/export/sanitize.rs:1061` e `:1074`.
+- **Causa:**
+  - O valor agora termina no primeiro `=` cru, então só `%2Fcb%3Ftoken` é decodificado, e ele não tem nada a redigir.
+  - A nova varredura recomeça no meio da palavra, e `%3F` não conta como fronteira. Com isso, `token=` nunca é reconhecido.
+- **Antes, no core `35a8a62`:** `next=%2Fcb%3Ftoken%3D%255BREDACTED%255D`.
+- **Agora:** `next=%2Fcb%3Ftoken=MIX1x`.
+- **Onde vaza de ponta a ponta:**
+  - header `X-Note3`;
+  - campos JSON `mix1`/`mix2`, por exemplo `redirect=https%3A%2F%2Fh%2Fcb%3Faccess_token=MIXED02x`.
+  - A query da URL segue mascarada.
+- **Evidência:** `/tmp/rev28/poc-secrets/zz_sec28_poc_r28.out` ("MARK MIXED02x: VAZA") e a mesma entrada rodada no core `35a8a62`.
+
+#### Baixo
+
+**A4-B1. `trace_value(request_id)` sem reveal ainda devolve `"length":N` (CONFIRMADO).**
+- **Local:** `mcp/src/tools.rs:1440-1466`, que mascara só o `value`; o `length` vem de `core/src/flow.rs:253`.
+- **Exemplos:** `sid` aparece com 4 e `X-Session` com 22.
+- É o mesmo vazamento que o `419c207` tirou do modo cookie.
+
+**A4-B2. No modo porta (`expose_cdp=true`), a mensagem grande perde a razão (CONFIRMADO).**
+- **Local:** `abnormal_close_reason` só trata o pipe (`capture/src/transport.rs:132-134`), então `transport_closed` fica `None` (`capture/src/lib.rs:339`).
+- **No release:** a sessão sai `partial`, mas só pelo `chrome_killed`, com `warnings:[]`.
+- **No debug:** um `debug_assert` do tungstenite 0.28 entra em panic na thread de captura, o stop dá `stop_failed`, nenhuma sessão é gravada e `recording` fica `true`.
+
+**A4-B3. Um symlink plantado em `session/attachments` ainda derruba o stop (CONFIRMADO, mesmo usuário).**
+- **Local:** `write_session_resilient` limpa só os 3 nomes (`capture/src/lib.rs:2001`), e `core/src/store.rs:168-176` recusa o link.
+- **Resultado:** `stop_failed` e nenhum `session.json`. É só negação de serviço; o alvo fica intacto.
+
+**A4-B4. Um processo que replanta o `session.json` em laço vence as 3 tentativas (CONFIRMADO 3/3, mesmo usuário).**
+- **Local:** `capture/src/lib.rs:2028-2045`.
+- É só negação de serviço; o alvo fica intacto.
+
+**A4-B5. O diretório da sessão não é reconferido no stop (CONFIRMADO, mesmo usuário).**
+- **Local:** a checagem de symlink do diretório só roda no start (`capture/src/lib.rs:151`).
+- **Cenário:** com `capture-X` trocado por um symlink para outro diretório, a sessão é gravada lá com 0600, e a limpeza nova apaga um symlink `session.json` fora da pasta da sessão.
+- **Atenuantes:** nada é escrito através de um link, e a escrita pelo diretório trocado já era possível antes do `62afa63`; o que é novo é a remoção.
+
+#### Informativo
+
+- **A4-I1. O `escape_display` (`mcp/src/live.rs:674-676`) não cobre os seletores de variação U+E0100–E01EF**, embora o `61ad875` diga que cobre; a faixa `0xE0000..=0xE007F` só pega tags.
+  - Também passam crus: U+05B4, U+064B, U+0489, U+115F/1160, U+FFA0, U+1680, U+17B4, U+0600, U+070F, U+1D173, U+13430 e U+1BCA0.
+  - Sugestão: filtrar pelas categorias Unicode Mn/Me/Cf/Zs em vez de faixas.
+- **Já existiam antes:**
+  - `a=b=token=X` e o parâmetro de matriz `;next=/cb%3Ftoken=X` passam;
+  - um valor JSON que começa com "Basic …" é redigido inteiro;
+  - valores com codificação múltipla saem normalizados, sem bater com os bytes originais (não é vazamento).
+- **Textos novos:** as razões e os avisos de incompletude usam só strings fixas, sem URL, query ou conteúdo.
