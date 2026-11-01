@@ -347,3 +347,116 @@ Todos os achados anteriores estão corrigidos ou passaram a ser reportados como 
   - Info.plist alterado, executável principal trocado e arquivo extra em MacOS são recusados;
   - Beta, Canary, Chromium e Chrome for Testing são recusados pelo bundle ID exato (só por leitura de código, porque não estão instalados).
 - **`--remote-allow-origins=*` removido:** Origin forjado, `127.0.0.1` e `localhost` recebem 403, e `/json` não manda ACAO.
+
+---
+
+## Adendo 3: confirmação do adendo 2 (Rodada 11)
+
+- **HEAD:** a revisão foi feita no clone novo `/tmp/rev27/repo`, em `03ee85c`, que inclui as correções:
+  - core: `5cdac78`, `f4f5c63`, `f276ba8`, `e5e45c1`;
+  - captura: `f437051`, `288b2d3`, `03ee85c`.
+- **Evidências:**
+  - testes de reprodução e saídas em `/tmp/rev27/poc-secrets` e `/tmp/rev27/poc-cap`;
+  - relatórios parciais em `/tmp/rev27/{secrets,cap}.md`.
+- **Restrições respeitadas:** o Chrome só rodou contra loopback. As cópias do Chrome.app ficaram em `/tmp`, e `/Applications` não foi alterado.
+
+### Veredito: REPROVADO
+
+Há dois achados **médios confirmados**, e um deles é uma regressão introduzida pelo `5cdac78`. Não há nenhum achado alto. Os riscos aceitos não pesaram no veredito.
+
+### R1–R14
+
+| Item | Estado | Evidência |
+|---|---|---|
+| R1 quebra de linha no codesign e na elicitação | Corrigido | O caminho é recusado antes da elicitação (`browser_invalid … inj\nIdentifier=…`) e o marcador não roda. |
+| R2 Helper trocado | Corrigido | `codesign --verify --deep -R='anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"'` (`chrome.rs:314-318`) devolve `BadSignature`. A decisão usa só o código de saída, sem parse de texto. |
+| R3 NetLog através de symlink | Corrigido | O NetLog fica no perfil 0700 e a cópia usa `create_new` + `O_NOFOLLOW` + rename. O arquivo vítima ficou intacto e o destino sai com 0600. |
+| R4 aviso de CDP sem autenticação | Corrigido | Texto real: "SIM — ATENÇÃO: a porta CDP não tem autenticação; qualquer processo local pode controlar o Chrome inteiro (todas as abas, cookies, sessões abertas)". |
+| R5 força bruta no `trace_value` | Parcial | `value_too_short` abaixo de 16 caracteres e `value_query_limit` na consulta 51 funcionam, mas o teto é contornável (A3-M1). |
+| R6 URL aninhada com percent-encoding | Corrigido em um nível | NESTED01–05 saem mascarados. A3-M2 e A3-B1 seguem abertos. |
+| R7 panic de UTF-8 | Corrigido | `abcdé€€€€` devolve erro, sem panic. |
+| R8 TAB depois do esquema | Corrigido em headers e JSON | Em texto livre, `bearer SEC4` e `Basic\tSEC9` ainda passam (Baixo). |
+| R9 fds herdados | Corrigido | `launcher-secret` não aparece em nenhum pid do Chrome; no modo pipe, os fds 3 e 4 continuam sendo pipes. |
+| R10 SIGTERM durante o stop | Corrigido | Com pipe, com porta e com EOF, o `session.json` é gravado e nenhum Chrome sobra. A espera tem teto de 120 s (`live.rs:617`), sem deadlock. |
+| R11 TOCTOU entre a verificação e o exec | Ainda reproduz (risco aceito) | Venceu 2 de 5 tentativas. Está documentado no 16b, linhas 64-70. |
+| R12 pipe e navigate | Corrigido | O navigate com o Chrome parado falha em 3,3 s (antes, 30,4 s). Uma mensagem de 140 MB bate no teto. |
+| R13 redação demais | Parcial | `pin:true`, `jwtExpiresIn` e `shotp:1` já aparecem. O objeto `ticket:{id,title}` continua todo redigido (Baixo). |
+| R14 `scrub_output` | Corrigido | `#id_token=`, `token=` sem `?` e userinfo saem mascarados. |
+
+### Achados que restam
+
+#### Médio
+
+**A3-M1. O teto de 50 consultas do `trace_value` volta a zero ao reimportar a sessão (CONFIRMADO).**
+- **Causa:** o contador vive em memória, por handle (`mcp/src/registry.rs:137`), e `import_session` (`mcp/src/tools.rs:243`) aceita reimportar `sessions_dir/<handle>` com qualquer novo `name`.
+- **Por que o mínimo de 16 caracteres não basta:** quando um segredo curto vem dentro de uma estrutura conhecida, o palpite inclui essa parte conhecida, por exemplo:
+  - `Basic base64("admin:PIN")`, que tem exatamente 16 caracteres;
+  - um id com prefixo fixo, como `acct-000000000000-NNNN`.
+- **Evidência:** 11.064 consultas e 222 reimportações em 34,8 s recuperaram `4821` do Authorization e `5531` de X-Session.
+- **Efeitos colaterais:**
+  - cada reimportação grava uma cópia completa da sessão no disco;
+  - `trace_value(cookie)` ainda expõe `valueLength` sem reveal (`tools.rs:1282/1305`).
+
+**A3-M2. Regressão do `5cdac78`: um `nome=valor` não sensível sem `%` é copiado inteiro (CONFIRMADO).**
+- **Local:** `core/src/export/sanitize.rs:952-965`. O `?token=` ou `pin=` que estiver dentro do valor nunca é examinado.
+- **Antes do `5cdac78`** (binário r26): `Refresh: 0;url=/d?pin=%5BREDACTED%5D&…&shotp=%5BREDACTED%5D`.
+- **Agora:** `Refresh: 0;url=/d?pin=1234&page=2&opinion=good&shotp=1&ticket_type=vip`.
+- **Também vazam agora:**
+  - `X-Note: redirect=https://h/cb?access_token=RAWNEST09x`;
+  - `go next=/cb?token=RAWNEST10x`;
+  - a string JSON `"note":"next=/cb?token=RAWNEST01x"`.
+- **Já vazavam antes, em `sanitize_query` (`:1024-1034`):** `?next=/cb?token=URL1x` e `Location: /cb?next=/x?access_token=RAWNEST11x`.
+- **Evidência:** `/tmp/rev27/poc-secrets/zz_sec27_r27.out` (atual) comparado com `zz_sec27_r26b.out` (antes).
+
+#### Baixo
+
+- **A3-B1. Valor com codificação dupla no primeiro nível não é redigido (CONFIRMADO).**
+  - **Local:** `sanitize.rs:896`.
+  - **Exemplos:** `c=%2Fcb%253Ftoken%253DX`, `X-Dbl: x%253D1%2526token%253DX` e `token+%3DX`.
+  - **Funciona:** `%3d` minúsculo e o aninhamento de 4 níveis.
+- **A3-B2. Uma mensagem acima de 128 MiB no pipe encerra a captura como `complete` (CONFIRMADO).**
+  - **Cenário:** `console.log("x".repeat(140e6))`. `TooLarge` é tratado como `Close` (`capture/src/transport.rs:238`), o Chrome sai com `Graceful(0)` e `mark_incomplete` retorna cedo (`lib.rs:1946`), o que dá `completeness.state="complete"` com `reasons=[]`. O único sinal é `graceful:false` no StopReport.
+  - **Contrato:** contradiz o 16b, linha 222 ("a sessão sai marcada como incompleta").
+  - **Também:** o laço de espera do navigate (`browser.rs:440-446`) não sai quando o transporte fecha; esperou 60 s e devolveu Ok com `loaded:false`.
+- **A3-B3. Um symlink plantado em `netlog.json` depois da cópia faz o `stop_capture` falhar (CONFIRMADO, mesmo usuário).**
+  - **Causa:** o core regrava o arquivo com `write_atomic` (`core/src/store.rs:197`), que recusa symlink.
+  - **Resultado:** `stop_failed … recusado` e nenhum `session.json`. O arquivo vítima fica intacto; o efeito é só negação de serviço.
+- **A3-B4. Bearer e Basic com TAB ou minúsculas em texto livre ainda passam (CONFIRMADO).**
+- **A3-B5. O objeto `ticket:{id:42,title:"Suporte"}` continua todo redigido (CONFIRMADO).**
+
+#### Informativo
+
+- **Caracteres invisíveis no `escape_display`** (`mcp/src/live.rs:666`): U+061C, U+180E, U+00AD, U+206A-206F, U+3164, U+2800, as tags U+E00xx, U+00A0/U+3000 e marcas combinantes passam.
+  - Só o `binary_path` pode trazê-los, e ele precisa ser um Chrome assinado válido.
+  - Não há injeção de linha; o risco é só de falsificação visual limitada (PLAUSÍVEL).
+- **Bidi e largura zero no caminho:** passam pelo `chrome.rs:233`, a elicitação os escapa, mas a mensagem `NotFound` (`chrome.rs:246`) não.
+- **Código de erro do navigate:** com o Chrome congelado, sai `navigate_failed`, não `navigate_timeout`.
+- **Tempo da validação:** o codesign leva 9–13 s por verificação.
+
+### Riscos aceitos: a documentação está clara
+
+O 16b descreve todos, com uma exceção:
+
+| Risco | Onde | Texto |
+|---|---|---|
+| TOCTOU | linhas 64-70 | "O `--deep` torna a janela pequena, mas não a fecha" |
+| Mesmo usuário com o perfil temporário | linhas 204-206 | "um processo do mesmo usuário que ache o perfil pelo nome ainda pode mexer nele" |
+| Fila do pipe | linha 225 | "sem limite de contagem de propósito" |
+| Janela sem CLOEXEC | linhas 86-89 | "Não medi nem reproduzi" |
+| NetLog parcial após SIGKILL | linha 207 | confirmado: os 208 KB foram apagados na partida seguinte |
+
+A exceção é a **linha 222**, que é inexata (ver A3-B2).
+
+### Verificado e limpo
+
+- **codesign:**
+  - aceita o Chrome de `/Applications` e uma cópia intacta;
+  - recusa arquivo extra (Frameworks, MacOS ou raiz), symlink novo, recurso trocado por symlink, Info.plist editado, executável trocado e framework editado;
+  - o `-R` é aplicado de fato (OU errado dá rc=3);
+  - recusa `\n`, `\r`, `\t`, NUL, ESC, DEL e C1 no caminho.
+- **CLOEXEC:** fds a partir do 5 fecham no exec.
+- **stops_in_flight:**
+  - um segundo stop dá `capture_not_found`;
+  - SIGTERM, SIGTERM e SIGINT durante o stop esperam a sessão ser gravada.
+- **Perfil:** é removido depois do stop.
+- **Desempenho:** o sanitizador fica linear com 1 MB de entrada adversarial (pior caso 715 ms).
