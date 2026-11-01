@@ -785,3 +785,104 @@ O teto anunciado de 324 ms não vale para entradas de URL com 4 MB. A causa prov
 | 258 | Falsa contra marcador forjado | Diz que "o resgate não some antes do prazo" (A6-B7). |
 | 259-260 | Incompletas | Não dizem que o fallback perde os eventos CDP (A6-B6). |
 | 174-175 e 241-256 | Corretas | — |
+
+---
+
+## Adendo 7: confirmação do adendo 6 (Rodada 11)
+
+- **HEAD revisado:** `868127b`, num clone novo em `/tmp/rev31/repo`, com as correções:
+  - core: `0b94424`, `39826a3` e `868127b`;
+  - captura: `93361b8` e `e6fc955`.
+- **Comparação:** o core `d50a19f`, compilado à parte em `/tmp/rev31/before`.
+- **Evidências:**
+  - testes de reprodução em `/tmp/rev31/poc-secrets` e `/tmp/rev31/poc-cap`;
+  - relatórios em `/tmp/rev31/{secrets,cap}.md`.
+- **Restrições:** Chrome só em loopback; `/Applications` intacto.
+
+### Veredito: APROVADO, com ressalvas baixas
+
+Não há achado alto nem médio confirmado. As decisões do líder não contam como achado:
+- `session=[REDACTED]/b`, porque `session` é nome sensível;
+- a redação de um irmão quando há 8 níveis de codificação, por falha fechada.
+
+Também não contam os riscos aceitos: a lacuna depois da reconferência final, o campo `device` e a redação a mais por falha fechada.
+
+### Itens do adendo 6
+
+| Item | Estado | Evidência |
+|---|---|---|
+| A6-M1 (`token=X` no caminho com `;`) | Corrigido | De ponta a ponta, `SEGURL3x`, `LNK6x`, `LNKA1x`, `LNKB2x` e `LNKUI3x` saem mascarados e `/next?page=2` é preservado. O `d50` vazava. |
+| A6-M2 (truncamento no caminho de texto) | Parcial | O texto não altera mais uma URL já sanitizada, e a idempotência voltou. Texto cru ainda perde `/b/c?x=1` (A7-B5). |
+| A6-B1 (8 níveis de codificação) | Corrigido | Do 8º ao 10º nível sai mascarado, com o sufixo e o `&page` externo preservados. |
+| A6-B2 (`\|`, `[`, `{` no valor) | Corrigido | `AB\|X`, `AB[X]`, `AB{X}` e `[abc]TAIL` saem mascarados. |
+| A6-B3 (memória) | Corrigido | Pico de RSS com 16 MB: 34 MB na cadeia, 34 MB na construção e 125 MB nos grupos de cerca de 1 MB. Parte dos 2,19 GB do r30 era do gerador de entrada. |
+| A6-B4 (entidades e variantes de `=`) | Parcial | 6 formas corrigidas; `&amp;#61;` e `＝` sozinho ainda vazam (A7-B1, A7-B2). |
+| A6-B5 (troca da pasta) | Corrigido | Em 32 trocas (16 debug, 16 release, de 0 a 30 ms), **nada foi escrito no alvo**. Em 31 o stop falha e o conteúdo vai para `.moved` e para o resgate. 1 passou depois da reconferência final, que é a lacuna aceita. |
+| A6-B6 (falha do resgate) | Corrigido | ENOSPC real num RAM disk de 64 MB. O plano B apaga Cookies, History, Login Data e Local State e mantém eventos, corpos, NetLog e `motivo.txt` (0700/0600) com marcador. Com 8 dias, a partida seguinte apaga a pasta. |
+| A6-B7 (marcador forjado) | Corrigido | Marcadores forjados não apagam um resgate recente. `touch -t` na pasta apaga, mas isso exige o mesmo usuário e está documentado (16b, l.269-271). |
+| Custo | OK | Crescimento linear. Pior caso: 438 ms com 4 MB (a promessa era menos de 400 ms; o `d50` dava 433 ms) e 1,7 s com 16 MB. |
+| Regressões da captura | Todas passam | R1–R4, R9, R10, R12, A3-B2, A3-B3, A4-B2 a A4-B5, A5-B2 a A5-B4 e `navigate_timeout`. |
+
+### Fuzz (release, 4 sementes)
+
+Cada semente rodou 150 mil casos estruturados e 900 mil entradas aleatórias:
+- 0 vazamentos e 0 panics;
+- 0 saídas não idempotentes nos casos estruturados;
+- cerca de 18,3 mil perdas de fidelidade por semente, todas dentro da falha fechada aceita: só o irmão interno se perde com 8 níveis (7 com contexto de redirect);
+- entre 76 e 104 saídas não idempotentes por semente nas entradas aleatórias (menos de 0,1 %).
+
+Para comparação, o `d50` teve 14.417 vazamentos na semente 1.
+
+### Cobertura do corpus
+
+- `cargo test --offline --release --test corpus --test corpus_fuzz` passa 4/4.
+- `cases.jsonl` tem 309 linhas e `benign.jsonl` tem 49; o anúncio falava em 320.
+- **Faltam cerca de 45 entradas dos PoCs:**
+  - o conjunto B4 do r30 (`token&#0061;E1x` a `E8x`, `token＝FW1x` e `Bearer ab%2B…`);
+  - `/a;v=2/session=keep/b`;
+  - `https://h/a;token=AB,CD/e`;
+  - os casos de placeholder.
+- **Limites da verificação:**
+  - em entradas com forma de URL, o `keep` só é verificado na saída de URL (`corpus.rs:97`), então o truncamento em texto não é testado;
+  - os casos de 8 níveis estão gravados já decodificados, e só o fuzz os exercita.
+
+### Achados que restam (todos baixos)
+
+- **A7-B1. `token＝X` vaza (CONFIRMADO de ponta a ponta; já existia).** Local: `scrub.rs:104`. O retorno antecipado só olha `= % @ &`. Vaza no header `X-FW` e no `search_bodies`.
+- **A7-B2. Entidade HTML de `=` com `&amp;` vaza (CONFIRMADO de ponta a ponta).** Local: `scrub.rs:827-835`. Só `&amp;&#61;` é tratado; `&amp;#61;`, `&amp;#x3D;` e `&amp;equals;` vazam.
+- **A7-B3. Valor que começa com um delimitador forte não é redigido (CONFIRMADO; já existia).** Local: `scrub.rs:449-450`. Exemplos: `token=\X`, `token="X` e `token=&#61;X`.
+- **A7-B4. Texto colado depois de fechar aspas ou colchetes vaza, se começa com outra abertura (CONFIRMADO; já existia).** Local: `scrub.rs:347`. Exemplos: `token='a'"X`, `"a"(X)`, `[a][X]` e `(token=AB(c)X)`.
+- **A7-B5. Fidelidade: texto cru ainda perde segmentos (CONFIRMADO; igual ao `d50`).**
+  - **Local:** `scrub.rs:479-515` e `sanitize.rs:362/381/688`.
+  - **Exemplos:** perde `/b/c?x=1` na linha de requisição, em headers que não são URL e em caminhos relativos dentro de JSON. Também `/a;v=2/session=keep/b` perde o `/b`, ao contrário da decisão do líder, que previa `session=[REDACTED]/b`.
+- **A7-B6. Fidelidade: um grupo acima de 1 MiB com `%XX` é apagado por inteiro, inclusive o nome do parâmetro (CONFIRMADO; novo).**
+  - **Local:** `scrub.rs:527-531`.
+  - **Exemplo:** um `a=%3Fb%3D…` de 4 MB vira 14 B, sem nada sensível nele; o `d50` mantinha o conteúdo.
+  - **Sugestão:** aplicar isso só quando houver um nome sensível.
+- **A7-B7. O `cdp-bodies.jsonl` ainda é aberto pelo caminho (PLAUSÍVEL; 0 em 6 tentativas).**
+  - **Local:** `capture/src/lib.rs:166`, seguido de `177-179`, logo depois da verificação do descritor.
+  - **Cenário:** uma troca nessa janela de microssegundos mandaria os corpos para a pasta do atacante.
+  - **Sugestão:** usar `fdio::create_new_at`.
+- **Informativo:**
+  - **Plano B:** um marcador de órfão remanescente pode apagar o perfil mantido, que é a única cópia dos eventos (`lib.rs:939-977`). A montagem é artificial.
+  - **Pastas de resgate nunca limpas:** uma com mtime no futuro (`lib.rs:1017-1023`) e outra sem marcador depois de um SIGKILL.
+  - **Lockfile:** o `868127b` não atualizou o `capture/Cargo.lock` para o rustix, e o build offline reescreve o arquivo.
+  - **JSON com `\ud800`:** o corpo é omitido por inteiro, como no `d50`.
+
+### `fdio.rs`
+
+Está limpo:
+- cada chamada usa um único nome, com O_NOFOLLOW, O_DIRECTORY e O_CLOEXEC;
+- as permissões são definidas na criação (0600/0700);
+- o `unlinkat` não segue links;
+- o temporário é removido nos erros;
+- depois de 20 capturas, 5 delas com falha forçada, a contagem de fds continua em 12 e não sobra `.tmp-*`.
+
+### Documentação do 16b §2.4
+
+| Linhas | Situação |
+|---|---|
+| 224-225 | Desatualizadas. O core já expõe `write_session_dir_at`, mas a captura não o usa (`lib.rs:2151`). |
+| 213-218 | Omitem que o arquivo de corpos é criado pelo caminho (A7-B7). |
+| 244-247 | A mensagem de erro se contradiz ("nada foi gravado nela" e "a sessão foi gravada na pasta original") e não dá o caminho `.moved`. |
+| 269-271, 278-281, 293-301, 303-307 | Corretas. |
