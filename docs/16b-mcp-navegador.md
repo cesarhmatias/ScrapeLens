@@ -241,6 +241,14 @@ cdp_transport_closed: frame_too_large: …` em `completeness.reasons`, e
 `completeness.state` deixa de ser `complete`. O `navigate` em espera de carga
 percebe o canal fechado e volta na hora com `navigate_failed` ("o CDP fechou
 durante o navigate (frame_too_large)"), em vez de girar até o prazo (eram 60 s).
+**Modo porta (A4-B2).** O WebSocket tem o mesmo teto (`max_message_size` e
+`max_frame_size` = 128 MiB; o padrão da biblioteca era 64/16 MiB). O erro de
+capacidade vira o mesmo `frame_too_large` e a mesma captura incompleta; depois de
+qualquer erro de leitura o socket **nunca mais é lido** (o tungstenite deixa o
+buffer de entrada cheio e uma nova leitura derrubava a thread em builds de
+debug, com `stop_failed` e `recording:true`). Testes
+`a4_b2_websocket_message_cap_closes_with_a_reason_and_never_panics` e o vivo
+`live_oversized_websocket_message_marks_the_capture_incomplete`.
 Testes `r12_read_frame_enforces_the_message_cap_without_buffering_past_it`,
 `r12_oversized_pipe_message_closes_the_transport_and_smaller_ones_still_pass`,
 `a3_b2_closed_transport_marks_the_session_incomplete_with_an_explicit_reason` e o
@@ -717,7 +725,7 @@ revisão de segurança (M2, M3, R1 a R4):
 | Suíte | Resultado |
 |---|---|
 | `capture/` `cargo test` | 53 passed, 8 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: só `scrapelens-core`, `serde`, `serde_json`, `tungstenite` e `libc` (0 `tauri`) |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` (A3-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` e `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
 | `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
 | `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |

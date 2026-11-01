@@ -1475,6 +1475,19 @@ mod tests {
     #[test]
     #[ignore]
     fn live_oversized_pipe_message_marks_the_capture_incomplete() {
+        oversized_message_marks_the_capture_incomplete(false, "oversize");
+    }
+
+    /// A4-B2: o mesmo no modo porta (`expose_cdp`, WebSocket).
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_oversized_websocket_message_marks_the_capture_incomplete() {
+        oversized_message_marks_the_capture_incomplete(true, "oversize-ws");
+    }
+
+    #[cfg(unix)]
+    fn oversized_message_marks_the_capture_incomplete(expose: bool, tag: &str) {
         let site = TestSite::start(|_m, path| {
             if path == "/favicon.ico" {
                 return Reply::html("").status(404);
@@ -1483,7 +1496,7 @@ mod tests {
         });
         let port = site.port;
         let (capture, _info) =
-            BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "oversize", false)).expect("start");
+            BrowserCapture::start(live_config(vec![format!("localhost:{port}")], tag, expose)).expect("start");
         let started = Instant::now();
         let nav = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(45));
         let elapsed = started.elapsed();

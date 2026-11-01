@@ -18,7 +18,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use tungstenite::stream::MaybeTlsStream;
-use tungstenite::{connect, Message, WebSocket};
+use tungstenite::protocol::WebSocketConfig;
+use tungstenite::client::connect_with_config;
+use tungstenite::{Message, WebSocket};
 
 /// Como o nosso cliente fala com o Chrome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -61,22 +63,45 @@ pub(crate) enum ReadError {
 }
 
 pub(crate) enum Transport {
-    Ws(Box<WebSocket<MaybeTlsStream<TcpStream>>>),
+    Ws(WsTransport),
     Pipe(PipeTransport),
+}
+
+/// WebSocket do modo porta. Depois de qualquer erro de leitura o socket NUNCA
+/// mais é tocado: o tungstenite deixa o buffer de entrada cheio depois de
+/// estourar o limite e uma nova leitura derruba a thread com um `debug_assert`
+/// (A4-B2). O motivo anormal (`frame_too_large`) fica guardado.
+pub(crate) struct WsTransport {
+    socket: Box<WebSocket<MaybeTlsStream<TcpStream>>>,
+    dead: bool,
+    abnormal: Option<&'static str>,
 }
 
 impl Transport {
     /// Conecta ao WebSocket do navegador, com tentativas por até 10 s.
     pub(crate) fn connect_ws(url: &str) -> Result<Transport, String> {
+        Self::connect_ws_with_limit(url, MAX_PIPE_MESSAGE_BYTES)
+    }
+
+    fn connect_ws_with_limit(url: &str, limit: usize) -> Result<Transport, String> {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut last_error = String::new();
         while Instant::now() < deadline {
-            match connect(url) {
+            // Mesmo teto do pipe, na mensagem e no quadro (o padrão da biblioteca
+            // é 64 MiB/16 MiB): a porta e o pipe se comportam igual.
+            let config = WebSocketConfig::default()
+                .max_message_size(Some(limit))
+                .max_frame_size(Some(limit));
+            match connect_with_config(url, Some(config), 3) {
                 Ok((socket, _response)) => {
                     if let MaybeTlsStream::Plain(stream) = socket.get_ref() {
                         let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
                     }
-                    return Ok(Transport::Ws(Box::new(socket)));
+                    return Ok(Transport::Ws(WsTransport {
+                        socket: Box::new(socket),
+                        dead: false,
+                        abnormal: None,
+                    }));
                 }
                 Err(error) => {
                     last_error = error.to_string();
@@ -93,25 +118,39 @@ impl Transport {
 
     pub(crate) fn read(&mut self) -> Result<Incoming, ReadError> {
         match self {
-            Transport::Ws(socket) => match socket.read() {
-                Ok(Message::Text(text)) => Ok(Incoming::Text(text.to_string())),
-                Ok(Message::Ping(payload)) => Ok(Incoming::Ping(payload.to_vec())),
-                Ok(Message::Close(_)) => Ok(Incoming::Close),
-                Ok(_) => Ok(Incoming::Other),
-                Err(tungstenite::Error::Io(error))
-                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
-                {
-                    Err(ReadError::WouldBlock)
+            Transport::Ws(ws) => {
+                if ws.dead {
+                    return Ok(Incoming::Close);
                 }
-                Err(error) => Err(ReadError::Fatal(error.to_string())),
-            },
+                match ws.socket.read() {
+                    Ok(Message::Text(text)) => Ok(Incoming::Text(text.to_string())),
+                    Ok(Message::Ping(payload)) => Ok(Incoming::Ping(payload.to_vec())),
+                    Ok(Message::Close(_)) => Ok(Incoming::Close),
+                    Ok(_) => Ok(Incoming::Other),
+                    Err(tungstenite::Error::Io(error))
+                        if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
+                    {
+                        Err(ReadError::WouldBlock)
+                    }
+                    Err(error) => {
+                        ws.dead = true;
+                        if matches!(error, tungstenite::Error::Capacity(_)) {
+                            eprintln!("CDP: mensagem do WebSocket acima do teto: {error}; transporte encerrado");
+                            ws.abnormal = Some("frame_too_large");
+                        }
+                        Err(ReadError::Fatal(error.to_string()))
+                    }
+                }
+            }
             Transport::Pipe(pipe) => pipe.read(),
         }
     }
 
     pub(crate) fn send_text(&mut self, text: String) -> Result<(), String> {
         match self {
-            Transport::Ws(socket) => socket
+            Transport::Ws(ws) if ws.dead => Err("WebSocket do CDP fechado".to_string()),
+            Transport::Ws(ws) => ws
+                .socket
                 .send(Message::Text(text.into()))
                 .map_err(|error| error.to_string()),
             Transport::Pipe(pipe) => pipe.send(&text),
@@ -122,7 +161,7 @@ impl Transport {
     /// Quem espera por eventos usa isto para não girar até o prazo.
     pub(crate) fn is_closed(&self) -> bool {
         match self {
-            Transport::Ws(socket) => !socket.can_read(),
+            Transport::Ws(ws) => ws.dead || !ws.socket.can_read(),
             Transport::Pipe(pipe) => pipe.eof || pipe.too_large.load(Ordering::SeqCst),
         }
     }
@@ -132,20 +171,25 @@ impl Transport {
     pub(crate) fn abnormal_close_reason(&self) -> Option<&'static str> {
         match self {
             Transport::Pipe(pipe) if pipe.too_large.load(Ordering::SeqCst) => Some("frame_too_large"),
+            Transport::Ws(ws) => ws.abnormal,
             _ => None,
         }
     }
 
     pub(crate) fn pong(&mut self, payload: Vec<u8>) {
-        if let Transport::Ws(socket) = self {
-            let _ = socket.send(Message::Pong(payload.into()));
+        if let Transport::Ws(ws) = self {
+            if !ws.dead {
+                let _ = ws.socket.send(Message::Pong(payload.into()));
+            }
         }
     }
 
     pub(crate) fn close(&mut self) {
         match self {
-            Transport::Ws(socket) => {
-                let _ = socket.close(None);
+            Transport::Ws(ws) => {
+                if !ws.dead {
+                    let _ = ws.socket.close(None);
+                }
             }
             Transport::Pipe(pipe) => pipe.close(),
         }
@@ -391,6 +435,46 @@ mod tests {
             }
         }
         panic!("sem mensagem");
+    }
+
+    /// A4-B2: no modo porta uma mensagem acima do teto fecha o transporte com
+    /// motivo explícito e NUNCA mais toca o socket (o tungstenite derruba a thread
+    /// com um `debug_assert` se for lido de novo depois do estouro).
+    #[test]
+    fn a4_b2_websocket_message_cap_closes_with_a_reason_and_never_panics() {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut ws = tungstenite::accept(stream).unwrap();
+            ws.send(Message::Text("{\"ok\":1}".into())).unwrap();
+            let _ = ws.send(Message::Text("y".repeat(64 * 1024).into()));
+            thread::sleep(Duration::from_millis(400));
+        });
+        let mut t = Transport::connect_ws_with_limit(&format!("ws://127.0.0.1:{port}/"), 4096).unwrap();
+        assert_eq!(next_text(&mut t), "{\"ok\":1}");
+        let mut fatal = false;
+        for _ in 0..40 {
+            match t.read() {
+                Err(ReadError::Fatal(_)) => {
+                    fatal = true;
+                    break;
+                }
+                Ok(Incoming::Text(text)) => panic!("mensagem acima do teto entregue: {} bytes", text.len()),
+                _ => {}
+            }
+        }
+        assert!(fatal, "esperava erro de capacidade");
+        assert_eq!(t.abnormal_close_reason(), Some("frame_too_large"));
+        assert!(t.is_closed());
+        // Leituras, envios e fechamento depois do estouro não tocam o socket.
+        for _ in 0..3 {
+            assert!(matches!(t.read(), Ok(Incoming::Close)));
+        }
+        assert!(t.send_text("{}".to_string()).is_err());
+        t.close();
+        server.join().unwrap();
     }
 
     #[test]
