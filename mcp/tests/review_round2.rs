@@ -174,6 +174,9 @@ fn error_messages_escape_bidi_and_invisible_characters() {
     }
     assert!(!shown.contains("\\n\\u200b"), "{shown}");
     assert_eq!(escape_display("A\u{0301}"), "A\\u{0301}");
+    for ch in ['\u{FE0F}', '\u{FFF9}', '\u{FFFC}', '\u{206F}', '\u{3164}'] {
+        assert!(!escape_display(&format!("a{ch}b")).contains(ch), "{ch:?}");
+    }
 }
 
 fn open_failure(env: &Env, handle: &str) -> scrapelens_mcp::error::ToolError {
