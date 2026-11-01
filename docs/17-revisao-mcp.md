@@ -668,3 +668,120 @@ Gravidade: Baixo.
 | TOCTOU entre a reconferência e o rename | Inexato. As linhas 245-248 falam em "janela de microssegundos", o que vale para a escrita no alvo da troca, mas a janela de perda do resgate tem cerca de 15 ms (A5-B2). A afirmação de que o `canonicalize` reduz a janela também não procede: ele resolve uma string, e as escritas seguintes resolvem o caminho de novo. |
 | Perfil | Contraditório. A linha 174 diz "perfil temporário descartado ao fim", e a linha 237 diz "perfil 0700, que não é apagado". Nenhuma das duas diz que os cookies ficam guardados, que nenhuma limpeza o remove ou que os corpos não são resgatados. |
 | Campo `device` | Aceito, como pedido. É o valor `"device":"dev-…-7319"` que fica visível no corpo JSON. |
+
+---
+
+## Adendo 6: confirmação do adendo 5 (Rodada 11)
+
+- **HEAD revisado:** `d50a19f`, num clone novo em `/tmp/rev30/repo`.
+- **Correções conferidas:**
+  - core: `e6a9edd`, `952921a`, `d50a19f`;
+  - captura: `daa3414`.
+- **Base de comparação:** o core `49f79ef`, compilado à parte. O `fake_server` foi recompilado.
+- **Evidências:**
+  - testes de reprodução e saídas em `/tmp/rev30/poc-secrets` (pares `*_head.out` / `*_49f.out`, `confirm_*.out`, `zz_sec30_*`) e `/tmp/rev30/poc-cap`;
+  - relatórios parciais em `/tmp/rev30/{secrets,cap}.md`.
+
+### Veredito: REPROVADO
+
+Há uma **regressão média confirmada** (A6-M1) e uma **perda de fidelidade média confirmada** (A6-M2). A6-M2 é o resto do A5-M1 no caminho de texto. Todos os itens do adendo 5 estão corrigidos nas URLs.
+
+### Itens do adendo 5
+
+| Item | Estado | Evidência |
+|---|---|---|
+| A5-M1 (caminho truncado após matriz) | Corrigido nas URLs | `/b/c?x=1`, `/profile/123` e `session=keep/b` são preservados. O caminho de texto ainda trunca (A6-M2). |
+| A5-M2 (`%2B`, `%2520`, `%2526`, `%2523`) | Corrigido | Mascarado por inteiro; `HDRPLUS6x` e `BODYPLUS9x` também, de ponta a ponta. |
+| A5-B1 (aspas, parênteses, `= X`) | Corrigido | O valor é mascarado e os delimitadores ficam. |
+| A5-B5 (excesso de redação) | Corrigido | `key=` e `{token=X}` são preservados. |
+| Informativos anteriores | Corrigidos | 9 ou mais níveis, `;token%3DX`, `&token%3DX`, `token\t=`, `token:=`, `&#61;`, CSRF em `X-Form`, `nonce`, `sessionKey`. |
+| A5-B2 (troca da pasta na escrita final) | Parcial | Em 20 tentativas, 16 foram resgatadas sem sobrar `.tmp-*`. Nas outras 3, os dados foram escritos no alvo da troca (A6-B5). |
+| A5-B3 (o que o resgate guarda) | Corrigido | O resgate guarda só `cdp-bodies`, `cdp-events`, `netlog` e `motivo.txt`, com 0700/0600 e marcador. O prazo de 7 dias usa `createdMs`: com 6 dias fica, com 7 dias e 1 s sai. A limpeza roda na partida do MCP (`live.rs:82`) e do App. |
+| A5-B4 (`cdp-events` vazio) | Corrigido | Conferido no código e no teste unitário; o caminho com 0 eventos não foi alcançado ao vivo. |
+| A4-B4 (link replantado) | Aceito | Agora vai para o resgate, e a vítima fica intacta. |
+| R1–R4, R9, R10, R12, A3-B2, A3-B3, A4-B2 (debug e release), A4-B3, A4-B5, `navigate_timeout` | Passam | — |
+
+### Tokenizador novo (`core/src/export/scrub.rs`)
+
+**Fuzz, em release:**
+- **150 mil casos estruturados:** 0 panics, 0 perdas de fidelidade, 0 saídas não idempotentes. Houve 14.417 vazamentos, todos com exatamente 8 níveis de codificação (A6-B1). O `49f` tinha 89.757 vazamentos em todas as profundidades.
+- **300 mil entradas aleatórias:** 0 panics, 0 vazamentos e 5 saídas não idempotentes (Info: dois placeholders adjacentes).
+
+**Fronteiras:** limpas para UTF-8 dividido, `%FF`, codificações overlong, escapes que formam escapes novos, escapes truncados, fim de string, espaços Unicode e formas de placeholder.
+
+**Custo, em release:**
+
+| Entrada | HEAD | 49f |
+|---|---|---|
+| matriz `;a=%3Fb%3D`, 4 MB | 0,32 s | 3,0 s |
+| `a=` repetido, 4 MB | 0,04 s | 1,0 s |
+| `%25` aninhado, 16 MB | 1,2 s | 5,7 s |
+| `%25`×8 com `3D`, `=` e `&` em URL, 4 MB | **0,95 s** | 0,30 s |
+| cadeia `%`+`25`×n, 16 MB | **1,4 s** | 0,44 s |
+
+O teto anunciado de 324 ms não vale para entradas de URL com 4 MB. A causa provável, não verificada, é o `sanitize_query` (`sanitize.rs:903`) chamar `scrub()` uma vez por par `&`.
+
+### Achados que restam
+
+#### Médio
+
+**A6-M1. Regressão do `e6a9edd`: um segmento `token=X` no caminho vaza quando o caminho tem `;` (CONFIRMADO).**
+- **Local:** `core/src/export/sanitize.rs:852-856`. O `sanitize_matrix` só examina segmentos que contêm `%`.
+- **Cenário de ponta a ponta:**
+  - a URL da requisição `https://h.invalid/x;v=1/token=SEGURL3x/next?page=2` sai em claro em `list_requests` e `get_request`;
+  - o header Link `</p;a=1/token=LNK6x>` também sai em claro.
+- **Antes:** o `49f` mascarava os dois (`confirm_49f.out`: "MARK SEGURL3x: mascarado"; `confirm_head.out`: "VAZA").
+- **Observação:** caminhos sem `;`, como `/x/token=X`, já vazavam no `49f`.
+
+**A6-M2. O caminho de texto trunca URLs (CONFIRMADO; resto do A5-M1).**
+- **O que acontece:**
+  1. o passo de URL acerta e produz `…jsessionid=%5BREDACTED%5D/b/c?x=1`;
+  2. em seguida, o `sanitize_text` (`sanitize.rs:688`) consome `/b/c?x=1`.
+- **Causa:** o valor vai até o fim do grupo (`scrub.rs:439`), e o `is_placeholder` (`scrub.rs:190`) só reconhece o placeholder exato.
+- **Onde aparece:** corpos JSON, a linha de requisição (`:381`) e headers que não são URL (`:362`).
+- **Efeito:** a URL exibida perde segmentos sem aviso, e a idempotência anunciada no `952921a` deixa de valer.
+
+#### Baixo
+
+- **A6-B1. Regressão de baixa probabilidade (CONFIRMADO).** Com exatamente 8 níveis de codificação, a cauda depois de um separador codificado vaza (`…%20CDLEAK8x`); o `49f` a mascarava. Local: `scrub.rs:290-300`.
+- **A6-B2. Regressão de baixa probabilidade (CONFIRMADO).** `|`, `[` ou `{` crus dentro do valor deixam a cauda vazar: `token=AB|X`, `AB[X]`, `AB{X}` e `token=[abc]TAIL`. Local: `scrub.rs:113-133`. O `49f` mascarava; tokens base64 e JWT não usam esses caracteres.
+- **A6-B3. Memória com codificação profunda (CONFIRMADO).** Locais: `scrub.rs:140-165` e `281-304`.
+
+  | Entrada de 16 MB | HEAD | 49f |
+  |---|---|---|
+  | `%2525…` | 1,31 GB | 197 MB |
+  | construção aninhada | 2,19 GB | 1,05 GB |
+
+  Os corpos têm teto de 8 MB (cerca de 0,65 GB); headers e URLs só são limitados pelo tamanho do HAR.
+- **A6-B4. Formas que já vazavam antes:**
+  - entidades HTML de `=`: `&#0061;`, `&#x003D;`, `&#61` sem `;`, `&amp;#61;` e `token &#61; X` (`scrub.rs:542`);
+  - o `＝` de largura total;
+  - `Bearer ab%2B…`;
+  - `//user:pass@host`.
+- **A6-B5. A troca da pasta entre gravações escreve no alvo, e o stop diz OK (CONFIRMADO, 3 de 20, só mesmo usuário).**
+  - **Local:** cada `write_atomic` resolve o caminho de novo (`core/src/store.rs:194-213`), e nada reconfere a identidade depois de `write_session_resilient` (`capture/src/lib.rs:476`).
+  - **Cenário:** com a troca aos 8, 12 e 15 ms, o `session.json` ou os corpos foram gravados no diretório do atacante. Isso substitui um arquivo regular de mesmo nome lá, e a sessão dividida é reportada como OK.
+  - **Sugestão:** reconferir a identidade depois da escrita, ou escrever relativo a um descritor de diretório.
+- **A6-B6. Quando o próprio resgate falha, os eventos CDP se perdem (CONFIRMADO).**
+  - **Local:** o fallback (`capture/src/lib.rs:536-544`) só chama `keep()` sobre o perfil, que tem Cookies, History e Login Data e não expira.
+  - **Mensagem:** "os dados ficaram no perfil temporário", sem avisar que os eventos CDP faltam.
+  - **Gatilho realista:** disco cheio. O teste usou a raiz de estado trocada por um arquivo.
+- **A6-B7. O nome do arquivo do marcador não é amarrado ao `dir` (CONFIRMADO, só mesmo usuário).**
+  - **Local:** `capture/src/lib.rs:986-1018`.
+  - **Cenário:** um `rescue-evil.json` forjado com `dir:"rescue-111-222"` e `createdMs:0` apaga um resgate recente.
+  - **Limite:** nada fora da raiz de estado foi apagado. Foram testados symlinks, `..`, `/` e nomes sem o prefixo.
+- **Info:**
+  - cada falha guarda mais uma cópia, sem teto total;
+  - a partida do MCP não registra `rescues_removed`;
+  - 5 saídas não idempotentes com dois placeholders adjacentes.
+
+### Documentação do 16b §2.4
+
+| Linhas | Situação | O que diz e por quê |
+|---|---|---|
+| 224-227 | Desatualizadas | Falam de "link simbólico replantado repetidamente". A mensagem real é outra, e os dados agora vão para o resgate. |
+| 274-275 | Erradas | Dizem que, "com 12 ms o `rename` já passou". Aos 12 ms, o `session.json` foi gravado no alvo da troca. |
+| 280-282 | Falsas | Dizem "0/13 do Revisor" e "microssegundos". Houve 3 de 20 com escrita no alvo (A6-B5). |
+| 258 | Falsa contra marcador forjado | Diz que "o resgate não some antes do prazo" (A6-B7). |
+| 259-260 | Incompletas | Não dizem que o fallback perde os eventos CDP (A6-B6). |
+| 174-175 e 241-256 | Corretas | — |
