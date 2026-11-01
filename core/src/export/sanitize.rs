@@ -997,7 +997,7 @@ fn sanitize_nested_value(value: &str, options: &SanitizeOptions, depth: usize) -
 }
 
 /// Rodadas máximas de decodificação ao procurar segredo em valor aninhado.
-const MAX_DECODE_ROUNDS: usize = 4;
+const MAX_DECODE_ROUNDS: usize = 8;
 
 /// Nome efetivo de um candidato `nome=`: decodifica até estabilizar e fica com o
 /// último segmento depois de um separador (`next%3Ftoken` → `token`), para que
