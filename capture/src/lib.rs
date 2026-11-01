@@ -30,6 +30,7 @@ use scrapelens_core::{correlate::CorrelationOptions, import_capture_labeled, sto
 pub mod allowlist;
 pub mod browser;
 pub mod chrome;
+mod fdio;
 pub mod transport;
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -173,8 +174,6 @@ fn run_inner(
     // fresco). Só depois do encerramento ele é lido sem seguir link e copiado
     // para a pasta da sessão por `write_private` (rename atômico).
     let netlog_path = profile.join("netlog.json");
-    let netlog_final = config.session_dir.join("netlog.json");
-    let cdp_path = config.session_dir.join("cdp-events.jsonl");
     let bodies_path = config.session_dir.join("cdp-bodies.jsonl");
     let bodies_file =
         open_private(&bodies_path).map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
@@ -377,7 +376,7 @@ fn run_inner(
     let cdp_bytes = cdp.events_text().into_bytes();
     if cdp_bytes.is_empty() {
         if recheck_session_dir(&config.session_dir, session_identity).is_ok() {
-            let _ = write_private(&cdp_path, &cdp_bytes);
+            let _ = fdio::write_private_at(&session_handle, "cdp-events.jsonl", &cdp_bytes);
         }
         let error = "Nenhum evento CDP foi gravado. A sessão não foi criada; verifique se o Chrome permaneceu aberto durante a captura.".to_string();
         let _ = ready.send(Err(error.clone()));
@@ -390,11 +389,14 @@ fn run_inner(
     recheck_session_dir(&config.session_dir, session_identity).map_err(session_dir_changed)?;
     // O CDP e os corpos já são evidência: ficam em disco antes de qualquer
     // passo que possa falhar (um NetLog ruim nunca descarta a captura).
-    write_private(&cdp_path, &cdp_bytes).map_err(|error| format!("cdp-events.jsonl: {error}"))?;
+    // Tudo relativo ao descritor da pasta aberto no início (A6-B5): se o nome
+    // for trocado, nada cai na pasta do atacante.
+    fdio::write_private_at(&session_handle, "cdp-events.jsonl", &cdp_bytes)
+        .map_err(|error| format!("cdp-events.jsonl: {error}"))?;
 
     if let Some(raw) = &netlog_raw {
         // Cópia fiel do que o Chrome gravou (o parseado/reparado vem depois).
-        if let Err(error) = write_private(&netlog_final, raw) {
+        if let Err(error) = fdio::write_private_at(&session_handle, "netlog.json", raw) {
             eprintln!("netlog.json: {error}");
         }
     }
@@ -402,12 +404,13 @@ fn run_inner(
     if let NetlogStatus::Repaired { .. } | NetlogStatus::Unusable { .. } = &netlog_status {
         // Preserva o arquivo original do Chrome ao lado da sessão.
         if let Some(raw) = &netlog_raw {
-            let _ = write_private(&config.session_dir.join("netlog.original.json"), raw);
+            let _ = fdio::write_private_at(&session_handle, "netlog.original.json", raw);
         }
     }
 
     // Sem o arquivo de corpos (falha de gravação), o core avisa uma vez por sessão.
-    let bodies_bytes = read_private_regular(&bodies_path);
+    // Relido pelo descritor (não pelo caminho): vale mesmo se a pasta foi trocada.
+    let bodies_bytes = read_all_from(&mut bodies_reader);
     let mut imported = import_capture_labeled(
         &cdp_bytes,
         &netlog,
@@ -471,19 +474,28 @@ fn run_inner(
             report_warnings.push(message);
         }
     }
-    // A3-B3: um symlink plantado no nome de um arquivo da sessão depois da nossa
-    // cópia faz o `write_atomic` do core recusar e derrubaria o stop. O nome do
-    // link é removido (nunca o alvo), vira aviso, e a gravação segue.
-    match write_session_resilient(&mut imported.bundle, &config.session_dir, session_identity) {
-        Ok(removed) => {
-            for name in removed {
+    // A3-B3/A6-B5: a sessão é gravada num diretório de preparo NOSSO (dentro do
+    // perfil 0700) e movida para a pasta da sessão com `renameat` relativo ao
+    // descritor aberto no início: um symlink plantado no nome é substituído sem
+    // escrever no alvo, e a troca do nome da pasta não manda nada para fora.
+    match write_session_fd(&mut imported.bundle, &session_handle, &profile) {
+        Ok(replaced) => {
+            for name in replaced {
                 report_warnings.push(format!(
-                    "{name}: havia um link simbólico no lugar do arquivo da sessão; o link foi removido (o alvo não foi tocado) e o arquivo foi gravado normalmente."
+                    "{name}: havia um link simbólico no lugar do arquivo da sessão; o link foi substituído (o alvo não foi tocado) e o arquivo foi gravado normalmente."
                 ));
             }
         }
-        Err(SessionWriteError::DirChanged(why)) => return Err(session_dir_changed(why)),
-        Err(SessionWriteError::Other(message)) => return Err(message),
+        Err(message) => return Err(message),
+    }
+    // Depois de gravar, a pasta precisa continuar sendo a do início: se o nome
+    // foi trocado durante a gravação, a sessão ficou na pasta ORIGINAL (movida),
+    // não onde o chamador vai procurar. Não diga OK (A6-B5).
+    if let Err(why) = recheck_session_dir(&config.session_dir, session_identity) {
+        return Err(format!(
+            "{} A sessão foi gravada na pasta original, que já não está nesse caminho.",
+            session_dir_changed(why)
+        ));
     }
 
     let session_value = serde_json::to_value(&imported.bundle.session)
@@ -2102,70 +2114,72 @@ fn mark_incomplete(
     }
 }
 
-/// Nomes que `store::write_session_dir` grava (arquivos) ou cria (`attachments`)
-/// no diretório da sessão e que o core recusa se forem symlink.
-#[cfg(test)]
-const SESSION_DIR_FILES: [&str; 3] = ["cdp-events.jsonl", "netlog.json", "session.json"];
+/// Nomes que a sessão grava (arquivos) ou cria (`attachments`) na pasta da
+/// sessão e que um symlink plantado poderia ocupar.
 const SESSION_DIR_LINK_NAMES: [&str; 4] =
     ["cdp-events.jsonl", "netlog.json", "session.json", "attachments"];
 
-/// Remove, do diretório da sessão, os symlinks que ocupam um desses nomes.
-/// Remove só o NOME do link (`remove_file` não segue). Devolve os nomes removidos.
-fn remove_planted_links(dir: &Path) -> Vec<String> {
-    let mut removed = Vec::new();
-    for name in SESSION_DIR_LINK_NAMES {
-        let path = dir.join(name);
-        let is_link = std::fs::symlink_metadata(&path)
-            .map(|m| m.file_type().is_symlink())
-            .unwrap_or(false);
-        if is_link && std::fs::remove_file(&path).is_ok() {
-            removed.push(name.to_string());
-        }
-    }
-    removed
-}
-
-enum SessionWriteError {
-    /// A pasta da sessão não é mais a do início (trocada, link, outro dono/modo).
-    DirChanged(String),
-    Other(String),
-}
-
-/// `store::write_session_dir` que não falha por symlink plantado depois da nossa
-/// cópia (A3-B3, A4-B3 para `attachments`): limpa os links, grava e, se o core
-/// ainda recusar por um link replantado na corrida, limpa e tenta de novo (até 3
-/// vezes). Cada remoção vira um aviso no documento. Antes de CADA tentativa a
-/// pasta é reconferida (A4-B5): trocada, nada é gravado nem removido nela. Outros
-/// erros continuam sendo erro. Replantar o link em laço vence as 3 tentativas:
-/// negação de serviço do mesmo usuário, aceita e documentada (16b §2.4).
-fn write_session_resilient(
+/// Grava a sessão (A3-B3, A4-B3, A6-B5) SEM resolver o caminho da pasta da sessão
+/// em nenhum momento:
+/// 1. avisa (no documento) quais nomes eram symlink, pelo descritor;
+/// 2. o core grava o bundle num diretório de preparo novo e 0700 dentro de
+///    `stage_parent` (o perfil temporário, nosso e fora do alcance do ataque);
+/// 3. cada item é movido para a pasta da sessão com `renameat` relativo ao
+///    descritor (`session.json` por último), substituindo o nome, inclusive um
+///    symlink, sem escrever no alvo dele. Entre filesystems diferentes, copia.
+/// O replantio de links em laço (A4-B4) deixa de importar: o `renameat` é atômico.
+/// Devolve os nomes que eram symlink e foram substituídos.
+fn write_session_fd(
     bundle: &mut scrapelens_core::SessionBundle,
-    dir: &Path,
-    identity: DirIdentity,
-) -> Result<Vec<String>, SessionWriteError> {
-    let mut all_removed: Vec<String> = Vec::new();
-    for attempt in 0..3 {
-        recheck_session_dir(dir, identity).map_err(SessionWriteError::DirChanged)?;
-        for name in remove_planted_links(dir) {
+    session: &std::fs::File,
+    stage_parent: &Path,
+) -> Result<Vec<String>, String> {
+    let fail = |what: &str, error: &dyn std::fmt::Display| {
+        format!("Não foi possível gravar a sessão: {what}: {error}")
+    };
+    for name in SESSION_DIR_LINK_NAMES {
+        if fdio::kind_of(session, name).ok().flatten() == Some(fdio::EntryKind::Symlink) {
             bundle.session.add_warning(scrapelens_core::model::Warning::new(
                 "capture.planted_symlink_removed",
-                format!("{name} era um link simbólico no diretório da sessão; o link foi removido e o alvo não foi tocado."),
+                format!("{name} era um link simbólico no diretório da sessão; o link foi substituído e o alvo não foi tocado."),
             ));
-            all_removed.push(name);
-        }
-        match store::write_session_dir(bundle, dir) {
-            Ok(()) => return Ok(all_removed),
-            Err(error) if attempt < 2 && error.to_string().contains("link simbólico") => {}
-            Err(error) => {
-                return Err(SessionWriteError::Other(format!(
-                    "Não foi possível gravar a sessão: {error}"
-                )))
-            }
         }
     }
-    Err(SessionWriteError::Other(
-        "Não foi possível gravar a sessão: link simbólico replantado repetidamente".to_string(),
-    ))
+    let stage = stage_parent.join(format!("stage-{}", unix_nanos()));
+    create_private_dir_new(&stage).map_err(|e| fail("diretório de preparo", &e))?;
+    let result = (|| -> Result<Vec<String>, String> {
+        store::write_session_dir(bundle, &stage).map_err(|e| fail("preparo", &e))?;
+        let (stage_handle, _) =
+            verify_private_dir_handle(&stage).map_err(|e| fail("diretório de preparo", &e))?;
+        let mut replaced: Vec<String> = Vec::new();
+        // `session.json` por último: nunca aponta para arquivos que ainda não existem.
+        let mut order: Vec<String> = fdio::list(&stage_handle)
+            .map_err(|e| fail("preparo", &e))?
+            .into_iter()
+            .map(|(name, _)| name)
+            .filter(|name| name != "session.json")
+            .collect();
+        order.sort();
+        order.push("session.json".to_string());
+        for name in order {
+            replaced.extend(
+                fdio::move_entry(&stage_handle, session, &name).map_err(|e| fail(&name, &e))?,
+            );
+        }
+        Ok(replaced)
+    })();
+    let _ = std::fs::remove_dir_all(&stage);
+    result
+}
+
+/// Lê tudo do descritor (da posição 0). Para os corpos: relê pelo descritor, não
+/// pelo caminho.
+fn read_all_from(file: &mut std::fs::File) -> Option<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut bytes = Vec::new();
+    file.seek(SeekFrom::Start(0)).ok()?;
+    file.read_to_end(&mut bytes).ok()?;
+    Some(bytes)
 }
 
 /// Mensagem de erro quando a pasta da sessão deixou de ser confiável (A4-B5).
@@ -3268,6 +3282,7 @@ fn unix_millis() -> u128 {
 
 #[cfg(test)]
 mod tests {
+    const SESSION_DIR_FILES: [&str; 3] = ["cdp-events.jsonl", "netlog.json", "session.json"];
     use super::*;
 
     fn lines(collector: &mut BodyCollector) -> Vec<Value> {
@@ -4219,6 +4234,7 @@ mod tests {
         for name in SESSION_DIR_FILES {
             symlink(&victim, out.join(name)).unwrap();
         }
+        let handle = std::fs::File::open(&session_dir).unwrap();
         let moved = base.join("capture-X.orig");
         std::fs::rename(&session_dir, &moved).unwrap();
         symlink(&out, &session_dir).unwrap();
@@ -4234,10 +4250,11 @@ mod tests {
             CorrelationOptions::default(),
         )
         .unwrap();
-        match write_session_resilient(&mut imported.bundle, &session_dir, identity) {
-            Err(SessionWriteError::DirChanged(_)) => {}
-            other => panic!("devia recusar a pasta trocada, veio {:?}", other.map(|_| ()).err().map(|_| "outro erro")),
-        }
+        // A6-B5: a gravação é relativa ao descritor: vai TODA para a pasta original
+        // (movida) e nada cai em OUT, mesmo com o nome já trocado.
+        write_session_fd(&mut imported.bundle, &handle, &base).expect("grava pelo descritor");
+        assert!(moved.join("session.json").is_file(), "a sessão ficou na pasta original");
+        assert!(moved.join("cdp-events.jsonl").is_file());
         // Nada foi gravado em OUT e os links de OUT NÃO foram removidos.
         for name in SESSION_DIR_FILES {
             let meta = std::fs::symlink_metadata(out.join(name)).unwrap();
@@ -4508,9 +4525,8 @@ mod tests {
         }
         let _ = std::fs::remove_file(session_dir.join("attachments"));
         symlink(&outside_dir, session_dir.join("attachments")).unwrap();
-        let identity = verify_private_dir(&session_dir).unwrap();
-        let removed = write_session_resilient(&mut imported.bundle, &session_dir, identity)
-            .ok()
+        let handle = std::fs::File::open(&session_dir).unwrap();
+        let removed = write_session_fd(&mut imported.bundle, &handle, &dir)
             .expect("o stop não pode falhar por symlink plantado");
         assert_eq!(removed.len(), 4, "{removed:?}");
         assert!(removed.contains(&"attachments".to_string()));

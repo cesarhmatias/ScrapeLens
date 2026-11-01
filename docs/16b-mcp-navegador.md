@@ -207,82 +207,104 @@ pode mexer nele (mesmo uid; fora do modelo, como a porta do `expose_cdp`). Um
 `SIGKILL` do servidor deixa o NetLog parcial só no perfil, que a limpeza de
 órfãos apaga: não sobra `netlog.json` parcial na pasta da sessão.
 
-**Link plantado depois da cópia (A3-B3, A4-B3).** O `write_session_dir` do core
-regrava `cdp-events.jsonl`, `netlog.json` e `session.json` com `write_atomic`, e
-cria `attachments/`; ambos recusam symlink e derrubavam o `stop_capture`
-(`stop_failed`, sem `session.json`) se um processo do mesmo usuário plantasse o
-link depois da nossa cópia. Agora `write_session_resilient` remove o **nome** do
-link (nunca o alvo; vale para os 3 arquivos **e para `attachments`**), grava, e se
-o core ainda recusar por um link replantado na corrida, limpa e tenta de novo
-(3 tentativas). Cada remoção vira o aviso `capture.planted_symlink_removed` na
-sessão e uma linha em `warnings` do `stop_capture`; o stop não falha. Outros
-erros de gravação continuam sendo erro. Teste
-`a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop` (sem a correção o
-core recusa; com ela os 4 nomes são limpos, o diretório de fora fica intacto e
-`attachments` vira um diretório de verdade).
+**Gravação da sessão relativa ao descritor (A3-B3, A4-B3, A4-B4, A6-B5).** No
+início abrimos a pasta da sessão (`O_NOFOLLOW|O_DIRECTORY`, nossa, 0700) e
+guardamos o **descritor** e a identidade (dispositivo + inode, que não aparece em
+nenhuma saída). Depois do encerramento do Chrome, NENHUMA escrita resolve o
+caminho da pasta de novo:
+- `cdp-events.jsonl`, `netlog.json` e `netlog.original.json` são gravados com
+  `openat(O_EXCL|O_NOFOLLOW)` + `renameat` relativos ao descritor
+  (`fdio::write_private_at`); os corpos são relidos pelo descritor do arquivo
+  (`cdp-bodies.jsonl`), não pelo caminho;
+- o core grava o resto (`session.json`, `attachments/`) num **diretório de
+  preparo** novo e 0700 dentro do perfil temporário (`write_session_fd`), e cada
+  item é movido para a pasta da sessão com `renameat` relativo ao descritor
+  (`attachments/`, `cdp-events.jsonl`, `netlog.json` e `session.json` por
+  último). Entre sistemas de arquivos diferentes (EXDEV) copia pelo mesmo
+  descritor. Quando a Core expuser `write_session_dir_at(dirfd, …)` este preparo
+  pode ser trocado por ela, sem mudar o contrato.
+Efeitos: (1) um symlink plantado em `cdp-events.jsonl`, `netlog.json`,
+`session.json` ou `attachments` é **substituído** pelo `renameat` (o NOME muda,
+o alvo nunca é escrito) e vira o aviso `capture.planted_symlink_removed` na
+sessão e uma linha em `warnings` do stop; (2) o laço que replanta o link (antes
+A4-B4, que vencia as 3 tentativas e derrubava o stop) não faz mais diferença,
+porque não há tentativas: o `rename` é atômico; (3) se o NOME da pasta for
+trocado durante a gravação, tudo continua indo para a pasta ORIGINAL (a que o
+descritor representa) e nada cai na pasta do atacante. Testes
+`fdio::tests::*` (nomes inválidos, escrita após mover a pasta, link substituído,
+`attachments` como link ou já povoado, pasta movida, diretório no lugar de arquivo),
+`a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop` (4 nomes, inclusive
+`attachments`) e `a4_b5_swapped_session_dir_is_detected_and_nothing_is_written_or_removed`
+(a sessão vai inteira para a pasta original, nada em OUT, links de OUT intactos).
 
-**A4-B4 (aceito, documentado).** Um laço que replante o link nas 3 tentativas
-ainda faz o stop falhar com "link simbólico replantado repetidamente": negação
-de serviço do mesmo usuário, fora do modelo (o mesmo usuário também poderia
-apagar a pasta). Nenhum alvo é escrito e nada é removido além do nome do link.
+**Pasta da sessão reconferida (A4-B5, A6-B5).** `recheck_session_dir` reabre a
+pasta pelo NOME (`O_NOFOLLOW|O_DIRECTORY`) e exige diretório, nosso, 0700 e a
+MESMA identidade, **antes de gravar e depois de gravar**. Trocada por um link,
+por outro diretório (mesmo 0700 e nosso) ou com o modo afrouxado, o stop **falha**:
+antes de gravar com "A pasta da sessão foi trocada ou deixou de ser nossa durante
+a captura (…); nada foi gravado nela e nada fora dela foi apagado."; depois de
+gravar com a mesma frase mais "A sessão foi gravada na pasta original, que já não
+está nesse caminho." Nunca devolve OK com a pasta trocada durante a gravação.
 
-**Pasta da sessão reconferida no stop (A4-B5).** No início guardamos a
-identidade (dispositivo + inode) da pasta, lida no descritor aberto sem seguir
-link (a identidade não aparece em nenhuma saída; o descritor fica aberto até o
-fim). No `stop`, antes de gravar qualquer coisa e antes de cada tentativa de
-gravação, `recheck_session_dir` reabre a pasta (`O_NOFOLLOW|O_DIRECTORY`) e exige:
-diretório, nosso, 0700 e a MESMA identidade. Trocada por um link, por outro
-diretório (mesmo que 0700 e nosso) ou com o modo afrouxado, o stop **falha** com
-"A pasta da sessão foi trocada ou deixou de ser nossa durante a captura (…);
-nada foi gravado nela e nada fora dela foi apagado." e a indicação da pasta de
-resgate (abaixo). `remove_planted_links` nunca roda na pasta trocada. Os corpos
-(`cdp-bodies.jsonl`) e o NetLog são lidos sem seguir link.
-
-**Resgate quando a sessão não pôde ser gravada (A5-B2, A5-B3).** *Toda* falha
-depois do encerramento do Chrome (pasta trocada, o core recusar um arquivo,
-`rename` com ENOENT, falha de importação) resgata os arquivos da captura **antes**
-de o perfil temporário ser apagado:
+**Resgate quando a sessão não pôde ser gravada (A5-B2, A5-B3, A6-B6, A6-B7).**
+*Toda* falha depois do encerramento do Chrome (pasta trocada, o core recusar um
+arquivo, `rename` com ENOENT, falha de importação) resgata os arquivos da captura
+**antes** de o perfil temporário ser apagado:
 - **O que fica:** só `cdp-events.jsonl`, `cdp-bodies.jsonl` (relido pelo
   descritor, mesmo com a pasta trocada), `netlog.json` e `motivo.txt` (a mensagem
   de erro, que pode ter o caminho da sessão), numa pasta **0700 nova**
   `scrapelens-capture-state/rescue-<pid>-<ns>/` dentro do `TMPDIR`, com um
   marcador `rescue-<pid>-<ns>.json` ao lado. O erro do `stop_capture` cita a
-  pasta. Esses arquivos **contêm cookies, cabeçalhos e corpos** (são a captura
-  crua, como o NetLog `Everything`): trate a pasta como sensível.
+  pasta. Esses arquivos **contêm cookies, cabeçalhos e corpos** (a captura crua,
+  como o NetLog `Everything`): trate a pasta como sensível.
 - **O que NÃO fica:** o resto do perfil do Chrome (Cookies, Login Data, History,
-  Local State...) é apagado como sempre. Antes o perfil inteiro (8,7 MB) ficava.
-- **Limpeza:** `cleanup_orphans` (no início do App e do servidor MCP) apaga a
-  pasta de resgate e o marcador depois de **7 dias** (`createdMs` do marcador),
-  só se o nome é filho direto do `state_root` com prefixo `rescue-` e não é
-  symlink; um marcador adulterado não apaga nada fora. Vale para o dono vivo ou
-  morto: o resgate não some antes do prazo. `OrphanCleanup.rescues_removed` conta.
-- **Último recurso:** se nem o resgate puder ser criado, o perfil temporário é
-  mantido (com os dados do Chrome) e o erro diz isso e pede para apagá-lo.
-- **`.tmp-*`:** o temporário que a gravação deixa (`.session.json.tmp-…`,
-  `.netlog.json.tmp-…`…) é removido pelo descritor da pasta ORIGINAL aberto no
-  início, esteja ela no lugar ou movida pelo atacante; só nomes exatos nossos.
-Testes `a4_b5_swapped_session_dir_is_detected_and_nothing_is_written_or_removed`,
-`a5_b3_rescue_keeps_only_the_capture_files_in_a_private_dir_with_a_marker`,
+  Local State...) é apagado como sempre.
+- **Limpeza e prazo (A6-B7):** `cleanup_orphans` (no início do App e do servidor
+  MCP) apaga a pasta de resgate e o marcador quando o **próprio diretório** tem
+  mais de **7 dias** (mtime do diretório, que só muda quando entradas são
+  criadas ou removidas nele). A idade **não** vem do marcador: um marcador forjado
+  (com `createdMs` antigo ou com o `dir` de outro resgate) não faz um resgate
+  recente parecer vencido. O marcador só vale se o nome do arquivo for `<dir>.json`,
+  com `dir` filho direto do `state_root`, prefixo `rescue-`, sem `/` nem `..`, e o
+  diretório não for symlink. `OrphanCleanup.rescues_removed` conta. Um usuário
+  que reescreva o mtime do diretório (mesmo usuário) pode antecipar a limpeza:
+  fora do modelo, ele poderia apagar a pasta direto. Teste
+  `a6_b7_forged_marker_cannot_delete_a_recent_rescue`.
+- **Plano B (A6-B6):** se a pasta de resgate normal não puder ser criada (ENOSPC,
+  `TMPDIR` cheio), o PRÓPRIO perfil vira o resgate: tudo o que não é da captura
+  (Cookies, Login Data, History, o que também libera espaço) é apagado, os
+  eventos CDP, os corpos e o motivo são gravados nele, e ele é movido para o
+  `state_root` com marcador, entrando no mesmo prazo de 7 dias. Se nem mover ou
+  marcar for possível, o perfil fica onde está, JÁ LIMPO e COM os eventos, e o
+  erro diz "SEM prazo automático … apague quando recuperar"; só se até isso
+  falhar o erro avisa que o perfil mantido pode estar incompleto e que contém
+  dados do Chrome. Testes `a6_b6_fallback_adopts_the_profile_with_events_and_a_ttl_marker`
+  e `a6_b6_fallback_keeps_events_in_place_when_it_cannot_be_moved`.
+- **`.tmp-*`:** o temporário que uma gravação deixa (`.session.json.tmp-…`…) é
+  removido pelo descritor da pasta ORIGINAL, esteja ela no lugar ou movida.
+Testes `a5_b3_rescue_keeps_only_the_capture_files_in_a_private_dir_with_a_marker`,
 `a5_b3_cleanup_removes_only_expired_rescues_that_the_marker_really_names`,
 `a5_b2_remove_stale_tmp_cleans_the_original_dir_even_after_it_was_moved` e os
 vivos `live_swapped_session_dir_fails_the_stop_without_touching_outside` (o PoC:
 a pasta vira um link para OUT; OUT fica com os mesmos 3 nomes, links intactos e
 alvo igual) e `live_any_write_failure_rescues_the_capture_files` (um diretório no
 nome de `session.json`: resgate com os 4 arquivos, sem `.tmp-*`, com marcador).
-`n_toctou.py` do Revisor, contra o binário atual com atrasos de 0 a 8 ms: o
-stop falha e **cada vez** há pasta de resgate com `cdp-events.jsonl`,
-`netlog.json` e `motivo.txt`, nada em OUT e nenhum `.tmp-*` (com 12 ms o `rename`
-já passou e a sessão fica na pasta movida).
 
-**Lacuna que resta (TOCTOU, cerca de 15 ms).** O `write_session_dir` do core
-leva **cerca de 15 ms** (10 a 16 ms medidos) entre a última reconferência e o
-fim da gravação. Se o mesmo usuário trocar a pasta nesse intervalo, a gravação
-falha com ENOENT e o resgate guarda os dados (acima); em nenhum teste algo foi
-escrito fora (0/13 do Revisor). Escrever através da troca exigiria acertar o
-intervalo ENTRE dois `write_atomic` seguidos, aí sim de microssegundos. O
-`canonicalize` que o core faz **não reduz** a janela: ele resolve a string do
-caminho uma vez e cada gravação seguinte resolve o caminho de novo; só gravar
-relativo a um descritor de diretório (`openat`) a fecharia, e isso é do core.
+**Resultado do PoC de janela (`a5b2_toctou.py`, Revisor).** Contra o binário
+atual da mcp, 8 rodadas com a troca disparada assim que `attachments/` aparece
+(atraso 0) e 9 com atrasos de 2 a 30 ms: nada caiu em OUT em nenhuma (só o
+`attachments/` vazio que o próprio atacante criou). Com atraso 0 a troca pega a
+gravação no meio: o stop **falha** com resgate (os arquivos já movidos estão na
+pasta original, o resto dos dados no resgate); com 2 ms ou mais a gravação (agora
+alguns `renameat`) já terminou e o stop devolve OK, com a sessão inteira na pasta
+original, e a troca acontece depois. Antes (daa3414): 3 de 20 rodadas escreviam
+`session.json` e corpos em OUT e o stop dizia OK.
+
+**Lacuna que resta.** Entre o `recheck` posterior à gravação e o retorno ao
+chamador a pasta ainda pode ser trocada por quem tem o mesmo usuário; o stop
+reportou a verdade no instante da verificação e a sessão está na pasta original.
+É o mesmo limite de qualquer arquivo de usuário (ele pode mover a pasta quando
+quiser) e fora do modelo.
 
 **Links plantados antes da captura (F2).** Teste vivo
 `live_planted_symlinks_are_not_followed` (o PoC da revisão: links para
@@ -788,7 +810,7 @@ revisão de segurança (M2, M3, R1 a R4):
 | Suíte | Resultado |
 |---|---|
 | `capture/` `cargo test` | 53 passed, 8 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: só `scrapelens-core`, `serde`, `serde_json`, `tungstenite` e `libc` (0 `tauri`) |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_swapped_session_dir_fails_the_stop_without_touching_outside` (A4-B5), `live_any_write_failure_rescues_the_capture_files` (A5-B2), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` e `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
+| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_swapped_session_dir_fails_the_stop_without_touching_outside` (A4-B5, A6-B5), `live_any_write_failure_rescues_the_capture_files` (A5-B2), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` e `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
 | `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
 | `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |
