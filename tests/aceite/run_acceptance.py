@@ -43,7 +43,7 @@ REPORT = ROOT / "tests" / "RELATORIO.md"
 # lugares juntos, para que a bateria nunca aprove um artefato não documentado.
 APP_EXECUTABLE = pathlib.Path(os.environ.get("SL_APP_EXECUTABLE") or (
     pathlib.Path(__file__).resolve().parents[2] / "src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
-EXPECTED_APP_SHA256 = "4636a3cf11c498bf5866974615dd6544fbaa1cb73c93140c9502b8e978043860"
+EXPECTED_APP_SHA256 = "65a6529c13ec96935f0da813184cadf5ab5e3cfd43d96e7b407c680acc5f2237"
 
 SECRETS = [
     "SECRET-AUTH-TOKEN",
