@@ -307,3 +307,38 @@ fn marked_secret_in_urls_at_random_positions_and_levels() {
         }
     }
 }
+
+#[test]
+fn html_entity_equals_and_unicode_space_after_scheme() {
+    let o = o();
+    for (text, secret) in [
+        ("token&#61;ENT1x", "ENT1x"),
+        ("note token&#x3D;ENT2x fim", "ENT2x"),
+        ("token&equals;ENT3x", "ENT3x"),
+        (
+            "auth bearer\tTABTOK02x; Basic\u{3000}WIDESP03x",
+            "WIDESP03x",
+        ),
+        ("Bearer\u{a0}NBSPTOK04x", "NBSPTOK04x"),
+    ] {
+        let out = sanitize_text(text, &o);
+        assert!(!out.contains(secret), "{text:?} -> {out:?}");
+    }
+    assert_eq!(sanitize_text("a &amp; b &#61; c", &o), "a &amp; b &#61; c");
+}
+
+#[test]
+fn redaction_is_idempotent() {
+    let o = o();
+    for text in [
+        "GET /cb?token=SEC1x&page=2 HTTP/1.1",
+        "next=%2Fcb%3Ftoken%3Dab%2BSEC2x&z=1",
+        "token=\"SEC3x y\" fim",
+        "token=(SEC4x) Bearer abc.DEF.ghi5",
+        "auth bearer\tSEC6x; Basic\u{3000}SEC7x",
+        "https://u:SEC8x@h/p;jsessionid=SEC9x/q?access_token=SEC10x#frag",
+    ] {
+        let once = sanitize_text(text, &o);
+        assert_eq!(sanitize_text(&once, &o), once, "{text}");
+    }
+}

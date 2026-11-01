@@ -73,19 +73,19 @@ struct Scrubber<'a> {
     options: &'a SanitizeOptions,
     edits: Vec<Edit>,
     names: HashMap<Vec<u8>, bool>,
-    param: String,
+    param: std::cell::OnceCell<String>,
 }
 
 /// Aplica as regras ao texto. `None` quando nada mudou.
 pub(super) fn scrub(text: &str, options: &SanitizeOptions) -> Option<String> {
-    if !text.contains(['=', '%', '@']) && !has_scheme_word(text.as_bytes()) {
+    if !text.contains(['=', '%', '@', '&']) && !has_scheme_word(text.as_bytes()) {
         return None;
     }
     let mut scrubber = Scrubber {
         options,
         edits: Vec::new(),
         names: HashMap::new(),
-        param: url_placeholder(options),
+        param: std::cell::OnceCell::new(),
     };
     let level = Level {
         bytes: Cow::Borrowed(text.as_bytes()),
@@ -181,12 +181,16 @@ fn has_escape(bytes: &[u8]) -> bool {
 }
 
 impl Scrubber<'_> {
+    fn param(&self) -> &str {
+        self.param.get_or_init(|| url_placeholder(self.options))
+    }
+
     /// O trecho já é o placeholder (ou o miolo dele entre colchetes)? Mantém a
     /// redação idempotente: sanitizar duas vezes não empilha placeholders.
     fn is_placeholder(&self, level: &Level<'_>, start: usize, end: usize) -> bool {
         let slice = &level.bytes[start..end];
         let placeholder = self.options.placeholder.as_bytes();
-        if slice == placeholder || slice == self.param.as_bytes() {
+        if slice == placeholder || slice == self.param().as_bytes() {
             return true;
         }
         let inner = self.options.placeholder.trim_matches(['[', ']']).as_bytes();
@@ -248,6 +252,16 @@ impl Scrubber<'_> {
         let mut look = end;
         while look < bytes.len() && matches!(bytes[look], b' ' | b'\t') {
             look += 1;
+        }
+        // `token&#61;valor` / `token&#x3D;valor` / `token&equals;valor` (entidade HTML de `=`)
+        if let Some(entity) = entity_equals_len(&bytes[end..]) {
+            if self.is_sensitive_part(&bytes[part_start..end]) {
+                let vstart = end + entity;
+                let (value_start, value_end, next) = value_extent(bytes, vstart, vstart);
+                self.push(level, value_start, value_end, Repl::Param);
+                self.decode_child(level, start, end, depth);
+                return next;
+            }
         }
         if look > end
             && look < bytes.len()
@@ -358,8 +372,12 @@ impl Scrubber<'_> {
                 pos == 0 || !(bytes[pos - 1].is_ascii_alphanumeric() || bytes[pos - 1] == b'_');
             let after = pos + scheme_len;
             let mut cred_start = after;
-            while cred_start < bytes.len() && is_space(bytes[cred_start]) {
-                cred_start += 1;
+            loop {
+                let len = space_len_at(bytes, cred_start);
+                if len == 0 {
+                    break;
+                }
+                cred_start += len;
             }
             if !before_ok || cred_start == after {
                 pos = after;
@@ -386,7 +404,7 @@ impl Scrubber<'_> {
     fn apply(&mut self, text: &str) -> String {
         self.edits
             .sort_by_key(|e| (e.start, std::cmp::Reverse(e.end)));
-        let param = self.param.clone();
+        let param = self.param().to_string();
         let mut out = String::with_capacity(text.len() + 16);
         let mut copied = 0;
         for edit in &self.edits {
@@ -518,6 +536,36 @@ fn decode_once(src: &[u8]) -> Vec<u8> {
         i += 1;
     }
     out
+}
+
+/// Comprimento da entidade HTML de `=` no início de `rest`, se houver.
+fn entity_equals_len(rest: &[u8]) -> Option<usize> {
+    for entity in [&b"&#61;"[..], b"&#x3d;", b"&equals;"] {
+        if rest.len() >= entity.len() && rest[..entity.len()].eq_ignore_ascii_case(entity) {
+            return Some(entity.len());
+        }
+    }
+    None
+}
+
+/// Comprimento do espaço em branco (ASCII ou Unicode) em `bytes[at..]`, ou 0.
+fn space_len_at(bytes: &[u8], at: usize) -> usize {
+    match bytes.get(at) {
+        Some(b) if is_space(*b) => 1,
+        Some(b) if *b >= 0x80 => {
+            let chunk = &bytes[at..bytes.len().min(at + 4)];
+            for len in 2..=chunk.len().min(4) {
+                if let Ok(text) = std::str::from_utf8(&chunk[..len]) {
+                    return match text.chars().next() {
+                        Some(ch) if ch.is_whitespace() => len,
+                        _ => 0,
+                    };
+                }
+            }
+            0
+        }
+        _ => 0,
+    }
 }
 
 fn find(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
