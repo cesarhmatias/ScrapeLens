@@ -179,6 +179,23 @@ fn error_messages_escape_bidi_and_invisible_characters() {
     }
 }
 
+#[test]
+fn escape_display_uses_unicode_categories_not_a_range_list() {
+    // Mn, Me, Cf, Zs (exceto o espaço comum), Co, Cn, controles e seletores E0100–E01EF.
+    for ch in [
+        '\u{05B4}', '\u{064B}', '\u{0489}', '\u{0600}', '\u{070F}', '\u{115F}', '\u{1160}',
+        '\u{1680}', '\u{17B4}', '\u{FFA0}', '\u{1D173}', '\u{13430}', '\u{1BCA0}', '\u{E0100}',
+        '\u{E01EF}', '\u{E000}', '\u{F8FF}', '\u{0378}', '\u{10FFFF}', '\u{2007}', '\u{202F}',
+        '\u{0085}', '\u{007F}', '\u{FE0F}',
+    ] {
+        let shown = escape_display(&format!("a{ch}b"));
+        assert!(!shown.contains(ch), "U+{:04X} passou cru", ch as u32);
+        assert!(shown.starts_with("a\\u{"), "{shown}");
+    }
+    // Texto comum, acentuado (letras compostas), CJK, emoji e o espaço comum ficam.
+    assert_eq!(escape_display("ação – 日本語 😀 a b"), "ação – 日本語 😀 a b");
+}
+
 fn open_failure(env: &Env, handle: &str) -> scrapelens_mcp::error::ToolError {
     list_requests(&env.ctx, p(json!({"session_id": handle}))).unwrap_err()
 }

@@ -1458,9 +1458,24 @@ fn trace_request(
             });
         }
         if !reveal {
+            // Nada derivado do valor sem reveal: nem a prévia, nem o comprimento,
+            // nem posições/tamanhos de trechos dentro dele.
             for item in values.iter_mut() {
                 if item.get("value").is_some() {
                     item["value"] = json!(PLACEHOLDER);
+                }
+                if let Some(map) = item.as_object_mut() {
+                    map.remove("length");
+                    map.remove("offset");
+                    for key in ["evidences", "partialComposition"] {
+                        if let Some(list) = map.get_mut(key).and_then(Value::as_array_mut) {
+                            for entry in list.iter_mut().filter_map(Value::as_object_mut) {
+                                for field in ["consumedOffset", "consumedLength", "start", "length"] {
+                                    entry.remove(field);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

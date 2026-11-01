@@ -656,26 +656,44 @@ impl Drop for InFlight<'_> {
     }
 }
 
-/// Marcas combinantes (U+0300–036F e blocos estendidos): empilham sobre o caractere
-/// anterior e podem apagar o que vem antes do rótulo.
-fn is_combining_mark(ch: char) -> bool {
-    matches!(ch as u32, 0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F)
+/// Caractere que não pode aparecer cru em texto mostrado ao usuário: controle
+/// (Cc), marcas não espaçadas e envolventes (Mn, Me: empilham sobre o anterior),
+/// formato (Cf: bidi, largura zero, seletores de variação, tags), separadores
+/// exceto o espaço comum (Zs, Zl, Zp), uso privado (Co) e não atribuídos (Cn),
+/// mais alguns "preenchimentos" que são letras/símbolos mas renderizam em branco.
+fn is_hidden_char(ch: char) -> bool {
+    use icu_properties::props::GeneralCategory as Gc;
+    if ch == ' ' {
+        return false;
+    }
+    if matches!(
+        ch as u32,
+        0x115F | 0x1160 | 0x17B4 | 0x17B5 | 0x2800 | 0x3164 | 0xFFA0 | 0xFFFC | 0xE0100..=0xE01EF
+    ) {
+        return true;
+    }
+    matches!(
+        icu_properties::CodePointMapData::<Gc>::new().get(ch),
+        Gc::Control
+            | Gc::NonspacingMark
+            | Gc::EnclosingMark
+            | Gc::Format
+            | Gc::SpaceSeparator
+            | Gc::LineSeparator
+            | Gc::ParagraphSeparator
+            | Gc::PrivateUse
+            | Gc::Unassigned
+            | Gc::Surrogate
+    )
 }
 
-/// Texto exibido na confirmação: caracteres de controle e de formatação
-/// (quebra de linha, bidi, largura zero) viram `\u{XXXX}` literal, para que um
-/// valor controlado pelo agente não injete linhas falsas no texto.
+/// Texto exibido na confirmação e nas mensagens de erro: caracteres invisíveis ou
+/// que reordenam/empilham (ver [`is_hidden_char`]) viram `\u{XXXX}` literal, para
+/// que um valor controlado pelo agente não injete linhas falsas nem disfarce o texto.
 pub fn escape_display(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
-        let hidden = ch.is_control()
-            || matches!(
-                ch as u32,
-                0x00A0 | 0x00AD | 0x061C | 0x180E | 0x2000..=0x200F | 0x2028..=0x202F
-                    | 0x205F..=0x206F | 0x2800 | 0x3000 | 0x3164 | 0xFE00..=0xFE0F | 0xFEFF | 0xFFF9..=0xFFFC
-                    | 0xE0000..=0xE007F
-            ) || is_combining_mark(ch);
-        if hidden {
+        if is_hidden_char(ch) {
             out.push_str(&format!("\\u{{{:04X}}}", ch as u32));
         } else {
             out.push(ch);

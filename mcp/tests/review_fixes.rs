@@ -90,12 +90,32 @@ fn cookie_and_request_modes_expose_nothing_derived_from_values_without_reveal() 
     )
     .unwrap();
     assert!(!text(&by_request).contains("valueLength"));
+    // Modo request_id: cada valor sai sem comprimento, offset ou tamanho de trecho.
+    for item in by_request["values"].as_array().unwrap() {
+        let map = item.as_object().unwrap();
+        for key in ["length", "offset"] {
+            assert!(!map.contains_key(key), "{key} em {item}");
+        }
+        for key in ["evidences", "partialComposition"] {
+            for entry in map.get(key).and_then(Value::as_array).into_iter().flatten() {
+                for field in ["consumedOffset", "consumedLength", "start", "length"] {
+                    assert!(entry.get(field).is_none(), "{field} em {entry}");
+                }
+            }
+        }
+    }
     let revealed = trace_value(
         &env.ctx,
         p(json!({"session_id": "flow", "cookie": "sid", "reveal": true})),
     )
     .unwrap();
     assert!(text(&revealed).contains("valueLength"));
+    let open = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "flow", "request_id": "har-0003", "reveal": true})),
+    )
+    .unwrap();
+    assert!(open["values"][0].get("length").is_some(), "com reveal o comprimento volta");
 }
 
 #[test]

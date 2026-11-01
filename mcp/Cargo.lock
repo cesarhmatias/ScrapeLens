@@ -804,6 +804,7 @@ dependencies = [
 name = "scrapelens-mcp"
 version = "0.1.0"
 dependencies = [
+ "icu_properties",
  "rmcp",
  "schemars",
  "scrapelens-capture",
