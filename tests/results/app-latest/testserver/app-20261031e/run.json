@@ -1,0 +1,27 @@
+{
+  "addrs": {
+    "h1": "127.0.0.1:8781",
+    "h2": "disabled",
+    "h3": "disabled",
+    "h3_on_h2_port": "disabled"
+  },
+  "arch": "aarch64",
+  "binary_version": "0.1.0",
+  "decode_points": {
+    "h2": "HPACK decoded field list (httlib-hpack 0.1.3), recorded in decode order before any map is built",
+    "h3": "QPACK decoded field list from quiche 0.30 h3 Event::Headers (Vec<Header>, decode order); quiche does not expose the raw QPACK field section",
+    "http/1.1": "raw socket bytes: request head split on CRLF, order, casing and duplicates preserved verbatim"
+  },
+  "evidence_schema": "scrapelens.testserver.evidence/1",
+  "h3_qpack_max_table_capacity": 0,
+  "note": "synthetic local test data only; no telemetry, no external network",
+  "os": "macos",
+  "run_id": "app-20261031e",
+  "schema": "scrapelens.testserver.run/1",
+  "started_at": "2026-10-31T23:49:57.084Z",
+  "tls": {
+    "cert_pem": "/Users/cesar/Projects/scrapelens/testserver/../fixtures/tls/scrapelens-test-localhost.crt.pem",
+    "key_pem": "/Users/cesar/Projects/scrapelens/testserver/../fixtures/tls/scrapelens-test-localhost.key.pem",
+    "spki_sha256_b64": "bZVWDrQvkR0ynQKHKqsiga6j0rd2KIqFX6NXGKIjsYw="
+  }
+}

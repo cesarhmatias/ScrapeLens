@@ -1,15 +1,15 @@
 {
- "generatedAt": "2026-10-31T23:57:16Z",
+ "generatedAt": "2026-11-01T00:18:45Z",
  "commands": [
   {
    "label": "cargo test mcp",
    "cmd": "cargo test --offline",
    "cwd": "mcp",
    "rc": 0,
-   "passed": 58,
+   "passed": 59,
    "failed": 0,
-   "seconds": 8.57,
-   "tail": "target/debug/deps/scrapelens_mcp-547eca00fa011c73)\n     Running unittests src/main.rs (target/debug/deps/scrapelens_mcp-5472f2f11de6eed7)\n     Running tests/e2e_capture.rs (target/debug/deps/e2e_capture-62ebb7e30e76503e)\n     Running tests/e2e_live.rs (target/debug/deps/e2e_live-81194ead479547d2)\n     Running tests/e2e_secrets.rs (target/debug/deps/e2e_secrets-50de0a7da6a06dec)\n     Running tests/e2e_stdio.rs (target/debug/deps/e2e_stdio-06cb2a086c98ddf5)\n     Running tests/live.rs (target/debug/deps/live-4dfbcae8e25ae9f6)\n     Running tests/review_fixes.rs (target/debug/deps/review_fixes-6ade3de835e462a8)\n     Running tests/review_round2.rs (target/debug/deps/review_round2-801030615c92e12f)\n     Running tests/tools.rs (target/debug/deps/tools-64e5d778a32502f2)\n   Doc-tests scrapelens_mcp\n"
+   "seconds": 8.95,
+   "tail": " (target/debug/deps/scrapelens_mcp-5472f2f11de6eed7)\n     Running tests/client_guard.rs (target/debug/deps/client_guard-22f822f5d6fe383e)\n     Running tests/e2e_capture.rs (target/debug/deps/e2e_capture-62ebb7e30e76503e)\n     Running tests/e2e_live.rs (target/debug/deps/e2e_live-81194ead479547d2)\n     Running tests/e2e_secrets.rs (target/debug/deps/e2e_secrets-50de0a7da6a06dec)\n     Running tests/e2e_stdio.rs (target/debug/deps/e2e_stdio-06cb2a086c98ddf5)\n     Running tests/live.rs (target/debug/deps/live-4dfbcae8e25ae9f6)\n     Running tests/review_fixes.rs (target/debug/deps/review_fixes-6ade3de835e462a8)\n     Running tests/review_round2.rs (target/debug/deps/review_round2-801030615c92e12f)\n     Running tests/tools.rs (target/debug/deps/tools-64e5d778a32502f2)\n   Doc-tests scrapelens_mcp\n"
   },
   {
    "label": "cargo test capture",
@@ -18,8 +18,8 @@
    "rc": 0,
    "passed": 62,
    "failed": 0,
-   "seconds": 43.2,
-   "tail": "lve_stable_chrome_never_substitutes_an_explicit_path ... ok\ntest chrome::tests::r11_validation_is_not_cached_and_returns_the_canonical_path ... ok\ntest chrome::tests::validate_accepts_the_installed_chrome_and_reads_its_version ... ok\ntest chrome::tests::r2_a_signed_copy_with_a_swapped_helper_is_refused ... ok\n\ntest result: ok. 62 passed; 0 failed; 11 ignored; 0 measured; 0 filtered out; finished in 41.69s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n   Compiling scrapelens-capture v0.1.0 (/Users/cesar/Projects/scrapelens/capture)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.12s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n   Doc-tests scrapelens_capture\n"
+   "seconds": 38.16,
+   "tail": "esponse_over_limit_is_truncated_with_original_size ... ok\ntest chrome::tests::resolve_stable_chrome_never_substitutes_an_explicit_path ... ok\ntest chrome::tests::r11_validation_is_not_cached_and_returns_the_canonical_path ... ok\ntest chrome::tests::validate_accepts_the_installed_chrome_and_reads_its_version ... ok\ntest chrome::tests::r2_a_signed_copy_with_a_swapped_helper_is_refused ... ok\n\ntest result: ok. 62 passed; 0 failed; 11 ignored; 0 measured; 0 filtered out; finished in 37.44s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n   Doc-tests scrapelens_capture\n"
   },
   {
    "label": "cargo test recon",
@@ -28,8 +28,8 @@
    "rc": 0,
    "passed": 26,
    "failed": 0,
-   "seconds": 0.19,
-   "tail": "low ... ok\ntest r4_a_redirect_or_a_cookie_from_another_host_does_not_resolve_a_challenge ... ok\ntest r3_block_on_a_third_party_resource_does_not_decide_the_recommendation ... ok\ntest every_signature_has_a_synthetic_fixture_that_triggers_it ... ok\n\ntest result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_recon-30b9530c221c4dd9)\n     Running tests/live_e2e.rs (target/debug/deps/live_e2e-ec85e6018f3e6e63)\n     Running tests/profile.rs (target/debug/deps/profile-6f22ff424cea2bff)\n   Doc-tests scrapelens_recon\n"
+   "seconds": 0.24,
+   "tail": "ock ... ok\ntest r3_block_on_a_third_party_resource_does_not_decide_the_recommendation ... ok\ntest r4_a_redirect_or_a_cookie_from_another_host_does_not_resolve_a_challenge ... ok\ntest every_signature_has_a_synthetic_fixture_that_triggers_it ... ok\n\ntest result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_recon-30b9530c221c4dd9)\n     Running tests/live_e2e.rs (target/debug/deps/live_e2e-ec85e6018f3e6e63)\n     Running tests/profile.rs (target/debug/deps/profile-6f22ff424cea2bff)\n   Doc-tests scrapelens_recon\n"
   },
   {
    "label": "vivo mcp e2e_live",
@@ -38,8 +38,8 @@
    "rc": 0,
    "passed": 3,
    "failed": 0,
-   "seconds": 34.93,
-   "tail": "\nrunning 3 tests\ntest live_sigterm_during_start_leaves_no_chrome_or_profile ... ok\ntest live_eof_during_start_leaves_no_chrome_or_profile ... ok\ntest live_cycle_with_real_chrome ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 34.75s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s\n     Running tests/e2e_live.rs (target/debug/deps/e2e_live-81194ead479547d2)\n"
+   "seconds": 34.12,
+   "tail": "\nrunning 3 tests\ntest live_sigterm_during_start_leaves_no_chrome_or_profile ... ok\ntest live_eof_during_start_leaves_no_chrome_or_profile ... ok\ntest live_cycle_with_real_chrome ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.68s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s\n     Running tests/e2e_live.rs (target/debug/deps/e2e_live-81194ead479547d2)\n"
   },
   {
    "label": "vivo capture live_pipe_opens_no_port_and_exposed_port_is_loopback_only",
@@ -48,8 +48,8 @@
    "rc": 0,
    "passed": 1,
    "failed": 0,
-   "seconds": 32.11,
-   "tail": "\nrunning 1 test\ntest browser::tests::live_pipe_opens_no_port_and_exposed_port_is_loopback_only ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 32.04s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
+   "seconds": 29.99,
+   "tail": "\nrunning 1 test\ntest browser::tests::live_pipe_opens_no_port_and_exposed_port_is_loopback_only ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 29.90s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
   },
   {
    "label": "vivo capture live_planted_symlinks_are_not_followed",
@@ -58,8 +58,8 @@
    "rc": 0,
    "passed": 1,
    "failed": 0,
-   "seconds": 21.26,
-   "tail": "\nrunning 1 test\ntest browser::tests::live_planted_symlinks_are_not_followed ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 21.12s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
+   "seconds": 16.75,
+   "tail": "\nrunning 1 test\ntest browser::tests::live_planted_symlinks_are_not_followed ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 16.64s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
   },
   {
    "label": "vivo capture live_port_gap_is_reported_on_all_paths",
@@ -68,8 +68,8 @@
    "rc": 0,
    "passed": 1,
    "failed": 0,
-   "seconds": 22.75,
-   "tail": "\nrunning 1 test\ntest browser::tests::live_port_gap_is_reported_on_all_paths ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 22.66s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
+   "seconds": 29.99,
+   "tail": "test\ntest browser::tests::live_port_gap_is_reported_on_all_paths ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 26.83s\n\n   Compiling scrapelens-capture v0.1.0 (/Users/cesar/Projects/scrapelens/capture)\nwarning: method `is_closed` is never used\n   --> src/transport.rs:123:19\n    |\n 68 | impl Transport {\n    | -------------- method in this implementation\n...\n123 |     pub(crate) fn is_closed(&self) -> bool {\n    |                   ^^^^^^^^^\n    |\n    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: `scrapelens-capture` (lib test) generated 1 warning\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.62s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
   },
   {
    "label": "vivo capture live_netlog_swap_race_does_not_write_through_a_symlink",
@@ -78,8 +78,8 @@
    "rc": 0,
    "passed": 1,
    "failed": 0,
-   "seconds": 16.78,
-   "tail": "\nrunning 1 test\ntest browser::tests::live_netlog_swap_race_does_not_write_through_a_symlink ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 16.71s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
+   "seconds": 21.68,
+   "tail": "\nrunning 1 test\ntest browser::tests::live_netlog_swap_race_does_not_write_through_a_symlink ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 19.18s\n\n   Compiling scrapelens-capture v0.1.0 (/Users/cesar/Projects/scrapelens/capture)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.97s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
   },
   {
    "label": "vivo capture live_inherited_fds_do_not_leak_into_chrome",
@@ -88,8 +88,8 @@
    "rc": 0,
    "passed": 1,
    "failed": 0,
-   "seconds": 30.72,
-   "tail": "\nrunning 1 test\ntest browser::tests::live_inherited_fds_do_not_leak_into_chrome ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 30.64s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
+   "seconds": 41.04,
+   "tail": "\nrunning 1 test\ntest browser::tests::live_inherited_fds_do_not_leak_into_chrome ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 75 filtered out; finished in 40.99s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s\n     Running unittests src/lib.rs (target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\n"
   },
   {
    "label": "vivo recon live_e2e.sh",
@@ -98,8 +98,8 @@
    "rc": 0,
    "passed": 4,
    "failed": 0,
-   "seconds": 54.35,
-   "tail": " finished in 0.03s\n\nsessões em /var/folders/y2/x1l60t016gz0_92fbpn793mw0000gn/T//sl-recon-e2e.vOazgH\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s\n     Running unittests src/lib.rs (capture/target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 211 }\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 106 }\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 210 }\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s\n     Running tests/live_e2e.rs (recon/target/debug/deps/live_e2e-ec85e6018f3e6e63)\n"
+   "seconds": 59.66,
+   "tail": "000gn/T//sl-recon-e2e.HMB2b6\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s\n     Running unittests src/lib.rs (capture/target/debug/deps/scrapelens_capture-2531fdad98c5dcc0)\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 516, transport_closed: None }\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 324, transport_closed: None }\ncapture transport: Pipe\ncapture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 208, transport_closed: None }\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s\n     Running tests/live_e2e.rs (recon/target/debug/deps/live_e2e-ec85e6018f3e6e63)\n"
   },
   {
    "label": "fluxo stdio (cliente independente)",
@@ -107,7 +107,7 @@
    "rc": 0,
    "passed": 28,
    "failed": 0,
-   "seconds": 36.63,
+   "seconds": 55.14,
    "tail": ""
   }
  ],
@@ -134,12 +134,12 @@
    {
     "name": "start_capture aceito (elicitação)",
     "ok": true,
-    "detail": "{\"warnings\": [], \"chromePid\": 16532, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
+    "detail": "{\"warnings\": [], \"chromePid\": 34908, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
    },
    {
     "name": "elicitação exibida ao usuário",
     "ok": true,
-    "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:65178\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:65178/\\nC"
+    "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:65375\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:65375/\\nC"
    },
    {
     "name": "Chrome real iniciado",
@@ -159,17 +159,17 @@
    {
     "name": "navigate permitido carregou",
     "ok": true,
-    "detail": "{\"frameId\": \"D9341C5681996E09E9C3CF1EE981E783\", \"loaderId\": \"2D5A279496B9846A1DEBFF51E8F93792\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-41f8af9ae392ed08\"}"
+    "detail": "{\"frameId\": \"678924BE9FB92D3F224FE5C7D129C7A6\", \"loaderId\": \"C9DEF152E6951A7C31062405E295A781\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-401771222abea085\"}"
    },
    {
     "name": "capture_status em gravação",
     "ok": true,
-    "detail": "{\"recording\": true, \"events\": 38, \"chromePid\": 16532, \"sessionId\": \"capture-1793491009865\", \"pageUrl\": \"http://localhost:65178/\", \"startedAt\": \"\", \"captureId\": \"cap-41f8af9ae392ed08\"}"
+    "detail": "{\"recording\": true, \"events\": 39, \"chromePid\": 34908, \"sessionId\": \"capture-1793492289037\", \"pageUrl\": \"http://localhost:65375/\", \"startedAt\": \"\", \"captureId\": \"cap-401771222abea085\"}"
    },
    {
     "name": "stop_capture gracioso",
     "ok": true,
-    "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 218, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-41f8af9ae392ed08\", \"sessionId\": \"capture-1793491009865\", \"readable\": true}"
+    "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 219, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-401771222abea085\", \"sessionId\": \"capture-1793492289037\", \"readable\": true}"
    },
    {
     "name": "NetLog completo",
@@ -184,7 +184,7 @@
    {
     "name": "/page2 na sessão",
     "ok": true,
-    "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:65178/favicon.ico\", \"host\": \"localhost:65178\", \"status\": 404, \"resourceType\": \"Other\", \"protocol\": \"h1\", \"totalMs\": 3.201999701559"
+    "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:65375/favicon.ico\", \"host\": \"localhost:65375\", \"status\": 404, \"resourceType\": \"Other\", \"protocol\": \"h1\", \"totalMs\": 5.543000064790"
    },
    {
     "name": "token da query fora da listagem",
@@ -214,17 +214,17 @@
    {
     "name": "trace_value do cookie sem erro",
     "ok": true,
-    "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:65178/\", \"startedAt\": 6080513.231839, \"source\": \"netlog\", \"verificat"
+    "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0002\", \"attemptId\": \"cdp-r0002-a1\", \"url\": \"http://localhost:65375/\", \"startedAt\": 6081799.651846, \"source\": \"netlog\", \"verificat"
    },
    {
     "name": "trace_value do cookie mascarado",
     "ok": true,
-    "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:65178/\", \"startedAt\": 6080513.231839, \"source\": \"netlog\", \"verificat"
+    "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0002\", \"attemptId\": \"cdp-r0002-a1\", \"url\": \"http://localhost:65375/\", \"startedAt\": 6081799.651846, \"source\": \"netlog\", \"verificat"
    },
    {
     "name": "site_profile sem erro",
     "ok": true,
-    "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793491009865\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:65178\": [\"h1"
+    "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793492289037\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:65375\": [\"h1"
    },
    {
     "name": "reveal=true recusado sem --allow-reveal",

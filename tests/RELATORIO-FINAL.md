@@ -150,6 +150,8 @@ nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas t
 
 - **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — PARCIAL:** `EXPECTED_APP_SHA256` atualizado para `4636a3cf…043860`; `app-latest` ainda é do bundle `6c0092c3` e o item 9 reprova até o ciclo real ser refeito. Bloqueio: o Mac está sem usuário ativo (`UserIsActive 0`), o desktop vem preto, e a janela do ScrapeLens (pid 9430 após reinício) fica sem AX resolvido (`ax_unresolved`); `bring_to_front` não verificou o foco (a frente é a janela do OpenBot), então não há como agir sem clicar sobre janelas do usuário. Pendentes: ciclo Iniciar/Encerrar + HAR/NetLog no bundle 4636a3cf e `lsof` durante a captura. Feito: `cargo build --examples` e `cargo test` em mcp: 58/0; `run_acceptance` 10/11 itens OK, item 11 OK (39 asserções) com os cinco vivos de capture/ (1 teste cada, `--test-threads=1`), e2e_live 3/0, live_e2e.sh 4/0, fluxo stdio 28/0.
 
+- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — FECHADO:** item 9 refeito. Ciclo real por teclado (a AX do botão foi recusada com `element_outside_target_window` mesmo com a janela verificada em foco; Tab até "Iniciar sessão"/"Encerrar" e Return, depois HAR e NetLog pela janela Open): `capture-1793491743660` (11 req, complete, cdp+netlog); HAR `-11` 24 req complete; NetLog `-11` 32 req partial. `lsof` durante a captura (Chrome pid 25252): sem LISTEN nem socket TCP. `run_acceptance` 11/11 (item 11 com os cinco vivos de capture/, 1 thread, e `e2e_live`). Evidência: `tests/results/app-latest/lsof-captura-r11b.txt`.
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)
