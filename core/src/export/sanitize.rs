@@ -1129,6 +1129,10 @@ pub(super) fn is_sensitive_key(name: &str) -> bool {
         || matches!(compact.as_str(), "totp" | "hotp" | "smsotp" | "emailotp")
         || compact.contains("csrf")
         || compact.contains("xsrf")
+        || compact.contains("sessionkey")
+        || compact == "nonce"
+        || name.ends_with("_nonce")
+        || name.ends_with("-nonce")
         || compact.ends_with("sessionid")
         || compact == "sid"
         || compact == "jsessionid"
@@ -1476,6 +1480,9 @@ fn is_propagating_key(name: &str) -> bool {
         || compact.contains("jwt")
         || compact.contains("cpf")
         || compact.contains("session")
+        || compact.contains("csrf")
+        || compact.contains("xsrf")
+        || compact.ends_with("nonce")
 }
 
 /// Palavras de credencial em um nome compactado (sem separadores).
@@ -1663,11 +1670,142 @@ fn collect_json(value: &Value, out: &mut Vec<SensitiveValue>) {
     }
 }
 
+/// `<input type="hidden" name="csrf_token" value="...">`: o valor de um input
+/// hidden de nome sensível entra no conjunto de propagação por valor, para ser
+/// redigido onde reaparecer (headers, query, formulário e JSON de requisições
+/// seguintes).
+fn collect_hidden_inputs(html: &str, out: &mut Vec<SensitiveValue>) {
+    let lower = html.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(at) = lower[from..].find("<input") {
+        let start = from + at;
+        let Some(len) = html[start..].find('>') else {
+            break;
+        };
+        let tag = &html[start + 6..start + len];
+        from = start + len + 1;
+        let attrs = html_attributes(tag);
+        let get = |key: &str| {
+            attrs
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(key))
+                .map(|(_, value)| value.as_str())
+        };
+        if !get("type").is_some_and(|t| t.trim().eq_ignore_ascii_case("hidden")) {
+            continue;
+        }
+        let (Some(name), Some(value)) = (get("name").or_else(|| get("id")), get("value")) else {
+            continue;
+        };
+        if is_propagating_key(&html_unescape(name)) {
+            out.push(SensitiveValue {
+                origin: "htmlHidden",
+                value: html_unescape(value),
+            });
+        }
+    }
+}
+
+/// Atributos de uma tag (`nome="valor"`, `nome='valor'`, `nome=valor`, `nome`).
+fn html_attributes(tag: &str) -> Vec<(String, String)> {
+    let bytes = tag.as_bytes();
+    let mut attrs = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b'/') {
+            i += 1;
+        }
+        let name_start = i;
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && !matches!(bytes[i], b'=' | b'/') {
+            i += 1;
+        }
+        if i == name_start {
+            break;
+        }
+        let name = tag[name_start..i].to_string();
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'=' {
+            i += 1;
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            let value = if i < bytes.len() && matches!(bytes[i], b'"' | b'\'') {
+                let quote = bytes[i];
+                let start = i + 1;
+                let end = bytes[start..]
+                    .iter()
+                    .position(|b| *b == quote)
+                    .map_or(bytes.len(), |n| start + n);
+                i = (end + 1).min(bytes.len());
+                tag[start..end].to_string()
+            } else {
+                let start = i;
+                while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+                tag[start..i].to_string()
+            };
+            attrs.push((name, value));
+        } else {
+            attrs.push((name, String::new()));
+        }
+    }
+    attrs
+}
+
+/// Entidades HTML comuns em valores de atributo.
+fn html_unescape(value: &str) -> String {
+    if !value.contains('&') {
+        return value.to_string();
+    }
+    let mut out = value
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">");
+    // `&#NN;` / `&#xHH;` (um caractere)
+    let mut result = String::with_capacity(out.len());
+    let mut rest = out.as_str();
+    while let Some(at) = rest.find("&#") {
+        result.push_str(&rest[..at]);
+        let tail = &rest[at + 2..];
+        let end = tail.find(';');
+        let decoded = end.and_then(|end| {
+            let code = &tail[..end];
+            let number = match code.strip_prefix(['x', 'X']) {
+                Some(hex) => u32::from_str_radix(hex, 16).ok(),
+                None => code.parse::<u32>().ok(),
+            }?;
+            char::from_u32(number).map(|ch| (ch, end))
+        });
+        match decoded {
+            Some((ch, end)) => {
+                result.push(ch);
+                rest = &tail[end + 1..];
+            }
+            None => {
+                result.push_str("&#");
+                rest = tail;
+            }
+        }
+    }
+    result.push_str(rest);
+    out = result.replace("&amp;", "&");
+    out
+}
+
 fn collect_body_bytes(bytes: &[u8], content_type: Option<&str>, out: &mut Vec<SensitiveValue>) {
     let Ok(text) = std::str::from_utf8(bytes) else {
         return;
     };
     let media = content_type.unwrap_or("").to_ascii_lowercase();
+    if media.contains("html") || (media.is_empty() && text.contains("<input")) {
+        collect_hidden_inputs(text, out);
+        return;
+    }
     let looks_json = matches!(text.trim_start().as_bytes().first(), Some(b'{' | b'['));
     if media.contains("json") || looks_json {
         if let Ok(value) = serde_json::from_str::<Value>(text) {
