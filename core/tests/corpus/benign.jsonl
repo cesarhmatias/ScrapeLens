@@ -1,0 +1,49 @@
+{"kind": "same", "input": "page=2&opinion=good&ticket_type=vip&sort=asc&q=shoes", "forbid": [], "keep": []}
+{"kind": "same", "input": "https://ex.invalid/list?page=2&q=shoes", "forbid": [], "keep": []}
+{"kind": "same", "input": "https://ex.invalid/list?page=2&q=a%3Db", "forbid": [], "keep": []}
+{"kind": "same", "input": "Basic authentication and Bearer tokens", "forbid": [], "keep": []}
+{"kind": "same", "input": "Basic authentication is weak", "forbid": [], "keep": []}
+{"kind": "same", "input": "Basic authentication required", "forbid": [], "keep": []}
+{"kind": "same", "input": "{\"a\":\"b=c\",\"n\":1}", "forbid": [], "keep": []}
+{"kind": "same", "input": "value=/a?b=c", "forbid": [], "keep": []}
+{"kind": "same", "input": "x=1", "forbid": [], "keep": []}
+{"kind": "same", "input": "abc==", "forbid": [], "keep": []}
+{"kind": "same", "input": "dGVzdA==", "forbid": [], "keep": []}
+{"kind": "same", "input": "data:image/png;base64,iVBORw0KGgo=", "forbid": [], "keep": []}
+{"kind": "same", "input": "if (a==b) { c = d; }", "forbid": [], "keep": []}
+{"kind": "same", "input": "a = b and x=1, y=2", "forbid": [], "keep": []}
+{"kind": "same", "input": "1+1=2", "forbid": [], "keep": []}
+{"kind": "same", "input": "e=mc2", "forbid": [], "keep": []}
+{"kind": "same", "input": "key=", "forbid": [], "keep": []}
+{"kind": "same", "input": "Refresh: 5; url=/next?page=2", "forbid": [], "keep": []}
+{"kind": "same", "input": "a == b", "forbid": [], "keep": []}
+{"kind": "same", "input": "state of the art = good", "forbid": [], "keep": []}
+{"kind": "same", "input": "page=2&opinion=good", "forbid": [], "keep": []}
+{"kind": "same", "input": "x=1, y=2", "forbid": [], "keep": []}
+{"kind": "same", "input": "https://h/list?page=2&q=shoes", "forbid": [], "keep": []}
+{"kind": "same", "input": "https://h/a;v=1/b?page=2", "forbid": [], "keep": []}
+{"kind": "same", "input": "/a;lang=en/x=1/y=2", "forbid": [], "keep": []}
+{"kind": "same", "input": "sort=asc", "forbid": [], "keep": []}
+{"kind": "same", "input": "next=%2Fcb%3Fpage%3D2", "forbid": [], "keep": []}
+{"kind": "same", "input": "q=%2Fshoes%3Fsort=asc", "forbid": [], "keep": []}
+{"kind": "same", "input": "mode=ok&view=full", "forbid": [], "keep": []}
+{"kind": "same", "input": "GET /list?page=2 HTTP/1.1", "forbid": [], "keep": []}
+{"kind": "same", "input": "noncense=1", "forbid": [], "keep": []}
+{"kind": "same", "input": "announce=yes", "forbid": [], "keep": []}
+{"kind": "same", "input": "random=ok", "forbid": [], "keep": []}
+{"kind": "same", "input": "HTTP/1.1 200 OK", "forbid": [], "keep": []}
+{"kind": "same", "input": "max-age=60; code_x=1", "forbid": [], "keep": []}
+{"kind": "same", "input": "/p?page=2&q=abc", "forbid": [], "keep": []}
+{"kind": "same", "input": "dev-000000000000-7319", "forbid": [], "keep": []}
+{"kind": "keep", "input": "{token=SEC1x}", "forbid": ["SEC1x"], "keep": ["{token=", "}"]}
+{"kind": "keep", "input": "[token=SEC2x]", "forbid": ["SEC2x"], "keep": ["[token=", "]"]}
+{"kind": "keep", "input": "token=\"SEC3x y\" fim", "forbid": ["SEC3x"], "keep": ["token=\"", "\" fim"]}
+{"kind": "keep", "input": "token='SEC4x' fim", "forbid": ["SEC4x"], "keep": ["token='", "' fim"]}
+{"kind": "keep", "input": "token=(SEC5x) fim", "forbid": ["SEC5x"], "keep": ["token=(", ") fim"]}
+{"kind": "keep", "input": "/a;jsessionid=SEC6x/b/c?x=1", "forbid": ["SEC6x"], "keep": ["/b/c?x=1"]}
+{"kind": "keep", "input": "https://h/a;jsessionid=SEC7x/b/c?x=1", "forbid": ["SEC7x"], "keep": ["/b/c?x=1"]}
+{"kind": "keep", "input": "/users;token=SEC8x/profile/123?page=2", "forbid": ["SEC8x"], "keep": ["/profile/123?page=2"]}
+{"kind": "keep", "input": "/a;v=2/b;token=SEC9x/c", "forbid": ["SEC9x"], "keep": ["/a;v=2/b;token=", "/c"]}
+{"kind": "keep", "input": "GET /cb?token=SEC10x&page=2 HTTP/1.1", "forbid": ["SEC10x"], "keep": ["GET /cb?token=", "&page=2 HTTP/1.1"]}
+{"kind": "keep", "input": "0;url=/d?pin=SEC11x&page=2", "forbid": ["SEC11x"], "keep": ["&page=2"]}
+{"kind": "keep", "input": "a=1 token=SEC12x b=2", "forbid": ["SEC12x"], "keep": ["a=1 ", " b=2"]}

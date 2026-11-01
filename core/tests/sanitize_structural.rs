@@ -35,12 +35,14 @@ fn matrix_param_redaction_keeps_the_following_path_segments() {
         sanitize_path_and_query("/a;v=2/b;token=SECRETX/c", &o),
         format!("/a;v=2/b;token={P}/c")
     );
+    // `session` é nome sensível: um segmento `session=X` também é redigido (A6-M1),
+    // mantendo o resto do caminho.
+    assert_eq!(
+        sanitize_path_and_query("/a;v=2/session=keep/b", &o),
+        format!("/a;v=2/session={P}/b")
+    );
     // O que não é segredo (inclusive `nome=valor` num segmento) fica igual.
-    for same in [
-        "/a;v=2/session=keep/b",
-        "/a;lang=en/x=1/y=2",
-        "/a;v=1/b?page=2",
-    ] {
+    for same in ["/a;lang=en/x=1/y=2", "/a;v=1/b?page=2"] {
         assert_eq!(sanitize_path_and_query(same, &o), same);
     }
     // Valor aninhado que atravessa segmentos continua sendo visto.

@@ -1,0 +1,309 @@
+{"input": "a=SUBVAL1; c=d", "forbid": ["SUBVAL1"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "cookie"}
+{"input": "k1=INNERV1&k2=x", "forbid": ["INNERV1"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "cookie"}
+{"input": "<html><body><form><input type=\"hidden\" name=\"csrf_token\" value=\"HTMLCSRF77777777\"><input name=\"authenticity_token\" value=\"HTMLAUTH8888888888\"></form><a href=\"/cb?token&#61;HTMLENT1x&amp;x=1\">l</a><a href=\"/cb?x=1&amp;token=HTMLAMP2x\">m</a> token=HTMLRAW3x</body></html>", "forbid": ["HTMLCSRF77777777"], "src": ["poc_r29.rs"], "kind": "html", "echo": ["HTMLCSRF77777777"]}
+{"input": "<html><input type=\"hidden\" name=\"nonce\" value=\"HtmlK9q2\"></html>", "forbid": ["HtmlK9q2"], "src": ["poc_oracle2.rs"], "kind": "html", "echo": ["HtmlK9q2"]}
+{"input": "<input name=nonce value=HtmlK9q2>", "forbid": [], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "html", "echo": []}
+{"input": "{\"a\":\"ApiKey SCHEME01x\",\"b\":\"OAuth SCHEME02x\",\"c\":\"bearer SCHEME03x\",\"d\":\"Hawk id=SCHEME04x\",\"e\":\"BEARER\\tSCHEME05x\",\"f\":\"Bearer  SCHEME06x\"}", "forbid": ["SCHEME01x", "SCHEME02x", "SCHEME03x", "SCHEME04x", "SCHEME06x"], "src": ["poc_r26b.rs"], "kind": "json"}
+{"input": "{\"device\":\"dev-000000000000-7319\",\"note\":\"next=/cb?token=RAWNEST01x\",\"link\":\"https://h.invalid/cb?access_token=RAWNEST02x&x=1\",\"dbl\":\"/r?next=%2Fcb%253Ftoken%253DDBLENC03x\",\"ok\":\"value=/a?b=c\",\"mix1\":\"next=%2Fcb%3Ftoken=MIXED01x\",\"mix2\":\"redirect=https%3A%2F%2Fh%2Fcb%3Faccess_token=MIXED02x&z=1\",\"mix3\":\"next=/cb%3Ftoken=MIXED03x\",\"chain\":\"a=b=token=CHAIN01x\",\"state\":\"state=token=CHAIN02x\",\"fr\":\"go to /p#token=FRAG01x\",\"txt\":\"use bearer\\tTABTOK01x and basic   lowbasic99 now\",\"page\":\"page=2&opinion=good&ticket_type=vip&sort=asc\",\"url\":\"https://ex.invalid/list?page=2&q=shoes\",\"prose\":\"Basic authentication and Bearer tokens are explained here\"}", "forbid": ["CHAIN01x", "CHAIN02x", "DBLENC03x", "FRAG01x", "MIXED01x", "MIXED02x", "MIXED03x", "RAWNEST01x", "RAWNEST02x"], "src": ["poc_r28.rs"], "kind": "json"}
+{"input": "{\"device\":\"dev-000000000000-7319\",\"note\":\"next=/cb?token=RAWNEST01x\",\"link\":\"https://h.invalid/cb?access_token=RAWNEST02x&x=1\",\"dbl\":\"/r?next=%2Fcb%253Ftoken%253DDBLENC03x\",\"ok\":\"value=/a?b=c\"}", "forbid": ["DBLENC03x", "RAWNEST01x", "RAWNEST02x"], "src": ["poc_r27.rs"], "kind": "json"}
+{"input": "{\"next\":\"https://h.invalid/a;jsessionid=JSB1x/b/c?x=1\",\"seg\":\"https://h.invalid/x;a=1/token=SEGB2x\"}", "forbid": ["JSB1x", "SEGB2x"], "src": ["zz_sec30_confirm.rs"], "kind": "json"}
+{"input": "{\"pin\":\"PINJSON05xx\",\"otp\":\"OTPJSON06xx\",\"auth_key\":\"AUTHKEYJSON07\",\"note\":\"bearer LOWERBEARER08\"}", "forbid": ["AUTHKEYJSON07", "LOWERBEARER08", "OTPJSON06xx", "PINJSON05xx"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "json"}
+{"input": "{\"redirect\":\"https://h/cb?next=%2Fcb%3Faccess_token%3DAAA%2BBODYPLUS9x\",\"q\":\"token=\\\"BODYQUOT10x\\\"\"}", "forbid": ["AAA", "BODYPLUS9x", "BODYQUOT10x"], "src": ["poc_r29.rs"], "kind": "json"}
+{"input": "{\"ticket\":{\"id\":42,\"title\":\"Suporte\",\"secret\":\"TKSEC\"},\"pin\":true,\"jwtExpiresIn\":3600,\"shotp\":1,\"pinCode\":\"9876\",\"otp\":123456,\"tokenType\":\"Bearer\",\"sessionId\":12345678,\"password\":1,\"pin2\":0,\"pinTtl\":4821,\"apiKeyVersion\":77,\"tokenCount\":918273,\"tokenLength\":555444,\"passwordExpires\":20261031,\"otpExpiresIn\":654321,\"tokens\":[111222,\"TKARR\"],\"mfa\":{\"type\":7,\"code\":334455}}", "forbid": ["TKARR", "TKSEC"], "src": ["poc_r27.rs"], "kind": "json"}
+{"input": "=EMPTYNAME30x; Path=/", "forbid": ["EMPTYNAME30x"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "setcookie"}
+{"input": "NAMELESS29xx; Path=/", "forbid": ["NAMELESS29xx"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "setcookie"}
+{"input": "\"https://u:UI6x@h\"", "forbid": ["UI6x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "%25%37%34oken%3DSECn", "forbid": ["SECn"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "%74%6F%6B%65%6E=HEX3x", "forbid": ["HEX3x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "%E2%82token%3DSECr", "forbid": ["SECr"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "%FFtoken=SECc", "forbid": ["SECc"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "%G1token=SECk", "forbid": ["SECk"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "0; url=https://app.poc.invalid/done#access_token=FRAGREFRESH11", "forbid": ["FRAGREFRESH11"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "text"}
+{"input": "</a;jsessionid=LNK1x/b>; rel=next", "forbid": ["LNK1x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "</p;a=1/token=LNK6x>; rel=next", "forbid": ["LNK6x"], "src": ["zz_sec30_confirm.rs"], "kind": "text"}
+{"input": "<https://app.poc.invalid/p?a=1>; rel=next; ticket=TKTLINK03", "forbid": ["TKTLINK03"], "src": ["poc_r26.rs", "poc_r26b.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "Authorization: bearer SEC4", "forbid": ["SEC4"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "Authorization:Bearer NOSP6x", "forbid": ["NOSP6x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "BEARER TOKENALONE99", "forbid": ["TOKENALONE99"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "Basic\tSEC9", "forbid": ["SEC9"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "Basic\nNEWL5x", "forbid": ["NEWL5x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "Basic　WIDE4x", "forbid": ["WIDE4x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "Bearer\tSCHEME09x", "forbid": ["SCHEME09x"], "src": ["poc_r26b.rs"], "kind": "text"}
+{"input": "Bearer TOKENALONE9", "forbid": ["TOKENALONE9"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "Bearer TOKENALONE99", "forbid": ["TOKENALONE99"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "Bearer ABCDEF123456NB", "forbid": ["ABCDEF123456NB"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "Bearer NBSP3x", "forbid": ["NBSP3x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "Bearer　ABCDEF123456ID", "forbid": ["ABCDEF123456ID"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "GET /a;jsessionid=MAT11x/b/c?x=1 HTTP/1.1", "forbid": ["MAT11x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "GET /cb?token=AB,RAWc11x HTTP/1.1", "forbid": ["RAWc11x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "Refresh: 0; url=/a;jsessionid=REF1x/b/c?page=2", "forbid": ["REF1x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "TOKEN=UP6x", "forbid": ["UP6x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "X-Note3: next=%2Fcb%3Ftoken=MIX4x", "forbid": ["MIX4x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "[token=BR54x]", "forbid": ["BR54x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "a%253Db%253Dtoken%253DENC57x", "forbid": ["ENC57x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "a%3Db%3Dtoken%3DENC56x", "forbid": ["ENC56x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "a%3Db=token%3DSECh", "forbid": ["SECh"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "a=%2541=token=EQ28x", "forbid": ["EQ28x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "a=%2F%3F&b=1%3D&token=AMP4x", "forbid": ["AMP4x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "a=%2Fx%3Ftoken%3DY=token=EQ25x", "forbid": ["EQ25x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "a=%41&token=AMP27x", "forbid": ["AMP27x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "a=%41=token=EQ26x", "forbid": ["EQ26x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "a=1&next=/cb?token=SECR3x", "forbid": ["SECR3x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "a=b=token=CH1x", "forbid": ["CH1x"], "src": ["poc_r28.rs", "zz_sec28_core.rs", "zz_sec29_core2.rs"], "kind": "text"}
+{"input": "auth bearer\tTABTOK02x; Basic　WIDESP03x", "forbid": ["TABTOK02x", "WIDESP03x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "auth=Bearer%20PCT9x", "forbid": ["PCT9x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "ação token=SEC10€ fim", "forbid": ["SEC10"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "bearer\tTAB1x", "forbid": ["TAB1x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "bearer TOKENALONE99", "forbid": ["TOKENALONE99"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "d1=%2Fa%3Fn%3D%252Fb%253Fn%253D%25252Fc%25253Fn%25253D%2525252Fd%2525253Ftoken%2525253DDEEP5x", "forbid": ["DEEP5x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "falhou cb?token=S15 e app.invalid/p;jsessionid=S16 e //h/x#id_token=S17 e h.invalid:9/p?k=S18", "forbid": ["S15", "S16", "S17"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "falhou https://h/p#id_token=SWEEP25xx", "forbid": ["SWEEP25xx"], "src": ["poc_secrets_live.rs", "poc_r26b.rs"], "kind": "text"}
+{"input": "foo-token=DASH50x", "forbid": ["DASH50x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "foo.token=DOT49x", "forbid": ["DOT49x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "foo_token=US51x", "forbid": ["US51x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "go next=%2Fcb%3Ftoken%3DSEC1", "forbid": ["SEC1"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "go next=/cb?token=RAWNEST10x done", "forbid": ["RAWNEST10x"], "src": ["poc_r27.rs", "poc_r28.rs"], "kind": "text"}
+{"input": "my:token=COL52x", "forbid": ["COL52x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "n=%252525252525252525252Fcb%252525252525252525253Ftoken%252525252525252525253DLVL10x", "forbid": ["LVL10x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "n=%2525252525252525252Fcb%2525252525252525253Ftoken%2525252525252525253DLVL9x", "forbid": ["LVL9x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "n=%25252525252525252Fcb%25252525252525253Ftoken%25252525252525253DLVL8x", "forbid": ["LVL8x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "n=%252525252Fcb%252525253Ftoken%252525253DPENT1x", "forbid": ["PENT1x"], "src": ["poc_r28.rs", "zz_sec28_core.rs", "zz_sec29_core2.rs"], "kind": "text"}
+{"input": "n=%2525252Fcb%2525253Ftoken%2525253DQUAD1x", "forbid": ["QUAD1x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "n=%C0%BDtoken=SECe", "forbid": ["SECe"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%252Fcb%253Ftoken%253DDBL1x", "forbid": ["DBL1x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "next=%252Fcb%253Ftoken%253DSECR6x", "forbid": ["SECR6x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "next=%2F%2F%3Fa%3D%2525%26token%3DSECR9x", "forbid": ["SECR9x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "next=%2Fcb%253Ftoken%253DDBL1x", "forbid": ["DBL1x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "next=%2Fcb%253Ftoken%253DSECR5x", "forbid": ["SECR5x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3F%20token=SP32x", "forbid": ["SP32x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%09=TAB33x", "forbid": ["TAB33x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%20=SP30x", "forbid": ["SP30x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%26%2361%3BE9x", "forbid": ["E9x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3D%FF%FESECd", "forbid": ["SECd"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%0ALEAKc9x", "forbid": ["LEAKc9x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%20LEAKc10x", "forbid": ["LEAKc10x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%22LEAKc4x", "forbid": ["LEAKc4x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%27LEAKc11x", "forbid": ["LEAKc11x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%28LEAKc5x", "forbid": ["LEAKc5x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%2CLEAKc1x", "forbid": ["LEAKc1x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%3BLEAKc8x", "forbid": ["LEAKc8x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%3CLEAKc6x", "forbid": ["LEAKc6x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%5CLEAKc3x", "forbid": ["LEAKc3x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%7BLEAKc7x", "forbid": ["LEAKc7x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DAB%7CLEAKc2x", "forbid": ["LEAKc2x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3DMIX3x", "forbid": ["MIX3x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3Dab%2520SP5x", "forbid": ["SP5x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3Dab%2522QUOT9x", "forbid": ["QUOT9x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3Dab%2523HASH7x", "forbid": ["HASH7x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3Dab%2526AMP6x", "forbid": ["AMP6x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3Dab%252BPLUS2x%252Fef", "forbid": ["PLUS2x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3Dab%253BSEMI8x", "forbid": ["SEMI8x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3Dab%2BHDRPLUS6x", "forbid": ["HDRPLUS6x"], "src": ["poc_r29.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3Dab%2BPLUSB64x", "forbid": ["PLUSB64x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken%3dSECR7x", "forbid": ["SECR7x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken+=PL31x", "forbid": ["PL31x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken=AB%26SECj", "forbid": ["SECj"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken=MIX1x", "forbid": ["MIX1x"], "src": ["poc_r28.rs", "zz_sec28_core.rs", "zz_sec29_core2.rs"], "kind": "text"}
+{"input": "next=%2Fcb%3Ftoken=MIXED05x", "forbid": ["MIXED05x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "next=/cb%3Ftoken%3D%2520SP29x", "forbid": ["SP29x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "next=/cb%3Ftoken=MIX2x", "forbid": ["MIX2x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "next=/cb%3Ftoken=MIX3x", "forbid": ["MIX3x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "next=/cb?token=SECR1x", "forbid": ["SECR1x"], "src": ["poc_r27.rs", "poc_r28.rs", "zz_sec28_core.rs"], "kind": "text"}
+{"input": "next=/cb?token=ab%2BRAWPLUS3x", "forbid": ["RAWPLUS3x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "next=/cb?token=ab+RAWPLUS4x", "forbid": ["RAWPLUS4x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "pass=SEC8", "forbid": ["SEC8"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "password = hunter2SP63", "forbid": ["hunter2SP63"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "q=%2Fcb%3Ftoken%3DSECR8x+more", "forbid": ["SECR8x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "q=%3D=token=EQ6x", "forbid": ["EQ6x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "q=a%3Db token=SPC5x", "forbid": ["SPC5x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "redirect=https%3A%2F%2Fh%2Fcb%3Faccess_token=MIX2x&z=1", "forbid": ["MIX2x"], "src": ["zz_sec28_core.rs", "zz_sec29_core2.rs"], "kind": "text"}
+{"input": "redirect=https%3A%2F%2Fu%3AUI5x%40h%2Fx", "forbid": ["UI5x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "redirect=https://h.invalid/cb?access_token=RAWNEST09x", "forbid": ["RAWNEST09x"], "src": ["poc_r27.rs", "poc_r28.rs"], "kind": "text"}
+{"input": "redirect=https://h/cb?access_token=SECR2x&y=1", "forbid": ["SECR2x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "redirect_uri=https%3A%2F%2Fh%2Fcb%3Fcode%3Dab%2BCODE10x%26state%3Dxyz", "forbid": ["CODE10x"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "requisição fora da allowlist sem falha de resolução: http://127.0.0.1:8081/cb;jsessionid=SWEEP22xx?k=SWEEP23xx#access_token=SWEEP24xx (porta fora da allowlist)", "forbid": ["SWEEP22xx", "SWEEP24xx"], "src": ["poc_secrets_live.rs"], "kind": "text"}
+{"input": "see https://user:UI1x@host/", "forbid": ["UI1x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "sid=Ck7Zp3Wq; Path=/", "forbid": ["Ck7Zp3Wq"], "src": ["poc_oracle2.rs"], "kind": "text"}
+{"input": "state=%2Fcb%3Faccess_token%3DAAA%2BBBB%2FCCC%3D%3D", "forbid": ["AAA", "BBB"], "src": ["zz_sec29_core3.rs"], "kind": "text"}
+{"input": "state=token=CH2x", "forbid": ["CH2x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "t%25%36%46ken%253DSECo", "forbid": ["SECo"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "t%6Fken=HEX2x", "forbid": ["HEX2x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "tok%00en=NUL4x", "forbid": ["NUL4x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "tok%2Ben=PLS5x", "forbid": ["PLS5x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token\t=HDRTAB8x", "forbid": ["HDRTAB8x"], "src": ["poc_r29.rs"], "kind": "text"}
+{"input": "token\t=TAB9x", "forbid": ["TAB9x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token  =SP8x", "forbid": ["SP8x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token = SPB10x", "forbid": ["SPB10x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token =SEC5", "forbid": ["SEC5"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "token =SP7x", "forbid": ["SP7x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token%%3DSECl", "forbid": ["SECl"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token%20%3DSP1x", "forbid": ["SP1x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "token%25%33%44SECg", "forbid": ["SECg"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token%25253DTRP20x", "forbid": ["TRP20x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token%253DDBL19x", "forbid": ["DBL19x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token%26%2361%3BE10x", "forbid": ["E10x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token%2B%3DPLUS2x", "forbid": ["PLUS2x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "token%3%3DSECm", "forbid": ["SECm"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token%3D%C3©SECb", "forbid": ["SECb"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token%3D=SECi", "forbid": ["SECi"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token%3dLOW1x", "forbid": ["LOW1x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token%C0%BDSECf", "forbid": ["SECf"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token+%3DPLUS1x", "forbid": ["PLUS1x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "token: \"Bearer XYZ7x\"", "forbid": ["XYZ7x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "token:=COL12x", "forbid": ["COL12x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token= HDRSP7x", "forbid": ["HDRSP7x"], "src": ["poc_r29.rs"], "kind": "text"}
+{"input": "token= SPA11x", "forbid": ["SPA11x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token=\"HDRQUOT5x\"", "forbid": ["HDRQUOT5x"], "src": ["poc_r29.rs"], "kind": "text"}
+{"input": "token=\"Q59x\"", "forbid": ["Q59x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token=\"abc\"TAILb3x", "forbid": ["TAILb3x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=%22Q58x%22", "forbid": ["Q58x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token=%5BREDACTED%5DTAILb5x", "forbid": ["TAILb5x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=%C3%A9SECa", "forbid": ["SECa"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token='Q60x'", "forbid": ["Q60x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token=(PAR61x)", "forbid": ["PAR61x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token=(abc)TAILb2x", "forbid": ["TAILb2x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=<LT62x>", "forbid": ["LT62x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "token=AB\"RAWc5x", "forbid": ["RAWc5x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB'RAWc10x", "forbid": ["RAWc10x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB(RAWc4x)", "forbid": ["RAWc4x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB,RAWc1x", "forbid": ["RAWc1x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB;RAWc3x", "forbid": ["RAWc3x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB<RAWc9x>", "forbid": ["RAWc9x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB[RAWc7x]", "forbid": ["RAWc7x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB\\RAWc6x", "forbid": ["RAWc6x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB{RAWc8x}", "forbid": ["RAWc8x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=AB|RAWc2x", "forbid": ["RAWc2x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=SEGURL3x", "forbid": ["SEGURL3x"], "src": ["zz_sec30_confirm.rs"], "kind": "text"}
+{"input": "token=SWEEP26xx sem interrogação", "forbid": ["SWEEP26xx"], "src": ["poc_secrets_live.rs", "poc_r26b.rs"], "kind": "text"}
+{"input": "token=[REDACTED]TAILb4x", "forbid": ["TAILb4x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=[abc]TAILb1x", "forbid": ["TAILb1x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token= NB3x", "forbid": ["NB3x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token=　IDS6x", "forbid": ["IDS6x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token =NB2x", "forbid": ["NB2x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token​=ZW2x", "forbid": ["ZW2x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token =LS7x", "forbid": ["LS7x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "token　=IDS5x", "forbid": ["IDS5x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "to­ken=SHY3x", "forbid": ["SHY3x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "u=%2F?token=Q7x", "forbid": ["Q7x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "usuario=joao&senha=SENHAFORM03&pwd=PWDFORM04xx", "forbid": ["PWDFORM04xx", "SENHAFORM03"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "text"}
+{"input": "x%23token=Q24x", "forbid": ["Q24x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x%253D1%2526token%253DDBLENC12x", "forbid": ["DBLENC12x"], "src": ["poc_r27.rs", "poc_r28.rs"], "kind": "text"}
+{"input": "x%253D1%2526token%253DSECR4x", "forbid": ["SECR4x"], "src": ["poc_r27.rs"], "kind": "text"}
+{"input": "x%26token=Q23x", "forbid": ["Q23x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x%3D1%26token%3DNESTED04x", "forbid": ["NESTED04x"], "src": ["poc_r26.rs", "poc_r26b.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "x%3D1%26token%3DSEC2", "forbid": ["SEC2"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "x%3Dtoken%2B%253DPLUS3x", "forbid": ["PLUS3x"], "src": ["poc_r28.rs", "zz_sec28_core.rs"], "kind": "text"}
+{"input": "x%3Ftoken%3DQ21x", "forbid": ["Q21x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x%3Ftoken=Q22x", "forbid": ["Q22x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%21token=EXC47x", "forbid": ["EXC47x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%22token=QT40x", "forbid": ["QT40x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%24token=DOL46x", "forbid": ["DOL46x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%27token=QT41x", "forbid": ["QT41x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%28token=PAR42x", "forbid": ["PAR42x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%2Atoken=AST48x", "forbid": ["AST48x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%2Ctoken=COMMA35x", "forbid": ["COMMA35x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%2F%3Fa%3Db&token=AMP1x", "forbid": ["AMP1x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "x=%2Fa&token=AMP2x", "forbid": ["AMP2x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "x=%3Atoken=COL37x", "forbid": ["COL37x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%3Btoken=SEMI34x", "forbid": ["SEMI34x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%3Ctoken=LT43x", "forbid": ["LT43x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%40token=AT44x", "forbid": ["AT44x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%41;token=SEMI3x", "forbid": ["SEMI3x"], "src": ["zz_sec28_core.rs"], "kind": "text"}
+{"input": "x=%5Btoken=BR38x", "forbid": ["BR38x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%5Ctoken=BS45x", "forbid": ["BS45x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%7Btoken=BR39x", "forbid": ["BR39x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=%7Ctoken=PIPE36x", "forbid": ["PIPE36x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=1=2=3=token=CH3x", "forbid": ["CH3x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=y%26token%3D%2526AMP55x", "forbid": ["AMP55x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "x=y&token=CH2x", "forbid": ["CH2x"], "src": ["poc_r28.rs"], "kind": "text"}
+{"input": "xhttps://u:UI3x@h", "forbid": ["UI3x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "{token=BR53x}", "forbid": ["BR53x"], "src": ["zz_sec29_core2.rs"], "kind": "text"}
+{"input": "é%3Ftoken%3DSECpé", "forbid": ["SECp"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "étoken=SECqéx", "forbid": ["SECq"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "ñtoken=U4x", "forbid": ["U4x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "‮token=RTL1x", "forbid": ["RTL1x"], "src": ["zz_sec30_new.rs"], "kind": "text"}
+{"input": "€€token%3dSEC11", "forbid": ["SEC11"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "text"}
+{"input": "//user:UI2x@host/x", "forbid": ["UI2x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "/a;JSESSIONID=SEC13/b;%6Asessionid=SEC14", "forbid": ["SEC13", "SEC14"], "src": ["poc_r26.rs", "poc_r26_rerun.rs", "zz_sec29_core2.rs"], "kind": "url"}
+{"input": "/a;jsessionid=MAT11x/b/c?x=1", "forbid": ["MAT11x"], "src": ["zz_sec29_core3.rs"], "kind": "url"}
+{"input": "/a;jsessionid=XH5x/b/c?x=1", "forbid": ["XH5x"], "src": ["zz_sec30_confirm.rs"], "kind": "url"}
+{"input": "/a;v=2/b;token=MAT15x/c", "forbid": ["MAT15x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "/cb#access_token=FRAGLOC17xx", "forbid": ["FRAGLOC17xx"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "url"}
+{"input": "/cb?next=%2Fx%3Faccess_token%3DNESTED02x", "forbid": ["NESTED02x"], "src": ["poc_r26.rs", "poc_r26b.rs", "poc_r26_rerun.rs"], "kind": "url"}
+{"input": "/cb?next=%2Fx%3Faccess_token%3DSEC3", "forbid": ["SEC3"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "url"}
+{"input": "/cb?next=/x?access_token=RAWNEST11x", "forbid": ["RAWNEST11x"], "src": ["poc_r27.rs", "poc_r28.rs"], "kind": "url"}
+{"input": "/cb?token=AB%20CDLEAK7x&page=K", "forbid": ["CDLEAK7x"], "src": ["zz_sec30_confirm.rs"], "kind": "url"}
+{"input": "/cb?token=AB%20CDLEAK8x&page=K", "forbid": ["CDLEAK8x"], "src": ["zz_sec30_confirm.rs"], "kind": "url"}
+{"input": "/p#a=b=token=FR66x", "forbid": ["FR66x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "/p#x%3Ftoken=FR67x", "forbid": ["FR67x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "/p;jsessionid=MAT1x?x=1", "forbid": ["MAT1x"], "src": ["zz_sec28_core.rs"], "kind": "url"}
+{"input": "/p?a=1#x&token=SWEEP28xx", "forbid": ["SWEEP28xx"], "src": ["poc_secrets_live.rs"], "kind": "url"}
+{"input": "/p?next=%2Fcb%3Ftoken=PQ1x", "forbid": ["PQ1x"], "src": ["zz_sec28_core.rs"], "kind": "url"}
+{"input": "/p?to%6Ben=SWEEP30xx", "forbid": ["SWEEP30xx"], "src": ["poc_secrets_live.rs"], "kind": "url"}
+{"input": "/p?token%3DSWEEP31xx", "forbid": ["SWEEP31xx"], "src": ["poc_secrets_live.rs"], "kind": "url"}
+{"input": "/p?x=1;token=SWEEP32xx", "forbid": ["SWEEP32xx"], "src": ["poc_secrets_live.rs"], "kind": "url"}
+{"input": "/r?next=%2Fcb%3Ftoken%3DSEC12&ok=1", "forbid": ["SEC12"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "url"}
+{"input": "/x/session=SEC5x?y=1", "forbid": ["SEC5x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "/x;a=1/b=token=SEC7x/c", "forbid": ["SEC7x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "http://admin:USERINFO19x@site.invalid.test/x", "forbid": ["USERINFO19x"], "src": ["poc_secrets_live.rs"], "kind": "url"}
+{"input": "http://admin:USERINFO20x@site.invalid.test/y#access_token=FRAGNAV21x", "forbid": ["FRAGNAV21x", "USERINFO20x"], "src": ["poc_secrets_live.rs"], "kind": "url"}
+{"input": "http://site.invalid.test/y;jsessionid=LIVE01x?token=LIVE02x#access_token=LIVE03x", "forbid": ["LIVE01x", "LIVE02x", "LIVE03x"], "src": ["poc_r26b.rs"], "kind": "url"}
+{"input": "https://admin:USERINFO12x@app.poc.invalid/x", "forbid": ["USERINFO12x"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "url"}
+{"input": "https://app.poc.invalid/a?auth_key=AUTHKEYQ13x&ticket=TICKETQ14xx&SAMLResponse=SAMLQ15xxxx", "forbid": ["AUTHKEYQ13x", "SAMLQ15xxxx", "TICKETQ14xx"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "url"}
+{"input": "https://app.poc.invalid/home;jsessionid=MATRIXSID01?x=1", "forbid": ["MATRIXSID01"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "url"}
+{"input": "https://app.poc.invalid/login?jwt=JWTPARAM02x&api%5Fkey=PCTKEY18xxx", "forbid": ["JWTPARAM02x", "PCTKEY18xxx"], "src": ["poc_oracle2.rs", "poc_secrets.rs"], "kind": "url"}
+{"input": "https://app.poc.invalid/r?next=%2Fcb%3Ftoken%3DNESTED01x&ok=1", "forbid": ["NESTED01x"], "src": ["poc_r26.rs", "poc_r26_rerun.rs"], "kind": "url"}
+{"input": "https://app.poc.invalid/r?next=%2Fcb%3Ftoken%3DNESTED01x&redirect_uri=https%3A%2F%2Fh%2Fcb%23access_token%3DNESTED05x", "forbid": ["NESTED01x", "NESTED05x"], "src": ["poc_r26b.rs"], "kind": "url"}
+{"input": "https://app.poc.invalid/r?next=/cb?token=RAWNEST04x&a=1&c=%2Fcb%253Ftoken%253DDBLENC05x&d=https%3A%2F%2Fh%2Fcb%253Faccess_token%253DDBLENC06x&e=%2Fx%3Ftoken%3dLOWER07x&f=%2Fx%3Ftoken+%3DPLUS08x", "forbid": ["DBLENC05x", "DBLENC06x", "LOWER07x", "PLUS08x", "RAWNEST04x"], "src": ["poc_r27.rs"], "kind": "url"}
+{"input": "https://app.poc.invalid/r?next=/cb?token=RAWNEST04x&a=1&c=%2Fcb%253Ftoken%253DDBLENC05x&d=https%3A%2F%2Fh%2Fcb%253Faccess_token%253DDBLENC06x&e=%2Fx%3Ftoken%3dLOWER07x&f=%2Fx%3Ftoken+%3DPLUS08x&g=%2Fcb%3Ftoken=MIXED04x&h=%25252Fcb%25253Ftoken%25253DTRIPLE09x&page=2", "forbid": ["DBLENC05x", "DBLENC06x", "LOWER07x", "MIXED04x", "PLUS08x", "RAWNEST04x", "TRIPLE09x"], "src": ["poc_r28.rs"], "kind": "url"}
+{"input": "https://h.invalid/a;jsessionid=REF4x/b/c?x=1", "forbid": ["REF4x"], "src": ["zz_sec30_confirm.rs"], "kind": "url"}
+{"input": "https://h.invalid/x;v=1/token=SEGURL3x/next?page=2", "forbid": ["SEGURL3x"], "src": ["zz_sec30_confirm.rs"], "kind": "url"}
+{"input": "https://h/a;jsessionid=MAT11x/b/c?x=1", "forbid": ["MAT11x"], "src": ["zz_sec29_core2.rs", "zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/api/v1/access_token=SEC6x/next", "forbid": ["SEC6x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/p;a=1/q=token=MAT16x", "forbid": ["MAT16x"], "src": ["zz_sec29_core2.rs", "zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/r#a=b=token=FRN4x", "forbid": ["FRN4x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r#next=%2Fcb%3Ftoken=FRN5x", "forbid": ["FRN5x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r#next=/cb?token=URL7x", "forbid": ["URL7x"], "src": ["poc_r28.rs"], "kind": "url"}
+{"input": "https://h/r#token=F1x", "forbid": ["F1x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/r#x%3Ftoken=FRN3x", "forbid": ["FRN3x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r;a=b=token=MATN9x", "forbid": ["MATN9x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r;next=%2Fcb%3Ftoken=MATN10x/z", "forbid": ["MATN10x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r;next=/cb%3Ftoken=URL8x", "forbid": ["URL8x"], "src": ["poc_r28.rs", "zz_sec28_core.rs", "zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r;t%6Fken=MATN6x", "forbid": ["MATN6x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r;token%3DMATN8x", "forbid": ["MATN8x"], "src": ["zz_sec29_core2.rs", "zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r;x=1;token%3DMATN7x", "forbid": ["MATN7x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r?%74oken=QN18x", "forbid": ["QN18x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r?a=1;token=Q3x", "forbid": ["Q3x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/r?a=b=token=URL6x", "forbid": ["URL6x"], "src": ["poc_r28.rs", "zz_sec28_core.rs", "zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r?c=%2Fcb%253Ftoken%253DURL2x", "forbid": ["URL2x"], "src": ["poc_r27.rs"], "kind": "url"}
+{"input": "https://h/r?d=https%3A%2F%2Fh%2Fcb%253Faccess_token%253DURL3x", "forbid": ["URL3x"], "src": ["poc_r27.rs"], "kind": "url"}
+{"input": "https://h/r?e=%2Fx%3Ftoken%3dURL5x", "forbid": ["URL5x"], "src": ["poc_r27.rs"], "kind": "url"}
+{"input": "https://h/r?f=%2Fx%3Ftoken+%3DURL4x", "forbid": ["URL4x"], "src": ["poc_r27.rs"], "kind": "url"}
+{"input": "https://h/r?f=%2Fx%3Ftoken+%3DURL5x", "forbid": ["URL5x"], "src": ["poc_r28.rs"], "kind": "url"}
+{"input": "https://h/r?g=%2Fcb%3Ftoken=URL2x", "forbid": ["URL2x"], "src": ["poc_r28.rs"], "kind": "url"}
+{"input": "https://h/r?h=%25252Fcb%25253Ftoken%25253DURL3x", "forbid": ["URL3x"], "src": ["poc_r28.rs"], "kind": "url"}
+{"input": "https://h/r?i=%2525252Fcb%2525253Ftoken%2525253DURL4x", "forbid": ["URL4x"], "src": ["poc_r28.rs"], "kind": "url"}
+{"input": "https://h/r?next=%2Fcb%3Ftoken%3Dab%2520QSP4x", "forbid": ["QSP4x"], "src": ["zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r?next=%2Fcb%3Ftoken%3Dab%2526QAMP5x", "forbid": ["QAMP5x"], "src": ["zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r?next=%2Fcb%3Ftoken%3Dab%252BQPLUS7x", "forbid": ["QPLUS7x"], "src": ["zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r?next=%2Fcb%3Ftoken%3Dab%2BQPLUS1x", "forbid": ["QPLUS1x"], "src": ["zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r?next=%2Fcb%3Ftoken=QN2x", "forbid": ["QN2x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r?next=/cb%3Ftoken%3Dab%2BQPLUS3x", "forbid": ["QPLUS3x"], "src": ["zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r?next=/cb?token=URL1x", "forbid": ["URL1x"], "src": ["poc_r27.rs", "poc_r28.rs"], "kind": "url"}
+{"input": "https://h/r?redirect_uri=https%3A%2F%2Fh%2Fcb%3Faccess_token%3DAAA%2BQPLUS2x&x=1", "forbid": ["AAA", "QPLUS2x"], "src": ["zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r?t%6Fken=QN17x", "forbid": ["QN17x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r?token=AB,CDq1x&z=1", "forbid": ["CDq1x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/r?token=ab%2BDIRECT6x", "forbid": ["DIRECT6x"], "src": ["zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r?x%3Ftoken=QN1x", "forbid": ["QN1x"], "src": ["zz_sec29_core2.rs"], "kind": "url"}
+{"input": "https://h/r?x=%2Fcb%3Ftoken%3DAB%2CCDq2x", "forbid": ["CDq2x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/r?x=%41&token=URL9x", "forbid": ["URL9x"], "src": ["zz_sec28_core.rs"], "kind": "url"}
+{"input": "https://h/r?x=1#a=b&token=F2x", "forbid": ["F2x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/r?x=1&token%3DQN19x", "forbid": ["QN19x"], "src": ["zz_sec29_core2.rs", "zz_sec29_core3.rs"], "kind": "url"}
+{"input": "https://h/r?x=token%26%2361%3BQ5x", "forbid": ["Q5x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/r?x=y,token=Q4x", "forbid": ["Q4x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/x%41/token=SEC4x", "forbid": ["SEC4x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/x/token=SEC1x", "forbid": ["SEC1x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/x;a=1/q=token=SEC3x", "forbid": ["SEC3x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://h/x;a=1/token=SEC2x", "forbid": ["SEC2x"], "src": ["zz_sec30_new.rs"], "kind": "url"}
+{"input": "https://u:SWEEP27xx@h/x", "forbid": ["SWEEP27xx"], "src": ["poc_secrets_live.rs", "poc_r26b.rs"], "kind": "url"}
+{"input": "https:/\\u:UI4x@h", "forbid": ["UI4x"], "src": ["zz_sec30_new.rs"], "kind": "url"}

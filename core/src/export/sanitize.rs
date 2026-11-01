@@ -350,7 +350,7 @@ fn sanitize_header_view(
             continue;
         }
         if is_url_header(&lower) {
-            let sanitized = sanitize_url_reference(&entry.value, options);
+            let sanitized = sanitize_url_header_value(&lower, &entry.value, options);
             if sanitized != entry.value {
                 entry.value = sanitized;
                 *redactions.entry("header:url".to_string()).or_default() += 1;
@@ -763,9 +763,61 @@ fn redact_auth_scheme(value: &str, options: &SanitizeOptions) -> Option<String> 
     split_auth_scheme(value).map(|(scheme, _)| format!("{scheme} {}", options.placeholder))
 }
 
+/// Valor de header de URL (`Location`, `Referer`, `Origin`, `Content-Location`,
+/// `Link`). Só o que PARECE referência de URL passa pelo sanitizador de URL; o
+/// resto (texto livre, lixo, aspas) segue as regras de texto. Em ambos os casos o
+/// resultado passa pelo sanitizador de texto (idempotente sobre URL já redigida).
+/// `Link: <url>; rel=next, <url2>`: cada `<url>` é sanitizado e os parâmetros
+/// seguem as regras de texto.
+fn sanitize_url_header_value(lower_name: &str, value: &str, options: &SanitizeOptions) -> String {
+    let one = |text: &str| {
+        let url_like = text.starts_with(['/', '?', '#', '.'])
+            || split_authority_prefix(text).is_some()
+            || text
+                .split_once(':')
+                .is_some_and(|(scheme, _)| {
+                    !scheme.is_empty()
+                        && scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                        && scheme
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+                });
+        let first = if url_like {
+            sanitize_url_reference(text, options)
+        } else {
+            text.to_string()
+        };
+        sanitize_text(&first, options)
+    };
+    if lower_name == "link" && value.contains('<') {
+        let mut out = String::with_capacity(value.len());
+        let mut rest = value;
+        while let Some(open) = rest.find('<') {
+            out.push_str(&sanitize_text(&rest[..open], options));
+            let after = &rest[open + 1..];
+            match after.find('>') {
+                Some(close) => {
+                    out.push('<');
+                    out.push_str(&one(&after[..close]));
+                    out.push('>');
+                    rest = &after[close + 1..];
+                }
+                None => {
+                    out.push('<');
+                    out.push_str(&one(after));
+                    rest = "";
+                }
+            }
+        }
+        out.push_str(&sanitize_text(rest, options));
+        return out;
+    }
+    one(value)
+}
+
 /// Sanitiza URL absoluta ou referência relativa (Location/Referer/:path).
 pub fn sanitize_url_reference(value: &str, options: &SanitizeOptions) -> String {
-    if value.contains("://") {
+    if split_authority_prefix(value).is_some() {
         sanitize_url(value, options)
     } else {
         sanitize_path_and_query(value, options)
@@ -777,19 +829,17 @@ pub fn sanitize_url(url: &str, options: &SanitizeOptions) -> String {
         Some((left, right)) => (left, Some(right)),
         None => (url, None),
     };
-    let sanitized_base = if let Some((scheme, rest)) = before_fragment.split_once("://") {
-        let (authority, path_and_query) = match rest.split_once('/') {
-            Some((authority, rest)) => (authority, format!("/{rest}")),
-            None => (rest, String::new()),
-        };
+    let sanitized_base = if let Some((prefix, rest)) = split_authority_prefix(before_fragment) {
+        let authority_len = rest.find(['/', '\\', '?']).unwrap_or(rest.len());
+        let (authority, path_and_query) = rest.split_at(authority_len);
         let authority = if let Some((_userinfo, host_port)) = authority.rsplit_once('@') {
             format!("{}@{}", url_placeholder(options), host_port)
         } else {
             authority.to_string()
         };
         format!(
-            "{scheme}://{authority}{}",
-            sanitize_path_and_query(&path_and_query, options)
+            "{prefix}{authority}{}",
+            sanitize_path_and_query(path_and_query, options)
         )
     } else {
         sanitize_path_and_query(before_fragment, options)
@@ -805,6 +855,31 @@ pub fn sanitize_url(url: &str, options: &SanitizeOptions) -> String {
         }
         _ => sanitized_base,
     }
+}
+
+/// `esquema://`, `esquema:/\\` (um ou mais `/` ou `\\` depois de `esquema:`) ou `//`
+/// (relativo ao esquema): devolve (prefixo até o fim das barras, resto).
+fn split_authority_prefix(text: &str) -> Option<(&str, &str)> {
+    let bytes = text.as_bytes();
+    let is_slash = |b: u8| b == b'/' || b == b'\\';
+    let mut i = 0;
+    if bytes.first().is_some_and(|b| b.is_ascii_alphabetic()) {
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b'+' | b'-' | b'.'))
+        {
+            i += 1;
+        }
+        if bytes.get(i) != Some(&b':') || !bytes.get(i + 1).is_some_and(|b| is_slash(*b)) {
+            return None;
+        }
+        i += 1;
+    } else if !(bytes.len() >= 2 && is_slash(bytes[0]) && is_slash(bytes[1])) {
+        return None;
+    }
+    while i < bytes.len() && is_slash(bytes[i]) {
+        i += 1;
+    }
+    Some(text.split_at(i))
 }
 
 pub fn sanitize_path_and_query(value: &str, options: &SanitizeOptions) -> String {
@@ -838,22 +913,25 @@ pub fn sanitize_path_and_query(value: &str, options: &SanitizeOptions) -> String
 
 /// Parâmetros de matriz de caminho (`/a;jsessionid=X/b`): um parâmetro sensível
 /// redigido substitui SÓ o próprio valor (termina em `;` ou `/`); os segmentos
-/// seguintes do caminho ficam intactos. Parâmetro com valor aninhado
-/// (`;next=/cb%3Ftoken=X`) e segmento com `%` seguem as regras do texto.
+/// seguintes do caminho ficam intactos. Todo segmento com `=` ou `%` passa pelo
+/// tokenizador de texto (`/x/token=X`, `;next=/cb%3Ftoken=X`), com ou sem `;`.
 fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
-    if !path.contains([';', '%']) {
+    if !path.contains([';', '%', '=']) {
         return path.to_string();
     }
     let placeholder = url_placeholder(options);
+    let plain = |text: &str| {
+        if text.contains(['=', '%']) {
+            sanitize_nested_value(text, options, 0).unwrap_or_else(|| text.to_string())
+        } else {
+            text.to_string()
+        }
+    };
     path.split('/')
         .map(|segment| {
             let mut parts = segment.split(';');
             let head = parts.next().unwrap_or("");
-            let mut out = if head.contains('%') {
-                sanitize_nested_value(head, options, 0).unwrap_or_else(|| head.to_string())
-            } else {
-                head.to_string()
-            };
+            let mut out = plain(head);
             for param in parts {
                 out.push(';');
                 match param.split_once('=') {
@@ -868,10 +946,7 @@ fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
                         out.push('=');
                         out.push_str(&placeholder);
                     }
-                    _ => out.push_str(
-                        &sanitize_nested_value(param, options, 0)
-                            .unwrap_or_else(|| param.to_string()),
-                    ),
+                    _ => out.push_str(&plain(param)),
                 }
             }
             out
