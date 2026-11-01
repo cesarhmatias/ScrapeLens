@@ -843,7 +843,8 @@ fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
         return path.to_string();
     }
     let placeholder = url_placeholder(options);
-    path.split('/')
+    let sanitized = path
+        .split('/')
         .map(|segment| {
             let mut parts = segment.split(';');
             let head = parts.next().unwrap_or("");
@@ -852,20 +853,29 @@ fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
                 out.push(';');
                 match param.split_once('=') {
                     Some((name, _))
-                        if is_sensitive_key(&percent_decode(name))
-                            || is_business_key(&percent_decode(name), &options.business_fields) =>
+                        if is_sensitive_key(&effective_name(name))
+                            || is_business_key(&effective_name(name), &options.business_fields) =>
                     {
                         out.push_str(name);
                         out.push('=');
                         out.push_str(&placeholder);
                     }
-                    _ => out.push_str(param),
+                    // Valor com `nome=…` aninhado (`next=/cb%3Ftoken=X`): mesmas regras do texto.
+                    Some(_) => out.push_str(&sanitize_text(param, options)),
+                    None => out.push_str(param),
                 }
             }
             out
         })
         .collect::<Vec<_>>()
-        .join("/")
+        .join("/");
+    // Parâmetro de matriz cujo valor contém `/` (`;next=/cb%3Ftoken=X`) atravessa
+    // segmentos: o restante passa pelas regras de texto.
+    if sanitized.contains('=') {
+        sanitize_text(&sanitized, options)
+    } else {
+        sanitized
+    }
 }
 
 /// Redige, em texto livre (linha de requisição, notas, mensagens, valores de
@@ -989,6 +999,25 @@ fn sanitize_nested_value(value: &str, options: &SanitizeOptions, depth: usize) -
 /// Rodadas máximas de decodificação ao procurar segredo em valor aninhado.
 const MAX_DECODE_ROUNDS: usize = 4;
 
+/// Nome efetivo de um candidato `nome=`: decodifica até estabilizar e fica com o
+/// último segmento depois de um separador (`next%3Ftoken` → `token`), para que
+/// separadores codificados (`%3F`, `%26`, `%23`, `%3B`, `%2F`) valham como fronteira.
+fn effective_name(candidate: &str) -> String {
+    let mut decoded = candidate.to_string();
+    for _ in 0..MAX_DECODE_ROUNDS {
+        let next = percent_decode(&decoded);
+        if next == decoded {
+            break;
+        }
+        decoded = next;
+    }
+    let tail = decoded
+        .rsplit(['?', '&', '#', ';', '/', ',', '|', '='])
+        .next()
+        .unwrap_or("");
+    tail.trim().to_string()
+}
+
 fn sanitize_text_depth(text: &str, options: &SanitizeOptions, depth: usize) -> String {
     if !text.contains('=') && !text.contains('%') && !text.contains('@') {
         return text.to_string();
@@ -1005,7 +1034,7 @@ fn sanitize_text_depth(text: &str, options: &SanitizeOptions, depth: usize) -> S
         ch.is_whitespace()
             || matches!(
                 ch,
-                '?' | '&' | ';' | ',' | '#' | '/' | '"' | '\'' | '(' | '<' | '[' | '{' | '|'
+                '?' | '&' | ';' | ',' | '#' | '/' | '"' | '\'' | '(' | '<' | '[' | '{' | '|' | '='
             )
     };
     let is_name =
@@ -1029,8 +1058,9 @@ fn sanitize_text_depth(text: &str, options: &SanitizeOptions, depth: usize) -> S
                 .trim_start_matches(' ')
                 .strip_prefix('=')
                 .filter(|_| {
-                    is_sensitive_key(&percent_decode(candidate))
-                        || is_business_key(&percent_decode(candidate), &options.business_fields)
+                    let effective = effective_name(candidate);
+                    is_sensitive_key(&effective)
+                        || is_business_key(&effective, &options.business_fields)
                 })
             {
                 // `token =valor` (o `+` de `token+%3Dvalor` decodifica para espaço)
@@ -1046,9 +1076,11 @@ fn sanitize_text_depth(text: &str, options: &SanitizeOptions, depth: usize) -> S
                 at_boundary = false;
                 continue;
             };
-            let sensitive = !name.is_empty()
-                && (is_sensitive_key(&percent_decode(name))
-                    || is_business_key(&percent_decode(name), &options.business_fields));
+            let sensitive = !name.is_empty() && {
+                let effective = effective_name(name);
+                is_sensitive_key(&effective)
+                    || is_business_key(&effective, &options.business_fields)
+            };
             if !sensitive {
                 if eq_text == "=" {
                     // `nome=valor` comum: o valor pode ser uma URL/consulta aninhada,
@@ -1071,7 +1103,12 @@ fn sanitize_text_depth(text: &str, options: &SanitizeOptions, depth: usize) -> S
                             continue;
                         }
                     }
+                    // A varredura recomeça NO valor como início de palavra: assim
+                    // `a=b=token=X` e `next=%2Fcb%3Ftoken=X` (fronteira codificada,
+                    // tratada por `effective_name`) são vistos.
                     rest = value_part;
+                    at_boundary = true;
+                    continue;
                 } else {
                     match sanitize_nested_value(candidate, options, depth) {
                         Some(nested) => out.push_str(&nested),

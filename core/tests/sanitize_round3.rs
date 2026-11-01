@@ -114,3 +114,44 @@ fn pathological_inputs_stay_linear_and_do_not_panic() {
     }
     assert!(start.elapsed().as_secs() < 30, "lento: {:?}", start.elapsed());
 }
+
+// ---- A4-M1: codificação mista e cadeias `a=b=token=X` --------------------------------------
+
+#[test]
+fn mixed_encoding_and_chained_equals_do_not_leak() {
+    for (text, secret) in [
+        ("next=%2Fcb%3Ftoken=MIX1x", "MIX1x"),
+        ("redirect=https%3A%2F%2Fh%2Fcb%3Faccess_token=MIX2x&z=1", "MIX2x"),
+        ("next=/cb%3Ftoken=MIX3x", "MIX3x"),
+        ("X-Note3: next=%2Fcb%3Ftoken=MIX4x", "MIX4x"),
+        ("{\"mix1\":\"next=%2Fcb%3Ftoken=MIX5x\"}", "MIX5x"),
+        ("{\"mix2\":\"redirect=https%3A%2F%2Fh%2Fcb%3Faccess_token=MIXED02x\"}", "MIXED02x"),
+        ("a=b=token=CH1x", "CH1x"),
+        ("q=%3D=token=EQ6x", "EQ6x"),
+        ("u=%2F?token=Q7x", "Q7x"),
+        ("x=%41;token=SEMI3x", "SEMI3x"),
+        ("x=%2F%3Fa%3Db&token=AMP1x", "AMP1x"),
+        ("a=%2F%3F&b=1%3D&token=AMP4x", "AMP4x"),
+        ("a=1%26token=AMP5x", "AMP5x"),
+        ("a=1%23access_token=FRAG6x", "FRAG6x"),
+        ("a=1%3Bjsessionid=SEMI7x", "SEMI7x"),
+    ] {
+        assert_masked(text, &[secret]);
+    }
+    for (url, secret) in [
+        ("https://h/r;next=/cb%3Ftoken=URL8x", "URL8x"),
+        ("https://h/r?a=b=token=URL6x", "URL6x"),
+        ("https://h/r?x=%41&token=URL9x", "URL9x"),
+        ("/p?next=%2Fcb%3Ftoken=PQ1x", "PQ1x"),
+        ("https://h/r;next=%2Fcb%3Ftoken=URL10x", "URL10x"),
+    ] {
+        let out = sanitize_url(url, &opts());
+        assert!(!out.contains(secret), "{secret} sobrou em {url} -> {out}");
+        let pq = scrapelens_core::export::sanitize::sanitize_path_and_query(url, &opts());
+        assert!(!pq.contains(secret), "{secret} sobrou (pq) em {url} -> {pq}");
+    }
+    // Nada que já estava legível é apagado.
+    assert_eq!(sanitize_text("a=1&b=2&page=3", &opts()), "a=1&b=2&page=3");
+    assert_eq!(sanitize_text("next=%2Fcb%3Fpage%3D2", &opts()), "next=%2Fcb%3Fpage%3D2");
+    assert_eq!(sanitize_text("q=%2Fshoes%3Fsort=asc", &opts()), "q=%2Fshoes%3Fsort=asc");
+}
