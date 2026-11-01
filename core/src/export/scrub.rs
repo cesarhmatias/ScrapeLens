@@ -71,7 +71,7 @@ impl Level<'_> {
     }
 }
 
-struct Scrubber<'a> {
+pub(super) struct Scrubber<'a> {
     options: &'a SanitizeOptions,
     edits: Vec<Edit>,
     names: HashMap<Vec<u8>, bool>,
@@ -84,25 +84,38 @@ struct Scrubber<'a> {
 
 /// Aplica as regras ao texto. `None` quando nada mudou.
 pub(super) fn scrub(text: &str, options: &SanitizeOptions) -> Option<String> {
-    if !text.contains(['=', '%', '@', '&']) && !has_scheme_word(text.as_bytes()) {
-        return None;
+    Scrubber::new(options).run(text)
+}
+
+impl<'a> Scrubber<'a> {
+    pub(super) fn new(options: &'a SanitizeOptions) -> Self {
+        Self {
+            options,
+            edits: Vec::new(),
+            names: HashMap::new(),
+            param: std::cell::OnceCell::new(),
+            closed: false,
+        }
     }
-    let mut scrubber = Scrubber {
-        options,
-        edits: Vec::new(),
-        names: HashMap::new(),
-        param: std::cell::OnceCell::new(),
-        closed: false,
-    };
-    let level = Level {
-        bytes: Cow::Borrowed(text.as_bytes()),
-        map: None,
-    };
-    scrubber.scan_level(&level, 0);
-    if scrubber.edits.is_empty() {
-        return None;
+
+    /// Varre `text`; o cache de nomes sensíveis é reaproveitado entre chamadas
+    /// (consulta com milhões de pares). `None` quando nada mudou.
+    pub(super) fn run(&mut self, text: &str) -> Option<String> {
+        if !text.contains(['=', '%', '@', '&']) && !has_scheme_word(text.as_bytes()) {
+            return None;
+        }
+        self.edits.clear();
+        self.closed = false;
+        let level = Level {
+            bytes: Cow::Borrowed(text.as_bytes()),
+            map: None,
+        };
+        self.scan_level(&level, 0);
+        if self.edits.is_empty() {
+            return None;
+        }
+        Some(self.apply(text))
     }
-    Some(scrubber.apply(text))
 }
 
 fn has_scheme_word(bytes: &[u8]) -> bool {

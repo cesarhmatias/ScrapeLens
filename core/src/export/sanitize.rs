@@ -920,9 +920,13 @@ fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
         return path.to_string();
     }
     let placeholder = url_placeholder(options);
+    let scrubber = std::cell::RefCell::new(super::scrub::Scrubber::new(options));
     let plain = |text: &str| {
         if text.contains(['=', '%']) {
-            sanitize_nested_value(text, options, 0).unwrap_or_else(|| text.to_string())
+            scrubber
+                .borrow_mut()
+                .run(text)
+                .unwrap_or_else(|| text.to_string())
         } else {
             text.to_string()
         }
@@ -978,6 +982,7 @@ fn sanitize_nested_value(value: &str, options: &SanitizeOptions, _depth: usize) 
 fn sanitize_query(query: &str, options: &SanitizeOptions) -> String {
     let placeholder = url_placeholder(options);
     let fields = business_fields();
+    let mut scrubber = super::scrub::Scrubber::new(options);
     query
         .split('&')
         .map(|pair| {
@@ -988,7 +993,7 @@ fn sanitize_query(query: &str, options: &SanitizeOptions) -> String {
                 }
             }
             // `a=b=token=X`, `next=%2Fcb%3Ftoken=X`, `x%3Dtoken%3DX`: mesmas regras do texto
-            sanitize_nested_value(pair, options, 0).unwrap_or_else(|| pair.to_string())
+            scrubber.run(pair).unwrap_or_else(|| pair.to_string())
         })
         .collect::<Vec<_>>()
         .join("&")
