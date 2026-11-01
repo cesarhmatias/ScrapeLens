@@ -291,17 +291,16 @@ De onde vem um cookie ou token e onde é usado. Três modos (exatamente um):
 
 - `{ session_id, cookie }` — **cookie por nome**: respostas que o definem
   (`Set-Cookie`, em ordem de tempo), requisições que o enviam.
-- `{ session_id, value }` — **valor** (token, id): onde aparece, com produtor
-  mais antigo e consumidores posteriores. **Sem `reveal`, o valor só casa se for
-  IGUAL a um valor inteiro** (valor de header, de cookie, de parâmetro de URL —
-  query, fragmento ou matriz — ou campo de corpo JSON/formulário); nunca um
-  pedaço, para a ferramenta não servir de oráculo de substring. Corpos não
-  estruturados (HTML, texto, binário) não são pesquisados sem reveal. Contra
-  força bruta, sem `reveal` o valor precisa ter **ao menos 16 caracteres**
-  (`value_too_short`), a resposta não traz comprimento nem outro dado derivado
-  do valor, e há um **teto de 50 consultas por sessão** durante a vida do
-  servidor (`value_query_limit`; recusas por tamanho não contam). Com
-  `reveal`, a busca é por substring literal (evidência `literal-match`).
+- `{ session_id, value, reveal:true }` — **valor** (token, id): onde aparece, com
+  produtor mais antigo e consumidores posteriores. **O modo `value` EXIGE
+  `reveal`** (dupla trava: `reveal:true` e servidor com `--allow-reveal`). Sem
+  isso responde `reveal_required`, qualquer que seja o valor: achar ou não achar
+  um valor fornecido pelo agente seria um oráculo sobre conteúdo mascarado
+  (substring, força bruta, reimportação da sessão para zerar contadores,
+  estrutura conhecida como `Basic base64("admin:PIN")`). A busca é por
+  substring literal (evidência `literal-match`). Os modos `cookie` e
+  `request_id` continuam sem `reveal`, sem `valueLength` nem outro dado derivado
+  do valor (com `reveal`, `valueLength` volta).
 - `{ session_id, request_id, field? }` — **origem dos valores consumidos por
   uma requisição** (`flow::value_origins` do core, com as mesmas
   `evidences`, `strength`, `confidence`, `unobservable`, `context`).
@@ -320,14 +319,13 @@ perfil do navegador ou de captura incompleta — nunca se afirma a origem.
 `sentValueEqualsFirstSetter` compara na sessão original e devolve só o booleano
 (`null` = sem setter para comparar).
 
-Saída (valor): `{ mode:"value", length, firstProducer?, producers[],
+Saída (valor, só com reveal): `{ mode:"value", length, firstProducer?, producers[],
 consumers[], truncated, warnings[] }` onde cada ocorrência é `{requestId,
 attemptId, scope, field?, byteOffset?, position}`. Produtor = ocorrência em
 resposta (headers, `Set-Cookie`, corpo); consumidor = URL, headers da requisição,
 cookies enviados, corpo da requisição, depois do produtor. Valores com menos de
-8 caracteres geram aviso (coincidência pode ser acaso). Sem `reveal` a relação
-é **igualdade de valor inteiro** (`evidence: "exact-value-match"`); com `reveal`,
-igualdade de substring (`"literal-match"`). Nenhuma das duas prova causalidade.
+8 caracteres geram aviso (coincidência pode ser acaso). A relação é igualdade de
+substring (`"literal-match"`); não prova causalidade.
 
 Saída (requisição): o `ValueOrigins` do core; a prévia `value` de cada entrada
 é `"[REDACTED]"` salvo `reveal=true` (comprimento, campo, escopo e evidências

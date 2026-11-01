@@ -1143,9 +1143,6 @@ pub struct TraceValueParams {
     pub reveal: Option<bool>,
 }
 
-/// Tamanho mínimo de `value` sem reveal (anti-força-bruta).
-const MIN_EXACT_VALUE_CHARS: usize = 16;
-
 pub fn trace_value(ctx: &Ctx, params: TraceValueParams) -> ToolResult {
     let modes = [
         params.cookie.is_some(),
@@ -1171,18 +1168,16 @@ pub fn trace_value(ctx: &Ctx, params: TraceValueParams) -> ToolResult {
     let mut out = if let Some(name) = &params.cookie {
         trace_cookie(&view, name, limit, reveal)
     } else if let Some(value) = &params.value {
-        if reveal {
-            trace_literal(&view, value, limit, reveal)?
-        } else {
-            if value.chars().count() < MIN_EXACT_VALUE_CHARS {
-                return Err(ToolError::new(
-                    "value_too_short",
-                    format!("sem reveal, value exige ao menos {MIN_EXACT_VALUE_CHARS} caracteres (valor inteiro de header, cookie, parâmetro ou campo)"),
-                ));
-            }
-            ctx.charge_value_query(&entry.handle)?;
-            trace_exact(&view, value, limit)?
+        // Um valor fornecido pelo agente só pode ser procurado por quem pode ver
+        // o conteúdo: sem `reveal` a resposta (casou ou não) seria um oráculo
+        // sobre segredos redigidos (força bruta, reimportação, estrutura conhecida).
+        if !reveal {
+            return Err(ToolError::new(
+                "reveal_required",
+                "o modo value exige reveal=true (e o servidor com --allow-reveal): sem isso, achar ou não achar um valor revelaria conteúdo mascarado; use os modos cookie ou request_id",
+            ));
         }
+        trace_literal(&view, value, limit, reveal)?
     } else {
         trace_request(&view, &params, reveal)?
     };
@@ -1279,7 +1274,6 @@ fn trace_cookie(view: &View<'_>, name: &str, limit: usize, reveal: bool) -> Map<
                         "startedAt": attempt.started_at,
                         "source": record.provenance.source.as_str(),
                         "verification": record.provenance.verification.as_str(),
-                        "valueLength": parsed.value.chars().count(),
                         "attributes": {
                             "domain": parsed.domain, "path": parsed.path, "expires": parsed.expires,
                             "maxAge": parsed.max_age, "secure": parsed.secure,
@@ -1288,6 +1282,7 @@ fn trace_cookie(view: &View<'_>, name: &str, limit: usize, reveal: bool) -> Map<
                     });
                     if reveal {
                         item["value"] = json!(parsed.value);
+                        item["valueLength"] = json!(parsed.value.chars().count());
                     }
                     setters.push(item);
                 }
@@ -1302,12 +1297,12 @@ fn trace_cookie(view: &View<'_>, name: &str, limit: usize, reveal: bool) -> Map<
                         "url": shown_url(&attempt.url, reveal),
                         "startedAt": attempt.started_at,
                         "source": pair.provenance.source.as_str(),
-                        "valueLength": pair.value.chars().count(),
                         "afterFirstSetter": first_value.is_some(),
                         "sentValueEqualsFirstSetter": first_value.as_ref().map(|v| v == &pair.value),
                     });
                     if reveal {
                         item["value"] = json!(pair.value);
+                        item["valueLength"] = json!(pair.value.chars().count());
                     }
                     users.push(item);
                 }
@@ -1339,287 +1334,6 @@ fn trace_cookie(view: &View<'_>, name: &str, limit: usize, reveal: bool) -> Map<
     out.insert("notes".into(), json!(notes));
     out.insert("evidence".into(), json!("set-cookie-observed"));
     out
-}
-
-// ---- value sem reveal: só valor inteiro --------------------------------------
-
-fn percent_decode_lossy(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'%' if i + 2 < bytes.len() => {
-                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
-                match hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
-                    Some(byte) => {
-                        out.push(byte);
-                        i += 3;
-                    }
-                    None => {
-                        out.push(b'%');
-                        i += 1;
-                    }
-                }
-            }
-            b'+' => {
-                out.push(b' ');
-                i += 1;
-            }
-            byte => {
-                out.push(byte);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Pares `nome=valor` de uma URL: query, fragmento e parâmetros de matriz.
-fn url_value_pairs(url: &str) -> Vec<(String, String)> {
-    let mut pairs = Vec::new();
-    let (before_fragment, fragment) = match url.split_once('#') {
-        Some((left, right)) => (left, Some(right)),
-        None => (url, None),
-    };
-    let (path, query) = match before_fragment.split_once('?') {
-        Some((path, query)) => (path, Some(query)),
-        None => (before_fragment, None),
-    };
-    for part in query.into_iter().chain(fragment) {
-        for pair in part.split('&') {
-            if let Some((name, value)) = pair.split_once('=') {
-                pairs.push((percent_decode_lossy(name), value.to_string()));
-            }
-        }
-    }
-    for segment in path.split('/') {
-        for param in segment.split(';').skip(1) {
-            if let Some((name, value)) = param.split_once('=') {
-                pairs.push((percent_decode_lossy(name), value.to_string()));
-            }
-        }
-    }
-    pairs
-}
-
-fn json_leaves(value: &Value, path: &str, out: &mut Vec<(String, String)>) {
-    match value {
-        Value::Object(map) => {
-            for (key, item) in map {
-                let next = if path.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{path}.{key}")
-                };
-                json_leaves(item, &next, out);
-            }
-        }
-        Value::Array(list) => {
-            for (i, item) in list.iter().enumerate() {
-                json_leaves(item, &format!("{path}[{i}]"), out);
-            }
-        }
-        Value::String(text) => out.push((path.to_string(), text.clone())),
-        Value::Number(number) => out.push((path.to_string(), number.to_string())),
-        Value::Bool(flag) => out.push((path.to_string(), flag.to_string())),
-        Value::Null => {}
-    }
-}
-
-/// Campos (nome, valor inteiro) de um corpo ESTRUTURADO (JSON ou formulário).
-/// `None` = corpo não estruturado (HTML, JS, texto livre, binário).
-fn structured_fields(bytes: &[u8], content_type: Option<&str>) -> Option<Vec<(String, String)>> {
-    let media = content_type
-        .unwrap_or("")
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
-    let looks_json = bytes
-        .iter()
-        .find(|b| !b.is_ascii_whitespace())
-        .is_some_and(|b| *b == b'{' || *b == b'[');
-    if media.contains("json") || looks_json {
-        let value: Value = serde_json::from_slice(bytes).ok()?;
-        let mut out = Vec::new();
-        json_leaves(&value, "", &mut out);
-        return Some(out);
-    }
-    if media == "application/x-www-form-urlencoded" {
-        let text = std::str::from_utf8(bytes).ok()?;
-        let mut out = Vec::new();
-        for pair in text.split('&') {
-            if let Some((name, value)) = pair.split_once('=') {
-                out.push((percent_decode_lossy(name), percent_decode_lossy(value)));
-            }
-        }
-        return Some(out);
-    }
-    None
-}
-
-/// `trace_value(value)` SEM reveal: o valor tem de ser IGUAL a um valor inteiro
-/// (header, valor de cookie, parâmetro de URL ou campo JSON/formulário), nunca
-/// um pedaço. Assim a resposta não serve de oráculo de substring para
-/// reconstruir segredos. Corpos não estruturados (HTML, texto, binário) não são
-/// pesquisados sem reveal.
-fn trace_exact(
-    view: &View<'_>,
-    value: &str,
-    limit: usize,
-) -> Result<Map<String, Value>, ToolError> {
-    if value.is_empty() {
-        return Err(ToolError::invalid("value não pode ser vazio"));
-    }
-    let (ordered, chrono) = chronological(view);
-    struct Hit {
-        index: usize,
-        request: String,
-        attempt: String,
-        scope: &'static str,
-        field: String,
-        producer: bool,
-    }
-    let mut hits: Vec<Hit> = Vec::new();
-    let mut unstructured = 0usize;
-    let strip_scheme = |text: &str| -> String {
-        scrapelens_core::export::sanitize::split_auth_scheme(text)
-            .map_or_else(|| text.to_string(), |(_, rest)| rest.to_string())
-    };
-    for (index, request) in ordered.iter().enumerate() {
-        for attempt in &request.attempts {
-            let mut add = |scope: &'static str, field: &str, producer: bool| {
-                if !hits.iter().any(|h| {
-                    h.index == index
-                        && h.attempt == attempt.id
-                        && h.scope == scope
-                        && h.field == field
-                }) {
-                    hits.push(Hit {
-                        index,
-                        request: request.id.clone(),
-                        attempt: attempt.id.clone(),
-                        scope,
-                        field: field.to_string(),
-                        producer,
-                    });
-                }
-            };
-            for (name, raw) in url_value_pairs(&attempt.url) {
-                if raw == value || percent_decode_lossy(&raw) == value {
-                    add("url", &name, false);
-                }
-            }
-            for entry in attempt.request_headers.iter_all() {
-                let lower = entry.name.to_ascii_lowercase();
-                if lower == "cookie" {
-                    continue;
-                }
-                if entry.value == value || strip_scheme(&entry.value) == value {
-                    add("requestHeaders", &entry.name, false);
-                }
-            }
-            for pair in &attempt.cookie.pairs {
-                if pair.value.trim_matches('"') == value {
-                    add("cookies", &pair.name, false);
-                }
-            }
-            for entry in attempt.response_headers.iter_all() {
-                if entry.name.eq_ignore_ascii_case("set-cookie") {
-                    continue;
-                }
-                if entry.value == value || strip_scheme(&entry.value) == value {
-                    add("responseHeaders", &entry.name, true);
-                }
-            }
-            for record in &attempt.set_cookies {
-                if let Some(parsed) = &record.parsed {
-                    if parsed.value.trim_matches('"') == value {
-                        add(
-                            "responseHeaders",
-                            &format!("set-cookie:{}", parsed.name),
-                            true,
-                        );
-                    }
-                }
-            }
-            for (body, scope, producer) in [
-                (&attempt.request_body, "requestBody", false),
-                (&attempt.response_body, "responseBody", true),
-            ] {
-                let Some(name) = body.attachment.as_ref().filter(|_| body.has_bytes()) else {
-                    continue;
-                };
-                let Some((bytes, _cut)) = view.read_attachment(name, BODY_READ_LIMIT) else {
-                    continue;
-                };
-                match structured_fields(&bytes, body.content_type.as_deref()) {
-                    Some(fields) => {
-                        for (field, leaf) in fields {
-                            if leaf == value {
-                                add(scope, &field, producer);
-                            }
-                        }
-                    }
-                    None => unstructured += 1,
-                }
-            }
-        }
-    }
-    hits.sort_by_key(|h| h.index);
-    let first_index = hits.iter().find(|h| h.producer).map(|h| h.index);
-    let item = |h: &Hit| {
-        json!({
-            "requestId": h.request,
-            "attemptId": h.attempt,
-            "scope": h.scope,
-            "field": h.field,
-            "position": match first_index {
-                Some(first) if h.index < first => "before-first-producer",
-                Some(_) => "at-or-after-first-producer",
-                None => "no-producer-observed",
-            },
-        })
-    };
-    let producers: Vec<&Hit> = hits.iter().filter(|h| h.producer).collect();
-    let consumers: Vec<&Hit> = hits.iter().filter(|h| !h.producer).collect();
-    let mut warnings: Vec<String> = vec![
-        "sem reveal o valor só casa com um valor INTEIRO (header, cookie, parâmetro ou campo JSON/formulário), nunca com um pedaço".to_string(),
-    ];
-    if unstructured > 0 {
-        warnings.push(format!(
-            "{unstructured} corpo(s) não estruturado(s) (HTML, texto, binário) não são pesquisados sem reveal"
-        ));
-    }
-    if producers.is_empty() {
-        warnings.push("nenhuma resposta observada contém este valor inteiro: ele pode ter sido gerado no cliente, estar dentro de um corpo não estruturado ou de captura incompleta".to_string());
-    }
-    let mut out = Map::new();
-    out.insert("mode".into(), json!("value"));
-    out.insert("evidence".into(), json!("exact-value-match"));
-    out.insert(
-        "firstProducer".into(),
-        producers.first().map(|h| item(h)).unwrap_or(Value::Null),
-    );
-    out.insert("producersTotal".into(), json!(producers.len()));
-    out.insert(
-        "producers".into(),
-        Value::Array(producers.iter().take(limit).map(|h| item(h)).collect()),
-    );
-    out.insert("consumersTotal".into(), json!(consumers.len()));
-    out.insert(
-        "consumers".into(),
-        Value::Array(consumers.iter().take(limit).map(|h| item(h)).collect()),
-    );
-    out.insert(
-        "truncated".into(),
-        json!(producers.len() > limit || consumers.len() > limit),
-    );
-    out.insert("warnings".into(), json!(warnings));
-    out.insert("notes".into(), json!([order_note(chrono)]));
-    Ok(out)
 }
 
 fn trace_literal(

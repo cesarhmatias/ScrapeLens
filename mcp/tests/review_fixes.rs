@@ -17,83 +17,85 @@ fn total(out: &Value) -> u64 {
 }
 
 #[test]
-fn trace_value_without_reveal_matches_only_whole_values() {
+fn trace_value_value_mode_requires_reveal_so_it_is_no_oracle() {
     let env = Env::new(true);
     env.import_flow("flow", "");
-    // Sem reveal, valores < 16 caracteres são recusados (`value_too_short`) e
-    // contam como "nada achado" para esta checagem de oráculo.
-    let try_trace = |value: &str, reveal: bool| {
-        trace_value(
-            &env.ctx,
-            p(json!({"session_id": "flow", "value": value, "reveal": reveal})),
-        )
-    };
-    let trace = |value: &str, reveal: bool| {
-        try_trace(value, reveal).unwrap_or_else(|error| {
-            assert_eq!(error.code, "value_too_short", "{value}");
-            json!({"producersTotal": 0, "consumersTotal": 0})
-        })
-    };
-    // Valor inteiro: casa (header Authorization sem o esquema, e campo JSON da resposta).
-    let whole = trace(TOKEN, false);
-    assert_eq!(whole["firstProducer"]["requestId"], "har-0002");
-    assert!(whole["consumers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|c| c["requestId"] == "har-0003"));
-    assert!(
-        total(&trace(&format!("Bearer {TOKEN}"), false)) > 0,
-        "header inteiro também"
-    );
-    // Qualquer pedaço NÃO casa, em nenhum modo de busca.
-    for len in 1..TOKEN.len() {
-        assert_eq!(total(&trace(&TOKEN[..len], false)), 0, "prefixo {len}");
-        assert_eq!(total(&trace(&TOKEN[len..], false)), 0, "sufixo {len}");
-        assert_eq!(
-            total(&trace(&format!("Bearer {}", &TOKEN[..len]), false)),
-            0
-        );
-    }
-    // Reconstrução caractere a caractere (o PoC do revisor): nenhum candidato avança.
-    let alphabet: Vec<char> = ('A'..='Z')
-        .chain('a'..='z')
-        .chain('0'..='9')
-        .chain(['-', '_'])
-        .collect();
-    let mut known = String::from("Bearer ");
-    let mut steps = 0;
-    for _ in 0..TOKEN.len() {
-        let next = alphabet
-            .iter()
-            .find(|c| total(&trace(&format!("{known}{c}"), false)) > 0);
-        match next {
-            Some(c) => {
-                known.push(*c);
-                steps += 1;
+    // Sem reveal o modo `value` recusa SEMPRE, qualquer que seja o valor: achar ou
+    // não achar revelaria conteúdo mascarado (inteiro, pedaço, estrutura conhecida).
+    let basic = format!("Basic {}", base64_of("admin:4821"));
+    for value in [
+        TOKEN.to_string(),
+        TOKEN[..10].to_string(),
+        format!("Bearer {TOKEN}"),
+        SID.to_string(),
+        basic,
+        "valor-que-nao-existe-em-lugar-nenhum".to_string(),
+        "a".to_string(),
+    ] {
+        for reveal in [None, Some(false)] {
+            let mut args = json!({"session_id": "flow", "value": value});
+            if let Some(reveal) = reveal {
+                args["reveal"] = json!(reveal);
             }
-            None => break,
+            let error = trace_value(&env.ctx, p(args)).unwrap_err();
+            assert_eq!(error.code, "reveal_required", "{value}");
+            assert!(!error.message.contains(&value) || value.len() < 3);
         }
     }
-    assert_eq!(steps, 0, "o oráculo reconstruiu: {known}");
-    // Valor dentro de corpo HTML retido, e pedaço do cookie: também nada.
-    assert_eq!(
-        total(&trace(CSRF, false)),
-        1,
-        "CSRF inteiro só no header X-CSRF (HTML não é pesquisado)"
-    );
-    let html = trace(CSRF, false);
-    assert!(html["consumers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|c| c["scope"] == "requestHeaders"));
-    assert!(text(&html["warnings"]).contains("não estruturado"));
-    assert_eq!(total(&trace(&SID[..10], false)), 0);
-    assert!(total(&trace(SID, false)) > 0, "cookie inteiro casa");
-    // Com reveal o comportamento de substring continua disponível (é a opção explícita).
-    assert!(total(&trace(&TOKEN[..10], true)) > 0);
-    assert_eq!(trace(&TOKEN[..10], true)["revealed"], true);
+    // Reimportar a sessão não muda nada: não há contador a zerar nem resposta a comparar.
+    for n in 0..5 {
+        env.import_flow(&format!("copy-{n}"), "");
+        let error = trace_value(
+            &env.ctx,
+            p(json!({"session_id": format!("copy-{n}"), "value": TOKEN})),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "reveal_required");
+    }
+    // Com reveal (e --allow-reveal) o modo existe e acha pedaços.
+    let whole = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "flow", "value": TOKEN, "reveal": true})),
+    )
+    .unwrap();
+    assert_eq!(whole["firstProducer"]["requestId"], "har-0002");
+    assert!(total(&whole) > 0);
+    let part = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "flow", "value": &TOKEN[..10], "reveal": true})),
+    )
+    .unwrap();
+    assert!(total(&part) > 0);
+    // Servidor sem --allow-reveal: o modo está fechado.
+    let closed = Env::new(false);
+    closed.import_flow("flow", "");
+    let error = trace_value(
+        &closed.ctx,
+        p(json!({"session_id": "flow", "value": TOKEN, "reveal": true})),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "reveal_disabled");
+}
+
+#[test]
+fn cookie_and_request_modes_expose_nothing_derived_from_values_without_reveal() {
+    let env = Env::new(true);
+    env.import_flow("flow", "");
+    let masked = trace_value(&env.ctx, p(json!({"session_id": "flow", "cookie": "sid"}))).unwrap();
+    let out = text(&masked);
+    assert!(!out.contains("valueLength"), "{out}");
+    let by_request = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "flow", "request_id": "har-0003"})),
+    )
+    .unwrap();
+    assert!(!text(&by_request).contains("valueLength"));
+    let revealed = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "flow", "cookie": "sid", "reveal": true})),
+    )
+    .unwrap();
+    assert!(text(&revealed).contains("valueLength"));
 }
 
 #[test]

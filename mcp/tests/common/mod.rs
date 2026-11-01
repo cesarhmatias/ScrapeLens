@@ -180,6 +180,10 @@ fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
+pub fn base64_of(text: &str) -> String {
+    base64_encode(text.as_bytes())
+}
+
 pub struct Env {
     pub dir: tempfile::TempDir,
     pub ctx: Ctx,

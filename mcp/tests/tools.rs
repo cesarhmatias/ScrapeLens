@@ -737,8 +737,12 @@ fn trace_cookie_finds_first_setter_and_users_without_leaking_values() {
 fn trace_literal_value_and_request_origins() {
     let env = Env::new(true);
     env.import_flow("flow", "");
-    let trace = trace_value(&env.ctx, p(json!({"session_id": "flow", "value": TOKEN}))).unwrap();
-    assert_eq!(trace["evidence"], "exact-value-match");
+    let trace = trace_value(
+        &env.ctx,
+        p(json!({"session_id": "flow", "value": TOKEN, "reveal": true})),
+    )
+    .unwrap();
+    assert_eq!(trace["evidence"], "literal-match");
     assert_eq!(trace["firstProducer"]["requestId"], "har-0002");
     assert_eq!(trace["firstProducer"]["scope"], "responseBody");
     assert!(trace["consumers"]
@@ -746,21 +750,13 @@ fn trace_literal_value_and_request_origins() {
         .unwrap()
         .iter()
         .any(|c| c["requestId"] == "har-0003" && c["scope"] == "requestHeaders"));
-    assert!(
-        trace.get("value").is_none(),
-        "o valor do agente não é ecoado sem reveal"
-    );
-    assert!(!text(&trace).contains(TOKEN));
+    assert_eq!(trace["value"], TOKEN, "com reveal o valor é ecoado");
 
-    let short = trace_value(&env.ctx, p(json!({"session_id": "flow", "value": "zzq"})));
-    assert_eq!(err_code(short), "value_too_short");
-    let unknown = trace_value(
-        &env.ctx,
-        p(json!({"session_id": "flow", "value": "zzq-not-in-session-0123"})),
-    )
-    .unwrap();
-    assert!(unknown["firstProducer"].is_null());
-    assert!(unknown.get("length").is_none() && unknown.get("valueLength").is_none());
+    // Sem reveal o modo `value` não existe (nem para valor curto, nem para desconhecido).
+    for value in ["zzq", "zzq-not-in-session-0123"] {
+        let denied = trace_value(&env.ctx, p(json!({"session_id": "flow", "value": value})));
+        assert_eq!(err_code(denied), "reveal_required");
+    }
 
     // Modo requisição: origens do core, prévias mascaradas.
     let origins = trace_value(
@@ -963,9 +959,12 @@ fn trace_uses_chronological_order_not_session_order() {
         .all(|u| u["afterFirstSetter"] == true));
     assert!(text(&trace["notes"]).contains("cronológica"));
 
+    // O modo value exige reveal; a ordem cronológica também vale nele.
+    let open_env = Env::new(true);
+    shuffled_native(&open_env);
     let literal = trace_value(
-        &env.ctx,
-        p(json!({"session_id": "shuffled", "value": "TOKEN-ABCDEFGH-0123"})),
+        &open_env.ctx,
+        p(json!({"session_id": "shuffled", "value": "TOKEN-ABCDEFGH-0123", "reveal": true})),
     )
     .unwrap();
     assert_eq!(literal["firstProducer"]["requestId"], "har-0002");

@@ -77,38 +77,6 @@ fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
     client.finish();
 }
 
-// ---- R5: trace_value por valor inteiro não é força bruta --------------------------------
-
-#[test]
-fn trace_value_refuses_short_values_hides_length_and_caps_queries() {
-    let env = Env::new(true);
-    env.import_flow("flow", "");
-    let ask = |value: &str| {
-        trace_value(&env.ctx, p(json!({"session_id": "flow", "value": value})))
-    };
-    // < 16 caracteres: recusado, sem dado derivado.
-    for short in ["a", "0123456789abcde", PASSWORD] {
-        let error = ask(short).unwrap_err();
-        assert_eq!(error.code, "value_too_short");
-        assert!(!error.message.contains(short) || short.len() < 3);
-    }
-    // 16 caracteres: aceito; não expõe length/valueLength.
-    let ok = ask(TOKEN).unwrap();
-    assert!(ok.get("length").is_none() && ok.get("valueLength").is_none(), "{ok}");
-    assert!(!text(&ok).contains(TOKEN));
-    // Teto de 50 consultas por sessão (a de cima já contou 1); recusas curtas não contam.
-    for i in 1..50 {
-        ask(&format!("valor-inexistente-{i:04}")).unwrap();
-    }
-    let error = ask("valor-inexistente-9999").unwrap_err();
-    assert_eq!(error.code, "value_query_limit");
-    // Com reveal o modo literal não é limitado (é a opção explícita).
-    assert!(trace_value(&env.ctx, p(json!({"session_id": "flow", "value": "A", "reveal": true}))).is_ok());
-    // Outra sessão tem o seu próprio contador.
-    env.import_flow("other", "");
-    assert!(trace_value(&env.ctx, p(json!({"session_id": "other", "value": TOKEN}))).is_ok());
-}
-
 // ---- R7: valores multibyte não derrubam trace_value -------------------------------------
 
 #[test]
@@ -126,7 +94,7 @@ fn trace_value_does_not_panic_on_multibyte_header_values() {
         format!("Bearer {TOKEN}"),
         "Béarer-é-é-é-é-é-é-é".to_string(),
     ] {
-        let out = trace_value(&env.ctx, p(json!({"session_id": "mb", "value": value}))).unwrap();
+        let out = trace_value(&env.ctx, p(json!({"session_id": "mb", "value": value, "reveal": true}))).unwrap();
         assert_eq!(out["mode"], "value");
     }
     let _: Value = Value::Null;
