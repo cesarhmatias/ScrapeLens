@@ -5,11 +5,6 @@ use std::path::{Component, Path, PathBuf};
 use crate::error::{CoreError, Result};
 use crate::model::SessionBundle;
 
-#[cfg(unix)]
-mod at;
-#[cfg(unix)]
-pub use at::write_session_dir_at;
-
 pub const SESSION_FILE: &str = "session.json";
 pub const CDP_EVENTS_FILE: &str = "cdp-events.jsonl";
 pub const NETLOG_FILE: &str = "netlog.json";
