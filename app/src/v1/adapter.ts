@@ -11,6 +11,7 @@ import type {
   RedirectHop,
   RequestLinkView,
   RequestRecord,
+  RequestSummary,
   ResourceType,
   SessionRecord,
   SessionOrigin,
@@ -27,7 +28,10 @@ import type {
   HeaderView,
   LogicalRequest,
   Provenance,
+  RawRequestDetail,
+  RawRequestSummary,
   RequestLink,
+  SessionHeaderV1,
   SessionV1,
   TargetProvenance,
   Timings,
@@ -578,8 +582,86 @@ export function adaptSession(
       labels: raw.session.labels ?? [],
       sourcePath: options.sourcePath,
       attachments: options.attachments,
+      requestCount: (raw as SessionHeaderV1).requestCount ?? requests.length,
+      paged: (raw as SessionHeaderV1).requestCount !== undefined,
     },
   };
+}
+
+function typeOf(resourceType: string | undefined): ResourceType {
+  const lower = (resourceType ?? "other").toLowerCase() as ResourceType;
+  return RESOURCE_TYPES.has(lower) ? lower : "other";
+}
+
+/** Resumo de `list_requests` → linha da tabela (mesmas regras de `adaptSession`). */
+export function summaryFromRaw(
+  raw: RawRequestSummary,
+  sessionStartedAt: string,
+  targets: TargetProvenance[] = [],
+): RequestSummary {
+  const target = mapTarget(raw.target === undefined ? undefined : targets[raw.target]);
+  const primarySource = sourceLabel(raw.source);
+  const status = raw.status ?? 0;
+  return {
+    id: raw.id,
+    url: raw.url,
+    method: raw.method,
+    domain: safeHost(raw.url),
+    path: safePath(raw.url),
+    status,
+    statusText: statusText(status),
+    protocol: protocolLabel(raw.protocol),
+    type: typeOf(raw.resourceType),
+    startedAt: raw.wallTime ?? sessionStartedAt,
+    durationMs: Math.round(raw.totalMs ?? 0),
+    durationApprox: Boolean(raw.estimated) || raw.totalMs === undefined,
+    initiator: initiatorLabel(raw.initiator),
+    target,
+    links: mapLinks(raw.links),
+    netlogOnlyUnknownTarget: !target && primarySource === "netlog",
+    primarySource,
+    warningCount: raw.warningCount,
+  };
+}
+
+/** Linha da tabela a partir de um registro completo (sessões em memória: demo, navegador). */
+export function summaryOfRecord(r: RequestRecord): RequestSummary {
+  return {
+    id: r.id,
+    url: r.url,
+    method: r.method,
+    domain: r.domain,
+    path: r.path,
+    status: r.status,
+    statusText: r.statusText,
+    protocol: r.protocol,
+    type: r.type,
+    startedAt: r.startedAt,
+    durationMs: r.durationMs,
+    durationApprox: r.verification.timings.status === "unverified",
+    initiator: r.initiator,
+    target: r.target,
+    links: r.links,
+    netlogOnlyUnknownTarget: r.netlogOnlyUnknownTarget,
+    primarySource: r.primarySource,
+    warningCount: r.warnings.length,
+  };
+}
+
+/** Detalhe de `get_request` → `RequestRecord`, pelo mesmo `adaptSession` (uma requisição). */
+export function adaptRequestDetail(
+  header: SessionV1,
+  detail: RawRequestDetail,
+  options: { attachments?: Record<string, string>; sourcePath?: string } = {},
+): RequestRecord {
+  const mini: SessionV1 = {
+    schemaVersion: header.schemaVersion,
+    session: header.session,
+    requests: [detail.request],
+    streamSessions: detail.streamSessions,
+    warnings: detail.warnings,
+  };
+  return adaptSession(mini, options).session.requests[0];
 }
 
 function safeHost(url: string): string {

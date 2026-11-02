@@ -11,6 +11,7 @@ pub mod chrome;
 pub mod cli;
 pub mod commands;
 pub mod export;
+pub mod listing;
 pub mod menu;
 pub mod prefs;
 pub mod validation;
@@ -95,6 +96,8 @@ pub fn run() {
             commands::app_info,
             commands::demo_session,
             commands::open_session,
+            commands::list_requests,
+            commands::get_request,
             commands::import_har,
             commands::import_netlog,
             commands::start_session,

@@ -9,6 +9,8 @@ import {
   loadLargeDemo,
   type BodyData,
   type ChromeInfo,
+  type ListFilter,
+  type RequestPageDto,
   type SearchMatch,
   type SearchResultDto,
   type SearchScope,
@@ -25,13 +27,14 @@ import { TimelineView, ValidationView } from "./Timeline";
 import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
-import { adaptSession, type AdaptedSession } from "./v1/adapter";
+import { adaptRequestDetail, adaptSession, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
 import type {
   BodyInfo,
   HeaderPair,
   Protocol,
   RequestRecord,
+  RequestSummary,
   SessionRecord,
   Verification,
   VerificationKey,
@@ -50,6 +53,9 @@ import {
   targetSetupWarnings,
   type TargetFilter,
 } from "./target";
+
+/** Página de `list_requests` (máximo do backend). */
+const PAGE = 2000;
 
 type View = "session" | "detail" | "compare" | "capture-compare" | "timeline" | "validate";
 type Theme = "light" | "dark";
@@ -127,8 +133,9 @@ function fmtTime(iso: string) {
   return t || iso;
 }
 
-function fmtDuration(req: RequestRecord) {
-  return `${req.verification.timings.status === "unverified" ? "≈" : ""}${req.durationMs} ms`;
+function fmtDuration(req: RequestRecord | RequestSummary) {
+  const approx = "durationApprox" in req ? req.durationApprox : req.verification.timings.status === "unverified";
+  return `${approx ? "≈" : ""}${req.durationMs} ms`;
 }
 
 function fmtBytes(n?: number) {
@@ -524,7 +531,7 @@ function CaptureLimits({
   requests,
 }: {
   session: SessionRecord;
-  requests: RequestRecord[];
+  requests: RequestSummary[];
 }) {
   const showTargets = sessionShowsTargets(requests, session.warnings);
   const targets = showTargets ? captureTargets(requests) : [];
@@ -730,11 +737,13 @@ function DetailView({
   matches,
   needle,
   outcomes,
+  limitsRequests,
   assessError,
   assessLoading,
   assessWarnings,
 }: {
   outcomes: OutcomeMap;
+  limitsRequests: RequestSummary[];
   assessError?: string;
   assessLoading?: boolean;
   assessWarnings?: string[];
@@ -1315,7 +1324,7 @@ function DetailView({
               <h3>Limites desta captura</h3>
               <span className="hint">visível em todas as abas</span>
             </div>
-            <CaptureLimits session={session} requests={session.requests} />
+            <CaptureLimits session={session} requests={limitsRequests} />
           </section>
         </div>
 
@@ -1325,25 +1334,63 @@ function DetailView({
   );
 }
 
-function CompareView({
-  aId,
-  bId,
+/** Comparação: o seletor usa os resumos; as duas requisições vêm sob demanda (P5). */
+function CompareView(props: {
+  aId: string;
+  bId: string;
+  setA: (id: string) => void;
+  setB: (id: string) => void;
+  onBack: () => void;
+  requests: RequestSummary[];
+  session: SessionRecord;
+  resolve: (id: string) => Promise<RequestRecord>;
+}) {
+  const { requests, resolve } = props;
+  const aId = requests.some((r) => r.id === props.aId) ? props.aId : requests[0]?.id ?? "";
+  const bId = requests.some((r) => r.id === props.bId) ? props.bId : requests[1]?.id ?? "";
+  const [pair, setPair] = useState<{ key: string; a?: RequestRecord; b?: RequestRecord; error?: string } | null>(null);
+  const key = `${aId}\u0000${bId}`;
+  useEffect(() => {
+    let alive = true;
+    setPair({ key });
+    Promise.all([resolve(aId), resolve(bId)])
+      .then(([a, b]) => alive && setPair({ key, a, b }))
+      .catch((error) => alive && setPair({ key, error: String(error) }));
+    return () => {
+      alive = false;
+    };
+  }, [aId, bId, key, resolve]);
+  if (pair?.key === key && pair.a && pair.b) {
+    return <CompareBody {...props} a={pair.a} b={pair.b} />;
+  }
+  return (
+    <div className="empty big">
+      <strong>{pair?.error ? "Não foi possível carregar as requisições." : "Carregando as duas requisições…"}</strong>
+      {pair?.error ? <span>{pair.error}</span> : null}
+      <button className="link" onClick={props.onBack}>
+        Voltar
+      </button>
+    </div>
+  );
+}
+
+function CompareBody({
+  a,
+  b,
   setA,
   setB,
   onBack,
   requests,
   session,
 }: {
-  aId: string;
-  bId: string;
+  a: RequestRecord;
+  b: RequestRecord;
   setA: (id: string) => void;
   setB: (id: string) => void;
   onBack: () => void;
-  requests: RequestRecord[];
+  requests: RequestSummary[];
   session: SessionRecord;
 }) {
-  const a = requests.find((r) => r.id === aId) ?? requests[0];
-  const b = requests.find((r) => r.id === bId) ?? requests[1];
   const headerDiff = useMemo(() => diffHeaders(a.requestHeaders, b.requestHeaders), [a, b]);
   const resDiff = useMemo(() => diffHeaders(a.responseHeaders, b.responseHeaders), [a, b]);
   const cookieDiff = useMemo(() => diffCookies(a.cookiesSent, b.cookiesSent), [a, b]);
@@ -1612,11 +1659,77 @@ export default function App() {
   const tableRef = useRef<HTMLDivElement | null>(null);
 
   const session = loaded.session;
-  const requests = session.requests;
   const desktop = isTauri();
-  const selected = requests.find((r) => r.id === selectedId) ?? requests[0];
+  // P5: sessão paginada → resumos via list_requests e detalhe via get_request;
+  // sessão em memória (demonstração, modo navegador) → mesmos resumos derivados localmente.
+  const pagedDir = session.paged && session.sourcePath ? session.sourcePath : undefined;
+  const memorySummaries = useMemo(() => session.requests.map(summaryOfRecord), [session.requests]);
+  const [remoteAll, setRemoteAll] = useState<{ dir: string; items: RequestSummary[]; first?: RequestPageDto } | null>(null);
+  useEffect(() => {
+    if (!pagedDir) {
+      setRemoteAll(null);
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      const items: RequestSummary[] = [];
+      let first: RequestPageDto | undefined;
+      try {
+        for (let offset = 0; ; offset += PAGE) {
+          const page = await bridge.listRequests(pagedDir, offset, PAGE, {});
+          if (!alive) return;
+          first = first ?? page;
+          for (const raw of page.items) items.push(summaryFromRaw(raw, session.createdAt, page.targets));
+          if (page.items.length === 0 || offset + PAGE >= page.matched) break;
+        }
+        if (alive) setRemoteAll({ dir: pagedDir, items, first });
+      } catch (error) {
+        if (alive) setNotice({ kind: "error", text: "Não foi possível listar as requisições.", detail: String(error) });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [pagedDir, session.createdAt]);
+  const requests: RequestSummary[] = pagedDir
+    ? remoteAll?.dir === pagedDir
+      ? remoteAll.items
+      : []
+    : memorySummaries;
+  const requestCount = session.requestCount;
+  const effectiveId = requests.some((r) => r.id === selectedId) ? selectedId : requests[0]?.id ?? "";
+  const resolveRecord = useCallback(
+    async (id: string): Promise<RequestRecord> => {
+      if (!pagedDir) {
+        const found = session.requests.find((r) => r.id === id);
+        if (!found) throw new Error(`requisição ${id} não encontrada`);
+        return found;
+      }
+      const detail = await bridge.getRequest(pagedDir, id);
+      return adaptRequestDetail(loaded.raw, detail, { sourcePath: pagedDir, attachments: session.attachments });
+    },
+    [pagedDir, session.requests, session.attachments, loaded.raw],
+  );
+  const [remoteDetail, setRemoteDetail] = useState<{ dir: string; id: string; record?: RequestRecord; error?: string } | null>(null);
+  useEffect(() => {
+    if (!pagedDir || !effectiveId) return;
+    let alive = true;
+    resolveRecord(effectiveId)
+      .then((record) => alive && setRemoteDetail({ dir: pagedDir, id: effectiveId, record }))
+      .catch((error) => alive && setRemoteDetail({ dir: pagedDir, id: effectiveId, error: String(error) }));
+    return () => {
+      alive = false;
+    };
+  }, [pagedDir, effectiveId, resolveRecord]);
+  const selected: RequestRecord | undefined = pagedDir
+    ? remoteDetail?.dir === pagedDir && remoteDetail.id === effectiveId
+      ? remoteDetail.record
+      : undefined
+    : session.requests.find((r) => r.id === selectedId) ?? session.requests[0];
+  const detailPending = Boolean(pagedDir && effectiveId && !selected);
+  const limitsRequests = requests;
   const warningTotal =
-    session.warnings.length + requests.reduce((total, request) => total + request.warnings.length, 0);
+    session.warnings.length + requests.reduce((total, request) => total + request.warningCount, 0);
   const compareCaptures = async () => {
     if (!session.sourcePath) return;
     try {
@@ -1647,7 +1760,7 @@ export default function App() {
     setFailFilter(false);
     setBlockFilter(false);
     setProtocol("all");
-    setSelectedId(payload.session.requests[0]?.id ?? "");
+    setSelectedId(payload.session.requests?.[0]?.id ?? "");
     setIsLargeDemo(false);
     if (payload.notice) setNotice({ kind: "info", text: payload.notice });
   }, []);
@@ -1988,11 +2101,15 @@ export default function App() {
   const payloadSearch = Boolean(searchKey);
 
   const showTargetColumn = useMemo(
-    () => sessionShowsTargets(requests, session.warnings),
-    [requests, session.warnings],
+    () =>
+      pagedDir
+        ? Boolean(remoteAll?.first?.hasTargets) || sessionShowsTargets([], session.warnings)
+        : sessionShowsTargets(requests, session.warnings),
+    [pagedDir, remoteAll, requests, session.warnings],
   );
 
-  const filtered = useMemo(() => {
+  const localFiltered = useMemo(() => {
+    if (pagedDir) return [];
     const q = query.trim().toLowerCase();
     return requests.filter((r) => {
       if (typeFilter === "fetch" && !(r.type === "fetch" || r.type === "xhr")) return false;
@@ -2023,6 +2140,7 @@ export default function App() {
       );
     });
   }, [
+    pagedDir,
     requests,
     query,
     typeFilter,
@@ -2036,14 +2154,66 @@ export default function App() {
     outcomes,
   ]);
 
-  const errors = requests.filter((r) => r.status >= 400).length;
-  const counts = {
+  // Filtro no backend (P5): mesma semântica de `localFiltered`, em src-tauri/src/listing.rs.
+  const remoteFilter = useMemo<ListFilter>(() => {
+    const restrict =
+      failFilter || blockFilter
+        ? [...outcomes.entries()]
+            .filter(([, o]) => (failFilter && isAppFailure(o)) || (blockFilter && isPossibleBlock(o)))
+            .map(([id]) => id)
+        : null;
+    return {
+      typeFilter,
+      protocol,
+      target: targetFilter,
+      query,
+      payloadSearch,
+      matchIds: payloadSearch ? [...matchesById.keys()] : [],
+      restrictIds: restrict,
+    };
+  }, [typeFilter, protocol, targetFilter, query, payloadSearch, matchesById, failFilter, blockFilter, outcomes]);
+  const remoteKey = pagedDir ? `${pagedDir}\u0000${JSON.stringify(remoteFilter)}` : "";
+  const [remoteFiltered, setRemoteFiltered] = useState<{ key: string; items: RequestSummary[] } | null>(null);
+  useEffect(() => {
+    if (!pagedDir) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const items: RequestSummary[] = [];
+        try {
+          for (let offset = 0; ; offset += PAGE) {
+            const page = await bridge.listRequests(pagedDir, offset, PAGE, remoteFilter);
+            if (!alive) return;
+            for (const raw of page.items) items.push(summaryFromRaw(raw, session.createdAt, page.targets));
+            if (page.items.length === 0 || offset + PAGE >= page.matched) break;
+          }
+          if (alive) setRemoteFiltered({ key: remoteKey, items });
+        } catch (error) {
+          if (alive) setNotice({ kind: "error", text: "Falha ao filtrar as requisições.", detail: String(error) });
+        }
+      })();
+    }, 120);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [pagedDir, remoteKey, remoteFilter, session.createdAt]);
+  const filtered: RequestSummary[] = pagedDir
+    ? remoteFiltered?.key === remoteKey
+      ? remoteFiltered.items
+      : remoteFiltered?.items ?? requests
+    : localFiltered;
+
+  const remoteCounts = pagedDir ? remoteAll?.first?.counts : undefined;
+  const counts = remoteCounts ?? {
     all: requests.length,
     fetch: requests.filter((r) => r.type === "fetch" || r.type === "xhr").length,
     document: requests.filter((r) => r.type === "document").length,
     media: requests.filter((r) => r.type === "image" || r.type === "font").length,
-    error: errors,
+    error: requests.filter((r) => r.status >= 400).length,
   };
+  const targetCount = (id: TargetFilter) =>
+    pagedDir ? remoteAll?.first?.targetCounts?.[id] ?? 0 : targetFilterCount(requests, id);
   const failCount = requests.filter((r) => isAppFailure(outcomes.get(r.id))).length;
   const blockCount = requests.filter((r) => isPossibleBlock(outcomes.get(r.id))).length;
 
@@ -2169,7 +2339,7 @@ export default function App() {
                 </div>
                 <div className="sid-meta mono">
                   {session.id} · {session.chromeVersion ?? "navegador não informado"} · criada{" "}
-                  {fmtTime(session.createdAt)} · {session.requests.length} requisições ·{" "}
+                  {fmtTime(session.createdAt)} · {requestCount} requisições ·{" "}
                   {session.capture.mode ?? "modo não informado"}
                 </div>
               </div>
@@ -2436,7 +2606,7 @@ export default function App() {
               {showTargetColumn && (
                 <div className="filters target-filters" aria-label="Filtro por tipo de alvo">
                   {TARGET_FILTERS.filter(
-                    (f) => f.id === "all" || targetFilterCount(requests, f.id) > 0,
+                    (f) => f.id === "all" || targetCount(f.id) > 0,
                   ).map((f) => (
                     <button
                       key={f.id}
@@ -2445,7 +2615,7 @@ export default function App() {
                       title="Filtrar pela proveniência do alvo CDP"
                     >
                       {f.label}
-                      <span className="count">{targetFilterCount(requests, f.id)}</span>
+                      <span className="count">{targetCount(f.id)}</span>
                     </button>
                   ))}
                 </div>
@@ -2484,8 +2654,8 @@ export default function App() {
                 <button
                   className="btn"
                   onClick={() => setView("compare")}
-                  disabled={requests.length < 2}
-                  title={requests.length < 2 ? "São necessárias duas requisições" : "Comparar duas requisições"}
+                  disabled={requestCount < 2}
+                  title={requestCount < 2 ? "São necessárias duas requisições" : "Comparar duas requisições"}
                 >
                   Comparar…
                 </button>
@@ -2628,7 +2798,7 @@ export default function App() {
 
             <div className="statusbar">
               <span>
-                {filtered.length} de {requests.length} requisições
+                {filtered.length} de {requestCount} requisições
               </span>
               <span className="sep">·</span>
               <span>{visibleRows.length} linhas renderizadas (virtualização)</span>
@@ -2661,13 +2831,24 @@ export default function App() {
             matches={matchesById.get(selected.id) ?? []}
             needle={payloadSearch ? { text: searchText, caseSensitive } : undefined}
             outcomes={outcomes}
+            limitsRequests={limitsRequests}
             assessError={assess.error}
             assessLoading={assess.loading}
             assessWarnings={assess.result?.warnings}
           />
         )}
 
-        {view === "detail" && !selected && (
+        {view === "detail" && detailPending && (
+          <div className="empty big">
+            <strong>{remoteDetail?.error ? "Não foi possível carregar a requisição." : "Carregando a requisição…"}</strong>
+            {remoteDetail?.error ? <span>{remoteDetail.error}</span> : null}
+            <button className="link" onClick={() => setView("session")}>
+              Voltar
+            </button>
+          </div>
+        )}
+
+        {view === "detail" && !selected && !detailPending && (
           <div className="empty big">
             <strong>Sessão sem requisições.</strong>
             <span>O session.json foi lido, mas não há nenhuma LogicalRequest nele.</span>
@@ -2723,13 +2904,14 @@ export default function App() {
             onBack={() => setView("session")}
             requests={requests}
             session={session}
+            resolve={resolveRecord}
           />
         )}
 
         {view === "compare" && requests.length < 2 && (
           <div className="empty big">
             <strong>Comparação precisa de duas requisições.</strong>
-            <span>Esta sessão tem {requests.length}.</span>
+            <span>Esta sessão tem {requestCount}.</span>
             <button className="link" onClick={() => setView("session")}>
               Voltar
             </button>

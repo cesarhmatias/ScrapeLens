@@ -101,63 +101,82 @@ fn read_session_payload(path: &str) -> Result<SessionPayload, String> {
     if !chosen.exists() {
         return Err(format!("caminho não encontrado: {path}"));
     }
-    let (session_file, session_dir) = if chosen.is_dir() {
-        (chosen.join("session.json"), chosen)
+    let session_dir = if chosen.is_dir() {
+        chosen
     } else {
-        let parent = chosen
+        chosen
             .parent()
             .map(Path::to_path_buf)
-            .ok_or_else(|| "o arquivo não tem pasta pai".to_string())?;
-        (chosen, parent)
+            .ok_or_else(|| "o arquivo não tem pasta pai".to_string())?
     };
-
-    let raw = fs::read_to_string(&session_file)
-        .map_err(|error| format!("não foi possível ler {}: {error}", session_file.display()))?;
-    let session: Value =
-        serde_json::from_str(&raw).map_err(|error| format!("session.json inválido: {error}"))?;
-
-    let version = session
-        .get("schemaVersion")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| "session.json sem schemaVersion".to_string())?;
-    if version != 1 {
-        return Err(format!(
-            "schemaVersion {version} não é suportado por este app (esperado: 1)"
-        ));
+    if !session_dir.join("session.json").is_file() {
+        return Err(format!("session.json não encontrado em {}", session_dir.display()));
     }
-    if session.pointer("/session/id").and_then(Value::as_str).is_none() {
-        return Err("session.json sem session.id".to_string());
-    }
-
-    let labels = session
-        .pointer("/session/labels")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let synthetic = labels
-        .iter()
-        .any(|label| label.as_str() == Some("synthetic-fixture"));
-    let partial = session
-        .pointer("/session/completeness/state")
-        .and_then(Value::as_str)
-        .map(|state| state != "complete")
-        .unwrap_or(true);
-    let requests = session
-        .get("requests")
-        .and_then(Value::as_array)
-        .map(Vec::len)
-        .unwrap_or(0);
-
-    Ok(SessionPayload {
-        session,
-        session_dir: Some(session_dir.display().to_string()),
-        synthetic,
-        notice: Some(format!(
+    header_payload(&session_dir, |requests, partial| {
+        format!(
             "Sessão aberta: {requests} requisição(ões){}.",
             if partial { " · sessão parcial, como declarada pela fonte" } else { "" }
-        )),
+        )
+    })
+}
+
+/// P5: lê a sessão tipada (cache `LazySession`, sem `Value`) e devolve só o
+/// cabeçalho + contagem. As requisições vêm de `list_requests`/`get_request`.
+pub(crate) fn header_payload(
+    session_dir: &Path,
+    notice: impl FnOnce(usize, bool) -> String,
+) -> Result<SessionPayload, String> {
+    let lazy = cached_session(session_dir)?;
+    let session = &lazy.session;
+    if session.schema_version != 1 {
+        return Err(format!(
+            "schemaVersion {} não é suportado por este app (esperado: 1)",
+            session.schema_version
+        ));
+    }
+    let header = crate::listing::header_of(session)?;
+    let synthetic = session.session.labels.iter().any(|label| label == "synthetic-fixture");
+    let partial = serde_json::to_value(&session.session.completeness.state)
+        .ok()
+        .and_then(|v| v.as_str().map(|s| s != "complete"))
+        .unwrap_or(true);
+    let requests = header.request_count;
+    Ok(SessionPayload {
+        session: serde_json::to_value(&header).map_err(|error| format!("cabeçalho inválido: {error}"))?,
+        session_dir: Some(session_dir.display().to_string()),
+        synthetic,
+        notice: Some(notice(requests, partial)),
         pending: false,
     })
+}
+
+/// Página de resumos (P5). `limit` até 2000; filtros rodam aqui, não no front.
+#[tauri::command]
+pub async fn list_requests(
+    session_dir: String,
+    offset: usize,
+    limit: usize,
+    filter: Option<crate::listing::ListFilter>,
+) -> Result<crate::listing::RequestPage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lazy = cached_session(Path::new(&session_dir))?;
+        Ok(crate::listing::list_page(&lazy.session, offset, limit, &filter.unwrap_or_default()))
+    })
+    .await
+    .map_err(|error| format!("a listagem foi interrompida: {error}"))?
+}
+
+/// Detalhe de uma requisição sob demanda (P5).
+#[tauri::command]
+pub async fn get_request(session_dir: String, id: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lazy = cached_session(Path::new(&session_dir))?;
+        let detail = crate::listing::detail(&lazy.session, &id)
+            .ok_or_else(|| format!("requisição {id} não encontrada na sessão"))?;
+        serde_json::to_value(&detail).map_err(|error| format!("detalhe inválido: {error}"))
+    })
+    .await
+    .map_err(|error| format!("a leitura do detalhe foi interrompida: {error}"))?
 }
 
 fn sessions_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -210,23 +229,13 @@ fn persist_imported(
     let dir = unique_session_dir(&root, &sanitize_dir_name(&session_id));
     store::write_session_dir(&imported.bundle, &dir)
         .map_err(|error| format!("não foi possível gravar a sessão importada: {error}"))?;
-    let value = serde_json::to_value(&imported.bundle.session)
-        .map_err(|error| format!("sessão importada inválida: {error}"))?;
-    let counts = &imported.bundle.session.session.completeness.counts;
+    let counts = imported.bundle.session.session.completeness.counts.requests;
     let warnings = imported.report.warnings.len();
-    let completeness = &imported.bundle.session.session.completeness.state;
-    Ok(SessionPayload {
-        session: value,
-        session_dir: Some(dir.display().to_string()),
-        synthetic: false,
-        notice: Some(format!(
-            "{label} importada: {} requisição(ões), {} aviso(s), completude {:?}. Diretório: {}.",
-            counts.requests,
-            warnings,
-            completeness,
-            dir.display()
-        )),
-        pending: false,
+    let completeness = format!("{:?}", imported.bundle.session.session.completeness.state);
+    drop(imported);
+    let shown = dir.display().to_string();
+    header_payload(&dir, move |_, _| {
+        format!("{label} importada: {counts} requisição(ões), {warnings} aviso(s), completude {completeness}. Diretório: {shown}.")
     })
 }
 
@@ -1526,6 +1535,8 @@ mod tests {
         let payload = read_session_payload(dir.to_str().unwrap()).unwrap();
         assert!(payload.synthetic);
         assert_eq!(payload.session["schemaVersion"], 1);
+        assert_eq!(payload.session["requestCount"], 0);
+        assert_eq!(payload.session["requests"], serde_json::json!([]));
         assert_eq!(payload.session.pointer("/session/id").unwrap(), "test-session");
         assert!(payload.session_dir.is_some());
         fs::remove_dir_all(dir).ok();

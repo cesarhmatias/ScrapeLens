@@ -5,7 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import type { SessionV1 } from "./v1/types";
+import type { RawRequestDetail, RawRequestSummary, SessionV1, TargetProvenance } from "./v1/types";
 import type { AssessResult, VerdictKind } from "./assess";
 import type { ComparePage, CompareSummary, FieldDiff, PrimingChain, ValueOrigins } from "./flow";
 
@@ -15,6 +15,29 @@ export interface SessionPayload {
   synthetic: boolean;
   notice?: string;
   pending?: boolean;
+}
+
+/** Filtro de `list_requests` (src-tauri/src/listing.rs `ListFilter`). */
+export interface ListFilter {
+  typeFilter?: "all" | "fetch" | "document" | "media" | "error";
+  protocol?: string;
+  target?: string;
+  query?: string;
+  payloadSearch?: boolean;
+  matchIds?: string[];
+  restrictIds?: string[] | null;
+}
+
+export interface RequestPageDto {
+  total: number;
+  matched: number;
+  offset: number;
+  items: RawRequestSummary[];
+  /** Alvos distintos da página; `items[i].target` é o índice. */
+  targets: TargetProvenance[];
+  counts: { all: number; fetch: number; document: number; media: number; error: number };
+  targetCounts: Record<string, number>;
+  hasTargets: boolean;
 }
 
 export interface CaptureStatus {
@@ -304,6 +327,16 @@ export const bridge = {
   async setCaptureStartUrl(url: string): Promise<string> {
     if (!isTauri()) return url.trim();
     return invoke("set_capture_start_url", { url });
+  },
+
+  /** Página de resumos (P5); filtros rodam no backend. */
+  async listRequests(sessionDir: string, offset: number, limit: number, filter: ListFilter): Promise<RequestPageDto> {
+    return invoke("list_requests", { sessionDir, offset, limit, filter });
+  },
+
+  /** Detalhe de uma requisição sob demanda (P5). */
+  async getRequest(sessionDir: string, id: string): Promise<RawRequestDetail> {
+    return invoke("get_request", { sessionDir, id });
   },
 
   /** Consome `--import-har` / `--import-netlog` / `--open-capture` (uma vez). */

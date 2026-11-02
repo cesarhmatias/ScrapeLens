@@ -300,6 +300,38 @@ export interface SessionV1 {
   warnings?: Warning[];
 }
 
+/** Resumo cru de `list_requests` (src-tauri/src/listing.rs). */
+export interface RawRequestSummary {
+  id: string;
+  url: string;
+  method: string;
+  status?: number;
+  protocol: Protocol;
+  resourceType?: string;
+  wallTime?: string;
+  totalMs?: number;
+  estimated?: boolean;
+  initiator?: { kind: string; url?: string };
+  /** Índice em `RequestPageDto.targets`. */
+  target?: number;
+  links?: RequestLink[];
+  source: Provenance["source"];
+  warningCount: number;
+}
+
+/** Detalhe de `get_request`. */
+export interface RawRequestDetail {
+  request: LogicalRequest;
+  warnings: Warning[];
+  streamSessions: StreamSession[];
+}
+
+/** Cabeçalho de `open_session` (P5): sem requisições. */
+export interface SessionHeaderV1 extends SessionV1 {
+  requestCount?: number;
+  sources?: Provenance["source"][];
+}
+
 export const SYNTHETIC_LABEL = "synthetic-fixture";
 
 export function isSynthetic(session: SessionV1): boolean {

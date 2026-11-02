@@ -33,13 +33,14 @@ pub fn run(
     stop: Receiver<()>,
     ready: Sender<Result<(), String>>,
 ) -> Result<SessionPayload, String> {
-    scrapelens_capture::run(config, status, stop, ready).map(|outcome| SessionPayload {
-        session: outcome.session,
-        session_dir: Some(outcome.session_dir.display().to_string()),
-        synthetic: false,
-        notice: Some(outcome.notice),
-        pending: false,
-    })
+    let outcome = scrapelens_capture::run(config, status, stop, ready)?;
+    // P5: descarta o `Value` da captura e devolve só o cabeçalho (lista paginada).
+    let notice = outcome.notice;
+    let dir = outcome.session_dir;
+    drop(outcome.session);
+    let mut payload = crate::commands::header_payload(&dir, |_, _| notice)?;
+    payload.synthetic = false;
+    Ok(payload)
 }
 
 #[cfg(test)]

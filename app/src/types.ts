@@ -187,6 +187,31 @@ export interface RequestRecord {
   verification: Record<VerificationKey, Verification>;
 }
 
+/** Linha da lista (P5): só o necessário para tabela, filtros e alvos; o detalhe vem de `get_request`. */
+export type RequestSummary = Pick<
+  RequestRecord,
+  | "id"
+  | "url"
+  | "method"
+  | "domain"
+  | "path"
+  | "status"
+  | "statusText"
+  | "protocol"
+  | "type"
+  | "startedAt"
+  | "durationMs"
+  | "initiator"
+  | "target"
+  | "links"
+  | "netlogOnlyUnknownTarget"
+  | "primarySource"
+> & {
+  warningCount: number;
+  /** Duração estimada ou ausente na fonte (mesma regra da verificação de timings). */
+  durationApprox: boolean;
+};
+
 export interface SessionOrigin {
   kind: "synthetic" | "live" | "capture-import" | "har-import" | "netlog-import" | "unknown";
   /** Rótulo humano da origem; nunca "ao vivo"/"real" sem rótulo explícito do core. */
@@ -214,4 +239,8 @@ export interface SessionRecord {
   labels: string[];
   sourcePath?: string;
   attachments?: Record<string, string>;
+  /** Total de requisições (na sessão paginada, `requests` fica vazio). */
+  requestCount: number;
+  /** Sessão paginada pelo backend (P5): lista via `list_requests`, detalhe via `get_request`. */
+  paged: boolean;
 }

@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { bridge, type TimelineDto, type ValidationResultDto } from "./bridge";
 import { VerdictKindChip } from "./assess";
-import type { RequestRecord } from "./types";
+import type { RequestSummary } from "./types";
 import { timelineTargetBadge } from "./target";
 
 export function TimelineView({
@@ -15,12 +15,12 @@ export function TimelineView({
 }: {
   sessionDir?: string;
   /** Para selo de alvo (fora da página principal); o core da timeline não envia target. */
-  requests?: RequestRecord[];
+  requests?: RequestSummary[];
   onOpenRequest: (id: string) => void;
   onBack: () => void;
 }) {
   const byId = useMemo(() => {
-    const map = new Map<string, RequestRecord>();
+    const map = new Map<string, RequestSummary>();
     for (const r of requests ?? []) map.set(r.id, r);
     return map;
   }, [requests]);

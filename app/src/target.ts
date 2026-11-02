@@ -1,7 +1,10 @@
 // Rótulos e filtros do alvo CDP (docs/14-captura-multi-alvo.md). A UI só
 // apresenta o que o core grava em `target`/`links`; não inventa proveniência.
 
-import type { RequestLinkView, RequestRecord, TargetKind, TargetView } from "./types";
+import type { RequestLinkView, RequestSummary, TargetKind, TargetView } from "./types";
+
+/** Campos usados pelas regras de alvo (resumo da lista ou registro completo). */
+export type TargetRow = Pick<RequestSummary, "id" | "url" | "domain" | "target" | "links" | "netlogOnlyUnknownTarget">;
 
 export const TARGET_KIND_LABELS: Record<TargetKind, string> = {
   page: "página",
@@ -38,7 +41,7 @@ export function isPopupTarget(target: TargetView | undefined): boolean {
 
 /** Sessão multi-alvo: há proveniência ou aviso de attach; senão, legado implícito. */
 export function sessionShowsTargets(
-  requests: RequestRecord[],
+  requests: TargetRow[],
   warnings: { code: string }[],
 ): boolean {
   if (
@@ -76,7 +79,7 @@ export function targetKindLabel(target: TargetView): string {
  * Selo curto da lista. `null` = não mostrar (página principal implícita em
  * sessão antiga, ou page sem opener quando a coluna já está oculta).
  */
-export function targetBadge(req: RequestRecord): string | null {
+export function targetBadge(req: TargetRow): string | null {
   if (req.netlogOnlyUnknownTarget) return "alvo desconhecido (só NetLog)";
   if (!req.target) return null;
   const kind = targetKindLabel(req.target);
@@ -86,7 +89,7 @@ export function targetBadge(req: RequestRecord): string | null {
 }
 
 /** Na timeline: só quando não for a página principal (sem opener). */
-export function timelineTargetBadge(req: RequestRecord | undefined): string | null {
+export function timelineTargetBadge(req: TargetRow | undefined): string | null {
   if (!req) return null;
   if (req.netlogOnlyUnknownTarget) return "alvo desconhecido (só NetLog)";
   if (!req.target) return null;
@@ -94,7 +97,7 @@ export function timelineTargetBadge(req: RequestRecord | undefined): string | nu
   return targetBadge(req);
 }
 
-export function matchesTargetFilter(req: RequestRecord, filter: TargetFilter): boolean {
+export function matchesTargetFilter(req: TargetRow, filter: TargetFilter): boolean {
   if (filter === "all") return true;
   if (filter === "netlog_unknown") return req.netlogOnlyUnknownTarget;
   if (filter === "popup") return isPopupTarget(req.target);
@@ -104,7 +107,7 @@ export function matchesTargetFilter(req: RequestRecord, filter: TargetFilter): b
   return req.target?.kind === filter;
 }
 
-export function targetFilterCount(requests: RequestRecord[], filter: TargetFilter): number {
+export function targetFilterCount(requests: TargetRow[], filter: TargetFilter): number {
   return requests.filter((r) => matchesTargetFilter(r, filter)).length;
 }
 
@@ -116,7 +119,7 @@ export interface CaptureTargetRow {
 }
 
 /** Alvos distintos vistos nas requisições (acompanhados). */
-export function captureTargets(requests: RequestRecord[]): CaptureTargetRow[] {
+export function captureTargets(requests: TargetRow[]): CaptureTargetRow[] {
   const map = new Map<string, CaptureTargetRow>();
   for (const req of requests) {
     if (!req.target) continue;
