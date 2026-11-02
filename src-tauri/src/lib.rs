@@ -34,6 +34,8 @@ pub struct AppState {
     pub cli_message: Mutex<Option<(String, String)>>,
     /// Gravação em andamento; lido pelo menu sem bloquear (A9-B8).
     pub recording: std::sync::atomic::AtomicBool,
+    /// Abertura/importação/encerramento em andamento: recusa uma segunda em paralelo.
+    pub loading: std::sync::atomic::AtomicBool,
 }
 
 /// Partida do app: limpa Chrome/perfil de capturas cujo dono morreu (ex.: SIGKILL).

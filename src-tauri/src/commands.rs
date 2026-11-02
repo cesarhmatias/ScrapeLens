@@ -89,11 +89,48 @@ pub fn demo_session() -> Result<SessionPayload, String> {
 /// Abre uma sessão v1 real (pasta com session.json ou o arquivo direto).
 /// Esta parte já é funcional e não depende do core para ler o documento.
 #[tauri::command]
-pub fn open_session(path: String, state: State<'_, AppState>) -> Result<SessionPayload, String> {
-    let payload = read_session_payload(&path)?;
-    *state.last_session_dir.lock().expect("session_dir lock") =
-        payload.session_dir.as_ref().map(PathBuf::from);
-    Ok(payload)
+pub async fn open_session(app: AppHandle, path: String) -> Result<SessionPayload, String> {
+    run_loading(app, move |app| {
+        let payload = read_session_payload(&path)?;
+        let state = app.state::<AppState>();
+        *state.last_session_dir.lock().expect("session_dir lock") =
+            payload.session_dir.as_ref().map(PathBuf::from);
+        Ok(payload)
+    })
+    .await
+}
+
+/// Liga um `AtomicBool` e o desliga ao sair (inclusive em erro ou pânico).
+pub(crate) struct FlagGuard<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl<'a> FlagGuard<'a> {
+    /// `None` se o sinal já estava ligado (outra operação em andamento).
+    pub(crate) fn acquire(flag: &'a std::sync::atomic::AtomicBool) -> Option<Self> {
+        use std::sync::atomic::Ordering;
+        flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).ok().map(|_| Self(flag))
+    }
+}
+
+impl Drop for FlagGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Abre/importa/encerra fora da thread principal (a leitura de 20 mil
+/// requisições leva ~10 s) e recusa uma segunda operação em paralelo.
+async fn run_loading<F>(app: AppHandle, work: F) -> Result<SessionPayload, String>
+where
+    F: FnOnce(&AppHandle) -> Result<SessionPayload, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _guard = FlagGuard::acquire(&state.loading)
+            .ok_or_else(|| "Já há uma sessão sendo aberta ou importada. Aguarde terminar.".to_string())?;
+        work(&app)
+    })
+    .await
+    .map_err(|error| format!("a operação foi interrompida: {error}"))?
 }
 
 fn read_session_payload(path: &str) -> Result<SessionPayload, String> {
@@ -101,17 +138,16 @@ fn read_session_payload(path: &str) -> Result<SessionPayload, String> {
     if !chosen.exists() {
         return Err(format!("caminho não encontrado: {path}"));
     }
+    // Pasta com session.json, ou um arquivo de sessão com qualquer nome
+    // (absoluto, regular, sem symlink em nenhum componente).
     let session_dir = if chosen.is_dir() {
+        if !chosen.join("session.json").is_file() {
+            return Err(format!("session.json não encontrado em {}", chosen.display()));
+        }
         chosen
     } else {
-        chosen
-            .parent()
-            .map(Path::to_path_buf)
-            .ok_or_else(|| "o arquivo não tem pasta pai".to_string())?
+        cli::validate_absolute_regular_file(&chosen)?
     };
-    if !session_dir.join("session.json").is_file() {
-        return Err(format!("session.json não encontrado em {}", session_dir.display()));
-    }
     header_payload(&session_dir, |requests, partial| {
         format!(
             "Sessão aberta: {requests} requisição(ões){}.",
@@ -309,6 +345,35 @@ pub(crate) fn open_beneath_parent(path: &Path) -> std::io::Result<fs::File> {
     Ok(unsafe { fs::File::from_raw_fd(fd) })
 }
 
+/// Estado "starting": liga `recording` e avisa o menu; se o start não chegar a
+/// `commit()`, desliga e reabilita o menu ao sair (erro, `?` ou pânico).
+pub(crate) struct StartingGuard<'a, F: FnMut(bool)> {
+    flag: &'a std::sync::atomic::AtomicBool,
+    notify: F,
+    committed: bool,
+}
+
+impl<'a, F: FnMut(bool)> StartingGuard<'a, F> {
+    pub(crate) fn begin(flag: &'a std::sync::atomic::AtomicBool, mut notify: F) -> Self {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        notify(true);
+        Self { flag, notify, committed: false }
+    }
+
+    pub(crate) fn commit(&mut self) {
+        self.committed = true;
+    }
+}
+
+impl<F: FnMut(bool)> Drop for StartingGuard<'_, F> {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.flag.store(false, std::sync::atomic::Ordering::SeqCst);
+            (self.notify)(false);
+        }
+    }
+}
+
 /// Importações ficam bloqueadas durante uma gravação (A8-B7).
 pub(crate) fn ensure_not_recording(recording: bool) -> Result<(), String> {
     if recording {
@@ -318,26 +383,29 @@ pub(crate) fn ensure_not_recording(recording: bool) -> Result<(), String> {
     }
 }
 
-fn is_recording(state: &State<'_, AppState>) -> bool {
-    state.recording.load(std::sync::atomic::Ordering::SeqCst)
+
+#[tauri::command]
+pub async fn import_har(app: AppHandle, path: String) -> Result<SessionPayload, String> {
+    run_loading(app, move |app| {
+        ensure_not_recording(app.state::<AppState>().recording.load(std::sync::atomic::Ordering::SeqCst))?;
+        let bytes = read_import_file(&path, "HAR")?;
+        let imported = scrapelens_core::import_har(&bytes)
+            .map_err(|error| format!("HAR inválido: {error}. Use um HAR 1.2 exportado pelo Chrome."))?;
+        persist_imported(app, imported, "HAR")
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn import_har(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<SessionPayload, String> {
-    ensure_not_recording(is_recording(&state))?;
-    let bytes = read_import_file(&path, "HAR")?;
-    let imported = scrapelens_core::import_har(&bytes)
-        .map_err(|error| format!("HAR inválido: {error}. Use um HAR 1.2 exportado pelo Chrome."))?;
-    persist_imported(&app, imported, "HAR")
-}
-
-#[tauri::command]
-pub fn import_netlog(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<SessionPayload, String> {
-    ensure_not_recording(is_recording(&state))?;
-    let bytes = read_import_file(&path, "NetLog")?;
-    let imported = scrapelens_core::import_netlog(&bytes)
-        .map_err(|error| format!("NetLog inválido: {error}. Use o JSON completo do Chrome."))?;
-    persist_imported(&app, imported, "NetLog")
+pub async fn import_netlog(app: AppHandle, path: String) -> Result<SessionPayload, String> {
+    run_loading(app, move |app| {
+        ensure_not_recording(app.state::<AppState>().recording.load(std::sync::atomic::Ordering::SeqCst))?;
+        let bytes = read_import_file(&path, "NetLog")?;
+        let imported = scrapelens_core::import_netlog(&bytes)
+            .map_err(|error| format!("NetLog inválido: {error}. Use o JSON completo do Chrome."))?;
+        persist_imported(app, imported, "NetLog")
+    })
+    .await
 }
 
 /// URL inicial sugerida na UI: preferência gravada, senão `SCRAPELENS_CAPTURE_URL`.
@@ -394,6 +462,15 @@ pub fn start_session(
     state: State<'_, AppState>,
     start_url: Option<String>,
 ) -> Result<SessionPayload, String> {
+    // "starting" (A9-B8/A8-B7): menu desabilita ⌘⇧R e importações desde já;
+    // se o start falhar, `StartingGuard` religa.
+    if state.recording.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Já existe uma captura em andamento ou iniciando. Clique em Encerrar antes de iniciar outra.".to_string());
+    }
+    let menu_app = app.clone();
+    let mut starting = StartingGuard::begin(&state.recording, move |recording| {
+        crate::menu::set_recording_menu(&menu_app, recording)
+    });
     let mut slot = state.capture.lock().map_err(|_| "estado de captura indisponível")?;
     if slot.is_some() {
         return Err("Já existe uma captura em andamento. Clique em Encerrar antes de iniciar outra.".to_string());
@@ -469,8 +546,7 @@ pub fn start_session(
         status,
     });
     drop(slot);
-    state.recording.store(true, std::sync::atomic::Ordering::SeqCst);
-    crate::menu::set_recording_menu(&app, true);
+    starting.commit();
 
     Ok(SessionPayload {
         session: json!({
@@ -509,13 +585,22 @@ pub fn start_session(
 /// Encerra a captura, aguarda o flush do NetLog, importa com o core e grava a
 /// sessão v1. Devolve a sessão pronta para a UI.
 #[tauri::command]
-pub fn stop_session(app: AppHandle, state: State<'_, AppState>) -> Result<SessionPayload, String> {
+pub async fn stop_session(app: AppHandle) -> Result<SessionPayload, String> {
+    // Fora da thread principal; não usa o sinal `loading` (encerrar nunca
+    // espera uma abertura em andamento).
+    tauri::async_runtime::spawn_blocking(move || stop_blocking(&app))
+        .await
+        .map_err(|error| format!("o encerramento foi interrompido: {error}"))?
+}
+
+fn stop_blocking(app: &AppHandle) -> Result<SessionPayload, String> {
+    let state = app.state::<AppState>();
     let capture = {
         let mut slot = state.capture.lock().map_err(|_| "estado de captura indisponível")?;
         slot.take()
     };
     state.recording.store(false, std::sync::atomic::Ordering::SeqCst);
-    crate::menu::set_recording_menu(&app, false);
+    crate::menu::set_recording_menu(app, false);
     let Some(capture) = capture else {
         return Err("Nenhuma captura em andamento para encerrar.".to_string());
     };
@@ -667,15 +752,29 @@ struct CachedSession {
 static SESSION_CACHE: Mutex<Vec<CachedSession>> = Mutex::new(Vec::new());
 static SESSION_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-fn session_fingerprint(dir: &Path) -> Vec<Option<(u64, SystemTime)>> {
-    ["session.json", "attachments"]
-        .iter()
-        .map(|name| {
-            fs::metadata(dir.join(name))
-                .ok()
-                .and_then(|meta| Some((meta.len(), meta.modified().ok()?)))
-        })
-        .collect()
+fn session_fingerprint(path: &Path) -> Vec<Option<(u64, SystemTime)>> {
+    let stat = |p: PathBuf| fs::metadata(p).ok().and_then(|meta| Some((meta.len(), meta.modified().ok()?)));
+    if path.is_file() {
+        let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        return vec![stat(path.to_path_buf()), stat(parent.join("attachments"))];
+    }
+    ["session.json", "attachments"].iter().map(|name| stat(path.join(name))).collect()
+}
+
+/// Arquivo de sessão com qualquer nome: lido tipado em fluxo (sem `Value`),
+/// aberto pelo pai sem seguir symlink; anexos relativos à pasta do arquivo.
+fn open_session_file_lazy(file: &Path) -> Result<scrapelens_core::lazy::LazySession, String> {
+    let handle = open_beneath_parent(file)
+        .map_err(|error| format!("não foi possível abrir {} (symlink é recusado): {error}", file.display()))?;
+    let meta = handle.metadata().map_err(|error| format!("falha ao inspecionar {}: {error}", file.display()))?;
+    if !meta.is_file() {
+        return Err(format!("{} não é um arquivo regular", file.display()));
+    }
+    let session: scrapelens_core::model::SessionV1 =
+        serde_json::from_reader(std::io::BufReader::with_capacity(1 << 20, handle))
+            .map_err(|error| format!("arquivo de sessão inválido: {error}"))?;
+    let parent = file.parent().map(Path::to_path_buf).ok_or("o arquivo não tem pasta pai")?;
+    Ok(scrapelens_core::lazy::LazySession::new(session, parent))
 }
 
 pub(crate) fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::LazySession>, String> {
@@ -697,8 +796,13 @@ pub(crate) fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::La
         guard.remove(0); // libera a mais antiga antes de carregar outra
     }
     SESSION_LOADS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let (lazy, _report) = scrapelens_core::open_session_dir_lazy(dir)
-        .map_err(|error| format!("não foi possível ler a sessão: {error}"))?;
+    let lazy = if dir.is_file() {
+        open_session_file_lazy(dir)?
+    } else {
+        scrapelens_core::open_session_dir_lazy(dir)
+            .map_err(|error| format!("não foi possível ler a sessão: {error}"))?
+            .0
+    };
     let lazy = Arc::new(lazy);
     guard.push(CachedSession { dir: dir.to_path_buf(), fingerprint, lazy: lazy.clone() });
     Ok(lazy)
@@ -1475,6 +1579,66 @@ mod tests {
         std::fs::rename(root.join("dir"), root.join("dir-old")).unwrap();
         std::os::unix::fs::symlink(root.join("other"), root.join("dir")).unwrap();
         assert!(read_import_file_max(path.to_str().unwrap(), "HAR", 64).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn second_open_is_refused_while_one_is_loading() {
+        let flag = std::sync::atomic::AtomicBool::new(false);
+        let first = FlagGuard::acquire(&flag).expect("primeira abertura");
+        assert!(FlagGuard::acquire(&flag).is_none(), "segunda em paralelo deve ser recusada");
+        drop(first);
+        assert!(FlagGuard::acquire(&flag).is_some(), "liberado ao terminar");
+        let result = std::panic::catch_unwind(|| {
+            let _g = FlagGuard::acquire(&flag).unwrap();
+            panic!("falha na abertura");
+        });
+        assert!(result.is_err());
+        assert!(!flag.load(std::sync::atomic::Ordering::SeqCst), "pânico também libera");
+    }
+
+    #[test]
+    fn starting_state_disables_menu_and_reenables_on_failure() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let flag = AtomicBool::new(false);
+        let calls = std::cell::RefCell::new(Vec::new());
+        {
+            let _g = StartingGuard::begin(&flag, |r| calls.borrow_mut().push(r));
+            assert!(flag.load(Ordering::SeqCst));
+            assert!(crate::menu::blocked_while_recording("start-session", &flag));
+            // start falha (sai sem commit)
+        }
+        assert!(!flag.load(Ordering::SeqCst));
+        assert_eq!(*calls.borrow(), vec![true, false]);
+        calls.borrow_mut().clear();
+        {
+            let mut g = StartingGuard::begin(&flag, |r| calls.borrow_mut().push(r));
+            g.commit();
+        }
+        assert!(flag.load(Ordering::SeqCst), "start ok mantém gravando");
+        assert_eq!(*calls.borrow(), vec![true]);
+    }
+
+    #[test]
+    fn opens_session_file_with_any_name_but_not_symlink() {
+        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!(
+            "scrapelens-anyname-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("minha-captura.json");
+        std::fs::write(&file, MINIMAL_SESSION).unwrap();
+        let payload = read_session_payload(file.to_str().unwrap()).unwrap();
+        assert_eq!(payload.session["requestCount"], 0);
+        assert_eq!(payload.session.pointer("/session/id").unwrap(), "test-session");
+        assert_eq!(payload.session_dir.as_deref(), file.to_str());
+        let page = crate::listing::list_page(&cached_session(&file).unwrap().session, 0, 10, &Default::default());
+        assert_eq!(page.total, 0);
+
+        let link = root.join("atalho.json");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        assert!(read_session_payload(link.to_str().unwrap()).unwrap_err().contains("symlink"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

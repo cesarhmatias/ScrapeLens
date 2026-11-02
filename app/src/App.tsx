@@ -1765,6 +1765,20 @@ export default function App() {
     if (payload.notice) setNotice({ kind: "info", text: payload.notice });
   }, []);
 
+  // Uma abertura/importação por vez (o backend também recusa a segunda).
+  const loadingRef = useRef(false);
+  const beginLoading = useCallback(() => {
+    if (loadingRef.current) {
+      setNotice({ kind: "info", text: "Já há uma sessão sendo aberta ou importada. Aguarde terminar." });
+      return false;
+    }
+    loadingRef.current = true;
+    return true;
+  }, []);
+  const endLoading = useCallback(() => {
+    loadingRef.current = false;
+  }, []);
+
   const openSession = useCallback(async () => {
     if (!desktop) {
       setNotice({
@@ -1774,15 +1788,17 @@ export default function App() {
       });
       return;
     }
-    setBusy("Abrindo sessão…");
+    if (!beginLoading()) return;
+    setBusy("Abrindo sessão… (sessões grandes levam alguns segundos)");
     try {
       applyPayload(await bridge.pickAndOpenSession());
     } catch (error) {
       setNotice({ kind: "error", text: "Não foi possível abrir a sessão.", detail: String(error), action: "open" });
     } finally {
+      endLoading();
       setBusy(null);
     }
-  }, [applyPayload, desktop]);
+  }, [applyPayload, desktop, beginLoading, endLoading]);
 
   const validationRef = useRef(validation);
   validationRef.current = validation;
@@ -1825,16 +1841,18 @@ export default function App() {
         setNotice({ kind: "info", text: "Há uma captura em andamento. Encerre a gravação antes de importar." });
         return;
       }
+      if (!beginLoading()) return;
       setBusy(kind === "har" ? "Importando HAR…" : "Importando NetLog…");
       try {
         applyPayload(kind === "har" ? await bridge.importHar() : await bridge.importNetlog());
       } catch (error) {
         setNotice({ kind: "error", text: `A importação de ${kind.toUpperCase()} falhou.`, detail: String(error) });
       } finally {
+        endLoading();
         setBusy(null);
       }
     },
-    [applyPayload, desktop, recording],
+    [applyPayload, desktop, recording, beginLoading, endLoading],
   );
 
   const chooseChrome = useCallback(async () => {
@@ -2509,9 +2527,16 @@ export default function App() {
             )}
 
             {busy && (
-              <div className="notice notice-info">
+              <div className="notice notice-info" role="status" aria-live="polite">
                 <span className="notice-icon">…</span>
                 <span>{busy}</span>
+              </div>
+            )}
+
+            {!busy && pagedDir && remoteAll?.dir !== pagedDir && requestCount > 0 && (
+              <div className="notice notice-info" role="status" aria-live="polite">
+                <span className="notice-icon">…</span>
+                <span>Carregando a lista de {requestCount} requisições…</span>
               </div>
             )}
 

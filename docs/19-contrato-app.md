@@ -18,6 +18,10 @@ o App deixa de montar `serde_json::Value` da sessão e de mandá-la inteira ao f
 
 ### `open_session(path)` → `SessionPayload`
 
+`path` é uma pasta com `session.json` ou um arquivo de sessão com qualquer nome
+(caminho absoluto, arquivo regular, sem symlink em nenhum componente). No caso do
+arquivo, `sessionDir` é o próprio arquivo e os anexos são lidos da pasta dele.
+
 Também devolvido por `import_har`, `import_netlog` e `stop_session`.
 
 ```jsonc
@@ -116,8 +120,9 @@ macOS arm64, pico de RSS por `getrusage`), em `/tmp/big20k` (`session.json` de 1
   ~240 B (URL e `wallTime` dominam). Fica acima da estimativa de 100 a 200 B do docs/18.
 - Tempo: a leitura tipada leva ~9,9 s, contra ~4,4 s do caminho antigo, que usa mais
   memória. As 11 páginas de `list_requests`, com cabeçalho e detalhe, levam ~70 ms.
-  `open_session`, `import_*` e `stop_session` ainda são comandos síncronos; passá-los
-  para `spawn_blocking` fica como próximo passo.
+  `open_session`, `import_*` e `stop_session` rodam em `spawn_blocking`, e a interface
+  não congela. Abertura e importação usam o sinal `loading`, que recusa uma segunda
+  em paralelo; a tela mostra um indicador durante a leitura e a carga da lista.
 - O que domina é a `SessionV1` tipada (~1.160 MiB, como o `lazy` do docs/18). P6/P8
   reduziriam isso no core.
 - Não medido: a memória do WebView. Os resumos de 20 mil requisições somam ~5 MB de
