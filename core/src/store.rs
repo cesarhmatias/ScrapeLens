@@ -146,6 +146,36 @@ fn sync_dir(_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Acima deste tamanho (JSON identado) o `session.json` é gravado compacto (docs/18 P6):
+/// ~−43 % no arquivo e na memória de quem o lê inteiro; abaixo, continua legível.
+pub const COMPACT_SESSION_BYTES: usize = 50 * 1024 * 1024;
+
+/// Contador de bytes que não guarda nada: mede o tamanho identado sem alocá-lo.
+struct CountingWriter(usize);
+
+impl Write for CountingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Bytes do `session.json`: identado se couber em `threshold`, compacto se não. A medida
+/// é feita sem montar o texto identado (que, para sessões enormes, custa ~1,7x o compacto).
+fn session_json_bytes(session: &crate::model::SessionV1, threshold: usize) -> Result<Vec<u8>> {
+    let mut counter = CountingWriter(0);
+    serde_json::to_writer_pretty(&mut counter, session)
+        .map_err(|error| CoreError::json("session.json", error))?;
+    if counter.0 > threshold {
+        serde_json::to_vec(session).map_err(|error| CoreError::json("session.json", error))
+    } else {
+        serde_json::to_vec_pretty(session).map_err(|error| CoreError::json("session.json", error))
+    }
+}
+
 /// Grava uma sessão completa no layout v1 com permissões restritas:
 /// diretório 0700, `session.json`/anexos 0600, escrita atômica por arquivo.
 ///
@@ -208,8 +238,7 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
         sync_dir(&attachments_dir)?;
     }
 
-    let json = serde_json::to_vec_pretty(&bundle.session)
-        .map_err(|error| CoreError::json("session.json", error))?;
+    let json = session_json_bytes(&bundle.session, COMPACT_SESSION_BYTES)?;
     write_atomic(&dir.join(SESSION_FILE), &json, true)?;
     sync_dir(dir)?;
     Ok(())
@@ -322,6 +351,28 @@ pub fn read_existing(path: &Path) -> Result<(File, u64)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn session_json_is_pretty_below_the_threshold_and_compact_above_it() {
+        let har = std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/har-minimal.json"),
+        )
+        .unwrap();
+        let session = crate::import_har(&har).unwrap().bundle.session;
+        let pretty = session_json_bytes(&session, usize::MAX).unwrap();
+        let compact = session_json_bytes(&session, 0).unwrap();
+        assert!(pretty.contains(&b'\n') && pretty.windows(2).any(|w| w == b"  "));
+        assert!(!compact.contains(&b'\n'));
+        assert!(compact.len() < pretty.len());
+        let a: serde_json::Value = serde_json::from_slice(&pretty).unwrap();
+        let b: serde_json::Value = serde_json::from_slice(&compact).unwrap();
+        assert_eq!(a, b);
+        // O limite é sobre o tamanho identado: exatamente no limite ainda é identado.
+        let exact = session_json_bytes(&session, pretty.len()).unwrap();
+        assert_eq!(exact, pretty);
+        let below = session_json_bytes(&session, pretty.len() - 1).unwrap();
+        assert_eq!(below, compact);
+    }
+
     use super::*;
     use crate::model::{BrowserInfo, SessionMeta, SessionV1, SCHEMA_VERSION};
 
