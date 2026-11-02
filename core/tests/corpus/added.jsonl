@@ -28,3 +28,11 @@
 {"input": "token&amp;#61;B2Ax", "forbid": ["B2Ax"], "kind": "text", "keep": []}
 {"input": "token&amp;#x3D;B2Bx", "forbid": ["B2Bx"], "kind": "text", "keep": []}
 {"input": "token&amp;equals;B2Cx", "forbid": ["B2Cx"], "kind": "text", "keep": []}
+{"input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaatoken=LONGNAME1x", "forbid": ["LONGNAME1x"], "kind": "text", "keep": []}
+{"input": "x_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_token=LONGNAME2x", "forbid": ["LONGNAME2x"], "kind": "text", "keep": []}
+{"input": "token=\\B3Ax", "forbid": ["B3Ax"], "kind": "text", "keep": []}
+{"input": "token=&#61;B3Cx", "forbid": ["B3Cx"], "kind": "text", "keep": []}
+{"input": "token='a'\"B4Ax", "forbid": ["B4Ax"], "kind": "text", "keep": []}
+{"input": "token=\"a\"(B4Bx)", "forbid": ["B4Bx"], "kind": "text", "keep": []}
+{"input": "token=[a][B4Cx]", "forbid": ["B4Cx"], "kind": "text", "keep": []}
+{"input": "(token=AB(c)B4Dx)", "forbid": ["B4Dx"], "kind": "text", "keep": []}

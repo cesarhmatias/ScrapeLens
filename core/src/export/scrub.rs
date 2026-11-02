@@ -342,17 +342,44 @@ impl Scrubber<'_> {
         let (value_start, value_end, next) =
             self.value_extent(bytes, vstart, group_end, depth, stack);
         self.push(level, value_start, value_end, Repl::Param);
-        // Depois de um valor entre aspas/colchetes, o que vier colado ainda é valor
-        // (`token="abc"TAIL`, `token=[abc]TAIL`).
-        if next > value_end && next < bytes.len() && is_tail_byte(bytes[next]) {
-            let tail_end = bytes[next..]
-                .iter()
-                .position(|b| !is_tail_byte(*b))
-                .map_or(bytes.len(), |n| next + n);
-            // `TAIL=...` não é cauda: é o nome do próximo parâmetro.
-            if !starts_with_equals(bytes, tail_end) {
-                self.push(level, next, tail_end, Repl::Param);
-                return tail_end;
+        // Depois de um valor entre aspas/colchetes, o que vier COLADO ainda é valor:
+        // texto (`token="abc"TAIL`, `[abc]TAIL`) ou outra abertura (`'a'"X`, `[a][X]`,
+        // `"a"(X)`). Cada volta consome pelo menos um byte.
+        let mut next = next;
+        if next > value_end {
+            while next < bytes.len() {
+                let b = bytes[next];
+                if is_tail_byte(b) {
+                    let tail_end = bytes[next..]
+                        .iter()
+                        .position(|c| !is_tail_byte(*c))
+                        .map_or(bytes.len(), |n| next + n);
+                    // `TAIL=...` não é cauda: é o nome do próximo parâmetro.
+                    if starts_with_equals(bytes, tail_end) {
+                        break;
+                    }
+                    self.push(level, next, tail_end, Repl::Param);
+                    next = tail_end;
+                    continue;
+                }
+                let opens = match b {
+                    b'"' | b'\'' => !stack.contains(&b),
+                    b'(' | b'[' | b'{' | b'<' => true,
+                    b'\\' => {
+                        matches!(bytes.get(next + 1), Some(b'"' | b'\''))
+                            && !stack.contains(&(0x80 | bytes[next + 1]))
+                    }
+                    _ => false,
+                };
+                if !opens {
+                    break;
+                }
+                let (s0, e0, n0) = self.value_extent(bytes, next, next, depth, stack);
+                if n0 <= next {
+                    break;
+                }
+                self.push(level, s0, e0, Repl::Param);
+                next = n0;
             }
         }
         next
@@ -378,6 +405,18 @@ impl Scrubber<'_> {
         }
         if p >= bytes.len() {
             return (p, p, p);
+        }
+        // `token=&#61;X`: outro "igual" (entidade) colado ao primeiro; o valor vem depois.
+        let mut after_equals = p;
+        while let Some(n) = equals_len_at(bytes, after_equals) {
+            after_equals += n;
+        }
+        if after_equals > p {
+            return self.value_extent(bytes, after_equals, after_equals, depth, stack);
+        }
+        // `token=\X`: a barra invertida que não escapa aspas é só mais um byte do valor.
+        if bytes[p] == b'\\' && !matches!(bytes.get(p + 1), Some(b'"' | b'\'')) {
+            return self.attached_extent(bytes, p, depth, stack);
         }
         if bytes[p] == b'\\' && matches!(bytes.get(p + 1), Some(b'"' | b'\'')) {
             // `\"valor\"` (aspas escapadas, comuns em texto dentro de JSON)
@@ -410,13 +449,16 @@ impl Scrubber<'_> {
                     }
                     q += 1;
                 }
-                let close = q.min(bytes.len());
-                let next = if close < bytes.len() && bytes[close] == quote {
-                    close + 1
-                } else {
-                    close
-                };
-                (p + 1, close, next)
+                let mut close = q.min(bytes.len());
+                let closed = close < bytes.len() && bytes[close] == quote;
+                if !closed && depth == 0 {
+                    // abertura sem fechamento: o valor vai até o próximo espaço
+                    close = bytes[p + 1..]
+                        .iter()
+                        .position(|b| is_space(*b))
+                        .map_or(bytes.len(), |n| p + 1 + n);
+                }
+                (p + 1, close, if closed { close + 1 } else { close })
             }
             open @ (b'(' | b'[' | b'{' | b'<') => {
                 let closer = match open {
@@ -425,26 +467,28 @@ impl Scrubber<'_> {
                     b'{' => b'}',
                     _ => b'>',
                 };
-                let mut depth = 1usize;
+                let mut nest = 1usize;
                 let mut q = p + 1;
                 while q < bytes.len() && bytes[q] != b'\n' {
                     if bytes[q] == open {
-                        depth += 1;
+                        nest += 1;
                     } else if bytes[q] == closer {
-                        depth -= 1;
-                        if depth == 0 {
+                        nest -= 1;
+                        if nest == 0 {
                             break;
                         }
                     }
                     q += 1;
                 }
-                let close = q.min(bytes.len());
-                let next = if close < bytes.len() && bytes[close] == closer {
-                    close + 1
-                } else {
-                    close
-                };
-                (p + 1, close, next)
+                let mut close = q.min(bytes.len());
+                let closed = close < bytes.len() && bytes[close] == closer;
+                if !closed && depth == 0 {
+                    close = bytes[p + 1..]
+                        .iter()
+                        .position(|b| is_space(*b))
+                        .map_or(bytes.len(), |n| p + 1 + n);
+                }
+                (p + 1, close, if closed { close + 1 } else { close })
             }
             b if !is_hard(b) => self.attached_extent(bytes, p, depth, stack),
             _ => (vstart, vstart, vstart),
@@ -476,6 +520,10 @@ impl Scrubber<'_> {
                 break; // placeholder com cauda colada: a cauda também é valor
             }
         }
+        // Aberturas DENTRO do valor (`AB(c)X`, `AB[c d]X`, `AB'x y'Z`) com fechamento por
+        // perto (até 64 bytes, na mesma linha) são puladas inteiras: o fechamento delas
+        // é parte do valor e não confunde com o de uma abertura anterior ao nome. Sem
+        // fechamento por perto, a abertura é só mais um byte do valor.
         let mut q = vstart;
         while q < bytes.len() {
             let b = bytes[q];
@@ -499,16 +547,34 @@ impl Scrubber<'_> {
                 q += 2;
                 continue;
             }
-            let closes_enclosing = match b {
-                b')' => stack.contains(&b'('),
-                b']' => stack.contains(&b'['),
-                b'}' => stack.contains(&b'{'),
-                b'>' => stack.contains(&b'<'),
-                b'"' | b'\'' => stack.contains(&b),
-                _ => false,
-            };
-            if closes_enclosing {
-                break;
+            match b {
+                b'(' | b'[' | b'{' | b'<' => {
+                    if let Some(close) = closer_nearby(bytes, q) {
+                        q = close + 1;
+                        continue;
+                    }
+                }
+                b'"' | b'\'' => {
+                    if stack.contains(&b) {
+                        break; // fecha a abertura anterior ao nome
+                    }
+                    if let Some(close) = closer_nearby(bytes, q) {
+                        q = close + 1;
+                        continue;
+                    }
+                }
+                b')' | b']' | b'}' | b'>' => {
+                    let open = match b {
+                        b')' => b'(',
+                        b']' => b'[',
+                        b'}' => b'{',
+                        _ => b'<',
+                    };
+                    if stack.contains(&open) {
+                        break;
+                    }
+                }
+                _ => {}
             }
             q += 1;
         }
@@ -555,7 +621,7 @@ impl Scrubber<'_> {
     /// O nome efetivo de `part` é sensível?
     fn is_sensitive_part(&mut self, part: &[u8]) -> bool {
         let tail = last_segment(part);
-        if tail.is_empty() || tail.len() > MAX_NAME_LEN * 3 {
+        if tail.is_empty() {
             return false;
         }
         if let Some(known) = self.names.get(tail) {
@@ -570,14 +636,17 @@ impl Scrubber<'_> {
                 String::from_utf8_lossy(tail)
             };
             let name = name.trim();
+            // Nomes longos também são examinados (falha fechada): `aaaa…token=X` é
+            // `token`; só o cache fica restrito a nomes curtos.
             !name.is_empty()
-                && name.len() <= MAX_NAME_LEN
                 && (is_sensitive_key(name) || is_business_key(name, &self.options.business_fields))
         };
-        if self.names.len() >= NAME_CACHE_CAP {
-            self.names.clear();
+        if tail.len() <= MAX_NAME_LEN {
+            if self.names.len() >= NAME_CACHE_CAP {
+                self.names.clear();
+            }
+            self.names.insert(tail.to_vec(), result);
         }
-        self.names.insert(tail.to_vec(), result);
         result
     }
 
@@ -786,6 +855,50 @@ fn semicolon_ends_value(bytes: &[u8], at: usize) -> bool {
         .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'%')))
         .unwrap_or(bytes.len() - at);
     bytes.get(at + word) == Some(&b'=')
+}
+
+/// Fechamento da abertura em `bytes[at]` (`( [ { <`, aspas) dentro de 64 bytes e
+/// sem passar de uma quebra de linha; `None` se não houver. Aninhamento do mesmo
+/// tipo é respeitado; aspas honram `\\` como escape.
+fn closer_nearby(bytes: &[u8], at: usize) -> Option<usize> {
+    const WINDOW: usize = 64;
+    let open = bytes[at];
+    let end = bytes.len().min(at + 1 + WINDOW);
+    if matches!(open, b'"' | b'\'') {
+        let mut i = at + 1;
+        while i < end && bytes[i] != b'\n' {
+            if bytes[i] == b'\\' {
+                i += 2;
+                continue;
+            }
+            if bytes[i] == open {
+                return Some(i);
+            }
+            i += 1;
+        }
+        return None;
+    }
+    let closer = match open {
+        b'(' => b')',
+        b'[' => b']',
+        b'{' => b'}',
+        _ => b'>',
+    };
+    let mut nest = 1usize;
+    for (i, &c) in bytes.iter().enumerate().take(end).skip(at + 1) {
+        if c == b'\n' {
+            return None;
+        }
+        if c == open {
+            nest += 1;
+        } else if c == closer {
+            nest -= 1;
+            if nest == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
 }
 
 /// Byte que continua um valor depois de um fechamento/placeholder: tudo que não
