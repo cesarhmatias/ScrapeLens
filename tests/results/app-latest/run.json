@@ -1,22 +1,20 @@
 {
  "runId": "app-latest",
- "generatedAt": "2026-11-01T00:12:53Z",
+ "generatedAt": "2026-11-02T14:29:05Z",
  "gui": {
   "startedFrom": "ScrapeLens.app (release, pid capturado pela janela)",
   "startButton": "Iniciar sessão",
   "stopButton": "Encerrar",
   "startUrl": "http://127.0.0.1:8781/page",
-  "screenshot": "/Users/cesar/Projects/scrapelens/tests/results/app-latest/screenshot-app-live.png",
-  "screenshotExists": true,
-  "importsScreenshot": "/Users/cesar/Projects/scrapelens/tests/results/app-latest/screenshot-app-imports.png",
-  "importsScreenshotExists": true
+  "screenshot": null,
+  "screenshotExists": false
  },
  "bundle": {
   "path": "/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app",
   "exists": true,
-  "sizeBytes": 17795882,
-  "executableSha256": "4636a3cf11c498bf5866974615dd6544fbaa1cb73c93140c9502b8e978043860",
-  "executableBytes": 17047184,
+  "sizeBytes": 17926330,
+  "executableSha256": "f3039e587be4431d300dd27f42f323066b09ab2d7f4a868173316b68f931b76a",
+  "executableBytes": 17177632,
   "binaries": [
    "scrapelens"
   ],
@@ -30,9 +28,9 @@
  },
  "appSessionsDir": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions",
  "capture": {
-  "id": "capture-1793491743660",
-  "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793491743660",
-  "sha256": "8fc0c563484e4769e0a83948283543617da99e19b2d45c993f3e3203c4b5c215",
+  "id": "capture-1793562925684",
+  "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793562925684",
+  "sha256": "ecadd91475857dcbed5e24074a102f931c64dffcedc47b554b5c942e862658f4",
   "mode": "cdp+netlog",
   "labels": [
    "live-capture"
@@ -45,8 +43,8 @@
    "redirects": 2,
    "connections": 1,
    "streamSessions": 0,
-   "sourceEvents": 3517,
-   "sourceEventsUsed": 3517,
+   "sourceEvents": 3302,
+   "sourceEventsUsed": 3302,
    "sourceEventsUnknown": 0,
    "warnings": 5
   },
@@ -62,7 +60,7 @@
   "matched": 9,
   "ambiguous": [
    {
-    "id": "cdp-r0007",
+    "id": "cdp-r0008",
     "candidates": [
      "netlog-r0012-a1",
      "netlog-r0013-a1"
@@ -70,7 +68,7 @@
     "candidateCount": 2
    },
    {
-    "id": "cdp-r0008",
+    "id": "cdp-r0009",
     "candidates": [
      "netlog-r0012-a1",
      "netlog-r0013-a1"
@@ -117,32 +115,32 @@
   "rawArtifacts": {
    "session.json": {
     "exists": true,
-    "bytes": 870390,
+    "bytes": 869749,
     "mode": "0o600"
    },
    "cdp-events.jsonl": {
     "exists": true,
-    "bytes": 386188,
+    "bytes": 385957,
     "mode": "0o600"
    },
    "netlog.json": {
     "exists": true,
-    "bytes": 1136230,
+    "bytes": 1085083,
     "mode": "0o600"
    }
   },
   "reload": {
    "requestsOnDisk": 11,
    "requestsFromInspect": 11,
-   "sha256BeforeInspect": "8fc0c563484e4769e0a83948283543617da99e19b2d45c993f3e3203c4b5c215",
-   "sha256AfterInspect": "8fc0c563484e4769e0a83948283543617da99e19b2d45c993f3e3203c4b5c215",
+   "sha256BeforeInspect": "ecadd91475857dcbed5e24074a102f931c64dffcedc47b554b5c942e862658f4",
+   "sha256AfterInspect": "ecadd91475857dcbed5e24074a102f931c64dffcedc47b554b5c942e862658f4",
    "unchangedAfterInspect": true
   },
   "attachments": [
-   "cdp-r0001-a1.request.body",
    "cdp-r0001-a1.response.body",
    "cdp-r0002-a1.request.body",
    "cdp-r0002-a1.response.body",
+   "cdp-r0003-a1.request.body",
    "cdp-r0003-a1.response.body",
    "cdp-r0004-a1.response.body",
    "cdp-r0005-a1.response.body",
@@ -150,14 +148,14 @@
    "cdp-r0007-a1.response.body",
    "cdp-r0008-a1.response.body",
    "cdp-r0009-a1.response.body",
-   "cdp-r0010-a3.response.body",
-   "cdp-r0011-a1.response.body"
+   "cdp-r0010-a1.response.body",
+   "cdp-r0011-a3.response.body"
   ]
  },
  "imports": {
   "har": {
-   "id": "har-3dbc391c02a985c5-11",
-   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-11",
+   "id": "har-3dbc391c02a985c5-12",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-12",
    "sha256": "bdd092195f2ea204eabbef2a8bdb849499fba3bfe3eb5b5a6ec213ceb6ee0460",
    "mode": "har-import",
    "labels": [
@@ -250,6 +248,7 @@
    },
    "duplicateSessions": [
     "har-3dbc391c02a985c5-10",
+    "har-3dbc391c02a985c5-11",
     "har-3dbc391c02a985c5-3",
     "har-3dbc391c02a985c5-4",
     "har-3dbc391c02a985c5-5",
@@ -260,8 +259,8 @@
    ]
   },
   "netlog": {
-   "id": "netlog-1704043c442dcbd1-11",
-   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-1704043c442dcbd1-11",
+   "id": "netlog-1704043c442dcbd1-12",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-1704043c442dcbd1-12",
    "sha256": "49253b2a971711f4ff64a033255ef96c957008f846ad839ef826b7b4bf0a9b0a",
    "mode": "netlog-import",
    "labels": [
@@ -363,6 +362,7 @@
    "duplicateSessions": [
     "netlog-1704043c442dcbd1",
     "netlog-1704043c442dcbd1-10",
+    "netlog-1704043c442dcbd1-11",
     "netlog-1704043c442dcbd1-2",
     "netlog-1704043c442dcbd1-3",
     "netlog-1704043c442dcbd1-4",
@@ -375,7 +375,7 @@
   }
  },
  "testserver": {
-  "dir": "tests/results/app-latest/testserver/app-20261031e",
+  "dir": "tests/results/app-latest/testserver/app-20261101c",
   "h1Lines": 14
  },
  "certificateInstalled": false,

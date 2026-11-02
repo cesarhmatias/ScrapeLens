@@ -152,6 +152,8 @@ nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas t
 
 - **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — FECHADO:** item 9 refeito. Ciclo real por teclado (a AX do botão foi recusada com `element_outside_target_window` mesmo com a janela verificada em foco; Tab até "Iniciar sessão"/"Encerrar" e Return, depois HAR e NetLog pela janela Open): `capture-1793491743660` (11 req, complete, cdp+netlog); HAR `-11` 24 req complete; NetLog `-11` 32 req partial. `lsof` durante a captura (Chrome pid 25252): sem LISTEN nem socket TCP. `run_acceptance` 11/11 (item 11 com os cinco vivos de capture/, 1 thread, e `e2e_live`). Evidência: `tests/results/app-latest/lsof-captura-r11b.txt`.
 
+- **Rodada 11 — bundle f3039e58 (HEAD fc5ca18, commit 88c69f7) — PARCIAL 10/11:** app aberto com `SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page` (pid 70761). Captura `capture-1793562925684` (11 req, complete, cdp+netlog; testserver `app-20261101c`); HAR `har-3dbc391c02a985c5-12` (24 req, complete) e NetLog `netlog-1704043c442dcbd1-12` (32 req, partial), importados pela UI a partir de `har-derived.json` e `h1h2h3.chrome-netlog.json`. `run_acceptance` 10/10 nos itens 1–8, 10 e 11; item 9 segue vermelho só por falta dos prints do ciclo (`screenshot-app-live.png` e `screenshot-app-imports.png` precisam ser deste bundle). Pasta `~/Desktop/sl-import-tmp` apagada; testserver, fake_server e Chrome da captura encerrados; pid 8911 ausente.
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)
