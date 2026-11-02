@@ -1,0 +1,15 @@
+[package]
+name = "memoria-sessao"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Mede o pico de memória (RSS) de cada etapa de abrir uma sessão grande (docs/18-memoria-sessoes-grandes.md). Só leitura: não altera o core."
+
+[dependencies]
+scrapelens-core = { path = "../../core" }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+libc = "0.2"
+
+# Crate independente (não faz parte de nenhum workspace).
+[workspace]
