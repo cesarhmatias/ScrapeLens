@@ -29,8 +29,13 @@
 //!   o fecha. `, ( ) [ ] { } | " ' \ < >` fazem parte do valor, exceto o fechamento
 //!   de uma abertura ANTERIOR ao nome (`{token=X}`); aberturas dentro do valor com
 //!   fechamento por perto são puladas inteiras.
-//! - Em CAMINHO (`/seg=valor/`, `;param=valor` depois de um token com `/`) o valor
-//!   acaba em `/` ou `?` (o resto do caminho segue examinado), salvo base64 com barra.
+//! - Em CAMINHO (`/seg=valor/`, `;param=valor` depois de um token com `/`) o valor de um
+//!   nome SENSÍVEL vai até o próximo `?` (ou `#`, ou o fim) e é redigido inteiro, `/`
+//!   incluída: um credencial pode conter `/` (base64) e não dá para saber onde acaba.
+//!   LIMITAÇÃO ACEITA (A7-B5/A8-M1): `/a;v=2/session=keep/b` sai
+//!   `/a;v=2/session=[REDACTED]` (o `/b` se perde); a segurança prevalece sobre a
+//!   fidelidade. Nomes NÃO sensíveis não mudam nada e o resto do caminho segue
+//!   examinado. O custo é linear: nenhuma heurística olha para trás a cada `/`.
 //! - Aspas/colchetes após `=`: o interior é o valor; texto ou outra abertura COLADA
 //!   depois do fechamento (`"a"X`, `[a][X]`, `'a'"X`) também é valor.
 //! - Valor que começa pelo placeholder já foi redigido (idempotência).
@@ -314,8 +319,8 @@ impl Scrubber<'_> {
             if self.is_sensitive_part(&bytes[part_start..eq]) {
                 // o que veio ANTES do nome ainda pode carregar segredo codificado
                 self.decode_child(level, seg_start, eq, depth);
-                let slash_ends = path_context(bytes, start, part_start, eq);
-                let next = self.redact_value(level, eq + eq_len, end, depth, stack, slash_ends);
+                let query_ends = path_context(bytes, start, part_start, eq);
+                let next = self.redact_value(level, eq + eq_len, end, depth, stack, query_ends);
                 if next >= end {
                     return next;
                 }
@@ -366,7 +371,7 @@ impl Scrubber<'_> {
         group_end: usize,
         depth: usize,
         stack: &[u8],
-        slash_ends: bool,
+        query_ends: bool,
     ) -> usize {
         let bytes: &[u8] = &level.bytes;
         if self.closed {
@@ -375,7 +380,7 @@ impl Scrubber<'_> {
             return bytes.len();
         }
         let (value_start, value_end, next) =
-            self.value_extent(bytes, vstart, group_end, depth, stack, slash_ends);
+            self.value_extent(bytes, vstart, group_end, depth, stack, query_ends);
         self.push(level, value_start, value_end, Repl::Param);
         // Depois de um valor entre aspas/colchetes, o que vier COLADO ainda é valor:
         // texto (`token="abc"TAIL`, `[abc]TAIL`) ou outra abertura (`'a'"X`, `[a][X]`,
@@ -429,10 +434,10 @@ impl Scrubber<'_> {
         group_end: usize,
         depth: usize,
         stack: &[u8],
-        slash_ends: bool,
+        query_ends: bool,
     ) -> (usize, usize, usize) {
         if vstart < group_end {
-            return self.attached_extent(bytes, vstart, depth, stack, slash_ends);
+            return self.attached_extent(bytes, vstart, depth, stack, query_ends);
         }
         // `=` é o último byte do grupo; o que vem depois é um delimitador ou fim
         let mut p = vstart;
@@ -545,7 +550,7 @@ impl Scrubber<'_> {
         vstart: usize,
         depth: usize,
         stack: &[u8],
-        slash_ends: bool,
+        query_ends: bool,
     ) -> (usize, usize, usize) {
         let rest = &bytes[vstart..];
         for placeholder in [self.options.placeholder.as_bytes(), self.param().as_bytes()] {
@@ -569,13 +574,7 @@ impl Scrubber<'_> {
             }
             // Em caminho (`/a;jsessionid=X/b`, `/s/session=X/b`) o valor acaba em `/` ou `?`:
             // o resto é o caminho/consulta, que segue sendo examinado.
-            if slash_ends && b == b'?' {
-                break;
-            }
-            // `/` acaba o valor num caminho, a menos que o credencial pareça base64 com
-            // barra (`AAA+x/yyy==`): `+` antes da barra, ou `+`, `=` ou 16+ caracteres no
-            // trecho seguinte.
-            if slash_ends && b == b'/' && !base64_slash(bytes, vstart, q) {
+            if query_ends && b == b'?' {
                 break;
             }
             if depth == 0 && is_space(b) {
@@ -925,23 +924,13 @@ fn semicolon_ends_value(bytes: &[u8], at: usize) -> bool {
     bytes.get(at + word) == Some(&b'=')
 }
 
-/// A barra em `bytes[slash]` faz parte de um credencial base64 (e não do caminho)?
-fn base64_slash(bytes: &[u8], value_start: usize, slash: usize) -> bool {
-    if bytes[value_start..slash].contains(&b'+') {
-        return true;
-    }
-    let rest = &bytes[slash + 1..];
-    let segment = rest
-        .iter()
-        .position(|b| is_hard(*b) || matches!(b, b'/' | b'?'))
-        .unwrap_or(rest.len());
-    segment >= 16 || rest[..segment].iter().any(|b| matches!(b, b'+' | b'='))
-}
-
 /// O nome em `bytes[part_start..eq]` está num CAMINHO (segmento `/nome=valor/` ou
-/// parâmetro de matriz `;nome=valor` depois de um token com `/`)? Então o valor acaba
-/// em `/` ou `?`. Num valor de consulta (`?token=ab/cd`) ou solto (`token=ab/cd`) a
-/// barra é parte do credencial (base64) e o valor vai até o espaço.
+/// parâmetro de matriz `;nome=valor` depois de um token com `/`)? Então o valor de um
+/// nome SENSÍVEL vai até o próximo `?` (`#` e `&` já encerram) ou o fim, `/` incluída:
+/// um credencial pode conter `/` e não dá para saber onde ele acaba (A8-M1). Isso
+/// custa o resto do caminho (`/a;v=2/session=keep/b` → `/a;v=2/session=[REDACTED]`),
+/// limitação aceita (A7-B5): a segurança prevalece sobre a fidelidade. Num valor de
+/// consulta (`?token=ab/cd`) ou solto o valor vai até o espaço.
 fn path_context(bytes: &[u8], group_start: usize, part_start: usize, eq: usize) -> bool {
     let part = &bytes[part_start..eq];
     if let Some(last_slash) = part.iter().rposition(|b| *b == b'/') {

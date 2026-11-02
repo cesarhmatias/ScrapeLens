@@ -911,52 +911,17 @@ pub fn sanitize_path_and_query(value: &str, options: &SanitizeOptions) -> String
     out
 }
 
-/// Parâmetros de matriz de caminho (`/a;jsessionid=X/b`): um parâmetro sensível
-/// redigido substitui SÓ o próprio valor (termina em `;` ou `/`); os segmentos
-/// seguintes do caminho ficam intactos. Todo segmento com `=` ou `%` passa pelo
-/// tokenizador de texto (`/x/token=X`, `;next=/cb%3Ftoken=X`), com ou sem `;`.
+/// Caminho de URL (`/a;jsessionid=X/b`, `/s/token=X/y`, `;next=/cb%3Ftoken=X`): passa pelo
+/// mesmo tokenizador do texto. O valor de um nome SENSÍVEL num caminho vai até o fim do
+/// caminho (a consulta e o fragmento já foram separados antes) e é redigido inteiro, `/`
+/// incluída: um credencial pode conter `/`. Custa o resto do caminho depois dele
+/// (`/a;v=2/session=keep/b` → `/a;v=2/session=[REDACTED]`), limitação aceita (A7-B5).
+/// Nomes não sensíveis não mudam nada e o resto do caminho segue examinado.
 fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
-    if !path.contains([';', '%', '=']) {
+    if !path.contains([';', '%', '=', '\u{FF1D}', '&']) {
         return path.to_string();
     }
-    let placeholder = url_placeholder(options);
-    let scrubber = std::cell::RefCell::new(super::scrub::Scrubber::new(options));
-    let plain = |text: &str| {
-        if text.contains(['=', '%']) {
-            scrubber
-                .borrow_mut()
-                .run(text)
-                .unwrap_or_else(|| text.to_string())
-        } else {
-            text.to_string()
-        }
-    };
-    path.split('/')
-        .map(|segment| {
-            let mut parts = segment.split(';');
-            let head = parts.next().unwrap_or("");
-            let mut out = plain(head);
-            for param in parts {
-                out.push(';');
-                match param.split_once('=') {
-                    Some((name, _))
-                        if is_sensitive_key(percent_decode(name).trim())
-                            || is_business_key(
-                                percent_decode(name).trim(),
-                                &options.business_fields,
-                            ) =>
-                    {
-                        out.push_str(name);
-                        out.push('=');
-                        out.push_str(&placeholder);
-                    }
-                    _ => out.push_str(&plain(param)),
-                }
-            }
-            out
-        })
-        .collect::<Vec<_>>()
-        .join("/")
+    super::scrub::scrub(path, options).unwrap_or_else(|| path.to_string())
 }
 
 /// Redige, em texto livre (linha de requisição, notas, mensagens, valores de

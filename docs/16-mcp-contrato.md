@@ -98,6 +98,13 @@ Com `reveal=false`:
   `SAMLResponse`, `*-api-key`, `*-appkey`, `*-secret`, `*-token`,
   `*-subscription-key`, `*csrf*`/`*xsrf*`, e o `parseError` de Set-Cookie não
   repete o valor cru.
+- **Valor sensível em caminho (limitação aceita, A7-B5/A8-M1):** o valor de um nome
+  sensível num CAMINHO (`/a;jsessionid=X/b`, `/s/token=X/y`) vai até o próximo `?`
+  (ou `#`, ou o fim do caminho) e é redigido inteiro, `/` incluída, porque um
+  credencial (base64) pode conter `/`. Custa o resto do caminho depois dele:
+  `/a;v=2/session=keep/b` sai `/a;v=2/session=[REDACTED]`. Vale igual para o texto
+  (linha de requisição, headers, JSON) e para a URL. Nomes não sensíveis não
+  mudam nada. A segurança prevalece sobre a fidelidade.
 - **Texto cru com query** (rodada 11, correção de vazamento): o sanitizador do
   core redige o valor de parâmetro de query com nome sensível também em
   `startLine` de requisição (`GET /p?token=… HTTP/1.1`), em qualquer valor de

@@ -14,40 +14,96 @@ fn o() -> SanitizeOptions {
     SanitizeOptions::default()
 }
 
-// ---- A5-M1: um parâmetro de matriz redigido não come o resto do caminho ------------------
+// ---- A5-M1 / A7-B5 / A8-M1: o valor de um nome sensível num caminho vai até `?` ou o fim -----
 
 #[test]
-fn matrix_param_redaction_keeps_the_following_path_segments() {
+fn sensitive_value_in_a_path_runs_to_the_query_and_non_sensitive_names_are_untouched() {
     let o = o();
+    // Decisão A8: um credencial pode conter `/`; a segurança prevalece sobre a fidelidade.
+    // O resto do CAMINHO depois do nome sensível vai junto; a consulta fica.
     assert_eq!(
         sanitize_path_and_query("/a;jsessionid=SECRETX/b/c?x=1", &o),
-        format!("/a;jsessionid={P}/b/c?x=1")
+        format!("/a;jsessionid={P}?x=1")
     );
     assert_eq!(
         sanitize_path_and_query("/users;token=SECRETX/profile/123?page=2", &o),
-        format!("/users;token={P}/profile/123?page=2")
+        format!("/users;token={P}?page=2")
     );
     assert_eq!(
         sanitize_url("https://h/a;jsessionid=SECRETX/b/c?x=1", &o),
-        format!("https://h/a;jsessionid={P}/b/c?x=1")
+        format!("https://h/a;jsessionid={P}?x=1")
     );
     assert_eq!(
         sanitize_path_and_query("/a;v=2/b;token=SECRETX/c", &o),
-        format!("/a;v=2/b;token={P}/c")
+        format!("/a;v=2/b;token={P}")
     );
-    // `session` é nome sensível: um segmento `session=X` também é redigido (A6-M1),
-    // mantendo o resto do caminho.
     assert_eq!(
         sanitize_path_and_query("/a;v=2/session=keep/b", &o),
-        format!("/a;v=2/session={P}/b")
+        format!("/a;v=2/session={P}")
     );
-    // O que não é segredo (inclusive `nome=valor` num segmento) fica igual.
-    for same in ["/a;lang=en/x=1/y=2", "/a;v=1/b?page=2"] {
+    // Mesmo resultado no caminho de TEXTO (linha de requisição, header, JSON).
+    assert_eq!(
+        sanitize_text("GET /a;jsessionid=SECRETX/b/c?x=1 HTTP/1.1", &o),
+        format!("GET /a;jsessionid={P}?x=1 HTTP/1.1")
+    );
+    assert_eq!(
+        sanitize_text("/a;v=2/session=keep/b", &o),
+        format!("/a;v=2/session={P}")
+    );
+    // Credencial com barras (base64) é redigido inteiro.
+    for secret in [
+        "GET /s;token=Zm9vYmFy/YmF6cXV4 HTTP/1.1",
+        "/api/token=/secret1/value2",
+        "?next=%2Fa%3Btoken%3DAbCdEfGh%2FIjKlMnOp",
+        "/p?x=1/token=abc/def",
+    ] {
+        let out = sanitize_text(secret, &o);
+        for tail in ["YmF6cXV4", "secret1", "value2", "IjKlMnOp", "/def"] {
+            assert!(!out.contains(tail), "{tail} em {out} (de {secret})");
+        }
+    }
+    // Nomes NÃO sensíveis não mudam nada e o resto do caminho segue examinado.
+    for same in ["/a;lang=en/x=1/y=2", "/a;v=1/b?page=2", "/a;v=2/b/c"] {
         assert_eq!(sanitize_path_and_query(same, &o), same);
     }
-    // Valor aninhado que atravessa segmentos continua sendo visto.
     let out = sanitize_url("https://h/r;next=/cb%3Ftoken=SECRETX/z", &o);
-    assert!(!out.contains("SECRETX") && out.ends_with("/z"), "{out}");
+    assert!(!out.contains("SECRETX"), "{out}");
+    let out = sanitize_text("/a;v=2/b/token=SECRETX", &o);
+    assert!(
+        out.starts_with("/a;v=2/b/token=") && !out.contains("SECRETX"),
+        "{out}"
+    );
+}
+
+// ---- A8-M2: custo linear para valores com muitas barras -----------------------------------
+
+#[test]
+fn many_slashes_cost_linear_time() {
+    let o = o();
+    let budget = if cfg!(debug_assertions) { 20_000 } else { 500 };
+    for (label, input) in [
+        ("A=/", "A=/".repeat(4_000_000 / 3)),
+        (
+            "/a;token= + (A×16 + /)*",
+            format!("/a;token={}", "AAAAAAAAAAAAAAAA/".repeat(4_000_000 / 17)),
+        ),
+        ("/t=x/", "/t=x/".repeat(4_000_000 / 5)),
+        (
+            "a;token=x/",
+            format!("/p{}", ";token=x/".repeat(4_000_000 / 9)),
+        ),
+    ] {
+        for (kind, run) in [("text", 0), ("url", 1), ("pq", 2)] {
+            let started = std::time::Instant::now();
+            let _ = match run {
+                0 => sanitize_text(&input, &o),
+                1 => sanitize_url(&format!("https://h{input}"), &o),
+                _ => sanitize_path_and_query(&input, &o),
+            };
+            let ms = started.elapsed().as_millis();
+            assert!(ms < budget, "{label} {kind}: {ms} ms (limite {budget})");
+        }
+    }
 }
 
 // ---- A5-M2: separadores que só aparecem depois da decodificação pertencem ao nível de baixo

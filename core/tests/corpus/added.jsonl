@@ -36,12 +36,44 @@
 {"input": "token=\"a\"(B4Bx)", "forbid": ["B4Bx"], "kind": "text", "keep": []}
 {"input": "token=[a][B4Cx]", "forbid": ["B4Cx"], "kind": "text", "keep": []}
 {"input": "(token=AB(c)B4Dx)", "forbid": ["B4Dx"], "kind": "text", "keep": []}
-{"input": "/a;v=2/session=keep/b", "forbid": ["keep"], "kind": "keep", "keep": ["/a;v=2/session=", "/b"]}
-{"input": "GET /a;jsessionid=SEC9x/b/c?x=1 HTTP/1.1", "forbid": ["SEC9x"], "kind": "keep", "keep": ["/b/c?x=1 HTTP/1.1"]}
-{"input": "Refresh: 0; url=/a;jsessionid=SEC10x/b/c?page=2", "forbid": ["SEC10x"], "kind": "keep", "keep": ["/b/c?page=2"]}
-{"input": "see /users;token=SEC11x/profile/123 now", "forbid": ["SEC11x"], "kind": "keep", "keep": ["/profile/123 now"]}
-{"input": "{\"u\":\"/a;jsessionid=SEC12x/b/c?x=1\"}", "forbid": ["SEC12x"], "kind": "keep", "keep": ["/b/c?x=1"]}
-{"kind": "keep", "input": "/a;jsessionid=SEC6x/b/c?x=1", "forbid": ["SEC6x"], "keep": ["/b/c?x=1"]}
-{"kind": "keep", "input": "https://h/a;jsessionid=SEC7x/b/c?x=1", "forbid": ["SEC7x"], "keep": ["/b/c?x=1"]}
-{"kind": "keep", "input": "/users;token=SEC8x/profile/123?page=2", "forbid": ["SEC8x"], "keep": ["/profile/123?page=2"]}
-{"kind": "keep", "input": "/a;v=2/b;token=SEC9x/c", "forbid": ["SEC9x"], "keep": ["/a;v=2/b;token=", "/c"]}
+{"input": "/a;v=2/session=keep/b", "forbid": ["keep"], "kind": "keep", "keep": ["/a;v=2/session="]}
+{"input": "GET /a;jsessionid=SEC9x/b/c?x=1 HTTP/1.1", "forbid": ["SEC9x"], "kind": "keep", "keep": ["?x=1 HTTP/1.1"]}
+{"input": "Refresh: 0; url=/a;jsessionid=SEC10x/b/c?page=2", "forbid": ["SEC10x"], "kind": "keep", "keep": ["?page=2"]}
+{"input": "see /users;token=SEC11x/profile/123 now", "forbid": ["SEC11x"], "kind": "keep", "keep": [" now"]}
+{"input": "{\"u\":\"/a;jsessionid=SEC12x/b/c?x=1\"}", "forbid": ["SEC12x"], "kind": "keep", "keep": ["?x=1\"}"]}
+{"kind": "keep", "input": "/a;jsessionid=SEC6x/b/c?x=1", "forbid": ["SEC6x"], "keep": ["?x=1"]}
+{"kind": "keep", "input": "https://h/a;jsessionid=SEC7x/b/c?x=1", "forbid": ["SEC7x"], "keep": ["?x=1"]}
+{"kind": "keep", "input": "/users;token=SEC8x/profile/123?page=2", "forbid": ["SEC8x"], "keep": ["?page=2"]}
+{"kind": "keep", "input": "/a;v=2/b;token=SEC9x/c", "forbid": ["SEC9x"], "keep": ["/a;v=2/b;token="]}
+{"input": "/a;token=abcSEC/def123", "forbid": ["abcSEC", "def123"], "kind": "url", "keep": []}
+{"input": "/api/token=/secret1/value2", "forbid": ["secret1", "value2"], "kind": "url", "keep": []}
+{"input": "/s;token=QUJD/REVG==", "forbid": ["QUJD", "REVG"], "kind": "url", "keep": []}
+{"input": "/s;token=Zm9vYmFyYmF6cXV4/AbCdEf12", "forbid": ["Zm9vYmFy", "AbCdEf12"], "kind": "url", "keep": []}
+{"input": "/s;token=AbCdEfGh/IjKlMnOp/QrStUvWxYz0123456789==", "forbid": ["AbCdEfGh", "IjKlMnOp", "QrStUvWx"], "kind": "url", "keep": []}
+{"input": "/a;token=TOKx;sig=SIGx/b", "forbid": ["TOKx", "SIGx"], "kind": "url", "keep": []}
+{"input": "/a;token=abc%2FdefP8/b", "forbid": ["defP8"], "kind": "url", "keep": []}
+{"input": "next=%2Fa%3Btoken%3DnestA9%2FnestB9%2Fg", "forbid": ["nestA9", "nestB9"], "kind": "text", "keep": []}
+{"input": "https://h/a;jsessionid=AB12CD34/EF56GH78/e", "forbid": ["AB12CD34", "EF56GH78"], "kind": "url", "keep": []}
+{"input": "/p/password=paSS1/woRD2/x", "forbid": ["paSS1", "woRD2"], "kind": "url", "keep": []}
+{"input": "/p?token=abcQ12/defQ12", "forbid": ["abcQ12", "defQ12"], "kind": "url", "keep": []}
+{"input": "/p?x=1/token=abcR13/defR13", "forbid": ["abcR13", "defR13"], "kind": "url", "keep": []}
+{"input": "/s/token=ab+cR14/dR14", "forbid": ["cR14", "dR14"], "kind": "url", "keep": []}
+{"input": "/s/token=abcR15/", "forbid": ["abcR15"], "kind": "url", "keep": []}
+{"input": "/s;id_token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIi/OiIxMjM0NTY3.SflKxwRJ/b", "forbid": ["eyJhbGciOi", "OiIxMjM0", "SflKxwRJ"], "kind": "url", "keep": []}
+{"input": "GET /s;token=Zm9vYmFy/YmF6cXV4 HTTP/1.1", "forbid": ["Zm9vYmFy", "YmF6cXV4"], "kind": "text", "keep": []}
+{"input": "{\"p\":\"/s/token=Zm9vYmFy/YmF6cXV4\"}", "forbid": ["Zm9vYmFy", "YmF6cXV4"], "kind": "text", "keep": []}
+{"input": "/s;token=Zm9v_YmFy-YmF6/next", "forbid": ["Zm9v_YmFy-YmF6"], "kind": "url", "keep": []}
+{"input": "https://h/a;token=QUJD%2FREVG/b", "forbid": ["QUJD", "REVG"], "kind": "url", "keep": []}
+{"input": "Refresh: 0; url=/a;token=Zm9vYmFy/YmF6cXV4", "forbid": ["Zm9vYmFy", "YmF6cXV4"], "kind": "text", "keep": []}
+{"input": "/x;sid=AB/CD/EFR22", "forbid": ["EFR22"], "kind": "url", "keep": []}
+{"input": "/s/token=abcR23/../x", "forbid": ["abcR23"], "kind": "url", "keep": []}
+{"input": "/s;token&#61;encR24/tailR24", "forbid": ["encR24", "tailR24"], "kind": "url", "keep": []}
+{"input": "/s;token＝fwR25/tailR25", "forbid": ["fwR25", "tailR25"], "kind": "url", "keep": []}
+{"input": "/s;token=AAAA/BBBB CCCC", "forbid": ["AAAA", "BBBB"], "kind": "text", "keep": []}
+{"input": "?redirect=/cb;access_token=ATk1/ATk2&x=1", "forbid": ["ATk1", "ATk2"], "kind": "text", "keep": []}
+{"input": "/s;token=abcR28/0123456789abcdef", "forbid": ["abcR28", "0123456789abcdef"], "kind": "url", "keep": []}
+{"input": "/s;token=abcR29/0123456789abcde", "forbid": ["abcR29", "0123456789abcde"], "kind": "url", "keep": []}
+{"input": "/s;token=abcR30/def&ghiR30", "forbid": ["abcR30"], "kind": "url", "keep": []}
+{"input": "?next=%2Fa%3Btoken%3DAbCdEfGh%2FIjKlMnOp", "forbid": ["AbCdEfGh", "IjKlMnOp"], "kind": "text", "keep": []}
+{"input": "/a;token=SECx/b/c?x=1&y=2", "forbid": ["SECx"], "kind": "keep", "keep": ["?x=1&y=2"]}
+{"input": "GET /s;token=Zm9vYmFy/YmF6cXV4?page=2 HTTP/1.1", "forbid": ["Zm9vYmFy", "YmF6cXV4"], "kind": "keep", "keep": ["?page=2 HTTP/1.1"]}
