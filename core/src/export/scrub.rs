@@ -1037,10 +1037,18 @@ fn equals_len_at(bytes: &[u8], at: usize) -> Option<usize> {
         0xEF if rest.len() >= 3 && rest[1] == 0xBC && rest[2] == 0x9D => Some(3),
         b'&' => {
             // `&amp;` repetido: cada camada de escape HTML conta
+            // `&amp;` e, depois do primeiro, também `amp;` sem o `&` (`&amp;amp;#61;`)
             let mut skip = 0;
-            while rest[skip..].len() >= 5 && rest[skip..skip + 5].eq_ignore_ascii_case(b"&amp;") {
-                skip += 5;
-                if skip > 40 {
+            loop {
+                let tail = &rest[skip..];
+                if tail.len() >= 5 && tail[..5].eq_ignore_ascii_case(b"&amp;") {
+                    skip += 5;
+                } else if skip > 0 && tail.len() >= 4 && tail[..4].eq_ignore_ascii_case(b"amp;") {
+                    skip += 4;
+                } else {
+                    break;
+                }
+                if skip > 64 {
                     break;
                 }
             }

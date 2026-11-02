@@ -77,3 +77,10 @@
 {"input": "?next=%2Fa%3Btoken%3DAbCdEfGh%2FIjKlMnOp", "forbid": ["AbCdEfGh", "IjKlMnOp"], "kind": "text", "keep": []}
 {"input": "/a;token=SECx/b/c?x=1&y=2", "forbid": ["SECx"], "kind": "keep", "keep": ["?x=1&y=2"]}
 {"input": "GET /s;token=Zm9vYmFy/YmF6cXV4?page=2 HTTP/1.1", "forbid": ["Zm9vYmFy", "YmF6cXV4"], "kind": "keep", "keep": ["?page=2 HTTP/1.1"]}
+{"input": "token&amp;amp;#61;B2Dx", "forbid": ["B2Dx"], "kind": "text", "keep": []}
+{"input": "token&amp;amp;amp;#x3d;B2Ex", "forbid": ["B2Ex"], "kind": "text", "keep": []}
+{"input": "token&amp;amp;equals;B2Fx", "forbid": ["B2Fx"], "kind": "text", "keep": []}
+{"input": "/s;token＝B2Gx/tail", "forbid": ["B2Gx"], "kind": "url", "keep": []}
+{"input": "https://h/s;token＝B2Hx/tail?x=1", "forbid": ["B2Hx"], "kind": "url", "keep": []}
+{"input": "/p?token＝B2Ix&page=2", "forbid": ["B2Ix"], "kind": "url", "keep": []}
+{"input": "/s;token%EF%BC%9DB2Jx/tail", "forbid": ["B2Jx"], "kind": "url", "keep": []}
