@@ -101,7 +101,7 @@ impl<'a> Scrubber<'a> {
     /// Varre `text`; o cache de nomes sensíveis é reaproveitado entre chamadas
     /// (consulta com milhões de pares). `None` quando nada mudou.
     pub(super) fn run(&mut self, text: &str) -> Option<String> {
-        if !text.contains(['=', '%', '@', '&']) && !has_scheme_word(text.as_bytes()) {
+        if !text.contains(['=', '%', '@', '&', '\u{FF1D}']) && !has_scheme_word(text.as_bytes()) {
             return None;
         }
         self.edits.clear();
@@ -816,41 +816,54 @@ fn find_equals(bytes: &[u8], from: usize, to: usize) -> Option<(usize, usize)> {
 }
 
 /// Tamanho de um "igual" em `bytes[at..]`: `=`, `＝`, `&equals;`, `&#61;`,
-/// `&#0061;`, `&#x3D;`, `&#X003d;` (`;` opcional) e `&amp;` antes de qualquer
-/// um deles.
+/// `&#0061;`, `&#x3D;`, `&#X003d;` (`;` opcional) e qualquer um deles escapado
+/// de novo (`&amp;#61;`, `&amp;equals;`, `&amp;&#61;`, `&amp;amp;#61;`...).
 fn equals_len_at(bytes: &[u8], at: usize) -> Option<usize> {
     let rest = bytes.get(at..)?;
     match rest.first()? {
         b'=' => Some(1),
         0xEF if rest.len() >= 3 && rest[1] == 0xBC && rest[2] == 0x9D => Some(3),
         b'&' => {
-            let (skip, body) = if rest.len() >= 5 && rest[..5].eq_ignore_ascii_case(b"&amp;") {
-                (5, &rest[5..])
-            } else {
-                (0, rest)
-            };
-            if body.len() >= 8 && body[..8].eq_ignore_ascii_case(b"&equals;") {
-                return Some(skip + 8);
+            // `&amp;` repetido: cada camada de escape HTML conta
+            let mut skip = 0;
+            while rest[skip..].len() >= 5 && rest[skip..skip + 5].eq_ignore_ascii_case(b"&amp;") {
+                skip += 5;
+                if skip > 40 {
+                    break;
+                }
             }
-            if body.len() >= 3 && body[0] == b'&' && body[1] == b'#' {
-                let (radix, digits_at) = match body[2] {
-                    b'x' | b'X' => (16, 3),
-                    _ => (10, 2),
+            let body = &rest[skip..];
+            // depois de `&amp;` o `&` da entidade é opcional (`&amp;#61;`)
+            let entity = if body.first() == Some(&b'&') {
+                &body[1..]
+            } else if skip > 0 {
+                body
+            } else {
+                return None;
+            };
+            let lead = skip + usize::from(body.first() == Some(&b'&'));
+            if entity.len() >= 7 && entity[..7].eq_ignore_ascii_case(b"equals;") {
+                return Some(lead + 7);
+            }
+            if entity.first() == Some(&b'#') {
+                let (radix, digits_at) = match entity.get(1) {
+                    Some(b'x' | b'X') => (16, 2),
+                    _ => (10, 1),
                 };
                 let mut j = digits_at;
                 let mut value: u32 = 0;
-                while j < body.len() && j - digits_at < 12 {
-                    let Some(d) = (body[j] as char).to_digit(radix) else {
+                while j < entity.len() && j - digits_at < 12 {
+                    let Some(d) = (entity[j] as char).to_digit(radix) else {
                         break;
                     };
                     value = value.saturating_mul(radix).saturating_add(d);
                     j += 1;
                 }
                 if j > digits_at && value == 0x3D {
-                    if body.get(j) == Some(&b';') {
+                    if entity.get(j) == Some(&b';') {
                         j += 1;
                     }
-                    return Some(skip + j);
+                    return Some(lead + j);
                 }
             }
             None

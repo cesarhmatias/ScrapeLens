@@ -21,3 +21,10 @@
 {"input": "token=[[REDACTED]]", "forbid": [], "kind": "idem", "keep": []}
 {"input": "{token=SEC8x}", "forbid": ["SEC8x"], "kind": "keep", "keep": ["{token=", "}"]}
 {"input": "token=\"B3Bx", "forbid": ["B3Bx"], "kind": "text", "keep": []}
+{"input": "token&amp;#61;E5x", "forbid": ["E5x"], "kind": "text", "keep": []}
+{"input": "token＝FW1x", "forbid": ["FW1x"], "kind": "text", "keep": []}
+{"input": "token＝B1x", "forbid": ["B1x"], "kind": "text", "keep": []}
+{"input": "token＝\"B1qx\"", "forbid": ["B1qx"], "kind": "text", "keep": []}
+{"input": "token&amp;#61;B2Ax", "forbid": ["B2Ax"], "kind": "text", "keep": []}
+{"input": "token&amp;#x3D;B2Bx", "forbid": ["B2Bx"], "kind": "text", "keep": []}
+{"input": "token&amp;equals;B2Cx", "forbid": ["B2Cx"], "kind": "text", "keep": []}
