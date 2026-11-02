@@ -39,7 +39,9 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
     let netlog_bytes = if netlog_path.exists() {
         let bytes = store::read_file(&netlog_path)?;
         report.bytes_read += bytes.len();
-        if serde_json::from_slice::<Value>(&bytes).is_err() {
+        // Só valida (mesmo veredito de antes): percorre o JSON sem montar o DOM, que
+        // custava ~10x o tamanho do arquivo (docs/18 §4.1).
+        if !json_is_valid(&bytes) {
             report.warn(Warning::error(
                 "session.netlog_invalid",
                 "netlog.json existe, mas não é JSON válido; mantido como artefato bruto",
@@ -156,6 +158,82 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
         attachments,
     };
     Ok(ImportedSession::new(bundle, report))
+}
+
+/// Valida JSON sem montar o DOM, com o MESMO veredito de `serde_json::from_slice::<Value>`
+/// (inclusive o limite de recursão de 128 níveis): `IgnoredAny` não serve porque
+/// pula o limite. Memória O(profundidade).
+struct JsonShape;
+
+impl<'de> serde::Deserialize<'de> for JsonShape {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(JsonShapeVisitor)?;
+        Ok(JsonShape)
+    }
+}
+
+struct JsonShapeVisitor;
+
+impl<'de> serde::de::DeserializeSeed<'de> for JsonShapeVisitor {
+    type Value = ();
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<(), D::Error> {
+        deserializer.deserialize_any(JsonShapeVisitor)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for JsonShapeVisitor {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("qualquer valor JSON")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> std::result::Result<(), E> {
+        Ok(())
+    }
+    fn visit_i64<E>(self, _: i64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+    fn visit_u64<E>(self, _: u64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+    fn visit_f64<E>(self, _: f64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+    fn visit_str<E>(self, _: &str) -> std::result::Result<(), E> {
+        Ok(())
+    }
+    fn visit_unit<E>(self) -> std::result::Result<(), E> {
+        Ok(())
+    }
+    fn visit_none<E>(self) -> std::result::Result<(), E> {
+        Ok(())
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+        self,
+        mut seq: A,
+    ) -> std::result::Result<(), A::Error> {
+        while seq.next_element_seed(JsonShapeVisitor)?.is_some() {}
+        Ok(())
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(
+        self,
+        mut map: A,
+    ) -> std::result::Result<(), A::Error> {
+        while map.next_key_seed(JsonShapeVisitor)?.is_some() {
+            map.next_value_seed(JsonShapeVisitor)?;
+        }
+        Ok(())
+    }
+}
+
+fn json_is_valid(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<JsonShape>(bytes).is_ok()
 }
 
 /// Lê e valida `session.json` sem árvore `Value` intermediária: uma passada
@@ -403,7 +481,7 @@ fn validate_jsonl(bytes: &[u8], report: &mut ImportReport) {
             continue;
         }
         report.source_events += 1;
-        if let Err(error) = serde_json::from_str::<Value>(line) {
+        if let Err(error) = serde_json::from_str::<JsonShape>(line) {
             report.source_events_unknown += 1;
             report.warn(Warning::new(
                 "cdp.jsonl_line_invalid",
