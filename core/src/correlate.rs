@@ -9,7 +9,7 @@
 //! silêncio. Quando o NetLog comprova a sequência e o CDP não, a visão primária
 //! passa a ser do NetLog, mantendo o bloco CDP original em `headerEvidence`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -81,6 +81,52 @@ impl Candidate<'_> {
     }
 }
 
+/// Índices do NetLog e das chaves explícitas, montados UMA vez por correlação (docs/18 P3):
+/// o candidato de uma tentativa CDP exige método e URL canônica iguais (senão
+/// `score_candidate` devolve `None`), então basta olhar o balde `(método em minúsculas,
+/// URL canônica)`; mais os pares explícitos, que valem sem checar método/URL. A ordem de
+/// varredura (requisição, tentativa) é preservada, então o resultado é idêntico ao da
+/// varredura de todos os pares.
+struct CorrelationIndex<'a> {
+    by_key: HashMap<(String, String), Vec<(usize, usize)>>,
+    by_source_id: HashMap<u32, Vec<usize>>,
+    explicit_by_request: HashMap<&'a str, Vec<&'a ExplicitPair>>,
+}
+
+impl<'a> CorrelationIndex<'a> {
+    fn new(netlog: &NetlogCapture, options: &'a CorrelationOptions) -> Self {
+        let mut by_key: HashMap<(String, String), Vec<(usize, usize)>> = HashMap::new();
+        let mut by_source_id: HashMap<u32, Vec<usize>> = HashMap::new();
+        for (request_index, request) in netlog.requests.iter().enumerate() {
+            by_source_id
+                .entry(request.source_id)
+                .or_default()
+                .push(request_index);
+            for (attempt_index, attempt) in request.attempts.iter().enumerate() {
+                by_key
+                    .entry((
+                        attempt.method.to_ascii_lowercase(),
+                        canonical_url(&attempt.url),
+                    ))
+                    .or_default()
+                    .push((request_index, attempt_index));
+            }
+        }
+        let mut explicit_by_request: HashMap<&str, Vec<&ExplicitPair>> = HashMap::new();
+        for pair in &options.explicit_pairs {
+            explicit_by_request
+                .entry(pair.cdp_request_id.as_str())
+                .or_default()
+                .push(pair);
+        }
+        Self {
+            by_key,
+            by_source_id,
+            explicit_by_request,
+        }
+    }
+}
+
 pub fn attach_netlog(
     session: &mut SessionV1,
     netlog: &NetlogCapture,
@@ -95,6 +141,7 @@ pub fn attach_netlog(
         .iter()
         .map(|request| request.attempts.len())
         .sum();
+    let index = CorrelationIndex::new(netlog, options);
 
     for request in &mut session.requests {
         let cdp_request_id = request.cdp.as_ref().and_then(|cdp| cdp.request_id.clone());
@@ -109,6 +156,7 @@ pub fn attach_netlog(
                 cdp_session_id.as_deref(),
                 netlog,
                 options,
+                &index,
                 &used,
             );
 
@@ -217,31 +265,64 @@ pub fn attach_netlog(
     outcome
 }
 
+/// Posições (requisição, tentativa) do NetLog que podem gerar candidato para `attempt`,
+/// em ordem de varredura: o balde `(método, URL canônica)` mais as tentativas da
+/// requisição NetLog do par explícito (que valem sem checar método/URL).
+fn candidate_positions(
+    attempt: &Attempt,
+    explicit_source: Option<u32>,
+    netlog: &NetlogCapture,
+    index: &CorrelationIndex<'_>,
+) -> Vec<(usize, usize)> {
+    let mut positions: Vec<(usize, usize)> = index
+        .by_key
+        .get(&(
+            attempt.method.to_ascii_lowercase(),
+            canonical_url(&attempt.url),
+        ))
+        .cloned()
+        .unwrap_or_default();
+    if let Some(source_id) = explicit_source {
+        for &request_index in index.by_source_id.get(&source_id).into_iter().flatten() {
+            for attempt_index in 0..netlog.requests[request_index].attempts.len() {
+                positions.push((request_index, attempt_index));
+            }
+        }
+        positions.sort_unstable();
+        positions.dedup();
+    }
+    positions
+}
+
 fn find_candidates<'a>(
     attempt: &Attempt,
     cdp_request_id: Option<&str>,
     cdp_session_id: Option<&str>,
     netlog: &'a NetlogCapture,
     options: &CorrelationOptions,
+    index: &CorrelationIndex<'_>,
     used: &BTreeSet<String>,
 ) -> Vec<Candidate<'a>> {
     let explicit_source = cdp_request_id.and_then(|request_id| {
-        options
-            .explicit_pairs
+        index
+            .explicit_by_request
+            .get(request_id)?
             .iter()
             .find(|pair| {
-                pair.cdp_request_id == request_id
-                    && pair
-                        .cdp_session_id
-                        .as_deref()
-                        .map_or(true, |session| Some(session) == cdp_session_id)
+                pair.cdp_session_id
+                    .as_deref()
+                    .map_or(true, |session| Some(session) == cdp_session_id)
             })
             .map(|pair| pair.netlog_source_id)
     });
 
+    let positions = candidate_positions(attempt, explicit_source, netlog, index);
+
     let mut candidates = Vec::new();
-    for (request_index, request) in netlog.requests.iter().enumerate() {
-        for (attempt_index, netlog_attempt) in request.attempts.iter().enumerate() {
+    for (request_index, attempt_index) in positions {
+        let request = &netlog.requests[request_index];
+        let netlog_attempt = &request.attempts[attempt_index];
+        {
             let id = format!("netlog-r{:04}-a{}", request_index + 1, attempt_index + 1);
             if used.contains(&id) {
                 continue;
@@ -768,5 +849,60 @@ mod tests {
         netlog.method = "GET".to_string();
         netlog.url = "https://a.test/other".to_string();
         assert!(score_candidate(&cdp, &request, &netlog, &options, None).is_none());
+    }
+
+    /// O índice só pode descartar pares que a varredura de todos os pares também descartaria:
+    /// para cada tentativa CDP das capturas reais, todo par (requisição, tentativa) do NetLog
+    /// que `score_candidate` aceita (ou que é explícito) está em `candidate_positions`.
+    #[test]
+    fn index_never_drops_a_pair_the_full_scan_would_keep() {
+        use crate::parse::{cdp, netlog};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../experiments/results");
+        let mut checked_pairs = 0usize;
+        for dir in [
+            "h1-page",
+            "h2-page",
+            "h3-page",
+            "contract-h1",
+            "contract-h3",
+            "h1-set3",
+            "multi-target-official/with-wait",
+            "multi-target-smoke/with-wait",
+        ] {
+            let Ok(cdp_bytes) = std::fs::read(root.join(dir).join("cdp-events.jsonl")) else {
+                continue;
+            };
+            let netlog_bytes = std::fs::read(root.join(dir).join("chrome-netlog.json")).unwrap();
+            let capture = cdp::parse_cdp_jsonl(&cdp_bytes).unwrap();
+            let (session, _) = cdp::build_cdp_session(&capture);
+            let netlog = netlog::parse_netlog(&netlog_bytes).unwrap();
+            let options = CorrelationOptions::default();
+            let index = CorrelationIndex::new(&netlog, &options);
+            for request in &session.requests {
+                for attempt in &request.attempts {
+                    let positions = candidate_positions(attempt, None, &netlog, &index);
+                    for (ri, nreq) in netlog.requests.iter().enumerate() {
+                        for (ai, natt) in nreq.attempts.iter().enumerate() {
+                            checked_pairs += 1;
+                            let accepted = score_candidate(
+                                attempt,
+                                nreq,
+                                natt,
+                                &options,
+                                netlog.time_tick_offset_ms,
+                            )
+                            .is_some();
+                            if accepted {
+                                assert!(
+                                    positions.contains(&(ri, ai)),
+                                    "{dir}: par ({ri},{ai}) aceito pela varredura e fora do índice"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked_pairs > 1000, "fixtures ausentes? {checked_pairs}");
     }
 }
