@@ -196,7 +196,17 @@ pub async fn list_requests(
 ) -> Result<crate::listing::RequestPage, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
-        Ok(crate::listing::list_page(&lazy.session, offset, limit, &filter.unwrap_or_default()))
+        let page = crate::listing::list_page(&lazy.session, offset, limit, &filter.unwrap_or_default());
+        // Só no modo de teste: prova, sem ler a tela, que a lista veio pelo contrato paginado.
+        if std::env::var("SCRAPELENS_TEST_MODE").as_deref() == Ok("1") {
+            eprintln!(
+                "scrapelens: list_requests offset={offset} items={} matched={} total={}",
+                page.items.len(),
+                page.matched,
+                page.total
+            );
+        }
+        Ok(page)
     })
     .await
     .map_err(|error| format!("a listagem foi interrompida: {error}"))?
