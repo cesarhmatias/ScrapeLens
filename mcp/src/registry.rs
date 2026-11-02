@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
-use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
+use scrapelens_core::export::sanitize::{sanitize_bundle_owned, SanitizeOptions};
 use scrapelens_core::lazy::LazySession;
 use scrapelens_core::search::{BodySource, LazyBodies, Loaded};
 use scrapelens_core::{SessionBundle, SessionV1};
@@ -40,7 +40,8 @@ impl Entry {
                     format!("não foi possível carregar a sessão para mascarar: {error}"),
                 )
             })?;
-            Ok(sanitize_bundle(&imported.bundle, &SanitizeOptions::default()).bundle)
+            // Consome o bundle importado: sem a cópia da sessão (docs/18 P7).
+            Ok(sanitize_bundle_owned(imported.bundle, &SanitizeOptions::default()).bundle)
         });
         result
             .as_ref()

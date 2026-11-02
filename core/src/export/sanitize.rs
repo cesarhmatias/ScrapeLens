@@ -105,9 +105,25 @@ impl SanitizedExport {
     }
 }
 
+/// Sanitiza uma CÓPIA do bundle (o original fica intacto). Para sessões grandes use
+/// [`sanitize_bundle_owned`], que não duplica a sessão (docs/18 P7).
 pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> SanitizedExport {
+    sanitize_bundle_owned(bundle.clone(), options)
+}
+
+/// Como [`sanitize_bundle`], mas CONSOME o bundle e sanitiza a sessão no lugar: sem a cópia
+/// mascarada (−927 MiB com 20 mil requisições capturadas, docs/18) e liberando os anexos
+/// originais ao terminar. Os valores sensíveis a propagar são coletados ANTES de qualquer
+/// edição, então o resultado é idêntico ao da versão por referência.
+pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -> SanitizedExport {
     BUSINESS.with(|b| *b.borrow_mut() = (options.business_fields.clone(), BTreeMap::new()));
-    let mut session = bundle.session.clone();
+    let sensitive = collect_sensitive_values(&bundle);
+    let SessionBundle {
+        mut session,
+        cdp_events_jsonl,
+        netlog_json,
+        attachments,
+    } = bundle;
     let mut warnings = Vec::new();
     let mut redactions: BTreeMap<String, usize> = BTreeMap::new();
     let mut omitted_attachments = Vec::new();
@@ -154,7 +170,7 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
         }
         request.request_body = sanitize_body(
             &request.request_body,
-            bundle,
+            &attachments,
             options,
             &mut cache,
             &mut generated,
@@ -164,7 +180,7 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
         );
         request.response_body = sanitize_body(
             &request.response_body,
-            bundle,
+            &attachments,
             options,
             &mut cache,
             &mut generated,
@@ -207,7 +223,7 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
             }
             attempt.request_body = sanitize_body(
                 &attempt.request_body,
-                bundle,
+                &attachments,
                 options,
                 &mut cache,
                 &mut generated,
@@ -217,7 +233,7 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
             );
             attempt.response_body = sanitize_body(
                 &attempt.response_body,
-                bundle,
+                &attachments,
                 options,
                 &mut cache,
                 &mut generated,
@@ -234,7 +250,7 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
         capture.chrome_args = None;
         capture.notes = None;
     }
-    let raw_removed = bundle.cdp_events_jsonl.is_some() || bundle.netlog_json.is_some();
+    let raw_removed = cdp_events_jsonl.is_some() || netlog_json.is_some();
     session.session.labels.push("sanitized".to_string());
     session.session.notes.push(
         "sessão sanitizada: headers/cookies/URLs/corpos sensíveis redigidos; eventos brutos removidos. Detecção heurística por nomes de parâmetros/headers, prefixos de autenticação e estrutura do corpo; revise o resultado antes de compartilhar."
@@ -267,7 +283,7 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
     }
 
     propagate_sensitive_values(
-        bundle,
+        sensitive,
         &mut session,
         &mut generated,
         options,
@@ -290,12 +306,12 @@ pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> San
     let mut sanitized_bundle = SessionBundle {
         session,
         cdp_events_jsonl: if options.keep_raw_events {
-            bundle.cdp_events_jsonl.clone()
+            cdp_events_jsonl
         } else {
             None
         },
         netlog_json: if options.keep_raw_events {
-            bundle.netlog_json.clone()
+            netlog_json
         } else {
             None
         },
@@ -450,7 +466,7 @@ fn sanitize_set_cookie(
 
 fn sanitize_body(
     body: &Body,
-    bundle: &SessionBundle,
+    attachments: &BTreeMap<String, Vec<u8>>,
     options: &SanitizeOptions,
     cache: &mut BTreeMap<String, Option<String>>,
     generated: &mut BTreeMap<String, Vec<u8>>,
@@ -494,7 +510,7 @@ fn sanitize_body(
         };
     }
 
-    let Some(bytes) = bundle.attachments.get(&original) else {
+    let Some(bytes) = attachments.get(&original) else {
         cache.insert(original.clone(), None);
         omitted.push(original.clone());
         warnings.push(Warning::new(
@@ -607,11 +623,22 @@ fn number_may_stay_visible(key: &str, number: &serde_json::Number) -> bool {
         .filter(|ch| ch.is_ascii_alphanumeric())
         .collect();
     const BENIGN: [&str; 14] = [
-        "expiresin", "expires", "expiry", "expiration", "ttl", "type", "length", "size", "count",
-        "seconds", "enabled", "required", "valid", "version",
+        "expiresin",
+        "expires",
+        "expiry",
+        "expiration",
+        "ttl",
+        "type",
+        "length",
+        "size",
+        "count",
+        "seconds",
+        "enabled",
+        "required",
+        "valid",
+        "version",
     ];
-    matches!(number.as_i64(), Some(0 | 1))
-        || BENIGN.iter().any(|suffix| compact.ends_with(suffix))
+    matches!(number.as_i64(), Some(0 | 1)) || BENIGN.iter().any(|suffix| compact.ends_with(suffix))
 }
 
 /// Sob uma chave de credencial: textos viram placeholder, booleanos e números
@@ -773,15 +800,16 @@ fn sanitize_url_header_value(lower_name: &str, value: &str, options: &SanitizeOp
     let one = |text: &str| {
         let url_like = text.starts_with(['/', '?', '#', '.'])
             || split_authority_prefix(text).is_some()
-            || text
-                .split_once(':')
-                .is_some_and(|(scheme, _)| {
-                    !scheme.is_empty()
-                        && scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-                        && scheme
-                            .chars()
-                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
-                });
+            || text.split_once(':').is_some_and(|(scheme, _)| {
+                !scheme.is_empty()
+                    && scheme
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphabetic())
+                    && scheme
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+            });
         let first = if url_like {
             sanitize_url_reference(text, options)
         } else {
@@ -1761,7 +1789,8 @@ fn html_attributes(tag: &str) -> Vec<(String, String)> {
             i += 1;
         }
         let name_start = i;
-        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && !matches!(bytes[i], b'=' | b'/') {
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && !matches!(bytes[i], b'=' | b'/')
+        {
             i += 1;
         }
         if i == name_start {
@@ -1894,8 +1923,8 @@ fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
                 continue; // cobertos pelos pares/registros de cookie
             }
             if is_sensitive_header(&lower) {
-                let value = split_auth_scheme(&entry.value)
-                    .map_or(entry.value.as_str(), |(_, rest)| rest);
+                let value =
+                    split_auth_scheme(&entry.value).map_or(entry.value.as_str(), |(_, rest)| rest);
                 out.push(SensitiveValue {
                     origin: "header",
                     value: value.to_string(),
@@ -2101,7 +2130,7 @@ impl Propagator<'_> {
 /// serializar a sessão. Nenhum passo é falível; anexos que não são texto UTF-8
 /// não são varridos e isso é declarado.
 fn propagate_sensitive_values(
-    original: &SessionBundle,
+    sensitive: Vec<SensitiveValue>,
     session: &mut crate::model::SessionV1,
     generated: &mut BTreeMap<String, Vec<u8>>,
     options: &SanitizeOptions,
@@ -2109,7 +2138,7 @@ fn propagate_sensitive_values(
     warnings: &mut Vec<Warning>,
 ) {
     let mut seen = std::collections::BTreeSet::new();
-    let mut values: Vec<SensitiveValue> = collect_sensitive_values(original)
+    let mut values: Vec<SensitiveValue> = sensitive
         .into_iter()
         .filter(|item| !is_trivial_value(&item.value, options, item.origin == "business"))
         .filter(|item| seen.insert(item.value.clone()))
@@ -2548,13 +2577,24 @@ mod tests {
     fn round2_nested_url_tab_after_scheme_and_obvious_values() {
         let o = SanitizeOptions::default();
         // R6: URL aninhada com percent-encoding (também em dois níveis).
-        let out = sanitize_text("GET /cb?redirect_uri=https%3A%2F%2Fa.test%2Fx%3Ftoken%3DSEGMARC1 HTTP/1.1", &o);
+        let out = sanitize_text(
+            "GET /cb?redirect_uri=https%3A%2F%2Fa.test%2Fx%3Ftoken%3DSEGMARC1 HTTP/1.1",
+            &o,
+        );
         assert!(!out.contains("SEGMARC1"), "{out}");
-        let out = sanitize_url("https://a.test/c?next=%2Fcb%3Fnext%3D%252Fz%253Ftoken%253DSEGMARC2", &o);
+        let out = sanitize_url(
+            "https://a.test/c?next=%2Fcb%3Fnext%3D%252Fz%253Ftoken%253DSEGMARC2",
+            &o,
+        );
         assert!(!out.contains("SEGMARC2"), "{out}");
         // R8: TAB (e qualquer espaço) depois do esquema; UTF-8 sem panic.
-        assert_eq!(split_auth_scheme("Bearer\tSEGMARC3").map(|(_, r)| r), Some("SEGMARC3"));
-        assert!(redact_auth_scheme("bearer \t SEGMARC3", &o).is_some_and(|v| !v.contains("SEGMARC3")));
+        assert_eq!(
+            split_auth_scheme("Bearer\tSEGMARC3").map(|(_, r)| r),
+            Some("SEGMARC3")
+        );
+        assert!(
+            redact_auth_scheme("bearer \t SEGMARC3", &o).is_some_and(|v| !v.contains("SEGMARC3"))
+        );
         assert!(split_auth_scheme("Béarer xyz").is_none());
         assert!(split_auth_scheme("日本語日本語日本語").is_none());
         // R13: booleano/número óbvio visível; string redigida; objeto-rótulo percorrido.

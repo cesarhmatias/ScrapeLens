@@ -147,8 +147,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let output = PathBuf::from(&args[1]);
             let imported =
                 scrapelens_core::import_session_dir(&input).map_err(|e| e.to_string())?;
-            let export =
-                sanitize::sanitize_bundle(&imported.bundle, &sanitize::SanitizeOptions::default());
+            // Consome o bundle (sem a cópia da sessão; docs/18 P7).
+            let export = sanitize::sanitize_bundle_owned(
+                imported.bundle,
+                &sanitize::SanitizeOptions::default(),
+            );
             export.write_to(&output).map_err(|e| e.to_string())?;
             print_json(&serde_json::json!({
                 "output": output.display().to_string(),
