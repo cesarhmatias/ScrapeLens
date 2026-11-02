@@ -36,6 +36,9 @@
 //!   `/a;v=2/session=[REDACTED]` (o `/b` se perde); a segurança prevalece sobre a
 //!   fidelidade. Nomes NÃO sensíveis não mudam nada e o resto do caminho segue
 //!   examinado. O custo é linear: nenhuma heurística olha para trás a cada `/`.
+//!   Exceção (A9-B1): `,` ou `|` seguido de `/` encerra o valor em contexto de caminho (lista
+//!   sem espaço `/a/token=x/b,/c/keep` preserva o item seguinte). Limitação aceita: um
+//!   credencial que contém `,/` ou `|/` vaza o que vem depois.
 //! - Aspas/colchetes após `=`: o interior é o valor; texto ou outra abertura COLADA
 //!   depois do fechamento (`"a"X`, `[a][X]`, `'a'"X`) também é valor.
 //! - Entidades HTML de `=` (`&#61;`, `&equals;`...) valem em qualquer número de camadas de
@@ -577,6 +580,11 @@ impl Scrubber<'_> {
             // Em caminho (`/a;jsessionid=X/b`, `/s/session=X/b`) o valor acaba em `/` ou `?`:
             // o resto é o caminho/consulta, que segue sendo examinado.
             if query_ends && b == b'?' {
+                break;
+            }
+            // Lista de caminhos sem espaço (`/a/token=x/b,/c/keep`): `,` ou `|` seguido de `/`
+            // abre o próximo item e encerra o valor em contexto de caminho (A9-B1).
+            if query_ends && matches!(b, b',' | b'|') && bytes.get(q + 1) == Some(&b'/') {
                 break;
             }
             if depth == 0 && is_space(b) {

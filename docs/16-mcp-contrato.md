@@ -104,7 +104,9 @@ Com `reveal=false`:
   credencial (base64) pode conter `/`. Custa o resto do caminho depois dele:
   `/a;v=2/session=keep/b` sai `/a;v=2/session=[REDACTED]`. Vale igual para o texto
   (linha de requisição, headers, JSON) e para a URL. Nomes não sensíveis não
-  mudam nada. A segurança prevalece sobre a fidelidade.
+  mudam nada. A segurança prevalece sobre a fidelidade. Exceção (A9-B1): `,` ou `|`
+  seguido de `/` encerra o valor (lista sem espaço `/a/token=x/b,/c/keep` preserva o
+  item seguinte); um credencial que contenha `,/` ou `|/` vaza o que vem depois.
 - **Texto cru com query** (rodada 11, correção de vazamento): o sanitizador do
   core redige o valor de parâmetro de query com nome sensível também em
   `startLine` de requisição (`GET /p?token=… HTTP/1.1`), em qualquer valor de
