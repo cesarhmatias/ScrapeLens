@@ -114,6 +114,10 @@ macOS arm64, pico de RSS por `getrusage`), em `/tmp/big20k` (`session.json` de 1
   no backend (1.161 MiB, −84 %).
 - Resumo: 268 B por linha em média, com a sobra da página; uma linha sozinha tem
   ~240 B (URL e `wallTime` dominam). Fica acima da estimativa de 100 a 200 B do docs/18.
+- Tempo: a leitura tipada leva ~9,9 s, contra ~4,4 s do caminho antigo, que usa mais
+  memória. As 11 páginas de `list_requests`, com cabeçalho e detalhe, levam ~70 ms.
+  `open_session`, `import_*` e `stop_session` ainda são comandos síncronos; passá-los
+  para `spawn_blocking` fica como próximo passo.
 - O que domina é a `SessionV1` tipada (~1.160 MiB, como o `lazy` do docs/18). P6/P8
   reduziriam isso no core.
 - Não medido: a memória do WebView. Os resumos de 20 mil requisições somam ~5 MB de

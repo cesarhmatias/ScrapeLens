@@ -31,24 +31,23 @@ pub struct SessionHeader {
 
 pub fn header_of(session: &SessionV1) -> Result<SessionHeader, String> {
     let meta = serde_json::to_value(&session.session).map_err(|error| format!("sessão inválida: {error}"))?;
-    let mut sources: Vec<Value> = Vec::new();
-    let mut seen = HashSet::new();
-    let mut push = |value: Value| {
-        let key = value.to_string();
-        if seen.insert(key) {
-            sources.push(value);
+    let mut seen: Vec<&'static str> = Vec::new();
+    let mut push = |source: scrapelens_core::model::Source| {
+        let name = source.as_str();
+        if !seen.contains(&name) {
+            seen.push(name);
         }
     };
     for request in &session.requests {
-        push(serde_json::to_value(&request.provenance.source).unwrap_or(Value::Null));
+        push(request.provenance.source);
         for attempt in &request.attempts {
-            push(serde_json::to_value(&attempt.provenance.source).unwrap_or(Value::Null));
+            push(attempt.provenance.source);
             for pair in &attempt.cookie.pairs {
-                push(serde_json::to_value(&pair.provenance.source).unwrap_or(Value::Null));
+                push(pair.provenance.source);
             }
         }
     }
-    sources.retain(|value| !value.is_null());
+    let sources: Vec<Value> = seen.into_iter().map(|s| Value::String(s.to_string())).collect();
     Ok(SessionHeader {
         schema_version: session.schema_version,
         session: meta,
@@ -109,10 +108,7 @@ fn target_of(request: &LogicalRequest) -> Option<&TargetProvenance> {
 }
 
 fn source_is_netlog(request: &LogicalRequest) -> bool {
-    serde_json::to_value(&request.provenance.source)
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s == "netlog"))
-        .unwrap_or(false)
+    request.provenance.source == scrapelens_core::model::Source::NetLog
 }
 
 pub fn summarize(request: &LogicalRequest, warning_count: usize, target: Option<usize>) -> RequestSummary {
@@ -129,7 +125,7 @@ pub fn summarize(request: &LogicalRequest, warning_count: usize, target: Option<
         initiator: initiator_of(request),
         target,
         links: request.links.clone(),
-        source: serde_json::to_value(&request.provenance.source).unwrap_or(Value::Null),
+        source: Value::String(request.provenance.source.as_str().to_string()),
         warning_count,
     }
 }

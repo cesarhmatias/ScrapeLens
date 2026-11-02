@@ -129,7 +129,13 @@ pub fn persistable_url(raw: &str) -> Result<String, String> {
     let trimmed = trim_url(raw);
     validate_http_url(trimmed)?;
     let parts = split_http_url(trimmed)?;
-    Ok(format!("{}{}{}", parts.scheme, parts.authority, sanitize_persisted_path(parts.path)))
+    let cleaned = sanitize_persisted_path(parts.path);
+    // Caminho com algo redigido: grava só a origem. Nunca se grava (nem se
+    // preenche no campo) uma URL com `[REDACTED]`, que o Chrome abriria.
+    if cleaned != parts.path {
+        return Ok(format!("{}{}", parts.scheme, parts.authority));
+    }
+    Ok(format!("{}{}{}", parts.scheme, parts.authority, parts.path))
 }
 
 /// Caminho gravado em disco (A9-B4): sanitizador do core (`;jsessionid=`,
@@ -447,7 +453,7 @@ mod tests {
         ] {
             let out = persistable_url(input).unwrap();
             assert!(!out.contains(secret), "{input} -> {out}");
-            assert!(out.starts_with("https://h/"), "{out}");
+            assert_eq!(out, "https://h", "só a origem quando algo foi redigido");
         }
         assert_eq!(persistable_url("https://h/docs/page-2").unwrap(), "https://h/docs/page-2");
     }

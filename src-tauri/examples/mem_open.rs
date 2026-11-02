@@ -34,6 +34,7 @@ fn main() {
         "paged" => {
             let (lazy, _) = scrapelens_core::open_session_dir_lazy(dir).expect("abrir sessão");
             let after_open = peak_mib();
+            let open_ms = started.elapsed().as_millis() as u64;
             let header = scrapelens_lib::listing::header_of(&lazy.session).expect("cabeçalho");
             let header_bytes = serde_json::to_vec(&header).unwrap().len();
             let filter = scrapelens_lib::listing::ListFilter::default();
@@ -65,6 +66,7 @@ fn main() {
                     "requests": lazy.session.requests.len(),
                     "basePeakMiB": base,
                     "openPeakMiB": after_open,
+                    "openMs": open_ms,
                     "peakMiB": peak_mib(),
                     "headerBytes": header_bytes,
                     "listWireBytes": wire,

@@ -258,8 +258,7 @@ mod tests {
 
         fs::write(&file, r#"{"captureStartUrl":"https://h/p;jsessionid=J2?token=S2#f"}"#).unwrap();
         let mut prefs = read_and_scrub(&file);
-        let kept = prefs.capture_start_url.clone().unwrap();
-        assert!(kept.starts_with("https://h/") && !kept.contains("J2") && !kept.contains('?'), "{kept}");
+        assert_eq!(prefs.capture_start_url.as_deref(), Some("https://h"));
         prefs.chrome_path = Some("/y".into());
         normalize(&mut prefs);
         write_prefs(file.clone(), &prefs).unwrap();
