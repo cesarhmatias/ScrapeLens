@@ -1,6 +1,6 @@
 {
- "port": 53481,
- "host": "localhost:53481",
+ "port": 56000,
+ "host": "localhost:56000",
  "tools": [
   "capture_status",
   "diff_requests",
@@ -17,7 +17,7 @@
   "stop_capture",
   "trace_value"
  ],
- "sessionId": "capture-1793629942301",
+ "sessionId": "capture-1793651404133",
  "header_order": [
   "Host",
   "Connection",
@@ -75,12 +75,12 @@
   {
    "name": "start_capture aceito (elicitação)",
    "ok": true,
-   "detail": "{\"warnings\": [], \"chromePid\": 69437, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
+   "detail": "{\"warnings\": [], \"chromePid\": 53666, \"browser\": {\"path\": \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\", \"version\": \"Chrome/156.0.8078.74\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36\"}, \""
   },
   {
    "name": "elicitação exibida ao usuário",
    "ok": true,
-   "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:53481\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:53481/\\nC"
+   "detail": "['Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\\nHosts permitidos (navegar e agir): localhost:56000\\nHosts de terceiros liberados: (nenhum)\\nURL inicial: http://localhost:56000/\\nC"
   },
   {
    "name": "Chrome real iniciado",
@@ -100,17 +100,17 @@
   {
    "name": "navigate permitido carregou",
    "ok": true,
-   "detail": "{\"frameId\": \"A21C06E2B36C5B838A7A5AD6ED64FCE4\", \"loaderId\": \"30C738B7C572866F50D3239B12F72C2F\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-f08db884b6a6bf0f\"}"
+   "detail": "{\"frameId\": \"D402869F412EBF4C34465CF54AA06C0C\", \"loaderId\": \"0766151747616F202ACF5016B6862D1D\", \"loaded\": true, \"errorText\": null, \"captureId\": \"cap-84fa30503b383510\"}"
   },
   {
    "name": "capture_status em gravação",
    "ok": true,
-   "detail": "{\"recording\": true, \"events\": 40, \"chromePid\": 69437, \"sessionId\": \"capture-1793629942301\", \"pageUrl\": \"http://localhost:53481/\", \"startedAt\": \"\", \"captureId\": \"cap-f08db884b6a6bf0f\"}"
+   "detail": "{\"recording\": true, \"events\": 40, \"chromePid\": 53666, \"sessionId\": \"capture-1793651404133\", \"pageUrl\": \"http://localhost:56000/\", \"startedAt\": \"\", \"captureId\": \"cap-84fa30503b383510\"}"
   },
   {
    "name": "stop_capture gracioso",
    "ok": true,
-   "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 105, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-f08db884b6a6bf0f\", \"sessionId\": \"capture-1793629942301\", \"readable\": true}"
+   "detail": "{\"warnings\": [], \"requests\": 3, \"netlog\": \"complete\", \"graceful\": true, \"waitedMs\": 104, \"allowlist\": {\"blockedHosts\": [], \"violations\": []}, \"captureId\": \"cap-84fa30503b383510\", \"sessionId\": \"capture-1793651404133\", \"readable\": true}"
   },
   {
    "name": "NetLog completo",
@@ -125,7 +125,7 @@
   {
    "name": "/page2 na sessão",
    "ok": true,
-   "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:53481/page2?token=%5BREDACTED%5D\", \"host\": \"localhost:53481\", \"status\": 200, \"resourceType\": \"Document\", \"protocol\": \"h1\", \"totalM"
+   "detail": "[{\"requestId\": \"cdp-r0001\", \"method\": \"GET\", \"url\": \"http://localhost:56000/page2?token=%5BREDACTED%5D\", \"host\": \"localhost:56000\", \"status\": 200, \"resourceType\": \"Document\", \"protocol\": \"h1\", \"totalM"
   },
   {
    "name": "token da query fora da listagem",
@@ -155,17 +155,17 @@
   {
    "name": "trace_value do cookie sem erro",
    "ok": true,
-   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:53481/\", \"startedAt\": 74752.884615, \"source\": \"netlog\", \"verificatio"
+   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0002\", \"attemptId\": \"cdp-r0002-a1\", \"url\": \"http://localhost:56000/\", \"startedAt\": 96216.84361, \"source\": \"netlog\", \"verification"
   },
   {
    "name": "trace_value do cookie mascarado",
    "ok": true,
-   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0003\", \"attemptId\": \"cdp-r0003-a1\", \"url\": \"http://localhost:53481/\", \"startedAt\": 74752.884615, \"source\": \"netlog\", \"verificatio"
+   "detail": "{\"mode\": \"cookie\", \"cookie\": \"sid\", \"firstSetter\": {\"requestId\": \"cdp-r0002\", \"attemptId\": \"cdp-r0002-a1\", \"url\": \"http://localhost:56000/\", \"startedAt\": 96216.84361, \"source\": \"netlog\", \"verification"
   },
   {
    "name": "site_profile sem erro",
    "ok": true,
-   "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793629942301\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:53481\": [\"h1"
+   "detail": "{\"schema\": \"scrapelens.site-profile/1\", \"sessionId\": \"capture-1793651404133\", \"sample\": {\"requests\": 3, \"documents\": 2, \"appRequests\": 2, \"partial\": false, \"protocols\": {\"http://localhost:56000\": [\"h1"
   },
   {
    "name": "reveal=true recusado sem --allow-reveal",

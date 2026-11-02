@@ -1,20 +1,22 @@
 {
  "runId": "app-latest",
- "generatedAt": "2026-11-02T14:29:05Z",
+ "generatedAt": "2026-11-02T20:25:59Z",
  "gui": {
   "startedFrom": "ScrapeLens.app (release, pid capturado pela janela)",
   "startButton": "Iniciar sessão",
   "stopButton": "Encerrar",
   "startUrl": "http://127.0.0.1:8781/page",
-  "screenshot": null,
-  "screenshotExists": false
+  "screenshot": "/Users/cesar/Projects/scrapelens/tests/results/app-latest/screenshot-app-live.png",
+  "screenshotExists": true,
+  "importsScreenshot": "/Users/cesar/Projects/scrapelens/tests/results/app-latest/screenshot-app-imports.png",
+  "importsScreenshotExists": true
  },
  "bundle": {
   "path": "/Users/cesar/Projects/scrapelens/src-tauri/target/release/bundle/macos/ScrapeLens.app",
   "exists": true,
-  "sizeBytes": 17926330,
-  "executableSha256": "f3039e587be4431d300dd27f42f323066b09ab2d7f4a868173316b68f931b76a",
-  "executableBytes": 17177632,
+  "sizeBytes": 17894458,
+  "executableSha256": "2691f1528a6b5b6009d8cc29c049f1e500093d6aab9f2163bcc4aad60df18156",
+  "executableBytes": 17145760,
   "binaries": [
    "scrapelens"
   ],
@@ -28,9 +30,9 @@
  },
  "appSessionsDir": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions",
  "capture": {
-  "id": "capture-1793562925684",
-  "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793562925684",
-  "sha256": "ecadd91475857dcbed5e24074a102f931c64dffcedc47b554b5c942e862658f4",
+  "id": "capture-1793651039927",
+  "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793651039927",
+  "sha256": "fdf2763b251adb794f75f6003f4379e5814cb4606282666858a191454f6bd843",
   "mode": "cdp+netlog",
   "labels": [
    "live-capture"
@@ -43,8 +45,8 @@
    "redirects": 2,
    "connections": 1,
    "streamSessions": 0,
-   "sourceEvents": 3302,
-   "sourceEventsUsed": 3302,
+   "sourceEvents": 3113,
+   "sourceEventsUsed": 3113,
    "sourceEventsUnknown": 0,
    "warnings": 5
   },
@@ -115,25 +117,25 @@
   "rawArtifacts": {
    "session.json": {
     "exists": true,
-    "bytes": 869749,
+    "bytes": 869983,
     "mode": "0o600"
    },
    "cdp-events.jsonl": {
     "exists": true,
-    "bytes": 385957,
+    "bytes": 385946,
     "mode": "0o600"
    },
    "netlog.json": {
     "exists": true,
-    "bytes": 1085083,
+    "bytes": 1063751,
     "mode": "0o600"
    }
   },
   "reload": {
    "requestsOnDisk": 11,
    "requestsFromInspect": 11,
-   "sha256BeforeInspect": "ecadd91475857dcbed5e24074a102f931c64dffcedc47b554b5c942e862658f4",
-   "sha256AfterInspect": "ecadd91475857dcbed5e24074a102f931c64dffcedc47b554b5c942e862658f4",
+   "sha256BeforeInspect": "fdf2763b251adb794f75f6003f4379e5814cb4606282666858a191454f6bd843",
+   "sha256AfterInspect": "fdf2763b251adb794f75f6003f4379e5814cb4606282666858a191454f6bd843",
    "unchangedAfterInspect": true
   },
   "attachments": [
@@ -154,8 +156,8 @@
  },
  "imports": {
   "har": {
-   "id": "har-3dbc391c02a985c5-12",
-   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-12",
+   "id": "har-3dbc391c02a985c5-13",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-13",
    "sha256": "bdd092195f2ea204eabbef2a8bdb849499fba3bfe3eb5b5a6ec213ceb6ee0460",
    "mode": "har-import",
    "labels": [
@@ -249,6 +251,7 @@
    "duplicateSessions": [
     "har-3dbc391c02a985c5-10",
     "har-3dbc391c02a985c5-11",
+    "har-3dbc391c02a985c5-12",
     "har-3dbc391c02a985c5-3",
     "har-3dbc391c02a985c5-4",
     "har-3dbc391c02a985c5-5",
@@ -259,8 +262,8 @@
    ]
   },
   "netlog": {
-   "id": "netlog-1704043c442dcbd1-12",
-   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-1704043c442dcbd1-12",
+   "id": "netlog-1704043c442dcbd1-13",
+   "path": "/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions/netlog-1704043c442dcbd1-13",
    "sha256": "49253b2a971711f4ff64a033255ef96c957008f846ad839ef826b7b4bf0a9b0a",
    "mode": "netlog-import",
    "labels": [
@@ -363,6 +366,7 @@
     "netlog-1704043c442dcbd1",
     "netlog-1704043c442dcbd1-10",
     "netlog-1704043c442dcbd1-11",
+    "netlog-1704043c442dcbd1-12",
     "netlog-1704043c442dcbd1-2",
     "netlog-1704043c442dcbd1-3",
     "netlog-1704043c442dcbd1-4",
@@ -375,9 +379,12 @@
   }
  },
  "testserver": {
-  "dir": "tests/results/app-latest/testserver/app-20261101c",
+  "dir": "tests/results/app-latest/testserver/app-20261102r12",
   "h1Lines": 14
  },
  "certificateInstalled": false,
- "telemetry": false
+ "telemetry": false,
+ "notes": [
+  "Rodada 12: app aberto com SCRAPELENS_TEST_MODE=1 e SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page (testserver app-20261102r12). Captura ao vivo feita por invoke_menu(['Captura','Iniciar sessão']) e encerrada por invoke_menu(['Captura','Encerrar']); a captura ao vivo é comprovada por capture-1793651039927 (11 req, complete) e pelo lsof (sem LISTEN no Chrome da captura). HAR e NetLog importados pela CLI de teste (--import-har e --import-netlog), a partir de tests/.work/r12-import. screenshot-app-live.png é o mesmo print posterior da janela do ScrapeLens (tirado depois da captura), não um print durante a gravação."
+ ]
 }

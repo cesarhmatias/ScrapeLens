@@ -156,6 +156,8 @@ nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas t
 
 - **Rodada 11 — FECHADA com ressalva (10/11):** o item 9 está sem os prints do bundle f3039e58; a evidência funcional é `capture-1793562925684` (11 req, complete), o lsof sem LISTEN, o HAR `-12` (24 req) e o NetLog `-12` (32 req), importados pelo usuário em 02/11; os prints ficam para a rodada 12, com atalhos de teclado no app. `run_acceptance` não foi afrouxado: o item 9 segue vermelho em `aceite.json`.
 
+- **Rodada 12 — bundle 2691f152 (HEAD ce68eb9, commit e7cfc38) — FECHADA (11/11):** app aberto com `SCRAPELENS_TEST_MODE=1` e `SCRAPELENS_CAPTURE_URL` apontando para o testserver `app-20261102r12`. Captura ao vivo por `invoke_menu` (Captura > Iniciar sessão / Encerrar), `capture-1793651039927` (11 req, complete), sem LISTEN no Chrome da captura (lsof). HAR `har-3dbc391c02a985c5-13` (24 req, complete) e NetLog `netlog-1704043c442dcbd1-13` (32 req, partial), importados pela CLI de teste a partir de `tests/.work/r12-import`. Print `screenshot-app-imports.png` só da janela do ScrapeLens; `screenshot-app-live.png` é o mesmo print, posterior à captura (ver nota no `run.json`). `run_acceptance` 11/11 com `EXPECTED_APP_SHA256` = `2691f152…`. Órfãos: testserver encerrado; app encerrado; pid 8911 ausente.
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)
