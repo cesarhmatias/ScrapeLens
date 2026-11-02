@@ -31,6 +31,8 @@ pub struct AppState {
     pub pending_cli: Mutex<Option<CliAction>>,
     /// Erro ou aviso da CLI de teste para a janela mostrar (consumido uma vez).
     pub cli_message: Mutex<Option<(String, String)>>,
+    /// Gravação em andamento; lido pelo menu sem bloquear (A9-B8).
+    pub recording: std::sync::atomic::AtomicBool,
 }
 
 /// Partida do app: limpa Chrome/perfil de capturas cujo dono morreu (ex.: SIGKILL).

@@ -11,12 +11,18 @@ pub enum CliAction {
     OpenCapture(PathBuf),
 }
 
+/// Pontas aparadas da URL: espaço Unicode (inclui U+0085) e BOM U+FEFF.
+/// Mesmo conjunto de `trimUrl` em `app/src/captureUrl.ts`.
+pub fn trim_url(raw: &str) -> &str {
+    raw.trim_matches(|c: char| c.is_whitespace() || c == '\u{FEFF}')
+}
+
 /// Tamanho máximo da URL inicial (caracteres).
 pub const MAX_URL_LEN: usize = 2048;
 
 /// Valida URL de captura: vazia → `about:blank`; senão só `http`/`https`.
 pub fn resolve_capture_start_url(input: Option<&str>) -> Result<String, String> {
-    let trimmed = input.unwrap_or("").trim();
+    let trimmed = trim_url(input.unwrap_or(""));
     if trimmed.is_empty() {
         return Ok("about:blank".to_string());
     }
@@ -65,7 +71,7 @@ fn split_http_url(trimmed: &str) -> Result<UrlParts<'_>, String> {
 /// Aceita só `http://` e `https://` com host; recusa userinfo, espaços,
 /// controles, NUL, caracteres invisíveis (Cf) e mais de 2048 caracteres.
 pub fn validate_http_url(raw: &str) -> Result<(), String> {
-    let trimmed = raw.trim();
+    let trimmed = trim_url(raw);
     if trimmed.is_empty() {
         return Err("URL vazia".to_string());
     }
@@ -120,10 +126,35 @@ fn validate_port(port: Option<&str>) -> Result<(), String> {
 /// Forma persistida da URL inicial: só esquema, host, porta e caminho
 /// (sem query nem fragmento). A URL completa vale só na memória da sessão.
 pub fn persistable_url(raw: &str) -> Result<String, String> {
-    let trimmed = raw.trim();
+    let trimmed = trim_url(raw);
     validate_http_url(trimmed)?;
     let parts = split_http_url(trimmed)?;
-    Ok(format!("{}{}{}", parts.scheme, parts.authority, parts.path))
+    Ok(format!("{}{}{}", parts.scheme, parts.authority, sanitize_persisted_path(parts.path)))
+}
+
+/// Caminho gravado em disco (A9-B4): sanitizador do core (`;jsessionid=`,
+/// `token=`, formas codificadas) e, por segmento, troca por `[REDACTED]` o que
+/// parece credencial opaca: userinfo codificado (`%40`/`%3A`) ou um token com
+/// 16+ caracteres que mistura letras e dígitos (`/reset/TOKEN`).
+pub fn sanitize_persisted_path(path: &str) -> String {
+    let options = scrapelens_core::export::sanitize::SanitizeOptions::default();
+    let cleaned = scrapelens_core::export::sanitize::sanitize_path_and_query(path, &options);
+    cleaned
+        .split('/')
+        .map(|segment| {
+            let lower = segment.to_ascii_lowercase();
+            let alnum: Vec<char> = segment.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+            let opaque = alnum.len() >= 16
+                && alnum.iter().any(|c| c.is_ascii_digit())
+                && alnum.iter().any(|c| c.is_ascii_alphabetic());
+            if lower.contains("%40") || lower.contains("%3a") || opaque {
+                options.placeholder.clone()
+            } else {
+                segment.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Resultado da leitura da linha de comando.
@@ -405,6 +436,28 @@ mod tests {
         );
         assert_eq!(persistable_url("http://h?x=1").unwrap(), "http://h");
         assert!(persistable_url("http://u:p@h/").is_err());
+    }
+
+    #[test]
+    fn persisted_path_is_sanitized() {
+        for (input, secret) in [
+            ("https://h/app;jsessionid=ABC123/x", "ABC123"),
+            ("https://h/reset/SECRETTOKEN1234567890", "SECRETTOKEN1234567890"),
+            ("https://h/go/user%3Apw%40h", "pw"),
+        ] {
+            let out = persistable_url(input).unwrap();
+            assert!(!out.contains(secret), "{input} -> {out}");
+            assert!(out.starts_with("https://h/"), "{out}");
+        }
+        assert_eq!(persistable_url("https://h/docs/page-2").unwrap(), "https://h/docs/page-2");
+    }
+
+    #[test]
+    fn url_edges_trim_nel_and_bom_like_ts() {
+        for raw in ["\u{0085}http://h/a", "http://h/a\u{0085}", "\u{FEFF}http://h/a", "http://h/a\u{FEFF}"] {
+            assert_eq!(resolve_capture_start_url(Some(raw)).unwrap(), "http://h/a", "{raw:?}");
+        }
+        assert!(validate_http_url("http://h\u{FEFF}/a").is_err());
     }
 
     #[test]

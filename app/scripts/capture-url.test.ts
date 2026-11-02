@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { MAX_URL_LEN, persistableUrl, resolveCaptureStartUrl, validateHttpUrl } from "../src/captureUrl.ts";
+import { MAX_URL_LEN, trimUrl, persistableUrl, resolveCaptureStartUrl, validateHttpUrl } from "../src/captureUrl.ts";
 
 assert.equal(resolveCaptureStartUrl("").ok && resolveCaptureStartUrl("").url, "about:blank");
 assert.equal(resolveCaptureStartUrl("  ").ok && resolveCaptureStartUrl("  ").url, "about:blank");
@@ -32,5 +32,12 @@ const persisted = persistableUrl("https://example.com:8443/a/b?token=SECRET#frag
 assert.equal(persisted.ok && persisted.url, "https://example.com:8443/a/b");
 const bare = persistableUrl("http://h?x=1");
 assert.equal(bare.ok && bare.url, "http://h");
+
+for (const raw of ["\u0085http://h/a", "http://h/a\u0085", "\uFEFFhttp://h/a", "http://h/a\uFEFF"]) {
+  const r = resolveCaptureStartUrl(raw);
+  assert.equal(r.ok && r.url, "http://h/a", JSON.stringify(raw));
+  assert.equal(trimUrl(raw), "http://h/a");
+}
+assert.equal(validateHttpUrl("http://h\uFEFF/a").ok, false);
 
 console.log("capture-url.test.ts: ok");

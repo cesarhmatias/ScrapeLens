@@ -4,9 +4,14 @@ export type CaptureUrlResult =
   | { ok: true; url: string }
   | { ok: false; error: string };
 
+/** Pontas aparadas: espaço Unicode (inclui U+0085) e BOM U+FEFF — igual a `trim_url` no Rust. */
+export function trimUrl(raw: string | null | undefined): string {
+  return (raw ?? "").replace(/^[\s\u0085\uFEFF]+|[\s\u0085\uFEFF]+$/gu, "");
+}
+
 /** Vazio → about:blank; senão só http/https. */
 export function resolveCaptureStartUrl(input: string | null | undefined): CaptureUrlResult {
-  const trimmed = (input ?? "").trim();
+  const trimmed = trimUrl(input);
   if (!trimmed) return { ok: true, url: "about:blank" };
   const check = validateHttpUrl(trimmed);
   if (!check.ok) return check;
@@ -50,7 +55,7 @@ function validPort(port: string | undefined): boolean {
 }
 
 export function validateHttpUrl(raw: string): CaptureUrlResult {
-  const trimmed = raw.trim();
+  const trimmed = trimUrl(raw);
   if (!trimmed) return { ok: false, error: "URL vazia" };
   const cps = Array.from(trimmed, (c) => c.codePointAt(0) ?? 0);
   if (cps.length > MAX_URL_LEN) return { ok: false, error: `URL maior que ${MAX_URL_LEN} caracteres` };

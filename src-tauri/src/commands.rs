@@ -236,13 +236,9 @@ fn read_import_file(path: &str, label: &str) -> Result<Vec<u8>, String> {
 
 fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, String> {
     use std::io::Read;
-    use std::os::unix::fs::OpenOptionsExt;
     // O_NOFOLLOW + O_NONBLOCK (FIFO não trava); tipo e tamanho conferidos por fstat
     // no próprio descritor, e a leitura usa o mesmo descritor (sem TOCTOU).
-    let handle = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)
+    let handle = open_beneath_parent(Path::new(path))
         .map_err(|error| format!("{label} não pôde ser aberto em {path} (symlink é recusado): {error}"))?;
     let metadata = handle
         .metadata()
@@ -271,6 +267,39 @@ fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, St
     Ok(bytes)
 }
 
+/// A9-B5: abre o diretório pai por descritor (O_DIRECTORY|O_NOFOLLOW) e o
+/// arquivo com `openat` relativo a ele (O_NOFOLLOW|O_NONBLOCK). Trocar o pai por
+/// symlink depois da validação faz a abertura falhar em vez de ler outro arquivo.
+pub(crate) fn open_beneath_parent(path: &Path) -> std::io::Result<fs::File> {
+    use std::ffi::CString;
+    use std::os::fd::FromRawFd;
+    use std::os::unix::ffi::OsStrExt;
+    let invalid = |msg: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, msg.to_string());
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).ok_or_else(|| invalid("sem pasta pai"))?;
+    let name = path.file_name().ok_or_else(|| invalid("sem nome de arquivo"))?;
+    let parent_c = CString::new(parent.as_os_str().as_bytes()).map_err(|_| invalid("NUL no caminho"))?;
+    let name_c = CString::new(name.as_bytes()).map_err(|_| invalid("NUL no nome"))?;
+    let dir_fd = unsafe {
+        libc::open(parent_c.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+    };
+    if dir_fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let dir = unsafe { fs::File::from_raw_fd(dir_fd) };
+    let fd = unsafe {
+        use std::os::fd::AsRawFd;
+        libc::openat(
+            dir.as_raw_fd(),
+            name_c.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe { fs::File::from_raw_fd(fd) })
+}
+
 /// Importações ficam bloqueadas durante uma gravação (A8-B7).
 pub(crate) fn ensure_not_recording(recording: bool) -> Result<(), String> {
     if recording {
@@ -281,7 +310,7 @@ pub(crate) fn ensure_not_recording(recording: bool) -> Result<(), String> {
 }
 
 fn is_recording(state: &State<'_, AppState>) -> bool {
-    state.capture.lock().map(|slot| slot.is_some()).unwrap_or(true)
+    state.recording.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 #[tauri::command]
@@ -431,7 +460,8 @@ pub fn start_session(
         status,
     });
     drop(slot);
-    crate::menu::set_imports_enabled(&app, false);
+    state.recording.store(true, std::sync::atomic::Ordering::SeqCst);
+    crate::menu::set_recording_menu(&app, true);
 
     Ok(SessionPayload {
         session: json!({
@@ -475,7 +505,8 @@ pub fn stop_session(app: AppHandle, state: State<'_, AppState>) -> Result<Sessio
         let mut slot = state.capture.lock().map_err(|_| "estado de captura indisponível")?;
         slot.take()
     };
-    crate::menu::set_imports_enabled(&app, true);
+    state.recording.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::menu::set_recording_menu(&app, false);
     let Some(capture) = capture else {
         return Err("Nenhuma captura em andamento para encerrar.".to_string());
     };
@@ -1418,10 +1449,47 @@ mod tests {
     }
 
     #[test]
+    fn import_open_fails_when_parent_is_swapped_for_symlink() {
+        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!(
+            "scrapelens-openat-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("dir")).unwrap();
+        std::fs::create_dir_all(root.join("other")).unwrap();
+        std::fs::write(root.join("dir/a.har"), b"good").unwrap();
+        std::fs::write(root.join("other/a.har"), b"evil").unwrap();
+        let path = root.join("dir/a.har");
+        crate::cli::validate_absolute_regular_file(&path).unwrap();
+        assert_eq!(read_import_file_max(path.to_str().unwrap(), "HAR", 64).unwrap(), b"good");
+        // troca o pai por symlink depois da validação
+        std::fs::rename(root.join("dir"), root.join("dir-old")).unwrap();
+        std::os::unix::fs::symlink(root.join("other"), root.join("dir")).unwrap();
+        assert!(read_import_file_max(path.to_str().unwrap(), "HAR", 64).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn imports_are_refused_while_recording() {
         assert!(ensure_not_recording(true).unwrap_err().contains("Encerre"));
         assert!(ensure_not_recording(false).is_ok());
-        assert_eq!(crate::menu::IMPORT_MENU_IDS, ["import-har", "import-netlog"]);
+        assert_eq!(crate::menu::RECORDING_DISABLED_IDS, ["import-har", "import-netlog", "start-session"]);
+    }
+
+    #[test]
+    fn menu_guard_never_waits_on_capture_lock() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let state = crate::AppState::default();
+        // start_session segura o lock (até 35 s); o menu tem de responder já.
+        let _held = state.capture.lock().unwrap();
+        let started = std::time::Instant::now();
+        assert!(!crate::menu::blocked_while_recording("start-session", &state.recording));
+        state.recording.store(true, Ordering::SeqCst);
+        assert!(crate::menu::blocked_while_recording("start-session", &state.recording));
+        assert!(crate::menu::blocked_while_recording("import-har", &state.recording));
+        assert!(!crate::menu::blocked_while_recording("stop-session", &state.recording));
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+        let _ = AtomicBool::new(false);
     }
     use super::*;
 

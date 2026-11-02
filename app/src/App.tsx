@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import demoRaw from "./demo/session.v1.json";
 import demoAttachments from "./demo/attachments.json";
-import { resolveCaptureStartUrl, validateHttpUrl } from "./captureUrl";
+import { resolveCaptureStartUrl, trimUrl, validateHttpUrl } from "./captureUrl";
 import {
   bridge,
   isTauri,
@@ -1750,7 +1750,7 @@ export default function App() {
     setStartUrlError(null);
     setBusy("Abrindo Chrome com perfil dedicado e conectando ao CDP…");
     try {
-      const payload = await bridge.startSession(startUrl.trim() ? startUrl.trim() : undefined);
+      const payload = await bridge.startSession(trimUrl(startUrl) ? trimUrl(startUrl) : undefined);
       if (!payload) return;
       setRecording({
         sessionId: payload.session.session.id,
@@ -2189,7 +2189,7 @@ export default function App() {
                     onChange={(event) => {
                       const value = event.target.value;
                       setStartUrl(value);
-                      if (!value.trim()) {
+                      if (!trimUrl(value)) {
                         setStartUrlError(null);
                         return;
                       }
@@ -2198,7 +2198,9 @@ export default function App() {
                     }}
                     onBlur={() => {
                       if (!desktop) return;
-                      void bridge.setCaptureStartUrl(startUrl).catch((error) => {
+                      const normalized = trimUrl(startUrl);
+                      if (normalized !== startUrl) setStartUrl(normalized);
+                      void bridge.setCaptureStartUrl(normalized).catch((error) => {
                         setStartUrlError(String(error));
                       });
                     }}
