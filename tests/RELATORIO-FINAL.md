@@ -154,6 +154,8 @@ nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas t
 
 - **Rodada 11 — bundle f3039e58 (HEAD fc5ca18, commit 88c69f7) — PARCIAL 10/11:** app aberto com `SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page` (pid 70761). Captura `capture-1793562925684` (11 req, complete, cdp+netlog; testserver `app-20261101c`); HAR `har-3dbc391c02a985c5-12` (24 req, complete) e NetLog `netlog-1704043c442dcbd1-12` (32 req, partial), importados pela UI a partir de `har-derived.json` e `h1h2h3.chrome-netlog.json`. `run_acceptance` 10/10 nos itens 1–8, 10 e 11; item 9 segue vermelho só por falta dos prints do ciclo (`screenshot-app-live.png` e `screenshot-app-imports.png` precisam ser deste bundle). Pasta `~/Desktop/sl-import-tmp` apagada; testserver, fake_server e Chrome da captura encerrados; pid 8911 ausente.
 
+- **Rodada 11 — FECHADA com ressalva (10/11):** o item 9 está sem os prints do bundle f3039e58; a evidência funcional é `capture-1793562925684` (11 req, complete), o lsof sem LISTEN, o HAR `-12` (24 req) e o NetLog `-12` (32 req), importados pelo usuário em 02/11; os prints ficam para a rodada 12, com atalhos de teclado no app. `run_acceptance` não foi afrouxado: o item 9 segue vermelho em `aceite.json`.
+
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
 - **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)
