@@ -1,0 +1,23 @@
+{"input": "token&#0061;E1x", "forbid": ["E1x"], "kind": "text", "keep": []}
+{"input": "token&#x003D;E2x", "forbid": ["E2x"], "kind": "text", "keep": []}
+{"input": "token&#X3D;E3x", "forbid": ["E3x"], "kind": "text", "keep": []}
+{"input": "token&#61E4x", "forbid": ["E4x"], "kind": "text", "keep": []}
+{"input": "token&Equals;E6x", "forbid": ["E6x"], "kind": "text", "keep": []}
+{"input": "token &#61; E7x", "forbid": ["E7x"], "kind": "text", "keep": []}
+{"input": "token&#61; E8x", "forbid": ["E8x"], "kind": "text", "keep": []}
+{"input": "x=Bearer%20ab%2Bcdefghijklmnop", "forbid": ["cdefghijklmnop"], "kind": "text", "keep": []}
+{"input": "Bearer ab%2Bcdefghijklmnop", "forbid": ["cdefghijklmnop"], "kind": "text", "keep": []}
+{"input": "Bearer abc:defghijklmnopq", "forbid": ["defghijklmnopq"], "kind": "text", "keep": []}
+{"input": "https://user:pa%40ss@host/x", "forbid": ["pa%40ss"], "kind": "url", "keep": []}
+{"input": "https://h/a;token=AB,CD/e", "forbid": ["AB,CD"], "kind": "url", "keep": []}
+{"input": "https://h/a;next=%2Fcb%3Ftoken%3DAB%2FCD/e", "forbid": ["AB%2FCD"], "kind": "url", "keep": []}
+{"input": "token=[REDACTED]", "forbid": [], "kind": "idem", "keep": []}
+{"input": "token=%5BREDACTED%5D", "forbid": [], "kind": "idem", "keep": []}
+{"input": "token=%255BREDACTED%255D", "forbid": [], "kind": "idem", "keep": []}
+{"input": "next=%2Fcb%3Ftoken%3D%5BREDACTED%5D", "forbid": [], "kind": "idem", "keep": []}
+{"input": "Authorization: Bearer [REDACTED]", "forbid": [], "kind": "idem", "keep": []}
+{"input": "token=REDACTED]", "forbid": [], "kind": "idem", "keep": []}
+{"input": "token=[REDACTED", "forbid": [], "kind": "idem", "keep": []}
+{"input": "token=[[REDACTED]]", "forbid": [], "kind": "idem", "keep": []}
+{"input": "{token=SEC8x}", "forbid": ["SEC8x"], "kind": "keep", "keep": ["{token=", "}"]}
+{"input": "token=\"B3Bx", "forbid": ["B3Bx"], "kind": "text", "keep": []}

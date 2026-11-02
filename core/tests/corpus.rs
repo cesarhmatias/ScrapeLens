@@ -5,7 +5,8 @@
 //! - nenhum marcador (`forbid`) sobra na saída, em texto, URL, caminho+query e
 //!   em cada portador (header de requisição/resposta, Location, string JSON,
 //!   campo de formulário, valor de query);
-//! - `same`: a saída é igual à entrada; `keep`: os trechos ficam;
+//! - `same`: a saída é igual à entrada; `keep`: os trechos ficam em todas as
+//!   saídas aplicáveis (texto e URL); `idem`: só idempotência;
 //! - idempotência: sanitizar duas vezes dá o mesmo que uma.
 //!
 //! Um commit que faça qualquer caso regredir não entra.
@@ -34,6 +35,7 @@ fn cases() -> Vec<Case> {
     for raw in [
         include_str!("corpus/cases.jsonl"),
         include_str!("corpus/benign.jsonl"),
+        include_str!("corpus/added.jsonl"),
     ] {
         for line in raw.lines().filter(|l| !l.trim().is_empty()) {
             all.push(serde_json::from_str::<Case>(line).expect("linha do corpus inválida"));
@@ -51,7 +53,7 @@ fn is_url(case: &Case) -> bool {
 /// Casos que o sanitizador de TEXTO trata (os demais têm mecanismo próprio:
 /// JSON, HTML com propagação, Cookie, Set-Cookie).
 fn text_level(case: &Case) -> bool {
-    matches!(case.kind.as_str(), "text" | "url" | "same" | "keep")
+    matches!(case.kind.as_str(), "text" | "url" | "same" | "keep" | "idem")
 }
 
 #[test]
@@ -94,8 +96,9 @@ fn corpus_text_and_url_never_leak_keep_fidelity_and_are_idempotent() {
                     case.input
                 ));
             }
-            let keep_label = if is_url(&case) { "url" } else { "text" };
-            if case.kind == "keep" && *label == keep_label {
+            // `keep`: os trechos ficam em TODA saída aplicável (texto e, se tem forma de
+            // URL, também a de URL): o caminho cru não pode perder segmentos.
+            if case.kind == "keep" && matches!(*label, "text" | "url") {
                 for piece in &case.keep {
                     if !once.contains(piece.as_str()) {
                         failures.push(format!(

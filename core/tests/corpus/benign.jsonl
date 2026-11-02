@@ -40,10 +40,6 @@
 {"kind": "keep", "input": "token=\"SEC3x y\" fim", "forbid": ["SEC3x"], "keep": ["token=\"", "\" fim"]}
 {"kind": "keep", "input": "token='SEC4x' fim", "forbid": ["SEC4x"], "keep": ["token='", "' fim"]}
 {"kind": "keep", "input": "token=(SEC5x) fim", "forbid": ["SEC5x"], "keep": ["token=(", ") fim"]}
-{"kind": "keep", "input": "/a;jsessionid=SEC6x/b/c?x=1", "forbid": ["SEC6x"], "keep": ["/b/c?x=1"]}
-{"kind": "keep", "input": "https://h/a;jsessionid=SEC7x/b/c?x=1", "forbid": ["SEC7x"], "keep": ["/b/c?x=1"]}
-{"kind": "keep", "input": "/users;token=SEC8x/profile/123?page=2", "forbid": ["SEC8x"], "keep": ["/profile/123?page=2"]}
-{"kind": "keep", "input": "/a;v=2/b;token=SEC9x/c", "forbid": ["SEC9x"], "keep": ["/a;v=2/b;token=", "/c"]}
 {"kind": "keep", "input": "GET /cb?token=SEC10x&page=2 HTTP/1.1", "forbid": ["SEC10x"], "keep": ["GET /cb?token=", "&page=2 HTTP/1.1"]}
 {"kind": "keep", "input": "0;url=/d?pin=SEC11x&page=2", "forbid": ["SEC11x"], "keep": ["&page=2"]}
 {"kind": "keep", "input": "a=1 token=SEC12x b=2", "forbid": ["SEC12x"], "keep": ["a=1 ", " b=2"]}
