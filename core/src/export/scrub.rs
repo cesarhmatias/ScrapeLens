@@ -6,7 +6,7 @@
 //! 1. Separa-se por delimitadores CRUS daquele nível (espaço em branco, aspas,
 //!    parênteses, colchetes, `, | \ & # ;`), formando *grupos*. `? / =` e `:` ficam
 //!    dentro do grupo: delimitam nomes, não valores.
-//! 2. Dentro do grupo, cada `=` crú fecha um nome (`parte`). Se o **nome efetivo**
+//! 2. Dentro do grupo, cada `=` cru fecha um nome (`parte`). Se o **nome efetivo**
 //!    da parte é sensível, o valor (até o fim do grupo, ou até o fechamento de
 //!    aspas/parênteses, ou o próximo grupo se há espaço depois do `=`) é redigido.
 //!    O nome efetivo é o último segmento da parte depois de `? / & # ; , | =`,
@@ -21,6 +21,30 @@
 //! edições, então nada que não foi redigido é reescrito (nem recodificado).
 //! Custo: uma passada de varredura por nível + uma de aplicação; a decodificação
 //! só acontece em grupos que contêm `%XX` válido, e a profundidade é limitada.
+//!
+//! # Extensão do valor
+//!
+//! - Nível 0: o valor vai até espaço ou `& #`; `;` só o fecha no fim ou antes de
+//!   `nome=`. Níveis decodificados (1+): o espaço veio de `%XX` do mesmo valor e não
+//!   o fecha. `, ( ) [ ] { } | " ' \ < >` fazem parte do valor, exceto o fechamento
+//!   de uma abertura ANTERIOR ao nome (`{token=X}`); aberturas dentro do valor com
+//!   fechamento por perto são puladas inteiras.
+//! - Em CAMINHO (`/seg=valor/`, `;param=valor` depois de um token com `/`) o valor
+//!   acaba em `/` ou `?` (o resto do caminho segue examinado), salvo base64 com barra.
+//! - Aspas/colchetes após `=`: o interior é o valor; texto ou outra abertura COLADA
+//!   depois do fechamento (`"a"X`, `[a][X]`, `'a'"X`) também é valor.
+//! - Valor que começa pelo placeholder já foi redigido (idempotência).
+//!
+//! # Falhar fechado
+//!
+//! Sempre que não dá para decidir, redige-se o VALOR inteiro que sobra em vez de
+//! deixar a cauda crua: (1) no teto de 8 níveis o texto é decodificado até estabilizar
+//! e varrido em modo fechado (o valor vai até o fim do nível; se ainda sobra `%XX`, o
+//! grupo inteiro é redigido); (2) byte inválido/overlong logo depois de um nome
+//! sensível redige o resto do grupo; (3) GRUPO ACIMA DE 1 MiB com `%XX`: não se montam
+//! mapas de posição; decodifica-se "a seco" (só os bytes) para DECIDIR, e o grupo é
+//! redigido por inteiro SÓ se algum nível tem um nome sensível ou se não dá para decidir
+//! (sobra `%XX` no teto); sem nome sensível o grupo passa intacto.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -55,6 +79,9 @@ struct Edit {
 struct Level<'a> {
     bytes: Cow<'a, [u8]>,
     map: Option<Vec<(u32, u32)>>,
+    /// Nível "a seco" (grupo acima do teto de trabalho): sem mapa de posições, só para
+    /// DECIDIR se há nome sensível; as edições que ele produz são descartadas.
+    dry: bool,
 }
 
 impl Level<'_> {
@@ -109,6 +136,7 @@ impl<'a> Scrubber<'a> {
         let level = Level {
             bytes: Cow::Borrowed(text.as_bytes()),
             map: None,
+            dry: false,
         };
         self.scan_level(&level, 0);
         if self.edits.is_empty() {
@@ -161,30 +189,35 @@ const MAX_DECODE_BYTES: usize = 1 << 20;
 
 /// Decodifica `[start, end)` de `level` (`%XX`; `+` fica `+`), com o mapa de
 /// volta às posições do texto original.
-fn decode_level(level: &Level<'_>, start: usize, end: usize) -> Level<'static> {
+fn decode_level(level: &Level<'_>, start: usize, end: usize, dry: bool) -> Level<'static> {
     let src = &level.bytes[start..end];
     let mut bytes = Vec::with_capacity(src.len());
-    let mut map: Vec<(u32, u32)> = Vec::with_capacity(src.len());
+    let mut map: Vec<(u32, u32)> = Vec::with_capacity(if dry { 0 } else { src.len() });
     let mut i = 0;
     while i < src.len() {
         if src[i] == b'%' && i + 2 < src.len() {
             if let (Some(h), Some(l)) = (hex(src[i + 1]), hex(src[i + 2])) {
                 bytes.push(h * 16 + l);
-                let (a, _) = level.orig(start + i);
-                let (_, b) = level.orig(start + i + 2);
-                map.push((a as u32, b as u32));
+                if !dry {
+                    let (a, _) = level.orig(start + i);
+                    let (_, b) = level.orig(start + i + 2);
+                    map.push((a as u32, b as u32));
+                }
                 i += 3;
                 continue;
             }
         }
         bytes.push(src[i]);
-        let (a, b) = level.orig(start + i);
-        map.push((a as u32, b as u32));
+        if !dry {
+            let (a, b) = level.orig(start + i);
+            map.push((a as u32, b as u32));
+        }
         i += 1;
     }
     Level {
         bytes: Cow::Owned(bytes),
-        map: Some(map),
+        map: if dry { None } else { Some(map) },
+        dry,
     }
 }
 
@@ -605,12 +638,32 @@ impl Scrubber<'_> {
         if !src.contains(&b'%') || !has_escape(src) {
             return;
         }
-        if src.len() > MAX_DECODE_BYTES {
-            // Falha fechada: grupo grande demais para decodificar com segurança.
-            self.push(level, start, end, Repl::Param);
+        if src.len() > MAX_DECODE_BYTES && !level.dry {
+            // Grupo acima do teto de trabalho: não montamos mapas de posição (8 bytes por
+            // byte). Decodificamos "a seco" só para DECIDIR: se algum nível tem um nome
+            // sensível (ou se não dá para decidir: sobra `%XX` no teto), o grupo inteiro é
+            // redigido (falha fechada); senão fica como está.
+            let before = self.edits.len();
+            self.decode_child_inner(level, start, end, depth, true);
+            let produced = self.edits.len() > before;
+            self.edits.truncate(before);
+            if produced {
+                self.push(level, start, end, Repl::Param);
+            }
             return;
         }
-        let mut child = decode_level(level, start, end);
+        self.decode_child_inner(level, start, end, depth, level.dry);
+    }
+
+    fn decode_child_inner(
+        &mut self,
+        level: &Level<'_>,
+        start: usize,
+        end: usize,
+        depth: usize,
+        dry: bool,
+    ) {
+        let mut child = decode_level(level, start, end, dry);
         if depth + 1 >= MAX_LEVELS {
             // Teto de níveis: decodifica até estabilizar (com limite) e varre uma
             // última vez em modo fechado (o valor vai até o fim do nível).
@@ -619,7 +672,7 @@ impl Scrubber<'_> {
                     break;
                 }
                 let whole = child.bytes.len();
-                child = decode_level(&child, 0, whole);
+                child = decode_level(&child, 0, whole, dry);
             }
             if has_escape(&child.bytes) {
                 self.push(level, start, end, Repl::Param);
@@ -881,7 +934,7 @@ fn base64_slash(bytes: &[u8], value_start: usize, slash: usize) -> bool {
     let segment = rest
         .iter()
         .position(|b| is_hard(*b) || matches!(b, b'/' | b'?'))
-        .map_or(rest.len(), |n| n);
+        .unwrap_or(rest.len());
     segment >= 16 || rest[..segment].iter().any(|b| matches!(b, b'+' | b'='))
 }
 

@@ -344,3 +344,41 @@ fn redaction_is_idempotent() {
         assert_eq!(sanitize_text(&once, &o), once, "{text}");
     }
 }
+
+// ---- A7-B6: grupo acima de 1 MiB com %XX -------------------------------------------------
+
+#[test]
+fn oversize_group_is_redacted_only_when_a_sensitive_name_is_in_it_or_it_cannot_be_decided() {
+    let o = o();
+    // 3 MiB de `a=%3Fb%3Dc` (nada sensível): passa intacto, inclusive os nomes.
+    let benign = format!("x={}", "a%3Fb%3Dc".repeat((3 << 20) / 9));
+    assert!(benign.len() > (1 << 20));
+    assert_eq!(sanitize_text(&benign, &o), benign);
+    // O mesmo tamanho com um nome sensível codificado no meio: o grupo é redigido.
+    let sensitive = format!(
+        "x={}token%3DSEC1x{}",
+        "a%3Fb%3Dc".repeat((2 << 20) / 9),
+        "a%3Fb%3Dc".repeat((2 << 20) / 9)
+    );
+    let out = sanitize_text(&sensitive, &o);
+    assert!(!out.contains("SEC1x") && out.len() < 100, "{}", out.len());
+    // Sensível só num nível fundo (3 níveis de codificação) também é visto.
+    let deep = format!(
+        "x={}%2525253Ftoken%2525253DSEC2x",
+        "a%3Fb%3Dc".repeat((2 << 20) / 9)
+    );
+    let out = sanitize_text(&deep, &o);
+    assert!(!out.contains("SEC2x") && out.len() < 100, "{}", out.len());
+    // Não dá para decidir (um escape com 40 camadas de `%25`, mais que o teto de rodadas):
+    // falha fechada, mesmo sem nome sensível visível.
+    let undecidable = format!(
+        "x={}%{}41",
+        "a%3Fb%3Dc".repeat((2 << 20) / 9),
+        "25".repeat(40)
+    );
+    let out = sanitize_text(&undecidable, &o);
+    assert!(out.len() < 100, "{}", out.len());
+    // Cadeia de %25 curta o bastante para decidir e sem nome sensível: intacta.
+    let decidable = format!("x={}", "%2541".repeat((2 << 20) / 5));
+    assert_eq!(sanitize_text(&decidable, &o), decidable);
+}
