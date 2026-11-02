@@ -479,15 +479,10 @@ fn run_inner(
     // perfil 0700) e movida para a pasta da sessão com `renameat` relativo ao
     // descritor aberto no início: um symlink plantado no nome é substituído sem
     // escrever no alvo, e a troca do nome da pasta não manda nada para fora.
-    match write_session_fd(&mut imported.bundle, &session_handle, &profile) {
-        Ok(replaced) => {
-            for name in replaced {
-                report_warnings.push(format!(
-                    "{name}: havia um link simbólico no lugar do arquivo da sessão; o link foi substituído (o alvo não foi tocado) e o arquivo foi gravado normalmente."
-                ));
-            }
-        }
-        Err(message) => return Err(message),
+    for name in write_session_fd(&mut imported.bundle, &session_handle, &profile)? {
+        report_warnings.push(format!(
+            "{name}: havia um link simbólico no lugar do arquivo da sessão; o link foi substituído (o alvo não foi tocado) e o arquivo foi gravado normalmente."
+        ));
     }
     // Depois de gravar, a pasta precisa continuar sendo a do início: se o nome
     // foi trocado durante a gravação, a sessão ficou na pasta ORIGINAL (movida),
@@ -2125,6 +2120,7 @@ const SESSION_DIR_LINK_NAMES: [&str; 4] =
 /// 3. cada item é movido para a pasta da sessão com `renameat` relativo ao
 ///    descritor (`session.json` por último), substituindo o nome, inclusive um
 ///    symlink, sem escrever no alvo dele. Entre filesystems diferentes, copia.
+///
 /// O replantio de links em laço (A4-B4) deixa de importar: o `renameat` é atômico.
 /// Devolve os nomes que eram symlink e foram substituídos.
 fn write_session_fd(
