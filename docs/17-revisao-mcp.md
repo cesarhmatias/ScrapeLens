@@ -1044,3 +1044,99 @@ Há três achados **médios confirmados** e nenhum alto:
 - **Testes:**
   - `cargo test --offline --lib` em `src-tauri`: 37 passam, 8 ignorados (`cli::` 6/6);
   - `capture-url.test.ts`: ok.
+
+---
+
+## Adendo 9: confirmação do adendo 8 (Rodada 12)
+
+Revisão feita num clone novo, em `/tmp/rev33/repo`, no `ce68eb9`. Commits conferidos:
+- core: `27fb212` e `ce68eb9`;
+- app: `a7e2495`.
+
+O HEAD (H) foi comparado com `737290a` (P) e `a7087f4` (B).
+
+Evidências:
+- PoCs e saídas em `/tmp/rev33/poc-secrets`: `cases-*.tsv`, `fuzz-*.txt`, `perf3-*.txt`, `e2e-*.json` e `corp-diff-class.txt`;
+- PoCs do app em `/tmp/rev33/poc-app`: `rev33_app_poc.rs`, `url-table.json` e `compare.mjs`;
+- relatórios parciais em `/tmp/rev33/{secrets,app}.md`.
+
+As preferências reais do usuário não foram tocadas, e nenhum site real foi acessado.
+
+### Veredito: APROVADO, com ressalvas baixas
+
+Não há achado alto nem médio confirmado.
+
+Ficam de fora, por decisão do líder:
+- `/a;v=2/session=keep/b` → `/a;v=2/session=[REDACTED]`, limitação aceita A7-B5;
+- o caso R06, texto depois do `?` sem nome.
+
+### Itens do adendo 8
+
+| Item | Estado | Evidência |
+|---|---|---|
+| A8-M1 (segredo com `/`) | Corrigido | R01–R30: H vaza em 1 caso (R06, fora do escopo); P vaza em 21 e B em 15. No MCP (`get_request`, `get_body`, `search_bodies`, `list_requests`), H não vaza nenhum dos 60 marcadores; P vaza 25 e B vaza 21. Query, ` HTTP/1.1` e `&z=1` são preservados. |
+| A8-M2 (custo quadrático) | Corrigido | Custo linear: `/a;token=`+(16A+`/`) leva 7, 26 e 69 ms com 1, 4 e 16 MB (P: 1,4 s com 1 MB); `A=/` com 16 MB leva 77 ms (P: 7,9 s com 1 MB); um `get_body` de 4 MB leva 0,12 s (P: 21,8 s). |
+| A8-M3 (URL inicial em claro) | Corrigido, com resíduos | As preferências não guardam userinfo, query nem fragmento. Um diretório já existente com 0755 passa a 0700, e o arquivo sai com 0600. O temporário nasce com 0600 e O_NOFOLLOW, sem janela em 0644. Symlink e diretório no destino são recusados. Resíduos: A9-B3 e A9-B4. |
+| A8-B1 (`&amp;amp;#61;`) | Corrigido | `&amp;amp;#61;`, `&amp;amp;amp;#x3d;`, `equals;`, `&AMP;Amp;` e `#0061` saem mascarados, inclusive de ponta a ponta. |
+| A8-B2 (`＝` dentro de URL) | Corrigido | `sanitize_url("/s;token＝X/…")` sai mascarado, inclusive de ponta a ponta. |
+| A8-B3 (CLI ativa no release) | Corrigido | A CLI só liga com `SCRAPELENS_TEST_MODE` exatamente igual a `"1"`. Valores como `"1 "`, `"true"` e `"01"` são ignorados, e nenhum `LSEnvironment` ou script define a variável. |
+| A8-B4 (TOCTOU e FIFO na importação) | Corrigido, com resíduo | A FIFO é recusada em cerca de 50 µs. O symlink para `/dev/zero` dá ELOOP. `/dev/null`, diretório e arquivo esparso de 300 MiB são recusados. Resíduo: A9-B5. |
+| A8-B5 (validação de URL frouxa) | Corrigido | Recusa NUL, controles, DEL, Cf, bidi, `http:///`, `http://@`, userinfo, `:99999`, `\` e 2 MB. Restam 4 divergências pequenas entre TS e Rust (A9-B6). |
+| A8-B6 (detalhes da CLI) | Corrigido | Recusa `..`, pai que é symlink, `/`, `--open-capture=/x`, flag desconhecida e argumento posicional. Efeito colateral: `/tmp`, `/var` e `/etc` são recusados, porque são symlinks no macOS. |
+| A8-B7 (atalhos de menu) | Parcial | Plausível: as importações ficam bloqueadas no menu, nos comandos e na interface. O ⌘⇧R continua sem estado desabilitado no menu; só o backend recusa a segunda sessão. |
+
+### Fuzz de caminho (release, 150 mil casos por semente)
+
+| Semente | H: vazamentos | H: perdas A7-B5 / outras | P: vazamentos / perdas | B: vazamentos / perdas |
+|---|---|---|---|---|
+| 1 | **0** | 107.352 / **0** | 45.596 / 10.578 | 17.870 / 107.352 |
+| 2 | **0** | 107.136 / **0** | 45.086 / 10.721 | 17.471 / 107.136 |
+| 3 | **0** | 107.253 / **0** | 45.604 / 10.778 | 17.883 / 107.253 |
+| 4 | **0** | 107.209 / **0** | 45.170 / 10.656 | 17.699 / 107.209 |
+
+- **Variantes extras:** Link, JSON com duas chaves e lista com vírgula seguida de espaço (cerca de 107 mil cada) não tiveram nenhum vazamento, e o item seguinte foi sempre preservado.
+- **Testes do repositório:** `cargo test --offline --release --test corpus --test corpus_fuzz --test corpus_fuzz_path` passa 5/5.
+- **Testes do app:** `cargo test --offline --lib` em `src-tauri` dá 44 aprovados e 8 ignorados; `capture-url.test.ts` passa.
+
+### Regressões
+
+Comparei as 440 linhas do corpus entre H e P, como texto e como URL:
+- 0 vazamentos novos;
+- 37 vazamentos corrigidos;
+- 59 saídas mudaram, todas pela cauda de caminho aceita em A7-B5.
+
+Continuam iguais a P: matriz e segmentos não sensíveis, valores de query, JSON, itens de Link, href, markdown, Set-Cookie e Cookie.
+
+### Achados que restam (todos baixos)
+
+- **A9-B1. Numa lista sem espaço e sem `?`, a redação invade o item seguinte (CONFIRMADO, de ponta a ponta).**
+  - Exemplo: `X-Urls: /a/token=x/b,/c/keep` e `…/b|/c/keep` saem como `/a/token=[REDACTED]`.
+  - Local: `core/src/export/scrub.rs:577`, onde só `?` termina o valor no caminho.
+  - P preservava o item seguinte; B o perdia do mesmo jeito.
+  - Não afeta vírgula seguida de espaço nem itens entre `<…>` ou `"…"`.
+- **A9-B2. Entidade aninhada e mais de 16 camadas de `amp;` vazam (CONFIRMADO; igual em H, P e B).**
+  - Exemplo: `token&#38;#61;X` vaza.
+  - Local: o teto de 16 camadas em `scrub.rs:1051`.
+- **A9-B3. O segredo gravado pela versão anterior não é limpo (CONFIRMADO).**
+  - Local: `src-tauri/src/prefs.rs:43-57`.
+  - Um `preferences.json` do `395cf8e` continua com 0644 até a primeira gravação.
+  - Depois disso, o `save_chrome_path` regrava `user:pw@…?token=SECRET#f` intacto, agora com 0600.
+  - Sugestão: aplicar `persistable_url` na leitura e regravar o arquivo.
+- **A9-B4. O caminho da URL inicial é gravado sem sanitizar (CONFIRMADO).**
+  - Ficam no disco valores como `/reset/SECRETTOKEN123`, `;jsessionid=ABC` e `user%3Apw%40h`.
+  - Sugestão: passar o caminho pelo sanitizador do core ou guardar só origem e caminho sem parâmetros de matriz.
+- **A9-B5. A importação aceita a troca de um diretório pai por symlink (CONFIRMADO, só do mesmo usuário).**
+  - Local: `src-tauri/src/commands.rs:240-245`, onde o `O_NOFOLLOW` só protege o último componente.
+  - Depois da validação da CLI, a troca do pai fez a leitura devolver o conteúdo de outro arquivo.
+- **A9-B6. Pequenas divergências entre TS e Rust na validação de URL (CONFIRMADO, 4 de 66 entradas).**
+  - Com `\u0085` nas pontas, o Rust aceita e o TS recusa.
+  - Com `﻿` nas pontas, o Rust recusa e o TS aceita.
+  - Causa: o `trim` de cada linguagem trata esses caracteres de forma diferente.
+  - Efeito: o `onBlur` (`App.tsx:2201`) envia o valor cru; com BOM, a interface mostra o campo como válido e o Rust devolve erro.
+- **A9-B7. Gravação privada das preferências (CONFIRMADO).**
+  - Local: `prefs.rs:98-108` só checa o pai imediato, então um ancestral que é symlink passa e a gravação cai no alvo real.
+  - Falta fsync do diretório depois do `rename`.
+  - O nome do temporário é previsível, mas o `create_new` reduz o efeito a um erro.
+- **A9-B8. Lock no handler de menu durante a partida do Chrome (PLAUSÍVEL).**
+  - O handler faz `capture.lock()`, e o `start_session` segura esse lock por até 35 s.
+  - Sugestão: `try_lock`.
