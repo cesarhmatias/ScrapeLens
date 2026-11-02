@@ -2618,6 +2618,7 @@ fn open_new_private(path: &Path) -> std::io::Result<std::fs::File> {
     options.open(path)
 }
 
+#[cfg(test)]
 /// Abre o arquivo para escrita como NOVO, sem seguir symlink. Se o nome já
 /// existir (arquivo antigo ou symlink plantado), REMOVE o nome (o link, nunca o
 /// alvo) e cria de novo; uma corrida em que alguém replante o nome faz o
