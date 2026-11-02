@@ -156,3 +156,31 @@ fn cli_assess_prints_rule_warnings() {
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(json["warnings"].as_array().unwrap().is_empty());
 }
+
+/// P2 (docs/18): `inspect` escreve em fluxo com struct emprestada; a saída é BYTE A BYTE a do
+/// antigo `json!` + `to_string_pretty` + `println!`.
+#[test]
+fn inspect_streaming_output_is_byte_identical_to_the_legacy_json_macro() {
+    let root = tempfile::tempdir().unwrap();
+    let session = root.path().join("s");
+    let status = cli()
+        .args(["import-har"])
+        .arg(har_fixture())
+        .args(["--out"])
+        .arg(&session)
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    let real = cli().args(["inspect"]).arg(&session).output().unwrap();
+    assert!(real.status.success());
+    let imported = scrapelens_core::import_session_dir(&session).unwrap();
+    let legacy = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "session": imported.bundle.session,
+            "report": imported.report,
+        }))
+        .unwrap()
+    );
+    assert_eq!(String::from_utf8(real.stdout).unwrap(), legacy);
+}

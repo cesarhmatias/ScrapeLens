@@ -47,10 +47,12 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "inspect" => {
             let path = one_path(&args)?;
             let imported = scrapelens_core::import_session_dir(&path).map_err(|e| e.to_string())?;
-            print_json(&serde_json::json!({
-                "session": imported.bundle.session,
-                "report": imported.report,
-            }))
+            // Struct emprestada + escrita em fluxo: sem `json!` (que copia a sessão num DOM) e
+            // sem a `String` gigante (docs/18 §4.2). A ordem e o formato são os de antes.
+            print_json(&Inspect {
+                session: &imported.bundle.session,
+                report: &imported.report,
+            })
         }
         "import-har" => {
             let (path, out) = input_and_out(&args)?;
@@ -377,13 +379,15 @@ fn assess_command(args: &[String]) -> Result<(), String> {
             .entry(outcome.verdict_kind.count_key().to_string())
             .or_default() += 1;
     }
-    print_json(&serde_json::json!({
-        "schema": "scrapelens.assess/1",
-        "rules": rules_path.map(|p| p.display().to_string()).unwrap_or_else(|| "default".into()),
-        "counts": counts,
-        "warnings": warnings,
-        "outcomes": outcomes,
-    }))
+    print_json(&AssessOutput {
+        schema: "scrapelens.assess/1",
+        rules: rules_path
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "default".into()),
+        counts,
+        warnings: &warnings,
+        outcomes: &outcomes,
+    })
 }
 
 fn search_command(args: &[String]) -> Result<(), String> {
@@ -518,10 +522,31 @@ fn input_and_out(args: &[String]) -> Result<(PathBuf, PathBuf), String> {
     Ok((PathBuf::from(path), PathBuf::from(out)))
 }
 
+/// Saída de `inspect` (mesma ordem de campos do antigo `json!`).
+#[derive(serde::Serialize)]
+struct Inspect<'a> {
+    session: &'a scrapelens_core::SessionV1,
+    report: &'a scrapelens_core::ImportReport,
+}
+
+/// Saída de `assess` (mesma ordem de campos do antigo `json!`).
+#[derive(serde::Serialize)]
+struct AssessOutput<'a, W: serde::Serialize, O: serde::Serialize> {
+    schema: &'static str,
+    rules: String,
+    counts: std::collections::BTreeMap<String, usize>,
+    warnings: &'a W,
+    outcomes: &'a O,
+}
+
+/// JSON identado direto no stdout, sem montar a `String` inteira.
 fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
-    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-    println!("{text}");
-    Ok(())
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::new(stdout.lock());
+    serde_json::to_writer_pretty(&mut out, value).map_err(|e| e.to_string())?;
+    out.write_all(b"\n").map_err(|e| e.to_string())?;
+    out.flush().map_err(|e| e.to_string())
 }
 
 fn usage() -> String {
