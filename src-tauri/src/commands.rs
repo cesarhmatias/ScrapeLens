@@ -19,6 +19,7 @@ use scrapelens_core::{store, ImportedSession};
 
 use crate::capture::{self, CaptureConfig, CaptureSession, CaptureStatus};
 use crate::chrome::{self, ChromeInfo};
+use crate::cli::{self, CliAction};
 use crate::prefs;
 use crate::AppState;
 
@@ -264,12 +265,60 @@ pub fn import_netlog(app: AppHandle, path: String) -> Result<SessionPayload, Str
     persist_imported(&app, imported, "NetLog")
 }
 
+/// URL inicial sugerida na UI: preferência gravada, senão `SCRAPELENS_CAPTURE_URL`.
+#[tauri::command]
+pub fn capture_start_url(app: AppHandle) -> String {
+    prefs::load_capture_start_url(&app).unwrap_or_else(|| {
+        std::env::var("SCRAPELENS_CAPTURE_URL").unwrap_or_default()
+    })
+}
+
+/// Persiste a URL inicial (vazia limpa a preferência). Só `http`/`https` quando não vazia.
+#[tauri::command]
+pub fn set_capture_start_url(app: AppHandle, url: String) -> Result<String, String> {
+    let trimmed = url.trim().to_string();
+    if !trimmed.is_empty() {
+        cli::validate_http_url(&trimmed)?;
+    }
+    prefs::save_capture_start_url(&app, if trimmed.is_empty() { None } else { Some(trimmed.as_str()) })?;
+    Ok(trimmed)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliActionPayload {
+    pub kind: String,
+    pub path: String,
+}
+
+/// Consome a ação CLI de teste (no máximo uma vez por processo).
+#[tauri::command]
+pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
+    let action = state.pending_cli.lock().ok()?.take()?;
+    Some(match action {
+        CliAction::ImportHar(path) => CliActionPayload {
+            kind: "import-har".to_string(),
+            path: path.display().to_string(),
+        },
+        CliAction::ImportNetlog(path) => CliActionPayload {
+            kind: "import-netlog".to_string(),
+            path: path.display().to_string(),
+        },
+        CliAction::OpenCapture(path) => CliActionPayload {
+            kind: "open-capture".to_string(),
+            path: path.display().to_string(),
+        },
+    })
+}
+
 /// Inicia uma captura real com Chrome externo. O comando volta assim que o
 /// CDP está pronto; a sessão v1 final é devolvida por `stop_session`.
+/// `start_url` (opcional): campo da UI; vazio → `about:blank`; só http/https.
 #[tauri::command]
 pub fn start_session(
     app: AppHandle,
     state: State<'_, AppState>,
+    start_url: Option<String>,
 ) -> Result<SessionPayload, String> {
     let mut slot = state.capture.lock().map_err(|_| "estado de captura indisponível")?;
     if slot.is_some() {
@@ -287,6 +336,8 @@ pub fn start_session(
             })?
     };
 
+    let resolved_url = cli::resolve_capture_start_url(start_url.as_deref())?;
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
@@ -296,10 +347,11 @@ pub fn start_session(
     let dir = unique_session_dir(&sessions_root(&app)?, &session_id);
     store::ensure_private_dir(&dir).map_err(|error| format!("diretório da sessão: {error}"))?;
 
+    let start_url_for_notice = resolved_url.clone();
     let config = CaptureConfig {
         chrome: chrome_path.clone(),
         session_dir: dir.clone(),
-        start_url: std::env::var("SCRAPELENS_CAPTURE_URL").unwrap_or_else(|_| "about:blank".to_string()),
+        start_url: resolved_url,
         headless: std::env::var("SCRAPELENS_CAPTURE_HEADLESS").as_deref() == Ok("1"),
         ignore_cert: std::env::var("SCRAPELENS_CAPTURE_IGNORE_CERT").as_deref() == Ok("1"),
     };
@@ -361,10 +413,18 @@ pub fn start_session(
         }),
         session_dir: Some(dir.display().to_string()),
         synthetic: false,
-        notice: Some(format!(
-            "Captura iniciada com Chrome externo em {}. Navegue no Chrome e clique em Encerrar para gravar a sessão.",
-            chrome_path.display()
-        )),
+        notice: Some(if start_url_for_notice == "about:blank" {
+            format!(
+                "Captura iniciada com Chrome externo em {}. A captura começou em branco; navegue no Chrome ou informe a URL.",
+                chrome_path.display()
+            )
+        } else {
+            format!(
+                "Captura iniciada com Chrome externo em {} · {}. Clique em Encerrar para gravar a sessão.",
+                chrome_path.display(),
+                start_url_for_notice
+            )
+        }),
         pending: false,
     })
 }

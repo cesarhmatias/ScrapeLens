@@ -12,6 +12,9 @@ use tauri::{AppHandle, Manager};
 struct Preferences {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chrome_path: Option<String>,
+    /// URL inicial da captura ao vivo (`http`/`https`); ausente = usar env ou em branco.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capture_start_url: Option<String>,
 }
 
 fn config_file(app: &AppHandle) -> Option<PathBuf> {
@@ -45,10 +48,35 @@ pub fn save_chrome_path(app: &AppHandle, path: &Path) -> Result<(), String> {
     if let Some(parent) = file.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("não foi possível criar {parent:?}: {error}"))?;
     }
-    let preferences = Preferences {
-        chrome_path: Some(path.display().to_string()),
+    let mut preferences = read(app);
+    preferences.chrome_path = Some(path.display().to_string());
+    write_prefs(file, &preferences)
+}
+
+pub fn load_capture_start_url(app: &AppHandle) -> Option<String> {
+    read(app)
+        .capture_start_url
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn save_capture_start_url(app: &AppHandle, url: Option<&str>) -> Result<(), String> {
+    let Some(file) = config_file(app) else {
+        return Err("sem diretório de configuração do app".to_string());
     };
-    let text = serde_json::to_string_pretty(&preferences)
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("não foi possível criar {parent:?}: {error}"))?;
+    }
+    let mut preferences = read(app);
+    preferences.capture_start_url = url
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    write_prefs(file, &preferences)
+}
+
+fn write_prefs(file: PathBuf, preferences: &Preferences) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(preferences)
         .map_err(|error| format!("falha ao serializar preferências: {error}"))?;
     fs::write(&file, text).map_err(|error| format!("falha ao gravar {file:?}: {error}"))
 }

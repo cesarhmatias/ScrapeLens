@@ -1,6 +1,11 @@
 //! Menu nativo do macOS com os atalhos usuais da spec.
 //! O evento chega à UI como `menu://action` com um destes payloads:
-//! open | import-har | import-netlog | find | copy | theme | demo.
+//! open | import-har | import-netlog | start-session | stop-session |
+//! find | copy | theme | demo | choose-chrome.
+//!
+//! Atalhos nativos (funcionam via invoke_menu / menu bar, sem foco na WebView):
+//! Abrir captura… ⌘O · Importar HAR… ⌘⇧H · Importar NetLog… ⌘⇧N ·
+//! Iniciar sessão ⌘⇧R · Encerrar ⌘.
 
 use tauri::menu::{
     MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
@@ -23,8 +28,16 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?,
         )
-        .item(&MenuItemBuilder::with_id("import-har", "Importar HAR…").build(app)?)
-        .item(&MenuItemBuilder::with_id("import-netlog", "Importar NetLog…").build(app)?)
+        .item(
+            &MenuItemBuilder::with_id("import-har", "Importar HAR…")
+                .accelerator("CmdOrCtrl+Shift+H")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("import-netlog", "Importar NetLog…")
+                .accelerator("CmdOrCtrl+Shift+N")
+                .build(app)?,
+        )
         .separator()
         .item(&MenuItemBuilder::with_id("choose-chrome", "Selecionar Chrome…").build(app)?)
         .separator()
@@ -35,6 +48,19 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         )
         .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
+        .build()?;
+
+    let capture_menu = SubmenuBuilder::new(app, "Captura")
+        .item(
+            &MenuItemBuilder::with_id("start-session", "Iniciar sessão")
+                .accelerator("CmdOrCtrl+Shift+R")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("stop-session", "Encerrar")
+                .accelerator("CmdOrCtrl+.")
+                .build(app)?,
+        )
         .build()?;
 
     let edit_menu = SubmenuBuilder::new(app, "Editar")
@@ -70,7 +96,14 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .build()?;
 
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu])
+        .items(&[
+            &app_menu,
+            &file_menu,
+            &capture_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+        ])
         .build()?;
     app.set_menu(menu)?;
 

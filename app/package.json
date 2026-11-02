@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:adapter": "tsx scripts/adapter-minimal.test.ts",
+    "test:capture-url": "tsx scripts/capture-url.test.ts",
     "shots": "node scripts/shoot.mjs",
     "perf": "node scripts/perf.mjs",
     "gen:demo": "node scripts/gen-demo-v1.mjs",

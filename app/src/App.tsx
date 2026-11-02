@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import demoRaw from "./demo/session.v1.json";
 import demoAttachments from "./demo/attachments.json";
+import { resolveCaptureStartUrl, validateHttpUrl } from "./captureUrl";
 import {
   bridge,
   isTauri,
@@ -1589,6 +1590,8 @@ export default function App() {
     pageUrl: string;
     chromePid?: number;
   } | null>(null);
+  const [startUrl, setStartUrl] = useState("");
+  const [startUrlError, setStartUrlError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [exportTarget, setExportTarget] = useState<RequestRecord | null>(null);
   const [sanitizeOpen, setSanitizeOpen] = useState(false);
@@ -1734,16 +1737,23 @@ export default function App() {
       setNotice({ kind: "info", text: "A captura ao vivo usa o Chrome externo e só existe no app desktop." });
       return;
     }
+    const resolved = resolveCaptureStartUrl(startUrl);
+    if (!resolved.ok) {
+      setStartUrlError(resolved.error);
+      setNotice({ kind: "error", text: "URL inicial inválida.", detail: resolved.error, action: "start" });
+      return;
+    }
+    setStartUrlError(null);
     setBusy("Abrindo Chrome com perfil dedicado e conectando ao CDP…");
     try {
-      const payload = await bridge.startSession();
+      const payload = await bridge.startSession(startUrl.trim() ? startUrl.trim() : undefined);
       if (!payload) return;
       setRecording({
         sessionId: payload.session.session.id,
         sessionDir: payload.sessionDir ?? "",
         startedAt: payload.session.session.startedAt,
         events: 0,
-        pageUrl: "",
+        pageUrl: resolved.url,
       });
       setNotice({ kind: "info", text: payload.notice ?? "Captura iniciada. Navegue no Chrome e clique em Encerrar." });
     } catch (error) {
@@ -1758,7 +1768,7 @@ export default function App() {
     } finally {
       setBusy(null);
     }
-  }, [desktop]);
+  }, [desktop, startUrl]);
 
   const stopCapture = useCallback(async () => {
     setBusy("Encerrando o Chrome, aguardando o NetLog e importando a sessão…");
@@ -1797,7 +1807,48 @@ export default function App() {
     if (!desktop) return;
     void bridge.detectChrome().then(setChrome).catch(() => setChrome({ found: false, candidates: [] }));
     void bridge.appInfo().catch(() => null);
+    void bridge.captureStartUrl().then((url) => {
+      setStartUrl(url);
+      if (url.trim()) {
+        const check = validateHttpUrl(url);
+        setStartUrlError(check.ok ? null : check.error);
+      }
+    });
   }, [desktop]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const action = await bridge.takeCliAction();
+        if (cancelled || !action) return;
+        setBusy(
+          action.kind === "import-har"
+            ? "Importando HAR (CLI)…"
+            : action.kind === "import-netlog"
+              ? "Importando NetLog (CLI)…"
+              : "Abrindo captura (CLI)…",
+        );
+        const payload =
+          action.kind === "import-har"
+            ? await bridge.importHarAt(action.path)
+            : action.kind === "import-netlog"
+              ? await bridge.importNetlogAt(action.path)
+              : await bridge.openSessionAt(action.path);
+        if (!cancelled) applyPayload(payload);
+      } catch (error) {
+        if (!cancelled) {
+          setNotice({ kind: "error", text: "Falha no argumento CLI de abertura.", detail: String(error) });
+        }
+      } finally {
+        if (!cancelled) setBusy(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyPayload, desktop]);
 
   useEffect(() => {
     if (params.get("demo") !== "large") return;
@@ -1817,6 +1868,8 @@ export default function App() {
         if (action === "open") void openSession();
         else if (action === "import-har") void importCapture("har");
         else if (action === "import-netlog") void importCapture("netlog");
+        else if (action === "start-session") void startCapture();
+        else if (action === "stop-session") void stopCapture();
         else if (action === "choose-chrome") void chooseChrome();
         else if (action === "find") {
           setView("session");
@@ -1829,7 +1882,7 @@ export default function App() {
         dispose = fn;
       });
     return () => dispose();
-  }, [applyPayload, chooseChrome, copy, importCapture, openSession, selected]);
+  }, [applyPayload, chooseChrome, copy, importCapture, openSession, selected, startCapture, stopCapture]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -2109,30 +2162,67 @@ export default function App() {
                 </div>
               </div>
               <div className="session-actions">
+                <label className="start-url-field" htmlFor="scrapelens-start-url">
+                  <span className="start-url-label">URL inicial</span>
+                  <input
+                    id="scrapelens-start-url"
+                    className="start-url-input mono"
+                    type="url"
+                    inputMode="url"
+                    placeholder="http://127.0.0.1:8781/page"
+                    value={startUrl}
+                    disabled={!desktop || !!recording || !!busy}
+                    aria-label="URL inicial da captura"
+                    aria-invalid={!!startUrlError}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setStartUrl(value);
+                      if (!value.trim()) {
+                        setStartUrlError(null);
+                        return;
+                      }
+                      const check = validateHttpUrl(value);
+                      setStartUrlError(check.ok ? null : check.error);
+                    }}
+                    onBlur={() => {
+                      if (!desktop) return;
+                      void bridge.setCaptureStartUrl(startUrl).catch((error) => {
+                        setStartUrlError(String(error));
+                      });
+                    }}
+                  />
+                  {startUrlError ? <span className="start-url-error">{startUrlError}</span> : null}
+                </label>
                 <button
+                  id="scrapelens-start-session"
                   className="btn primary"
                   onClick={() => void startCapture()}
-                  disabled={!desktop || !!recording || !!busy}
+                  disabled={!desktop || !!recording || !!busy || !!startUrlError}
+                  aria-label="Iniciar sessão"
                   title={
                     desktop
-                      ? "Abrir Chrome com perfil dedicado e gravar CDP+NetLog; navegue e clique em Encerrar"
+                      ? "Abrir Chrome com perfil dedicado e gravar CDP+NetLog — ⌘⇧R"
                       : "Captura ao vivo só no app desktop (Tauri)"
                   }
                 >
                   Iniciar sessão
                 </button>
                 <button
+                  id="scrapelens-stop-session"
                   className="btn"
                   onClick={() => void stopCapture()}
                   disabled={!recording || !!busy}
-                  title="Sair do Chrome, aguardar o flush do NetLog, importar com o core e abrir a sessão"
+                  aria-label="Encerrar sessão"
+                  title="Sair do Chrome, aguardar o flush do NetLog, importar com o core e abrir a sessão — ⌘."
                 >
                   Encerrar
                 </button>
                 <button
+                  id="scrapelens-open-capture"
                   className="btn"
                   onClick={() => void openSession()}
                   disabled={!desktop || !!recording}
+                  aria-label="Abrir captura"
                   title={
                     desktop
                       ? "Abrir uma pasta de sessão v1 (session.json) com diálogo nativo — ⌘O"
@@ -2179,17 +2269,28 @@ export default function App() {
             </div>
 
             {recording && (
-              <div className="recording-banner">
+              <div className="recording-banner" id="scrapelens-recording-banner">
                 <span className="rec-dot" />
                 <strong>Gravando com Chrome externo</strong>
                 <span>
                   sessão <span className="mono">{recording.sessionId}</span> · {recording.events} evento(s) CDP
-                  {recording.pageUrl && recording.pageUrl !== "about:blank" ? (
+                  {recording.pageUrl ? (
                     <span className="mono dim"> · {recording.pageUrl}</span>
                   ) : null}
                 </span>
+                {(!recording.pageUrl || recording.pageUrl === "about:blank") && (
+                  <span className="recording-blank-warn" role="status">
+                    a captura começou em branco; navegue no Chrome ou informe a URL
+                  </span>
+                )}
                 <span className="grow" />
-                <button className="ghost-btn small" onClick={() => void stopCapture()} disabled={!!busy}>
+                <button
+                  id="scrapelens-stop-recording"
+                  className="ghost-btn small"
+                  onClick={() => void stopCapture()}
+                  disabled={!!busy}
+                  aria-label="Encerrar e abrir"
+                >
                   Encerrar e abrir
                 </button>
               </div>
@@ -2347,18 +2448,22 @@ export default function App() {
               </label>
               <div className="toolbar-actions">
                 <button
+                  id="scrapelens-import-har"
                   className="btn small"
                   onClick={() => void importCapture("har")}
                   disabled={!desktop || !!recording}
-                  title={desktop ? "Importar HAR (entrega demo até o core/ ser plugado)" : "Importação só no app desktop"}
+                  aria-label="Importar HAR"
+                  title={desktop ? "Importar HAR — ⌘⇧H" : "Importação só no app desktop"}
                 >
                   HAR
                 </button>
                 <button
+                  id="scrapelens-import-netlog"
                   className="btn small"
                   onClick={() => void importCapture("netlog")}
                   disabled={!desktop || !!recording}
-                  title={desktop ? "Importar NetLog (entrega demo até o core/ ser plugado)" : "Importação só no app desktop"}
+                  aria-label="Importar NetLog"
+                  title={desktop ? "Importar NetLog — ⌘⇧N" : "Importação só no app desktop"}
                 >
                   NetLog
                 </button>

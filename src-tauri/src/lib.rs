@@ -8,6 +8,7 @@
 pub mod adapters;
 pub mod capture;
 pub mod chrome;
+pub mod cli;
 pub mod commands;
 pub mod export;
 pub mod menu;
@@ -17,13 +18,17 @@ pub mod validation;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+use cli::CliAction;
 
 #[derive(Default)]
 pub struct AppState {
     pub chrome_path: Mutex<Option<PathBuf>>,
     pub last_session_dir: Mutex<Option<PathBuf>>,
     pub capture: Mutex<Option<capture::CaptureSession>>,
+    /// Ação CLI de teste (`--import-har` / `--import-netlog` / `--open-capture`), consumida uma vez.
+    pub pending_cli: Mutex<Option<CliAction>>,
 }
 
 /// Partida do app: limpa Chrome/perfil de capturas cujo dono morreu (ex.: SIGKILL).
@@ -52,9 +57,23 @@ pub fn run() {
         .manage(AppState::default())
         .setup(|app| {
             menu::install(app.handle())?;
+            let state = app.state::<AppState>();
             if let Some(path) = prefs::load_chrome_path(app.handle()) {
-                let state = app.state::<AppState>();
                 *state.chrome_path.lock().expect("chrome_path lock") = Some(path);
+            }
+            match cli::parse_cli_args(&std::env::args().collect::<Vec<_>>()) {
+                Ok(action) => {
+                    *state.pending_cli.lock().expect("pending_cli lock") = action;
+                }
+                Err(error) => {
+                    eprintln!("scrapelens: argumento CLI inválido: {error}");
+                    *state.pending_cli.lock().expect("pending_cli lock") = None;
+                    // Guarda o erro para a UI mostrar no boot.
+                    let _ = app.emit(
+                        "cli://error",
+                        error,
+                    );
+                }
             }
             // sobras de validações de execução (crash/kill): o trace guarda dados da sessão
             if let Ok(data) = app.path().app_data_dir() {
@@ -75,6 +94,9 @@ pub fn run() {
             commands::start_session,
             commands::stop_session,
             commands::capture_status,
+            commands::capture_start_url,
+            commands::set_capture_start_url,
+            commands::take_cli_action,
             commands::detect_chrome,
             commands::set_chrome_path,
             commands::read_attachment,

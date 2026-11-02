@@ -209,11 +209,18 @@ export type MenuAction =
   | "open"
   | "import-har"
   | "import-netlog"
+  | "start-session"
+  | "stop-session"
   | "choose-chrome"
   | "find"
   | "copy"
   | "demo"
   | "theme";
+
+export interface CliActionPayload {
+  kind: "import-har" | "import-netlog" | "open-capture" | string;
+  path: string;
+}
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -276,14 +283,39 @@ export const bridge = {
     return invoke("import_netlog", { path: picked });
   },
 
-  async startSession(): Promise<SessionPayload | null> {
+  async startSession(startUrl?: string): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
-    return invoke("start_session");
+    return invoke("start_session", { startUrl: startUrl ?? null });
   },
 
   async stopSession(): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
     return invoke("stop_session");
+  },
+
+  /** Preferência / env para o campo de URL inicial. */
+  async captureStartUrl(): Promise<string> {
+    if (!isTauri()) return "";
+    return invoke("capture_start_url");
+  },
+
+  async setCaptureStartUrl(url: string): Promise<string> {
+    if (!isTauri()) return url.trim();
+    return invoke("set_capture_start_url", { url });
+  },
+
+  /** Consome `--import-har` / `--import-netlog` / `--open-capture` (uma vez). */
+  async takeCliAction(): Promise<CliActionPayload | null> {
+    if (!isTauri()) return null;
+    return invoke("take_cli_action");
+  },
+
+  async importHarAt(path: string): Promise<SessionPayload> {
+    return invoke("import_har", { path });
+  },
+
+  async importNetlogAt(path: string): Promise<SessionPayload> {
+    return invoke("import_netlog", { path });
   },
 
   async captureStatus(): Promise<CaptureStatus | null> {
