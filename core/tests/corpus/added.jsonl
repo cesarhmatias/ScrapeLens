@@ -36,7 +36,7 @@
 {"input": "token=\"a\"(B4Bx)", "forbid": ["B4Bx"], "kind": "text", "keep": []}
 {"input": "token=[a][B4Cx]", "forbid": ["B4Cx"], "kind": "text", "keep": []}
 {"input": "(token=AB(c)B4Dx)", "forbid": ["B4Dx"], "kind": "text", "keep": []}
-{"input": "/a;v=2/session=keep/b", "forbid": ["keep"], "kind": "keep", "keep": ["/a;v=2/session="]}
+{"input": "/a;v=2/session=keep/b", "forbid": ["session=keep"], "kind": "keep", "keep": ["/a;v=2/session="]}
 {"input": "GET /a;jsessionid=SEC9x/b/c?x=1 HTTP/1.1", "forbid": ["SEC9x"], "kind": "keep", "keep": ["?x=1 HTTP/1.1"]}
 {"input": "Refresh: 0; url=/a;jsessionid=SEC10x/b/c?page=2", "forbid": ["SEC10x"], "kind": "keep", "keep": ["?page=2"]}
 {"input": "see /users;token=SEC11x/profile/123 now", "forbid": ["SEC11x"], "kind": "keep", "keep": [" now"]}
@@ -84,3 +84,11 @@
 {"input": "https://h/s;token＝B2Hx/tail?x=1", "forbid": ["B2Hx"], "kind": "url", "keep": []}
 {"input": "/p?token＝B2Ix&page=2", "forbid": ["B2Ix"], "kind": "url", "keep": []}
 {"input": "/s;token%EF%BC%9DB2Jx/tail", "forbid": ["B2Jx"], "kind": "url", "keep": []}
+{"input": "token&#38;#61;B2Kx", "forbid": ["B2Kx"], "kind": "text", "keep": []}
+{"input": "token&#x26;#x3D;B2Lx", "forbid": ["B2Lx"], "kind": "text", "keep": []}
+{"input": "token&amp;&#38;&#x3D;B2Mx", "forbid": ["B2Mx"], "kind": "text", "keep": []}
+{"input": "token&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;#61;B2Nx", "forbid": ["B2Nx"], "kind": "text", "keep": []}
+{"input": "token&amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;amp;#61;B2Ox", "forbid": ["B2Ox"], "kind": "text", "keep": []}
+{"input": "token&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;#61;B2Px", "forbid": ["B2Px"], "kind": "text", "keep": []}
+{"input": "token&#38;amp;equals;B2Qx", "forbid": ["B2Qx"], "kind": "text", "keep": []}
+{"input": "token&#038;#0061;B2Rx", "forbid": ["B2Rx"], "kind": "text", "keep": []}

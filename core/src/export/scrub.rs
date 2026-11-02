@@ -38,6 +38,8 @@
 //!   examinado. O custo é linear: nenhuma heurística olha para trás a cada `/`.
 //! - Aspas/colchetes após `=`: o interior é o valor; texto ou outra abertura COLADA
 //!   depois do fechamento (`"a"X`, `[a][X]`, `'a'"X`) também é valor.
+//! - Entidades HTML de `=` (`&#61;`, `&equals;`...) valem em qualquer número de camadas de
+//!   escape (`&amp;`, `&#38;`); acima de 256 camadas falha fechado (trata como `=`).
 //! - Valor que começa pelo placeholder já foi redigido (idempotência).
 //!
 //! # Falhar fechado
@@ -1027,66 +1029,77 @@ fn find_equals(bytes: &[u8], from: usize, to: usize) -> Option<(usize, usize)> {
     None
 }
 
-/// Tamanho de um "igual" em `bytes[at..]`: `=`, `＝`, `&equals;`, `&#61;`,
-/// `&#0061;`, `&#x3D;`, `&#X003d;` (`;` opcional) e qualquer um deles escapado
-/// de novo (`&amp;#61;`, `&amp;equals;`, `&amp;&#61;`, `&amp;amp;#61;`...).
+/// Camadas de escape HTML de `&` examinadas antes de falhar fechado.
+const MAX_AMP_LAYERS: usize = 256;
+
+#[derive(PartialEq, Eq)]
+enum Entity {
+    Equals,
+    Ampersand,
+}
+
+/// Uma entidade HTML no começo de `rest`: `&equals;`, `&#61;`/`&#x3D;` (qualquer zeros à
+/// esquerda, `;` opcional) → igual; `&amp;`, `&#38;`/`&#x26;` → `&` (outra camada de escape).
+/// Depois de uma camada, o `&` inicial é opcional (`&amp;amp;#61;`, `&#38;#61;`).
+fn parse_entity(rest: &[u8], amp_optional: bool) -> Option<(Entity, usize)> {
+    let lead = usize::from(rest.first() == Some(&b'&'));
+    if lead == 0 && !amp_optional {
+        return None;
+    }
+    let body = &rest[lead..];
+    if body.len() >= 7 && body[..7].eq_ignore_ascii_case(b"equals;") {
+        return Some((Entity::Equals, lead + 7));
+    }
+    if body.len() >= 4 && body[..4].eq_ignore_ascii_case(b"amp;") {
+        return Some((Entity::Ampersand, lead + 4));
+    }
+    if body.first() == Some(&b'#') {
+        let (radix, digits_at) = match body.get(1) {
+            Some(b'x' | b'X') => (16, 2),
+            _ => (10, 1),
+        };
+        let mut j = digits_at;
+        let mut value: u32 = 0;
+        while j < body.len() && j - digits_at < 12 {
+            let Some(d) = (body[j] as char).to_digit(radix) else {
+                break;
+            };
+            value = value.saturating_mul(radix).saturating_add(d);
+            j += 1;
+        }
+        if j > digits_at && matches!(value, 0x3D | 0x26) {
+            if body.get(j) == Some(&b';') {
+                j += 1;
+            }
+            let kind = if value == 0x3D {
+                Entity::Equals
+            } else {
+                Entity::Ampersand
+            };
+            return Some((kind, lead + j));
+        }
+    }
+    None
+}
+
+/// Tamanho de um "igual" em `bytes[at..]`: `=`, `＝`, `&equals;`, `&#61;`, `&#0061;`,
+/// `&#x3D;`, `&#X003d;` (`;` opcional) e qualquer um deles escapado de novo, em quantas
+/// camadas houver (`&amp;#61;`, `&amp;amp;equals;`, `&#38;#61;`, `&amp;&#38;&#x3D;`...).
+/// Acima de [`MAX_AMP_LAYERS`] camadas falha fechado: trata como "igual".
 fn equals_len_at(bytes: &[u8], at: usize) -> Option<usize> {
     let rest = bytes.get(at..)?;
     match rest.first()? {
         b'=' => Some(1),
         0xEF if rest.len() >= 3 && rest[1] == 0xBC && rest[2] == 0x9D => Some(3),
         b'&' => {
-            // `&amp;` repetido: cada camada de escape HTML conta
-            // `&amp;` e, depois do primeiro, também `amp;` sem o `&` (`&amp;amp;#61;`)
-            let mut skip = 0;
-            loop {
-                let tail = &rest[skip..];
-                if tail.len() >= 5 && tail[..5].eq_ignore_ascii_case(b"&amp;") {
-                    skip += 5;
-                } else if skip > 0 && tail.len() >= 4 && tail[..4].eq_ignore_ascii_case(b"amp;") {
-                    skip += 4;
-                } else {
-                    break;
-                }
-                if skip > 64 {
-                    break;
+            let mut pos = 0;
+            for layer in 0..=MAX_AMP_LAYERS {
+                match parse_entity(&rest[pos..], layer > 0)? {
+                    (Entity::Equals, len) => return Some(pos + len),
+                    (Entity::Ampersand, len) => pos += len,
                 }
             }
-            let body = &rest[skip..];
-            // depois de `&amp;` o `&` da entidade é opcional (`&amp;#61;`)
-            let entity = if body.first() == Some(&b'&') {
-                &body[1..]
-            } else if skip > 0 {
-                body
-            } else {
-                return None;
-            };
-            let lead = skip + usize::from(body.first() == Some(&b'&'));
-            if entity.len() >= 7 && entity[..7].eq_ignore_ascii_case(b"equals;") {
-                return Some(lead + 7);
-            }
-            if entity.first() == Some(&b'#') {
-                let (radix, digits_at) = match entity.get(1) {
-                    Some(b'x' | b'X') => (16, 2),
-                    _ => (10, 1),
-                };
-                let mut j = digits_at;
-                let mut value: u32 = 0;
-                while j < entity.len() && j - digits_at < 12 {
-                    let Some(d) = (entity[j] as char).to_digit(radix) else {
-                        break;
-                    };
-                    value = value.saturating_mul(radix).saturating_add(d);
-                    j += 1;
-                }
-                if j > digits_at && value == 0x3D {
-                    if entity.get(j) == Some(&b';') {
-                        j += 1;
-                    }
-                    return Some(lead + j);
-                }
-            }
-            None
+            Some(pos)
         }
         _ => None,
     }
