@@ -235,9 +235,23 @@ fn read_import_file(path: &str, label: &str) -> Result<Vec<u8>, String> {
 }
 
 fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, String> {
-    let metadata = fs::metadata(path).map_err(|error| format!("{label} não encontrado em {path}: {error}"))?;
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    // O_NOFOLLOW + O_NONBLOCK (FIFO não trava); tipo e tamanho conferidos por fstat
+    // no próprio descritor, e a leitura usa o mesmo descritor (sem TOCTOU).
+    let handle = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|error| format!("{label} não pôde ser aberto em {path} (symlink é recusado): {error}"))?;
+    let metadata = handle
+        .metadata()
+        .map_err(|error| format!("{label}: falha ao inspecionar {path}: {error}"))?;
     if metadata.is_dir() {
         return Err(format!("{label}: {path} é um diretório, selecione um arquivo"));
+    }
+    if !metadata.is_file() {
+        return Err(format!("{label}: {path} não é um arquivo regular"));
     }
     if metadata.len() > max {
         return Err(format!(
@@ -246,11 +260,33 @@ fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, St
             metadata.len()
         ));
     }
-    fs::read(path).map_err(|error| format!("não foi possível ler {label} em {path}: {error}"))
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    handle
+        .take(max + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("não foi possível ler {label} em {path}: {error}"))?;
+    if bytes.len() as u64 > max {
+        return Err(format!("{label} cresceu além de {} MiB durante a leitura", max / (1024 * 1024)));
+    }
+    Ok(bytes)
+}
+
+/// Importações ficam bloqueadas durante uma gravação (A8-B7).
+pub(crate) fn ensure_not_recording(recording: bool) -> Result<(), String> {
+    if recording {
+        Err("Há uma captura em andamento. Encerre a gravação antes de importar.".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn is_recording(state: &State<'_, AppState>) -> bool {
+    state.capture.lock().map(|slot| slot.is_some()).unwrap_or(true)
 }
 
 #[tauri::command]
-pub fn import_har(app: AppHandle, path: String) -> Result<SessionPayload, String> {
+pub fn import_har(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<SessionPayload, String> {
+    ensure_not_recording(is_recording(&state))?;
     let bytes = read_import_file(&path, "HAR")?;
     let imported = scrapelens_core::import_har(&bytes)
         .map_err(|error| format!("HAR inválido: {error}. Use um HAR 1.2 exportado pelo Chrome."))?;
@@ -258,7 +294,8 @@ pub fn import_har(app: AppHandle, path: String) -> Result<SessionPayload, String
 }
 
 #[tauri::command]
-pub fn import_netlog(app: AppHandle, path: String) -> Result<SessionPayload, String> {
+pub fn import_netlog(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<SessionPayload, String> {
+    ensure_not_recording(is_recording(&state))?;
     let bytes = read_import_file(&path, "NetLog")?;
     let imported = scrapelens_core::import_netlog(&bytes)
         .map_err(|error| format!("NetLog inválido: {error}. Use o JSON completo do Chrome."))?;
@@ -287,28 +324,27 @@ pub fn set_capture_start_url(app: AppHandle, url: String) -> Result<String, Stri
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CliActionPayload {
+    /// `import-har` | `import-netlog` | `open-capture` | `error` | `warning`.
     pub kind: String,
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
-/// Consome a ação CLI de teste (no máximo uma vez por processo).
+/// Consome a ação CLI de teste, ou o erro/aviso da CLI (no máximo uma vez por processo).
+/// Só existe ação com `SCRAPELENS_TEST_MODE=1`.
 #[tauri::command]
 pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
+    if let Some((kind, message)) = state.cli_message.lock().ok()?.take() {
+        return Some(CliActionPayload { kind, path: String::new(), message: Some(message) });
+    }
     let action = state.pending_cli.lock().ok()?.take()?;
-    Some(match action {
-        CliAction::ImportHar(path) => CliActionPayload {
-            kind: "import-har".to_string(),
-            path: path.display().to_string(),
-        },
-        CliAction::ImportNetlog(path) => CliActionPayload {
-            kind: "import-netlog".to_string(),
-            path: path.display().to_string(),
-        },
-        CliAction::OpenCapture(path) => CliActionPayload {
-            kind: "open-capture".to_string(),
-            path: path.display().to_string(),
-        },
-    })
+    let (kind, path) = match action {
+        CliAction::ImportHar(path) => ("import-har", path),
+        CliAction::ImportNetlog(path) => ("import-netlog", path),
+        CliAction::OpenCapture(path) => ("open-capture", path),
+    };
+    Some(CliActionPayload { kind: kind.to_string(), path: path.display().to_string(), message: None })
 }
 
 /// Inicia uma captura real com Chrome externo. O comando volta assim que o
@@ -394,6 +430,8 @@ pub fn start_session(
         join,
         status,
     });
+    drop(slot);
+    crate::menu::set_imports_enabled(&app, false);
 
     Ok(SessionPayload {
         session: json!({
@@ -432,11 +470,12 @@ pub fn start_session(
 /// Encerra a captura, aguarda o flush do NetLog, importa com o core e grava a
 /// sessão v1. Devolve a sessão pronta para a UI.
 #[tauri::command]
-pub fn stop_session(state: State<'_, AppState>) -> Result<SessionPayload, String> {
+pub fn stop_session(app: AppHandle, state: State<'_, AppState>) -> Result<SessionPayload, String> {
     let capture = {
         let mut slot = state.capture.lock().map_err(|_| "estado de captura indisponível")?;
         slot.take()
     };
+    crate::menu::set_imports_enabled(&app, true);
     let Some(capture) = capture else {
         return Err("Nenhuma captura em andamento para encerrar.".to_string());
     };
@@ -1352,6 +1391,38 @@ pub fn reveal_path(path: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn import_read_uses_fd_refusing_symlink_fifo_and_dir() {
+        use std::os::unix::fs::symlink;
+        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!(
+            "scrapelens-fdread-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("a.har");
+        std::fs::write(&file, b"{\"log\":{}}").unwrap();
+        assert_eq!(read_import_file_max(file.to_str().unwrap(), "HAR", 1024).unwrap(), b"{\"log\":{}}");
+        assert!(read_import_file_max(file.to_str().unwrap(), "HAR", 3).unwrap_err().contains("maior"));
+        let link = root.join("l.har");
+        symlink(&file, &link).unwrap();
+        assert!(read_import_file_max(link.to_str().unwrap(), "HAR", 1024).is_err());
+        let fifo = root.join("p.har");
+        let c = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        // FIFO sem escritor: O_NONBLOCK não trava; fstat recusa por não ser regular.
+        assert!(read_import_file_max(fifo.to_str().unwrap(), "HAR", 1024).unwrap_err().contains("regular"));
+        assert!(read_import_file_max(root.to_str().unwrap(), "HAR", 1024).unwrap_err().contains("diretório"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn imports_are_refused_while_recording() {
+        assert!(ensure_not_recording(true).unwrap_err().contains("Encerre"));
+        assert!(ensure_not_recording(false).is_ok());
+        assert_eq!(crate::menu::IMPORT_MENU_IDS, ["import-har", "import-netlog"]);
+    }
     use super::*;
 
     static CACHE_TEST_LOCK: Mutex<()> = Mutex::new(());

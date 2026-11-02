@@ -1708,6 +1708,10 @@ export default function App() {
         setNotice({ kind: "info", text: `Importar ${kind.toUpperCase()} só está disponível no app desktop.` });
         return;
       }
+      if (recording) {
+        setNotice({ kind: "info", text: "Há uma captura em andamento. Encerre a gravação antes de importar." });
+        return;
+      }
       setBusy(kind === "har" ? "Importando HAR…" : "Importando NetLog…");
       try {
         applyPayload(kind === "har" ? await bridge.importHar() : await bridge.importNetlog());
@@ -1717,7 +1721,7 @@ export default function App() {
         setBusy(null);
       }
     },
-    [applyPayload, desktop],
+    [applyPayload, desktop, recording],
   );
 
   const chooseChrome = useCallback(async () => {
@@ -1823,6 +1827,14 @@ export default function App() {
       try {
         const action = await bridge.takeCliAction();
         if (cancelled || !action) return;
+        if (action.kind === "error" || action.kind === "warning") {
+          setNotice({
+            kind: action.kind === "error" ? "error" : "info",
+            text: action.kind === "error" ? "Argumento de linha de comando inválido." : "Argumentos de linha de comando ignorados.",
+            detail: action.message,
+          });
+          return;
+        }
         setBusy(
           action.kind === "import-har"
             ? "Importando HAR (CLI)…"

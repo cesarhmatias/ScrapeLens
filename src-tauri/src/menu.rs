@@ -12,6 +12,24 @@ use tauri::menu::{
 };
 use tauri::{AppHandle, Emitter, Runtime};
 
+/// Itens de importação desabilitados durante uma gravação (A8-B7).
+pub const IMPORT_MENU_IDS: [&str; 2] = ["import-har", "import-netlog"];
+
+/// Liga/desliga Importar HAR/NetLog (e seus atalhos ⌘⇧H/⌘⇧N) no menu nativo.
+pub fn set_imports_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
+    let Some(menu) = app.menu() else { return };
+    let Ok(items) = menu.items() else { return };
+    for item in items {
+        if let tauri::menu::MenuItemKind::Submenu(sub) = item {
+            for id in IMPORT_MENU_IDS {
+                if let Some(tauri::menu::MenuItemKind::MenuItem(entry)) = sub.get(id) {
+                    let _ = entry.set_enabled(enabled);
+                }
+            }
+        }
+    }
+}
+
 pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let app_menu = SubmenuBuilder::new(app, "ScrapeLens")
         .item(&PredefinedMenuItem::about(app, None, None)?)
@@ -109,6 +127,16 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
     app.on_menu_event(|app, event| {
         let action = event.id().as_ref().to_string();
+        if IMPORT_MENU_IDS.contains(&action.as_str()) {
+            use tauri::Manager;
+            let recording = app
+                .try_state::<crate::AppState>()
+                .map(|state| state.capture.lock().map(|slot| slot.is_some()).unwrap_or(true))
+                .unwrap_or(false);
+            if recording {
+                return;
+            }
+        }
         // Copy nativo continua sendo o do sistema; o "copy" do app é emitido
         // pelo atalho da UI (⌘C) e copia a URL da requisição selecionada.
         let _ = app.emit("menu://action", action);

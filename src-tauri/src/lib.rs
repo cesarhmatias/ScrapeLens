@@ -18,7 +18,7 @@ pub mod validation;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 use cli::CliAction;
 
@@ -29,6 +29,8 @@ pub struct AppState {
     pub capture: Mutex<Option<capture::CaptureSession>>,
     /// Ação CLI de teste (`--import-har` / `--import-netlog` / `--open-capture`), consumida uma vez.
     pub pending_cli: Mutex<Option<CliAction>>,
+    /// Erro ou aviso da CLI de teste para a janela mostrar (consumido uma vez).
+    pub cli_message: Mutex<Option<(String, String)>>,
 }
 
 /// Partida do app: limpa Chrome/perfil de capturas cujo dono morreu (ex.: SIGKILL).
@@ -61,18 +63,20 @@ pub fn run() {
             if let Some(path) = prefs::load_chrome_path(app.handle()) {
                 *state.chrome_path.lock().expect("chrome_path lock") = Some(path);
             }
-            match cli::parse_cli_args(&std::env::args().collect::<Vec<_>>()) {
-                Ok(action) => {
-                    *state.pending_cli.lock().expect("pending_cli lock") = action;
+            let args = std::env::args().collect::<Vec<_>>();
+            let test_mode = std::env::var("SCRAPELENS_TEST_MODE").ok();
+            match cli::cli_outcome(&args, test_mode.as_deref()) {
+                cli::CliOutcome::None => {}
+                cli::CliOutcome::Action(action) => {
+                    *state.pending_cli.lock().expect("pending_cli lock") = Some(action);
                 }
-                Err(error) => {
+                cli::CliOutcome::Ignored(warning) => {
+                    eprintln!("scrapelens: {warning}");
+                    *state.cli_message.lock().expect("cli_message lock") = Some(("warning".into(), warning));
+                }
+                cli::CliOutcome::Error(error) => {
                     eprintln!("scrapelens: argumento CLI inválido: {error}");
-                    *state.pending_cli.lock().expect("pending_cli lock") = None;
-                    // Guarda o erro para a UI mostrar no boot.
-                    let _ = app.emit(
-                        "cli://error",
-                        error,
-                    );
+                    *state.cli_message.lock().expect("cli_message lock") = Some(("error".into(), error));
                 }
             }
             // sobras de validações de execução (crash/kill): o trace guarda dados da sessão

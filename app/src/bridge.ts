@@ -218,8 +218,10 @@ export type MenuAction =
   | "theme";
 
 export interface CliActionPayload {
-  kind: "import-har" | "import-netlog" | "open-capture" | string;
+  kind: "import-har" | "import-netlog" | "open-capture" | "error" | "warning" | string;
   path: string;
+  /** Erro ou aviso da CLI de teste (kind `error`/`warning`). */
+  message?: string;
 }
 
 export function isTauri(): boolean {

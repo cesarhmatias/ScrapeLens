@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { resolveCaptureStartUrl, validateHttpUrl } from "../src/captureUrl.ts";
+import { MAX_URL_LEN, persistableUrl, resolveCaptureStartUrl, validateHttpUrl } from "../src/captureUrl.ts";
 
 assert.equal(resolveCaptureStartUrl("").ok && resolveCaptureStartUrl("").url, "about:blank");
 assert.equal(resolveCaptureStartUrl("  ").ok && resolveCaptureStartUrl("  ").url, "about:blank");
@@ -9,5 +9,28 @@ assert.equal(validateHttpUrl("about:blank").ok, false);
 assert.equal(validateHttpUrl("file:///tmp/x").ok, false);
 assert.equal(validateHttpUrl("http:// spaced").ok, false);
 assert.equal(validateHttpUrl("http://").ok, false);
+
+for (const bad of [
+  "http://user:pw@example.com/",
+  "http://user@example.com",
+  "http://@",
+  "http:///",
+  "http://:80/",
+  "http://exa\u0000mple.com",
+  "http://exa\u0007mple.com",
+  "http://exa\u200Bmple.com",
+  "http://\uFEFFexample.com",
+  "http://example.com:99999/",
+  "http://[::1/",
+  `http://e.com/${"a".repeat(MAX_URL_LEN)}`,
+]) {
+  assert.equal(validateHttpUrl(bad).ok, false, `deveria recusar ${JSON.stringify(bad)}`);
+}
+assert.equal(validateHttpUrl("http://[::1]:8080/x").ok, true);
+assert.equal(validateHttpUrl("https://example.com:443/a?b=1#c").ok, true);
+const persisted = persistableUrl("https://example.com:8443/a/b?token=SECRET#frag");
+assert.equal(persisted.ok && persisted.url, "https://example.com:8443/a/b");
+const bare = persistableUrl("http://h?x=1");
+assert.equal(bare.ok && bare.url, "http://h");
 
 console.log("capture-url.test.ts: ok");
