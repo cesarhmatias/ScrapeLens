@@ -886,3 +886,161 @@ Está limpo:
 | 213-218 | Omitem que o arquivo de corpos é criado pelo caminho (A7-B7). |
 | 244-247 | A mensagem de erro se contradiz ("nada foi gravado nela" e "a sessão foi gravada na pasta original") e não dá o caminho `.moved`. |
 | 269-271, 278-281, 293-301, 303-307 | Corretas. |
+
+---
+
+## Adendo 8 — Rodada 12: confirmação do adendo 7 e revisão do app (395cf8e)
+
+**Base revisada.** Clone novo em `/tmp/rev32/repo`, no commit `737290a`. A comparação é com `a7087f4`, compilado à parte em `/tmp/rev32/poc-secrets/before`. O `fake_server` foi recompilado nos dois commits.
+
+**Commits revisados:**
+- core: `3607179`, `16da1c2`, `93cbf1d`, `dfe7ea8` e `c7dab11`;
+- captura: `f6e1cc1`, `611c63d` e `737290a`;
+- app: `395cf8e`.
+
+**Evidências:**
+- `/tmp/rev32/poc-secrets`: `cases-{head,before}.tsv`, `fuzz-*.txt`, `perf*.txt` e `e2e-*.json`;
+- `/tmp/rev32/poc-app`;
+- relatórios em `/tmp/rev32/{secrets,app}.md`.
+
+As preferências reais do usuário não foram tocadas, e nenhum site real foi acessado.
+
+### Veredito: REPROVADO
+
+Há três achados **médios confirmados** e nenhum alto:
+- **A8-M1:** regressão de vazamento causada pela nova regra de caminho;
+- **A8-M2:** custo quadrático da mesma regra;
+- **A8-M3:** a URL inicial é gravada em claro nas preferências.
+
+### Itens do adendo 7
+
+| Item | HEAD | a7087f4 | Estado |
+|---|---|---|---|
+| A7-B1 `token＝FW1x` | mascarado | vaza | Corrigido |
+| A7-B2 `&amp;#61;`, `&amp;#x3D;`, `&amp;equals;` | mascarado | vaza | Corrigido; `&amp;amp;#61;` ainda vaza (A8-B1) |
+| A7-B3 `\X`, `"X`, `&#61;X` | mascarado | vaza | Corrigido |
+| A7-B4 `'a'"X`, `"a"(X)`, `[a][X]`, `(token=AB(c)X)` | mascarado | vaza | Corrigido |
+| A7-B5 `;jsessionid=X/b/c?x=1` (linha de requisição, header, JSON) e `/a;v=2/session=keep/b` | `/b/c?x=1` e `/b` preservados | perdidos | Corrigido |
+| A7-B6 grupo de 4 MB sem nome sensível / com nome sensível | preservado inteiro (4,2 MB no `get_body`) / redigido | 14 B / redigido | Corrigido |
+| A7-B7 `cdp-bodies.jsonl` | `capture/src/lib.rs:179` usa `fdio::create_replacing_at` (O_EXCL, O_NOFOLLOW, 0600); os 8 testes de `fdio` passam | — | Corrigido por leitura do código, sem corrida ao vivo |
+| 16b §2.4 | as linhas 213-225 descrevem o A7-B7; a mensagem das linhas 244-256 ficou coerente e traz o caminho `.moved` | — | Corrigido |
+
+### Corpus
+
+- **Tamanho:** 401 linhas (309 + 45 + 47). Quatro das linhas de `added.jsonl` apenas saíram de `benign.jsonl`.
+- **Testes:** `cargo test --offline --release --test corpus --test corpus_fuzz` passa 4/4.
+- **Cobre, com a expectativa certa:**
+  - o B4 do r30;
+  - `＝` e `Bearer ab%2B`;
+  - `,CD/e`;
+  - os placeholders;
+  - as formas de B1 a B5.
+- **Faltam:**
+  - `&amp;amp;#61;`;
+  - casos que devem ser mascarados pela nova regra de caminho, ou seja, segredo com `/`;
+  - um teste de custo para valores com muitas `/`.
+
+### Achados que restam
+
+#### Médio
+
+**A8-M1. Regressão do `93cbf1d`: a cauda de um segredo que contém `/` vaza (CONFIRMADO).**
+
+- **Local:** `core/src/export/scrub.rs:572-580` e `929-941`.
+- **Causa:** a heurística de base64 só aceita a barra se o segmento seguinte tiver 16 ou mais caracteres, ou contiver `+` ou `=`.
+
+| Entrada | HEAD | a7087f4 |
+|---|---|---|
+| `GET /s;token=Zm9vYmFy/YmF6cXV4 HTTP/1.1` | `…token=%5BREDACTED%5D/YmF6cXV4` | `…token=%5BREDACTED%5D` |
+| `{"p":"/s/token=…/YmF6cXV4"}` | vaza `YmF6cXV4` | mascarado |
+| `Refresh: 0; url=/a;token=…/YmF6cXV4` | vaza `YmF6cXV4` | mascarado |
+| `/api/token=/secret1/value2` (texto) | vaza o valor inteiro | mascarado |
+
+- **Também vazam**, e a `a7087f4` mascarava:
+  - `?next=%2Fa%3Btoken%3DAbCdEfGh%2FIjKlMnOp`;
+  - `/p?x=1/token=abc/def`.
+- **De ponta a ponta:** confirmado em `get_request`, `get_body` e `search_bodies`.
+- **Fuzz diferencial em release, 150 mil casos por semente:**
+
+  | | Semente 1 | Semente 2 |
+  |---|---|---|
+  | Vazamentos no HEAD | 45,6 mil | 45,1 mil |
+  | Vazamentos na a7087f4 | 17,9 mil | 17,5 mil |
+  | Perdas de fidelidade no HEAD | 10,6 mil | 10,6 mil |
+  | Perdas de fidelidade na a7087f4 | 107 mil | 107 mil |
+
+  A regra nova melhorou muito a fidelidade, mas abriu vazamentos:
+  - os novos ficam em headers, JSON, linhas de requisição e redirects codificados;
+  - segredo base64 com barra vaza em cerca de 78 % dos casos, e segredo com forma de caminho em 100 %.
+- **Evidência:** `cases-{head,before}.tsv` (casos R02, R17, R18 e R21) e `fuzz-{head,before}-{1,2}.txt`.
+
+**A8-M2. A regra de caminho tem custo quadrático (CONFIRMADO).**
+
+- **Local:** `scrub.rs:930`. O `contains(&b'+')` percorre o valor inteiro acumulado a cada `/`.
+
+| Entrada | HEAD | a7087f4 |
+|---|---|---|
+| 1 MB de `/a;token=` + (`A`×16 + `/`)… | 1,4 s | 8 ms |
+| 4 MB da mesma entrada | 21 s | 23 ms |
+| 4 MB de `A=/` repetido | 121 s | 18 ms |
+| corpo JSON de 4 MB via MCP `get_body` | **22,05 s** | 0,10 s |
+
+- **Extrapolação, não medida:** 16 MB levaria de 6 a 30 min.
+- **Fora do problema:** as entradas `/a;token=x/` e `/t=x/` seguem lineares (no máximo 468 ms com 16 MB).
+- **Sugestão:** guardar uma flag de "já vi `+`" durante a varredura.
+- **Evidência:** `perf.txt`, `perf2.txt` e `e2e-dos-{head,before}.json`.
+
+**A8-M3. A URL inicial é gravada em claro, com credenciais e query, com permissões padrão e seguindo symlink (CONFIRMADO).**
+
+- **Local:** `src-tauri/src/prefs.rs:63-82` e `src-tauri/src/commands.rs:278-285`.
+  - `set_capture_start_url` só chama `cli::validate_http_url` (`cli.rs:25-43`), que não recusa userinfo.
+  - Em seguida grava a URL inteira em `preferences.json` com `fs::create_dir_all` + `fs::write`, sem temp + rename e sem O_NOFOLLOW.
+- **Cenário:** `http://user:s3cret@h/?token=x` vai para o disco em claro.
+- **Teste (PoC idêntico ao `prefs.rs`):**
+  - o diretório sai 0755 e o arquivo 0644;
+  - um symlink plantado no caminho é seguido, e o alvo é sobrescrito.
+- **Contrato:** viola "nenhum segredo persistido" e "0700/0600".
+- **Atenuante:** o `~/Library` é 0700.
+- **Efeito colateral:** a mesma credencial chega ao Chrome pelo CDP e aparece no aviso e no banner.
+
+#### Baixo
+
+- **A8-B1. `token&amp;amp;#61;X` e `&amp;amp;amp;#x3d;X` ainda vazam (CONFIRMADO).**
+  - **Local:** `scrub.rs:1052`. O laço procura `&amp;` repetido, mas não `&amp;amp;`.
+  - **Contexto:** o `3607179` declarava "&amp; repetido" como corrigido.
+- **A8-B2. `sanitize_url("/s;token＝X/…")` vaza o valor (CONFIRMADO; já existia).** O navegador codifica o `＝`, e a forma codificada sai mascarada.
+- **A8-B3. A CLI "só de testes" está ativa no release (PLAUSÍVEL).**
+  - **Local:** `src-tauri/src/lib.rs:64-77` lê `env::args()` sem `cfg(debug_assertions)` nem variável de ambiente.
+  - **Cenário:** `open -a ScrapeLens --args --import-har /abs` importa sem passar pelo diálogo.
+  - **Limite:** não há URL scheme, então exige execução local.
+- **A8-B4. TOCTOU no arquivo da importação, e uma FIFO trava (CONFIRMADO).**
+  - **Local:** `cli.rs:90-103` valida o arquivo, mas o `import_har` (`commands.rs:237-249`) relê o caminho com `fs::metadata`, que segue symlink.
+  - **Cenário:** um symlink trocado para uma FIFO bloqueou o `fs::read` por mais de 3 s, e o comando é síncrono.
+  - **Plausível:** um symlink para `/dev/zero` (tamanho 0) passa no teto de 256 MiB. O diálogo da interface tem o mesmo problema, de antes do `395cf8e`.
+- **A8-B5. Validação de URL frouxa, igual no TS e no Rust (CONFIRMADO).**
+  - **Local:** `cli.rs:25-43` e `captureUrl.ts:16-28`.
+  - **Aceita:** NUL, caracteres de controle, DEL, U+200B, `http:///`, `http://@`, barra invertida e URL de 2 MB.
+  - **Divergência:** U+FEFF no meio é recusado no TS e aceito no Rust.
+  - **Mitigação:** o `start_session` revalida a URL, e os esquemas que não são http(s) são recusados.
+- **A8-B6. Detalhes da CLI (CONFIRMADO).**
+  - Só o último componente é checado, então `..` e um pai que é symlink passam.
+  - `--open-capture /` é aceito.
+  - `--open-capture=/x` e flags desconhecidas são ignorados em silêncio.
+  - O `cli://error` é emitido antes de a interface escutar e só aparece no stderr.
+- **A8-B7. Atalhos de menu ignoram o estado desabilitado.**
+  - ⌘⇧H e ⌘⇧N importam durante uma gravação e trocam a visão.
+  - ⌘⇧R ignora o botão desabilitado, mas o JS e o Rust recusam a segunda sessão.
+
+### O que está limpo no `395cf8e`
+
+- **URL inicial:**
+  - só vai ao Chrome como JSON do CDP, nunca para o shell;
+  - o Rust a revalida no `start_session` (`commands.rs:339`);
+  - os esquemas `javascript`, `data`, `file`, `chrome`, `about`, `view-source`, `blob` e `ws` são recusados.
+- **CLI:** recusa caminho relativo, FIFO e `/dev/zero` na partida, symlink, diretório, valor começando com `-`, flag repetida e duas ações.
+- **`--open-capture`:** só lê, sem gravar na pasta.
+- **Importações:** vão para `sessions/` com 0700.
+- **`preferences.json` corrompido:** volta ao padrão sem travar.
+- **Testes:**
+  - `cargo test --offline --lib` em `src-tauri`: 37 passam, 8 ignorados (`cli::` 6/6);
+  - `capture-url.test.ts`: ok.
