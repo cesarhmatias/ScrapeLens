@@ -190,3 +190,59 @@ front-end.
   as variantes medidas no harness, mas usando a API atual do core, não um patch.
 - O captura do Chrome em si (processo `capture_big`) não teve a memória medida à
   parte; o `stop` roda o mesmo import de `capture-write` (9,2 GiB de pico).
+
+## 7. Resultado depois das correções (rodada 13, onda 1)
+
+Implementados no `core/` e no `mcp/` (um commit por item): **P1** (`87bd164`: validação do
+`netlog.json` e das linhas do CDP em fluxo, sem DOM, com o mesmo veredito do `Value`, inclusive o
+limite de recursão de 128 níveis: `IgnoredAny` não serve porque o pula), **P2** (`752230e`:
+`inspect` e `assess` escrevem em fluxo com struct emprestada; saída byte a byte igual), **P3**
+(`4d82e36`: índice por (método em minúsculas, URL canônica) e por id de origem do NetLog; as chaves
+explícitas também indexadas), **P6** (`2550041`: `session.json` compacto quando o JSON identado passa
+de 50 MiB) e **P7** (`b438945`: `sanitize_bundle_owned` consome o bundle e sanitiza no lugar; CLI
+`sanitize` e registry do MCP usam). **P4, P5 e P8 não foram feitos** (P5 é do App).
+
+**Requisito de P3, saída idêntica.** `core/tests/correlation_identity.rs` importa as 29 capturas e
+fixtures versionadas (HTTP/1.1, h2, h3, contratos, multi-alvo, `src-tauri/evidence`, adapters) e
+confere o `session.json` identado e os anexos, byte a byte (FNV-1a 64 bits + tamanho), contra os
+hashes gravados ANTES da mudança (commit `aefacc9`); passa igual depois. Mais um teste unitário em
+`correlate.rs` mostra que o índice nunca descarta um par que a varredura de todos os pares aceitaria,
+e o `tests/aceite/check_multi_target.py` (captura real multi-alvo) passou.
+
+**Medido depois** (mesmas sessões sintéticas de §2, mesmo harness, `--release`, picos de RSS em MiB;
+a etapa nova `import-eager-sanitize-owned` foi acrescentada ao harness; `inspect` é o binário
+`scrapelens-core inspect` medido com `/usr/bin/time -l`). N = 2.002 não foi medido de novo.
+
+| Etapa | N = 5.002 antes → depois | N = 20.002 antes → depois | Tempo a 20.002 |
+|---|---:|---:|---:|
+| `import-eager` (MCP máscara / CLI) — P1 | 1.186 → **400** | 4.727 → **1.580** (−67 %) | 17,8 s → 10,1 s |
+| `inspect` (CLI) — P1+P2 | 2.611 → **419** | 9.305 → **1.656** (−82 %) | n/m → 11,5 s |
+| 1ª chamada mascarada do MCP — P1+P7 (`import-eager-sanitize-owned`) | 1.415 → **415** | 5.654 → **1.649** (−71 %) | 25,8 s → 22,8 s |
+| `capture-full` (parse + correlação) — P3 | 1.784 → 1.783 | 6.993 → 7.110 | **20,5 s → 2,2 s** (5k); **248,9 s → 9,3 s** (20k) |
+| `capture-write` (+ `write_session_dir`) — P3+P6 | — → 1.903 | 9.189 → **7.580** | 263 s → **16,2 s** |
+| `netlog-only` (parse do NetLog; P4 não feito) | — → 1.194 | 4.662 → 4.759 | 4,6 s → 5,0 s |
+| `session.json` gravado (5.002 req.) — P6 | 283 MiB → **162 MiB** (−43 %) | 1.133 MiB → ~650 MiB (estimado, igual proporção) | — |
+
+Leitura:
+
+- O **tempo** de importar uma captura grande caiu de forma linear: `capture-full` a 20 mil requisições
+  de ~4 min para 9,3 s (27×); o `stop_capture` do MCP e do App deixa de congelar por minutos. A
+  memória de `capture-full` não muda (o DOM do NetLog, P4, continua: 4,7 GiB só no parse).
+- A memória de `import-eager`, `inspect` e da 1ª chamada mascarada do MCP caiu para ~1,6 GiB (−67 a
+  −82 %): é o custo da sessão tipada (1,15 GiB) mais os bytes do CDP e do NetLog, sem o DOM nem a cópia
+  mascarada. A estimativa de §5 (≈1,6 GiB) se confirmou; a do MCP mascarado (≈1,6 GiB com P7) também.
+- `capture-write` caiu de 9,2 para 7,6 GiB e de 263 para 16 s; o que resta é o parse do NetLog (P4).
+- Variação: ±1 % na memória; os tempos curtos variam com o cache de disco (±30 %).
+- Reproduzir: `cd experiments/memoria-sessao && cargo build --release && ./target/release/memoria-sessao
+  <etapa> /tmp/big20k` (uma etapa por processo); `inspect`: `/usr/bin/time -l
+  core/target/release/scrapelens-core inspect /tmp/big20k > /dev/null`.
+
+**Projeção atualizada (20 mil requisições capturadas):**
+
+| Consumidor | Antes | Depois (medido) | Com P4/P5 (estimado) |
+|---|---:|---:|---:|
+| `inspect` (CLI) | 9,3 GiB | **1,6 GiB** | — |
+| 1ª chamada mascarada do MCP | 5,7 GiB | **1,6 GiB** | — |
+| `stop_capture` (importa a captura) | 7,0 GiB, 249 s | **7,1 GiB, 9,3 s** | ~3,8 GiB (P4) |
+| Abrir no App | 7,1 GiB | 7,1 GiB (P5 pendente, é do App) | ~1,2 GiB |
+

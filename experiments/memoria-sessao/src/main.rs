@@ -198,6 +198,17 @@ fn main() {
             }
         }
         // Mesmo caminho do servidor MCP na primeira chamada mascarada e do CLI `inspect`.
+        // P7: consome o bundle e sanitiza no lugar (caminho do MCP e do CLI `sanitize`).
+        "import-eager-sanitize-owned" => {
+            let imported = scrapelens_core::import_session_dir(&dir).unwrap();
+            m.check("import_session_dir (sessão + anexos em memória)");
+            let sanitized = scrapelens_core::export::sanitize::sanitize_bundle_owned(
+                imported.bundle,
+                &scrapelens_core::export::sanitize::SanitizeOptions::default(),
+            );
+            m.check("sanitize_bundle_owned (no lugar)");
+            println!("{}", json!({"sanitizedRequests": sanitized.bundle.session.requests.len()}));
+        }
         "import-eager" | "import-eager-pretty" | "import-eager-stream" | "import-eager-sanitize" => {
             let imported = scrapelens_core::import_session_dir(&dir).unwrap();
             m.check("import_session_dir (sessão + anexos em memória)");
