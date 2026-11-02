@@ -138,6 +138,8 @@ fn rename_at(src: &File, from: &str, dst: &File, to: &str) -> io::Result<()> {
 }
 
 /// Cria um arquivo NOVO 0600 (O_EXCL, O_NOFOLLOW) no diretório do descritor.
+/// Aberto para leitura e escrita: quem precisa reler pelo mesmo descritor (os
+/// corpos, no resgate) clona o `File`.
 pub(crate) fn create_new_at(dir: &File, name: &str) -> io::Result<File> {
     let cname = name_c(name)?;
     // SAFETY: descritor e nome válidos.
@@ -145,7 +147,7 @@ pub(crate) fn create_new_at(dir: &File, name: &str) -> io::Result<File> {
         libc::openat(
             dir.as_raw_fd(),
             cname.as_ptr(),
-            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
             0o600 as libc::c_uint,
         )
     })?;
@@ -164,6 +166,20 @@ pub(crate) fn open_read_at(dir: &File, name: &str) -> io::Result<File> {
         )
     })?;
     Ok(to_file(fd))
+}
+
+/// Cria `name` NOVO no diretório do descritor. Se o nome já existe (arquivo antigo
+/// ou symlink plantado), remove o NOME (nunca o alvo) e cria de novo; se alguém o
+/// replantar entre as duas chamadas, falha em vez de seguir o link. Relativo ao
+/// descritor: nenhum caminho é resolvido.
+pub(crate) fn create_replacing_at(dir: &File, name: &str) -> io::Result<File> {
+    match create_new_at(dir, name) {
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            unlink(dir, name)?;
+            create_new_at(dir, name)
+        }
+        other => other,
+    }
 }
 
 fn unique_tmp(name: &str) -> String {
@@ -320,6 +336,44 @@ mod tests {
         assert_eq!(names(&out), Vec::<String>::new(), "nada pode cair em OUT");
         assert_eq!(std::fs::read(moved.join("session.json")).unwrap(), b"{}");
         assert_eq!(std::fs::metadata(moved.join("session.json")).unwrap().permissions().mode() & 0o777, 0o600);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn create_replacing_at_never_writes_through_a_planted_link_nor_into_a_swapped_dir() {
+        let base = scratch("create");
+        let dir_path = base.join("sessao");
+        std::fs::create_dir(&dir_path).unwrap();
+        let victim = base.join("VICTIM.txt");
+        std::fs::write(&victim, "ORIGINAL\n").unwrap();
+        std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o644)).unwrap();
+        // 1. Symlink plantado no nome: o NOME é substituído, o alvo não é tocado.
+        symlink(&victim, dir_path.join("cdp-bodies.jsonl")).unwrap();
+        let handle = open(&dir_path);
+        let mut file = create_replacing_at(&handle, "cdp-bodies.jsonl").unwrap();
+        file.write_all(b"corpo\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n");
+        assert_eq!(std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777, 0o644);
+        let meta = std::fs::symlink_metadata(dir_path.join("cdp-bodies.jsonl")).unwrap();
+        assert!(meta.file_type().is_file());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        // O mesmo descritor também LÊ (o resgate relê os corpos): clone + seek.
+        let mut reader = file.try_clone().unwrap();
+        std::io::Seek::seek(&mut reader, std::io::SeekFrom::Start(0)).unwrap();
+        let mut back = String::new();
+        reader.read_to_string(&mut back).unwrap();
+        assert_eq!(back, "corpo\n");
+        // 2. A pasta é trocada por um link para OUT ANTES da criação: o arquivo
+        //    nasce na pasta ORIGINAL.
+        let out = base.join("OUT");
+        std::fs::create_dir(&out).unwrap();
+        let moved = base.join("sessao.moved");
+        std::fs::rename(&dir_path, &moved).unwrap();
+        symlink(&out, &dir_path).unwrap();
+        std::fs::remove_file(moved.join("cdp-bodies.jsonl")).unwrap();
+        create_replacing_at(&handle, "cdp-bodies.jsonl").unwrap();
+        assert_eq!(names(&out), Vec::<String>::new(), "nada em OUT");
+        assert!(moved.join("cdp-bodies.jsonl").is_file());
         let _ = std::fs::remove_dir_all(base);
     }
 

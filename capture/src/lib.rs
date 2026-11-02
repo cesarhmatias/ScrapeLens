@@ -174,9 +174,10 @@ fn run_inner(
     // fresco). Só depois do encerramento ele é lido sem seguir link e copiado
     // para a pasta da sessão por `write_private` (rename atômico).
     let netlog_path = profile.join("netlog.json");
-    let bodies_path = config.session_dir.join("cdp-bodies.jsonl");
-    let bodies_file =
-        open_private(&bodies_path).map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
+    // Os corpos nascem relativos ao descritor da pasta (A7-B7): sem caminho, nada
+    // vai para a pasta do atacante se o nome for trocado depois da verificação.
+    let bodies_file = fdio::create_replacing_at(&session_handle, "cdp-bodies.jsonl")
+        .map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
     // Só para o resgate (A5-B3): relê os corpos pelo descritor, mesmo que a
     // pasta da sessão tenha sido trocada.
     let mut bodies_reader = bodies_file
@@ -492,10 +493,7 @@ fn run_inner(
     // foi trocado durante a gravação, a sessão ficou na pasta ORIGINAL (movida),
     // não onde o chamador vai procurar. Não diga OK (A6-B5).
     if let Err(why) = recheck_session_dir(&config.session_dir, session_identity) {
-        return Err(format!(
-            "{} A sessão foi gravada na pasta original, que já não está nesse caminho.",
-            session_dir_changed(why)
-        ));
+        return Err(session_dir_changed_after_write(why, &session_handle));
     }
 
     let session_value = serde_json::to_value(&imported.bundle.session)
@@ -2187,6 +2185,40 @@ fn session_dir_changed(why: String) -> String {
     format!(
         "A pasta da sessão foi trocada ou deixou de ser nossa durante a captura ({why}); nada foi gravado nela e nada fora dela foi apagado."
     )
+}
+
+/// Mensagem quando a pasta foi trocada DURANTE a gravação (A7): a sessão foi
+/// gravada inteira na pasta ORIGINAL (o descritor aberto no início), que o
+/// sistema agora localiza noutro caminho (`F_GETPATH`); nada foi gravado na pasta
+/// que tomou o lugar. Não repete "nada foi gravado nela", que seria falso.
+fn session_dir_changed_after_write(why: String, original: &std::fs::File) -> String {
+    let moved = descriptor_path(original)
+        .map(|p| format!("agora em {}", p.display()))
+        .unwrap_or_else(|| "que não conseguimos localizar".to_string());
+    format!(
+        "A pasta da sessão foi trocada durante a gravação ({why}). A sessão foi gravada inteira na pasta ORIGINAL, {moved}; nada foi gravado na pasta que tomou o lugar dela e nada fora da pasta original foi apagado."
+    )
+}
+
+/// Caminho ATUAL do diretório que o descritor representa, mesmo que o nome tenha
+/// sido movido (macOS: `F_GETPATH`).
+#[cfg(target_os = "macos")]
+fn descriptor_path(file: &std::fs::File) -> Option<PathBuf> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
+    let mut buffer = [0u8; libc::PATH_MAX as usize];
+    // SAFETY: `F_GETPATH` escreve no máximo PATH_MAX bytes no buffer.
+    let result = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buffer.as_mut_ptr()) };
+    if result < 0 {
+        return None;
+    }
+    let len = buffer.iter().position(|&b| b == 0)?;
+    Some(PathBuf::from(std::ffi::OsStr::from_bytes(&buffer[..len])))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn descriptor_path(_file: &std::fs::File) -> Option<PathBuf> {
+    None
 }
 
 const RESCUE_PREFIX: &str = "rescue-";
@@ -4274,6 +4306,28 @@ mod tests {
         recheck_session_dir(&session_dir, identity).expect("o original de volta passa");
         std::fs::set_permissions(&session_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(recheck_session_dir(&session_dir, identity).is_err());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a7_message_after_a_swap_during_the_write_names_the_moved_dir_and_does_not_contradict_itself() {
+        use std::os::unix::fs::symlink;
+        let base = scratch_dir("a7msg");
+        let dir = base.join("capture-X");
+        std::fs::create_dir_all(&dir).unwrap();
+        let handle = std::fs::File::open(&dir).unwrap();
+        let moved = base.join("capture-X.moved");
+        std::fs::rename(&dir, &moved).unwrap();
+        symlink(base.join("OUT"), &dir).unwrap();
+        let message = session_dir_changed_after_write("agora é um link simbólico".to_string(), &handle);
+        let canonical = std::fs::canonicalize(&moved).unwrap();
+        assert!(message.contains(&canonical.display().to_string()), "sem o caminho movido: {message}");
+        assert!(message.contains("gravada inteira na pasta ORIGINAL"), "{message}");
+        // Não afirma o contrário ("nada foi gravado nela").
+        assert!(!message.contains("nada foi gravado nela"), "{message}");
+        // A mensagem de ANTES de gravar continua dizendo que nada foi gravado.
+        assert!(session_dir_changed("x".to_string()).contains("nada foi gravado nela"));
         let _ = std::fs::remove_dir_all(base);
     }
 

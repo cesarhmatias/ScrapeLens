@@ -212,10 +212,17 @@ início abrimos a pasta da sessão (`O_NOFOLLOW|O_DIRECTORY`, nossa, 0700) e
 guardamos o **descritor** e a identidade (dispositivo + inode, que não aparece em
 nenhuma saída). Depois do encerramento do Chrome, NENHUMA escrita resolve o
 caminho da pasta de novo:
+- `cdp-bodies.jsonl` é **criado** relativo ao descritor, no início da captura
+  (`fdio::create_replacing_at`: `openat(O_EXCL|O_NOFOLLOW)`; um nome já ocupado,
+  inclusive por symlink plantado, tem o NOME removido e é recriado, nunca o alvo),
+  então uma troca do nome da pasta logo depois da verificação não manda os corpos
+  para a pasta do atacante (A7-B7: antes era `open_private(caminho)`); durante a
+  captura ele é escrito pelo próprio descritor e, no fim, relido por ele (não
+  pelo caminho). Teste `fdio::tests::create_replacing_at_never_writes_through_a_planted_link_nor_into_a_swapped_dir`
+  e o vivo `live_planted_symlinks_are_not_followed`;
 - `cdp-events.jsonl`, `netlog.json` e `netlog.original.json` são gravados com
   `openat(O_EXCL|O_NOFOLLOW)` + `renameat` relativos ao descritor
-  (`fdio::write_private_at`); os corpos são relidos pelo descritor do arquivo
-  (`cdp-bodies.jsonl`), não pelo caminho;
+  (`fdio::write_private_at`);
 - o core grava o resto (`session.json`, `attachments/`) num **diretório de
   preparo** novo e 0700 dentro do perfil temporário (`write_session_fd`), e cada
   item é movido para a pasta da sessão com `renameat` relativo ao descritor
@@ -241,10 +248,18 @@ descritor representa) e nada cai na pasta do atacante. Testes
 pasta pelo NOME (`O_NOFOLLOW|O_DIRECTORY`) e exige diretório, nosso, 0700 e a
 MESMA identidade, **antes de gravar e depois de gravar**. Trocada por um link,
 por outro diretório (mesmo 0700 e nosso) ou com o modo afrouxado, o stop **falha**:
-antes de gravar com "A pasta da sessão foi trocada ou deixou de ser nossa durante
-a captura (…); nada foi gravado nela e nada fora dela foi apagado."; depois de
-gravar com a mesma frase mais "A sessão foi gravada na pasta original, que já não
-está nesse caminho." Nunca devolve OK com a pasta trocada durante a gravação.
+**antes** de gravar com "A pasta da sessão foi trocada ou deixou de ser nossa
+durante a captura (…); nada foi gravado nela e nada fora dela foi apagado."; **depois**
+de gravar (a troca aconteceu DURANTE a gravação) com uma mensagem própria, que
+não repete o "nada foi gravado": "A pasta da sessão foi trocada durante a
+gravação (…). A sessão foi gravada inteira na pasta ORIGINAL, agora em
+`<caminho.moved>`; nada foi gravado na pasta que tomou o lugar dela e nada fora da
+pasta original foi apagado." O caminho vem de `F_GETPATH` no descritor aberto
+no início (o lugar ATUAL da pasta original, mesmo movida); se o sistema não
+informar, a mensagem diz "que não conseguimos localizar". Em ambos os casos os
+arquivos da captura também vão para o resgate. Nunca devolve OK com a pasta
+trocada durante a gravação. Teste
+`a7_message_after_a_swap_during_the_write_names_the_moved_dir_and_does_not_contradict_itself`.
 
 **Resgate quando a sessão não pôde ser gravada (A5-B2, A5-B3, A6-B6, A6-B7).**
 *Toda* falha depois do encerramento do Chrome (pasta trocada, o core recusar um
