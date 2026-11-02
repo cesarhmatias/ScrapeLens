@@ -281,7 +281,8 @@ impl Scrubber<'_> {
             if self.is_sensitive_part(&bytes[part_start..eq]) {
                 // o que veio ANTES do nome ainda pode carregar segredo codificado
                 self.decode_child(level, seg_start, eq, depth);
-                let next = self.redact_value(level, eq + eq_len, end, depth, stack);
+                let slash_ends = path_context(bytes, start, part_start, eq);
+                let next = self.redact_value(level, eq + eq_len, end, depth, stack, slash_ends);
                 if next >= end {
                     return next;
                 }
@@ -316,7 +317,7 @@ impl Scrubber<'_> {
             if self.is_sensitive_part(&bytes[part_start..end]) {
                 self.decode_child(level, seg_start, end, depth);
                 let vstart = look + len;
-                return self.redact_value(level, vstart, vstart, depth, stack);
+                return self.redact_value(level, vstart, vstart, depth, stack, false);
             }
         }
         self.decode_child(level, seg_start, end, depth);
@@ -332,6 +333,7 @@ impl Scrubber<'_> {
         group_end: usize,
         depth: usize,
         stack: &[u8],
+        slash_ends: bool,
     ) -> usize {
         let bytes: &[u8] = &level.bytes;
         if self.closed {
@@ -340,7 +342,7 @@ impl Scrubber<'_> {
             return bytes.len();
         }
         let (value_start, value_end, next) =
-            self.value_extent(bytes, vstart, group_end, depth, stack);
+            self.value_extent(bytes, vstart, group_end, depth, stack, slash_ends);
         self.push(level, value_start, value_end, Repl::Param);
         // Depois de um valor entre aspas/colchetes, o que vier COLADO ainda é valor:
         // texto (`token="abc"TAIL`, `[abc]TAIL`) ou outra abertura (`'a'"X`, `[a][X]`,
@@ -374,7 +376,7 @@ impl Scrubber<'_> {
                 if !opens {
                     break;
                 }
-                let (s0, e0, n0) = self.value_extent(bytes, next, next, depth, stack);
+                let (s0, e0, n0) = self.value_extent(bytes, next, next, depth, stack, false);
                 if n0 <= next {
                     break;
                 }
@@ -394,9 +396,10 @@ impl Scrubber<'_> {
         group_end: usize,
         depth: usize,
         stack: &[u8],
+        slash_ends: bool,
     ) -> (usize, usize, usize) {
         if vstart < group_end {
-            return self.attached_extent(bytes, vstart, depth, stack);
+            return self.attached_extent(bytes, vstart, depth, stack, slash_ends);
         }
         // `=` é o último byte do grupo; o que vem depois é um delimitador ou fim
         let mut p = vstart;
@@ -412,11 +415,11 @@ impl Scrubber<'_> {
             after_equals += n;
         }
         if after_equals > p {
-            return self.value_extent(bytes, after_equals, after_equals, depth, stack);
+            return self.value_extent(bytes, after_equals, after_equals, depth, stack, false);
         }
         // `token=\X`: a barra invertida que não escapa aspas é só mais um byte do valor.
         if bytes[p] == b'\\' && !matches!(bytes.get(p + 1), Some(b'"' | b'\'')) {
-            return self.attached_extent(bytes, p, depth, stack);
+            return self.attached_extent(bytes, p, depth, stack, false);
         }
         if bytes[p] == b'\\' && matches!(bytes.get(p + 1), Some(b'"' | b'\'')) {
             // `\"valor\"` (aspas escapadas, comuns em texto dentro de JSON)
@@ -490,7 +493,7 @@ impl Scrubber<'_> {
                 }
                 (p + 1, close, if closed { close + 1 } else { close })
             }
-            b if !is_hard(b) => self.attached_extent(bytes, p, depth, stack),
+            b if !is_hard(b) => self.attached_extent(bytes, p, depth, stack, false),
             _ => (vstart, vstart, vstart),
         }
     }
@@ -509,6 +512,7 @@ impl Scrubber<'_> {
         vstart: usize,
         depth: usize,
         stack: &[u8],
+        slash_ends: bool,
     ) -> (usize, usize, usize) {
         let rest = &bytes[vstart..];
         for placeholder in [self.options.placeholder.as_bytes(), self.param().as_bytes()] {
@@ -528,6 +532,17 @@ impl Scrubber<'_> {
         while q < bytes.len() {
             let b = bytes[q];
             if matches!(b, b'&' | b'#') {
+                break;
+            }
+            // Em caminho (`/a;jsessionid=X/b`, `/s/session=X/b`) o valor acaba em `/` ou `?`:
+            // o resto é o caminho/consulta, que segue sendo examinado.
+            if slash_ends && b == b'?' {
+                break;
+            }
+            // `/` acaba o valor num caminho, a menos que o credencial pareça base64 com
+            // barra (`AAA+x/yyy==`): `+` antes da barra, ou `+`, `=` ou 16+ caracteres no
+            // trecho seguinte.
+            if slash_ends && b == b'/' && !base64_slash(bytes, vstart, q) {
                 break;
             }
             if depth == 0 && is_space(b) {
@@ -855,6 +870,48 @@ fn semicolon_ends_value(bytes: &[u8], at: usize) -> bool {
         .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'%')))
         .unwrap_or(bytes.len() - at);
     bytes.get(at + word) == Some(&b'=')
+}
+
+/// A barra em `bytes[slash]` faz parte de um credencial base64 (e não do caminho)?
+fn base64_slash(bytes: &[u8], value_start: usize, slash: usize) -> bool {
+    if bytes[value_start..slash].contains(&b'+') {
+        return true;
+    }
+    let rest = &bytes[slash + 1..];
+    let segment = rest
+        .iter()
+        .position(|b| is_hard(*b) || matches!(b, b'/' | b'?'))
+        .map_or(rest.len(), |n| n);
+    segment >= 16 || rest[..segment].iter().any(|b| matches!(b, b'+' | b'='))
+}
+
+/// O nome em `bytes[part_start..eq]` está num CAMINHO (segmento `/nome=valor/` ou
+/// parâmetro de matriz `;nome=valor` depois de um token com `/`)? Então o valor acaba
+/// em `/` ou `?`. Num valor de consulta (`?token=ab/cd`) ou solto (`token=ab/cd`) a
+/// barra é parte do credencial (base64) e o valor vai até o espaço.
+fn path_context(bytes: &[u8], group_start: usize, part_start: usize, eq: usize) -> bool {
+    let part = &bytes[part_start..eq];
+    if let Some(last_slash) = part.iter().rposition(|b| *b == b'/') {
+        let last_query = part.iter().rposition(|b| *b == b'?');
+        return last_query.map_or(true, |q| q < last_slash);
+    }
+    if part_start != group_start {
+        return false;
+    }
+    // matriz: o grupo começa logo depois de `;` e um dos grupos `;`-encadeados
+    // anteriores (até um delimitador que não seja `;`) contém `/`
+    let mut pos = group_start;
+    while pos > 0 && bytes[pos - 1] == b';' {
+        let mut j = pos - 1;
+        while j > 0 && !is_hard(bytes[j - 1]) {
+            j -= 1;
+        }
+        if bytes[j..pos - 1].contains(&b'/') {
+            return true;
+        }
+        pos = j;
+    }
+    false
 }
 
 /// Fechamento da abertura em `bytes[at]` (`( [ { <`, aspas) dentro de 64 bytes e

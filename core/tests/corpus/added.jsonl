@@ -36,3 +36,12 @@
 {"input": "token=\"a\"(B4Bx)", "forbid": ["B4Bx"], "kind": "text", "keep": []}
 {"input": "token=[a][B4Cx]", "forbid": ["B4Cx"], "kind": "text", "keep": []}
 {"input": "(token=AB(c)B4Dx)", "forbid": ["B4Dx"], "kind": "text", "keep": []}
+{"input": "/a;v=2/session=keep/b", "forbid": ["keep"], "kind": "keep", "keep": ["/a;v=2/session=", "/b"]}
+{"input": "GET /a;jsessionid=SEC9x/b/c?x=1 HTTP/1.1", "forbid": ["SEC9x"], "kind": "keep", "keep": ["/b/c?x=1 HTTP/1.1"]}
+{"input": "Refresh: 0; url=/a;jsessionid=SEC10x/b/c?page=2", "forbid": ["SEC10x"], "kind": "keep", "keep": ["/b/c?page=2"]}
+{"input": "see /users;token=SEC11x/profile/123 now", "forbid": ["SEC11x"], "kind": "keep", "keep": ["/profile/123 now"]}
+{"input": "{\"u\":\"/a;jsessionid=SEC12x/b/c?x=1\"}", "forbid": ["SEC12x"], "kind": "keep", "keep": ["/b/c?x=1"]}
+{"kind": "keep", "input": "/a;jsessionid=SEC6x/b/c?x=1", "forbid": ["SEC6x"], "keep": ["/b/c?x=1"]}
+{"kind": "keep", "input": "https://h/a;jsessionid=SEC7x/b/c?x=1", "forbid": ["SEC7x"], "keep": ["/b/c?x=1"]}
+{"kind": "keep", "input": "/users;token=SEC8x/profile/123?page=2", "forbid": ["SEC8x"], "keep": ["/profile/123?page=2"]}
+{"kind": "keep", "input": "/a;v=2/b;token=SEC9x/c", "forbid": ["SEC9x"], "keep": ["/a;v=2/b;token=", "/c"]}
