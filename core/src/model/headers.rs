@@ -31,7 +31,7 @@ impl HeaderEntry {
 }
 
 /// Como a ordem do bloco foi obtida.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OrderState {
     /// Ordem da fonte, sem reordenação.
@@ -40,13 +40,8 @@ pub enum OrderState {
     Reconstructed,
     /// Visão normalizada: ordem não é a do fio.
     Normalized,
+    #[default]
     Unknown,
-}
-
-impl Default for OrderState {
-    fn default() -> Self {
-        OrderState::Unknown
-    }
 }
 
 /// Bloco de headers de uma requisição ou resposta.

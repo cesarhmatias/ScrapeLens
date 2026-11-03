@@ -514,7 +514,7 @@ fn one_path(args: &[String]) -> Result<PathBuf, String> {
 }
 
 fn input_and_out(args: &[String]) -> Result<(PathBuf, PathBuf), String> {
-    let path = args.first().ok_or_else(|| usage())?;
+    let path = args.first().ok_or_else(usage)?;
     let index = args
         .iter()
         .position(|arg| arg == "--out")

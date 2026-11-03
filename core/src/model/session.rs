@@ -7,31 +7,21 @@ use super::entities::{Connection, LogicalRequest, StreamSession};
 
 pub const SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CompletenessState {
     Complete,
+    #[default]
     Partial,
 }
 
-impl Default for CompletenessState {
-    fn default() -> Self {
-        CompletenessState::Partial
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum WarningSeverity {
     Info,
+    #[default]
     Warning,
     Error,
-}
-
-impl Default for WarningSeverity {
-    fn default() -> Self {
-        WarningSeverity::Warning
-    }
 }
 
 /// Aviso de importação/captura. Nada é descartado em silêncio: dados

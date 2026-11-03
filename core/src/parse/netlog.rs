@@ -183,9 +183,10 @@ impl Builder {
 // Campos desconhecidos são pulados com `JsonShape` (mesmo limite de recursão de
 // 128 níveis do `Value`), então o veredito de JSON inválido/truncado não muda.
 //
-// Limitação conhecida: chave de topo duplicada (`events` duas vezes) é lida duas
-// vezes; o `Value` antigo ficava só com a última. O Chrome nunca duplica chaves,
-// e as capturas/fixtures reais têm hash idêntico.
+// Chave de topo duplicada: `events` duas vezes segue a semântica do `Value`
+// antigo (a última vence; a anterior é descartada em ambas as passadas).
+// `events` antes de `constants` cai no fallback de memória abaixo: os eventos são
+// bufferizados e processados no fim, para usar as `constants` do arquivo.
 // ---------------------------------------------------------------------------
 
 /// Informações que a importação usa de `constants`.
@@ -1174,6 +1175,19 @@ impl ScanCtx {
         }
     }
 
+    /// Semântica do `Value`: a última chave `events` do objeto raiz vence.
+    /// Uma segunda ocorrência descarta tudo que veio do array anterior.
+    fn reset_events(&mut self) {
+        self.buffered.clear();
+        self.events_total = 0;
+        self.first_ticks = None;
+        self.bound_to_request.clear();
+        self.quic_stream_requests.clear();
+        self.unknown_counts.clear();
+        self.not_object_count = 0;
+        self.not_object_warnings.clear();
+    }
+
     fn absorb(&mut self, event: RawEventObject) {
         let event_type = event.type_id;
         let name = match self
@@ -1362,11 +1376,16 @@ impl<'de> Visitor<'de> for ScanRootVisitor<'_> {
                     self.ctx.constants = map.next_value::<ConstantsValue>()?.0;
                 }
                 "events" => {
-                    self.ctx.saw_events = true;
+                    if self.ctx.saw_events {
+                        self.ctx.reset_events();
+                    } else {
+                        self.ctx.saw_events = true;
+                    }
                     let is_array = map.next_value_seed(ScanEvents {
                         ctx: &mut *self.ctx,
                     })?;
-                    self.ctx.events_is_array |= is_array;
+                    // Última chave vence, inclusive se não for array (como o `Value`).
+                    self.ctx.events_is_array = is_array;
                 }
                 _ => {
                     map.next_value::<JsonShape>()?;
@@ -1437,6 +1456,7 @@ struct BuildCtx {
     pending_session: Vec<(NetlogHeaderEvent, Option<u32>)>,
     events_used: usize,
     index: usize,
+    saw_events: bool,
     warnings: Vec<Warning>,
 }
 
@@ -1447,6 +1467,15 @@ struct BuiltEvents {
 }
 
 impl BuildCtx {
+    /// Mesma semântica do `Value`: a última chave `events` do objeto raiz vence.
+    fn reset_events(&mut self) {
+        self.builders.clear();
+        self.pending_session.clear();
+        self.events_used = 0;
+        self.index = 0;
+        self.warnings.clear();
+    }
+
     fn process(&mut self, index: usize, event: RawEventObject) {
         let name = match event
             .type_id
@@ -1714,6 +1743,11 @@ impl<'de> Visitor<'de> for BuildRootVisitor<'_> {
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
                 "events" => {
+                    if self.ctx.saw_events {
+                        self.ctx.reset_events();
+                    } else {
+                        self.ctx.saw_events = true;
+                    }
                     map.next_value_seed(BuildEvents {
                         ctx: &mut *self.ctx,
                     })?;
@@ -1780,6 +1814,7 @@ fn build_events(
         pending_session: Vec::new(),
         events_used: 0,
         index: 0,
+        saw_events: false,
         warnings: Vec::new(),
     };
     let mut deserializer = serde_json::Deserializer::from_slice(json);
@@ -2055,6 +2090,9 @@ fn protocol_for_event(name: &str) -> Protocol {
     }
 }
 
+// O erro é um `Warning` rico (código, mensagem e detalhe), que o chamador empilha
+// como aviso; boxear só moveria a alocação para o caminho de sucesso.
+#[allow(clippy::result_large_err)]
 fn parse_headers(
     params: Option<RawParams>,
     event_name: &str,

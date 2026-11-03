@@ -20,7 +20,7 @@ pub struct CookiePairEntry {
 /// Preserva (a) o valor original de cada campo da fonte, (b) os pares internos
 /// parseados e (c) as linhas divididas observadas no fio (h2/h3). Nada é
 /// fundido: `wire_lines` pode ter N entradas enquanto `raw` tem 1.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CookieField {
     /// Valores originais do(s) campo(s) `Cookie` na fonte (0..N).
@@ -39,19 +39,6 @@ pub struct CookieField {
     pub notes: Vec<String>,
     #[serde(default)]
     pub provenance: Provenance,
-}
-
-impl Default for CookieField {
-    fn default() -> Self {
-        Self {
-            raw: Vec::new(),
-            pairs: Vec::new(),
-            wire_lines: Vec::new(),
-            unparsed: Vec::new(),
-            notes: Vec::new(),
-            provenance: Provenance::default(),
-        }
-    }
 }
 
 impl CookieField {

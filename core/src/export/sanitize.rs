@@ -464,6 +464,9 @@ fn sanitize_set_cookie(
     *redactions.entry("setCookie".to_string()).or_default() += 1;
 }
 
+// Assinatura interna de um único chamador; agrupar os acumuladores num struct só
+// adicionaria um tipo sem ganho de clareza.
+#[allow(clippy::too_many_arguments)]
 fn sanitize_body(
     body: &Body,
     attachments: &BTreeMap<String, Vec<u8>>,

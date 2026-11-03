@@ -333,3 +333,45 @@ fn events_before_constants_are_still_processed_in_file_order() {
     assert_eq!(capture.events_used, 2);
     assert_eq!(capture.events_unknown, 0);
 }
+
+/// Chave `"events"` duplicada na raiz: como o `serde_json::Value` antigo, a
+/// última vence e o array anterior é descartado por inteiro.
+#[test]
+fn duplicate_root_events_keeps_only_the_last_array_like_value() {
+    let json = br#"{
+      "constants":{"logEventTypes":{"URL_REQUEST_START_JOB":1000}},
+      "events":[
+        {"type":1000,"phase":1,"time":"1000","source":{"id":9},
+         "params":{"url":"https://first.invalid/"}}
+      ],
+      "events":[
+        {"type":1000,"phase":1,"time":"2000","source":{"id":10},
+         "params":{"url":"https://last.invalid/"}}
+      ]
+    }"#;
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(json).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let capture = parse_netlog(json).unwrap();
+    assert_eq!(capture.events_total, 1);
+    assert_eq!(capture.events_used, 1);
+    assert_eq!(capture.requests.len(), 1);
+    assert_eq!(capture.requests[0].url, "https://last.invalid/");
+
+    // Última chave com array vazio também vence: nada do primeiro array sobra.
+    let empty_last = br#"{
+      "constants":{"logEventTypes":{"URL_REQUEST_START_JOB":1000}},
+      "events":[
+        {"type":1000,"phase":1,"time":"1000","source":{"id":9},
+         "params":{"url":"https://first.invalid/"}}
+      ],
+      "events":[]
+    }"#;
+    let capture = parse_netlog(empty_last).unwrap();
+    assert_eq!(capture.events_total, 0);
+    assert!(capture.requests.is_empty());
+}

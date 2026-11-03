@@ -35,9 +35,12 @@ impl Source {
 /// - `Partial`: preserva parte da informação (ex.: ordem h2/h3, `Cookie` fundido);
 /// - `Unverified`: a fonte não comprova o que foi pedido (ex.: HAR, CDP
 ///   `requestWillBeSent.headers` para sequência) ou não há evidência.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum Verification {
+    #[default]
     Unverified,
     Partial,
     Verified,
@@ -55,12 +58,6 @@ impl Verification {
             Verification::Partial => "partial",
             Verification::Unverified => "unverified",
         }
-    }
-}
-
-impl Default for Verification {
-    fn default() -> Self {
-        Verification::Unverified
     }
 }
 

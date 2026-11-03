@@ -5,12 +5,13 @@ use super::cookies::{CookieField, SetCookieRecord};
 use super::headers::HeaderView;
 use super::provenance::Provenance;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {
     H1,
     H2,
     H3,
+    #[default]
     Unknown,
 }
 
@@ -38,31 +39,20 @@ impl Protocol {
     }
 }
 
-impl Default for Protocol {
-    fn default() -> Self {
-        Protocol::Unknown
-    }
-}
-
 /// Resultado da associação de uma entidade com a fonte oposta. `Ambiguous`
 /// nunca escolhe um candidato silenciosamente.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MatchState {
     Matched,
     Ambiguous,
+    #[default]
     Unmatched,
 }
 
 impl MatchState {
     pub fn is_ambiguous(self) -> bool {
         matches!(self, MatchState::Ambiguous)
-    }
-}
-
-impl Default for MatchState {
-    fn default() -> Self {
-        MatchState::Unmatched
     }
 }
 
@@ -272,17 +262,12 @@ impl NetlogRefs {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum HeaderRole {
+    #[default]
     Request,
     Response,
-}
-
-impl Default for HeaderRole {
-    fn default() -> Self {
-        HeaderRole::Request
-    }
 }
 
 /// Evidência de headers de uma fonte específica. Uma tentativa pode ter várias
@@ -301,20 +286,15 @@ pub struct HeaderEvidence {
     pub view: HeaderView,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AttemptOutcome {
     Completed,
     Failed,
     Aborted,
     Pending,
+    #[default]
     Unknown,
-}
-
-impl Default for AttemptOutcome {
-    fn default() -> Self {
-        AttemptOutcome::Unknown
-    }
 }
 
 /// Uma tentativa concreta de executar uma requisição lógica (retry, corrida
