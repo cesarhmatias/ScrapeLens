@@ -1,7 +1,7 @@
 # Relatório final de aceite — ScrapeLens
 
 - **HEAD testado:** 6a85676 (`fix(priming): placa com hífen, chassi, +55, ...`)
-- **Última atualização:** 2026-11-03 (rodadas 13 e 14; seções próprias abaixo)
+- **Última atualização:** 2026-11-03 (rodadas 13 a 16; seções próprias abaixo)
 - **Data:** 2026-10-29
 - **Máquina:** macOS arm64, Chrome 156.0.8078.73, sem rede externa (Chrome restrito a 127.0.0.1).
 - **Dados:** sintéticos; HARs reais só em agregados, lidos em modo somente leitura (temporários 0700 apagados).
@@ -213,6 +213,50 @@ Primeira bateria (`1ee0783`, artefatos `25248f3`, origem `fa89c25`) também fech
 **Limitações registradas:** `Ctrl+.` só encerra com foco na janela do ScrapeLens (para atalho global falta um caminho de nível GTK); aceleradores de menu GTK continuam não chegando ao WebView; no arm64 o Chromium por snap foi aceito pela captura (não foi preciso apt/PPA); `dpkg -i` sozinho deixa o pacote quebrado até `apt-get install <deb>` resolver `libwebkit2gtk-4.1-0`.
 
 Evidência: `tests/results/linux/README.md`, `tests/results/linux/{amd64,arm64}/` (summary, atalhos, contagens, `ss-durante-captura.txt`, prints), `tests/linux/acceptance.sh`, commit `a837465`. As VMs foram preservadas.
+
+## Rodada 15 — fechamento dos cinco achados baixos da revisão R13+R14
+
+- **Data:** 2026-11-03. **Base:** `578f367` (core/tests), `f377617` (capture), `4e19d6c` e `13b9164` (docs/relatórios).
+
+| Achado | Correção | Commit |
+|---|---|---|
+| P3 dependia de capturas locais | `correlation_identity` separa as **23 capturas rastreadas** no git (obrigatórias em clone limpo) das **6 locais opcionais** `multi-target-*` | `578f367` |
+| P7 sem oráculo independente | `sanitize_owned.rs` fixa **10 hashes FNV-1a** (sessão, anexos, brutos, contadores e avisos) como proteção de regressão do sanitizador | `578f367` |
+| FIFO/device podiam bloquear a leitura do cabeçalho | `linux_open_regular`/`linux_head` abrem com `O_RDONLY \| O_NONBLOCK \| O_NOFOLLOW \| O_CLOEXEC` e validam `S_IFREG` por `fstat` antes de ler (FIFO/device/symlink recusados de imediato) | `f377617` |
+| Wrapper arbitrário virava navegador | `linux_real_binary` restrito a `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser` | `f377617` |
+| Documentação desalinhada | `docs/21-linux.md`/`docs/16b` alinhados; item 9 do aceite pela CLI de teste e rodadas 13/14 no relatório final | `4e19d6c`, `13b9164` |
+
+Parecer independente em `/Users/cesar/OpenBot/Shared/scrapelens-revisao-r15-r16.md`: os cinco itens foram conferidos; o teste FIFO/device foi feito com a função extraída no macOS, então comprova o comportamento POSIX da abertura, **não** uma execução integrada do ramo Linux (os testes Linux novos são `cfg`).
+
+## Rodada 16 — P4 (parser de NetLog em fluxo) e fechamento de qualidade
+
+- **Data:** 2026-11-03. **Commits:** `ad4f5c1` (P4), `fed9b61` (medição), `22854c3` (fechamento), `e91cadf` (pacotes finais).
+- **P4:** o array `events` do NetLog é lido em fluxo por um `Visitor`, sem o DOM `serde_json::Value` do arquivo inteiro, em duas passadas (a primeira resolve `constants`, unidade de tempo, cadeias e tipos desconhecidos; a segunda constrói os registros). Chave `"events"` duplicada na raiz mantém o último array, igual ao `Value` antigo (`22854c3`).
+- **Qualidade:** `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings` com **0 warnings**; **362 testes** aprovados em `core/`; fuzzing determinístico do sanitizador na rodada completa (`FUZZ_N=150000`, `SOUP_N=100000`) sem falhas.
+
+**P4 medido (`docs/18` §8, sessão sintética de 20.002 requisições, mesmo harness):**
+
+| Etapa | Antes (R13) → P4 | Tempo a 20 mil |
+|---|---:|---:|
+| `netlog-only` (parse do NetLog) | 4.759 → **1.615 MiB** (−66,1 %) | 5,0 → 3,5 s |
+| `capture-full` (parse + correlação) | 7.110 → **4.200 MiB** (−40,9 %) | 9,3 → 8,1 s |
+| `capture-write` (+ gravação) | 7.580 → **4.629 MiB** (−38,9 %) | 16,2 → 15,9 s |
+
+O DOM do NetLog (~3,1 GiB) deixou de existir; o piso agora é a sessão tipada (~1,15 GiB) mais o `session.json` de ~650 MiB. Contra a linha de base da rodada 12, `capture-full` caiu de 6.993 para 4.200 MiB (−40 %) e `capture-write` de 9.189 para 4.629 MiB (−50 %).
+
+**Revisão independente (revalidação de `22854c3`):** **aprovada** — harness diferencial antigo×novo com **3.170/3.170** casos sem divergência e **25/25** combinações extras de `"events"` duplicado idênticas. Ressalvas do parecer original (`fed9b61`, clippy e o caso de `events` duplicado) foram encerradas em `22854c3`. O revisor não reexecutou os benchmarks de 20 mil nem testes Linux vivos.
+
+**Pacotes finais (`e91cadf`, origem `22854c3`, árvore limpa):**
+
+| Artefato | Bytes | SHA-256 |
+|---|---:|---|
+| macOS `ScrapeLens.app` (`Contents/MacOS/ScrapeLens`) | 18.089.024 | `cbebd19d9c2339774fb6e959ae136439c896d69efd747f4bdf53d07f4c9ccf3f` |
+| Linux amd64 `.deb` | 6.404.930 | `871a04eb10e79ca291de16ca113a60dc766c733f84fad98a6ec8cdc6c479be15` |
+| Linux amd64 `AppImage` | 84.404.728 | `d06c7d80d5bcb99d648944571cb704e72c71d11356b18eb1160c7721bb47039c` |
+| Linux arm64 `.deb` | 6.504.416 | `11161abc54774b9ce94f7d140645c0120c24f76b4f27d12bdc2db33e1571a410` |
+| Linux arm64 `AppImage` | 82.569.736 | `5fb8f9138ef3dd65cb3af26a08f0a4801381de4b37729f8331df1502aa76aef6` |
+
+Builds: Rust **56 aprovados, 0 falhas, 8 ignorados** nas três plataformas; `clippy -D warnings` limpo; cinco suítes front-end e `typecheck` aprovados; `codesign --verify --deep --strict` aprovado no macOS (identidade local, DR preservado). Linux amd64 (emulado) e arm64 (nativo): mesmos 56/0/8 e smoke Xvfb com `SCRAPELENS_TEST_MODE=1 --import-har` gravando `session.json` com **1 requisição** em cada arquitetura. O smoke usa o executável avulso: não executa o AppImage, não instala o `.deb` e não testa atalhos X11; não houve nova validação em Ubuntu 24.04/Debian 12 nesta rodada.
 
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
