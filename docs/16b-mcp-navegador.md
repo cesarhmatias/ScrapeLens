@@ -907,6 +907,9 @@ revisão de segurança (M2, M3, R1 a R4):
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |
 | `tests/aceite/check_multi_target.py` (captura comum, via `live_bodies_cycle` do App) | OK: 16/16 NetLog, ≥15/16 CDP |
 
+Os números acima são do fechamento de 2026-10-31. Os placares atuais de `capture`, `recon` e
+`src-tauri` nas plataformas (macOS e Linux) estão em `docs/21-linux.md` §1 e §7.1.
+
 Achados que mudaram o contrato: (1) o resolvedor do Chrome 156 **também nega IP
 literal** (§2.2); (2) a lacuna real é a **porta**; (3) `session.requests` não é
 cronológica (§5.2); (4) cookie de presença reutilizado não é priming (§5.3);
@@ -916,9 +919,13 @@ Limites desta entrega: as sessões do `live_e2e` vêm de servidores que **imitam
 os sinais; elas provam o detector, não a presença de proteção em site algum.
 Nenhum site real de terceiros foi acessado: os servidores são loopback e o script de terceiro do cenário "desafio sem solução" aponta para um host fictício (`turnstile.blocked.invalid.test`), que a allowlist nega. As assinaturas de fornecedor vêm de
 documentação lida em 2026-10-31; os fornecedores mudam sinais sem aviso. O
-`site_profile` ainda não está registrado como ferramenta do servidor MCP (é da
-Core/servidor), e o encadeamento `start_capture`→`navigate`→`stop_capture` ainda
-não tem o servidor MCP que guarda o `capture_id` e faz a confirmação.
+Os limites acima são do detector, não do transporte. O `site_profile` **é** ferramenta do
+servidor MCP (`mcp/src/server.rs`, `site_profile`), e o encadeamento
+`start_capture`→`navigate`→`capture_status`→`stop_capture` está no mesmo servidor: ele guarda o
+`capture_id`, exige a confirmação do usuário no `start_capture` e devolve o `session_id` que
+`list_requests`, `get_request`, `get_body`, `search_bodies`, `diff_requests`, `diff_sessions`,
+`trace_value` e o próprio `site_profile` aceitam. Esta seção descreve o detector e o que ele
+prova; a lista de ferramentas e a confirmação são do `mcp/`.
 
 Perguntas ao líder, com a recomendação da Captura:
 

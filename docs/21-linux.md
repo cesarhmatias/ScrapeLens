@@ -1,9 +1,10 @@
 # 21. Versão Linux do ScrapeLens (captura e reconhecimento)
 
 Rodada 14, a pedido do usuário. Escopo desta etapa: portar `capture/` (e `recon/`, que
-não precisou de mudança) para Linux **sem regredir o macOS**. O App Tauri (`src-tauri/`)
-**não** foi portado nem compilado no Linux (webkit2gtk/GTK ficam para outra rodada); o
-servidor MCP (`mcp/`) compila e passa os testes no Linux sem mudança.
+não precisou de mudança) para Linux **sem regredir o macOS**. O porte de `capture/` não
+dependeu do App: o `src-tauri/` não foi tocado nesta etapa, mas no **aceite da rodada 14**
+ele foi empacotado (`.deb` e `AppImage`, amd64 e arm64) e passou na bateria real das VMs do
+OrbStack (§7.1). O servidor MCP (`mcp/`) compila e passa os testes no Linux sem mudança.
 
 ## 1. Alvo e o que foi testado
 
@@ -66,15 +67,21 @@ checagens**:
 1. O caminho dado e o canônico não têm caractere de controle nem são não-UTF-8.
 2. O caminho é resolvido ao **canônico** (os links `/usr/bin/google-chrome-stable` →
    `/etc/alternatives/google-chrome` → `/opt/google/chrome/google-chrome` caem no destino).
-   Se o destino é um **script** (`#!`), só vale o wrapper conhecido do pacote: o `chrome`
-   ELF ao lado (`/opt/google/chrome/`) ou, para o Debian/Ubuntu,
-   `/usr/bin/chromium` → `/usr/lib/chromium/chromium`. Um script qualquer é recusado, nunca
-   trocado por um binário de outro lugar. O que roda é sempre um **ELF**.
+   Se o destino é um **script** (`#!`), só vale se o **nome** for de um wrapper conhecido do
+   pacote: `google-chrome` ou `google-chrome-stable` (o `chrome` ELF ao lado, em
+   `/opt/google/chrome/`), `chromium` ou `chromium-browser` (os caminhos do Debian/Ubuntu,
+   `/usr/lib/chromium/chromium` e `/usr/lib/chromium-browser/chromium-browser`). Um script de
+   nome arbitrário é recusado, nunca trocado por um binário de outro lugar. O que roda é
+   sempre um **ELF**.
 3. O nome do executável é de navegador (`chrome`, `chromium`, `chromium-browser`).
 4. O binário é **arquivo regular, de root (uid 0), executável, sem escrita para grupo nem
    outros**; **cada diretório acima, até `/`, é de root e sem escrita para grupo/outros**.
    Quando o usuário atual não é root, `access(W_OK)` precisa **falhar** para o binário e para
    cada diretório (cobre ACL e permissões que o modo não mostra).
+   O tipo do arquivo é conferido no **descritor aberto** com
+   `O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC` + `fstat`: FIFO, socket e device são
+   recusados na hora, sem bloquear (um FIFO sem escritor travaria um `open` comum antes de
+   qualquer timeout).
 5. **Só depois** roda `<binário> --version` (ambiente limpo, `PATH=/usr/bin:/bin`, 10 s). A
    saída tem de ser `Google Chrome <n.n.n.n>` (o estável: Beta, Dev e "for Testing" têm mais
    palavras e são recusados) ou `Chromium <n.n.n.n> …`. O produto e a versão vêm daí.
@@ -90,11 +97,13 @@ alternativa e vem **marcado** (`BrowserKind::Chromium`). Quando o navegador é C
 registra em `capture.notes`: "navegador: Chromium (alternativa ao Google Chrome estável, que
 não existe para este sistema/arquitetura)".
 
-**Fica de fora, e é dito:** o Chromium instalado por **snap** (`/snap/bin/chromium`, o que o
-`apt install chromium-browser` do Ubuntu instala) **não foi testado e não é suportado**: aquele
-caminho é um lançador do snapd, não o binário do pacote, e não passa nas regras acima. Use o
-Chrome estável ou o Chromium do Debian. Uma instalação em pasta do usuário (`~/chrome`, binário
-baixado à mão) também é recusada de propósito: o diretório é do usuário.
+**Fica de fora, e é dito:** o Chromium instalado por **snap** — no aceite da rodada 14 o
+Chromium do snap (arm64, 156.0.8078.47) passou a bateria real do App, com 0 falhas
+(`tests/results/linux/README.md`). O binário ELF dentro do snap é de root e cumpre as regras
+acima; o **lançador** `/snap/bin/chromium` (o que o `apt install chromium-browser` do Ubuntu
+cria) não é candidato nem aceito, porque é um lançador do snapd, não o binário do pacote. Uma
+instalação em pasta do usuário (`~/chrome`, binário baixado à mão) é recusada de propósito: o
+diretório é do usuário.
 
 **Janela que resta:** entre a checagem e o `exec` há uma janela (TOCTOU), como no macOS. Aqui
 o binário e todos os diretórios são de root e inacessíveis para escrita pelo usuário, então só
@@ -106,7 +115,10 @@ Testes (Linux): `parses_the_version_line_of_each_product_and_refuses_the_others`
 `a_binary_writable_by_group_or_others_is_refused_before_anything_runs`,
 `a_writable_directory_above_the_binary_is_refused`,
 `a_file_owned_by_someone_else_is_refused`,
-`scripts_and_non_browser_names_are_refused_without_running`,
+`scripts_and_non_browser_names_are_refused_without_running` (inclui um script de nome
+arbitrário ao lado de um `chrome` ELF, que **não** é trocado),
+`a_fifo_is_refused_immediately_without_blocking` (um FIFO sem escritor é recusado em menos de
+5 s, provando que o `open` não bloqueia),
 `a_symlink_is_resolved_to_the_canonical_binary`, `control_characters_in_the_path_are_refused`
 e `the_installed_browser_passes_when_present` (o navegador real do container, com versão,
 tipo e pacote; no arm64 exige `Chromium`).
@@ -175,13 +187,16 @@ do `mcp/`; a captura com perfil e state root sob `XDG_RUNTIME_DIR`; as duas capt
 
 **Não rodou, e por quê:**
 
-- **`src-tauri/` (o App Tauri) no Linux:** não foi compilado nem testado; exige webkit2gtk/GTK e o
-  empacotamento Linux, que não fazem parte desta etapa. O `check_multi_target.py` rodou com o
-  `shim/` no lugar do `src-tauri/` (§6). Os 8 testes `--ignored` do `src-tauri` também não rodaram.
+- **`src-tauri/` (o App Tauri) no Linux, nesta bateria de contêiner:** não foi compilado nem
+  testado aqui; exige webkit2gtk/GTK e o empacotamento Linux, que ficaram na etapa do App. O
+  `check_multi_target.py` rodou com o `shim/` no lugar do `src-tauri/` (§6), e os 8 testes
+  `--ignored` do `src-tauri` não rodaram no contêiner. No **aceite da rodada 14** o App foi
+  empacotado e validado nas VMs do OrbStack (§7.1).
 - **Distribuições RPM** (Fedora, RHEL): não testadas. O caminho `rpm -qf` está codificado, mas
   nunca foi executado; `dpkg -S` foi exercitado (Ubuntu e Debian).
-- **Outros navegadores do sistema:** Chromium por snap, Chrome Beta/Dev/for Testing (recusados de
-  propósito) e Chromium em Ubuntu (que só existe como snap).
+- **Outros navegadores do sistema:** Chrome Beta/Dev/for Testing (recusados de propósito). O
+  Chromium por snap passou no aceite do App (§7.1); o lançador `/snap/bin/chromium` segue fora
+  dos candidatos.
 - **Caminho de reserva de `close_range`** (kernel < 5.11 ou seccomp que bloqueie o syscall): o
   laço de `fcntl` é o mesmo código do macOS e passa lá, mas não foi forçado no Linux.
 - **Montagem somente leitura / ACL** na validação do navegador (o `access(W_OK)` para usuário não
@@ -189,6 +204,20 @@ do `mcp/`; a captura com perfil e state root sob `XDG_RUNTIME_DIR`; as duas capt
 - **Emulação x86:** os amd64 rodam por emulação (OrbStack), então os tempos dos vivos (≈ 280 s)
   não valem como desempenho; o arm64 nativo leva ≈ 200 s.
 - **HTTP/3, outras CPUs, Wayland:** fora do que a captura testa em loopback.
+
+### 7.1 Aceite do App nas VMs do OrbStack (rodada 14)
+
+Execução do App real empacotado, registrada pela Testes/App em `tests/results/linux/README.md`
+(artefatos `src-tauri/linux/out/` do commit `e6d5fc6`): duas VMs Ubuntu 24.04, amd64 sobre
+Rosetta com Google Chrome 156.0.8078.79 do repositório oficial, e arm64 nativa com **Chromium
+156.0.8078.47 do snap**. Instalado o `.deb` (`ScrapeLens_0.1.0_amd64.deb` e
+`ScrapeLens_0.1.0_arm64.deb`; também `AppImage` das duas arquiteturas), **0 falhas** em cada
+máquina: iniciar e encerrar por atalho, captura `complete` com 11 requisições, HAR `complete` 24,
+NetLog `partial` 32, `navigator.webdriver === false`, nenhum socket LISTEN do Chrome da captura.
+
+É a prova de que a validação de navegador deste módulo funciona com o Chrome do repositório e com
+o Chromium do snap no App real; a bateria de contêiner da tabela do §1 continua sendo a prova de
+`capture`/`recon` por plataforma.
 
 **Regressão no macOS:** nenhuma. A lista da tabela é a mesma de antes (clippy, 91 unitários, 17 vivos,
 recon, `src-tauri` 56 passed, mcp, `check_multi_target` OK); os ramos `cfg(target_os = "macos")`

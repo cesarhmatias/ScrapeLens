@@ -137,8 +137,8 @@ fn correlated_sessions_are_byte_identical_to_the_brute_force_baseline() {
     let mut checked = 0;
     for (dir, expected_hash, expected_len) in VERSIONED {
         let netlog = netlog_for(dir);
-        let (hash, len) = fingerprint(dir, netlog)
-            .unwrap_or_else(|| panic!("entrada versionada ausente: {dir}"));
+        let (hash, len) =
+            fingerprint(dir, netlog).unwrap_or_else(|| panic!("entrada versionada ausente: {dir}"));
         assert_eq!(
             (hash, len),
             (*expected_hash, *expected_len),
