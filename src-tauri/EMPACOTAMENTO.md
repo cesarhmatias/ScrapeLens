@@ -170,14 +170,14 @@ docker run --rm --platform linux/$ARCH -v "$PWD/src-tauri/linux/out:/out" scrape
 
 Os artefatos em `src-tauri/linux/out/` ficam fora do git (`.gitignore`).
 
-| Artefato (HEAD de origem `fa89c25`, árvore limpa, com o porte Linux de `capture/` em `3b56ae3`/`fa89c25`) | SHA-256 |
+| Artefato (HEAD de origem `98ab629`, árvore limpa, atalhos Linux corrigidos e porte de `capture/` incluído) | SHA-256 |
 |---|---|
-| `amd64/ScrapeLens_0.1.0_amd64.deb` | `5843dd5a598a70bc9e92c51cec238c57ff89c2fa4bda0962cfaa3538b8225801` |
-| `amd64/ScrapeLens_0.1.0_amd64.AppImage` | `30f549a5fd053291087d74502bedacedfdd5005cfcdc455eec4ef64cab27b628` |
-| `amd64/scrapelens` (executável) | `da58c65edfb2cf9287f27681ec76c7ef90b5db9d669843302beafcc1e74df2e6` |
-| `arm64/ScrapeLens_0.1.0_arm64.deb` | `d4a15edce636275590807a52709d6459a292abb9615517f22c98d3c423135dc0` |
-| `arm64/ScrapeLens_0.1.0_aarch64.AppImage` | `3fbac33fd3945383d3fb19425db570aefd8a19916ee6465b1113c7ec96c5da80` |
-| `arm64/scrapelens` (executável) | `b083c4033206ac71f983bc3e22fcc728b2b66358bceca5919ba69a24b97e97f9` |
+| `amd64/ScrapeLens_0.1.0_amd64.deb` | `5d288b32575bd8a12bb65f59178534cf4f34e447fd0ec3e5485ff35115df53ac` |
+| `amd64/ScrapeLens_0.1.0_amd64.AppImage` | `64b08eb83747f4dec1205c7f99f83e5219d0e2c4df6119d474f4993e88c40ec5` |
+| `amd64/scrapelens` (executável) | `cd606a5d08aae7de7ce98f05c9183cbd3d06a7c3edafed1bf944c6d1d7f9367b` |
+| `arm64/ScrapeLens_0.1.0_arm64.deb` | `a43397f34591c707d6c4f34f2321bd7d67750572efedce4880a7879ef35fde09` |
+| `arm64/ScrapeLens_0.1.0_aarch64.AppImage` | `7c291e0b0ba29508b3e157ccf5ef334ff3fb89f723d02f34de89fff0a40d66f1` |
+| `arm64/scrapelens` (executável) | `fc667f779f0f017c4844f7994bf321500dc8cf21ded8a38f712f7d4dbf1debf3` |
 
 Sem assinatura no Linux. Para verificar: `sha256sum -c SHA256SUMS` na pasta do
 artefato, ou `sha256sum ScrapeLens_0.1.0_amd64.deb` comparado com a tabela acima.
@@ -186,11 +186,11 @@ diferentes (o hash identifica o artefato, não a receita). Toolchain e dependên
 são fixas; o que varia é o conteúdo gerado (ids de build, timestamps internos).
 
 Resultado nos containers (amd64 e arm64 iguais): `cargo test` 56/0/8, clippy
-`-D warnings` limpo, `test:list-view`, `test:paged`, `test:capture-url`,
+`-D warnings` limpo, `test:shortcuts`, `test:list-view`, `test:paged`, `test:capture-url`,
 `test:adapter` e `tsc` ok; smoke com `SCRAPELENS_TEST_MODE=1 --import-har
 fixtures/aceite/headers-cookies/headers-cookies.har` sob `xvfb-run` gravou
 `~/.local/share/app.scrapelens.desktop/sessions/har-…/session.json` (1 requisição)
-e o app foi fechado por SIGTERM. No build anterior (árvore suja), o `.deb` amd64 instalou com `apt install ./…deb` em
+e o app foi fechado por SIGTERM. Os dois smokes emitiram aviso AT-SPI de bus de acessibilidade ausente, sem impedir a importação nem a listagem. Evidência deste rebuild: `/tmp/sl-shortcuts-{amd64,arm64}.log`, `/tmp/sl-shortcuts-result.json` e `src-tauri/linux/out/{amd64,arm64}/{build.log,smoke.log,SHA256SUMS}`. Não houve teste dos atalhos via X11 nem reinstalação destes pacotes nas VMs nesta execução; a validação dos atalhos aqui é automatizada no front. No build anterior (árvore suja), o `.deb` amd64 instalou com `apt install ./…deb` em
 `ubuntu:24.04` e `debian:12`, sem biblioteca faltando no `ldd`. O AppImage não foi
 executado (precisaria de FUSE ou `--appimage-extract-and-run`); 24.04/Debian 12
 foram só instalação, sem abrir a janela.
@@ -198,8 +198,7 @@ foram só instalação, sem abrir a janela.
 Diferenças de plataforma: atalhos aparecem como `Ctrl+`/`Shift+` (o menu já usa
 `CmdOrCtrl`); preferências em `$XDG_CONFIG_HOME/app.scrapelens.desktop` (0700/0600,
 mesma escrita atômica); "Mostrar no gerenciador de arquivos" abre a pasta com
-`xdg-open` (não seleciona o arquivo). A captura no Linux depende do porte em
-`capture/` (Captura), não incluído aqui.
+`xdg-open` (não seleciona o arquivo). O porte Linux de `capture/` está incluído. Os atalhos de captura, importação, demo e cópia de URL também são tratados no `keydown` fora do macOS (`98ab629`), com as guardas de estado dos botões.
 
 ## Evidência da exportação/sanitização
 
