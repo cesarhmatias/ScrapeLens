@@ -172,7 +172,7 @@ pub(crate) fn header_payload(
     }
     let header = crate::listing::header_of(session)?;
     let synthetic = session.session.labels.iter().any(|label| label == "synthetic-fixture");
-    let partial = serde_json::to_value(&session.session.completeness.state)
+    let partial = serde_json::to_value(session.session.completeness.state)
         .ok()
         .and_then(|v| v.as_str().map(|s| s != "complete"))
         .unwrap_or(true);

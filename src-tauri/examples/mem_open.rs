@@ -71,7 +71,7 @@ fn main() {
                     "headerBytes": header_bytes,
                     "listWireBytes": wire,
                     "listItems": items,
-                    "bytesPerSummary": if items > 0 { wire / items } else { 0 },
+                    "bytesPerSummary": wire.checked_div(items).unwrap_or(0),
                     "detailBytes": detail_bytes,
                     "ms": started.elapsed().as_millis() as u64,
                 })
