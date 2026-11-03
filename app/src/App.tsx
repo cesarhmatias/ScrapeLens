@@ -1,3 +1,4 @@
+import { desktopShortcut } from "./shortcuts";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import demoRaw from "./demo/session.v1.json";
@@ -27,7 +28,7 @@ import { TimelineView, ValidationView } from "./Timeline";
 import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
-import { activeFilterLabels, outcomeChipDisabled, PagedList, sessionIsRecording, shortcutLabel } from "./listView";
+import { IS_MAC, activeFilterLabels, outcomeChipDisabled, PagedList, sessionIsRecording, shortcutLabel } from "./listView";
 import { adaptRequestDetail, adaptSession, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
 import type {
@@ -2047,6 +2048,20 @@ export default function App() {
       const meta = event.metaKey || event.ctrlKey;
       if (!meta) return;
       const key = event.key.toLowerCase();
+      const shortcut = desktopShortcut(event, IS_MAC, {
+        desktop, recording: !!recording, busy: !!busy, startUrlError: !!startUrlError,
+      });
+      if (shortcut) {
+        event.preventDefault();
+        if (shortcut === "start") void startCapture();
+        else if (shortcut === "stop") void stopCapture();
+        else if (shortcut === "har") void importCapture("har");
+        else if (shortcut === "netlog") void importCapture("netlog");
+        else if (shortcut === "demo") void bridge.demoSession().then(applyPayload);
+        else if (shortcut === "copy" && selected) void copy(selected.url, "URL da requisição");
+        return;
+      }
+      if (event.shiftKey) return;
       if (key === "f") {
         event.preventDefault();
         setView("session");
@@ -2070,7 +2085,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [copy, openSession, selected]);
+  }, [applyPayload, busy, copy, desktop, importCapture, openSession, recording, selected, startCapture, startUrlError, stopCapture]);
 
   useEffect(() => {
     if (!recording || !desktop) return;

@@ -11,7 +11,7 @@ if cargo test --locked >>"$LOG" 2>&1; then echo "cargo test ok" | tee -a "$LOG";
 grep -E "^test result" "$LOG" | tee -a "$OUT/summary.txt"
 step "clippy"; cargo clippy --locked --all-targets -- -D warnings >>"$LOG" 2>&1 && echo "clippy ok" | tee -a "$LOG" || { echo "clippy FAIL" | tee -a "$LOG"; fail=1; }
 cd /src/app
-for t in test:list-view test:paged test:capture-url test:adapter; do
+for t in test:shortcuts test:list-view test:paged test:capture-url test:adapter; do
   step "$t"; npm run -s $t >>"$LOG" 2>&1 && echo "$t ok" | tee -a "$LOG" || { echo "$t FAIL" | tee -a "$LOG"; fail=1; }
 done
 step "tsc"; npx tsc --noEmit >>"$LOG" 2>&1 && echo "tsc ok" | tee -a "$LOG" || { echo "tsc FAIL" | tee -a "$LOG"; fail=1; }
