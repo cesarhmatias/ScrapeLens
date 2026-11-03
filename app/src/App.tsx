@@ -27,7 +27,7 @@ import { TimelineView, ValidationView } from "./Timeline";
 import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
-import { activeFilterLabels, outcomeChipDisabled, PagedList, sessionIsRecording } from "./listView";
+import { activeFilterLabels, outcomeChipDisabled, PagedList, sessionIsRecording, shortcutLabel } from "./listView";
 import { adaptRequestDetail, adaptSession, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
 import type {
@@ -2417,7 +2417,7 @@ export default function App() {
                   aria-label="Iniciar sessão"
                   title={
                     desktop
-                      ? "Abrir Chrome com perfil dedicado e gravar CDP+NetLog — ⌘⇧R"
+                      ? "Abrir Chrome com perfil dedicado e gravar CDP+NetLog — " + shortcutLabel("⌘⇧R")
                       : "Captura ao vivo só no app desktop (Tauri)"
                   }
                 >
@@ -2429,7 +2429,7 @@ export default function App() {
                   onClick={() => void stopCapture()}
                   disabled={!recording || !!busy}
                   aria-label="Encerrar sessão"
-                  title="Sair do Chrome, aguardar o flush do NetLog, importar com o core e abrir a sessão — ⌘."
+                  title={"Sair do Chrome, aguardar o flush do NetLog, importar com o core e abrir a sessão — " + shortcutLabel("⌘.")}
                 >
                   Encerrar
                 </button>
@@ -2441,7 +2441,7 @@ export default function App() {
                   aria-label="Abrir captura"
                   title={
                     desktop
-                      ? "Abrir uma pasta de sessão v1 (session.json) com diálogo nativo — ⌘O"
+                      ? "Abrir uma pasta de sessão v1 (session.json) com diálogo nativo — " + shortcutLabel("⌘O")
                       : "Abrir captura usa o diálogo nativo do macOS; disponível no app Tauri."
                   }
                 >
@@ -2577,7 +2577,7 @@ export default function App() {
                   placeholder="Buscar domínio, caminho, id, status…"
                   aria-label="Buscar requisições"
                 />
-                <kbd>⌘F</kbd>
+                <kbd>{shortcutLabel("⌘F")}</kbd>
               </div>
               {searchDir && (
                 <div className="search-opts" role="group" aria-label="Escopos da busca">
@@ -2678,7 +2678,7 @@ export default function App() {
                   onClick={() => void importCapture("har")}
                   disabled={!desktop || !!recording}
                   aria-label="Importar HAR"
-                  title={desktop ? "Importar HAR — ⌘⇧H" : "Importação só no app desktop"}
+                  title={desktop ? "Importar HAR — " + shortcutLabel("⌘⇧H") : "Importação só no app desktop"}
                 >
                   HAR
                 </button>
@@ -2688,7 +2688,7 @@ export default function App() {
                   onClick={() => void importCapture("netlog")}
                   disabled={!desktop || !!recording}
                   aria-label="Importar NetLog"
-                  title={desktop ? "Importar NetLog — ⌘⇧N" : "Importação só no app desktop"}
+                  title={desktop ? "Importar NetLog — " + shortcutLabel("⌘⇧N") : "Importação só no app desktop"}
                 >
                   NetLog
                 </button>
@@ -2854,7 +2854,7 @@ export default function App() {
                   : `parcial: ${session.completeness.reasons[0] ?? "motivo não informado"}`}
               </span>
               <span className="grow" />
-              <span className="mono dim">⌘O abrir · ⌘F buscar · ⌘C copiar · ⌘⇧C URL</span>
+              <span className="mono dim">{`${shortcutLabel("⌘O")} abrir · ${shortcutLabel("⌘F")} buscar · ${shortcutLabel("⌘C")} copiar · ${shortcutLabel("⌘⇧C")} URL`}</span>
             </div>
           </>
         )}

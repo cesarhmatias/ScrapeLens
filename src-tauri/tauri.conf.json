@@ -27,14 +27,38 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": [
+      "app"
+    ],
     "category": "DeveloperTool",
     "shortDescription": "Inspecione sessões HTTP para scraping",
     "longDescription": "ScrapeLens inspeciona a sequência real de headers em sessões HTTP capturadas via CDP e NetLog, preservando duplicatas, ordem e proveniência.",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
     "macOS": {
       "minimumSystemVersion": "12.0",
       "signingIdentity": "ScrapeLens Local Signing"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libsoup-3.0-0",
+          "libjavascriptcoregtk-4.1-0",
+          "xdg-utils"
+        ],
+        "section": "devel",
+        "priority": "optional"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
     }
   }
 }

@@ -1,3 +1,4 @@
+import { FILE_MANAGER } from "./listView";
 // Diálogos de exportação (cURL/Python) e de sessão sanitizada.
 //
 // O texto exibido é gerado pelo Rust e é exatamente o que a cópia e o arquivo
@@ -419,7 +420,7 @@ export function SanitizeDialog({
           {saved ? (
             <>
               <button className="btn" onClick={() => void bridge.revealPath(saved.path)}>
-                Mostrar no Finder
+                Mostrar no {FILE_MANAGER}
               </button>
               <button className="btn primary" onClick={() => void open()}>
                 Abrir sessão sanitizada

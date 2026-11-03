@@ -1540,14 +1540,45 @@ pub fn reveal_path(path: String) -> Result<(), String> {
             Err(error) => Err(format!("não foi possível abrir o Finder: {error}")),
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
-        Err("revelar no Finder é exclusivo do macOS nesta versão".to_string())
+        // xdg-open não seleciona arquivos: abre a pasta (o pai, quando é um arquivo).
+        let dir = reveal_dir(&target);
+        match std::process::Command::new("xdg-open").arg(&dir).status() {
+            Ok(status) if status.success() => Ok(()),
+            Ok(status) => Err(format!("xdg-open terminou com {status}")),
+            Err(error) => Err(format!("não foi possível abrir o gerenciador de arquivos (xdg-open): {error}")),
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        Err("revelar o arquivo não é suportado nesta plataforma".to_string())
+    }
+}
+
+/// Pasta a abrir no gerenciador de arquivos: a própria pasta ou o pai do arquivo.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn reveal_dir(target: &std::path::Path) -> PathBuf {
+    if target.is_dir() {
+        target.to_path_buf()
+    } else {
+        target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("/"))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reveal_dir_uses_parent_for_files() {
+        let dir = std::env::temp_dir().join(format!("sl-reveal-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.txt");
+        std::fs::write(&file, b"x").unwrap();
+        assert_eq!(super::reveal_dir(&file), dir);
+        assert_eq!(super::reveal_dir(&dir), dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
 
     #[test]
     fn import_read_uses_fd_refusing_symlink_fifo_and_dir() {

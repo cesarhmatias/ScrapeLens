@@ -111,3 +111,15 @@ export class PagedList<Row, Meta extends { matched: number }> {
     this.dead = true;
   }
 }
+
+/** macOS mostra ⌘/⇧; Linux e Windows mostram Ctrl+/Shift+. */
+export const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
+
+/** Rótulo de atalho a partir de "⌘⇧R" (forma canônica do código). */
+export function shortcutLabel(mac: string, isMac: boolean = IS_MAC): string {
+  if (isMac) return mac;
+  return mac.replace(/⌘/g, "Ctrl+").replace(/⇧/g, "Shift+");
+}
+
+/** Nome do gerenciador de arquivos da plataforma. */
+export const FILE_MANAGER = IS_MAC ? "Finder" : "gerenciador de arquivos";

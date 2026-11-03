@@ -70,3 +70,10 @@ await (async () => {
   assert.deepEqual(seen, [0, 2000, 18000, 20000]);
 })();
 console.log("paged-window ok");
+
+// Rodada 14: atalhos no Linux aparecem como Ctrl+/Shift+.
+import { shortcutLabel } from "../src/listView";
+assert.equal(shortcutLabel("⌘⇧R", true), "⌘⇧R");
+assert.equal(shortcutLabel("⌘⇧R", false), "Ctrl+Shift+R");
+assert.equal(shortcutLabel("⌘.", false), "Ctrl+.");
+console.log("shortcut-label ok");
