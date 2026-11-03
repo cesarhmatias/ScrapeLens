@@ -515,6 +515,9 @@ pub fn start_session(
         start_url: resolved_url,
         headless: std::env::var("SCRAPELENS_CAPTURE_HEADLESS").as_deref() == Ok("1"),
         ignore_cert: std::env::var("SCRAPELENS_CAPTURE_IGNORE_CERT").as_deref() == Ok("1"),
+        // Rede normal por padrão; as suítes de teste ligam só-loopback com
+        // `SCRAPELENS_CAPTURE_NETWORK=loopback`.
+        network: scrapelens_capture::NetworkMode::from_env(),
     };
 
     let status = Arc::new(Mutex::new(CaptureStatus {

@@ -89,6 +89,48 @@ lançado por outra thread nesse instante poderia herdar uma ponta do pipe. Não
 medi nem reproduzi; o filho é de vida curta e só segura a ponta até sair.
 Informativo, sem correção.
 
+### 2.1b Captura comum do App: rede aberta por padrão (`NetworkMode`)
+
+Defeito achado pelo usuário: no App, `Iniciar sessão` com `https://google.com.br`
+abria o Chrome com `DNS_PROBE_FINISHED_NXDOMAIN`. A captura comum levava
+`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost` e
+`--allow-insecure-localhost`: só loopback resolvia, nenhum site real carregava.
+Agora `CaptureConfig.network` escolhe:
+- `NetworkMode::Open` (**padrão**): sem `--host-resolver-rules` e sem
+  `--allow-insecure-localhost`; o Chrome resolve e acessa a rede normalmente;
+- `NetworkMode::LoopbackOnly`: o comportamento antigo, **só para testes**
+  (nada além de `127.0.0.1`/`localhost` resolve). As suítes ligam com
+  `SCRAPELENS_CAPTURE_NETWORK=loopback` (o App lê isso via `NetworkMode::from_env()`)
+  ou, nos testes Rust, `network: NetworkMode::LoopbackOnly`.
+A captura **controlada** do MCP (allowlist) não mudou: a allowlist
+(`resolver_rules`) vale no lugar do modo, sem relaxamento de certificado; a
+`BrowserCapture` passa `LoopbackOnly` só como falha fechada caso a allowlist faltasse.
+Testes: `network_mode_defaults_to_open`, `open_mode_passes_no_dns_rules_and_no_localhost_relaxation`,
+`loopback_only_mode_keeps_the_lab_restrictions`,
+`the_controlled_capture_allowlist_overrides_the_network_mode`,
+`ignore_cert_is_the_only_certificate_relaxation_in_open_mode` e o vivo
+`live_open_mode_resolves_a_local_name_and_loopback_only_does_not` (um servidor local
+acessado por `sl-open-mode.localhost`, que o Chrome resolve sozinho: no modo aberto o
+servidor vê a requisição e a sessão tem status 200; no `LoopbackOnly` o servidor não
+vê nada). Nenhum site real foi acessado.
+
+**Revisão dos demais argumentos do launcher em sites reais** (nenhum impede
+carregar um site; os que alteram o que o servidor vê):
+
+| Argumento | Efeito em site real |
+|---|---|
+| `--ignore-certificate-errors` (só com `ignore_cert`/`SCRAPELENS_CAPTURE_IGNORE_CERT=1`) | esconde erros de TLS: o Chrome deixa de mostrar o interstício e a captura de um site com certificado ruim parece normal. **Só para laboratório**; o padrão é desligado |
+| `--allow-insecure-localhost` | só afeta `localhost`; removido do modo aberto |
+| `--no-pings` | desliga o `ping` de `<a ping>` (hyperlink auditing): a beacon que o site esperaria não é enviada. Raro; **muda o tráfego** |
+| `--disable-popup-blocking` | deixa `window.open` sem gesto abrir abas (anúncios, OAuth). Bom para capturar multi-alvo; o usuário pode ver mais popups |
+| `--disable-features=OptimizationHints,Translate,MediaRouter,InterestFeedContentSuggestions` | evita requisições do próprio Chrome (hints, tradutor); não muda os recursos da página |
+| `--disable-background-networking`, `--disable-component-update`, `--disable-sync`, `--metrics-recording-only`, `--disable-domain-reliability`, `--disable-client-side-phishing-detection`, `--disable-breakpad`, `--no-service-autorun` | silenciam tráfego do navegador (não da página) para o NetLog ficar só com o que interessa; sem efeito no que o site vê |
+| `--enable-quic` | QUIC já é o padrão; mantido para h3 (a regra do projeto é não desabilitar QUIC) |
+| `--disable-extensions`, `--disable-default-apps`, `--password-store=basic`, `--use-mock-keychain`, `--no-first-run`, `--no-default-browser-check`, `--disable-search-engine-choice-screen`, `--disable-component-extensions-with-background-pages` | UI/perfil/chaveiro; sem efeito de rede |
+| `--net-log-capture-mode=Everything`, `--log-net-log` | só registram (cookies e cabeçalhos no NetLog: ver §2.4) |
+| `--remote-debugging-pipe` (ou porta com `expose_cdp`) | não liga `navigator.webdriver` (não passamos `--enable-automation`) |
+| `--headless=new` (só com `headless`) | o User-Agent e a impressão digital do navegador mudam (`HeadlessChrome`); o padrão do App é janela visível. **Relevante ao `site_profile`**: um desafio anti-bot sob headless pode não ocorrer com o Chrome normal |
+
 ### 2.2 Allowlist obrigatória, em duas camadas
 
 `start_capture` **sem `allowed_hosts` não vazio é erro** (`allowlist_required`).
@@ -545,7 +587,8 @@ API pública (`use scrapelens_capture::…`):
 
 ```text
 // captura comum (a do App)
-CaptureConfig { chrome, session_dir, start_url, headless, ignore_cert }
+CaptureConfig { chrome, session_dir, start_url, headless, ignore_cert, network: NetworkMode }
+NetworkMode { Open /* padrão */, LoopbackOnly }   // from_env(): SCRAPELENS_CAPTURE_NETWORK=loopback
 CaptureStatus { recording, events, chrome_pid, session_id, session_dir, started_at, page_url, last_error }
 CaptureOutcome { session: Value, session_dir: PathBuf, notice: String }
 run(config, status: Arc<Mutex<CaptureStatus>>, stop: Receiver<()>, ready: Sender<Result<(),String>>)

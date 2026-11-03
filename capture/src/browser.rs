@@ -240,6 +240,10 @@ impl BrowserCapture {
             start_url,
             headless: config.headless,
             ignore_cert: false,
+            // Sem efeito: a captura controlada sempre leva a allowlist
+            // (`resolver_rules`), que vale no lugar do modo. Se ela faltasse, a rede
+            // ficaria restrita a loopback (falha fechada), nunca aberta.
+            network: crate::NetworkMode::LoopbackOnly,
         };
         let status = Arc::new(Mutex::new(CaptureStatus {
             recording: true,
@@ -1635,6 +1639,78 @@ mod tests {
         assert!(marker.is_file(), "sem marcador {}", marker.display());
         let _ = std::fs::remove_dir_all(&rescue);
         let _ = std::fs::remove_file(marker);
+    }
+
+    /// Captura COMUM (`crate::run`) contra um servidor local acessado por um NOME que
+    /// não é `127.0.0.1` nem `localhost` (`<nome>.localhost`, que o Chrome resolve
+    /// para loopback sozinho). Devolve `(requisições do site vistas pelo servidor,
+    /// status das requisições da sessão para o nome)`.
+    #[cfg(unix)]
+    fn run_common_capture(mode: crate::NetworkMode, tag: &str) -> (usize, Vec<u64>) {
+        use std::sync::mpsc::channel;
+        let site = TestSite::start(|_m, _p| Reply::html("<html><body>aberto</body></html>"));
+        let port = site.port;
+        let name = "sl-open-mode.localhost";
+        let dir = std::env::temp_dir().join(format!(
+            "scrapelens-open-{tag}-{}-{}",
+            std::process::id(),
+            super::super::unix_millis()
+        ));
+        let config = crate::CaptureConfig {
+            chrome: chrome_or_skip(),
+            session_dir: dir.clone(),
+            start_url: format!("http://{name}:{port}/"),
+            headless: true,
+            ignore_cert: false,
+            network: mode,
+        };
+        let status = Arc::new(Mutex::new(CaptureStatus::default()));
+        let (stop_tx, stop_rx) = channel();
+        let (ready_tx, ready_rx) = channel();
+        let join = thread::spawn(move || crate::run(config, status, stop_rx, ready_tx));
+        ready_rx
+            .recv_timeout(Duration::from_secs(40))
+            .expect("captura pronta")
+            .expect("captura iniciou");
+        // Espera o servidor ver a requisição (modo aberto) ou dá um prazo (loopback).
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while site.seen_paths().is_empty() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(200));
+        }
+        thread::sleep(Duration::from_millis(800));
+        let _ = stop_tx.send(());
+        let outcome = join.join().expect("thread").expect("captura encerrou");
+        let statuses = outcome.session["requests"]
+            .as_array()
+            .map(|requests| {
+                requests
+                    .iter()
+                    .filter(|r| r["url"].as_str().is_some_and(|u| u.contains(name)))
+                    .filter_map(|r| r["status"].as_u64())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let _ = std::fs::remove_dir_all(dir);
+        (site.seen_paths().len(), statuses)
+    }
+
+    /// Defeito do usuário: `Iniciar sessão` com `https://google.com.br` abria o Chrome
+    /// com `DNS_PROBE_FINISHED_NXDOMAIN`, porque a captura comum levava
+    /// `--host-resolver-rules=MAP * ~NOTFOUND…`. Sem acessar site real: um nome local
+    /// resolvido pelo próprio Chrome carrega no modo aberto e NÃO no `LoopbackOnly`.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_open_mode_resolves_a_local_name_and_loopback_only_does_not() {
+        let (seen_open, statuses_open) = run_common_capture(crate::NetworkMode::Open, "open");
+        println!("Open: servidor viu {seen_open}, status {statuses_open:?}");
+        assert!(seen_open >= 1, "o modo aberto devia chegar ao servidor pelo nome local");
+        assert!(statuses_open.contains(&200), "{statuses_open:?}");
+
+        let (seen_lo, statuses_lo) = run_common_capture(crate::NetworkMode::LoopbackOnly, "loopback");
+        println!("LoopbackOnly: servidor viu {seen_lo}, status {statuses_lo:?}");
+        assert_eq!(seen_lo, 0, "o nome local não podia resolver em LoopbackOnly");
+        assert!(!statuses_lo.contains(&200), "{statuses_lo:?}");
     }
 
     #[test]

@@ -73,6 +73,8 @@ mod tests {
             start_url: "http://127.0.0.1:8781/page".to_string(),
             headless: true,
             ignore_cert: false,
+            // Testes ao vivo: só loopback, nada sai da máquina.
+            network: scrapelens_capture::NetworkMode::LoopbackOnly,
         };
         let status_thread = status.clone();
         let join = thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));
@@ -125,6 +127,8 @@ mod tests {
             start_url,
             headless: true,
             ignore_cert: false,
+            // Testes ao vivo: só loopback, nada sai da máquina.
+            network: scrapelens_capture::NetworkMode::LoopbackOnly,
         };
         let status_thread = status.clone();
         let join = thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));

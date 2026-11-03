@@ -56,6 +56,39 @@ pub struct CaptureOutcome {
     pub notice: String,
 }
 
+/// Como o Chrome da captura COMUM (a do App) enxerga a rede.
+///
+/// A captura controlada do MCP (`browser::BrowserCapture`) não usa isto: ela tem a
+/// própria allowlist (`--host-resolver-rules` só com os hosts aprovados).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NetworkMode {
+    /// Rede normal (padrão): o Chrome resolve e acessa qualquer site. Nenhum
+    /// `--host-resolver-rules` e nenhum `--allow-insecure-localhost`.
+    #[default]
+    Open,
+    /// SÓ loopback (`127.0.0.1` e `localhost`): qualquer outro nome dá
+    /// `ERR_NAME_NOT_RESOLVED`. Para testes e experimentos de laboratório, onde
+    /// nada pode sair da máquina; também aceita certificado de `localhost`
+    /// inválido (`--allow-insecure-localhost`).
+    LoopbackOnly,
+}
+
+impl NetworkMode {
+    /// `SCRAPELENS_CAPTURE_NETWORK=loopback` liga o modo só-loopback (suítes de
+    /// teste que não podem tocar a rede); qualquer outro valor, ou a variável
+    /// ausente, é a rede aberta.
+    pub fn from_env() -> NetworkMode {
+        Self::parse(std::env::var("SCRAPELENS_CAPTURE_NETWORK").ok().as_deref())
+    }
+
+    fn parse(value: Option<&str>) -> NetworkMode {
+        match value.map(str::trim) {
+            Some(v) if v.eq_ignore_ascii_case("loopback") => NetworkMode::LoopbackOnly,
+            _ => NetworkMode::Open,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CaptureConfig {
     pub chrome: PathBuf,
@@ -63,6 +96,8 @@ pub struct CaptureConfig {
     pub start_url: String,
     pub headless: bool,
     pub ignore_cert: bool,
+    /// Rede aberta (padrão) ou só loopback (testes).
+    pub network: NetworkMode,
 }
 
 pub fn run(
@@ -539,13 +574,17 @@ fn run_inner(
     }
 }
 
-fn spawn_chrome(
+/// Argumentos de linha de comando do Chrome da captura, sem executar nada
+/// (testável). `resolver_rules` é a allowlist da captura CONTROLADA; quando
+/// existe, vale no lugar do modo de rede e nenhum relaxamento de certificado é
+/// adicionado.
+fn chrome_args(
     config: &CaptureConfig,
     profile: &Path,
     netlog: &Path,
     resolver_rules: Option<&str>,
-    pipe: Option<&transport::PipeEnds>,
-) -> Result<Child, String> {
+    use_pipe: bool,
+) -> Vec<String> {
     let mut args: Vec<String> = vec![
         format!("--user-data-dir={}", profile.display()),
         format!("--log-net-log={}", netlog.display()),
@@ -573,7 +612,7 @@ fn spawn_chrome(
         "--disable-popup-blocking".to_string(),
         "about:blank".to_string(),
     ];
-    if pipe.is_some() {
+    if use_pipe {
         // Sem porta nenhuma: o Chrome lê comandos no fd 3 e escreve no fd 4.
         args.insert(args.len() - 1, "--remote-debugging-pipe".to_string());
     } else {
@@ -583,12 +622,14 @@ fn spawn_chrome(
         args.insert(args.len() - 1, "--remote-debugging-port=0".to_string());
         args.insert(args.len() - 1, "--remote-debugging-address=127.0.0.1".to_string());
     }
-    match resolver_rules {
+    match (resolver_rules, config.network) {
         // Captura controlada: só os hosts da allowlist resolvem; nenhum
         // relaxamento de certificado.
-        Some(rules) => args.insert(args.len() - 1, format!("--host-resolver-rules={rules}")),
-        // Captura comum do App (testes em loopback): comportamento de sempre.
-        None => {
+        (Some(rules), _) => args.insert(args.len() - 1, format!("--host-resolver-rules={rules}")),
+        // Captura comum do App: rede normal. Nada de regras de DNS.
+        (None, NetworkMode::Open) => {}
+        // Só para testes: nada além de loopback resolve.
+        (None, NetworkMode::LoopbackOnly) => {
             args.insert(args.len() - 1, "--allow-insecure-localhost".to_string());
             args.insert(
                 args.len() - 1,
@@ -603,6 +644,17 @@ fn spawn_chrome(
     if config.ignore_cert {
         args.push("--ignore-certificate-errors".to_string());
     }
+    args
+}
+
+fn spawn_chrome(
+    config: &CaptureConfig,
+    profile: &Path,
+    netlog: &Path,
+    resolver_rules: Option<&str>,
+    pipe: Option<&transport::PipeEnds>,
+) -> Result<Child, String> {
+    let args = chrome_args(config, profile, netlog, resolver_rules, pipe.is_some());
     let mut command = Command::new(&config.chrome);
     command
         .args(&args)
@@ -3311,6 +3363,80 @@ fn unix_millis() -> u128 {
 
 #[cfg(test)]
 mod tests {
+    fn args_for(network: NetworkMode, rules: Option<&str>, headless: bool, ignore_cert: bool, pipe: bool) -> Vec<String> {
+        let config = CaptureConfig {
+            chrome: PathBuf::from("/x/chrome"),
+            session_dir: PathBuf::from("/x/sessao"),
+            start_url: String::new(),
+            headless,
+            ignore_cert,
+            network,
+        };
+        chrome_args(&config, Path::new("/x/perfil"), Path::new("/x/perfil/netlog.json"), rules, pipe)
+    }
+
+    fn has(args: &[String], flag: &str) -> bool {
+        args.iter().any(|a| a == flag || a.starts_with(&format!("{flag}=")))
+    }
+
+    /// O padrão é a rede aberta: a captura do App acessa sites reais (antes o App
+    /// só capturava loopback e `https://google.com.br` dava DNS_PROBE_FINISHED_NXDOMAIN).
+    #[test]
+    fn network_mode_defaults_to_open() {
+        assert_eq!(NetworkMode::default(), NetworkMode::Open);
+        assert_eq!(NetworkMode::parse(None), NetworkMode::Open);
+        assert_eq!(NetworkMode::parse(Some("")), NetworkMode::Open);
+        assert_eq!(NetworkMode::parse(Some("open")), NetworkMode::Open);
+        assert_eq!(NetworkMode::parse(Some("lixo")), NetworkMode::Open);
+        assert_eq!(NetworkMode::parse(Some("loopback")), NetworkMode::LoopbackOnly);
+        assert_eq!(NetworkMode::parse(Some(" LOOPBACK ")), NetworkMode::LoopbackOnly);
+    }
+
+    #[test]
+    fn open_mode_passes_no_dns_rules_and_no_localhost_relaxation() {
+        let args = args_for(NetworkMode::Open, None, false, false, true);
+        assert!(!has(&args, "--host-resolver-rules"), "{args:?}");
+        assert!(!has(&args, "--allow-insecure-localhost"), "{args:?}");
+        assert!(!has(&args, "--ignore-certificate-errors"), "{args:?}");
+        assert!(!has(&args, "--headless"), "{args:?}");
+        // O que a captura precisa continua: NetLog Everything, QUIC, perfil, pipe.
+        assert!(has(&args, "--log-net-log") && has(&args, "--net-log-capture-mode"));
+        assert!(args.contains(&"--net-log-capture-mode=Everything".to_string()));
+        assert!(has(&args, "--enable-quic") && has(&args, "--user-data-dir"));
+        assert!(has(&args, "--remote-debugging-pipe"));
+        assert_eq!(args.last().map(String::as_str), Some("about:blank"), "{args:?}");
+    }
+
+    #[test]
+    fn loopback_only_mode_keeps_the_lab_restrictions() {
+        let args = args_for(NetworkMode::LoopbackOnly, None, true, false, false);
+        assert!(args.contains(&"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost".to_string()), "{args:?}");
+        assert!(has(&args, "--allow-insecure-localhost"));
+        assert!(has(&args, "--headless"));
+        assert!(has(&args, "--remote-debugging-port") && has(&args, "--remote-debugging-address"));
+        assert!(!has(&args, "--remote-debugging-pipe"));
+    }
+
+    #[test]
+    fn the_controlled_capture_allowlist_overrides_the_network_mode() {
+        for mode in [NetworkMode::Open, NetworkMode::LoopbackOnly] {
+            let args = args_for(mode, Some("MAP * ~NOTFOUND, EXCLUDE a.test"), false, false, true);
+            let rules: Vec<&String> = args.iter().filter(|a| a.starts_with("--host-resolver-rules=")).collect();
+            assert_eq!(rules.len(), 1, "{mode:?}: {args:?}");
+            assert_eq!(rules[0], "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE a.test");
+            // Nenhum relaxamento de certificado na captura controlada.
+            assert!(!has(&args, "--allow-insecure-localhost"), "{mode:?}");
+            assert!(!has(&args, "--ignore-certificate-errors"), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn ignore_cert_is_the_only_certificate_relaxation_in_open_mode() {
+        let args = args_for(NetworkMode::Open, None, false, true, true);
+        assert!(has(&args, "--ignore-certificate-errors"));
+        assert!(!has(&args, "--allow-insecure-localhost"));
+    }
+
     const SESSION_DIR_FILES: [&str; 3] = ["cdp-events.jsonl", "netlog.json", "session.json"];
     use super::*;
 
@@ -3497,6 +3623,7 @@ mod tests {
             start_url: String::new(),
             headless: true,
             ignore_cert: false,
+            network: NetworkMode::default(),
         };
         let status = Arc::new(Mutex::new(CaptureStatus::default()));
         let error = run(config, status, stop_rx, ready_tx).unwrap_err();
