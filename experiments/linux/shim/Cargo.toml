@@ -1,0 +1,11 @@
+[package]
+name = "scrapelens-linux-shim"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Substituto de src-tauri SÓ para o container Linux: expõe o teste live_bodies_cycle sobre a crate de captura, para o tests/aceite/check_multi_target.py rodar sem o Tauri (docs/21-linux.md). Não faz parte do produto."
+
+[dependencies]
+scrapelens-capture = { path = "../capture" }
+
+[workspace]

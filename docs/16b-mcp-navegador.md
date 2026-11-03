@@ -89,6 +89,14 @@ lançado por outra thread nesse instante poderia herdar uma ponta do pipe. Não
 medi nem reproduzi; o filho é de vida curta e só segura a ponta até sair.
 Informativo, sem correção.
 
+**Linux (rodada 14).** A validação acima é a do macOS (`codesign`). No Linux não existe
+assinatura de código no binário; `chrome::validate_chrome_linux` aplica o equivalente
+(binário ELF regular de root, sem escrita para grupo/outros nem para o usuário, diretórios
+acima de root e sem escrita, só então `--version`, e o pacote dono por `dpkg -S`/`rpm -qf`
+apenas como informação) e aceita o **Chromium** como alternativa marcada (único no arm64). Os
+caminhos privados (perfil, NetLog, state root) respeitam `$TMPDIR` e `$XDG_RUNTIME_DIR`. Ver
+`docs/21-linux.md`.
+
 ### 2.1b Captura comum do App: rede aberta por padrão (`NetworkMode`)
 
 Defeito achado pelo usuário: no App, `Iniciar sessão` com `https://google.com.br`
