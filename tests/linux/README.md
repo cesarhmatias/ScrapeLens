@@ -29,8 +29,9 @@ a pasta de saída do roteiro traz `host:` e `tipo de execução:` na primeira li
 2. Sobe o testserver em 127.0.0.1:8781 (`/page`).
 3. Abre o AppImage com `SCRAPELENS_TEST_MODE=1`, `SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page`,
    `SCRAPELENS_CAPTURE_NETWORK=loopback`.
-4. Iniciar com `ctrl+shift+r` e Encerrar com `ctrl+period` (atalhos do menu Captura), no Xvfb.
-   Durante a captura: `ss -ltnp` e confirmação de nenhum LISTEN do Chrome da captura.
+4. Iniciar e Encerrar por **clique** (xdotool na tela virtual 1600x1000): Iniciar sessão em (1044,178),
+   Encerrar em (1138,178). Os atalhos de teclado (ctrl+shift+r / ctrl+period) não chegam ao app no Linux,
+   por isso não são usados. Durante a captura: `ss -ltnp` e confirmação de nenhum LISTEN do Chrome da captura.
 5. Confere a sessão no disco (`~/.local/share/app.scrapelens.desktop/sessions`).
 6. Imports com `--import-har` e `--import-netlog` pela CLI de teste.
 7. Confere as contagens: HAR complete 24, NetLog partial 32.
@@ -41,7 +42,9 @@ a pasta de saída do roteiro traz `host:` e `tipo de execução:` na primeira li
 Saída: `~/sl-acceptance-<arch>-<timestamp>/summary.txt` na máquina; `FALHAS=0` quando tudo passa.
 
 ## Limites conhecidos
-- O roteiro usa atalhos de teclado via `xdotool` na tela virtual da máquina (nada no macOS).
+- O roteiro usa cliques via `xdotool` na tela virtual da máquina (nada no macOS).
+- O X reporta a janela cliente do app como 10x10 (a moldura do openbox não tem geometria própria),
+  então os prints são da tela virtual inteira (1600x1000), que contém só o openbox e as janelas do app.
 - A captura usa CDP por pipe (sem porta TCP), então o `navigator.webdriver` é lido pela página-sonda
   e não por CDP no navegador.
 - Este README não registra resultados: eles ficam em `tests/RELATORIO-FINAL.md` quando a bateria rodar.

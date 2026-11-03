@@ -1,0 +1,4 @@
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+scrapelens: cleanup_orphans markers_removed=0 processes_killed=0 profiles_removed=0
+scrapelens: list_requests offset=0 items=32 matched=32 total=32

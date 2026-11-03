@@ -1,0 +1,19 @@
+host: aarch64 · Ubuntu 24.04.5 LTS · dpkg=arm64
+tipo de execução: NATIVA (aarch64)
+navegador: Chromium 156.0.8078.47 snap
+OK   instalar .deb (ScrapeLens_0.1.0_arm64.deb)
+OK   pacote scrape-lens instalado
+OK   testserver responde /page
+OK   janela ScrapeLens encontrada (wid=4194305)
+OK   nenhum LISTEN do Chrome da captura (pid 33940)
+OK   print da janela durante a captura
+OK   sessão de captura no disco (capture-1793687873676)
+captura: requisições=11
+OK   captura com requisições (11)
+OK   import --import-har (sessão har criada)
+OK   import --import-netlog (sessão netlog criada)
+OK   HAR complete com 24 requisições
+OK   NetLog partial com 32 requisições
+navigator.webdriver (valor lido pela sonda): false
+OK   navigator.webdriver === false
+FALHAS=0 · saída em /home/cesar/sl-acceptance-arm64-20261103033706

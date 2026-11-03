@@ -1,0 +1,19 @@
+host: x86_64 · Ubuntu 24.04.5 LTS · dpkg=amd64
+tipo de execução: ROSETTA (x86_64 sobre host arm64)
+navegador: Google Chrome 156.0.8078.79 
+OK   instalar .deb (ScrapeLens_0.1.0_amd64.deb)
+OK   pacote scrape-lens instalado
+OK   testserver responde /page
+OK   janela ScrapeLens encontrada (wid=4194305)
+OK   nenhum LISTEN do Chrome da captura (pid 28088)
+OK   print da janela durante a captura
+OK   sessão de captura no disco (capture-1793687622572)
+captura: requisições=11
+OK   captura com requisições (11)
+OK   import --import-har (sessão har criada)
+OK   import --import-netlog (sessão netlog criada)
+OK   HAR complete com 24 requisições
+OK   NetLog partial com 32 requisições
+navigator.webdriver (valor lido pela sonda): false
+OK   navigator.webdriver === false
+FALHAS=0 · saída em /home/cesar/sl-acceptance-amd64-20261103033254
