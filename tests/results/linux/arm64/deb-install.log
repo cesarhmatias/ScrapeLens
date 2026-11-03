@@ -1,5 +1,15 @@
 Reading package lists...
 Building dependency tree...
 Reading state information...
-scrape-lens is already the newest version (0.1.0).
-0 upgraded, 0 newly installed, 0 to remove and 8 not upgraded.
+The following packages will be upgraded:
+  scrape-lens
+1 upgraded, 0 newly installed, 0 to remove and 8 not upgraded.
+Need to get 0 B/6,468 kB of archives.
+After this operation, 4,096 B of additional disk space will be used.
+Get:1 /home/cesar/artifacts-r14b/ScrapeLens_0.1.0_arm64.deb scrape-lens arm64 0.1.0 [6,468 kB]
+dpkg-preconfigure: unable to re-open stdin: No such file or directory
+(Reading database… (Reading database… 5%(Reading database… 10%(Reading database… 15%(Reading database… 20%(Reading database… 25%(Reading database… 30%(Reading database… 35%(Reading database… 40%(Reading database… 45%(Reading database… 50%(Reading database… 55%(Reading database… 60%(Reading database… 65%(Reading database… 70%(Reading database… 75%(Reading database… 80%(Reading database… 85%(Reading database… 90%(Reading database… 95%(Reading database… 100%(Reading database… 69462 files and directories currently installed.)
+Preparing to unpack …/ScrapeLens_0.1.0_arm64.deb…
+Unpacking scrape-lens (0.1.0) over (0.1.0)…
+Setting up scrape-lens (0.1.0)…
+Processing triggers for hicolor-icon-theme (0.17-2)…

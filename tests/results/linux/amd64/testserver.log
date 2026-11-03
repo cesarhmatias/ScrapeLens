@@ -1,22 +1,22 @@
 ScrapeLens reference test servers
-  evidence run: /home/cesar/sl-acceptance-amd64-20261103033254/ts/lx-amd64
+  evidence run: /home/cesar/sl-acceptance-amd64-20261103040745/ts/lx-amd64
   cert: fixtures/tls/scrapelens-test-localhost.crt.pem
   chrome pin: --ignore-certificate-errors-spki-list=bZVWDrQvkR0ynQKHKqsiga6j0rd2KIqFX6NXGKIjsYw=
 
 Endpoints: /echo-order /setcookie /echo /page /redirect /healthz /multi/
 Press Ctrl+C to stop. Evidence is flushed per request.
-[scrapelens-testserver h1 06:32:59.423] listening on http://127.0.0.1:8781 (raw socket order) evidence=/home/cesar/sl-acceptance-amd64-20261103033254/ts/lx-amd64/h1.jsonl
-[scrapelens-testserver h1 06:33:01.491] c1 #1 GET /page -> 200 (3 headers, 0 body bytes, peer 127.0.0.1:54732)
-[scrapelens-testserver h1 06:33:44.837] c2 #1 GET /page -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:42918)
-[scrapelens-testserver h1 06:33:45.073] c2 #2 GET /setcookie -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:42918)
-[scrapelens-testserver h1 06:33:45.250] c2 #3 GET /setcookie?via=img -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:42918)
-[scrapelens-testserver h1 06:33:45.253] c2 #4 GET /favicon.ico -> 404 (16 headers, 0 body bytes, peer 127.0.0.1:42918)
-[scrapelens-testserver h1 06:33:45.273] c2 #5 GET /echo-order?repeated=1 -> 200 (19 headers, 0 body bytes, peer 127.0.0.1:42918)
-[scrapelens-testserver h1 06:33:45.281] c2 #6 GET /echo-order?concurrent=1 -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:42918)
-[scrapelens-testserver h1 06:33:45.281] c3 #1 GET /echo-order?concurrent=1 -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:42920)
-[scrapelens-testserver h1 06:33:45.286] c3 #2 GET /echo-order?after=cookies -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:42920)
-[scrapelens-testserver h1 06:33:45.289] c3 #3 GET /redirect?n=2 -> 302 (16 headers, 0 body bytes, peer 127.0.0.1:42920)
-[scrapelens-testserver h1 06:33:45.298] c3 #4 GET /redirect?n=1 -> 302 (16 headers, 0 body bytes, peer 127.0.0.1:42920)
-[scrapelens-testserver h1 06:33:45.300] c3 #5 GET /redirect?n=0 -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:42920)
-[scrapelens-testserver h1 06:33:45.308] c3 #6 POST /echo -> 200 (20 headers, 28 body bytes, peer 127.0.0.1:42920)
-[scrapelens-testserver h1 06:33:45.314] c3 #7 POST /echo -> 200 (19 headers, 131072 body bytes, peer 127.0.0.1:42920)
+[scrapelens-testserver h1 07:07:50.307] listening on http://127.0.0.1:8781 (raw socket order) evidence=/home/cesar/sl-acceptance-amd64-20261103040745/ts/lx-amd64/h1.jsonl
+[scrapelens-testserver h1 07:07:52.341] c1 #1 GET /page -> 200 (3 headers, 0 body bytes, peer 127.0.0.1:48332)
+[scrapelens-testserver h1 07:08:32.884] c2 #1 GET /page -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.114] c2 #2 GET /setcookie -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.268] c2 #3 GET /setcookie?via=img -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.278] c2 #4 GET /favicon.ico -> 404 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.295] c2 #5 GET /echo-order?repeated=1 -> 200 (19 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.301] c2 #6 GET /echo-order?concurrent=1 -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.301] c3 #1 GET /echo-order?concurrent=1 -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:38744)
+[scrapelens-testserver h1 07:08:33.308] c2 #7 GET /echo-order?after=cookies -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.310] c2 #8 GET /redirect?n=2 -> 302 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.319] c2 #9 GET /redirect?n=1 -> 302 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.320] c2 #10 GET /redirect?n=0 -> 200 (16 headers, 0 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.329] c2 #11 POST /echo -> 200 (20 headers, 28 body bytes, peer 127.0.0.1:38736)
+[scrapelens-testserver h1 07:08:33.335] c2 #12 POST /echo -> 200 (19 headers, 131072 body bytes, peer 127.0.0.1:38736)

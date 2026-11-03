@@ -2,7 +2,5 @@ libEGL warning: DRI3 error: Could not get DRI3 device
 libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
 scrapelens: cleanup_orphans markers_removed=0 processes_killed=0 profiles_removed=0
 capture transport: Pipe
-
-** (scrapelens:35097): WARNING **: 03:40:45.846: atk-bridge: get_device_events_reply: unknown signature
-capture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 100, transport_closed: None }
+capture shutdown: ShutdownReport { browser_close: Ok(()), exit: Graceful(Some(0)), waited_ms: 102, transport_closed: None }
 scrapelens: list_requests offset=0 items=3 matched=3 total=3

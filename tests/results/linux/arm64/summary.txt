@@ -1,19 +1,28 @@
 host: aarch64 · Ubuntu 24.04.5 LTS · dpkg=arm64
 tipo de execução: NATIVA (aarch64)
 navegador: Chromium 156.0.8078.47 snap
+artefato: ScrapeLens_0.1.0_aarch64.AppImage · sha256=7c291e0b0ba29508b3e157ccf5ef334ff3fb89f723d02f34de89fff0a40d66f1
 OK   instalar .deb (ScrapeLens_0.1.0_arm64.deb)
 OK   pacote scrape-lens instalado
 OK   testserver responde /page
-OK   janela ScrapeLens encontrada (wid=4194305)
-OK   nenhum LISTEN do Chrome da captura (pid 33940)
+OK   janela ScrapeLens encontrada (wid=4194307)
+OK   iniciar por atalho Ctrl+Shift+R (sem clique em botão)
+atalho iniciar: disparou com teclado puro (windowactivate + Ctrl+Shift+R, sem clique)
+OK   nenhum LISTEN do Chrome da captura (pid 37439)
 OK   print da janela durante a captura
-OK   sessão de captura no disco (capture-1793687873676)
+OK   encerrar por atalho Ctrl+. (sem clique em botão)
+atalho encerrar: disparou com teclado puro (windowactivate + Ctrl+., sem clique)
+OK   sessão de captura no disco (capture-1793689525720)
 captura: requisições=11
 OK   captura com requisições (11)
 OK   import --import-har (sessão har criada)
 OK   import --import-netlog (sessão netlog criada)
 OK   HAR complete com 24 requisições
 OK   NetLog partial com 32 requisições
+2ª captura (sonda): iniciar=disparou com teclado puro (windowactivate + Ctrl+Shift+R, sem clique) · encerrar=disparou com teclado puro (windowactivate + Ctrl+., sem clique)
 navigator.webdriver (valor lido pela sonda): false
 OK   navigator.webdriver === false
-FALHAS=0 · saída em /home/cesar/sl-acceptance-arm64-20261103033706
+OK   nenhum clique nos botões Iniciar/Encerrar
+OK   iniciar disparou pelo atalho de teclado
+OK   encerrar disparou pelo atalho de teclado
+FALHAS=0 · saída em /home/cesar/sl-acceptance-arm64-20261103040442

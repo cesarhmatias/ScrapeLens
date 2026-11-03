@@ -1,0 +1,5 @@
+iniciar (Ctrl+Shift+R): disparou com teclado puro (windowactivate + Ctrl+Shift+R, sem clique)
+encerrar (Ctrl+.): disparou com teclado puro (windowactivate + Ctrl+., sem clique)
+método: xdotool windowactivate --sync + xdotool key --clearmodifiers (XTEST, tela :99)
+cliques em coordenadas de botão Iniciar (1044,178) / Encerrar (1138,178): 0
+cliques neutros de foco em (700,900): 0

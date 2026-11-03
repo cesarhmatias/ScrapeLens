@@ -17,21 +17,26 @@ a pasta de saída do roteiro traz `host:` e `tipo de execução:` na primeira li
    Chrome ou Chromium). Logs locais em `tests/.work/linux/` (ignorados pelo git).
    Rodar: `orb -m <máquina> bash -s < tests/linux/setup-vm.sh`.
 
-## Artefatos (pendentes, vêm do App)
-- `.deb` e AppImage em `src-tauri/linux/` (somente leitura; copiados para a máquina).
-- Binário `scrapelens-testserver` compilado para Linux (dentro da máquina, a partir de `testserver/`).
-- Fixtures de import em `~/fixtures-r14/`: `har-derived.json` e `h1h2h3.chrome-netlog.json`
-  (copiar de `tests/.work/r12-import/` ou de `~/Projects/scrapelens-import-tmp/`; nunca da Mesa).
+## Artefatos
+- `.deb` e AppImage em `src-tauri/linux/out/` (somente leitura; copiados para `~/artifacts-r14b/` na máquina,
+  com SHA-256 conferido dos dois lados antes de rodar).
+- Binário `scrapelens-testserver` compilado para Linux (dentro da máquina, a partir de `testserver/`),
+  em `~/scrapelens/testserver/target/release/`.
+- Fixtures de import em `~/fixtures-r14/`: `har-derived.json` e `h1h2h3.chrome-netlog.json`.
 
 ## Roteiro
 `tests/linux/acceptance.sh <amd64|arm64> <AppImage> [.deb] [testserver] [probe_server.py]`
-1. Instala o `.deb` (só amd64) e confirma o binário no PATH.
+1. Instala o `.deb` da arquitetura da máquina (amd64 e arm64) e confirma o pacote instalado.
 2. Sobe o testserver em 127.0.0.1:8781 (`/page`).
 3. Abre o AppImage com `SCRAPELENS_TEST_MODE=1`, `SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page`,
    `SCRAPELENS_CAPTURE_NETWORK=loopback`.
-4. Iniciar e Encerrar por **clique** (xdotool na tela virtual 1600x1000): Iniciar sessão em (1044,178),
-   Encerrar em (1138,178). Os atalhos de teclado (ctrl+shift+r / ctrl+period) não chegam ao app no Linux,
-   por isso não são usados. Durante a captura: `ss -ltnp` e confirmação de nenhum LISTEN do Chrome da captura.
+4. Iniciar e Encerrar pelos **atalhos de teclado** do app, enviados com `xdotool key --clearmodifiers`
+   (XTEST) na tela virtual `:99`, com a janela principal focada por `xdotool windowactivate --sync`:
+   `ctrl+shift+r` (Iniciar sessão) e `ctrl+period` (Encerrar). O foco precisa ser reativado antes de cada
+   atalho, porque ao iniciar a captura o foco vai para a janela do Chrome. Os botões (1044,178) e (1138,178)
+   não são clicados em nenhum passo; se a tecla não chegar ao WebView, o roteiro tenta de novo com um único
+   clique neutro em (700,900) — área vazia, longe de controles — só para dar foco, e registra em `atalhos.txt`.
+   Durante a captura: `ss -ltnp` e confirmação de nenhum LISTEN do Chrome da captura.
 5. Confere a sessão no disco (`~/.local/share/app.scrapelens.desktop/sessions`).
 6. Imports com `--import-har` e `--import-netlog` pela CLI de teste.
 7. Confere as contagens: HAR complete 24, NetLog partial 32.
@@ -42,7 +47,11 @@ a pasta de saída do roteiro traz `host:` e `tipo de execução:` na primeira li
 Saída: `~/sl-acceptance-<arch>-<timestamp>/summary.txt` na máquina; `FALHAS=0` quando tudo passa.
 
 ## Limites conhecidos
-- O roteiro usa cliques via `xdotool` na tela virtual da máquina (nada no macOS).
+- O roteiro envia teclas via `xdotool` na tela virtual da máquina (nada no macOS). Os atalhos só funcionam
+  com foco no WebView; por isso cada atalho é precedido de `windowactivate --sync`. O clique neutro de foco
+  em (700,900) é a última alternativa e fica registrado em `atalhos.txt`.
+- A janela do app só aparece com área útil ≥ 100 px alguns segundos após o lançamento; a espera é pela
+  janela real (não pelo helper `InputOnly` 10x10), com até 60 s.
 - O X reporta a janela cliente do app como 10x10 (a moldura do openbox não tem geometria própria),
   então os prints são da tela virtual inteira (1600x1000), que contém só o openbox e as janelas do app.
 - A captura usa CDP por pipe (sem porta TCP), então o `navigator.webdriver` é lido pela página-sonda
