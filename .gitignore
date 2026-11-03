@@ -12,3 +12,4 @@ tests/results/capture-latest/profile-*
 __pycache__/
 
 .idea/
+src-tauri/linux/out/

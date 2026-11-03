@@ -154,6 +154,53 @@ substituído por este.
 - `/tmp/big20k` não é aceito como caminho: `/tmp` é symlink para `/private/tmp` e a
   CLI recusa symlink em qualquer componente (comportamento esperado, A8-B6).
 
+## Linux (rodada 14)
+
+Build em container, sem nada instalado no macOS: `src-tauri/linux/Dockerfile`
+(Ubuntu 22.04 fixado por digest `sha256:076e7bf8…5e11`, Rust 1.98.1, Node 26.8.1
+conferido pelo `SHASUMS256.txt` oficial, `cargo --locked` e `npm ci`) e
+`src-tauri/linux/build.sh` (testes, `tauri build --bundles deb,appimage`, smoke com Xvfb).
+
+```bash
+# na raiz do repositório; ARCH=amd64 (emulado no OrbStack) ou arm64 (nativo)
+docker build --platform linux/$ARCH -f src-tauri/linux/Dockerfile -t scrapelens-linux:$ARCH .
+docker run --rm --platform linux/$ARCH -v "$PWD/src-tauri/linux/out:/out" scrapelens-linux:$ARCH
+# saída: src-tauri/linux/out/$ARCH/{*.deb,*.AppImage,scrapelens,SHA256SUMS,build.log,smoke.log}
+```
+
+Os artefatos em `src-tauri/linux/out/` ficam fora do git (`.gitignore`).
+
+| Artefato (HEAD de origem: commit da rodada 14) | SHA-256 |
+|---|---|
+| `amd64/ScrapeLens_0.1.0_amd64.deb` | `cb236a46497aeabee7f5bb068f91bbf0f8b6cd5568164b291410c6ade0c7294c` |
+| `amd64/ScrapeLens_0.1.0_amd64.AppImage` | `8e5e507bbe0bc9aa5e982812ae89f0f746e426ef8eddf235332849100e3dd3e6` |
+| `amd64/scrapelens` (executável) | `afb2d0d46da4591e72bcf675cd3dbffab87fed6c4160c0f9b2df5197bab125e5` |
+| `arm64/ScrapeLens_0.1.0_arm64.deb` | `3bde2f1d00d8ebcc93947720270cbf2ec55be3bcfc21ce05818c5432d4a0a214` |
+| `arm64/ScrapeLens_0.1.0_aarch64.AppImage` | `c30f97408b68057928277a869776d6d104bd047ce936836a19dd0e1f172abdaa` |
+| `arm64/scrapelens` (executável) | `cf6f5605af34ce107535df31490c6b7cf12294fef4ab8c14c8c84b0eb1a28dc7` |
+
+Sem assinatura no Linux. Para verificar: `sha256sum -c SHA256SUMS` na pasta do
+artefato, ou `sha256sum ScrapeLens_0.1.0_amd64.deb` comparado com a tabela acima.
+O build **não é bit a bit reprodutível**: dois builds arm64 seguidos deram hashes
+diferentes (o hash identifica o artefato, não a receita). Toolchain e dependências
+são fixas; o que varia é o conteúdo gerado (ids de build, timestamps internos).
+
+Resultado nos containers (amd64 e arm64 iguais): `cargo test` 56/0/8, clippy
+`-D warnings` limpo, `test:list-view`, `test:paged`, `test:capture-url`,
+`test:adapter` e `tsc` ok; smoke com `SCRAPELENS_TEST_MODE=1 --import-har
+fixtures/aceite/headers-cookies/headers-cookies.har` sob `xvfb-run` gravou
+`~/.local/share/app.scrapelens.desktop/sessions/har-…/session.json` (1 requisição)
+e o app foi fechado por SIGTERM. O `.deb` amd64 instala com `apt install ./…deb` em
+`ubuntu:24.04` e `debian:12`, sem biblioteca faltando no `ldd`. O AppImage não foi
+executado (precisaria de FUSE ou `--appimage-extract-and-run`); 24.04/Debian 12
+foram só instalação, sem abrir a janela.
+
+Diferenças de plataforma: atalhos aparecem como `Ctrl+`/`Shift+` (o menu já usa
+`CmdOrCtrl`); preferências em `$XDG_CONFIG_HOME/app.scrapelens.desktop` (0700/0600,
+mesma escrita atômica); "Mostrar no gerenciador de arquivos" abre a pasta com
+`xdg-open` (não seleciona o arquivo). A captura no Linux depende do porte em
+`capture/` (Captura), não incluído aqui.
+
 ## Evidência da exportação/sanitização
 
 Pasta: `src-tauri/evidence/exportacao/`.
