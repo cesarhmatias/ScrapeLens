@@ -4,6 +4,49 @@ Estado do pacote entregue nesta rodada. Serve como evidência reprodutível: os
 comandos abaixo geram exatamente o artefato descrito, na mesma máquina e nas
 mesmas condições.
 
+## Release rodada 16 — 2026-11-03 (vigente)
+
+Esta seção substitui os hashes e a origem das rodadas anteriores abaixo.
+Origem: `fed9b61` (árvore limpa antes dos builds), incluindo `f377617`
+(validação FIFO/wrappers da Captura) e `ad4f5c1` (parser NetLog em fluxo P4).
+Builds executados até o término neste turno, sem callback, sem abrir ou ativar
+janelas macOS, sem tocar nas VMs e sem push.
+
+| Artefato (relativo à raiz) | Bytes | SHA-256 |
+|---|---:|---|
+| `src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens` | 18069504 | `3d4f0ba3dd22cd37a5e88fd93a43dac995d2dc0b50d27d19fbd5839434de8dfb` |
+| `src-tauri/linux/out/amd64/ScrapeLens_0.1.0_amd64.deb` | 6405530 | `f292bcf2a66619648669d5b28a7058d60136cde5972615380c0b17f9dffd7d34` |
+| `src-tauri/linux/out/amd64/ScrapeLens_0.1.0_amd64.AppImage` | 84412920 | `bbbd81699dd6df8b68811a2d4fa576aae437446c87948e3ca55e3d87e86f42dc` |
+| `src-tauri/linux/out/amd64/scrapelens` | 21934104 | `2f1290ed6bd0ea097f710d211497a33494b54fa309fcfe147bcf70657043ae6a` |
+| `src-tauri/linux/out/arm64/ScrapeLens_0.1.0_arm64.deb` | 6503380 | `4fd64763bc43a1c31db98fa5a0d0169f707462619764019d1439f9a2e03fd1c5` |
+| `src-tauri/linux/out/arm64/ScrapeLens_0.1.0_aarch64.AppImage` | 82577928 | `7c4bf27b2ed6cc74148597c30663331efe3eb730fdd00dee99ab2f769df0a370` |
+| `src-tauri/linux/out/arm64/scrapelens` | 20706392 | `0fc691699181f1dd61f136855fa517188450e1bb99ed04381ebb62b54dba5a9d` |
+
+macOS arm64: `cargo test --locked` **56 aprovados, 0 falhas, 8 ignorados**;
+`cargo clippy --locked --all-targets -- -D warnings`, cinco testes front
+(`test:shortcuts`, `test:list-view`, `test:paged`, `test:capture-url`,
+`test:adapter`), typecheck e build Vite aprovados. Bundle assinado com
+`ScrapeLens Local Signing`; `codesign --verify --deep --strict` aprovado.
+DR preservado: `identifier "app.scrapelens.desktop" and certificate root =
+H"d0a53befa59a447043abc9e58a3381addbbf1751"`.
+O hash macOS identifica o executável dentro do `.app`, não o diretório.
+Não foi executado smoke GUI macOS nesta rodada.
+
+Linux amd64 (emulado) e arm64 (nativo) via Docker/Ubuntu 22.04:
+`cargo test --locked` **56 aprovados, 0 falhas, 8 ignorados** em cada arquitetura;
+clippy com `-D warnings`, os mesmos cinco testes front e typecheck aprovados;
+`.deb` e AppImage gerados. Smoke Xvfb com `SCRAPELENS_TEST_MODE=1 --import-har`
+gravou `session.json` com **1 requisição** em cada arquitetura e encerrou o
+executável por SIGTERM. O smoke usa o executável avulso: não executa o AppImage
+nem testa instalação dos pacotes ou atalhos via X11. Não houve nova validação
+em Ubuntu 24.04/Debian 12. Sem assinatura Linux; conferir com
+`sha256sum -c SHA256SUMS` no respectivo diretório de saída.
+A receita fixa toolchains/lockfiles, mas não promete reprodução bit a bit.
+
+Evidências: `/tmp/sl-r16-{macos,amd64,arm64}.log`,
+`/tmp/sl-r16-result.json`, `/tmp/sl-r16-hashes.json` e
+`src-tauri/linux/out/{amd64,arm64}/{build.log,smoke.log,SHA256SUMS}`.
+
 ## Fontes do build
 
 | Item | Valor |
