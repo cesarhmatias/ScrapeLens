@@ -356,16 +356,28 @@ fn high_cloexec(fd: i32) -> std::io::Result<OwnedFd> {
     Ok(unsafe { OwnedFd::from_raw_fd(dup) })
 }
 
+/// Um `pipe()` com as duas pontas já em CLOEXEC quando o sistema permite: no Linux
+/// `pipe2(O_CLOEXEC)` é atômico (sem a janela entre `pipe()` e o `fcntl` que um
+/// `exec` concorrente poderia herdar); no macOS não existe `pipe2`, então a janela
+/// mínima continua e é fechada logo por `high_cloexec` (docs/16b §2.1).
+fn cloexec_pipe(fds: &mut [libc::c_int; 2]) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    // SAFETY: array de 2 inteiros, como `pipe2(2)` exige.
+    let rc = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
+    #[cfg(not(target_os = "linux"))]
+    // SAFETY: array de 2 inteiros, como `pipe(2)` exige.
+    let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 pub(crate) fn make_pipe_ends() -> std::io::Result<PipeEnds> {
     let mut to_chrome = [0i32; 2]; // [leitura do Chrome, escrita do pai]
     let mut from_chrome = [0i32; 2]; // [leitura do pai, escrita do Chrome]
-    // SAFETY: arrays de 2 inteiros, como `pipe(2)` exige.
-    if unsafe { libc::pipe(to_chrome.as_mut_ptr()) } != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    // SAFETY: idem.
-    if unsafe { libc::pipe(from_chrome.as_mut_ptr()) } != 0 {
-        let error = std::io::Error::last_os_error();
+    cloexec_pipe(&mut to_chrome)?;
+    if let Err(error) = cloexec_pipe(&mut from_chrome) {
         // SAFETY: fecha o primeiro par, que ficou aberto.
         unsafe {
             libc::close(to_chrome[0]);

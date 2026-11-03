@@ -666,6 +666,11 @@ mod tests {
         PathBuf::from(crate::chrome::detect(None).path.expect("Chrome instalado"))
     }
 
+    /// `SL_LIVE_HEADED=1` roda os vivos que o aceitam com janela (no Linux, sob Xvfb).
+    fn live_headless() -> bool {
+        std::env::var("SL_LIVE_HEADED").as_deref() != Ok("1")
+    }
+
     fn live_config(allowed: Vec<String>, name: &str, expose_cdp: bool) -> BrowserCaptureConfig {
         BrowserCaptureConfig {
             chrome: chrome_or_skip(),
@@ -675,7 +680,7 @@ mod tests {
                 super::super::unix_millis()
             )),
             start_url: None,
-            headless: true,
+            headless: live_headless(),
             allowed_hosts: allowed,
             third_party_hosts: Vec::new(),
             expose_cdp,
@@ -1299,8 +1304,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(outside);
     }
 
+    /// Primeiro caminho que existe (`lsof` fica em /usr/sbin no macOS e em /usr/bin no Linux).
+    fn tool_path(candidates: &[&'static str]) -> &'static str {
+        candidates.iter().copied().find(|p| std::path::Path::new(p).exists()).unwrap_or(candidates[0])
+    }
+
     fn lsof_listen(pid: u32) -> String {
-        let out = std::process::Command::new("/usr/sbin/lsof")
+        let out = std::process::Command::new(tool_path(&["/usr/sbin/lsof", "/usr/bin/lsof"]))
             .args(["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", &pid.to_string()])
             .output()
             .expect("lsof");
@@ -1308,7 +1318,7 @@ mod tests {
     }
 
     fn process_args(pid: u32) -> String {
-        let out = std::process::Command::new("/bin/ps")
+        let out = std::process::Command::new(tool_path(&["/bin/ps", "/usr/bin/ps"]))
             .args(["-o", "command=", "-p", &pid.to_string()])
             .output()
             .expect("ps");
@@ -1409,7 +1419,7 @@ mod tests {
                 .expect("navigate");
             assert!(nav.loaded);
             // Processo principal e descendentes (helpers).
-            let ps = std::process::Command::new("/bin/ps").args(["-axo", "pid=,ppid="]).output().unwrap();
+            let ps = std::process::Command::new(tool_path(&["/bin/ps", "/usr/bin/ps"])).args(["-axo", "pid=,ppid="]).output().unwrap();
             let ps = String::from_utf8_lossy(&ps.stdout).to_string();
             let mut pids = vec![info.chrome_pid];
             for line in ps.lines() {
@@ -1421,7 +1431,7 @@ mod tests {
                 }
             }
             for pid in &pids {
-                let out = std::process::Command::new("/usr/sbin/lsof").args(["-n", "-P", "-p", &pid.to_string()]).output().unwrap();
+                let out = std::process::Command::new(tool_path(&["/usr/sbin/lsof", "/usr/bin/lsof"])).args(["-n", "-P", "-p", &pid.to_string()]).output().unwrap();
                 let text = String::from_utf8_lossy(&out.stdout).to_string();
                 assert!(!text.contains("launcher-secret"), "fd vazou para o pid {pid} ({tag}):\n{text}");
             }
@@ -1761,7 +1771,7 @@ mod tests {
                 chrome: chrome_or_skip(),
                 session_dir: dir.clone(),
                 start_url: format!("http://127.0.0.1:{}/", site.port),
-                headless: true,
+                headless: live_headless(),
                 ignore_cert: false,
                 network: crate::NetworkMode::LoopbackOnly,
             };

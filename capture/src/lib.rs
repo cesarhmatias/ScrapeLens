@@ -173,7 +173,7 @@ fn run_inner(
     opts: &RunOptions,
 ) -> Result<(CaptureOutcome, RunReport), String> {
     eprintln!("capture transport: {:?}", opts.transport);
-    let profile = std::env::temp_dir().join(format!(
+    let profile = private_base_dir().join(format!(
         "scrapelens-chrome-{}-{}",
         std::process::id(),
         unix_nanos()
@@ -463,9 +463,16 @@ fn run_inner(
     // temporários), entre eles `--disable-blink-features=AutomationControlled`, e
     // `notes` diz isso em texto, para quem lê a sessão saber o contexto.
     let recorded_args = recorded_chrome_args(&launch_args);
-    let automation_note = format!(
+    let mut automation_note = format!(
         "captura com o aviso de automação suprimido (--disable-blink-features={AUTOMATION_FEATURE}): navigator.webdriver === false"
     );
+    // Linux/arm64: o Google Chrome estável não tem build; o Chromium é aceito e fica
+    // registrado na sessão (docs/21-linux.md §3).
+    if chrome::BrowserKind::from_path(&config.chrome) == chrome::BrowserKind::Chromium {
+        automation_note.push_str(
+            "; navegador: Chromium (alternativa ao Google Chrome estável, que não existe para este sistema/arquitetura)",
+        );
+    }
     match imported.bundle.session.session.capture.as_mut() {
         Some(capture) => {
             capture.mode = Some("cdp+netlog".to_string());
@@ -780,6 +787,19 @@ const MAX_FD_SWEEP: libc::c_int = 65_536;
 /// roda no filho entre o fork e o exec). Descritores acima de `MAX_FD_SWEEP`
 /// não são varridos: lacuna documentada em docs/16b §2.1.
 fn mark_fds_cloexec(first: libc::c_int) {
+    // Linux 5.11+: `close_range(first, ~0, CLOSE_RANGE_CLOEXEC)` marca TODOS de uma vez
+    // (sem teto de varredura). Sem o syscall (kernel antigo, seccomp), cai no laço.
+    #[cfg(target_os = "linux")]
+    {
+        const CLOSE_RANGE_CLOEXEC: libc::c_uint = 4;
+        // SAFETY: syscall direto, async-signal-safe; só altera flags de descritores.
+        let rc = unsafe {
+            libc::syscall(libc::SYS_close_range, first as libc::c_uint, libc::c_uint::MAX, CLOSE_RANGE_CLOEXEC)
+        };
+        if rc == 0 {
+            return;
+        }
+    }
     // SAFETY: `getdtablesize` e `fcntl` só leem/alteram flags de descritores.
     unsafe {
         let limit = libc::getdtablesize().clamp(first, MAX_FD_SWEEP);
@@ -880,10 +900,94 @@ impl Drop for ChromeProcess {
 const MARKER_PREFIX: &str = "capture-";
 const PROFILE_PREFIX: &str = "scrapelens-chrome-";
 
-/// Raiz de estado dos marcadores de captura (por usuário; o `temp_dir` do macOS
-/// já é privado ao usuário). O App chama `cleanup_orphans(&default_state_root())`.
+/// Base PRIVADA ao usuário para o perfil temporário, o NetLog e o state root.
+/// - macOS: o `temp_dir()` (`$TMPDIR` é um diretório por usuário, 0700).
+/// - Linux: `$TMPDIR`, se o usuário o definiu; senão `$XDG_RUNTIME_DIR` (por usuário,
+///   tmpfs, 0700), se existir de verdade e for do usuário com modo 0700; senão
+///   `/tmp` (compartilhado: lá os nomes levam o uid e tudo é conferido depois de
+///   criado, ver [`default_state_root`] e `create_private_dir_new`).
+pub fn private_base_dir() -> PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        pick_base_dir(
+            std::env::var_os("TMPDIR"),
+            std::env::var_os("XDG_RUNTIME_DIR"),
+            std::env::temp_dir(),
+        )
+    }
+    #[cfg(not(target_os = "linux"))]
+    std::env::temp_dir()
+}
+
+/// Escolha pura (testável sem mexer no ambiente): `TMPDIR` definido e não vazio vence;
+/// senão o `XDG_RUNTIME_DIR` válido; senão o `fallback` (`temp_dir()`).
+#[cfg(target_os = "linux")]
+fn pick_base_dir(
+    tmpdir: Option<std::ffi::OsString>,
+    xdg: Option<std::ffi::OsString>,
+    fallback: PathBuf,
+) -> PathBuf {
+    if tmpdir.is_some_and(|v| !v.is_empty()) {
+        return fallback;
+    }
+    xdg.and_then(|v| valid_runtime_dir(PathBuf::from(v))).unwrap_or(fallback)
+}
+
+/// `dir` se for um diretório real (não symlink), absoluto, do usuário atual e sem
+/// acesso para grupo/outros (o `XDG_RUNTIME_DIR` correto é 0700).
+#[cfg(target_os = "linux")]
+fn valid_runtime_dir(dir: PathBuf) -> Option<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    if !dir.is_absolute() {
+        return None;
+    }
+    let meta = std::fs::symlink_metadata(&dir).ok()?;
+    // SAFETY: `geteuid` não tem pré-condições.
+    let euid = unsafe { libc::geteuid() };
+    (meta.is_dir() && meta.uid() == euid && meta.mode() & 0o077 == 0).then_some(dir)
+}
+
+/// Raiz de estado dos marcadores de captura (por usuário). O App chama
+/// `cleanup_orphans(&default_state_root())`. No Linux, quando a base é o `/tmp`
+/// compartilhado, o nome leva o uid (`scrapelens-capture-state-<uid>`) para dois
+/// usuários não disputarem a mesma pasta; sob `$XDG_RUNTIME_DIR` ou no macOS o nome
+/// é `scrapelens-capture-state`.
 pub fn default_state_root() -> PathBuf {
-    std::env::temp_dir().join("scrapelens-capture-state")
+    state_root_in(&private_base_dir())
+}
+
+/// Nome da raiz de estado dentro de `base`. Linux: sob um `XDG_RUNTIME_DIR` válido
+/// (por usuário) é `scrapelens-capture-state`; em qualquer outra base (por exemplo
+/// o `/tmp` compartilhado) leva o uid. macOS: sempre `scrapelens-capture-state`.
+fn state_root_in(base: &Path) -> PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        let per_user = std::env::var_os("XDG_RUNTIME_DIR")
+            .and_then(|v| valid_runtime_dir(PathBuf::from(v)))
+            .is_some_and(|x| x == base);
+        if !per_user {
+            // SAFETY: `geteuid` não tem pré-condições.
+            let uid = unsafe { libc::geteuid() };
+            return base.join(format!("scrapelens-capture-state-{uid}"));
+        }
+    }
+    base.join("scrapelens-capture-state")
+}
+
+/// Cria (se faltar) a raiz de estado e confere, já aberta, que é um diretório do
+/// usuário, 0700 e não um link (importa em `/tmp`, onde outro usuário pode ter
+/// criado o nome antes).
+fn ensure_private_state_root(root: &Path) -> std::io::Result<()> {
+    // Um symlink no lugar da raiz é recusado ANTES de qualquer chmod (o `set_mode` do
+    // core seguiria o link e mudaria o modo do alvo).
+    if std::fs::symlink_metadata(root).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(std::io::Error::new(
+            ErrorKind::PermissionDenied,
+            format!("{} é um link simbólico; recusado", root.display()),
+        ));
+    }
+    store::ensure_private_dir(root).map_err(|e| std::io::Error::other(e.to_string()))?;
+    verify_private_dir(root).map(|_| ())
 }
 
 fn port_from_ws_url(url: &str) -> Option<u16> {
@@ -906,7 +1010,7 @@ impl OrphanMarker {
             chrome_pid,
             profile: profile.to_path_buf(),
         };
-        if store::ensure_private_dir(root).is_ok() {
+        if ensure_private_state_root(root).is_ok() {
             let path = root.join(format!(
                 "{MARKER_PREFIX}{}-{}.json",
                 std::process::id(),
@@ -943,15 +1047,25 @@ impl Drop for OrphanMarker {
 }
 
 /// Linha de comando do processo, ou `None` se ele não existe.
+#[cfg(not(target_os = "linux"))]
 fn process_command(pid: u32) -> Option<String> {
     let output = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "command="])
+        .args(["-ww", "-p", &pid.to_string(), "-o", "command="])
         .output()
         .ok()?;
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
     (output.status.success() && !text.is_empty()).then_some(text)
 }
 
+/// Linux: `/proc/<pid>/cmdline` (argumentos separados por NUL), sem depender do `ps`.
+#[cfg(target_os = "linux")]
+fn process_command(pid: u32) -> Option<String> {
+    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let text = String::from_utf8_lossy(&raw).replace('\0', " ").trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+#[cfg(not(target_os = "linux"))]
 fn process_exists(pid: u32) -> bool {
     Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "pid="])
@@ -960,17 +1074,28 @@ fn process_exists(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
+/// Linux: `kill(pid, 0)`; `EPERM` também significa que o processo existe.
+#[cfg(target_os = "linux")]
+fn process_exists(pid: u32) -> bool {
+    // SAFETY: sinal 0 só testa a existência.
+    let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
 fn signal(pid: u32, name: &str) {
-    let _ = Command::new("kill")
-        .args([name, &pid.to_string()])
-        .stderr(Stdio::null())
-        .status();
+    let sig = match name {
+        "-KILL" => libc::SIGKILL,
+        _ => libc::SIGTERM,
+    };
+    // SAFETY: envia um sinal ao pid do marcador (já conferido como nosso pelo chamador).
+    unsafe { libc::kill(pid as libc::pid_t, sig) };
 }
 
 /// Pids cuja linha de comando contém exatamente `--user-data-dir=<profile>`
 /// (o Chrome dedicado e seus auxiliares).
+#[cfg(not(target_os = "linux"))]
 fn pids_using_profile(profile_flag: &str) -> Vec<u32> {
-    let Ok(output) = Command::new("ps").args(["-axo", "pid=,command="]).output() else {
+    let Ok(output) = Command::new("ps").args(["-ww", "-axo", "pid=,command="]).output() else {
         return Vec::new();
     };
     String::from_utf8_lossy(&output.stdout)
@@ -984,10 +1109,26 @@ fn pids_using_profile(profile_flag: &str) -> Vec<u32> {
         .collect()
 }
 
-/// Só apaga perfis que este módulo cria: dentro do `temp_dir` e com o prefixo
+/// Linux: varre `/proc/<pid>/cmdline`.
+#[cfg(target_os = "linux")]
+fn pids_using_profile(profile_flag: &str) -> Vec<u32> {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let pid: u32 = entry.file_name().to_str()?.parse().ok()?;
+            let command = process_command(pid)?;
+            (command.contains(profile_flag) && pid != std::process::id()).then_some(pid)
+        })
+        .collect()
+}
+
+/// Só apaga perfis que este módulo cria: dentro da base privada e com o prefixo
 /// do app. Um marcador adulterado não consegue apontar para outro diretório.
 fn is_app_profile(profile: &Path) -> bool {
-    profile.parent() == Some(std::env::temp_dir().as_path())
+    profile.parent() == Some(private_base_dir().as_path())
         && profile
             .file_name()
             .and_then(|n| n.to_str())
@@ -2322,7 +2463,7 @@ fn session_dir_changed_after_write(why: String, original: &std::fs::File) -> Str
 }
 
 /// Caminho ATUAL do diretório que o descritor representa, mesmo que o nome tenha
-/// sido movido (macOS: `F_GETPATH`).
+/// sido movido (macOS: `F_GETPATH`; Linux: `/proc/self/fd/N`).
 #[cfg(target_os = "macos")]
 fn descriptor_path(file: &std::fs::File) -> Option<PathBuf> {
     use std::os::fd::AsRawFd;
@@ -2337,7 +2478,15 @@ fn descriptor_path(file: &std::fs::File) -> Option<PathBuf> {
     Some(PathBuf::from(std::ffi::OsStr::from_bytes(&buffer[..len])))
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Linux: `readlink /proc/self/fd/N` (o caminho atual do diretório; o núcleo acrescenta
+/// ` (deleted)` se ele foi apagado).
+#[cfg(target_os = "linux")]
+fn descriptor_path(file: &std::fs::File) -> Option<PathBuf> {
+    use std::os::fd::AsRawFd;
+    std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).ok()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn descriptor_path(_file: &std::fs::File) -> Option<PathBuf> {
     None
 }
@@ -2362,7 +2511,7 @@ fn rescue_capture_files(
     if FORCE_PRIMARY_RESCUE_FAILURE.with(std::cell::Cell::get) {
         return Err("falha forçada (teste)".to_string());
     }
-    store::ensure_private_dir(state_root).map_err(|e| format!("pasta de estado: {e}"))?;
+    ensure_private_state_root(state_root).map_err(|e| format!("pasta de estado: {e}"))?;
     let name = format!("{RESCUE_PREFIX}{}-{}", std::process::id(), unix_nanos());
     let dir = state_root.join(&name);
     create_private_dir_new(&dir).map_err(|e| format!("pasta de resgate: {e}"))?;
@@ -2462,7 +2611,7 @@ fn adopt_profile_as_rescue(
     // 3. Move para o state root e marca (mesmo prazo).
     let name = format!("{RESCUE_PREFIX}{}-{}", std::process::id(), unix_nanos());
     let target = state_root.join(&name);
-    let moved = store::ensure_private_dir(state_root)
+    let moved = ensure_private_state_root(state_root)
         .ok()
         .and_then(|()| std::fs::rename(profile, &target).ok());
     if moved.is_some() && write_rescue_marker(state_root, &name).is_ok() {
@@ -3436,6 +3585,64 @@ fn unix_millis() -> u128 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_base_dir_prefers_tmpdir_then_a_valid_xdg_runtime_dir_then_tmp() {
+        use std::ffi::OsString;
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let base = scratch_dir("xdg");
+        let fallback = PathBuf::from("/fallback-tmp");
+        let xdg = base.join("run-user");
+        std::fs::create_dir_all(&xdg).unwrap();
+        std::fs::set_permissions(&xdg, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let os = |p: &Path| Some(OsString::from(p));
+        // 1. Sem TMPDIR, um XDG_RUNTIME_DIR válido (0700, nosso, absoluto) é a base.
+        assert_eq!(pick_base_dir(None, os(&xdg), fallback.clone()), xdg);
+        // 2. TMPDIR definido pelo usuário vence o XDG; vazio não conta.
+        assert_eq!(pick_base_dir(Some("/meu/tmp".into()), os(&xdg), fallback.clone()), fallback);
+        assert_eq!(pick_base_dir(Some("".into()), os(&xdg), fallback.clone()), xdg);
+        // 3. XDG inválido cai no /tmp: modo aberto, link, relativo, inexistente, vazio.
+        let open = base.join("aberto");
+        std::fs::create_dir_all(&open).unwrap();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = base.join("link");
+        symlink(&xdg, &link).unwrap();
+        for bad in [os(&open), os(&link), Some("relativo/run".into()), os(&base.join("nao-existe")), None] {
+            assert_eq!(pick_base_dir(None, bad.clone(), fallback.clone()), fallback, "{bad:?}");
+        }
+        // 4. O nome da raiz de estado leva o uid fora de um XDG válido (em /tmp compartilhado).
+        // SAFETY: `geteuid` não tem pré-condições.
+        let uid = unsafe { libc::geteuid() };
+        assert_eq!(
+            state_root_in(Path::new("/tmp")),
+            PathBuf::from(format!("/tmp/scrapelens-capture-state-{uid}"))
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_state_root_is_created_0700_and_a_symlink_in_its_place_is_refused_untouched() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let base = scratch_dir("stateroot");
+        let root = base.join("estado");
+        ensure_private_state_root(&root).unwrap();
+        assert_eq!(std::fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
+        // Já existe com modo frouxo: o core aperta para 0700 e a conferência passa.
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        ensure_private_state_root(&root).unwrap();
+        assert_eq!(std::fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
+        // Um link no lugar é recusado SEM mudar o modo do alvo.
+        let target = base.join("alvo");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = base.join("estado-link");
+        symlink(&target, &link).unwrap();
+        assert!(ensure_private_state_root(&link).is_err());
+        assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o755, "o alvo do link foi alterado");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
     fn blink_flags(args: &[String]) -> Vec<&String> {
         args.iter().filter(|a| a.starts_with("--disable-blink-features")).collect()
     }

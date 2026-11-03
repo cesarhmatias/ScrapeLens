@@ -16,6 +16,7 @@ pub struct ChromeInfo {
     pub candidates: Vec<String>,
 }
 
+#[cfg(target_os = "macos")]
 fn home_candidates() -> Vec<PathBuf> {
     let mut list = Vec::new();
     if let Some(home) = std::env::var_os("HOME") {
@@ -30,12 +31,39 @@ fn home_candidates() -> Vec<PathBuf> {
     list
 }
 
+#[cfg(not(target_os = "macos"))]
+fn home_candidates() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+/// Onde procurar o navegador, do preferido ao alternativo. No Linux o Google
+/// Chrome estável vem primeiro; o Chromium é alternativa (e é o único navegador
+/// possível no arm64, onde o Chrome estável não tem build) e é MARCADO como tal
+/// (`BrowserKind::Chromium`). Prefere o binário real (`/opt/google/chrome/chrome`,
+/// `/usr/lib/chromium/chromium`) ao script `google-chrome`/`chromium` que só o
+/// chama.
 pub fn candidates() -> Vec<String> {
-    let mut paths = vec![
-        PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-        PathBuf::from("/Applications/Chromium.app/Contents/MacOS/Chromium"),
-        PathBuf::from("/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"),
-    ];
+    let mut paths: Vec<PathBuf> = if cfg!(target_os = "macos") {
+        vec![
+            PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+            PathBuf::from("/Applications/Chromium.app/Contents/MacOS/Chromium"),
+            PathBuf::from("/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"),
+        ]
+    } else {
+        [
+            "/opt/google/chrome/chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/google-chrome",
+            "/opt/google/chrome/google-chrome",
+            "/usr/lib/chromium/chromium",
+            "/usr/lib/chromium-browser/chromium-browser",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
+    };
     paths.extend(home_candidates());
     paths
         .into_iter()
@@ -110,20 +138,61 @@ pub fn detect(saved: Option<&Path>) -> ChromeInfo {
 // ---------------------------------------------------------------------------
 
 /// Identificador do bundle e Team ID da Google para o Chrome estável.
+#[cfg(target_os = "macos")]
 const CHROME_BUNDLE_ID: &str = "com.google.Chrome";
+#[cfg(target_os = "macos")]
 const CHROME_TEAM_ID: &str = "EQHXZ8M8AV";
 /// Requisito de código que o Chrome estável precisa satisfazer.
 pub const CHROME_REQUIREMENT: &str = "anchor apple generic and identifier \"com.google.Chrome\" and certificate leaf[subject.OU] = \"EQHXZ8M8AV\"";
 
-/// Chrome aceito para a captura controlada, lido sem executar o binário.
+/// Qual navegador é. O Chromium é aceito no Linux como alternativa (no arm64 é o
+/// único, o Chrome estável não tem build) e fica MARCADO na sessão.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BrowserKind {
+    GoogleChrome,
+    Chromium,
+}
+
+impl BrowserKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            BrowserKind::GoogleChrome => "Google Chrome",
+            BrowserKind::Chromium => "Chromium",
+        }
+    }
+
+    /// Pelo nome do executável (para o `run()` da captura comum, que só tem o caminho).
+    pub fn from_path(path: &Path) -> BrowserKind {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if name.contains("chromium") {
+            BrowserKind::Chromium
+        } else {
+            BrowserKind::GoogleChrome
+        }
+    }
+}
+
+/// Chrome aceito para a captura controlada. No macOS é lido sem executar o
+/// binário; no Linux o `--version` só roda depois das checagens de dono e permissão.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedChrome {
-    /// Binário dentro do bundle, com symlinks resolvidos.
+    /// Binário executável, com symlinks resolvidos.
     pub binary: PathBuf,
+    /// macOS: o `.app`. Linux: o diretório do binário.
     pub app: PathBuf,
-    /// `CFBundleShortVersionString` do `Info.plist`.
+    /// macOS: `CFBundleShortVersionString`. Linux: a versão de `--version`.
     pub version: String,
+    /// macOS: o Team ID da Google. Linux: vazio (não existe assinatura de código).
     pub team_id: String,
+    pub kind: BrowserKind,
+    /// Linux: pacote dono do binário (`dpkg -S` ou `rpm -qf`), quando o sistema sabe
+    /// dizer. Informativo: a validação não depende dele.
+    pub package: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +207,9 @@ pub enum ChromeError {
     UnexpectedBundle(String),
     NoVersion,
     BadSignature(String),
+    /// Linux: o binário ou um diretório acima não é de root, ou é gravável por
+    /// outros usuários / pelo usuário atual (docs/21-linux.md §3).
+    Untrusted(String),
     UnsupportedPlatform,
 }
 
@@ -153,7 +225,11 @@ impl std::fmt::Display for ChromeError {
             ChromeError::NotFound(p) => write!(f, "navegador não encontrado: {p}"),
             ChromeError::NotABundle(why) => write!(
                 f,
-                "só o Chrome estável instalado é aceito (um .app da Google); este caminho não é: {why}"
+                "só o Chrome estável instalado é aceito (no macOS um .app da Google; no Linux o binário do pacote do Chrome, ou do Chromium); este caminho não é: {why}"
+            ),
+            ChromeError::Untrusted(why) => write!(
+                f,
+                "o navegador não é confiável (precisa ser de root e fora do alcance do usuário): {why}"
             ),
             ChromeError::UnsafePath(shown) => write!(
                 f,
@@ -161,7 +237,7 @@ impl std::fmt::Display for ChromeError {
             ),
             ChromeError::UnexpectedBundle(id) => write!(
                 f,
-                "o bundle é {id:?}, não o Chrome estável ({CHROME_BUNDLE_ID})"
+                "o produto é {id:?}, não o Chrome estável (macOS: com.google.Chrome; Linux: Google Chrome <versão> ou Chromium)"
             ),
             ChromeError::NoVersion => write!(f, "o Info.plist do navegador não informa a versão"),
             ChromeError::BadSignature(why) => {
@@ -169,7 +245,7 @@ impl std::fmt::Display for ChromeError {
             }
             ChromeError::UnsupportedPlatform => write!(
                 f,
-                "a validação do navegador da captura controlada só existe para macOS nesta versão"
+                "a validação do navegador da captura controlada só existe para macOS e Linux nesta versão"
             ),
         }
     }
@@ -196,14 +272,18 @@ impl std::error::Error for ChromeError {}
 /// do próprio usuário, que já poderia executar qualquer coisa. Documentado em
 /// docs/16b §2.1.
 pub fn validate_chrome(chosen: &Path) -> Result<ValidatedChrome, ChromeError> {
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = chosen;
-        Err(ChromeError::UnsupportedPlatform)
-    }
     #[cfg(target_os = "macos")]
     {
         validate_chrome_macos(chosen)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        validate_chrome_linux(chosen, 0)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = chosen;
+        Err(ChromeError::UnsupportedPlatform)
     }
 }
 
@@ -339,7 +419,284 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
         app,
         version,
         team_id,
+        kind: BrowserKind::GoogleChrome,
+        package: None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Linux: validação equivalente à assinatura de código do macOS (docs/21-linux.md §3)
+// ---------------------------------------------------------------------------
+
+/// Aceita o Google Chrome estável (ou o Chromium, marcado) instalado pelo sistema.
+/// Não existe `codesign` no Linux; o equivalente que este módulo verifica, SEM
+/// executar nada até o fim das checagens:
+///
+/// 1. o caminho (dado e canônico) não tem caractere de controle nem é não-UTF-8;
+/// 2. o caminho é resolvido ao canônico (symlinks de `/usr/bin/google-chrome-stable`
+///    → `/etc/alternatives/...` → `/opt/google/chrome/google-chrome`) e, se cair num
+///    script (`#!`), troca pelo binário real ao lado (`chrome`,
+///    `/usr/lib/chromium/chromium`); o que roda é um **ELF**;
+/// 3. o binário é arquivo regular, **de dono `trusted_uid`** (root), executável, **sem
+///    escrita para grupo/outros**, e **cada diretório acima, até `/`**, é do mesmo
+///    dono e sem escrita para grupo/outros; quando o usuário atual não é esse dono,
+///    `access(W_OK)` precisa falhar para o arquivo e para cada diretório (cobre ACL e
+///    montagem somente leitura ao contrário: o usuário não escreve);
+/// 4. SÓ DEPOIS disso roda `<binário> --version` (ambiente limpo, 10 s de limite): o
+///    produto e a versão vêm dele (`Google Chrome 156...`, `Chromium 126...`);
+/// 5. o pacote dono (`dpkg -S` ou `rpm -qf`) é consultado e registrado, mas a
+///    validação não depende dele.
+///
+/// Fica uma janela entre a checagem e o `exec` (TOCTOU), como no macOS: o binário e
+/// os diretórios são de root e fora do alcance do usuário, então só root a explora.
+#[cfg(target_os = "linux")]
+pub(crate) fn validate_chrome_linux(
+    chosen: &Path,
+    trusted_uid: u32,
+) -> Result<ValidatedChrome, ChromeError> {
+    validate_chrome_linux_from(chosen, trusted_uid, Path::new("/"))
+}
+
+/// Como [`validate_chrome_linux`], mas os diretórios são conferidos só até `anchor`
+/// (inclusive; `/` na produção). Existe para os testes poderem montar uma árvore
+/// própria sem exigir que `/tmp` seja de root.
+#[cfg(target_os = "linux")]
+pub(crate) fn validate_chrome_linux_from(
+    chosen: &Path,
+    trusted_uid: u32,
+    anchor: &Path,
+) -> Result<ValidatedChrome, ChromeError> {
+    use std::os::unix::fs::MetadataExt;
+
+    reject_unsafe_path(chosen)?;
+    let resolved = std::fs::canonicalize(chosen)
+        .map_err(|_| ChromeError::NotFound(chosen.display().to_string()))?;
+    reject_unsafe_path(&resolved)?;
+    let binary = linux_real_binary(&resolved)?;
+    reject_unsafe_path(&binary)?;
+    // Só um executável com nome de navegador roda `--version` (nunca um binário
+    // qualquer que o agente aponte).
+    let name = binary.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if !["chrome", "chromium", "chromium-browser"].contains(&name) {
+        return Err(ChromeError::NotABundle(format!(
+            "{} não tem nome de navegador (chrome, chromium ou chromium-browser)",
+            binary.display()
+        )));
+    }
+
+    // 3. dono, modo e diretórios acima.
+    let meta = std::fs::symlink_metadata(&binary)
+        .map_err(|_| ChromeError::NotFound(binary.display().to_string()))?;
+    if !meta.file_type().is_file() {
+        return Err(ChromeError::NotABundle(format!("{} não é arquivo regular", binary.display())));
+    }
+    if meta.uid() != trusted_uid {
+        return Err(ChromeError::Untrusted(format!(
+            "{} é do usuário {} (esperado {trusted_uid})",
+            binary.display(),
+            meta.uid()
+        )));
+    }
+    if meta.mode() & 0o022 != 0 {
+        return Err(ChromeError::Untrusted(format!(
+            "{} é gravável por grupo ou outros (modo {:o})",
+            binary.display(),
+            meta.mode() & 0o7777
+        )));
+    }
+    if meta.mode() & 0o111 == 0 {
+        return Err(ChromeError::NotABundle(format!("{} não é executável", binary.display())));
+    }
+    // SAFETY: `geteuid` não tem pré-condições.
+    let euid = unsafe { libc::geteuid() };
+    let user_must_not_write = euid != trusted_uid && euid != 0;
+    if user_must_not_write && linux_can_write(&binary) {
+        return Err(ChromeError::Untrusted(format!("o usuário atual consegue gravar em {}", binary.display())));
+    }
+    for dir in binary.ancestors().skip(1) {
+        if !dir.starts_with(anchor) {
+            break;
+        }
+        let dir_meta = std::fs::symlink_metadata(dir)
+            .map_err(|e| ChromeError::Untrusted(format!("{}: {e}", dir.display())))?;
+        if !dir_meta.file_type().is_dir() {
+            return Err(ChromeError::Untrusted(format!("{} não é um diretório", dir.display())));
+        }
+        if dir_meta.uid() != trusted_uid {
+            return Err(ChromeError::Untrusted(format!(
+                "o diretório {} é do usuário {} (esperado {trusted_uid})",
+                dir.display(),
+                dir_meta.uid()
+            )));
+        }
+        if dir_meta.mode() & 0o022 != 0 {
+            return Err(ChromeError::Untrusted(format!(
+                "o diretório {} é gravável por grupo ou outros (modo {:o})",
+                dir.display(),
+                dir_meta.mode() & 0o7777
+            )));
+        }
+        if user_must_not_write && linux_can_write(dir) {
+            return Err(ChromeError::Untrusted(format!("o usuário atual consegue gravar em {}", dir.display())));
+        }
+    }
+
+    // 4. Só agora o binário roda, e só com `--version`.
+    let (kind, version) = linux_version(&binary)?;
+    // 5. Pacote dono (informativo).
+    let package = linux_owning_package(&binary);
+    let app = binary.parent().map(Path::to_path_buf).unwrap_or_else(|| binary.clone());
+    Ok(ValidatedChrome {
+        binary,
+        app,
+        version,
+        team_id: String::new(),
+        kind,
+        package,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn linux_can_write(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    match std::ffi::CString::new(path.as_os_str().as_bytes()) {
+        // SAFETY: `access` só lê o caminho NUL-terminado.
+        Ok(c) => unsafe { libc::access(c.as_ptr(), libc::W_OK) == 0 },
+        Err(_) => true,
+    }
+}
+
+/// Os primeiros bytes do arquivo: `\x7fELF` ou `#!`.
+#[cfg(target_os = "linux")]
+fn linux_head(path: &Path) -> std::io::Result<[u8; 4]> {
+    use std::io::Read;
+    let mut head = [0u8; 4];
+    let mut file = std::fs::File::open(path)?;
+    let _ = file.read(&mut head)?;
+    Ok(head)
+}
+
+/// O executável ELF a rodar: o próprio caminho se for ELF; se for o script que só
+/// chama o binário (`google-chrome`, `chromium`), o binário real ao lado.
+#[cfg(target_os = "linux")]
+fn linux_real_binary(resolved: &Path) -> Result<PathBuf, ChromeError> {
+    let head = linux_head(resolved)
+        .map_err(|_| ChromeError::NotFound(resolved.display().to_string()))?;
+    if head == *b"\x7fELF" {
+        return Ok(resolved.to_path_buf());
+    }
+    if &head[..2] == b"#!" {
+        // O script só vale se for o wrapper CONHECIDO do pacote: o `google-chrome`
+        // ao lado do `chrome` real (`/opt/google/chrome/`), ou o `chromium` do
+        // Debian/Ubuntu (`/usr/bin/chromium` → `/usr/lib/chromium/chromium`). Um
+        // script qualquer nunca é trocado por um binário de outro lugar.
+        let mapped = match resolved.to_str() {
+            Some("/usr/bin/chromium") => Some(PathBuf::from("/usr/lib/chromium/chromium")),
+            Some("/usr/bin/chromium-browser") => Some(PathBuf::from("/usr/lib/chromium-browser/chromium-browser")),
+            _ => resolved.parent().map(|dir| dir.join("chrome")),
+        };
+        if let Some(real) = mapped.and_then(|m| std::fs::canonicalize(m).ok()) {
+            if linux_head(&real).map(|h| h == *b"\x7fELF").unwrap_or(false) {
+                return Ok(real);
+            }
+        }
+        return Err(ChromeError::NotABundle(format!(
+            "{} é um script e não há binário ELF do navegador ao lado",
+            resolved.display()
+        )));
+    }
+    Err(ChromeError::NotABundle(format!("{} não é um binário ELF", resolved.display())))
+}
+
+/// `<binário> --version` com ambiente limpo e 10 s de limite. Devolve o produto e a
+/// versão; recusa qualquer produto que não seja o Google Chrome estável ou o Chromium.
+#[cfg(target_os = "linux")]
+fn linux_version(binary: &Path) -> Result<(BrowserKind, String), ChromeError> {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    let mut child = Command::new(binary)
+        .arg("--version")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| ChromeError::NotABundle(format!("{}: {e}", binary.display())))?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(ChromeError::NoVersion);
+            }
+        }
+    }
+    let mut text = String::new();
+    if let Some(mut out) = child.stdout.take() {
+        use std::io::Read;
+        let _ = out.by_ref().take(4096).read_to_string(&mut text);
+    }
+    parse_linux_version(text.lines().next().unwrap_or(""))
+}
+
+/// `Google Chrome 156.0.7778.56`, `Chromium 126.0.6478.182 built on Debian…`.
+/// O Chrome estável só tem o número depois do nome (Beta/Dev/for Testing trazem mais
+/// palavras e são recusados).
+#[cfg(target_os = "linux")]
+pub(crate) fn parse_linux_version(line: &str) -> Result<(BrowserKind, String), ChromeError> {
+    let line = line.trim();
+    let numeric = |v: &str| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit() || c == '.') && v.contains('.');
+    if let Some(rest) = line.strip_prefix("Google Chrome ") {
+        let mut words = rest.split_whitespace();
+        let version = words.next().unwrap_or("");
+        if numeric(version) && words.next().is_none() {
+            return Ok((BrowserKind::GoogleChrome, version.to_string()));
+        }
+        return Err(ChromeError::UnexpectedBundle(format!(
+            "{line:?} (só o Chrome estável é aceito, não Beta, Dev ou for Testing)"
+        )));
+    }
+    if let Some(rest) = line.strip_prefix("Chromium ") {
+        let version = rest.split_whitespace().next().unwrap_or("");
+        if numeric(version) {
+            return Ok((BrowserKind::Chromium, version.to_string()));
+        }
+    }
+    Err(ChromeError::UnexpectedBundle(format!("{line:?}")))
+}
+
+/// Pacote dono do arquivo (`dpkg -S`, depois `rpm -qf`), ou `None`. Informativo.
+#[cfg(target_os = "linux")]
+fn linux_owning_package(binary: &Path) -> Option<String> {
+    use std::process::{Command, Stdio};
+    let run = |tool: &str, args: &[&str]| -> Option<String> {
+        if !Path::new(tool).is_file() {
+            return None;
+        }
+        let output = Command::new(tool)
+            .args(args)
+            .arg(binary)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        output.status.success().then(|| String::from_utf8_lossy(&output.stdout).to_string())
+    };
+    if let Some(out) = run("/usr/bin/dpkg", &["-S"]) {
+        // `google-chrome-stable: /opt/google/chrome/chrome` (ou `pkg:arch: caminho`).
+        let first = out.lines().next()?;
+        let package = first.rsplit_once(": ").map(|(p, _)| p.trim())?;
+        return (!package.is_empty()).then(|| package.to_string());
+    }
+    let out = run("/usr/bin/rpm", &["-qf"])?;
+    let package = out.lines().next()?.trim();
+    (!package.is_empty()).then(|| package.to_string())
 }
 
 #[cfg(test)]
@@ -379,9 +736,11 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
     trait TapCreate {
         fn tap_create(self) -> PathBuf;
     }
+    #[cfg(target_os = "macos")]
     impl TapCreate for PathBuf {
         fn tap_create(self) -> PathBuf {
             std::fs::create_dir_all(&self).unwrap();
@@ -437,6 +796,163 @@ mod tests {
             assert!(matches!(err, ChromeError::NotABundle(_)), "{err:?}");
         }
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // ---- Linux (docs/21-linux.md §3) -------------------------------------
+
+    #[cfg(target_os = "linux")]
+    mod linux {
+        use super::*;
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        fn euid() -> u32 {
+            // SAFETY: `geteuid` não tem pré-condições.
+            unsafe { libc::geteuid() }
+        }
+
+        /// Árvore de teste: `<raiz>/opt/chrome/chrome` (cópia de um ELF real, modo 0755)
+        /// com diretórios 0755, todos do usuário atual.
+        fn tree(tag: &str) -> (PathBuf, PathBuf) {
+            let root = scratch(tag);
+            let dir = root.join("opt/chrome");
+            std::fs::create_dir_all(&dir).unwrap();
+            for d in [root.join("opt"), dir.clone()] {
+                std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            let binary = dir.join("chrome");
+            std::fs::copy("/bin/true", &binary).unwrap();
+            std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+            (root, binary)
+        }
+
+        #[test]
+        fn parses_the_version_line_of_each_product_and_refuses_the_others() {
+            let (kind, version) = parse_linux_version("Google Chrome 156.0.7778.56 ").unwrap();
+            assert_eq!((kind, version.as_str()), (BrowserKind::GoogleChrome, "156.0.7778.56"));
+            let (kind, version) =
+                parse_linux_version("Chromium 126.0.6478.182 built on Debian GNU/Linux 12 (bookworm), running on Debian GNU/Linux 12 (bookworm)").unwrap();
+            assert_eq!((kind, version.as_str()), (BrowserKind::Chromium, "126.0.6478.182"));
+            for bad in [
+                "Google Chrome 157.0.1.2 beta",
+                "Google Chrome 157.0.1.2 dev",
+                "Google Chrome for Testing 156.0.1.2",
+                "Chromium",
+                "true (GNU coreutils) 9.4",
+                "",
+            ] {
+                assert!(parse_linux_version(bad).is_err(), "{bad:?}");
+            }
+        }
+
+        #[test]
+        fn candidates_list_chrome_before_chromium_and_the_real_binary_before_the_script() {
+            let list = candidates();
+            let pos = |needle: &str| list.iter().position(|c| c == needle).unwrap_or_else(|| panic!("{needle}"));
+            assert!(pos("/opt/google/chrome/chrome") < pos("/usr/bin/google-chrome-stable"));
+            assert!(pos("/usr/bin/google-chrome-stable") < pos("/usr/lib/chromium/chromium"));
+            assert!(pos("/usr/lib/chromium/chromium") < pos("/usr/bin/chromium"));
+        }
+
+        #[test]
+        fn a_regular_trusted_elf_passes_every_check_and_only_then_runs_version() {
+            let (root, binary) = tree("lx-ok");
+            // O ELF é o `true` do coreutils: passa dono/modo/diretórios e SÓ ENTÃO roda
+            // `--version`, cuja saída não é a de um navegador.
+            let err = validate_chrome_linux_from(&binary, euid(), &root).unwrap_err();
+            assert!(matches!(err, ChromeError::UnexpectedBundle(_)), "{err:?}");
+            let _ = std::fs::remove_dir_all(root);
+        }
+
+        #[test]
+        fn a_binary_writable_by_group_or_others_is_refused_before_anything_runs() {
+            let (root, binary) = tree("lx-w");
+            std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o775)).unwrap();
+            let err = validate_chrome_linux_from(&binary, euid(), &root).unwrap_err();
+            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("gravável")), "{err:?}");
+            std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o757)).unwrap();
+            assert!(matches!(validate_chrome_linux_from(&binary, euid(), &root).unwrap_err(), ChromeError::Untrusted(_)));
+            let _ = std::fs::remove_dir_all(root);
+        }
+
+        #[test]
+        fn a_writable_directory_above_the_binary_is_refused() {
+            let (root, binary) = tree("lx-dir");
+            std::fs::set_permissions(root.join("opt"), std::fs::Permissions::from_mode(0o777)).unwrap();
+            let err = validate_chrome_linux_from(&binary, euid(), &root).unwrap_err();
+            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("diretório")), "{err:?}");
+            std::fs::set_permissions(root.join("opt"), std::fs::Permissions::from_mode(0o755)).unwrap();
+            let _ = std::fs::remove_dir_all(root);
+        }
+
+        #[test]
+        fn a_file_owned_by_someone_else_is_refused() {
+            let (root, binary) = tree("lx-uid");
+            // O "dono confiável" é outro uid: o do usuário atual deixa de servir.
+            let err = validate_chrome_linux_from(&binary, euid() + 1, &root).unwrap_err();
+            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("é do usuário")), "{err:?}");
+            let _ = std::fs::remove_dir_all(root);
+        }
+
+        #[test]
+        fn scripts_and_non_browser_names_are_refused_without_running() {
+            let (root, binary) = tree("lx-script");
+            let marker = root.join("rodou");
+            let script = root.join("opt/chrome/google-chrome");
+            std::fs::write(&script, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+            make_executable(&script);
+            // O script some do caminho: troca pelo binário ELF `chrome` ao lado.
+            assert_eq!(linux_real_binary(&std::fs::canonicalize(&script).unwrap()).unwrap(), std::fs::canonicalize(&binary).unwrap());
+            // Um script sem irmão ELF é recusado.
+            let alone = root.join("solto");
+            std::fs::create_dir_all(&alone).unwrap();
+            let lonely = alone.join("chrome");
+            std::fs::write(&lonely, "#!/bin/sh\ntouch rodou\n").unwrap();
+            make_executable(&lonely);
+            assert!(matches!(linux_real_binary(&lonely).unwrap_err(), ChromeError::NotABundle(_)));
+            // Um ELF com nome que não é de navegador nunca roda.
+            let other = root.join("opt/chrome/ls");
+            std::fs::copy("/bin/true", &other).unwrap();
+            make_executable(&other);
+            let err = validate_chrome_linux_from(&other, euid(), &root).unwrap_err();
+            assert!(matches!(err, ChromeError::NotABundle(ref w) if w.contains("nome de navegador")), "{err:?}");
+            assert!(!marker.exists(), "o script não pode ter rodado");
+            let _ = std::fs::remove_dir_all(root);
+        }
+
+        #[test]
+        fn a_symlink_is_resolved_to_the_canonical_binary() {
+            let (root, binary) = tree("lx-link");
+            let link = root.join("google-chrome-stable");
+            symlink(&binary, &link).unwrap();
+            // O link resolve para o canônico; a validação roda sobre o canônico.
+            let err = validate_chrome_linux_from(&link, euid(), &root).unwrap_err();
+            assert!(matches!(err, ChromeError::UnexpectedBundle(_)), "{err:?}");
+            assert_eq!(std::fs::canonicalize(&link).unwrap(), std::fs::canonicalize(&binary).unwrap());
+            let _ = std::fs::remove_dir_all(root);
+        }
+
+        #[test]
+        fn control_characters_in_the_path_are_refused() {
+            let err = validate_chrome_linux_from(Path::new("/opt/g\noogle/chrome"), 0, Path::new("/")).unwrap_err();
+            assert!(matches!(err, ChromeError::UnsafePath(_)), "{err:?}");
+        }
+
+        /// O navegador REAL desta máquina (no container de teste, o pacote oficial):
+        /// passa na validação, com produto, versão e pacote dono.
+        #[test]
+        fn the_installed_browser_passes_when_present() {
+            let Ok(found) = resolve_stable_chrome(None) else {
+                eprintln!("nenhum navegador instalado: teste ignorado");
+                return;
+            };
+            assert!(found.binary.is_absolute() && found.binary.is_file());
+            assert!(found.version.chars().next().unwrap().is_ascii_digit(), "{}", found.version);
+            assert!(found.team_id.is_empty());
+            println!("{:?} {} {} pacote={:?}", found.kind, found.version, found.binary.display(), found.package);
+            if cfg!(target_arch = "aarch64") {
+                assert_eq!(found.kind, BrowserKind::Chromium, "no arm64 só existe o Chromium");
+            }
+        }
     }
 
     #[cfg(target_os = "macos")]
