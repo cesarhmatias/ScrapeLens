@@ -170,14 +170,14 @@ docker run --rm --platform linux/$ARCH -v "$PWD/src-tauri/linux/out:/out" scrape
 
 Os artefatos em `src-tauri/linux/out/` ficam fora do git (`.gitignore`).
 
-| Artefato (HEAD de origem: commit da rodada 14) | SHA-256 |
+| Artefato (HEAD de origem `fa89c25`, árvore limpa, com o porte Linux de `capture/` em `3b56ae3`/`fa89c25`) | SHA-256 |
 |---|---|
-| `amd64/ScrapeLens_0.1.0_amd64.deb` | `cb236a46497aeabee7f5bb068f91bbf0f8b6cd5568164b291410c6ade0c7294c` |
-| `amd64/ScrapeLens_0.1.0_amd64.AppImage` | `8e5e507bbe0bc9aa5e982812ae89f0f746e426ef8eddf235332849100e3dd3e6` |
-| `amd64/scrapelens` (executável) | `afb2d0d46da4591e72bcf675cd3dbffab87fed6c4160c0f9b2df5197bab125e5` |
-| `arm64/ScrapeLens_0.1.0_arm64.deb` | `3bde2f1d00d8ebcc93947720270cbf2ec55be3bcfc21ce05818c5432d4a0a214` |
-| `arm64/ScrapeLens_0.1.0_aarch64.AppImage` | `c30f97408b68057928277a869776d6d104bd047ce936836a19dd0e1f172abdaa` |
-| `arm64/scrapelens` (executável) | `cf6f5605af34ce107535df31490c6b7cf12294fef4ab8c14c8c84b0eb1a28dc7` |
+| `amd64/ScrapeLens_0.1.0_amd64.deb` | `5843dd5a598a70bc9e92c51cec238c57ff89c2fa4bda0962cfaa3538b8225801` |
+| `amd64/ScrapeLens_0.1.0_amd64.AppImage` | `30f549a5fd053291087d74502bedacedfdd5005cfcdc455eec4ef64cab27b628` |
+| `amd64/scrapelens` (executável) | `da58c65edfb2cf9287f27681ec76c7ef90b5db9d669843302beafcc1e74df2e6` |
+| `arm64/ScrapeLens_0.1.0_arm64.deb` | `d4a15edce636275590807a52709d6459a292abb9615517f22c98d3c423135dc0` |
+| `arm64/ScrapeLens_0.1.0_aarch64.AppImage` | `3fbac33fd3945383d3fb19425db570aefd8a19916ee6465b1113c7ec96c5da80` |
+| `arm64/scrapelens` (executável) | `b083c4033206ac71f983bc3e22fcc728b2b66358bceca5919ba69a24b97e97f9` |
 
 Sem assinatura no Linux. Para verificar: `sha256sum -c SHA256SUMS` na pasta do
 artefato, ou `sha256sum ScrapeLens_0.1.0_amd64.deb` comparado com a tabela acima.
@@ -190,7 +190,7 @@ Resultado nos containers (amd64 e arm64 iguais): `cargo test` 56/0/8, clippy
 `test:adapter` e `tsc` ok; smoke com `SCRAPELENS_TEST_MODE=1 --import-har
 fixtures/aceite/headers-cookies/headers-cookies.har` sob `xvfb-run` gravou
 `~/.local/share/app.scrapelens.desktop/sessions/har-…/session.json` (1 requisição)
-e o app foi fechado por SIGTERM. O `.deb` amd64 instala com `apt install ./…deb` em
+e o app foi fechado por SIGTERM. No build anterior (árvore suja), o `.deb` amd64 instalou com `apt install ./…deb` em
 `ubuntu:24.04` e `debian:12`, sem biblioteca faltando no `ldd`. O AppImage não foi
 executado (precisaria de FUSE ou `--appimage-extract-and-run`); 24.04/Debian 12
 foram só instalação, sem abrir a janela.
