@@ -288,3 +288,48 @@ fn time_unit_is_calibrated_by_wall_clock_reference() {
             < 1e-6
     );
 }
+
+/// P4 (docs/18 §5): o leitor em fluxo tem de manter o veredito do `Value` para
+/// JSON inválido/truncado, inclusive no limite de recursão de 128 níveis.
+#[test]
+fn streaming_reader_keeps_the_value_verdict_for_deep_or_truncated_json() {
+    for n in [100usize, 126, 127, 128, 129, 200] {
+        let json = format!("{{\"events\":[{}{}]}}", "[".repeat(n), "]".repeat(n));
+        let by_value = serde_json::from_slice::<serde_json::Value>(json.as_bytes()).is_ok();
+        assert_eq!(
+            by_value,
+            parse_netlog(json.as_bytes()).is_ok(),
+            "profundidade {n}"
+        );
+    }
+    for broken in [
+        &br#"{"events":["#[..],
+        &br#"{"events":[1,2,,3]}"#[..],
+        &br#"{"constants":{"logEventTypes":{"X":1}},"events":[{"type":1}]} x"#[..],
+        b"\xff\xfe",
+    ] {
+        assert!(serde_json::from_slice::<serde_json::Value>(broken).is_err());
+        assert!(parse_netlog(broken).is_err());
+    }
+}
+
+/// `events` antes de `constants` (ordem que o Chrome não usa) continua sendo
+/// processado na ordem do arquivo, sem depender da posição do envelope.
+#[test]
+fn events_before_constants_are_still_processed_in_file_order() {
+    let json = br#"{
+      "events":[
+        {"type":1000,"phase":1,"time":"1000","source":{"id":9},
+         "params":{"url":"https://demo.invalid/x","method":"GET"}},
+        {"type":1001,"phase":0,"time":"1001","source":{"id":9},
+         "params":{"headers":["Host: demo.invalid"]}}
+      ],
+      "constants":{"timeTickOffset":1793040360000,"logEventTypes":{
+        "URL_REQUEST_START_JOB":1000,"HTTP_TRANSACTION_SEND_REQUEST_HEADERS":1001}}
+    }"#;
+    let capture = parse_netlog(json).unwrap();
+    assert_eq!(capture.requests.len(), 1);
+    assert_eq!(capture.requests[0].url, "https://demo.invalid/x");
+    assert_eq!(capture.events_used, 2);
+    assert_eq!(capture.events_unknown, 0);
+}

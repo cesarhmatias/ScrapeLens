@@ -14,7 +14,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{Map, Value};
+use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::Deserialize;
 
 use crate::error::{CoreError, Result};
 use crate::model::{
@@ -23,6 +24,7 @@ use crate::model::{
     Redirect, SessionBundle, SessionMeta, SessionV1, Source, StreamSession, Timings, Verification,
     Warning,
 };
+use crate::parse::own::JsonShape;
 use crate::parse::{ImportReport, ImportedSession, InputFormat};
 
 const MAX_UNKNOWN_SAMPLES: usize = 8;
@@ -171,6 +173,1630 @@ impl Builder {
     }
 }
 
+// ---------------------------------------------------------------------------
+// P4 (docs/18 §5): leitura em fluxo.
+//
+// O NetLog de 20 mil requisições tem ~313 MiB; desserializá-lo inteiro em
+// `serde_json::Value` custava ~3,15 GiB de DOM (10×). Daqui em diante o arquivo
+// é percorrido em fluxo: `constants` vai para uma struct pequena, cada evento do
+// array `events` é extraído para os poucos campos que o parser usa e descartado.
+// Campos desconhecidos são pulados com `JsonShape` (mesmo limite de recursão de
+// 128 níveis do `Value`), então o veredito de JSON inválido/truncado não muda.
+//
+// Limitação conhecida: chave de topo duplicada (`events` duas vezes) é lida duas
+// vezes; o `Value` antigo ficava só com a última. O Chrome nunca duplica chaves,
+// e as capturas/fixtures reais têm hash idêntico.
+// ---------------------------------------------------------------------------
+
+/// Informações que a importação usa de `constants`.
+#[derive(Debug, Default)]
+struct ConstantsInfo {
+    event_names: BTreeMap<u32, String>,
+    client: Option<ClientFields>,
+    tick_offset_ms: Option<f64>,
+}
+
+#[derive(Debug, Default)]
+struct ClientFields {
+    name: Option<String>,
+    version: Option<String>,
+    platform: Option<String>,
+}
+
+impl ConstantsInfo {
+    fn browser(&self) -> BrowserInfo {
+        match &self.client {
+            Some(client) => BrowserInfo {
+                name: client.name.clone().unwrap_or_else(|| "Chrome".to_string()),
+                version: client.version.clone(),
+                platform: client.platform.clone(),
+                user_agent: None,
+            },
+            None => BrowserInfo::default(),
+        }
+    }
+}
+
+/// Número JSON preservado nas três leituras que o parser usa (`as_u64`,
+/// `as_i64`, `as_f64`), sem guardar o `Value`. `Text` cobre o `time` em string
+/// que o Chrome real grava.
+#[derive(Debug, Clone)]
+enum JsonNum {
+    U64(u64),
+    I64(i64),
+    F64(f64),
+    Text(String),
+    Other,
+}
+
+impl JsonNum {
+    fn as_u64(&self) -> Option<u64> {
+        match self {
+            JsonNum::U64(value) => Some(*value),
+            JsonNum::I64(value) if *value >= 0 => Some(*value as u64),
+            _ => None,
+        }
+    }
+
+    fn as_i64(&self) -> Option<i64> {
+        match self {
+            JsonNum::I64(value) => Some(*value),
+            JsonNum::U64(value) if *value <= i64::MAX as u64 => Some(*value as i64),
+            _ => None,
+        }
+    }
+
+    fn as_f64(&self) -> Option<f64> {
+        match self {
+            JsonNum::U64(value) => Some(*value as f64),
+            JsonNum::I64(value) => Some(*value as f64),
+            JsonNum::F64(value) => Some(*value),
+            JsonNum::Text(value) => value.parse().ok(),
+            JsonNum::Other => None,
+        }
+    }
+}
+
+fn drain_seq<'de, A: SeqAccess<'de>>(mut seq: A) -> std::result::Result<(), A::Error> {
+    while seq.next_element::<JsonShape>()?.is_some() {}
+    Ok(())
+}
+
+fn drain_map<'de, A: MapAccess<'de>>(mut map: A) -> std::result::Result<(), A::Error> {
+    while map.next_entry::<JsonShape, JsonShape>()?.is_some() {}
+    Ok(())
+}
+
+struct NumVisitor;
+
+impl<'de> Visitor<'de> for NumVisitor {
+    type Value = JsonNum;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um número ou uma string numérica")
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> std::result::Result<JsonNum, E> {
+        Ok(JsonNum::U64(value))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> std::result::Result<JsonNum, E> {
+        Ok(JsonNum::I64(value))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> std::result::Result<JsonNum, E> {
+        Ok(JsonNum::F64(value))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> std::result::Result<JsonNum, E> {
+        Ok(JsonNum::Text(value.to_string()))
+    }
+
+    fn visit_string<E: serde::de::Error>(self, value: String) -> std::result::Result<JsonNum, E> {
+        Ok(JsonNum::Text(value))
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<JsonNum, E> {
+        Ok(JsonNum::Other)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<JsonNum, E> {
+        Ok(JsonNum::Other)
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<JsonNum, E> {
+        Ok(JsonNum::Other)
+    }
+
+    fn visit_some<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<JsonNum, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<JsonNum, A::Error> {
+        drain_seq(seq)?;
+        Ok(JsonNum::Other)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> std::result::Result<JsonNum, A::Error> {
+        drain_map(map)?;
+        Ok(JsonNum::Other)
+    }
+}
+
+impl<'de> Deserialize<'de> for JsonNum {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(NumVisitor)
+    }
+}
+
+/// String JSON; qualquer outro valor vira `None` (o `Value::as_str` anterior).
+#[derive(Debug, Default)]
+struct LooseStr(Option<String>);
+
+struct StrVisitor;
+
+impl<'de> Visitor<'de> for StrVisitor {
+    type Value = LooseStr;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("uma string")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> std::result::Result<LooseStr, E> {
+        Ok(LooseStr(Some(value.to_string())))
+    }
+
+    fn visit_string<E: serde::de::Error>(self, value: String) -> std::result::Result<LooseStr, E> {
+        Ok(LooseStr(Some(value)))
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<LooseStr, E> {
+        Ok(LooseStr(None))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<LooseStr, E> {
+        Ok(LooseStr(None))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<LooseStr, E> {
+        Ok(LooseStr(None))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<LooseStr, E> {
+        Ok(LooseStr(None))
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<LooseStr, E> {
+        Ok(LooseStr(None))
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<LooseStr, E> {
+        Ok(LooseStr(None))
+    }
+
+    fn visit_some<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<LooseStr, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<LooseStr, A::Error> {
+        drain_seq(seq)?;
+        Ok(LooseStr(None))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> std::result::Result<LooseStr, A::Error> {
+        drain_map(map)?;
+        Ok(LooseStr(None))
+    }
+}
+
+impl<'de> Deserialize<'de> for LooseStr {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(StrVisitor)
+    }
+}
+
+/// `{ "id": N }` tolerante (usado por `source` e `source_dependency`).
+#[derive(Debug, Default)]
+struct IdValue(Option<u32>);
+
+struct IdVisitor;
+
+impl<'de> Visitor<'de> for IdVisitor {
+    type Value = IdValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um objeto com id")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<IdValue, A::Error> {
+        let mut id = None;
+        while let Some(key) = map.next_key::<String>()? {
+            if key == "id" {
+                id = map
+                    .next_value::<JsonNum>()?
+                    .as_u64()
+                    .map(|value| value as u32);
+            } else {
+                map.next_value::<JsonShape>()?;
+            }
+        }
+        Ok(IdValue(id))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<IdValue, A::Error> {
+        drain_seq(seq)?;
+        Ok(IdValue(None))
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<IdValue, E> {
+        Ok(IdValue(None))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<IdValue, E> {
+        Ok(IdValue(None))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<IdValue, E> {
+        Ok(IdValue(None))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<IdValue, E> {
+        Ok(IdValue(None))
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<IdValue, E> {
+        Ok(IdValue(None))
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<IdValue, E> {
+        Ok(IdValue(None))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<IdValue, E> {
+        Ok(IdValue(None))
+    }
+
+    fn visit_string<E: serde::de::Error>(self, _: String) -> std::result::Result<IdValue, E> {
+        Ok(IdValue(None))
+    }
+}
+
+impl<'de> Deserialize<'de> for IdValue {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(IdVisitor)
+    }
+}
+
+/// Um item de `params.headers` (string ou `{name, value}`).
+#[derive(Debug)]
+enum HeaderLine {
+    Line(String),
+    Pair {
+        name: Option<String>,
+        value: Option<String>,
+    },
+    Other,
+}
+
+struct HeaderLineVisitor;
+
+impl<'de> Visitor<'de> for HeaderLineVisitor {
+    type Value = HeaderLine;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("uma linha de header")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> std::result::Result<HeaderLine, E> {
+        Ok(HeaderLine::Line(value.to_string()))
+    }
+
+    fn visit_string<E: serde::de::Error>(
+        self,
+        value: String,
+    ) -> std::result::Result<HeaderLine, E> {
+        Ok(HeaderLine::Line(value))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<HeaderLine, A::Error> {
+        let mut name = None;
+        let mut value = None;
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "name" => name = map.next_value::<LooseStr>()?.0,
+                "value" => value = map.next_value::<LooseStr>()?.0,
+                _ => {
+                    map.next_value::<JsonShape>()?;
+                }
+            }
+        }
+        Ok(HeaderLine::Pair { name, value })
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<HeaderLine, A::Error> {
+        drain_seq(seq)?;
+        Ok(HeaderLine::Other)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<HeaderLine, E> {
+        Ok(HeaderLine::Other)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<HeaderLine, E> {
+        Ok(HeaderLine::Other)
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<HeaderLine, E> {
+        Ok(HeaderLine::Other)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<HeaderLine, E> {
+        Ok(HeaderLine::Other)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<HeaderLine, E> {
+        Ok(HeaderLine::Other)
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<HeaderLine, E> {
+        Ok(HeaderLine::Other)
+    }
+}
+
+impl<'de> Deserialize<'de> for HeaderLine {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(HeaderLineVisitor)
+    }
+}
+
+/// `params.headers`: array, texto ou formato inesperado (o `null` cai em `Other`,
+/// como `Value::as_array`/`as_str` caindo em `false`).
+#[derive(Debug)]
+enum HeadersValue {
+    Lines(Vec<HeaderLine>),
+    Text(String),
+    Other,
+}
+
+struct HeadersVisitor;
+
+impl<'de> Visitor<'de> for HeadersVisitor {
+    type Value = HeadersValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("headers em array ou texto")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(
+        self,
+        mut seq: A,
+    ) -> std::result::Result<HeadersValue, A::Error> {
+        let mut lines = Vec::new();
+        while let Some(line) = seq.next_element::<HeaderLine>()? {
+            lines.push(line);
+        }
+        Ok(HeadersValue::Lines(lines))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> std::result::Result<HeadersValue, E> {
+        Ok(HeadersValue::Text(value.to_string()))
+    }
+
+    fn visit_string<E: serde::de::Error>(
+        self,
+        value: String,
+    ) -> std::result::Result<HeadersValue, E> {
+        Ok(HeadersValue::Text(value))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> std::result::Result<HeadersValue, A::Error> {
+        drain_map(map)?;
+        Ok(HeadersValue::Other)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<HeadersValue, E> {
+        Ok(HeadersValue::Other)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<HeadersValue, E> {
+        Ok(HeadersValue::Other)
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<HeadersValue, E> {
+        Ok(HeadersValue::Other)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<HeadersValue, E> {
+        Ok(HeadersValue::Other)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<HeadersValue, E> {
+        Ok(HeadersValue::Other)
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<HeadersValue, E> {
+        Ok(HeadersValue::Other)
+    }
+}
+
+impl<'de> Deserialize<'de> for HeadersValue {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(HeadersVisitor)
+    }
+}
+
+#[derive(Debug, Default)]
+enum HeadersOpt {
+    #[default]
+    Missing,
+    Lines(Vec<String>),
+    Text(String),
+    Other,
+}
+
+impl HeadersOpt {
+    fn from_value(value: HeadersValue) -> Self {
+        match value {
+            HeadersValue::Lines(entries) => HeadersOpt::Lines(
+                entries
+                    .into_iter()
+                    .filter_map(|entry| match entry {
+                        HeaderLine::Line(line) => Some(line),
+                        HeaderLine::Pair {
+                            name: Some(name),
+                            value: Some(value),
+                        } => Some(format!("{name}: {value}")),
+                        _ => None,
+                    })
+                    .collect(),
+            ),
+            HeadersValue::Text(text) => HeadersOpt::Text(text),
+            HeadersValue::Other => HeadersOpt::Other,
+        }
+    }
+}
+
+/// Os poucos campos de `params` que o parser usa.
+#[derive(Debug, Default)]
+struct RawParams {
+    url: Option<String>,
+    method: Option<String>,
+    request_type: Option<String>,
+    net_error: Option<i64>,
+    location: Option<String>,
+    line: Option<String>,
+    headers: HeadersOpt,
+    source_dependency_id: Option<u32>,
+    stream_id: Option<JsonNum>,
+    quic_stream_id: Option<JsonNum>,
+}
+
+struct ParamsVisitor;
+
+impl<'de> Visitor<'de> for ParamsVisitor {
+    type Value = Option<RawParams>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um objeto params")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(
+        self,
+        mut map: A,
+    ) -> std::result::Result<Self::Value, A::Error> {
+        let mut params = RawParams::default();
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "url" => params.url = map.next_value::<LooseStr>()?.0,
+                "method" => params.method = map.next_value::<LooseStr>()?.0,
+                "request_type" => params.request_type = map.next_value::<LooseStr>()?.0,
+                "net_error" => {
+                    params.net_error = map.next_value::<JsonNum>()?.as_i64();
+                }
+                "location" => params.location = map.next_value::<LooseStr>()?.0,
+                "line" => params.line = map.next_value::<LooseStr>()?.0,
+                "headers" => {
+                    params.headers = HeadersOpt::from_value(map.next_value::<HeadersValue>()?)
+                }
+                "source_dependency" => params.source_dependency_id = map.next_value::<IdValue>()?.0,
+                "stream_id" => {
+                    params.stream_id = Some(map.next_value::<JsonNum>()?);
+                }
+                "quic_stream_id" => {
+                    params.quic_stream_id = Some(map.next_value::<JsonNum>()?);
+                }
+                _ => {
+                    map.next_value::<JsonShape>()?;
+                }
+            }
+        }
+        Ok(Some(params))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<Self::Value, A::Error> {
+        drain_seq(seq)?;
+        Ok(None)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_string<E: serde::de::Error>(self, _: String) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+}
+
+struct ParamsHolder(Option<RawParams>);
+
+impl<'de> Deserialize<'de> for ParamsHolder {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        Ok(ParamsHolder(deserializer.deserialize_any(ParamsVisitor)?))
+    }
+}
+
+/// Um evento reduzido ao que o parser usa.
+#[derive(Debug, Default)]
+struct RawEventObject {
+    type_id: Option<u64>,
+    phase: Option<i64>,
+    time: Option<JsonNum>,
+    source_id: Option<u32>,
+    source_dependency_present: bool,
+    source_dependency_id: Option<u32>,
+    params: Option<RawParams>,
+}
+
+impl RawEventObject {
+    fn dependency_id(&self) -> Option<u32> {
+        if self.source_dependency_present {
+            self.source_dependency_id
+        } else {
+            self.params
+                .as_ref()
+                .and_then(|params| params.source_dependency_id)
+        }
+    }
+}
+
+struct RawEventVisitor;
+
+impl<'de> Visitor<'de> for RawEventVisitor {
+    type Value = Option<RawEventObject>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um evento NetLog")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(
+        self,
+        mut map: A,
+    ) -> std::result::Result<Self::Value, A::Error> {
+        let mut event = RawEventObject::default();
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "type" => event.type_id = map.next_value::<JsonNum>()?.as_u64(),
+                "phase" => event.phase = map.next_value::<JsonNum>()?.as_i64(),
+                "time" => event.time = Some(map.next_value::<JsonNum>()?),
+                "source" => event.source_id = map.next_value::<IdValue>()?.0,
+                "source_dependency" => {
+                    let id = map.next_value::<IdValue>()?.0;
+                    event.source_dependency_present = true;
+                    event.source_dependency_id = id;
+                }
+                "params" => event.params = map.next_value::<ParamsHolder>()?.0,
+                _ => {
+                    map.next_value::<JsonShape>()?;
+                }
+            }
+        }
+        Ok(Some(event))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<Self::Value, A::Error> {
+        drain_seq(seq)?;
+        Ok(None)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_string<E: serde::de::Error>(self, _: String) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+}
+
+struct RawEventSeed;
+
+impl<'de> DeserializeSeed<'de> for RawEventSeed {
+    type Value = Option<RawEventObject>;
+
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(RawEventVisitor)
+    }
+}
+
+/// `constants.logEventTypes` como pares na ordem do arquivo.
+#[derive(Debug, Default)]
+struct EventTypes(Vec<(String, u64)>);
+
+struct EventTypesVisitor;
+
+impl<'de> Visitor<'de> for EventTypesVisitor {
+    type Value = EventTypes;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um mapa de nomes de evento")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<EventTypes, A::Error> {
+        let mut pairs = Vec::new();
+        while let Some(name) = map.next_key::<String>()? {
+            if let Some(id) = map.next_value::<JsonNum>()?.as_u64() {
+                pairs.push((name, id));
+            }
+        }
+        Ok(EventTypes(pairs))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<EventTypes, A::Error> {
+        drain_seq(seq)?;
+        Ok(EventTypes::default())
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<EventTypes, E> {
+        Ok(EventTypes::default())
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<EventTypes, E> {
+        Ok(EventTypes::default())
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<EventTypes, E> {
+        Ok(EventTypes::default())
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<EventTypes, E> {
+        Ok(EventTypes::default())
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<EventTypes, E> {
+        Ok(EventTypes::default())
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<EventTypes, E> {
+        Ok(EventTypes::default())
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<EventTypes, E> {
+        Ok(EventTypes::default())
+    }
+
+    fn visit_string<E: serde::de::Error>(self, _: String) -> std::result::Result<EventTypes, E> {
+        Ok(EventTypes::default())
+    }
+}
+
+impl<'de> Deserialize<'de> for EventTypes {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(EventTypesVisitor)
+    }
+}
+
+#[derive(Debug, Default)]
+struct ClientInfoValue(Option<ClientFields>);
+
+struct ClientInfoVisitor;
+
+impl<'de> Visitor<'de> for ClientInfoVisitor {
+    type Value = ClientInfoValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um objeto clientInfo")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(
+        self,
+        mut map: A,
+    ) -> std::result::Result<ClientInfoValue, A::Error> {
+        let mut client = ClientFields::default();
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "name" => client.name = map.next_value::<LooseStr>()?.0,
+                "version" => client.version = map.next_value::<LooseStr>()?.0,
+                "os_type" => client.platform = map.next_value::<LooseStr>()?.0,
+                _ => {
+                    map.next_value::<JsonShape>()?;
+                }
+            }
+        }
+        Ok(ClientInfoValue(Some(client)))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(
+        self,
+        seq: A,
+    ) -> std::result::Result<ClientInfoValue, A::Error> {
+        drain_seq(seq)?;
+        Ok(ClientInfoValue(None))
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<ClientInfoValue, E> {
+        Ok(ClientInfoValue(None))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<ClientInfoValue, E> {
+        Ok(ClientInfoValue(None))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<ClientInfoValue, E> {
+        Ok(ClientInfoValue(None))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<ClientInfoValue, E> {
+        Ok(ClientInfoValue(None))
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<ClientInfoValue, E> {
+        Ok(ClientInfoValue(None))
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<ClientInfoValue, E> {
+        Ok(ClientInfoValue(None))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<ClientInfoValue, E> {
+        Ok(ClientInfoValue(None))
+    }
+
+    fn visit_string<E: serde::de::Error>(
+        self,
+        _: String,
+    ) -> std::result::Result<ClientInfoValue, E> {
+        Ok(ClientInfoValue(None))
+    }
+}
+
+impl<'de> Deserialize<'de> for ClientInfoValue {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(ClientInfoVisitor)
+    }
+}
+
+#[derive(Debug, Default)]
+struct ConstantsValue(Option<ConstantsInfo>);
+
+struct ConstantsVisitor;
+
+impl<'de> Visitor<'de> for ConstantsVisitor {
+    type Value = ConstantsValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um objeto constants")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(
+        self,
+        mut map: A,
+    ) -> std::result::Result<ConstantsValue, A::Error> {
+        let mut info = ConstantsInfo::default();
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "logEventTypes" => {
+                    for (name, id) in map.next_value::<EventTypes>()?.0 {
+                        info.event_names.insert(id as u32, name);
+                    }
+                }
+                "clientInfo" => info.client = map.next_value::<ClientInfoValue>()?.0,
+                "timeTickOffset" => {
+                    info.tick_offset_ms = map.next_value::<JsonNum>()?.as_f64();
+                }
+                _ => {
+                    map.next_value::<JsonShape>()?;
+                }
+            }
+        }
+        Ok(ConstantsValue(Some(info)))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<ConstantsValue, A::Error> {
+        drain_seq(seq)?;
+        Ok(ConstantsValue(None))
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<ConstantsValue, E> {
+        Ok(ConstantsValue(None))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<ConstantsValue, E> {
+        Ok(ConstantsValue(None))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<ConstantsValue, E> {
+        Ok(ConstantsValue(None))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<ConstantsValue, E> {
+        Ok(ConstantsValue(None))
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<ConstantsValue, E> {
+        Ok(ConstantsValue(None))
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<ConstantsValue, E> {
+        Ok(ConstantsValue(None))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<ConstantsValue, E> {
+        Ok(ConstantsValue(None))
+    }
+
+    fn visit_string<E: serde::de::Error>(
+        self,
+        _: String,
+    ) -> std::result::Result<ConstantsValue, E> {
+        Ok(ConstantsValue(None))
+    }
+}
+
+impl<'de> Deserialize<'de> for ConstantsValue {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(ConstantsVisitor)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RootKind {
+    Object,
+    Array,
+    Unsupported,
+}
+
+#[derive(Debug, Default)]
+struct ScanCtx {
+    constants: Option<ConstantsInfo>,
+    constants_seen: bool,
+    saw_events: bool,
+    events_is_array: bool,
+    buffering: bool,
+    buffered: Vec<RawEventObject>,
+    events_total: usize,
+    first_ticks: Option<f64>,
+    bound_to_request: BTreeMap<u32, u32>,
+    quic_stream_requests: BTreeMap<u32, BTreeSet<u32>>,
+    unknown_counts: BTreeMap<u32, usize>,
+    not_object_count: usize,
+    not_object_warnings: Vec<Warning>,
+}
+
+impl ScanCtx {
+    fn record(&mut self, event: Option<RawEventObject>) {
+        let index = self.events_total;
+        self.events_total += 1;
+        let Some(event) = event else {
+            self.not_object_count += 1;
+            self.not_object_warnings.push(Warning::new(
+                "netlog.event_not_object",
+                format!("evento {index} não é objeto; ignorado"),
+            ));
+            return;
+        };
+        if let Some(ticks) = event.time.as_ref().and_then(JsonNum::as_f64) {
+            self.first_ticks = Some(match self.first_ticks {
+                Some(current) => current.min(ticks),
+                None => ticks,
+            });
+        }
+        if self.buffering || !self.constants_seen {
+            // `events` antes de `constants` (ordem não usada pelo Chrome): guarda e
+            // processa depois, preservando a ordem do arquivo.
+            self.buffering = true;
+            self.buffered.push(event);
+        } else {
+            self.absorb(event);
+        }
+    }
+
+    fn absorb(&mut self, event: RawEventObject) {
+        let event_type = event.type_id;
+        let name = match self
+            .constants
+            .as_ref()
+            .and_then(|constants| event_type.and_then(|id| constants.event_names.get(&(id as u32))))
+            .cloned()
+        {
+            Some(name) => name,
+            None => {
+                let id = event_type.unwrap_or(0);
+                *self.unknown_counts.entry(id as u32).or_default() += 1;
+                format!("unknown:{id}")
+            }
+        };
+        if name == "HTTP_STREAM_JOB_BOUND_TO_REQUEST" {
+            let source = event.source_id;
+            let dependency = event
+                .params
+                .as_ref()
+                .and_then(|params| params.source_dependency_id);
+            if let (Some(source_id), Some(dep_id)) = (source, dependency) {
+                self.bound_to_request.insert(source_id, dep_id);
+            }
+        } else if name == "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS" {
+            if let (Some(request_id), Some(stream_id)) = (
+                event.source_id,
+                event.params.as_ref().and_then(stream_id_of),
+            ) {
+                self.quic_stream_requests
+                    .entry(stream_id)
+                    .or_default()
+                    .insert(request_id);
+            }
+        }
+    }
+
+    fn finish(mut self, root: RootKind) -> Result<ScanOutcome> {
+        for event in std::mem::take(&mut self.buffered) {
+            self.absorb(event);
+        }
+        match root {
+            RootKind::Unsupported => Err(CoreError::UnsupportedFormat {
+                message: "NetLog deve ser um objeto com {constants,events}".to_string(),
+            }),
+            RootKind::Object if !self.saw_events || !self.events_is_array => {
+                Err(CoreError::MissingField {
+                    field: "events".to_string(),
+                })
+            }
+            _ => Ok(ScanOutcome {
+                constants: self.constants,
+                events_total: self.events_total,
+                first_ticks: self.first_ticks,
+                bound_to_request: self.bound_to_request,
+                quic_stream_requests: self.quic_stream_requests,
+                unknown_counts: self.unknown_counts,
+                not_object_warnings: self.not_object_warnings,
+                not_object_count: self.not_object_count,
+            }),
+        }
+    }
+}
+
+struct ScanOutcome {
+    constants: Option<ConstantsInfo>,
+    events_total: usize,
+    first_ticks: Option<f64>,
+    bound_to_request: BTreeMap<u32, u32>,
+    quic_stream_requests: BTreeMap<u32, BTreeSet<u32>>,
+    unknown_counts: BTreeMap<u32, usize>,
+    not_object_warnings: Vec<Warning>,
+    not_object_count: usize,
+}
+
+struct ScanRoot<'a> {
+    ctx: &'a mut ScanCtx,
+}
+
+impl<'de> DeserializeSeed<'de> for ScanRoot<'_> {
+    type Value = RootKind;
+
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(ScanRootVisitor { ctx: self.ctx })
+    }
+}
+
+struct ScanRootVisitor<'a> {
+    ctx: &'a mut ScanCtx,
+}
+
+fn scan_events_seq<'de, A: SeqAccess<'de>>(
+    mut seq: A,
+    ctx: &mut ScanCtx,
+) -> std::result::Result<(), A::Error> {
+    while let Some(event) = seq.next_element_seed(RawEventSeed)? {
+        ctx.record(event);
+    }
+    Ok(())
+}
+
+struct ScanEvents<'a> {
+    ctx: &'a mut ScanCtx,
+}
+
+impl<'de> DeserializeSeed<'de> for ScanEvents<'_> {
+    type Value = bool;
+
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(ScanEventsVisitor { ctx: self.ctx })
+    }
+}
+
+struct ScanEventsVisitor<'a> {
+    ctx: &'a mut ScanCtx,
+}
+
+impl<'de> Visitor<'de> for ScanEventsVisitor<'_> {
+    type Value = bool;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um array de eventos")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<bool, A::Error> {
+        scan_events_seq(seq, self.ctx)?;
+        Ok(true)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> std::result::Result<bool, A::Error> {
+        drain_map(map)?;
+        Ok(false)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<bool, E> {
+        Ok(false)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<bool, E> {
+        Ok(false)
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<bool, E> {
+        Ok(false)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<bool, E> {
+        Ok(false)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<bool, E> {
+        Ok(false)
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<bool, E> {
+        Ok(false)
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<bool, E> {
+        Ok(false)
+    }
+
+    fn visit_string<E: serde::de::Error>(self, _: String) -> std::result::Result<bool, E> {
+        Ok(false)
+    }
+}
+
+impl<'de> Visitor<'de> for ScanRootVisitor<'_> {
+    type Value = RootKind;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um objeto NetLog ou um array de eventos")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<RootKind, A::Error> {
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "constants" => {
+                    self.ctx.constants_seen = true;
+                    self.ctx.constants = map.next_value::<ConstantsValue>()?.0;
+                }
+                "events" => {
+                    self.ctx.saw_events = true;
+                    let is_array = map.next_value_seed(ScanEvents {
+                        ctx: &mut *self.ctx,
+                    })?;
+                    self.ctx.events_is_array |= is_array;
+                }
+                _ => {
+                    map.next_value::<JsonShape>()?;
+                }
+            }
+        }
+        Ok(RootKind::Object)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<RootKind, A::Error> {
+        self.ctx.saw_events = true;
+        self.ctx.events_is_array = true;
+        scan_events_seq(seq, self.ctx)?;
+        Ok(RootKind::Array)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<RootKind, E> {
+        Ok(RootKind::Unsupported)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<RootKind, E> {
+        Ok(RootKind::Unsupported)
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<RootKind, E> {
+        Ok(RootKind::Unsupported)
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<RootKind, E> {
+        Ok(RootKind::Unsupported)
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<RootKind, E> {
+        Ok(RootKind::Unsupported)
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<RootKind, E> {
+        Ok(RootKind::Unsupported)
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<RootKind, E> {
+        Ok(RootKind::Unsupported)
+    }
+
+    fn visit_string<E: serde::de::Error>(self, _: String) -> std::result::Result<RootKind, E> {
+        Ok(RootKind::Unsupported)
+    }
+}
+
+fn scan_netlog(json: &[u8]) -> Result<ScanOutcome> {
+    let mut ctx = ScanCtx::default();
+    let mut deserializer = serde_json::Deserializer::from_slice(json);
+    let root = ScanRoot { ctx: &mut ctx }
+        .deserialize(&mut deserializer)
+        .map_err(|error| CoreError::json("NetLog", error))?;
+    deserializer
+        .end()
+        .map_err(|error| CoreError::json("NetLog", error))?;
+    ctx.finish(root)
+}
+
+struct BuildCtx {
+    names: BTreeMap<u32, String>,
+    tick_offset_ms: Option<f64>,
+    time_unit: NetlogTimeUnit,
+    browser_version: Option<String>,
+    builders: BTreeMap<u32, Builder>,
+    pending_session: Vec<(NetlogHeaderEvent, Option<u32>)>,
+    events_used: usize,
+    index: usize,
+    warnings: Vec<Warning>,
+}
+
+struct BuiltEvents {
+    builders: BTreeMap<u32, Builder>,
+    pending_session: Vec<(NetlogHeaderEvent, Option<u32>)>,
+    events_used: usize,
+}
+
+impl BuildCtx {
+    fn process(&mut self, index: usize, event: RawEventObject) {
+        let name = match event
+            .type_id
+            .and_then(|id| self.names.get(&(id as u32)))
+            .cloned()
+        {
+            Some(name) => name,
+            None => "unknown:0".to_string(),
+        };
+        let source_id = event.source_id;
+        // Uma única conversão para toda a captura (ver `ticks_to_epoch_seconds`).
+        let time = event
+            .time
+            .as_ref()
+            .and_then(JsonNum::as_f64)
+            .map(|ticks| ticks_to_epoch_seconds(ticks, self.tick_offset_ms, self.time_unit));
+        let phase = event.phase.unwrap_or(0);
+
+        match name.as_str() {
+            "URL_REQUEST_START_JOB" => {
+                let Some(source_id) = source_id else { return };
+                if phase == 1 {
+                    let builder = self
+                        .builders
+                        .entry(source_id)
+                        .or_insert_with(|| Builder::new(source_id));
+                    if let Some(params) = event.params.as_ref() {
+                        if let Some(url) = params.url.as_deref() {
+                            if builder.url.is_empty() {
+                                builder.url = url.to_string();
+                            }
+                            if builder.started_at.is_none() {
+                                builder.started_at = time;
+                            }
+                        }
+                        if let Some(method) = params.method.as_deref() {
+                            builder.method = method.to_string();
+                        }
+                        if let Some(request_type) = params.request_type.as_deref() {
+                            builder.request_type = Some(request_type.to_string());
+                        }
+                    }
+                    self.events_used += 1;
+                } else if phase == 2 {
+                    let builder = self
+                        .builders
+                        .entry(source_id)
+                        .or_insert_with(|| Builder::new(source_id));
+                    let net_error = event
+                        .params
+                        .as_ref()
+                        .and_then(|params| params.net_error)
+                        .map(|value| value as i32)
+                        .filter(|value| *value != 0);
+                    if let Some(net_error) = net_error {
+                        builder.net_error = Some(net_error);
+                    }
+                    builder.ended_at = time;
+                    builder.atoms.push(Atom::End {
+                        time,
+                        net_error,
+                        index,
+                    });
+                    self.events_used += 1;
+                }
+            }
+            "URL_REQUEST_REDIRECTED" => {
+                let Some(source_id) = source_id else { return };
+                let builder = self
+                    .builders
+                    .entry(source_id)
+                    .or_insert_with(|| Builder::new(source_id));
+                if let Some(location) = event
+                    .params
+                    .as_ref()
+                    .and_then(|params| params.location.as_deref())
+                {
+                    builder.atoms.push(Atom::Redirect {
+                        location: location.to_string(),
+                        time,
+                        index,
+                    });
+                    self.events_used += 1;
+                }
+            }
+            _ => {
+                if is_header_event(&name) {
+                    let Some(source_id) = source_id else { return };
+                    let role = if is_request_headers(&name) {
+                        HeaderRole::Request
+                    } else {
+                        HeaderRole::Response
+                    };
+                    let protocol = protocol_for_event(&name);
+                    let dependency_id = event.dependency_id();
+                    let stream_id = event.params.as_ref().and_then(stream_id_of);
+                    let (view, nul_expanded, issues) = match parse_headers(
+                        event.params,
+                        &name,
+                        index,
+                        role,
+                        protocol,
+                        self.browser_version.as_deref(),
+                        time,
+                    ) {
+                        Ok(parsed) => parsed,
+                        Err(warning) => {
+                            self.warnings.push(warning);
+                            return;
+                        }
+                    };
+                    if !issues.is_empty() {
+                        self.warnings.push(
+                            Warning::new(
+                                "netlog.header_line_invalid",
+                                format!(
+                                    "{} (evento {index}): {} linha(s) de header sem separador ':'",
+                                    name,
+                                    issues.len()
+                                ),
+                            )
+                            .with_detail(serde_json::json!({ "lines": issues })),
+                        );
+                    }
+                    let header_event = NetlogHeaderEvent {
+                        event_name: name.clone(),
+                        event_index: index,
+                        time,
+                        source_id: Some(source_id),
+                        stream_id,
+                        dependency_id,
+                        protocol,
+                        role,
+                        view,
+                        nul_expanded,
+                    };
+                    self.events_used += 1;
+
+                    if is_transaction_event(&name) {
+                        let builder = self
+                            .builders
+                            .entry(source_id)
+                            .or_insert_with(|| Builder::new(source_id));
+                        match role {
+                            HeaderRole::Request => builder.atoms.push(Atom::Send(header_event)),
+                            HeaderRole::Response => builder.atoms.push(Atom::Recv(header_event)),
+                        }
+                    } else {
+                        self.pending_session.push((header_event, None));
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct BuildRoot<'a> {
+    ctx: &'a mut BuildCtx,
+}
+
+impl<'de> DeserializeSeed<'de> for BuildRoot<'_> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(BuildRootVisitor { ctx: self.ctx })
+    }
+}
+
+struct BuildRootVisitor<'a> {
+    ctx: &'a mut BuildCtx,
+}
+
+struct BuildEvents<'a> {
+    ctx: &'a mut BuildCtx,
+}
+
+impl<'de> DeserializeSeed<'de> for BuildEvents<'_> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> std::result::Result<Self::Value, D::Error> {
+        deserializer.deserialize_any(BuildEventsVisitor { ctx: self.ctx })
+    }
+}
+
+struct BuildEventsVisitor<'a> {
+    ctx: &'a mut BuildCtx,
+}
+
+fn build_events_seq<'de, A: SeqAccess<'de>>(
+    mut seq: A,
+    ctx: &mut BuildCtx,
+) -> std::result::Result<(), A::Error> {
+    while let Some(event) = seq.next_element_seed(RawEventSeed)? {
+        let index = ctx.index;
+        ctx.index += 1;
+        if let Some(event) = event {
+            ctx.process(index, event);
+        }
+    }
+    Ok(())
+}
+
+impl<'de> Visitor<'de> for BuildEventsVisitor<'_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um array de eventos")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<(), A::Error> {
+        build_events_seq(seq, self.ctx)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> std::result::Result<(), A::Error> {
+        drain_map(map)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_string<E: serde::de::Error>(self, _: String) -> std::result::Result<(), E> {
+        Ok(())
+    }
+}
+
+impl<'de> Visitor<'de> for BuildRootVisitor<'_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("um objeto NetLog ou um array de eventos")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<(), A::Error> {
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "events" => {
+                    map.next_value_seed(BuildEvents {
+                        ctx: &mut *self.ctx,
+                    })?;
+                }
+                _ => {
+                    map.next_value::<JsonShape>()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<(), A::Error> {
+        build_events_seq(seq, self.ctx)
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> std::result::Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_string<E: serde::de::Error>(self, _: String) -> std::result::Result<(), E> {
+        Ok(())
+    }
+}
+
+fn build_events(
+    json: &[u8],
+    names: &BTreeMap<u32, String>,
+    tick_offset_ms: Option<f64>,
+    time_unit: NetlogTimeUnit,
+    browser_version: Option<&str>,
+    warnings: &mut Vec<Warning>,
+) -> Result<BuiltEvents> {
+    let mut ctx = BuildCtx {
+        names: names.clone(),
+        tick_offset_ms,
+        time_unit,
+        browser_version: browser_version.map(str::to_string),
+        builders: BTreeMap::new(),
+        pending_session: Vec::new(),
+        events_used: 0,
+        index: 0,
+        warnings: Vec::new(),
+    };
+    let mut deserializer = serde_json::Deserializer::from_slice(json);
+    BuildRoot { ctx: &mut ctx }
+        .deserialize(&mut deserializer)
+        .map_err(|error| CoreError::json("NetLog", error))?;
+    deserializer
+        .end()
+        .map_err(|error| CoreError::json("NetLog", error))?;
+    warnings.append(&mut ctx.warnings);
+    Ok(BuiltEvents {
+        builders: ctx.builders,
+        pending_session: ctx.pending_session,
+        events_used: ctx.events_used,
+    })
+}
+
 /// Importa NetLog sem referência de relógio de parede.
 ///
 /// Sem referência (CDP), a unidade é assumida como milissegundos — o que o
@@ -186,34 +1812,21 @@ pub fn parse_netlog_with_wall_clock(
     json: &[u8],
     wall_clock_s: Option<f64>,
 ) -> Result<NetlogCapture> {
-    let root: Value =
-        serde_json::from_slice(json).map_err(|error| CoreError::json("NetLog", error))?;
-    let (constants, events) = match &root {
-        Value::Object(object) => {
-            let events = object
-                .get("events")
-                .and_then(Value::as_array)
-                .ok_or_else(|| CoreError::MissingField {
-                    field: "events".to_string(),
-                })?;
-            (
-                object.get("constants").and_then(Value::as_object),
-                events.as_slice(),
-            )
-        }
-        Value::Array(events) => {
-            // NetLog sem envelope: tolerado, mas explicitamente incompleto.
-            (None, events.as_slice())
-        }
-        _ => {
-            return Err(CoreError::UnsupportedFormat {
-                message: "NetLog deve ser um objeto com {constants,events}".to_string(),
-            })
-        }
-    };
+    let scan = scan_netlog(json)?;
+    let ScanOutcome {
+        mut constants,
+        events_total,
+        first_ticks,
+        bound_to_request,
+        quic_stream_requests,
+        unknown_counts,
+        not_object_warnings,
+        not_object_count,
+    } = scan;
 
     let mut capture = NetlogCapture {
-        events_total: events.len(),
+        events_total,
+        events_unknown: not_object_count,
         ..Default::default()
     };
     if constants.is_none() {
@@ -222,23 +1835,17 @@ pub fn parse_netlog_with_wall_clock(
             "NetLog sem objeto constants; tipos de evento não podem ser decodificados por nome",
         ));
     }
-
-    let mut event_names: BTreeMap<u32, String> = BTreeMap::new();
-    let mut tick_offset_ms: Option<f64> = None;
-    if let Some(constants) = constants {
-        if let Some(types) = constants.get("logEventTypes").and_then(Value::as_object) {
-            for (name, id) in types {
-                if let Some(id) = id.as_u64() {
-                    event_names.insert(id as u32, name.clone());
-                }
-            }
-        }
-        capture.browser = browser_from_constants(constants);
-        tick_offset_ms = constants.get("timeTickOffset").and_then(as_f64);
-    }
+    let event_names = constants
+        .as_mut()
+        .map(|info| std::mem::take(&mut info.event_names))
+        .unwrap_or_default();
+    let tick_offset_ms = constants.as_ref().and_then(|info| info.tick_offset_ms);
+    capture.browser = match constants.as_ref() {
+        Some(info) => info.browser(),
+        None => BrowserInfo::default(),
+    };
 
     // O relógio é decidido uma vez por captura; todo evento usa a mesma base.
-    let first_ticks = first_time(events);
     let time_unit = match (first_ticks, tick_offset_ms) {
         (Some(ticks), Some(offset)) => {
             detect_time_unit(ticks, offset, wall_clock_s, &mut capture.warnings)
@@ -268,64 +1875,8 @@ pub fn parse_netlog_with_wall_clock(
         ));
     }
 
-    // Cadeias explícitas:
-    // - HTTP_STREAM_JOB_BOUND_TO_REQUEST: stream job -> URL_REQUEST (h2);
-    // - HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS: quic_stream_id -> URL_REQUEST
-    //   (h3; o evento de sessão só tem session id + quic_stream_id).
-    let mut bound_to_request: BTreeMap<u32, u32> = BTreeMap::new();
-    let mut quic_stream_requests: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
-    let mut unknown_counts: BTreeMap<u32, usize> = BTreeMap::new();
-
-    for (index, event) in events.iter().enumerate() {
-        let object = match event.as_object() {
-            Some(object) => object,
-            None => {
-                capture.events_unknown += 1;
-                capture.warnings.push(Warning::new(
-                    "netlog.event_not_object",
-                    format!("evento {index} não é objeto; ignorado"),
-                ));
-                continue;
-            }
-        };
-        let event_type = object.get("type").and_then(Value::as_u64);
-        let name = event_type
-            .and_then(|id| event_names.get(&(id as u32)).cloned())
-            .unwrap_or_else(|| {
-                let id = event_type.unwrap_or(0);
-                *unknown_counts.entry(id as u32).or_default() += 1;
-                format!("unknown:{id}")
-            });
-        if name == "HTTP_STREAM_JOB_BOUND_TO_REQUEST" {
-            let source = object.get("source").and_then(Value::as_object);
-            let dep = object
-                .get("params")
-                .and_then(Value::as_object)
-                .and_then(|params| params.get("source_dependency"))
-                .and_then(Value::as_object);
-            if let (Some(source_id), Some(dep_id)) = (
-                source
-                    .and_then(|source| source.get("id"))
-                    .and_then(Value::as_u64),
-                dep.and_then(|dep| dep.get("id")).and_then(Value::as_u64),
-            ) {
-                bound_to_request.insert(source_id as u32, dep_id as u32);
-            }
-        } else if name == "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS" {
-            if let (Some(request_id), Some(stream_id)) = (
-                source_id(object),
-                object
-                    .get("params")
-                    .and_then(Value::as_object)
-                    .and_then(stream_id_of),
-            ) {
-                quic_stream_requests
-                    .entry(stream_id)
-                    .or_default()
-                    .insert(request_id);
-            }
-        }
-    }
+    // Avisos de evento não-objeto foram coletados na ordem do arquivo.
+    capture.warnings.extend(not_object_warnings);
 
     capture.events_unknown += unknown_counts.values().sum::<usize>();
     for (id, count) in unknown_counts {
@@ -350,153 +1901,17 @@ pub fn parse_netlog_with_wall_clock(
         );
     }
 
-    let mut builders: BTreeMap<u32, Builder> = BTreeMap::new();
-    let mut pending_session: Vec<(NetlogHeaderEvent, Option<u32>)> = Vec::new();
-
-    for (index, event) in events.iter().enumerate() {
-        let Some(object) = event.as_object() else {
-            continue;
-        };
-        let name = event_type_name(object, &event_names);
-        let source_id = source_id(object);
-        // Uma única conversão para toda a captura (ver `ticks_to_epoch_seconds`).
-        let time = object
-            .get("time")
-            .and_then(as_f64)
-            .map(|ticks| ticks_to_epoch_seconds(ticks, tick_offset_ms, time_unit));
-        let phase = object.get("phase").and_then(Value::as_i64).unwrap_or(0);
-        let params = object.get("params").and_then(Value::as_object);
-
-        match name.as_str() {
-            "URL_REQUEST_START_JOB" => {
-                let Some(source_id) = source_id else { continue };
-                if phase == 1 {
-                    let builder = builders
-                        .entry(source_id)
-                        .or_insert_with(|| Builder::new(source_id));
-                    if let Some(params) = params {
-                        if let Some(url) = params.get("url").and_then(Value::as_str) {
-                            if builder.url.is_empty() {
-                                builder.url = url.to_string();
-                            }
-                            if builder.started_at.is_none() {
-                                builder.started_at = time;
-                            }
-                        }
-                        if let Some(method) = params.get("method").and_then(Value::as_str) {
-                            builder.method = method.to_string();
-                        }
-                        if let Some(request_type) =
-                            params.get("request_type").and_then(Value::as_str)
-                        {
-                            builder.request_type = Some(request_type.to_string());
-                        }
-                    }
-                    capture.events_used += 1;
-                } else if phase == 2 {
-                    let builder = builders
-                        .entry(source_id)
-                        .or_insert_with(|| Builder::new(source_id));
-                    let net_error = params
-                        .and_then(|params| params.get("net_error"))
-                        .and_then(Value::as_i64)
-                        .map(|value| value as i32)
-                        .filter(|value| *value != 0);
-                    if let Some(net_error) = net_error {
-                        builder.net_error = Some(net_error);
-                    }
-                    builder.ended_at = time;
-                    builder.atoms.push(Atom::End {
-                        time,
-                        net_error,
-                        index,
-                    });
-                    capture.events_used += 1;
-                }
-            }
-            "URL_REQUEST_REDIRECTED" => {
-                let Some(source_id) = source_id else { continue };
-                let builder = builders
-                    .entry(source_id)
-                    .or_insert_with(|| Builder::new(source_id));
-                if let Some(location) = params
-                    .and_then(|params| params.get("location"))
-                    .and_then(Value::as_str)
-                {
-                    builder.atoms.push(Atom::Redirect {
-                        location: location.to_string(),
-                        time,
-                        index,
-                    });
-                    capture.events_used += 1;
-                }
-            }
-            _ => {
-                if is_header_event(&name) {
-                    let Some(source_id) = source_id else { continue };
-                    let role = if is_request_headers(&name) {
-                        HeaderRole::Request
-                    } else {
-                        HeaderRole::Response
-                    };
-                    let protocol = protocol_for_event(&name);
-                    let (view, nul_expanded, issues) = match parse_headers(
-                        params,
-                        &name,
-                        index,
-                        role,
-                        protocol,
-                        capture.browser.version.as_deref(),
-                        time,
-                    ) {
-                        Ok(parsed) => parsed,
-                        Err(warning) => {
-                            capture.warnings.push(warning);
-                            continue;
-                        }
-                    };
-                    if !issues.is_empty() {
-                        capture.warnings.push(
-                            Warning::new(
-                                "netlog.header_line_invalid",
-                                format!(
-                                    "{} (evento {index}): {} linha(s) de header sem separador ':'",
-                                    name,
-                                    issues.len()
-                                ),
-                            )
-                            .with_detail(serde_json::json!({ "lines": issues })),
-                        );
-                    }
-                    let header_event = NetlogHeaderEvent {
-                        event_name: name.clone(),
-                        event_index: index,
-                        time,
-                        source_id: Some(source_id),
-                        stream_id: params.and_then(stream_id_of),
-                        dependency_id: source_dependency_id(object),
-                        protocol,
-                        role,
-                        view,
-                        nul_expanded,
-                    };
-                    capture.events_used += 1;
-
-                    if is_transaction_event(&name) {
-                        let builder = builders
-                            .entry(source_id)
-                            .or_insert_with(|| Builder::new(source_id));
-                        match role {
-                            HeaderRole::Request => builder.atoms.push(Atom::Send(header_event)),
-                            HeaderRole::Response => builder.atoms.push(Atom::Recv(header_event)),
-                        }
-                    } else {
-                        pending_session.push((header_event, None));
-                    }
-                }
-            }
-        }
-    }
+    let built = build_events(
+        json,
+        &event_names,
+        tick_offset_ms,
+        time_unit,
+        capture.browser.version.as_deref(),
+        &mut capture.warnings,
+    )?;
+    capture.events_used += built.events_used;
+    let mut builders = built.builders;
+    let mut pending_session = built.pending_session;
 
     // Liga eventos de sessão ao URL_REQUEST pela cadeia explícita
     // HTTP_STREAM_JOB_BOUND_TO_REQUEST.
@@ -591,20 +2006,13 @@ pub fn parse_netlog_with_wall_clock(
     Ok(capture)
 }
 
-fn stream_id_of(params: &Map<String, Value>) -> Option<u32> {
+fn stream_id_of(params: &RawParams) -> Option<u32> {
     params
-        .get("stream_id")
-        .or_else(|| params.get("quic_stream_id"))
-        .and_then(Value::as_u64)
+        .stream_id
+        .as_ref()
+        .or(params.quic_stream_id.as_ref())
+        .and_then(JsonNum::as_u64)
         .map(|value| value as u32)
-}
-
-fn event_type_name(object: &Map<String, Value>, names: &BTreeMap<u32, String>) -> String {
-    object
-        .get("type")
-        .and_then(Value::as_u64)
-        .and_then(|id| names.get(&(id as u32)).cloned())
-        .unwrap_or_else(|| "unknown:0".to_string())
 }
 
 fn is_header_event(name: &str) -> bool {
@@ -648,7 +2056,7 @@ fn protocol_for_event(name: &str) -> Protocol {
 }
 
 fn parse_headers(
-    params: Option<&Map<String, Value>>,
+    params: Option<RawParams>,
     event_name: &str,
     index: usize,
     role: HeaderRole,
@@ -662,36 +2070,23 @@ fn parse_headers(
             format!("{event_name} (evento {index}) sem params; ignorado"),
         )
     })?;
-    let Some(headers) = params.get("headers") else {
-        return Err(Warning::new(
-            "netlog.header_event_without_headers",
-            format!("{event_name} (evento {index}) sem params.headers; ignorado"),
-        ));
-    };
-
-    let mut lines: Vec<String> = Vec::new();
-    if let Some(array) = headers.as_array() {
-        for value in array {
-            if let Some(line) = value.as_str() {
-                lines.push(line.to_string());
-            } else if let Some(object) = value.as_object() {
-                if let (Some(name), Some(value)) = (
-                    object.get("name").and_then(Value::as_str),
-                    object.get("value").and_then(Value::as_str),
-                ) {
-                    lines.push(format!("{name}: {value}"));
-                }
-            }
+    let RawParams { line, headers, .. } = params;
+    let lines: Vec<String> = match headers {
+        HeadersOpt::Missing => {
+            return Err(Warning::new(
+                "netlog.header_event_without_headers",
+                format!("{event_name} (evento {index}) sem params.headers; ignorado"),
+            ))
         }
-    } else if let Some(text) = headers.as_str() {
-        lines.extend(text.lines().map(str::to_string));
-    } else {
-        return Err(Warning::new(
-            "netlog.headers_not_array",
-            format!("{event_name} (evento {index}) tem params.headers em formato inesperado"),
-        ));
-    }
-
+        HeadersOpt::Other => {
+            return Err(Warning::new(
+                "netlog.headers_not_array",
+                format!("{event_name} (evento {index}) tem params.headers em formato inesperado"),
+            ))
+        }
+        HeadersOpt::Text(text) => text.lines().map(str::to_string).collect(),
+        HeadersOpt::Lines(lines) => lines,
+    };
     let (expanded, nul_expanded) = expand_nul_duplicates(&lines);
     let direction = match role {
         HeaderRole::Request => policy::Direction::Request,
@@ -723,10 +2118,7 @@ fn parse_headers(
 
     let (mut view, _issues, unparsed) =
         HeaderView::from_header_lines(&expanded, &provenance, OrderState::SourceOrder);
-    let request_line = params
-        .get("line")
-        .and_then(Value::as_str)
-        .map(|line| line.trim_end_matches(['\r', '\n']).to_string());
+    let request_line = line.map(|line| line.trim_end_matches(['\r', '\n']).to_string());
     if let Some(line) = &request_line {
         view.start_line = Some(line.clone());
         view.raw_block = Some(format!("{line}\n{}", lines.join("\n")));
@@ -999,68 +2391,6 @@ fn atom_index(atom: &Atom) -> usize {
         Atom::Send(event) | Atom::Recv(event) => event.event_index,
         Atom::Redirect { index, .. } | Atom::End { index, .. } => *index,
     }
-}
-
-fn source_id(object: &Map<String, Value>) -> Option<u32> {
-    object
-        .get("source")
-        .and_then(Value::as_object)
-        .and_then(|source| source.get("id"))
-        .and_then(Value::as_u64)
-        .map(|id| id as u32)
-}
-
-fn source_dependency_id(object: &Map<String, Value>) -> Option<u32> {
-    object
-        .get("source_dependency")
-        .or_else(|| {
-            object
-                .get("params")
-                .and_then(Value::as_object)
-                .and_then(|params| params.get("source_dependency"))
-        })
-        .and_then(Value::as_object)
-        .and_then(|dependency| dependency.get("id"))
-        .and_then(Value::as_u64)
-        .map(|id| id as u32)
-}
-
-fn browser_from_constants(constants: &Map<String, Value>) -> BrowserInfo {
-    let Some(client) = constants.get("clientInfo").and_then(Value::as_object) else {
-        return BrowserInfo::default();
-    };
-    BrowserInfo {
-        name: client
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or("Chrome")
-            .to_string(),
-        version: client
-            .get("version")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        platform: client
-            .get("os_type")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        user_agent: None,
-    }
-}
-
-fn as_f64(value: &Value) -> Option<f64> {
-    value
-        .as_f64()
-        .or_else(|| value.as_i64().map(|value| value as f64))
-        .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
-}
-
-fn first_time(events: &[Value]) -> Option<f64> {
-    events
-        .iter()
-        .filter_map(|event| event.get("time").and_then(as_f64))
-        .fold(None, |acc: Option<f64>, time| {
-            Some(acc.map_or(time, |acc| acc.min(time)))
-        })
 }
 
 /// Converte `time` do NetLog (ticks do processo) para segundos Unix.

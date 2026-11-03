@@ -163,7 +163,7 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
 /// Valida JSON sem montar o DOM, com o MESMO veredito de `serde_json::from_slice::<Value>`
 /// (inclusive o limite de recursão de 128 níveis): `IgnoredAny` não serve porque
 /// pula o limite. Memória O(profundidade).
-struct JsonShape;
+pub(crate) struct JsonShape;
 
 impl<'de> serde::Deserialize<'de> for JsonShape {
     fn deserialize<D: serde::Deserializer<'de>>(
