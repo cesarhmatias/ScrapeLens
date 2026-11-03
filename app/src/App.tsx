@@ -2296,19 +2296,7 @@ export default function App() {
   return (
     <div className="app" data-theme={theme}>
       <div className="window">
-        <div className="titlebar">
-          <div className="traffic">
-            <span className="tl close" />
-            <span className="tl min" />
-            <span className="tl max" />
-          </div>
-          <div className="title">
-            ScrapeLens
-            <span className="title-sep">—</span>
-            <span className="title-sub">
-              {session.synthetic ? "sessão de demonstração" : session.label}
-            </span>
-          </div>
+        <div className="toolbar-top" id="scrapelens-toolbar">
           <div className="title-actions">
             <OriginTag session={session} />
             <span className="tag tag-synthetic">{desktop ? "Tauri 2" : "modo navegador"}</span>

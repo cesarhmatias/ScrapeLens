@@ -83,7 +83,7 @@ body {
 
 .app {
   min-height: 100vh;
-  padding: 22px;
+  padding: 0;
   background:
     radial-gradient(1200px 500px at 15% -10%, rgba(90, 140, 255, 0.16), transparent 60%),
     radial-gradient(900px 400px at 100% 0%, rgba(160, 120, 255, 0.12), transparent 55%),
@@ -108,51 +108,24 @@ kbd {
 }
 
 .window {
-  max-width: 1380px;
-  margin: 0 auto;
   background: var(--bg-window);
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
   overflow: hidden;
-  min-height: calc(100vh - 44px);
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
-/* ---------- title bar ---------- */
-.titlebar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+/* ---------- barra de ferramentas (a barra de título é a nativa do macOS) ---------- */
+.toolbar-top {
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  height: 42px;
-  padding: 0 14px;
-  background: linear-gradient(var(--bg-subtle), var(--bg-window));
+  min-height: 36px;
+  padding: 4px 14px;
+  background: var(--bg-subtle);
   border-bottom: 1px solid var(--border);
   user-select: none;
 }
-.traffic {
-  display: flex;
-  gap: 7px;
-}
-.tl {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  display: inline-block;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-}
-.tl.close { background: #ff5f57; }
-.tl.min { background: #febc2e; }
-.tl.max { background: #28c840; }
-.title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fg-muted);
-  white-space: nowrap;
-}
-.title-sep { margin: 0 6px; color: var(--fg-faint); }
-.title-sub { font-weight: 400; color: var(--fg-faint); }
 .title-actions {
   display: flex;
   justify-content: flex-end;
