@@ -7,20 +7,20 @@ mesmas condições.
 ## Release rodada 16 — 2026-11-03 (vigente)
 
 Esta seção substitui os hashes e a origem das rodadas anteriores abaixo.
-Origem: `fed9b61` (árvore limpa antes dos builds), incluindo `f377617`
-(validação FIFO/wrappers da Captura) e `ad4f5c1` (parser NetLog em fluxo P4).
+Origem: `22854c3` (árvore limpa antes dos builds), incluindo `f377617`
+(validação FIFO/wrappers da Captura) e `ad4f5c1` (parser NetLog em fluxo P4), com fechamento de clippy/Core e semântica de `events` duplicado em `22854c3`.
 Builds executados até o término neste turno, sem callback, sem abrir ou ativar
 janelas macOS, sem tocar nas VMs e sem push.
 
 | Artefato (relativo à raiz) | Bytes | SHA-256 |
 |---|---:|---|
-| `src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens` | 18069504 | `3d4f0ba3dd22cd37a5e88fd93a43dac995d2dc0b50d27d19fbd5839434de8dfb` |
-| `src-tauri/linux/out/amd64/ScrapeLens_0.1.0_amd64.deb` | 6405530 | `f292bcf2a66619648669d5b28a7058d60136cde5972615380c0b17f9dffd7d34` |
-| `src-tauri/linux/out/amd64/ScrapeLens_0.1.0_amd64.AppImage` | 84412920 | `bbbd81699dd6df8b68811a2d4fa576aae437446c87948e3ca55e3d87e86f42dc` |
-| `src-tauri/linux/out/amd64/scrapelens` | 21934104 | `2f1290ed6bd0ea097f710d211497a33494b54fa309fcfe147bcf70657043ae6a` |
-| `src-tauri/linux/out/arm64/ScrapeLens_0.1.0_arm64.deb` | 6503380 | `4fd64763bc43a1c31db98fa5a0d0169f707462619764019d1439f9a2e03fd1c5` |
-| `src-tauri/linux/out/arm64/ScrapeLens_0.1.0_aarch64.AppImage` | 82577928 | `7c4bf27b2ed6cc74148597c30663331efe3eb730fdd00dee99ab2f769df0a370` |
-| `src-tauri/linux/out/arm64/scrapelens` | 20706392 | `0fc691699181f1dd61f136855fa517188450e1bb99ed04381ebb62b54dba5a9d` |
+| `src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens` | 18089024 | `cbebd19d9c2339774fb6e959ae136439c896d69efd747f4bdf53d07f4c9ccf3f` |
+| `src-tauri/linux/out/amd64/ScrapeLens_0.1.0_amd64.deb` | 6404930 | `871a04eb10e79ca291de16ca113a60dc766c733f84fad98a6ec8cdc6c479be15` |
+| `src-tauri/linux/out/amd64/ScrapeLens_0.1.0_amd64.AppImage` | 84404728 | `d06c7d80d5bcb99d648944571cb704e72c71d11356b18eb1160c7721bb47039c` |
+| `src-tauri/linux/out/amd64/scrapelens` | 21938000 | `6d9007aa510787e3376c3c3e3a400abff903ac3716c9bf04bbe803834ae815fd` |
+| `src-tauri/linux/out/arm64/ScrapeLens_0.1.0_arm64.deb` | 6504416 | `11161abc54774b9ce94f7d140645c0120c24f76b4f27d12bdc2db33e1571a410` |
+| `src-tauri/linux/out/arm64/ScrapeLens_0.1.0_aarch64.AppImage` | 82569736 | `5fb8f9138ef3dd65cb3af26a08f0a4801381de4b37729f8331df1502aa76aef6` |
+| `src-tauri/linux/out/arm64/scrapelens` | 20702552 | `f9e0ecf0d2ffeafbee2ed69e5678d4eac1fa85841b09c18c246fed543b2116d5` |
 
 macOS arm64: `cargo test --locked` **56 aprovados, 0 falhas, 8 ignorados**;
 `cargo clippy --locked --all-targets -- -D warnings`, cinco testes front
@@ -44,8 +44,12 @@ em Ubuntu 24.04/Debian 12. Sem assinatura Linux; conferir com
 A receita fixa toolchains/lockfiles, mas não promete reprodução bit a bit.
 
 Evidências: `/tmp/sl-r16-{macos,amd64,arm64}.log`,
-`/tmp/sl-r16-result.json`, `/tmp/sl-r16-hashes.json` e
+`/tmp/sl-r16-result.json`, `/tmp/sl-r16-final-hashes.json` e
 `src-tauri/linux/out/{amd64,arm64}/{build.log,smoke.log,SHA256SUMS}`.
+
+O primeiro `docker run` amd64 falhou com snapshot pai ausente no daemon;
+a repetição do mesmo comando concluiu com código 0. Log da tentativa bem-sucedida:
+`/tmp/sl-r16-amd64-retry.log` (o JSON do script conserva `run=125` da primeira tentativa).
 
 ## Fontes do build
 
