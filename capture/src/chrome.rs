@@ -435,13 +435,16 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
 /// 1. o caminho (dado e canônico) não tem caractere de controle nem é não-UTF-8;
 /// 2. o caminho é resolvido ao canônico (symlinks de `/usr/bin/google-chrome-stable`
 ///    → `/etc/alternatives/...` → `/opt/google/chrome/google-chrome`) e, se cair num
-///    script (`#!`), troca pelo binário real ao lado (`chrome`,
-///    `/usr/lib/chromium/chromium`); o que roda é um **ELF**;
+///    script (`#!`), só aceita nome de wrapper conhecido (`google-chrome`,
+///    `google-chrome-stable`, `chromium`, `chromium-browser`) e troca pelo binário
+///    real ao lado (`chrome`, `/usr/lib/chromium/chromium`); o que roda é um **ELF**;
 /// 3. o binário é arquivo regular, **de dono `trusted_uid`** (root), executável, **sem
 ///    escrita para grupo/outros**, e **cada diretório acima, até `/`**, é do mesmo
 ///    dono e sem escrita para grupo/outros; quando o usuário atual não é esse dono,
 ///    `access(W_OK)` precisa falhar para o arquivo e para cada diretório (cobre ACL e
-///    montagem somente leitura ao contrário: o usuário não escreve);
+///    montagem somente leitura ao contrário: o usuário não escreve). O tipo é conferido
+///    no descritor aberto com `O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC`: FIFO, socket
+///    e device são recusados sem bloquear (um FIFO sem escritor bloquearia `open`);
 /// 4. SÓ DEPOIS disso roda `<binário> --version` (ambiente limpo, 10 s de limite): o
 ///    produto e a versão vêm dele (`Google Chrome 156...`, `Chromium 126...`);
 /// 5. o pacote dono (`dpkg -S` ou `rpm -qf`) é consultado e registrado, mas a
@@ -566,13 +569,57 @@ fn linux_can_write(path: &Path) -> bool {
     }
 }
 
+/// Abre o caminho só para leitura, sem seguir symlink e sem bloquear, e exige que o
+/// descritor **aberto** seja um arquivo regular. Um FIFO, socket ou device é recusado
+/// na hora: abrir um FIFO sem escritor bloquearia para sempre e o limite de 10 s do
+/// `--version` nunca chegaria a valer (achado da revisão da rodada 14).
+#[cfg(target_os = "linux")]
+fn linux_open_regular(path: &Path) -> Result<std::fs::File, ChromeError> {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::FromRawFd;
+
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| ChromeError::UnsafePath(path.display().to_string()))?;
+    // SAFETY: `c` é NUL-terminado e as flags são válidas; o descritor devolvido é
+    // nosso e passa a ser dono do `File`.
+    let fd = unsafe {
+        libc::open(
+            c.as_ptr(),
+            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(ChromeError::NotFound(path.display().to_string()));
+    }
+    // SAFETY: `fd` acabou de ser aberto aqui e não é usado em outro lugar.
+    let file = unsafe { std::fs::File::from_raw_fd(fd) };
+    let meta = file
+        .metadata()
+        .map_err(|_| ChromeError::NotFound(path.display().to_string()))?;
+    if !meta.file_type().is_file() {
+        return Err(ChromeError::NotABundle(format!(
+            "{} não é arquivo regular",
+            path.display()
+        )));
+    }
+    Ok(file)
+}
+
 /// Os primeiros bytes do arquivo: `\x7fELF` ou `#!`.
 #[cfg(target_os = "linux")]
-fn linux_head(path: &Path) -> std::io::Result<[u8; 4]> {
+fn linux_head(path: &Path) -> Result<[u8; 4], ChromeError> {
     use std::io::Read;
     let mut head = [0u8; 4];
-    let mut file = std::fs::File::open(path)?;
-    let _ = file.read(&mut head)?;
+    let mut file = linux_open_regular(path)?;
+    let mut read = 0;
+    while read < head.len() {
+        match file.read(&mut head[read..]) {
+            Ok(0) => break,
+            Ok(n) => read += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err(ChromeError::NotFound(path.display().to_string())),
+        }
+    }
     Ok(head)
 }
 
@@ -580,20 +627,26 @@ fn linux_head(path: &Path) -> std::io::Result<[u8; 4]> {
 /// chama o binário (`google-chrome`, `chromium`), o binário real ao lado.
 #[cfg(target_os = "linux")]
 fn linux_real_binary(resolved: &Path) -> Result<PathBuf, ChromeError> {
-    let head = linux_head(resolved)
-        .map_err(|_| ChromeError::NotFound(resolved.display().to_string()))?;
+    let head = linux_head(resolved)?;
     if head == *b"\x7fELF" {
         return Ok(resolved.to_path_buf());
     }
     if &head[..2] == b"#!" {
         // O script só vale se for o wrapper CONHECIDO do pacote: o `google-chrome`
-        // ao lado do `chrome` real (`/opt/google/chrome/`), ou o `chromium` do
-        // Debian/Ubuntu (`/usr/bin/chromium` → `/usr/lib/chromium/chromium`). Um
-        // script qualquer nunca é trocado por um binário de outro lugar.
-        let mapped = match resolved.to_str() {
-            Some("/usr/bin/chromium") => Some(PathBuf::from("/usr/lib/chromium/chromium")),
-            Some("/usr/bin/chromium-browser") => Some(PathBuf::from("/usr/lib/chromium-browser/chromium-browser")),
-            _ => resolved.parent().map(|dir| dir.join("chrome")),
+        // e o `google-chrome-stable` ao lado do `chrome` real (`/opt/google/chrome/`),
+        // ou o `chromium` do Debian/Ubuntu (`/usr/bin/chromium` →
+        // `/usr/lib/chromium/chromium`). Um script de nome arbitrário nunca é trocado
+        // por um binário de outro lugar (achado da revisão da rodada 14).
+        let name = resolved.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let mapped = match (name, resolved.to_str()) {
+            ("chromium", Some("/usr/bin/chromium")) => Some(PathBuf::from("/usr/lib/chromium/chromium")),
+            ("chromium-browser", Some("/usr/bin/chromium-browser")) => {
+                Some(PathBuf::from("/usr/lib/chromium-browser/chromium-browser"))
+            }
+            ("google-chrome" | "google-chrome-stable", _) => {
+                resolved.parent().map(|dir| dir.join("chrome"))
+            }
+            _ => None,
         };
         if let Some(real) = mapped.and_then(|m| std::fs::canonicalize(m).ok()) {
             if linux_head(&real).map(|h| h == *b"\x7fELF").unwrap_or(false) {
@@ -915,7 +968,42 @@ mod tests {
             make_executable(&other);
             let err = validate_chrome_linux_from(&other, euid(), &root).unwrap_err();
             assert!(matches!(err, ChromeError::NotABundle(ref w) if w.contains("nome de navegador")), "{err:?}");
+            // Um script de nome arbitrário NÃO é trocado pelo `chrome` ao lado
+            // (só os nomes de wrapper conhecidos, achado da revisão da rodada 14).
+            let arbitrary = root.join("opt/chrome/run-chrome");
+            std::fs::write(&arbitrary, "#!/bin/sh\ntouch rodou\n").unwrap();
+            make_executable(&arbitrary);
+            let err = linux_real_binary(&std::fs::canonicalize(&arbitrary).unwrap()).unwrap_err();
+            assert!(matches!(err, ChromeError::NotABundle(ref w) if w.contains("script")), "{err:?}");
             assert!(!marker.exists(), "o script não pode ter rodado");
+            let _ = std::fs::remove_dir_all(root);
+        }
+
+        /// Um FIFO apontado como navegador é recusado **imediatamente**: sem escritor,
+        /// um `open` bloqueante travaria antes do limite de `linux_version`.
+        #[test]
+        fn a_fifo_is_refused_immediately_without_blocking() {
+            use std::sync::mpsc;
+            use std::time::Duration;
+
+            let root = scratch("lx-fifo");
+            let fifo = root.join("chrome");
+            let c = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+            // SAFETY: `c` é NUL-terminado e o FIFO é criado dentro da pasta de teste.
+            assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o755) }, 0);
+            let (tx, rx) = mpsc::channel();
+            let (fifo, root_clone) = (fifo.clone(), root.clone());
+            std::thread::spawn(move || {
+                let result = validate_chrome_linux_from(&fifo, euid(), &root_clone)
+                    .map(|_| String::from("aceitou"))
+                    .unwrap_or_else(|e| e.to_string());
+                let _ = tx.send(result);
+            });
+            // Nenhum escritor no FIFO: se o `open` bloqueasse, nada chegaria aqui.
+            let got = rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("a validação não pode bloquear num FIFO");
+            assert!(got.contains("não é arquivo regular"), "{got}");
             let _ = std::fs::remove_dir_all(root);
         }
 
