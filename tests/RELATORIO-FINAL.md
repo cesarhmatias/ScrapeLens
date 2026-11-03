@@ -1,6 +1,7 @@
 # Relatório final de aceite — ScrapeLens
 
 - **HEAD testado:** 6a85676 (`fix(priming): placa com hífen, chassi, +55, ...`)
+- **Última atualização:** 2026-11-03 (rodadas 13 e 14; seções próprias abaixo)
 - **Data:** 2026-10-29
 - **Máquina:** macOS arm64, Chrome 156.0.8078.73, sem rede externa (Chrome restrito a 127.0.0.1).
 - **Dados:** sintéticos; HARs reais só em agregados, lidos em modo somente leitura (temporários 0700 apagados).
@@ -157,6 +158,61 @@ nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas t
 - **Rodada 11 — FECHADA com ressalva (10/11):** o item 9 está sem os prints do bundle f3039e58; a evidência funcional é `capture-1793562925684` (11 req, complete), o lsof sem LISTEN, o HAR `-12` (24 req) e o NetLog `-12` (32 req), importados pelo usuário em 02/11; os prints ficam para a rodada 12, com atalhos de teclado no app. `run_acceptance` não foi afrouxado: o item 9 segue vermelho em `aceite.json`.
 
 - **Rodada 12 — bundle 2691f152 (HEAD ce68eb9, commit e7cfc38) — FECHADA (11/11):** app aberto com `SCRAPELENS_TEST_MODE=1` e `SCRAPELENS_CAPTURE_URL` apontando para o testserver `app-20261102r12`. Captura ao vivo por `invoke_menu` (Captura > Iniciar sessão / Encerrar), `capture-1793651039927` (11 req, complete), sem LISTEN no Chrome da captura (lsof). HAR `har-3dbc391c02a985c5-13` (24 req, complete) e NetLog `netlog-1704043c442dcbd1-13` (32 req, partial), importados pela CLI de teste a partir de `tests/.work/r12-import`. Print `screenshot-app-imports.png` só da janela do ScrapeLens; `screenshot-app-live.png` é o mesmo print, posterior à captura (ver nota no `run.json`). `run_acceptance` 11/11 com `EXPECTED_APP_SHA256` = `2691f152…`. Órfãos: testserver encerrado; app encerrado; pid 8911 ausente.
+
+## Rodada 13 — memória de sessões grandes (P1–P7) e D7
+
+- **Data:** 2026-11-02 (onda 1) e 2026-11-03 (onda 2/D7). **Máquina:** macOS arm64, 64 GiB, Chrome 156, binários `--release`.
+- **Carga:** sintética por captura real em loopback (`capture/examples/capture_big.rs`), 2.002 / 5.002 / 20.002 requisições; `session.json` de 1.133 MiB a 20 mil. Pico de RSS medido por etapa em `experiments/memoria-sessao` (uma etapa por processo).
+- **Onde estava o pico (`docs/18` §3, 20.002 req.):** abrir no App (`app-open-ipc`) 7.101 MiB; `inspect` 9.305 MiB; 1ª chamada mascarada do MCP 5.654 MiB; `capture-write` 9.189 MiB e 263 s; `capture-full` 6.993 MiB e 249 s; `session.json` 1.133 MiB.
+
+**Correções no core/MCP (medidas, `docs/18` §7, mesmas cargas de 20.002 requisições):**
+
+| Item | Commit | Antes → depois |
+|---|---|---|
+| P1 — validar `netlog.json` e CDP em fluxo, sem DOM | `87bd164` | `import-eager` 4.727 → **1.580 MiB** (−67 %); 17,8 → 10,1 s |
+| P2 — `inspect`/`assess` em fluxo com struct emprestada | `752230e` | `inspect` 9.305 → **1.656 MiB** (−82 %); 11,5 s; saída byte a byte igual |
+| P3 — correlação por índice (método, URL canônica, id) | `4d82e36` | `capture-full` 248,9 s → **9,3 s**; memória igual (o DOM do NetLog continua); saída idêntica contra baseline `aefacc9` em 29 capturas/fixtures |
+| P6 — `session.json` compacto acima de 50 MiB | `2550041` | 5.002 req.: 283 → **162 MiB** (−43 %); `capture-write` 9.189 → 7.580 MiB, 263 → 16,2 s |
+| P7 — `sanitize_bundle_owned` sem cópia mascarada | `b438945` | 1ª chamada mascarada do MCP 5.654 → **1.649 MiB** (−71 %) |
+
+P4 (DOM do NetLog), P5 e P8 não foram feitos no core; P5 foi feito no App. O que resta de memória no `stop_capture` é o DOM do NetLog (P4).
+
+**App — P5, contrato paginado (`6b6bdff`, `docs/19-contrato-app.md`):** o backend lê `SessionV1` tipado e o front recebe cabeçalho, páginas de 2.000 resumos e o detalhe sob demanda (`open_session`, `list_requests`, `get_request`). Medido com `src-tauri/examples/mem_open.rs` em `/private/tmp/big20k` (`session.json` 1,19 GB): **7.108 → 1.161 MiB (−84 %)**; ao front vão 1,4 KB de cabeçalho + 5,4 MB de todas as páginas + 32 KB de um detalhe (antes, 681 MB). Bundles: onda 1 `52cd14fd` (HEAD `f81ea80`); onda 2 `78155379` (HEAD `291fae4`; lista sob demanda `6f11440`, rede aberta por padrão `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), com **2** chamadas de `list_requests` até a primeira tela contra 33 na onda 1 (`src-tauri/EMPACOTAMENTO.md`).
+
+**Revisão A9 (core e App):** `3fe7efc` (A9-B1: em caminho, `,` ou `|` seguido de `/` encerra o valor; lista sem espaço preserva o item seguinte; fuzz de caminho com 3 sementes sem vazamento), `0d9d935` (A9-B2: entidades de `=` com qualquer número de camadas de escape — `&amp;`, `&#38;`, `&#x26;` — falhando fechado acima de 256; corpus +8) e `727e657` (A9-B3..B8 no App e A8-B7 ⌘⇧R).
+
+**D7 — aviso de automação suprimido em toda captura (2026-11-03):** `e8ae66c` passa `--disable-blink-features=AutomationControlled` em toda captura (App, MCP controlado, pipe e porta; combina com `--disable-blink-features` já presente, sem duplicar), grava `capture.chromeArgs`/`capture.notes` e expõe `site_profile.captureContext.automationFlagSuppressed` (`recon/src/lib.rs`); `885b592` registra a decisão em `docs/01`, 16b §2.1b e `docs/20`; `a3b24f5` gera o bundle `fcdc4bd2` do HEAD `885b592` (substitui `78155379`). Medição de `docs/20` §4.2: `navigator.webdriver` é `true` com qualquer `--remote-debugging-pipe` (CDP reduzido ou completo) e volta a `false` com a flag — é o valor que a captura passa a entregar ao site. Testes: `capture/src/lib.rs` (`AUTOMATION_FEATURE` e combinação de flags) e `capture/src/browser.rs` (flag em toda captura e notas na sessão).
+
+## Rodada 14 — versão Linux (porte, pacotes e aceite em VMs)
+
+- **Data:** 2026-11-03. **Alvo:** Ubuntu 24.04 (noble) em duas máquinas OrbStack — `sl-ubuntu-amd64` (amd64 em Rosetta sobre host arm64) e `sl-ubuntu-arm64` (nativa).
+- **Porte:** `3b56ae3` porta `capture/` para Linux (validação do navegador sem codesign, Chromium marcado, `XDG_RUNTIME_DIR`/`TMPDIR`, `close_range`, `pipe2`, `/proc`; macOS inalterado) e `fa89c25` registra `docs/21-linux.md` + `experiments/linux` (Dockerfile, `run.sh`, `inside.sh`, shim).
+- **App e pacotes:** `878010a` (atalhos Ctrl/Shift fora do macOS, revelar com `xdg-open`, bundle deb/appimage com dependências), `bdab18e` (Dockerfile Ubuntu 22.04, Rust 1.98.1, Node 26.8.1, `cargo --locked`, `npm ci`; `build.sh` com testes e smoke em Xvfb), `98ab629` (listener `keydown` para `Ctrl+Shift+R`, `Ctrl+.` e `Ctrl+Shift+H`/`N` no Linux) e `e6d5fc6` (artefatos). Saída em `src-tauri/linux/out/{amd64,arm64}/`:
+  - amd64: `.deb` `5d288b32…15df53ac`; `AppImage` `64b08eb8…3e88c40ec5`
+  - arm64: `.deb` `a43397f3…9ef35fde09`; `AppImage` `7c291e0b…a40d66f1`
+  - SHA-256 conferidos no macOS e dentro de cada VM antes de instalar/rodar.
+
+**Aceite (`tests/linux/acceptance.sh`), 0 falhas em cada máquina:**
+
+| Item | `sl-ubuntu-amd64` (Rosetta) | `sl-ubuntu-arm64` (nativa) |
+|---|---|---|
+| Navegador | Google Chrome 156.0.8078.79 (repositório oficial) | Chromium 156.0.8078.47 (snap) |
+| `.deb` / pacote `scrape-lens` | OK / OK | OK / OK |
+| Iniciar | `Ctrl+Shift+R` por teclado puro | idem |
+| Encerrar | `Ctrl+.` por teclado puro | idem |
+| Captura | `complete`, 11 req | `complete`, 11 req |
+| HAR / NetLog | `complete` 24 / `partial` 32 | `complete` 24 / `partial` 32 |
+| `ss -ltnp` na captura | nenhum LISTEN do Chrome | nenhum LISTEN do Chrome |
+| `navigator.webdriver` | `false` | `false` |
+| Falhas | **0** | **0** |
+
+Teclado puro = `xdotool windowactivate --sync` + `xdotool key --clearmodifiers` na tela Xvfb `:99`, sem clique em botão e sem clique de foco (`atalhos.txt`: 0 e 0). O foco é reativado antes de cada atalho porque o Chrome assume o foco ao iniciar. Prints da tela virtual (1600×1000), que contém só openbox, o Chrome de teste e a janela do ScrapeLens.
+
+Primeira bateria (`1ee0783`, artefatos `25248f3`, origem `fa89c25`) também fechou 0 falhas, mas por clique nos botões: os atalhos ainda não disparavam. Depois de `98ab629`, a revisão `a837465` refez a bateria com os atalhos e é a que consta acima.
+
+**Limitações registradas:** `Ctrl+.` só encerra com foco na janela do ScrapeLens (para atalho global falta um caminho de nível GTK); aceleradores de menu GTK continuam não chegando ao WebView; no arm64 o Chromium por snap foi aceito pela captura (não foi preciso apt/PPA); `dpkg -i` sozinho deixa o pacote quebrado até `apt-get install <deb>` resolver `libwebkit2gtk-4.1-0`.
+
+Evidência: `tests/results/linux/README.md`, `tests/results/linux/{amd64,arm64}/` (summary, atalhos, contagens, `ss-durante-captura.txt`, prints), `tests/linux/acceptance.sh`, commit `a837465`. As VMs foram preservadas.
 
 ## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
 
