@@ -222,6 +222,8 @@ pub struct RequestPage {
     pub target_counts: BTreeMap<&'static str, usize>,
     /// Alguma requisição tem alvo, alvo desconhecido (só NetLog) ou ligação.
     pub has_targets: bool,
+    /// Avisos ligados a requisições na sessão inteira (sem filtro), para o total da barra.
+    pub warning_total: usize,
 }
 
 fn passes(request: &LogicalRequest, filter: &ListFilter, show_targets: bool, matches: &HashSet<&str>, restrict: Option<&HashSet<&str>>) -> bool {
@@ -323,7 +325,8 @@ pub fn list_page(session: &SessionV1, offset: usize, limit: usize, filter: &List
             matched += 1;
         }
     }
-    RequestPage { total: session.requests.len(), matched, offset, items, targets, counts, target_counts, has_targets }
+    let warning_total = session.requests.iter().map(|r| warnings.get(r.id.as_str()).copied().unwrap_or(0)).sum();
+    RequestPage { total: session.requests.len(), matched, offset, items, targets, counts, target_counts, has_targets, warning_total }
 }
 
 /// Detalhe sob demanda: a requisição v1 completa, os avisos dela e as
@@ -409,6 +412,10 @@ mod tests {
         let all = list_page(&s, 0, 500, &ListFilter::default());
         assert_eq!(all.matched, all.total);
         assert_eq!(empty.counts.all, all.total);
+        // O total de avisos vem do backend numa chamada só, igual em qualquer página e filtro.
+        let per_item: usize = all.items.iter().map(|i| i.warning_count).sum();
+        assert_eq!(all.warning_total, per_item);
+        assert_eq!(empty.warning_total, per_item);
     }
 
     #[test]

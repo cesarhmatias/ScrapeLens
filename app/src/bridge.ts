@@ -38,6 +38,8 @@ export interface RequestPageDto {
   counts: { all: number; fetch: number; document: number; media: number; error: number };
   targetCounts: Record<string, number>;
   hasTargets: boolean;
+  /** Avisos ligados a requisições na sessão inteira (sem filtro). */
+  warningTotal: number;
 }
 
 export interface CaptureStatus {

@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import demoRaw from "./demo/session.v1.json";
 import demoAttachments from "./demo/attachments.json";
 import { resolveCaptureStartUrl, trimUrl, validateHttpUrl } from "./captureUrl";
@@ -27,7 +27,7 @@ import { TimelineView, ValidationView } from "./Timeline";
 import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
-import { activeFilterLabels, outcomeChipDisabled, sessionIsRecording } from "./listView";
+import { activeFilterLabels, outcomeChipDisabled, PagedList, sessionIsRecording } from "./listView";
 import { adaptRequestDetail, adaptSession, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
 import type {
@@ -1666,11 +1666,15 @@ export default function App() {
   const pagedDir = session.paged && session.sourcePath ? session.sourcePath : undefined;
   const memorySummaries = useMemo(() => session.requests.map(summaryOfRecord), [session.requests]);
   const [remoteAll, setRemoteAll] = useState<{ dir: string; items: RequestSummary[]; first?: RequestPageDto } | null>(null);
+  // A lista inteira só é varrida quando uma tela precisa dela (detalhe, linha do tempo, comparação);
+  // a tela principal usa `PagedList` (páginas visíveis + 1) e as contagens do backend.
+  const needFull = Boolean(pagedDir) && (view === "detail" || view === "timeline" || view === "compare");
   useEffect(() => {
     if (!pagedDir) {
       setRemoteAll(null);
       return;
     }
+    if (!needFull || remoteAll?.dir === pagedDir) return;
     let alive = true;
     void (async () => {
       const items: RequestSummary[] = [];
@@ -1691,14 +1695,20 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [pagedDir, session.createdAt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagedDir, session.createdAt, needFull]);
   const requests: RequestSummary[] = pagedDir
     ? remoteAll?.dir === pagedDir
       ? remoteAll.items
       : []
     : memorySummaries;
   const requestCount = session.requestCount;
-  const effectiveId = requests.some((r) => r.id === selectedId) ? selectedId : requests[0]?.id ?? "";
+  const effectiveId =
+    pagedDir && selectedId && !remoteAll
+      ? selectedId
+      : requests.some((r) => r.id === selectedId)
+        ? selectedId
+        : requests[0]?.id ?? "";
   const resolveRecord = useCallback(
     async (id: string): Promise<RequestRecord> => {
       if (!pagedDir) {
@@ -1729,8 +1739,12 @@ export default function App() {
     : session.requests.find((r) => r.id === selectedId) ?? session.requests[0];
   const detailPending = Boolean(pagedDir && effectiveId && !selected);
   const limitsRequests = requests;
+  const [listMeta, setListMeta] = useState<RequestPageDto | undefined>(undefined);
   const warningTotal =
-    session.warnings.length + requests.reduce((total, request) => total + request.warningCount, 0);
+    session.warnings.length +
+    (pagedDir
+      ? listMeta?.warningTotal ?? 0
+      : requests.reduce((total, request) => total + request.warningCount, 0));
   const compareCaptures = async () => {
     if (!session.sourcePath) return;
     try {
@@ -2122,9 +2136,9 @@ export default function App() {
   const showTargetColumn = useMemo(
     () =>
       pagedDir
-        ? Boolean(remoteAll?.first?.hasTargets) || sessionShowsTargets([], session.warnings)
+        ? Boolean(listMeta?.hasTargets) || sessionShowsTargets([], session.warnings)
         : sessionShowsTargets(requests, session.warnings),
-    [pagedDir, remoteAll, requests, session.warnings],
+    [pagedDir, listMeta, requests, session.warnings],
   );
 
   const localFiltered = useMemo(() => {
@@ -2192,38 +2206,39 @@ export default function App() {
     };
   }, [typeFilter, protocol, targetFilter, query, payloadSearch, matchesById, failFilter, blockFilter, outcomes]);
   const remoteKey = pagedDir ? `${pagedDir}\u0000${JSON.stringify(remoteFilter)}` : "";
-  const [remoteFiltered, setRemoteFiltered] = useState<{ key: string; items: RequestSummary[] } | null>(null);
+  const remoteFilterRef = useRef(remoteFilter);
+  remoteFilterRef.current = remoteFilter;
+  const [, bumpList] = useReducer((n: number) => n + 1, 0);
+  // Uma `PagedList` por (sessão, filtro): troca só quando a chave muda, não a cada render.
+  const pagedList = useMemo(() => {
+    if (!pagedDir) return null;
+    const filter = remoteFilterRef.current;
+    const createdAt = session.createdAt;
+    return new PagedList<RequestSummary, RequestPageDto>(
+      async (offset, limit) => {
+        const page = await bridge.listRequests(pagedDir, offset, limit, filter);
+        return { meta: page, rows: page.items.map((raw) => summaryFromRaw(raw, createdAt, page.targets)) };
+      },
+      PAGE,
+      bumpList,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteKey]);
+  useEffect(() => () => pagedList?.dispose(), [pagedList]);
   useEffect(() => {
-    if (!pagedDir) return;
-    let alive = true;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        const items: RequestSummary[] = [];
-        try {
-          for (let offset = 0; ; offset += PAGE) {
-            const page = await bridge.listRequests(pagedDir, offset, PAGE, remoteFilter);
-            if (!alive) return;
-            for (const raw of page.items) items.push(summaryFromRaw(raw, session.createdAt, page.targets));
-            if (page.items.length === 0 || offset + PAGE >= page.matched) break;
-          }
-          if (alive) setRemoteFiltered({ key: remoteKey, items });
-        } catch (error) {
-          if (alive) setNotice({ kind: "error", text: "Falha ao filtrar as requisições.", detail: String(error) });
-        }
-      })();
-    }, 120);
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-    };
-  }, [pagedDir, remoteKey, remoteFilter, session.createdAt]);
-  const filtered: RequestSummary[] = pagedDir
-    ? remoteFiltered?.key === remoteKey
-      ? remoteFiltered.items
-      : remoteFiltered?.items ?? requests
-    : localFiltered;
+    if (pagedList?.meta) setListMeta(pagedList.meta);
+  });
+  useEffect(() => {
+    if (pagedList?.error) setNotice({ kind: "error", text: "Falha ao listar as requisições.", detail: pagedList.error });
+  }, [pagedList, pagedList?.error]);
+  useEffect(() => {
+    if (!pagedDir) setListMeta(undefined);
+  }, [pagedDir]);
+  const filteredLength = pagedList ? pagedList.length : localFiltered.length;
+  const rowAt = (index: number): RequestSummary | undefined =>
+    pagedList ? pagedList.row(index) : localFiltered[index];
 
-  const remoteCounts = pagedDir ? remoteAll?.first?.counts : undefined;
+  const remoteCounts = pagedDir ? listMeta?.counts : undefined;
   const counts = remoteCounts ?? {
     all: requests.length,
     fetch: requests.filter((r) => r.type === "fetch" || r.type === "xhr").length,
@@ -2232,9 +2247,13 @@ export default function App() {
     error: requests.filter((r) => r.status >= 400).length,
   };
   const targetCount = (id: TargetFilter) =>
-    pagedDir ? remoteAll?.first?.targetCounts?.[id] ?? 0 : targetFilterCount(requests, id);
-  const failCount = requests.filter((r) => isAppFailure(outcomes.get(r.id))).length;
-  const blockCount = requests.filter((r) => isPossibleBlock(outcomes.get(r.id))).length;
+    pagedDir ? listMeta?.targetCounts?.[id] ?? 0 : targetFilterCount(requests, id);
+  const failCount = pagedDir
+    ? [...outcomes.values()].filter((o) => isAppFailure(o)).length
+    : requests.filter((r) => isAppFailure(outcomes.get(r.id))).length;
+  const blockCount = pagedDir
+    ? [...outcomes.values()].filter((o) => isPossibleBlock(o)).length
+    : requests.filter((r) => isPossibleBlock(outcomes.get(r.id))).length;
 
   const ROW_HEIGHT = 34;
   const OVERSCAN = 6;
@@ -2259,8 +2278,14 @@ export default function App() {
   const colCount = showTargetColumn ? 10 : 9;
 
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const endIndex = Math.min(filtered.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
-  const visibleRows = filtered.slice(startIndex, endIndex);
+  const endIndex = Math.min(filteredLength, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
+  // Na sessão paginada, pede só a janela visível (+1 página); linhas ainda não chegadas ficam de fora.
+  pagedList?.ensure(startIndex, Math.max(endIndex, Math.ceil(viewportH / ROW_HEIGHT) + OVERSCAN));
+  const visibleRows: RequestSummary[] = [];
+  for (let i = startIndex; i < endIndex; i++) {
+    const row = rowAt(i);
+    if (row) visibleRows.push(row);
+  }
 
   const openDetail = (id: string) => {
     setSelectedId(id);
@@ -2534,7 +2559,7 @@ export default function App() {
               </div>
             )}
 
-            {!busy && pagedDir && remoteAll?.dir !== pagedDir && requestCount > 0 && (
+            {!busy && pagedList && !pagedList.meta && requestCount > 0 && (
               <div className="notice notice-info" role="status" aria-live="polite">
                 <span className="notice-icon">…</span>
                 <span>Carregando a lista de {requestCount} requisições…</span>
@@ -2793,12 +2818,12 @@ export default function App() {
                     </tr>
                     );
                   })}
-                  {endIndex < filtered.length && (
+                  {endIndex < filteredLength && (
                     <tr className="spacer" aria-hidden="true">
-                      <td colSpan={colCount} style={{ height: (filtered.length - endIndex) * ROW_HEIGHT }} />
+                      <td colSpan={colCount} style={{ height: (filteredLength - endIndex) * ROW_HEIGHT }} />
                     </tr>
                   )}
-                  {filtered.length === 0 && (
+                  {filteredLength === 0 && (
                     <tr>
                       <td colSpan={colCount}>
                         <div className="empty">
@@ -2828,7 +2853,7 @@ export default function App() {
 
             <div className="statusbar">
               <span>
-                {filtered.length} de {requestCount} requisições
+                {filteredLength} de {requestCount} requisições
               </span>
               <span className="sep">·</span>
               <span>{visibleRows.length} linhas renderizadas (virtualização)</span>
