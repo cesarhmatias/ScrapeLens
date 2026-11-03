@@ -128,8 +128,32 @@ carregar um site; os que alteram o que o servidor vê):
 | `--enable-quic` | QUIC já é o padrão; mantido para h3 (a regra do projeto é não desabilitar QUIC) |
 | `--disable-extensions`, `--disable-default-apps`, `--password-store=basic`, `--use-mock-keychain`, `--no-first-run`, `--no-default-browser-check`, `--disable-search-engine-choice-screen`, `--disable-component-extensions-with-background-pages` | UI/perfil/chaveiro; sem efeito de rede |
 | `--net-log-capture-mode=Everything`, `--log-net-log` | só registram (cookies e cabeçalhos no NetLog: ver §2.4) |
-| `--remote-debugging-pipe` (ou porta com `expose_cdp`) | não liga `navigator.webdriver` (não passamos `--enable-automation`) |
+| `--remote-debugging-pipe` (ou porta com `expose_cdp`) | **liga `navigator.webdriver = true`** na página (medido, `docs/20-captcha-google.md` §4.2); o D7 passa a flag da linha seguinte para desfazer isso |
+| `--disable-blink-features=AutomationControlled` (**D7, sempre**) | `navigator.webdriver` volta a `false`, mesmo com o CDP ligado. Não mexe na rede nem no que é capturado. Ver o parágrafo abaixo |
 | `--headless=new` (só com `headless`) | o User-Agent e a impressão digital do navegador mudam (`HeadlessChrome`); o padrão do App é janela visível. **Relevante ao `site_profile`**: um desafio anti-bot sob headless pode não ocorrer com o Chrome normal |
+
+**Aviso de automação suprimido por padrão (D7, 2026-11-03).** Por decisão do usuário
+(`docs/01-decisoes.md` D7), **toda** captura leva `--disable-blink-features=AutomationControlled`:
+a comum do App e a controlada do MCP, no pipe e na porta (`expose_cdp`), em qualquer
+`NetworkMode`, com ou sem `headless`. A flag entra em `chrome_args()`; se já houver um
+`--disable-blink-features` com outros valores, os valores são **combinados numa só flag**
+(`merge_blink_features`, sem duplicar a flag nem os valores). Medido: sem ela a página lê
+`navigator.webdriver === true` com o CDP por pipe; com ela, `false` na captura completa e
+na controlada, nos dois transportes. O `session.json` registra o contexto para quem lê:
+`capture.chromeArgs` traz os argumentos do lançamento (sem os caminhos temporários e sem
+a URL inicial, com a flag) e `capture.notes` diz em texto que o aviso foi suprimido; o
+`site_profile` expõe isso em `captureContext.automationFlagSuppressed` (`true`, `false`,
+ou `null` quando a sessão não informa, como as importadas de HAR/NetLog), para um desafio
+anti-bot ser lido sabendo que o site NÃO viu o aviso de automação. **Resolver CAPTCHA
+continua fora do escopo**, e **nenhuma outra técnica de anti-detecção** (User-Agent
+falso, remendo de impressão digital, ocultar o CDP etc.) entra sem decisão nova.
+Testes: `automation_flag_is_always_present_exactly_once_in_every_mode` (rede, allowlist,
+headless, `ignore_cert`, pipe e porta), `merge_blink_features_combines_without_duplicating_the_flag_or_the_values`,
+`recorded_args_keep_the_automation_flag_and_drop_temp_paths_and_the_url`, os vivos
+`live_full_capture_hides_navigator_webdriver_on_both_transports` e
+`live_controlled_capture_hides_navigator_webdriver_on_both_transports` (página em loopback
+que grava `navigator.webdriver` no servidor) e, no `recon`,
+`capture_context_reports_whether_the_automation_flag_was_suppressed`.
 
 ### 2.2 Allowlist obrigatória, em duas camadas
 
@@ -647,6 +671,7 @@ para corpos HTML/JS) e opções. Saída (camelCase, como a Core):
 {
   "schema": "scrapelens.site-profile/1",
   "sessionId": "…",
+  "captureContext": { "automationFlagSuppressed": true | false | null, "headless": false | true | null },
   "sample": { "requests": 31, "documents": 3, "appRequests": 12, "partial": false,
               "protocols": { "https://exemplo.test": ["h2"] } },
   "findings": [

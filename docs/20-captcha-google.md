@@ -128,6 +128,12 @@ plugins e 4 idiomas.
 
 ## 6. Recomendação
 
+> **Atualização (2026-11-03):** o item 1 virou a decisão **D7** (`docs/01-decisoes.md`):
+> `--disable-blink-features=AutomationControlled` é PADRÃO em toda captura (App, MCP
+> controlada, pipe e porta), com registro em `capture.chromeArgs`/`notes` e
+> `captureContext` no `site_profile`. Medido de novo em loopback com a captura completa e a
+> controlada: `navigator.webdriver === false`. Os itens 2 a 4 seguem como recomendação.
+
 O que as medições sustentam, em ordem de custo:
 
 1. **Adicionar `--disable-blink-features=AutomationControlled` ao launcher**

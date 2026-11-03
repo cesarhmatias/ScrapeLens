@@ -64,3 +64,26 @@ Data: 2026-10-31. Decisão do líder, após a fase A de viabilidade
    normal para entender a configuração de um site (`site_profile`,
    `docs/16b-mcp-navegador.md`); a recomendação "candidato a CloakBrowser" é o
    gatilho para voltar ao assunto.
+
+## D7 — Aviso de automação suprimido por padrão em toda captura
+
+Data: 2026-11-03. Decisão do usuário, depois da medição de
+`docs/20-captcha-google.md` (§4.2: com `--remote-debugging-pipe`,
+`navigator.webdriver` é `true`; com a flag abaixo, `false`).
+
+1. **`--disable-blink-features=AutomationControlled` passa a ser PADRÃO em toda
+   captura**: a comum do App, a controlada do MCP (allowlist), pipe e porta
+   (`expose_cdp`), qualquer modo de rede. Fica sempre presente em `chrome_args()`;
+   se já houver um `--disable-blink-features` com outros valores, eles são
+   combinados numa só flag, sem duplicar.
+2. **A sessão registra o contexto**: `capture.chromeArgs` (argumentos do
+   lançamento, sem caminhos temporários) e `capture.notes` dizem que o aviso foi
+   suprimido, e o `site_profile` expõe `captureContext.automationFlagSuppressed`
+   para o reconhecimento do site saber o que o site viu.
+3. **Resolver CAPTCHA continua fora do escopo** do ScrapeLens.
+4. **Nenhuma outra técnica de anti-detecção sem decisão nova**: User-Agent falso,
+   remendo de impressão digital, plugins "stealth", ocultar o CDP, evitar
+   `Runtime.enable` ou a pausa por depurador para "parecer" um navegador
+   comum, e o mesmo vale para os argumentos de laboratório (`docs/20` §6, item 4).
+   O modo discreto escalonado (só NetLog, CDP reduzido, completo) segue como
+   recomendação do `docs/20`, não como decisão.
