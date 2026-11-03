@@ -4,6 +4,9 @@
 //! byte, o `session.json` serializado (JSON identado) e os anexos contra o hash gravado
 //! ANTES da mudança (FNV-1a 64 bits + tamanho).
 //!
+//! Rodada 15: as 6 entradas `multi-target-*` (brutos no `experiments/.gitignore`) são
+//! opcionais e só conferidas quando presentes; as 23 versionadas são obrigatórias.
+//!
 //! Regenerar (só se a SAÍDA muda de propósito): `PRINT_GOLDEN=1 cargo test --test
 //! correlation_identity -- --nocapture` e colar a tabela.
 
@@ -126,11 +129,16 @@ fn correlated_sessions_are_byte_identical_to_the_brute_force_baseline() {
         }
         return;
     }
+
+    // Rodada 15: as 6 entradas `multi-target-*` ficam no `experiments/.gitignore`
+    // (só `analysis`/`summary` são versionados). Num `git clone` limpo os brutos não
+    // existem, então elas são conferidas apenas quando presentes. As 23 versionadas
+    // têm de existir SEMPRE: ausência é falha, não skip.
     let mut checked = 0;
-    for (dir, expected_hash, expected_len) in GOLDEN {
-        let netlog = INPUTS.iter().find(|(d, _)| d == dir).unwrap().1;
+    for (dir, expected_hash, expected_len) in VERSIONED {
+        let netlog = netlog_for(dir);
         let (hash, len) = fingerprint(dir, netlog)
-            .unwrap_or_else(|| panic!("entrada ausente: {dir} (os arquivos são versionados)"));
+            .unwrap_or_else(|| panic!("entrada versionada ausente: {dir}"));
         assert_eq!(
             (hash, len),
             (*expected_hash, *expected_len),
@@ -138,11 +146,43 @@ fn correlated_sessions_are_byte_identical_to_the_brute_force_baseline() {
         );
         checked += 1;
     }
-    assert_eq!(checked, INPUTS.len(), "cada entrada tem de ter um hash");
+    assert_eq!(
+        checked,
+        VERSIONED.len(),
+        "cada entrada versionada tem de ter um hash"
+    );
+
+    let mut local_checked = 0;
+    let mut local_present = 0;
+    for (dir, expected_hash, expected_len) in LOCAL_OPTIONAL {
+        let netlog = netlog_for(dir);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(dir);
+        if !root.join("cdp-events.jsonl").exists() || !root.join(netlog).exists() {
+            continue;
+        }
+        local_present += 1;
+        let (hash, len) = fingerprint(dir, netlog).expect("entrada local presente");
+        assert_eq!(
+            (hash, len),
+            (*expected_hash, *expected_len),
+            "{dir}: a saída da correlação mudou"
+        );
+        local_checked += 1;
+    }
+    assert_eq!(local_checked, local_present);
 }
 
-/// Hashes gerados ANTES do índice (varredura de todos os pares).
-const GOLDEN: &[(&str, u64, usize)] = &[
+fn netlog_for(dir: &str) -> &'static str {
+    INPUTS
+        .iter()
+        .find(|(candidate, _)| *candidate == dir)
+        .unwrap_or_else(|| panic!("entrada sem NetLog em INPUTS: {dir}"))
+        .1
+}
+
+/// 23 entradas versionadas (`contract-*`, `h1-*`, `h2-*`, `h3-*`, fixtures e
+/// evidências do App/adapters). Hashes gerados ANTES do índice.
+const VERSIONED: &[(&str, u64, usize)] = &[
     (
         "experiments/results/contract-h1",
         0x1c8ff1cbb2f421e0,
@@ -186,6 +226,36 @@ const GOLDEN: &[(&str, u64, usize)] = &[
     ("experiments/results/h3-plain", 0x834a5310965c95c6, 149992),
     ("experiments/results/h3-set3", 0xb3772f1d847d70e2, 166036),
     (
+        "fixtures/aceite/sanitize/session",
+        0x508f2021c0a643fd,
+        15192,
+    ),
+    (
+        "src-tauri/evidence/busca-corpos/multi-alvo-session",
+        0x063620acf1ccd5c8,
+        1619857,
+    ),
+    (
+        "adapters/natural-ajax/tests/fixtures/previous-round-producer",
+        0xfbfbd168130d7346,
+        45779,
+    ),
+    (
+        "adapters/natural-ajax/tests/fixtures/pruned-producer",
+        0xa903a7677f7a8096,
+        31821,
+    ),
+    (
+        "adapters/natural-ajax/tests/fixtures/same-round-producer",
+        0xaf4e2f907f75cfb3,
+        24857,
+    ),
+];
+
+/// 6 entradas locais opcionais (`multi-target-*`), ignoradas no git. São
+/// conferidas contra o hash esperado quando os brutos estão na árvore.
+const LOCAL_OPTIONAL: &[(&str, u64, usize)] = &[
+    (
         "experiments/results/multi-target-attach-probe/headful",
         0x6604a3eadd577f4c,
         76,
@@ -214,30 +284,5 @@ const GOLDEN: &[(&str, u64, usize)] = &[
         "experiments/results/multi-target-smoke/with-wait",
         0x20424e48f1f7d68b,
         409259,
-    ),
-    (
-        "fixtures/aceite/sanitize/session",
-        0x508f2021c0a643fd,
-        15192,
-    ),
-    (
-        "src-tauri/evidence/busca-corpos/multi-alvo-session",
-        0x063620acf1ccd5c8,
-        1619857,
-    ),
-    (
-        "adapters/natural-ajax/tests/fixtures/previous-round-producer",
-        0xfbfbd168130d7346,
-        45779,
-    ),
-    (
-        "adapters/natural-ajax/tests/fixtures/pruned-producer",
-        0xa903a7677f7a8096,
-        31821,
-    ),
-    (
-        "adapters/natural-ajax/tests/fixtures/same-round-producer",
-        0xaf4e2f907f75cfb3,
-        24857,
     ),
 ];

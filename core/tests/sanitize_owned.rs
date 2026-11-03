@@ -1,5 +1,15 @@
 //! P7 (docs/18): `sanitize_bundle_owned` consome o bundle e sanitiza no lugar; o resultado
 //! tem de ser idêntico ao de `sanitize_bundle` (por referência, sobre uma cópia).
+//!
+//! Rodada 15: comparar as duas funções só prova que `.clone()` não altera o resultado
+//! (`sanitize_bundle` delega para `_owned`), sem oráculo independente. Por isso o teste
+//! também trava hashes FNV-1a de TODA a saída sanitizada (sessão, anexos, eventos brutos,
+//! contadores de redação, anexos omitidos e avisos) dos bundles de `bundles()`.
+//!
+//! Regenerar (só se a SAÍDA muda de propósito): `PRINT_SANITIZE_GOLDEN=1 cargo test
+//! --test sanitize_owned -- --nocapture` e colar a tabela.
+
+use std::collections::BTreeMap;
 
 use scrapelens_core::export::sanitize::{sanitize_bundle, sanitize_bundle_owned, SanitizeOptions};
 
@@ -35,9 +45,61 @@ fn bundles() -> Vec<(String, scrapelens_core::SessionBundle)> {
     out
 }
 
+fn fnv1a(hash: &mut u64, bytes: &[u8]) {
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+}
+
+/// Impressão determinística e independente de toda a saída sanitizada.
+fn fingerprint(export: &scrapelens_core::export::sanitize::SanitizedExport) -> (u64, usize) {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    let mut len = 0usize;
+    let mut feed = |bytes: &[u8]| {
+        fnv1a(&mut hash, bytes);
+        len += bytes.len();
+    };
+    let session = serde_json::to_vec(&export.bundle.session).unwrap();
+    feed(b"session\0");
+    feed(&session);
+    for (name, bytes) in &export.bundle.attachments {
+        feed(b"attachment\0");
+        feed(name.as_bytes());
+        feed(b"\0");
+        feed(bytes);
+    }
+    match &export.bundle.cdp_events_jsonl {
+        Some(bytes) => {
+            feed(b"cdp\0");
+            feed(bytes);
+        }
+        None => feed(b"cdp-none\0"),
+    }
+    match &export.bundle.netlog_json {
+        Some(bytes) => {
+            feed(b"netlog\0");
+            feed(bytes);
+        }
+        None => feed(b"netlog-none\0"),
+    }
+    for (key, count) in &export.redactions {
+        feed(b"redaction\0");
+        feed(key.as_bytes());
+        feed(&count.to_le_bytes());
+    }
+    for name in &export.omitted_attachments {
+        feed(b"omitted\0");
+        feed(name.as_bytes());
+    }
+    let warnings = serde_json::to_vec(&export.warnings).unwrap();
+    feed(b"warnings\0");
+    feed(&warnings);
+    (hash, len)
+}
+
 #[test]
 fn owned_and_borrowed_sanitization_give_identical_exports() {
-    let mut compared = 0;
     for keep_raw in [false, true] {
         let options = SanitizeOptions {
             keep_raw_events: keep_raw,
@@ -74,8 +136,64 @@ fn owned_and_borrowed_sanitization_give_identical_exports() {
                 serde_json::to_vec(&owned.warnings).unwrap(),
                 "{name}: avisos"
             );
+        }
+    }
+}
+
+#[test]
+fn sanitized_output_is_pinned_by_independent_hashes() {
+    if std::env::var("PRINT_SANITIZE_GOLDEN").is_ok() {
+        for keep_raw in [false, true] {
+            let options = SanitizeOptions {
+                keep_raw_events: keep_raw,
+                omit_unstructured_bodies: false,
+                ..SanitizeOptions::default()
+            };
+            for (name, bundle) in bundles() {
+                let (hash, len) = fingerprint(&sanitize_bundle(&bundle, &options));
+                println!("GOLDEN (\"{name}\", {keep_raw}, 0x{hash:016x}, {len}),");
+            }
+        }
+        return;
+    }
+    let golden: BTreeMap<(&str, bool), (u64, usize)> = GOLDEN
+        .iter()
+        .map(|(name, keep_raw, hash, len)| ((*name, *keep_raw), (*hash, *len)))
+        .collect();
+    let mut compared = 0;
+    for keep_raw in [false, true] {
+        let options = SanitizeOptions {
+            keep_raw_events: keep_raw,
+            omit_unstructured_bodies: false,
+            ..SanitizeOptions::default()
+        };
+        for (name, bundle) in bundles() {
+            let key = (name.as_str(), keep_raw);
+            let (expected_hash, expected_len) = golden
+                .get(&key)
+                .unwrap_or_else(|| panic!("sem hash para {name} keep_raw={keep_raw}"));
+            let (hash, len) = fingerprint(&sanitize_bundle(&bundle, &options));
+            assert_eq!(
+                (hash, len),
+                (*expected_hash, *expected_len),
+                "{name} keep_raw={keep_raw}: a saída sanitizada mudou"
+            );
             compared += 1;
         }
     }
-    assert!(compared >= 4, "{compared}");
+    assert_eq!(compared, GOLDEN.len(), "cada bundle tem de ter um hash");
 }
+
+/// (bundle, keep_raw, hash FNV-1a, tamanho total) da saída sanitizada.
+const GOLDEN: &[(&str, bool, u64, usize)] = &[
+    ("secret.har", false, 0x269832bf48cd1ac6, 13915),
+    ("h1-page", false, 0xc57671997d22a007, 427769),
+    ("h2-page", false, 0xeb5d697dd868ae2d, 539616),
+    ("h3-page", false, 0xd00bb0e4df83955c, 546464),
+    ("contract-h1", false, 0x54a596836bd829da, 522343),
+    ("secret.har", true, 0x269832bf48cd1ac6, 13915),
+    ("h1-page", true, 0xa5ecb3c1dede4920, 858881),
+    ("h2-page", true, 0x909f004e9fd22aac, 1109522),
+    ("h3-page", true, 0x72f02bf288656cf1, 1144111),
+    ("contract-h1", true, 0xfb21dd9b55f9379e, 1912663),
+];
