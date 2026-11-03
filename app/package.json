@@ -12,6 +12,7 @@
     "test:adapter": "tsx scripts/adapter-minimal.test.ts",
     "test:capture-url": "tsx scripts/capture-url.test.ts",
     "test:paged": "tsx scripts/paged-contract.test.ts",
+    "test:list-view": "tsx scripts/list-view.test.ts",
     "shots": "node scripts/shoot.mjs",
     "perf": "node scripts/perf.mjs",
     "gen:demo": "node scripts/gen-demo-v1.mjs",

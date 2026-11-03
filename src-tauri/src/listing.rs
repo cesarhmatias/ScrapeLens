@@ -400,6 +400,15 @@ mod tests {
 
         let restricted = list_page(&s, 0, 500, &ListFilter { restrict_ids: Some(vec!["r3".into(), "r4".into()]), ..Default::default() });
         assert_eq!(restricted.matched, 2);
+
+        // Filtro de avaliação ligado sem nenhum id avaliado: lista vazia, mas as contagens
+        // dos chips continuam sendo as da sessão inteira (mesma semântica do front).
+        let empty = list_page(&s, 0, 500, &ListFilter { restrict_ids: Some(vec![]), ..Default::default() });
+        assert_eq!(empty.matched, 0);
+        assert!(empty.items.is_empty());
+        let all = list_page(&s, 0, 500, &ListFilter::default());
+        assert_eq!(all.matched, all.total);
+        assert_eq!(empty.counts.all, all.total);
     }
 
     #[test]

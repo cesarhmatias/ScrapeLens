@@ -27,6 +27,7 @@ import { TimelineView, ValidationView } from "./Timeline";
 import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
+import { activeFilterLabels, outcomeChipDisabled, sessionIsRecording } from "./listView";
 import { adaptRequestDetail, adaptSession, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
 import type {
@@ -2344,7 +2345,7 @@ export default function App() {
                   <span className="dot-live" />
                   <span className="sid-label">{session.label}</span>
                   <OriginTag session={session} />
-                  {recording ? (
+                  {sessionIsRecording(session, recording) ? (
                     <span className="tag tag-recording">
                       <span className="rec-dot" /> gravando
                     </span>
@@ -2613,6 +2614,7 @@ export default function App() {
                 ))}
                 <button
                   className={failFilter ? "chip-filter active" : "chip-filter"}
+                  disabled={outcomeChipDisabled(failCount, failFilter)}
                   onClick={() => setFailFilter((v) => !v)}
                   title="Respostas com falha da aplicação afirmada (app-error), mesmo com HTTP 200"
                 >
@@ -2621,6 +2623,7 @@ export default function App() {
                 </button>
                 <button
                   className={blockFilter ? "chip-filter active" : "chip-filter"}
+                  disabled={outcomeChipDisabled(blockCount, blockFilter)}
                   onClick={() => setBlockFilter((v) => !v)}
                   title="Possíveis bloqueios (blocked?): evidência, não confirmação"
                 >
@@ -2799,7 +2802,9 @@ export default function App() {
                     <tr>
                       <td colSpan={colCount}>
                         <div className="empty">
-                          Nenhuma requisição corresponde a “{query}” com os filtros atuais.
+                          {requestCount === 0
+                            ? "Esta sessão não tem requisições."
+                            : `Nenhuma requisição corresponde aos filtros ativos: ${activeFilterLabels({ query, typeFilter, targetFilter, protocol, failFilter, blockFilter }).join(", ") || "nenhum"}.`}
                           <button
                             className="link"
                             onClick={() => {
