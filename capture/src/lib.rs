@@ -226,13 +226,14 @@ fn run_inner(
         ),
         CdpTransport::Port => None,
     };
-    let mut chrome = ChromeProcess::new(spawn_chrome(
+    let launch_args = chrome_args(
         config,
         &profile,
         &netlog_path,
         resolver_rules.as_deref(),
-        pipe_ends.as_ref(),
-    )?);
+        pipe_ends.is_some(),
+    );
+    let mut chrome = ChromeProcess::new(spawn_chrome(config, &launch_args, pipe_ends.as_ref())?);
     // Marcador para limpar órfãos se este processo morrer por SIGKILL; o Drop
     // o remove em qualquer saída normal (sucesso, erro ou panic).
     let marker = OrphanMarker::create(
@@ -458,18 +459,31 @@ fn run_inner(
     mark_incomplete(&mut imported.bundle.session, &netlog_status, &shutdown);
     // Metadados da captura são do pipeline, não do parser: o core monta o
     // documento a partir do CDP e não sabe que este fluxo também gravou NetLog.
+    // D7: `chromeArgs` registra os argumentos do lançamento (sem caminhos
+    // temporários), entre eles `--disable-blink-features=AutomationControlled`, e
+    // `notes` diz isso em texto, para quem lê a sessão saber o contexto.
+    let recorded_args = recorded_chrome_args(&launch_args);
+    let automation_note = format!(
+        "captura com o aviso de automação suprimido (--disable-blink-features={AUTOMATION_FEATURE}): navigator.webdriver === false"
+    );
     match imported.bundle.session.session.capture.as_mut() {
         Some(capture) => {
             capture.mode = Some("cdp+netlog".to_string());
             capture.headless = Some(config.headless);
             capture.browser_binary = Some(config.chrome.display().to_string());
+            capture.chrome_args = Some(recorded_args);
+            capture.notes = Some(match capture.notes.take() {
+                Some(previous) if !previous.is_empty() => format!("{previous}; {automation_note}"),
+                _ => automation_note,
+            });
         }
         None => {
             imported.bundle.session.session.capture = Some(scrapelens_core::model::CaptureMeta {
                 mode: Some("cdp+netlog".to_string()),
                 browser_binary: Some(config.chrome.display().to_string()),
                 headless: Some(config.headless),
-                ..scrapelens_core::model::CaptureMeta::default()
+                chrome_args: Some(recorded_args),
+                notes: Some(automation_note),
             });
         }
     }
@@ -574,6 +588,65 @@ fn run_inner(
     }
 }
 
+/// Feature do Blink desligada em toda captura (D7, `docs/01-decisoes.md`).
+pub const AUTOMATION_FEATURE: &str = "AutomationControlled";
+
+/// Garante UM só `--disable-blink-features=` com `features` combinadas às que já
+/// existiam (sem duplicar a flag nem os valores; a ordem original é mantida).
+/// Sem a flag, ela entra antes do último argumento (a URL).
+fn merge_blink_features(args: &mut Vec<String>, features: &[&str]) {
+    const PREFIX: &str = "--disable-blink-features=";
+    let mut merged: Vec<String> = Vec::new();
+    let mut first_index: Option<usize> = None;
+    let mut index = 0;
+    while index < args.len() {
+        if let Some(values) = args[index].strip_prefix(PREFIX) {
+            for value in values.split(',').map(str::trim).filter(|v| !v.is_empty()) {
+                if !merged.iter().any(|m| m == value) {
+                    merged.push(value.to_string());
+                }
+            }
+            if first_index.is_none() {
+                first_index = Some(index);
+                index += 1;
+            } else {
+                args.remove(index);
+            }
+        } else {
+            index += 1;
+        }
+    }
+    for feature in features {
+        if !merged.iter().any(|m| m == feature) {
+            merged.push((*feature).to_string());
+        }
+    }
+    let flag = format!("{PREFIX}{}", merged.join(","));
+    match first_index {
+        Some(at) => args[at] = flag,
+        None => args.insert(args.len().saturating_sub(1), flag),
+    }
+}
+
+/// Argumentos que ficam registrados no `session.json` (`capture.chromeArgs`): os
+/// mesmos do lançamento, sem os caminhos temporários (perfil e NetLog) e sem a
+/// URL inicial. Quem lê a sessão (o `site_profile`) sabe com que contexto ela foi
+/// capturada, inclusive que o aviso de automação foi suprimido.
+fn recorded_chrome_args(args: &[String]) -> Vec<String> {
+    args.iter()
+        .filter(|a| *a != "about:blank")
+        .map(|a| {
+            if a.starts_with("--user-data-dir=") {
+                "--user-data-dir=<perfil-temporário>".to_string()
+            } else if a.starts_with("--log-net-log=") {
+                "--log-net-log=<netlog>".to_string()
+            } else {
+                a.clone()
+            }
+        })
+        .collect()
+}
+
 /// Argumentos de linha de comando do Chrome da captura, sem executar nada
 /// (testável). `resolver_rules` é a allowlist da captura CONTROLADA; quando
 /// existe, vale no lugar do modo de rede e nenhum relaxamento de certificado é
@@ -612,6 +685,9 @@ fn chrome_args(
         "--disable-popup-blocking".to_string(),
         "about:blank".to_string(),
     ];
+    // D7: o aviso de automação é SEMPRE suprimido (`navigator.webdriver` volta a
+    // `false` mesmo com CDP), em qualquer modo e transporte.
+    merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
     if use_pipe {
         // Sem porta nenhuma: o Chrome lê comandos no fd 3 e escreve no fd 4.
         args.insert(args.len() - 1, "--remote-debugging-pipe".to_string());
@@ -649,15 +725,12 @@ fn chrome_args(
 
 fn spawn_chrome(
     config: &CaptureConfig,
-    profile: &Path,
-    netlog: &Path,
-    resolver_rules: Option<&str>,
+    args: &[String],
     pipe: Option<&transport::PipeEnds>,
 ) -> Result<Child, String> {
-    let args = chrome_args(config, profile, netlog, resolver_rules, pipe.is_some());
     let mut command = Command::new(&config.chrome);
     command
-        .args(&args)
+        .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null());
@@ -3363,6 +3436,71 @@ fn unix_millis() -> u128 {
 
 #[cfg(test)]
 mod tests {
+    fn blink_flags(args: &[String]) -> Vec<&String> {
+        args.iter().filter(|a| a.starts_with("--disable-blink-features")).collect()
+    }
+
+    /// D7: o aviso de automação é suprimido SEMPRE, uma única vez, em todos os
+    /// modos: rede (Open/LoopbackOnly), allowlist, headless, ignore_cert e transporte
+    /// (pipe e porta).
+    #[test]
+    fn automation_flag_is_always_present_exactly_once_in_every_mode() {
+        let flag = format!("--disable-blink-features={AUTOMATION_FEATURE}");
+        for network in [NetworkMode::Open, NetworkMode::LoopbackOnly] {
+            for rules in [None, Some("MAP * ~NOTFOUND, EXCLUDE a.test")] {
+                for headless in [false, true] {
+                    for ignore_cert in [false, true] {
+                        for pipe in [false, true] {
+                            let args = args_for(network, rules, headless, ignore_cert, pipe);
+                            let found = blink_flags(&args);
+                            assert_eq!(found, vec![&flag], "{network:?} {rules:?} h={headless} c={ignore_cert} p={pipe}: {args:?}");
+                            assert_eq!(args.iter().filter(|a| *a == "about:blank").count(), 1);
+                            // As outras flags de --disable-features continuam separadas.
+                            assert_eq!(args.iter().filter(|a| a.starts_with("--disable-features=")).count(), 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn merge_blink_features_combines_without_duplicating_the_flag_or_the_values() {
+        let base = |extra: &[&str]| {
+            let mut v: Vec<String> = vec!["--a".to_string()];
+            v.extend(extra.iter().map(|s| s.to_string()));
+            v.push("about:blank".to_string());
+            v
+        };
+        // Sem a flag: entra uma vez, antes da URL.
+        let mut args = base(&[]);
+        merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
+        assert_eq!(args, ["--a", "--disable-blink-features=AutomationControlled", "about:blank"]);
+        // Já existe com outras features: combina, na mesma posição, sem duplicar a flag.
+        let mut args = base(&["--disable-blink-features=Foo,Bar", "--b"]);
+        merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
+        assert_eq!(args, ["--a", "--disable-blink-features=Foo,Bar,AutomationControlled", "--b", "about:blank"]);
+        // Já tem a feature (e repetida em duas flags): fica uma flag, um valor cada.
+        let mut args = base(&["--disable-blink-features=AutomationControlled,Foo", "--disable-blink-features=Foo,Baz"]);
+        merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
+        assert_eq!(blink_flags(&args).len(), 1, "{args:?}");
+        assert_eq!(args[1], "--disable-blink-features=AutomationControlled,Foo,Baz");
+        // Idempotente.
+        let before = args.clone();
+        merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
+        assert_eq!(args, before);
+    }
+
+    #[test]
+    fn recorded_args_keep_the_automation_flag_and_drop_temp_paths_and_the_url() {
+        let args = args_for(NetworkMode::Open, None, false, false, true);
+        let recorded = recorded_chrome_args(&args);
+        assert!(recorded.contains(&"--disable-blink-features=AutomationControlled".to_string()), "{recorded:?}");
+        assert!(recorded.iter().all(|a| !a.contains("/x/perfil") && a != "about:blank"), "{recorded:?}");
+        assert!(recorded.contains(&"--user-data-dir=<perfil-temporário>".to_string()));
+        assert!(recorded.contains(&"--log-net-log=<netlog>".to_string()));
+    }
+
     fn args_for(network: NetworkMode, rules: Option<&str>, headless: bool, ignore_cert: bool, pipe: bool) -> Vec<String> {
         let config = CaptureConfig {
             chrome: PathBuf::from("/x/chrome"),

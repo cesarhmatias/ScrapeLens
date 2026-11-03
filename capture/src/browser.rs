@@ -1713,6 +1713,102 @@ mod tests {
         assert!(!statuses_lo.contains(&200), "{statuses_lo:?}");
     }
 
+    /// Página-sonda local: grava `navigator.webdriver` no servidor (`/wd?webdriver=…`).
+    #[cfg(unix)]
+    fn webdriver_probe_site() -> TestSite {
+        TestSite::start(|_m, path| {
+            if path.starts_with("/wd") || path == "/favicon.ico" {
+                return Reply::html("").status(204);
+            }
+            Reply::html(
+                "<html><body><script>fetch('/wd?webdriver='+navigator.webdriver)</script>sonda</body></html>",
+            )
+        })
+    }
+
+    #[cfg(unix)]
+    fn webdriver_seen(site: &TestSite) -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let seen: Vec<String> = site
+                .seen_paths()
+                .into_iter()
+                .filter_map(|p| p.split("/wd?webdriver=").nth(1).map(str::to_string))
+                .collect();
+            if !seen.is_empty() || Instant::now() >= deadline {
+                return seen;
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    /// D7, captura COMUM completa (`run`/`run_with_options`) nos dois transportes: a
+    /// página lê `navigator.webdriver === false` (sem a flag seria `true` com o CDP
+    /// ligado) e a sessão registra a flag em `capture.chromeArgs`/`notes`.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_full_capture_hides_navigator_webdriver_on_both_transports() {
+        use std::sync::mpsc::channel;
+        for (transport, tag) in [(crate::transport::CdpTransport::Pipe, "pipe"), (crate::transport::CdpTransport::Port, "port")] {
+            let site = webdriver_probe_site();
+            let dir = std::env::temp_dir().join(format!(
+                "scrapelens-d7-{tag}-{}-{}",
+                std::process::id(),
+                super::super::unix_millis()
+            ));
+            let config = crate::CaptureConfig {
+                chrome: chrome_or_skip(),
+                session_dir: dir.clone(),
+                start_url: format!("http://127.0.0.1:{}/", site.port),
+                headless: true,
+                ignore_cert: false,
+                network: crate::NetworkMode::LoopbackOnly,
+            };
+            let status = Arc::new(Mutex::new(CaptureStatus::default()));
+            let (stop_tx, stop_rx) = channel();
+            let (ready_tx, ready_rx) = channel();
+            let opts = crate::RunOptions { transport, ..crate::RunOptions::default() };
+            let join = thread::spawn(move || crate::run_with_options(config, status, stop_rx, ready_tx, &opts));
+            ready_rx.recv_timeout(Duration::from_secs(40)).expect("pronta").expect("iniciou");
+            let seen = webdriver_seen(&site);
+            println!("{tag}: navigator.webdriver visto pela página = {seen:?}");
+            assert_eq!(seen, ["false"], "{tag}: a captura completa devia esconder navigator.webdriver");
+            let _ = stop_tx.send(());
+            let (outcome, _) = join.join().expect("thread").expect("encerrou");
+            let capture = &outcome.session["session"]["capture"];
+            let args: Vec<&str> = capture["chromeArgs"].as_array().expect("chromeArgs").iter().filter_map(|v| v.as_str()).collect();
+            assert!(args.contains(&"--disable-blink-features=AutomationControlled"), "{tag}: {args:?}");
+            assert_eq!(args.contains(&"--remote-debugging-pipe"), tag == "pipe", "{tag}: {args:?}");
+            assert!(capture["notes"].as_str().unwrap_or("").contains("AutomationControlled"), "{capture}");
+            // O registro não vaza os caminhos temporários.
+            assert!(args.iter().all(|a| !a.contains(&*dir.display().to_string())), "{args:?}");
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    /// D7, captura CONTROLADA do MCP (allowlist), pipe e `expose_cdp` (porta).
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_controlled_capture_hides_navigator_webdriver_on_both_transports() {
+        for (expose, tag) in [(false, "pipe"), (true, "port")] {
+            let site = webdriver_probe_site();
+            let port = site.port;
+            let (capture, _info) =
+                BrowserCapture::start(live_config(vec![format!("localhost:{port}")], &format!("d7-{tag}"), expose)).expect("start");
+            capture
+                .navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(15))
+                .expect("navigate");
+            let seen = webdriver_seen(&site);
+            println!("controlada {tag}: navigator.webdriver = {seen:?}");
+            assert_eq!(seen, ["false"], "controlada/{tag}");
+            let report = capture.stop().expect("stop");
+            let session_json = std::fs::read_to_string(std::path::Path::new(&report.session_dir).join("session.json")).unwrap();
+            assert!(session_json.contains("--disable-blink-features=AutomationControlled"), "{tag}");
+        }
+    }
+
     #[test]
     fn test_site_serves_and_records() {
         let site = TestSite::start(|_m, path| Reply::html(&format!("<p>{path}</p>")).header("X-T", "1"));

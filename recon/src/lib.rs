@@ -128,11 +128,39 @@ pub struct Sample {
     pub protocols: BTreeMap<String, Vec<String>>,
 }
 
+/// Em que contexto a sessão foi capturada (`capture.chromeArgs` do `session.json`).
+/// `None` = a sessão não informa (importada de HAR/NetLog, ou capturada antes do D7).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureContext {
+    /// `--disable-blink-features=AutomationControlled` no lançamento: o site viu
+    /// `navigator.webdriver === false` mesmo com o CDP ligado (D7). Um desafio
+    /// anti-bot visto com isto `true` não vem do aviso de automação.
+    pub automation_flag_suppressed: Option<bool>,
+    pub headless: Option<bool>,
+}
+
+fn capture_context(session: &SessionV1) -> CaptureContext {
+    let capture = session.session.capture.as_ref();
+    let suppressed = capture.and_then(|c| c.chrome_args.as_ref()).map(|args| {
+        args.iter().any(|arg| {
+            arg.strip_prefix("--disable-blink-features=")
+                .is_some_and(|values| values.split(',').any(|v| v.trim() == "AutomationControlled"))
+        })
+    });
+    CaptureContext {
+        automation_flag_suppressed: suppressed,
+        headless: capture.and_then(|c| c.headless),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SiteProfile {
     pub schema: &'static str,
     pub session_id: String,
+    /// Contexto de captura (aviso de automação suprimido? headless?).
+    pub capture_context: CaptureContext,
     pub sample: Sample,
     pub findings: Vec<Finding>,
     pub recommendation: Recommendation,
@@ -189,6 +217,7 @@ pub fn site_profile_with(
     SiteProfile {
         schema: PROFILE_SCHEMA,
         session_id: session.session.id.clone(),
+        capture_context: capture_context(session),
         sample,
         findings,
         recommendation,

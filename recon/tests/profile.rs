@@ -573,3 +573,40 @@ fn r4_a_redirect_or_a_cookie_from_another_host_does_not_resolve_a_challenge() {
     ]));
     assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(true));
 }
+
+// --- contexto de captura (D7) ------------------------------------------------
+
+#[test]
+fn capture_context_reports_whether_the_automation_flag_was_suppressed() {
+    use scrapelens_core::model::CaptureMeta;
+    let mut bundle = with_main(vec![Req::doc("d1", "https://shop.invalid.test/", 200)]);
+    // Sessão sem metadado de captura (ex.: importada de HAR): desconhecido.
+    bundle.session.session.capture = None;
+    assert_eq!(profile(&bundle).capture_context.automation_flag_suppressed, None);
+
+    // Capturada pelo ScrapeLens depois do D7: a flag está em `chromeArgs`.
+    bundle.session.session.capture = Some(CaptureMeta {
+        mode: Some("cdp+netlog".into()),
+        headless: Some(false),
+        chrome_args: Some(vec![
+            "--enable-quic".into(),
+            "--disable-blink-features=Foo,AutomationControlled".into(),
+        ]),
+        ..CaptureMeta::default()
+    });
+    let ctx = profile(&bundle).capture_context;
+    assert_eq!(ctx.automation_flag_suppressed, Some(true));
+    assert_eq!(ctx.headless, Some(false));
+
+    // Argumentos registrados SEM a flag (captura anterior ao D7): falso, não desconhecido.
+    bundle.session.session.capture = Some(CaptureMeta {
+        mode: Some("cdp+netlog".into()),
+        chrome_args: Some(vec!["--enable-quic".into(), "--disable-blink-features=Foo".into()]),
+        ..CaptureMeta::default()
+    });
+    assert_eq!(profile(&bundle).capture_context.automation_flag_suppressed, Some(false));
+
+    // Serializa em camelCase para o servidor MCP.
+    let json = serde_json::to_value(profile(&bundle)).unwrap();
+    assert_eq!(json["captureContext"]["automationFlagSuppressed"], false);
+}
