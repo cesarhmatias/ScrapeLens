@@ -1,3 +1,5 @@
+import { CookieSourceSelect } from "./CookieSourceSelect";
+import type { CookieSourceDto } from "./bridge";
 import { desktopShortcut } from "./shortcuts";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -1640,6 +1642,9 @@ export default function App() {
     chromePid?: number;
   } | null>(null);
   const [startUrl, setStartUrl] = useState("");
+  const [cookieSources, setCookieSources] = useState<CookieSourceDto[]>([]);
+  const [cookieSource, setCookieSource] = useState("");
+  const [cookieSourcesReady, setCookieSourcesReady] = useState(false);
   const [startUrlError, setStartUrlError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [exportTarget, setExportTarget] = useState<RequestRecord | null>(null);
@@ -1888,6 +1893,7 @@ export default function App() {
       setNotice({ kind: "info", text: "A captura ao vivo usa o Chrome externo e só existe no app desktop." });
       return;
     }
+    if (!cookieSourcesReady || busy || recording) return;
     const resolved = resolveCaptureStartUrl(startUrl);
     if (!resolved.ok) {
       setStartUrlError(resolved.error);
@@ -1897,7 +1903,7 @@ export default function App() {
     setStartUrlError(null);
     setBusy("Abrindo Chrome com perfil dedicado e conectando ao CDP…");
     try {
-      const payload = await bridge.startSession(trimUrl(startUrl) ? trimUrl(startUrl) : undefined);
+      const payload = await bridge.startSession(trimUrl(startUrl) ? trimUrl(startUrl) : undefined, cookieSource || undefined);
       if (!payload) return;
       setRecording({
         sessionId: payload.session.session.id,
@@ -1919,7 +1925,7 @@ export default function App() {
     } finally {
       setBusy(null);
     }
-  }, [desktop, startUrl]);
+  }, [desktop, startUrl, cookieSource, cookieSourcesReady, busy, recording]);
 
   const stopCapture = useCallback(async () => {
     setBusy("Encerrando o Chrome, aguardando o NetLog e importando a sessão…");
@@ -1958,6 +1964,12 @@ export default function App() {
     if (!desktop) return;
     void bridge.detectChrome().then(setChrome).catch(() => setChrome({ found: false, candidates: [] }));
     void bridge.appInfo().catch(() => null);
+    void bridge.listCookieSources().then((payload) => {
+      setCookieSources(payload.sources);
+      setCookieSource(payload.selected ?? "");
+    }).catch((error) => {
+      setNotice({ kind: "error", text: "Não foi possível listar as fontes de cookies. A captura usará sessão limpa.", detail: String(error) });
+    }).finally(() => setCookieSourcesReady(true));
     void bridge.captureStartUrl().then((url) => {
       setStartUrl(url);
       if (url.trim()) {
@@ -2424,11 +2436,25 @@ export default function App() {
                   />
                   {startUrlError ? <span className="start-url-error">{startUrlError}</span> : null}
                 </label>
+                <CookieSourceSelect
+                  sources={cookieSources}
+                  value={cookieSource}
+                  startUrl={startUrl}
+                  disabled={!desktop || !!recording || !!busy || !cookieSourcesReady}
+                  onChange={(value) => {
+                    setBusy("Salvando fonte de cookies…");
+                    void bridge.setCaptureCookieSource(value || null).then((saved) => {
+                      setCookieSource(saved ?? "");
+                    }).catch((error) => {
+                      setNotice({ kind: "error", text: "Não foi possível salvar a fonte de cookies.", detail: String(error) });
+                    }).finally(() => setBusy(null));
+                  }}
+                />
                 <button
                   id="scrapelens-start-session"
                   className="btn primary"
                   onClick={() => void startCapture()}
-                  disabled={!desktop || !!recording || !!busy || !!startUrlError}
+                  disabled={!desktop || !!recording || !!busy || !!startUrlError || !cookieSourcesReady}
                   aria-label="Iniciar sessão"
                   title={
                     desktop

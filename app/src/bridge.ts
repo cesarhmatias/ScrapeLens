@@ -1,3 +1,12 @@
+export interface CookieSourceDto {
+  id: string;
+  browser: string;
+  profile: string;
+  label: string;
+  kind: "chromium" | "firefox" | "safari";
+}
+export interface CookieSourcesPayload { sources: CookieSourceDto[]; selected: string | null }
+
 // Ponte única entre a UI e o shell Tauri 2.
 // Fora do Tauri (navegador, para prints/testes) usa a fixture v1 local; dentro
 // do Tauri chama os commands preparados para o core/.
@@ -310,9 +319,19 @@ export const bridge = {
     return invoke("import_netlog", { path: picked });
   },
 
-  async startSession(startUrl?: string): Promise<SessionPayload | null> {
+  async startSession(startUrl?: string, cookieSource?: string): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
-    return invoke("start_session", { startUrl: startUrl ?? null });
+    return invoke("start_session", { startUrl: startUrl ?? null, cookieSource: cookieSource || null });
+  },
+
+  async listCookieSources(): Promise<CookieSourcesPayload> {
+    if (!isTauri()) return { sources: [], selected: null };
+    return invoke("list_cookie_sources");
+  },
+
+  async setCaptureCookieSource(source: string | null): Promise<string | null> {
+    if (!isTauri()) return null;
+    return invoke("set_capture_cookie_source", { source });
   },
 
   async stopSession(): Promise<SessionPayload | null> {

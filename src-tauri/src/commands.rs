@@ -463,6 +463,58 @@ pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
     Some(CliActionPayload { kind: kind.to_string(), path: path.display().to_string(), message: None })
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CookieSourceDto {
+    id: String,
+    browser: String,
+    profile: String,
+    label: String,
+    kind: scrapelens_capture::BrowserKind,
+}
+
+impl From<scrapelens_capture::BrowserCookieSource> for CookieSourceDto {
+    fn from(source: scrapelens_capture::BrowserCookieSource) -> Self {
+        Self { id: source.id, browser: source.browser, profile: source.profile,
+            label: source.label, kind: source.kind }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CookieSourcesPayload {
+    sources: Vec<CookieSourceDto>,
+    selected: Option<String>,
+}
+
+fn resolve_cookie_source<'a>(source: Option<&str>, sources: &'a [CookieSourceDto]) -> Result<Option<&'a CookieSourceDto>, String> {
+    match source.filter(|value| !value.is_empty()) {
+        None => Ok(None),
+        Some(id) => sources.iter().find(|item| item.id == id).map(Some)
+            .ok_or_else(|| "Fonte de cookies indisponível. Selecione outro navegador ou uma sessão limpa.".to_string()),
+    }
+}
+
+fn cookie_sources() -> Vec<CookieSourceDto> {
+    scrapelens_capture::list_browser_cookie_sources().into_iter().map(Into::into).collect()
+}
+
+#[tauri::command]
+pub fn list_cookie_sources(app: AppHandle) -> CookieSourcesPayload {
+    let sources = cookie_sources();
+    let saved = prefs::load_capture_cookie_source(&app);
+    let selected = resolve_cookie_source(saved.as_deref(), &sources).ok().flatten().map(|s| s.id.clone());
+    CookieSourcesPayload { sources, selected }
+}
+
+#[tauri::command]
+pub fn set_capture_cookie_source(app: AppHandle, source: Option<String>) -> Result<Option<String>, String> {
+    let sources = cookie_sources();
+    let selected = resolve_cookie_source(source.as_deref(), &sources)?.map(|s| s.id.clone());
+    prefs::save_capture_cookie_source(&app, selected.as_deref())?;
+    Ok(selected)
+}
+
 /// Inicia uma captura real com Chrome externo. O comando volta assim que o
 /// CDP está pronto; a sessão v1 final é devolvida por `stop_session`.
 /// `start_url` (opcional): campo da UI; vazio → `about:blank`; só http/https.
@@ -471,6 +523,7 @@ pub fn start_session(
     app: AppHandle,
     state: State<'_, AppState>,
     start_url: Option<String>,
+    cookie_source: Option<String>,
 ) -> Result<SessionPayload, String> {
     // "starting" (A9-B8/A8-B7): menu desabilita ⌘⇧R e importações desde já;
     // se o start falhar, `StartingGuard` religa.
@@ -498,6 +551,14 @@ pub fn start_session(
     };
 
     let resolved_url = cli::resolve_capture_start_url(start_url.as_deref())?;
+    // A UI envia a escolha explicitamente; ausência significa sessão limpa.
+    let sources = cookie_sources();
+    let selected_cookie_source = if resolved_url == "about:blank" { None } else {
+        resolve_cookie_source(cookie_source.as_deref(), &sources)?
+    };
+    let cookie_notice = selected_cookie_source.map(|source| format!(
+        " Cookies de {} carregados para o site da URL inicial.", source.label
+    )).unwrap_or_default();
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -518,7 +579,7 @@ pub fn start_session(
         // Rede normal por padrão; as suítes de teste ligam só-loopback com
         // `SCRAPELENS_CAPTURE_NETWORK=loopback`.
         network: scrapelens_capture::NetworkMode::from_env(),
-        cookie_source: None,
+        cookie_source: selected_cookie_source.map(|source| source.id.clone()),
         initial_cookies: Vec::new(),
     };
 
@@ -581,7 +642,7 @@ pub fn start_session(
         }),
         session_dir: Some(dir.display().to_string()),
         synthetic: false,
-        notice: Some(if start_url_for_notice == "about:blank" {
+        notice: Some((if start_url_for_notice == "about:blank" {
             format!(
                 "Captura iniciada com Chrome externo em {}. A captura começou em branco; navegue no Chrome ou informe a URL.",
                 chrome_path.display()
@@ -592,7 +653,7 @@ pub fn start_session(
                 chrome_path.display(),
                 start_url_for_notice
             )
-        }),
+        }) + &cookie_notice),
         pending: false,
     })
 }
@@ -2292,5 +2353,26 @@ mod tests {
         let out = std::env::var("SL_DUMP").expect("SL_DUMP");
         let preview = crate::export::sanitize_preview(Path::new(&dir)).unwrap();
         fs::write(out, serde_json::to_string_pretty(&preview).unwrap()).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod cookie_source_tests {
+    use super::*;
+
+    #[test]
+    fn validates_sources_without_exposing_database_path() {
+        let sources = vec![CookieSourceDto::from(scrapelens_capture::BrowserCookieSource {
+            id: "chrome:Default".into(), browser: "Google Chrome".into(),
+            profile: "Default".into(), label: "Google Chrome — Default".into(),
+            kind: scrapelens_capture::BrowserKind::Chromium,
+            db_path: PathBuf::from("/private/cookie-database"),
+        })];
+        assert!(resolve_cookie_source(None, &sources).unwrap().is_none());
+        assert!(resolve_cookie_source(Some(""), &sources).unwrap().is_none());
+        assert!(resolve_cookie_source(Some("chrome:deleted"), &sources).is_err());
+        assert_eq!(resolve_cookie_source(Some("chrome:Default"), &sources).unwrap().unwrap().id, "chrome:Default");
+        let json = serde_json::to_string(&sources).unwrap();
+        assert!(!json.contains("dbPath") && !json.contains("cookie-database"));
     }
 }

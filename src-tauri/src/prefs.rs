@@ -15,6 +15,8 @@ struct Preferences {
     /// URL inicial da captura ao vivo (`http`/`https`); ausente = usar env ou em branco.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     capture_start_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capture_cookie_source: Option<String>,
 }
 
 fn config_file(app: &AppHandle) -> Option<PathBuf> {
@@ -90,6 +92,17 @@ pub fn save_capture_start_url(app: &AppHandle, url: Option<&str>) -> Result<(), 
         Some(value) => Some(crate::cli::persistable_url(value)?),
         None => None,
     };
+    write_prefs(file, &preferences)
+}
+
+pub fn load_capture_cookie_source(app: &AppHandle) -> Option<String> {
+    read(app).capture_cookie_source.filter(|value| !value.is_empty())
+}
+
+pub fn save_capture_cookie_source(app: &AppHandle, source: Option<&str>) -> Result<(), String> {
+    let file = config_file(app).ok_or("sem diretório de configuração do app")?;
+    let mut preferences = read_and_scrub(&file);
+    preferences.capture_cookie_source = source.filter(|value| !value.is_empty()).map(str::to_owned);
     write_prefs(file, &preferences)
 }
 
@@ -203,6 +216,24 @@ mod tests {
             .join(format!("scrapelens-prefs-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let _ = fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn cookie_source_roundtrip_preserves_other_preferences_and_legacy_defaults() {
+        let mut prefs: Preferences = serde_json::from_str(r#"{"chromePath":"/browser","captureStartUrl":"https://example.org"}"#).unwrap();
+        assert!(prefs.capture_cookie_source.is_none());
+        prefs.capture_cookie_source = Some("chrome:Default".into());
+        let root = base();
+        let file = root.join("preferences.json");
+        write_prefs(file.clone(), &prefs).unwrap();
+        let restored = read_and_scrub(&file);
+        assert_eq!(restored.capture_cookie_source.as_deref(), Some("chrome:Default"));
+        assert_eq!(restored.chrome_path.as_deref(), Some("/browser"));
+        assert_eq!(restored.capture_start_url.as_deref(), Some("https://example.org"));
+        prefs.capture_cookie_source = None;
+        write_prefs(file.clone(), &prefs).unwrap();
+        assert!(!fs::read_to_string(&file).unwrap().contains("captureCookieSource"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

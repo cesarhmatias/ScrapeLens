@@ -103,6 +103,8 @@ pub fn run() {
             commands::import_har,
             commands::import_netlog,
             commands::start_session,
+            commands::list_cookie_sources,
+            commands::set_capture_cookie_source,
             commands::stop_session,
             commands::capture_status,
             commands::capture_start_url,

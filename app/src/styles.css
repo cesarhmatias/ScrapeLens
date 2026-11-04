@@ -1413,3 +1413,25 @@ kbd {
 
 .chip.dashed { border-style: dashed; }
 .col-app { width: 108px; }
+
+.cookie-source-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+  max-width: 260px;
+}
+.cookie-source-select {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--fg);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.cookie-source-select:disabled { opacity: 0.5; }
+.cookie-source-select:focus-visible { outline: 2px solid var(--fg-muted); outline-offset: 2px; }
+.cookie-source-hint { font-size: 10px; color: var(--fg-muted); }
