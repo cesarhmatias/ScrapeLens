@@ -48,10 +48,12 @@ Stdout é o canal JSON-RPC; todo log vai para stderr. Transporte: stdio.
 ### Limites de leitura e escrita
 
 - **Escrita** só em: `<sessions-dir>/<session_id>/` (import) e `<out-dir>/`
-  (corpos grandes). Todo caminho de escrita é montado pelo servidor a partir de
-  nomes validados (`[A-Za-z0-9._-]`, sem `..`, sem `/`) e conferido depois de
-  canonicalizado: se sair do diretório, a chamada falha com
-  `outside_allowed_dir`. Diretórios 0700, arquivos 0600, escrita atômica.
+  (corpos grandes e `export_session`) ou no `destination` absoluto validado da
+  exportação (novo/vazio, 0700, fora da sessão de origem). Todo caminho de
+  escrita é montado pelo servidor a partir de nomes validados
+  (`[A-Za-z0-9._-]`, sem `..`, sem `/`) e conferido depois de canonicalizado: se
+  sair do diretório, a chamada falha com `outside_allowed_dir`. Diretórios 0700,
+  arquivos 0600, escrita atômica.
 - **Leitura de sessões**: só `--sessions-dir` e `--extra-sessions-dir`.
   Parâmetros `session_id` são handles, nunca caminhos.
 - **Leitura de entrada do import**: o `path` pode ser qualquer arquivo/diretório
@@ -67,6 +69,9 @@ Stdout é o canal JSON-RPC; todo log vai para stderr. Transporte: stdio.
 valores. `reveal=true` exige `--allow-reveal` no servidor.
 **Decisão do líder (rodada 11):** a trava é dupla — parâmetro por chamada
 *e* `--allow-reveal` ao iniciar o servidor; o agente não revela sozinho.
+**Exceção explícita (rodada 17):** `export_session` com `include_sensitive:true`
+grava os valores no diretório local 0700/0600 a pedido do usuário, mas o JSON de
+resposta não devolve valor algum (ver §5.10).
 
 Com `reveal=false`:
 
@@ -342,6 +347,36 @@ ficam).
 
 `value` fornecido pelo agente nunca é ecoado sem `reveal`.
 
+### 5.10 `export_session`
+
+Grava uma cópia da sessão num diretório privado. **Não** revela valores no JSON
+de resposta: devolve só caminho e contagens.
+
+```json
+{ "session_id": "...", "destination": "minha-exportacao", "include_sensitive": false }
+```
+
+- **Sanitizada (padrão, `include_sensitive: false`):** aplica
+  `export::sanitize::sanitize_bundle` com as opções padrão, grava com
+  `store::write_session_dir` e **não** leva `cdp-events.jsonl` nem `netlog.json`
+  brutos. Saída: `{sessionId, path, includeSensitive:false, requests,
+  attachmentsWritten, rawArtifactsWritten:[], totalRedactions, report
+  {redactions, warnings, omittedAttachments}}`.
+- **Completa (`include_sensitive: true`):** grava o bundle original **sem
+  redação** e copia os artefatos brutos existentes na origem
+  (`cdp-events.jsonl`, `netlog.json`, `cdp-bodies.jsonl`), recusando symlink e
+  aplicando 0600. Saída sem `report` e com `totalRedactions: 0`. Não exige
+  `--allow-reveal`: é uma ação local, explícita, pedida pelo usuário ao LLM;
+  os segredos ficam no diretório 0700/0600, nunca no stdout.
+- **Destino:** `destination` omitido → `<out-dir>/<session_id>-sanitized` (com
+  `-2`, `-3`… se existir) ou `<out-dir>/<session_id>-full` (recusa se já
+  existir). Nome simples sem `/` resolve dentro de `--out-dir`; caminho absoluto
+  é aceito se não for a sessão de origem nem ficar dentro dela (ou de outra
+  sessão/raiz reservada), se nenhum ancestral existente for symlink (exceto os
+  aliases de sistema do macOS `/var`, `/tmp`, `/etc` → `/private/...`) e se o
+  diretório não existir ou estiver vazio (o diretório pai precisa existir). O
+  destino é criado 0700; os arquivos, 0600.
+
 ## 6. Testes exigidos
 
 - Unitários por ferramenta, contra as fixtures existentes
@@ -354,6 +389,11 @@ ficam).
 - Ponta a ponta: o binário real por stdio (`initialize`, `tools/list`,
   `tools/call` para cada ferramenta), com asserção de que stdout só traz
   JSON-RPC.
+- `export_session`: sanitizada redige os segredos e não leva artefatos brutos;
+  `include_sensitive:true` preserva headers/cookies/corpos e os arquivos
+  `cdp-events.jsonl`/`netlog.json`/`cdp-bodies.jsonl` com 0700/0600, e o JSON
+  devolvido não contém os valores; destinos perigosos (dentro da origem, outra
+  sessão, raiz reservada, symlink, diretório não vazio) são recusados.
 
 ## 6b. Navegador e perfil do site (rodada 11, onda 2)
 

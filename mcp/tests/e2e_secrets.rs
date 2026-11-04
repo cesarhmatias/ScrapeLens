@@ -167,7 +167,7 @@ fn poisoned_session(dir: &std::path::Path) {
 }
 
 #[test]
-fn marked_query_secret_never_leaves_any_of_the_14_tools() {
+fn marked_query_secret_never_leaves_any_of_the_15_tools() {
     let work = tempfile::tempdir().unwrap();
     let extra = work.path().join("extra");
     poisoned_session(&extra.join("poison"));
@@ -276,6 +276,17 @@ fn marked_query_secret_never_leaves_any_of_the_14_tools() {
         json!({"capture_id": id, "url": format!("http://site.invalid.test/page2?token={MARK}")}),
     );
     call(&mut client, "capture_status", json!({"capture_id": id}));
+    // export_session: metadados não podem ecoar segredos, nem na versão completa.
+    call(
+        &mut client,
+        "export_session",
+        json!({"session_id": "poison", "destination": "exp-sanitized"}),
+    );
+    call(
+        &mut client,
+        "export_session",
+        json!({"session_id": "poison", "destination": "exp-full", "include_sensitive": true}),
+    );
     let stopped = call(&mut client, "stop_capture", json!({"capture_id": id}));
     call(
         &mut client,
@@ -283,9 +294,9 @@ fn marked_query_secret_never_leaves_any_of_the_14_tools() {
         json!({"session_id": stopped["sessionId"]}),
     );
 
-    // Todas as 14 ferramentas foram exercitadas.
+    // Todas as 15 ferramentas foram exercitadas.
     let (_, tools) = (0, client.request("tools/list", json!({})));
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 14);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 15);
 
     // Varre o JSON inteiro de cada saída, as linhas brutas do stdout e as elicitações.
     let all_marks: Vec<&str> = std::iter::once(MARK).chain(FORMS).collect();

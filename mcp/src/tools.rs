@@ -433,6 +433,305 @@ fn write_import(
 }
 
 // ---------------------------------------------------------------------------
+// export_session
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ExportSessionParams {
+    /// Id da sessão (de `list_sessions`).
+    pub session_id: String,
+    /// Nome dentro de `--out-dir` (ex.: `minha-exportacao`) ou caminho absoluto
+    /// de um diretório novo/vazio. Sem isso: `<session_id>-sanitized` (com
+    /// sufixo `-2`, `-3`...) ou `<session_id>-full`.
+    pub destination: Option<String>,
+    /// `false` (padrão) grava a sessão sanitizada. `true` grava a captura
+    /// completa, com os dados sensíveis sem redação, em diretório 0700.
+    pub include_sensitive: Option<bool>,
+}
+
+/// Alias de sistema do macOS na raiz (`/var`, `/tmp`, `/etc` → `/private/...`):
+/// é o único symlink ancestral aceito, como no App (`src-tauri/src/export.rs`).
+fn is_system_alias(path: &Path) -> bool {
+    matches!(path.to_str(), Some("/var") | Some("/tmp") | Some("/etc"))
+        && std::fs::read_link(path)
+            .map(|target| {
+                target.starts_with("/private") || target.starts_with("private")
+            })
+            .unwrap_or(false)
+}
+
+/// `true` se o caminho existe (inclusive como symlink quebrado).
+fn path_exists(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
+}
+
+/// Confere que `path` não existe ou é um diretório vazio; devolve se ele já existia.
+fn check_empty_destination(path: &Path) -> Result<bool, ToolError> {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(ToolError::new("io", format!("{}: {error}", path.display()))),
+        Ok(meta) if !meta.is_dir() => Err(ToolError::new(
+            "invalid_argument",
+            format!("o destino existe e não é um diretório: {}", path.display()),
+        )),
+        Ok(_) => {
+            let mut entries = std::fs::read_dir(path)
+                .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
+            if entries.next().is_some() {
+                return Err(ToolError::new(
+                    "invalid_argument",
+                    format!(
+                        "o diretório de destino não está vazio: {}; escolha um novo",
+                        path.display()
+                    ),
+                ));
+            }
+            Ok(true)
+        }
+    }
+}
+
+/// Resolve e cria o destino da exportação. Devolve o caminho canônico do
+/// diretório (0700) e se ele foi criado agora.
+fn export_destination(
+    ctx: &Ctx,
+    source: &Path,
+    session_id: &str,
+    requested: Option<&str>,
+    include_sensitive: bool,
+) -> Result<(PathBuf, bool), ToolError> {
+    let base = ctx.cfg.out_dir.clone();
+    let requested = requested.map(str::trim).filter(|text| !text.is_empty());
+    let dest = match requested {
+        Some(text) => {
+            if text.chars().any(char::is_control) {
+                return Err(ToolError::invalid("destination com caractere de controle"));
+            }
+            let path = PathBuf::from(text);
+            if path.is_absolute() {
+                path
+            } else if !text.contains('/') && !text.contains('\\') {
+                if !valid_name(text) {
+                    return Err(ToolError::invalid(format!(
+                        "destination inválido: {text:?} (nome simples com letras, números, '.', '_' e '-', ou caminho absoluto)"
+                    )));
+                }
+                base.join(text)
+            } else {
+                return Err(ToolError::invalid(
+                    "destination relativo com separadores não é aceito: use um nome simples ou um caminho absoluto",
+                ));
+            }
+        }
+        None => {
+            let stem = format!(
+                "{session_id}-{}",
+                if include_sensitive { "full" } else { "sanitized" }
+            );
+            if include_sensitive {
+                let candidate = base.join(&stem);
+                if path_exists(&candidate) {
+                    return Err(ToolError::new(
+                        "exists",
+                        format!(
+                            "{} já existe; informe destination para escolher outro diretório",
+                            candidate.display()
+                        ),
+                    ));
+                }
+                candidate
+            } else {
+                let mut candidate = base.join(&stem);
+                let mut suffix = 2usize;
+                while path_exists(&candidate) {
+                    candidate = base.join(format!("{stem}-{suffix}"));
+                    suffix += 1;
+                }
+                candidate
+            }
+        }
+    };
+
+    // Nenhum componente existente do caminho pedido pode ser symlink (o destino
+    // é criado por nós; seguir um link escreveria fora dele).
+    for ancestor in dest.ancestors() {
+        match std::fs::symlink_metadata(ancestor) {
+            Ok(meta) if meta.file_type().is_symlink() && !is_system_alias(ancestor) => {
+                return Err(ToolError::new(
+                    "outside_allowed_dir",
+                    format!("{} é um link simbólico; recusado", ancestor.display()),
+                ))
+            }
+            _ => {}
+        }
+    }
+    let parent = dest
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| ToolError::invalid("destination sem diretório pai"))?;
+    if !parent.is_dir() {
+        return Err(ToolError::invalid(format!(
+            "o diretório pai não existe: {}",
+            parent.display()
+        )));
+    }
+    let file_name = dest
+        .file_name()
+        .ok_or_else(|| ToolError::invalid("destination sem nome final"))?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|error| ToolError::new("io", format!("{}: {error}", parent.display())))?;
+    let resolved = canonical_parent.join(file_name);
+
+    // Fora da sessão de origem, de qualquer outra sessão e das raízes reservadas.
+    let source_canonical = source
+        .canonicalize()
+        .map_err(|error| ToolError::new("io", format!("{}: {error}", source.display())))?;
+    if resolved == source_canonical || resolved.starts_with(&source_canonical) {
+        return Err(ToolError::new(
+            "outside_allowed_dir",
+            "o destino não pode ser a sessão de origem nem ficar dentro dela",
+        ));
+    }
+    for (_, (dir, _)) in ctx.handles() {
+        if resolved == dir || resolved.starts_with(&dir) {
+            return Err(ToolError::new(
+                "outside_allowed_dir",
+                format!("o destino fica dentro da sessão {}", dir.display()),
+            ));
+        }
+    }
+    for reserved in std::iter::once(&ctx.cfg.sessions_dir)
+        .chain(std::iter::once(&ctx.cfg.out_dir))
+        .chain(ctx.cfg.extra_dirs.iter())
+    {
+        if resolved == *reserved {
+            return Err(ToolError::new(
+                "outside_allowed_dir",
+                "o destino não pode ser uma raiz de sessões/exportação; use um subdiretório",
+            ));
+        }
+    }
+
+    let existed = check_empty_destination(&resolved)?;
+    ensure_private_dir(&resolved)
+        .map_err(|error| ToolError::new("io", format!("{}: {error}", resolved.display())))?;
+    Ok((resolved, !existed))
+}
+
+/// Grava um artefato bruto com 0600, recusando symlink no destino.
+fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
+    if std::fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(ToolError::new(
+            "outside_allowed_dir",
+            format!("{} é um link simbólico; recusado", path.display()),
+        ));
+    }
+    std::fs::write(path, bytes)
+        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// Copia um artefato bruto da sessão de origem, se existir como arquivo regular.
+/// Symlink ou tipo especial é ignorado (não é copiado nem listado).
+fn copy_raw_artifact(source: &Path, dest: &Path, name: &str) -> Result<bool, ToolError> {
+    let path = source.join(name);
+    let meta = match std::fs::symlink_metadata(&path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(ToolError::new(
+                "io",
+                format!("{}: {error}", path.display()),
+            ))
+        }
+    };
+    if !meta.file_type().is_file() {
+        return Ok(false);
+    }
+    let bytes = std::fs::read(&path)
+        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
+    write_private_bytes(&dest.join(name), &bytes)?;
+    Ok(true)
+}
+
+pub fn export_session(ctx: &Ctx, params: ExportSessionParams) -> ToolResult {
+    let include_sensitive = params.include_sensitive.unwrap_or(false);
+    let entry = ctx.open(&params.session_id)?;
+    let imported = scrapelens_core::import_session_dir(&entry.dir).map_err(|error| {
+        ToolError::new(
+            "io",
+            format!("não foi possível carregar {}: {error}", entry.dir.display()),
+        )
+    })?;
+    let bundle = imported.bundle;
+    let (dest, created) = export_destination(
+        ctx,
+        &entry.dir,
+        &params.session_id,
+        params.destination.as_deref(),
+        include_sensitive,
+    )?;
+
+    let outcome = (|| -> ToolResult {
+        if include_sensitive {
+            // Captura completa, sem redação: só os metadados saem no JSON; os
+            // segredos ficam nos arquivos 0600 do destino 0700.
+            write_session_dir(&bundle, &dest)?;
+            let mut raw_written = Vec::new();
+            for name in ["cdp-events.jsonl", "netlog.json", "cdp-bodies.jsonl"] {
+                if copy_raw_artifact(&entry.dir, &dest, name)? {
+                    raw_written.push(name);
+                }
+            }
+            Ok(json!({
+                "sessionId": params.session_id,
+                "path": dest.display().to_string(),
+                "includeSensitive": true,
+                "requests": bundle.session.requests.len(),
+                "attachmentsWritten": bundle.attachments.len(),
+                "rawArtifactsWritten": raw_written,
+                "totalRedactions": 0,
+            }))
+        } else {
+            let export = scrapelens_core::export::sanitize::sanitize_bundle_owned(
+                bundle,
+                &scrapelens_core::export::sanitize::SanitizeOptions::default(),
+            );
+            export.write_to(&dest)?;
+            let total_redactions: usize = export.redactions.values().sum();
+            Ok(json!({
+                "sessionId": params.session_id,
+                "path": dest.display().to_string(),
+                "includeSensitive": false,
+                "requests": export.bundle.session.requests.len(),
+                "attachmentsWritten": export.bundle.attachments.len(),
+                "rawArtifactsWritten": [],
+                "totalRedactions": total_redactions,
+                "report": {
+                    "redactions": export.redactions,
+                    "warnings": export.warnings,
+                    "omittedAttachments": export.omitted_attachments,
+                },
+            }))
+        }
+    })();
+
+    if outcome.is_err() && created {
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+    outcome
+}
+
+// ---------------------------------------------------------------------------
 // list_requests
 // ---------------------------------------------------------------------------
 

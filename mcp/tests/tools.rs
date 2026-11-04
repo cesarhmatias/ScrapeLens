@@ -4,6 +4,7 @@
 mod common;
 
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 use common::*;
 use scrapelens_mcp::tools::*;
@@ -985,5 +986,159 @@ fn capture_outputs_drop_the_query_entirely() {
     assert_eq!(
         scrapelens_mcp::live::strip_query("http://a.test/p"),
         "http://a.test/p"
+    );
+}
+
+// ---- export_session -------------------------------------------------------
+
+fn mode_of(path: &std::path::Path) -> u32 {
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+#[test]
+fn export_session_is_sanitized_by_default_and_omits_raw_artifacts() {
+    let env = Env::new(false);
+    let id = env.import_flow("flow", "");
+    // Artefatos brutos com segredos na origem: a exportação sanitizada não os leva.
+    let src = env.dir.path().join("sessions").join(&id);
+    std::fs::write(
+        src.join("cdp-events.jsonl"),
+        format!("{{\"method\":\"Network.requestWillBeSent\",\"params\":{{\"cookie\":\"{SID}\"}}}}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        src.join("netlog.json"),
+        format!("{{\"events\":[{{\"params\":{{\"headers\":\"Bearer {TOKEN}\"}}}}]}}"),
+    )
+    .unwrap();
+
+    let out = export_session(&env.ctx, p(json!({"session_id": id}))).unwrap();
+    assert_eq!(out["includeSensitive"], false);
+    assert!(out["totalRedactions"].as_u64().unwrap() > 0);
+    let dir = PathBuf::from(out["path"].as_str().unwrap());
+    assert_eq!(
+        dir.file_name().unwrap().to_str().unwrap(),
+        "flow-sanitized"
+    );
+    assert_eq!(mode_of(&dir), 0o700);
+    assert_eq!(mode_of(&dir.join("session.json")), 0o600);
+    let session = std::fs::read_to_string(dir.join("session.json")).unwrap();
+    for secret in MASKED_SECRETS {
+        assert!(!session.contains(secret), "segredo {secret} no session.json exportado");
+    }
+    assert!(!dir.join("cdp-events.jsonl").exists(), "artefato bruto não pode ir na sanitizada");
+    assert!(!dir.join("netlog.json").exists());
+    assert_eq!(out["rawArtifactsWritten"], json!([]));
+    // Segunda exportação com o mesmo nome ganha sufixo.
+    let out2 = export_session(&env.ctx, p(json!({"session_id": id}))).unwrap();
+    assert!(out2["path"].as_str().unwrap().ends_with("flow-sanitized-2"), "{out2}");
+}
+
+#[test]
+fn export_session_include_sensitive_keeps_secrets_raw_artifacts_and_private_modes() {
+    let env = Env::new(false);
+    let id = env.import_flow("flow", "");
+    let src = env.dir.path().join("sessions").join(&id);
+    std::fs::write(
+        src.join("cdp-events.jsonl"),
+        format!("{{\"method\":\"Network.requestWillBeSent\",\"params\":{{\"cookie\":\"{SID}\"}}}}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        src.join("netlog.json"),
+        format!("{{\"events\":[{{\"params\":{{\"headers\":\"Bearer {TOKEN}\"}}}}]}}"),
+    )
+    .unwrap();
+    std::fs::write(src.join("cdp-bodies.jsonl"), format!("{PASSWORD}\n")).unwrap();
+
+    let out = export_session(
+        &env.ctx,
+        p(json!({"session_id": id, "destination": "minha-exportacao", "include_sensitive": true})),
+    )
+    .unwrap();
+    assert_eq!(out["includeSensitive"], true);
+    assert_eq!(out["totalRedactions"], 0);
+    let dir = PathBuf::from(out["path"].as_str().unwrap());
+    assert_eq!(dir, env.ctx.cfg.out_dir.join("minha-exportacao"));
+    assert_eq!(mode_of(&dir), 0o700);
+    assert_eq!(mode_of(&dir.join("session.json")), 0o600);
+    let session = std::fs::read_to_string(dir.join("session.json")).unwrap();
+    assert!(session.contains(SID), "a versão completa preserva o cookie");
+    assert!(session.contains(TOKEN), "a versão completa preserva o token");
+    let cdp = std::fs::read_to_string(dir.join("cdp-events.jsonl")).unwrap();
+    assert!(cdp.contains(SID));
+    let netlog = std::fs::read_to_string(dir.join("netlog.json")).unwrap();
+    assert!(netlog.contains(TOKEN));
+    assert_eq!(
+        std::fs::read_to_string(dir.join("cdp-bodies.jsonl")).unwrap(),
+        format!("{PASSWORD}\n")
+    );
+    assert_eq!(
+        out["rawArtifactsWritten"],
+        json!(["cdp-events.jsonl", "netlog.json", "cdp-bodies.jsonl"])
+    );
+    for name in ["cdp-events.jsonl", "netlog.json", "cdp-bodies.jsonl"] {
+        assert_eq!(mode_of(&dir.join(name)), 0o600, "{name}");
+    }
+    // O JSON da ferramenta nunca carrega os valores.
+    let text = out.to_string();
+    for secret in [SID, TOKEN, PASSWORD] {
+        assert!(!text.contains(secret), "{secret} no JSON de export_session");
+    }
+}
+
+#[test]
+fn export_session_refuses_unsafe_destinations() {
+    let env = Env::new(false);
+    let id = env.import_flow("flow", "");
+    let src = env.dir.path().join("sessions").join(&id);
+
+    // Dentro da sessão de origem.
+    assert_eq!(
+        err_code(export_session(
+            &env.ctx,
+            p(json!({"session_id": id, "destination": src.join("x").to_str().unwrap()}))
+        )),
+        "outside_allowed_dir"
+    );
+    // Destino relativo com separadores.
+    assert_eq!(
+        err_code(export_session(
+            &env.ctx,
+            p(json!({"session_id": id, "destination": "a/b"}))
+        )),
+        "invalid_argument"
+    );
+    // Diretório existente não vazio.
+    let busy = env.dir.path().join("busy");
+    std::fs::create_dir_all(&busy).unwrap();
+    std::fs::write(busy.join("x"), "1").unwrap();
+    assert_eq!(
+        err_code(export_session(
+            &env.ctx,
+            p(json!({"session_id": id, "destination": busy.to_str().unwrap()}))
+        )),
+        "invalid_argument"
+    );
+    // Ancestral symlink.
+    #[cfg(unix)]
+    {
+        let link = env.dir.path().join("link");
+        std::os::unix::fs::symlink(&busy, &link).unwrap();
+        assert_eq!(
+            err_code(export_session(
+                &env.ctx,
+                p(json!({"session_id": id, "destination": link.join("sub").to_str().unwrap()}))
+            )),
+            "outside_allowed_dir"
+        );
+    }
+    // Sessão inexistente.
+    assert_eq!(
+        err_code(export_session(
+            &env.ctx,
+            p(json!({"session_id": "nao-existe"}))
+        )),
+        "not_found"
     );
 }

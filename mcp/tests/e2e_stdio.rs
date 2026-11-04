@@ -54,7 +54,7 @@ fn full_session_over_stdio() {
     assert_eq!(init["result"]["serverInfo"]["name"], "scrapelens-mcp");
     assert!(init["result"]["capabilities"]["tools"].is_object());
 
-    // tools/list: as catorze ferramentas, com esquema e anotações.
+    // tools/list: as quinze ferramentas, com esquema e anotações.
     let listed = client.request("tools/list", json!({}));
     let tools = listed["result"]["tools"].as_array().unwrap();
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -65,6 +65,7 @@ fn full_session_over_stdio() {
             "capture_status",
             "diff_requests",
             "diff_sessions",
+            "export_session",
             "get_body",
             "get_request",
             "import_session",
@@ -81,6 +82,7 @@ fn full_session_over_stdio() {
     for tool in tools {
         assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
         let writes = [
+            "export_session",
             "import_session",
             "start_capture",
             "navigate",
