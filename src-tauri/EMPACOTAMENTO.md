@@ -4,6 +4,32 @@ Estado do pacote entregue nesta rodada. Serve como evidência reprodutível: os
 comandos abaixo geram exatamente o artefato descrito, na mesma máquina e nas
 mesmas condições.
 
+## macOS — exportação completa opcional (2026-11-04, vigente)
+
+Código App: `71d9f7c`. O diálogo **Exportar / Sanitizar…** mantém a cópia
+sanitizada por padrão. O checkbox **Incluir dados sensíveis** habilita a captura
+completa (sessão, anexos e os artefatos presentes `cdp-events.jsonl`, `netlog.json`,
+`cdp-bodies.jsonl`), sem redações, com aviso destacado e destino sugerido `-full`.
+O destino continua sujeito às mesmas recusas: origem, pasta interna, symlinks ou
+pasta ocupada. Arquivos brutos especiais/symlinks são recusados; cópia em fluxo
+com `O_NOFOLLOW`, arquivos 0600 e diretório 0700. Nada da origem é alterado.
+
+Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
+SHA-256 de `Contents/MacOS/scrapelens` (18.268.880 bytes):
+`bd8d10a6b753287ad85235c7a48a3b6a3659f612d7e9e2b08cc55feb40fd5d71`.
+Assinado com `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
+aprovado e DR preservado (`d0a53befa59a447043abc9e58a3381addbbf1751`).
+Nenhuma janela aberta ou ativada. Linux não recompilado nesta tarefa.
+
+Validação: `cargo test --locked` 60 aprovados, 0 falhas, 8 ignorados;
+clippy `--locked --all-targets -- -D warnings` limpo; `npm test` (sete suítes),
+typecheck e build aprovados. Testes Rust preservam segredos das fixtures em
+cookies/corpos/artefatos, verificam permissões e recusas de destino/symlinks.
+`app/src/Export.test.tsx` exercita o checkbox, chamadas de prévia e salvamento
+com `includeSensitive=true`, alternância do destino sugerido e preservação de
+caminho editado. Teste de componente React, sem automação do diálogo nativo.
+Logs: `/tmp/sl-full-{rust,clippy,front,bundle}.log`.
+
 ## macOS — seletor de cookies de navegador (vigente)
 
 Origem: `3e09738`, sobre `2a52152`, árvore limpa antes do build.
