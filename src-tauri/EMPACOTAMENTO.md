@@ -4,6 +4,37 @@ Estado do pacote entregue nesta rodada. Serve como evidência reprodutível: os
 comandos abaixo geram exatamente o artefato descrito, na mesma máquina e nas
 mesmas condições.
 
+## macOS — seletor de cookies de navegador (vigente)
+
+Origem: `3e09738`, sobre `2a52152`, árvore limpa antes do build.
+O seletor **Cookies** ao lado de URL inicial lista os perfis detectados e
+salva somente o identificador em preferências privadas. Uma fonte removida
+volta para sessão limpa; fonte inválida passada ao comando é recusada. Com URL
+vazia, a captura ignora a fonte e a UI avisa para informar a URL inicial.
+O DTO não expõe o caminho do banco. Os cookies seguem para `CaptureConfig`
+e são importados pela crate de captura antes de navegar; falhas são mostradas
+pelo aviso de início da captura.
+
+Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
+Executável interno `Contents/MacOS/scrapelens`: **18.277.584 bytes**,
+SHA-256 `9645c147f2f43b3286421d94e7e0a39376b2add404f0e22b0502fe0bff8a80c8`.
+O hash identifica o executável, não o diretório `.app`.
+Assinatura `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
+aprovado; DR preservado (`d0a53befa59a447043abc9e58a3381addbbf1751`).
+Bundle pronto para o usuário abrir, sem abrir/ativar janelas nesta execução.
+A instância existente não foi encerrada nem substituída em execução.
+
+Validação: `cargo test --locked` **58 aprovados, 0 falhas, 8 ignorados**;
+`cargo clippy --locked --all-targets -- -D warnings` limpo; seis suítes front
+(`test:cookie-source`, `test:shortcuts`, `test:adapter`, `test:capture-url`,
+`test:paged`, `test:list-view`), typecheck e build aprovados. Novos testes cobrem
+preferências legadas/persistência, validação de IDs, ausência de caminho do banco
+no DTO e markup do seletor (escolha salva, sessão limpa, bloqueio e dica de URL).
+Não foi realizada importação real de cookies pessoais nem teste GUI do seletor.
+Linux não foi recompilado nesta tarefa; os pacotes abaixo seguem em `22854c3`.
+Logs: `/tmp/sl-cookie-rust.log`, `/tmp/sl-cookie-validation.log`,
+`/tmp/sl-cookie-validation.json` e `/tmp/sl-cookie-bundle.log`.
+
 ## Release rodada 16 — 2026-11-03 (vigente)
 
 Esta seção substitui os hashes e a origem das rodadas anteriores abaixo.
