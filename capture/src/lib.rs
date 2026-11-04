@@ -30,8 +30,14 @@ use scrapelens_core::{correlate::CorrelationOptions, import_capture_labeled, sto
 pub mod allowlist;
 pub mod browser;
 pub mod chrome;
+pub mod cookies;
 mod fdio;
 pub mod transport;
+
+pub use cookies::{
+    list_browser_cookie_sources, load_cookies_for_url, BrowserCookieSource, BrowserKind,
+    CookieImportOutcome, ImportedCookie,
+};
 
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +104,12 @@ pub struct CaptureConfig {
     pub ignore_cert: bool,
     /// Rede aberta (padrão) ou só loopback (testes).
     pub network: NetworkMode,
+    /// Fonte de cookies de um navegador instalado (`BrowserCookieSource.id`).
+    /// `None` = a captura começa sem cookies importados.
+    pub cookie_source: Option<String>,
+    /// Cookies já resolvidos pelo chamador. Quando não vazio, vence
+    /// `cookie_source` (útil para testes e para o MCP).
+    pub initial_cookies: Vec<ImportedCookie>,
 }
 
 pub fn run(
@@ -173,6 +185,32 @@ fn run_inner(
     opts: &RunOptions,
 ) -> Result<(CaptureOutcome, RunReport), String> {
     eprintln!("capture transport: {:?}", opts.transport);
+    // Cookies de um navegador instalado entram ANTES de o Chrome subir: uma
+    // falha de leitura (Keychain negado, banco ausente) aborta a captura sem
+    // lançar navegador, e nada do perfil pessoal é tocado.
+    let mut imported_cookies = config.initial_cookies.clone();
+    let mut cookie_source_label: Option<String> = None;
+    let mut cookie_domain = String::new();
+    let mut cookie_skipped = 0usize;
+    if imported_cookies.is_empty() {
+        if let Some(source_id) = &config.cookie_source {
+            let outcome = cookies::load_cookies_for_url(source_id, &config.start_url)?;
+            imported_cookies = outcome.cookies;
+            cookie_source_label = Some(outcome.label);
+            cookie_domain = outcome.domain;
+            cookie_skipped = outcome.skipped;
+            for note in &outcome.notes {
+                eprintln!("cookies: {note}");
+            }
+        }
+    } else if let Some(domain) = imported_cookies.first().map(|c| c.domain.clone()) {
+        cookie_domain = domain;
+    }
+    let cookie_suffix = match (&cookie_source_label, imported_cookies.len()) {
+        (Some(label), count) => format!(" · {count} cookie(s) importado(s) de {label}"),
+        (None, count) if count > 0 => format!(" · {count} cookie(s) importado(s)"),
+        _ => String::new(),
+    };
     let profile = private_base_dir().join(format!(
         "scrapelens-chrome-{}-{}",
         std::process::id(),
@@ -282,7 +320,21 @@ fn run_inner(
         Err(error) => return Err(fail_start(&mut chrome, error)),
     };
 
-    let setup = cdp.setup(&mut socket, &config.start_url);
+    let cookie_audit = if cookie_source_label.is_some() || !imported_cookies.is_empty() {
+        Some((
+            cookie_source_label.as_deref().unwrap_or("initialCookies"),
+            cookie_domain.as_str(),
+            cookie_skipped,
+        ))
+    } else {
+        None
+    };
+    let setup = cdp.setup(
+        &mut socket,
+        &config.start_url,
+        &imported_cookies,
+        cookie_audit,
+    );
     if let Err(error) = setup {
         let _ = chrome.child_mut().kill();
         let _ = chrome.child_mut().wait();
@@ -569,8 +621,8 @@ fn run_inner(
             session: session_value,
             session_dir: config.session_dir.clone(),
             notice: format!(
-                "Sessão capturada e importada: {} evento(s) CDP+NetLog usados, {} aviso(s).",
-                requests, warnings
+                "Sessão capturada e importada: {} evento(s) CDP+NetLog usados, {} aviso(s).{}",
+                requests, warnings, cookie_suffix
             ),
         },
         report,
@@ -1959,8 +2011,10 @@ impl Cdp {
         &mut self,
         socket: &mut Transport,
         start_url: &str,
+        cookies: &[cookies::ImportedCookie],
+        audit: Option<(&str, &str, usize)>,
     ) -> Result<(), String> {
-        let setup_result = self.setup_inner(socket, start_url);
+        let setup_result = self.setup_inner(socket, start_url, cookies, audit);
         if setup_result.is_ok() {
             self.pump_socket(socket, Duration::from_millis(400));
         }
@@ -1973,13 +2027,18 @@ impl Cdp {
         &mut self,
         socket: &mut Transport,
         start_url: &str,
+        cookies: &[cookies::ImportedCookie],
+        audit: Option<(&str, &str, usize)>,
     ) -> Result<(), String> {
         self.send(
             socket,
             "Target.setDiscoverTargets",
             json!({ "discover": true }),
             None,
-            Duration::from_secs(10),
+            // Alinhado a `wait_for_devtools` e `Target.setAutoAttach`: um Chrome
+            // headful frio no macOS pode levar >10 s para inicializar a GPU e a
+            // janela antes de drenar o fd 3 do pipe (timeout visto pelo usuário).
+            Duration::from_secs(25),
         )?;
         self.send(
             socket,
@@ -2043,6 +2102,30 @@ impl Cdp {
                     Duration::from_secs(5),
                 )?;
                 if url != "about:blank" {
+                    // Cookies importados entram ANTES da primeira navegação: o
+                    // pedido inicial já leva a sessão do site.
+                    if !cookies.is_empty() {
+                        self.send(
+                            socket,
+                            "Network.setCookies",
+                            json!({ "cookies": cookies::cdp_cookies(cookies) }),
+                            Some(&page_session),
+                            Duration::from_secs(10),
+                        )?;
+                    }
+                    if let Some((source, domain, skipped)) = audit {
+                        self.push_event_line(
+                            &page_session,
+                            "Capture.cookiesImported",
+                            &json!({
+                                "source": source,
+                                "domain": domain,
+                                "importedCount": cookies.len(),
+                                "skippedCount": skipped,
+                            }),
+                            None,
+                        );
+                    }
                     self.send(
                         socket,
                         "Page.navigate",
@@ -3716,6 +3799,8 @@ mod tests {
             headless,
             ignore_cert,
             network,
+            cookie_source: None,
+            initial_cookies: Vec::new(),
         };
         chrome_args(&config, Path::new("/x/perfil"), Path::new("/x/perfil/netlog.json"), rules, pipe)
     }
@@ -3969,6 +4054,8 @@ mod tests {
             headless: true,
             ignore_cert: false,
             network: NetworkMode::default(),
+            cookie_source: None,
+            initial_cookies: Vec::new(),
         };
         let status = Arc::new(Mutex::new(CaptureStatus::default()));
         let error = run(config, status, stop_rx, ready_tx).unwrap_err();

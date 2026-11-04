@@ -244,6 +244,8 @@ impl BrowserCapture {
             // (`resolver_rules`), que vale no lugar do modo. Se ela faltasse, a rede
             // ficaria restrita a loopback (falha fechada), nunca aberta.
             network: crate::NetworkMode::LoopbackOnly,
+            cookie_source: None,
+            initial_cookies: Vec::new(),
         };
         let status = Arc::new(Mutex::new(CaptureStatus {
             recording: true,
@@ -1673,6 +1675,8 @@ mod tests {
             headless: true,
             ignore_cert: false,
             network: mode,
+            cookie_source: None,
+            initial_cookies: Vec::new(),
         };
         let status = Arc::new(Mutex::new(CaptureStatus::default()));
         let (stop_tx, stop_rx) = channel();
@@ -1774,6 +1778,8 @@ mod tests {
                 headless: live_headless(),
                 ignore_cert: false,
                 network: crate::NetworkMode::LoopbackOnly,
+                cookie_source: None,
+                initial_cookies: Vec::new(),
             };
             let status = Arc::new(Mutex::new(CaptureStatus::default()));
             let (stop_tx, stop_rx) = channel();
@@ -1795,6 +1801,108 @@ mod tests {
             assert!(args.iter().all(|a| !a.contains(&*dir.display().to_string())), "{args:?}");
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+
+    /// Cookies importados (`CaptureConfig.initial_cookies`) chegam no PRIMEIRO
+    /// pedido da navegação inicial, e o evento de auditoria entra no stream CDP
+    /// sem os valores. Loopback, headless conforme `SL_LIVE_HEADED`.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn live_imported_cookies_are_sent_with_the_first_navigation() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::mpsc::channel;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        let heads: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let heads_thread = heads.clone();
+        thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut stream = stream;
+                let mut buf = vec![0u8; 16 * 1024];
+                let mut total = 0;
+                while total < buf.len() {
+                    match stream.read(&mut buf[total..]) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            total += n;
+                            if buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+                heads_thread
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&buf[..total]).to_string());
+                let body = b"ok";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.write_all(body);
+                let _ = stream.flush();
+            }
+        });
+
+        let dir = std::env::temp_dir().join(format!(
+            "scrapelens-cookies-live-{}-{}",
+            std::process::id(),
+            super::super::unix_millis()
+        ));
+        let cookie = crate::cookies::ImportedCookie {
+            name: "sid".to_string(),
+            value: "abc123".to_string(),
+            domain: "127.0.0.1".to_string(),
+            path: "/".to_string(),
+            secure: false,
+            http_only: false,
+            same_site: Some("Lax".to_string()),
+            expires: None,
+        };
+        let config = crate::CaptureConfig {
+            chrome: chrome_or_skip(),
+            session_dir: dir.clone(),
+            start_url: format!("http://127.0.0.1:{port}/"),
+            headless: live_headless(),
+            ignore_cert: false,
+            network: crate::NetworkMode::LoopbackOnly,
+            cookie_source: None,
+            initial_cookies: vec![cookie],
+        };
+        let status = Arc::new(Mutex::new(CaptureStatus::default()));
+        let (stop_tx, stop_rx) = channel();
+        let (ready_tx, ready_rx) = channel();
+        let join = thread::spawn(move || crate::run(config, status, stop_rx, ready_tx));
+        ready_rx.recv_timeout(Duration::from_secs(40)).expect("pronta").expect("iniciou");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut saw_cookie = false;
+        while Instant::now() < deadline && !saw_cookie {
+            saw_cookie = heads
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|head| head.lines().any(|line| line.eq_ignore_ascii_case("cookie: sid=abc123")));
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(saw_cookie, "o primeiro pedido devia levar o cookie importado: {:?}", heads.lock().unwrap());
+        let _ = stop_tx.send(());
+        let outcome = join.join().expect("thread").expect("encerrou");
+        assert!(outcome.notice.contains("cookie(s) importado(s)"), "{}", outcome.notice);
+        let events = std::fs::read_to_string(dir.join("cdp-events.jsonl")).unwrap();
+        assert!(events.contains("Capture.cookiesImported"), "falta o evento de auditoria");
+        assert!(events.contains("\"importedCount\":1"), "{events}");
+        let audit = events
+            .lines()
+            .find(|line| line.contains("Capture.cookiesImported"))
+            .expect("linha de auditoria");
+        assert!(!audit.contains("abc123"), "o evento de auditoria não pode gravar o valor: {audit}");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// D7, captura CONTROLADA do MCP (allowlist), pipe e `expose_cdp` (porta).

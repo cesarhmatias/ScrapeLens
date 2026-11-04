@@ -33,6 +33,8 @@ mod tests {
             headless: true,
             ignore_cert: false,
             network: NetworkMode::LoopbackOnly,
+            cookie_source: None,
+            initial_cookies: Vec::new(),
         };
         let status_thread = status.clone();
         let join = std::thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));

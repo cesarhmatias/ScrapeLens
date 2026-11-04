@@ -75,6 +75,8 @@ mod tests {
             ignore_cert: false,
             // Testes ao vivo: só loopback, nada sai da máquina.
             network: scrapelens_capture::NetworkMode::LoopbackOnly,
+            cookie_source: None,
+            initial_cookies: Vec::new(),
         };
         let status_thread = status.clone();
         let join = thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));
@@ -129,6 +131,8 @@ mod tests {
             ignore_cert: false,
             // Testes ao vivo: só loopback, nada sai da máquina.
             network: scrapelens_capture::NetworkMode::LoopbackOnly,
+            cookie_source: None,
+            initial_cookies: Vec::new(),
         };
         let status_thread = status.clone();
         let join = thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));

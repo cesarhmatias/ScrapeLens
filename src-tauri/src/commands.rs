@@ -518,6 +518,8 @@ pub fn start_session(
         // Rede normal por padrão; as suítes de teste ligam só-loopback com
         // `SCRAPELENS_CAPTURE_NETWORK=loopback`.
         network: scrapelens_capture::NetworkMode::from_env(),
+        cookie_source: None,
+        initial_cookies: Vec::new(),
     };
 
     let status = Arc::new(Mutex::new(CaptureStatus {

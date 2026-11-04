@@ -12,7 +12,7 @@ ARG BROWSER=chrome
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl build-essential pkg-config git xvfb xauth python3 procps lsof \
-        fonts-liberation dbus-x11 \
+        sqlite3 fonts-liberation dbus-x11 \
     && rm -rf /var/lib/apt/lists/*
 RUN set -eux; \
     if [ "$BROWSER" = "chrome" ]; then \
