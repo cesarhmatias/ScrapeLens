@@ -2500,7 +2500,7 @@ export default function App() {
                         : "Redigir credenciais da sessão inteira e gravar em uma pasta nova; a origem não é alterada"
                   }
                 >
-                  Sanitizar…
+                  Exportar / Sanitizar…
                 </button>
                 <button
                   className="btn"

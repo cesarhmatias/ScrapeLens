@@ -1435,3 +1435,8 @@ kbd {
 .cookie-source-select:disabled { opacity: 0.5; }
 .cookie-source-select:focus-visible { outline: 2px solid var(--fg-muted); outline-offset: 2px; }
 .cookie-source-hint { font-size: 10px; color: var(--fg-muted); }
+
+.export-sensitive-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-bottom: 12px; }
+.export-sensitive-option input { margin-top: 3px; flex-shrink: 0; }
+.export-destination { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.export-warning { border: 1px solid #c99545; background: rgba(201,149,69,0.12); color: var(--fg); padding: 12px; border-radius: 8px; margin: 12px 0; }

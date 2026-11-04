@@ -4,7 +4,7 @@ import { FILE_MANAGER } from "./listView";
 // O texto exibido é gerado pelo Rust e é exatamente o que a cópia e o arquivo
 // salvo recebem. A UI não monta, não edita e não executa o código exportado.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { bridge, type ExportPreview, type SanitizePreview, type SanitizeSaved, type SavedFile } from "./bridge";
 import type { RequestRecord, SessionRecord } from "./types";
@@ -340,6 +340,9 @@ export function SanitizeDialog({
   onOpened: (payload: Awaited<ReturnType<typeof bridge.openSessionAt>>) => void;
 }) {
   const sessionDir = session.sourcePath;
+  const [includeSensitive, setIncludeSensitive] = useState(false);
+  const [destination, setDestination] = useState("");
+  const previousSuggestion = useRef("");
   const [preview, setPreview] = useState<SanitizePreview | null>(null);
   const [saved, setSaved] = useState<SanitizeSaved | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -356,9 +359,14 @@ export function SanitizeDialog({
     setLoading(true);
     setError(null);
     bridge
-      .previewSanitized(sessionDir)
+      .previewSanitized(sessionDir, includeSensitive)
       .then((result) => {
-        if (alive) setPreview(result);
+        if (alive) {
+          const previous = previousSuggestion.current;
+          setDestination((current) => !current || current === previous ? result.suggestedDestination : current);
+          previousSuggestion.current = result.suggestedDestination;
+          setPreview(result);
+        }
       })
       .catch((reason) => {
         if (alive) setError(String(reason));
@@ -369,27 +377,27 @@ export function SanitizeDialog({
     return () => {
       alive = false;
     };
-  }, [sessionDir]);
+  }, [sessionDir, includeSensitive]);
 
   const save = useCallback(async () => {
-    if (!sessionDir || !preview) return;
+    if (!sessionDir || !preview || loading || !!preview.includeSensitive !== includeSensitive || !destination.trim()) return;
     setSaving(true);
     setError(null);
     setStatus(null);
     try {
-      const result = await bridge.saveSanitized(sessionDir, preview.suggestedDestination);
+      const result = await bridge.saveSanitized(sessionDir, destination.trim(), includeSensitive);
       if (!result) {
         setStatus("Salvamento cancelado; a sessão original não foi alterada.");
         return;
       }
       setSaved(result);
-      setStatus("Sessão sanitizada gravada em pasta nova e privada (0700/0600).");
+      setStatus(includeSensitive ? "Captura completa gravada com dados sensíveis em pasta privada (0700/0600)." : "Sessão sanitizada gravada em pasta nova e privada (0700/0600).");
     } catch (reason) {
       setError(String(reason));
     } finally {
       setSaving(false);
     }
-  }, [preview, sessionDir]);
+  }, [preview, sessionDir, destination, includeSensitive, loading]);
 
   const open = useCallback(async () => {
     if (!saved) return;
@@ -404,7 +412,7 @@ export function SanitizeDialog({
 
   return (
     <Modal
-      title="Sanitizar sessão inteira"
+      title="Exportar / Sanitizar sessão inteira"
       subtitle={session.id}
       onClose={onClose}
       wide
@@ -423,22 +431,40 @@ export function SanitizeDialog({
                 Mostrar no {FILE_MANAGER}
               </button>
               <button className="btn primary" onClick={() => void open()}>
-                Abrir sessão sanitizada
+                {saved.includeSensitive ? "Abrir captura completa" : "Abrir sessão sanitizada"}
               </button>
             </>
           ) : (
-            <button className="btn primary" onClick={() => void save()} disabled={!preview || loading || saving}>
-              {saving ? "Gravando…" : "Escolher destino e salvar…"}
+            <button className="btn primary" onClick={() => void save()} disabled={!preview || loading || saving || !!preview.includeSensitive !== includeSensitive || !destination.trim()}>
+              {saving ? "Gravando…" : includeSensitive ? "Exportar captura completa" : "Salvar cópia sanitizada"}
             </button>
           )}
         </>
       }
     >
-      <p className="export-disclaimer">
+      <label className="export-sensitive-option">
+        <input type="checkbox" data-testid="sanitize-include-sensitive"
+          checked={includeSensitive} disabled={saving || !!saved}
+          onChange={(event) => {
+            setIncludeSensitive(event.target.checked);
+            setStatus(null);
+          }} />
+        Incluir dados sensíveis (exportar captura completa sem redigir cookies, headers, corpos e eventos brutos)
+      </label>
+      {includeSensitive && <div className="export-warning" role="alert">
+        A captura completa conterá credenciais, cookies, tokens, corpos brutos e artefatos brutos
+        (cdp-events.jsonl, netlog.json e cdp-bodies.jsonl, quando presentes) sem redação.
+      </div>}
+      {!includeSensitive && <p className="export-disclaimer">
         Usa a política conservadora do core (<span className="mono">keep_raw_events=false</span>): redige headers,
         cookies, tokens em URL e corpos sensíveis, e omite anexos que não podem ser sanitizados com segurança. A
         origem nunca é alterada.
-      </p>
+      </p>}
+      {!saved && <label className="export-destination">
+        Destino sugerido (confirme no diálogo nativo)
+        <input className="start-url-input mono" aria-label="Destino da exportação" value={destination}
+          disabled={loading || saving} onChange={(event) => setDestination(event.target.value)} />
+      </label>}
 
       {loading && <div className="notice notice-info"><span className="notice-icon">…</span><span>Calculando a prévia no Rust…</span></div>}
       {error && <div className="notice notice-error"><span className="notice-icon">!</span><span>{error}</span></div>}
@@ -480,8 +506,7 @@ export function SanitizeDialog({
             <h3>Redações por origem</h3>
             {preview.redactions.length === 0 ? (
               <p className="export-hint">
-                Nenhuma redação contabilizada. Isso não prova que a sessão está livre de credenciais: a sanitização é
-                heurística.
+                {includeSensitive ? "Dados preservados integralmente; nenhuma redação aplicada." : "Nenhuma redação contabilizada. Isso não prova que a sessão está livre de credenciais: a sanitização é heurística."}
               </p>
             ) : (
               <ul className="redaction-list">
@@ -529,6 +554,10 @@ export function SanitizeDialog({
             </div>
           )}
 
+          {!!preview.rawArtifactsKept?.length && <div className="export-block">
+            <h3>Artefatos brutos incluídos</h3>
+            <div className="chip-row">{preview.rawArtifactsKept.map((name) => <span className="chip mono" key={name}>{name}</span>)}</div>
+          </div>}
           <WarningList warnings={preview.warnings} />
 
           <p className="export-hint mono">destino sugerido: {preview.suggestedDestination}</p>

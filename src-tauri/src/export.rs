@@ -88,6 +88,8 @@ pub struct RedactionCount {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SanitizePreview {
+    pub include_sensitive: bool,
+    pub raw_artifacts_kept: Vec<String>,
     pub session_id: String,
     pub original_dir: String,
     pub suggested_destination: String,
@@ -103,6 +105,8 @@ pub struct SanitizePreview {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SanitizeSaved {
+    pub include_sensitive: bool,
+    pub attachments_written: usize,
     pub path: String,
     pub session_id: String,
     pub requests: usize,
@@ -310,6 +314,36 @@ fn raw_artifacts(dir: &Path) -> Vec<String> {
         .collect()
 }
 
+// Somente arquivos regulares; bancos/eventos não podem redirecionar a cópia.
+fn full_raw_artifacts(dir: &Path) -> Result<Vec<String>, String> {
+    let mut names = Vec::new();
+    for name in [store::CDP_EVENTS_FILE, store::NETLOG_FILE, "cdp-bodies.jsonl"] {
+        match fs::symlink_metadata(dir.join(name)) {
+            Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => names.push(name.to_string()),
+            Ok(_) => return Err(format!("artefato bruto não é arquivo regular (symlink recusado): {name}")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+            Err(error) => return Err(format!("falha ao ler artefato bruto {name}: {error}")),
+        }
+    }
+    Ok(names)
+}
+
+fn copy_raw_private(src: &Path, dest: &Path) -> Result<(), String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let copy = || -> std::io::Result<()> {
+        let mut input = fs::OpenOptions::new().read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(src)?;
+        if !input.metadata()?.is_file() {
+            return Err(std::io::Error::other("artefato bruto não é arquivo regular"));
+        }
+        let mut output = fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW).open(dest)?;
+        std::io::copy(&mut input, &mut output)?;
+        output.sync_all()
+    };
+    copy().map_err(|error| format!("falha ao copiar artefato bruto {}: {error}", src.display()))
+}
+
 fn sanitized(dir: &Path) -> Result<(SessionBundle, SanitizedExport), String> {
     let bundle = load(dir)?;
     // Política conservadora do core: sem eventos brutos, corpos não
@@ -319,6 +353,23 @@ fn sanitized(dir: &Path) -> Result<(SessionBundle, SanitizedExport), String> {
 }
 
 pub fn sanitize_preview(dir: &Path) -> Result<SanitizePreview, String> {
+    sanitize_preview_with_options(dir, false)
+}
+
+pub fn sanitize_preview_with_options(dir: &Path, include_sensitive: bool) -> Result<SanitizePreview, String> {
+    if include_sensitive {
+        let raw_artifacts_kept = full_raw_artifacts(dir)?;
+        let bundle = load(dir)?;
+        let session_id = bundle.session.session.id.clone();
+        return Ok(SanitizePreview {
+            include_sensitive: true,
+            suggested_destination: dir.parent().unwrap_or(dir).join(format!("{session_id}-full")).display().to_string(),
+            session_id, original_dir: dir.display().to_string(), requests: bundle.session.requests.len(),
+            redactions: Vec::new(), total_redactions: 0, warnings: Vec::new(),
+            omitted_attachments: Vec::new(), attachments_kept: bundle.attachments.len(),
+            raw_artifacts_dropped: Vec::new(), raw_artifacts_kept,
+        });
+    }
     let (bundle, export) = sanitized(dir)?;
     let redactions: Vec<RedactionCount> = export
         .redactions
@@ -337,6 +388,8 @@ pub fn sanitize_preview(dir: &Path) -> Result<SanitizePreview, String> {
         .to_string();
 
     Ok(SanitizePreview {
+        include_sensitive: false,
+        raw_artifacts_kept: Vec::new(),
         session_id,
         original_dir: dir.display().to_string(),
         suggested_destination,
@@ -353,6 +406,10 @@ pub fn sanitize_preview(dir: &Path) -> Result<SanitizePreview, String> {
 /// Grava a sessão sanitizada em `destination`, que precisa ser uma pasta nova
 /// (ou vazia) fora da origem. Em erro, remove o que esta chamada criou.
 pub fn sanitize_to(src: &Path, destination: &Path) -> Result<SanitizeSaved, String> {
+    sanitize_to_with_options(src, destination, false)
+}
+
+pub fn sanitize_to_with_options(src: &Path, destination: &Path, include_sensitive: bool) -> Result<SanitizeSaved, String> {
     let src_abs = fs::canonicalize(src)
         .map_err(|error| format!("pasta da sessão inválida ({}): {error}", src.display()))?;
     if !src_abs.is_dir() {
@@ -407,6 +464,26 @@ pub fn sanitize_to(src: &Path, destination: &Path) -> Result<SanitizeSaved, Stri
         .map_err(|error| format!("não foi possível criar {}: {error}", dest_abs.display()))?;
 
     let outcome = (|| -> Result<SanitizeSaved, String> {
+        if include_sensitive {
+            let raw = full_raw_artifacts(&src_abs)?;
+            let mut bundle = load(&src_abs)?;
+            // Copiamos os três arquivos brutos em fluxo abaixo, sem duplicar
+            // a escrita dos dois que o store também sabe gravar.
+            bundle.cdp_events_jsonl = None;
+            bundle.netlog_json = None;
+            store::write_session_dir(&bundle, &dest_abs).map_err(|error| format!("não foi possível gravar a captura completa: {error}"))?;
+            for name in raw {
+                copy_raw_private(&src_abs.join(&name), &dest_abs.join(&name))?;
+            }
+            return Ok(SanitizeSaved {
+                include_sensitive: true, attachments_written: bundle.attachments.len(),
+                path: dest_abs.display().to_string(), session_id: bundle.session.session.id.clone(),
+                requests: bundle.session.requests.len(), total_redactions: 0,
+                omitted_attachments: Vec::new(), attachments_kept: bundle.attachments.len(),
+                raw_artifacts_dropped: Vec::new(),
+                session_bytes: fs::metadata(dest_abs.join(store::SESSION_FILE)).map_err(|error| error.to_string())?.len(),
+            });
+        }
         let (bundle, export) = sanitized(&src_abs)?;
         let raw_dropped = raw_artifacts(&src_abs);
         export
@@ -417,6 +494,8 @@ pub fn sanitize_to(src: &Path, destination: &Path) -> Result<SanitizeSaved, Stri
             .map(|metadata| metadata.len())
             .unwrap_or(0);
         Ok(SanitizeSaved {
+            include_sensitive: false,
+            attachments_written: export.bundle.attachments.len(),
             path: dest_abs.display().to_string(),
             session_id: bundle.session.session.id.clone(),
             requests: bundle.session.requests.len(),
@@ -503,6 +582,62 @@ mod tests {
         fs::create_dir_all(dir.join("attachments")).unwrap();
         fs::write(dir.join("attachments/req-body.bin"), b"a=1&b=2").unwrap();
         dir
+    }
+
+
+    #[test]
+    fn full_export_preserves_secrets_raw_files_and_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = fixture("full");
+        fs::write(dir.join("attachments/req-body.bin"), b"password=BODY_SECRET").unwrap();
+        for name in [store::CDP_EVENTS_FILE, store::NETLOG_FILE, "cdp-bodies.jsonl"] {
+            fs::write(dir.join(name), b"RAW_TOKEN_SECRET").unwrap();
+        }
+        let preview = sanitize_preview_with_options(&dir, true).unwrap();
+        assert!(preview.include_sensitive);
+        assert!(preview.suggested_destination.ends_with("-full"));
+        assert_eq!(preview.total_redactions, 0);
+        assert!(preview.redactions.is_empty() && preview.omitted_attachments.is_empty());
+        assert!(preview.raw_artifacts_dropped.is_empty());
+        assert_eq!(preview.raw_artifacts_kept.len(), 3);
+        let dest = dir.with_extension("full");
+        let saved = sanitize_to_with_options(&dir, &dest, true).unwrap();
+        assert!(saved.include_sensitive);
+        assert_eq!(saved.total_redactions, 0);
+        assert_eq!(saved.attachments_written, preview.attachments_kept);
+        assert!(fs::read_to_string(dest.join("session.json")).unwrap().contains("ZZSECRET-1"));
+        assert_eq!(fs::read(dest.join("attachments/req-body.bin")).unwrap(), b"password=BODY_SECRET");
+        assert_eq!(fs::metadata(&dest).unwrap().permissions().mode() & 0o777, 0o700);
+        for name in [store::SESSION_FILE, store::CDP_EVENTS_FILE, store::NETLOG_FILE, "cdp-bodies.jsonl", "attachments/req-body.bin"] {
+            let path = dest.join(name);
+            assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+            if name != store::SESSION_FILE {
+                assert_eq!(fs::read(&path).unwrap(), fs::read(dir.join(name)).unwrap());
+            }
+        }
+        assert!(sanitize_preview(&dir).unwrap().total_redactions > 0);
+        fs::remove_dir_all(dest).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn full_export_refuses_unsafe_destinations_and_raw_symlinks() {
+        let dir = fixture("full-unsafe");
+        assert!(sanitize_to_with_options(&dir, &dir, true).is_err());
+        assert!(sanitize_to_with_options(&dir, &dir.join("child"), true).is_err());
+        let dest = dir.with_extension("full");
+        fs::create_dir(&dest).unwrap();
+        fs::write(dest.join("existing"), "keep").unwrap();
+        assert!(sanitize_to_with_options(&dir, &dest, true).is_err());
+        fs::remove_dir_all(&dest).unwrap();
+        std::os::unix::fs::symlink(&dir, &dest).unwrap();
+        assert!(sanitize_to_with_options(&dir, &dest, true).is_err());
+        fs::remove_file(&dest).unwrap();
+        std::os::unix::fs::symlink(dir.join("session.json"), dir.join("netlog.json")).unwrap();
+        assert!(sanitize_preview_with_options(&dir, true).is_err());
+        assert!(sanitize_to_with_options(&dir, &dest, true).is_err());
+        assert!(!dest.exists());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

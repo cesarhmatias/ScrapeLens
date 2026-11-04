@@ -180,6 +180,8 @@ export interface RedactionCount {
 }
 
 export interface SanitizePreview {
+  includeSensitive?: boolean;
+  rawArtifactsKept?: string[];
   sessionId: string;
   originalDir: string;
   suggestedDestination: string;
@@ -193,6 +195,8 @@ export interface SanitizePreview {
 }
 
 export interface SanitizeSaved {
+  includeSensitive?: boolean;
+  rawArtifactsKept?: string[];
   path: string;
   sessionId: string;
   requests: number;
@@ -543,23 +547,23 @@ export const bridge = {
   },
 
   /** Contagens/avisos da sanitização; não grava nada. */
-  async previewSanitized(sessionDir: string): Promise<SanitizePreview> {
-    return invoke("preview_sanitized", { sessionDir });
+  async previewSanitized(sessionDir: string, includeSensitive = false): Promise<SanitizePreview> {
+    return invoke("preview_sanitized", { sessionDir, includeSensitive });
   },
 
   /**
    * Diálogo nativo escolhendo uma pasta nova e gravação da sessão sanitizada.
    * Cancelar o diálogo devolve `null` sem tocar na origem.
    */
-  async saveSanitized(sessionDir: string, suggestedDestination: string): Promise<SanitizeSaved | null> {
+  async saveSanitized(sessionDir: string, suggestedDestination: string, includeSensitive = false): Promise<SanitizeSaved | null> {
     if (!isTauri()) return null;
     const picked = await saveDialog({
-      title: "Escolher pasta nova para a sessão sanitizada",
+      title: includeSensitive ? "Exportar captura completa com dados sensíveis" : "Escolher pasta nova para a sessão sanitizada",
       defaultPath: suggestedDestination,
       canCreateDirectories: true,
     });
     if (!picked) return null;
-    return invoke("save_sanitized", { sessionDir, destination: picked });
+    return invoke("save_sanitized", { sessionDir, destination: picked, includeSensitive });
   },
 
   async copyText(text: string): Promise<boolean> {

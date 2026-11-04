@@ -19,7 +19,9 @@
     "perf": "node scripts/perf.mjs",
     "gen:demo": "node scripts/gen-demo-v1.mjs",
     "desktop:dev": "cd .. && ./app/node_modules/.bin/tauri dev",
-    "desktop:build": "cd .. && ./app/node_modules/.bin/tauri build --bundles app"
+    "desktop:build": "cd .. && ./app/node_modules/.bin/tauri build --bundles app",
+    "test:export": "tsx --tsconfig tsconfig.json src/Export.test.tsx",
+    "test": "npm run test:export && npm run test:cookie-source && npm run test:shortcuts && npm run test:adapter && npm run test:capture-url && npm run test:paged && npm run test:list-view"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
@@ -30,10 +32,13 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/react-test-renderer": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "playwright": "^1.64.1",
+    "react-test-renderer": "^19.3.1",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^7.3.7"

@@ -1565,8 +1565,8 @@ pub async fn save_export_file(path: String, text: String) -> Result<crate::expor
 
 /// Contagens e avisos da sanitização, sem gravar nada.
 #[tauri::command]
-pub async fn preview_sanitized(session_dir: String) -> Result<crate::export::SanitizePreview, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::export::sanitize_preview(Path::new(&session_dir)))
+pub async fn preview_sanitized(session_dir: String, include_sensitive: Option<bool>) -> Result<crate::export::SanitizePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::export::sanitize_preview_with_options(Path::new(&session_dir), include_sensitive.unwrap_or(false)))
         .await
         .map_err(|error| format!("a prévia da sanitização falhou: {error}"))?
 }
@@ -1576,9 +1576,10 @@ pub async fn preview_sanitized(session_dir: String) -> Result<crate::export::San
 pub async fn save_sanitized(
     session_dir: String,
     destination: String,
+    include_sensitive: Option<bool>,
 ) -> Result<crate::export::SanitizeSaved, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        crate::export::sanitize_to(Path::new(&session_dir), Path::new(&destination))
+        crate::export::sanitize_to_with_options(Path::new(&session_dir), Path::new(&destination), include_sensitive.unwrap_or(false))
     })
     .await
     .map_err(|error| format!("a sanitização falhou: {error}"))?
