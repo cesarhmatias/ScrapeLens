@@ -163,6 +163,42 @@ headless, `ignore_cert`, pipe e porta), `merge_blink_features_combines_without_d
 que grava `navigator.webdriver` no servidor) e, no `recon`,
 `capture_context_reports_whether_the_automation_flag_was_suppressed`.
 
+### 2.1c Cookies importados de navegador instalado (`capture::cookies`)
+
+A captura pode começar já logada sem tocar no perfil pessoal: `CaptureConfig.cookie_source`
+recebe o `id` de uma fonte de `list_browser_cookie_sources()` (Chrome, Brave, Arc, Edge,
+Chromium, Firefox e Safari, perfis `Default`/`Profile *`), e
+`load_cookies_for_url(id, start_url)` devolve os cookies do **mesmo site registrável** do host
+inicial (inclui subdomínios de login/SSO; `localhost`/IP só casam exato) e descarta os
+expirados. `CaptureConfig.initial_cookies` permite ao chamador entregar a lista pronta; quando
+não vazia, vence a fonte.
+
+- **O banco do usuário nunca é aberto no lugar.** `cookies.rs` copia `Cookies`/`cookies.sqlite`
+  (com `-wal`/`-shm`) para uma pasta temporária 0700 e a apaga no `Drop`; a leitura é pelo
+  `sqlite3` do sistema (o macOS já tem; as imagens Linux de teste instalam o pacote `sqlite3`).
+- **Descriptografia:** Rust puro (`SHA-1`/`SHA-256`/`PBKDF2-HMAC-SHA1`/`AES-128-CBC`), sem
+  OpenSSL. Chromium `v10` no macOS usa a senha `"<Produto> Safe Storage"` do Keychain (uma
+  chamada por captura; o macOS pode pedir autorização) com PBKDF2 1003 iterações e salt
+  `"saltysalt"`; no Linux `v10` usa `"peanuts"` com 1 iteração e `v11` tenta o `secret-tool`
+  (libsecret), com aviso claro quando a senha não está lá. No Chrome 130+ (`meta.version >= 24`)
+  o prefixo de 32 bytes `SHA-256(host_key)` é removido. Firefox (`moz_cookies`) e Safari
+  (`Cookies.binarycookies`) são texto puro/sem Keychain.
+- **Injeção:** em `Cdp::setup_inner`, `Network.setCookies` na sessão da página **antes** de
+  `Page.navigate`; o primeiro pedido já leva `Cookie`. Um evento
+  `Capture.cookiesImported` no `cdp-events.jsonl` registra `source`, `domain`, `importedCount`
+  e `skippedCount` — **sem os valores**. O `notice` da captura ganha
+  ` · N cookie(s) importado(s) de <fonte>`.
+- **Privacidade:** os valores importados aparecem nos headers `Cookie` do CDP/NetLog como
+  qualquer cookie da sessão; vale o aviso de dados sensíveis (`browser::SENSITIVE_NOTICE`).
+  A importação é opt-in (`cookie_source`/`initial_cookies`), só do site inicial, e não grava
+  valores no resumo nem em log.
+- **Testes:** vetores oficiais de SHA-1/SHA-256/PBKDF2 (RFC 6070)/AES-128-CBC (NIST SP 800-38A);
+  prefixo do Chrome 130+; bancos SQLite sintéticos Chromium e Firefox; filtro de site
+  (`.exemplo.com.br` e `login.exemplo.com.br` entram para `app.exemplo.com.br`,
+  `outro.com.br` não); `Cookies.binarycookies` sintético; payload do `Network.setCookies`; e o
+  vivo `live_imported_cookies_are_sent_with_the_first_navigation` (loopback: o servidor vê
+  `Cookie: sid=abc123` no primeiro pedido, o evento de auditoria existe e não contém o valor).
+
 ### 2.2 Allowlist obrigatória, em duas camadas
 
 `start_capture` **sem `allowed_hosts` não vazio é erro** (`allowlist_required`).
