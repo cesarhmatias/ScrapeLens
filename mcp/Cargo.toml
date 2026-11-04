@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT"
-description = "ScrapeLens MCP: servidor local, somente leitura, sobre sessões já capturadas"
+description = "ScrapeLens MCP: local, read-only server over already-captured sessions"
 publish = false
 
 [dependencies]
@@ -29,7 +29,7 @@ path = "src/lib.rs"
 name = "scrapelens-mcp"
 path = "src/main.rs"
 
-# Servidor com navegador falso para os testes ponta a ponta (não faz parte do produto).
+# Server with a fake browser for the end-to-end tests (not part of the product).
 [[example]]
 name = "fake_server"
 path = "examples/fake_server.rs"

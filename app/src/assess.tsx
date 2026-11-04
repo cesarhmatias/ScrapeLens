@@ -1,9 +1,9 @@
-// Sucesso da aplicação × HTTP (core: assess::assess_session, esquema scrapelens.assess/1).
-// A UI só mostra o veredito do core; nada é inferido aqui.
+// Application success × HTTP (core: assess::assess_session, schema scrapelens.assess/1).
+// The UI only shows the core's verdict; nothing is inferred here.
 import { useEffect, useMemo, useState } from "react";
 import { bridge } from "./bridge";
 
-/** Veredito do core (`VerdictKind`, kebab-case). `not-assessed` desde o core 306e8f5. */
+/** Core verdict (`VerdictKind`, kebab-case). `not-assessed` since core 306e8f5. */
 export type VerdictKind = "app-ok" | "app-error" | "blocked" | "indeterminado" | "not-assessed";
 
 export interface AppSignal {
@@ -28,14 +28,14 @@ export interface ResponseOutcome {
 export interface AssessResult {
   schema: string;
   rules: string;
-  /** Chaves iguais ao `verdictKind` do core (`VerdictKind::count_key()`). */
+  /** Keys equal to the core's `verdictKind` (`VerdictKind::count_key()`). */
   counts: Record<string, number>;
-  /** Avisos das regras (`AssessRules::warnings()`); ausente em cores antigos. */
+  /** Rule warnings (`AssessRules::warnings()`); absent in older cores. */
   warnings?: string[];
   outcomes: ResponseOutcome[];
 }
 
-/** Chaves de `counts` no esquema `scrapelens.assess/1` (nada de `Debug`). */
+/** Keys of `counts` in the `scrapelens.assess/1` schema (no `Debug`). */
 export const VERDICT_KINDS: readonly VerdictKind[] = [
   "app-ok",
   "app-error",
@@ -44,7 +44,7 @@ export const VERDICT_KINDS: readonly VerdictKind[] = [
   "not-assessed",
 ];
 
-/** Contagens por veredito; chaves fora do esquema são ignoradas. */
+/** Counts per verdict; keys outside the schema are ignored. */
 export function verdictCounts(counts: Record<string, number> | undefined): Record<VerdictKind, number> {
   return Object.fromEntries(VERDICT_KINDS.map((kind) => [kind, counts?.[kind] ?? 0])) as Record<VerdictKind, number>;
 }
@@ -56,7 +56,7 @@ const SHORT: Record<VerdictKind, string> = {
   "app-error": "app-error",
   blocked: "blocked?",
   indeterminado: "indeterminado",
-  "not-assessed": "não-avaliado",
+  "not-assessed": "not assessed",
 };
 const CLASS: Record<VerdictKind, string> = {
   "app-ok": "v-ok",
@@ -66,10 +66,10 @@ const CLASS: Record<VerdictKind, string> = {
   "not-assessed": "tag dim",
 };
 
-/** Falha da aplicação = app-error (afirmado; HTTP pode ter sido 200). */
+/** Application failure = app-error (asserted; HTTP may have been 200). */
 export const isAppFailure = (o: ResponseOutcome | undefined) => o?.verdictKind === "app-error";
 
-/** Possível bloqueio = blocked? (não afirmado). */
+/** Possible block = blocked? (not asserted). */
 export const isPossibleBlock = (o: ResponseOutcome | undefined) => o?.verdictKind === "blocked";
 
 export function VerdictChip({ outcome }: { outcome: ResponseOutcome | undefined }) {
@@ -89,13 +89,13 @@ export function VerdictChip({ outcome }: { outcome: ResponseOutcome | undefined 
   );
 }
 
-/** Chip de um `verdictKind` solto (timeline e validação). */
+/** Chip for a loose `verdictKind` (timeline and validation). */
 export function VerdictKindChip({ kind, title }: { kind: VerdictKind; title?: string }) {
   if (kind === "not-assessed") return <span className="dim" title={title}>{SHORT[kind]}</span>;
   return <span className={`chip ${CLASS[kind] ?? "tag"}`} title={title}>{SHORT[kind] ?? kind}</span>;
 }
 
-/** Carrega a avaliação da sessão (cache no Rust); `undefined` sem pasta persistida. */
+/** Loads the session's assessment (cached in Rust); `undefined` without a persisted folder. */
 export function useAssess(dir: string | undefined, enabled = true) {
   const [state, setState] = useState<{ dir: string; result?: AssessResult; error?: string } | null>(null);
   useEffect(() => {
@@ -121,19 +121,19 @@ export function useAssess(dir: string | undefined, enabled = true) {
 }
 
 const signalLabel: Record<string, string> = {
-  ok: "sinal de sucesso",
-  error: "erro da aplicação",
-  protection: "proteção",
-  missing: "campo ausente",
-  info: "observação",
+  ok: "success signal",
+  error: "application error",
+  protection: "protection",
+  missing: "missing field",
+  info: "note",
 };
 
-/** Avisos de `assess-rules.json` em destaque (regras que zeram detecções, `/` como proteção, marcador vazio). */
+/** Warnings from `assess-rules.json` highlighted (rules that zero out detections, `/` as protection, empty marker). */
 export function AssessWarnings({ warnings }: { warnings?: string[] }) {
   if (!warnings || warnings.length === 0) return null;
   return (
     <div className="body-flag flag-truncated" role="alert">
-      <strong>Regras da avaliação (assess-rules.json) com problema</strong>
+      <strong>Assessment rules (assess-rules.json) with a problem</strong>
       <ul className="chain-list">
         {warnings.map((w, i) => <li key={i}>{w}</li>)}
       </ul>
@@ -145,12 +145,12 @@ export function AppSuccessSection({ outcome, error, loading, warnings }: { outco
   return (
     <section className="body-panel">
       <header className="block-head">
-        <h3>Sucesso da aplicação</h3>
-        <span className="block-meta">HTTP não é sucesso da aplicação · veredito do core</span>
+        <h3>Application success</h3>
+        <span className="block-meta">HTTP is not application success · core verdict</span>
       </header>
       <AssessWarnings warnings={warnings} />
-      {error && <div className="body-flag flag-truncated"><strong>Avaliação indisponível</strong><span>{error}</span></div>}
-      {!error && !outcome && <div className="empty">{loading ? "Avaliando…" : "Sem avaliação: exige uma sessão aberta da pasta persistida."}</div>}
+      {error && <div className="body-flag flag-truncated"><strong>Assessment unavailable</strong><span>{error}</span></div>}
+      {!error && !outcome && <div className="empty">{loading ? "Assessing…" : "No assessment: requires an open session from the persisted folder."}</div>}
       {outcome && (
         <div style={{ padding: "8px 13px" }}>
           <p>
@@ -159,21 +159,21 @@ export function AppSuccessSection({ outcome, error, loading, warnings }: { outco
           </p>
           {outcome.httpOk && (outcome.verdictKind === "app-error" || outcome.verdictKind === "blocked") && (
             <div className="body-flag flag-truncated">
-              <strong>HTTP bem-sucedido, mas a aplicação não teve sucesso</strong>
+              <strong>HTTP succeeded, but the application did not succeed</strong>
               <span>
                 {outcome.verdictKind === "blocked"
-                  ? `possível bloqueio (não afirmado) — evidência: ${evidenceText(outcome)}`
-                  : `a resposta traz erro da aplicação — evidência: ${evidenceText(outcome)}`}
+                  ? `possible block (not asserted) — evidence: ${evidenceText(outcome)}`
+                  : `the response carries an application error — evidence: ${evidenceText(outcome)}`}
               </span>
             </div>
           )}
           {outcome.verdictKind === "blocked" && !(outcome.httpOk) && (
-            <p className="dim">blocked? — evidência: {evidenceText(outcome)}</p>
+            <p className="dim">blocked? — evidence: {evidenceText(outcome)}</p>
           )}
-          {outcome.reason && <p><strong>Motivo:</strong> {outcome.reason}</p>}
-          <h4>Sinais ({outcome.appSignals.length})</h4>
+          {outcome.reason && <p><strong>Reason:</strong> {outcome.reason}</p>}
+          <h4>Signals ({outcome.appSignals.length})</h4>
           {outcome.appSignals.length === 0 ? (
-            <p className="dim">Nenhum sinal da aplicação nesta resposta.</p>
+            <p className="dim">No application signal in this response.</p>
           ) : (
             <ul className="chain-list">
               {outcome.appSignals.map((s, i) => (
@@ -186,9 +186,9 @@ export function AppSuccessSection({ outcome, error, loading, warnings }: { outco
           )}
           {outcome.missingFields.length > 0 && (
             <>
-              <h4>Campos ausentes ({outcome.missingFields.length})</h4>
+              <h4>Missing fields ({outcome.missingFields.length})</h4>
               <p className="mono">{outcome.missingFields.join(", ")}</p>
-              <p className="dim">Esperados porque a mesma rota os trouxe em outras respostas desta sessão (ou pelas regras).</p>
+              <p className="dim">Expected because the same route brought them in other responses of this session (or by the rules).</p>
             </>
           )}
         </div>

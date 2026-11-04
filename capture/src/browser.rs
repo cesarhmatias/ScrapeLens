@@ -1,10 +1,10 @@
-//! Captura controlada para o MCP (`docs/16b-mcp-navegador.md` §3–§4).
+//! Controlled capture for the MCP (`docs/16b-mcp-navegador.md` §3–§4).
 //!
-//! `BrowserCapture` abre o Chrome estável com perfil dedicado, CDP + NetLog e
-//! **allowlist obrigatória**, aceita `navigate` e encerra de forma graciosa. A
-//! thread de captura continua dona do soquete CDP; `navigate` é uma mensagem
-//! num canal consumido pelo laço de gravação. A confirmação do usuário
-//! (elicitação MCP) acontece na camada do servidor, antes de chamar esta API.
+//! `BrowserCapture` opens stable Chrome with a dedicated profile, CDP + NetLog and
+//! a **mandatory allowlist**, accepts `navigate` and shuts down gracefully. The
+//! capture thread keeps ownership of the CDP socket; `navigate` is a message
+//! on a channel consumed by the recording loop. The user's confirmation
+//! (MCP elicitation) happens in the server layer, before calling this API.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
@@ -20,10 +20,10 @@ use super::allowlist::{Allowlist, AllowlistError, AllowlistReport, UrlDenied};
 use super::chrome::{validate_chrome, ChromeError};
 use super::{run_with_options, CaptureConfig, CaptureOutcome, CaptureStatus, Cdp, RunOptions, RunReport};
 
-/// Texto fixo que o servidor MCP mostra na confirmação de `start_capture`.
-pub const SENSITIVE_NOTICE: &str = "Esta captura grava cookies, cabeçalhos de autorização e corpos de requisição e resposta (NetLog em modo Everything + CDP). Os dados ficam na pasta da sessão; as ferramentas de leitura mascaram valores por padrão. Não digite credenciais no navegador da captura.";
+/// Fixed text that the MCP server shows in the `start_capture` confirmation.
+pub const SENSITIVE_NOTICE: &str = "This capture records cookies, authorization headers and request and response bodies (NetLog in Everything mode + CDP). The data stays in the session folder; read tools mask values by default. Do not type credentials into the capture browser.";
 
-/// Endereço de depuração do Chrome (loopback).
+/// Chrome debugging address (loopback).
 #[derive(Debug, Clone)]
 pub(crate) struct Endpoint {
     pub http: Option<String>,
@@ -34,7 +34,7 @@ pub(crate) struct Endpoint {
     pub user_agent: Option<String>,
 }
 
-/// Mensagens para o laço de gravação.
+/// Messages for the recording loop.
 pub(crate) enum Control {
     Navigate {
         url: String,
@@ -67,7 +67,7 @@ pub struct BrowserCaptureConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartError {
     Allowlist(AllowlistError),
-    /// O navegador não é o Chrome estável da Google (`chrome::validate_chrome`).
+    /// The browser is not Google's stable Chrome (`chrome::validate_chrome`).
     BrowserInvalid(ChromeError),
     StartUrlNotAllowed(UrlDenied),
     SessionDir(String),
@@ -92,7 +92,7 @@ impl std::fmt::Display for StartError {
             StartError::Allowlist(e) => write!(f, "{e}"),
             StartError::BrowserInvalid(e) => write!(f, "{e}"),
             StartError::StartUrlNotAllowed(e) => write!(f, "start_url: {e}"),
-            StartError::SessionDir(e) => write!(f, "diretório da sessão: {e}"),
+            StartError::SessionDir(e) => write!(f, "session directory: {e}"),
             StartError::BrowserStart(e) => write!(f, "{e}"),
         }
     }
@@ -105,7 +105,7 @@ impl std::error::Error for StartError {}
 pub struct CdpAccess {
     pub http: Option<String>,
     pub browser_ws: String,
-    /// A aba da captura (a que `navigate` usa): o agente anexa a esta.
+    /// The capture tab (the one `navigate` uses): the agent attaches to this one.
     pub page_target_id: Option<String>,
 }
 
@@ -125,7 +125,7 @@ pub struct AllowlistInfo {
     pub resolver_rules: String,
 }
 
-/// Resposta de `start_capture`.
+/// Response of `start_capture`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartInfo {
@@ -133,7 +133,7 @@ pub struct StartInfo {
     pub chrome_pid: u32,
     pub browser: BrowserInfo,
     pub allowlist: AllowlistInfo,
-    /// Só com `expose_cdp: true`.
+    /// Only with `expose_cdp: true`.
     pub cdp: Option<CdpAccess>,
     pub sensitive_notice: &'static str,
     pub warnings: Vec<String>,
@@ -144,8 +144,8 @@ pub enum NavigateError {
     UrlNotAllowed(UrlDenied),
     CaptureStopped,
     Failed(String),
-    /// O navegador não respondeu dentro do prazo do `navigate` (travado ou
-    /// parado). A captura continua; o agente pode tentar de novo ou encerrar.
+    /// The browser did not respond within the `navigate` deadline (stuck or
+    /// stopped). The capture keeps running; the agent can retry or stop it.
     TimedOut,
 }
 
@@ -164,11 +164,11 @@ impl std::fmt::Display for NavigateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NavigateError::UrlNotAllowed(e) => write!(f, "{e}"),
-            NavigateError::CaptureStopped => write!(f, "a captura já foi encerrada"),
+            NavigateError::CaptureStopped => write!(f, "the capture has already been stopped"),
             NavigateError::Failed(e) => write!(f, "{e}"),
             NavigateError::TimedOut => write!(
                 f,
-                "o navegador não respondeu ao navigate dentro do prazo (travado ou parado)"
+                "the browser did not respond to navigate within the deadline (stuck or stopped)"
             ),
         }
     }
@@ -176,7 +176,7 @@ impl std::fmt::Display for NavigateError {
 
 impl std::error::Error for NavigateError {}
 
-/// Resposta de `stop_capture`.
+/// Response of `stop_capture`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StopReport {
@@ -187,7 +187,7 @@ pub struct StopReport {
     pub waited_ms: u64,
     pub allowlist: AllowlistReport,
     pub warnings: Vec<String>,
-    /// Sessão importada, para o chamador (o servidor MCP registra o handle).
+    /// Imported session, for the caller (the MCP server registers the handle).
     #[serde(skip)]
     pub outcome: Option<CaptureOutcome>,
 }
@@ -201,24 +201,24 @@ pub struct BrowserCapture {
     status: Arc<Mutex<CaptureStatus>>,
 }
 
-/// Início da mensagem de `Cdp::send` quando o prazo de uma resposta estoura.
+/// Start of the `Cdp::send` message when a response deadline expires.
 pub(crate) const CDP_TIMEOUT_PREFIX: &str = "CDP timeout aguardando";
 
-/// Piso do prazo de um `navigate`: o `Page.navigate` precisa de tempo para
-/// confirmar mesmo quando o agente pede `timeout_ms` muito curto.
+/// Floor for a `navigate` deadline: `Page.navigate` needs time to confirm
+/// even when the agent asks for a very short `timeout_ms`.
 const MIN_NAVIGATE_BUDGET: Duration = Duration::from_secs(2);
-/// Teto do `Page.navigate` (o prazo pedido nunca o estende).
+/// Cap for `Page.navigate` (the requested deadline never extends it).
 const MAX_PAGE_NAVIGATE: Duration = Duration::from_secs(30);
-/// Folga entre o prazo do laço e o do chamador.
+/// Slack between the loop deadline and the caller's.
 const NAVIGATE_REPLY_MARGIN: Duration = Duration::from_secs(5);
 
-/// Prazo total (comando + espera da carga) de um `navigate`.
+/// Total deadline (command + load wait) of a `navigate`.
 fn navigate_budget(timeout: Duration) -> Duration {
     timeout.max(MIN_NAVIGATE_BUDGET)
 }
 
 impl BrowserCapture {
-    /// Abre o Chrome. Sem allowlist válida não abre nada.
+    /// Opens Chrome. Without a valid allowlist, it opens nothing.
     pub fn start(config: BrowserCaptureConfig) -> Result<(BrowserCapture, StartInfo), StartError> {
         let allowlist = Allowlist::new(&config.allowed_hosts, &config.third_party_hosts)
             .map_err(StartError::Allowlist)?;
@@ -231,8 +231,8 @@ impl BrowserCapture {
             }
             None => String::new(),
         };
-        // Só o Chrome estável da Google, lido do bundle e da assinatura, sem
-        // executar nada. O caminho validado (symlinks resolvidos) é o que roda.
+        // Only Google's stable Chrome, read from the bundle and its signature,
+        // without running anything. The validated path (symlinks resolved) is the one that runs.
         let validated = validate_chrome(&config.chrome).map_err(StartError::BrowserInvalid)?;
         let capture_config = CaptureConfig {
             chrome: validated.binary.clone(),
@@ -240,9 +240,9 @@ impl BrowserCapture {
             start_url,
             headless: config.headless,
             ignore_cert: false,
-            // Sem efeito: a captura controlada sempre leva a allowlist
-            // (`resolver_rules`), que vale no lugar do modo. Se ela faltasse, a rede
-            // ficaria restrita a loopback (falha fechada), nunca aberta.
+            // No effect: the controlled capture always carries the allowlist
+            // (`resolver_rules`), which applies in place of the mode. If it were missing,
+            // the network would be restricted to loopback (fail closed), never opened.
             network: crate::NetworkMode::LoopbackOnly,
             cookie_source: None,
             initial_cookies: Vec::new(),
@@ -261,8 +261,8 @@ impl BrowserCapture {
             control: Some(control_rx),
             endpoint: Some(endpoint.clone()),
             require_initial_target_ready: true,
-            // Sem agente conectado, o Chrome não abre porta nenhuma (pipe); com
-            // `expose_cdp` a porta, só em 127.0.0.1, é inerente ao recurso.
+            // With no agent connected, Chrome opens no port at all (pipe); with
+            // `expose_cdp`, the port, only on 127.0.0.1, is inherent to the feature.
             transport: if config.expose_cdp {
                 CdpTransport::Port
             } else {
@@ -283,7 +283,7 @@ impl BrowserCapture {
                 let _ = stop_tx.send(());
                 let _ = join.join();
                 return Err(StartError::BrowserStart(
-                    "o Chrome não ficou pronto em 90 s".to_string(),
+                    "Chrome was not ready within 90 s".to_string(),
                 ));
             }
         }
@@ -291,7 +291,7 @@ impl BrowserCapture {
             .lock()
             .ok()
             .and_then(|guard| guard.clone())
-            .ok_or_else(|| StartError::BrowserStart("endpoint de depuração ausente".to_string()))?;
+            .ok_or_else(|| StartError::BrowserStart("debugging endpoint missing".to_string()))?;
         let info = StartInfo {
             session_dir: config.session_dir.display().to_string(),
             chrome_pid: endpoint.chrome_pid,
@@ -326,7 +326,7 @@ impl BrowserCapture {
         ))
     }
 
-    /// Navega a aba principal. A URL é validada antes de qualquer envio.
+    /// Navigates the main tab. The URL is validated before anything is sent.
     pub fn navigate(
         &self,
         url: &str,
@@ -346,8 +346,8 @@ impl BrowserCapture {
                 reply: reply_tx,
             })
             .map_err(|_| NavigateError::CaptureStopped)?;
-        // O laço atende em até ~250 ms e `navigate_page` respeita o prazo
-        // inteiro (R12); a margem cobre o atraso de uma tarefa em curso no laço.
+        // The loop responds within ~250 ms and `navigate_page` honors the whole
+        // deadline (R12); the margin covers the delay of a task running in the loop.
         match reply_rx.recv_timeout(navigate_budget(timeout) + NAVIGATE_REPLY_MARGIN) {
             Ok(Ok(result)) => Ok(result),
             Ok(Err(error)) => Err(error),
@@ -363,17 +363,17 @@ impl BrowserCapture {
             .unwrap_or_default()
     }
 
-    /// Encerramento gracioso (`Browser.close`, espera, NetLog fechado) e
-    /// importação da sessão.
+    /// Graceful shutdown (`Browser.close`, wait, NetLog closed) and
+    /// session import.
     pub fn stop(mut self) -> Result<StopReport, String> {
         let _ = self.stop.send(());
         let join = self
             .join
             .take()
-            .ok_or_else(|| "captura já encerrada".to_string())?;
+            .ok_or_else(|| "capture already stopped".to_string())?;
         let (outcome, report) = join
             .join()
-            .map_err(|_| "a thread de captura falhou".to_string())??;
+            .map_err(|_| "the capture thread failed".to_string())??;
         Ok(StopReport {
             session_dir: self.session_dir.display().to_string(),
             requests: report.requests,
@@ -389,8 +389,8 @@ impl BrowserCapture {
 
 impl Drop for BrowserCapture {
     fn drop(&mut self) {
-        // Sem `stop`: encerra do mesmo jeito (o laço trata o canal fechado
-        // como parada) e espera a thread, para o Chrome não ficar solto.
+        // Without `stop`: shuts down the same way (the loop treats the closed channel
+        // as a stop) and waits for the thread, so Chrome is not left running.
         if let Some(join) = self.join.take() {
             let _ = self.stop.send(());
             let _ = join.join();
@@ -399,7 +399,7 @@ impl Drop for BrowserCapture {
 }
 
 impl Cdp {
-    /// Atende uma mensagem de controle dentro do laço de gravação.
+    /// Handles a control message inside the recording loop.
     pub(super) fn handle_control(
         &mut self,
         socket: &mut Transport,
@@ -426,12 +426,12 @@ impl Cdp {
         timeout: Duration,
     ) -> Result<NavigateResult, NavigateError> {
         if self.page_session_id.is_empty() {
-            return Err(NavigateError::Failed("a aba principal não está pronta".to_string()));
+            return Err(NavigateError::Failed("the main tab is not ready".to_string()));
         }
         let page = self.page_session_id.clone();
         let before = self.page_load_events;
-        // Um só prazo para o comando e a espera da carga: com o Chrome travado,
-        // o `navigate(timeout_ms=3000)` volta em ~3 s, não em 30 s.
+        // A single deadline for the command and the load wait: with Chrome stuck,
+        // `navigate(timeout_ms=3000)` returns in ~3 s, not 30 s.
         let budget = navigate_budget(timeout);
         let started = Instant::now();
         let result = self.send(
@@ -442,7 +442,7 @@ impl Cdp {
             budget.min(MAX_PAGE_NAVIGATE),
         )
         .map_err(|error| {
-            // Prazo estourado (Chrome parado/travado) é `navigate_timeout`, não falha.
+            // An expired deadline (Chrome stopped/stuck) is `navigate_timeout`, not a failure.
             if error.starts_with(CDP_TIMEOUT_PREFIX) {
                 NavigateError::TimedOut
             } else {
@@ -460,19 +460,19 @@ impl Cdp {
                     break;
                 }
                 self.pump_socket(socket, Duration::from_millis(100));
-                // O canal fechou (Chrome saiu ou mensagem acima do teto): não há
-                // mais evento de carga a esperar; sem isto o laço gira até o prazo.
+                // The channel closed (Chrome exited or a message above the cap): there is
+                // no load event left to wait for; without this the loop spins until the deadline.
                 if socket.is_closed() && self.page_load_events <= before {
                     let why = socket
                         .abnormal_close_reason()
                         .map(|r| format!(" ({r})"))
                         .unwrap_or_default();
                     return Err(NavigateError::Failed(format!(
-                        "o CDP fechou durante o navigate{why}; a captura terminou"
+                        "the CDP closed during navigate{why}; the capture ended"
                     )));
                 }
             }
-            // Um último olhar: o evento pode ter chegado no último bombeamento.
+            // One last look: the event may have arrived in the last pump.
             loaded = loaded || self.page_load_events > before;
         }
         Ok(NavigateResult {
@@ -486,7 +486,7 @@ impl Cdp {
 
 #[cfg(test)]
 pub(crate) mod testsite {
-    //! Servidor HTTP mínimo em loopback para os testes vivos (std apenas).
+    //! Minimal HTTP server on loopback for the live tests (std only).
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::sync::{Arc, Mutex};
@@ -518,7 +518,7 @@ pub(crate) mod testsite {
 
     pub struct TestSite {
         pub port: u16,
-        /// `"MÉTODO caminho"` de cada requisição recebida, em ordem.
+        /// `"METHOD path"` of each received request, in order.
         pub seen: Arc<Mutex<Vec<String>>>,
     }
 
@@ -620,13 +620,13 @@ mod tests {
 
     #[test]
     fn start_without_allowlist_is_an_error_and_never_spawns() {
-        let err = BrowserCapture::start(config(&[], None)).err().expect("erro");
+        let err = BrowserCapture::start(config(&[], None)).err().expect("error");
         assert_eq!(err.code(), "allowlist_required");
-        let err = BrowserCapture::start(config(&["*"], None)).err().expect("erro");
+        let err = BrowserCapture::start(config(&["*"], None)).err().expect("error");
         assert_eq!(err.code(), "allowlist_too_broad");
         let err = BrowserCapture::start(config(&["http://exemplo.com"], None))
             .err()
-            .expect("erro");
+            .expect("error");
         assert_eq!(err.code(), "allowlist_invalid");
     }
 
@@ -634,13 +634,13 @@ mod tests {
     fn start_url_must_pass_the_allowlist() {
         let err = BrowserCapture::start(config(&["a.test"], Some("http://b.test/")))
             .err()
-            .expect("erro");
+            .expect("error");
         assert_eq!(err.code(), "start_url_not_allowed");
     }
 
     #[test]
     fn start_refuses_anything_that_is_not_the_stable_chrome() {
-        // Inexistente, binário do sistema e script falso: `browser_invalid`, nada roda.
+        // Nonexistent, system binary and fake script: `browser_invalid`, nothing runs.
         let dir = std::env::temp_dir().join(format!("scrapelens-fakechrome-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("chrome");
@@ -657,18 +657,18 @@ mod tests {
         ] {
             let mut cfg = config(&["a.test"], Some("http://a.test/"));
             cfg.chrome = path.clone();
-            let err = BrowserCapture::start(cfg).err().expect("erro");
+            let err = BrowserCapture::start(cfg).err().expect("error");
             assert_eq!(err.code(), "browser_invalid", "{path:?}: {err}");
         }
-        assert!(!Path::new("/tmp/sl-start-ran").exists(), "o script falso não pode ter rodado");
+        assert!(!Path::new("/tmp/sl-start-ran").exists(), "the fake script must not have run");
         let _ = std::fs::remove_dir_all(dir);
     }
 
     fn chrome_or_skip() -> PathBuf {
-        PathBuf::from(crate::chrome::detect(None).path.expect("Chrome instalado"))
+        PathBuf::from(crate::chrome::detect(None).path.expect("Chrome installed"))
     }
 
-    /// `SL_LIVE_HEADED=1` roda os vivos que o aceitam com janela (no Linux, sob Xvfb).
+    /// `SL_LIVE_HEADED=1` runs the live tests that accept a window (on Linux, under Xvfb).
     fn live_headless() -> bool {
         std::env::var("SL_LIVE_HEADED").as_deref() != Ok("1")
     }
@@ -689,12 +689,11 @@ mod tests {
         }
     }
 
-    /// Ciclo vivo em loopback: allowlist nas duas camadas + encerramento
-    /// gracioso. `cargo test --lib live_allowlist_cycle -- --ignored --nocapture`.
+    /// Live cycle on loopback: allowlist on both layers + graceful shutdown. `cargo test --lib live_allowlist_cycle -- --ignored --nocapture`.
     ///
-    /// Achado medido (Chrome 156): `MAP * ~NOTFOUND` também nega IP literal
-    /// (`ERR_NAME_NOT_RESOLVED`); o que escapa do resolvedor é a PORTA de um
-    /// host permitido, e isso só a camada 2 e o relatório pegam.
+    /// Measured finding (Chrome 156): `MAP * ~NOTFOUND` also denies a literal IP
+    /// (`ERR_NAME_NOT_RESOLVED`); what escapes the resolver is the PORT of an
+    /// allowed host, and only layer 2 and the report catch that.
     #[test]
     #[ignore]
     fn live_allowlist_cycle() {
@@ -724,11 +723,11 @@ mod tests {
         let config = live_config(vec![format!("localhost:{port}")], "allowlist", true);
         let (capture, info) = BrowserCapture::start(config).expect("start");
         assert!(info.allowlist.resolver_rules.contains("EXCLUDE localhost"));
-        let cdp = info.cdp.expect("cdp exposto");
+        let cdp = info.cdp.expect("cdp exposed");
         assert!(cdp.browser_ws.starts_with("ws://127.0.0.1:"));
         assert!(info.browser.version.as_deref().unwrap_or("").contains("Chrome"));
 
-        // Camada 2: recusas antes de qualquer envio.
+        // Layer 2: refusals before anything is sent.
         for bad in [
             format!("http://127.0.0.1:{port}/"),
             "http://evil.test/".to_string(),
@@ -741,7 +740,7 @@ mod tests {
                 .expect_err(&bad);
             assert_eq!(err.code(), "url_not_allowed", "{bad}");
         }
-        assert!(site.seen_paths().is_empty(), "nada pode ter chegado ao servidor");
+        assert!(site.seen_paths().is_empty(), "nothing may have reached the server");
 
         let result = capture
             .navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(20))
@@ -752,7 +751,7 @@ mod tests {
 
         let report = capture.stop().expect("stop");
         println!("allowlist: {:#?}", report.allowlist);
-        println!("servidor viu: {:?}; segundo servidor viu: {:?}", site.seen_paths(), site2.seen_paths());
+        println!("server saw: {:?}; second server saw: {:?}", site.seen_paths(), site2.seen_paths());
         assert!(report.graceful, "encerramento gracioso");
         assert_eq!(report.netlog, "complete");
         assert!(report.requests >= 1);
@@ -762,16 +761,16 @@ mod tests {
             .iter()
             .map(|b| b.host.as_str())
             .collect();
-        // Camada 1: nome fora da lista e IP literal (qualquer forma) não resolvem.
+        // Layer 1: a name outside the list and a literal IP (any form) do not resolve.
         assert!(blocked.contains(&"blocked.invalid.test"), "{blocked:?}");
         assert!(blocked.contains(&"127.0.0.1"), "{blocked:?}");
         for escaped in ["ip.png", "ip-short.png", "ip-decimal.png", "ip-v6.png", "b.png"] {
             assert!(
                 !site.seen_paths().iter().any(|p| p.contains(escaped)),
-                "{escaped} chegou ao servidor"
+                "{escaped} reached the server"
             );
         }
-        // Lacuna medida: outra PORTA do host permitido passa pelo resolvedor.
+        // Measured gap: another PORT of the allowed host goes through the resolver.
         assert!(site2.seen_paths().iter().any(|p| p == "GET /other-port.png"));
         assert!(
             report
@@ -789,10 +788,10 @@ mod tests {
         assert!(session_json.contains("capture.allowlist_violation"));
     }
 
-    /// Segundo cliente CDP (o agente) no mesmo Chrome, com auto-attach e
-    /// `waitForDebuggerOnStart`. Mede se coexiste com o nosso cliente
-    /// (`docs/16b-mcp-navegador.md` §3.5). `cooperative`: retoma os alvos
-    /// pausados; senão nunca chama `runIfWaitingForDebugger`.
+    /// Second CDP client (the agent) on the same Chrome, with auto-attach and
+    /// `waitForDebuggerOnStart`. Measures whether it coexists with our client
+    /// (`docs/16b-mcp-navegador.md` §3.5). `cooperative`: resumes the paused
+    /// targets; otherwise it never calls `runIfWaitingForDebugger`.
     fn second_cdp_client_scenario(cooperative: bool, name: &str) -> (bool, Vec<String>, String) {
         use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
         static PORT: AtomicU16 = AtomicU16::new(0);
@@ -814,7 +813,7 @@ mod tests {
         let (capture, info) = BrowserCapture::start(config).expect("start");
         let ws = info.cdp.expect("cdp").browser_ws;
 
-        // O agente se conecta no meio da sessão: a página já está numa URL conhecida.
+        // The agent connects mid-session: the page is already at a known URL.
         let idle = capture
             .navigate(&format!("http://localhost:{port}/idle"), true, Duration::from_secs(20))
             .expect("navigate idle");
@@ -826,7 +825,7 @@ mod tests {
         let idle_prefix = format!("http://localhost:{port}/idle");
         let (ready_tx, ready_rx) = channel::<()>();
         let client = thread::spawn(move || {
-            let (mut socket, _) = tungstenite::connect(ws.as_str()).expect("segundo cliente");
+            let (mut socket, _) = tungstenite::connect(ws.as_str()).expect("second client");
             if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_ref() {
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
             }
@@ -845,7 +844,7 @@ mod tests {
                     .expect("send");
                 next
             };
-            // O alvo da página principal da captura.
+            // The capture's main page target.
             let id_targets = send(&mut socket, "Target.getTargets", json!({}), None);
             send(&mut socket, "Target.setDiscoverTargets", json!({ "discover": true }), None);
             let mut id_attach = 0u64;
@@ -868,7 +867,7 @@ mod tests {
                     }
                 }
                 if v.get("error").is_some() {
-                    client_log.lock().unwrap().push(format!("segundo cliente: erro {}", v["error"]));
+                    client_log.lock().unwrap().push(format!("second client: error {}", v["error"]));
                 }
                 if v.get("id").and_then(Value::as_u64) == Some(id_targets) {
                     let target = v["result"]["targetInfos"]
@@ -910,7 +909,7 @@ mod tests {
                     client_log
                         .lock()
                         .unwrap()
-                        .push(format!("segundo cliente: attached {kind} waiting={waiting}"));
+                        .push(format!("second client: attached {kind} waiting={waiting}"));
                     if waiting && cooperative {
                         if let Some(sid) = v["params"]["sessionId"].as_str() {
                             send(&mut socket, "Runtime.runIfWaitingForDebugger", json!({}), Some(sid));
@@ -922,7 +921,7 @@ mod tests {
         });
         ready_rx
             .recv_timeout(Duration::from_secs(15))
-            .expect("segundo cliente anexou");
+            .expect("second client attached");
 
         thread::sleep(Duration::from_millis(500));
         let result = capture
@@ -938,7 +937,7 @@ mod tests {
         let worker_in_session = session_json.contains("from-worker");
         let worker_hit = site.seen_paths().iter().any(|p| p.contains("/from-worker"));
         let summary = format!(
-            "{name}: navigate.loaded={} graceful={} worker_chegou_ao_servidor={} worker_na_sessao={}",
+            "{name}: navigate.loaded={} graceful={} worker_reached_server={} worker_in_session={}",
             result.loaded, report.graceful, worker_hit, worker_in_session
         );
         println!("{summary}");
@@ -949,34 +948,34 @@ mod tests {
         (result.loaded && report.graceful && worker_hit && worker_in_session, log_lines, summary)
     }
 
-    /// Cenário A: o agente retoma os alvos que pausou. Esperado: nada trava e
-    /// o worker é capturado pelo nosso cliente.
+    /// Scenario A: the agent resumes the targets it paused. Expected: nothing hangs and
+    /// the worker is captured by our client.
     #[test]
     #[ignore]
     fn second_cdp_client_cooperative() {
-        let (ok, _log, summary) = second_cdp_client_scenario(true, "cooperativo");
+        let (ok, _log, summary) = second_cdp_client_scenario(true, "cooperative");
         assert!(ok, "{summary}");
     }
 
-    /// Cenário B: o agente pede `waitForDebuggerOnStart` e NUNCA retoma. O
-    /// resultado é medido e impresso; só se exige que a captura não trave e
-    /// encerre de forma graciosa.
+    /// Scenario B: the agent asks for `waitForDebuggerOnStart` and NEVER resumes. The
+    /// result is measured and printed; the only requirement is that the capture does not
+    /// hang and shuts down gracefully.
     #[test]
     #[ignore]
     fn second_cdp_client_never_resumes() {
-        let (_ok, _log, summary) = second_cdp_client_scenario(false, "nunca-retoma");
+        let (_ok, _log, summary) = second_cdp_client_scenario(false, "never-resumes");
         println!("RESULTADO B: {summary}");
     }
 
-    /// Gera três sessões reais (Chrome headless contra servidores em loopback
-    /// que IMITAM sinais documentados) para o teste de ponta a ponta do crate
-    /// `recon`: `plain`, `unsolved`, `solved`. Rodado por
-    /// `recon/scripts/live_e2e.sh`. Variável: `SL_RECON_E2E_DIR`.
+    /// Generates three real sessions (headless Chrome against loopback servers that
+    /// IMITATE documented signals) for the end-to-end test of the `recon` crate:
+    /// `plain`, `unsolved`, `solved`. Run by `recon/scripts/live_e2e.sh`.
+    /// Variable: `SL_RECON_E2E_DIR`.
     #[test]
     #[ignore]
     fn live_recon_scenarios() {
         let root = PathBuf::from(
-            std::env::var("SL_RECON_E2E_DIR").expect("SL_RECON_E2E_DIR (diretório de saída)"),
+            std::env::var("SL_RECON_E2E_DIR").expect("SL_RECON_E2E_DIR (output directory)"),
         );
         std::fs::create_dir_all(&root).unwrap();
         for scenario in ["plain", "unsolved", "solved"] {
@@ -1030,14 +1029,14 @@ mod tests {
             thread::sleep(Duration::from_millis(1800));
             let report = capture.stop().expect("stop");
             assert!(report.graceful, "{scenario}");
-            println!("{scenario}: {} requisições; servidor viu {:?}", report.requests, site.seen_paths());
+            println!("{scenario}: {} requests; server saw {:?}", report.requests, site.seen_paths());
         }
     }
 
-    /// O endereço CDP só é entregue com o nosso cliente ligado no alvo inicial:
-    /// a PRIMEIRA ação de um agente externo (anexar à aba da captura e navegar,
-    /// sem esperar nada) já é vista pela nossa captura, com os eventos `Network.*`
-    /// da própria aba. Exigência do líder, derivada do achado 5 de
+    /// The CDP address is only handed out with our client attached to the initial target:
+    /// the FIRST action of an external agent (attach to the capture tab and navigate,
+    /// without waiting for anything) is already seen by our capture, with the `Network.*`
+    /// events of that same tab. Requirement from the lead, derived from finding 5 of
     /// `docs/16b-mcp-navegador.md` §3.5.
     #[test]
     #[ignore]
@@ -1052,11 +1051,11 @@ mod tests {
         let port = site.port;
         let config = live_config(vec![format!("localhost:{port}")], "agent-first", true);
         let (capture, info) = BrowserCapture::start(config).expect("start");
-        let access = info.cdp.expect("cdp exposto");
-        let target_id = access.page_target_id.clone().expect("aba da captura");
+        let access = info.cdp.expect("cdp exposed");
+        let target_id = access.page_target_id.clone().expect("capture tab");
 
-        // Ação imediata do agente: anexa à aba da captura e navega.
-        let (mut socket, _) = tungstenite::connect(access.browser_ws.as_str()).expect("agente");
+        // Agent's immediate action: attaches to the capture tab and navigates.
+        let (mut socket, _) = tungstenite::connect(access.browser_ws.as_str()).expect("agent");
         let mut call = |method: &str, params: Value, session: Option<&str>| -> Value {
             use std::sync::atomic::{AtomicU64, Ordering};
             static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -1076,14 +1075,14 @@ mod tests {
                     }
                 }
             }
-            panic!("sem resposta de {method}");
+            panic!("no response to {method}");
         };
         let attached = call(
             "Target.attachToTarget",
             json!({ "targetId": target_id, "flatten": true }),
             None,
         );
-        let session = attached["result"]["sessionId"].as_str().expect("sessão do agente").to_string();
+        let session = attached["result"]["sessionId"].as_str().expect("agent session").to_string();
         let nav = call(
             "Page.navigate",
             json!({ "url": format!("http://localhost:{port}/first?m=agent-first") }),
@@ -1104,17 +1103,17 @@ mod tests {
                 .lines()
                 .any(|l| l.contains("\"Network.requestWillBeSent\"") && l.contains(needle))
         };
-        assert!(seen_in_cdp("m=agent-first"), "a navegação do agente não está no CDP da captura");
-        assert!(seen_in_cdp("m=agent-sub"), "o subrecurso não está no CDP da captura");
-        println!("servidor viu: {:?}", site.seen_paths());
+        assert!(seen_in_cdp("m=agent-first"), "the agent's navigation is not in the capture's CDP");
+        assert!(seen_in_cdp("m=agent-sub"), "the subresource is not in the capture's CDP");
+        println!("server saw: {:?}", site.seen_paths());
     }
 
-    /// Os 8 caminhos do PoC da revisão (`/tmp/rev25/poc-allow`): com
-    /// `localhost:P1` aprovado, a página alcança `localhost:P2` por 302 de
-    /// topo, `location=`, meta refresh, `window.open`, iframe, fetch,
-    /// WebSocket e host em maiúsculas. Semântica oficial (docs/16b §2.2): o
-    /// navegador impõe o HOST; a porta é só reportada. Cada um dos 8 precisa
-    /// aparecer em `allowlist.violations`.
+    /// The 8 paths of the review PoC (`/tmp/rev25/poc-allow`): with
+    /// `localhost:P1` approved, the page reaches `localhost:P2` via a top-level 302,
+    /// `location=`, meta refresh, `window.open`, iframe, fetch, WebSocket and an
+    /// uppercase host. Official semantics (docs/16b §2.2): the browser enforces the
+    /// HOST; the port is only reported. Each of the 8 must appear in
+    /// `allowlist.violations`.
     #[test]
     #[ignore]
     fn live_port_gap_is_reported_on_all_paths() {
@@ -1154,8 +1153,8 @@ mod tests {
         }
         let report = capture.stop().expect("stop");
         let p2 = site2.port;
-        println!("P2 viu: {:?}", site2.seen_paths());
-        println!("violações: {:#?}", report.allowlist.violations.iter().map(|v| (&v.url, &v.reason)).collect::<Vec<_>>());
+        println!("P2 saw: {:?}", site2.seen_paths());
+        println!("violations: {:#?}", report.allowlist.violations.iter().map(|v| (&v.url, &v.reason)).collect::<Vec<_>>());
         let urls: Vec<String> = report.allowlist.violations.iter().map(|v| v.url.clone()).collect();
         for path in [
             "redirected-top-level",
@@ -1169,19 +1168,19 @@ mod tests {
         ] {
             let scheme = if path == "ws-other-port" { "ws" } else { "http" };
             let expected = format!("{scheme}://localhost:{p2}/{path}");
-            assert!(urls.contains(&expected), "caminho {path} não foi reportado: {urls:?}");
+            assert!(urls.contains(&expected), "path {path} was not reported: {urls:?}");
             let v = report.allowlist.violations.iter().find(|v| v.url == expected).unwrap();
             assert!(v.reason.contains(&format!("porta {p2}")), "{}", v.reason);
         }
-        // A lacuna é real e documentada: o navegador deixou chegar (host liberado).
+        // The gap is real and documented: the browser let it through (host allowed).
         for path in ["/redirected-top-level", "/js-location", "/meta-refresh", "/fetch-other-port", "/upper.png"] {
             assert!(
                 site2.seen_paths().iter().any(|p| p == &format!("GET {path}")),
-                "o PoC esperava que {path} chegasse a P2: {:?}",
+                "the PoC expected {path} to reach P2: {:?}",
                 site2.seen_paths()
             );
         }
-        // O que está na porta aprovada não é violação; avisos da sessão não vazam consulta.
+        // What is on the approved port is not a violation; session warnings do not leak queries.
         assert!(!urls.iter().any(|u| u.contains(&format!("localhost:{p1}"))));
         assert!(report.warnings.iter().all(|w| !w.contains('?') || w.contains("?…")));
         let session_json =
@@ -1189,10 +1188,10 @@ mod tests {
         assert!(session_json.contains("capture.allowlist_violation"));
     }
 
-    /// PoC da revisão (`/tmp/rev25/poc-fs/poc_capture_symlink.py`): symlinks
-    /// plantados na pasta da sessão, antes (`netlog.json`, `cdp-bodies.jsonl`) e
-    /// durante a captura (`cdp-events.jsonl`), apontando para arquivos fora dela.
-    /// Nenhum alvo pode receber dados nem mudar de modo.
+    /// Review PoC (`/tmp/rev25/poc-fs/poc_capture_symlink.py`): symlinks
+    /// planted in the session folder, before (`netlog.json`, `cdp-bodies.jsonl`) and
+    /// during the capture (`cdp-events.jsonl`), pointing to files outside it.
+    /// No target may receive data or change mode.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1214,18 +1213,18 @@ mod tests {
         symlink(&targets[1], dir.join("cdp-bodies.jsonl")).unwrap();
         config.session_dir = dir.clone();
         let (capture, _info) = BrowserCapture::start(config).expect("start");
-        // Durante a captura: o arquivo final ainda não existe, planta o link.
+        // During the capture: the final file does not exist yet, plant the link.
         symlink(&targets[2], dir.join("cdp-events.jsonl")).unwrap();
         let _ = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10));
         thread::sleep(Duration::from_millis(500));
         let report = capture.stop().expect("stop");
         for t in &targets {
-            assert_eq!(std::fs::read_to_string(t).unwrap(), "ORIGINAL\n", "{t:?} recebeu dados");
+            assert_eq!(std::fs::read_to_string(t).unwrap(), "ORIGINAL\n", "{t:?} received data");
             assert_eq!(std::fs::metadata(t).unwrap().permissions().mode() & 0o777, 0o644, "{t:?}");
         }
         for name in ["netlog.json", "cdp-bodies.jsonl", "cdp-events.jsonl"] {
             let meta = std::fs::symlink_metadata(dir.join(name)).unwrap();
-            assert!(meta.file_type().is_file(), "{name} devia ser arquivo regular");
+            assert!(meta.file_type().is_file(), "{name} should be a regular file");
         }
         let events = std::fs::read_to_string(dir.join("cdp-events.jsonl")).unwrap();
         assert!(events.contains("Network.requestWillBeSent"));
@@ -1234,10 +1233,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(outside);
     }
 
-    /// PoC da revisão (`poc_netlog_race.py`, R3): um processo do mesmo usuário
-    /// troca `netlog.json` da pasta da sessão por um symlink durante a captura.
-    /// O Chrome agora grava o NetLog no perfil privado, então o alvo do link não
-    /// pode receber nenhum byte, e o `netlog.json` final é um arquivo regular.
+    /// Review PoC (`poc_netlog_race.py`, R3): a process of the same user
+    /// swaps `netlog.json` in the session folder for a symlink during the capture.
+    /// Chrome now writes the NetLog to the private profile, so the link target cannot
+    /// receive any byte, and the final `netlog.json` is a regular file.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1261,9 +1260,9 @@ mod tests {
             thread::spawn(move || {
                 let path = dir.join("netlog.json");
                 while !done.load(Ordering::SeqCst) {
-                    // O golpe do PoC, nas duas formas: o arquivo existe e não é
-                    // link -> troca; o nome está livre -> planta o link (um
-                    // Chrome que abrisse esse caminho gravaria no alvo).
+                    // The PoC's attack, in both forms: the file exists and is not a
+                    // link -> swap; the name is free -> plant the link (a Chrome that
+                    // opened that path would write to the target).
                     match std::fs::symlink_metadata(&path) {
                         Ok(m) if !m.file_type().is_symlink() => {
                             if std::fs::remove_file(&path).is_ok() && symlink(&victim, &path).is_ok() {
@@ -1288,25 +1287,25 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&victim).unwrap(),
             "ORIGINAL\n",
-            "o NetLog vazou para o alvo do link DURANTE a captura"
+            "the NetLog leaked to the link target DURING the capture"
         );
-        // O atacante age durante a captura (como o PoC); depois do `stop` ele
-        // só poderia fazer a gravação final falhar (recusa de link), nunca vazar.
+        // The attacker acts during the capture (like the PoC); after `stop` it could
+        // only make the final write fail (link refusal), never leak.
         done.store(true, Ordering::SeqCst);
         attacker.join().unwrap();
         let report = capture.stop().expect("stop");
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "alvo alterado");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "target altered");
         assert_eq!(std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777, 0o644);
         let meta = std::fs::symlink_metadata(dir.join("netlog.json")).unwrap();
-        assert!(meta.file_type().is_file(), "netlog.json final deve ser arquivo regular");
-        assert!(meta.len() > 1000, "o NetLog chegou à sessão ({} bytes)", meta.len());
+        assert!(meta.file_type().is_file(), "final netlog.json must be a regular file");
+        assert!(meta.len() > 1000, "the NetLog reached the session ({} bytes)", meta.len());
         assert_eq!(meta.permissions().mode() & 0o777, 0o600);
         assert!(report.requests >= 1);
-        eprintln!("swaps tentados pelo atacante: {}", swaps.load(Ordering::SeqCst));
+        eprintln!("swaps attempted by the attacker: {}", swaps.load(Ordering::SeqCst));
         let _ = std::fs::remove_dir_all(outside);
     }
 
-    /// Primeiro caminho que existe (`lsof` fica em /usr/sbin no macOS e em /usr/bin no Linux).
+    /// First path that exists (`lsof` lives in /usr/sbin on macOS and in /usr/bin on Linux).
     fn tool_path(candidates: &[&'static str]) -> &'static str {
         candidates.iter().copied().find(|p| std::path::Path::new(p).exists()).unwrap_or(candidates[0])
     }
@@ -1327,9 +1326,9 @@ mod tests {
         String::from_utf8_lossy(&out.stdout).to_string()
     }
 
-    /// Item 5 da revisão: sem `expose_cdp` o Chrome não abre porta nenhuma
-    /// (`--remote-debugging-pipe`); com `expose_cdp` a porta escuta SÓ em
-    /// 127.0.0.1 e recusa WebSocket de página web (Origin presente).
+    /// Review item 5: without `expose_cdp` Chrome opens no port at all
+    /// (`--remote-debugging-pipe`); with `expose_cdp` the port listens ONLY on
+    /// 127.0.0.1 and refuses WebSocket from a web page (Origin present).
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1337,24 +1336,24 @@ mod tests {
         use std::io::{Read, Write};
         let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
         let port = site.port;
-        // 1. Pipe: nenhuma porta, nenhum --remote-debugging-port.
+        // 1. Pipe: no port, no --remote-debugging-port.
         let (capture, info) =
             BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "pipe", false)).expect("start");
         assert!(info.cdp.is_none());
         let args = process_args(info.chrome_pid);
         assert!(args.contains("--remote-debugging-pipe"), "{args}");
         assert!(!args.contains("--remote-debugging-port"), "{args}");
-        assert!(lsof_listen(info.chrome_pid).trim().is_empty(), "o Chrome abriu porta: {}", lsof_listen(info.chrome_pid));
+        assert!(lsof_listen(info.chrome_pid).trim().is_empty(), "Chrome opened a port: {}", lsof_listen(info.chrome_pid));
         let nav = capture
             .navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10))
             .expect("navigate");
         assert!(nav.loaded);
         let report = capture.stop().expect("stop");
         assert!(report.graceful && report.netlog == "complete");
-        // 2. Porta exposta: só 127.0.0.1, sem --remote-allow-origins.
+        // 2. Exposed port: only 127.0.0.1, without --remote-allow-origins.
         let (capture, info) =
             BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "port", true)).expect("start");
-        let access = info.cdp.clone().expect("cdp exposto");
+        let access = info.cdp.clone().expect("cdp exposed");
         let args = process_args(info.chrome_pid);
         assert!(args.contains("--remote-debugging-address=127.0.0.1"), "{args}");
         assert!(!args.contains("--remote-allow-origins"), "{args}");
@@ -1362,11 +1361,11 @@ mod tests {
         let listen = lsof_listen(info.chrome_pid);
         println!("lsof:\n{listen}");
         let names: Vec<&str> = listen.lines().skip(1).filter_map(|l| l.split_whitespace().nth(8)).collect();
-        assert!(!names.is_empty(), "esperava uma porta de depuração: {listen}");
+        assert!(!names.is_empty(), "expected a debugging port: {listen}");
         for n in &names {
-            assert!(n.starts_with("127.0.0.1:"), "escuta fora do loopback: {n}");
+            assert!(n.starts_with("127.0.0.1:"), "listening outside the loopback: {n}");
         }
-        // WebSocket de uma página web (Origin) é recusado; sem Origin é aceito.
+        // WebSocket from a web page (Origin) is refused; without Origin it is accepted.
         let ws_path = access.browser_ws.split_once("127.0.0.1:").unwrap().1;
         let (port_s, path) = ws_path.split_once('/').unwrap();
         let handshake = |origin: Option<&str>| -> String {
@@ -1384,15 +1383,15 @@ mod tests {
         };
         let evil = handshake(Some("https://evil.example"));
         let plain = handshake(None);
-        println!("com Origin: {evil:?}; sem Origin: {plain:?}");
-        assert!(!evil.contains("101"), "página web conseguiu o WebSocket: {evil}");
-        assert!(plain.contains("101"), "cliente sem Origin deve conectar: {plain}");
+        println!("with Origin: {evil:?}; without Origin: {plain:?}");
+        assert!(!evil.contains("101"), "web page got the WebSocket: {evil}");
+        assert!(plain.contains("101"), "client without Origin should connect: {plain}");
         let _ = capture.stop().expect("stop");
     }
 
-    /// R9: um descritor herdado do lançador, SEM CLOEXEC, não pode chegar ao
-    /// Chrome (nem ao processo principal nem aos helpers), com pipe ou com porta;
-    /// no modo pipe, só o 3 e o 4 do CDP existem.
+    /// R9: a descriptor inherited from the launcher, WITHOUT CLOEXEC, must not reach
+    /// Chrome (neither the main process nor the helpers), with pipe or with port;
+    /// in pipe mode, only fds 3 and 4 of the CDP exist.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1402,11 +1401,11 @@ mod tests {
         let port = site.port;
         let secret = std::env::temp_dir().join(format!("launcher-secret-{}.log", std::process::id()));
         let c_path = CString::new(secret.to_str().unwrap()).unwrap();
-        // SAFETY: `open` direto, sem O_CLOEXEC: reproduz o fd 7 do PoC.
+        // SAFETY: plain `open`, without O_CLOEXEC: reproduces the PoC's fd 7.
         let leaked = unsafe { libc::open(c_path.as_ptr(), libc::O_WRONLY | libc::O_CREAT, 0o600) };
         assert!(leaked >= 0);
-        // Número alto e sem CLOEXEC (F_DUPFD), longe do 3 e do 4 do pipe.
-        // SAFETY: `fcntl`/`close` sobre o fd recém-aberto.
+        // High number and without CLOEXEC (F_DUPFD), far from the pipe's 3 and 4.
+        // SAFETY: `fcntl`/`close` on the freshly opened fd.
         let leaked = unsafe {
             let high = libc::fcntl(leaked, libc::F_DUPFD, 20);
             libc::close(leaked);
@@ -1420,7 +1419,7 @@ mod tests {
                 .navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10))
                 .expect("navigate");
             assert!(nav.loaded);
-            // Processo principal e descendentes (helpers).
+            // Main process and descendants (helpers).
             let ps = std::process::Command::new(tool_path(&["/bin/ps", "/usr/bin/ps"])).args(["-axo", "pid=,ppid="]).output().unwrap();
             let ps = String::from_utf8_lossy(&ps.stdout).to_string();
             let mut pids = vec![info.chrome_pid];
@@ -1435,13 +1434,13 @@ mod tests {
             for pid in &pids {
                 let out = std::process::Command::new(tool_path(&["/usr/sbin/lsof", "/usr/bin/lsof"])).args(["-n", "-P", "-p", &pid.to_string()]).output().unwrap();
                 let text = String::from_utf8_lossy(&out.stdout).to_string();
-                assert!(!text.contains("launcher-secret"), "fd vazou para o pid {pid} ({tag}):\n{text}");
+                assert!(!text.contains("launcher-secret"), "fd leaked to pid {pid} ({tag}):\n{text}");
             }
             let _ = capture.stop().expect("stop");
         };
         children(false, "fds-pipe");
         children(true, "fds-port");
-        // SAFETY: fecha o fd aberto acima.
+        // SAFETY: closes the fd opened above.
         unsafe { libc::close(leaked) };
         let _ = std::fs::remove_file(secret);
     }
@@ -1452,13 +1451,13 @@ mod tests {
         assert_eq!(navigate_budget(Duration::from_secs(3)), Duration::from_secs(3));
         assert!(
             navigate_budget(Duration::from_secs(3)) + NAVIGATE_REPLY_MARGIN < Duration::from_secs(10),
-            "o PoC levava 30,4 s com timeout_ms=3000"
+            "the PoC took 30.4 s with timeout_ms=3000"
         );
         assert_eq!(NavigateError::TimedOut.code(), "navigate_timeout");
     }
 
-    /// R12 (PoC `poc_sigstop`): com o Chrome PARADO (SIGSTOP), `navigate` com
-    /// `timeout_ms=3000` voltava em 30,4 s. Agora respeita o prazo.
+    /// R12 (PoC `poc_sigstop`): with Chrome STOPPED (SIGSTOP), `navigate` with
+    /// `timeout_ms=3000` returned in 30.4 s. Now it honors the deadline.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1468,25 +1467,25 @@ mod tests {
         let (capture, info) =
             BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "sigstop", false)).expect("start");
         let pid = info.chrome_pid as i32;
-        // SAFETY: sinais para o processo que nós mesmos iniciamos.
+        // SAFETY: signals to the process we started ourselves.
         unsafe { libc::kill(pid, libc::SIGSTOP) };
         let started = Instant::now();
         let result = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_millis(3000));
         let elapsed = started.elapsed();
-        // SAFETY: idem; retoma antes de qualquer asserção, para o Chrome poder sair.
+        // SAFETY: same; resume before any assertion so Chrome can exit.
         unsafe { libc::kill(pid, libc::SIGCONT) };
-        println!("navigate com Chrome parado: {result:?} em {elapsed:?}");
+        println!("navigate with Chrome stopped: {result:?} in {elapsed:?}");
         assert!(
             matches!(result, Err(NavigateError::TimedOut)),
-            "com o prazo estourado o código é navigate_timeout: {result:?}"
+            "with the deadline expired the code is navigate_timeout: {result:?}"
         );
-        assert!(elapsed < Duration::from_secs(9), "levou {elapsed:?}; o prazo era 3 s + folga");
+        assert!(elapsed < Duration::from_secs(9), "took {elapsed:?}; the deadline was 3 s + slack");
         let _ = capture.stop();
     }
 
-    /// A3-B2 (PoC `r12_cap.py`): uma página permitida faz `console.log` de 140 MB.
-    /// A mensagem passa do teto do pipe: a captura precisa sair INCOMPLETA com
-    /// motivo explícito, e o `navigate` não pode esperar o prazo todo.
+    /// A3-B2 (PoC `r12_cap.py`): an allowed page does a `console.log` of 140 MB.
+    /// The message exceeds the pipe cap: the capture must come out INCOMPLETE with an
+    /// explicit reason, and `navigate` must not wait for the whole deadline.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1494,7 +1493,7 @@ mod tests {
         oversized_message_marks_the_capture_incomplete(false, "oversize");
     }
 
-    /// A4-B2: o mesmo no modo porta (`expose_cdp`, WebSocket).
+    /// A4-B2: the same in port mode (`expose_cdp`, WebSocket).
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1517,7 +1516,7 @@ mod tests {
         let nav = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(45));
         let elapsed = started.elapsed();
         println!("navigate: {nav:?} em {elapsed:?}");
-        assert!(elapsed < Duration::from_secs(40), "esperou o prazo todo: {elapsed:?}");
+        assert!(elapsed < Duration::from_secs(40), "waited the whole deadline: {elapsed:?}");
         let report = capture.stop().expect("stop");
         println!("stop: graceful={} netlog={} warnings={:?}", report.graceful, report.netlog, report.warnings);
         assert!(!report.graceful);
@@ -1532,13 +1531,13 @@ mod tests {
         let doc: serde_json::Value = serde_json::from_str(&session_json).unwrap();
         let state = doc["session"]["completeness"]["state"].as_str().unwrap_or("?").to_string();
         println!("completeness.state = {state}");
-        assert_ne!(state, "complete", "a sessão não pode sair complete");
+        assert_ne!(state, "complete", "the session must not come out complete");
     }
 
-    /// A4-B5 (PoC `n_newsurface.py`, dirswap): a pasta da sessão é trocada por um
-    /// symlink para OUT durante a captura. O stop falha com erro claro, nada é
-    /// gravado em OUT, os links de OUT não são removidos e os dados ficam no
-    /// perfil temporário.
+    /// A4-B5 (PoC `n_newsurface.py`, dirswap): the session folder is swapped for a
+    /// symlink to OUT during the capture. Stop fails with a clear error, nothing is
+    /// written to OUT, OUT's links are not removed and the data stays in the
+    /// temporary profile.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1550,7 +1549,7 @@ mod tests {
         let dir = config.session_dir.clone();
         let (capture, _info) = BrowserCapture::start(config).expect("start");
         let _ = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10));
-        // Troca a pasta por um link para OUT (que contém links para um alvo).
+        // Swap the folder for a link to OUT (which contains links to a target).
         let out = std::env::temp_dir().join(format!("scrapelens-dirswap-out-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
         std::fs::create_dir_all(&out).unwrap();
@@ -1563,12 +1562,12 @@ mod tests {
         std::fs::rename(&dir, &moved).unwrap();
         symlink(&out, &dir).unwrap();
         let result = capture.stop();
-        let error = result.expect_err("o stop devia falhar com a pasta trocada");
-        println!("erro: {error}");
+        let error = result.expect_err("stop should fail with the folder swapped");
+        println!("error: {error}");
         assert!(error.contains("pasta da sessão foi trocada"), "{error}");
         assert!(error.contains("agora é um link simbólico"), "{error}");
         assert!(error.contains("pasta de resgate"), "{error}");
-        // OUT intacto: mesmos 3 nomes, links não removidos, alvo igual.
+        // OUT intact: same 3 names, links not removed, target unchanged.
         let mut names: Vec<String> = std::fs::read_dir(&out)
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
@@ -1579,10 +1578,10 @@ mod tests {
             assert!(std::fs::symlink_metadata(out.join(name)).unwrap().file_type().is_symlink(), "{name} mexido");
         }
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n");
-        // Os dados ficaram na pasta de resgate citada no erro: só os arquivos da
-        // captura, nada do perfil do Chrome.
+        // The data stayed in the rescue folder named in the error: only the capture
+        // files, nothing from the Chrome profile.
         let rescue = rescue_dir_from(&error);
-        assert!(rescue.join("cdp-events.jsonl").is_file(), "sem cdp-events em {}", rescue.display());
+        assert!(rescue.join("cdp-events.jsonl").is_file(), "no cdp-events in {}", rescue.display());
         assert!(rescue.join("netlog.json").is_file());
         assert_no_chrome_profile_data(&rescue);
         let _ = std::fs::remove_dir_all(&rescue);
@@ -1592,13 +1591,13 @@ mod tests {
         let _ = std::fs::remove_file(dir);
     }
 
-    /// Pasta de resgate citada no erro do stop.
+    /// Rescue folder named in the stop error.
     fn rescue_dir_from(error: &str) -> PathBuf {
-        let after = error.split("pasta de resgate ").nth(1).expect("erro cita a pasta de resgate");
+        let after = error.split("pasta de resgate ").nth(1).expect("error cites the rescue folder");
         PathBuf::from(after.split(" (0700").next().unwrap().trim())
     }
 
-    /// O resgate só tem os arquivos da captura: nenhum dado do perfil do Chrome.
+    /// The rescue has only the capture files: no Chrome profile data.
     fn assert_no_chrome_profile_data(dir: &std::path::Path) {
         let mut names: Vec<String> = std::fs::read_dir(dir)
             .unwrap()
@@ -1608,17 +1607,17 @@ mod tests {
         for name in &names {
             assert!(
                 ["cdp-bodies.jsonl", "cdp-events.jsonl", "motivo.txt", "netlog.json"].contains(&name.as_str()),
-                "arquivo inesperado no resgate: {name} (todos: {names:?})"
+                "unexpected file in the rescue: {name} (all: {names:?})"
             );
         }
         for forbidden in ["Cookies", "Login Data", "History", "Default", "Local State"] {
-            assert!(!names.iter().any(|n| n == forbidden), "{forbidden} no resgate");
+            assert!(!names.iter().any(|n| n == forbidden), "{forbidden} in the rescue");
         }
     }
 
-    /// A5-B2: uma falha de gravação com a pasta ainda nossa (aqui, um DIRETÓRIO no
-    /// nome de `session.json`, que o core recusa) também resgata os dados, não
-    /// apaga o perfil antes, e não deixa `.tmp-*` na pasta da sessão.
+    /// A5-B2: a write failure with the folder still ours (here, a DIRECTORY named
+    /// `session.json`, which the core refuses) also rescues the data, does not delete
+    /// the profile first, and leaves no `.tmp-*` in the session folder.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1630,33 +1629,33 @@ mod tests {
         let (capture, _info) = BrowserCapture::start(config).expect("start");
         let _ = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(10));
         std::fs::create_dir(dir.join("session.json")).unwrap();
-        let error = capture.stop().expect_err("o core recusa um diretório no lugar de session.json");
-        println!("erro: {error}");
+        let error = capture.stop().expect_err("the core refuses a directory in place of session.json");
+        println!("error: {error}");
         assert!(error.contains("pasta de resgate"), "{error}");
         let rescue = rescue_dir_from(&error);
         assert!(rescue.join("cdp-events.jsonl").is_file());
         assert!(rescue.join("netlog.json").is_file());
-        assert!(rescue.join("cdp-bodies.jsonl").is_file(), "os corpos também são resgatados");
+        assert!(rescue.join("cdp-bodies.jsonl").is_file(), "the bodies are also rescued");
         assert!(rescue.join("motivo.txt").is_file());
         assert_no_chrome_profile_data(&rescue);
-        // Sem `.tmp-*` perdido na pasta da sessão.
+        // No stray `.tmp-*` left in the session folder.
         let strays: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
             .filter(|n| n.contains(".tmp-"))
             .collect();
         assert!(strays.is_empty(), "{strays:?}");
-        // Marcador do resgate existe no state root.
+        // Rescue marker exists in the state root.
         let marker = rescue.with_extension("json");
-        assert!(marker.is_file(), "sem marcador {}", marker.display());
+        assert!(marker.is_file(), "no marker {}", marker.display());
         let _ = std::fs::remove_dir_all(&rescue);
         let _ = std::fs::remove_file(marker);
     }
 
-    /// Captura COMUM (`crate::run`) contra um servidor local acessado por um NOME que
-    /// não é `127.0.0.1` nem `localhost` (`<nome>.localhost`, que o Chrome resolve
-    /// para loopback sozinho). Devolve `(requisições do site vistas pelo servidor,
-    /// status das requisições da sessão para o nome)`.
+    /// COMMON capture (`crate::run`) against a local server accessed by a NAME that
+    /// is neither `127.0.0.1` nor `localhost` (`<name>.localhost`, which Chrome resolves
+    /// to loopback on its own). Returns `(site requests seen by the server,
+    /// statuses of the session's requests for the name)`.
     #[cfg(unix)]
     fn run_common_capture(mode: crate::NetworkMode, tag: &str) -> (usize, Vec<u64>) {
         use std::sync::mpsc::channel;
@@ -1684,16 +1683,16 @@ mod tests {
         let join = thread::spawn(move || crate::run(config, status, stop_rx, ready_tx));
         ready_rx
             .recv_timeout(Duration::from_secs(40))
-            .expect("captura pronta")
-            .expect("captura iniciou");
-        // Espera o servidor ver a requisição (modo aberto) ou dá um prazo (loopback).
+            .expect("capture ready")
+            .expect("capture started");
+        // Waits for the server to see the request (open mode) or gives a deadline (loopback).
         let deadline = Instant::now() + Duration::from_secs(8);
         while site.seen_paths().is_empty() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(200));
         }
         thread::sleep(Duration::from_millis(800));
         let _ = stop_tx.send(());
-        let outcome = join.join().expect("thread").expect("captura encerrou");
+        let outcome = join.join().expect("thread").expect("capture ended");
         let statuses = outcome.session["requests"]
             .as_array()
             .map(|requests| {
@@ -1708,26 +1707,26 @@ mod tests {
         (site.seen_paths().len(), statuses)
     }
 
-    /// Defeito do usuário: `Iniciar sessão` com `https://google.com.br` abria o Chrome
-    /// com `DNS_PROBE_FINISHED_NXDOMAIN`, porque a captura comum levava
-    /// `--host-resolver-rules=MAP * ~NOTFOUND…`. Sem acessar site real: um nome local
-    /// resolvido pelo próprio Chrome carrega no modo aberto e NÃO no `LoopbackOnly`.
+    /// User-reported bug: `Start session` with `https://google.com.br` opened Chrome
+    /// with `DNS_PROBE_FINISHED_NXDOMAIN`, because the common capture passed
+    /// `--host-resolver-rules=MAP * ~NOTFOUND…`. Without touching a real site: a local name
+    /// resolved by Chrome itself loads in open mode and NOT in `LoopbackOnly`.
     #[cfg(unix)]
     #[test]
     #[ignore]
     fn live_open_mode_resolves_a_local_name_and_loopback_only_does_not() {
         let (seen_open, statuses_open) = run_common_capture(crate::NetworkMode::Open, "open");
-        println!("Open: servidor viu {seen_open}, status {statuses_open:?}");
-        assert!(seen_open >= 1, "o modo aberto devia chegar ao servidor pelo nome local");
+        println!("Open: server saw {seen_open}, status {statuses_open:?}");
+        assert!(seen_open >= 1, "open mode should reach the server by the local name");
         assert!(statuses_open.contains(&200), "{statuses_open:?}");
 
         let (seen_lo, statuses_lo) = run_common_capture(crate::NetworkMode::LoopbackOnly, "loopback");
-        println!("LoopbackOnly: servidor viu {seen_lo}, status {statuses_lo:?}");
-        assert_eq!(seen_lo, 0, "o nome local não podia resolver em LoopbackOnly");
+        println!("LoopbackOnly: server saw {seen_lo}, status {statuses_lo:?}");
+        assert_eq!(seen_lo, 0, "the local name must not resolve in LoopbackOnly");
         assert!(!statuses_lo.contains(&200), "{statuses_lo:?}");
     }
 
-    /// Página-sonda local: grava `navigator.webdriver` no servidor (`/wd?webdriver=…`).
+    /// Local probe page: records `navigator.webdriver` on the server (`/wd?webdriver=…`).
     #[cfg(unix)]
     fn webdriver_probe_site() -> TestSite {
         TestSite::start(|_m, path| {
@@ -1756,9 +1755,9 @@ mod tests {
         }
     }
 
-    /// D7, captura COMUM completa (`run`/`run_with_options`) nos dois transportes: a
-    /// página lê `navigator.webdriver === false` (sem a flag seria `true` com o CDP
-    /// ligado) e a sessão registra a flag em `capture.chromeArgs`/`notes`.
+    /// D7, FULL COMMON capture (`run`/`run_with_options`) on both transports: the
+    /// page reads `navigator.webdriver === false` (without the flag it would be `true` with
+    /// CDP on) and the session records the flag in `capture.chromeArgs`/`notes`.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1786,26 +1785,26 @@ mod tests {
             let (ready_tx, ready_rx) = channel();
             let opts = crate::RunOptions { transport, ..crate::RunOptions::default() };
             let join = thread::spawn(move || crate::run_with_options(config, status, stop_rx, ready_tx, &opts));
-            ready_rx.recv_timeout(Duration::from_secs(40)).expect("pronta").expect("iniciou");
+            ready_rx.recv_timeout(Duration::from_secs(40)).expect("ready").expect("started");
             let seen = webdriver_seen(&site);
-            println!("{tag}: navigator.webdriver visto pela página = {seen:?}");
-            assert_eq!(seen, ["false"], "{tag}: a captura completa devia esconder navigator.webdriver");
+            println!("{tag}: navigator.webdriver seen by the page = {seen:?}");
+            assert_eq!(seen, ["false"], "{tag}: the full capture should hide navigator.webdriver");
             let _ = stop_tx.send(());
-            let (outcome, _) = join.join().expect("thread").expect("encerrou");
+            let (outcome, _) = join.join().expect("thread").expect("ended");
             let capture = &outcome.session["session"]["capture"];
             let args: Vec<&str> = capture["chromeArgs"].as_array().expect("chromeArgs").iter().filter_map(|v| v.as_str()).collect();
             assert!(args.contains(&"--disable-blink-features=AutomationControlled"), "{tag}: {args:?}");
             assert_eq!(args.contains(&"--remote-debugging-pipe"), tag == "pipe", "{tag}: {args:?}");
             assert!(capture["notes"].as_str().unwrap_or("").contains("AutomationControlled"), "{capture}");
-            // O registro não vaza os caminhos temporários.
+            // The record does not leak temporary paths.
             assert!(args.iter().all(|a| !a.contains(&*dir.display().to_string())), "{args:?}");
             let _ = std::fs::remove_dir_all(dir);
         }
     }
 
-    /// Cookies importados (`CaptureConfig.initial_cookies`) chegam no PRIMEIRO
-    /// pedido da navegação inicial, e o evento de auditoria entra no stream CDP
-    /// sem os valores. Loopback, headless conforme `SL_LIVE_HEADED`.
+    /// Imported cookies (`CaptureConfig.initial_cookies`) reach the FIRST request
+    /// of the initial navigation, and the audit event enters the CDP stream
+    /// without the values. Loopback, headless per `SL_LIVE_HEADED`.
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1879,7 +1878,7 @@ mod tests {
         let (stop_tx, stop_rx) = channel();
         let (ready_tx, ready_rx) = channel();
         let join = thread::spawn(move || crate::run(config, status, stop_rx, ready_tx));
-        ready_rx.recv_timeout(Duration::from_secs(40)).expect("pronta").expect("iniciou");
+        ready_rx.recv_timeout(Duration::from_secs(40)).expect("ready").expect("started");
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut saw_cookie = false;
         while Instant::now() < deadline && !saw_cookie {
@@ -1890,22 +1889,22 @@ mod tests {
                 .any(|head| head.lines().any(|line| line.eq_ignore_ascii_case("cookie: sid=abc123")));
             thread::sleep(Duration::from_millis(100));
         }
-        assert!(saw_cookie, "o primeiro pedido devia levar o cookie importado: {:?}", heads.lock().unwrap());
+        assert!(saw_cookie, "the first request should carry the imported cookie: {:?}", heads.lock().unwrap());
         let _ = stop_tx.send(());
-        let outcome = join.join().expect("thread").expect("encerrou");
+        let outcome = join.join().expect("thread").expect("ended");
         assert!(outcome.notice.contains("cookie(s) importado(s)"), "{}", outcome.notice);
         let events = std::fs::read_to_string(dir.join("cdp-events.jsonl")).unwrap();
-        assert!(events.contains("Capture.cookiesImported"), "falta o evento de auditoria");
+        assert!(events.contains("Capture.cookiesImported"), "the audit event is missing");
         assert!(events.contains("\"importedCount\":1"), "{events}");
         let audit = events
             .lines()
             .find(|line| line.contains("Capture.cookiesImported"))
             .expect("linha de auditoria");
-        assert!(!audit.contains("abc123"), "o evento de auditoria não pode gravar o valor: {audit}");
+        assert!(!audit.contains("abc123"), "the audit event must not record the value: {audit}");
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// D7, captura CONTROLADA do MCP (allowlist), pipe e `expose_cdp` (porta).
+    /// D7, MCP CONTROLLED capture (allowlist), pipe and `expose_cdp` (port).
     #[cfg(unix)]
     #[test]
     #[ignore]
@@ -1919,8 +1918,8 @@ mod tests {
                 .navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(15))
                 .expect("navigate");
             let seen = webdriver_seen(&site);
-            println!("controlada {tag}: navigator.webdriver = {seen:?}");
-            assert_eq!(seen, ["false"], "controlada/{tag}");
+            println!("controlled {tag}: navigator.webdriver = {seen:?}");
+            assert_eq!(seen, ["false"], "controlled/{tag}");
             let report = capture.stop().expect("stop");
             let session_json = std::fs::read_to_string(std::path::Path::new(&report.session_dir).join("session.json")).unwrap();
             assert!(session_json.contains("--disable-blink-features=AutomationControlled"), "{tag}");

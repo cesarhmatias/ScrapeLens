@@ -1,9 +1,9 @@
-//! Commands da ponte UI ↔ shell. Contrato v1: docs/03-contratos.md.
+//! Commands for the UI ↔ shell bridge. Contract v1: docs/03-contratos.md.
 //!
-//! Nota de integração: `start_session`, `import_har` e `import_netlog` chamam o
-//! `scrapelens-core` (dependência crate, sem sidecar) e operam dados reais. A
-//! captura abre o Chrome externo em `capture.rs`; o envelope `SessionPayload`
-//! permanece estável para a UI.
+//! Integration note: `start_session`, `import_har` and `import_netlog` call
+//! `scrapelens-core` (a crate dependency, no sidecar) and operate on real data. The
+//! capture opens the external Chrome in `capture.rs`; the `SessionPayload` envelope
+//! stays stable for the UI.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,7 +23,7 @@ use crate::cli::{self, CliAction};
 use crate::prefs;
 use crate::AppState;
 
-/// Resposta uniforme dos commands que carregam uma sessão.
+/// Uniform response for the commands that load a session.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionPayload {
@@ -57,7 +57,7 @@ pub struct AttachmentPayload {
 
 fn demo_session_value() -> Result<Value, String> {
     let raw = include_str!("../../app/src/demo/session.v1.json");
-    let value: Value = serde_json::from_str(raw).map_err(|error| format!("fixture demo inválida: {error}"))?;
+    let value: Value = serde_json::from_str(raw).map_err(|error| format!("invalid demo fixture: {error}"))?;
     Ok(value)
 }
 
@@ -73,7 +73,7 @@ pub fn app_info() -> AppInfo {
     }
 }
 
-/// Fixture do contrato v1, sempre rotulada como sintética.
+/// Contract v1 fixture, always labeled as synthetic.
 #[tauri::command]
 pub fn demo_session() -> Result<SessionPayload, String> {
     let session = demo_session_value()?;
@@ -86,8 +86,8 @@ pub fn demo_session() -> Result<SessionPayload, String> {
     })
 }
 
-/// Abre uma sessão v1 real (pasta com session.json ou o arquivo direto).
-/// Esta parte já é funcional e não depende do core para ler o documento.
+/// Opens a real v1 session (a folder with session.json, or the file itself).
+/// This part already works and does not depend on the core to read the document.
 #[tauri::command]
 pub async fn open_session(app: AppHandle, path: String) -> Result<SessionPayload, String> {
     run_loading(app, move |app| {
@@ -100,11 +100,11 @@ pub async fn open_session(app: AppHandle, path: String) -> Result<SessionPayload
     .await
 }
 
-/// Liga um `AtomicBool` e o desliga ao sair (inclusive em erro ou pânico).
+/// Sets an `AtomicBool` and clears it on exit (including on error or panic).
 pub(crate) struct FlagGuard<'a>(&'a std::sync::atomic::AtomicBool);
 
 impl<'a> FlagGuard<'a> {
-    /// `None` se o sinal já estava ligado (outra operação em andamento).
+    /// `None` if the flag was already set (another operation is in progress).
     pub(crate) fn acquire(flag: &'a std::sync::atomic::AtomicBool) -> Option<Self> {
         use std::sync::atomic::Ordering;
         flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).ok().map(|_| Self(flag))
@@ -117,8 +117,8 @@ impl Drop for FlagGuard<'_> {
     }
 }
 
-/// Abre/importa/encerra fora da thread principal (a leitura de 20 mil
-/// requisições leva ~10 s) e recusa uma segunda operação em paralelo.
+/// Opens/imports/stops off the main thread (reading 20 thousand
+/// requests takes ~10 s) and refuses a second operation in parallel.
 async fn run_loading<F>(app: AppHandle, work: F) -> Result<SessionPayload, String>
 where
     F: FnOnce(&AppHandle) -> Result<SessionPayload, String> + Send + 'static,
@@ -126,23 +126,23 @@ where
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let _guard = FlagGuard::acquire(&state.loading)
-            .ok_or_else(|| "Já há uma sessão sendo aberta ou importada. Aguarde terminar.".to_string())?;
+            .ok_or_else(|| "A session is already being opened or imported. Wait for it to finish.".to_string())?;
         work(&app)
     })
     .await
-    .map_err(|error| format!("a operação foi interrompida: {error}"))?
+    .map_err(|error| format!("the operation was interrupted: {error}"))?
 }
 
 fn read_session_payload(path: &str) -> Result<SessionPayload, String> {
     let chosen = PathBuf::from(path);
     if !chosen.exists() {
-        return Err(format!("caminho não encontrado: {path}"));
+        return Err(format!("path not found: {path}"));
     }
-    // Pasta com session.json, ou um arquivo de sessão com qualquer nome
-    // (absoluto, regular, sem symlink em nenhum componente).
+    // A folder with session.json, or a session file with any name
+    // (absolute, regular, with no symlink in any component).
     let session_dir = if chosen.is_dir() {
         if !chosen.join("session.json").is_file() {
-            return Err(format!("session.json não encontrado em {}", chosen.display()));
+            return Err(format!("session.json not found in {}", chosen.display()));
         }
         chosen
     } else {
@@ -150,14 +150,14 @@ fn read_session_payload(path: &str) -> Result<SessionPayload, String> {
     };
     header_payload(&session_dir, |requests, partial| {
         format!(
-            "Sessão aberta: {requests} requisição(ões){}.",
-            if partial { " · sessão parcial, como declarada pela fonte" } else { "" }
+            "Session opened: {requests} request(s){}.",
+            if partial { " · partial session, as declared by the source" } else { "" }
         )
     })
 }
 
-/// P5: lê a sessão tipada (cache `LazySession`, sem `Value`) e devolve só o
-/// cabeçalho + contagem. As requisições vêm de `list_requests`/`get_request`.
+/// P5: reads the typed session (`LazySession` cache, no `Value`) and returns only the
+/// header + count. The requests come from `list_requests`/`get_request`.
 pub(crate) fn header_payload(
     session_dir: &Path,
     notice: impl FnOnce(usize, bool) -> String,
@@ -166,7 +166,7 @@ pub(crate) fn header_payload(
     let session = &lazy.session;
     if session.schema_version != 1 {
         return Err(format!(
-            "schemaVersion {} não é suportado por este app (esperado: 1)",
+            "schemaVersion {} is not supported by this app (expected: 1)",
             session.schema_version
         ));
     }
@@ -178,7 +178,7 @@ pub(crate) fn header_payload(
         .unwrap_or(true);
     let requests = header.request_count;
     Ok(SessionPayload {
-        session: serde_json::to_value(&header).map_err(|error| format!("cabeçalho inválido: {error}"))?,
+        session: serde_json::to_value(&header).map_err(|error| format!("invalid header: {error}"))?,
         session_dir: Some(session_dir.display().to_string()),
         synthetic,
         notice: Some(notice(requests, partial)),
@@ -186,7 +186,7 @@ pub(crate) fn header_payload(
     })
 }
 
-/// Página de resumos (P5). `limit` até 2000; filtros rodam aqui, não no front.
+/// Page of summaries (P5). `limit` up to 2000; filters run here, not in the front end.
 #[tauri::command]
 pub async fn list_requests(
     session_dir: String,
@@ -197,7 +197,7 @@ pub async fn list_requests(
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
         let page = crate::listing::list_page(&lazy.session, offset, limit, &filter.unwrap_or_default());
-        // Só no modo de teste: prova, sem ler a tela, que a lista veio pelo contrato paginado.
+        // Test mode only: proves, without reading the screen, that the list came through the paginated contract.
         if std::env::var("SCRAPELENS_TEST_MODE").as_deref() == Ok("1") {
             eprintln!(
                 "scrapelens: list_requests offset={offset} items={} matched={} total={}",
@@ -209,30 +209,30 @@ pub async fn list_requests(
         Ok(page)
     })
     .await
-    .map_err(|error| format!("a listagem foi interrompida: {error}"))?
+    .map_err(|error| format!("the listing was interrupted: {error}"))?
 }
 
-/// Detalhe de uma requisição sob demanda (P5).
+/// On-demand detail of a request (P5).
 #[tauri::command]
 pub async fn get_request(session_dir: String, id: String) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
         let detail = crate::listing::detail(&lazy.session, &id)
-            .ok_or_else(|| format!("requisição {id} não encontrada na sessão"))?;
-        serde_json::to_value(&detail).map_err(|error| format!("detalhe inválido: {error}"))
+            .ok_or_else(|| format!("request {id} not found in the session"))?;
+        serde_json::to_value(&detail).map_err(|error| format!("invalid detail: {error}"))
     })
     .await
-    .map_err(|error| format!("a leitura do detalhe foi interrompida: {error}"))?
+    .map_err(|error| format!("reading the detail was interrupted: {error}"))?
 }
 
 fn sessions_root(app: &AppHandle) -> Result<PathBuf, String> {
     let root = app
         .path()
         .app_data_dir()
-        .map_err(|error| format!("sem diretório de dados do app: {error}"))?
+        .map_err(|error| format!("no app data directory: {error}"))?
         .join("sessions");
     store::ensure_private_dir(&root)
-        .map_err(|error| format!("não foi possível criar {}: {error}", root.display()))?;
+        .map_err(|error| format!("could not create {}: {error}", root.display()))?;
     Ok(root)
 }
 
@@ -274,14 +274,14 @@ fn persist_imported(
     let root = sessions_root(app)?;
     let dir = unique_session_dir(&root, &sanitize_dir_name(&session_id));
     store::write_session_dir(&imported.bundle, &dir)
-        .map_err(|error| format!("não foi possível gravar a sessão importada: {error}"))?;
+        .map_err(|error| format!("could not write the imported session: {error}"))?;
     let counts = imported.bundle.session.session.completeness.counts.requests;
     let warnings = imported.report.warnings.len();
     let completeness = format!("{:?}", imported.bundle.session.session.completeness.state);
     drop(imported);
     let shown = dir.display().to_string();
     header_payload(&dir, move |_, _| {
-        format!("{label} importada: {counts} requisição(ões), {warnings} aviso(s), completude {completeness}. Diretório: {shown}.")
+        format!("{label} imported: {counts} request(s), {warnings} warning(s), completeness {completeness}. Directory: {shown}.")
     })
 }
 
@@ -291,22 +291,22 @@ fn read_import_file(path: &str, label: &str) -> Result<Vec<u8>, String> {
 
 fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, String> {
     use std::io::Read;
-    // O_NOFOLLOW + O_NONBLOCK (FIFO não trava); tipo e tamanho conferidos por fstat
-    // no próprio descritor, e a leitura usa o mesmo descritor (sem TOCTOU).
+    // O_NOFOLLOW + O_NONBLOCK (a FIFO does not block); type and size checked by fstat
+    // on the descriptor itself, and the read uses the same descriptor (no TOCTOU).
     let handle = open_beneath_parent(Path::new(path))
-        .map_err(|error| format!("{label} não pôde ser aberto em {path} (symlink é recusado): {error}"))?;
+        .map_err(|error| format!("{label} could not be opened at {path} (symlink is refused): {error}"))?;
     let metadata = handle
         .metadata()
-        .map_err(|error| format!("{label}: falha ao inspecionar {path}: {error}"))?;
+        .map_err(|error| format!("{label}: failed to inspect {path}: {error}"))?;
     if metadata.is_dir() {
-        return Err(format!("{label}: {path} é um diretório, selecione um arquivo"));
+        return Err(format!("{label}: {path} is a directory, select a file"));
     }
     if !metadata.is_file() {
-        return Err(format!("{label}: {path} não é um arquivo regular"));
+        return Err(format!("{label}: {path} is not a regular file"));
     }
     if metadata.len() > max {
         return Err(format!(
-            "{label} maior que {} MiB ({} bytes); divida a captura ou use o formato de sessão v1",
+            "{label} is larger than {} MiB ({} bytes); split the capture or use the v1 session format",
             max / (1024 * 1024),
             metadata.len()
         ));
@@ -315,25 +315,25 @@ fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, St
     handle
         .take(max + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("não foi possível ler {label} em {path}: {error}"))?;
+        .map_err(|error| format!("could not read {label} at {path}: {error}"))?;
     if bytes.len() as u64 > max {
-        return Err(format!("{label} cresceu além de {} MiB durante a leitura", max / (1024 * 1024)));
+        return Err(format!("{label} grew beyond {} MiB while being read", max / (1024 * 1024)));
     }
     Ok(bytes)
 }
 
-/// A9-B5: abre o diretório pai por descritor (O_DIRECTORY|O_NOFOLLOW) e o
-/// arquivo com `openat` relativo a ele (O_NOFOLLOW|O_NONBLOCK). Trocar o pai por
-/// symlink depois da validação faz a abertura falhar em vez de ler outro arquivo.
+/// A9-B5: opens the parent directory by descriptor (O_DIRECTORY|O_NOFOLLOW) and the
+/// file with `openat` relative to it (O_NOFOLLOW|O_NONBLOCK). Swapping the parent for a
+/// symlink after validation makes the open fail instead of reading another file.
 pub(crate) fn open_beneath_parent(path: &Path) -> std::io::Result<fs::File> {
     use std::ffi::CString;
     use std::os::fd::FromRawFd;
     use std::os::unix::ffi::OsStrExt;
     let invalid = |msg: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, msg.to_string());
-    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).ok_or_else(|| invalid("sem pasta pai"))?;
-    let name = path.file_name().ok_or_else(|| invalid("sem nome de arquivo"))?;
-    let parent_c = CString::new(parent.as_os_str().as_bytes()).map_err(|_| invalid("NUL no caminho"))?;
-    let name_c = CString::new(name.as_bytes()).map_err(|_| invalid("NUL no nome"))?;
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).ok_or_else(|| invalid("no parent directory"))?;
+    let name = path.file_name().ok_or_else(|| invalid("no file name"))?;
+    let parent_c = CString::new(parent.as_os_str().as_bytes()).map_err(|_| invalid("NUL in the path"))?;
+    let name_c = CString::new(name.as_bytes()).map_err(|_| invalid("NUL in the name"))?;
     let dir_fd = unsafe {
         libc::open(parent_c.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
     };
@@ -355,8 +355,8 @@ pub(crate) fn open_beneath_parent(path: &Path) -> std::io::Result<fs::File> {
     Ok(unsafe { fs::File::from_raw_fd(fd) })
 }
 
-/// Estado "starting": liga `recording` e avisa o menu; se o start não chegar a
-/// `commit()`, desliga e reabilita o menu ao sair (erro, `?` ou pânico).
+/// "starting" state: sets `recording` and notifies the menu; if the start does not reach
+/// `commit()`, it clears the flag and re-enables the menu on exit (error, `?` or panic).
 pub(crate) struct StartingGuard<'a, F: FnMut(bool)> {
     flag: &'a std::sync::atomic::AtomicBool,
     notify: F,
@@ -384,10 +384,10 @@ impl<F: FnMut(bool)> Drop for StartingGuard<'_, F> {
     }
 }
 
-/// Importações ficam bloqueadas durante uma gravação (A8-B7).
+/// Imports stay blocked while a recording is in progress (A8-B7).
 pub(crate) fn ensure_not_recording(recording: bool) -> Result<(), String> {
     if recording {
-        Err("Há uma captura em andamento. Encerre a gravação antes de importar.".to_string())
+        Err("A capture is in progress. Stop the recording before importing.".to_string())
     } else {
         Ok(())
     }
@@ -400,7 +400,7 @@ pub async fn import_har(app: AppHandle, path: String) -> Result<SessionPayload, 
         ensure_not_recording(app.state::<AppState>().recording.load(std::sync::atomic::Ordering::SeqCst))?;
         let bytes = read_import_file(&path, "HAR")?;
         let imported = scrapelens_core::import_har(&bytes)
-            .map_err(|error| format!("HAR inválido: {error}. Use um HAR 1.2 exportado pelo Chrome."))?;
+            .map_err(|error| format!("invalid HAR: {error}. Use a HAR 1.2 file exported from Chrome."))?;
         persist_imported(app, imported, "HAR")
     })
     .await
@@ -412,13 +412,13 @@ pub async fn import_netlog(app: AppHandle, path: String) -> Result<SessionPayloa
         ensure_not_recording(app.state::<AppState>().recording.load(std::sync::atomic::Ordering::SeqCst))?;
         let bytes = read_import_file(&path, "NetLog")?;
         let imported = scrapelens_core::import_netlog(&bytes)
-            .map_err(|error| format!("NetLog inválido: {error}. Use o JSON completo do Chrome."))?;
+            .map_err(|error| format!("invalid NetLog: {error}. Use the full JSON from Chrome."))?;
         persist_imported(app, imported, "NetLog")
     })
     .await
 }
 
-/// URL inicial sugerida na UI: preferência gravada, senão `SCRAPELENS_CAPTURE_URL`.
+/// Starting URL suggested in the UI: the saved preference, otherwise `SCRAPELENS_CAPTURE_URL`.
 #[tauri::command]
 pub fn capture_start_url(app: AppHandle) -> String {
     prefs::load_capture_start_url(&app).unwrap_or_else(|| {
@@ -426,7 +426,7 @@ pub fn capture_start_url(app: AppHandle) -> String {
     })
 }
 
-/// Persiste a URL inicial (vazia limpa a preferência). Só `http`/`https` quando não vazia.
+/// Persists the starting URL (empty clears the preference). Only `http`/`https` when not empty.
 #[tauri::command]
 pub fn set_capture_start_url(app: AppHandle, url: String) -> Result<String, String> {
     let trimmed = url.trim().to_string();
@@ -447,8 +447,8 @@ pub struct CliActionPayload {
     pub message: Option<String>,
 }
 
-/// Consome a ação CLI de teste, ou o erro/aviso da CLI (no máximo uma vez por processo).
-/// Só existe ação com `SCRAPELENS_TEST_MODE=1`.
+/// Consumes the test CLI action, or the CLI error/warning (at most once per process).
+/// An action only exists with `SCRAPELENS_TEST_MODE=1`.
 #[tauri::command]
 pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
     if let Some((kind, message)) = state.cli_message.lock().ok()?.take() {
@@ -491,7 +491,7 @@ fn resolve_cookie_source<'a>(source: Option<&str>, sources: &'a [CookieSourceDto
     match source.filter(|value| !value.is_empty()) {
         None => Ok(None),
         Some(id) => sources.iter().find(|item| item.id == id).map(Some)
-            .ok_or_else(|| "Fonte de cookies indisponível. Selecione outro navegador ou uma sessão limpa.".to_string()),
+            .ok_or_else(|| "Cookie source unavailable. Select another browser or a clean session.".to_string()),
     }
 }
 
@@ -515,9 +515,9 @@ pub fn set_capture_cookie_source(app: AppHandle, source: Option<String>) -> Resu
     Ok(selected)
 }
 
-/// Inicia uma captura real com Chrome externo. O comando volta assim que o
-/// CDP está pronto; a sessão v1 final é devolvida por `stop_session`.
-/// `start_url` (opcional): campo da UI; vazio → `about:blank`; só http/https.
+/// Starts a real capture with an external Chrome. The command returns as soon as
+/// CDP is ready; the final v1 session is returned by `stop_session`.
+/// `start_url` (optional): a UI field; empty → `about:blank`; only http/https.
 #[tauri::command]
 pub fn start_session(
     app: AppHandle,
@@ -525,39 +525,39 @@ pub fn start_session(
     start_url: Option<String>,
     cookie_source: Option<String>,
 ) -> Result<SessionPayload, String> {
-    // "starting" (A9-B8/A8-B7): menu desabilita ⌘⇧R e importações desde já;
-    // se o start falhar, `StartingGuard` religa.
+    // "starting" (A9-B8/A8-B7): the menu disables ⌘⇧R and imports right away;
+    // if the start fails, `StartingGuard` re-enables them.
     if state.recording.load(std::sync::atomic::Ordering::SeqCst) {
-        return Err("Já existe uma captura em andamento ou iniciando. Clique em Encerrar antes de iniciar outra.".to_string());
+        return Err("A capture is already in progress or starting. Click Stop before starting another.".to_string());
     }
     let menu_app = app.clone();
     let mut starting = StartingGuard::begin(&state.recording, move |recording| {
         crate::menu::set_recording_menu(&menu_app, recording)
     });
-    let mut slot = state.capture.lock().map_err(|_| "estado de captura indisponível")?;
+    let mut slot = state.capture.lock().map_err(|_| "capture state unavailable")?;
     if slot.is_some() {
-        return Err("Já existe uma captura em andamento. Clique em Encerrar antes de iniciar outra.".to_string());
+        return Err("A capture is already in progress. Click Stop before starting another.".to_string());
     }
 
     let chrome_path = {
-        let saved = state.chrome_path.lock().map_err(|_| "estado do Chrome indisponível")?.clone();
+        let saved = state.chrome_path.lock().map_err(|_| "Chrome state unavailable")?.clone();
         chrome::detect(saved.as_deref())
             .path
             .map(PathBuf::from)
             .ok_or_else(|| {
-                "Chrome não encontrado. Selecione o Google Chrome manualmente no aviso da tela ou no menu Arquivo."
+                "Chrome not found. Select Google Chrome manually in the banner on screen or in the File menu."
                     .to_string()
             })?
     };
 
     let resolved_url = cli::resolve_capture_start_url(start_url.as_deref())?;
-    // A UI envia a escolha explicitamente; ausência significa sessão limpa.
+    // The UI sends the choice explicitly; absence means a clean session.
     let sources = cookie_sources();
     let selected_cookie_source = if resolved_url == "about:blank" { None } else {
         resolve_cookie_source(cookie_source.as_deref(), &sources)?
     };
     let cookie_notice = selected_cookie_source.map(|source| format!(
-        " Cookies de {} carregados para o site da URL inicial.", source.label
+        " Cookies from {} loaded for the starting URL's site.", source.label
     )).unwrap_or_default();
 
     let now = SystemTime::now()
@@ -567,7 +567,7 @@ pub fn start_session(
     let session_id = format!("capture-{now}");
     let started_at = iso_now();
     let dir = unique_session_dir(&sessions_root(&app)?, &session_id);
-    store::ensure_private_dir(&dir).map_err(|error| format!("diretório da sessão: {error}"))?;
+    store::ensure_private_dir(&dir).map_err(|error| format!("session directory: {error}"))?;
 
     let start_url_for_notice = resolved_url.clone();
     let config = CaptureConfig {
@@ -576,7 +576,7 @@ pub fn start_session(
         start_url: resolved_url,
         headless: std::env::var("SCRAPELENS_CAPTURE_HEADLESS").as_deref() == Ok("1"),
         ignore_cert: std::env::var("SCRAPELENS_CAPTURE_IGNORE_CERT").as_deref() == Ok("1"),
-        // Rede normal por padrão; as suítes de teste ligam só-loopback com
+        // Normal network by default; the test suites enable loopback-only with
         // `SCRAPELENS_CAPTURE_NETWORK=loopback`.
         network: scrapelens_capture::NetworkMode::from_env(),
         cookie_source: selected_cookie_source.map(|source| source.id.clone()),
@@ -609,7 +609,7 @@ pub fn start_session(
             let _ = stop_tx.send(());
             let _ = join.join();
             let _ = std::fs::remove_dir_all(&dir);
-            return Err("A captura não ficou pronta em 35 s. Verifique se o Chrome abriu e tente novamente.".to_string());
+            return Err("The capture was not ready within 35 s. Check whether Chrome opened and try again.".to_string());
         }
     }
 
@@ -633,10 +633,10 @@ pub fn start_session(
                 "startedAt": started_at,
                 "completeness": {
                     "state": "partial",
-                    "reasons": ["captura em andamento; a sessão final é gravada em stop_session"]
+                    "reasons": ["capture in progress; the final session is written by stop_session"]
                 },
                 "labels": [],
-                "notes": ["captura ao vivo em andamento"]
+                "notes": ["live capture in progress"]
             },
             "requests": []
         }),
@@ -644,12 +644,12 @@ pub fn start_session(
         synthetic: false,
         notice: Some((if start_url_for_notice == "about:blank" {
             format!(
-                "Captura iniciada com Chrome externo em {}. A captura começou em branco; navegue no Chrome ou informe a URL.",
+                "Capture started with external Chrome at {}. The capture started blank; browse in Chrome or enter a URL.",
                 chrome_path.display()
             )
         } else {
             format!(
-                "Captura iniciada com Chrome externo em {} · {}. Clique em Encerrar para gravar a sessão.",
+                "Capture started with external Chrome at {} · {}. Click Stop to record the session.",
                 chrome_path.display(),
                 start_url_for_notice
             )
@@ -658,33 +658,33 @@ pub fn start_session(
     })
 }
 
-/// Encerra a captura, aguarda o flush do NetLog, importa com o core e grava a
-/// sessão v1. Devolve a sessão pronta para a UI.
+/// Stops the capture, waits for the NetLog flush, imports with the core and writes the
+/// v1 session. Returns the session ready for the UI.
 #[tauri::command]
 pub async fn stop_session(app: AppHandle) -> Result<SessionPayload, String> {
-    // Fora da thread principal; não usa o sinal `loading` (encerrar nunca
-    // espera uma abertura em andamento).
+    // Off the main thread; does not use the `loading` flag (stopping never
+    // waits for an open in progress).
     tauri::async_runtime::spawn_blocking(move || stop_blocking(&app))
         .await
-        .map_err(|error| format!("o encerramento foi interrompido: {error}"))?
+        .map_err(|error| format!("stopping was interrupted: {error}"))?
 }
 
 fn stop_blocking(app: &AppHandle) -> Result<SessionPayload, String> {
     let state = app.state::<AppState>();
     let capture = {
-        let mut slot = state.capture.lock().map_err(|_| "estado de captura indisponível")?;
+        let mut slot = state.capture.lock().map_err(|_| "capture state unavailable")?;
         slot.take()
     };
     state.recording.store(false, std::sync::atomic::Ordering::SeqCst);
     crate::menu::set_recording_menu(app, false);
     let Some(capture) = capture else {
-        return Err("Nenhuma captura em andamento para encerrar.".to_string());
+        return Err("No capture in progress to stop.".to_string());
     };
     let _ = capture.stop.send(());
     let payload = capture
         .join
         .join()
-        .map_err(|_| "a thread de captura terminou inesperadamente".to_string())??;
+        .map_err(|_| "the capture thread ended unexpectedly".to_string())??;
     if let Ok(mut last) = state.last_session_dir.lock() {
         *last = Some(capture.dir.clone());
     }
@@ -717,7 +717,7 @@ fn iso_now() -> String {
     )
 }
 
-/// Algoritmo civil_from_days (Howard Hinnant), sem dependência de chrono.
+/// civil_from_days algorithm (Howard Hinnant), without a chrono dependency.
 fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
     let z = days_since_epoch + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -762,7 +762,7 @@ pub fn set_chrome_path(
     })
 }
 
-/// Lê uma prévia textual de anexo da sessão (limite rígido, sem sair da pasta).
+/// Reads a text preview of a session attachment (hard limit, never leaves the folder).
 #[tauri::command]
 pub fn read_attachment(session_dir: String, name: String) -> Result<AttachmentPayload, String> {
     use std::io::Read;
@@ -777,7 +777,7 @@ pub fn read_attachment(session_dir: String, name: String) -> Result<AttachmentPa
     let mut bytes = Vec::new();
     file.take(1024 * 1024)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("falha ao ler anexo: {error}"))?;
+        .map_err(|error| format!("failed to read attachment: {error}"))?;
     match String::from_utf8(bytes) {
         Ok(text) => Ok(AttachmentPayload {
             kind: "text".to_string(),
@@ -792,14 +792,14 @@ pub fn read_attachment(session_dir: String, name: String) -> Result<AttachmentPa
     }
 }
 
-/// Abre um anexo regular de `attachments/` (recusa symlink e confere o inode
-/// após abrir); a verificação vive em `store::open_regular_attachment`.
+/// Opens a regular attachment from `attachments/` (refuses symlinks and checks the inode
+/// after opening); the check lives in `store::open_regular_attachment`.
 fn open_attachment(session_dir: &str, name: &str) -> Result<(fs::File, u64), String> {
     store::open_regular_attachment(Path::new(session_dir), name).map_err(|error| error.to_string())
 }
 
-/// Busca no payload via `scrapelens_core::search`, fora da thread da UI.
-/// `max_matches` limita o resultado; o frontend não reimplementa a busca.
+/// Searches the payload via `scrapelens_core::search`, off the UI thread.
+/// `max_matches` limits the result; the front end does not reimplement the search.
 #[tauri::command]
 pub async fn search_session(
     session_dir: String,
@@ -812,19 +812,19 @@ pub async fn search_session(
         run_search(&session_dir, &text, &scopes, case_sensitive, max_matches)
     })
     .await
-    .map_err(|error| format!("a busca foi interrompida: {error}"))?
+    .map_err(|error| format!("the search was interrupted: {error}"))?
 }
 
-/// Sessões preguiçosas (até duas) usadas por busca, origens, cadeia e comparação (anexos lidos um a um). Chave: pasta + (tamanho, mtime) de
-/// `session.json` + mtime de `attachments/`; mudou, recarrega. Guarda uma só
-/// sessão (abrir outra substitui) e não retém corpos nem os brutos CDP/NetLog.
+/// Lazy sessions (up to two) used by search, origins, chain and comparison (attachments read one at a time). Key: folder + (size, mtime) of
+/// `session.json` + mtime of `attachments/`; if changed, reload. Keeps only one
+/// session (opening another replaces it) and retains neither bodies nor the raw CDP/NetLog.
 struct CachedSession {
     dir: PathBuf,
     fingerprint: Vec<Option<(u64, SystemTime)>>,
     lazy: Arc<scrapelens_core::lazy::LazySession>,
 }
 
-/// Duas sessões em cache (a aberta e a comparada); a mais antiga sai primeiro.
+/// Two cached sessions (the open one and the compared one); the oldest leaves first.
 static SESSION_CACHE: Mutex<Vec<CachedSession>> = Mutex::new(Vec::new());
 static SESSION_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -837,46 +837,46 @@ fn session_fingerprint(path: &Path) -> Vec<Option<(u64, SystemTime)>> {
     ["session.json", "attachments"].iter().map(|name| stat(path.join(name))).collect()
 }
 
-/// Arquivo de sessão com qualquer nome: lido tipado em fluxo (sem `Value`),
-/// aberto pelo pai sem seguir symlink; anexos relativos à pasta do arquivo.
+/// Session file with any name: read typed as a stream (no `Value`),
+/// opened through the parent without following symlinks; attachments are relative to the file's folder.
 fn open_session_file_lazy(file: &Path) -> Result<scrapelens_core::lazy::LazySession, String> {
     let handle = open_beneath_parent(file)
-        .map_err(|error| format!("não foi possível abrir {} (symlink é recusado): {error}", file.display()))?;
-    let meta = handle.metadata().map_err(|error| format!("falha ao inspecionar {}: {error}", file.display()))?;
+        .map_err(|error| format!("could not open {} (symlink is refused): {error}", file.display()))?;
+    let meta = handle.metadata().map_err(|error| format!("failed to inspect {}: {error}", file.display()))?;
     if !meta.is_file() {
-        return Err(format!("{} não é um arquivo regular", file.display()));
+        return Err(format!("{} is not a regular file", file.display()));
     }
     let session: scrapelens_core::model::SessionV1 =
         serde_json::from_reader(std::io::BufReader::with_capacity(1 << 20, handle))
-            .map_err(|error| format!("arquivo de sessão inválido: {error}"))?;
-    let parent = file.parent().map(Path::to_path_buf).ok_or("o arquivo não tem pasta pai")?;
+            .map_err(|error| format!("invalid session file: {error}"))?;
+    let parent = file.parent().map(Path::to_path_buf).ok_or("the file has no parent folder")?;
     Ok(scrapelens_core::lazy::LazySession::new(session, parent))
 }
 
 pub(crate) fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::LazySession>, String> {
-    // Chave canônica: `./s`, `s` e symlinks para a mesma pasta compartilham a entrada.
+    // Canonical key: `./s`, `s` and symlinks to the same folder share the entry.
     let canonical = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     let dir = canonical.as_path();
-    let mut guard = SESSION_CACHE.lock().map_err(|_| "cache de busca corrompido".to_string())?;
+    let mut guard = SESSION_CACHE.lock().map_err(|_| "search cache corrupted".to_string())?;
     let fingerprint = session_fingerprint(dir);
     if let Some(index) = guard.iter().position(|cached| cached.dir == dir) {
         if guard[index].fingerprint == fingerprint {
             let hit = guard.remove(index);
             let lazy = hit.lazy.clone();
-            guard.push(hit); // mais recente por último
+            guard.push(hit); // most recent last
             return Ok(lazy);
         }
-        guard.remove(index); // arquivo mudou: recarrega
+        guard.remove(index); // file changed: reload
     }
     while guard.len() >= 2 {
-        guard.remove(0); // libera a mais antiga antes de carregar outra
+        guard.remove(0); // free the oldest before loading another
     }
     SESSION_LOADS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let lazy = if dir.is_file() {
         open_session_file_lazy(dir)?
     } else {
         scrapelens_core::open_session_dir_lazy(dir)
-            .map_err(|error| format!("não foi possível ler a sessão: {error}"))?
+            .map_err(|error| format!("could not read the session: {error}"))?
             .0
     };
     let lazy = Arc::new(lazy);
@@ -893,11 +893,11 @@ fn run_search(
 ) -> Result<scrapelens_core::search::SearchResult, String> {
     use scrapelens_core::search::{Scope, SearchQuery};
     if text.is_empty() {
-        return Err("digite um texto para buscar".to_string());
+        return Err("type some text to search for".to_string());
     }
     let mut parsed = Vec::new();
     for scope in scopes {
-        parsed.push(Scope::parse(scope).ok_or_else(|| format!("escopo desconhecido: {scope}"))?);
+        parsed.push(Scope::parse(scope).ok_or_else(|| format!("unknown scope: {scope}"))?);
     }
     let lazy = cached_session(Path::new(session_dir))?;
     let mut query = SearchQuery::new(text);
@@ -910,28 +910,28 @@ fn run_search(
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BodyPayload {
-    /// `text` (UTF-8 válido), `binary` (nunca renderizado; só prévia hex).
+    /// `text` (valid UTF-8), `binary` (never rendered; hex preview only).
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
-    /// Primeiros bytes em hexadecimal (limitado), só para `binary`.
+    /// First bytes in hexadecimal (limited), only for `binary`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hex: Option<String>,
     pub bytes: u64,
-    /// Bytes efetivamente devolvidos em `text`; menor que `bytes` se cortado.
+    /// Bytes actually returned in `text`; less than `bytes` if cut.
     pub shown_bytes: u64,
     pub cut: bool,
 }
 
 const HEX_PREVIEW_BYTES: usize = 256;
 
-/// Lê um corpo anexado até `limit` bytes. Texto vira `String` (o frontend o
-/// exibe em `<pre>`); o resto vira só tamanho e prévia hexadecimal.
+/// Reads an attached body up to `limit` bytes. Text becomes a `String` (the front end
+/// shows it in `<pre>`); the rest becomes only a size and a hex preview.
 #[tauri::command]
 pub async fn read_body(session_dir: String, name: String, limit: Option<u64>) -> Result<BodyPayload, String> {
     tauri::async_runtime::spawn_blocking(move || read_body_blocking(&session_dir, &name, limit.unwrap_or(262_144)))
         .await
-        .map_err(|error| format!("a leitura foi interrompida: {error}"))?
+        .map_err(|error| format!("the read was interrupted: {error}"))?
 }
 
 fn read_body_blocking(session_dir: &str, name: &str, limit: u64) -> Result<BodyPayload, String> {
@@ -940,9 +940,9 @@ fn read_body_blocking(session_dir: &str, name: &str, limit: u64) -> Result<BodyP
     let mut buf = Vec::new();
     file.take(limit.min(16 * 1024 * 1024))
         .read_to_end(&mut buf)
-        .map_err(|error| format!("falha ao ler anexo: {error}"))?;
+        .map_err(|error| format!("failed to read attachment: {error}"))?;
     let cut = (buf.len() as u64) < total;
-    // Corte no limite pode partir um caractere: aceita prefixo UTF-8 válido.
+    // A cut at the limit may split a character: accepts a valid UTF-8 prefix.
     let text = match std::str::from_utf8(&buf) {
         Ok(text) => Some(text.to_string()),
         Err(error) if cut && error.error_len().is_none() => {
@@ -976,7 +976,7 @@ fn read_body_blocking(session_dir: &str, name: &str, limit: u64) -> Result<BodyP
     })
 }
 
-/// Origem dos valores de uma requisição (`flow::value_origins`), fora da thread da UI.
+/// Origin of a request's values (`flow::value_origins`), off the UI thread.
 #[tauri::command]
 pub async fn request_origins(
     session_dir: String,
@@ -990,13 +990,13 @@ pub async fn request_origins(
             &request_id,
             &crate::adapters::flow_options(),
         )
-        .map_err(|error| format!("não foi possível calcular as origens: {error}"))
+        .map_err(|error| format!("could not calculate the origins: {error}"))
     })
     .await
-    .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
+    .map_err(|error| format!("the calculation was interrupted: {error}"))?
 }
 
-/// Cadeia de priming de uma requisição (`flow::priming_chain`).
+/// Priming chain of a request (`flow::priming_chain`).
 #[tauri::command]
 pub async fn request_chain(
     session_dir: String,
@@ -1010,13 +1010,13 @@ pub async fn request_chain(
             &request_id,
             &crate::adapters::flow_options(),
         )
-        .map_err(|error| format!("não foi possível calcular a cadeia: {error}"))
+        .map_err(|error| format!("could not calculate the chain: {error}"))
     })
     .await
-    .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
+    .map_err(|error| format!("the calculation was interrupted: {error}"))?
 }
 
-/// Visão estruturada (derivada) dos campos do corpo que um adaptador de protocolo reivindica.
+/// Structured (derived) view of the body fields that a protocol adapter claims.
 #[tauri::command]
 pub async fn adapter_view(
     session_dir: String,
@@ -1030,14 +1030,14 @@ pub async fn adapter_view(
             .requests
             .iter()
             .find(|r| r.id == request_id)
-            .ok_or_else(|| format!("requisição {request_id} não encontrada na sessão"))?;
+            .ok_or_else(|| format!("request {request_id} not found in the session"))?;
         crate::adapters::view(&lazy, request, &side)
     })
     .await
-    .map_err(|error| format!("a leitura foi interrompida: {error}"))?
+    .map_err(|error| format!("the read was interrupted: {error}"))?
 }
 
-/// Linha do tempo da aplicação (`timeline::timeline`), com o registro de adaptadores do app.
+/// Application timeline (`timeline::timeline`), with the app's adapter registry.
 #[tauri::command]
 pub async fn session_timeline(session_dir: String) -> Result<scrapelens_core::timeline::Timeline, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1051,30 +1051,30 @@ pub async fn session_timeline(session_dir: String) -> Result<scrapelens_core::ti
         ))
     })
     .await
-    .map_err(|error| format!("o cálculo foi interrompido: {error}"))?
+    .map_err(|error| format!("the calculation was interrupted: {error}"))?
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidationResult {
-    /// Pasta nova (0700) com a sessão importada do trace; contém dados da execução.
+    /// New folder (0700) with the session imported from the trace; contains execution data.
     pub trace_dir: String,
     pub trace_requests: usize,
     pub validation: scrapelens_core::validate::Validation,
 }
 
 fn validation_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let data = app.path().app_data_dir().map_err(|error| format!("sem diretório de dados do app: {error}"))?;
+    let data = app.path().app_data_dir().map_err(|error| format!("no app data directory: {error}"))?;
     crate::validation::tmp_root(&data)
 }
 
-/// Descarta a sessão temporária do trace (fechar a tela de validação).
+/// Discards the trace's temporary session (closing the validation screen).
 #[tauri::command]
 pub fn discard_validation(app: AppHandle, trace_dir: String) -> Result<(), String> {
     crate::validation::discard(&validation_root(&app)?, Path::new(&trace_dir))
 }
 
-/// "Guardar esta execução": copia a sessão do trace para uma pasta nova e apaga a temporária.
+/// "Keep this execution": copies the trace's session to a new folder and deletes the temporary one.
 #[tauri::command]
 pub async fn keep_validation(app: AppHandle, trace_dir: String, destination: String) -> Result<String, String> {
     let root = validation_root(&app)?;
@@ -1082,11 +1082,11 @@ pub async fn keep_validation(app: AppHandle, trace_dir: String, destination: Str
         crate::validation::keep(&root, Path::new(&trace_dir), Path::new(&destination)).map(|p| p.display().to_string())
     })
     .await
-    .map_err(|error| format!("o salvamento falhou: {error}"))?
+    .map_err(|error| format!("saving failed: {error}"))?
 }
 
-/// Importa o trace de execução do script (`scrapelens.trace/1`) para uma pasta nova e valida
-/// contra a sessão aberta. Nada é executado e nenhuma rede é usada.
+/// Imports the script's execution trace (`scrapelens.trace/1`) into a new folder and validates
+/// it against the open session. Nothing is executed and no network is used.
 #[tauri::command]
 pub async fn validate_execution(
     app: AppHandle,
@@ -1099,7 +1099,7 @@ pub async fn validate_execution(
         validate_execution_blocking(&root, Path::new(&session_dir), &trace_path, map_origin.as_deref())
     })
     .await
-    .map_err(|error| format!("a validação foi interrompida: {error}"))?
+    .map_err(|error| format!("the validation was interrupted: {error}"))?
 }
 
 fn validate_execution_blocking(
@@ -1113,22 +1113,22 @@ fn validate_execution_blocking(
         None => None,
         Some(text) => Some(
             scrapelens_core::compare::OriginMap::parse(text)
-                .ok_or_else(|| format!("mapeamento de origem inválido ({text}); use <origem-da-captura>=<origem-do-trace>, por exemplo https://sistema.gov.br=http://127.0.0.1:8080"))?,
+                .ok_or_else(|| format!("invalid origin mapping ({text}); use <capture-origin>=<trace-origin>, for example https://sistema.gov.br=http://127.0.0.1:8080"))?,
         ),
     };
-    let bytes = read_import_file_max(trace_path, "trace de execução", crate::validation::TRACE_MAX_BYTES)?;
+    let bytes = read_import_file_max(trace_path, "execution trace", crate::validation::TRACE_MAX_BYTES)?;
     let imported = scrapelens_core::parse::import_trace(&bytes).map_err(|error| {
-        format!("trace inválido: {error}. Use o arquivo gerado pelo script de priming com --trace (scrapelens.trace/1).")
+        format!("invalid trace: {error}. Use the file generated by the priming script with --trace (scrapelens.trace/1).")
     })?;
     let dir = unique_session_dir(root, &sanitize_dir_name(&imported.bundle.session.session.id));
     store::write_session_dir(&imported.bundle, &dir)
-        .map_err(|error| format!("não foi possível gravar a sessão do trace: {error}"))?;
+        .map_err(|error| format!("could not write the trace session: {error}"))?;
     let rules = load_rules(capture_dir)?;
     let capture = cached_session(capture_dir)?;
     let trace = cached_session(&dir)?;
     let mut options = ValidateOptions { rules, ..Default::default() };
     options.compare.flow = crate::adapters::flow_options();
-    // o `plan.hash` é recalculado com os mesmos adaptadores da geração (o app gera e valida sempre com o adaptador)
+    // `plan.hash` is recalculated with the same adapters used for generation (the app always generates and validates with the adapter)
     options.compare.map_origin = map;
     let validation = validate(
         &capture.session,
@@ -1144,8 +1144,8 @@ fn validate_execution_blocking(
     })
 }
 
-/// Sucesso da aplicação × HTTP (`assess::assess_session`). Regras opcionais em
-/// `<sessao>/assess-rules.json`; regras inválidas viram erro acionável.
+/// Application success × HTTP (`assess::assess_session`). Optional rules in
+/// `<session>/assess-rules.json`; invalid rules become an actionable error.
 #[tauri::command]
 pub async fn assess_session(session_dir: String) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || assess_blocking(Path::new(&session_dir)))
@@ -1153,14 +1153,14 @@ pub async fn assess_session(session_dir: String) -> Result<serde_json::Value, St
         .map_err(|error| format!("a avaliação foi interrompida: {error}"))?
 }
 
-/// Regras opcionais `<sessao>/assess-rules.json` (arquivo regular, até 256 KiB); padrão sem o arquivo.
+/// Optional rules `<session>/assess-rules.json` (regular file, up to 256 KiB); default when the file is absent.
 fn load_rules(dir: &Path) -> Result<scrapelens_core::assess::AssessRules, String> {
     use scrapelens_core::assess::AssessRules;
     let rules_path = dir.join("assess-rules.json");
     match read_rules_file(&rules_path)? {
         Some(text) => AssessRules::from_json(&text).map_err(|_| {
             format!(
-                "as regras em {} não são válidas (JSON, schema ou campos fora do esquema scrapelens.assess-rules/1); corrija ou remova o arquivo",
+                "the rules in {} are not valid (JSON, schema, or fields outside the scrapelens.assess-rules/1 schema); fix or remove the file",
                 rules_path.display()
             )
         }),
@@ -1170,38 +1170,38 @@ fn load_rules(dir: &Path) -> Result<scrapelens_core::assess::AssessRules, String
 
 const RULES_MAX_BYTES: u64 = 256 * 1024;
 
-/// Lê `assess-rules.json` só se for arquivo regular sem symlink (symlink_metadata + inode) e até 256 KiB.
-/// `None` quando não existe.
+/// Reads `assess-rules.json` only if it is a regular file without a symlink (symlink_metadata + inode) and up to 256 KiB.
+/// `None` when it does not exist.
 fn read_rules_file(path: &Path) -> Result<Option<String>, String> {
     use std::io::Read;
     let before = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("não foi possível verificar {}: {error}", path.display())),
+        Err(error) => return Err(format!("could not check {}: {error}", path.display())),
     };
     if before.file_type().is_symlink() || !before.is_file() {
-        return Err(format!("{} não é um arquivo regular (link simbólico recusado); remova-o", path.display()));
+        return Err(format!("{} is not a regular file (symbolic link refused); remove it", path.display()));
     }
-    let file = fs::File::open(path).map_err(|error| format!("não foi possível ler {}: {error}", path.display()))?;
-    let opened = file.metadata().map_err(|error| format!("não foi possível ler {}: {error}", path.display()))?;
+    let file = fs::File::open(path).map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let opened = file.metadata().map_err(|error| format!("could not read {}: {error}", path.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         if opened.ino() != before.ino() || opened.dev() != before.dev() {
-            return Err(format!("{} mudou durante a abertura; recusado", path.display()));
+            return Err(format!("{} changed while being opened; refused", path.display()));
         }
     }
     if !opened.is_file() || opened.len() > RULES_MAX_BYTES {
-        return Err(format!("{} excede 256 KiB ou não é arquivo regular; reduza ou remova o arquivo", path.display()));
+        return Err(format!("{} exceeds 256 KiB or is not a regular file; reduce or remove the file", path.display()));
     }
     let mut bytes = Vec::new();
     file.take(RULES_MAX_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("não foi possível ler {}: {error}", path.display()))?;
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
     if bytes.len() as u64 > RULES_MAX_BYTES {
-        return Err(format!("{} excede 256 KiB; reduza ou remova o arquivo", path.display()));
+        return Err(format!("{} exceeds 256 KiB; reduce or remove the file", path.display()));
     }
-    String::from_utf8(bytes).map(Some).map_err(|_| format!("{} não é UTF-8 válido; corrija ou remova o arquivo", path.display()))
+    String::from_utf8(bytes).map(Some).map_err(|_| format!("{} is not valid UTF-8; fix or remove the file", path.display()))
 }
 
 pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
@@ -1223,8 +1223,8 @@ pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
     }))
 }
 
-/// Comparação mantida no Rust: a UI recebe só o resumo e pede páginas de pares
-/// e os campos de um par sob demanda (evita dezenas de MB de JSON no IPC).
+/// Comparison kept in Rust: the UI receives only the summary and requests pages of pairs
+/// and the fields of a pair on demand (avoids tens of MB of JSON over IPC).
 struct StoredComparison {
     id: u64,
     result: Arc<scrapelens_core::compare::SessionComparison>,
@@ -1239,7 +1239,7 @@ const ONLY_LIST_CAP: usize = 200;
 pub struct CompareSummary {
     pub handle: u64,
     pub pairs: usize,
-    /// Pares com algum campo que não é estático (candidatos ao filtro "só dinâmicos").
+    /// Pairs with at least one field that is not static (candidates for the "only dynamic" filter).
     pub dynamic_pairs: usize,
     pub counts: scrapelens_core::compare::PairCounts,
     pub parts_counts: scrapelens_core::compare::PartsCounts,
@@ -1250,14 +1250,14 @@ pub struct CompareSummary {
     pub only_in_a_total: usize,
     pub only_in_b: Vec<scrapelens_core::compare::RequestRef>,
     pub only_in_b_total: usize,
-    /// Sobras de mesmo modelo nos dois lados (provável reordenação), limitadas.
+    /// Leftovers of the same model on both sides (probable reordering), limited.
     pub reordered: Vec<scrapelens_core::compare::ReorderedPair>,
     pub reordered_total: usize,
-    /// Rodadas pareadas, rodadas sem par e requisição de entrada (docs/10 L6).
+    /// Paired rounds, unpaired rounds and the entry request (docs/10 L6).
     pub rounds: Vec<scrapelens_core::compare::RoundInfo>,
     pub unpaired_rounds: Vec<scrapelens_core::compare::UnpairedRound>,
     pub entry_request: Option<String>,
-    /// Proteção/estáticos fora do alinhamento: tipo + totais, com listas limitadas.
+    /// Protection/static fields outside the alignment: type + totals, with limited lists.
     pub groups: Vec<GroupSummary>,
     pub include_all: bool,
 }
@@ -1276,7 +1276,7 @@ pub struct GroupSummary {
 #[serde(rename_all = "camelCase")]
 pub struct PairSummary {
     pub index: usize,
-    /// Índice em `rounds`.
+    /// Index into `rounds`.
     pub round: usize,
     pub a: scrapelens_core::compare::RequestRef,
     pub b: scrapelens_core::compare::RequestRef,
@@ -1290,7 +1290,7 @@ pub struct PairSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComparePage {
-    /// Pares que passam no filtro (não só os desta página).
+    /// Pairs that pass the filter (not only those on this page).
     pub total: usize,
     pub items: Vec<PairSummary>,
 }
@@ -1300,7 +1300,7 @@ fn pair_is_dynamic(pair: &scrapelens_core::compare::PairComparison) -> bool {
     c.dynamic + c.only_a + c.only_b + c.redacted > 0
 }
 
-/// Compara a sessão aberta (A) com outra pasta (B), fora da thread da UI.
+/// Compares the open session (A) with another folder (B), off the UI thread.
 #[tauri::command]
 pub async fn compare_open(
     dir_a: String,
@@ -1317,7 +1317,7 @@ pub async fn compare_open(
         .map_err(|error| format!("a comparação foi interrompida: {error}"))?
 }
 
-/// Página de pares (resumos, sem campos).
+/// Page of pairs (summaries, without fields).
 #[tauri::command]
 pub async fn compare_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool) -> Result<ComparePage, String> {
     tauri::async_runtime::spawn_blocking(move || comparison_page(handle, offset, limit, only_dynamic))
@@ -1325,7 +1325,7 @@ pub async fn compare_page(handle: u64, offset: usize, limit: usize, only_dynamic
         .map_err(|error| format!("a leitura foi interrompida: {error}"))?
 }
 
-/// Campos de um par (na ordem da fonte), carregados ao expandir.
+/// Fields of a pair (in source order), loaded on expansion.
 #[tauri::command]
 pub async fn compare_fields(handle: u64, index: usize) -> Result<Vec<scrapelens_core::compare::FieldDiff>, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1334,17 +1334,17 @@ pub async fn compare_fields(handle: u64, index: usize) -> Result<Vec<scrapelens_
             .pairs
             .get(index)
             .map(|pair| pair.fields.clone())
-            .ok_or_else(|| format!("par {index} inexistente"))
+            .ok_or_else(|| format!("pair {index} does not exist"))
     })
     .await
     .map_err(|error| format!("a leitura foi interrompida: {error}"))?
 }
 
 fn stored_comparison(handle: u64) -> Result<Arc<scrapelens_core::compare::SessionComparison>, String> {
-    let guard = COMPARISON.lock().map_err(|_| "comparação corrompida".to_string())?;
+    let guard = COMPARISON.lock().map_err(|_| "comparison corrupted".to_string())?;
     match guard.as_ref() {
         Some(stored) if stored.id == handle => Ok(stored.result.clone()),
-        _ => Err("esta comparação foi substituída por outra; compare de novo".to_string()),
+        _ => Err("this comparison was replaced by another; compare again".to_string()),
     }
 }
 
@@ -1375,8 +1375,8 @@ fn comparison_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool)
     Ok(ComparePage { total, items })
 }
 
-/// Caminhos canonicalizados (resolve `./s`, `s` e symlinks): a mesma sessão por
-/// dois caminhos é recusada.
+/// Canonicalized paths (resolves `./s`, `s` and symlinks): the same session through
+/// two paths is refused.
 fn compare_options(
     include_all: bool,
     a_range: Option<&str>,
@@ -1388,7 +1388,7 @@ fn compare_options(
             None => Ok(None),
             Some(text) => RequestRange::parse(text)
                 .map(Some)
-                .ok_or_else(|| format!("faixa {label} inválida ({text}); use de:ate, por exemplo 10:50 ou har-0010:har-0050")),
+                .ok_or_else(|| format!("invalid {label} range ({text}); use from:to, for example 10:50 or har-0010:har-0050")),
         }
     };
     Ok(scrapelens_core::compare::CompareOptions {
@@ -1411,18 +1411,18 @@ fn open_comparison_with(
     options: scrapelens_core::compare::CompareOptions,
 ) -> Result<CompareSummary, String> {
     let canon = |label: &str, dir: &str| {
-        fs::canonicalize(dir).map_err(|error| format!("sessão {label} inacessível ({dir}): {error}"))
+        fs::canonicalize(dir).map_err(|error| format!("session {label} is inaccessible ({dir}): {error}"))
     };
     let a_path = canon("A", dir_a)?;
     let b_path = canon("B", dir_b)?;
     if a_path == b_path {
         return Err(format!(
-            "A e B são a mesma sessão ({}); escolha outra pasta para comparar",
+            "A and B are the same session ({}); choose another folder to compare",
             a_path.display()
         ));
     }
     let a = cached_session(&a_path)?;
-    let b = cached_session(&b_path).map_err(|error| format!("sessão B: {error}"))?;
+    let b = cached_session(&b_path).map_err(|error| format!("session B: {error}"))?;
     let result = scrapelens_core::compare::compare_sessions(
         &a.session,
         &scrapelens_core::search::LazyBodies(&a),
@@ -1462,13 +1462,13 @@ fn open_comparison_with(
             .collect(),
         include_all: options.include_all,
     };
-    *COMPARISON.lock().map_err(|_| "comparação corrompida".to_string())? =
+    *COMPARISON.lock().map_err(|_| "comparison corrupted".to_string())? =
         Some(StoredComparison { id, result: Arc::new(result) });
     Ok(summary)
 }
 
-/// Script de priming (cadeia completa até a requisição); usa o codificador do adaptador
-/// de protocolo quando ele reivindica o campo e informa isso na prévia.
+/// Priming script (full chain up to the request); uses the protocol adapter's encoder
+/// when it claims the field, and reports that in the preview.
 fn priming_preview(dir: &Path, request_id: &str, lenient_parts: bool) -> Result<crate::export::ExportPreview, String> {
     let lazy = cached_session(dir)?;
     let request = lazy
@@ -1476,7 +1476,7 @@ fn priming_preview(dir: &Path, request_id: &str, lenient_parts: bool) -> Result<
         .requests
         .iter()
         .find(|r| r.id == request_id)
-        .ok_or_else(|| format!("requisição {request_id} não encontrada na sessão"))?;
+        .ok_or_else(|| format!("request {request_id} not found in the session"))?;
     let options = scrapelens_core::export::priming::PrimingOptions {
         flow: crate::adapters::flow_options(),
         adapter_encoders: crate::adapters::priming_encoders(),
@@ -1489,7 +1489,7 @@ fn priming_preview(dir: &Path, request_id: &str, lenient_parts: bool) -> Result<
         request_id,
         &options,
     )
-    .map_err(|error| format!("não foi possível gerar o script de priming: {error}"))?;
+    .map_err(|error| format!("could not generate the priming script: {error}"))?;
     let adapter = crate::adapters::script_uses_adapter(&output.text).map(str::to_string);
     Ok(crate::export::ExportPreview {
         session_id: lazy.session.session.id.clone(),
@@ -1509,7 +1509,7 @@ fn priming_preview(dir: &Path, request_id: &str, lenient_parts: bool) -> Result<
     })
 }
 
-/// Prévia de exportação; com `annotate` calcula as origens (cache LazySession).
+/// Export preview; with `annotate` it calculates the origins (LazySession cache).
 fn export_preview(
     dir: &Path,
     request_id: &str,
@@ -1534,11 +1534,11 @@ fn export_preview(
     crate::export::preview_with(dir, request_id, format, origins)
 }
 
-/// Gera a exportação cURL/Python de uma requisição da sessão persistida.
+/// Generates the cURL/Python export of a request from the persisted session.
 ///
-/// Roda fora da thread da UI: ler anexos e gerar texto pode ser pesado em
-/// sessões grandes. O texto devolvido é a fonte da prévia, da cópia e do
-/// arquivo salvo.
+/// Runs off the UI thread: reading attachments and generating text can be heavy on
+/// large sessions. The returned text is the source for the preview, the copy and the
+/// saved file.
 #[tauri::command]
 pub async fn export_request(
     session_dir: String,
@@ -1551,27 +1551,27 @@ pub async fn export_request(
         export_preview(Path::new(&session_dir), &request_id, &format, annotate_origins.unwrap_or(false), lenient_parts.unwrap_or(false))
     })
     .await
-    .map_err(|error| format!("a geração da exportação falhou: {error}"))?
+    .map_err(|error| format!("generating the export failed: {error}"))?
 }
 
-/// Grava o texto exportado em um arquivo novo (0600), recusando sobrescrita e
-/// links simbólicos. O caminho vem do diálogo nativo de salvamento.
+/// Writes the exported text to a new file (0600), refusing overwrites and
+/// symbolic links. The path comes from the native save dialog.
 #[tauri::command]
 pub async fn save_export_file(path: String, text: String) -> Result<crate::export::SavedFile, String> {
     tauri::async_runtime::spawn_blocking(move || crate::export::write_text_file(Path::new(&path), &text))
         .await
-        .map_err(|error| format!("o salvamento falhou: {error}"))?
+        .map_err(|error| format!("saving failed: {error}"))?
 }
 
-/// Contagens e avisos da sanitização, sem gravar nada.
+/// Sanitization counts and warnings, without writing anything.
 #[tauri::command]
 pub async fn preview_sanitized(session_dir: String, include_sensitive: Option<bool>) -> Result<crate::export::SanitizePreview, String> {
     tauri::async_runtime::spawn_blocking(move || crate::export::sanitize_preview_with_options(Path::new(&session_dir), include_sensitive.unwrap_or(false)))
         .await
-        .map_err(|error| format!("a prévia da sanitização falhou: {error}"))?
+        .map_err(|error| format!("the sanitization preview failed: {error}"))?
 }
 
-/// Grava a sessão sanitizada em uma pasta nova escolhida pelo usuário.
+/// Writes the sanitized session to a new folder chosen by the user.
 #[tauri::command]
 pub async fn save_sanitized(
     session_dir: String,
@@ -1582,14 +1582,14 @@ pub async fn save_sanitized(
         crate::export::sanitize_to_with_options(Path::new(&session_dir), Path::new(&destination), include_sensitive.unwrap_or(false))
     })
     .await
-    .map_err(|error| format!("a sanitização falhou: {error}"))?
+    .map_err(|error| format!("sanitization failed: {error}"))?
 }
 
 #[tauri::command]
 pub fn reveal_path(path: String) -> Result<(), String> {
     let target = PathBuf::from(&path);
     if !target.exists() {
-        return Err(format!("caminho não encontrado: {path}"));
+        return Err(format!("path not found: {path}"));
     }
     #[cfg(target_os = "macos")]
     {
@@ -1600,27 +1600,27 @@ pub fn reveal_path(path: String) -> Result<(), String> {
         };
         match status {
             Ok(status) if status.success() => Ok(()),
-            Ok(status) => Err(format!("open terminou com {status}")),
-            Err(error) => Err(format!("não foi possível abrir o Finder: {error}")),
+            Ok(status) => Err(format!("open exited with {status}")),
+            Err(error) => Err(format!("could not open Finder: {error}")),
         }
     }
     #[cfg(target_os = "linux")]
     {
-        // xdg-open não seleciona arquivos: abre a pasta (o pai, quando é um arquivo).
+        // xdg-open does not select files: it opens the folder (the parent, when it is a file).
         let dir = reveal_dir(&target);
         match std::process::Command::new("xdg-open").arg(&dir).status() {
             Ok(status) if status.success() => Ok(()),
-            Ok(status) => Err(format!("xdg-open terminou com {status}")),
-            Err(error) => Err(format!("não foi possível abrir o gerenciador de arquivos (xdg-open): {error}")),
+            Ok(status) => Err(format!("xdg-open exited with {status}")),
+            Err(error) => Err(format!("could not open the file manager (xdg-open): {error}")),
         }
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        Err("revelar o arquivo não é suportado nesta plataforma".to_string())
+        Err("revealing a file is not supported on this platform".to_string())
     }
 }
 
-/// Pasta a abrir no gerenciador de arquivos: a própria pasta ou o pai do arquivo.
+/// Folder to open in the file manager: the folder itself or the file's parent.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn reveal_dir(target: &std::path::Path) -> PathBuf {
     if target.is_dir() {
@@ -1656,16 +1656,16 @@ mod tests {
         let file = root.join("a.har");
         std::fs::write(&file, b"{\"log\":{}}").unwrap();
         assert_eq!(read_import_file_max(file.to_str().unwrap(), "HAR", 1024).unwrap(), b"{\"log\":{}}");
-        assert!(read_import_file_max(file.to_str().unwrap(), "HAR", 3).unwrap_err().contains("maior"));
+        assert!(read_import_file_max(file.to_str().unwrap(), "HAR", 3).unwrap_err().contains("larger"));
         let link = root.join("l.har");
         symlink(&file, &link).unwrap();
         assert!(read_import_file_max(link.to_str().unwrap(), "HAR", 1024).is_err());
         let fifo = root.join("p.har");
         let c = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
-        // FIFO sem escritor: O_NONBLOCK não trava; fstat recusa por não ser regular.
+        // FIFO with no writer: O_NONBLOCK does not block; fstat refuses it for not being regular.
         assert!(read_import_file_max(fifo.to_str().unwrap(), "HAR", 1024).unwrap_err().contains("regular"));
-        assert!(read_import_file_max(root.to_str().unwrap(), "HAR", 1024).unwrap_err().contains("diretório"));
+        assert!(read_import_file_max(root.to_str().unwrap(), "HAR", 1024).unwrap_err().contains("directory"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1683,7 +1683,7 @@ mod tests {
         let path = root.join("dir/a.har");
         crate::cli::validate_absolute_regular_file(&path).unwrap();
         assert_eq!(read_import_file_max(path.to_str().unwrap(), "HAR", 64).unwrap(), b"good");
-        // troca o pai por symlink depois da validação
+        // swap the parent for a symlink after validation
         std::fs::rename(root.join("dir"), root.join("dir-old")).unwrap();
         std::os::unix::fs::symlink(root.join("other"), root.join("dir")).unwrap();
         assert!(read_import_file_max(path.to_str().unwrap(), "HAR", 64).is_err());
@@ -1693,16 +1693,16 @@ mod tests {
     #[test]
     fn second_open_is_refused_while_one_is_loading() {
         let flag = std::sync::atomic::AtomicBool::new(false);
-        let first = FlagGuard::acquire(&flag).expect("primeira abertura");
-        assert!(FlagGuard::acquire(&flag).is_none(), "segunda em paralelo deve ser recusada");
+        let first = FlagGuard::acquire(&flag).expect("first open");
+        assert!(FlagGuard::acquire(&flag).is_none(), "a second parallel open must be refused");
         drop(first);
-        assert!(FlagGuard::acquire(&flag).is_some(), "liberado ao terminar");
+        assert!(FlagGuard::acquire(&flag).is_some(), "released when finished");
         let result = std::panic::catch_unwind(|| {
             let _g = FlagGuard::acquire(&flag).unwrap();
-            panic!("falha na abertura");
+            panic!("open failed");
         });
         assert!(result.is_err());
-        assert!(!flag.load(std::sync::atomic::Ordering::SeqCst), "pânico também libera");
+        assert!(!flag.load(std::sync::atomic::Ordering::SeqCst), "a panic also releases it");
     }
 
     #[test]
@@ -1714,7 +1714,7 @@ mod tests {
             let _g = StartingGuard::begin(&flag, |r| calls.borrow_mut().push(r));
             assert!(flag.load(Ordering::SeqCst));
             assert!(crate::menu::blocked_while_recording("start-session", &flag));
-            // start falha (sai sem commit)
+            // start fails (exits without commit)
         }
         assert!(!flag.load(Ordering::SeqCst));
         assert_eq!(*calls.borrow(), vec![true, false]);
@@ -1723,7 +1723,7 @@ mod tests {
             let mut g = StartingGuard::begin(&flag, |r| calls.borrow_mut().push(r));
             g.commit();
         }
-        assert!(flag.load(Ordering::SeqCst), "start ok mantém gravando");
+        assert!(flag.load(Ordering::SeqCst), "a successful start keeps recording");
         assert_eq!(*calls.borrow(), vec![true]);
     }
 
@@ -1752,7 +1752,7 @@ mod tests {
 
     #[test]
     fn imports_are_refused_while_recording() {
-        assert!(ensure_not_recording(true).unwrap_err().contains("Encerre"));
+        assert!(ensure_not_recording(true).unwrap_err().contains("Stop the recording"));
         assert!(ensure_not_recording(false).is_ok());
         assert_eq!(crate::menu::RECORDING_DISABLED_IDS, ["import-har", "import-netlog", "start-session"]);
     }
@@ -1761,7 +1761,7 @@ mod tests {
     fn menu_guard_never_waits_on_capture_lock() {
         use std::sync::atomic::{AtomicBool, Ordering};
         let state = crate::AppState::default();
-        // start_session segura o lock (até 35 s); o menu tem de responder já.
+        // start_session holds the lock (up to 35 s); the menu must respond right away.
         let _held = state.capture.lock().unwrap();
         let started = std::time::Instant::now();
         assert!(!crate::menu::blocked_while_recording("start-session", &state.recording));
@@ -1795,7 +1795,7 @@ mod tests {
         "id": "test-session",
         "startedAt": "2026-10-26T20:00:00Z",
         "labels": ["synthetic-fixture"],
-        "completeness": { "state": "partial", "reasons": ["fixture de teste"] }
+        "completeness": { "state": "partial", "reasons": ["test fixture"] }
       },
       "requests": []
     }"#;
@@ -1830,7 +1830,7 @@ mod tests {
     #[test]
     fn rejects_missing_session_file() {
         let error = read_session_payload("/caminho/que/nao/existe/scrapelens").unwrap_err();
-        assert!(error.contains("não encontrado"), "{error}");
+        assert!(error.contains("not found"), "{error}");
     }
 
     #[test]
@@ -1909,15 +1909,15 @@ mod tests {
         let dir = detran_session("cache");
         let first = cached_session(&dir).unwrap();
         let second = cached_session(&dir).unwrap();
-        assert!(Arc::ptr_eq(&first, &second), "segunda busca deve reutilizar o bundle");
-        // arquivo mudou (tamanho/mtime) → recarrega
+        assert!(Arc::ptr_eq(&first, &second), "the second search must reuse the bundle");
+        // file changed (size/mtime) → reload
         let session_file = dir.join("session.json");
         let mut text = fs::read_to_string(&session_file).unwrap();
         text.push('\n');
         fs::write(&session_file, text).unwrap();
         let third = cached_session(&dir).unwrap();
         assert!(!Arc::ptr_eq(&first, &third));
-        // outra sessão substitui a anterior
+        // another session replaces the previous one
         let other = detran_session("cache-other");
         let fourth = cached_session(&other).unwrap();
         assert!(!Arc::ptr_eq(&third, &fourth));
@@ -1938,12 +1938,12 @@ mod tests {
         assert!(read_body_blocking(d, "link.bin", 100).unwrap_err().contains("link simbólico"));
         assert!(read_attachment(d.to_string(), "link.bin".to_string()).unwrap_err().contains("link simbólico"));
         assert_eq!(read_body_blocking(d, "ok.bin", 100).unwrap().kind, "text");
-        // pasta attachments/ como link
+        // attachments/ folder as a link
         let dir2 = temp_session_dir("symlink2");
         fs::remove_dir_all(dir2.join("attachments")).unwrap();
         std::os::unix::fs::symlink(&att, dir2.join("attachments")).unwrap();
         assert!(read_body_blocking(dir2.to_str().unwrap(), "ok.bin", 100).unwrap_err().contains("link simbólico"));
-        // diretório no lugar de arquivo
+        // directory in place of a file
         fs::create_dir(att.join("sub")).unwrap();
         assert!(read_body_blocking(d, "sub", 100).is_err());
         for d in [dir, dir2, outside] {
@@ -1951,15 +1951,15 @@ mod tests {
         }
     }
 
-    /// Medição manual: `SL_LARGE_DIR=<sessão> cargo test --release -- --ignored large_search --nocapture`.
+    /// Manual measurement: `SL_LARGE_DIR=<session> cargo test --release -- --ignored large_search --nocapture`.
     #[test]
     #[ignore]
     fn large_search_timing() {
-        let dir = std::env::var("SL_LARGE_DIR").expect("defina SL_LARGE_DIR");
+        let dir = std::env::var("SL_LARGE_DIR").expect("set SL_LARGE_DIR");
         for round in 1..=3 {
             let start = std::time::Instant::now();
             let found = run_search(&dir, "zzzz", &[], false, None).unwrap();
-            eprintln!("busca {round}: {:?}, {} achados, loads={}, rss_atual={}", start.elapsed(), found.matches.len(), SESSION_LOADS.load(std::sync::atomic::Ordering::SeqCst), String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout).trim());
+            eprintln!("search {round}: {:?}, {} matches, loads={}, current_rss={}", start.elapsed(), found.matches.len(), SESSION_LOADS.load(std::sync::atomic::Ordering::SeqCst), String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout).trim());
         }
     }
 
@@ -1984,14 +1984,14 @@ mod tests {
         let fields = stored_comparison(cmp.handle).unwrap().pairs[page.items[0].index].fields.len();
         assert_eq!(fields, page.items[0].field_count);
         assert!(comparison_page(cmp.handle + 99, 0, 5, false).is_err());
-        // a mesma sessão por caminhos diferentes (./, symlink) é recusada
+        // the same session through different paths (./, symlink) is refused
         let same = a.to_str().unwrap().to_string();
-        assert!(open_comparison(&same, &format!("{same}/../{}", a.file_name().unwrap().to_str().unwrap())).unwrap_err().contains("mesma sessão"));
+        assert!(open_comparison(&same, &format!("{same}/../{}", a.file_name().unwrap().to_str().unwrap())).unwrap_err().contains("same session"));
         let link = std::env::temp_dir().join(format!("sl-link-{}", std::process::id()));
         std::os::unix::fs::symlink(&a, &link).unwrap();
-        assert!(open_comparison(&same, link.to_str().unwrap()).unwrap_err().contains("mesma sessão"));
+        assert!(open_comparison(&same, link.to_str().unwrap()).unwrap_err().contains("same session"));
         fs::remove_file(&link).ok();
-        // as duas sessões ficam em cache ao mesmo tempo
+        // both sessions stay cached at the same time
         let again = cached_session(&a).unwrap();
         assert!(Arc::ptr_eq(&lazy, &again));
         fs::remove_dir_all(a).ok();
@@ -2007,30 +2007,30 @@ mod tests {
         let outcomes = result["outcomes"].as_array().unwrap();
         assert!(!outcomes.is_empty());
         assert!(outcomes.iter().any(|o| o["verdictKind"] == "app-ok"));
-        // as chaves de `counts` são as mesmas do `verdictKind` (kebab-case)
+        // the keys of `counts` are the same as `verdictKind` (kebab-case)
         let counts = result["counts"].as_object().unwrap();
         assert!(!counts.is_empty());
         for (key, value) in counts {
-            assert_eq!(value.as_u64().unwrap() as usize, outcomes.iter().filter(|o| o["verdictKind"] == key.as_str()).count(), "chave {key} fora do esquema");
-            assert!(["app-ok", "app-error", "blocked", "indeterminado", "not-assessed"].contains(&key.as_str()), "chave inesperada: {key}");
+            assert_eq!(value.as_u64().unwrap() as usize, outcomes.iter().filter(|o| o["verdictKind"] == key.as_str()).count(), "key {key} outside the schema");
+            assert!(["app-ok", "app-error", "blocked", "indeterminado", "not-assessed"].contains(&key.as_str()), "unexpected key: {key}");
         }
-        // regras inválidas viram erro acionável
+        // invalid rules become an actionable error
         fs::write(dir.join("assess-rules.json"), "{\"schema\":\"x\"}").unwrap();
-        assert!(assess_blocking(&dir).unwrap_err().contains("corrija ou remova"));
-        // o erro de parse não ecoa conteúdo do arquivo
+        assert!(assess_blocking(&dir).unwrap_err().contains("fix or remove"));
+        // the parse error does not echo the file's content
         fs::write(dir.join("assess-rules.json"), "SEGREDO-NO-ARQUIVO").unwrap();
         assert!(!assess_blocking(&dir).unwrap_err().contains("SEGREDO"));
-        // arquivo grande é recusado
+        // a large file is refused
         fs::write(dir.join("assess-rules.json"), vec![b' '; 256 * 1024 + 1]).unwrap();
         assert!(assess_blocking(&dir).unwrap_err().contains("256 KiB"));
-        // symlink é recusado, sem ler o alvo
+        // a symlink is refused, without reading the target
         let outside = dir.join("fora.json");
         fs::write(&outside, "{\"schema\":\"scrapelens.assess-rules/1\"}").unwrap();
         fs::remove_file(dir.join("assess-rules.json")).unwrap();
         std::os::unix::fs::symlink(&outside, dir.join("assess-rules.json")).unwrap();
-        assert!(assess_blocking(&dir).unwrap_err().contains("link simbólico"));
+        assert!(assess_blocking(&dir).unwrap_err().contains("symbolic link"));
         fs::remove_file(dir.join("assess-rules.json")).unwrap();
-        // sem regras ou com regras sãs, sem avisos; regras que distorcem devolvem os avisos do core
+        // without rules or with sound rules, no warnings; rules that distort return the core's warnings
         fs::remove_file(dir.join("assess-rules.json")).ok();
         assert_eq!(result["warnings"].as_array().unwrap().len(), 0);
         fs::write(
@@ -2053,12 +2053,12 @@ mod tests {
         let noted = export_preview(d, "cdp-r0011", "curl", true, false).unwrap();
         let strip = |text: &str| text.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n");
         assert_eq!(strip(&plain.text), strip(&noted.text));
-        assert!(noted.text.len() > plain.text.len(), "deve haver comentários de origem");
+        assert!(noted.text.len() > plain.text.len(), "there must be origin comments");
         assert!(noted.warnings.iter().all(|w| w.code != "export.origins_unavailable"));
         fs::remove_dir_all(dir).ok();
     }
 
-    /// Gera as prévias reais (com e sem origens) para o harness de UI:
+    /// Generates the real previews (with and without origins) for the UI harness:
     /// `SL_SESSION=<pasta> SL_REQUEST=<id> SL_DUMP=<arquivo.json> cargo test -- --ignored dump_export_previews`.
     #[test]
     #[ignore]
@@ -2076,7 +2076,7 @@ mod tests {
         fs::write(out, serde_json::to_string_pretty(&all).unwrap()).unwrap();
     }
 
-    /// Medição manual: `SL_LARGE_A=<sessão> SL_LARGE_B=<cópia> cargo test --release -- --ignored large_compare --nocapture`.
+    /// Manual measurement: `SL_LARGE_A=<session> SL_LARGE_B=<copy> cargo test --release -- --ignored large_compare --nocapture`.
     #[test]
     #[ignore]
     fn large_compare_timing() {
@@ -2094,11 +2094,11 @@ mod tests {
         let opened = start.elapsed();
         let filtered = comparison_page(summary.handle, 0, 50, summary.pairs > 500).unwrap();
         let first = start.elapsed();
-        eprintln!("1a página com o filtro padrão (só dinâmicos se >500 pares): {} item(ns) de {}", filtered.items.len(), filtered.total);
+        eprintln!("1st page with the default filter (only dynamic if >500 pairs): {} item(s) of {}", filtered.items.len(), filtered.total);
         let page = comparison_page(summary.handle, 0, 50, false).unwrap();
         let fields = stored_comparison(summary.handle).unwrap().pairs[page.items[0].index].fields.len();
         eprintln!(
-            "pares={} dinamicos={} resumo_json={}B pagina50_json={}B campos_do_1o_par={} abrir={:?} 1a_pagina={:?} rss_kb={}",
+            "pairs={} dynamic={} summary_json={}B page50_json={}B fields_of_1st_pair={} open={:?} 1st_page={:?} rss_kb={}",
             summary.pairs,
             summary.dynamic_pairs,
             serde_json::to_string(&summary).unwrap().len(),
@@ -2115,7 +2115,7 @@ mod tests {
             &scrapelens_core::search::LazyBodies(&cached_session(Path::new(&b)).unwrap()),
             &scrapelens_core::compare::CompareOptions::default(),
         );
-        eprintln!("json_completo_antigo={}B", serde_json::to_string(&full).unwrap().len());
+        eprintln!("full_json_old={}B", serde_json::to_string(&full).unwrap().len());
     }
 
     #[test]
@@ -2123,7 +2123,7 @@ mod tests {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let a = detran_session("reorder-a");
         let b = fixture_session("reorder-b", "detran-pb-b", "detran-pb-b");
-        // B com a 4ª requisição movida para o fim: sobra de mesmo modelo nos dois lados.
+        // B with the 4th request moved to the end: a leftover of the same model on both sides.
         let file = b.join("session.json");
         let mut doc: serde_json::Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
         let requests = doc["requests"].as_array_mut().unwrap();
@@ -2161,7 +2161,7 @@ mod tests {
         let b = har("real-shape-2rounds.har");
         let summary = open_comparison(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
         assert!(!summary.rounds.is_empty());
-        assert!(!summary.unpaired_rounds.is_empty(), "a 2ª rodada de B fica sem par");
+        assert!(!summary.unpaired_rounds.is_empty(), "B's 2nd round is left without a pair");
         assert!(summary.groups.iter().any(|g| g.kind == "protection"));
         let all = open_comparison_with(
             a.to_str().unwrap(),
@@ -2189,7 +2189,7 @@ mod tests {
         let dir = real_shape_session("natural");
         let d = dir.to_str().unwrap();
         let lazy = cached_session(&dir).unwrap();
-        // origens usam nomes internos do adaptador
+        // origins use the adapter's internal names
         let origins = scrapelens_core::flow::value_origins(
             &lazy.session,
             &scrapelens_core::search::LazyBodies(&lazy),
@@ -2198,19 +2198,19 @@ mod tests {
         )
         .unwrap();
         let json = serde_json::to_string(&origins).unwrap();
-        assert!(json.contains("XML.delta") || json.contains("XML.p."), "sem nomes internos do adaptador");
-        // visão estruturada: bruto + partes nomeadas
+        assert!(json.contains("XML.delta") || json.contains("XML.p."), "no internal adapter names");
+        // structured view: raw + named parts
         let request = lazy.session.requests.iter().find(|r| r.id == "har-0026").unwrap();
         let view = crate::adapters::view(&lazy, request, "request").unwrap();
         assert!(!view.fields.is_empty() && view.fields[0].error.is_none());
         assert!(view.fields[0].parts.iter().any(|p| p.name == "delta" || p.name.starts_with("p.")));
         assert!(!view.fields[0].raw.is_empty());
         assert!(crate::adapters::view(&lazy, request, "lado").is_err());
-        // script de priming usa o codificador do adaptador e a prévia diz isso
+        // the priming script uses the adapter's encoder and the preview says so
         let preview = export_preview(&dir, "har-0026", "priming", false, false).unwrap();
         assert_eq!(preview.format, "priming");
         assert_eq!(preview.adapter.as_deref(), Some("natural-ajax"));
-        // `--lenient-parts` é opção avançada: desligada por padrão, e ligada ela gera o script sem erro (nesta fixture o texto sai igual ao estrito)
+        // `--lenient-parts` is an advanced option: off by default; when on, it generates the script without error (in this fixture the text comes out the same as strict)
         let lenient = export_preview(&dir, "har-0026", "priming", false, true).unwrap();
         assert_eq!(lenient.adapter.as_deref(), Some("natural-ajax"));
         let _ = d;
@@ -2247,33 +2247,33 @@ mod tests {
     fn timeline_and_validate_execution_on_real_shape_with_sim_traces() {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let capture = real_shape_session("timeline-cap");
-        // linha do tempo: eventos da aplicação com rótulo do adaptador e grupos recolhidos
+        // timeline: application events with the adapter label and collapsed groups
         let rt = tauri::async_runtime::block_on(session_timeline(capture.display().to_string())).unwrap();
         assert!(rt.counts.events > 0 && rt.counts.protection > 0);
         let json = serde_json::to_value(&rt).unwrap();
         assert!(json["items"].as_array().unwrap().iter().any(|i| i["type"] == "group" && i["kind"] == "protection"));
-        assert!(json["items"].as_array().unwrap().iter().any(|i| i["label"].as_str().is_some_and(|l| l.contains("cmd_consultar_placa"))), "rótulo event do adaptador");
-        // validação: trace ok = equivalente; 403 = diverge, trace em pasta nova 0700
+        assert!(json["items"].as_array().unwrap().iter().any(|i| i["label"].as_str().is_some_and(|l| l.contains("cmd_consultar_placa"))), "event label from the adapter");
+        // validation: trace ok = equivalent; 403 = diverges; trace in a new 0700 folder
         let root = temp_session_dir("timeline-root");
         fs::remove_dir_all(&root).ok();
         fs::create_dir_all(&root).unwrap();
         let ok = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), None).unwrap();
         assert!(ok.validation.summary.starts_with("execução equivalente à captura"), "{}", ok.validation.summary);
         assert!(ok.validation.summary.contains("[origem mapeada:"));
-        // trace fiel (plan.version 2): nenhum aviso de parâmetro ou de plano; só o de origem mapeada
+        // faithful trace (plan.version 2): no parameter or plan warning; only the mapped-origin one
         assert!(
             ok.validation.warnings.iter().all(|w| w.starts_with("origens de aplicação diferentes")),
-            "a trace fiel não pode gerar avisos além do de origem mapeada: {:?}",
+            "a faithful trace must not generate warnings beyond the mapped-origin one: {:?}",
             ok.validation.warnings
         );
         assert!(
             !ok.validation.warnings.iter().any(|w| w.contains("parâmetro") || w.contains("plano")),
-            "avisos espúrios de parâmetro/plano: {:?}",
+            "spurious parameter/plan warnings: {:?}",
             ok.validation.warnings
         );
         assert!(
             ok.validation.steps.iter().flat_map(|st| &st.expected).any(|n| n.reason.contains("parâmetro do usuário")),
-            "placa/CPF informados viram esperado (parâmetro do usuário)"
+            "plate/CPF provided become expected (user parameter)"
         );
         let bad = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-403.json"), None).unwrap();
         assert!(bad.validation.summary.starts_with("diverge no passo 3"), "{}", bad.validation.summary);
@@ -2283,24 +2283,24 @@ mod tests {
         assert_ne!(ok.trace_dir, bad.trace_dir);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(fs::metadata(&bad.trace_dir).unwrap().permissions().mode() & 0o777, 0o700);
-        // erros acionáveis
+        // actionable errors
         let invalid = root.join("nao-e-trace.json");
         fs::write(&invalid, "{\"schema\":\"x\"}").unwrap();
-        assert!(validate_execution_blocking(&root, &capture, invalid.to_str().unwrap(), None).unwrap_err().contains("trace inválido"));
-        assert!(validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), Some("sem-igual")).unwrap_err().contains("mapeamento de origem inválido"));
+        assert!(validate_execution_blocking(&root, &capture, invalid.to_str().unwrap(), None).unwrap_err().contains("invalid trace"));
+        assert!(validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), Some("sem-igual")).unwrap_err().contains("invalid origin mapping"));
         assert!(validate_execution_blocking(&root, &capture, "/nao/existe.json", None).is_err());
-        // trace acima de 64 MiB: erro acionável, sem ler nem criar sessão
+        // trace above 64 MiB: actionable error, without reading or creating a session
         let huge = root.join("enorme.json");
         fs::File::create(&huge).unwrap().set_len(crate::validation::TRACE_MAX_BYTES + 1).unwrap();
         let before = fs::read_dir(&root).unwrap().count();
         let err = validate_execution_blocking(&root, &capture, huge.to_str().unwrap(), None).unwrap_err();
-        assert!(err.contains("maior que 64 MiB"), "{err}");
+        assert!(err.contains("larger than 64 MiB"), "{err}");
         assert_eq!(fs::read_dir(&root).unwrap().count(), before);
         fs::remove_dir_all(capture).ok();
         fs::remove_dir_all(root).ok();
     }
 
-    /// Dados reais da Rodada 9 para o harness de UI:
+    /// Real Round 9 data for the UI harness:
     /// `SL_SESSION=<pasta> SL_TRACES=<a.json,b.json> SL_DUMP=<dir> cargo test -- --ignored dump_round9_evidence`.
     #[test]
     #[ignore]
@@ -2318,7 +2318,7 @@ mod tests {
         }
     }
 
-    /// Dados reais (adaptador Natural registrado) para o harness de UI:
+    /// Real data (Natural adapter registered) for the UI harness:
     /// `SL_SESSION=<pasta> SL_DUMP=<dir> cargo test -- --ignored dump_adapter_evidence`.
     #[test]
     #[ignore]
@@ -2345,7 +2345,7 @@ mod tests {
         }
     }
 
-    /// Prévia real da sanitização para o harness de UI:
+    /// Real sanitization preview for the UI harness:
     /// `SL_SESSION=<pasta> SL_DUMP=<arquivo.json> cargo test -- --ignored dump_sanitize_preview`.
     #[test]
     #[ignore]

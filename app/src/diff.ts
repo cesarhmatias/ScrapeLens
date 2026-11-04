@@ -16,9 +16,9 @@ export interface HeaderDiff {
 }
 
 /**
- * Diff de headers por NOME, com pares repetidos casados por VALOR (multiconjunto),
- * nunca por posição. "reordenado" = mesmo par presente nos dois lados, com a
- * ordem relativa invertida em relação a outro par estável.
+ * Header diff by NAME, with repeated pairs matched by VALUE (multiset),
+ * never by position. "reordered" = the same pair present on both sides, with its
+ * relative order inverted relative to another stable pair.
  */
 export function diffHeaders(a: HeaderPair[], b: HeaderPair[]): HeaderDiff {
   const names: string[] = [];
@@ -38,7 +38,7 @@ export function diffHeaders(a: HeaderPair[], b: HeaderPair[]): HeaderDiff {
     const bList = b.filter((h) => h.name === name);
     const usedB = new Set<number>();
 
-    // 1. casamento exato nome+valor (preserva duplicatas legítimas)
+    // 1. exact name+value match (keeps legitimate duplicates)
     const matched: { a: HeaderPair; b: HeaderPair }[] = [];
     const restA: HeaderPair[] = [];
     for (const ah of aList) {
@@ -56,7 +56,7 @@ export function diffHeaders(a: HeaderPair[], b: HeaderPair[]): HeaderDiff {
     for (const m of matched) {
       rowsForName.push({ key: `${name}-${r++}`, name, a: m.a, b: m.b, kind: "same" });
     }
-    // 2. sobras: mesmo nome nos dois lados = valor alterado; senão adicionado/removido
+    // 2. leftovers: same name on both sides = changed value; otherwise added/removed
     const maxRest = Math.max(restA.length, restB.length);
     for (let i = 0; i < maxRest; i += 1) {
       const ah = restA[i];
@@ -67,7 +67,7 @@ export function diffHeaders(a: HeaderPair[], b: HeaderPair[]): HeaderDiff {
     rows.push(...rowsForName);
   }
 
-  // 3. reordenação por ordem relativa entre pares iguais
+  // 3. reordering by relative order between identical pairs
   const sameRows = rows.filter((row) => row.kind === "same" && row.a && row.b);
   for (const p of sameRows) {
     for (const q of sameRows) {
@@ -136,7 +136,7 @@ export interface NormalizedHeader {
   count: number;
 }
 
-/** Visão derivada: agrupada por nome, ordenada, duplicatas preservadas e contadas. */
+/** Derived view: grouped by name, sorted, duplicates kept and counted. */
 export function normalizeHeaders(pairs: HeaderPair[]): NormalizedHeader[] {
   const map = new Map<string, string[]>();
   for (const p of pairs) {
@@ -150,9 +150,9 @@ export function normalizeHeaders(pairs: HeaderPair[]): NormalizedHeader[] {
 }
 
 export const kindLabel: Record<DiffKind, string> = {
-  same: "igual",
-  added: "adicionado",
-  removed: "removido",
-  changed: "alterado",
-  reordered: "reordenado",
+  same: "same",
+  added: "added",
+  removed: "removed",
+  changed: "changed",
+  reordered: "reordered",
 };

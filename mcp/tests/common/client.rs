@@ -1,5 +1,5 @@
-//! Cliente MCP mínimo por stdio (JSON-RPC em linhas), independente do rmcp.
-//! Responde às elicitações do servidor conforme a política escolhida.
+//! Minimal MCP client over stdio (line-delimited JSON-RPC), independent of rmcp.
+//! Answers the server's elicitations according to the chosen policy.
 #![allow(dead_code)]
 
 use std::io::{BufRead, BufReader, Write};
@@ -12,21 +12,21 @@ use serde_json::{json, Value};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Elicit {
-    /// O cliente não declara a capacidade de elicitação.
+    /// The client does not declare the elicitation capability.
     Unsupported,
-    /// Declara e responde `accept` com `confirmo: true`.
+    /// Declares it and answers `accept` with `confirmo: true`.
     Accept,
-    /// Declara e responde `accept` mas sem marcar a caixa.
+    /// Declares it and answers `accept` without checking the box.
     AcceptUnchecked,
-    /// Declara e responde `decline`.
+    /// Declares it and answers `decline`.
     Decline,
-    /// Declara e responde com um erro JSON-RPC ("User rejected").
+    /// Declares it and answers with a JSON-RPC error ("User rejected").
     RpcError,
-    /// Declara e responde `accept` com `content: {}` (caixa ausente).
+    /// Declares it and answers `accept` with `content: {}` (box absent).
     AcceptEmpty,
-    /// Declara e responde `accept` com `confirmo: "true"` (string, não booleano).
+    /// Declares it and answers `accept` with `confirmo: "true"` (string, not boolean).
     AcceptString,
-    /// Declara e responde `accept` com `confirmo: 1`.
+    /// Declares it and answers `accept` with `confirmo: 1`.
     AcceptNumber,
 }
 
@@ -36,13 +36,13 @@ pub struct Client {
     lines: Receiver<String>,
     next_id: u64,
     policy: Elicit,
-    /// Toda linha de stdout recebida (precisa ser JSON-RPC).
+    /// Every stdout line received (must be JSON-RPC).
     pub seen: Vec<String>,
-    /// Mensagens de elicitação recebidas do servidor.
+    /// Elicitation messages received from the server.
     pub elicitations: Vec<String>,
 }
 
-/// Caminho do servidor com navegador falso (exemplo do crate, construído pelo
+/// Path to the server with a fake browser (the crate's example, built by
 /// `cargo test`).
 pub fn fake_server() -> PathBuf {
     let exe = std::env::current_exe().unwrap();
@@ -52,14 +52,14 @@ pub fn fake_server() -> PathBuf {
         .join(format!("fake_server{}", std::env::consts::EXE_SUFFIX));
     assert!(
         path.is_file(),
-        "exemplo fake_server não construído: {path:?} (rode `cargo test`)"
+        "fake_server example not built: {path:?} (run `cargo test`)"
     );
     path
 }
 
-/// O guarda do processo: o servidor nunca sobrevive ao `Client`, nem quando o
-/// teste falha ou entra em panic. Fecha o stdin (saída graciosa, que também
-/// encerra um Chrome em andamento) e, se o servidor não sair em 15 s, mata e espera.
+/// The process guard: the server never outlives the `Client`, not even when the
+/// test fails or panics. Closes stdin (graceful exit, which also ends a Chrome in
+/// progress) and, if the server does not exit within 15 s, kills it and waits.
 impl Drop for Client {
     fn drop(&mut self) {
         drop(self.stdin.take());
@@ -151,13 +151,13 @@ impl Client {
             let line = self
                 .lines
                 .recv_timeout(Duration::from_secs(120))
-                .expect("o servidor não respondeu a tempo");
+                .expect("the server did not respond in time");
             self.seen.push(line.clone());
             let message: Value = serde_json::from_str(&line)
-                .unwrap_or_else(|e| panic!("stdout não é JSON ({e}): {line}"));
+                .unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {line}"));
             assert_eq!(
                 message["jsonrpc"], "2.0",
-                "stdout só pode trazer JSON-RPC: {line}"
+                "stdout may only carry JSON-RPC: {line}"
             );
             if message["method"] == "elicitation/create" {
                 self.answer_elicitation(&message);
@@ -183,11 +183,11 @@ impl Client {
         init
     }
 
-    /// Chama uma ferramenta e devolve (isError, structuredContent).
+    /// Calls a tool and returns (isError, structuredContent).
     pub fn tool(&mut self, name: &str, arguments: Value) -> (bool, Value) {
         let reply = self.request("tools/call", json!({"name": name, "arguments": arguments}));
         let result = &reply["result"];
-        assert!(result.is_object(), "sem result: {reply}");
+        assert!(result.is_object(), "no result: {reply}");
         let text: Value =
             serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
         assert_eq!(text, result["structuredContent"], "{name}");
@@ -197,7 +197,7 @@ impl Client {
         )
     }
 
-    /// Fecha o stdin e espera o servidor sair; devolve (sucesso, stderr).
+    /// Closes stdin and waits for the server to exit; returns (success, stderr).
     pub fn finish(mut self) -> (bool, String) {
         drop(self.stdin.take());
         let status = self.child.wait().unwrap();
@@ -206,7 +206,7 @@ impl Client {
         (status.success(), stderr)
     }
 
-    /// Envia um `tools/call` sem esperar a resposta; devolve o id da chamada.
+    /// Sends a `tools/call` without waiting for the reply; returns the call id.
     pub fn call_nowait(&mut self, name: &str, arguments: Value) -> u64 {
         self.next_id += 1;
         let id = self.next_id;
@@ -214,13 +214,13 @@ impl Client {
         id
     }
 
-    /// Lê até chegar a próxima elicitação do servidor e a responde pela política.
+    /// Reads until the next elicitation from the server and answers it per the policy.
     pub fn answer_next_elicitation(&mut self) {
         loop {
             let line = self
                 .lines
                 .recv_timeout(Duration::from_secs(60))
-                .expect("sem elicitação");
+                .expect("no elicitation");
             self.seen.push(line.clone());
             let message: Value = serde_json::from_str(&line).unwrap();
             if message["method"] == "elicitation/create" {
@@ -230,13 +230,13 @@ impl Client {
         }
     }
 
-    /// Lê até a próxima elicitação e a devolve SEM responder.
+    /// Reads until the next elicitation and returns it WITHOUT answering.
     pub fn take_elicitation(&mut self) -> Value {
         loop {
             let line = self
                 .lines
                 .recv_timeout(Duration::from_secs(60))
-                .expect("sem elicitação");
+                .expect("no elicitation");
             self.seen.push(line.clone());
             let message: Value = serde_json::from_str(&line).unwrap();
             if message["method"] == "elicitation/create" {
@@ -251,12 +251,12 @@ impl Client {
         }
     }
 
-    /// Cancela uma chamada em andamento (`notifications/cancelled`).
+    /// Cancels an in-progress call (`notifications/cancelled`).
     pub fn cancel(&mut self, request_id: u64) {
-        self.send(json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": request_id, "reason": "cliente desistiu"}}));
+        self.send(json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": request_id, "reason": "client gave up"}}));
     }
 
-    /// Responde uma elicitação com `accept` e `confirmo: true`.
+    /// Answers an elicitation with `accept` and `confirmo: true`.
     pub fn accept_elicitation(&mut self, message: &Value) {
         self.send(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"action": "accept", "content": {"confirmo": true}}}));
     }

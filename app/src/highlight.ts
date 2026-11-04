@@ -1,5 +1,5 @@
-// Intervalos de realce a partir dos achados do core. O core informa bytes UTF-8
-// no original; o texto exibido é uma string JS (UTF-16), então convertemos.
+// Highlight ranges derived from the core's findings. The core reports UTF-8 bytes
+// in the original; the displayed text is a JS string (UTF-16), so we convert.
 
 export interface RangeMatch {
   byteOffset: number | null;
@@ -15,9 +15,9 @@ export interface TextRange {
 }
 
 /**
- * Realce tracejado (derivado) só quando o intervalo não é um trecho literal:
- * `exact === false`, ou o texto no intervalo difere do texto buscado (ex.:
- * percent-encoded). Com `exact === true` e trecho igual, o realce é sólido.
+ * Dashed (derived) highlight only when the range is not a literal excerpt:
+ * `exact === false`, or the text in the range differs from the searched text (e.g.
+ * percent-encoded). With `exact === true` and an identical excerpt, the highlight is solid.
  */
 function isDerived(match: RangeMatch, slice: string, needle: string | undefined, caseSensitive: boolean): boolean {
   if (match.exact === false) return true;
@@ -26,7 +26,7 @@ function isDerived(match: RangeMatch, slice: string, needle: string | undefined,
   return caseSensitive ? slice !== needle : slice.toLowerCase() !== needle.toLowerCase();
 }
 
-/** Sem `byteLength` não há intervalo confiável: o achado não é realçado. */
+/** Without `byteLength` there is no reliable range: the finding is not highlighted. */
 export function matchRanges(
   text: string,
   matches: RangeMatch[],

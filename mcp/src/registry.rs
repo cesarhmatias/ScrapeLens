@@ -1,4 +1,4 @@
-//! Sessões abertas: resolução de handles, cache, visão original e mascarada.
+//! Open sessions: handle resolution, cache, original and masked views.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ use scrapelens_core::{SessionBundle, SessionV1};
 use crate::config::{is_within, valid_name, Config};
 use crate::error::ToolError;
 
-/// Limite de leitura de um corpo (o mesmo da busca do core).
+/// Body read limit (the same as the core search).
 pub const BODY_READ_LIMIT: u64 = scrapelens_core::lazy::BODY_READ_LIMIT;
 
 pub struct Entry {
@@ -26,7 +26,7 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// Cópia sanitizada (eager), calculada uma vez por sessão.
+    /// Sanitized copy (eager), computed once per session.
     pub fn masked(&self) -> Result<&SessionBundle, ToolError> {
         let result = self.masked.get_or_init(|| {
             let imported = scrapelens_core::import_session_dir(&self.dir).map_err(|error| {
@@ -37,10 +37,10 @@ impl Entry {
                 };
                 (
                     code,
-                    format!("não foi possível carregar a sessão para mascarar: {error}"),
+                    format!("could not load the session to mask it: {error}"),
                 )
             })?;
-            // Consome o bundle importado: sem a cópia da sessão (docs/18 P7).
+            // Consumes the imported bundle: without a copy of the session (docs/18 P7).
             Ok(sanitize_bundle_owned(imported.bundle, &SanitizeOptions::default()).bundle)
         });
         result
@@ -49,7 +49,7 @@ impl Entry {
     }
 }
 
-/// Origem dos bytes de corpo de uma visão.
+/// Source of the body bytes of a view.
 pub enum Src<'a> {
     Lazy(LazyBodies<'a>),
     Bundle(&'a SessionBundle),
@@ -64,7 +64,7 @@ impl BodySource for Src<'_> {
     }
 }
 
-/// Visão de uma sessão: original (`reveal`) ou mascarada.
+/// View of a session: original (`reveal`) or masked.
 pub struct View<'a> {
     pub entry: &'a Entry,
     pub session: &'a SessionV1,
@@ -92,7 +92,7 @@ impl<'a> View<'a> {
         })
     }
 
-    /// A mesma requisição na sessão original (metadados que a máscara apaga).
+    /// The same request in the original session (metadata the mask removes).
     pub fn original_request(&self, id: &str) -> Option<&scrapelens_core::model::LogicalRequest> {
         self.entry.lazy.session.find_request(id)
     }
@@ -104,7 +104,7 @@ impl<'a> View<'a> {
         }
     }
 
-    /// Até `limit` bytes do anexo; `true` = havia mais.
+    /// Up to `limit` bytes of the attachment; `true` = there was more.
     pub fn read_attachment(&self, name: &str, limit: u64) -> Option<(Vec<u8>, bool)> {
         match self.bundle {
             Some(bundle) => bundle.attachment(name).map(|bytes| {
@@ -133,14 +133,14 @@ impl Ctx {
         if reveal && !self.cfg.allow_reveal {
             return Err(ToolError::new(
                 "reveal_disabled",
-                "reveal=true exige iniciar o servidor com --allow-reveal",
+                "reveal=true requires starting the server with --allow-reveal",
             ));
         }
         Ok(())
     }
 
-    /// Handles conhecidos → (diretório, somente leitura). `sessions_dir` vence
-    /// colisões com os diretórios extras.
+    /// Known handles → (directory, read-only). `sessions_dir` wins
+    /// collisions with the extra directories.
     pub fn handles(&self) -> BTreeMap<String, (PathBuf, bool)> {
         let mut found = BTreeMap::new();
         let roots = std::iter::once((&self.cfg.sessions_dir, false))
@@ -157,7 +157,7 @@ impl Ctx {
                     continue;
                 }
                 let path = entry.path();
-                // `session.json` precisa ser arquivo regular (nunca symlink).
+                // `session.json` must be a regular file (never a symlink).
                 if !std::fs::symlink_metadata(path.join("session.json"))
                     .map(|meta| meta.file_type().is_file())
                     .unwrap_or(false)
@@ -179,13 +179,13 @@ impl Ctx {
     pub fn open(&self, handle: &str) -> Result<Arc<Entry>, ToolError> {
         if !valid_name(handle) {
             return Err(ToolError::invalid(format!(
-                "session_id inválido: {handle:?} (use o id devolvido por list_sessions)"
+                "invalid session_id: {handle:?} (use the id returned by list_sessions)"
             )));
         }
         let handles = self.handles();
         let Some((dir, read_only)) = handles.get(handle) else {
             return Err(ToolError::not_found(format!(
-                "sessão {handle:?} não encontrada (use list_sessions)"
+                "session {handle:?} not found (use list_sessions)"
             )));
         };
         let meta = std::fs::metadata(dir.join("session.json"))

@@ -1,11 +1,11 @@
-//! Contrato de sessão paginada (rodada 13, P5; docs/19-contrato-app.md).
+//! Paginated session contract (round 13, P5; docs/19-contrato-app.md).
 //!
-//! O app não monta `serde_json::Value` da sessão nem a manda inteira ao
-//! front-end. A sessão tipada (`SessionV1`) fica no cache de `LazySession`
-//! (`commands::cached_session`) e o front pede:
-//! - `open_session` → cabeçalho + contagem (`SessionHeader`);
-//! - `list_requests(offset, limit, filtro)` → resumos de uma página;
-//! - `get_request(id)` → a requisição v1 completa, sob demanda.
+//! The app does not build a `serde_json::Value` of the session nor send the whole
+//! thing to the front-end. The typed session (`SessionV1`) stays in the `LazySession`
+//! cache (`commands::cached_session`), and the front-end asks for:
+//! - `open_session` → header + count (`SessionHeader`);
+//! - `list_requests(offset, limit, filter)` → summaries for one page;
+//! - `get_request(id)` → the full v1 request, on demand.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -13,11 +13,11 @@ use scrapelens_core::model::{LogicalRequest, RequestLink, SessionV1, TargetProve
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Página máxima de `list_requests`.
+/// Maximum page size for `list_requests`.
 pub const MAX_PAGE: usize = 2000;
 
-/// Cabeçalho da sessão: o documento v1 sem `requests`, só com avisos de
-/// sessão (sem `entity`), mais a contagem e as fontes vistas.
+/// Session header: the v1 document without `requests`, only with session-level
+/// warnings (without `entity`), plus the count and the sources seen.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionHeader {
@@ -30,7 +30,7 @@ pub struct SessionHeader {
 }
 
 pub fn header_of(session: &SessionV1) -> Result<SessionHeader, String> {
-    let meta = serde_json::to_value(&session.session).map_err(|error| format!("sessão inválida: {error}"))?;
+    let meta = serde_json::to_value(&session.session).map_err(|error| format!("invalid session: {error}"))?;
     let mut seen: Vec<&'static str> = Vec::new();
     let mut push = |source: scrapelens_core::model::Source| {
         let name = source.as_str();
@@ -66,8 +66,8 @@ pub struct InitiatorSummary {
     pub url: Option<String>,
 }
 
-/// Resumo de uma requisição para a lista (~150–400 B; a URL domina).
-/// Campos crus do v1: a derivação de rótulos fica no front (`v1/adapter.ts`).
+/// Summary of a request for the list (~150–400 B; the URL dominates).
+/// Raw v1 fields: label derivation stays in the front-end (`v1/adapter.ts`).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestSummary {
@@ -83,12 +83,12 @@ pub struct RequestSummary {
     pub wall_time: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_ms: Option<f64>,
-    /// Duração estimada pela fonte (`timings.estimated`): a lista mostra "≈".
+    /// Duration estimated by the source (`timings.estimated`): the list shows "≈".
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub estimated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub initiator: Option<InitiatorSummary>,
-    /// Índice em `RequestPage.targets` (alvos repetidos vão uma vez por página).
+    /// Index into `RequestPage.targets` (repeated targets appear once per page).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<usize>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -130,7 +130,7 @@ pub fn summarize(request: &LogicalRequest, warning_count: usize, target: Option<
     }
 }
 
-/// Tipo exibido (mesma regra de `adaptSession`): só os conhecidos, senão `other`.
+/// Displayed type (same rule as `adaptSession`): only the known ones, otherwise `other`.
 pub fn display_type(request: &LogicalRequest) -> &'static str {
     let lower = request.resource_type.as_deref().unwrap_or("other").to_ascii_lowercase();
     match lower.as_str() {
@@ -162,7 +162,7 @@ fn is_popup(target: Option<&TargetProvenance>) -> bool {
     matches!(target, Some(t) if t.kind.as_str() == "page" && t.opener_id.is_some())
 }
 
-/// Filtro de alvo (mesma regra de `matchesTargetFilter` em `app/src/target.ts`).
+/// Target filter (same rule as `matchesTargetFilter` in `app/src/target.ts`).
 pub fn matches_target(request: &LogicalRequest, filter: &str) -> bool {
     let target = target_of(request);
     match filter {
@@ -177,7 +177,7 @@ pub fn matches_target(request: &LogicalRequest, filter: &str) -> bool {
 pub const TARGET_FILTERS: [&str; 8] =
     ["all", "page", "popup", "iframe", "worker", "service_worker", "shared_worker", "netlog_unknown"];
 
-/// Filtro da lista; os campos espelham os controles da tela.
+/// List filter; the fields mirror the screen controls.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ListFilter {
@@ -185,15 +185,15 @@ pub struct ListFilter {
     pub type_filter: Option<String>,
     /// `all` | `HTTP/1.1` | `HTTP/2` | `HTTP/3` | `desconhecido`.
     pub protocol: Option<String>,
-    /// Ver `TARGET_FILTERS`; só vale quando a sessão mostra alvos.
+    /// See `TARGET_FILTERS`; only applies when the session shows targets.
     pub target: Option<String>,
-    /// Texto da busca rápida (URL, id, método, status).
+    /// Quick search text (URL, id, method, status).
     pub query: Option<String>,
-    /// Busca no payload ativa: a URL deixa de valer e `matchIds` (achados do
-    /// `search_session`) passam.
+    /// Payload search active: the URL no longer counts and `matchIds` (hits from
+    /// `search_session`) pass.
     pub payload_search: bool,
     pub match_ids: Vec<String>,
-    /// Filtros de veredito (falha/bloqueio): só estes ids passam.
+    /// Verdict filters (failure/blocked): only these ids pass.
     pub restrict_ids: Option<Vec<String>>,
 }
 
@@ -209,20 +209,20 @@ pub struct TypeCounts {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestPage {
-    /// Requisições na sessão.
+    /// Requests in the session.
     pub total: usize,
-    /// Requisições que passam no filtro.
+    /// Requests that pass the filter.
     pub matched: usize,
     pub offset: usize,
     pub items: Vec<RequestSummary>,
-    /// Alvos distintos citados nesta página (`RequestSummary.target` é o índice).
+    /// Distinct targets referenced on this page (`RequestSummary.target` is the index).
     pub targets: Vec<TargetProvenance>,
-    /// Contagens por tipo na sessão inteira (sem filtro).
+    /// Counts by type across the whole session (no filter).
     pub counts: TypeCounts,
     pub target_counts: BTreeMap<&'static str, usize>,
-    /// Alguma requisição tem alvo, alvo desconhecido (só NetLog) ou ligação.
+    /// Some request has a target, an unknown target (NetLog only), or a link.
     pub has_targets: bool,
-    /// Avisos ligados a requisições na sessão inteira (sem filtro), para o total da barra.
+    /// Warnings tied to requests across the whole session (no filter), for the bar total.
     pub warning_total: usize,
 }
 
@@ -260,7 +260,7 @@ fn passes(request: &LogicalRequest, filter: &ListFilter, show_targets: bool, mat
     }
 }
 
-/// Avisos ligados a cada requisição (`entity`).
+/// Warnings tied to each request (`entity`).
 fn warning_counts(session: &SessionV1) -> HashMap<&str, usize> {
     let mut map = HashMap::new();
     for warning in &session.warnings {
@@ -329,8 +329,8 @@ pub fn list_page(session: &SessionV1, offset: usize, limit: usize, filter: &List
     RequestPage { total: session.requests.len(), matched, offset, items, targets, counts, target_counts, has_targets, warning_total }
 }
 
-/// Detalhe sob demanda: a requisição v1 completa, os avisos dela e as
-/// `streamSessions` das tentativas (para a verificação de protocolo).
+/// On-demand detail: the full v1 request, its warnings, and the
+/// `streamSessions` of its attempts (for protocol verification).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestDetail<'a> {
@@ -404,15 +404,15 @@ mod tests {
         let restricted = list_page(&s, 0, 500, &ListFilter { restrict_ids: Some(vec!["r3".into(), "r4".into()]), ..Default::default() });
         assert_eq!(restricted.matched, 2);
 
-        // Filtro de avaliação ligado sem nenhum id avaliado: lista vazia, mas as contagens
-        // dos chips continuam sendo as da sessão inteira (mesma semântica do front).
+        // Verdict filter on with no evaluated ids: empty list, but the chip counts
+        // still come from the whole session (same semantics as the front-end).
         let empty = list_page(&s, 0, 500, &ListFilter { restrict_ids: Some(vec![]), ..Default::default() });
         assert_eq!(empty.matched, 0);
         assert!(empty.items.is_empty());
         let all = list_page(&s, 0, 500, &ListFilter::default());
         assert_eq!(all.matched, all.total);
         assert_eq!(empty.counts.all, all.total);
-        // O total de avisos vem do backend numa chamada só, igual em qualquer página e filtro.
+        // The warning total comes from the backend in a single call, the same for any page and filter.
         let per_item: usize = all.items.iter().map(|i| i.warning_count).sum();
         assert_eq!(all.warning_total, per_item);
         assert_eq!(empty.warning_total, per_item);
@@ -424,7 +424,7 @@ mod tests {
         let page = list_page(&s, 0, 3, &ListFilter::default());
         for item in &page.items {
             let bytes = serde_json::to_vec(item).unwrap().len();
-            assert!(bytes < 250, "resumo grande: {bytes} B");
+            assert!(bytes < 250, "summary too large: {bytes} B");
         }
         let header = header_of(&s).unwrap();
         let text = serde_json::to_string(&header).unwrap();

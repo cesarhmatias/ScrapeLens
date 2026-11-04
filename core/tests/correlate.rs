@@ -1,4 +1,4 @@
-//! Correlação CDP×NetLog: único, ambíguo e explícito.
+//! CDP×NetLog correlation: unique, ambiguous and explicit.
 
 use scrapelens_core::correlate::{attach_netlog, CorrelationOptions, ExplicitPair};
 use scrapelens_core::model::{
@@ -152,7 +152,7 @@ fn unique_match_uses_netlog_as_primary_and_keeps_cdp_evidence() {
         Verification::Verified
     );
     assert!(attempt.request_headers.get_all("x-cdp-only").is_empty());
-    // O original CDP continua acessível como evidência.
+    // The original CDP stays accessible as evidence.
     assert!(attempt.header_evidence.iter().any(|evidence| {
         evidence.role == HeaderRole::Request
             && evidence.event.contains("requestWillBeSent")
@@ -188,7 +188,7 @@ fn two_candidates_are_ambiguous_and_none_is_chosen() {
         .collect();
     assert!(ids.contains(&"netlog-r0001-a1"));
     assert!(ids.contains(&"netlog-r0002-a1"));
-    // A visão primária permanece a do CDP: nada foi associado.
+    // The primary view remains the CDP one: nothing was associated.
     assert_eq!(
         attempt.request_headers.first_value("x-cdp-only"),
         Some("keep-me")
@@ -227,7 +227,7 @@ fn explicit_pair_resolves_ambiguity() {
     assert!(attempt.match_candidates.iter().any(|candidate| candidate
         .reasons
         .iter()
-        .any(|reason| reason.contains("explícita"))));
+        .any(|reason| reason.contains("explicit"))));
 }
 
 #[test]
@@ -268,6 +268,6 @@ fn netlog_only_attempts_are_counted_not_silently_ignored() {
         .warnings
         .iter()
         .any(|warning| warning.code == "correlate.netlog_unmatched"));
-    // Tráfego de background não é importado para a sessão CDP.
+    // Background traffic is not imported into the CDP session.
     assert_eq!(session.requests.len(), 1);
 }

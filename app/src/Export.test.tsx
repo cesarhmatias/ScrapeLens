@@ -25,14 +25,14 @@ await act(async () => { renderer = create(<SanitizeDialog session={{ id: "fixtur
   onClose={() => {}} onOpened={() => {}} />); });
 const root = renderer!.root;
 const checkbox = () => root.findByProps({ "data-testid": "sanitize-include-sensitive" });
-const destination = () => root.findByProps({ "aria-label": "Destino da exportação" });
+const destination = () => root.findByProps({ "aria-label": "Export destination" });
 assert.equal(checkbox().props.checked, false);
 assert.deepEqual(calls[0], ["preview", "/capture", false]);
 await act(async () => { checkbox().props.onChange({ target: { checked: true } }); });
 assert.deepEqual(calls.at(-1), ["preview", "/capture", true]);
 assert.equal(destination().props.value, "/out/full");
 assert.equal(root.findByProps({ role: "alert" }).props.className, "export-warning");
-const confirm = root.findAllByType("button").find(b => b.props.children === "Exportar captura completa")!;
+const confirm = root.findAllByType("button").find(b => b.props.children === "Export full capture")!;
 await act(async () => { await confirm.props.onClick(); });
 assert.deepEqual(calls.at(-1), ["save", "/capture", "/out/full", true]);
 await act(async () => { checkbox().props.onChange({ target: { checked: false } }); });

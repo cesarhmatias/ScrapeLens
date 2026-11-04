@@ -1,4 +1,4 @@
-//! Erros de ferramenta: viram `isError: true` com `{"error":{code,message}}`.
+//! Tool errors: become `isError: true` with `{"error":{code,message}}`.
 
 use serde_json::{json, Value};
 
@@ -25,7 +25,7 @@ impl ToolError {
     }
 
     pub fn to_value(&self) -> Value {
-        // A mensagem pode ecoar texto do agente (ids, caminhos): sem controle nem bidi.
+        // The message may echo agent text (ids, paths): no control or bidi characters.
         json!({"error": {"code": self.code, "message": crate::live::escape_display(&self.message)}})
     }
 }

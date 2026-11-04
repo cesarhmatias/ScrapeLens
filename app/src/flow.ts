@@ -1,6 +1,6 @@
-// Projeção TypeScript da saída do core: flow::value_origins, flow::priming_chain
-// e compare::compare_sessions (docs/09-cadeia-comparacao.md). A UI só exibe o
-// que o core devolve; "value-match" nunca é apresentado como certeza.
+// TypeScript projection of the core's output: flow::value_origins, flow::priming_chain
+// and compare::compare_sessions (docs/09-cadeia-comparacao.md). The UI only shows what
+// the core returns; "value-match" is never presented as certainty.
 
 export type EvidenceKind = "cookie-jar" | "same-field" | "value-match" | "initiator" | string;
 export type Strength = "strong" | "medium" | "weak" | string;
@@ -8,7 +8,7 @@ export type Strength = "strong" | "medium" | "weak" | string;
 export interface Evidence {
   kind: EvidenceKind;
   strength: Strength;
-  /** produced = 1º produtor; reissued = reaparece depois. */
+  /** produced = 1st producer; reissued = appears again later. */
   role: string;
   producerRequestId: string;
   producerAttemptId: string;
@@ -17,7 +17,7 @@ export interface Evidence {
   producerOffset: number | null;
   consumedOffset: number | null;
   consumedLength: number | null;
-  /** O produtor é um controle de formulário HTML (input/textarea/select). */
+  /** The producer is an HTML form control (input/textarea/select). */
   htmlControl?: boolean;
 }
 
@@ -25,7 +25,7 @@ export interface Unobservable {
   requestId: string;
   state: string;
   reason?: string;
-  /** Ocorrência equivalente (mesmo modelo) mais adiante com corpo observável. */
+  /** Equivalent occurrence (same model) later on with an observable body. */
   suggestion?: string | null;
 }
 
@@ -35,7 +35,7 @@ export interface ContextNote {
   note: string;
 }
 
-/** Valor de um produtor à borda do campo; o resto não tem fonte observada. */
+/** Value of a producer at the edge of the field; the rest has no observed source. */
 export interface PartialComposition {
   producerRequestId: string;
   field?: string | null;
@@ -51,20 +51,20 @@ export interface ValueOrigin {
   length: number;
   /** origin | ambiguous | repeated | none | composite | redacted ... */
   status: string;
-  /** `strong` | `possible` | null (core ≥ revisão 5); ausente em esquemas antigos. */
+  /** `strong` | `possible` | null (core ≥ revision 5); absent in old schemas. */
   confidence?: "strong" | "possible" | string | null;
   label: string;
   offset: number | null;
-  /** Índice, em `evidences`, do produtor mais antigo (se houver). */
+  /** Index, in `evidences`, of the oldest producer (if any). */
   oldest: number | null;
   evidences: Evidence[];
   repeatedFrom: string[];
   unobservable?: Unobservable[];
   parent: string | null;
   note: string | null;
-  /** Valor também presente em recurso estático: provável constante do protocolo. */
+  /** Value also present in a static resource: likely a protocol constant. */
   context?: ContextNote[];
-  /** Composição parcial (core ≥ 6b): parte com fonte + parte sem fonte. */
+  /** Partial composition (core ≥ 6b): part with a source + part without a source. */
   partialComposition?: PartialComposition[] | string | null;
 }
 
@@ -86,7 +86,7 @@ export interface StepReason {
 }
 
 export interface ChainStep {
-  /** `strong` | `possible` (core ≥ revisão 5); ausente em esquemas antigos. */
+  /** `strong` | `possible` (core ≥ revision 5); absent in old schemas. */
   confidence?: "strong" | "possible" | string;
   requestId: string;
   attemptId: string;
@@ -111,9 +111,9 @@ export interface PrimingChain {
   requestId: string;
   steps: ChainStep[];
   protection: ChainStep[];
-  /** Páginas de contexto (Referer): nunca produtoras. */
+  /** Context pages (Referer): never producers. */
   pages?: ChainStep[];
-  /** Frames auxiliares carregados por parser (fora de `pages`). */
+  /** Auxiliary frames loaded by a parser (outside `pages`). */
   auxiliaryPages?: ChainStep[];
   unresolved: UnresolvedValue[];
   redactedValues: number;
@@ -121,7 +121,7 @@ export interface PrimingChain {
 }
 
 export interface RequestRef {
-  /** Marca opcional do core: requisição única reordenada (nome ainda não fixado). */
+  /** Optional core marker: a single request that was reordered (name not yet fixed). */
   reordered?: boolean;
   outOfOrder?: boolean;
   requestId: string;
@@ -229,44 +229,44 @@ export interface SessionComparison {
 }
 
 export const evidenceLabels: Record<string, string> = {
-  "cookie-jar": "cookie-jar (Set-Cookie anterior com o mesmo nome e valor)",
-  "same-field": "same-field (mesmo nome de campo e valor)",
-  "value-match": "value-match (valor encontrado, sem garantia de causa)",
-  initiator: "initiator (complementar; não prova origem)",
+  "cookie-jar": "cookie-jar (earlier Set-Cookie with the same name and value)",
+  "same-field": "same-field (same field name and value)",
+  "value-match": "value-match (value found, no guarantee of cause)",
+  initiator: "initiator (supplementary; does not prove origin)",
 };
 
-export const strengthLabels: Record<string, string> = { strong: "forte", medium: "média", weak: "fraca" };
+export const strengthLabels: Record<string, string> = { strong: "strong", medium: "medium", weak: "weak" };
 
-/** Rótulo de status em português; "sem origem observada" é neutro, nunca erro. */
+/** Status label; "no observed origin" is neutral, never an error. */
 export function originStatusLabel(value: ValueOrigin): string {
   const confidence = originConfidence(value);
-  // Rótulo do core, quando informa a confiança (garante os mesmos textos do core).
+  // Core label, when it reports confidence (keeps the exact same texts as the core).
   if ((value.status === "origin" || value.status === "ambiguous") && value.confidence && value.label) return value.label;
   const kind = (oldestEvidence(value) ?? value.evidences[0])?.kind;
   switch (value.status) {
     case "repeated":
-      return "sem origem observada (já circulava)";
+      return "no observed origin (already circulating)";
     case "composite":
-      return "composto (ver trechos)";
+      return "composite (see excerpts)";
     case "redacted":
-      return "redigido (não rastreável)";
+      return "redacted (not traceable)";
     case "none":
-      return "sem origem observada";
+      return "no observed origin";
     default:
       break;
   }
-  if (value.status === "ambiguous") return confidence === "possible" ? "ambíguo (possível origem)" : "ambíguo";
-  if (confidence === "possible") return `possível origem (${kind ?? "evidência média"})`;
-  if (confidence === "strong") return "origem observada";
-  return "sem origem observada";
+  if (value.status === "ambiguous") return confidence === "possible" ? "ambiguous (possible origin)" : "ambiguous";
+  if (confidence === "possible") return `possible origin (${kind ?? "medium evidence"})`;
+  if (confidence === "strong") return "observed origin";
+  return "no observed origin";
 }
 
-/** Evidência do produtor mais antigo, quando `oldest` aponta para uma. */
+/** Evidence of the oldest producer, when `oldest` points to one. */
 export function oldestEvidence(value: ValueOrigin): Evidence | undefined {
   return value.oldest === null ? undefined : value.evidences[value.oldest];
 }
 
-/** Valores de trecho (filhos de um campo opaco) agrupados sob o pai. */
+/** Excerpt values (children of an opaque field) grouped under their parent. */
 export function groupOrigins(values: ValueOrigin[]): { top: ValueOrigin; parts: ValueOrigin[] }[] {
   const groups: { top: ValueOrigin; parts: ValueOrigin[] }[] = [];
   for (const value of values) {
@@ -282,7 +282,7 @@ export function groupOrigins(values: ValueOrigin[]): { top: ValueOrigin; parts: 
   return groups;
 }
 
-/** Filtro "só dinâmicos": pares sem campos dinâmicos somem; campos ficam na ordem da fonte. */
+/** "Dynamic only" filter: pairs without dynamic fields disappear; fields keep the source order. */
 export function dynamicOnly(pairs: PairComparison[]): PairComparison[] {
   return pairs
     .map((pair) => ({ ...pair, fields: pair.fields.filter((field) => field.class !== "static") }))
@@ -290,15 +290,15 @@ export function dynamicOnly(pairs: PairComparison[]): PairComparison[] {
 }
 
 export function fieldClassLabel(field: FieldDiff): string {
-  if (field.class === "static") return "estático";
-  if (field.dynamicKind === "runtime") return field.originLabel || "obter em runtime";
-  if (field.dynamicKind === "noOrigin") return "dinâmico sem origem";
-  if (field.dynamicKind === "repeated") return "dinâmico (já circulava, sem produtor observado)";
-  if (field.dynamicKind === "composite") return "dinâmico composto (ver trechos)";
+  if (field.class === "static") return "static";
+  if (field.dynamicKind === "runtime") return field.originLabel || "obtain at runtime";
+  if (field.dynamicKind === "noOrigin") return "dynamic, no origin";
+  if (field.dynamicKind === "repeated") return "dynamic (already circulating, no observed producer)";
+  if (field.dynamicKind === "composite") return "dynamic composite (see excerpts)";
   return field.label;
 }
 
-// ---- Comparação paginada (commands compare_open / compare_page / compare_fields) ----
+// ---- Paged comparison (commands compare_open / compare_page / compare_fields) ----
 
 export interface ReorderedPair {
   a: RequestRef;
@@ -329,7 +329,7 @@ export interface CompareSummary {
 
 export interface PairSummary {
   index: number;
-  /** Índice em `rounds`. */
+  /** Index into `rounds`. */
   round?: number;
   a: RequestRef;
   b: RequestRef;
@@ -345,24 +345,24 @@ export interface ComparePage {
   items: PairSummary[];
 }
 
-/** Acima deste número de pares, "só dinâmicos" começa ligado. */
+/** Above this number of pairs, "dynamic only" starts on. */
 export const DYNAMIC_ONLY_THRESHOLD = 500;
 
 export function visibleFields(fields: FieldDiff[], onlyDynamic: boolean): FieldDiff[] {
   return onlyDynamic ? fields.filter((field) => field.class !== "static") : fields;
 }
 
-/** "N dinâmicos, sendo M em trechos de campos compostos" (só com partsCounts). */
+/** "N dynamic, M of them in excerpts of composite fields" (only with partsCounts). */
 export function dynamicSummary(counts: PairCounts, parts?: PartsCounts): string {
-  const base = `${counts.dynamic} dinâmico(s)`;
-  return parts ? `${base}, sendo ${parts.dynamic} em trechos de campos compostos` : base;
+  const base = `${counts.dynamic} dynamic`;
+  return parts ? `${base}, ${parts.dynamic} in excerpts of composite fields` : base;
 }
 
-// ---- Confiança da origem ("possível origem" × "origem observada") ----
+// ---- Origin confidence ("possible origin" × "observed origin") ----
 
 export type OriginConfidence = "strong" | "possible" | "none";
 
-/** "Origem observada" exige evidência forte; só média = "possível origem". */
+/** "Observed origin" requires strong evidence; only medium = "possible origin". */
 export function originConfidence(value: ValueOrigin): OriginConfidence {
   if (value.confidence === "strong" || value.confidence === "possible") return value.confidence;
   if (value.status.startsWith("possible")) return "possible";
@@ -378,26 +378,26 @@ export function stepConfidence(step: ChainStep): "strong" | "possible" {
   return step.reasons.some((reason) => reason.strength === "strong") ? "strong" : step.reasons.length === 0 ? "strong" : "possible";
 }
 
-// ---- Rodada 6: controles HTML, contexto estático, sugestão, composição parcial ----
+// ---- Round 6: HTML controls, static context, suggestion, partial composition ----
 
-/** Rótulo do produtor: controle de formulário HTML, quando aplicável. */
+/** Producer label: HTML form control, when applicable. */
 export function producerKindLabel(ev: Evidence): string | null {
-  return ev.htmlControl ? `controle de formulário HTML (${ev.field ?? "?"})` : null;
+  return ev.htmlControl ? `HTML form control (${ev.field ?? "?"})` : null;
 }
 
-export const CONTEXT_LABEL = "também presente em recurso estático: provável constante do protocolo";
+export const CONTEXT_LABEL = "also present in a static resource: likely a protocol constant";
 
 export function partialCompositionText(value: ValueOrigin): string | null {
   const pc = value.partialComposition;
   if (!pc || (Array.isArray(pc) && pc.length === 0)) return null;
   if (typeof pc === "string") return pc;
-  // O core já escreve o rótulo ("sem origem observada; contém o valor de <campo> de <produtor> …").
+  // The core already writes the label ("sem origem observada; contém o valor de <campo> de <produtor> …").
   if (value.label.includes("composição")) return value.label;
   const first = pc[0];
   return `sem origem observada; contém ${first.field ?? "um campo"} de ${first.producerRequestId} + parte sem fonte — provável composição no cliente`;
 }
 
-/** Avisos que merecem destaque (cookies ausentes no HAR etc.), sem repetir. */
+/** Warnings worth highlighting (missing cookies in the HAR, etc.), without repeats. */
 export function highlightedWarnings(...lists: (string[] | undefined)[]): string[] {
   const seen = new Set<string>();
   for (const list of lists) for (const text of list ?? []) seen.add(text);
@@ -408,11 +408,11 @@ export function isCookiesAbsent(text: string): boolean {
   return text.includes("har.cookies_absent") || text.includes("não contém cookies");
 }
 
-/** Agrupa pares de uma página por rodada: cabeçalho quando a rodada muda. */
+/** Groups a page's pairs by round: header when the round changes. */
 export function roundHeader(round: number | undefined, previous: number | undefined, rounds?: RoundInfo[]): string | null {
   if (round === undefined || round === previous) return null;
   const info = rounds?.[round];
   return info
-    ? `Rodada ${round + 1}: A#${info.aRound + 1} ↔ B#${info.bRound + 1} · ${info.aRequests} × ${info.bRequests} requisições · ${info.score} modelo(s) em comum`
-    : `Rodada ${round + 1}`;
+    ? `Round ${round + 1}: A#${info.aRound + 1} ↔ B#${info.bRound + 1} · ${info.aRequests} × ${info.bRequests} requests · ${info.score} model(s) in common`
+    : `Round ${round + 1}`;
 }

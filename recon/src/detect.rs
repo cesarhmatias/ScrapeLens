@@ -1,5 +1,5 @@
-//! Detecção: assinaturas (dados) + achados genéricos (status, protocolo,
-//! cookies, tokens). Só lê a sessão; nada abre rede.
+//! Detection: signatures (data) + generic findings (status, protocol,
+//! cookies, tokens). Only reads the session; nothing opens the network.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -15,8 +15,8 @@ use scrapelens_core::search::BodySource;
 use crate::signatures::{SigKind, Signature, SignatureSet, SourceKind, Weight};
 use crate::{Confidence, Evidence, Finding, ProfileOptions, Sample, SourceRef};
 
-/// Uma tentativa (ou a requisição, quando não há tentativas) com tudo o que a
-/// detecção lê.
+/// One attempt (or the request, when there are no attempts) with everything
+/// that detection reads.
 struct View<'a> {
     index: usize,
     started: Option<f64>,
@@ -58,9 +58,9 @@ fn views(session: &SessionV1) -> Vec<View<'_>> {
             out.push(attempt_view(index, req, attempt));
         }
     }
-    // A ordem de `session.requests` não é cronológica (a Core ordena por id).
-    // "Antes/depois" usa o início da tentativa quando TODAS têm tempo (mesmo
-    // relógio de captura); senão vale a ordem da sessão.
+    // The order of `session.requests` is not chronological (Core sorts by id).
+    // "Before/after" uses the start of the attempt when ALL have a time (same
+    // capture clock); otherwise the session order applies.
     if !out.is_empty() && out.iter().all(|v| v.started.is_some()) {
         out.sort_by(|a, b| {
             a.started
@@ -92,13 +92,13 @@ fn attempt_view<'a>(index: usize, req: &'a LogicalRequest, a: &'a Attempt) -> Vi
     }
 }
 
-// --- utilidades ------------------------------------------------------------
+// --- utilities ------------------------------------------------------------
 
 fn redacted(len: usize) -> String {
-    format!("[redigido, {len} bytes]")
+    format!("[redacted, {len} bytes]")
 }
 
-/// URL sem consulta nem fragmento (podem carregar tokens).
+/// URL without query or fragment (they may carry tokens).
 fn safe_url(url: &str) -> String {
     let cut = url.find(['?', '#']).unwrap_or(url.len());
     if cut == url.len() {
@@ -109,7 +109,7 @@ fn safe_url(url: &str) -> String {
 }
 
 fn url_parts(url: &str) -> Option<(String, String, String)> {
-    // (origem, host, caminho)
+    // (origin, host, path)
     let (scheme, rest) = url.split_once("://")?;
     let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let authority = &rest[..end];
@@ -151,7 +151,7 @@ fn is_static(req: &LogicalRequest) -> bool {
     )
 }
 
-/// Rota da aplicação: documento, XHR/fetch ou escrita; nunca estático.
+/// Application route: document, XHR/fetch or write; never static.
 fn is_app(req: &LogicalRequest) -> bool {
     if is_static(req) {
         return false;
@@ -206,15 +206,15 @@ fn load_text(bodies: &dyn BodySource, body: &Body, limit: usize) -> Option<Strin
     Some(String::from_utf8_lossy(bytes).to_string())
 }
 
-// --- assinaturas -------------------------------------------------------------
+// --- signatures -------------------------------------------------------------
 
 struct Hit {
     evidence: Evidence,
     block: bool,
     view_index: usize,
     blocked_by_allowlist: bool,
-    /// O valor era de bloqueio, mas o status HTTP observado não é o documentado
-    /// (observado, documentado).
+    /// The value was a block value, but the observed HTTP status is not the documented one
+    /// (observed, documented).
     status_mismatch: Option<(u16, u16)>,
 }
 
@@ -234,8 +234,8 @@ fn header_hits(sig: &Signature, v: &View<'_>, response: bool) -> Vec<Hit> {
         let mut block = sig.weight == Weight::Block
             && (sig.block_values.contains(&value)
                 || (!sig.block_unless.is_empty() && !sig.block_unless.contains(&value)));
-        // A documentação fixa o status que acompanha o valor (AWS WAF: 202 para
-        // challenge, 405 para captcha). Outro status não é essa ação.
+        // The documentation fixes the status that goes with the value (AWS WAF: 202 for
+        // challenge, 405 for captcha). Another status is not that action.
         let mut status_mismatch = None;
         if block {
             if let (Some(expected), Some(observed)) = (sig.value_status.get(&value), v.status) {
@@ -248,8 +248,8 @@ fn header_hits(sig: &Signature, v: &View<'_>, response: bool) -> Vec<Hit> {
         let known = sig.values.contains(&value)
             || sig.block_values.contains(&value)
             || sig.block_unless.contains(&value);
-        // Valores de enumeração documentados e códigos numéricos de status
-        // (ex.: X-DataDomeResponse: 403) podem aparecer; o resto é redigido.
+        // Documented enumeration values and numeric status codes
+        // (e.g. X-DataDomeResponse: 403) may appear; the rest is redacted.
         let numeric_status = !sig.block_unless.is_empty()
             && !value.is_empty()
             && value.len() <= 3
@@ -367,7 +367,7 @@ fn path_hit(sig: &Signature, v: &View<'_>) -> Option<Hit> {
 fn field_in_text(text: &str, name: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     let n = name.to_ascii_lowercase();
-    // `name="campo"`, `name='campo'`, JSON `"campo":`, form `campo=` e `&campo=`.
+    // `name="field"`, `name='field'`, JSON `"field":`, form `field=` and `&field=`.
     lower.contains(&format!("name=\"{n}\""))
         || lower.contains(&format!("name='{n}'"))
         || lower.contains(&format!("\"{n}\":"))
@@ -438,14 +438,14 @@ fn host_of(url: &str) -> String {
     url_parts(url).map(|(_, host, _)| host).unwrap_or_default()
 }
 
-/// Mesmo site, de forma conservadora: igual ou um é subdomínio do outro. Não há
-/// lista de sufixos públicos aqui (limite declarado).
+/// Same site, conservatively: equal, or one is a subdomain of the other. There is no
+/// public suffix list here (declared limit).
 fn same_site(a: &str, b: &str) -> bool {
     !a.is_empty() && !b.is_empty() && (a == b || a.ends_with(&format!(".{b}")) || b.ends_with(&format!(".{a}")))
 }
 
-/// Hosts dos documentos de topo (os do site-alvo). Iframes de terceiros não
-/// entram: um iframe de captcha não torna o host do captcha "o site".
+/// Hosts of the top-level documents (the target site's). Third-party iframes are
+/// not included: a captcha iframe does not make the captcha host "the site".
 fn target_hosts(vs: &[View<'_>]) -> BTreeSet<String> {
     vs.iter()
         .filter(|v| {
@@ -465,8 +465,7 @@ fn is_foreign(url: &str, targets: &BTreeSet<String>) -> bool {
     !targets.iter().any(|t| same_site(&host, t))
 }
 
-/// Só 2xx resolve um desafio: um 3xx pode ser o redirecionamento para o próprio
-/// desafio.
+/// Only 2xx resolves a challenge: a 3xx may be the redirect to the challenge itself.
 fn is_ok2xx(status: Option<u16>) -> bool {
     matches!(status, Some(200..=299))
 }
@@ -475,9 +474,9 @@ fn is_success(status: Option<u16>) -> bool {
     matches!(status, Some(200..=399))
 }
 
-/// Houve resposta 2xx DEPOIS na mesma rota, ou cookie de liberação definido
-/// DEPOIS pelo mesmo site? Redirecionamento (3xx) não resolve (pode levar ao
-/// próprio desafio) e cookie de outro host não libera este.
+/// Was there a 2xx response AFTER on the same route, or a clearance cookie set
+/// AFTER by the same site? A redirect (3xx) does not resolve it (it may lead to
+/// the challenge itself), and a cookie from another host does not clear this one.
 fn resolved_after(
     vs: &[View<'_>],
     sigs: &SignatureSet,
@@ -512,8 +511,8 @@ fn confidence_of(sig: &Signature, block: bool) -> Confidence {
 }
 
 fn is_weak_scope(scope: &str) -> bool {
-    // Texto refletido, consulta controlável por quem cria o link, e cookie que
-    // só aparece no pedido (pode vir de `document.cookie`): indício fraco.
+    // Reflected text, a query controllable by whoever creates the link, and a cookie
+    // that only appears in the request (may come from `document.cookie`): weak evidence.
     matches!(scope, "query" | "request-body" | "response-body" | "request-cookie")
 }
 
@@ -533,9 +532,9 @@ fn signature_findings(
         if hits.is_empty() {
             continue;
         }
-        // Cookie, cabeçalho e caminho vistos num recurso de OUTRO host não
-        // atribuem a proteção ao site-alvo (script/campo de formulário são
-        // referências embutidas pela própria página e ficam fora desta regra).
+        // Cookie, header and path seen on a resource from ANOTHER host do not
+        // attribute the protection to the target site (script/form field are
+        // references embedded by the page itself and fall outside this rule).
         if matches!(
             sig.kind,
             SigKind::Cookie | SigKind::ResponseHeader | SigKind::RequestHeader | SigKind::Path
@@ -565,45 +564,45 @@ fn signature_findings(
         let mut limits: Vec<String> = Vec::new();
         if used.iter().any(|h| h.blocked_by_allowlist) {
             limits.push(
-                "o carregamento foi bloqueado pela allowlist (ERR_NAME_NOT_RESOLVED): o script não executou, só a tentativa foi vista"
+                "loading was blocked by the allowlist (ERR_NAME_NOT_RESOLVED): the script did not run, only the attempt was seen"
                     .to_string(),
             );
         }
         if sig.source.kind != SourceKind::Fornecedor {
             limits.push(format!(
-                "assinatura de fonte {}: indício, não prova",
+                "signature from source {}: indication, not proof",
                 sig.source.kind.as_str()
             ));
         }
         if sig.kind == SigKind::Path {
-            limits.push("citação do caminho sozinha não indica bloqueio".to_string());
+            limits.push("a path citation alone does not indicate a block".to_string());
         }
         let mut confidence = confidence_of(sig, any_block);
         if foreign_only {
             let hosts: BTreeSet<String> =
                 used.iter().map(|h| host_of(&h.evidence.url)).collect();
             limits.push(format!(
-                "visto só em recurso de outro host ({}), não nos documentos do site-alvo ({}): não atribui a proteção ao alvo",
+                "seen only on a resource from another host ({}), not in the target site's documents ({}): does not attribute the protection to the target",
                 hosts.into_iter().collect::<Vec<_>>().join(", "),
                 targets.iter().cloned().collect::<Vec<_>>().join(", ")
             ));
             confidence = Confidence::Baixa;
         }
-        // Status observado diferente do documentado (AWS WAF: 202/405): não é a
-        // ação documentada, então não é desafio.
+        // Observed status differs from the documented one (AWS WAF: 202/405): it is not
+        // the documented action, so it is not a challenge.
         let mismatches: Vec<(u16, u16)> = used.iter().filter_map(|h| h.status_mismatch).collect();
         if !any_block && !mismatches.is_empty() {
             let (seen, expected) = mismatches[0];
             limits.push(format!(
-                "status observado {seen} difere do documentado ({expected}) para este valor: presença do produto, não desafio servido"
+                "observed status {seen} differs from the documented one ({expected}) for this value: product presence, not a challenge served"
             ));
             confidence = Confidence::Baixa;
         }
-        // Presença só em corpo, consulta ou cookie do pedido: baixa.
+        // Presence only in body, query or request cookie: low.
         if !foreign_only && used.iter().all(|h| is_weak_scope(&h.evidence.scope)) {
             let scopes: BTreeSet<&str> = used.iter().map(|h| h.evidence.scope.as_str()).collect();
             limits.push(format!(
-                "indício só em {}: pode ser texto refletido, consulta controlável por terceiros ou cookie criado pelo JavaScript da página",
+                "evidence only in {}: may be reflected text, a query controllable by third parties, or a cookie created by the page's JavaScript",
                 scopes.into_iter().collect::<Vec<_>>().join(", ")
             ));
             confidence = Confidence::Baixa;
@@ -616,7 +615,7 @@ fn signature_findings(
             .collect();
         let mut category = sig.category.clone();
         if !any_block && category == "desafio" {
-            // Ex.: X-DataDomeResponse: 200 — o produto está presente, não desafiou.
+            // E.g.: X-DataDomeResponse: 200 — the product is present, it did not challenge.
             category = "protecao".to_string();
         }
         findings.push(Finding {
@@ -637,9 +636,9 @@ fn signature_findings(
             limits,
         });
     }
-    // Campo de formulário só em corpo/consulta sobe para `media` quando o
-    // MESMO fornecedor tem um indício independente e forte (script, cabeçalho
-    // ou cookie de fonte do fornecedor, no site-alvo).
+    // A form field only in body/query is raised to `media` when the SAME
+    // vendor has an independent, strong indication (script, header
+    // or cookie from the vendor's source, on the target site).
     let strong_vendors: BTreeMap<String, String> = findings
         .iter()
         .filter(|f| {
@@ -654,15 +653,15 @@ fn signature_findings(
         if f.kind == "form-field" && f.confidence == Confidence::Baixa {
             if let Some(other) = f.vendor.as_ref().and_then(|v| strong_vendors.get(v)) {
                 f.confidence = Confidence::Media;
-                f.limits.push(format!("corroborado por {other} do mesmo fornecedor"));
+                f.limits.push(format!("corroborated by {other} from the same vendor"));
             }
         }
     }
-    // Dois ou mais indícios independentes de fonte secundária do mesmo
-    // fornecedor sobem para `media`.
+    // Two or more independent secondary-source indications from the same
+    // vendor are raised to `media`.
     let mut secondary: BTreeMap<String, usize> = BTreeMap::new();
     for f in &findings {
-        if f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria") && f.limits.iter().all(|l| !l.contains("outro host")) {
+        if f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria") && f.limits.iter().all(|l| !l.contains("another host")) {
             if let Some(v) = &f.vendor {
                 *secondary.entry(v.clone()).or_default() += 1;
             }
@@ -677,16 +676,16 @@ fn signature_findings(
         if multi
             && f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria")
             && f.confidence == Confidence::Baixa
-            && f.limits.iter().all(|l| !l.contains("outro host") && !l.contains("indício só em"))
+            && f.limits.iter().all(|l| !l.contains("another host") && !l.contains("evidence only in"))
         {
             f.confidence = Confidence::Media;
-            f.limits.push("dois ou mais indícios de fonte secundária do mesmo fornecedor".to_string());
+            f.limits.push("two or more secondary-source indications from the same vendor".to_string());
         }
     }
     findings
 }
 
-// --- achados genéricos ------------------------------------------------------
+// --- generic findings ------------------------------------------------------
 
 fn status_findings(
     vs: &[View<'_>],
@@ -694,8 +693,8 @@ fn status_findings(
     opts: &ProfileOptions,
     targets: &BTreeSet<String>,
 ) -> Vec<Finding> {
-    // (status, de outro host?) -> respostas. Bloqueio num recurso de outro host
-    // não é bloqueio do site-alvo.
+    // (status, from another host?) -> responses. A block on a resource from another host
+    // is not a block of the target site.
     let mut by_status: BTreeMap<(u16, bool), Vec<&View<'_>>> = BTreeMap::new();
     for v in vs {
         if let Some(s @ (403 | 429 | 503)) = v.status {
@@ -751,9 +750,9 @@ fn status_findings(
             }
         }
         let label = match status {
-            403 => "403 (proibido)",
-            429 => "429 (limite de requisições)",
-            _ => "503 (indisponível)",
+            403 => "403 (forbidden)",
+            429 => "429 (rate limit)",
+            _ => "503 (unavailable)",
         };
         out.push(Finding {
             id: String::new(),
@@ -762,13 +761,13 @@ fn status_findings(
             kind: "status".to_string(),
             signature_id: None,
             summary: if foreign {
-                format!("{} resposta(s) {} em recurso de outro host", list.len(), label)
+                format!("{} response(s) {} on a resource from another host", list.len(), label)
             } else {
                 format!(
-                    "{} resposta(s) {} em rota da aplicação{}",
+                    "{} response(s) {} on an application route{}",
                     list.len(),
                     label,
-                    if main_blocked { ", incluindo o documento principal" } else { "" }
+                    if main_blocked { ", including the main document" } else { "" }
                 )
             },
             confidence,
@@ -778,11 +777,11 @@ fn status_findings(
             resolved_later: if foreign { None } else { Some(!app_unresolved) },
             limits: if foreign {
                 vec![format!(
-                    "recurso de outro host que os documentos do site-alvo ({}): não conta como bloqueio do site",
+                    "resource from another host than the target site's documents ({}): does not count as a site block",
                     targets.iter().cloned().collect::<Vec<_>>().join(", ")
                 )]
             } else {
-                vec!["o status sozinho não diz quem bloqueou; vale para esta captura".to_string()]
+                vec!["the status alone does not say who blocked; it applies to this capture".to_string()]
             },
         });
     }
@@ -871,14 +870,14 @@ fn protocol_findings(session: &SessionV1, vs: &[View<'_>], opts: &ProfileOptions
             vendor: None,
             kind: "protocol".to_string(),
             signature_id: None,
-            summary: format!("protocolo observado em {origin}: {}", list.join(", ")),
+            summary: format!("protocol observed on {origin}: {}", list.join(", ")),
             confidence: Confidence::Media,
             occurrences: evidence_list.len(),
             evidence: evidence_list,
             source: None,
             resolved_later: None,
             limits: vec![
-                "observado, não exigido: provar a exigência pede uma tentativa em h1 que falhe".to_string(),
+                "observed, not required: proving the requirement needs an h1 attempt that fails".to_string(),
             ],
         });
     }
@@ -886,7 +885,7 @@ fn protocol_findings(session: &SessionV1, vs: &[View<'_>], opts: &ProfileOptions
 }
 
 fn cookie_flow_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOptions) -> Vec<Finding> {
-    // nome → índice (em `vs`) da primeira definição.
+    // name → index (in `vs`) of the first definition.
     let mut producer: BTreeMap<String, usize> = BTreeMap::new();
     for (i, v) in vs.iter().enumerate() {
         for record in v.set_cookies {
@@ -933,7 +932,7 @@ fn cookie_flow_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOpti
             kind: "cookie-flow".to_string(),
             signature_id: None,
             summary: format!(
-                "cookie `{name}` definido por {} e reenviado em {} requisição(ões) seguinte(s)",
+                "cookie `{name}` set by {} and resent in {} following request(s)",
                 route_key(p.url),
                 list.len()
             ),
@@ -943,7 +942,7 @@ fn cookie_flow_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOpti
             source: None,
             resolved_later: None,
             limits: vec![
-                "observado: set e reenvio na mesma captura; ser OBRIGATÓRIO exige removê-lo e testar (validate_run)".to_string(),
+                "observed: set and resent in the same capture; being REQUIRED needs removing it and testing (validate_run)".to_string(),
             ],
         });
     }
@@ -1028,7 +1027,7 @@ fn token_findings(
                 kind: "token-origin".to_string(),
                 signature_id: None,
                 summary: format!(
-                    "valor dinâmico `{}` ({} B) em {} vem de {} ({})",
+                    "dynamic value `{}` ({} B) in {} comes from {} ({})",
                     value.field,
                     value.length,
                     route_key(consumer.url),
@@ -1054,15 +1053,15 @@ fn token_findings(
                 source: None,
                 resolved_later: None,
                 limits: vec![format!(
-                    "origem por igualdade de valor (flow::value_origins, {}); não prova que o valor é exigido",
-                    if strong { "evidência forte" } else { "só evidência média: possível origem" }
+                    "origin by value equality (flow::value_origins, {}); does not prove the value is required",
+                    if strong { "strong evidence" } else { "medium evidence only: possible origin" }
                 )],
             });
         }
     }
     if redacted_total > 0 {
         warnings.push(format!(
-            "{redacted_total} valor(es) redigido(s) na sessão não puderam ser rastreados"
+            "{redacted_total} redacted value(s) in the session could not be traced"
         ));
     }
     out
@@ -1094,7 +1093,7 @@ fn blocked_host_findings(session: &SessionV1) -> Vec<Finding> {
             kind: "blocked-host".to_string(),
             signature_id: None,
             summary: format!(
-                "a página tentou carregar {host} ({requests} requisição(ões)) e a allowlist bloqueou; uma proteção ou recurso pode estar escondido"
+                "the page tried to load {host} ({requests} request(s)) and the allowlist blocked it; a protection or resource may be hidden"
             ),
             confidence: Confidence::Alta,
             occurrences: requests,
@@ -1102,7 +1101,7 @@ fn blocked_host_findings(session: &SessionV1) -> Vec<Finding> {
             source: None,
             resolved_later: None,
             limits: vec![
-                "refaça a captura com este host em third_party_hosts (nova confirmação) para ver o que ele serve".to_string(),
+                "redo the capture with this host in third_party_hosts (new confirmation) to see what it serves".to_string(),
             ],
         });
     }

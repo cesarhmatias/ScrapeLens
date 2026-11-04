@@ -1,5 +1,5 @@
-// Gera uma sessão v1 sintética grande para medir a lista virtualizada.
-// Rótulo synthetic-fixture mantido; nada aqui é captura real.
+// Generates a large synthetic v1 session to measure the virtualized list.
+// synthetic-fixture label kept; nothing here is a real capture.
 
 import base from "./session.v1.json";
 import type { LogicalRequest, SessionV1 } from "../v1/types";
@@ -43,7 +43,7 @@ export function buildLargeSession(count = 12000): SessionV1 {
     session: {
       ...source.session,
       id: "demo-estresse-12000",
-      notes: ["Sessão sintética de estresse para medir virtualização; nenhum byte real."],
+      notes: ["Synthetic stress session to measure virtualization; no real bytes."],
       completeness: {
         ...source.session.completeness,
         counts: { ...(source.session.completeness.counts ?? {}), requests: count },

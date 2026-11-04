@@ -1,6 +1,6 @@
-//! Ponta a ponta das ferramentas de navegador: o servidor real (`fake_server`,
-//! mesmo código do produto) com navegador falso, falando JSON-RPC por stdio e
-//! respondendo às elicitações como um cliente de verdade.
+//! End-to-end tests of the browser tools: the real server (`fake_server`,
+//! same code as the product) with a fake browser, speaking JSON-RPC over stdio and
+//! answering elicitations like a real client.
 
 mod common;
 
@@ -34,7 +34,7 @@ fn start_args() -> Value {
 fn assert_clean(value: &Value, what: &str) {
     let text = value.to_string();
     for secret in SECRETS {
-        assert!(!text.contains(secret), "{what}: vazou {secret}\n{text}");
+        assert!(!text.contains(secret), "{what}: leaked {secret}\n{text}");
     }
 }
 
@@ -43,7 +43,7 @@ fn start_with_accepted_confirmation_runs_the_whole_cycle() {
     let work = tempfile::tempdir().unwrap();
     let mut client = start(work.path(), Elicit::Accept, &[]);
 
-    // O esquema não tem nenhum parâmetro de confirmação que o modelo pudesse preencher.
+    // The schema has no confirmation parameter that the model could fill in.
     let listed = client.request("tools/list", json!({}));
     let start_tool = listed["result"]["tools"]
         .as_array()
@@ -65,7 +65,7 @@ fn start_with_accepted_confirmation_runs_the_whole_cycle() {
     assert_eq!(started["confirmation"], "elicited");
     assert!(
         started.get("sessionDir").is_none(),
-        "caminhos não saem: {started}"
+        "paths don't leave: {started}"
     );
     assert!(started["sessionId"]
         .as_str()
@@ -73,10 +73,10 @@ fn start_with_accepted_confirmation_runs_the_whole_cycle() {
         .starts_with("capture-"));
     assert_eq!(
         started["cdp"]["pageTargetId"], "T1",
-        "expose_cdp entrega o endereço"
+        "expose_cdp delivers the address"
     );
 
-    // O texto da confirmação mostra tudo o que o usuário precisa saber.
+    // The confirmation text shows everything the user needs to know.
     assert_eq!(client.elicitations.len(), 1);
     let message = &client.elicitations[0];
     for needle in [
@@ -88,16 +88,16 @@ fn start_with_accepted_confirmation_runs_the_whole_cycle() {
         "cookies",
         "http://site.invalid.test/",
     ] {
-        assert!(message.contains(needle), "faltou {needle:?} em: {message}");
+        assert!(message.contains(needle), "missing {needle:?} in: {message}");
     }
 
-    // Só uma captura por vez; a segunda nem chega a pedir confirmação.
+    // Only one capture at a time; the second one doesn't even ask for confirmation.
     let (is_error, second) = client.tool("start_capture", start_args());
     assert!(is_error);
     assert_eq!(second["error"]["code"], "capture_already_running");
     assert_eq!(client.elicitations.len(), 1);
 
-    // navigate: dentro da allowlist passa, fora é recusado antes de enviar.
+    // navigate: inside the allowlist it passes; outside it is refused before sending.
     let (is_error, nav) = client.tool(
         "navigate",
         json!({"capture_id": capture_id, "url": "http://site.invalid.test/area?token=SEGREDO-STATUS-1"}),
@@ -124,13 +124,13 @@ fn start_with_accepted_confirmation_runs_the_whole_cycle() {
     assert!(is_error);
     assert_eq!(bad_wait["error"]["code"], "invalid_argument");
 
-    // capture_status: sem caminho e com a URL mascarada.
+    // capture_status: no path, and with the URL masked.
     let (_, status) = client.tool("capture_status", json!({"capture_id": capture_id}));
     assert_eq!(status["recording"], true);
     assert_clean(&status, "capture_status");
     assert_eq!(status["captureId"], json!(capture_id));
 
-    // stop_capture: grava a sessão, legível pelas ferramentas de leitura.
+    // stop_capture: writes the session, readable by the read tools.
     let (is_error, stopped) = client.tool("stop_capture", json!({"capture_id": capture_id}));
     assert!(!is_error, "{stopped}");
     assert_clean(&stopped, "stop_capture");
@@ -150,9 +150,9 @@ fn start_with_accepted_confirmation_runs_the_whole_cycle() {
     let (is_error, requests) = client.tool("list_requests", json!({"session_id": session_id}));
     assert!(!is_error, "{requests}");
     assert_eq!(requests["total"], 2);
-    assert_clean(&requests, "list_requests da captura");
+    assert_clean(&requests, "list_requests of the capture");
 
-    // A captura saiu do mapa: nada mais responde por ela, e já cabe outra.
+    // The capture left the map: nothing responds to it anymore, and another one fits.
     let (is_error, gone) = client.tool("capture_status", json!({"capture_id": capture_id}));
     assert!(is_error);
     assert_eq!(gone["error"]["code"], "capture_not_found");
@@ -189,7 +189,7 @@ fn site_profile_reads_the_captured_session_with_redaction() {
     assert!(sig("cf-005"), "cf-mitigated: challenge");
     assert!(sig("cf-001"), "__cf_bm");
     assert_clean(&profile, "site_profile");
-    // Todo id de evidência resolve em get_request.
+    // Every evidence id resolves in get_request.
     for finding in findings {
         for evidence in finding["evidence"].as_array().unwrap() {
             let request_id = evidence["requestId"].as_str().unwrap();
@@ -197,7 +197,7 @@ fn site_profile_reads_the_captured_session_with_redaction() {
                 "get_request",
                 json!({"session_id": session_id, "request_id": request_id}),
             );
-            assert!(!is_error, "{request_id} não resolve");
+            assert!(!is_error, "{request_id} doesn't resolve");
         }
     }
     let (is_error, missing) = client.tool(
@@ -215,13 +215,13 @@ fn site_profile_reads_the_captured_session_with_redaction() {
 fn declined_or_unchecked_confirmation_opens_nothing() {
     for policy in [Elicit::Decline, Elicit::AcceptUnchecked] {
         let work = tempfile::tempdir().unwrap();
-        // Mesmo com a flag: recusa explícita do usuário vale sempre.
+        // Even with the flag: an explicit refusal from the user always applies.
         let mut client = start(work.path(), policy, &["--allow-unconfirmed-capture"]);
         let (is_error, out) = client.tool("start_capture", start_args());
         assert!(is_error, "{policy:?}: {out}");
         assert_eq!(out["error"]["code"], "confirmation_denied", "{policy:?}");
         assert_eq!(client.elicitations.len(), 1);
-        // A vaga foi liberada e nenhuma captura existe.
+        // The slot was released and no capture exists.
         let (_, list) = client.tool("list_sessions", json!({}));
         assert_eq!(list["total"], 0);
         let (is_error, _) = client.tool(
@@ -229,7 +229,7 @@ fn declined_or_unchecked_confirmation_opens_nothing() {
             json!({"capture_id": "cap-0", "url": "http://site.invalid.test/"}),
         );
         assert!(is_error);
-        // Pedido inválido é recusado sem incomodar o usuário.
+        // An invalid request is refused without bothering the user.
         let (is_error, bad) = client.tool("start_capture", json!({"allowed_hosts": []}));
         assert!(is_error);
         assert_eq!(bad["error"]["code"], "allowlist_required");
@@ -242,7 +242,7 @@ fn declined_or_unchecked_confirmation_opens_nothing() {
         );
         assert!(is_error);
         assert_eq!(bad["error"]["code"], "start_url_not_allowed");
-        assert_eq!(client.elicitations.len(), 1, "nenhuma elicitação a mais");
+        assert_eq!(client.elicitations.len(), 1, "no extra elicitation");
         client.finish();
     }
 }
@@ -290,7 +290,7 @@ fn closing_stdin_stops_active_captures_gracefully() {
             .join(&session_id)
             .join("session.json")
             .is_file(),
-        "a sessão foi gravada ao sair"
+        "the session was written on exit"
     );
 }
 

@@ -1,4 +1,4 @@
-//! Regressões da revisão independente da onda 4a (docs/08 → "Revisão da onda 4a").
+//! Regressions from the independent review of wave 4a (see docs/08, section "Revisão da onda 4a").
 
 use scrapelens_core::export::sanitize::{is_sensitive_header, sanitize_bundle, SanitizeOptions};
 use scrapelens_core::export::{curl, python, ExportOptions};
@@ -111,13 +111,13 @@ fn item1_propagation_never_touches_enums_and_never_fails_open() {
     );
     let s = sanitized(&b);
     let all = everything(&s);
-    assert!(!all.contains("Pa55w0rd-secret-9"), "senha vazou");
-    assert!(!all.contains("SessAbcdef123456"), "cookie vazou");
+    assert!(!all.contains("Pa55w0rd-secret-9"), "password leaked");
+    assert!(!all.contains("SessAbcdef123456"), "cookie leaked");
     assert_eq!(
         s.session.requests[0].attempts[0].outcome,
         AttemptOutcome::Completed
     );
-    // a sessão sanitizada continua desserializável
+    // the sanitized session still deserializes
     let round: scrapelens_core::SessionV1 =
         serde_json::from_value(serde_json::to_value(&s.session).unwrap()).unwrap();
     assert_eq!(round.requests.len(), 2);
@@ -342,7 +342,7 @@ fn item5_search_decodes_json_escapes_url_percent_and_maps_offsets() {
         .find(|m| m.scope == Scope::RequestBody)
         .unwrap();
     assert_eq!(m.field.as_deref(), Some("XML"));
-    assert_eq!(m.byte_offset, Some(7), "aponta o 'c' de cmd_ no original");
+    assert_eq!(m.byte_offset, Some(7), "points to the 'c' of cmd_ in the original");
 }
 
 // ---- 6 -------------------------------------------------------------------
@@ -371,10 +371,10 @@ fn item6_transformed_marks_body_as_not_identical_to_wire() {
         .provenance
         .notes
         .iter()
-        .any(|n| n.contains("não idêntico ao fio")));
+        .any(|n| n.contains("not identical to the wire")));
     let json = serde_json::to_value(body).unwrap();
     assert!(json.get("transformed").is_some());
-    // sem o campo: nada serializado e verificação inalterada
+    // without the field: nothing serialized and verification unchanged
     let plain = bundle(&events, &[line("6.1", 0, "request", "a=1")]);
     let body = &plain.session.requests[0].request_body;
     assert!(body.transformed.is_empty());
@@ -383,7 +383,7 @@ fn item6_transformed_marks_body_as_not_identical_to_wire() {
         .get("transformed")
         .is_none());
     assert_eq!(body.provenance.verification, Verification::Unverified);
-    // preservado pela sanitização
+    // preserved by sanitization
     let s = sanitized(&b);
     assert_eq!(s.session.requests[0].request_body.transformed.len(), 2);
 }
@@ -415,11 +415,11 @@ fn item7_bodyless_get_is_empty_with_evidence_not_misleading_message() {
     let b = bundle(&events, &[line("7.2", 1, "request", "órfão")]);
     let get = &b.session.requests[0].request_body;
     assert_eq!(get.state, BodyState::Empty);
-    assert_eq!(get.note.as_deref(), Some("CDP: requisição sem corpo"));
-    // POST com hasPostData e sem linha continua unavailable, nunca empty
+    assert_eq!(get.note.as_deref(), Some("CDP: request without body"));
+    // POST with hasPostData and no line stays unavailable, never empty
     let post = &b.session.requests[1].request_body;
     assert_eq!(post.state, BodyState::Unavailable);
-    // sem arquivo de corpos (apply não chamado) a mensagem antiga permanece
+    // without a bodies file (apply not called) the old message remains
     let capture = parse_cdp_jsonl(&jsonl(&events)).unwrap();
     let (session, _) = build_cdp_session(&capture);
     assert_eq!(
@@ -468,13 +468,13 @@ fn item8_export_flags_307_url_mismatch() {
         curl::to_curl(r, None, &options).unwrap().text,
         python::to_python(r, None, &options).unwrap().text,
     ] {
-        assert!(text.contains("1ª tentativa"), "{text}");
+        assert!(text.contains("1st attempt"), "{text}");
         assert!(text.contains("https://example.test/new"));
     }
     let plain = curl::to_curl(&b.session.requests[1], None, &options)
         .unwrap()
         .text;
-    assert!(!plain.contains("1ª tentativa"));
+    assert!(!plain.contains("1st attempt"));
 }
 
 // ---- 9 -------------------------------------------------------------------
@@ -634,11 +634,11 @@ fn a1_export_warns_when_body_is_transformed() {
     for out in [&c, &p] {
         assert!(
             out.text
-                .contains("ATENÇÃO: corpo transformado (lossy-postData, chrome-decoded)"),
+                .contains("WARNING: transformed body (lossy-postData, chrome-decoded)"),
             "{}",
             out.text
         );
-        assert!(out.text.contains("podem diferir dos enviados"));
+        assert!(out.text.contains("may differ from the sent bytes"));
         assert!(out
             .warnings
             .iter()
@@ -650,7 +650,7 @@ fn a1_export_warns_when_body_is_transformed() {
     assert!(!curl::to_curl(r, Some(bytes), &options)
         .unwrap()
         .text
-        .contains("transformado"));
+        .contains("transformed"));
 }
 
 #[test]
@@ -704,5 +704,5 @@ fn a4_empty_get_provenance_is_honest() {
     let body = &b.session.requests[0].request_body;
     assert_eq!(body.state, BodyState::Empty);
     assert_eq!(body.provenance.method, "requestWillBeSent");
-    assert!(body.provenance.notes.iter().any(|n| n.contains("inferido")));
+    assert!(body.provenance.notes.iter().any(|n| n.contains("inferred")));
 }

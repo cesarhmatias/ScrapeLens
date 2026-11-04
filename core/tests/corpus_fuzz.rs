@@ -1,12 +1,12 @@
-//! Fuzz determinístico do Revisor (rodada 30), incorporado ao repositório.
-//! Oráculos: (1) segredo (marcador "ZQ..") em posição de nome sensível nunca sai;
-//! (2) bytes não-secretos de contexto (PRE/SUF separados por espaço e irmão
-//! `&page=KEEP`) ficam; (3) idempotência; (4) sem pânico.
-//! Tamanhos: `FUZZ_N` (principal; 3000 por padrão) e `SOUP_N` (sopa, x3 funções;
-//! 3000 por padrão); `SEED` muda a semente. A rodada completa do Revisor é
+//! Deterministic fuzz of the Reviewer (round 30), incorporated into the repository.
+//! Oracles: (1) a secret (marker "ZQ..") in a sensitive-name position never leaks;
+//! (2) non-secret context bytes (PRE/SUF separated by spaces and the sibling
+//! `&page=KEEP`) remain; (3) idempotence; (4) no panic.
+//! Sizes: `FUZZ_N` (main; 3000 by default) and `SOUP_N` (soup, x3 functions;
+//! 3000 by default); `SEED` changes the seed. The Reviewer's full round is
 //! `FUZZ_N=150000 SOUP_N=100000 cargo test --release --test corpus_fuzz`.
-//! No teto de 8 níveis o sanitizador FALHA FECHADO: o valor vai até o fim do
-//! nível, então a fidelidade (irmão `&page=KEEP`) só é exigida abaixo de 8 níveis.
+//! At the 8-level ceiling the sanitizer FAILS CLOSED: the value runs to the end of the
+//! level, so fidelity (sibling `&page=KEEP`) is only required below 8 levels.
 use scrapelens_core::export::sanitize::{
     sanitize_path_and_query, sanitize_text, sanitize_url, SanitizeOptions,
 };
@@ -29,7 +29,7 @@ impl Rng {
     }
 }
 
-/// Codifica um nível: reservados e `%` viram %XX (hex em caixa aleatória).
+/// Encodes one level: reserved characters and `%` become %XX (hex in random case).
 fn enc(s: &str, r: &mut Rng) -> String {
     let mut o = String::new();
     for b in s.bytes() {
@@ -46,7 +46,7 @@ fn enc(s: &str, r: &mut Rng) -> String {
 }
 
 fn encode_name(name: &str, r: &mut Rng) -> String {
-    // caixa aleatória e, às vezes, letras em %XX
+    // random case and, sometimes, letters as %XX
     name.chars()
         .map(|c| {
             let c = if r.below(3) == 0 {
@@ -88,7 +88,7 @@ const NAMES: &[&str] = &[
 
 fn main_case(r: &mut Rng, i: usize) -> (String, &'static str, usize, String) {
     let marker = format!("ZQ{i}a");
-    // valor: pedaços alnum separados por chars de credencial que, no nível do valor, vão codificados
+    // value: alnum chunks separated by credential characters that get encoded at the value level
     let seps = [
         "", "+", "/", "=", "-", ".", "_", "~", " ", "&", "#", "%", ",", ";", "|", "\"", "(", "[",
         "{", "<", "\\", "'",
@@ -100,8 +100,8 @@ fn main_case(r: &mut Rng, i: usize) -> (String, &'static str, usize, String) {
         raw_value.push_str(&format!("ZQ{i}p{j}"));
     }
     let name = *r.pick(NAMES);
-    let k = r.below(9); // níveis de codificação em volta
-                        // nível mais interno: `?name=valor(enc)&page=KEEP`
+    let k = r.below(9); // encoding levels around it
+                        // innermost level: `?name=value(enc)&page=KEEP`
     let inner = format!(
         "/cb?{}={}&page=KEEP{i}",
         encode_name(name, r),
@@ -176,7 +176,7 @@ fn deterministic_fuzz_has_no_leaks_panics_or_nonidempotent_outputs() {
             if e.1.is_empty() {
                 e.1 = format!("{text:?} -> {out:?}");
             }
-            // separador que corta o valor
+            // separator that cuts the value
             let sep: String = raw_value
                 .chars()
                 .filter(|c| !c.is_ascii_alphanumeric())
@@ -185,7 +185,7 @@ fn deterministic_fuzz_has_no_leaks_panics_or_nonidempotent_outputs() {
         }
         let pre = format!("PRE{i}w ");
         let suf = format!(" SUF{i}w");
-        // `redirect` embrulha mais um nível de codificação
+        // `redirect` wraps one more encoding level
         let keep_required = k + usize::from(label == "redirect") < 8;
         if !out.starts_with(&pre)
             || !out.ends_with(&suf)
@@ -206,7 +206,7 @@ fn deterministic_fuzz_has_no_leaks_panics_or_nonidempotent_outputs() {
             }
         }
     }
-    // sopa aleatória: pânico + idempotência em text/url/pq
+    // random soup: panic + idempotence on text/url/pq
     let atoms = [
         "%",
         "25",
@@ -280,7 +280,7 @@ fn deterministic_fuzz_has_no_leaks_panics_or_nonidempotent_outputs() {
         for _ in 0..len {
             s.push_str(r.pick(&atoms));
         }
-        // marcador em posição de valor de `token=` cru, colado e seguido de espaço
+        // marker in the raw `token=` value position, glued and followed by a space
         let with_secret = format!("{s}token=ZQs{}x {s}", r.below(1000));
         for (kind, f) in [
             (
@@ -351,22 +351,22 @@ fn deterministic_fuzz_has_no_leaks_panics_or_nonidempotent_outputs() {
     for (k, (_, ex)) in &soup_nonidem {
         println!("SOUP NONIDEM {k} ex: {}", &ex[..ex.len().min(600)]);
     }
-    assert_eq!(panics + soup_panics, 0, "pânico");
+    assert_eq!(panics + soup_panics, 0, "panic");
     assert_eq!(
         leaks.values().map(|v| v.0).sum::<usize>(),
         0,
-        "vazamentos: {leaks:?}"
+        "leaks: {leaks:?}"
     );
-    assert_eq!(soup_secret_leak, 0, "vazamento na sopa: {soup_leak_ex}");
-    assert!(fidelity.is_empty(), "perda de fidelidade: {fidelity:?}");
-    assert!(nonidem.is_empty(), "não idempotente: {nonidem:?}");
-    // Sopa de átomos aleatórios: a idempotência é métrica, não garantia (um nome
-    // sensível seguido de lixo que a 1a passada redige pode virar `nome+placeholder`
-    // na 2a). Orçamento: menos de 0,1% dos casos.
+    assert_eq!(soup_secret_leak, 0, "leak in the soup: {soup_leak_ex}");
+    assert!(fidelity.is_empty(), "fidelity loss: {fidelity:?}");
+    assert!(nonidem.is_empty(), "not idempotent: {nonidem:?}");
+    // Soup of random atoms: idempotence is a metric, not a guarantee (a sensitive name
+    // followed by garbage that the 1st pass redacts may become `name+placeholder`
+    // in the 2nd). Budget: less than 0.1% of cases.
     let soup_nonidem_total: usize = soup_nonidem.values().map(|v| v.0).sum();
     assert!(
         soup_nonidem_total * 1000 <= m * 3,
-        "sopa não idempotente demais ({soup_nonidem_total} de {}): {soup_nonidem:?}",
+        "too many non-idempotent soup cases ({soup_nonidem_total} of {}): {soup_nonidem:?}",
         m * 3
     );
 }

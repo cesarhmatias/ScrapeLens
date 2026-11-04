@@ -1,5 +1,5 @@
-//! P1 (docs/18): `netlog.json` é validado com `IgnoredAny` (sem montar o DOM). O veredito
-//! tem de ser o mesmo de `Value`, e a importação continua avisando só quando o arquivo é inválido.
+//! P1 (docs/18): `netlog.json` is validated with `IgnoredAny` (without building the DOM). The verdict
+//! must be the same as `Value`'s, and the import keeps warning only when the file is invalid.
 
 use scrapelens_core::store::write_session_dir;
 use serde_json::Value;
@@ -34,7 +34,7 @@ fn samples() -> Vec<Vec<u8>> {
 
 #[test]
 fn stream_validator_gives_the_same_verdict_as_value_including_the_recursion_limit() {
-    // `IgnoredAny` aceitaria 300 níveis (pula o limite de recursão); o validador do core não.
+    // `IgnoredAny` would accept 300 levels (it skips the recursion limit); the core's validator does not.
     let deep = format!("{}{}", "[".repeat(300), "]".repeat(300));
     assert!(serde_json::from_slice::<serde::de::IgnoredAny>(deep.as_bytes()).is_ok());
     assert!(serde_json::from_slice::<Value>(deep.as_bytes()).is_err());
@@ -51,7 +51,7 @@ fn stream_validator_gives_the_same_verdict_as_value_including_the_recursion_limi
                 .collect::<String>()
         );
     }
-    // Na fronteira do limite (127 passa, 128 não), como o `Value`.
+    // At the limit boundary (127 passes, 128 does not), like `Value`.
     for n in [126usize, 127, 128, 129] {
         let s = format!("{}{}", "[".repeat(n), "]".repeat(n));
         assert_eq!(

@@ -1,6 +1,6 @@
-// Linha do tempo da aplicação (core: timeline::timeline) e validação da execução do script
-// (core: validate::validate, esquema scrapelens.validate/1). A UI só apresenta o que o core
-// devolve; rótulos (`event @ page`) e vereditos são texto do core, renderizados escapados.
+// Application timeline (core: timeline::timeline) and script run validation
+// (core: validate::validate, schema scrapelens.validate/1). The UI only shows what the core
+// returns; labels (`event @ page`) and verdicts are core text, rendered escaped.
 import { useEffect, useMemo, useState } from "react";
 import { bridge, type TimelineDto, type ValidationResultDto } from "./bridge";
 import { VerdictKindChip } from "./assess";
@@ -14,7 +14,7 @@ export function TimelineView({
   onBack,
 }: {
   sessionDir?: string;
-  /** Para selo de alvo (fora da página principal); o core da timeline não envia target. */
+  /** For the target badge (outside the main page); the timeline core does not send target. */
   requests?: RequestSummary[];
   onOpenRequest: (id: string) => void;
   onBack: () => void;
@@ -30,7 +30,7 @@ export function TimelineView({
     setData(null);
     setError(null);
     if (!sessionDir) {
-      setError("Esta sessão não tem pasta persistida; a linha do tempo precisa dos arquivos da sessão.");
+      setError("This session has no persisted folder; the timeline needs the session's files.");
       return;
     }
     let alive = true;
@@ -47,23 +47,23 @@ export function TimelineView({
   return (
     <div className="timeline-view">
       <div className="breadcrumb">
-        <button className="link" onClick={onBack}>← Sessão</button> <span className="dim">/ Linha do tempo</span>
+        <button className="link" onClick={onBack}>← Session</button> <span className="dim">/ Timeline</span>
       </div>
-      <h2>Linha do tempo da aplicação</h2>
+      <h2>Application timeline</h2>
       {error && <div className="notice notice-error"><span className="notice-icon">!</span><span>{error}</span></div>}
-      {!data && !error && <div className="empty">Calculando no Rust…</div>}
+      {!data && !error && <div className="empty">Calculating in Rust…</div>}
       {data && (
         <>
           <p className="dim">
-            {data.counts.events} evento(s) da aplicação · {data.rounds} rodada(s) · proteção {data.counts.protection} · estáticos {data.counts.static}.
-            Clique numa linha para abrir a requisição.
+            {data.counts.events} application event(s) · {data.rounds} round(s) · protection {data.counts.protection} · static {data.counts.static}.
+            Click a row to open the request.
           </p>
           {data.warnings.map((w, i) => (
             <div className="notice notice-info" key={i}><span className="notice-icon">i</span><span>{w}</span></div>
           ))}
           <table className="norm-table timeline-table">
             <thead>
-              <tr><th>Rodada</th><th>Evento</th><th>Tipo</th><th>Status</th><th>Aplicação</th><th>Consumiu</th><th>Produziu</th></tr>
+              <tr><th>Round</th><th>Event</th><th>Type</th><th>Status</th><th>Application</th><th>Consumed</th><th>Produced</th></tr>
             </thead>
             <tbody>
               {data.items.map((item, i) => {
@@ -73,7 +73,7 @@ export function TimelineView({
                       <td colSpan={7}>
                         <details>
                           <summary>
-                            {item.kind === "protection" ? "Proteção" : "Recursos estáticos"} <span className="count">{item.count}</span>
+                            {item.kind === "protection" ? "Protection" : "Static resources"} <span className="count">{item.count}</span>
                           </summary>
                           <div className="chips">
                             {item.requestIds.map((id) => (
@@ -90,12 +90,12 @@ export function TimelineView({
                 const targetLabel = timelineTargetBadge(byId.get(item.requestId));
                 return (
                   <tr key={i} className="clickable" onClick={() => onOpenRequest(item.requestId)} title={`${item.method} ${item.url}`}>
-                    <td>{header ? `rodada ${item.round}` : ""}</td>
+                    <td>{header ? `round ${item.round}` : ""}</td>
                     <td>
                       <strong className="mono">{item.label}</strong>{" "}
                       <span className="dim mono">{item.requestId}</span>
                       {targetLabel ? (
-                        <span className="chip tag target-chip" title="Alvo CDP (≠ página principal)">
+                        <span className="chip tag target-chip" title="CDP target (≠ main page)">
                           {targetLabel}
                         </span>
                       ) : null}
@@ -116,13 +116,13 @@ export function TimelineView({
   );
 }
 
-/** Classe da diferença, a partir do prefixo do motivo devolvido pelo core. */
+/** Difference class, from the prefix of the reason returned by the core. */
 const NOTE_CLASSES: [string, string, "ok" | "bad" | "info"][] = [
-  ["parâmetro do usuário", "parâmetro do usuário", "info"],
-  ["esperado (parâmetro do usuário)", "parâmetro do usuário", "info"],
-  ["valor congelado", "valor congelado", "bad"],
-  ["origem diferente", "origem diferente", "bad"],
-  ["valor sem origem no trace", "sem origem no trace", "bad"],
+  ["parâmetro do usuário", "user parameter", "info"],
+  ["esperado (parâmetro do usuário)", "user parameter", "info"],
+  ["valor congelado", "frozen value", "bad"],
+  ["origem diferente", "different origin", "bad"],
+  ["valor sem origem no trace", "no origin in trace", "bad"],
 ];
 function noteClass(reason: string): { label: string; tone: "ok" | "bad" | "info" } | null {
   const hit = NOTE_CLASSES.find(([prefix]) => reason.includes(prefix));
@@ -144,7 +144,7 @@ const verdictClass: Record<string, string> = {
   diverges: "notice-error",
   incomplete: "notice-info",
 };
-/** Veredito desconhecido (o core pode acrescentar motivos) conta como divergência, nunca como sucesso. */
+/** An unknown verdict (the core may add reasons) counts as a divergence, never as success. */
 const noticeClass = (verdict: string) => verdictClass[verdict] ?? "notice-error";
 
 export function ValidationView({
@@ -183,9 +183,9 @@ export function ValidationView({
   return (
     <div className="validation-view">
       <div className="breadcrumb">
-        <button className="link" onClick={onBack}>← Sessão</button> <span className="dim">/ Validar execução</span>
+        <button className="link" onClick={onBack}>← Session</button> <span className="dim">/ Validate run</span>
       </div>
-      <h2>Validar execução do script</h2>
+      <h2>Validate script run</h2>
       <div className={`notice ${noticeClass(v.verdict)}`} role="status">
         <span className="notice-icon">{v.verdict === "equivalent" ? "✓" : v.verdict === "incomplete" ? "…" : "!"}</span>
         <span><strong>{v.summary}</strong></span>
@@ -193,23 +193,23 @@ export function ValidationView({
       <div className="notice notice-info">
         <span className="notice-icon">i</span>
         <span>
-          O trace contém dados da sessão da execução (cookies, valores, corpos); não o compartilhe sem sanitizar. A sessão importada fica numa
-          pasta temporária privada, <strong>apagada ao fechar esta tela</strong> ou o app{kept ? <>; ela foi guardada em <span className="mono">{kept}</span></> : null}.{" "}
-          {!kept && <button className="link" onClick={() => void keep()}>Guardar esta execução…</button>}{" "}
-          {!kept && <button className="link" onClick={onSanitizeTrace}>Sanitizar a sessão do trace…</button>}
+          The trace contains the run's session data (cookies, values, bodies); do not share it without sanitizing. The imported session is kept in a
+          private temporary folder, <strong>deleted when this screen is closed</strong> or the app quits{kept ? <>; it was saved to <span className="mono">{kept}</span></> : null}.{" "}
+          {!kept && <button className="link" onClick={() => void keep()}>Keep this run…</button>}{" "}
+          {!kept && <button className="link" onClick={onSanitizeTrace}>Sanitize the trace session…</button>}
         </span>
       </div>
-      <p className="dim">Trace lido de <span className="mono">{tracePath}</span>.</p>
+      <p className="dim">Trace read from <span className="mono">{tracePath}</span>.</p>
       {keepError && <div className="notice notice-error"><span className="notice-icon">!</span><span>{keepError}</span></div>}
       {v.mappedOrigin && (
-        <p className="dim">Origem mapeada: <span className="mono">{v.mappedOrigin.from}</span> → <span className="mono">{v.mappedOrigin.to}</span> (a troca de host da execução não conta como diferença).</p>
+        <p className="dim">Mapped origin: <span className="mono">{v.mappedOrigin.from}</span> → <span className="mono">{v.mappedOrigin.to}</span> (the host swap in the run does not count as a difference).</p>
       )}
       {v.warnings.map((w, i) => {
         const invalid = w.startsWith("parâmetro inválido");
         return (
           <div className={`notice ${invalid ? "notice-error" : "notice-info"}`} key={i}>
             <span className="notice-icon">{invalid ? "!" : "i"}</span>
-            <span>{invalid ? <><strong>Parâmetro ignorado.</strong> {w}</> : w}</span>
+            <span>{invalid ? <><strong>Parameter ignored.</strong> {w}</> : w}</span>
           </div>
         );
       })}
@@ -217,7 +217,7 @@ export function ValidationView({
         <div className="notice notice-info">
           <span className="notice-icon">i</span>
           <span>
-            O host da execução não é loopback e não foi mapeado automaticamente. Informe <span className="mono">origem-da-captura=origem-do-trace</span>:{" "}
+            The run's host is not loopback and was not mapped automatically. Enter <span className="mono">capture-origin=trace-origin</span>:{" "}
             <input
               className="mono"
               style={{ minWidth: 320 }}
@@ -225,24 +225,24 @@ export function ValidationView({
               placeholder="https://sistema.gov.br=https://staging.exemplo.com"
               onChange={(e) => setMapText(e.target.value)}
             />{" "}
-            <button className="btn" disabled={!mapText.trim()} onClick={() => onRevalidate(mapText.trim())}>Revalidar com este mapeamento</button>
+            <button className="btn" disabled={!mapText.trim()} onClick={() => onRevalidate(mapText.trim())}>Revalidate with this mapping</button>
           </span>
         </div>
       )}
       {v.missingInTrace.length > 0 && (
-        <div className="notice notice-error"><span className="notice-icon">!</span><span>Passos da captura sem par no trace: <span className="mono">{v.missingInTrace.join(", ")}</span></span></div>
+        <div className="notice notice-error"><span className="notice-icon">!</span><span>Capture steps with no match in the trace: <span className="mono">{v.missingInTrace.join(", ")}</span></span></div>
       )}
-      <p className="dim">{v.steps.length} passo(s) no trace · {problemSteps} com problema ou diferença inesperada.</p>
+      <p className="dim">{v.steps.length} step(s) in the trace · {problemSteps} with a problem or unexpected difference.</p>
       <table className="norm-table validation-table">
         <thead>
-          <tr><th>Passo</th><th>Captura → trace</th><th>Status</th><th>Aplicação (captura × trace)</th><th>Diferenças</th></tr>
+          <tr><th>Step</th><th>Capture → trace</th><th>Status</th><th>Application (capture × trace)</th><th>Differences</th></tr>
         </thead>
         <tbody>
           {v.steps.map((s) => (
             <tr key={s.step} className={s.problem || (v.verdict === "incomplete" && v.step === s.step) ? "row-problem" : undefined}>
               <td>{s.step}</td>
               <td>
-                <span className="mono">{s.captureRequestId ?? "— (passo extra)"} → {s.traceRequestId}</span>
+                <span className="mono">{s.captureRequestId ?? "— (extra step)"} → {s.traceRequestId}</span>
                 <div className="dim mono" title={s.url}>{s.method} {s.url.replace(/^https?:\/\/[^/]+/, "")}</div>
               </td>
               <td className="mono">{s.statusCapture ?? "—"} × {s.statusTrace ?? "—"}</td>
@@ -255,7 +255,7 @@ export function ValidationView({
                 {s.problem && <div className="body-flag flag-truncated"><strong>Diverge</strong><span>{s.problem}</span></div>}
                 {s.unexpected.length > 0 && (
                   <details open>
-                    <summary>inesperadas ({s.unexpected.length})</summary>
+                    <summary>unexpected ({s.unexpected.length})</summary>
                     <ul className="chain-list">
                       {s.unexpected.map((n, i) => <NoteItem key={i} n={n} />)}
                     </ul>
@@ -263,16 +263,16 @@ export function ValidationView({
                 )}
                 {s.expected.length > 0 && (
                   <details open={s.expected.some((n) => n.reason.includes("parâmetro do usuário"))}>
-                    <summary>esperadas ({s.expected.length})</summary>
+                    <summary>expected ({s.expected.length})</summary>
                     <ul className="chain-list">
                       {s.expected.map((n, i) => <NoteItem key={i} n={n} />)}
                     </ul>
                   </details>
                 )}
                 {!s.problem && v.verdict === "incomplete" && v.step === s.step && (
-                  <div className="body-flag flag-truncated"><strong>Incompleta: parou aqui</strong><span>{v.reason}</span></div>
+                  <div className="body-flag flag-truncated"><strong>Incomplete: stopped here</strong><span>{v.reason}</span></div>
                 )}
-                {!s.problem && !(v.verdict === "incomplete" && v.step === s.step) && s.unexpected.length === 0 && s.expected.length === 0 && <span className="dim">sem diferenças</span>}
+                {!s.problem && !(v.verdict === "incomplete" && v.step === s.step) && s.unexpected.length === 0 && s.expected.length === 0 && <span className="dim">no differences</span>}
               </td>
             </tr>
           ))}

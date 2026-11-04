@@ -1,4 +1,4 @@
-//! Servidor MCP local e somente leitura do ScrapeLens. Contrato:
+//! ScrapeLens local, read-only MCP server. Contract:
 //! `docs/16-mcp-contrato.md`.
 
 #![forbid(unsafe_code)]

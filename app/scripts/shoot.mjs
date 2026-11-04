@@ -11,7 +11,7 @@ const distIndex = path.join(distDir, "index.html");
 const outDir = path.resolve(appRoot, "..", "docs", "screenshots");
 
 if (!fs.existsSync(distIndex)) {
-  console.error("dist/index.html não existe — rode `npm run build` antes.");
+  console.error("dist/index.html does not exist — run `npm run build` first.");
   process.exit(1);
 }
 fs.mkdirSync(outDir, { recursive: true });
@@ -84,4 +84,4 @@ for (const shot of shots) {
 
 await browser.close();
 server.close();
-console.log(`\nPNGs em ${outDir}`);
+console.log(`\nPNGs in ${outDir}`);

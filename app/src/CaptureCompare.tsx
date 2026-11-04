@@ -1,4 +1,4 @@
-// Comparação A × B entre duas capturas (compare::compare_sessions do core).
+// Comparison A × B between two captures (compare::compare_sessions of the core).
 import { useEffect, useState } from "react";
 import { bridge } from "./bridge";
 import { VerdictChip, useAssess, type OutcomeMap } from "./assess";
@@ -30,18 +30,18 @@ function FieldRow({ field }: { field: FieldDiff }) {
           {field.origin && (
             <div className="dim">
               {field.origin.kind}
-              {field.origin.ambiguous ? " · ambíguo" : ""}
+              {field.origin.ambiguous ? " · ambiguous" : ""}
             </div>
           )}
         </div>
       </div>
       {field.parts.map((part, index) => (
         <div key={index} className={part.class === "static" ? "cmp-field" : "cmp-field cmp-dynamic"} style={{ paddingLeft: 24 }}>
-          <div className="dim">trecho @ {part.aOffset ?? "?"}/{part.bOffset ?? "?"}</div>
+          <div className="dim">fragment @ {part.aOffset ?? "?"}/{part.bOffset ?? "?"}</div>
           <div className="mono">{part.a ?? "—"}</div>
           <div className="mono">{part.b ?? "—"}</div>
           <div>
-            <span className="chip tag">{part.class === "static" ? "estático" : part.originLabel || "dinâmico sem origem"}</span>
+            <span className="chip tag">{part.class === "static" ? "static" : part.originLabel || "dynamic without origin"}</span>
           </div>
         </div>
       ))}
@@ -61,7 +61,7 @@ function OnlyList({
   title: string;
   items: RequestRef[];
   total: number;
-  /** requestId deste lado → requisição do outro lado de mesmo modelo (reordenação). */
+  /** requestId on this side → request on the other side of the same model (reordering). */
   counterpart: Map<string, string>;
   side: "A" | "B";
 }) {
@@ -78,15 +78,15 @@ function OnlyList({
           <li key={r.requestId} id={`only-${side}-${r.requestId}`}>
             <span className="mono">{r.method}</span> <span className="mono">{r.requestId}</span> <span className="mono dim">{r.url}</span>
             {(counterpart.has(r.requestId) || r.reordered || r.outOfOrder) && (
-              <span className="chip possible" title="Sobra de mesmo modelo nos dois lados (marca do core)">
-                possivelmente a mesma requisição, em outra ordem
+              <span className="chip possible" title="Leftover of the same model on both sides (core mark)">
+                possibly the same request, in another order
                 {counterpart.has(r.requestId) && (
                   <>
                     {" "}
                     (
                     <button
                       className="link-req mono"
-                      title="Ir para a requisição correspondente do outro lado"
+                      title="Go to the matching request on the other side"
                       onClick={() =>
                         document
                           .getElementById(`only-${side === "A" ? "B" : "A"}-${counterpart.get(r.requestId)}`)
@@ -103,7 +103,7 @@ function OnlyList({
           </li>
         ))}
       </ul>
-      {total > items.length && <div className="body-foot">Mostrando {items.length} de {total}.</div>}
+      {total > items.length && <div className="body-foot">Showing {items.length} of {total}.</div>}
     </section>
   );
 }
@@ -128,7 +128,7 @@ function PairBlock({ handle, pair, onlyDynamic, outA, outB }: { handle: number; 
     <section className="cmp-pair">
       <header>
         <button className="ghost-btn small" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? "▾" : "▸"} campos
+          {open ? "▾" : "▸"} fields
         </button>
         <span className="mono">{pair.a.method}</span>
         <span className="mono">A {pair.a.requestId}</span>
@@ -136,19 +136,19 @@ function PairBlock({ handle, pair, onlyDynamic, outA, outB }: { handle: number; 
         <span className="mono">B {pair.b.requestId}</span>
         <span className="mono dim">{pair.a.url}</span>
         {outA && outB && (
-          <span title="Sucesso da aplicação: A → B">
+          <span title="Application success: A → B">
             app: <VerdictChip outcome={outA.get(pair.a.requestId)} /> → <VerdictChip outcome={outB.get(pair.b.requestId)} />
           </span>
         )}
-        <span className="chip tag">alinhado por {pair.alignedBy}</span>
-        {pair.outOfOrder && <span className="chip v-partial">fora de ordem</span>}
+        <span className="chip tag">aligned by {pair.alignedBy}</span>
+        {pair.outOfOrder && <span className="chip v-partial">out of order</span>}
         <span className="dim">
-          {pair.counts.static} est. · {pair.counts.dynamic} din. · {pair.fieldCount} campo(s)
+          {pair.counts.static} static · {pair.counts.dynamic} dyn. · {pair.fieldCount} field(s)
         </span>
       </header>
       {open && error && <div className="empty">{error}</div>}
-      {open && !fields && !error && <div className="empty">Carregando campos…</div>}
-      {open && fields && shown.length === 0 && <div className="empty">Sem campos dinâmicos neste par.</div>}
+      {open && !fields && !error && <div className="empty">Loading fields…</div>}
+      {open && fields && shown.length === 0 && <div className="empty">No dynamic fields in this pair.</div>}
       {open && shown.map((field, index) => <FieldRow key={index} field={field} />)}
     </section>
   );
@@ -217,7 +217,7 @@ export function CaptureCompareView({
     <div className="detail">
       <div className="detail-top">
         <button className="back" onClick={onBack}>
-          ← Sessão
+          ← Session
         </button>
         <div className="crumbs">
           <span className="mono">A: {labelA}</span>
@@ -227,9 +227,9 @@ export function CaptureCompareView({
       </div>
       <section className="body-panel">
         <header className="block-head">
-          <h3>Comparação entre capturas</h3>
+          <h3>Comparison between captures</h3>
           <span className="block-meta">
-            {summary.pairs} par(es) · {c.static} estático(s) · {dynamicSummary(c, summary.partsCounts)} ({c.runtime} obter em runtime, {c.noOrigin} sem origem) · só em A {summary.onlyInATotal} · só em B {summary.onlyInBTotal}
+            {summary.pairs} pair(s) · {c.static} static · {dynamicSummary(c, summary.partsCounts)} ({c.runtime} obtained at runtime, {c.noOrigin} without origin) · only in A {summary.onlyInATotal} · only in B {summary.onlyInBTotal}
           </span>
           <label className="annotate-opt">
             <input
@@ -240,45 +240,45 @@ export function CaptureCompareView({
                 setOnlyDynamic(e.target.checked);
               }}
             />{" "}
-            só dinâmicos ({summary.dynamicPairs} de {summary.pairs} pares)
+            dynamic only ({summary.dynamicPairs} of {summary.pairs} pairs)
           </label>
         </header>
-        <div className="cmp-options" role="group" aria-label="Opções da comparação">
+        <div className="cmp-options" role="group" aria-label="Comparison options">
           <label className="annotate-opt">
-            <input type="checkbox" checked={includeAll} onChange={(e) => setIncludeAll(e.target.checked)} /> incluir tudo (proteção e recursos estáticos no alinhamento)
+            <input type="checkbox" checked={includeAll} onChange={(e) => setIncludeAll(e.target.checked)} /> include everything (protection and static resources in the alignment)
           </label>
           <label className="annotate-opt">
-            faixa A <input className="range-input mono" value={aRange} onChange={(e) => setARange(e.target.value)} placeholder="de:ate (ex.: 10:50)" aria-label="Faixa A" />
+            range A <input className="range-input mono" value={aRange} onChange={(e) => setARange(e.target.value)} placeholder="from:to (e.g.: 10:50)" aria-label="Range A" />
           </label>
           <label className="annotate-opt">
-            faixa B <input className="range-input mono" value={bRange} onChange={(e) => setBRange(e.target.value)} placeholder="de:ate" aria-label="Faixa B" />
+            range B <input className="range-input mono" value={bRange} onChange={(e) => setBRange(e.target.value)} placeholder="from:to" aria-label="Range B" />
           </label>
           <button className="btn small" disabled={recomputing} onClick={() => void recompare()}>
-            {recomputing ? "Comparando…" : "Recomparar"}
+            {recomputing ? "Comparing…" : "Compare again"}
           </button>
           {optionError && <span className="err">{optionError}</span>}
         </div>
         <div className="body-foot">
-          “Obter em runtime” = a origem em B é uma resposta anterior de B (evidência indicada; value-match é só coincidência). Campos repetidos seguem a ordem da fonte. Os campos de cada par carregam ao expandir.
-          {summary.pairs > DYNAMIC_ONLY_THRESHOLD && " Comparação grande: “só dinâmicos” começou ligado."}
-          {summary.includeAll ? " Alinhamento com tudo incluído." : " Por padrão só a aplicação é alinhada; proteção e estáticos ficam nos grupos abaixo."}
+          “Obtained at runtime” = the origin in B is an earlier response from B (evidence indicated; value-match is only coincidence). Repeated fields follow the source order. The fields of each pair load when expanded.
+          {summary.pairs > DYNAMIC_ONLY_THRESHOLD && " Large comparison: “dynamic only” started on."}
+          {summary.includeAll ? " Alignment with everything included." : " By default only the application is aligned; protection and static resources stay in the groups below."}
         </div>
         {summary.entryRequest && (
           <div className="body-foot">
-            Rodadas segmentadas pela requisição de entrada: <span className="mono">{summary.entryRequest}</span>. {rounds.length} rodada(s) pareada(s)
-            {(summary.unpairedRounds?.length ?? 0) > 0 ? `, ${summary.unpairedRounds!.length} sem par` : ""}.
+            Rounds segmented by the entry request: <span className="mono">{summary.entryRequest}</span>. {rounds.length} paired round(s)
+            {(summary.unpairedRounds?.length ?? 0) > 0 ? `, ${summary.unpairedRounds!.length} unpaired` : ""}.
           </div>
         )}
         {summary.ambiguities.length > 0 && (
           <div className="body-flag flag-truncated">
-            <strong>Ambiguidades no alinhamento ({summary.ambiguities.length})</strong>
+            <strong>Ambiguities in the alignment ({summary.ambiguities.length})</strong>
             <span>{summary.ambiguities.join(" · ")}</span>
           </div>
         )}
         {summary.redactedFields > 0 && (
           <div className="body-flag flag-truncated">
-            <strong>{summary.redactedFields} campo(s) redigido(s)</strong>
-            <span>Valores redigidos não podem ser comparados nem rastreados.</span>
+            <strong>{summary.redactedFields} redacted field(s)</strong>
+            <span>Redacted values cannot be compared or traced.</span>
           </div>
         )}
         {summary.warnings.map((warning, index) => (
@@ -291,17 +291,17 @@ export function CaptureCompareView({
         <section className="body-panel">
           <header className="block-head">
             <h3>
-              Rodadas sem par <span className="count">{summary.unpairedRounds!.length}</span>
+              Unpaired rounds <span className="count">{summary.unpairedRounds!.length}</span>
             </h3>
           </header>
           <ul className="chain-list" style={{ padding: "0 13px" }}>
             {summary.unpairedRounds!.map((round, index) => (
               <li key={index}>
                 <strong>
-                  Rodada {round.round + 1} de {round.side}
+                  Round {round.round + 1} of {round.side}
                 </strong>{" "}
-                · {round.requests} requisição(ões): <span className="mono">{round.first.requestId}</span> → <span className="mono">{round.last.requestId}</span>
-                <div className="why">Sem rodada parecida do outro lado; não entra em “só em A/B”.</div>
+                · {round.requests} request(s): <span className="mono">{round.first.requestId}</span> → <span className="mono">{round.last.requestId}</span>
+                <div className="why">No similar round on the other side; not counted in “only in A/B”.</div>
               </li>
             ))}
           </ul>
@@ -310,7 +310,7 @@ export function CaptureCompareView({
       {(summary.groups ?? []).map((group) => (
         <details className="body-panel cmp-group" key={group.kind}>
           <summary>
-            {group.kind === "protection" ? "Proteção (/TSPD/ etc.)" : group.kind === "static" ? "Recursos estáticos" : group.kind} — fora do alinhamento · A {group.aTotal} · B {group.bTotal}
+            {group.kind === "protection" ? "Protection (/TSPD/ etc.)" : group.kind === "static" ? "Static resources" : group.kind} — outside the alignment · A {group.aTotal} · B {group.bTotal}
           </summary>
           <div className="cmp-group-cols">
             {([["A", group.a, group.aTotal], ["B", group.b, group.bTotal]] as const).map(([side, items, count]) => (
@@ -320,32 +320,32 @@ export function CaptureCompareView({
                     <span className="chip tag">{side}</span> <span className="mono">{r.method}</span> <span className="mono">{r.requestId}</span> <span className="mono dim">{r.url}</span>
                   </li>
                 ))}
-                {count > items.length && <li className="dim">+{count - items.length} não listados</li>}
+                {count > items.length && <li className="dim">+{count - items.length} not listed</li>}
               </ul>
             ))}
           </div>
         </details>
       ))}
-      <OnlyList side="A" title="Só em A" items={summary.onlyInA} total={summary.onlyInATotal} counterpart={new Map((summary.reordered ?? []).map((pair) => [pair.a.requestId, pair.b.requestId]))} />
-      <OnlyList side="B" title="Só em B" items={summary.onlyInB} total={summary.onlyInBTotal} counterpart={new Map((summary.reordered ?? []).map((pair) => [pair.b.requestId, pair.a.requestId]))} />
+      <OnlyList side="A" title="Only in A" items={summary.onlyInA} total={summary.onlyInATotal} counterpart={new Map((summary.reordered ?? []).map((pair) => [pair.a.requestId, pair.b.requestId]))} />
+      <OnlyList side="B" title="Only in B" items={summary.onlyInB} total={summary.onlyInBTotal} counterpart={new Map((summary.reordered ?? []).map((pair) => [pair.b.requestId, pair.a.requestId]))} />
       {(summary.reorderedTotal ?? 0) > 0 && (
         <div className="body-foot" style={{ margin: "0 14px" }}>
-          {summary.reorderedTotal} sobra(s) de mesmo modelo nos dois lados: possivelmente as mesmas requisições em outra ordem (o pareamento segue monotônico).
+          {summary.reorderedTotal} leftover(s) of the same model on both sides: possibly the same requests in another order (pairing stays monotonic).
         </div>
       )}
       <div className="cmp-pager">
         <button className="btn small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
-          ← Anteriores
+          ← Previous
         </button>
         <span className="dim">
-          {total === 0 ? "0 pares" : `pares ${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} de ${total}`}
+          {total === 0 ? "0 pairs" : `pairs ${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} of ${total}`}
         </span>
         <button className="btn small" disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>
-          Próximos →
+          Next →
         </button>
       </div>
       {error && <div className="empty">{error}</div>}
-      {!page && !error && <div className="empty">Carregando pares…</div>}
+      {!page && !error && <div className="empty">Loading pairs…</div>}
       {page?.items.map((pair, index) => {
         const header = roundHeader(pair.round, index === 0 && offset === 0 ? undefined : page.items[index - 1]?.round ?? undefined, rounds);
         return (
@@ -355,7 +355,7 @@ export function CaptureCompareView({
           </div>
         );
       })}
-      {page && page.items.length === 0 && <div className="empty">Nenhum par para exibir com este filtro.</div>}
+      {page && page.items.length === 0 && <div className="empty">No pair to show with this filter.</div>}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-//! Linha do tempo (docs/13) com o protocolo inventado de prefixo de comprimento.
+//! Timeline (docs/13) with the invented length-prefix protocol.
 
 use std::sync::Arc;
 
@@ -32,10 +32,10 @@ impl ProtocolAdapter for LenPrefix {
             let n: usize = value
                 .get(*i..*i + 2)
                 .and_then(|s| s.parse().ok())
-                .ok_or_else(|| bad("comprimento"))?;
+                .ok_or_else(|| bad("length"))?;
             let start = *i + 2;
             if start + n > b.len() {
-                return Err(bad("truncado"));
+                return Err(bad("truncated"));
             }
             *i = start + n;
             Ok((start, n))
@@ -216,7 +216,7 @@ fn timeline_without_adapter_labels_with_method_and_path_and_groups_noise() {
         (ev[0].round, ev[2].round, ev[3].round, ev[5].round),
         (1, 1, 2, 2)
     );
-    // proteção e estáticos recolhidos entre os eventos, com contagem
+    // protection and static requests collapsed between the events, with counts
     let groups: Vec<_> = t
         .items
         .iter()
@@ -234,7 +234,7 @@ fn timeline_without_adapter_labels_with_method_and_path_and_groups_noise() {
             ("static", 2)
         ]
     );
-    // valores não vazam: só nomes
+    // values do not leak: only names
     let json = serde_json::to_string(&t).unwrap();
     assert!(!json.contains("D3LTA-"));
     assert!(
@@ -308,7 +308,7 @@ fn timeline_scales_roughly_linearly() {
         started.elapsed().as_secs_f64()
     };
     let (small, large) = (time(400), time(1600));
-    // 4x mais requisições: com custo ~n^2,7 daria ~40x; aceita até ~12x
+    // 4x more requests: with ~n^2.7 cost it would be ~40x; accepts up to ~12x
     assert!(
         large < small.max(0.02) * 12.0 + 0.5,
         "400 → {small:.3}s, 1600 → {large:.3}s"

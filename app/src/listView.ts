@@ -1,4 +1,4 @@
-// Regras puras da lista e da barra de sessão (testadas em scripts/list-view.test.ts).
+// Pure rules for the list and the session bar (tested in scripts/list-view.test.ts).
 
 export type FilterState = {
   query: string;
@@ -9,26 +9,26 @@ export type FilterState = {
   blockFilter: boolean;
 };
 
-/** Chip de filtro por avaliação: com contagem 0 e inativo, fica desabilitado (só esvaziaria a lista). */
+/** Verdict filter chip: with a count of 0 and inactive, it is disabled (it would only empty the list). */
 export function outcomeChipDisabled(count: number, active: boolean): boolean {
   return count === 0 && !active;
 }
 
-/** Nomes dos filtros ativos, para o estado vazio dizer por que a lista está vazia. */
+/** Names of the active filters, so the empty state can say why the list is empty. */
 export function activeFilterLabels(f: FilterState): string[] {
   const out: string[] = [];
-  if (f.query.trim()) out.push(`busca “${f.query.trim()}”`);
-  if (f.typeFilter !== "all") out.push(`tipo ${f.typeFilter}`);
-  if (f.targetFilter !== "all") out.push(`alvo ${f.targetFilter}`);
-  if (f.protocol !== "all") out.push(`protocolo ${f.protocol}`);
-  if (f.failFilter) out.push("Falhas da aplicação");
-  if (f.blockFilter) out.push("Possíveis bloqueios?");
+  if (f.query.trim()) out.push(`search “${f.query.trim()}”`);
+  if (f.typeFilter !== "all") out.push(`type ${f.typeFilter}`);
+  if (f.targetFilter !== "all") out.push(`target ${f.targetFilter}`);
+  if (f.protocol !== "all") out.push(`protocol ${f.protocol}`);
+  if (f.failFilter) out.push("Application failures");
+  if (f.blockFilter) out.push("Possible blocks?");
   return out;
 }
 
 /**
- * O selo "gravando" pertence à captura, não à sessão exibida: só aparece junto do título
- * quando a sessão exibida é a pasta da gravação em andamento.
+ * The "recording" badge belongs to the capture, not to the displayed session: it only appears
+ * next to the title when the displayed session is the folder of the recording in progress.
  */
 export function sessionIsRecording(
   displayed: { sourcePath?: string; synthetic?: boolean },
@@ -40,8 +40,8 @@ export function sessionIsRecording(
 }
 
 /**
- * Páginas de `list_requests` necessárias para mostrar as linhas [start, end) e mais uma de folga.
- * Sem `matched` conhecido (antes da primeira resposta), só a página 0.
+ * `list_requests` pages needed to show rows [start, end) plus one spare page.
+ * Without a known `matched` (before the first response), only page 0.
  */
 export function pagesFor(start: number, end: number, matched: number | undefined, pageSize: number): number[] {
   if (matched === undefined) return [0];
@@ -53,7 +53,7 @@ export function pagesFor(start: number, end: number, matched: number | undefined
   return out;
 }
 
-/** Lista paginada sob demanda para um filtro fixo: busca só as páginas pedidas, uma vez cada. */
+/** On-demand paged list for a fixed filter: fetches only the requested pages, once each. */
 export class PagedList<Row, Meta extends { matched: number }> {
   readonly pages = new Map<number, Row[]>();
   private readonly inflight = new Set<number>();
@@ -76,14 +76,14 @@ export class PagedList<Row, Meta extends { matched: number }> {
     return this.pages.get(Math.floor(index / this.pageSize))?.[index % this.pageSize];
   }
 
-  /** Linhas já carregadas, em ordem. */
+  /** Rows already loaded, in order. */
   loadedRows(): Row[] {
     return [...this.pages.keys()].sort((a, b) => a - b).flatMap((p) => this.pages.get(p) ?? []);
   }
 
   ensure(start: number, end: number): void {
     if (this.dead || this.error) return;
-    // Antes da primeira resposta só existe a página 0; não dispara a 1 às cegas.
+    // Before the first response only page 0 exists; do not blindly fire page 1.
     if (this.meta === undefined && this.inflight.size > 0) return;
     for (const page of pagesFor(start, end, this.meta?.matched, this.pageSize)) {
       if (this.pages.has(page) || this.inflight.has(page)) continue;
@@ -112,14 +112,14 @@ export class PagedList<Row, Meta extends { matched: number }> {
   }
 }
 
-/** macOS mostra ⌘/⇧; Linux e Windows mostram Ctrl+/Shift+. */
+/** macOS shows ⌘/⇧; Linux and Windows show Ctrl+/Shift+. */
 export const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
 
-/** Rótulo de atalho a partir de "⌘⇧R" (forma canônica do código). */
+/** Shortcut label from "⌘⇧R" (the canonical form used in the code). */
 export function shortcutLabel(mac: string, isMac: boolean = IS_MAC): string {
   if (isMac) return mac;
   return mac.replace(/⌘/g, "Ctrl+").replace(/⇧/g, "Shift+");
 }
 
-/** Nome do gerenciador de arquivos da plataforma. */
-export const FILE_MANAGER = IS_MAC ? "Finder" : "gerenciador de arquivos";
+/** Name of the platform's file manager. */
+export const FILE_MANAGER = IS_MAC ? "Finder" : "file manager";

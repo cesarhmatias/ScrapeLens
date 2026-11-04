@@ -1,7 +1,7 @@
-//! E2E vivo: o binário real do produto, com Chrome de verdade (headless) e um
-//! servidor HTTP em loopback do próprio teste. Nenhum site real é acessado.
+//! Live E2E: the real product binary, with real Chrome (headless) and an HTTP
+//! server on loopback from the test itself. No real site is accessed.
 //!
-//! Rode com: `cargo test --test e2e_live -- --ignored --nocapture`
+//! Run with: `cargo test --test e2e_live -- --ignored --nocapture`
 
 mod common;
 
@@ -14,8 +14,8 @@ use std::time::Duration;
 use common::client::{Client, Elicit};
 use serde_json::json;
 
-/// Servidor mínimo: `/` com sinais inventados de Cloudflare (cf-ray e cookie),
-/// `/area` com 403 e `cf-mitigated: challenge`. Guarda os caminhos vistos.
+/// Minimal server: `/` with invented Cloudflare signals (cf-ray and cookie),
+/// `/area` with 403 and `cf-mitigated: challenge`. Keeps the paths seen.
 fn serve() -> (u16, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -55,7 +55,7 @@ fn serve() -> (u16, Arc<Mutex<Vec<String>>>) {
 }
 
 #[test]
-#[ignore = "usa Chrome real (headless) e servidor em loopback"]
+#[ignore = "uses real Chrome (headless) and a loopback server"]
 fn live_cycle_with_real_chrome() {
     let (port, seen) = serve();
     let work = tempfile::tempdir().unwrap();
@@ -84,7 +84,7 @@ fn live_cycle_with_real_chrome() {
     );
     assert_eq!(client.elicitations.len(), 1);
 
-    // Fora da allowlist: recusado antes de enviar; o servidor não vê nada.
+    // Outside the allowlist: refused before sending; the server sees nothing.
     let before = seen.lock().unwrap().len();
     for bad in [
         format!("http://127.0.0.1:{port}/x"),
@@ -108,7 +108,7 @@ fn live_cycle_with_real_chrome() {
     assert_eq!(status["recording"], true);
     assert!(
         !status.to_string().contains("x=1"),
-        "query não sai: {status}"
+        "query doesn't leave: {status}"
     );
 
     let (is_error, stopped) = client.tool("stop_capture", json!({"capture_id": id}));
@@ -118,7 +118,7 @@ fn live_cycle_with_real_chrome() {
     assert_eq!(stopped["readable"], true);
     let session_id = stopped["sessionId"].as_str().unwrap().to_string();
 
-    // A sessão gravada é legível pelas ferramentas de leitura, com ordem de headers.
+    // The recorded session is readable by the read tools, with header order.
     let (is_error, requests) = client.tool(
         "list_requests",
         json!({"session_id": session_id, "host": host}),
@@ -130,7 +130,7 @@ fn live_cycle_with_real_chrome() {
         .unwrap()
         .iter()
         .find(|i| i["url"].as_str().unwrap().contains("/area"))
-        .expect("/area na sessão");
+        .expect("/area in the session");
     assert_eq!(area["status"], 403);
     let (_, detail) = client.tool(
         "get_request",
@@ -141,7 +141,7 @@ fn live_cycle_with_real_chrome() {
         .unwrap()
         .iter()
         .any(|h| h[0].as_str().unwrap().eq_ignore_ascii_case("cf-mitigated")));
-    // Valor do cookie nunca sai sem reveal.
+    // The cookie value never leaves without reveal.
     let root = client
         .tool(
             "get_request",
@@ -150,7 +150,7 @@ fn live_cycle_with_real_chrome() {
         .1;
     assert!(!root.to_string().contains("SEGREDO-LIVE-1"), "{root}");
 
-    // site_profile reconhece o desafio e a recomendação.
+    // site_profile recognizes the challenge and the recommendation.
     let (is_error, profile) = client.tool("site_profile", json!({"session_id": session_id}));
     assert!(!is_error, "{profile}");
     let signatures: Vec<&str> = profile["findings"]
@@ -161,7 +161,7 @@ fn live_cycle_with_real_chrome() {
         .collect();
     assert!(signatures.contains(&"cf-005"), "{signatures:?}");
     assert!(!profile.to_string().contains("SEGREDO-LIVE-1"));
-    println!("recomendação: {}", profile["recommendation"]["value"]);
+    println!("recommendation: {}", profile["recommendation"]["value"]);
 
     let (ok, stderr) = client.finish();
     assert!(ok, "{stderr}");
@@ -204,7 +204,7 @@ fn end_during_start(sigterm: bool) {
         json!({"allowed_hosts": ["localhost:9"], "headless": true}),
     );
     client.answer_next_elicitation();
-    // A confirmação foi dada e o Chrome está subindo: encerra o servidor agora.
+    // The confirmation was given and Chrome is starting up: shut the server down now.
     if sigterm {
         let status = std::process::Command::new("kill")
             .args(["-TERM", &pid.to_string()])
@@ -217,25 +217,25 @@ fn end_during_start(sigterm: bool) {
         client.close_stdin();
         let (ok, stderr) = client.finish();
         assert!(ok, "{stderr}");
-        // Prova de que o teste pegou a janela: o Chrome subia e foi parado pelo servidor.
+        // Proof that the test caught the window: Chrome was starting up and was stopped by the server.
         assert!(
             stderr.contains("que subia durante o encerramento foi parada"),
             "{stderr}"
         );
     }
     let (procs, profiles) = chrome_left_for(pid);
-    assert_eq!(procs, 0, "Chrome órfão depois de encerrar durante o início");
-    assert!(profiles.is_empty(), "perfil sobrando: {profiles:?}");
+    assert_eq!(procs, 0, "orphaned Chrome after shutting down during startup");
+    assert!(profiles.is_empty(), "leftover profile: {profiles:?}");
 }
 
 #[test]
-#[ignore = "usa Chrome real (headless)"]
+#[ignore = "uses real Chrome (headless)"]
 fn live_eof_during_start_leaves_no_chrome_or_profile() {
     end_during_start(false);
 }
 
 #[test]
-#[ignore = "usa Chrome real (headless)"]
+#[ignore = "uses real Chrome (headless)"]
 fn live_sigterm_during_start_leaves_no_chrome_or_profile() {
     end_during_start(true);
 }

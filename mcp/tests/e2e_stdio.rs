@@ -1,4 +1,4 @@
-//! Ponta a ponta: o binário real falando JSON-RPC por stdio.
+//! End to end: the real binary speaking JSON-RPC over stdio.
 
 mod common;
 
@@ -29,7 +29,7 @@ impl Client {
     }
     fn finish(self) -> String {
         let (ok, stderr) = self.0.finish();
-        assert!(ok, "o servidor deveria sair limpo no EOF");
+        assert!(ok, "the server should exit cleanly on EOF");
         stderr
     }
 }
@@ -54,7 +54,7 @@ fn full_session_over_stdio() {
     assert_eq!(init["result"]["serverInfo"]["name"], "scrapelens-mcp");
     assert!(init["result"]["capabilities"]["tools"].is_object());
 
-    // tools/list: as quinze ferramentas, com esquema e anotações.
+    // tools/list: the fifteen tools, with schema and annotations.
     let listed = client.request("tools/list", json!({}));
     let tools = listed["result"]["tools"].as_array().unwrap();
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -122,7 +122,7 @@ fn full_session_over_stdio() {
     );
     assert_eq!(
         body["masked"], "unsupported",
-        "texto livre fica retido sem reveal"
+        "free text stays withheld without reveal"
     );
     let (_, json_body) = client.tool(
         "get_body",
@@ -149,21 +149,21 @@ fn full_session_over_stdio() {
     assert_eq!(trace["firstSetter"]["requestId"], "har-0001");
     assert_no_secrets(&trace, "trace e2e");
 
-    // Erros de ferramenta voltam como resultado com isError, não como erro de protocolo.
+    // Tool errors come back as a result with isError, not as a protocol error.
     let (is_error, error) = client.tool(
         "get_request",
         json!({"session_id": "a", "request_id": "nope"}),
     );
     assert!(is_error);
     assert_eq!(error["error"]["code"], "not_found");
-    // reveal sem --allow-reveal é recusado.
+    // reveal without --allow-reveal is refused.
     let (is_error, error) = client.tool(
         "get_request",
         json!({"session_id": "a", "request_id": "har-0003", "reveal": true}),
     );
     assert!(is_error);
     assert_eq!(error["error"]["code"], "reveal_disabled");
-    // Argumento inválido (campo obrigatório ausente): o rmcp responde com isError e o motivo.
+    // Invalid argument (required field missing): rmcp responds with isError and the reason.
     let bad = client.request(
         "tools/call",
         json!({"name": "get_request", "arguments": {"session_id": "a"}}),
@@ -174,12 +174,12 @@ fn full_session_over_stdio() {
         .unwrap()
         .contains("request_id"));
 
-    // Nada além de JSON-RPC em stdout (cada linha foi validada em request()).
+    // Nothing but JSON-RPC on stdout (each line was validated in request()).
     assert!(!client.0.seen.is_empty());
     let stderr = client.finish();
     assert!(
         stderr.contains("scrapelens-mcp"),
-        "banner em stderr: {stderr}"
+        "banner on stderr: {stderr}"
     );
 }
 
@@ -201,7 +201,7 @@ fn reveal_works_when_the_server_allows_it() {
     );
     assert!(!is_error);
     assert!(request.to_string().contains(TOKEN));
-    // Corpo grande vai para arquivo em --out-dir (padrão: <sessions>/.mcp-out).
+    // Large body goes to a file in --out-dir (default: <sessions>/.mcp-out).
     let (_, body) = client.tool(
         "get_body",
         json!({"session_id": "a", "request_id": "har-0003", "reveal": true}),
@@ -218,12 +218,12 @@ fn reveal_works_when_the_server_allows_it() {
         "{path:?}"
     );
     assert_eq!(std::fs::metadata(&path).unwrap().len(), 100_000);
-    // Padrão continua mascarado.
+    // Default stays masked.
     let (_, masked) = client.tool(
         "get_request",
         json!({"session_id": "a", "request_id": "har-0003"}),
     );
-    assert_no_secrets(&masked, "padrão mascarado");
+    assert_no_secrets(&masked, "default masked");
     client.finish();
 }
 
@@ -233,6 +233,6 @@ fn server_refuses_to_start_without_sessions_dir() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty(), "stdout deve ficar vazio");
+    assert!(output.stdout.is_empty(), "stdout must stay empty");
     assert!(String::from_utf8_lossy(&output.stderr).contains("--sessions-dir"));
 }

@@ -1,15 +1,15 @@
-/** Validação da URL inicial de captura (espelha src-tauri/src/cli.rs). */
+/** Validation of the capture start URL (mirrors src-tauri/src/cli.rs). */
 
 export type CaptureUrlResult =
   | { ok: true; url: string }
   | { ok: false; error: string };
 
-/** Pontas aparadas: espaço Unicode (inclui U+0085) e BOM U+FEFF — igual a `trim_url` no Rust. */
+/** Trimmed ends: Unicode whitespace (including U+0085) and BOM U+FEFF, same as `trim_url` in Rust. */
 export function trimUrl(raw: string | null | undefined): string {
   return (raw ?? "").replace(/^[\s\u0085\uFEFF]+|[\s\u0085\uFEFF]+$/gu, "");
 }
 
-/** Vazio → about:blank; senão só http/https. */
+/** Empty → about:blank; otherwise only http/https. */
 export function resolveCaptureStartUrl(input: string | null | undefined): CaptureUrlResult {
   const trimmed = trimUrl(input);
   if (!trimmed) return { ok: true, url: "about:blank" };
@@ -20,7 +20,7 @@ export function resolveCaptureStartUrl(input: string | null | undefined): Captur
 
 export const MAX_URL_LEN = 2048;
 
-/** Caracteres Unicode Cf recusados; mesma lista de `is_invisible_format` em src-tauri/src/cli.rs (autoridade). */
+/** Unicode Cf (format) characters that are rejected; same list as `is_invisible_format` in src-tauri/src/cli.rs (authoritative). */
 export function isInvisibleFormat(cp: number): boolean {
   const ranges: Array<[number, number]> = [
     [0x00ad, 0x00ad], [0x0600, 0x0605], [0x061c, 0x061c], [0x06dd, 0x06dd], [0x070f, 0x070f],
@@ -32,7 +32,7 @@ export function isInvisibleFormat(cp: number): boolean {
   return ranges.some(([a, b]) => cp >= a && cp <= b);
 }
 
-/** Controle Unicode (Cc), como `char::is_control` do Rust. */
+/** Unicode control character (Cc), like `char::is_control` in Rust. */
 function isControl(cp: number): boolean {
   return cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f);
 }
@@ -56,36 +56,36 @@ function validPort(port: string | undefined): boolean {
 
 export function validateHttpUrl(raw: string): CaptureUrlResult {
   const trimmed = trimUrl(raw);
-  if (!trimmed) return { ok: false, error: "URL vazia" };
+  if (!trimmed) return { ok: false, error: "URL is empty" };
   const cps = Array.from(trimmed, (c) => c.codePointAt(0) ?? 0);
-  if (cps.length > MAX_URL_LEN) return { ok: false, error: `URL maior que ${MAX_URL_LEN} caracteres` };
-  if (cps.some(isControl)) return { ok: false, error: "URL não pode conter caracteres de controle" };
+  if (cps.length > MAX_URL_LEN) return { ok: false, error: `URL is longer than ${MAX_URL_LEN} characters` };
+  if (cps.some(isControl)) return { ok: false, error: "URL cannot contain control characters" };
   if (/\s/u.test(trimmed) || cps.some((cp) => cp === 0x85 || cp === 0x1680 || (cp >= 0x2000 && cp <= 0x200a) || cp === 0x2028 || cp === 0x2029 || cp === 0x202f || cp === 0x205f || cp === 0x3000)) {
-    return { ok: false, error: "URL não pode conter espaços" };
+    return { ok: false, error: "URL cannot contain spaces" };
   }
-  if (cps.some(isInvisibleFormat)) return { ok: false, error: "URL não pode conter caracteres invisíveis" };
+  if (cps.some(isInvisibleFormat)) return { ok: false, error: "URL cannot contain invisible characters" };
   const parts = splitHttpUrl(trimmed);
-  if (!parts) return { ok: false, error: "a URL inicial aceita só http:// ou https://" };
-  if (parts.authority.includes("@")) return { ok: false, error: "URL com usuário/senha (user@host) não é aceita" };
+  if (!parts) return { ok: false, error: "the start URL only accepts http:// or https://" };
+  if (parts.authority.includes("@")) return { ok: false, error: "URLs with a username/password (user@host) are not accepted" };
   let host: string;
   if (parts.authority.startsWith("[")) {
     const close = parts.authority.indexOf("]");
-    if (close < 0) return { ok: false, error: "host IPv6 malformado" };
+    if (close < 0) return { ok: false, error: "malformed IPv6 host" };
     const tail = parts.authority.slice(close + 1);
-    if (!(tail === "" || tail.startsWith(":"))) return { ok: false, error: "host IPv6 malformado" };
-    if (!validPort(tail.startsWith(":") ? tail.slice(1) : undefined)) return { ok: false, error: "porta inválida na URL" };
+    if (!(tail === "" || tail.startsWith(":"))) return { ok: false, error: "malformed IPv6 host" };
+    if (!validPort(tail.startsWith(":") ? tail.slice(1) : undefined)) return { ok: false, error: "invalid port in URL" };
     host = parts.authority.slice(1, close);
   } else {
     const colon = parts.authority.lastIndexOf(":");
     const port = colon < 0 ? undefined : parts.authority.slice(colon + 1);
-    if (!validPort(port)) return { ok: false, error: "porta inválida na URL" };
+    if (!validPort(port)) return { ok: false, error: "invalid port in URL" };
     host = colon < 0 ? parts.authority : parts.authority.slice(0, colon);
   }
-  if (!host) return { ok: false, error: "URL sem host" };
+  if (!host) return { ok: false, error: "URL has no host" };
   return { ok: true, url: trimmed };
 }
 
-/** Forma persistida: só esquema, host, porta e caminho (sem query/fragmento). */
+/** Persisted form: only scheme, host, port and path (no query/fragment). */
 export function persistableUrl(raw: string): CaptureUrlResult {
   const check = validateHttpUrl(raw);
   if (!check.ok) return check;

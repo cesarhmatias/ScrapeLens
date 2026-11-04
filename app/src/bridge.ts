@@ -7,9 +7,9 @@ export interface CookieSourceDto {
 }
 export interface CookieSourcesPayload { sources: CookieSourceDto[]; selected: string | null }
 
-// Ponte única entre a UI e o shell Tauri 2.
-// Fora do Tauri (navegador, para prints/testes) usa a fixture v1 local; dentro
-// do Tauri chama os commands preparados para o core/.
+// Single bridge between the UI and the Tauri 2 shell.
+// Outside Tauri (browser, for screenshots/tests) it uses the local v1 fixture; inside
+// Tauri it calls the commands prepared for the core.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -42,12 +42,12 @@ export interface RequestPageDto {
   matched: number;
   offset: number;
   items: RawRequestSummary[];
-  /** Alvos distintos da página; `items[i].target` é o índice. */
+  /** Distinct targets of the page; `items[i].target` is the index. */
   targets: TargetProvenance[];
   counts: { all: number; fetch: number; document: number; media: number; error: number };
   targetCounts: Record<string, number>;
   hasTargets: boolean;
-  /** Avisos ligados a requisições na sessão inteira (sem filtro). */
+  /** Warnings tied to requests across the whole session (unfiltered). */
   warningTotal: number;
 }
 
@@ -76,7 +76,7 @@ export interface WarningDto {
   entity?: string;
 }
 
-/** Prévia gerada no Rust; `text` é a fonte da cópia e do arquivo salvo. */
+/** Preview generated in Rust; `text` is the source of the copy and of the saved file. */
 export interface ExportPreview {
   sessionId: string;
   requestId: string;
@@ -91,7 +91,7 @@ export interface ExportPreview {
   bodyIncluded: boolean;
   bodyNote?: string;
   bodyState: string;
-  /** Adaptador de protocolo cujo codificador entrou no script de priming. */
+  /** Protocol adapter whose encoder was included in the priming script. */
   adapter?: string;
 }
 
@@ -144,7 +144,7 @@ export interface ValidationResultDto {
   traceRequests: number;
   validation: {
     schema: string;
-    /** Veredito do core; outros valores (o core pode acrescentar) aparecem como divergência. */
+    /** Verdict from the core; other values (the core may add some) show up as a divergence. */
     verdict: string;
     step: number | null;
     reason: string | null;
@@ -215,17 +215,17 @@ export interface SearchMatch {
   scope: SearchScope;
   field: string | null;
   byteOffset: number | null;
-  /** Comprimento em bytes UTF-8 do trecho original (core ≥ rodada 4b-fix). */
+  /** Length in UTF-8 bytes of the original excerpt (core ≥ round 4b-fix). */
   byteLength?: number;
-  /** O achado está num controle de formulário HTML (input/textarea/select). */
+  /** The finding is in an HTML form control (input/textarea/select). */
   htmlControl?: boolean;
-  /** true: o intervalo é literal no original; false: achado só na visão decodificada. */
+  /** true: the range is literal in the original; false: finding only in the decoded view. */
   exact?: boolean;
   snippet: string;
   decoded: boolean;
 }
 
-/** Resultado de `scrapelens_core::search`; a UI não refaz a busca. */
+/** Result of `scrapelens_core::search`; the UI does not redo the search. */
 export interface SearchResultDto {
   matches: SearchMatch[];
   skippedBinary: number;
@@ -258,7 +258,7 @@ export type MenuAction =
 export interface CliActionPayload {
   kind: "import-har" | "import-netlog" | "open-capture" | "error" | "warning" | string;
   path: string;
-  /** Erro ou aviso da CLI de teste (kind `error`/`warning`). */
+  /** Error or warning from the test CLI (kind `error`/`warning`). */
   message?: string;
 }
 
@@ -288,12 +288,12 @@ export const bridge = {
     return invoke("demo_session");
   },
 
-  /** Abre um diretório de sessão v1 (ou um session.json) via diálogo nativo. */
+  /** Opens a v1 session directory (or a session.json) via the native dialog. */
   async pickAndOpenSession(): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
     const picked = await openDialog({
-      title: "Abrir sessão do ScrapeLens",
-      message: "Escolha a pasta da sessão (com session.json) ou o próprio arquivo.",
+      title: "Open ScrapeLens session",
+      message: "Choose the session folder (containing session.json) or the file itself.",
       directory: true,
       multiple: false,
     });
@@ -304,7 +304,7 @@ export const bridge = {
   async importHar(): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
     const picked = await openDialog({
-      title: "Importar HAR",
+      title: "Import HAR",
       multiple: false,
       filters: [{ name: "HAR", extensions: ["har", "json"] }],
     });
@@ -315,7 +315,7 @@ export const bridge = {
   async importNetlog(): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
     const picked = await openDialog({
-      title: "Importar NetLog",
+      title: "Import NetLog",
       multiple: false,
       filters: [{ name: "NetLog", extensions: ["json"] }],
     });
@@ -343,7 +343,7 @@ export const bridge = {
     return invoke("stop_session");
   },
 
-  /** Preferência / env para o campo de URL inicial. */
+  /** Preference / env for the start URL field. */
   async captureStartUrl(): Promise<string> {
     if (!isTauri()) return "";
     return invoke("capture_start_url");
@@ -354,17 +354,17 @@ export const bridge = {
     return invoke("set_capture_start_url", { url });
   },
 
-  /** Página de resumos (P5); filtros rodam no backend. */
+  /** Page of summaries (P5); filters run in the backend. */
   async listRequests(sessionDir: string, offset: number, limit: number, filter: ListFilter): Promise<RequestPageDto> {
     return invoke("list_requests", { sessionDir, offset, limit, filter });
   },
 
-  /** Detalhe de uma requisição sob demanda (P5). */
+  /** Detail of one request, on demand (P5). */
   async getRequest(sessionDir: string, id: string): Promise<RawRequestDetail> {
     return invoke("get_request", { sessionDir, id });
   },
 
-  /** Consome `--import-har` / `--import-netlog` / `--open-capture` (uma vez). */
+  /** Consumes `--import-har` / `--import-netlog` / `--open-capture` (once). */
   async takeCliAction(): Promise<CliActionPayload | null> {
     if (!isTauri()) return null;
     return invoke("take_cli_action");
@@ -388,12 +388,12 @@ export const bridge = {
     return invoke("detect_chrome");
   },
 
-  /** Seleção manual do Chrome quando o detect não encontra. */
+  /** Manual selection of Chrome when detection does not find it. */
   async chooseChrome(): Promise<ChromeInfo | null> {
     if (!isTauri()) return null;
     const picked = await openDialog({
-      title: "Selecionar Google Chrome",
-      message: "Escolha Google Chrome.app (ou o binário dentro de Contents/MacOS).",
+      title: "Select Google Chrome",
+      message: "Choose Google Chrome.app (or the binary inside Contents/MacOS).",
       directory: true,
       multiple: false,
     });
@@ -420,19 +420,19 @@ export const bridge = {
     return invoke("search_session", { sessionDir, text, scopes, caseSensitive, maxMatches });
   },
 
-  /** Lê um corpo anexado (texto, ou tamanho + prévia hex se binário). */
+  /** Reads an attached body (text, or size + hex preview if binary). */
   async readBody(sessionDir: string, name: string, limit?: number): Promise<BodyData> {
     return invoke("read_body", { sessionDir, name, limit });
   },
 
-  /** Abre uma pasta de sessão já conhecida, sem diálogo. */
+  /** Opens an already known session folder, without a dialog. */
   async openSessionAt(path: string): Promise<SessionPayload> {
     return invoke("open_session", { path });
   },
 
   /**
-   * Gera a exportação no Rust a partir da sessão persistida. O texto devolvido
-   * é exatamente o que a UI mostra, copia e salva — nada é executado.
+   * Generates the export in Rust from the persisted session. The returned text
+   * is exactly what the UI shows, copies and saves — nothing is executed.
    */
   async exportRequest(
     sessionDir: string,
@@ -456,12 +456,12 @@ export const bridge = {
     return invoke("session_timeline", { sessionDir });
   },
 
-  /** Seletor nativo do arquivo de trace (`--trace` do script de priming); `null` se cancelar. */
+  /** Native picker for the trace file (`--trace` of the priming script); `null` if cancelled. */
   async pickTraceFile(): Promise<string | null> {
     if (!isTauri()) return null;
     const picked = await openDialog({
-      title: "Escolher o trace da execução do script",
-      message: "Arquivo JSON gerado pelo script de priming com --trace (scrapelens.trace/1).",
+      title: "Choose the trace of the script run",
+      message: "JSON file generated by the priming script with --trace (scrapelens.trace/1).",
       multiple: false,
       filters: [{ name: "Trace", extensions: ["json"] }],
     });
@@ -472,17 +472,17 @@ export const bridge = {
     return invoke("validate_execution", { sessionDir, tracePath, mapOrigin: mapOrigin || null });
   },
 
-  /** Apaga a sessão temporária do trace (ao fechar a tela de validação). */
+  /** Deletes the trace's temporary session (when closing the validation screen). */
   async discardValidation(traceDir: string): Promise<void> {
     if (!isTauri()) return;
     return invoke("discard_validation", { traceDir });
   },
 
-  /** "Guardar esta execução": escolhe uma pasta nova e move a sessão do trace para lá; `null` se cancelar. */
+  /** "Keep this run": picks a new folder and moves the trace session there; `null` if cancelled. */
   async keepValidation(traceDir: string): Promise<string | null> {
     if (!isTauri()) return null;
     const picked = await saveDialog({
-      title: "Escolher pasta nova para guardar a execução",
+      title: "Choose a new folder to keep the run",
       defaultPath: "execucao-do-script",
       canCreateDirectories: true,
     });
@@ -498,19 +498,19 @@ export const bridge = {
     return invoke("request_chain", { sessionDir, requestId });
   },
 
-  /** Seletor nativo de pasta para a 2ª captura; `null` se o usuário cancelar. */
+  /** Native folder picker for the 2nd capture; `null` if the user cancels. */
   async pickCompareSession(): Promise<string | null> {
     if (!isTauri()) return null;
     const picked = await openDialog({
-      title: "Escolher a 2ª captura (pasta da sessão B)",
-      message: "Escolha a pasta de uma sessão do ScrapeLens para comparar com a aberta.",
+      title: "Choose the 2nd capture (session B folder)",
+      message: "Choose the folder of a ScrapeLens session to compare with the open one.",
       directory: true,
       multiple: false,
     });
     return typeof picked === "string" ? picked : null;
   },
 
-  /** Compara A × B no Rust e devolve só o resumo; pares e campos vêm por página. */
+  /** Compares A × B in Rust and returns only the summary; pairs and fields come per page. */
   async compareOpen(
     dirA: string,
     dirB: string,
@@ -534,11 +534,11 @@ export const bridge = {
   },
 
 
-  /** Diálogo nativo de salvamento + gravação 0600 sem sobrescrever. */
+  /** Native save dialog + 0600 write without overwriting. */
   async saveExport(defaultName: string, text: string): Promise<SavedFile | null> {
     if (!isTauri()) return null;
     const picked = await saveDialog({
-      title: "Salvar exportação",
+      title: "Save export",
       defaultPath: defaultName,
       filters: [{ name: defaultName.endsWith(".py") ? "Python" : "Shell", extensions: [defaultName.endsWith(".py") ? "py" : "sh"] }],
     });
@@ -546,19 +546,19 @@ export const bridge = {
     return invoke("save_export_file", { path: picked, text });
   },
 
-  /** Contagens/avisos da sanitização; não grava nada. */
+  /** Sanitization counts/warnings; writes nothing. */
   async previewSanitized(sessionDir: string, includeSensitive = false): Promise<SanitizePreview> {
     return invoke("preview_sanitized", { sessionDir, includeSensitive });
   },
 
   /**
-   * Diálogo nativo escolhendo uma pasta nova e gravação da sessão sanitizada.
-   * Cancelar o diálogo devolve `null` sem tocar na origem.
+   * Native dialog to choose a new folder and write the sanitized session.
+   * Cancelling the dialog returns `null` without touching the source.
    */
   async saveSanitized(sessionDir: string, suggestedDestination: string, includeSensitive = false): Promise<SanitizeSaved | null> {
     if (!isTauri()) return null;
     const picked = await saveDialog({
-      title: includeSensitive ? "Exportar captura completa com dados sensíveis" : "Escolher pasta nova para a sessão sanitizada",
+      title: includeSensitive ? "Export full capture with sensitive data" : "Choose a new folder for the sanitized session",
       defaultPath: suggestedDestination,
       canCreateDirectories: true,
     });
@@ -573,13 +573,13 @@ export const bridge = {
         await writeText(text);
         return true;
       } catch {
-        /* cai para o fallback */
+        /* fall through to the fallback */
       }
     }
     return copyFallback(text);
   },
 
-  /** Eventos do menu nativo (⌘O, ⌘F, ⌘C, importar, demo). */
+  /** Native menu events (⌘O, ⌘F, ⌘C, import, demo). */
   async onMenu(handler: (action: MenuAction) => void): Promise<() => void> {
     if (!isTauri()) return () => {};
     const unlisten = await listen<string>("menu://action", (event) => {
@@ -589,8 +589,8 @@ export const bridge = {
   },
 };
 
-/** Sessão grande para exercitar a virtualização no modo navegador. */
+/** Large session to exercise virtualization in browser mode. */
 export async function loadLargeDemo(): Promise<SessionPayload> {
   const { buildLargeSession } = await import("./demo/large");
-  return { session: buildLargeSession(12000), synthetic: true, notice: "Sessão sintética de estresse (12.000 requisições)." };
+  return { session: buildLargeSession(12000), synthetic: true, notice: "Synthetic stress session (12,000 requests)." };
 }

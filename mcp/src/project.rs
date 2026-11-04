@@ -1,6 +1,6 @@
-//! Projeções JSON compactas do modelo do core. Headers continuam arrays
-//! ordenados de pares, com duplicatas, pseudoheaders separados e a ordem
-//! original; nada é ordenado nem fundido aqui.
+//! Compact JSON projections of the core model. Headers remain ordered arrays
+//! of pairs, with duplicates, pseudoheaders kept separate and the original
+//! order; nothing is sorted or merged here.
 
 use scrapelens_core::model::{
     Attempt, Body, BodyState, CookieField, HeaderView, LogicalRequest, SetCookieRecord,
@@ -9,7 +9,7 @@ use serde_json::{json, Map, Value};
 
 pub const PLACEHOLDER: &str = "[REDACTED]";
 
-/// `host[:porta]` em minúsculas, ou string vazia.
+/// `host[:port]` in lowercase, or an empty string.
 pub fn host_of(url: &str) -> String {
     url.split_once("://")
         .map(|(_, rest)| {
@@ -132,11 +132,11 @@ pub fn set_cookie(record: &SetCookieRecord) -> Value {
     Value::Object(object)
 }
 
-/// Descritor de corpo (sem conteúdo). `masked` só aparece na visão mascarada.
+/// Body descriptor (no content). `masked` only appears in the masked view.
 ///
-/// `body` é o corpo da visão em uso; `original` é o corpo correspondente na
-/// sessão original: estado, tamanho e tipo (metadados, não segredo) saem dele,
-/// para a visão mascarada não esconder que existe um corpo.
+/// `body` is the body of the view in use; `original` is the matching body in
+/// the original session: state, size and type (metadata, not a secret) come
+/// from it, so the masked view does not hide that a body exists.
 pub fn body_descriptor(body: &Body, original: &Body, masked_view: bool) -> Value {
     let meta = if masked_view { original } else { body };
     let mut object = Map::new();
@@ -171,7 +171,7 @@ pub fn body_descriptor(body: &Body, original: &Body, masked_view: bool) -> Value
     Value::Object(object)
 }
 
-/// `unsupported` (corpo não sanitizável, conteúdo retido) ou `redacted`.
+/// `unsupported` (body cannot be sanitized, content retained) or `redacted`.
 pub fn masked_kind(body: &Body) -> Option<&'static str> {
     let note = body.note.as_deref().unwrap_or("");
     if body.state == BodyState::Discarded && note.contains("sanitização") {
@@ -286,7 +286,7 @@ pub fn request_detail(
     verbose: bool,
     masked: bool,
 ) -> Value {
-    // Corpos da sessão original (metadados) para a mesma visão.
+    // Bodies from the original session (metadata) for the same view.
     let (orig_req_body, orig_resp_body) = match attempt {
         Some(a) => original
             .attempts
@@ -297,7 +297,7 @@ pub fn request_detail(
             }),
         None => (&original.request_body, &original.response_body),
     };
-    // Visão: a tentativa pedida ou a primária da requisição lógica.
+    // View: the requested attempt or the primary attempt of the logical request.
     let (
         url,
         method,

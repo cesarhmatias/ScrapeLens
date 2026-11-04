@@ -1,21 +1,21 @@
-// Rótulos e filtros do alvo CDP (docs/14-captura-multi-alvo.md). A UI só
-// apresenta o que o core grava em `target`/`links`; não inventa proveniência.
+// Labels and filters for the CDP target (docs/14-captura-multi-alvo.md). The UI only
+// shows what the core writes to `target`/`links`; it does not invent provenance.
 
 import type { RequestLinkView, RequestSummary, TargetKind, TargetView } from "./types";
 
-/** Campos usados pelas regras de alvo (resumo da lista ou registro completo). */
+/** Fields used by the target rules (list summary or full record). */
 export type TargetRow = Pick<RequestSummary, "id" | "url" | "domain" | "target" | "links" | "netlogOnlyUnknownTarget">;
 
 export const TARGET_KIND_LABELS: Record<TargetKind, string> = {
-  page: "página",
+  page: "page",
   iframe: "iframe",
   worker: "worker",
   service_worker: "service worker",
   shared_worker: "shared worker",
-  other: "outro",
+  other: "other",
 };
 
-/** Filtros da lista: tipos reais + só-NetLog. */
+/** List filters: real types + NetLog-only. */
 export type TargetFilter =
   | "all"
   | TargetKind
@@ -23,23 +23,23 @@ export type TargetFilter =
   | "netlog_unknown";
 
 export const TARGET_FILTERS: { id: TargetFilter; label: string }[] = [
-  { id: "all", label: "todos os alvos" },
-  { id: "page", label: "página" },
+  { id: "all", label: "all targets" },
+  { id: "page", label: "page" },
   { id: "popup", label: "popup" },
   { id: "iframe", label: "iframe" },
   { id: "worker", label: "worker" },
   { id: "service_worker", label: "service worker" },
   { id: "shared_worker", label: "shared worker" },
-  { id: "other", label: "outro" },
-  { id: "netlog_unknown", label: "só NetLog" },
+  { id: "other", label: "other" },
+  { id: "netlog_unknown", label: "NetLog only" },
 ];
 
-/** Página com opener = popup/`_blank` (Chrome tipa ambos como `page`). */
+/** Page with an opener = popup/`_blank` (Chrome types both as `page`). */
 export function isPopupTarget(target: TargetView | undefined): boolean {
   return Boolean(target && target.kind === "page" && target.openerId);
 }
 
-/** Sessão multi-alvo: há proveniência ou aviso de attach; senão, legado implícito. */
+/** Multi-target session: has provenance or an attach warning; otherwise, implicit legacy. */
 export function sessionShowsTargets(
   requests: TargetRow[],
   warnings: { code: string }[],
@@ -69,18 +69,18 @@ export function shortTargetUrl(url: string | undefined): string {
   }
 }
 
-/** Tipo exibido: popup quando page+openerId. */
+/** Displayed type: popup when page+openerId. */
 export function targetKindLabel(target: TargetView): string {
   if (isPopupTarget(target)) return "popup";
   return TARGET_KIND_LABELS[target.kind] ?? target.kind;
 }
 
 /**
- * Selo curto da lista. `null` = não mostrar (página principal implícita em
- * sessão antiga, ou page sem opener quando a coluna já está oculta).
+ * Short list badge. `null` = do not show (implicit main page in an
+ * old session, or a page without an opener when the column is already hidden).
  */
 export function targetBadge(req: TargetRow): string | null {
-  if (req.netlogOnlyUnknownTarget) return "alvo desconhecido (só NetLog)";
+  if (req.netlogOnlyUnknownTarget) return "unknown target (NetLog only)";
   if (!req.target) return null;
   const kind = targetKindLabel(req.target);
   const url =
@@ -88,10 +88,10 @@ export function targetBadge(req: TargetRow): string | null {
   return url ? `${kind} · ${url}` : kind;
 }
 
-/** Na timeline: só quando não for a página principal (sem opener). */
+/** In the timeline: only when it is not the main page (no opener). */
 export function timelineTargetBadge(req: TargetRow | undefined): string | null {
   if (!req) return null;
-  if (req.netlogOnlyUnknownTarget) return "alvo desconhecido (só NetLog)";
+  if (req.netlogOnlyUnknownTarget) return "unknown target (NetLog only)";
   if (!req.target) return null;
   if (req.target.kind === "page" && !req.target.openerId) return null;
   return targetBadge(req);
@@ -118,19 +118,19 @@ export interface CaptureTargetRow {
   count: number;
 }
 
-/** Alvos distintos vistos nas requisições (acompanhados). */
+/** Distinct targets seen in the requests (tracked). */
 export function captureTargets(requests: TargetRow[]): CaptureTargetRow[] {
   const map = new Map<string, CaptureTargetRow>();
   for (const req of requests) {
     if (!req.target) continue;
     const kind = targetKindLabel(req.target);
-    // Sem URL no Target.*: usa o host/caminho da requisição (ex.: blank/_blank).
+    // No URL in Target.*: use the request's host/path (e.g. blank/_blank).
     const url =
       req.target.url ||
       shortTargetUrl(req.url) ||
       req.domain ||
-      "(URL do alvo não informada)";
-    // Agrupa pelo targetId quando existe, senão por kind+url.
+      "(target URL not provided)";
+    // Group by targetId when present, otherwise by kind+url.
     const key = req.target.targetId
       ? `id:${req.target.targetId}`
       : `${kind}\0${url}`;
@@ -138,7 +138,7 @@ export function captureTargets(requests: TargetRow[]): CaptureTargetRow[] {
     if (row) {
       row.count += 1;
       if (req.target.attached === false) row.attached = false;
-      // Prefere URL do Target.* quando aparecer depois.
+      // Prefer the Target.* URL when it shows up later.
       if (req.target.url && row.url !== req.target.url) row.url = req.target.url;
     } else {
       map.set(key, {
@@ -163,7 +163,7 @@ export function attachFailureWarnings(
   );
 }
 
-/** Timeout e erro de configuração CDP do alvo — mesmo bloco em Limites. */
+/** Target CDP setup timeout and error — same block as in Limits. */
 export function targetSetupWarnings(
   warnings: { code: string; message: string }[],
 ): { code: string; message: string }[] {
@@ -173,7 +173,7 @@ export function targetSetupWarnings(
 }
 
 export function linkResolutionLabel(link: RequestLinkView): string {
-  if (link.resolution === "linked") return "ligada";
-  if (link.resolution === "ambiguous") return "ambígua";
-  return link.resolution || "sem resolução";
+  if (link.resolution === "linked") return "linked";
+  if (link.resolution === "ambiguous") return "ambiguous";
+  return link.resolution || "no resolution";
 }

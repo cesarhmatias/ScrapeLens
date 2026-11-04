@@ -1,14 +1,14 @@
-//! Gramática do campo `XML` do Connector Natural for Ajax, sem depender do
-//! core. Comprimentos em unidades UTF-16 (`String.length` do JS); a análise é
-//! linear e qualquer entrada inválida vira [`Error`], nunca panic.
+//! Grammar of the `XML` field of the Connector Natural for Ajax, without
+//! depending on the core. Lengths in UTF-16 units (JS `String.length`); parsing
+//! is linear and any invalid input becomes an [`Error`], never a panic.
 //!
-//! Requisição: `i`/`v` + larguras fixas (2,2,2,2,2,3,5,1) + 8 campos, depois
-//! operações `p` (nome 2, valor 5) e `x` (delta 2). Resposta: `l`, `s`, `p`,
+//! Request: `i`/`v` + fixed widths (2,2,2,2,2,3,5,1) + 8 fields, then
+//! operations `p` (name 2, value 5) and `x` (delta 2). Response: `l`, `s`, `p`,
 //! `q`, `z`, `w`, `b`, `c`, `k`, `x`.
 
 use std::fmt;
 
-/// Larguras dos 8 campos do cabeçalho de requisição.
+/// Widths of the 8 fields of the request header.
 pub const HEAD_WIDTHS: [usize; 8] = [2, 2, 2, 2, 2, 3, 5, 1];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,43 +17,43 @@ pub enum Error {
     InvalidLength,
     UnknownOp(char),
     UnbalancedScope,
-    /// Corte no meio de um par substituto UTF-16.
+    /// Cut in the middle of a UTF-16 surrogate pair.
     SplitSurrogate,
-    /// Valor maior do que a largura do prefixo comporta.
+    /// Value larger than the prefix width can hold.
     TooLong {
         what: &'static str,
         max: usize,
     },
-    /// Operação fora de lugar (cabeçalho fora do início).
+    /// Operation out of place (header not at the start).
     Misplaced(char),
-    /// Escopos aninhados demais, caminho longo demais ou dicionário grande demais.
+    /// Scopes nested too deeply, path too long or dictionary too large.
     Limit(&'static str),
 }
 
-/// Profundidade máxima de escopos.
+/// Maximum scope depth.
 pub const MAX_DEPTH: usize = 32;
-/// Chaves distintas máximas no dicionário (`s`).
+/// Maximum distinct keys in the dictionary (`s`).
 pub const MAX_KEYS: usize = 10_000;
-/// Comprimento máximo (em `char`) do caminho de escopos de uma propriedade.
+/// Maximum length (in `char`) of a property's scope path.
 pub const MAX_PATH: usize = 512;
-/// Tamanho máximo do texto reivindicado/decodificado (bytes).
+/// Maximum size of the claimed/decoded text (bytes).
 pub const MAX_INPUT: usize = 8 * 1024 * 1024;
-/// Operações máximas por campo.
+/// Maximum operations per field.
 pub const MAX_OPS: usize = 200_000;
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Truncated => write!(f, "mensagem truncada"),
-            Error::InvalidLength => write!(f, "comprimento inválido"),
-            Error::UnknownOp(c) => write!(f, "opcode não suportado: {c:?}"),
-            Error::UnbalancedScope => write!(f, "escopo inválido"),
-            Error::SplitSurrogate => write!(f, "comprimento corta um par substituto UTF-16"),
+            Error::Truncated => write!(f, "message truncated"),
+            Error::InvalidLength => write!(f, "invalid length"),
+            Error::UnknownOp(c) => write!(f, "unsupported opcode: {c:?}"),
+            Error::UnbalancedScope => write!(f, "invalid scope"),
+            Error::SplitSurrogate => write!(f, "length cuts a UTF-16 surrogate pair"),
             Error::TooLong { what, max } => {
-                write!(f, "{what} excede o máximo de {max} unidades UTF-16")
+                write!(f, "{what} exceeds the maximum of {max} UTF-16 units")
             }
-            Error::Misplaced(c) => write!(f, "operação fora de lugar: {c:?}"),
-            Error::Limit(what) => write!(f, "limite excedido: {what}"),
+            Error::Misplaced(c) => write!(f, "operation out of place: {c:?}"),
+            Error::Limit(what) => write!(f, "limit exceeded: {what}"),
         }
     }
 }
@@ -62,24 +62,24 @@ impl std::error::Error for Error {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
-    /// `i`/`v` + 8 campos (sid, pid, vazio, modelo, dummy, página, evento, flag).
+    /// `i`/`v` + 8 fields (sid, pid, empty, model, dummy, page, event, flag).
     Head {
         init: bool,
         fields: [String; 8],
     },
-    /// `p` (valor 5) / `z` (valor 10): nome literal.
+    /// `p` (value 5) / `z` (value 10): literal name.
     Lit {
         op: char,
         key: String,
         value: String,
     },
-    /// `q` (valor 5) / `w` (valor 10): nome por referência ao dicionário `s`.
+    /// `q` (value 5) / `w` (value 10): name by reference to the `s` dictionary.
     Ref {
         op: char,
         key: String,
         value: String,
     },
-    /// `s`: define `key` → `name`.
+    /// `s`: defines `key` → `name`.
     Dict {
         key: String,
         name: String,
@@ -91,24 +91,24 @@ pub enum Op {
     Delta(String),
 }
 
-/// Operação com as posições (bytes UTF-8 no texto original).
+/// Operation with its positions (UTF-8 bytes in the original text).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     pub op: Op,
     pub start: usize,
     pub end: usize,
-    /// Posição do valor (ou do delta / nome do escopo) no original.
+    /// Position of the value (or of the delta / scope name) in the original.
     pub value_start: usize,
     pub value_end: usize,
-    /// Nome completo resolvido (escopos + chave) para `Lit`/`Ref`.
+    /// Full resolved name (scopes + key) for `Lit`/`Ref`.
     pub path: Option<String>,
 }
 
-/// Texto em unidades UTF-16 com o mapa unidade → byte do original.
+/// Text in UTF-16 units with the unit → byte map of the original.
 struct Units {
     units: Vec<u16>,
-    /// `byte[i]` = byte do original em que a unidade `i` começa;
-    /// `u32::MAX` marca a segunda metade de um par substituto.
+    /// `byte[i]` = byte of the original where unit `i` starts;
+    /// `u32::MAX` marks the second half of a surrogate pair.
     byte: Vec<u32>,
 }
 
@@ -142,7 +142,7 @@ impl Cursor<'_> {
         }
     }
 
-    /// Consome `n` unidades; devolve o texto e os bytes (início, fim).
+    /// Consumes `n` units; returns the text and the bytes (start, end).
     fn take(&mut self, n: usize) -> Result<(String, usize, usize), Error> {
         let end = self.pos.checked_add(n).ok_or(Error::Truncated)?;
         if end > self.u.units.len() {
@@ -167,13 +167,13 @@ impl Cursor<'_> {
     }
 }
 
-/// Comprimento em unidades UTF-16 (`jslen`).
+/// Length in UTF-16 units (`jslen`).
 pub fn jslen(text: &str) -> usize {
     text.encode_utf16().count()
 }
 
-/// Verificação barata para `detect`: só o cabeçalho da primeira operação,
-/// sem percorrer a mensagem.
+/// Cheap check for `detect`: only the first operation's header,
+/// without walking the message.
 pub fn quick_check(text: &str) -> bool {
     let b = text.as_bytes();
     if b.is_empty() || b.len() > MAX_INPUT {
@@ -193,16 +193,16 @@ pub fn quick_check(text: &str) -> bool {
     }
 }
 
-/// Decodifica a mensagem em operações. Custo linear no tamanho do texto.
+/// Decodes the message into operations. Cost is linear in the text length.
 pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
     let units = Units::new(text);
     let mut cur = Cursor { u: &units, pos: 0 };
     let mut out: Vec<Item> = Vec::new();
     if text.len() > MAX_INPUT {
-        return Err(Error::Limit("mensagem grande demais"));
+        return Err(Error::Limit("message too large"));
     }
-    // Pilha de escopos: `prefix` guarda "a.b." e `marks` o tamanho antes de
-    // cada escopo, então o caminho de uma propriedade custa O(|caminho|).
+    // Scope stack: `prefix` holds "a.b." and `marks` the length before
+    // each scope, so a property's path costs O(|path|).
     let mut prefix = String::new();
     let mut marks: Vec<usize> = Vec::new();
     let mut names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -235,7 +235,7 @@ pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
 
     while cur.pos < units.units.len() {
         if out.len() >= MAX_OPS {
-            return Err(Error::Limit("operações demais"));
+            return Err(Error::Limit("too many operations"));
         }
         let start = cur.byte_at(cur.pos);
         let (op_text, _, _) = cur.take(1)?;
@@ -248,7 +248,7 @@ pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
                 let (key, _, _) = cur.take(n)?;
                 let (name, v0, v1) = cur.take(m)?;
                 if names.len() >= MAX_KEYS && !names.contains_key(&key) {
-                    return Err(Error::Limit("chaves de dicionário demais"));
+                    return Err(Error::Limit("too many dictionary keys"));
                 }
                 names.insert(key.clone(), name.clone());
                 (Op::Dict { key, name }, None, v0, v1)
@@ -277,13 +277,13 @@ pub fn parse(text: &str) -> Result<Vec<Item>, Error> {
                 let n = cur.number(2)?;
                 let (scope, v0, v1) = cur.take(n)?;
                 if marks.len() >= MAX_DEPTH {
-                    return Err(Error::Limit("escopos aninhados demais"));
+                    return Err(Error::Limit("scopes nested too deeply"));
                 }
                 marks.push(prefix.len());
                 prefix.push_str(&scope);
                 prefix.push('.');
                 if prefix.chars().count() > MAX_PATH {
-                    return Err(Error::Limit("caminho de escopos longo demais"));
+                    return Err(Error::Limit("scope path too long"));
                 }
                 (Op::Begin(scope), None, v0, v1)
             }
@@ -338,7 +338,7 @@ fn fit(value: usize, width: usize, what: &'static str) -> Result<String, Error> 
     Ok(format!("{text:0>width$}"))
 }
 
-/// Recodifica as operações recalculando todos os prefixos de comprimento.
+/// Re-encodes the operations, recalculating all length prefixes.
 pub fn serialize(ops: &[Op]) -> Result<String, Error> {
     let mut out = String::new();
     for op in ops {
@@ -346,7 +346,7 @@ pub fn serialize(ops: &[Op]) -> Result<String, Error> {
             Op::Head { init, fields } => {
                 out.push(if *init { 'i' } else { 'v' });
                 for (field, width) in fields.iter().zip(HEAD_WIDTHS) {
-                    out.push_str(&fit(jslen(field), width, "campo do cabeçalho")?);
+                    out.push_str(&fit(jslen(field), width, "header field")?);
                 }
                 for field in fields {
                     out.push_str(field);
@@ -355,28 +355,28 @@ pub fn serialize(ops: &[Op]) -> Result<String, Error> {
             Op::Lit { op, key, value } | Op::Ref { op, key, value } => {
                 let width = if matches!(op, 'z' | 'w') { 10 } else { 5 };
                 out.push(*op);
-                out.push_str(&fit(jslen(key), 2, "nome")?);
-                out.push_str(&fit(jslen(value), width, "valor")?);
+                out.push_str(&fit(jslen(key), 2, "name")?);
+                out.push_str(&fit(jslen(value), width, "value")?);
                 out.push_str(key);
                 out.push_str(value);
             }
             Op::Dict { key, name } => {
                 out.push('s');
-                out.push_str(&fit(jslen(key), 1, "chave do dicionário")?);
-                out.push_str(&fit(jslen(name), 2, "nome do dicionário")?);
+                out.push_str(&fit(jslen(key), 1, "dictionary key")?);
+                out.push_str(&fit(jslen(name), 2, "dictionary name")?);
                 out.push_str(key);
                 out.push_str(name);
             }
             Op::Begin(scope) => {
                 out.push('b');
-                out.push_str(&fit(jslen(scope), 2, "escopo")?);
+                out.push_str(&fit(jslen(scope), 2, "scope")?);
                 out.push_str(scope);
             }
             Op::End => out.push('c'),
             Op::Clear => out.push('l'),
             Op::Delete(name) => {
                 out.push('k');
-                out.push_str(&fit(jslen(name), 2, "nome removido")?);
+                out.push_str(&fit(jslen(name), 2, "removed name")?);
                 out.push_str(name);
             }
             Op::Delta(delta) => {

@@ -1,4 +1,4 @@
-//! Configuração e limites de diretório do servidor.
+//! Server configuration and directory limits.
 
 use std::path::{Path, PathBuf};
 
@@ -10,14 +10,14 @@ pub const DEFAULT_MAX_IMPORT_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Onde `import_session` grava e de onde `list_sessions` lê (canônico).
+    /// Where `import_session` writes and `list_sessions` reads from (canonical).
     pub sessions_dir: PathBuf,
-    /// Onde vão os arquivos de corpos grandes (canônico).
+    /// Where large body files go (canonical).
     pub out_dir: PathBuf,
-    /// Diretórios de sessões só para leitura (canônicos).
+    /// Read-only session directories (canonical).
     pub extra_dirs: Vec<PathBuf>,
     pub allow_reveal: bool,
-    /// Aceita `start_capture` sem elicitação quando o cliente não a suporta.
+    /// Accepts `start_capture` without elicitation when the client does not support it.
     pub allow_unconfirmed_capture: bool,
     pub max_import_bytes: u64,
 }
@@ -60,7 +60,7 @@ impl Config {
     }
 }
 
-/// Nome seguro de um único componente de caminho (handle de sessão, `name`).
+/// Safe name for a single path component (session handle, `name`).
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 128
@@ -70,7 +70,7 @@ pub fn valid_name(name: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
 }
 
-/// Converte texto livre em um nome seguro.
+/// Converts free text into a safe name.
 pub fn slug(text: &str) -> String {
     let mut out: String = text
         .chars()
@@ -91,7 +91,7 @@ pub fn slug(text: &str) -> String {
     }
 }
 
-/// `true` se `child` (já canônico) está dentro de `root` (canônico).
+/// `true` if `child` (already canonical) is inside `root` (canonical).
 pub fn is_within(root: &Path, child: &Path) -> bool {
     child.starts_with(root)
 }

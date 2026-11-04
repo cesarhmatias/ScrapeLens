@@ -1,4 +1,4 @@
-//! Ciclo de vida do servidor: stdio, sinais e encerramento das capturas.
+//! Server lifecycle: stdio, signals and shutdown of captures.
 
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ use crate::live::CaptureBackend;
 use crate::registry::Ctx;
 use crate::server::ScrapeLensServer;
 
-/// Espera SIGINT/SIGTERM (no Windows, só Ctrl-C).
+/// Waits for SIGINT/SIGTERM (on Windows, only Ctrl-C).
 async fn termination() {
     #[cfg(unix)]
     {
@@ -30,25 +30,25 @@ async fn termination() {
     }
 }
 
-/// Serve MCP por stdio até o stdin fechar ou um sinal chegar; então para todas
-/// as capturas ativas de forma graciosa.
-/// Devolve o código de saída; o chamador deve sair com `std::process::exit`,
-/// porque a leitura bloqueada do stdin impede o runtime de terminar sozinho
-/// quando a saída vem de um sinal.
+/// Serves MCP over stdio until stdin closes or a signal arrives; then gracefully
+/// stops all active captures.
+/// Returns the exit code; the caller must exit with `std::process::exit`,
+/// because the blocked stdin read keeps the runtime from terminating on its own
+/// when the exit comes from a signal.
 pub async fn run(config: Config, backend: Arc<dyn CaptureBackend>) -> i32 {
-    // stdout é o canal JSON-RPC: tudo que for diagnóstico vai para stderr.
+    // stdout is the JSON-RPC channel: all diagnostics go to stderr.
     eprintln!(
-        "scrapelens-mcp: sessões em {} (reveal {}, captura sem confirmação {})",
+        "scrapelens-mcp: sessions in {} (reveal {}, capture without confirmation {})",
         config.sessions_dir.display(),
         if config.allow_reveal {
-            "permitido"
+            "allowed"
         } else {
-            "desligado"
+            "disabled"
         },
         if config.allow_unconfirmed_capture {
-            "permitida"
+            "allowed"
         } else {
-            "desligada"
+            "disabled"
         }
     );
     let server = ScrapeLensServer::new(Ctx::new(config), backend);
@@ -56,7 +56,7 @@ pub async fn run(config: Config, backend: Arc<dyn CaptureBackend>) -> i32 {
     let service = match server.clone().serve(rmcp::transport::stdio()).await {
         Ok(service) => service,
         Err(error) => {
-            eprintln!("scrapelens-mcp: falha ao iniciar: {error}");
+            eprintln!("scrapelens-mcp: failed to start: {error}");
             return 1;
         }
     };
@@ -64,17 +64,17 @@ pub async fn run(config: Config, backend: Arc<dyn CaptureBackend>) -> i32 {
     tokio::select! {
         result = service.waiting() => {
             if let Err(error) = result {
-                eprintln!("scrapelens-mcp: encerrado com erro: {error}");
+                eprintln!("scrapelens-mcp: stopped with error: {error}");
                 failed = true;
             }
         }
         () = termination() => {
-            eprintln!("scrapelens-mcp: sinal recebido; encerrando");
+            eprintln!("scrapelens-mcp: signal received; shutting down");
         }
     }
     let stopped = server.shutdown_captures().await;
     if stopped > 0 {
-        eprintln!("scrapelens-mcp: {stopped} captura(s) encerrada(s) ao sair");
+        eprintln!("scrapelens-mcp: {stopped} capture(s) stopped on exit");
     }
     i32::from(failed)
 }

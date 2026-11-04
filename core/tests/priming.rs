@@ -1,4 +1,4 @@
-//! Script de priming em Python (docs/11-priming-sucesso.md §1, aceite 1 e 4).
+//! Python priming script (docs/11-priming-sucesso.md §1, acceptance 1 and 4).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -30,7 +30,7 @@ fn python(args: &[&str], file: &std::path::Path) -> std::process::Output {
         .expect("python3 disponível")
 }
 
-/// `ast.parse` + lista dos nomes chamados em todo o módulo.
+/// `ast.parse` + list of the names called anywhere in the module.
 const AST_CHECK: &str = r#"
 import ast, sys
 tree = ast.parse(open(sys.argv[1], encoding='utf-8').read())
@@ -79,8 +79,8 @@ fn each_step_checks_its_own_response_before_the_next_request() {
     let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
     let id = first_placa_request(&bundle);
     let script = generate(&bundle, &id);
-    // Um `step_N` por passo do plano; cada um checa status e ERRORMESSAGE
-    // DENTRO da função, antes de devolver a resposta para o próximo pedido.
+    // One `step_N` per plan step; each one checks status and ERRORMESSAGE
+    // INSIDE the function, before returning the response to the next request.
     let steps = script
         .match_indices("\ndef step_")
         .filter(|(i, _)| {
@@ -90,7 +90,7 @@ fn each_step_checks_its_own_response_before_the_next_request() {
                 .is_some_and(|c| c.is_ascii_digit())
         })
         .count();
-    assert!(steps >= 9, "passos esperados para o alvo:\n{script}");
+    assert!(steps >= 9, "expected steps for the target:\n{script}");
     assert_eq!(
         script
             .matches("if not (200 <= resp.status_code < 400):")
@@ -102,9 +102,9 @@ fn each_step_checks_its_own_response_before_the_next_request() {
         script.matches("except UnicodeEncodeError as exc").count(),
         steps
     );
-    // A ausência de ERRORMESSAGE não pode virar erro engolido: nenhum
-    // `except SystemExit` no script e a checagem só falha se houver valor.
-    // O único `except SystemExit` é o do `main`, que grava o trace e re-lança.
+    // A missing ERRORMESSAGE must not become a swallowed error: no
+    // `except SystemExit` in the script, and the check only fails if there is a value.
+    // The only `except SystemExit` is the one in `main`, which writes the trace and re-raises.
     assert_eq!(script.matches("except SystemExit").count(), 1, "{script}");
     assert!(
         script.contains("trace_close(base)\n        raise"),
@@ -112,7 +112,7 @@ fn each_step_checks_its_own_response_before_the_next_request() {
     );
     assert!(!script.contains("erro = ''"), "{script}");
     assert!(script.contains("if value is not None and value.strip():"));
-    // Todo passo que produz controle para outro tem a checagem na própria
+    // Every step that produces a control for another has the check in its own
     // função, antes do `return resp`; nunca no laço do main.
     for chunk in script.split("\ndef step_").skip(1) {
         let name: String = chunk.chars().take_while(|c| c.is_ascii_digit()).collect();
@@ -134,18 +134,18 @@ fn each_step_checks_its_own_response_before_the_next_request() {
             );
         }
     }
-    // O XML que o passo produtor entrega aos seguintes é checado nele.
+    // The XML that the producing step hands to the following ones is checked there.
     let producer = script
         .split("\ndef step_")
         .find(|chunk| chunk.contains("('control', 'XML', 0)"))
-        .expect("nenhum passo checa o XML que produz");
+        .expect("no step checks the XML it produces");
     assert!(
         producer.contains("step_expected(resp, S,"),
         "passo produtor sem checagem do XML:\n{producer}"
     );
 }
 
-/// HAR mínimo com um header cujo valor não cabe em latin-1.
+/// Minimal HAR with a header whose value does not fit in latin-1.
 fn header_outside_latin1_bundle() -> SessionBundle {
     let entries = serde_json::json!([{
         "startedDateTime": "2026-10-27T12:00:00.000Z", "time": 1,
@@ -165,12 +165,12 @@ fn header_outside_latin1_bundle() -> SessionBundle {
         "log": {"version": "1.2", "creator": {"name": "t", "version": "1"}, "entries": entries}
     });
     import_har(har.to_string().as_bytes())
-        .expect("HAR com header fora de latin-1")
+        .expect("HAR with a header outside latin-1")
         .bundle
 }
 
-/// Driver que roda passos do script gerado com um `S.request` falso, contando
-/// quantas requisições foram disparadas antes do `fail()`.
+/// Driver that runs steps of the generated script with a fake `S.request`, counting
+/// how many requests were fired before `fail()`.
 const STEP_DRIVER: &str = r#"
 import runpy, sys
 mod = runpy.run_path(sys.argv[3])
@@ -225,12 +225,12 @@ fn each_step_stops_on_bad_response_before_the_next_request() {
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
 
-    // Status fora de 2xx/3xx: falha no próprio passo, sem pedir o seguinte.
+    // Status outside 2xx/3xx: fails in the step itself, without requesting the next one.
     let stderr = run("http403", "1");
     assert!(stderr.contains("priming: passo 1: HTTP 403"), "{stderr}");
     assert!(stderr.contains("CALLS=1"), "pediu depois do erro: {stderr}");
 
-    // Resposta sem o controle que o passo entrega aos seguintes.
+    // Response without the control that the step hands to the following ones.
     let stderr = run("nocontrols", "2");
     assert!(
         stderr.contains("priming: passo 2: resposta sem STAMP"),
@@ -238,7 +238,7 @@ fn each_step_stops_on_bad_response_before_the_next_request() {
     );
     assert!(stderr.contains("CALLS=1"), "pediu depois do erro: {stderr}");
 
-    // ERRORMESSAGE preenchido com HTTP 200: erro da aplicação, no passo.
+    // ERRORMESSAGE filled in with HTTP 200: application error, at the step.
     let stderr = run("fillederror", "2");
     assert!(
         stderr.contains("priming: a aplicação respondeu com ERRORMESSAGE no passo 2"),
@@ -294,8 +294,8 @@ fn header_outside_latin1_fails_with_a_clear_priming_message() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("priming.py");
     std::fs::write(&path, &script).unwrap();
-    // O `requests` codifica headers em latin-1. O driver simula a exceção no
-    // passo (sem rede e sem depender do pacote `requests`).
+    // `requests` encodes headers in latin-1. The driver simulates the exception in the
+    // step (no network and without depending on the `requests` package).
     let driver = r#"
 import runpy, sys
 mod = runpy.run_path(sys.argv[1])
@@ -331,31 +331,31 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
     let dir = tempfile::tempdir().unwrap();
     ast_calls(&script, &dir);
 
-    // Só passos da aplicação: nada de /TSPD/ nem de scripts estáticos.
-    assert!(!script.contains("/TSPD/"), "proteção fora do script");
+    // Only application steps: no /TSPD/ nor static scripts.
+    assert!(!script.contains("/TSPD/"), "protection outside the script");
     assert!(!script.contains("jquery-ui"));
     assert!(!script.contains("CIS_V1_SYNTH.js"));
-    // Cabeçalho.
+    // Header.
     assert!(script.contains("Reprodução semântica"));
     assert!(script.contains("NÃO são garantidas"));
     assert!(script.contains("Não executado pelo ScrapeLens"));
     assert!(script.contains("--confirmar"));
-    // STAMP pelo controle HTML; delta pelo trecho da textarea (contexto).
+    // STAMP from the HTML control; delta from the textarea fragment (context).
     assert!(script.contains("('STAMP', html_control(R["));
     assert!(script.contains("html_control(R['har-0024'], 'XML', 0") || script.contains("'XML', 0"));
     assert!(
         script.contains("checked(ctx_extract(html_control("),
         "delta pelo trecho da textarea"
     );
-    // SESSIONID: prefixo extraído + comentário de composição parcial.
+    // SESSIONID: extracted prefix + partial-composition comment.
     assert!(script.contains("montado no cliente: complete aqui"));
     assert!(script.contains("P['sessionid_cliente']"));
-    // F1: a parte montada no cliente é obrigatória, sem valor capturado.
+    // F1: the part built on the client is required, with no captured value.
     assert!(
         script.contains("('sessionid_cliente', None, 'montado no cliente')"),
         "sufixo de composição parcial não pode ter padrão capturado"
     );
-    // Placa e CPF: parâmetros obrigatórios, sem o valor capturado.
+    // Plate and CPF: required parameters, without the captured value.
     assert!(script.contains("P['placa']"));
     assert!(script.contains("('placa', None,"));
     assert!(
@@ -366,17 +366,17 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
         !script.contains("00000000191"),
         "CPF capturado não pode ficar no script"
     );
-    // Valores dinâmicos capturados não aparecem como literais.
-    assert!(!script.contains("'4105'"), "STAMP capturado");
-    assert!(!script.contains("DLTC0005"), "delta capturado");
-    assert!(!script.contains("CSAN00011"), "prefixo de sessão capturado");
+    // Captured dynamic values do not appear as literals.
+    assert!(!script.contains("'4105'"), "captured STAMP");
+    assert!(!script.contains("DLTC0005"), "captured delta");
+    assert!(!script.contains("CSAN00011"), "captured session prefix");
     assert!(
         !script.contains("SYNTHPID000000000000000000000011"),
         "processId capturado"
     );
-    // F1 refinado: navegação da própria cadeia é constante estrutural, não dado
-    // de sessão — `op=S37` (query do passo) e `page=NatLogon` (query de uma
-    // página da cadeia) podem ter o valor capturado como padrão.
+    // F1 refined: navigation of the chain itself is a structural constant, not session data
+    // — `op=S37` (step query) and `page=NatLogon` (query of a
+    // chain page) may have the captured value as default.
     assert!(
         script.contains("('op', 'S37', 'constante estrutural')"),
         "op é navegação do fluxo e deveria ser constante estrutural:\n{script}"
@@ -388,8 +388,8 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
     assert!(script.contains("constante estrutural (rota/navegação)"));
 }
 
-/// HAR mínimo com `entries` (method, url, corpo de requisição, texto da resposta).
-/// `None` no texto da resposta = resposta sem corpo observável (`unavailable`).
+/// Minimal HAR with `entries` (method, url, request body, response text).
+/// `None` as response text = response without observable body (`unavailable`).
 fn mini_bundle(entries: Vec<(&str, &str, Option<&str>, Option<&str>)>) -> SessionBundle {
     let entries: Vec<serde_json::Value> = entries
         .into_iter()
@@ -412,7 +412,7 @@ fn mini_bundle(entries: Vec<(&str, &str, Option<&str>, Option<&str>)>) -> Sessio
                 Some(text) => serde_json::json!({
                     "size": text.len(), "mimeType": "text/html", "text": text
                 }),
-                // Tamanho > 0 sem texto = `unavailable` (não `empty`).
+                // Size > 0 without text = `unavailable` (not `empty`).
                 None => serde_json::json!({"size": 1, "mimeType": "text/html"}),
             };
             serde_json::json!({
@@ -433,16 +433,16 @@ fn mini_bundle(entries: Vec<(&str, &str, Option<&str>, Option<&str>)>) -> Sessio
         "log": {"version": "1.2", "creator": {"name": "t", "version": "1"}, "entries": entries}
     });
     import_har(har.to_string().as_bytes())
-        .expect("HAR mínimo")
+        .expect("minimal HAR")
         .bundle
 }
 
 #[test]
 fn second_round_target_extracts_stamp_from_the_chain_page() {
-    // Rodada 2: o alvo consome STAMP=INIT, definido pelo controle da cscform.
-    // O produtor registrado é a página da rodada 1 (fora da cadeia gerada);
-    // o passo equivalente da própria cadeia (har-0038) define o mesmo valor,
-    // então o script extrai em runtime em vez de pedir --stamp.
+    // Round 2: the target consumes STAMP=INIT, defined by the cscform control.
+    // The registered producer is the round 1 page (outside the generated chain);
+    // the equivalent step of the chain itself (har-0038) defines the same value,
+    // so the script extracts it at runtime instead of asking for --stamp.
     let bundle = fixture("detran-pb-real-shape", "real-shape-2rounds.har");
     let script = generate(&bundle, "har-0056");
     assert!(
@@ -458,15 +458,15 @@ fn second_round_target_extracts_stamp_from_the_chain_page() {
         "STAMP deveria ser extraído do controle da cscform da cadeia:\n{script}"
     );
     assert!(script.contains("definido pelo controle da página"));
-    // Só o que é da sessão/cliente continua obrigatório.
+    // Only what belongs to the session/client remains required.
     assert!(script.contains("('sessionid_cliente', None, 'montado no cliente')"));
     assert!(script.contains("('placa', None,"));
 }
 
 #[test]
 fn page_control_and_literal_are_extracted_not_asked() {
-    // A página da cadeia define STAMP por controle e PAGEINITPARAM por
-    // literal; o script extrai ambos em runtime.
+    // The chain page defines STAMP via a control and PAGEINITPARAM via a
+    // literal; the script extracts both at runtime.
     let page = "<html><script>var PAGEINITPARAM = \"PI_XYZ\";</script>\
                 <input type=\"hidden\" name=\"STAMP\" value=\"INIT\">\
                 <div>TOK=abc12345</div></html>";
@@ -499,8 +499,8 @@ fn page_control_and_literal_are_extracted_not_asked() {
 
 #[test]
 fn value_without_origin_is_a_default_only_with_constancy_proof() {
-    // Mesmo (campo, valor) em duas requisições e fora de qualquer resposta:
-    // constante do protocolo, pode virar padrão.
+    // Same (field, value) in two requests and outside any response:
+    // protocol constant, may become the default.
     let bundle = mini_bundle(vec![
         (
             "POST",
@@ -521,7 +521,7 @@ fn value_without_origin_is_a_default_only_with_constancy_proof() {
         "constância comprovada deveria permitir o padrão:\n{script}"
     );
 
-    // Uma única ocorrência: parâmetro obrigatório, sem o valor capturado.
+    // Single occurrence: required parameter, without the captured value.
     let bundle = mini_bundle(vec![
         (
             "GET",
@@ -549,8 +549,8 @@ fn value_without_origin_is_a_default_only_with_constancy_proof() {
 
 #[test]
 fn navigation_values_are_structural_constants() {
-    // O passo 1 é navegação da cadeia (`op`/`page` na query e `SIM1000X.html`
-    // no caminho); o alvo repete esses valores. São constantes estruturais.
+    // Step 1 is chain navigation (`op`/`page` in the query and `SIM1000X.html`
+    // in the path); the target repeats these values. They are structural constants.
     let bundle = mini_bundle(vec![
         (
             "GET",
@@ -582,7 +582,7 @@ fn navigation_values_are_structural_constants() {
             "{expected} deveria ser constante estrutural:\n{script}"
         );
     }
-    // Fora da navegação, sem prova de constância, segue obrigatório.
+    // Outside navigation, without proof of constancy, it stays required.
     assert!(
         script.contains("('code', None, 'sem origem observada')"),
         "query que não é de navegação não pode ganhar padrão:\n{script}"
@@ -591,8 +591,8 @@ fn navigation_values_are_structural_constants() {
 
 #[test]
 fn structural_constant_never_covers_sensitive_or_business_values() {
-    // A placa aparece no caminho/query da navegação, mas é dado de negócio:
-    // continua obrigatória e o valor capturado não entra no script.
+    // The plate appears in the navigation path/query, but it is business data:
+    // it stays required and the captured value does not enter the script.
     let bundle = mini_bundle(vec![(
         "GET",
         "https://mini.example.test/produto.html?placa=TST0T10",
@@ -669,8 +669,8 @@ fn partial_composition_suffix_is_required_without_a_captured_default() {
 
 #[test]
 fn incomplete_chain_is_refused_and_allow_incomplete_emits_explicit_fail() {
-    // A primeira resposta não tem corpo; o alvo consome um valor que só
-    // poderia ter vindo dela. A terceira é a ocorrência equivalente completa.
+    // The first response has no body; the target consumes a value that could only
+    // have come from it. The third is the complete equivalent occurrence.
     let bundle = mini_bundle(vec![
         (
             "POST",
@@ -746,7 +746,7 @@ fn without_confirm_only_prints_plan_and_exits() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("priming.py");
     std::fs::write(&path, &script).unwrap();
-    // Sem --confirmar: roda sem `requests`, imprime o plano e sai com 0.
+    // Without --confirmar: runs without `requests`, prints the plan and exits with 0.
     let out = python(&[], &path);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -758,7 +758,7 @@ fn without_confirm_only_prints_plan_and_exits() {
     assert!(stdout.contains("(altera estado)"));
     assert!(stdout.contains("Nada foi enviado"));
     assert!(!stdout.contains("HTTP 200"), "nenhuma requisição enviada");
-    // Com --confirmar e sem parâmetros obrigatórios: recusa antes de enviar.
+    // With --confirmar and without required parameters: refuses before sending.
     let out = Command::new("python3")
         .args(["-I"])
         .arg(&path)
@@ -771,7 +771,7 @@ fn without_confirm_only_prints_plan_and_exits() {
 
 #[test]
 fn plain_get_chain_does_not_require_confirm() {
-    // Um alvo GET sem passos que alteram estado roda sem a flag (plano + execução).
+    // A GET target without steps that change state runs without the flag (plan + execution).
     let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
     let id = bundle
         .session
@@ -785,7 +785,7 @@ fn plain_get_chain_does_not_require_confirm() {
     assert!(script.contains("HAS_STATE_CHANGE = False"));
 }
 
-/// HAR com nomes/valores hostis num POST que consome o STAMP de uma página.
+/// HAR with hostile names/values in a POST that consumes the STAMP of a page.
 fn hostile_bundle() -> SessionBundle {
     let hostile_name = "a\nb'''c\"\"\"d\\e\u{202e}f__import__('os').system('x')";
     let hostile_val = "v\nw'''x\"\"\"y\\z\u{202e}\u{2066}\u{0}";
@@ -821,7 +821,7 @@ fn hostile_bundle() -> SessionBundle {
     ]);
     let har = serde_json::json!({"log": {"version": "1.2", "creator": {"name": "t", "version": "1"}, "entries": entries}});
     import_har(har.to_string().as_bytes())
-        .expect("HAR hostil")
+        .expect("hostile HAR")
         .bundle
 }
 
@@ -835,7 +835,7 @@ fn hostile_names_and_values_stay_inside_literals() {
     let script = generate(&bundle, "har-0002");
     let dir = tempfile::tempdir().unwrap();
     let calls = ast_calls(&script, &dir);
-    // Nenhuma chamada além das conhecidas do script gerado.
+    // No calls beyond the known ones of the generated script.
     let allowed = [
         "ArgumentParser",
         "HTMLParser",
@@ -966,8 +966,8 @@ fn hostile_names_and_values_stay_inside_literals() {
             "chamada inesperada no script gerado: {call}\n{script}"
         );
     }
-    // O payload só pode existir em comentários (inertes, feitos por `comment`)
-    // ou dentro de literais escapados; nunca cru no código.
+    // The payload may only exist in comments (inert, made by `comment`)
+    // or inside escaped literals; never raw in the code.
     let code: String = script
         .lines()
         .filter(|l| !l.trim_start().starts_with('#'))
@@ -976,7 +976,7 @@ fn hostile_names_and_values_stay_inside_literals() {
     assert!(!code.contains("__import__('os')"), "payload cru no código");
     assert!(!script.contains('\u{202e}'), "bidi cru no código");
     assert!(!script.contains('\u{0}'));
-    // Sentinela hostil não vira instrução: ast só vê constantes.
+    // A hostile sentinel does not become an instruction: ast only sees constants.
     let probe = r#"
 import ast, sys
 tree = ast.parse(open(sys.argv[1], encoding='utf-8').read())
@@ -986,7 +986,7 @@ print(len(bad))
     let path = dir.path().join("priming.py");
     let out = python(&["-c", probe], &path);
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "0");
-    // Sem --confirmar imprime o plano e sai.
+    // Without --confirmar prints the plan and exits.
     let out = python(&[], &path);
     assert!(
         out.status.success(),
@@ -1009,8 +1009,8 @@ fn comments_carry_no_raw_hostile_text() {
     }
 }
 
-/// Driver sem rede: sessão falsa que responde com um redirect e registra o
-/// que foi enviado e para onde.
+/// Driver without network: fake session that answers with a redirect and records
+/// what was sent and where.
 const REDIRECT_DRIVER: &str = r#"
 import runpy, sys
 mod = runpy.run_path(sys.argv[1])
@@ -1133,7 +1133,7 @@ print(mod['safe_text']('a\x1b[31m\u202eb\n'))
     let stdout = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
     for l in &lines[..2] {
-        assert!(l.parse::<f64>().unwrap() < 1.0, "lento: {stdout}");
+        assert!(l.parse::<f64>().unwrap() < 1.0, "slow: {stdout}");
     }
     assert_eq!(lines[2], "xyz");
     assert_eq!(lines[3], "a?[31m?b?");
@@ -1144,7 +1144,7 @@ fn foreign_origin_steps_are_refused_unless_allowed() {
     let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
     let id = first_placa_request(&bundle);
     let mut bundle = bundle;
-    // Move o primeiro passo não-alvo para outro host.
+    // Moves the first non-target step to another host.
     let mut moved = false;
     for r in bundle.session.requests.iter_mut() {
         if !moved && r.id != id && r.url.starts_with("http") && r.url.contains("cscform") {
@@ -1194,13 +1194,13 @@ fn path_params_and_pii_names_are_data_not_literals() {
             "{name} deveria ser obrigatório:\n{script}"
         );
     }
-    // Estrutural continua padrão; `target` não é sensível por conter `rg`.
+    // Structural stays default; `target` is not sensitive for containing `rg`.
     assert!(script.contains("('op', 'S37', 'constante estrutural')"));
     let dir = tempfile::tempdir().unwrap();
     ast_calls(&script, &dir);
 }
 
-/// HAR sintético com headers/Content-Type próprios; a última entrada é o alvo.
+/// Synthetic HAR with its own headers/Content-Type; the last entry is the target.
 type CustomEntry<'a> = (
     &'a str,
     &'a str,
@@ -1286,7 +1286,7 @@ fn credential_headers_are_never_literal_and_referer_is_runtime_only() {
     assert!(script.contains("('x_api_key', None,"), "{script}");
     assert!(script.contains("('x_jwt', None,"), "{script}");
 
-    // Com passo anterior de mesmo origin+caminho, o Referer vem do runtime.
+    // With a previous step of the same origin+path, the Referer comes from runtime.
     let bundle = custom_bundle(&[
         (
             "GET",
@@ -1363,7 +1363,7 @@ fn non_form_non_json_body_is_refused_unless_allowed() {
     for leaked in ["Fulano Teste", "00000000191", "a@b.test"] {
         assert!(!out.text.contains(leaked), "{leaked} vazou:\n{}", out.text);
     }
-    assert!(out.text.contains("livre"), "o resto fica congelado");
+    assert!(out.text.contains("livre"), "the rest stays frozen");
     assert!(out
         .warnings
         .iter()
@@ -1416,7 +1416,7 @@ fn json_under_a_form_content_type_is_never_literal() {
     assert!(script.contains("json.dumps("), "{script}");
     assert!(script.contains("('cpf', None,"));
     assert!(script.contains("application/x-www-form-urlencoded"));
-    // Texto livre com cara de form, sem '=' e longo: recusado.
+    // Free text that looks like a form, without '=' and long: refused.
     let free = "Fulano Teste de Tal, CPF 00000000191, mora na Rua Sintetica 1 em Cidade";
     let bundle = custom_bundle(&[(
         "POST",
@@ -1541,7 +1541,7 @@ fn json_inside_field_values_is_decomposed_recursively() {
         let dir = tempfile::tempdir().unwrap();
         ast_calls(&script, &dir);
     }
-    // JSON dentro de string JSON, sob application/json.
+    // JSON inside a JSON string, under application/json.
     let bundle = custom_bundle(&[(
         "POST",
         "https://h.example.test/api",
@@ -1569,7 +1569,7 @@ fn partial_json_and_free_text_with_pii_are_refused_or_parameterised() {
             ),
         }
     }
-    // A barreira final recusa listando tipos, sem valores.
+    // The final barrier refuses, listing types without values.
     let bundle = form_bundle(free);
     let err = to_python(
         &bundle.session,
@@ -1633,8 +1633,8 @@ fn url_encode(text: &str) -> String {
 
 #[test]
 fn business_pii_formats_never_reach_literals_or_the_plan() {
-    // (rótulo, valor): placa com hífen, Mercosul com hífen, chassi, +55,
-    // cartão série 2 e de 19 dígitos (Luhn), largura total.
+    // (label, value): plate with hyphen, Mercosul with hyphen, chassis, +55,
+    // card series 2 and 19-digit (Luhn), full width.
     let values = [
         ("placa hífen", "ABC-1234"),
         ("placa Mercosul hífen", "ABC-1D23"),
@@ -1647,7 +1647,7 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
     ];
     for (label, value) in values {
         let encoded = url_encode(value);
-        // Query com nome genérico (nunca constante estrutural).
+        // Query with a generic name (never a structural constant).
         let bundle = custom_bundle(&[(
             "GET",
             &format!("https://h.example.test/go?ref={encoded}&p=1"),
@@ -1663,7 +1663,7 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
             script.contains("('ref', None,"),
             "{label}: query deve ser obrigatória"
         );
-        // Header de nome qualquer.
+        // Header with any name.
         let bundle = custom_bundle(&[(
             "GET",
             "https://h.example.test/go",
@@ -1671,8 +1671,8 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
             None,
         )]);
         let script = generate(&bundle, "har-0001");
-        assert!(!script.contains(value), "{label} em header:\n{script}");
-        // Segmento de caminho: vira parâmetro, nunca literal nem plano.
+        assert!(!script.contains(value), "{label} in header:\n{script}");
+        // Path segment: becomes a parameter, never a literal nor a plan entry.
         let bundle = custom_bundle(&[(
             "GET",
             &format!("https://h.example.test/go/{encoded}/fim"),
@@ -1686,7 +1686,7 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
         );
         assert!(script.contains("path_segmento_2"), "{label}:\n{script}");
         assert!(script.contains("/fim"));
-        // Chave de form.
+        // Form key.
         let bundle = form_bundle(&format!("{encoded}=1"));
         match to_python(
             &bundle.session,
@@ -1694,11 +1694,11 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
             "har-0001",
             &PrimingOptions::default(),
         ) {
-            Ok(out) => assert!(!out.text.contains(value), "{label} em chave:\n{}", out.text),
+            Ok(out) => assert!(!out.text.contains(value), "{label} in key:\n{}", out.text),
             Err(e) => assert!(!e.to_string().contains(value)),
         }
     }
-    // O mesmo placa_ref=ABC-1234 do revisor.
+    // The same placa_ref=ABC-1234 from the reviewer.
     let bundle = custom_bundle(&[(
         "GET",
         "https://h.example.test/go?placa_ref=ABC-1234",
@@ -1710,8 +1710,8 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
     assert!(script.contains("('placa_ref', None,"));
 }
 
-/// Adaptador de brinquedo `kv:a=1;b=2` para exercitar o caminho genérico do
-/// priming sem nenhum conhecimento de protocolo real no core.
+/// Toy adapter `kv:a=1;b=2` to exercise the generic path of the
+/// priming with no real protocol knowledge in the core.
 struct KvAdapter;
 
 impl scrapelens_core::adapter::ProtocolAdapter for KvAdapter {
@@ -1776,7 +1776,7 @@ fn claimed_field_is_built_by_parts_with_the_adapter_encoder() {
     )]);
     let mut opts = PrimingOptions::default();
     opts.flow.adapters = AdapterRegistry::new().with(std::sync::Arc::new(KvAdapter));
-    // Sem codificador Python, volta ao tratamento por trechos.
+    // Without a Python encoder, falls back to fragment handling.
     let plain = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("gera");
     assert!(!plain.text.contains("kv_encode"));
     opts.adapter_encoders.push(AdapterEncoder {
@@ -1801,8 +1801,8 @@ fn claimed_field_is_built_by_parts_with_the_adapter_encoder() {
     ast_calls(&out.text, &dir);
 }
 
-/// Driver sem rede: injeta um módulo `requests` falso e roda o `main` do
-/// script gerado com `--trace`.
+/// Driver without network: injects a fake `requests` module and runs the `main` of the
+/// generated script with `--trace`.
 const TRACE_DRIVER: &str = r#"
 import json, runpy, sys, types
 script, status, *argv = sys.argv[1:]
@@ -1878,7 +1878,7 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
     let script_path = dir.path().join("priming.py");
     std::fs::write(&script_path, &script).unwrap();
 
-    // Execução ok.
+    // Successful run.
     let trace = dir.path().join("trace.json");
     let out = trace_run(&script_path, 200, &["--trace", trace.to_str().unwrap()]);
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -1899,12 +1899,12 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
     assert!(exchange["requestHeaders"].is_array() && exchange["responseHeaders"].is_array());
     assert_eq!(exchange["responseBody"]["truncated"], false);
 
-    // Já existe: recusa, sem sobrescrever.
+    // Already exists: refuses, without overwriting.
     let before = std::fs::read(&trace).unwrap();
     let out = trace_run(&script_path, 200, &["--trace", trace.to_str().unwrap()]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace:"));
     assert_eq!(std::fs::read(&trace).unwrap(), before);
-    // Link simbólico (existente e pendente): recusa e não escreve no alvo.
+    // Symbolic link (existing and dangling): refuses and does not write to the target.
     let target = dir.path().join("alvo.txt");
     std::fs::write(&target, "intacto").unwrap();
     let link = dir.path().join("link.json");
@@ -1918,7 +1918,7 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace:"));
     assert!(!dir.path().join("nao-existe.json").exists());
 
-    // Falha no passo: o trace é gravado até o passo ruim, com a falha registrada.
+    // Step failure: the trace is written up to the bad step, with the failure recorded.
     let failing = dir.path().join("falha.json");
     let out = trace_run(&script_path, 403, &["--trace", failing.to_str().unwrap()]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: passo 1: HTTP 403"));
@@ -1929,7 +1929,7 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
         .unwrap()
         .contains("HTTP 403"));
     assert_eq!(doc["steps"][0]["status"], 403);
-    // O core importa o trace gravado (esquema exato).
+    // The core imports the written trace (exact schema).
     let session = dir.path().join("trace-session");
     let import = Command::new(env!("CARGO_BIN_EXE_scrapelens-core"))
         .arg("import-trace")
@@ -1948,8 +1948,8 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
         0o600
     );
 
-    // Sem --trace, nada é criado; no modo plano (passo que altera estado, sem
-    // --confirmar), nada é gravado.
+    // Without --trace, nothing is created; in plan mode (step that changes state, without
+    // --confirmar), nothing is written.
     let post = custom_bundle(&[(
         "POST",
         "https://h.example.test/alvo",
@@ -2053,12 +2053,12 @@ fn trace_lists_user_parameters_with_their_parts_and_never_values() {
             .any(|p| p["name"] == "placa" && p["part"] == "placa"),
         "{parameters:?}"
     );
-    // `op` ficou no padrão (não é entrada do usuário).
+    // `op` kept its default (it is not user input).
     assert!(
         parameters.iter().all(|p| p["name"] != "op"),
         "{parameters:?}"
     );
-    // Só nomes: o valor passado não aparece em `parameters`.
+    // Names only: the passed value does not appear in `parameters`.
     assert!(!serde_json::to_string(parameters)
         .unwrap()
         .contains("ZZZ9Z99"));
@@ -2088,7 +2088,7 @@ fn transport_errors_leave_a_valid_incomplete_trace_and_never_zero_bytes() {
             "{kind}: {stdout}"
         );
         let raw = std::fs::read(&trace).unwrap();
-        assert!(!raw.is_empty(), "{kind}: trace vazio");
+        assert!(!raw.is_empty(), "{kind}: empty trace");
         assert_eq!(
             std::fs::metadata(&trace).unwrap().permissions().mode() & 0o777,
             0o600
@@ -2108,7 +2108,7 @@ fn transport_errors_leave_a_valid_incomplete_trace_and_never_zero_bytes() {
         );
         assert_eq!(step["checks"][0]["ok"], false);
         assert!(step["status"].is_null());
-        // Importável pelo Core.
+        // Importable by the Core.
         let session = dir.path().join(format!("s-{kind}"));
         let import = Command::new(env!("CARGO_BIN_EXE_scrapelens-core"))
             .arg("import-trace")
@@ -2131,15 +2131,15 @@ fn invalid_arguments_fail_before_any_request_and_complete_is_true_on_success() {
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("p.py");
     std::fs::write(&script, generate(&bundle, "har-0001")).unwrap();
-    // --trace vazio é erro; nada é pedido.
+    // --trace empty is an error; nothing is requested.
     let out = trace_run(&script, 200, &["--trace", ""]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace exige"));
-    // --base-url inválida e --timeout fora da faixa.
+    // invalid --base-url and --timeout out of range.
     let out = trace_run(&script, 200, &["--base-url", "ftp://x"]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --base-url"));
     let out = trace_run(&script, 200, &["--timeout", "0"]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --timeout"));
-    // Bytes inválidos no argv (surrogate escape): falha antes de rodar.
+    // Invalid bytes in argv (surrogate escape): fails before running.
     let out = Command::new("python3")
         .arg("-I")
         .args(["-c", BAD_ARGV_DRIVER])
@@ -2152,7 +2152,7 @@ fn invalid_arguments_fail_before_any_request_and_complete_is_true_on_success() {
         "{stdout}{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    // Sucesso: complete=true.
+    // Success: complete=true.
     let trace = dir.path().join("ok.json");
     let out = trace_run(&script, 200, &["--trace", trace.to_str().unwrap()]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC 0"));
@@ -2191,7 +2191,7 @@ fn real_sockets_that_close_or_stay_silent_leave_a_valid_incomplete_trace() {
                     let _ = stream.read(&mut buf);
                     std::thread::sleep(std::time::Duration::from_millis(1500));
                 }
-                // "close": fecha sem responder.
+                // "close": closes without responding.
             }
         });
         let bundle = custom_bundle(&[("GET", &format!("http://127.0.0.1:{port}/alvo"), &[], None)]);
@@ -2212,7 +2212,7 @@ fn real_sockets_that_close_or_stay_silent_leave_a_valid_incomplete_trace() {
             String::from_utf8_lossy(&out.stderr)
         );
         let raw = std::fs::read(&trace).unwrap();
-        assert!(!raw.is_empty(), "{mode}: trace vazio");
+        assert!(!raw.is_empty(), "{mode}: empty trace");
         let doc: serde_json::Value = serde_json::from_slice(&raw).unwrap();
         assert_eq!(doc["complete"], false, "{mode}");
         assert!(doc["steps"][0]["error"].as_str().unwrap().len() > 3);
@@ -2249,8 +2249,8 @@ fn plan_hash_is_computed_at_generation_by_the_core_and_the_script_has_no_hashlib
         .lines()
         .find_map(|l| l.strip_prefix("PLAN_HASH = '"))
         .and_then(|l| l.strip_suffix('\''))
-        .expect("PLAN_HASH constante");
-    // O hash usa exatamente os nomes dos parâmetros OBRIGATÓRIOS (`plan.parameters`).
+        .expect("PLAN_HASH constant");
+    // The hash uses exactly the names of the REQUIRED parameters (`plan.parameters`).
     let names = vec!["placa".to_string()];
     let expected = scrapelens_core::validate::plan_hash(
         &bundle.session,
@@ -2261,7 +2261,7 @@ fn plan_hash_is_computed_at_generation_by_the_core_and_the_script_has_no_hashlib
     )
     .unwrap();
     assert_eq!(literal, expected);
-    // Executando o script com `--trace`, o hash gravado é o mesmo.
+    // Running the script with `--trace`, the recorded hash is the same.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("p.py");
     std::fs::write(&path, &script).unwrap();
@@ -2285,7 +2285,7 @@ fn plan_hash_is_computed_at_generation_by_the_core_and_the_script_has_no_hashlib
 
 #[test]
 fn overriding_an_optional_parameter_changes_neither_plan_hash_nor_plan_parameters() {
-    // `op` tem padrão (constante estrutural): opcional.
+    // `op` has a default (structural constant): optional.
     let bundle = custom_bundle(&[
         ("GET", "https://h.example.test/app?op=S37", &[], None),
         (
@@ -2316,7 +2316,7 @@ fn overriding_an_optional_parameter_changes_neither_plan_hash_nor_plan_parameter
     let overridden = run(&["--op", "OUTRO"], "b.json");
     assert_eq!(base["plan"], overridden["plan"]);
     assert_eq!(base["plan"]["parameters"], serde_json::json!(["placa"]));
-    // `parameters` de topo continua com todos os usados (aqui, `op` entra a mais).
+    // Top-level `parameters` still has all the used ones (here, `op` is an extra).
     let names = |d: &serde_json::Value| -> Vec<String> {
         d["parameters"]
             .as_array()

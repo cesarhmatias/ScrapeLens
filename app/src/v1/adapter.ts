@@ -1,6 +1,6 @@
-// Adaptador contrato v1 (docs/03-contratos.md) → modelo de exibição.
-// Regra: nada é ordenado nem fundido aqui. Headers seguem pseudo+regulares na
-// ordem da fonte; a visão normalizada é derivada na tela e rotulada.
+// v1 contract adapter (docs/03-contratos.md) → display model.
+// Rule: nothing is sorted or merged here. Headers follow pseudo + regular order in
+// the source's order; the normalized view is derived in the UI and labeled.
 
 import type {
   AttemptView,
@@ -52,7 +52,7 @@ function mapTarget(raw: TargetProvenance | undefined): TargetView | undefined {
     ? ((raw.kind ?? "other") as TargetKind)
     : "other";
   const notes = raw.notes ?? [];
-  // Proveniência vazia (serde default) não vira coluna confusa.
+  // Empty provenance (serde default) does not become a confusing column.
   if (
     !raw.targetId &&
     kind === "other" &&
@@ -85,7 +85,7 @@ function mapLinks(raw: RequestLink[] | undefined): RequestLinkView[] {
 }
 
 const protocolLabel = (p: string): Protocol =>
-  p === "h1" ? "HTTP/1.1" : p === "h2" ? "HTTP/2" : p === "h3" ? "HTTP/3" : "desconhecido";
+  p === "h1" ? "HTTP/1.1" : p === "h2" ? "HTTP/2" : p === "h3" ? "HTTP/3" : "unknown";
 
 const sourceLabel = (s: Provenance["source"]): SourceId => s;
 
@@ -105,7 +105,7 @@ const rank: Record<Provenance["verification"], number> = { verified: 2, partial:
 function evidenceOf(p: Provenance) {
   return {
     source: sourceLabel(p.source),
-    event: p.event ?? p.sourceId ?? "sem nome de evento",
+    event: p.event ?? p.sourceId ?? "no event name",
     timestamp: p.wallTime ?? "",
     sourceTime: p.wallTime ? undefined : p.timestamp,
     method: p.method,
@@ -115,18 +115,18 @@ function evidenceOf(p: Provenance) {
 }
 
 export function verificationOf(p?: Provenance): Verification {
-  if (!p) return { status: "unverified", reason: "sem proveniência registrada pela fonte" };
+  if (!p) return { status: "unverified", reason: "no provenance recorded by the source" };
   if (p.verification === "verified") return { status: "verified", evidence: evidenceOf(p) };
   if (p.verification === "partial") {
     return {
       status: "partial",
       evidence: evidenceOf(p),
-      missing: p.notes?.filter(Boolean).join(" · ") || "a fonte preserva parte da informação",
+      missing: p.notes?.filter(Boolean).join(" · ") || "the source preserves part of the information",
     };
   }
   return {
     status: "unverified",
-    reason: p.notes?.filter(Boolean).join(" · ") || p.method || "sem evidência na captura",
+    reason: p.notes?.filter(Boolean).join(" · ") || p.method || "no evidence in the capture",
   };
 }
 
@@ -136,7 +136,7 @@ function weakestVerification(entries: HeaderEntry[], view?: HeaderView): Verific
       status: "unverified",
       reason:
         view?.notes?.filter(Boolean).join(" · ") ||
-        "nenhuma linha de header foi observada nesta captura",
+        "no header line was observed in this capture",
     };
   }
   let weakest = entries[0];
@@ -173,7 +173,7 @@ const AVAILABILITY: Record<Body["state"], BodyInfo["availability"]> = {
 
 function mapBody(body: Body | undefined, attachments?: Record<string, string>): BodyInfo {
   if (!body) {
-    return { availability: "unavailable", reason: "corpo não informado pelo contrato" };
+    return { availability: "unavailable", reason: "body not provided by the contract" };
   }
   const preview = body.attachment ? attachments?.[body.attachment] : undefined;
   return {
@@ -207,7 +207,7 @@ function mapSetCookies(request: LogicalRequest): ReceivedCookie[] {
     }
     return {
       index,
-      name: parsed?.name ?? record.raw.split("=")[0]?.trim() ?? "(sem nome)",
+      name: parsed?.name ?? record.raw.split("=")[0]?.trim() ?? "(no name)",
       value: parsed?.value ?? "",
       raw: record.raw,
       attributes,
@@ -218,7 +218,7 @@ function mapSetCookies(request: LogicalRequest): ReceivedCookie[] {
 
 function cookieVerification(request: LogicalRequest): Verification {
   if (request.cookie.pairs.length === 0 && request.cookie.raw.length === 0) {
-    return { status: "unverified", reason: "nenhum cookie enviado nesta requisição" };
+    return { status: "unverified", reason: "no cookie sent in this request" };
   }
   return verificationOf(request.cookie.provenance);
 }
@@ -227,14 +227,14 @@ function timingsVerification(t: Timings, request: LogicalRequest): Verification 
   if (t.estimated) {
     return {
       status: "unverified",
-      reason: "duração estimada: a fonte não forneceu evento de conclusão",
+      reason: "estimated duration: the source did not provide a completion event",
     };
   }
-  if (t.totalMs === undefined) return { status: "unverified", reason: "sem tempo total na fonte" };
+  if (t.totalMs === undefined) return { status: "unverified", reason: "no total time from the source" };
   return {
     status: "partial",
     evidence: evidenceOf(request.provenance),
-    missing: "timings não carregam proveniência própria no contrato v1",
+    missing: "timings do not carry their own provenance in the v1 contract",
   };
 }
 
@@ -248,7 +248,7 @@ function protocolVerification(
     return {
       status: "partial",
       evidence: evidenceOf(request.provenance),
-      missing: "nenhuma StreamSession NetLog associada a esta tentativa",
+      missing: "no NetLog StreamSession associated with this attempt",
     };
   }
   return verificationOf(stream.provenance);
@@ -317,9 +317,9 @@ function matchOf(request: LogicalRequest) {
 }
 
 
-// Espelha os #[serde(default)] do core (core/src/model): o contrato v1 permite
-// omitir estes campos. Preenche apenas o vazio equivalente ao default do core —
-// "sem tentativas", "sem cookies", "corpo não fornecido" — nunca dados inventados.
+// Mirrors the core's #[serde(default)] values (core/src/model): the v1 contract allows
+// omitting these fields. Fills only the empty value equivalent to the core default —
+// "no attempts", "no cookies", "body not provided" — never invented data.
 const defaultProvenance = (): Provenance => ({
   source: "ownFormat",
   method: "unspecified",
@@ -331,7 +331,7 @@ const defaultHeaderView = (): HeaderView => ({ headers: [] }) as unknown as Head
 const defaultBody = (): Body =>
   ({
     state: "unavailable",
-    note: "corpo não fornecido pela fonte",
+    note: "body not provided by the source",
     provenance: defaultProvenance(),
   }) as unknown as Body;
 
@@ -407,7 +407,7 @@ export function normalizeSession(raw: SessionV1): SessionV1 {
       labels: meta.labels ?? [],
       completeness: meta.completeness ?? {
         state: "partial",
-        reasons: ["completeness não informada pela fonte"],
+        reasons: ["completeness not stated by the source"],
       },
     },
     requests: (raw.requests ?? []).map(normalizeRequest),
@@ -416,28 +416,28 @@ export function normalizeSession(raw: SessionV1): SessionV1 {
 
 export interface AdaptedSession {
   session: SessionRecord;
-  /** Versão v1 para exportações e para o diff sem perda. */
+  /** v1 version for exports and for the lossless diff. */
   raw: SessionV1;
   sourcePath?: string;
 }
 
-/** Origem pelos rótulos do core; sem rótulo conhecido nunca é "real" nem "ao vivo". */
+/** Origin from the core's labels; without a known label it is never "real" or "live". */
 export function sessionOrigin(labels: string[]): SessionOrigin {
   if (labels.includes("synthetic-fixture"))
-    return { kind: "synthetic", label: "Demonstração — vitrine sintética", real: false, tag: "DEMO" };
+    return { kind: "synthetic", label: "Demo — synthetic showcase", real: false, tag: "DEMO" };
   if (labels.includes("live-capture"))
-    return { kind: "live", label: "Captura ao vivo", real: true, tag: "captura ao vivo" };
+    return { kind: "live", label: "Live capture", real: true, tag: "live capture" };
   if (labels.includes("capture-import"))
-    return { kind: "capture-import", label: "Captura importada (CDP/NetLog)", real: true, tag: "importada" };
+    return { kind: "capture-import", label: "Imported capture (CDP/NetLog)", real: true, tag: "imported" };
   if (labels.includes("har-import"))
-    return { kind: "har-import", label: "HAR importado", real: true, tag: "importada" };
+    return { kind: "har-import", label: "HAR imported", real: true, tag: "imported" };
   if (labels.includes("netlog-import"))
-    return { kind: "netlog-import", label: "NetLog importado", real: true, tag: "importada" };
+    return { kind: "netlog-import", label: "NetLog imported", real: true, tag: "imported" };
   return {
     kind: "unknown",
-    label: labels.includes("sanitized") ? "Sessão sanitizada (origem não informada)" : "origem não informada",
+    label: labels.includes("sanitized") ? "Sanitized session (origin not stated)" : "origin not stated",
     real: false,
-    tag: "origem não informada",
+    tag: "origin not stated",
   };
 }
 
@@ -477,9 +477,9 @@ export function adaptSession(
           source: "derived",
           event: "derive:normalizedHeaders",
           timestamp: "",
-          method: "derivação local da UI a partir do original",
+          method: "local UI derivation from the original",
         },
-        missing: "visão derivada, não transmitida",
+        missing: "derived view, not transmitted",
       },
       cookies: cookieVerification(request),
       payload: verificationOf(request.requestBody?.provenance),
@@ -491,7 +491,7 @@ export function adaptSession(
     const rawStatus = statusOf(request);
     const bodyPreview = mapBody(request.responseBody, options.attachments);
     if (isSynthetic && bodyPreview.attachment && !bodyPreview.preview) {
-      bodyPreview.reason = bodyPreview.reason ?? "prévia sintética não incluída";
+      bodyPreview.reason = bodyPreview.reason ?? "synthetic preview not included";
     }
 
     const target = mapTarget(request.target);
@@ -549,10 +549,10 @@ export function adaptSession(
   const browser = raw.session.browser;
   const labels = raw.session.labels ?? [];
   const origin = sessionOrigin(labels);
-  const kind = labels.includes("sanitized") && origin.kind !== "unknown" ? `${origin.label} (sanitizada)` : origin.label;
+  const kind = labels.includes("sanitized") && origin.kind !== "unknown" ? `${origin.label} (sanitized)` : origin.label;
   const browserLabel = [browser.name, browser.version].filter(Boolean).join(" ");
   const label = synthetic
-    ? "Demonstração — vitrine sintética"
+    ? "Demo — synthetic showcase"
     : `${kind}${browserLabel ? ` — ${browserLabel}` : ""}`;
 
   return {
@@ -593,7 +593,7 @@ function typeOf(resourceType: string | undefined): ResourceType {
   return RESOURCE_TYPES.has(lower) ? lower : "other";
 }
 
-/** Resumo de `list_requests` → linha da tabela (mesmas regras de `adaptSession`). */
+/** `list_requests` summary → table row (same rules as `adaptSession`). */
 export function summaryFromRaw(
   raw: RawRequestSummary,
   sessionStartedAt: string,
@@ -624,7 +624,7 @@ export function summaryFromRaw(
   };
 }
 
-/** Linha da tabela a partir de um registro completo (sessões em memória: demo, navegador). */
+/** Table row from a full record (in-memory sessions: demo, browser). */
 export function summaryOfRecord(r: RequestRecord): RequestSummary {
   return {
     id: r.id,
@@ -648,7 +648,7 @@ export function summaryOfRecord(r: RequestRecord): RequestSummary {
   };
 }
 
-/** Detalhe de `get_request` → `RequestRecord`, pelo mesmo `adaptSession` (uma requisição). */
+/** `get_request` detail → `RequestRecord`, via the same `adaptSession` (one request). */
 export function adaptRequestDetail(
   header: SessionV1,
   detail: RawRequestDetail,
@@ -681,17 +681,17 @@ function safePath(url: string): string {
   }
 }
 
-/** `kind` + url do iniciador; sem ele, `undefined` (a UI mostra "não informado"). */
+/** `kind` + initiator url; without it, `undefined` (the UI shows "not stated"). */
 export function initiatorLabel(initiator: { kind: string; url?: string } | undefined): string | undefined {
   if (!initiator?.kind) return undefined;
   return initiator.url ? `${initiator.kind} · ${initiator.url}` : initiator.kind;
 }
 
 function statusText(status: number): string {
-  if (status === 0) return "sem status";
-  if (status >= 500) return "erro do servidor";
-  if (status >= 400) return "erro do cliente";
-  if (status >= 300) return "redirecionamento";
-  if (status >= 200) return "sucesso";
-  return "informativo";
+  if (status === 0) return "no status";
+  if (status >= 500) return "server error";
+  if (status >= 400) return "client error";
+  if (status >= 300) return "redirect";
+  if (status >= 200) return "success";
+  return "informational";
 }

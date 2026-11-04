@@ -1,30 +1,30 @@
-//! Allowlist de hosts da captura controlada (`docs/16b-mcp-navegador.md` §2.2).
+//! Host allowlist for controlled capture (`docs/16b-mcp-navegador.md` §2.2).
 //!
-//! **Semântica oficial:** o navegador impõe o **host** (todas as portas); a
-//! **porta** só é imposta em `navigate`. O Chrome não conhece porta na regra
-//! do resolvedor, e não vamos interceptar a rede (`Fetch`) para impô-la, porque
-//! isso altera a fidelidade da captura. Medido (Chrome 156): com
-//! `localhost:P1` aprovado, a página alcança `localhost:P2` por 302, JS
-//! `location`, meta refresh, `window.open`, iframe, fetch, WebSocket e host em
-//! maiúsculas. Por isso a porta fora da lista é **reportada**, nunca bloqueada:
-//! [`Allowlist::report_from_events`] varre os eventos CDP (não a sessão
-//! importada, que perde WebSocket) e lista cada requisição, redirect, iframe,
-//! popup e WebSocket para host/porta fora da lista.
+//! **Official semantics:** the browser enforces the **host** (all ports); the
+//! **port** is only enforced in `navigate`. Chrome does not know about ports in
+//! the resolver rule, and we will not intercept the network (`Fetch`) to enforce
+//! it, because that changes the fidelity of the capture. Measured (Chrome 156):
+//! with `localhost:P1` approved, the page reaches `localhost:P2` via 302, JS
+//! `location`, meta refresh, `window.open`, iframe, fetch, WebSocket and host in
+//! uppercase. That is why a port outside the list is **reported**, never blocked:
+//! [`Allowlist::report_from_events`] scans the CDP events (not the imported
+//! session, which loses WebSocket) and lists each request, redirect, iframe,
+//! popup and WebSocket to a host/port outside the list.
 //!
-//! Duas camadas com a MESMA decisão de host:
-//! 1. o Chrome recebe `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE …"` e
-//!    não resolve nenhum nome nem IPv4 literal fora da lista (medido:
-//!    `127.0.0.1`, `127.1`, `2130706433`, `[::1]`); vale para qualquer aba,
-//!    iframe, worker ou cliente CDP;
-//! 2. `permits_url` recusa antes de enviar `Page.navigate` (esquema, host,
-//!    porta, userinfo).
+//! Two layers with the SAME host decision:
+//! 1. Chrome receives `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE …"` and
+//!    does not resolve any name or literal IPv4 outside the list (measured:
+//!    `127.0.0.1`, `127.1`, `2130706433`, `[::1]`); this applies to any tab,
+//!    iframe, worker or CDP client;
+//! 2. `permits_url` refuses before sending `Page.navigate` (scheme, host,
+//!    port, userinfo).
 //!
-//! O analisador de URL é **mais estrito que o do Chrome de propósito**: tudo o
-//! que for ambíguo (barra invertida, espaço, `@`, `%` no host, ponto final,
-//! não-ASCII, IPv4 fora da forma canônica) é recusado, para que o que passa
-//! aqui seja lido da mesma forma pelo Chrome. Sem a crate `url`, para não mexer
-//! no `Cargo.toml` compartilhado. IPv6 literal não é aceito na lista (o
-//! resolvedor não o trata de forma confiável).
+//! The URL parser is **stricter than Chrome's on purpose**: anything that is
+//! ambiguous (backslash, space, `@`, `%` in the host, trailing dot, non-ASCII,
+//! IPv4 outside the canonical form) is refused, so that what passes here is read
+//! the same way by Chrome. No `url` crate, so as not to touch the shared
+//! `Cargo.toml`. Literal IPv6 is not accepted in the list (the resolver does not
+//! handle it reliably).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -32,11 +32,11 @@ use serde::Serialize;
 
 use scrapelens_core::model::SessionV1;
 
-/// Um padrão de host: nome exato, curinga de subdomínio ou IP literal, com
-/// porta opcional.
+/// A host pattern: exact name, subdomain wildcard or literal IP, with an
+/// optional port.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostPattern {
-    /// Minúsculo, sem o `*.` inicial, sem colchetes.
+    /// Lowercase, without the leading `*.`, without brackets.
     host: String,
     wildcard: bool,
     port: Option<u16>,
@@ -73,13 +73,13 @@ impl HostPattern {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AllowlistError {
-    /// Nenhum host em `allowed_hosts`.
+    /// No host in `allowed_hosts`.
     Empty,
-    /// `*`, `*.com`, curinga com IP… largo demais para ser uma allowlist.
+    /// `*`, `*.com`, wildcard with IP… too broad to be an allowlist.
     TooBroad(String),
-    /// Texto que não é um host (esquema, caminho, `@`, espaço…).
+    /// Text that is not a host (scheme, path, `@`, space…).
     Invalid(String),
-    /// IPv6 literal: o resolvedor do Chrome não o trata de forma confiável.
+    /// Literal IPv6: Chrome's resolver does not handle it reliably.
     Unsupported(String),
 }
 
@@ -98,13 +98,13 @@ impl std::fmt::Display for AllowlistError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AllowlistError::Empty => {
-                write!(f, "allowed_hosts é obrigatório e precisa ter ao menos um host")
+                write!(f, "allowed_hosts is required and must have at least one host")
             }
-            AllowlistError::TooBroad(p) => write!(f, "padrão largo demais: {p:?}"),
-            AllowlistError::Invalid(p) => write!(f, "host inválido na allowlist: {p:?}"),
+            AllowlistError::TooBroad(p) => write!(f, "pattern too broad: {p:?}"),
+            AllowlistError::Invalid(p) => write!(f, "invalid host in the allowlist: {p:?}"),
             AllowlistError::Unsupported(p) => write!(
                 f,
-                "IPv6 literal não é suportado na allowlist: {p:?} (use o nome do host ou um IPv4)"
+                "literal IPv6 is not supported in the allowlist: {p:?} (use the host name or an IPv4)"
             ),
         }
     }
@@ -112,7 +112,7 @@ impl std::fmt::Display for AllowlistError {
 
 impl std::error::Error for AllowlistError {}
 
-/// Por que uma URL foi recusada.
+/// Why a URL was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UrlDenied {
     Scheme(String),
@@ -131,12 +131,12 @@ impl UrlDenied {
 impl std::fmt::Display for UrlDenied {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UrlDenied::Scheme(s) => write!(f, "esquema não permitido: {s:?} (só http e https)"),
-            UrlDenied::Malformed(why) => write!(f, "URL recusada: {why}"),
-            UrlDenied::Userinfo => write!(f, "URL com usuário/senha (userinfo) é recusada"),
-            UrlDenied::HostNotAllowed(h) => write!(f, "host fora da allowlist: {h}"),
+            UrlDenied::Scheme(s) => write!(f, "scheme not allowed: {s:?} (only http and https)"),
+            UrlDenied::Malformed(why) => write!(f, "URL refused: {why}"),
+            UrlDenied::Userinfo => write!(f, "URL with user/password (userinfo) is refused"),
+            UrlDenied::HostNotAllowed(h) => write!(f, "host outside the allowlist: {h}"),
             UrlDenied::PortNotAllowed { host, port } => {
-                write!(f, "porta {port} fora da allowlist para {host}")
+                write!(f, "port {port} outside the allowlist for {host}")
             }
         }
     }
@@ -144,13 +144,13 @@ impl std::fmt::Display for UrlDenied {
 
 impl std::error::Error for UrlDenied {}
 
-/// URL já validada: o que `navigate` pode enviar.
+/// Validated URL: what `navigate` may send.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowedUrl {
     pub scheme: String,
     pub host: String,
     pub port: u16,
-    /// A URL original, sem alteração (só é aceita se for segura).
+    /// The original URL, unchanged (only accepted if safe).
     pub url: String,
 }
 
@@ -177,19 +177,19 @@ pub struct Violation {
     pub reason: String,
 }
 
-/// Resultado pós-captura (`stop_capture.allowlist`).
+/// Post-capture result (`stop_capture.allowlist`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AllowlistReport {
-    /// Hosts que a página tentou carregar e o resolvedor negou
-    /// (`ERR_NAME_NOT_RESOLVED`): evidência de terceiro necessário.
+    /// Hosts the page tried to load and the resolver denied
+    /// (`ERR_NAME_NOT_RESOLVED`): evidence of a required third party.
     pub blocked_hosts: Vec<BlockedHost>,
-    /// Requisições a host/porta fora da lista que NÃO falharam na resolução
-    /// (IP literal, porta diferente).
+    /// Requests to a host/port outside the list that did NOT fail resolution
+    /// (literal IP, different port).
     pub violations: Vec<Violation>,
 }
 
-/// Decisão de host/porta para um alvo já separado em partes.
+/// Host/port decision for a target already split into parts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Decision {
     Allowed,
@@ -217,7 +217,7 @@ impl Allowlist {
         Ok(Self { allowed, third_party })
     }
 
-    /// Padrões em texto, para devolver ao chamador.
+    /// Patterns as text, to return to the caller.
     pub fn allowed_hosts(&self) -> Vec<String> {
         self.allowed.iter().map(HostPattern::text).collect()
     }
@@ -226,8 +226,8 @@ impl Allowlist {
         self.third_party.iter().map(HostPattern::text).collect()
     }
 
-    /// Valor de `--host-resolver-rules`: nega tudo (nomes e IP literal),
-    /// exceto o que está listado. A regra conhece só o host, nunca a porta.
+    /// Value of `--host-resolver-rules`: denies everything (names and literal IP),
+    /// except what is listed. The rule knows only the host, never the port.
     pub fn resolver_rules(&self) -> String {
         let mut rules = vec!["MAP * ~NOTFOUND".to_string()];
         let mut seen: Vec<String> = Vec::new();
@@ -245,8 +245,8 @@ impl Allowlist {
         rules.join(", ")
     }
 
-    /// `navigate`: só `allowed_hosts` (e `about:blank`). Terceiros declarados
-    /// carregam subrecursos, mas não são destino de navegação.
+    /// `navigate`: only `allowed_hosts` (and `about:blank`). Declared third parties
+    /// load subresources, but are not navigation targets.
     pub fn permits_url(&self, raw: &str) -> Result<AllowedUrl, UrlDenied> {
         if raw == "about:blank" {
             return Ok(AllowedUrl {
@@ -272,7 +272,7 @@ impl Allowlist {
         }
     }
 
-    /// Host (qualquer porta) em `allowed_hosts` ou `third_party_hosts`.
+    /// Host (any port) in `allowed_hosts` or `third_party_hosts`.
     pub fn host_allowed(&self, host: &str) -> bool {
         let host = host.to_ascii_lowercase();
         self.allowed
@@ -291,23 +291,23 @@ impl Allowlist {
         }
     }
 
-    /// Classifica uma URL já acontecida: `Blocked` (o resolvedor negou) ou
-    /// `Violation` (host/porta fora da lista que NÃO falhou na resolução).
+    /// Classifies a URL that already happened: `Blocked` (the resolver denied it) or
+    /// `Violation` (host/port outside the list that did NOT fail resolution).
     fn classify(&self, url: &str, failure: Option<&str>, top_level: bool) -> Option<Classified> {
         let (scheme, host, port) = lenient_http_parts(url)?;
         let port = port.unwrap_or(if scheme == "https" || scheme == "wss" { 443 } else { 80 });
         let unresolved = failure.map(|f| f.contains("ERR_NAME_NOT_RESOLVED")).unwrap_or(false);
         match self.decide_any(&host, port) {
             Decision::Allowed => {
-                // Host aprovado só como origem de subrecursos não é destino de
-                // navegação de topo.
+                // A host approved only as a subresource origin is not a top-level
+                // navigation target.
                 if top_level
                     && decide(&self.allowed, &host, port) != Decision::Allowed
                     && decide(&self.third_party, &host, port) == Decision::Allowed
                 {
                     return Some(Classified::Violation {
                         host,
-                        reason: "navegação de topo para host aprovado só como terceiro (subrecursos)"
+                        reason: "top-level navigation to a host approved only as a third party (subresources)"
                             .to_string(),
                     });
                 }
@@ -317,21 +317,20 @@ impl Allowlist {
             _ => {
                 let reason = if self.host_allowed(&host) {
                     format!(
-                        "porta {port} fora da allowlist (o navegador impõe o host, não a porta; só `navigate` a impõe)"
+                        "port {port} outside the allowlist (the browser enforces the host, not the port; only `navigate` enforces it)"
                     )
                 } else if is_ip_literal(&host) {
-                    "IP literal fora da allowlist".to_string()
+                    "IP literal outside the allowlist".to_string()
                 } else {
-                    "host fora da allowlist sem falha de resolução".to_string()
+                    "host outside the allowlist without a resolution failure".to_string()
                 };
                 Some(Classified::Violation { host, reason })
             }
         }
     }
 
-    /// Relatório pós-captura sobre a sessão importada. Perde o que a
-    /// importação não guarda (WebSocket); a captura usa
-    /// [`Allowlist::report_from_events`].
+    /// Post-capture report over the imported session. Loses what the import does
+    /// not keep (WebSocket); the capture uses [`Allowlist::report_from_events`].
     pub fn report(&self, session: &SessionV1) -> AllowlistReport {
         let mut out = ReportBuilder::default();
         for request in &session.requests {
@@ -351,14 +350,15 @@ impl Allowlist {
         out.finish()
     }
 
-    /// Relatório a partir dos eventos CDP gravados (`cdp-events.jsonl`): cada
-    /// `Network.requestWillBeSent` (inclui cada salto de redirect, iframe e
-    /// popup, que têm sessão própria) e cada `Network.webSocketCreated`. É a
-    /// fonte completa; os ids viram os da sessão importada quando a requisição
-    /// existe nela (`cdp.sessionId` + `cdp.requestId`), senão `cdp:<sessão>/<id>`.
+    /// Report from the recorded CDP events (`cdp-events.jsonl`): each
+    /// `Network.requestWillBeSent` (includes each redirect hop, iframe and popup,
+    /// which have their own session) and each `Network.webSocketCreated`. It is
+    /// the complete source; the ids become those of the imported session when the
+    /// request exists there (`cdp.sessionId` + `cdp.requestId`), otherwise
+    /// `cdp:<session>/<id>`.
     pub fn report_from_events(&self, events: &[String], session: &SessionV1) -> AllowlistReport {
         use serde_json::Value;
-        // (sessionId, requestId) -> id lógico da sessão importada.
+        // (sessionId, requestId) -> logical id of the imported session.
         let mut logical: HashMap<(String, String), String> = HashMap::new();
         for r in &session.requests {
             let refs = r.cdp.iter().chain(r.attempts.iter().filter_map(|a| a.cdp.as_ref()));
@@ -373,7 +373,7 @@ impl Allowlist {
             url: String,
             top_level: bool,
         }
-        let mut targets: HashMap<String, (String, String)> = HashMap::new(); // sessão -> (targetId, tipo)
+        let mut targets: HashMap<String, (String, String)> = HashMap::new(); // session -> (targetId, type)
         let mut hops: Vec<Hop> = Vec::new();
         let mut last_url: HashMap<(String, String), String> = HashMap::new();
         let mut failures: HashMap<(String, String), String> = HashMap::new();
@@ -423,7 +423,7 @@ impl Allowlist {
         }
         let mut out = ReportBuilder::default();
         for hop in hops {
-            // A falha vale para o último salto do requestId.
+            // The failure applies to the last hop of the requestId.
             let failure = if last_url.get(&hop.key) == Some(&hop.url) {
                 failures.get(&hop.key).map(String::as_str)
             } else {
@@ -480,8 +480,8 @@ impl ReportBuilder {
     }
 }
 
-/// URL sem credenciais, consulta, fragmento nem parâmetros de caminho
-/// (`;jsessionid=…`): o que pode ir para avisos e relatórios sem vazar segredo.
+/// URL without credentials, query, fragment or path parameters
+/// (`;jsessionid=…`): what can go into warnings and reports without leaking a secret.
 pub fn redact_url(url: &str) -> String {
     let cut = url.find(['?', '#']).unwrap_or(url.len());
     let had_tail = cut < url.len();
@@ -530,10 +530,10 @@ fn is_ip_literal(host: &str) -> bool {
     host.contains(':') || is_ipv4_shape(host)
 }
 
-/// Como o Chrome (WHATWG): se o ÚLTIMO rótulo é numérico (decimal ou `0x…`), o
-/// host é lido como IPv4, inclusive formas curtas, hex e octal (`127.1`,
-/// `2130706433`, `0x7f.0.0.1`). Qualquer uma que não seja `a.b.c.d` canônica é
-/// recusada em vez de interpretada.
+/// Like Chrome (WHATWG): if the LAST label is numeric (decimal or `0x…`), the
+/// host is read as IPv4, including short, hex and octal forms (`127.1`,
+/// `2130706433`, `0x7f.0.0.1`). Any that is not canonical `a.b.c.d` is refused
+/// instead of interpreted.
 fn is_ipv4_shape(host: &str) -> bool {
     let last = host.rsplit('.').next().unwrap_or("");
     !last.is_empty()
@@ -596,7 +596,7 @@ fn parse_pattern(raw: &str) -> Result<HostPattern, AllowlistError> {
     if lower.starts_with('[') || lower.starts_with("*.[") || lower.matches(':').count() > 1 {
         return Err(AllowlistError::Unsupported(raw.to_string()));
     }
-    // Separa a porta.
+    // Split off the port.
     let (host_part, port) = if let Some(rest) = lower.strip_prefix('[') {
         let end = rest.find(']').ok_or_else(invalid)?;
         let host = &rest[..end];
@@ -609,7 +609,7 @@ fn parse_pattern(raw: &str) -> Result<HostPattern, AllowlistError> {
         (host.to_string(), port)
     } else if let Some((host, port)) = lower.rsplit_once(':') {
         if host.contains(':') {
-            return Err(invalid()); // IPv6 sem colchetes é ambíguo
+            return Err(invalid()); // IPv6 without brackets is ambiguous
         }
         (host.to_string(), Some(parse_port(port).ok_or_else(invalid)?))
     } else {
@@ -647,8 +647,8 @@ fn parse_pattern(raw: &str) -> Result<HostPattern, AllowlistError> {
         if !valid_dns_name(&host) {
             return Err(invalid());
         }
-        // Curinga precisa de pelo menos dois rótulos depois do `*.`
-        // (`*.com` é largo demais; não há lista de sufixos públicos aqui).
+        // A wildcard needs at least two labels after the `*.`
+        // (`*.com` is too broad; there is no public-suffix list here).
         if wildcard && !host.contains('.') {
             return Err(AllowlistError::TooBroad(raw.to_string()));
         }
@@ -673,73 +673,73 @@ struct StrictUrl {
 fn parse_url_strict(raw: &str) -> Result<StrictUrl, UrlDenied> {
     let malformed = |why: &str| UrlDenied::Malformed(why.to_string());
     if raw.is_empty() {
-        return Err(malformed("vazia"));
+        return Err(malformed("empty"));
     }
     if raw.len() > 8192 {
-        return Err(malformed("longa demais"));
+        return Err(malformed("too long"));
     }
     if raw
         .bytes()
         .any(|b| b <= b' ' || b >= 0x7f || b == b'\\')
     {
         return Err(malformed(
-            "contém espaço, controle, barra invertida ou caractere não ASCII",
+            "contains a space, control character, backslash or non-ASCII character",
         ));
     }
     let (scheme, rest) = raw
         .split_once(':')
-        .ok_or_else(|| malformed("sem esquema"))?;
+        .ok_or_else(|| malformed("no scheme"))?;
     let scheme_lower = scheme.to_ascii_lowercase();
     if scheme_lower != "http" && scheme_lower != "https" {
         return Err(UrlDenied::Scheme(scheme_lower));
     }
     let rest = rest
         .strip_prefix("//")
-        .ok_or_else(|| malformed("esperado // depois do esquema"))?;
+        .ok_or_else(|| malformed("expected // after the scheme"))?;
     let end = rest
         .find(['/', '?', '#'])
         .unwrap_or(rest.len());
     let authority = &rest[..end];
     if authority.is_empty() {
-        return Err(malformed("host vazio"));
+        return Err(malformed("empty host"));
     }
     if authority.contains('@') {
         return Err(UrlDenied::Userinfo);
     }
     let default_port = if scheme_lower == "https" { 443 } else { 80 };
     let (host, port) = if let Some(inner) = authority.strip_prefix('[') {
-        let close = inner.find(']').ok_or_else(|| malformed("IPv6 sem ]"))?;
+        let close = inner.find(']').ok_or_else(|| malformed("IPv6 without ]"))?;
         let host = inner[..close].to_ascii_lowercase();
         let tail = &inner[close + 1..];
         let port = match tail {
             "" => default_port,
             t if t.starts_with(':') => {
-                parse_port(&t[1..]).ok_or_else(|| malformed("porta inválida"))?
+                parse_port(&t[1..]).ok_or_else(|| malformed("invalid port"))?
             }
-            _ => return Err(malformed("texto depois do IPv6")),
+            _ => return Err(malformed("text after IPv6")),
         };
         if !valid_ipv6_chars(&host) {
-            return Err(malformed("IPv6 inválido"));
+            return Err(malformed("invalid IPv6"));
         }
         (host, port)
     } else {
         let (host, port) = match authority.rsplit_once(':') {
-            Some((h, p)) => (h, parse_port(p).ok_or_else(|| malformed("porta inválida"))?),
+            Some((h, p)) => (h, parse_port(p).ok_or_else(|| malformed("invalid port"))?),
             None => (authority, default_port),
         };
         let host = host.to_ascii_lowercase();
         if host.contains('%') || host.contains('*') {
-            return Err(malformed("caractere inválido no host"));
+            return Err(malformed("invalid character in host"));
         }
         if host.ends_with('.') {
-            return Err(malformed("host com ponto final"));
+            return Err(malformed("host with trailing dot"));
         }
         if is_ipv4_shape(&host) {
             if !is_canonical_ipv4(&host) {
-                return Err(malformed("IPv4 fora da forma canônica a.b.c.d"));
+                return Err(malformed("IPv4 not in canonical a.b.c.d form"));
             }
         } else if !valid_dns_name(&host) {
-            return Err(malformed("host inválido"));
+            return Err(malformed("invalid host"));
         }
         (host, port)
     };
@@ -750,8 +750,8 @@ fn parse_url_strict(raw: &str) -> Result<StrictUrl, UrlDenied> {
     })
 }
 
-/// Para o relatório: extrai (esquema, host, porta) de URLs http(s)/ws(s) sem
-/// recusar nada (a sessão já aconteceu; só classificamos).
+/// For the report: extracts (scheme, host, port) from http(s)/ws(s) URLs without
+/// refusing anything (the session already happened; we only classify).
 fn lenient_http_parts(url: &str) -> Option<(String, String, Option<u16>)> {
     let (scheme, rest) = url.split_once("://")?;
     let scheme = scheme.to_ascii_lowercase();
@@ -797,7 +797,7 @@ mod tests {
             Allowlist::new(&list(&["  ", ""]), &[]).unwrap_err().code(),
             "allowlist_required"
         );
-        // Só terceiros não basta: precisa de pelo menos um host de navegação.
+        // Third parties alone are not enough: at least one navigation host is needed.
         assert_eq!(
             Allowlist::new(&[], &list(&["cdn.exemplo.net"])).unwrap_err(),
             AllowlistError::Empty
@@ -844,16 +844,16 @@ mod tests {
         let a = al(&["exemplo.com", "*.api.exemplo.com", "loja.test:8443", "127.0.0.1:9000"], &[]);
         assert!(a.permits_url("https://exemplo.com/").is_ok());
         assert!(a.permits_url("HTTPS://EXEMPLO.COM/x?y=1#z").is_ok());
-        assert!(a.permits_url("http://exemplo.com:8080/").is_ok(), "sem porta na regra = qualquer porta");
+        assert!(a.permits_url("http://exemplo.com:8080/").is_ok(), "no port in the rule = any port");
         assert!(a.permits_url("https://v1.api.exemplo.com/").is_ok());
         assert!(a.permits_url("https://a.b.api.exemplo.com/").is_ok());
-        // O curinga não casa o domínio base nem sufixos parecidos.
+        // The wildcard matches neither the base domain nor similar suffixes.
         assert!(a.permits_url("https://api.exemplo.com/").is_err());
         assert!(a.permits_url("https://evilapi.exemplo.com/").is_err());
         assert!(a.permits_url("https://xapi.exemplo.com.evil.net/").is_err());
         assert!(a.permits_url("https://exemplo.com.evil.net/").is_err());
         assert!(a.permits_url("https://evil-exemplo.com/").is_err());
-        // Porta explícita na regra.
+        // Explicit port in the rule.
         assert!(a.permits_url("https://loja.test:8443/").is_ok());
         assert_eq!(
             a.permits_url("https://loja.test/").unwrap_err(),
@@ -861,7 +861,7 @@ mod tests {
         );
         assert!(a.permits_url("http://127.0.0.1:9000/").is_ok());
         assert!(a.permits_url("http://127.0.0.1:9001/").is_err());
-        // IPv6 literal nunca está na lista.
+        // Literal IPv6 is never in the list.
         assert!(a.permits_url("http://[::1]/").is_err());
     }
 
@@ -872,27 +872,27 @@ mod tests {
             ("http://exemplo.com@evil.net/", "userinfo"),
             ("http://evil.net@exemplo.com/", "userinfo"),
             ("http://exemplo.com:80@evil.net/", "userinfo"),
-            ("http://exemplo.com\\@evil.net/", "barra invertida"),
-            ("http://exemplo.com\\.evil.net/", "barra invertida"),
-            ("http://exemplo.com%2eevil.net/", "% no host"),
-            ("http://exemplo.com./", "ponto final"),
-            ("http://exemplo.com /", "espaço"),
-            ("http://exemplo.com\t.evil.net/", "controle"),
-            ("http://exemplo.com\n/", "controle"),
-            ("http://exémplo.com/", "não ASCII"),
-            ("http://127.1/", "IPv4 curto"),
-            ("http://2130706433/", "IPv4 decimal"),
+            ("http://exemplo.com\\@evil.net/", "backslash"),
+            ("http://exemplo.com\\.evil.net/", "backslash"),
+            ("http://exemplo.com%2eevil.net/", "% in host"),
+            ("http://exemplo.com./", "trailing dot"),
+            ("http://exemplo.com /", "space"),
+            ("http://exemplo.com\t.evil.net/", "control"),
+            ("http://exemplo.com\n/", "control"),
+            ("http://exémplo.com/", "non-ASCII"),
+            ("http://127.1/", "short IPv4"),
+            ("http://2130706433/", "decimal IPv4"),
             ("http://0x7f.0.0.1/", "hex"),
             ("http://0177.0.0.1/", "octal"),
-            ("http://127.0.0.1.evil.net/", "sufixo"),
-            ("http:/exemplo.com/", "uma barra"),
-            ("http:exemplo.com/", "sem //"),
-            ("//exemplo.com/", "sem esquema"),
-            ("exemplo.com/", "sem esquema"),
-            ("http:///", "host vazio"),
-            ("http://:80/", "host vazio com porta"),
-            ("http://exemplo.com:/", "porta vazia"),
-            ("http://exemplo.com:99999/", "porta grande"),
+            ("http://127.0.0.1.evil.net/", "suffix"),
+            ("http:/exemplo.com/", "one slash"),
+            ("http:exemplo.com/", "no //"),
+            ("//exemplo.com/", "no scheme"),
+            ("exemplo.com/", "no scheme"),
+            ("http:///", "empty host"),
+            ("http://:80/", "empty host with port"),
+            ("http://exemplo.com:/", "empty port"),
+            ("http://exemplo.com:99999/", "port too large"),
             ("javascript:alert(1)", "javascript"),
             ("data:text/html,<h1>x</h1>", "data"),
             ("file:///etc/passwd", "file"),
@@ -900,11 +900,11 @@ mod tests {
             ("blob:http://exemplo.com/abc", "blob"),
             ("ftp://exemplo.com/", "ftp"),
             ("view-source:http://exemplo.com/", "view-source"),
-            ("about:srcdoc", "about não blank"),
-            ("", "vazia"),
+            ("about:srcdoc", "about not blank"),
+            ("", "empty"),
         ];
         for (url, why) in cases {
-            assert!(a.permits_url(url).is_err(), "{url} ({why}) devia ser recusada");
+            assert!(a.permits_url(url).is_err(), "{url} ({why}) should be refused");
         }
         assert!(a.permits_url("about:blank").is_ok());
         assert_eq!(a.permits_url("http://exemplo.com@evil.net/").unwrap_err(), UrlDenied::Userinfo);
@@ -932,7 +932,7 @@ mod tests {
     #[test]
     fn resolver_rules_include_ipv4_literals_and_dedupe() {
         let a = al(&["127.0.0.1:8080", "exemplo.com", "exemplo.com:8443"], &["exemplo.com"]);
-        // IPv4 literal precisa de EXCLUDE: sem ele `MAP * ~NOTFOUND` o nega (medido).
+        // A literal IPv4 needs EXCLUDE: without it `MAP * ~NOTFOUND` denies it (measured).
         assert_eq!(
             a.resolver_rules(),
             "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE exemplo.com"
@@ -971,7 +971,7 @@ mod tests {
         let ids: Vec<&str> = report.violations.iter().map(|v| v.request_id.as_str()).collect();
         assert_eq!(ids, vec!["r4", "r5", "r8"]);
         assert!(report.violations[0].reason.contains("IP literal"));
-        assert!(report.violations[1].reason.contains("porta"));
+        assert!(report.violations[1].reason.contains("port"));
     }
 
     fn event(sid: &str, method: &str, params: serde_json::Value) -> String {
@@ -997,26 +997,26 @@ mod tests {
         let events = vec![
             event("P", "Target.attachedToTarget", serde_json::json!({ "sessionId": "P", "targetInfo": { "targetId": "T1", "type": "page" } })),
             will_be_sent("P", "r1", "http://localhost:1000/", "Document", "T1"),
-            // 302 / location= / meta refresh: novo documento (ou salto) em outra porta.
+            // 302 / location= / meta refresh: new document (or hop) on another port.
             will_be_sent("P", "r1", "http://localhost:2000/redirected-top-level", "Document", "T1"),
             will_be_sent("P", "r9", "http://localhost:2000/meta-refresh", "Document", "T1"),
-            // iframe em sessão própria, host em maiúsculas.
+            // iframe in its own session, host in uppercase.
             event("I", "Target.attachedToTarget", serde_json::json!({ "sessionId": "I", "targetInfo": { "targetId": "TI", "type": "iframe" } })),
             will_be_sent("I", "r3", "http://LOCALHOST:2000/iframe-other-port", "Document", "TI"),
-            // popup: página nova em outra sessão.
+            // popup: new page in another session.
             event("W", "Target.attachedToTarget", serde_json::json!({ "sessionId": "W", "targetInfo": { "targetId": "TW", "type": "page" } })),
             will_be_sent("W", "r4", "http://localhost:2000/popup-other-port", "Document", "TW"),
-            // fetch e WebSocket (este último nunca entra na sessão importada).
+            // fetch and WebSocket (the latter never enters the imported session).
             will_be_sent("P", "r5", "http://localhost:2000/fetch-other-port", "Fetch", "T1"),
             event("P", "Network.webSocketCreated", serde_json::json!({ "requestId": "r6", "url": "ws://localhost:2000/ws-other-port" })),
-            // consulta, fragmento, ;params e userinfo nunca saem.
+            // query, fragment, ;params and userinfo never leave.
             will_be_sent("P", "r7", "http://u:senha@localhost:2000/p;jsessionid=SEGREDO?token=X#frag", "Fetch", "T1"),
-            // resolvedor: nome e IP literal negados => blockedHosts, não violações.
+            // resolver: name and literal IP denied => blockedHosts, not violations.
             will_be_sent("P", "r10", "https://blocked.test/a.js", "Script", "T1"),
             failed("P", "r10", "net::ERR_NAME_NOT_RESOLVED"),
             will_be_sent("P", "r11", "http://10.0.0.1:9/x", "Image", "T1"),
             failed("P", "r11", "net::ERR_NAME_NOT_RESOLVED"),
-            // terceiro aprovado: subrecurso ok, navegação de topo é violação.
+            // approved third party: subresource ok, top-level navigation is a violation.
             will_be_sent("P", "r12", "https://cdn.test/app.js", "Script", "T1"),
             will_be_sent("P", "r13", "https://cdn.test/landing", "Document", "T1"),
         ];
@@ -1036,21 +1036,21 @@ mod tests {
             "http://localhost:2000/p?…",
             "https://cdn.test/landing",
         ] {
-            assert!(urls.contains(&expected), "faltou {expected}: {urls:?}");
+            assert!(urls.contains(&expected), "missing {expected}: {urls:?}");
         }
         assert_eq!(urls.len(), 8, "{urls:?}");
         for v in &report.violations {
             assert!(!v.url.contains("SEGREDO") && !v.url.contains("senha") && !v.url.contains("frag"), "{}", v.url);
         }
         let by_url = |u: &str| report.violations.iter().find(|v| v.url == u).unwrap();
-        assert!(by_url("http://localhost:2000/fetch-other-port").reason.contains("porta 2000"));
-        assert!(by_url("https://cdn.test/landing").reason.contains("terceiro"));
-        // O salto do redirect usa o id lógico da sessão; o WebSocket, o id CDP.
+        assert!(by_url("http://localhost:2000/fetch-other-port").reason.contains("port 2000"));
+        assert!(by_url("https://cdn.test/landing").reason.contains("third party"));
+        // The redirect hop uses the session's logical id; the WebSocket, the CDP id.
         assert_eq!(by_url("http://localhost:2000/redirected-top-level").request_id, "cdp-r0007");
         assert_eq!(by_url("ws://localhost:2000/ws-other-port").request_id, "cdp:P/r6");
         let blocked: Vec<&str> = report.blocked_hosts.iter().map(|b| b.host.as_str()).collect();
         assert_eq!(blocked, vec!["10.0.0.1", "blocked.test"]);
-        // O que está dentro da lista não aparece.
+        // What is inside the list does not appear.
         assert!(!urls.iter().any(|u| *u == "http://localhost:1000/" || u.contains("cdn.test/app.js")));
     }
 

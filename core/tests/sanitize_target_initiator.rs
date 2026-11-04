@@ -1,5 +1,5 @@
-//! Regressão: `target.url` e `initiator.url` (incl. topo do stack) também são
-//! sanitizados na exportação (sessão sintética, valores falsos).
+//! Regression: `target.url` and `initiator.url` (incl. the stack top) are also
+//! sanitized on export (synthetic session, fake values).
 
 use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
 use scrapelens_core::model::entities::{Initiator, InitiatorFrame};
@@ -42,7 +42,7 @@ fn target_and_initiator_urls_are_sanitized() {
     );
     assert!(
         target_url.contains("page=2"),
-        "parâmetros não sensíveis ficam: {target_url}"
+        "non-sensitive parameters are kept: {target_url}"
     );
     let initiator = sanitized.attempts[0].initiator.as_ref().unwrap();
     assert!(initiator
@@ -58,7 +58,7 @@ fn target_and_initiator_urls_are_sanitized() {
         .as_ref()
         .unwrap()
         .starts_with("https://x.invalid/b.js"));
-    // Função e linha (não sensíveis) são preservadas.
+    // Function and line (not sensitive) are preserved.
     assert_eq!(
         initiator.stack_top.as_ref().unwrap().function.as_deref(),
         Some("f")

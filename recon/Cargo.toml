@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 license = "MIT"
-description = "Reconhecimento do site (site_profile) para o ScrapeLens: proteções anti-bot, bloqueios e exigências, com evidência"
+description = "Site recognition (site_profile) for ScrapeLens: anti-bot protections, blocks and requirements, with evidence"
 publish = false
 
 [dependencies]
@@ -12,5 +12,5 @@ scrapelens-core = { path = "../core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Crate independente do core e do src-tauri (o core não conhece fornecedor algum).
+# Crate independent of core and src-tauri (core knows no vendor at all).
 [workspace]

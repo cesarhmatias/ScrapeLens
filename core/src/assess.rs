@@ -1,24 +1,26 @@
-//! Sucesso da aplicação × sucesso HTTP (docs/11-priming-sucesso.md §2).
+//! Application success × HTTP success (docs/11-priming-sucesso.md §2).
 //!
-//! Um HTTP 200 não prova que a aplicação respondeu: pode ser uma página de
-//! proteção, uma resposta sem os campos de sempre ou um `ERRORMESSAGE`
-//! preenchido. [`response_outcome`] avalia uma resposta e
-//! [`assess_session`] avalia a sessão inteira, aprendendo na própria sessão
-//! quais campos cada rota costuma trazer.
+//! An HTTP 200 does not prove that the application responded: it may be a
+//! protection page, a response without the usual fields or a filled
+//! `ERRORMESSAGE`. [`response_outcome`] assesses one response and
+//! [`assess_session`] assesses the whole session, learning from the session
+//! itself which fields each route usually carries.
 //!
-//! Princípios: regras são dados (JSON, sem código executável), `blocked?` só
-//! sai com evidência explícita e sempre com "?", e o que não dá para afirmar
-//! numa rota que já tem expectativa é `indeterminado`, com a lista do que
-//! faltou. Resposta sem sinal da aplicação e sem expectativa aprendida na
-//! rota é `não-avaliado` (`not-assessed`): página, frame, estático ou
-//! recurso de proteção não enchem a lista de suspeitos. Nada aqui abre rede.
+//! Principles: rules are data (JSON, no executable code), `blocked?` only
+//! comes out with explicit evidence and always with "?", and what cannot be
+//! asserted on a route that already has an expectation is `indeterminado`,
+//! with the list of what is missing. A response with no application signal
+//! and no learned expectation for the route is `não-avaliado`
+//! (`not-assessed`): pages, frames, static or protection resources do not
+//! fill the suspects list. Nothing here opens the network.
 //!
-//! Um marcador de proteção SOZINHO não bloqueia: páginas da aplicação citam
-//! `/TSPD/` num `<script src>`. `blocked?` exige status 403/429, conteúdo de
-//! desafio sem a página esperada, uma rota que trazia controles e agora vem sem
-//! eles, ou a página padrão de rejeição do F5 ASM — sempre numa rota da
-//! APLICAÇÃO. Requisições às rotas de proteção (`/TSPD/`) são o handshake
-//! normal: saem `não-avaliado` com o sinal informativo `proteção`.
+//! A protection marker ALONE does not block: application pages cite
+//! `/TSPD/` in a `<script src>`. `blocked?` requires status 403/429, challenge
+//! content without the expected page, a route that carried controls and now
+//! comes without them, or the default F5 ASM rejection page — always on an
+//! APPLICATION route. Requests to protection routes (`/TSPD/`) are the normal
+//! handshake: they come out `não-avaliado` with the informational signal
+//! `proteção`.
 
 use std::collections::{BTreeMap, BTreeSet};
 

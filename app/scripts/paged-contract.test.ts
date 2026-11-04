@@ -1,5 +1,5 @@
-// P5 (docs/19-contrato-app.md): o detalhe sob demanda e o resumo da lista
-// produzem o mesmo que o adaptador da sessão inteira. Rodar: npm run test:paged
+// P5 (docs/19-contrato-app.md): the on-demand detail and the list summary
+// produce the same output as the adapter for the whole session. Run: npm run test:paged
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { adaptRequestDetail, adaptSession, summaryFromRaw, summaryOfRecord } from "../src/v1/adapter";
@@ -9,7 +9,7 @@ const demo = JSON.parse(readFileSync(new URL("../src/demo/session.v1.json", impo
 const full = adaptSession(demo);
 const header: SessionV1 = { ...demo, requests: [], warnings: (demo.warnings ?? []).filter((w) => !w.entity) };
 
-assert.ok(full.session.requests.length >= 2, "fixture demo precisa de requisições");
+assert.ok(full.session.requests.length >= 2, "demo fixture needs requests");
 assert.equal(full.session.paged, false);
 assert.equal(adaptSession({ ...header, requestCount: 7 } as SessionV1).session.paged, true);
 assert.equal(adaptSession({ ...header, requestCount: 7 } as SessionV1).session.requestCount, 7);
@@ -22,9 +22,9 @@ for (const [index, request] of demo.requests.entries()) {
     streamSessions: (demo.streamSessions ?? []).filter((s) => s.attemptId && attemptIds.has(s.attemptId)),
   };
   const expected = full.session.requests[index];
-  assert.deepEqual(adaptRequestDetail(header, detail), expected, `detalhe ${request.id}`);
+  assert.deepEqual(adaptRequestDetail(header, detail), expected, `detail ${request.id}`);
 
-  // Resumo como o src-tauri/src/listing.rs monta (campos crus do v1).
+  // Summary as built by src-tauri/src/listing.rs (raw v1 fields).
   const initiator = request.attempts.at(-1)?.initiator ?? request.attempts[0]?.initiator;
   const raw: RawRequestSummary = {
     id: request.id,
@@ -42,7 +42,7 @@ for (const [index, request] of demo.requests.entries()) {
     source: request.provenance.source,
     warningCount: detail.warnings.length,
   };
-  assert.deepEqual(summaryFromRaw(raw, demo.session.startedAt, request.target ? [request.target] : []), summaryOfRecord(expected), `resumo ${request.id}`);
+  assert.deepEqual(summaryFromRaw(raw, demo.session.startedAt, request.target ? [request.target] : []), summaryOfRecord(expected), `summary ${request.id}`);
 }
 
-console.log(`paged-contract: ok (${demo.requests.length} requisições)`);
+console.log(`paged-contract: ok (${demo.requests.length} requests)`);

@@ -1,13 +1,13 @@
-//! Gera uma sessão GRANDE e sintética por captura real em loopback, para medir a
-//! memória de quem abre sessões grandes (docs/18-memoria-sessoes-grandes.md).
+//! Generates a LARGE, synthetic session via a real capture on loopback, to measure
+//! the memory of whoever opens large sessions (docs/18-memoria-sessoes-grandes.md).
 //!
-//! Uso: `cargo run --release --example capture_big -- <pasta-da-sessao> <N-requisições>`
+//! Usage: `cargo run --release --example capture_big -- <session-folder> <N-requests>`
 //!
-//! Um servidor HTTP/1.1 em 127.0.0.1 (std, keep-alive) serve uma página que dispara
-//! `N` `fetch` de `/r/<i>` (JSON de ~1,5 KiB, cookies de vez em quando, cabeçalhos
-//! variados). O Chrome estável é controlado por `BrowserCapture` (CDP + NetLog), a
-//! allowlist cobre só `localhost:<porta>`. Nada sai da máquina; os dados são
-//! sintéticos (`bigfixture-*`), sem credenciais reais.
+//! An HTTP/1.1 server on 127.0.0.1 (std, keep-alive) serves a page that fires
+//! `N` `fetch` calls to `/r/<i>` (~1.5 KiB JSON, cookies now and then, varied
+//! headers). Stable Chrome is driven by `BrowserCapture` (CDP + NetLog), and the
+//! allowlist covers only `localhost:<port>`. Nothing leaves the machine; the data is
+//! synthetic (`bigfixture-*`), with no real credentials.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -20,7 +20,7 @@ use scrapelens_capture::browser::{BrowserCapture, BrowserCaptureConfig};
 use scrapelens_capture::chrome::resolve_stable_chrome;
 
 fn body_for(i: usize) -> String {
-    // ~1,5 KiB de JSON com campos que variam por requisição.
+    // ~1.5 KiB of JSON with fields that vary per request.
     let mut items = String::new();
     for k in 0..12 {
         items.push_str(&format!(
@@ -85,8 +85,8 @@ fn serve(stream: TcpStream, hits: Arc<AtomicUsize>, n: usize) {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let dir = PathBuf::from(args.next().expect("uso: capture_big <pasta> <N>"));
-    let n: usize = args.next().and_then(|v| v.parse().ok()).expect("N inválido");
+    let dir = PathBuf::from(args.next().expect("usage: capture_big <folder> <N>"));
+    let n: usize = args.next().and_then(|v| v.parse().ok()).expect("invalid N");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let hits = Arc::new(AtomicUsize::new(0));
@@ -99,7 +99,7 @@ fn main() {
             }
         });
     }
-    let chrome = resolve_stable_chrome(None).expect("Chrome estável").binary;
+    let chrome = resolve_stable_chrome(None).expect("stable Chrome").binary;
     let (capture, _info) = BrowserCapture::start(BrowserCaptureConfig {
         chrome,
         session_dir: dir.clone(),
@@ -113,13 +113,13 @@ fn main() {
     let started = Instant::now();
     let nav = capture.navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(60));
     eprintln!("navigate: {nav:?}");
-    // Espera o servidor ter visto as N requisições (ou o prazo).
+    // Waits for the server to have seen the N requests (or the deadline).
     let deadline = Instant::now() + Duration::from_secs(900);
     while hits.load(Ordering::SeqCst) < n && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(500));
     }
     std::thread::sleep(Duration::from_secs(5));
-    eprintln!("servidor viu {} requisições em {:?}", hits.load(Ordering::SeqCst), started.elapsed());
+    eprintln!("server saw {} requests in {:?}", hits.load(Ordering::SeqCst), started.elapsed());
     let report = capture.stop().expect("stop");
     eprintln!(
         "stop: requests={} netlog={} graceful={} waitedMs={} warnings={}",

@@ -1,6 +1,6 @@
-//! Ponta a ponta: sessões reais capturadas pelo ScrapeLens (Chrome headless,
-//! servidor em loopback que imita sinais documentados) → `site_profile`.
-//! `recon/scripts/live_e2e.sh` gera as sessões e roda este teste.
+//! End to end: real sessions captured by ScrapeLens (headless Chrome,
+//! loopback server that imitates documented signals) → `site_profile`.
+//! `recon/scripts/live_e2e.sh` generates the sessions and runs this test.
 
 use std::path::PathBuf;
 
@@ -13,7 +13,7 @@ fn load(name: &str) -> (LazySession, SessionV1) {
     let root = PathBuf::from(std::env::var("SL_RECON_E2E_DIR").expect("SL_RECON_E2E_DIR"));
     let dir = root.join(name);
     let text = std::fs::read(dir.join("session.json")).expect("session.json");
-    let session: SessionV1 = serde_json::from_slice(&text).expect("sessão válida");
+    let session: SessionV1 = serde_json::from_slice(&text).expect("valid session");
     (LazySession::new(session.clone(), dir), session)
 }
 
@@ -29,10 +29,10 @@ fn live_plain_site_needs_nothing() {
     assert_eq!(p.recommendation.value, RecommendationValue::ChromeNormalBasta, "{:#?}", p.recommendation);
     let json = serde_json::to_string(&p).unwrap();
     assert!(!json.contains("SEGREDO-BM-1"));
-    // Todo id de evidência resolve na sessão.
+    // Every evidence id resolves in the session.
     for f in &p.findings {
         for e in &f.evidence {
-            assert!(session.find_request(&e.request_id).is_some(), "{} sem requisição", e.request_id);
+            assert!(session.find_request(&e.request_id).is_some(), "{} without a request", e.request_id);
         }
     }
 }
@@ -46,8 +46,8 @@ fn live_unsolved_challenge_is_cloakbrowser_candidate() {
     let cf = p.findings.iter().find(|f| f.signature_id.as_deref() == Some("cf-005")).expect("cf-mitigated");
     assert_eq!(cf.confidence, Confidence::Alta);
     assert_eq!(cf.resolved_later, Some(false));
-    // O script de terceiro (host fictício `.invalid.test`, nenhum site real) não
-    // carregou por causa da allowlist: fica o achado de terceiro bloqueado.
+    // The third-party script (fictitious host `.invalid.test`, no real site) did not
+    // load because of the allowlist: the blocked-third-party finding remains.
     assert!(p.findings.iter().any(|f| f.category == "terceiro-bloqueado" && f.summary.contains("turnstile.blocked.invalid.test")));
     assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser, "{:#?}", p.recommendation);
     assert!(p.recommendation.limits.iter().any(|l| l.contains("allowlist")));

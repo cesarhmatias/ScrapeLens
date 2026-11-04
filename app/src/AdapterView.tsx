@@ -1,6 +1,6 @@
-// Visão estruturada (derivada) dos campos que um adaptador de protocolo reivindica
-// (hoje Natural for Ajax). O corpo bruto, exibido acima, continua sendo o dado primário.
-// Todo texto é renderizado como texto React (escapado); nada é interpretado como HTML.
+// Structured (derived) view of the fields that a protocol adapter claims
+// (today Natural for Ajax). The raw body, shown above, remains the primary data.
+// All text is rendered as React text (escaped); nothing is interpreted as HTML.
 import { useEffect, useState } from "react";
 import { bridge, type AdapterViewDto } from "./bridge";
 
@@ -34,7 +34,7 @@ export function AdapterViewPanel({
   if (error) {
     return (
       <section className="body-panel">
-        <div className="body-flag flag-truncated"><strong>Visão do adaptador indisponível</strong><span>{error}</span></div>
+        <div className="body-flag flag-truncated"><strong>Adapter view unavailable</strong><span>{error}</span></div>
       </section>
     );
   }
@@ -44,38 +44,38 @@ export function AdapterViewPanel({
       {view.fields.map((f, i) => (
         <section className="body-panel" key={`${f.field}-${i}`}>
           <header className="block-head">
-            <h3>Visão do adaptador {adapterLabel[f.adapterId] ?? f.adapterId} (derivada)</h3>
+            <h3>Adapter view {adapterLabel[f.adapterId] ?? f.adapterId} (derived)</h3>
             <span className="block-meta">
-              campo <span className="mono">{f.field}</span> · o bruto acima é o dado primário
+              field <span className="mono">{f.field}</span> · the raw data above is the primary data
             </span>
           </header>
           {f.error ? (
             <div style={{ padding: "8px 13px" }}>
               <div className="body-flag flag-truncated">
-                <strong>Não foi possível decodificar o campo</strong>
+                <strong>Could not decode the field</strong>
                 <span>{f.error}</span>
               </div>
-              <h4>Bruto</h4>
+              <h4>Raw</h4>
               <pre className="mono">{f.raw}</pre>
             </div>
           ) : (
             <div style={{ padding: "8px 13px" }}>
               <table className="norm-table">
                 <thead>
-                  <tr><th>parte</th><th>papel</th><th>valor</th></tr>
+                  <tr><th>part</th><th>role</th><th>value</th></tr>
                 </thead>
                 <tbody>
                   {f.parts.map((p, j) => (
                     <tr key={j}>
                       <td className="mono">{f.field}.{p.name}</td>
                       <td>{p.role}</td>
-                      <td className="mono" title={`bytes ${p.offset}–${p.offset + p.len} do campo bruto`}>{p.value}</td>
+                      <td className="mono" title={`bytes ${p.offset}–${p.offset + p.len} of the raw field`}>{p.value}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               {(f.omittedParts ?? 0) > 0 && (
-                <p className="dim">{f.omittedParts} partes omitidas — veja o bruto.</p>
+                <p className="dim">{f.omittedParts} parts omitted — see the raw data.</p>
               )}
             </div>
           )}

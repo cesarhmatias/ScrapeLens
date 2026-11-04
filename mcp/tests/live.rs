@@ -1,4 +1,4 @@
-//! Política de confirmação e mapa de capturas, sem navegador (backend contado).
+//! Confirmation policy and capture map, without a browser (counted backend).
 
 mod common;
 
@@ -92,7 +92,7 @@ fn decide_requires_explicit_acceptance() {
     use Confirmation::*;
     assert_eq!(decide(&Accepted, false).unwrap(), "elicited");
     for flag in [false, true] {
-        // Recusa ou cancelamento valem sempre, com ou sem a flag.
+        // Refusal or cancellation always applies, with or without the flag.
         for c in [Declined("não".into()), Cancelled] {
             assert_eq!(
                 decide(&c, flag).unwrap_err().code,
@@ -101,7 +101,7 @@ fn decide_requires_explicit_acceptance() {
             );
         }
     }
-    // Sem elicitação: só com a flag do operador.
+    // Without elicitation: only with the operator's flag.
     let unavailable = Unavailable("cliente sem suporte".into());
     assert_eq!(
         decide(&unavailable, false).unwrap_err().code,
@@ -118,12 +118,12 @@ fn manager_allows_one_capture_and_releases_the_slot() {
     let args = || params(json!({"allowed_hosts": ["site.invalid.test"]}));
 
     let first = manager.prepare(&env.ctx, args()).unwrap();
-    // A vaga já está reservada durante a confirmação.
+    // The slot is already reserved during confirmation.
     assert_eq!(
         manager.prepare(&env.ctx, args()).err().unwrap().code,
         "capture_already_running"
     );
-    // Negada a confirmação: a vaga volta e o navegador nunca foi aberto.
+    // Confirmation denied: the slot is released and the browser was never opened.
     manager.release(&first.capture_id);
     assert_eq!(backend.starts.load(Ordering::SeqCst), 0);
     assert_eq!(manager.active(), 0);
@@ -184,7 +184,7 @@ fn prepare_validates_before_reserving_or_asking() {
             code,
             "{args}"
         );
-        assert_eq!(manager.active(), 0, "nada reservado: {args}");
+        assert_eq!(manager.active(), 0, "nothing reserved: {args}");
     }
 }
 
@@ -208,9 +208,9 @@ fn confirmation_text_lists_what_the_user_is_authorizing() {
         SENSITIVE_NOTICE,
         "confirmo",
     ] {
-        assert!(message.contains(needle), "faltou {needle:?}: {message}");
+        assert!(message.contains(needle), "missing {needle:?}: {message}");
     }
-    // O id da captura é opaco e o diretório fica dentro de --sessions-dir.
+    // The capture id is opaque and the directory stays inside --sessions-dir.
     assert!(prepared.capture_id.starts_with("cap-"));
     assert!(prepared
         .config
@@ -218,6 +218,6 @@ fn confirmation_text_lists_what_the_user_is_authorizing() {
         .starts_with(&env.ctx.cfg.sessions_dir));
     assert!(
         !prepared.config.session_dir.exists(),
-        "nada criado antes da confirmação"
+        "nothing created before confirmation"
     );
 }

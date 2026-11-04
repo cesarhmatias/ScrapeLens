@@ -24,7 +24,7 @@ for (const bad of [
   "http://[::1/",
   `http://e.com/${"a".repeat(MAX_URL_LEN)}`,
 ]) {
-  assert.equal(validateHttpUrl(bad).ok, false, `deveria recusar ${JSON.stringify(bad)}`);
+  assert.equal(validateHttpUrl(bad).ok, false, `should reject ${JSON.stringify(bad)}`);
 }
 assert.equal(validateHttpUrl("http://[::1]:8080/x").ok, true);
 assert.equal(validateHttpUrl("https://example.com:443/a?b=1#c").ok, true);

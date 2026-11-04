@@ -1,4 +1,4 @@
-//! CLI: importação, inspeção, exportação, diff e sanitização em arquivos.
+//! CLI: import, inspection, export, diff and sanitization of files.
 
 use std::process::Command;
 
@@ -57,7 +57,7 @@ fn cli_import_inspect_export_diff_sanitize() {
     assert!(text.contains("curl"));
     assert!(text.contains("--header 'x-rep: a'"));
     assert!(text.contains("--header 'X-Rep: b'"));
-    assert!(text.contains("NÃO reproduz TLS"));
+    assert!(text.contains("does NOT reproduce TLS"));
 
     let python = cli()
         .args(["export-python"])
@@ -112,7 +112,7 @@ fn cli_import_inspect_export_diff_sanitize() {
 fn cli_reports_errors_without_panicking() {
     let output = cli().args(["inspect", "/nao/existe"]).output().unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("erro:"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("error:"));
 }
 
 #[test]
@@ -148,17 +148,17 @@ fn cli_assess_prints_rule_warnings() {
         .output()
         .unwrap();
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("desligam todas as detecções"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("turn off all detections"));
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json["warnings"].as_array().unwrap().len(), 2);
-    // Regras padrão: sem avisos.
+    // Default rules: no warnings.
     let out = cli().arg("assess").arg(&session).output().unwrap();
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(json["warnings"].as_array().unwrap().is_empty());
 }
 
-/// P2 (docs/18): `inspect` escreve em fluxo com struct emprestada; a saída é BYTE A BYTE a do
-/// antigo `json!` + `to_string_pretty` + `println!`.
+/// P2 (docs/18): `inspect` writes to a stream with a borrowed struct; the output is BYTE FOR BYTE
+/// the same as the old `json!` + `to_string_pretty` + `println!`.
 #[test]
 fn inspect_streaming_output_is_byte_identical_to_the_legacy_json_macro() {
     let root = tempfile::tempdir().unwrap();

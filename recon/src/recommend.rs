@@ -1,4 +1,4 @@
-//! Recomendação determinística (`docs/16b-mcp-navegador.md` §5.3).
+//! Deterministic recommendation (`docs/16b-mcp-navegador.md` §5.3).
 
 use scrapelens_core::model::SessionV1;
 
@@ -18,11 +18,11 @@ pub(crate) fn recommend(
 ) -> Recommendation {
     let mut limits = vec![
         format!(
-            "amostra: uma captura com {} requisição(ões); não prova o comportamento em outras sessões",
+            "sample: one capture with {} request(s); does not prove behavior in other sessions",
             sample.requests
         ),
-        "sem interação humana além da navegação feita; páginas atrás de login/ação não foram vistas".to_string(),
-        "\"barrado\" e \"passou\" valem para o Chrome normal nesta captura".to_string(),
+        "no human interaction beyond the navigation performed; pages behind login/action were not seen".to_string(),
+        "\"blocked\" and \"passed\" apply to normal Chrome in this capture".to_string(),
     ];
     let blocked_hosts: Vec<String> = findings
         .iter()
@@ -31,7 +31,7 @@ pub(crate) fn recommend(
         .collect();
     if !blocked_hosts.is_empty() {
         limits.push(format!(
-            "hosts de terceiros foram bloqueados pela allowlist e podem esconder proteção ({} host(s)); veja os achados `terceiro-bloqueado`",
+            "third-party hosts were blocked by the allowlist and may hide protection ({} host(s)); see the `terceiro-bloqueado` findings",
             blocked_hosts.len()
         ));
     }
@@ -42,16 +42,16 @@ pub(crate) fn recommend(
         .find(|r| is_doc(&r.resource_type));
     let main_status = main_doc.and_then(|r| r.status);
 
-    // 1. Indeterminado.
+    // 1. Indeterminate.
     let mut why: Vec<String> = Vec::new();
     if partial {
-        why.push("a sessão está marcada parcial/incompleta pela Core".to_string());
+        why.push("the session is marked partial/incomplete by Core".to_string());
     }
     if sample.requests < 2 {
-        why.push("menos de 2 requisições".to_string());
+        why.push("fewer than 2 requests".to_string());
     }
     if main_doc.is_none() || main_status.is_none() {
-        why.push("nenhum documento principal com resposta".to_string());
+        why.push("no main document with a response".to_string());
     }
     if !why.is_empty() {
         return Recommendation {
@@ -63,7 +63,7 @@ pub(crate) fn recommend(
         };
     }
 
-    // 2. Candidato a CloakBrowser: o Chrome normal foi barrado e nada resolveu.
+    // 2. Candidate for CloakBrowser: normal Chrome was blocked and nothing resolved it.
     let hard: Vec<&Finding> = findings
         .iter()
         .filter(|f| {
@@ -82,10 +82,10 @@ pub(crate) fn recommend(
         let vendor_based = hard.iter().any(|f| f.signature_id.is_some());
         let mut reasons: Vec<String> = hard.iter().map(|f| format!("{} ({})", f.summary, f.id)).collect();
         reasons.push(
-            "o Chrome normal foi barrado e não houve resposta bem-sucedida depois na mesma rota nem cookie de liberação".to_string(),
+            "normal Chrome was blocked and there was no successful response afterwards on the same route, nor a clearance cookie".to_string(),
         );
         limits.push(
-            "isto NÃO prova que o CloakBrowser passaria; é o gatilho para voltar a esse assunto (D6)".to_string(),
+            "this does NOT prove that CloakBrowser would pass; it is the trigger to revisit this topic (D6)".to_string(),
         );
         return Recommendation {
             value: RecommendationValue::CandidatoACloakbrowser,
@@ -96,15 +96,15 @@ pub(crate) fn recommend(
         };
     }
 
-    // 3. Precisa de priming.
+    // 3. Needs priming.
     let resolved_challenges: Vec<&Finding> = findings
         .iter()
         .filter(|f| f.category == "desafio" && f.resolved_later == Some(true))
         .collect();
     let tokens: Vec<&Finding> = findings.iter().filter(|f| f.kind == "token-origin").collect();
-    // Só cookie de LIBERAÇÃO (cf_clearance, aws-waf-token) reutilizado conta como
-    // priming. Cookie de presença (`__cf_bm`, `datadome`, `_px3`, `bm_sv`…) é
-    // reenviado por qualquer cliente com cookie jar: vira observação, não gatilho.
+    // Only a reused CLEARANCE cookie (cf_clearance, aws-waf-token) counts as
+    // priming. A presence cookie (`__cf_bm`, `datadome`, `_px3`, `bm_sv`…) is
+    // resent by any client with a cookie jar: it becomes an observation, not a trigger.
     let is_clearance = |f: &Finding| {
         f.kind == "cookie-flow"
             && f.evidence
@@ -133,7 +133,7 @@ pub(crate) fn recommend(
         let mut reasons = Vec::new();
         for f in &resolved_challenges {
             reasons.push(format!(
-                "um desafio foi servido e resolvido no próprio navegador ({}, {}); um cliente sem navegador precisa reproduzir essa troca",
+                "a challenge was served and solved in the browser itself ({}, {}); a client without a browser needs to reproduce that exchange",
                 f.summary, f.id
             ));
         }
@@ -142,21 +142,21 @@ pub(crate) fn recommend(
         }
         for f in &protection_cookie_flow {
             reasons.push(format!(
-                "cookie de proteção ({}) definido e reenviado: {} ({})",
+                "protection cookie ({}) set and resent: {} ({})",
                 f.vendor.as_deref().unwrap_or("?"),
                 f.summary,
                 f.id
             ));
         }
         limits.push(
-            "\"precisa de priming\" é o que a captura OBSERVOU circulando; que cada item seja obrigatório só se prova removendo-o (validate_run)".to_string(),
+            "\"needs priming\" is what the capture OBSERVED circulating; that each item is required is only proven by removing it (validate_run)".to_string(),
         );
         let confidence = if !resolved_challenges.is_empty() {
             Confidence::Alta
         } else if !protection_cookie_flow.is_empty() || tokens.iter().any(|f| f.confidence >= Confidence::Media) {
             Confidence::Media
         } else {
-            Confidence::Baixa // só "possível origem" de token
+            Confidence::Baixa // only "possible origin" of token
         };
         return Recommendation {
             value: RecommendationValue::PrecisaDePriming,
@@ -173,18 +173,18 @@ pub(crate) fn recommend(
         .filter(|f| f.category == "protecao" || f.category == "captcha")
         .collect();
     let mut reasons = vec![format!(
-        "documento principal respondeu {} e nenhuma rota da aplicação foi barrada",
+        "main document responded {} and no application route was blocked",
         main_status.map(|s| s.to_string()).unwrap_or_else(|| "?".to_string())
     )];
     if !protections.is_empty() {
         reasons.push(format!(
-            "há proteção presente de forma passiva ({} achado(s)), sem bloqueio nesta captura",
+            "protection is passively present ({} finding(s)), with no block in this capture",
             protections.len()
         ));
     }
     for f in &passive_cookie_flow {
         reasons.push(format!(
-            "cookie de proteção ({}) reenviado pelo navegador ({}): observado; um cliente com cookie jar o reenvia sozinho e a obrigatoriedade não foi provada",
+            "protection cookie ({}) resent by the browser ({}): observed; a client with a cookie jar resends it on its own and the requirement was not proven",
             f.vendor.as_deref().unwrap_or("?"),
             f.id
         ));

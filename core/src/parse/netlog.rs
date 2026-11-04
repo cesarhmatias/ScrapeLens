@@ -1,16 +1,16 @@
-//! Importador de NetLog do Chrome.
+//! NetLog importer for Chrome.
 //!
-//! O NetLog é a única fonte que comprova ordem de transmissão (ver
-//! `docs/02-matriz-fidelidade.md`). Este módulo preserva:
-//! - pares na ordem do evento, com duplicatas;
+//! NetLog is the only source that proves transmission order (see
+//! `docs/02-matriz-fidelidade.md`). This module preserves:
+//! - pairs in event order, with duplicates;
 //! - pseudoheaders separados;
-//! - repetições fundidas por `\x00` nos eventos de sessão h2/h3 (expandidas);
-//! - proveniência por bloco e verificação conforme D2;
-//! - eventos desconhecidos e linhas malformadas como avisos, nunca silêncio.
+//! - repeats merged by `\x00` in h2/h3 session events (expanded);
+//! - provenance per block and verification per D2;
+//! - unknown events and malformed lines as warnings, never silence.
 //!
-//! IDs do NetLog não são equivalentes aos do CDP: aqui só se usa a cadeia
-//! explícita `HTTP_STREAM_JOB_BOUND_TO_REQUEST` para ligar headers de sessão ao
-//! `URL_REQUEST`; a correlação com CDP fica em [`crate::correlate`].
+//! NetLog IDs are not equivalent to CDP ones: here only the chain
+//! `HTTP_STREAM_JOB_BOUND_TO_REQUEST` is used explicitly to link session headers to
+//! `URL_REQUEST`; the correlation with CDP lives in [`crate::correlate`].
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,25 +29,25 @@ use crate::parse::{ImportReport, ImportedSession, InputFormat};
 
 const MAX_UNKNOWN_SAMPLES: usize = 8;
 
-/// Unidade do campo `time` do NetLog.
+/// Unit of the NetLog `time` field.
 ///
-/// O Chrome real observado neste projeto (capturas em `experiments/results/`)
-/// grava `time` em **milissegundos** de ticks: `timeTickOffset` (ms) + `time`
-/// cai no relógio de parede. As fixtures sintéticas `detran-pb` usam
-/// microssegundos. A unidade é decidida uma vez por captura em
-/// [`detect_time_unit`] e aplicada por [`ticks_to_epoch_seconds`]; nenhum outro
-/// ponto do parser converte tempo.
+/// The real Chrome observed in this project (captures in `experiments/results/`)
+/// records `time` in **milliseconds** of ticks: `timeTickOffset` (ms) + `time`
+/// lands on the wall clock. The synthetic `detran-pb` fixtures use
+/// microseconds. The unit is decided once per capture in
+/// [`detect_time_unit`] and applied by [`ticks_to_epoch_seconds`]; no other
+/// point in the parser converts time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NetlogTimeUnit {
-    /// `time` em microssegundos de ticks do processo.
+    /// `time` in microseconds of process ticks.
     Microseconds,
-    /// `time` em milissegundos de ticks do processo (Chrome real).
+    /// `time` in milliseconds of process ticks (real Chrome).
     #[default]
     Milliseconds,
 }
 
 impl NetlogTimeUnit {
-    /// Divisor que leva `time` a milissegundos.
+    /// Divisor that converts `time` to milliseconds.
     fn per_millisecond(self) -> f64 {
         match self {
             NetlogTimeUnit::Microseconds => 1_000.0,
@@ -67,7 +67,7 @@ impl NetlogTimeUnit {
 pub struct NetlogCapture {
     pub browser: BrowserInfo,
     pub started_at: Option<String>,
-    /// Unidade usada para converter `time` nesta captura.
+    /// Unit used to convert `time` in this capture.
     pub time_unit: NetlogTimeUnit,
     pub time_tick_offset_ms: Option<f64>,
     pub events_total: usize,
@@ -174,22 +174,22 @@ impl Builder {
 }
 
 // ---------------------------------------------------------------------------
-// P4 (docs/18 §5): leitura em fluxo.
+// P4 (docs/18 §5): streaming read.
 //
-// O NetLog de 20 mil requisições tem ~313 MiB; desserializá-lo inteiro em
-// `serde_json::Value` custava ~3,15 GiB de DOM (10×). Daqui em diante o arquivo
-// é percorrido em fluxo: `constants` vai para uma struct pequena, cada evento do
-// array `events` é extraído para os poucos campos que o parser usa e descartado.
-// Campos desconhecidos são pulados com `JsonShape` (mesmo limite de recursão de
-// 128 níveis do `Value`), então o veredito de JSON inválido/truncado não muda.
+// A NetLog of 20 thousand requests is ~313 MiB; deserializing it whole into
+// `serde_json::Value` cost ~3.15 GiB of DOM (10×). From here on the file
+// is walked as a stream: `constants` goes into a small struct, each event of the
+// `events` array is extracted to the few fields the parser uses, then discarded.
+// Unknown fields are skipped with `JsonShape` (same recursion limit of
+// 128 levels as `Value`), so the verdict on invalid/truncated JSON does not change.
 //
-// Chave de topo duplicada: `events` duas vezes segue a semântica do `Value`
-// antigo (a última vence; a anterior é descartada em ambas as passadas).
-// `events` antes de `constants` cai no fallback de memória abaixo: os eventos são
-// bufferizados e processados no fim, para usar as `constants` do arquivo.
+// Duplicate top-level key: `events` twice follows the `Value` semantics
+// of before (the last one wins; the earlier one is discarded in both passes).
+// `events` before `constants` falls back to the in-memory path below: the events are
+// buffered and processed at the end, to use the file's `constants`.
 // ---------------------------------------------------------------------------
 
-/// Informações que a importação usa de `constants`.
+/// Information the import uses from `constants`.
 #[derive(Debug, Default)]
 struct ConstantsInfo {
     event_names: BTreeMap<u32, String>,
@@ -218,9 +218,9 @@ impl ConstantsInfo {
     }
 }
 
-/// Número JSON preservado nas três leituras que o parser usa (`as_u64`,
-/// `as_i64`, `as_f64`), sem guardar o `Value`. `Text` cobre o `time` em string
-/// que o Chrome real grava.
+/// JSON number preserved across the three reads the parser uses (`as_u64`,
+/// `as_i64`, `as_f64`), without keeping the `Value`. `Text` covers `time` as a string
+/// that real Chrome writes.
 #[derive(Debug, Clone)]
 enum JsonNum {
     U64(u64),
@@ -274,7 +274,7 @@ impl<'de> Visitor<'de> for NumVisitor {
     type Value = JsonNum;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um número ou uma string numérica")
+        formatter.write_str("a number or a numeric string")
     }
 
     fn visit_u64<E: serde::de::Error>(self, value: u64) -> std::result::Result<JsonNum, E> {
@@ -335,7 +335,7 @@ impl<'de> Deserialize<'de> for JsonNum {
     }
 }
 
-/// String JSON; qualquer outro valor vira `None` (o `Value::as_str` anterior).
+/// JSON string; any other value becomes `None` (the earlier `Value::as_str`).
 #[derive(Debug, Default)]
 struct LooseStr(Option<String>);
 
@@ -345,7 +345,7 @@ impl<'de> Visitor<'de> for StrVisitor {
     type Value = LooseStr;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("uma string")
+        formatter.write_str("a string")
     }
 
     fn visit_str<E: serde::de::Error>(self, value: &str) -> std::result::Result<LooseStr, E> {
@@ -406,7 +406,7 @@ impl<'de> Deserialize<'de> for LooseStr {
     }
 }
 
-/// `{ "id": N }` tolerante (usado por `source` e `source_dependency`).
+/// Tolerant `{ "id": N }` (used by `source` and `source_dependency`).
 #[derive(Debug, Default)]
 struct IdValue(Option<u32>);
 
@@ -416,7 +416,7 @@ impl<'de> Visitor<'de> for IdVisitor {
     type Value = IdValue;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um objeto com id")
+        formatter.write_str("an object with id")
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<IdValue, A::Error> {
@@ -480,7 +480,7 @@ impl<'de> Deserialize<'de> for IdValue {
     }
 }
 
-/// Um item de `params.headers` (string ou `{name, value}`).
+/// An item of `params.headers` (string or `{name, value}`).
 #[derive(Debug)]
 enum HeaderLine {
     Line(String),
@@ -497,7 +497,7 @@ impl<'de> Visitor<'de> for HeaderLineVisitor {
     type Value = HeaderLine;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("uma linha de header")
+        formatter.write_str("a header line")
     }
 
     fn visit_str<E: serde::de::Error>(self, value: &str) -> std::result::Result<HeaderLine, E> {
@@ -564,8 +564,8 @@ impl<'de> Deserialize<'de> for HeaderLine {
     }
 }
 
-/// `params.headers`: array, texto ou formato inesperado (o `null` cai em `Other`,
-/// como `Value::as_array`/`as_str` caindo em `false`).
+/// `params.headers`: array, text or unexpected format (`null` falls into `Other`,
+/// like `Value::as_array`/`as_str` falling to `false`).
 #[derive(Debug)]
 enum HeadersValue {
     Lines(Vec<HeaderLine>),
@@ -579,7 +579,7 @@ impl<'de> Visitor<'de> for HeadersVisitor {
     type Value = HeadersValue;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("headers em array ou texto")
+        formatter.write_str("headers as array or text")
     }
 
     fn visit_seq<A: SeqAccess<'de>>(
@@ -673,7 +673,7 @@ impl HeadersOpt {
     }
 }
 
-/// Os poucos campos de `params` que o parser usa.
+/// The few `params` fields the parser uses.
 #[derive(Debug, Default)]
 struct RawParams {
     url: Option<String>,
@@ -694,7 +694,7 @@ impl<'de> Visitor<'de> for ParamsVisitor {
     type Value = Option<RawParams>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um objeto params")
+        formatter.write_str("a params object")
     }
 
     fn visit_map<A: MapAccess<'de>>(
@@ -778,7 +778,7 @@ impl<'de> Deserialize<'de> for ParamsHolder {
     }
 }
 
-/// Um evento reduzido ao que o parser usa.
+/// An event reduced to what the parser uses.
 #[derive(Debug, Default)]
 struct RawEventObject {
     type_id: Option<u64>,
@@ -808,7 +808,7 @@ impl<'de> Visitor<'de> for RawEventVisitor {
     type Value = Option<RawEventObject>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um evento NetLog")
+        formatter.write_str("a NetLog event")
     }
 
     fn visit_map<A: MapAccess<'de>>(
@@ -887,7 +887,7 @@ impl<'de> DeserializeSeed<'de> for RawEventSeed {
     }
 }
 
-/// `constants.logEventTypes` como pares na ordem do arquivo.
+/// `constants.logEventTypes` as pairs in file order.
 #[derive(Debug, Default)]
 struct EventTypes(Vec<(String, u64)>);
 
@@ -897,7 +897,7 @@ impl<'de> Visitor<'de> for EventTypesVisitor {
     type Value = EventTypes;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um mapa de nomes de evento")
+        formatter.write_str("a map of event names")
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<EventTypes, A::Error> {
@@ -965,7 +965,7 @@ impl<'de> Visitor<'de> for ClientInfoVisitor {
     type Value = ClientInfoValue;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um objeto clientInfo")
+        formatter.write_str("a clientInfo object")
     }
 
     fn visit_map<A: MapAccess<'de>>(
@@ -1047,7 +1047,7 @@ impl<'de> Visitor<'de> for ConstantsVisitor {
     type Value = ConstantsValue;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um objeto constants")
+        formatter.write_str("a constants object")
     }
 
     fn visit_map<A: MapAccess<'de>>(
@@ -1155,7 +1155,7 @@ impl ScanCtx {
             self.not_object_count += 1;
             self.not_object_warnings.push(Warning::new(
                 "netlog.event_not_object",
-                format!("evento {index} não é objeto; ignorado"),
+                format!("event {index} is not an object; skipped"),
             ));
             return;
         };
@@ -1166,8 +1166,8 @@ impl ScanCtx {
             });
         }
         if self.buffering || !self.constants_seen {
-            // `events` antes de `constants` (ordem não usada pelo Chrome): guarda e
-            // processa depois, preservando a ordem do arquivo.
+            // `events` before `constants` (order not used by Chrome): keep and
+            // process later, preserving the file order.
             self.buffering = true;
             self.buffered.push(event);
         } else {
@@ -1175,8 +1175,8 @@ impl ScanCtx {
         }
     }
 
-    /// Semântica do `Value`: a última chave `events` do objeto raiz vence.
-    /// Uma segunda ocorrência descarta tudo que veio do array anterior.
+    /// `Value` semantics: the last `events` key of the root object wins.
+    /// A second occurrence discards everything that came from the earlier array.
     fn reset_events(&mut self) {
         self.buffered.clear();
         self.events_total = 0;
@@ -1231,7 +1231,7 @@ impl ScanCtx {
         }
         match root {
             RootKind::Unsupported => Err(CoreError::UnsupportedFormat {
-                message: "NetLog deve ser um objeto com {constants,events}".to_string(),
+                message: "NetLog must be an object with {constants,events}".to_string(),
             }),
             RootKind::Object if !self.saw_events || !self.events_is_array => {
                 Err(CoreError::MissingField {
@@ -1315,7 +1315,7 @@ impl<'de> Visitor<'de> for ScanEventsVisitor<'_> {
     type Value = bool;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um array de eventos")
+        formatter.write_str("an array of events")
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<bool, A::Error> {
@@ -1365,7 +1365,7 @@ impl<'de> Visitor<'de> for ScanRootVisitor<'_> {
     type Value = RootKind;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um objeto NetLog ou um array de eventos")
+        formatter.write_str("a NetLog object or an array of events")
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<RootKind, A::Error> {
@@ -1384,7 +1384,7 @@ impl<'de> Visitor<'de> for ScanRootVisitor<'_> {
                     let is_array = map.next_value_seed(ScanEvents {
                         ctx: &mut *self.ctx,
                     })?;
-                    // Última chave vence, inclusive se não for array (como o `Value`).
+                    // Last key wins, even if not an array (like `Value`).
                     self.ctx.events_is_array = is_array;
                 }
                 _ => {
@@ -1467,7 +1467,7 @@ struct BuiltEvents {
 }
 
 impl BuildCtx {
-    /// Mesma semântica do `Value`: a última chave `events` do objeto raiz vence.
+    /// Same `Value` semantics: the last `events` key of the root object wins.
     fn reset_events(&mut self) {
         self.builders.clear();
         self.pending_session.clear();
@@ -1486,7 +1486,7 @@ impl BuildCtx {
             None => "unknown:0".to_string(),
         };
         let source_id = event.source_id;
-        // Uma única conversão para toda a captura (ver `ticks_to_epoch_seconds`).
+        // A single conversion for the whole capture (see `ticks_to_epoch_seconds`).
         let time = event
             .time
             .as_ref()
@@ -1592,7 +1592,7 @@ impl BuildCtx {
                             Warning::new(
                                 "netlog.header_line_invalid",
                                 format!(
-                                    "{} (evento {index}): {} linha(s) de header sem separador ':'",
+                                    "{} (event {index}): {} header line(s) without ':' separator",
                                     name,
                                     issues.len()
                                 ),
@@ -1688,7 +1688,7 @@ impl<'de> Visitor<'de> for BuildEventsVisitor<'_> {
     type Value = ();
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um array de eventos")
+        formatter.write_str("an array of events")
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> std::result::Result<(), A::Error> {
@@ -1736,7 +1736,7 @@ impl<'de> Visitor<'de> for BuildRootVisitor<'_> {
     type Value = ();
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um objeto NetLog ou um array de eventos")
+        formatter.write_str("a NetLog object or an array of events")
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<(), A::Error> {
@@ -1832,17 +1832,17 @@ fn build_events(
     })
 }
 
-/// Importa NetLog sem referência de relógio de parede.
+/// Imports NetLog without a wall-clock reference.
 ///
-/// Sem referência (CDP), a unidade é assumida como milissegundos — o que o
-/// Chrome real grava — e a captura recebe o aviso `netlog.time_unit_assumed`.
+/// Without a reference (CDP), the unit is assumed to be milliseconds — what the
+/// real Chrome writes — and the capture receives the `netlog.time_unit_assumed` warning.
 pub fn parse_netlog(json: &[u8]) -> Result<NetlogCapture> {
     parse_netlog_with_wall_clock(json, None)
 }
 
-/// Importa NetLog usando um relógio de parede de referência (epoch em segundos,
-/// normalmente a mediana dos `wallTime` do CDP da mesma captura) para decidir a
-/// unidade de `time`. Não associa requisições: só calibra o relógio.
+/// Imports NetLog using a reference wall clock (epoch in seconds,
+/// usually the median of the CDP `wallTime`s of the same capture) to decide the
+/// unit of `time`. It does not associate requests: it only calibrates the clock.
 pub fn parse_netlog_with_wall_clock(
     json: &[u8],
     wall_clock_s: Option<f64>,
@@ -1867,7 +1867,7 @@ pub fn parse_netlog_with_wall_clock(
     if constants.is_none() {
         capture.warnings.push(Warning::new(
             "netlog.constants_missing",
-            "NetLog sem objeto constants; tipos de evento não podem ser decodificados por nome",
+            "NetLog has no constants object; event types cannot be decoded by name",
         ));
     }
     let event_names = constants
@@ -1880,7 +1880,7 @@ pub fn parse_netlog_with_wall_clock(
         None => BrowserInfo::default(),
     };
 
-    // O relógio é decidido uma vez por captura; todo evento usa a mesma base.
+    // The clock is decided once per capture; every event uses the same base.
     let time_unit = match (first_ticks, tick_offset_ms) {
         (Some(ticks), Some(offset)) => {
             detect_time_unit(ticks, offset, wall_clock_s, &mut capture.warnings)
@@ -1889,7 +1889,7 @@ pub fn parse_netlog_with_wall_clock(
             if tick_offset_ms.is_none() {
                 capture.warnings.push(Warning::new(
                     "netlog.time_unit_assumed",
-                    "NetLog sem timeTickOffset; unidade de `time` assumida como milissegundos e relógio relativo",
+                    "NetLog has no timeTickOffset; `time` unit assumed to be milliseconds and clock relative",
                 ));
             }
             NetlogTimeUnit::default()
@@ -1906,11 +1906,11 @@ pub fn parse_netlog_with_wall_clock(
         capture.started_at = Some("1970-01-01T00:00:00Z".to_string());
         capture.warnings.push(Warning::new(
             "netlog.no_wall_clock",
-            "NetLog sem timeTickOffset; startedAt usa época Unix como marcador explícito",
+            "NetLog has no timeTickOffset; startedAt uses the Unix epoch as an explicit marker",
         ));
     }
 
-    // Avisos de evento não-objeto foram coletados na ordem do arquivo.
+    // Non-object event warnings were collected in file order.
     capture.warnings.extend(not_object_warnings);
 
     capture.events_unknown += unknown_counts.values().sum::<usize>();
@@ -1926,7 +1926,7 @@ pub fn parse_netlog_with_wall_clock(
             Warning::new(
                 "netlog.unknown_event_type",
                 format!(
-                    "{} evento(s) de tipo desconhecido; preservados no arquivo bruto e contados",
+                    ""{} event(s) of unknown type; preserved in the raw file and counted",
                     capture.events_unknown
                 ),
             )
@@ -1948,7 +1948,7 @@ pub fn parse_netlog_with_wall_clock(
     let mut builders = built.builders;
     let mut pending_session = built.pending_session;
 
-    // Liga eventos de sessão ao URL_REQUEST pela cadeia explícita
+    // Links session events to URL_REQUEST through the explicit chain
     // HTTP_STREAM_JOB_BOUND_TO_REQUEST.
     let mut session_resolution: BTreeMap<(u32, u32), u32> = BTreeMap::new();
     for (event, resolution) in &mut pending_session {
@@ -2005,7 +2005,7 @@ pub fn parse_netlog_with_wall_clock(
         capture.warnings.push(Warning::new(
             "netlog.session_headers_unlinked",
             format!(
-                "{} evento(s) de headers de sessão h2/h3 sem cadeia explícita até um URL_REQUEST; não associados",
+                ""{} h2/h3 session header event(s) without an explicit chain to a URL_REQUEST; not associated",
                 capture.unlinked_session_events
             ),
         ));
@@ -2023,7 +2023,7 @@ pub fn parse_netlog_with_wall_clock(
             capture.warnings.push(Warning::new(
                 "netlog.request_without_url",
                 format!(
-                    "URL_REQUEST {} sem URL em URL_REQUEST_START_JOB; não importado",
+                    ""URL_REQUEST {} has no URL in URL_REQUEST_START_JOB; not imported",
                     request.source_id
                 ),
             ));
@@ -2035,7 +2035,7 @@ pub fn parse_netlog_with_wall_clock(
     if capture.requests.is_empty() {
         capture.warnings.push(Warning::error(
             "netlog.no_requests",
-            "NetLog não produziu nenhuma requisição utilizável",
+            ""NetLog produced no usable request",
         ));
     }
     Ok(capture)
@@ -2090,8 +2090,8 @@ fn protocol_for_event(name: &str) -> Protocol {
     }
 }
 
-// O erro é um `Warning` rico (código, mensagem e detalhe), que o chamador empilha
-// como aviso; boxear só moveria a alocação para o caminho de sucesso.
+// The error is a rich `Warning` (code, message and detail), which the caller stacks
+// as a warning; boxing would only move the allocation to the success path.
 #[allow(clippy::result_large_err)]
 fn parse_headers(
     params: Option<RawParams>,
@@ -2105,7 +2105,7 @@ fn parse_headers(
     let params = params.ok_or_else(|| {
         Warning::new(
             "netlog.header_event_without_params",
-            format!("{event_name} (evento {index}) sem params; ignorado"),
+            format!("{event_name} (event {index}) has no params; skipped"),
         )
     })?;
     let RawParams { line, headers, .. } = params;
@@ -2113,13 +2113,13 @@ fn parse_headers(
         HeadersOpt::Missing => {
             return Err(Warning::new(
                 "netlog.header_event_without_headers",
-                format!("{event_name} (evento {index}) sem params.headers; ignorado"),
+                format!("{event_name} (event {index}) has no params.headers; skipped"),
             ))
         }
         HeadersOpt::Other => {
             return Err(Warning::new(
                 "netlog.headers_not_array",
-                format!("{event_name} (evento {index}) tem params.headers em formato inesperado"),
+                format!("{event_name} (event {index}) has params.headers in an unexpected format"),
             ))
         }
         HeadersOpt::Text(text) => text.lines().map(str::to_string).collect(),
@@ -2161,8 +2161,8 @@ fn parse_headers(
         view.start_line = Some(line.clone());
         view.raw_block = Some(format!("{line}\n{}", lines.join("\n")));
     }
-    // Para eventos de header, os pares ordenados já são o original; não
-    // duplicamos todas as linhas em `rawBlock` (custo alto em capturas grandes).
+    // For header events, the ordered pairs are already the original; we do not
+    // duplicate every line into `rawBlock` (high cost on large captures).
     if request_line.is_none() {
         view.raw_block = None;
     }
@@ -2176,21 +2176,21 @@ fn parse_headers(
             .iter_mut()
             .chain(view.headers.iter_mut())
         {
-            entry.provenance.notes.push("expandido de NUL".to_string());
+            entry.provenance.notes.push("expanded from NUL".to_string());
         }
     }
     if !unparsed.is_empty() {
         view.notes.push(format!(
-            "{} linha(s) sem ':' preservadas em raw_block e reportadas",
+            ""{} line(s) without ':' preserved in raw_block and reported",
             unparsed.len()
         ));
     }
     Ok((view, nul_expanded, unparsed))
 }
 
-/// Expande `"x-resp-order: 1\x002"` em `"x-resp-order: 1"` e
-/// `"x-resp-order: 2"` na mesma posição. Pseudoheaders (`:status: 1\x002`)
-/// também são suportados.
+/// Expands `"x-resp-order: 1\x002"` into `"x-resp-order: 1"` and
+/// `"x-resp-order: 2"` at the same position. Pseudoheaders (`:status: 1\x002`)
+/// are also supported.
 pub fn expand_nul_duplicates(lines: &[String]) -> (Vec<String>, bool) {
     let mut expanded = Vec::new();
     let mut changed = false;
@@ -2251,8 +2251,8 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
                 } else if current.send_session.is_none() {
                     current.send_session = Some(event);
                 } else {
-                    // Segundo evento de sessão para a mesma tentativa: fica
-                    // como evidência adicional apenas se for o mesmo stream.
+                    // Second session event for the same attempt: kept
+                    // as additional evidence only if it is the same stream.
                 }
                 current_has_data = true;
             }
@@ -2273,7 +2273,7 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
                     }
                     current.recv_transaction = Some(event);
                 } else if current.recv_session.is_none() {
-                    // Evento de sessão é evidência paralela, não nova tentativa.
+                    // A session event is parallel evidence, not a new attempt.
                     current.recv_session = Some(event);
                 }
                 current_has_data = true;
@@ -2315,7 +2315,7 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
         flush_attempt(&mut current, &mut attempts);
     }
 
-    // Liga redirects às tentativas seguintes.
+    // Links redirects to the following attempts.
     for index in 0..attempts.len().saturating_sub(1) {
         if attempts[index].redirect_to.is_some() {
             attempts[index].ended_at = attempts[index]
@@ -2431,11 +2431,11 @@ fn atom_index(atom: &Atom) -> usize {
     }
 }
 
-/// Converte `time` do NetLog (ticks do processo) para segundos Unix.
+/// Converts NetLog `time` (process ticks) to Unix seconds.
 ///
-/// Fórmula única do módulo: `ms = timeTickOffset + time / fator`, onde `fator`
-/// é 1 para milissegundos e 1000 para microssegundos. Sem `timeTickOffset`, o
-/// resultado é relativo ao início dos ticks (e o chamador registra o aviso).
+/// Single formula of the module: `ms = timeTickOffset + time / factor`, where `factor`
+/// is 1 for milliseconds and 1000 for microseconds. Without `timeTickOffset`, the
+/// result is relative to the start of the ticks (and the caller records the warning).
 pub fn ticks_to_epoch_seconds(
     ticks: f64,
     tick_offset_ms: Option<f64>,
@@ -2448,14 +2448,14 @@ pub fn ticks_to_epoch_seconds(
     }
 }
 
-/// Decide a unidade de `time` comparando as duas leituras possíveis com um
-/// relógio de parede de referência (mediana dos `wallTime` do CDP da mesma
-/// captura). Sem referência, mantém milissegundos — o comportamento do Chrome
-/// real — e registra que a unidade foi assumida.
+/// Decides the unit of `time` by comparing the two possible readings with a
+/// reference wall clock (median of the CDP `wallTime`s of the same
+/// capture). Without a reference, it keeps milliseconds — the behavior of real
+/// Chrome — and records that the unit was assumed.
 ///
-/// As leituras diferem por ~1000× na parte de ticks, então a que cai perto da
-/// referência vence sem heurística de URL/método. A decisão é registrada como
-/// aviso informativo, com o desvio das duas hipóteses.
+/// The readings differ by ~1000× in the ticks part, so the one that falls near the
+/// reference wins without a URL/method heuristic. The decision is recorded as
+/// an informational warning, with the deviation of both hypotheses.
 fn detect_time_unit(
     first_ticks: f64,
     tick_offset_ms: f64,
@@ -2465,7 +2465,7 @@ fn detect_time_unit(
     let Some(reference) = wall_clock_s else {
         warnings.push(Warning::new(
             "netlog.time_unit_assumed",
-            "sem relógio de parede de referência (CDP); unidade de `time` assumida como milissegundos",
+            ""no reference wall clock (CDP); `time` unit assumed to be milliseconds",
         ));
         return NetlogTimeUnit::default();
     };
@@ -2490,7 +2490,7 @@ fn detect_time_unit(
         Warning::info(
             "netlog.time_unit_detected",
             format!(
-                "unidade de `time` calibrada como {} pelo relógio do CDP (desvio {:.3}s)",
+                ""`time` unit calibrated as {} by the CDP clock (deviation {:.3}s)",
                 unit.as_str(),
                 error
             ),
@@ -2506,7 +2506,7 @@ fn detect_time_unit(
     unit
 }
 
-/// Converte milissegundos Unix para RFC 3339 UTC sem dependência de data.
+/// Converts Unix milliseconds to RFC 3339 UTC without a date dependency.
 pub fn epoch_ms_to_iso(ms: i64) -> String {
     let days = ms.div_euclid(86_400_000);
     let rem = ms.rem_euclid(86_400_000);
@@ -2532,7 +2532,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (year, month, day)
 }
 
-/// Constrói uma sessão v1 apenas com o NetLog (sem CDP).
+/// Builds a v1 session with only the NetLog (no CDP).
 pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport) {
     let mut report = ImportReport::new(InputFormat::NetLog);
     report.source_events = capture.events_total;
@@ -2552,11 +2552,11 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
         headless: None,
         browser_binary: None,
         chrome_args: None,
-        notes: Some("importado sem CDP; associação entre fontes não foi tentada".to_string()),
+        notes: Some("imported without CDP; association between sources was not attempted".to_string()),
     });
     meta.labels.push("netlog-import".to_string());
     meta.completeness = Completeness::partial(
-        "NetLog não declara captura CDP; cobertura de requisições não confirmada",
+        ""NetLog does not declare a CDP capture; request coverage not confirmed",
     );
     let mut session = SessionV1::new(meta);
 
@@ -2581,7 +2581,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             Verification::Partial,
         )
         .with_source_id(request.source_id.to_string())
-        .with_note("requisição lida apenas do NetLog");
+          .with_note("request read only from the NetLog");
         if let Some(version) = &capture.browser.version {
             logical.provenance = logical.provenance.clone().with_browser_version(version);
         }
@@ -2592,7 +2592,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
         if request.attempts.is_empty() {
             session.add_warning(Warning::new(
                 "netlog.request_without_headers",
-                format!("URL_REQUEST {} sem eventos de headers", request.source_id),
+                format!("URL_REQUEST {} has no header events", request.source_id),
             ));
         }
 
@@ -2639,7 +2639,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 if attempt.cookie.wire_lines.is_empty() && !attempt.cookie.raw.is_empty() {
                     attempt.cookie.wire_lines = attempt.cookie.raw.clone();
                     attempt.cookie.notes.push(
-                        "h1: um único campo Cookie observado na fonte transacional".to_string(),
+                        \"h1: a single Cookie field observed in the transactional source\".to_string(),
                     );
                 }
             }
@@ -2658,10 +2658,10 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                         ));
                 }
             }
-            attempt.request_body = Body::unavailable("NetLog não contém corpo de requisição");
-            attempt.response_body = Body::unavailable("NetLog não contém corpo de resposta");
+            attempt.request_body = Body::unavailable("NetLog has no request body");
+            attempt.response_body = Body::unavailable("NetLog has no response body");
 
-            // Evidências originais preservadas por fonte.
+            // Original evidence preserved per source.
             for (role, evidence) in [
                 (HeaderRole::Request, parsed.send_transaction.as_ref()),
                 (HeaderRole::Request, parsed.send_session.as_ref()),
@@ -2721,7 +2721,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 ..Default::default()
             };
 
-            // Conexão: derivada da URL; o NetLog não entrega um id estável aqui.
+            // Connection: derived from the URL; NetLog does not provide a stable id here.
             let connection_key = connection_key(&parsed.url, parsed.protocol);
             if let Some((host, port)) = host_port(&parsed.url) {
                 let connection_id = connections
@@ -2746,7 +2746,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                                 "derived:url",
                                 Verification::Partial,
                             )
-                            .with_note("conexão derivada da URL; não é o id do stream job"),
+                              .with_note("connection derived from the URL; not the stream job id"),
                         });
                         id
                     })
@@ -2754,7 +2754,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 attempt.connection_id = Some(connection_id);
             }
 
-            // StreamSession: só quando há evento de sessão h2/h3 com stream id.
+            // StreamSession: only when there is an h2/h3 session event with a stream id.
             if let Some(session_event) = parsed
                 .send_session
                 .as_ref()
@@ -2791,7 +2791,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             logical.attempts.push(attempt);
         }
 
-        // Redirects ligando tentativas consecutivas.
+        // Redirects linking consecutive attempts.
         for (index, redirect) in request.redirects.iter().enumerate() {
             let from_attempt = logical
                 .attempts
@@ -2805,7 +2805,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             if to_attempt.is_none() {
                 session.add_warning(Warning::new(
                     "netlog.redirect_without_attempt",
-                    format!("redirect para {} sem tentativa seguinte", redirect.location),
+                    format!("redirect to {} has no following attempt", redirect.location),
                 ));
             }
             logical.redirects.push(Redirect {
@@ -2860,7 +2860,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 entry
                     .provenance
                     .notes
-                    .push("evento transacional em h1".to_string());
+                      .push("transactional event in h1".to_string());
             }
         }
         session.requests.push(logical);

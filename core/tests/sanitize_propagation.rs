@@ -1,4 +1,4 @@
-//! Propagação por valor na sanitização (sessão sintética, valores falsos).
+//! Value propagation in sanitization (synthetic session, fake values).
 
 use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
 use scrapelens_core::model::SessionBundle;
@@ -97,7 +97,7 @@ fn everything(bundle: &SessionBundle) -> String {
 fn session_value_in_opaque_field_url_and_json_is_redacted_everywhere() {
     let (bundle, redactions, codes) = sanitized();
     let all = everything(&bundle);
-    assert!(!all.contains(SID), "valor de sessão vazou");
+    assert!(!all.contains(SID), "session value leaked");
     assert!(!all.contains(SLASHY));
     assert!(!all.contains("ab%2Fcd"), "forma percent-encoded vazou");
     assert!(!all.contains("ab\\/cd"));
@@ -124,10 +124,10 @@ fn opaque_form_field_stays_parseable_and_short_values_remain() {
     assert_eq!(pairs[0], ("SESSIONID", "[REDACTED]"));
     assert_eq!(pairs[1].0, "XML");
     assert!(pairs[1].1.contains("REDACTED") && pairs[1].1.contains("dummy"));
-    // valores curtos/triviais não são propagados
+    // short/trivial values are not propagated
     assert_eq!(pairs[2], ("n", "abc12"));
     assert_eq!(pairs[3], ("flag", "true"));
-    // query: `short=abc12` permanece; `ref=<SID>` foi redigido
+    // query: `short=abc12` stays; `ref=<SID>` was redacted
     let url = bundle
         .session
         .requests

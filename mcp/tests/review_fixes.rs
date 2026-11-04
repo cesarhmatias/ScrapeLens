@@ -1,5 +1,5 @@
-//! Regressões da revisão de segurança do MCP (docs/17): oráculo de substring,
-//! confirmação, spill por symlink, encerramento durante o início da captura.
+//! Regressions from the MCP security review (docs/17): substring oracle,
+//! confirmation, symlink spill, shutdown while the capture is starting.
 
 mod common;
 
@@ -10,7 +10,7 @@ use common::*;
 use scrapelens_mcp::tools::*;
 use serde_json::{json, Value};
 
-// ---- C1: trace_value não é oráculo de substring -----------------------------------
+// ---- C1: trace_value is not a substring oracle -----------------------------------
 
 fn total(out: &Value) -> u64 {
     out["producersTotal"].as_u64().unwrap() + out["consumersTotal"].as_u64().unwrap()
@@ -20,8 +20,8 @@ fn total(out: &Value) -> u64 {
 fn trace_value_value_mode_requires_reveal_so_it_is_no_oracle() {
     let env = Env::new(true);
     env.import_flow("flow", "");
-    // Sem reveal o modo `value` recusa SEMPRE, qualquer que seja o valor: achar ou
-    // não achar revelaria conteúdo mascarado (inteiro, pedaço, estrutura conhecida).
+    // Without reveal the `value` mode ALWAYS refuses, whatever the value: finding or
+    // not finding would reveal masked content (whole, a piece, a known structure).
     let basic = format!("Basic {}", base64_of("admin:4821"));
     for value in [
         TOKEN.to_string(),
@@ -42,7 +42,7 @@ fn trace_value_value_mode_requires_reveal_so_it_is_no_oracle() {
             assert!(!error.message.contains(&value) || value.len() < 3);
         }
     }
-    // Reimportar a sessão não muda nada: não há contador a zerar nem resposta a comparar.
+    // Reimporting the session changes nothing: there is no counter to reset nor response to compare.
     for n in 0..5 {
         env.import_flow(&format!("copy-{n}"), "");
         let error = trace_value(
@@ -52,7 +52,7 @@ fn trace_value_value_mode_requires_reveal_so_it_is_no_oracle() {
         .unwrap_err();
         assert_eq!(error.code, "reveal_required");
     }
-    // Com reveal (e --allow-reveal) o modo existe e acha pedaços.
+    // With reveal (and --allow-reveal) the mode exists and finds pieces.
     let whole = trace_value(
         &env.ctx,
         p(json!({"session_id": "flow", "value": TOKEN, "reveal": true})),
@@ -66,7 +66,7 @@ fn trace_value_value_mode_requires_reveal_so_it_is_no_oracle() {
     )
     .unwrap();
     assert!(total(&part) > 0);
-    // Servidor sem --allow-reveal: o modo está fechado.
+    // Server without --allow-reveal: the mode is closed.
     let closed = Env::new(false);
     closed.import_flow("flow", "");
     let error = trace_value(
@@ -90,7 +90,7 @@ fn cookie_and_request_modes_expose_nothing_derived_from_values_without_reveal() 
     )
     .unwrap();
     assert!(!text(&by_request).contains("valueLength"));
-    // Modo request_id: cada valor sai sem comprimento, offset ou tamanho de trecho.
+    // Request_id mode: each value comes out without length, offset or range size.
     for item in by_request["values"].as_array().unwrap() {
         let map = item.as_object().unwrap();
         for key in ["length", "offset"] {
@@ -115,7 +115,7 @@ fn cookie_and_request_modes_expose_nothing_derived_from_values_without_reveal() 
         p(json!({"session_id": "flow", "request_id": "har-0003", "reveal": true})),
     )
     .unwrap();
-    assert!(open["values"][0].get("length").is_some(), "com reveal o comprimento volta");
+    assert!(open["values"][0].get("length").is_some(), "with reveal the length comes back");
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn other_tools_do_not_answer_about_redacted_content() {
     let env = Env::new(true);
     env.import_flow("flow", "");
     env.import_flow("flow2", "-v2");
-    // search_bodies: pedaço de segredo (mesmo inteiro) não acha nada sem reveal.
+    // search_bodies: a piece of a secret (even the whole one) finds nothing without reveal.
     for query in [
         &TOKEN[..8],
         TOKEN,
@@ -137,7 +137,7 @@ fn other_tools_do_not_answer_about_redacted_content() {
             search_bodies(&env.ctx, p(json!({"session_id": "flow", "query": query}))).unwrap();
         let matches = out["matches"].as_array().unwrap();
         for m in matches {
-            // só pode achar texto que não está redigido (ex.: a palavra "Bearer" no esquema)
+            // may only find text that is not redacted (e.g. the word "Bearer" in the scheme)
             assert!(
                 !m["snippet"]
                     .as_str()
@@ -151,7 +151,7 @@ fn other_tools_do_not_answer_about_redacted_content() {
             assert_eq!(out["total"], 0, "{query}");
         }
     }
-    // corpo retido (HTML) não é pesquisável sem reveal
+    // retained body (HTML) is not searchable without reveal
     assert_eq!(
         search_bodies(
             &env.ctx,
@@ -160,8 +160,8 @@ fn other_tools_do_not_answer_about_redacted_content() {
         .unwrap()["total"],
         0
     );
-    // list_requests(text) só enxerga a URL já redigida: o valor do parâmetro `key`
-    // (sensível) não é pesquisável, a parte visível da URL é.
+    // list_requests(text) only sees the already redacted URL: the value of the `key`
+    // parameter (sensitive) is not searchable, the visible part of the URL is.
     let hidden =
         list_requests(&env.ctx, p(json!({"session_id": "flow", "text": "key=1"}))).unwrap();
     assert_eq!(hidden["total"], 0);
@@ -171,7 +171,7 @@ fn other_tools_do_not_answer_about_redacted_content() {
     )
     .unwrap();
     assert_eq!(visible["total"], 1);
-    // diff: valores diferentes e redigidos aparecem iguais; nada de dado cru
+    // diff: different redacted values appear equal; no raw data
     let diff = diff_requests_tool(
         &env.ctx,
         p(json!({"session_id": "flow", "request_a": "har-0003", "request_b": "har-0003", "other_session_id": "flow2"})),
@@ -180,11 +180,11 @@ fn other_tools_do_not_answer_about_redacted_content() {
     assert_no_secrets(&diff, "diff_requests");
     assert!(
         !text(&diff).contains("v2"),
-        "diferença de token não pode aparecer: {diff}"
+        "token difference must not appear: {diff}"
     );
 }
 
-// ---- A1: confirmação ----------------------------------------------------------------
+// ---- A1: confirmation ----------------------------------------------------------------
 
 #[test]
 fn confirmation_from_denies_everything_except_an_explicit_true() {
@@ -208,18 +208,18 @@ fn confirmation_from_denies_everything_except_an_explicit_true() {
     };
     let cases: Vec<(&str, Result<Option<ConfirmStart>, ElicitationError>)> = vec![
         (
-            "caixa desmarcada",
+            "checkbox unchecked",
             Ok(Some(ConfirmStart { confirmo: false })),
         ),
-        ("sem conteúdo", Ok(None)),
+        ("no content", Ok(None)),
         ("NoContent", Err(ElicitationError::NoContent)),
-        ("recusou", Err(ElicitationError::UserDeclined)),
-        ("cancelou", Err(ElicitationError::UserCancelled)),
-        ("erro JSON-RPC", Err(rpc_error())),
-        ("malformado", Err(parse_error())),
-        ("prazo", Err(timeout())),
+        ("declined", Err(ElicitationError::UserDeclined)),
+        ("cancelled", Err(ElicitationError::UserCancelled)),
+        ("JSON-RPC error", Err(rpc_error())),
+        ("malformed", Err(parse_error())),
+        ("timeout", Err(timeout())),
         (
-            "conexão caída",
+            "connection dropped",
             Err(ElicitationError::Service(ServiceError::TransportClosed)),
         ),
     ];
@@ -238,7 +238,7 @@ fn confirmation_from_denies_everything_except_an_explicit_true() {
         confirmation_from(Ok(Some(ConfirmStart { confirmo: true }))),
         Confirmation::Accepted
     );
-    // Só "o cliente não declarou elicitação" depende da flag.
+    // Only "the client did not declare elicitation" depends on the flag.
     let unsupported = confirmation_from(Err(ElicitationError::CapabilityNotSupported));
     assert_eq!(
         decide(&unsupported, false).unwrap_err().code,
@@ -279,7 +279,7 @@ fn malformed_or_failed_confirmation_never_opens_even_with_the_flag() {
             "{policy:?}: {out}"
         );
         assert!(out.get("captureId").is_none());
-        // A vaga voltou e nenhuma captura existe.
+        // The slot came back and no capture exists.
         let (_, list) = client.tool("list_sessions", json!({}));
         assert_eq!(list["total"], 0);
         client.finish();
@@ -304,7 +304,7 @@ fn confirmation_text_warns_that_the_port_is_only_enforced_on_navigate() {
     client.finish();
 }
 
-// ---- M4: encerrar durante o início --------------------------------------------------
+// ---- M4: shutdown during start --------------------------------------------------
 
 fn session_dirs(work: &std::path::Path) -> Vec<std::path::PathBuf> {
     std::fs::read_dir(work.join("sessions"))
@@ -334,7 +334,7 @@ fn eof_during_start_stops_the_browser_that_is_coming_up() {
     );
     client.call_nowait("start_capture", start_args());
     client.answer_next_elicitation();
-    std::thread::sleep(std::time::Duration::from_millis(300)); // o "Chrome" ainda está subindo
+    std::thread::sleep(std::time::Duration::from_millis(300)); // "Chrome" is still starting up
     client.close_stdin();
     let (ok, stderr) = client.finish();
     assert!(ok, "{stderr}");
@@ -342,7 +342,7 @@ fn eof_during_start_stops_the_browser_that_is_coming_up() {
     assert_eq!(dirs.len(), 1, "{dirs:?}");
     assert!(
         dirs[0].join("session.json").is_file(),
-        "a captura que subia foi parada e gravada"
+        "the capture that was starting was stopped and recorded"
     );
 }
 
@@ -370,7 +370,7 @@ fn sigterm_during_start_stops_the_browser_that_is_coming_up() {
     assert!(dirs[0].join("session.json").is_file());
 }
 
-// ---- P1: avisos do stop sem query/fragmento/matriz ------------------------------------
+// ---- P1: stop warnings without query/fragment/matrix ------------------------------------
 
 #[test]
 fn stop_capture_warnings_carry_no_url_parameters() {
@@ -381,18 +381,18 @@ fn stop_capture_warnings_carry_no_url_parameters() {
     let warnings = text(&stopped["warnings"]);
     assert!(
         warnings.contains("site.invalid.test:9/p"),
-        "o aviso continua legível: {warnings}"
+        "the warning is still readable: {warnings}"
     );
     for secret in ["SEGREDO-VIOL", "SEGREDO-VIOLQ", "SEGREDO-VIOLF"] {
         assert!(
             !text(&stopped).contains(secret),
-            "{secret} vazou: {stopped}"
+            "{secret} leaked: {stopped}"
         );
     }
     client.finish();
 }
 
-// ---- M5/B1/B2/B4: spill do get_body -----------------------------------------------------
+// ---- M5/B1/B2/B4: get_body spill -----------------------------------------------------
 
 fn big_body_env() -> (Env, std::path::PathBuf) {
     let env = Env::new(true);
@@ -413,8 +413,8 @@ fn spill_refuses_a_planted_symlink_and_writes_0600() {
         std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
         0o600
     );
-    // Planta um symlink no nome final e outro no que seria um temporário previsível.
-    let outside = env.dir.path().join("fora.txt");
+    // Plants a symlink at the final name and another at what would be a predictable temporary.
+    let outside = env.dir.path().join("outside.txt");
     std::fs::write(&outside, "ORIGINAL").unwrap();
     std::fs::remove_file(&path).unwrap();
     std::os::unix::fs::symlink(&outside, &path).unwrap();
@@ -429,14 +429,14 @@ fn spill_refuses_a_planted_symlink_and_writes_0600() {
     assert_eq!(
         std::fs::read_to_string(&outside).unwrap(),
         "ORIGINAL",
-        "o alvo do symlink não pode ser escrito"
+        "the symlink target must not be written"
     );
     let new_path = std::path::PathBuf::from(again["path"].as_str().unwrap());
     assert_eq!(new_path, path);
     let meta = std::fs::symlink_metadata(&new_path).unwrap();
     assert!(
         meta.file_type().is_file(),
-        "o link foi substituído por arquivo regular"
+        "the link was replaced by a regular file"
     );
     assert_eq!(meta.permissions().mode() & 0o777, 0o600);
     assert_eq!(meta.len(), 100_000);
@@ -446,10 +446,10 @@ fn spill_refuses_a_planted_symlink_and_writes_0600() {
 fn spill_refuses_symlinked_directories_without_touching_the_target() {
     let env = Env::new(true);
     env.import_flow("flow", "");
-    let outside = env.dir.path().join("fora");
+    let outside = env.dir.path().join("outside");
     std::fs::create_dir(&outside).unwrap();
     std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o755)).unwrap();
-    // `bodies` é um symlink para fora
+    // `bodies` is a symlink pointing outside
     std::os::unix::fs::symlink(&outside, env.dir.path().join("out").join("bodies")).unwrap();
     let err = get_body(
         &env.ctx,
@@ -460,7 +460,7 @@ fn spill_refuses_symlinked_directories_without_touching_the_target() {
     assert_eq!(
         std::fs::metadata(&outside).unwrap().permissions().mode() & 0o777,
         0o755,
-        "o alvo não recebeu chmod"
+        "the target did not receive chmod"
     );
     assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
 }
@@ -499,11 +499,11 @@ fn concurrent_spills_do_not_mix_bytes_and_distinct_handles_do_not_collide() {
     assert_ne!(
         dir("x.y"),
         dir("x-y"),
-        "handles distintos não compartilham diretório de spill"
+        "distinct handles do not share a spill directory"
     );
 }
 
-// ---- binary_path: só o Chrome estável (usa o validador do capture/) ---------------------
+// ---- binary_path: only stable Chrome (uses the validator from capture/) ---------------------
 
 #[test]
 fn binary_path_that_is_not_chrome_is_refused_before_asking_the_user() {
@@ -526,12 +526,12 @@ fn binary_path_that_is_not_chrome_is_refused_before_asking_the_user() {
     }
     assert!(
         client.elicitations.is_empty(),
-        "nada foi perguntado ao usuário"
+        "nothing was asked of the user"
     );
     client.finish();
 }
 
-// ---- cancelamento e aceite tardio ------------------------------------------------------
+// ---- cancellation and late acceptance ------------------------------------------------------
 
 #[test]
 fn cancelling_then_accepting_late_opens_nothing_and_frees_the_slot() {
@@ -541,14 +541,14 @@ fn cancelling_then_accepting_late_opens_nothing_and_frees_the_slot() {
     let late = client.take_elicitation();
     client.cancel(id);
     std::thread::sleep(std::time::Duration::from_millis(400));
-    client.accept_elicitation(&late); // aceite tardio: ignorado
+    client.accept_elicitation(&late); // late acceptance: ignored
     std::thread::sleep(std::time::Duration::from_millis(400));
     assert!(
         session_dirs(work.path()).is_empty(),
-        "nada foi aberto: {:?}",
+        "nothing was opened: {:?}",
         session_dirs(work.path())
     );
-    // A vaga está livre: um novo pedido pergunta de novo e abre.
+    // The slot is free: a new request asks again and opens.
     let (is_error, started) = client.tool("start_capture", start_args());
     assert!(!is_error, "{started}");
     assert_eq!(client.elicitations.len(), 2);
@@ -567,10 +567,10 @@ fn cancelling_while_the_browser_comes_up_stops_it_and_frees_the_slot() {
         &[("FAKE_START_DELAY_MS", "1200")],
     );
     let id = client.call_nowait("start_capture", start_args());
-    client.answer_next_elicitation(); // confirmou; o "Chrome" demora a subir
+    client.answer_next_elicitation(); // confirmed; "Chrome" is slow to start
     std::thread::sleep(std::time::Duration::from_millis(300));
     client.cancel(id);
-    // Quando o navegador ficar pronto, a captura é parada e gravada; a vaga volta.
+    // When the browser is ready, the capture is stopped and recorded; the slot comes back.
     let mut started = None;
     for _ in 0..40 {
         let (is_error, out) = client.tool("start_capture", start_args());
@@ -581,7 +581,7 @@ fn cancelling_while_the_browser_comes_up_stops_it_and_frees_the_slot() {
         assert_eq!(out["error"]["code"], "capture_already_running", "{out}");
         std::thread::sleep(std::time::Duration::from_millis(250));
     }
-    assert!(started.is_some(), "a vaga nunca voltou");
+    assert!(started.is_some(), "the slot never came back");
     let dirs = session_dirs(work.path());
     assert_eq!(dirs.len(), 2, "{dirs:?}");
     let stopped: Vec<_> = dirs
@@ -591,7 +591,7 @@ fn cancelling_while_the_browser_comes_up_stops_it_and_frees_the_slot() {
     assert_eq!(
         stopped.len(),
         1,
-        "a primeira captura foi parada e gravada: {dirs:?}"
+        "the first capture was stopped and recorded: {dirs:?}"
     );
     client.finish();
 }

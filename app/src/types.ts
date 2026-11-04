@@ -1,5 +1,5 @@
-// Modelo de exibição da UI. Derivado do contrato v1 (src/v1/types.ts) pelo
-// adaptador em src/v1/adapter.ts. Nenhuma tela importa JSON bruto.
+// UI display model. Derived from the v1 contract (src/v1/types.ts) by the
+// adapter in src/v1/adapter.ts. No screen imports raw JSON.
 
 export type SourceId = "cdp" | "netlog" | "har" | "ownFormat" | "capture" | "derived" | "manual";
 export type Protocol = "HTTP/1.1" | "HTTP/2" | "HTTP/3" | "desconhecido";
@@ -19,7 +19,7 @@ export interface HeaderPair {
   value: string;
   kind: "pseudo" | "regular";
   note?: string;
-  /** Proveniência copiada da entrada v1 (fonte, evento, método). */
+  /** Provenance copied from the v1 entry (source, event, method). */
   source?: SourceId;
   event?: string;
   method?: string;
@@ -64,9 +64,9 @@ export interface RedirectHop {
 export interface EvidenceRef {
   source: SourceId;
   event: string;
-  /** Instante absoluto ISO, quando a fonte fornece. */
+  /** Absolute ISO instant, when the source provides it. */
   timestamp: string;
-  /** Tempo monotônico da fonte (segundos), quando não há relógio de parede. */
+  /** Monotonic time from the source (seconds), when there is no wall clock. */
   sourceTime?: number;
   method: string;
   eventRef?: string;
@@ -119,7 +119,7 @@ export interface WarningView {
   entity?: string;
 }
 
-/** Tipo do alvo CDP (`Target.targetInfo.type`), espelho do core. */
+/** CDP target type (`Target.targetInfo.type`), mirror of the core. */
 export type TargetKind =
   | "page"
   | "iframe"
@@ -128,7 +128,7 @@ export type TargetKind =
   | "shared_worker"
   | "other";
 
-/** Proveniência do alvo CDP; ausente em sessões antigas e em NetLog-only. */
+/** CDP target provenance; absent in old sessions and in NetLog-only ones. */
 export interface TargetView {
   targetId?: string;
   kind: TargetKind;
@@ -136,11 +136,11 @@ export interface TargetView {
   openerId?: string;
   parentSessionId?: string;
   attached?: boolean;
-  /** Notas informativas do core (ex.: "alvo encerrado durante a configuração"). */
+  /** Informational notes from the core (e.g. "target closed during setup"). */
   notes: string[];
 }
 
-/** Observação irmã (service worker): `linked` ou `ambiguous`. */
+/** Sibling observation (service worker): `linked` or `ambiguous`. */
 export interface RequestLinkView {
   kind: string;
   request: string;
@@ -161,13 +161,13 @@ export interface RequestRecord {
   startedAt: string;
   durationMs: number;
   initiator?: string;
-  /** Alvo CDP; ausente = sessão antiga ou só NetLog. */
+  /** CDP target; absent = old session or NetLog only. */
   target?: TargetView;
-  /** Observações ligadas (SW); nunca duplicata sem este campo. */
+  /** Linked observations (SW); never a duplicate without this field. */
   links: RequestLinkView[];
   /**
-   * Sem proveniência de alvo e fonte NetLog: marcar "alvo desconhecido (só NetLog)".
-   * Em sessões antigas (sem coluna Alvo) este selo não aparece.
+   * No target provenance and a NetLog source: mark "unknown target (NetLog only)".
+   * In old sessions (without a Target column) this badge does not appear.
    */
   netlogOnlyUnknownTarget: boolean;
   requestHeaders: HeaderPair[];
@@ -187,7 +187,7 @@ export interface RequestRecord {
   verification: Record<VerificationKey, Verification>;
 }
 
-/** Linha da lista (P5): só o necessário para tabela, filtros e alvos; o detalhe vem de `get_request`. */
+/** List row (P5): only what the table, filters and targets need; the detail comes from `get_request`. */
 export type RequestSummary = Pick<
   RequestRecord,
   | "id"
@@ -208,17 +208,17 @@ export type RequestSummary = Pick<
   | "primarySource"
 > & {
   warningCount: number;
-  /** Duração estimada ou ausente na fonte (mesma regra da verificação de timings). */
+  /** Duration estimated or missing in the source (same rule as the timings check). */
   durationApprox: boolean;
 };
 
 export interface SessionOrigin {
   kind: "synthetic" | "live" | "capture-import" | "har-import" | "netlog-import" | "unknown";
-  /** Rótulo humano da origem; nunca "ao vivo"/"real" sem rótulo explícito do core. */
+  /** Human-readable label of the origin; never "live"/"real" without an explicit label from the core. */
   label: string;
-  /** Selo "real": só captura ao vivo ou arquivo do usuário importado. */
+  /** "Real" badge: only for a live capture or a user-imported file. */
   real: boolean;
-  /** Texto curto para tags. */
+  /** Short text for tags. */
   tag: string;
 }
 
@@ -239,8 +239,8 @@ export interface SessionRecord {
   labels: string[];
   sourcePath?: string;
   attachments?: Record<string, string>;
-  /** Total de requisições (na sessão paginada, `requests` fica vazio). */
+  /** Total number of requests (in a paged session, `requests` stays empty). */
   requestCount: number;
-  /** Sessão paginada pelo backend (P5): lista via `list_requests`, detalhe via `get_request`. */
+  /** Session paged by the backend (P5): list via `list_requests`, detail via `get_request`. */
   paged: boolean;
 }

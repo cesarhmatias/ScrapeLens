@@ -1,12 +1,12 @@
-//! Exportação (cURL/Python) e sessão sanitizada, reutilizando o core.
+//! Export (cURL/Python) and sanitized session, reusing the core.
 //!
-//! Regras desta ponte:
-//! - o texto exportado é gerado **no Rust** a partir da sessão persistida; a UI
-//!   nunca monta nem edita o código exportado;
-//! - nada é executado, nenhuma rede é aberta;
-//! - escrita só em destino explicitamente escolhido pelo usuário, com
-//!   `create_new` (recusa sobrescrita), sem links simbólicos e com 0600;
-//! - a sessão original nunca é modificada.
+//! Rules of this bridge:
+//! - the exported text is generated **in Rust** from the persisted session; the UI
+//!   never builds or edits the exported code;
+//! - nothing is executed and no network is opened;
+//! - writes only go to a destination explicitly chosen by the user, using
+//!   `create_new` (refuses overwrites), with no symbolic links and 0600;
+//! - the original session is never modified.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -34,7 +34,7 @@ impl Format {
             "curl" => Ok(Self::Curl),
             "python" => Ok(Self::Python),
             other => Err(format!(
-                "formato de exportação desconhecido: {other:?} (use \"curl\" ou \"python\")"
+                "unknown export format: {other:?} (use \"curl\" or \"python\")"
             )),
         }
     }
@@ -47,7 +47,7 @@ impl Format {
     }
 }
 
-/// Resultado da geração: é exatamente o texto que a UI mostra, copia e salva.
+/// Generation result: exactly the text the UI shows, copies, and saves.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportPreview {
@@ -65,7 +65,7 @@ pub struct ExportPreview {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_note: Option<String>,
     pub body_state: String,
-    /// Adaptador de protocolo cujo codificador entrou no script de priming.
+    /// Protocol adapter whose encoder was included in the priming script.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter: Option<String>,
 }
@@ -84,7 +84,7 @@ pub struct RedactionCount {
     pub count: usize,
 }
 
-/// Prévia da sanitização: nada é gravado.
+/// Sanitization preview: nothing is written.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SanitizePreview {
@@ -119,17 +119,17 @@ pub struct SanitizeSaved {
 
 fn load(dir: &Path) -> Result<SessionBundle, String> {
     if !dir.exists() {
-        return Err(format!("pasta da sessão não encontrada: {}", dir.display()));
+        return Err(format!("session folder not found: {}", dir.display()));
     }
     if !dir.is_dir() {
         return Err(format!(
-            "a exportação precisa da pasta da sessão (com session.json), não do arquivo: {}",
+            "the export needs the session folder (containing session.json), not the file: {}",
             dir.display()
         ));
     }
     scrapelens_core::import_session_dir(dir)
         .map(|imported| imported.bundle)
-        .map_err(|error| format!("não foi possível ler a sessão: {error}"))
+        .map_err(|error| format!("could not read the session: {error}"))
 }
 
 fn find_request<'a>(
@@ -143,14 +143,14 @@ fn find_request<'a>(
         .find(|request| request.id == request_id)
         .ok_or_else(|| {
             format!(
-                "requisição {request_id} não encontrada nesta sessão ({} requisição(ões) no arquivo)",
+                "request {request_id} not found in this session ({} request(s) in the file)",
                 bundle.session.requests.len()
             )
         })
 }
 
-/// Corpo só é exportado quando a fonte diz que ele foi capturado e os bytes
-/// estão de fato no bundle. Estado indisponível continua indisponível.
+/// The body is only exported when the source says it was captured and the bytes
+/// are actually in the bundle. Unavailable state stays unavailable.
 fn body_bytes<'a>(
     request: &LogicalRequest,
     attachments: &'a BTreeMap<String, Vec<u8>>,
@@ -177,18 +177,18 @@ fn generate(
         Format::Curl => to_curl_with_origins(request, body, &options, origins),
         Format::Python => to_python_with_origins(request, body, &options, origins),
     };
-    output.map_err(|error| format!("não foi possível gerar a exportação: {error}"))
+    output.map_err(|error| format!("could not generate the export: {error}"))
 }
 
 pub fn preview(dir: &Path, request_id: &str, format: &str) -> Result<ExportPreview, String> {
     preview_with(dir, request_id, format, None)
 }
 
-/// Como [`preview`]; `origins` é `None` (sem anotação), `Some(Ok(..))` (anota no
-/// comentário os campos com origem observada) ou `Some(Err(..))` (origens
-/// indisponíveis: exporta sem anotar e avisa). O comando gerado não muda.
-/// O cálculo das origens fica com o chamador, para este módulo não depender
-/// de `commands`.
+/// Same as [`preview`]; `origins` is `None` (no annotation), `Some(Ok(..))` (annotates
+/// in the comment the fields with observed origin), or `Some(Err(..))` (origins
+/// unavailable: exports without annotations and warns). The generated command does not change.
+/// The caller computes the origins, so this module does not depend on
+/// `commands`.
 pub fn preview_with(
     dir: &Path,
     request_id: &str,
@@ -206,10 +206,10 @@ pub fn preview_with(
     };
     let mut output = generate(request, body, format, origins.as_ref())?;
     if let Some(error) = origins_error {
-        // A exportação segue sem anotações; a prévia diz por quê.
+        // The export proceeds without annotations; the preview says why.
         output.warnings.push(Warning::new(
             "export.origins_unavailable",
-            format!("origens não anotadas: {error}"),
+            format!("origins not annotated: {error}"),
         ));
     }
 
@@ -231,7 +231,7 @@ pub fn preview_with(
     })
 }
 
-/// Aliases de nível raiz do macOS (`/var`, `/tmp`, `/etc` → `/private/...`).
+/// Root-level macOS aliases (`/var`, `/tmp`, `/etc` → `/private/...`).
 const SYSTEM_ALIASES: [&str; 3] = ["/var", "/tmp", "/etc"];
 
 fn is_system_alias(path: &Path) -> bool {
@@ -241,10 +241,10 @@ fn is_system_alias(path: &Path) -> bool {
             .unwrap_or(false)
 }
 
-/// Recusa o caminho se ele ou QUALQUER ancestral existente for link simbólico.
-/// Política: a única exceção são os aliases de sistema do macOS de nível raiz
-/// (`/var`, `/tmp`, `/etc`) que apontam para `/private/...`; qualquer outro
-/// link, em qualquer posição, é recusado. Componentes inexistentes são ignorados.
+/// Refuses the path if it or ANY existing ancestor is a symbolic link.
+/// Policy: the only exception is the root-level macOS system aliases
+/// (`/var`, `/tmp`, `/etc`) that point to `/private/...`; any other
+/// link, at any position, is refused. Nonexistent components are ignored.
 fn reject_symlink(path: &Path, label: &str) -> Result<(), String> {
     for ancestor in path.ancestors() {
         if ancestor.as_os_str().is_empty() {
@@ -253,7 +253,7 @@ fn reject_symlink(path: &Path, label: &str) -> Result<(), String> {
         if let Ok(metadata) = fs::symlink_metadata(ancestor) {
             if metadata.file_type().is_symlink() && !is_system_alias(ancestor) {
                 return Err(format!(
-                    "{label} passa por um link simbólico ({}); escolha um caminho real",
+                    "{label} goes through a symbolic link ({}); choose a real path",
                     ancestor.display()
                 ));
             }
@@ -262,25 +262,25 @@ fn reject_symlink(path: &Path, label: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Grava um arquivo novo com 0600; nunca sobrescreve nem segue link simbólico.
+/// Writes a new file with 0600; never overwrites or follows a symbolic link.
 pub fn write_text_file(path: &Path, text: &str) -> Result<SavedFile, String> {
     let parent = path
         .parent()
-        .ok_or_else(|| format!("destino sem pasta: {}", path.display()))?;
-    reject_symlink(parent, "a pasta de destino")?;
+        .ok_or_else(|| format!("destination has no folder: {}", path.display()))?;
+    reject_symlink(parent, "the destination folder")?;
     if !parent.is_dir() {
         return Err(format!(
-            "a pasta de destino não existe: {}",
+            "the destination folder does not exist: {}",
             parent.display()
         ));
     }
     if path.file_name().is_none() {
-        return Err("o destino precisa de um nome de arquivo".to_string());
+        return Err("the destination needs a file name".to_string());
     }
-    reject_symlink(path, "o arquivo de destino")?;
+    reject_symlink(path, "the destination file")?;
     if path.exists() {
         return Err(format!(
-            "o arquivo já existe ({}); escolha outro nome para não sobrescrever",
+            "the file already exists ({}); choose another name to avoid overwriting",
             path.display()
         ));
     }
@@ -294,11 +294,11 @@ pub fn write_text_file(path: &Path, text: &str) -> Result<SavedFile, String> {
     }
     let mut file = options
         .open(path)
-        .map_err(|error| format!("não foi possível criar {}: {error}", path.display()))?;
+        .map_err(|error| format!("could not create {}: {error}", path.display()))?;
     file.write_all(text.as_bytes())
-        .map_err(|error| format!("falha ao gravar {}: {error}", path.display()))?;
+        .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
     file.sync_all()
-        .map_err(|error| format!("falha ao sincronizar {}: {error}", path.display()))?;
+        .map_err(|error| format!("failed to sync {}: {error}", path.display()))?;
 
     Ok(SavedFile {
         path: path.display().to_string(),
@@ -314,15 +314,15 @@ fn raw_artifacts(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-// Somente arquivos regulares; bancos/eventos não podem redirecionar a cópia.
+// Regular files only; databases/events must not be able to redirect the copy.
 fn full_raw_artifacts(dir: &Path) -> Result<Vec<String>, String> {
     let mut names = Vec::new();
     for name in [store::CDP_EVENTS_FILE, store::NETLOG_FILE, "cdp-bodies.jsonl"] {
         match fs::symlink_metadata(dir.join(name)) {
             Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => names.push(name.to_string()),
-            Ok(_) => return Err(format!("artefato bruto não é arquivo regular (symlink recusado): {name}")),
+            Ok(_) => return Err(format!("raw artifact is not a regular file (symlink refused): {name}")),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
-            Err(error) => return Err(format!("falha ao ler artefato bruto {name}: {error}")),
+            Err(error) => return Err(format!("failed to read raw artifact {name}: {error}")),
         }
     }
     Ok(names)
@@ -334,20 +334,20 @@ fn copy_raw_private(src: &Path, dest: &Path) -> Result<(), String> {
         let mut input = fs::OpenOptions::new().read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(src)?;
         if !input.metadata()?.is_file() {
-            return Err(std::io::Error::other("artefato bruto não é arquivo regular"));
+            return Err(std::io::Error::other("raw artifact is not a regular file"));
         }
         let mut output = fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
             .custom_flags(libc::O_NOFOLLOW).open(dest)?;
         std::io::copy(&mut input, &mut output)?;
         output.sync_all()
     };
-    copy().map_err(|error| format!("falha ao copiar artefato bruto {}: {error}", src.display()))
+    copy().map_err(|error| format!("failed to copy raw artifact {}: {error}", src.display()))
 }
 
 fn sanitized(dir: &Path) -> Result<(SessionBundle, SanitizedExport), String> {
     let bundle = load(dir)?;
-    // Política conservadora do core: sem eventos brutos, corpos não
-    // estruturados omitidos, placeholders padrão.
+    // Conservative core policy: no raw events, unstructured bodies omitted,
+    // default placeholders.
     let export = sanitize_bundle(&bundle, &SanitizeOptions::default());
     Ok((bundle, export))
 }
@@ -403,56 +403,56 @@ pub fn sanitize_preview_with_options(dir: &Path, include_sensitive: bool) -> Res
     })
 }
 
-/// Grava a sessão sanitizada em `destination`, que precisa ser uma pasta nova
-/// (ou vazia) fora da origem. Em erro, remove o que esta chamada criou.
+/// Writes the sanitized session to `destination`, which must be a new (or empty)
+/// folder outside the source. On error, removes what this call created.
 pub fn sanitize_to(src: &Path, destination: &Path) -> Result<SanitizeSaved, String> {
     sanitize_to_with_options(src, destination, false)
 }
 
 pub fn sanitize_to_with_options(src: &Path, destination: &Path, include_sensitive: bool) -> Result<SanitizeSaved, String> {
     let src_abs = fs::canonicalize(src)
-        .map_err(|error| format!("pasta da sessão inválida ({}): {error}", src.display()))?;
+        .map_err(|error| format!("invalid session folder ({}): {error}", src.display()))?;
     if !src_abs.is_dir() {
-        return Err(format!("a origem não é uma pasta: {}", src.display()));
+        return Err(format!("the source is not a folder: {}", src.display()));
     }
 
     let file_name = destination
         .file_name()
-        .ok_or_else(|| format!("destino sem nome de pasta: {}", destination.display()))?;
+        .ok_or_else(|| format!("destination has no folder name: {}", destination.display()))?;
     let parent = destination
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    reject_symlink(parent, "a pasta escolhida")?;
+    reject_symlink(parent, "the chosen folder")?;
     let parent_abs = fs::canonicalize(parent)
-        .map_err(|error| format!("pasta de destino inválida ({}): {error}", parent.display()))?;
+        .map_err(|error| format!("invalid destination folder ({}): {error}", parent.display()))?;
     let dest_abs = parent_abs.join(file_name);
 
     if dest_abs == src_abs {
-        return Err("o destino é a própria sessão original; escolha uma pasta nova".to_string());
+        return Err("the destination is the original session itself; choose a new folder".to_string());
     }
     if dest_abs.starts_with(&src_abs) {
         return Err(
-            "o destino está dentro da sessão original; escolha uma pasta fora dela para não misturar dados brutos e sanitizados"
+            "the destination is inside the original session; choose a folder outside it so raw and sanitized data are not mixed"
                 .to_string(),
         );
     }
-    reject_symlink(&dest_abs, "o destino")?;
+    reject_symlink(&dest_abs, "the destination")?;
 
     let mut created = false;
     match fs::metadata(&dest_abs) {
         Ok(metadata) if !metadata.is_dir() => {
             return Err(format!(
-                "o destino existe e não é uma pasta: {}",
+                "the destination exists and is not a folder: {}",
                 dest_abs.display()
             ));
         }
         Ok(_) => {
             let mut entries = fs::read_dir(&dest_abs)
-                .map_err(|error| format!("não foi possível ler {}: {error}", dest_abs.display()))?;
+                .map_err(|error| format!("could not read {}: {error}", dest_abs.display()))?;
             if entries.next().is_some() {
                 return Err(format!(
-                    "a pasta de destino não está vazia ({}); escolha uma pasta nova",
+                    "the destination folder is not empty ({}); choose a new folder",
                     dest_abs.display()
                 ));
             }
@@ -461,17 +461,17 @@ pub fn sanitize_to_with_options(src: &Path, destination: &Path, include_sensitiv
     }
 
     store::ensure_private_dir(&dest_abs)
-        .map_err(|error| format!("não foi possível criar {}: {error}", dest_abs.display()))?;
+        .map_err(|error| format!("could not create {}: {error}", dest_abs.display()))?;
 
     let outcome = (|| -> Result<SanitizeSaved, String> {
         if include_sensitive {
             let raw = full_raw_artifacts(&src_abs)?;
             let mut bundle = load(&src_abs)?;
-            // Copiamos os três arquivos brutos em fluxo abaixo, sem duplicar
-            // a escrita dos dois que o store também sabe gravar.
+            // The three raw files are copied below, without duplicating the writes
+            // of the two that the store can also write.
             bundle.cdp_events_jsonl = None;
             bundle.netlog_json = None;
-            store::write_session_dir(&bundle, &dest_abs).map_err(|error| format!("não foi possível gravar a captura completa: {error}"))?;
+            store::write_session_dir(&bundle, &dest_abs).map_err(|error| format!("could not write the full capture: {error}"))?;
             for name in raw {
                 copy_raw_private(&src_abs.join(&name), &dest_abs.join(&name))?;
             }
@@ -488,7 +488,7 @@ pub fn sanitize_to_with_options(src: &Path, destination: &Path, include_sensitiv
         let raw_dropped = raw_artifacts(&src_abs);
         export
             .write_to(&dest_abs)
-            .map_err(|error| format!("não foi possível gravar a sessão sanitizada: {error}"))?;
+            .map_err(|error| format!("could not write the sanitized session: {error}"))?;
         let total_redactions = export.redactions.values().sum();
         let session_bytes = fs::metadata(dest_abs.join(store::SESSION_FILE))
             .map(|metadata| metadata.len())
@@ -571,7 +571,7 @@ mod tests {
               { "name": "Host", "value": "127.0.0.1:8781", "source": "capture", "method": "fixture", "verification": "verified" }
             ]
           },
-          "requestBody": { "state": "unavailable", "note": "CDP não forneceu o corpo" }
+          "requestBody": { "state": "unavailable", "note": "CDP did not provide the body" }
         }
       ]
     }"#;
@@ -650,8 +650,8 @@ mod tests {
             "{}",
             preview.text
         );
-        // Aspas simples no valor não podem quebrar o comando: o shell recebe
-        // `a'\''b` dentro do argumento delimitado por aspas simples.
+        // Single quotes in the value must not break the command: the shell receives
+        // `a'\''b` inside the single-quoted argument.
         assert!(preview.text.contains("a'\\''b"), "{}", preview.text);
         assert_eq!(preview.body_state, "captured");
         fs::remove_dir_all(&dir).ok();
@@ -684,16 +684,16 @@ mod tests {
     #[test]
     fn unknown_request_and_missing_dir_are_actionable_errors() {
         let dir = fixture("missing");
-        let error = preview(&dir, "req-inexistente", "curl").unwrap_err();
-        assert!(error.contains("req-inexistente"), "{error}");
-        assert!(error.contains("2 requisição"), "{error}");
+        let error = preview(&dir, "req-missing", "curl").unwrap_err();
+        assert!(error.contains("req-missing"), "{error}");
+        assert!(error.contains("2 request"), "{error}");
 
-        let gone = dir.join("nao-existe");
+        let gone = dir.join("does-not-exist");
         let error = preview(&gone, "req-body", "curl").unwrap_err();
-        assert!(error.contains("não encontrada"), "{error}");
+        assert!(error.contains("not found"), "{error}");
 
         let error = preview(&dir, "req-body", "wget").unwrap_err();
-        assert!(error.contains("desconhecido"), "{error}");
+        assert!(error.contains("unknown"), "{error}");
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -707,17 +707,17 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600, "modo {mode:o}");
+            assert_eq!(mode, 0o600, "mode {mode:o}");
         }
 
-        let error = write_text_file(&target, "outra coisa").unwrap_err();
-        assert!(error.contains("já existe"), "{error}");
+        let error = write_text_file(&target, "something else").unwrap_err();
+        assert!(error.contains("already exists"), "{error}");
         assert_eq!(fs::read_to_string(&target).unwrap(), "#!/bin/sh\necho ok\n");
 
         let link = dir.join("link.sh");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         let error = write_text_file(&link, "x").unwrap_err();
-        assert!(error.contains("link simbólico"), "{error}");
+        assert!(error.contains("symbolic link"), "{error}");
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -738,7 +738,7 @@ mod tests {
             .flatten()
             .map(|e| e.file_name())
             .collect();
-        assert_eq!(before, after, "prévia não pode escrever na origem");
+        assert_eq!(before, after, "preview must not write to the source");
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -758,19 +758,19 @@ mod tests {
         assert!(saved.total_redactions >= 1);
 
         let sanitized = fs::read_to_string(dest.join("session.json")).unwrap();
-        assert!(!sanitized.contains("ZZSECRET-1"), "cookie não redigido");
+        assert!(!sanitized.contains("ZZSECRET-1"), "cookie not redacted");
         assert!(sanitized.contains("[REDACTED]"));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let dir_mode = fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
-            assert_eq!(dir_mode, 0o700, "modo {dir_mode:o}");
+            assert_eq!(dir_mode, 0o700, "mode {dir_mode:o}");
             let file_mode = fs::metadata(dest.join("session.json"))
                 .unwrap()
                 .permissions()
                 .mode()
                 & 0o777;
-            assert_eq!(file_mode, 0o600, "modo {file_mode:o}");
+            assert_eq!(file_mode, 0o600, "mode {file_mode:o}");
         }
 
         assert_eq!(fs::read(dir.join("session.json")).unwrap(), session_before);
@@ -783,18 +783,18 @@ mod tests {
     fn sanitize_refuses_origin_inside_origin_and_occupied_destination() {
         let dir = fixture("dest");
         let error = sanitize_to(&dir, &dir).unwrap_err();
-        assert!(error.contains("própria sessão"), "{error}");
+        assert!(error.contains("original session itself"), "{error}");
 
         let inside = dir.join("sanitized");
         let error = sanitize_to(&dir, &inside).unwrap_err();
-        assert!(error.contains("dentro da sessão"), "{error}");
+        assert!(error.contains("inside the original session"), "{error}");
         assert!(!inside.exists());
 
         let occupied = temp_dir("occupied");
-        fs::write(occupied.join("arquivo.txt"), b"x").unwrap();
+        fs::write(occupied.join("file.txt"), b"x").unwrap();
         let error = sanitize_to(&dir, &occupied).unwrap_err();
-        assert!(error.contains("não está vazia"), "{error}");
-        assert!(occupied.join("arquivo.txt").exists());
+        assert!(error.contains("is not empty"), "{error}");
+        assert!(occupied.join("file.txt").exists());
 
         let link = dir.parent().unwrap().join(format!(
             "{}-link",
@@ -802,7 +802,7 @@ mod tests {
         ));
         std::os::unix::fs::symlink(&occupied, &link).unwrap();
         let error = sanitize_to(&dir, &link).unwrap_err();
-        assert!(error.contains("link simbólico"), "{error}");
+        assert!(error.contains("symbolic link"), "{error}");
 
         fs::remove_file(&link).ok();
         fs::remove_dir_all(&occupied).ok();
@@ -813,7 +813,7 @@ mod tests {
     fn saving_into_missing_parent_is_refused() {
         let dir = temp_dir("parent");
         let error = write_text_file(&dir.join("ausente/arq.sh"), "x").unwrap_err();
-        assert!(error.contains("não existe"), "{error}");
+        assert!(error.contains("does not exist"), "{error}");
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -821,7 +821,7 @@ mod tests {
     fn annotated_preview_without_origins_warns_and_keeps_text() {
         let dir = fixture("export-annotate");
         let plain = preview(&dir, "req-body", "curl").unwrap();
-        let noted = preview_with(&dir, "req-body", "curl", Some(Err("sem tentativas".to_string()))).unwrap();
+        let noted = preview_with(&dir, "req-body", "curl", Some(Err("no attempts".to_string()))).unwrap();
         assert_eq!(plain.text, noted.text);
         assert!(noted.warnings.iter().any(|w| w.code == "export.origins_unavailable"));
     }

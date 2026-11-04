@@ -1,5 +1,5 @@
-//! Preferências locais do shell (por enquanto: caminho manual do Chrome).
-//! Ficam em `app_config_dir()/preferences.json`; nada sai da máquina.
+//! Local shell preferences (for now: manual Chrome path).
+//! Stored in `app_config_dir()/preferences.json`; nothing leaves the machine.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager};
 struct Preferences {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chrome_path: Option<String>,
-    /// URL inicial da captura ao vivo (`http`/`https`); ausente = usar env ou em branco.
+    /// Initial live-capture URL (`http`/`https`); absent = use env or blank.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     capture_start_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -33,9 +33,9 @@ fn read(app: &AppHandle) -> Preferences {
     read_and_scrub(&file)
 }
 
-/// Lê as preferências e limpa o legado (A9-B3): a URL inicial passa por
-/// `persistable_url` (sem userinfo, query, fragmento e com caminho sanitizado);
-/// URL inválida é descartada. Se algo mudou ou o arquivo não é 0600, regrava.
+/// Reads the preferences and scrubs legacy data (A9-B3): the initial URL goes through
+/// `persistable_url` (no userinfo, query or fragment, and with a sanitized path);
+/// an invalid URL is discarded. If anything changed or the file is not 0600, it is rewritten.
 fn read_and_scrub(file: &Path) -> Preferences {
     let Some((text, mode)) = read_nofollow(file) else {
         return Preferences::default();
@@ -50,7 +50,7 @@ fn read_and_scrub(file: &Path) -> Preferences {
     preferences
 }
 
-/// Normaliza o que vai para o disco; devolve `true` se mudou algo.
+/// Normalizes what goes to disk; returns `true` if anything changed.
 fn normalize(preferences: &mut Preferences) -> bool {
     let before = preferences.capture_start_url.clone();
     preferences.capture_start_url = before
@@ -68,7 +68,7 @@ pub fn load_chrome_path(app: &AppHandle) -> Option<PathBuf> {
 
 pub fn save_chrome_path(app: &AppHandle, path: &Path) -> Result<(), String> {
     let Some(file) = config_file(app) else {
-        return Err("sem diretório de configuração do app".to_string());
+        return Err("no app configuration directory".to_string());
     };
     let mut preferences = read_and_scrub(&file);
     preferences.chrome_path = Some(path.display().to_string());
@@ -85,7 +85,7 @@ pub fn load_capture_start_url(app: &AppHandle) -> Option<String> {
 
 pub fn save_capture_start_url(app: &AppHandle, url: Option<&str>) -> Result<(), String> {
     let Some(file) = config_file(app) else {
-        return Err("sem diretório de configuração do app".to_string());
+        return Err("no app configuration directory".to_string());
     };
     let mut preferences = read_and_scrub(&file);
     preferences.capture_start_url = match url.map(str::trim).filter(|value| !value.is_empty()) {
@@ -100,7 +100,7 @@ pub fn load_capture_cookie_source(app: &AppHandle) -> Option<String> {
 }
 
 pub fn save_capture_cookie_source(app: &AppHandle, source: Option<&str>) -> Result<(), String> {
-    let file = config_file(app).ok_or("sem diretório de configuração do app")?;
+    let file = config_file(app).ok_or("no app configuration directory")?;
     let mut preferences = read_and_scrub(&file);
     preferences.capture_cookie_source = source.filter(|value| !value.is_empty()).map(str::to_owned);
     write_prefs(file, &preferences)
@@ -108,11 +108,11 @@ pub fn save_capture_cookie_source(app: &AppHandle, source: Option<&str>) -> Resu
 
 fn write_prefs(file: PathBuf, preferences: &Preferences) -> Result<(), String> {
     let text = serde_json::to_string_pretty(preferences)
-        .map_err(|error| format!("falha ao serializar preferências: {error}"))?;
+        .map_err(|error| format!("failed to serialize preferences: {error}"))?;
     write_private_atomic(&file, text.as_bytes())
 }
 
-/// Lê sem seguir symlink (O_NOFOLLOW) e só arquivo regular; devolve o texto e o modo.
+/// Reads without following symlinks (O_NOFOLLOW) and only regular files; returns the text and the mode.
 fn read_nofollow(file: &Path) -> Option<(String, u32)> {
     use std::io::Read;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -130,49 +130,49 @@ fn read_nofollow(file: &Path) -> Option<(String, u32)> {
     Some((text, meta.permissions().mode() & 0o777))
 }
 
-/// Nenhum componente do caminho (ancestrais inclusive) pode ser symlink (A9-B7).
+/// No path component (ancestors included) may be a symlink (A9-B7).
 fn refuse_symlinked_components(path: &Path) -> Result<(), String> {
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component);
         if let Ok(meta) = fs::symlink_metadata(&current) {
             if meta.file_type().is_symlink() {
-                return Err(format!("componente symlink recusado: {}", current.display()));
+                return Err(format!("symlink component refused: {}", current.display()));
             }
         }
     }
     Ok(())
 }
 
-/// Diretório 0700 (recusa symlink), temporário `create_new` + O_NOFOLLOW 0600,
-/// fsync e `rename` sobre o destino (que não pode ser symlink).
+/// 0700 directory (refuses symlink), temporary file via `create_new` + O_NOFOLLOW 0600,
+/// fsync and `rename` over the destination (which cannot be a symlink).
 pub(crate) fn write_private_atomic(file: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-    let parent = file.parent().ok_or("destino sem diretório")?;
+    let parent = file.parent().ok_or("destination has no directory")?;
     if !file.is_absolute() {
-        return Err(format!("caminho de preferências não absoluto: {}", file.display()));
+        return Err(format!("preferences path is not absolute: {}", file.display()));
     }
     refuse_symlinked_components(parent)?;
     match fs::symlink_metadata(parent) {
         Ok(meta) if meta.file_type().is_symlink() => {
-            return Err(format!("diretório de configuração é symlink: {}", parent.display()));
+            return Err(format!("configuration directory is a symlink: {}", parent.display()));
         }
         Ok(meta) if !meta.is_dir() => {
-            return Err(format!("não é um diretório: {}", parent.display()));
+            return Err(format!("not a directory: {}", parent.display()));
         }
         Ok(_) => {}
         Err(_) => fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
             .create(parent)
-            .map_err(|error| format!("não foi possível criar {}: {error}", parent.display()))?,
+            .map_err(|error| format!("could not create {}: {error}", parent.display()))?,
     }
     fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
-        .map_err(|error| format!("não foi possível proteger {}: {error}", parent.display()))?;
+        .map_err(|error| format!("could not protect {}: {error}", parent.display()))?;
     if let Ok(meta) = fs::symlink_metadata(file) {
         if meta.file_type().is_symlink() || !meta.is_file() {
-            return Err(format!("{} não é um arquivo regular (symlink recusado)", file.display()));
+            return Err(format!("{} is not a regular file (symlink refused)", file.display()));
         }
     }
     let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("prefs");
@@ -188,16 +188,16 @@ pub(crate) fn write_private_atomic(file: &Path, bytes: &[u8]) -> Result<(), Stri
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
             .open(&tmp)
-            .map_err(|error| format!("falha ao criar {}: {error}", tmp.display()))?;
+            .map_err(|error| format!("failed to create {}: {error}", tmp.display()))?;
         handle
             .write_all(bytes)
             .and_then(|_| handle.sync_all())
-            .map_err(|error| format!("falha ao gravar {}: {error}", tmp.display()))?;
-        fs::rename(&tmp, file).map_err(|error| format!("falha ao gravar {}: {error}", file.display()))?;
-        // fsync do diretório: o rename sobrevive a queda de energia.
+            .map_err(|error| format!("failed to write {}: {error}", tmp.display()))?;
+        fs::rename(&tmp, file).map_err(|error| format!("failed to write {}: {error}", file.display()))?;
+        // fsync the directory: the rename survives a power loss.
         fs::File::open(parent)
             .and_then(|dir| dir.sync_all())
-            .map_err(|error| format!("falha no fsync de {}: {error}", parent.display()))
+            .map_err(|error| format!("fsync failed for {}: {error}", parent.display()))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
@@ -245,7 +245,7 @@ mod tests {
         assert_eq!(fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
         assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
         assert_eq!(read_nofollow(&file).unwrap(), ("{\"a\":1}".to_string(), 0o600));
-        // sem temporários sobrando
+        // no leftover temporary files
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
 
         let victim = root.join("victim.txt");
@@ -280,7 +280,7 @@ mod tests {
         fs::write(&file, r#"{"chromePath":"/x","captureStartUrl":"https://u:pw@h/p;jsessionid=J1?token=SECRET#frag"}"#).unwrap();
         fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
         let prefs = read_and_scrub(&file);
-        assert_eq!(prefs.capture_start_url, None, "userinfo invalida a URL legada");
+        assert_eq!(prefs.capture_start_url, None, "userinfo invalidates the legacy URL");
         let text = fs::read_to_string(&file).unwrap();
         for secret in ["pw", "SECRET", "frag", "J1"] {
             assert!(!text.contains(secret), "{text}");

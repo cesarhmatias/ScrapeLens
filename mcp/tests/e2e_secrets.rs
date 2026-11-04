@@ -1,6 +1,6 @@
-//! Regressão de segurança: um segredo marcado na query não aparece em NENHUMA
-//! saída das 14 ferramentas sem `reveal`. Varre toda linha que o servidor
-//! escreveu em stdout (e as mensagens de elicitação), não só campos conhecidos.
+//! Security regression: a secret tagged in the query never appears in ANY
+//! output of the 14 tools without `reveal`. Scans every line the server
+//! wrote to stdout (and the elicitation messages), not just known fields.
 
 mod common;
 
@@ -15,8 +15,8 @@ use serde_json::{json, Value};
 
 const MARK: &str = "SEGREDO-MARCADO-7";
 
-/// Um marcador único por forma de vazamento (revisão: fragmento, matriz,
-/// userinfo, `nome=` sem `?`, nomes de credencial, corpos, parseError...).
+/// One unique marker per leak form (review: fragment, matrix, userinfo,
+/// `name=` without `?`, credential names, bodies, parseError...).
 const FORMS: [&str; 27] = [
     "MK-FRAG-LOCATION",
     "MK-FRAG-REFRESH",
@@ -51,7 +51,7 @@ fn prov() -> Provenance {
     Provenance::new(Source::NetLog, "test", Verification::Verified)
 }
 
-/// Sessão nativa com o segredo marcado em todo campo que carrega URL ou alvo.
+/// Native session with the secret marked in every field that carries a URL or target.
 fn poisoned_session(dir: &std::path::Path) {
     let imported = scrapelens_core::import_har(flow_har("").as_bytes()).unwrap();
     let mut bundle = imported.bundle;
@@ -63,7 +63,7 @@ fn poisoned_session(dir: &std::path::Path) {
         request
             .provenance
             .notes
-            .push(format!("visto em https://x.invalid/a{q}"));
+            .push(format!("seen in https://x.invalid/a{q}"));
         request.target = Some(TargetProvenance {
             target_id: Some("T1".into()),
             kind: TargetKind::Page,
@@ -73,7 +73,7 @@ fn poisoned_session(dir: &std::path::Path) {
         for attempt in &mut request.attempts {
             attempt.url = request.url.clone();
             attempt.started_at = Some(100.0 + n as f64);
-            attempt.failure = Some(format!("net::ERR_FAILED em https://x.invalid/f{q}"));
+            attempt.failure = Some(format!("net::ERR_FAILED at https://x.invalid/f{q}"));
             attempt.initiator = Some(Initiator {
                 kind: "script".into(),
                 url: Some(format!("https://x.invalid/a.js{q}")),
@@ -87,7 +87,7 @@ fn poisoned_session(dir: &std::path::Path) {
             for view in [&mut attempt.request_headers, &mut attempt.response_headers] {
                 view.start_line = Some(format!("GET /page{q} HTTP/1.1"));
                 view.raw_block = Some(format!("GET /page{q} HTTP/1.1\n"));
-                view.notes.push(format!("linha /page{q}"));
+                view.notes.push(format!("line /page{q}"));
                 view.pseudo_headers
                     .push(HeaderEntry::new(":path", format!("/page{q}"), &prov()));
                 for (name, value) in [
@@ -158,7 +158,7 @@ fn poisoned_session(dir: &std::path::Path) {
     }
     session.warnings.push(Warning::new(
         "x.aviso",
-        format!("falha ao carregar https://x.invalid/w{q}"),
+        format!("failed to load https://x.invalid/w{q}"),
     ));
     for (name, bytes) in bundle_attachments {
         bundle.insert_attachment(name, bytes);
@@ -171,7 +171,7 @@ fn marked_query_secret_never_leaves_any_of_the_15_tools() {
     let work = tempfile::tempdir().unwrap();
     let extra = work.path().join("extra");
     poisoned_session(&extra.join("poison"));
-    // Uma cópia para importar pela ferramenta (a saída do import também conta).
+    // A copy to import through the tool (the import output counts too).
     let sessions = work.path().join("sessions");
     let mut client = Client::start(
         &fake_server(),
@@ -263,7 +263,7 @@ fn marked_query_secret_never_leaves_any_of_the_15_tools() {
         call(&mut client, "site_profile", json!({"session_id": sid}));
     }
 
-    // Ferramentas de captura (navegador falso): navigate com o segredo na query.
+    // Capture tools (fake browser): navigate with the secret in the query.
     let (_, started) = client.tool(
         "start_capture",
         json!({"allowed_hosts": ["site.invalid.test"], "start_url": format!("http://site.invalid.test/?token={MARK}")}),
@@ -276,7 +276,7 @@ fn marked_query_secret_never_leaves_any_of_the_15_tools() {
         json!({"capture_id": id, "url": format!("http://site.invalid.test/page2?token={MARK}")}),
     );
     call(&mut client, "capture_status", json!({"capture_id": id}));
-    // export_session: metadados não podem ecoar segredos, nem na versão completa.
+    // export_session: metadata must not echo secrets, not even in the full version.
     call(
         &mut client,
         "export_session",
@@ -294,34 +294,34 @@ fn marked_query_secret_never_leaves_any_of_the_15_tools() {
         json!({"session_id": stopped["sessionId"]}),
     );
 
-    // Todas as 15 ferramentas foram exercitadas.
+    // All 15 tools were exercised.
     let (_, tools) = (0, client.request("tools/list", json!({})));
     assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 15);
 
-    // Varre o JSON inteiro de cada saída, as linhas brutas do stdout e as elicitações.
+    // Scans the whole JSON of each output, the raw stdout lines and the elicitations.
     let all_marks: Vec<&str> = std::iter::once(MARK).chain(FORMS).collect();
     for mark in &all_marks {
         for output in outputs.borrow().iter() {
             assert!(
                 !output.to_string().contains(mark),
-                "{mark} vazou em: {output}"
+                "{mark} leaked in: {output}"
             );
         }
         for line in &client.seen {
-            assert!(!line.contains(mark), "{mark} vazou no stdout: {line}");
+            assert!(!line.contains(mark), "{mark} leaked to stdout: {line}");
         }
         for message in &client.elicitations {
             assert!(
                 !message.contains(mark),
-                "{mark} vazou na elicitação: {message}"
+                "{mark} leaked in elicitation: {message}"
             );
         }
     }
-    // A sessão original continua intacta (o segredo existe nela): sem reveal ele não sai.
+    // The original session stays intact (the secret exists in it): without reveal it does not leak.
     let original = std::fs::read_to_string(extra.join("poison/session.json")).unwrap();
     assert!(
         original.contains(MARK),
-        "a sessão de teste precisa conter o segredo"
+        "the test session must contain the secret"
     );
     let (ok, stderr) = client.finish();
     assert!(ok, "{stderr}");

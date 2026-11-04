@@ -1,4 +1,4 @@
-//! Exportadores cURL/Python: escaping de dados não confiáveis.
+//! cURL/Python exporters: escaping of untrusted data.
 
 use scrapelens_core::export::curl::to_curl;
 use scrapelens_core::export::python::to_python;
@@ -35,7 +35,7 @@ fn curl_preserves_order_duplicates_and_escapes_untrusted_data() {
     assert!(text.contains("--header 'X-Rep: b'"));
     assert!(text.contains("--header 'x-quote: a'\\''b\\c'"));
     assert!(text.contains("--data-binary $'hello\\nworld'"));
-    assert!(text.contains("NÃO reproduz TLS"));
+    assert!(text.contains("does NOT reproduce TLS"));
     assert!(output.body_included);
 }
 
@@ -75,8 +75,8 @@ fn curl_marks_unverified_sequence_and_pseudoheaders() {
     let provenance = Provenance::new(Source::Cdp, "test", Verification::Unverified);
     request.request_headers.add(":method", "POST", &provenance);
     let output = to_curl(&request, None, &ExportOptions::default()).unwrap();
-    assert!(output.text.contains("NÃO verificada"));
-    assert!(output.text.contains(":method: pseudoheader não replicável"));
+    assert!(output.text.contains("NOT verified"));
+    assert!(output.text.contains(":method: pseudoheader not replicable"));
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn python_uses_http_client_and_preserves_header_duplicates() {
     assert!(first < second);
     assert!(text.contains("conn.send(b\"hello\\nworld\")"));
     assert!(text.contains("putrequest(\"POST\", \"/a?x=1&y=';id\", skip_host=True"));
-    assert!(text.contains("NÃO reproduz TLS"));
+    assert!(text.contains("does NOT reproduce TLS"));
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn python_maps_authority_to_host_for_http11() {
     assert!(output
         .text
         .contains("conn.putheader(\"Host\", \"demo.invalid\")"));
-    assert!(output.text.contains(":authority convertido para Host"));
+    assert!(output.text.contains(":authority converted to Host"));
     assert!(!output.text.contains("conn.putheader(\":path\""));
 }
 

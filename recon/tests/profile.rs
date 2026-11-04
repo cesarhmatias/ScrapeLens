@@ -15,7 +15,7 @@ fn finding<'a>(p: &'a SiteProfile, sig: &str) -> Option<&'a scrapelens_recon::Fi
     p.findings.iter().find(|f| f.signature_id.as_deref() == Some(sig))
 }
 
-// --- tabela de assinaturas ---------------------------------------------------
+// --- signature table ---------------------------------------------------
 
 #[test]
 fn embedded_signatures_are_valid_sourced_and_match_the_contract() {
@@ -28,7 +28,7 @@ fn embedded_signatures_are_valid_sourced_and_match_the_contract() {
         "ak-001", "ak-002", "ak-003", "im-001", "rc-001", "rc-002", "rc-003", "hc-001", "hc-002",
         "f5-001",
     ];
-    assert_eq!(ids, expected, "a tabela deve coincidir com docs/16b §6.1");
+    assert_eq!(ids, expected, "the table must match docs/16b §6.1");
     for s in &set.signatures {
         assert!(!s.source.quote.trim().is_empty(), "{}", s.id);
         match s.source.kind {
@@ -38,7 +38,7 @@ fn embedded_signatures_are_valid_sourced_and_match_the_contract() {
             SourceKind::Projeto => assert!(s.source.url.contains("docs/") || s.source.url.contains("core/")),
         }
     }
-    // Fontes secundárias nunca chegam a `alta`: só `weight=present`.
+    // Secondary sources never reach high confidence: only `weight=present`.
     for s in set.signatures.iter().filter(|s| s.source.kind != SourceKind::Fornecedor) {
         assert_eq!(s.weight, Weight::Present, "{}", s.id);
     }
@@ -54,8 +54,8 @@ fn signature_without_source_is_refused() {
     assert!(SignatureSet::from_json(unknown).is_err());
 }
 
-/// Gera uma requisição que dispara a assinatura (fixture sintética, loopback
-/// zero: nenhuma rede). Prova o detector, não a existência da proteção.
+/// Builds a request that triggers the signature (synthetic fixture, loopback
+/// zero: no network). Proves the detector, not the existence of the protection.
 fn trigger(sig: &Signature) -> Req {
     let ts = || -> String {
         sig.host
@@ -106,43 +106,43 @@ fn trigger(sig: &Signature) -> Req {
 fn every_signature_has_a_synthetic_fixture_that_triggers_it() {
     let set = SignatureSet::embedded();
     for sig in &set.signatures {
-        // `rc-001` e `rc-002`: o mesmo host, caminhos diferentes: um não dispara o outro.
+        // `rc-001` and `rc-002`: same host, different paths: one does not trigger the other.
         let bundle = with_main(vec![trigger(sig)]);
         let p = profile(&bundle);
-        let f = finding(&p, &sig.id).unwrap_or_else(|| panic!("{} não disparou: {:#?}", sig.id, p.findings));
+        let f = finding(&p, &sig.id).unwrap_or_else(|| panic!("{} did not fire: {:#?}", sig.id, p.findings));
         assert_eq!(f.vendor.as_deref(), Some(sig.vendor.as_str()), "{}", sig.id);
         assert_eq!(f.source.as_ref().unwrap().url, sig.source.url, "{}", sig.id);
         assert!(f.evidence.iter().any(|e| e.request_id == "t1"), "{}: {:?}", sig.id, f.evidence);
-        // Redação: o valor sintético do cookie nunca sai.
+        // Redaction: the synthetic cookie value never leaks.
         let json = serde_json::to_string(&p).unwrap();
-        assert!(!json.contains("SEGREDO123"), "{} vazou valor", sig.id);
+        assert!(!json.contains("SEGREDO123"), "{} leaked value", sig.id);
     }
-    // E nenhum outro dispara por engano: a sessão só com o documento principal está limpa.
+    // And no other signature fires by mistake: the session with only the main document is clean.
     let clean = profile(&with_main(vec![]));
     assert!(clean.findings.iter().all(|f| f.signature_id.is_none()), "{:#?}", clean.findings);
 }
 
-// --- confiança -----------------------------------------------------------------
+// --- confidence -----------------------------------------------------------------
 
 #[test]
 fn confidence_follows_source_and_weight() {
-    // fornecedor + bloqueio documentado => alta
+    // vendor + documented block => high
     let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", 403).rh("cf-mitigated", "challenge")]));
     assert_eq!(finding(&p, "cf-005").unwrap().confidence, Confidence::Alta);
     assert_eq!(finding(&p, "cf-005").unwrap().category, "desafio");
-    // fornecedor + presença => media
+    // vendor + presence => medium
     let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", 200).set_cookie("__cf_bm=abc; Path=/")]));
     assert_eq!(finding(&p, "cf-001").unwrap().confidence, Confidence::Media);
-    // fonte secundária sozinha => baixa
+    // secondary source alone => low
     let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", 200).set_cookie("incap_ses_1_2=abc; Path=/")]));
     assert_eq!(finding(&p, "im-001").unwrap().confidence, Confidence::Baixa);
-    // dois indícios secundários do mesmo fornecedor => media
+    // two secondary indications from the same vendor => medium
     let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", 200)
         .set_cookie("_abck=abc; Path=/")
         .set_cookie("bm_sz=def; Path=/")]));
     assert_eq!(finding(&p, "ak-002").unwrap().confidence, Confidence::Media);
     assert_eq!(finding(&p, "ak-003").unwrap().confidence, Confidence::Media);
-    // projeto (/TSPD/): baixa, com a ressalva escrita
+    // project (/TSPD/): low, with the caveat written out
     let p = profile(&with_main(vec![Req::script("c", "https://app.test/TSPD/abc?type=1", 200)]));
     let f = finding(&p, "f5-001").unwrap();
     assert_eq!(f.confidence, Confidence::Baixa);
@@ -153,7 +153,7 @@ fn confidence_follows_source_and_weight() {
 fn datadome_response_header_is_block_only_when_not_200() {
     let ok = profile(&with_main(vec![Req::xhr("c", "GET", "https://app.test/a", 200).rh("X-DataDomeResponse", "200")]));
     let f = finding(&ok, "dd-003").unwrap();
-    assert_eq!(f.category, "protecao", "200 = permitido: presença, não desafio");
+    assert_eq!(f.category, "protecao", "200 = allowed: presence, not challenge");
     assert_eq!(f.confidence, Confidence::Media);
     let blocked = profile(&with_main(vec![Req::xhr("c", "GET", "https://app.test/a", 403).rh("X-DataDomeResponse", "403")]));
     let f = finding(&blocked, "dd-003").unwrap();
@@ -176,11 +176,11 @@ fn secrets_never_leave_in_evidence() {
     let json = serde_json::to_string_pretty(&p).unwrap();
     assert!(!json.contains(secret), "{json}");
     assert!(json.contains("[redigido,"));
-    // URL aparece sem a consulta.
+    // URL appears without the query string.
     assert!(json.contains("https://app.test/x?…"));
 }
 
-// --- bloqueios e recomendação -----------------------------------------------------
+// --- blocks and recommendation -----------------------------------------------------
 
 #[test]
 fn marker_alone_does_not_block_and_chrome_is_enough() {
@@ -229,7 +229,7 @@ fn challenge_solved_in_the_browser_needs_priming_not_cloakbrowser() {
 
 #[test]
 fn clearance_cookie_alone_resolves_a_challenge_on_another_route() {
-    // O desafio é servido na rota /a; a liberação chega por cookie, depois.
+    // The challenge is served on route /a; the release arrives later, by cookie.
     let bundle = build(vec![
         Req::doc("m", "https://app.test/", 200).resp_body("text/html", "<html></html>"),
         Req::xhr("x1", "GET", "https://app.test/a", 202).rh("x-amzn-waf-action", "challenge"),
@@ -261,7 +261,7 @@ fn blocked_api_route_without_recovery_is_alta_and_candidate() {
     assert_eq!(f.confidence, Confidence::Alta);
     assert_eq!(f.resolved_later, Some(false));
     assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser);
-    // O documento principal respondeu 200: a confiança da recomendação é menor.
+    // The main document answered 200: the recommendation's confidence is lower.
     assert_eq!(p.recommendation.confidence, Confidence::Media);
 }
 
@@ -278,16 +278,16 @@ fn static_asset_403_is_not_an_application_block() {
 
 #[test]
 fn indeterminate_when_partial_or_too_small_or_without_main_document() {
-    // parcial
+    // partial
     let mut b = with_main(vec![Req::xhr("x", "GET", "https://app.test/a", 200)]);
     b.session.session.completeness = scrapelens_core::model::Completeness::partial("NetLog truncado");
     let p = site_profile(&b.session, &b, &ProfileOptions::default());
     assert_eq!(p.recommendation.value, RecommendationValue::Indeterminado);
     assert!(p.sample.partial);
-    // uma só requisição
+    // a single request
     let p = profile(&build(vec![Req::doc("m", "https://app.test/", 200)]));
     assert_eq!(p.recommendation.value, RecommendationValue::Indeterminado);
-    // sem documento principal
+    // without a main document
     let p = profile(&build(vec![
         Req::xhr("a", "GET", "https://app.test/a", 200),
         Req::xhr("b", "GET", "https://app.test/b", 200),
@@ -296,7 +296,7 @@ fn indeterminate_when_partial_or_too_small_or_without_main_document() {
     assert!(p.recommendation.reasons.iter().any(|r| r.contains("documento principal")));
 }
 
-// --- achados genéricos -------------------------------------------------------------
+// --- generic findings -------------------------------------------------------------
 
 #[test]
 fn protocol_is_observed_not_required() {
@@ -309,7 +309,7 @@ fn protocol_is_observed_not_required() {
     let f = p.findings.iter().find(|f| f.category == "protocolo").unwrap();
     assert!(f.summary.contains("h2") && f.summary.contains("app.test"));
     assert!(f.limits[0].contains("observado, não exigido"));
-    // Só a origem do documento vira achado; a do ícone fica na amostra.
+    // Only the document origin becomes a finding; the icon's stays in the sample.
     assert_eq!(p.findings.iter().filter(|f| f.category == "protocolo").count(), 1);
     assert_eq!(p.sample.protocols.get("https://img.test").unwrap(), &vec!["h3".to_string()]);
 }
@@ -326,13 +326,13 @@ fn cookie_flow_is_observed_and_never_called_mandatory() {
     assert_eq!(f.occurrences, 2);
     assert!(f.limits[0].contains("OBRIGATÓRIO"));
     assert!(f.vendor.is_none());
-    // Cookie comum sem fornecedor não vira priming sozinho.
+    // A common cookie without a vendor does not become priming on its own.
     assert_eq!(p.recommendation.value, RecommendationValue::ChromeNormalBasta);
 }
 
 #[test]
 fn presence_cookie_reused_is_noted_but_clearance_cookie_reused_means_priming() {
-    // `datadome` é cookie de presença/identificação: observação, não gatilho.
+    // `datadome` is a presence/identification cookie: an observation, not a trigger.
     let bundle = build(vec![
         Req::doc("m", "https://app.test/", 200).set_cookie("datadome=ABCDEFGH; Path=/"),
         Req::xhr("x1", "GET", "https://app.test/a", 200).cookie("datadome=ABCDEFGH"),
@@ -343,7 +343,7 @@ fn presence_cookie_reused_is_noted_but_clearance_cookie_reused_means_priming() {
     assert_eq!(p.recommendation.value, RecommendationValue::ChromeNormalBasta);
     assert!(p.recommendation.reasons.iter().any(|r| r.contains("obrigatoriedade não foi provada")));
 
-    // `aws-waf-token` é cookie de liberação: reutilizado => priming (media).
+    // `aws-waf-token` is a release cookie: reused => priming (medium).
     let bundle = build(vec![
         Req::doc("m", "https://app.test/", 200).set_cookie("aws-waf-token=ABCDEFGH; Path=/"),
         Req::xhr("x1", "GET", "https://app.test/a", 200).cookie("aws-waf-token=ABCDEFGH"),
@@ -356,7 +356,7 @@ fn presence_cookie_reused_is_noted_but_clearance_cookie_reused_means_priming() {
 #[test]
 fn dynamic_token_origin_comes_from_flow_and_is_redacted() {
     let token = "tok-ABCDEFGH12345678";
-    // Campo com nome diferente do produtor (csrf × x-csrf): a Core diz "possível origem".
+    // Field with a name different from the producer (csrf × x-csrf): Core says "possible origin".
     let bundle = build(vec![
         Req::doc("m", "https://app.test/", 200).resp_body("text/html", "<html></html>"),
         Req::xhr("p", "GET", "https://app.test/api/token", 200)
@@ -366,7 +366,7 @@ fn dynamic_token_origin_comes_from_flow_and_is_redacted() {
     let p = profile(&bundle);
     let f = p.findings.iter().find(|f| f.kind == "token-origin").unwrap_or_else(|| panic!("{:#?}", p));
     assert_eq!(f.category, "token");
-    assert_eq!(f.confidence, Confidence::Baixa, "valor igual, campo diferente = possível origem");
+    assert_eq!(f.confidence, Confidence::Baixa, "same value, different field = possible origin");
     assert_eq!(f.evidence.len(), 2);
     assert_eq!(f.evidence[0].request_id, "c");
     assert_eq!(f.evidence[1].request_id, "p");
@@ -375,7 +375,7 @@ fn dynamic_token_origin_comes_from_flow_and_is_redacted() {
     assert_eq!(p.recommendation.value, RecommendationValue::PrecisaDePriming);
     assert_eq!(p.recommendation.confidence, Confidence::Baixa);
 
-    // Mesmo nome de campo: evidência forte => media.
+    // Same field name: strong evidence => medium.
     let bundle = build(vec![
         Req::doc("m", "https://app.test/", 200).resp_body("text/html", "<html></html>"),
         Req::xhr("p", "GET", "https://app.test/api/token", 200)
@@ -447,29 +447,29 @@ fn output_is_camel_case_json_with_stable_ids() {
     assert!(v["sample"]["appRequests"].is_number());
 }
 
-// --- Revisão de segurança (docs/17): confiança do site_profile -----------------------
+// --- Security review (docs/17): site_profile confidence -----------------------
 
 #[test]
 fn r1_presence_only_in_body_query_or_request_cookie_is_low() {
-    // Texto refletido numa página de busca.
+    // Text reflected on a search page.
     let p = profile(&with_main(vec![Req::doc("s", "https://app.test/search?q=x", 200)
         .resp_body("text/html", "<p>Resultados para: name=\"cf-turnstile-response\"</p>")]));
     let f = finding(&p, "cf-008").unwrap();
     assert_eq!(f.confidence, Confidence::Baixa);
     assert!(f.limits.iter().any(|l| l.contains("indício só em response-body")), "{:?}", f.limits);
-    // Só na consulta de um link qualquer.
+    // Only in the query of some link.
     let p = profile(&with_main(vec![Req::xhr("q", "GET", "https://app.test/api?g-recaptcha-response=1", 200)]));
     let f = finding(&p, "rc-003").unwrap();
     assert_eq!(f.confidence, Confidence::Baixa);
     assert!(f.evidence.iter().all(|e| e.scope == "query"));
-    // Cookie só no pedido (pode vir de `document.cookie`).
+    // Cookie only on the request (may come from `document.cookie`).
     let p = profile(&with_main(vec![Req::xhr("c", "GET", "https://app.test/api", 200).cookie("datadome=x; _px3=y")]));
     assert_eq!(finding(&p, "dd-001").unwrap().confidence, Confidence::Baixa);
     assert_eq!(finding(&p, "hm-001").unwrap().confidence, Confidence::Baixa);
-    // O mesmo cookie vindo num Set-Cookie do servidor continua `media`.
+    // The same cookie coming from a server Set-Cookie stays `medium`.
     let p = profile(&with_main(vec![Req::doc("d", "https://app.test/x", 200).set_cookie("datadome=x; Path=/")]));
     assert_eq!(finding(&p, "dd-001").unwrap().confidence, Confidence::Media);
-    // Com um indício forte e independente do MESMO fornecedor (o script), sobe a `media`.
+    // With a strong, independent indication from the SAME vendor (the script), it rises to `medium`.
     let p = profile(&with_main(vec![
         Req::script("rcs", "https://www.google.com/recaptcha/api.js", 200),
         Req::doc("s", "https://app.test/login", 200).resp_body("text/html", "<textarea name=\"g-recaptcha-response\"></textarea>"),
@@ -481,7 +481,7 @@ fn r1_presence_only_in_body_query_or_request_cookie_is_low() {
 
 #[test]
 fn r2_aws_waf_challenge_needs_the_documented_status() {
-    // x-amzn-waf-action: challenge com 200 não é a ação documentada (202).
+    // x-amzn-waf-action: challenge with 200 is not the documented action (202).
     let p = profile(&with_main(vec![
         Req::xhr("w", "GET", "https://app.test/api/x", 200).rh("x-amzn-waf-action", "challenge"),
         Req::xhr("w2", "GET", "https://app.test/api/y", 200),
@@ -493,10 +493,10 @@ fn r2_aws_waf_challenge_needs_the_documented_status() {
     assert!(f.limits.iter().any(|l| l.contains("difere do documentado (202)")), "{:?}", f.limits);
     assert_ne!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser);
     assert!(p.findings.iter().all(|f| f.category != "desafio"));
-    // captcha com 403 (documentado: 405) também não.
+    // captcha with 403 (documented: 405) is not either.
     let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", 403).rh("x-amzn-waf-action", "captcha")]));
     assert_eq!(finding(&p, "aw-001").unwrap().confidence, Confidence::Baixa);
-    // Os pares documentados continuam `alta`.
+    // The documented pairs remain high confidence.
     for (value, status) in [("challenge", 202), ("captcha", 405)] {
         let p = profile(&with_main(vec![Req::doc("c", "https://app.test/x", status).rh("x-amzn-waf-action", value)]));
         let f = finding(&p, "aw-001").unwrap();
@@ -514,16 +514,16 @@ fn r3_block_on_a_third_party_resource_does_not_decide_the_recommendation() {
     ]));
     let f = finding(&p, "cf-005").unwrap();
     assert_eq!(f.confidence, Confidence::Baixa);
-    assert_eq!(f.category, "protecao", "sem bloqueio atribuído ao alvo");
+    assert_eq!(f.category, "protecao", "no block attributed to the target");
     assert!(f.evidence.iter().all(|e| e.third_party));
     assert!(f.limits.iter().any(|l| l.contains("outro host") && l.contains("app.test")), "{:?}", f.limits);
     assert_eq!(p.recommendation.value, RecommendationValue::ChromeNormalBasta, "{:#?}", p.recommendation);
-    // Cookie de proteção vindo só de outro host também não atribui.
+    // A protection cookie coming only from another host is not attributed either.
     let p = profile(&with_main(vec![Req::script("t", "https://cdn.other.test/x.js", 200).set_cookie("__cf_bm=z; Path=/")]));
     let f = finding(&p, "cf-001").unwrap();
     assert_eq!(f.confidence, Confidence::Baixa);
     assert!(f.evidence.iter().all(|e| e.third_party));
-    // XHR 403 num host de terceiro: achado marcado, fora da recomendação.
+    // XHR 403 on a third-party host: finding flagged, outside the recommendation.
     let p = profile(&with_main(vec![
         Req::xhr("a", "GET", "https://metrics.other.test/collect", 403),
         Req::xhr("x1", "GET", "https://app.test/api/a", 200),
@@ -532,41 +532,41 @@ fn r3_block_on_a_third_party_resource_does_not_decide_the_recommendation() {
     assert_eq!(f.confidence, Confidence::Baixa);
     assert!(f.evidence.iter().all(|e| e.third_party));
     assert_ne!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser);
-    // O mesmo bloqueio num subdomínio do site-alvo CONTA.
+    // The same block on a subdomain of the target site COUNTS.
     let p = profile(&with_main(vec![Req::xhr("a", "GET", "https://api.app.test/v1", 403).rh("cf-mitigated", "challenge")]));
     let f = finding(&p, "cf-005").unwrap();
     assert_eq!(f.confidence, Confidence::Alta);
     assert!(f.evidence.iter().all(|e| !e.third_party));
     assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser);
-    // Script de captcha de outro host é referência embutida pela página: continua atribuído.
+    // A captcha script from another host is a reference embedded by the page: it stays attributed.
     let p = profile(&with_main(vec![Req::script("s", "https://challenges.cloudflare.com/turnstile/v0/api.js", 200)]));
     assert_eq!(finding(&p, "cf-007").unwrap().confidence, Confidence::Media);
 }
 
 #[test]
 fn r4_a_redirect_or_a_cookie_from_another_host_does_not_resolve_a_challenge() {
-    // (a) 403 de desafio e depois 302 na MESMA rota (para a página de desafio).
+    // (a) challenge 403 and then 302 on the SAME route (to the challenge page).
     let p = profile(&build(vec![
         Req::doc("m1", "https://app.test/", 403).rh("cf-mitigated", "challenge").resp_body("text/html", "<html>c</html>"),
         Req::doc("m2", "https://app.test/", 302).rh("location", "https://app.test/__challenge"),
     ]));
     assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(false));
     assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser, "{:#?}", p.recommendation);
-    // (b) cf_clearance definido por OUTRO host.
+    // (b) cf_clearance set by ANOTHER host.
     let p = profile(&build(vec![
         Req::doc("m1", "https://app.test/", 403).rh("cf-mitigated", "challenge").resp_body("text/html", "<html>c</html>"),
         Req::script("t", "https://cdn.other.test/x.js", 200).set_cookie("cf_clearance=Z; Path=/"),
     ]));
     assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(false));
     assert_eq!(p.recommendation.value, RecommendationValue::CandidatoACloakbrowser, "{:#?}", p.recommendation);
-    // (c) o mesmo cookie vindo de um subdomínio do site-alvo libera.
+    // (c) the same cookie coming from a subdomain of the target site releases it.
     let p = profile(&build(vec![
         Req::doc("m1", "https://app.test/", 403).rh("cf-mitigated", "challenge").resp_body("text/html", "<html>c</html>"),
         Req::xhr("x", "GET", "https://api.app.test/ok", 200).set_cookie("cf_clearance=Z; Path=/"),
     ]));
     assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(true));
     assert_eq!(p.recommendation.value, RecommendationValue::PrecisaDePriming);
-    // (d) 2xx depois na mesma rota continua resolvendo.
+    // (d) a 2xx afterwards on the same route still resolves it.
     let p = profile(&build(vec![
         Req::doc("m1", "https://app.test/", 403).rh("cf-mitigated", "challenge").resp_body("text/html", "<html>c</html>"),
         Req::doc("m2", "https://app.test/", 200).resp_body("text/html", "<html>ok</html>"),
@@ -574,17 +574,17 @@ fn r4_a_redirect_or_a_cookie_from_another_host_does_not_resolve_a_challenge() {
     assert_eq!(finding(&p, "cf-005").unwrap().resolved_later, Some(true));
 }
 
-// --- contexto de captura (D7) ------------------------------------------------
+// --- capture context (D7) ------------------------------------------------
 
 #[test]
 fn capture_context_reports_whether_the_automation_flag_was_suppressed() {
     use scrapelens_core::model::CaptureMeta;
     let mut bundle = with_main(vec![Req::doc("d1", "https://shop.invalid.test/", 200)]);
-    // Sessão sem metadado de captura (ex.: importada de HAR): desconhecido.
+    // Session without capture metadata (e.g. imported from HAR): unknown.
     bundle.session.session.capture = None;
     assert_eq!(profile(&bundle).capture_context.automation_flag_suppressed, None);
 
-    // Capturada pelo ScrapeLens depois do D7: a flag está em `chromeArgs`.
+    // Captured by ScrapeLens after D7: the flag is in `chromeArgs`.
     bundle.session.session.capture = Some(CaptureMeta {
         mode: Some("cdp+netlog".into()),
         headless: Some(false),
@@ -598,7 +598,7 @@ fn capture_context_reports_whether_the_automation_flag_was_suppressed() {
     assert_eq!(ctx.automation_flag_suppressed, Some(true));
     assert_eq!(ctx.headless, Some(false));
 
-    // Argumentos registrados SEM a flag (captura anterior ao D7): falso, não desconhecido.
+    // Arguments recorded WITHOUT the flag (capture before D7): false, not unknown.
     bundle.session.session.capture = Some(CaptureMeta {
         mode: Some("cdp+netlog".into()),
         chrome_args: Some(vec!["--enable-quic".into(), "--disable-blink-features=Foo".into()]),
@@ -606,7 +606,7 @@ fn capture_context_reports_whether_the_automation_flag_was_suppressed() {
     });
     assert_eq!(profile(&bundle).capture_context.automation_flag_suppressed, Some(false));
 
-    // Serializa em camelCase para o servidor MCP.
+    // Serializes to camelCase for the MCP server.
     let json = serde_json::to_value(profile(&bundle)).unwrap();
     assert_eq!(json["captureContext"]["automationFlagSuppressed"], false);
 }

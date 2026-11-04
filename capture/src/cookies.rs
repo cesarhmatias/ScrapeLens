@@ -1,23 +1,23 @@
-//! Importação de cookies dos navegadores instalados para o domínio da URL
-//! inicial de uma captura.
+//! Import of cookies from installed browsers for the domain of a capture's
+//! initial URL.
 //!
-//! Regras de segurança e privacidade:
-//! - o banco do navegador do usuário **nunca** é aberto no lugar: é copiado
-//!   (com `-wal`/`-shm`) para um diretório temporário privado 0700, que é
-//!   apagado no `Drop`; nada é escrito no perfil pessoal;
-//! - só entram cookies do **mesmo site registrável** do host da URL inicial
-//!   (mais o próprio host, para `localhost` e IP), e cookies expirados ficam
-//!   de fora;
-//! - os valores importados não são registrados em log de resumo: o evento de
-//!   auditoria `Capture.cookiesImported` leva só a fonte, o domínio e as
-//!   contagens. Os cookies aparecem depois, como qualquer outro, nos headers
-//!   `Cookie` do CDP/NetLog — por isso a captura já nasce com o aviso de dados
-//!   sensíveis (`browser::SENSITIVE_NOTICE`).
+//! Security and privacy rules:
+//! - the user's browser database is **never** opened in place: it is copied
+//!   (with `-wal`/`-shm`) into a private 0700 temporary directory, which is
+//!   deleted on `Drop`; nothing is written to the personal profile;
+//! - only cookies from the **same registrable site** as the initial URL's host
+//!   get in (plus the host itself, for `localhost` and IPs), and expired cookies
+//!   are left out;
+//! - imported values are not written to the summary log: the audit event
+//!   `Capture.cookiesImported` carries only the source, the domain and the
+//!   counts. The cookies later appear, like any others, in the `Cookie` headers
+//!   of CDP/NetLog — which is why the capture already starts with the sensitive
+//!   data notice (`browser::SENSITIVE_NOTICE`).
 //!
-//! A leitura do SQLite é feita pelo `sqlite3` do sistema (presente no macOS;
-//! instalado nas imagens de teste Linux), sempre sobre a cópia. A
-//! descriptografia é Rust puro (SHA-1/SHA-256/PBKDF2/AES-128-CBC), sem OpenSSL
-//! nem crate nova, para funcionar igual no macOS e no container `--offline`.
+//! SQLite is read with the system's `sqlite3` (present on macOS; installed in the
+//! Linux test images), always against the copy. Decryption is pure Rust
+//! (SHA-1/SHA-256/PBKDF2/AES-128-CBC), with no OpenSSL and no new crate, so it
+//! works the same on macOS and in the `--offline` container.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -26,7 +26,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-/// Tipo de armazenamento de cookies da fonte.
+/// Cookie storage type of the source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BrowserKind {
@@ -45,28 +45,28 @@ impl BrowserKind {
     }
 }
 
-/// Um perfil de navegador instalado com um banco de cookies legível.
+/// An installed browser profile with a readable cookie database.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserCookieSource {
-    /// Identificador estável para o chamador escolher: `chrome:Default`,
+    /// Stable identifier for the caller to choose: `chrome:Default`,
     /// `firefox:xxxx.default-release`, `safari:default`.
     pub id: String,
-    /// Nome do produto: `Google Chrome`, `Brave`, `Firefox`, `Safari`...
+    /// Product name: `Google Chrome`, `Brave`, `Firefox`, `Safari`...
     pub browser: String,
-    /// Perfil: nome amigável do Chromium (`Default (Pessoa 1)`) ou o diretório
-    /// do perfil do Firefox.
+    /// Profile: the friendly Chromium name (`Default (Person 1)`) or the Firefox
+    /// profile directory.
     pub profile: String,
-    /// Texto para a interface: `Google Chrome — Default`.
+    /// Text for the UI: `Google Chrome — Default`.
     pub label: String,
     pub kind: BrowserKind,
-    /// Caminho do `Cookies`/`cookies.sqlite`/`Cookies.binarycookies`.
+    /// Path to the `Cookies`/`cookies.sqlite`/`Cookies.binarycookies` file.
     pub db_path: PathBuf,
 }
 
-/// Cookie pronto para o `Network.setCookies` do CDP. `domain` é o `host_key`
-/// como está no banco (pode começar com `.`); `expires` é Unix em segundos e
-/// fica ausente para cookie de sessão.
+/// Cookie ready for CDP's `Network.setCookies`. `domain` is the `host_key` as it
+/// is in the database (it may start with `.`); `expires` is Unix time in seconds and
+/// is absent for session cookies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedCookie {
@@ -82,8 +82,8 @@ pub struct ImportedCookie {
     pub expires: Option<i64>,
 }
 
-/// Resultado de uma importação. `skipped` conta cookies do banco que ficaram de
-/// fora (expirados, de outro site, `v11` sem chave, valor não-UTF-8).
+/// Result of an import. `skipped` counts database cookies left out (expired, from
+/// another site, `v11` without a key, non-UTF-8 value).
 #[derive(Debug, Clone)]
 pub struct CookieImportOutcome {
     pub source_id: String,
@@ -91,15 +91,15 @@ pub struct CookieImportOutcome {
     pub domain: String,
     pub cookies: Vec<ImportedCookie>,
     pub skipped: usize,
-    /// Avisos estruturais (sem valores de cookie), para a sessão/UI.
+    /// Structural warnings (no cookie values), for the session/UI.
     pub notes: Vec<String>,
 }
 
 impl CookieImportOutcome {
-    /// Sufixo para o `notice` da captura, sem valores.
+    /// Suffix for the capture's `notice`, without values.
     pub fn notice_suffix(&self) -> String {
         format!(
-            " · {} cookie(s) importado(s) de {}",
+            " · {} cookie(s) imported from {}",
             self.cookies.len(),
             self.label
         )
@@ -107,11 +107,11 @@ impl CookieImportOutcome {
 }
 
 // ---------------------------------------------------------------------------
-// Descoberta das fontes instaladas
+// Discovery of installed sources
 // ---------------------------------------------------------------------------
 
-/// Fontes de cookies legíveis nesta máquina, em ordem estável. Uma fonte só
-/// entra se o arquivo existir; perfis vazios ou ilegíveis ficam de fora.
+/// Readable cookie sources on this machine, in stable order. A source only
+/// gets in if its file exists; empty or unreadable profiles are left out.
 pub fn list_browser_cookie_sources() -> Vec<BrowserCookieSource> {
     #[cfg(target_os = "macos")]
     {
@@ -185,7 +185,7 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").filter(|v| !v.is_empty()).map(PathBuf::from)
 }
 
-/// Perfis Chromium (`Default`, `Profile 1`, ...) dentro de um user-data-dir.
+/// Chromium profiles (`Default`, `Profile 1`, ...) inside a user-data-dir.
 fn chromium_sources(
     product: &'static ChromiumProduct,
     user_data: &Path,
@@ -229,8 +229,8 @@ fn chromium_sources(
     }
 }
 
-/// `Local State` → `profile.info_cache` → nome amigável do perfil. Só leitura;
-/// um arquivo ausente ou inválido não impede a descoberta.
+/// `Local State` → `profile.info_cache` → friendly profile name. Read-only;
+/// a missing or invalid file does not prevent discovery.
 fn chromium_profile_names(user_data: &Path) -> std::collections::HashMap<String, String> {
     let mut names = std::collections::HashMap::new();
     let Ok(text) = std::fs::read(user_data.join("Local State")) else {
@@ -363,10 +363,10 @@ fn firefox_source(db: &Path, profile_dir: &Path) -> BrowserCookieSource {
 }
 
 // ---------------------------------------------------------------------------
-// URL, site registrável e filtro de domínio
+// URL, registrable site and domain filter
 // ---------------------------------------------------------------------------
 
-/// Host minúsculo de uma URL `http(s)`: sem usuário, porta nem colchetes de IPv6.
+/// Lowercase host of an `http(s)` URL: no user, port or IPv6 brackets.
 pub fn url_host(target_url: &str) -> Option<String> {
     let rest = target_url.split_once("://").map(|(_, r)| r)?;
     let authority = rest.split(['/', '?', '#']).next()?;
@@ -394,7 +394,7 @@ fn is_ip(host: &str) -> bool {
     host.contains(':') || host.parse::<std::net::Ipv4Addr>().is_ok()
 }
 
-/// Sufixos compostos usados nas URLs do projeto e nos casos comuns de eTLD+1.
+/// Compound suffixes used in the project's URLs and in common eTLD+1 cases.
 const COMPOUND_SUFFIXES: &[&str] = &[
     "com.br", "net.br", "org.br", "gov.br", "edu.br", "art.br", "blog.br", "eco.br",
     "co.uk", "org.uk", "ac.uk", "gov.uk", "co.jp", "ne.jp", "or.jp", "com.au", "net.au",
@@ -402,7 +402,7 @@ const COMPOUND_SUFFIXES: &[&str] = &[
 ];
 
 /// `app.exemplo.com.br` → `exemplo.com.br`; `exemplo.com` → `exemplo.com`;
-/// `localhost`/IP → `None` (aí o match é exato).
+/// `localhost`/IP → `None` (the match is then exact).
 pub fn registrable_domain(host: &str) -> Option<String> {
     let host = host.trim_end_matches('.').to_ascii_lowercase();
     if host.is_empty() || is_ip(&host) {
@@ -424,8 +424,8 @@ pub fn registrable_domain(host: &str) -> Option<String> {
     Some(labels[labels.len() - start..].join("."))
 }
 
-/// O cookie pertence ao site do host? Mesmo site registrável (inclui
-/// subdomínios de login/SSO), ou host exato para `localhost`/IP.
+/// Does the cookie belong to the host's site? Same registrable site (includes
+/// login/SSO subdomains), or exact host for `localhost`/IP.
 fn cookie_matches_host(cookie_domain: &str, host: &str) -> bool {
     let domain = cookie_domain.trim_start_matches('.').trim_end_matches('.').to_ascii_lowercase();
     if domain.is_empty() {
@@ -441,7 +441,7 @@ fn cookie_matches_host(cookie_domain: &str, host: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Cópia privada do banco (somente leitura, apagada no Drop)
+// Private copy of the database (read-only, deleted on Drop)
 // ---------------------------------------------------------------------------
 
 struct CookieDbCopy {
@@ -457,10 +457,10 @@ impl Drop for CookieDbCopy {
 
 fn copy_cookie_db(source: &Path) -> Result<CookieDbCopy, String> {
     let meta = std::fs::metadata(source)
-        .map_err(|error| format!("banco de cookies inacessível ({}): {error}", source.display()))?;
+        .map_err(|error| format!("cookie database inaccessible ({}): {error}", source.display()))?;
     if !meta.is_file() {
         return Err(format!(
-            "banco de cookies não é arquivo regular: {}",
+            "cookie database is not a regular file: {}",
             source.display()
         ));
     }
@@ -470,14 +470,14 @@ fn copy_cookie_db(source: &Path) -> Result<CookieDbCopy, String> {
         unix_nanos()
     ));
     crate::create_private_dir_new(&dir)
-        .map_err(|error| format!("pasta temporária de cookies: {error}"))?;
+        .map_err(|error| format!("cookie temporary directory: {error}"))?;
     let db = dir.join("cookies.db");
     if let Err(error) = std::fs::copy(source, &db) {
         let _ = std::fs::remove_dir_all(&dir);
-        return Err(format!("copiar o banco de cookies: {error}"));
+        return Err(format!("copy the cookie database: {error}"));
     }
-    // WAL e SHM acompanham a cópia: sem eles o SQLite não vê os cookies mais
-    // recentes (o Chrome mantém writes no WAL).
+    // WAL and SHM follow the copy: without them SQLite does not see the most
+    // recent cookies (Chrome keeps its writes in the WAL).
     for suffix in ["-wal", "-shm"] {
         let mut name = source.as_os_str().to_os_string();
         name.push(suffix);
@@ -499,7 +499,7 @@ fn unix_nanos() -> u128 {
 }
 
 // ---------------------------------------------------------------------------
-// Leitura do SQLite pelo CLI do sistema
+// Reading SQLite through the system CLI
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -514,9 +514,9 @@ fn sqlite3_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Roda uma consulta no banco copiado e devolve as linhas separadas por TAB.
-/// Texto sai sempre em `hex(...)`, então nome/valor/domínio nunca quebram a
-/// linha, mesmo com TAB, aspas ou byte não-UTF-8.
+/// Runs a query on the copied database and returns the rows separated by TAB.
+/// Text always comes out as `hex(...)`, so name/value/domain never break the
+/// line, even with TAB, quotes or a non-UTF-8 byte.
 fn sqlite_rows(db: &Path, sql: &str) -> Result<Vec<Vec<String>>, String> {
     let output = Command::new("sqlite3")
         .arg("-batch")
@@ -528,12 +528,12 @@ fn sqlite_rows(db: &Path, sql: &str) -> Result<Vec<Vec<String>>, String> {
         .stdin(Stdio::null())
         .output()
         .map_err(|error| {
-            format!("sqlite3 não encontrado (instale o pacote sqlite3): {error}")
+            format!("sqlite3 not found (install the sqlite3 package): {error}")
         })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let first = stderr.lines().next().unwrap_or("erro do sqlite3");
-        return Err(format!("consulta de cookies falhou: {first}"));
+        let first = stderr.lines().next().unwrap_or("sqlite3 error");
+        return Err(format!("cookie query failed: {first}"));
     }
     let text = String::from_utf8_lossy(&output.stdout);
     Ok(text
@@ -567,8 +567,8 @@ fn unhex_text(text: &str) -> String {
 }
 
 fn sql_quote(value: &str) -> String {
-    // Só entra host já normalizado (letras, dígitos, '.', ':', '-' e '_');
-    // ainda assim, aspas são dobradas por segurança.
+    // Only an already normalized host gets in (letters, digits, '.', ':', '-' and '_');
+    // even so, quotes are doubled for safety.
     format!("'{}'", value.replace('\'', "''"))
 }
 
@@ -594,7 +594,7 @@ fn unix_now() -> i64 {
 }
 
 // ---------------------------------------------------------------------------
-// Descriptografia Chromium (v10/v11)
+// Chromium decryption (v10/v11)
 // ---------------------------------------------------------------------------
 
 fn chromium_key(product: &ChromiumProduct, version_prefix: &[u8]) -> Result<Vec<u8>, String> {
@@ -615,7 +615,7 @@ fn chromium_key(product: &ChromiumProduct, version_prefix: &[u8]) -> Result<Vec<
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (product, version_prefix);
-        Err("descriptografia de cookies não suportada nesta plataforma".to_string())
+        Err("cookie decryption is not supported on this platform".to_string())
     }
 }
 
@@ -637,7 +637,7 @@ fn keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
                     .map_err(|error| format!("Keychain ({service}): {error}"))?;
                 if !status.success() {
                     return Err(format!(
-                        "não foi possível ler a senha \"{service}\" do Keychain; autorize o acesso e tente de novo"
+                        "could not read the \"{service}\" password from the Keychain; authorize access and try again"
                     ));
                 }
                 let mut password = output.stdout;
@@ -645,7 +645,7 @@ fn keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
                     password.pop();
                 }
                 if password.is_empty() {
-                    return Err(format!("a senha \"{service}\" do Keychain veio vazia"));
+                    return Err(format!("the \"{service}\" password in the Keychain came back empty"));
                 }
                 return Ok(password);
             }
@@ -656,7 +656,7 @@ fn keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!(
-                    "o Keychain não respondeu em 30 s para \"{service}\" (autorização pendente?)"
+                    "the Keychain did not respond within 30 s for \"{service}\" (authorization pending?)"
                 ));
             }
         }
@@ -677,13 +677,13 @@ fn linux_v11_key(product: &ChromiumProduct) -> Result<Vec<u8>, String> {
         .output()
         .map_err(|_| {
             format!(
-                "cookie v11 de {}: instale libsecret/secret-tool ou use um perfil com v10",
+                "v11 cookie of {}: install libsecret/secret-tool or use a profile with v10",
                 product.browser
             )
         })?;
     if !output.status.success() || output.stdout.is_empty() {
         return Err(format!(
-            "cookie v11 de {}: a senha não está no libsecret",
+            "v11 cookie of {}: the password is not in libsecret",
             product.browser
         ));
     }
@@ -694,9 +694,9 @@ fn linux_v11_key(product: &ChromiumProduct) -> Result<Vec<u8>, String> {
     Ok(pbkdf2_sha1(&password, b"saltysalt", 1, 16))
 }
 
-/// `v10`/`v11` + AES-128-CBC (IV = 16 espaços, PKCS#7). No Chrome 130+ o
-/// plaintext começa com 32 bytes de SHA-256(host_key); o prefixo só é removido
-/// quando confere exatamente.
+/// `v10`/`v11` + AES-128-CBC (IV = 16 spaces, PKCS#7). In Chrome 130+ the
+/// plaintext starts with 32 bytes of SHA-256(host_key); the prefix is only removed
+/// when it matches exactly.
 fn decrypt_chromium_value(
     encrypted: &[u8],
     key: &[u8],
@@ -704,20 +704,20 @@ fn decrypt_chromium_value(
     value_version: Option<i64>,
 ) -> Result<String, String> {
     if encrypted.len() < 3 {
-        return Err("valor criptografado curto".to_string());
+        return Err("encrypted value too short".to_string());
     }
     if &encrypted[..3] != b"v10" && &encrypted[..3] != b"v11" {
-        return Err("prefixo de criptografia desconhecido".to_string());
+        return Err("unknown encryption prefix".to_string());
     }
     let mut plain = aes_128_cbc_decrypt(key, &[0x20u8; 16], &encrypted[3..])?;
     let hash = sha256(host_key.as_bytes());
     let has_hash_prefix = plain.len() >= 32 && plain[..32] == hash[..];
-    // Chrome 130+ (meta.version >= 24) prefixa SHA-256(host_key). Sem versão no
-    // banco, o match exato dos 32 bytes basta; com versão antiga, não remove.
+    // Chrome 130+ (meta.version >= 24) prefixes SHA-256(host_key). With no version
+    // in the database, an exact match of the 32 bytes is enough; with an old version, it does not remove.
     if has_hash_prefix && value_version.map_or(true, |v| v >= 24) {
         plain.drain(..32);
     }
-    String::from_utf8(plain).map_err(|_| "valor do cookie não é UTF-8".to_string())
+    String::from_utf8(plain).map_err(|_| "cookie value is not UTF-8".to_string())
 }
 
 fn same_site_from_db(value: i64) -> Option<String> {
@@ -730,10 +730,10 @@ fn same_site_from_db(value: i64) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Carregamento
+// Loading
 // ---------------------------------------------------------------------------
 
-/// Cookies do site da `target_url` a partir da fonte `source_id`.
+/// Cookies for the site of `target_url` from the source `source_id`.
 pub fn load_cookies_for_url(
     source_id: &str,
     target_url: &str,
@@ -741,9 +741,9 @@ pub fn load_cookies_for_url(
     let source = list_browser_cookie_sources()
         .into_iter()
         .find(|s| s.id == source_id)
-        .ok_or_else(|| format!("fonte de cookies não encontrada: {source_id}"))?;
+        .ok_or_else(|| format!("cookie source not found: {source_id}"))?;
     let host = url_host(target_url)
-        .ok_or_else(|| format!("URL inicial sem host http(s): {target_url}"))?;
+        .ok_or_else(|| format!("initial URL without an http(s) host: {target_url}"))?;
     let site = registrable_domain(&host).unwrap_or_else(|| host.clone());
 
     let copy = copy_cookie_db(&source.db_path)?;
@@ -771,7 +771,7 @@ pub fn load_cookies_for_url(
     })
 }
 
-/// Remove cookies expirados (com `expires` definido) e conta os que saíram.
+/// Removes expired cookies (with `expires` set) and counts those removed.
 fn drop_expired(cookies: &mut Vec<ImportedCookie>, skipped: &mut usize) {
     let now = unix_now();
     let before = cookies.len();
@@ -787,7 +787,7 @@ fn load_chromium(
     notes: &mut Vec<String>,
 ) -> Result<Vec<ImportedCookie>, String> {
     let product = product_for_slug(source.id.split(':').next().unwrap_or(""))
-        .ok_or_else(|| format!("produto Chromium desconhecido: {}", source.id))?;
+        .ok_or_else(|| format!("unknown Chromium product: {}", source.id))?;
     let version = sqlite_rows(db, "SELECT value FROM meta WHERE key='version'")
         .ok()
         .and_then(|rows| rows.first().and_then(|r| r.first().cloned()))
@@ -831,7 +831,7 @@ fn load_chromium(
                 match chromium_key(product, &encrypted[..3]) {
                     Ok(found) => key = Some(found),
                     Err(why) => {
-                        notes.push(format!("{why} (cookies criptografados ignorados)"));
+                        notes.push(format!("{why} (encrypted cookies ignored)"));
                         key_error = Some(why);
                     }
                 }
@@ -844,7 +844,7 @@ fn load_chromium(
                 Ok(value) => value,
                 Err(why) => {
                     *skipped += 1;
-                    notes.push(format!("{why} ({} cookie ignorado)", source.label));
+                    notes.push(format!("{why} ({} cookie ignored)", source.label));
                     continue;
                 }
             }
@@ -966,8 +966,8 @@ fn load_safari(
     Ok(cookies)
 }
 
-/// Converte a lista para o parâmetro `cookies` de `Network.setCookies`. Nunca
-/// devolve os valores em log; é só o payload do CDP.
+/// Converts the list to the `cookies` parameter of `Network.setCookies`. Never
+/// returns the values to a log; it is just the CDP payload.
 pub(crate) fn cdp_cookies(cookies: &[ImportedCookie]) -> Value {
     Value::Array(
         cookies
@@ -1008,24 +1008,24 @@ struct RawCookie {
     expires: i64,
 }
 
-/// `cook` big-endian: 4 bytes mágicos, nº de páginas, tamanhos das páginas e,
-/// em cada página, cookies com offsets. Strings são NUL-terminadas; a data é
-/// `f64` em segundos desde 2001-01-01.
+/// `cook` big-endian: 4 magic bytes, page count, page sizes and, in each page,
+/// cookies with offsets. Strings are NUL-terminated; the date is an `f64` in
+/// seconds since 2001-01-01.
 fn parse_binarycookies(bytes: &[u8]) -> Result<Vec<RawCookie>, String> {
     if bytes.len() < 8 || &bytes[..4] != b"cook" {
-        return Err("Cookies.binarycookies: assinatura inválida".to_string());
+        return Err("Cookies.binarycookies: invalid signature".to_string());
     }
-    let pages = be_u32(bytes, 4).ok_or("arquivo truncado")? as usize;
+    let pages = be_u32(bytes, 4).ok_or("truncated file")? as usize;
     let mut pos = 8usize;
     let mut sizes = Vec::with_capacity(pages);
     for _ in 0..pages {
-        sizes.push(be_u32(bytes, pos).ok_or("tamanho de página truncado")? as usize);
+        sizes.push(be_u32(bytes, pos).ok_or("truncated page size")? as usize);
         pos += 4;
     }
     let mut cookies = Vec::new();
     for size in sizes {
         if pos + size > bytes.len() {
-            return Err("página de cookies truncada".to_string());
+            return Err("truncated cookie page".to_string());
         }
         parse_binarycookies_page(&bytes[pos..pos + size], &mut cookies)?;
         pos += size;
@@ -1037,11 +1037,11 @@ fn parse_binarycookies_page(page: &[u8], out: &mut Vec<RawCookie>) -> Result<(),
     if page.len() < 8 {
         return Ok(());
     }
-    let count = le_u32(page, 4).ok_or("página truncada")? as usize;
+    let count = le_u32(page, 4).ok_or("truncated page")? as usize;
     let mut offsets = Vec::with_capacity(count);
     for index in 0..count {
         let at = 8 + index * 4;
-        offsets.push(le_u32(page, at).ok_or("offset de cookie truncado")? as usize);
+        offsets.push(le_u32(page, at).ok_or("truncated cookie offset")? as usize);
     }
     for offset in offsets {
         if offset >= page.len() {
@@ -1051,12 +1051,12 @@ fn parse_binarycookies_page(page: &[u8], out: &mut Vec<RawCookie>) -> Result<(),
         if record.len() < 48 {
             continue;
         }
-        let flags = le_u32(record, 8).ok_or("cookie truncado")?;
-        let url_off = le_u32(record, 16).ok_or("cookie truncado")? as usize;
-        let name_off = le_u32(record, 20).ok_or("cookie truncado")? as usize;
-        let path_off = le_u32(record, 24).ok_or("cookie truncado")? as usize;
-        let value_off = le_u32(record, 28).ok_or("cookie truncado")? as usize;
-        let expiry = be_f64(record, 40).ok_or("cookie truncado")?;
+        let flags = le_u32(record, 8).ok_or("truncated cookie")?;
+        let url_off = le_u32(record, 16).ok_or("truncated cookie")? as usize;
+        let name_off = le_u32(record, 20).ok_or("truncated cookie")? as usize;
+        let path_off = le_u32(record, 24).ok_or("truncated cookie")? as usize;
+        let value_off = le_u32(record, 28).ok_or("truncated cookie")? as usize;
+        let expiry = be_f64(record, 40).ok_or("truncated cookie")?;
         let Some(domain) = c_string(record, url_off) else {
             continue;
         };
@@ -1255,7 +1255,7 @@ fn hmac_sha1(key: &[u8], message: &[u8]) -> [u8; 20] {
     sha1(&outer)
 }
 
-/// PBKDF2-HMAC-SHA1 (RFC 2898) com `dk_len` bytes.
+/// PBKDF2-HMAC-SHA1 (RFC 2898) producing `dk_len` bytes.
 pub fn pbkdf2_sha1(password: &[u8], salt: &[u8], iterations: u32, dk_len: usize) -> Vec<u8> {
     let iterations = iterations.max(1);
     let mut out = Vec::with_capacity(dk_len);
@@ -1348,9 +1348,9 @@ fn expand_key(key: &[u8]) -> [u8; 176] {
             expanded[offset - 2],
             expanded[offset - 1],
         ];
-        // Cada passo do laço produz exatamente 4 palavras: a primeira palavra
-        // de TODO passo é múltipla de 4 e passa pela `g` (SubWord + RotWord +
-        // Rcon), não só a cada quatro passos.
+        // Each loop step produces exactly 4 words: the first word of EVERY step
+        // is a multiple of 4 and goes through `g` (SubWord + RotWord +
+        // Rcon), not only every four steps.
         temp.rotate_left(1);
         for byte in &mut temp {
             *byte = SBOX[*byte as usize];
@@ -1415,20 +1415,20 @@ fn aes128_decrypt_block(key: &[u8; 16], block: &[u8; 16]) -> [u8; 16] {
     state
 }
 
-/// AES-128-CBC decrypt com PKCS#7 opcional (padding inválido é mantido como
-/// veio: alguns perfis gravam valores com padding zero).
+/// AES-128-CBC decrypt with optional PKCS#7 (invalid padding is kept as it came:
+/// some profiles store values with zero padding).
 pub fn aes_128_cbc_decrypt(key: &[u8], iv: &[u8; 16], ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     if key.len() != 16 {
-        return Err("chave AES-128 precisa de 16 bytes".to_string());
+        return Err("AES-128 key must be 16 bytes".to_string());
     }
     if ciphertext.is_empty() || ciphertext.len() % 16 != 0 {
-        return Err("texto cifrado não é múltiplo de 16".to_string());
+        return Err("ciphertext is not a multiple of 16".to_string());
     }
     let key: [u8; 16] = key.try_into().expect("checado acima");
     let mut previous = *iv;
     let mut out = Vec::with_capacity(ciphertext.len());
     for chunk in ciphertext.chunks(16) {
-        let block: [u8; 16] = chunk.try_into().expect("múltiplo de 16");
+        let block: [u8; 16] = chunk.try_into().expect("multiple of 16");
         let decrypted = aes128_decrypt_block(&key, &block);
         for i in 0..16 {
             out.push(decrypted[i] ^ previous[i]);
@@ -1508,8 +1508,8 @@ mod tests {
 
     #[test]
     fn chromium_v10_value_decrypts_and_strips_the_sha256_prefix() {
-        // Cifra com o caminho inverso? Não: usamos um vetor montado aqui com AES
-        // de ida mínimo para provar a remoção do prefixo do Chrome 130+.
+        // Encrypt via the reverse path? No: we use a vector built here with a minimal
+        // forward AES to prove the removal of the Chrome 130+ prefix.
         let host = ".exemplo.com.br";
         let key = pbkdf2_sha1(b"peanuts", b"saltysalt", 1, 16);
         let hash = sha256(host.as_bytes());
@@ -1521,7 +1521,7 @@ mod tests {
         blob.extend_from_slice(&encrypted);
         let value = decrypt_chromium_value(&blob, &key, host, Some(24)).unwrap();
         assert_eq!(value, "valor-secreto");
-        // Sem versão no banco, o match exato do prefixo ainda o remove.
+        // With no version in the database, the exact prefix match still removes it.
         assert_eq!(decrypt_chromium_value(&blob, &key, host, None).unwrap(), "valor-secreto");
     }
 
@@ -1573,7 +1573,7 @@ mod tests {
 
     #[test]
     fn safari_binarycookies_parses_a_synthetic_file() {
-        // Uma página, um cookie: "sid=abc" para ".exemplo.com.br", secure.
+        // One page, one cookie: "sid=abc" for ".exemplo.com.br", secure.
         let domain = b".exemplo.com.br\0";
         let name = b"sid\0";
         let path = b"/\0";
@@ -1599,7 +1599,7 @@ mod tests {
         let mut page = vec![0u8; 8];
         page[0..4].copy_from_slice(&0x0000_0100u32.to_le_bytes());
         page[4..8].copy_from_slice(&1u32.to_le_bytes());
-        page.extend_from_slice(&(8u32 + 4).to_le_bytes()); // offset do cookie
+        page.extend_from_slice(&(8u32 + 4).to_le_bytes()); // cookie offset
         page.extend_from_slice(&record);
         let mut file = b"cook".to_vec();
         file.extend_from_slice(&1u32.to_be_bytes());
@@ -1658,7 +1658,7 @@ mod tests {
     #[test]
     fn sqlite_roundtrip_reads_chromium_and_firefox_tables() {
         if !sqlite3_available() {
-            eprintln!("sqlite3 ausente: teste de banco ignorado");
+            eprintln!("sqlite3 missing: database test skipped");
             return;
         }
         let dir = crate::private_base_dir().join(format!(
@@ -1668,8 +1668,8 @@ mod tests {
         ));
         crate::create_private_dir_new(&dir).unwrap();
         let chromium_db = dir.join("Cookies");
-        // Valor em texto puro: o teste cobre a leitura do SQLite; a
-        // descriptografia tem teste próprio (sem tocar no Keychain do usuário).
+        // Plain-text value: the test covers reading SQLite; decryption has its own
+        // test (without touching the user's Keychain).
         let sql = "PRAGMA journal_mode=DELETE;\
              CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);\
              INSERT INTO meta VALUES('version','24');\
@@ -1698,13 +1698,13 @@ mod tests {
         let mut notes = Vec::new();
         let copy = copy_cookie_db(&source.db_path).unwrap();
         let mut cookies = load_chromium(&source, &copy.db, "app.exemplo.com.br", &mut skipped, &mut notes).unwrap();
-        assert_eq!(cookies.len(), 2, "sid e o expirado; o de outro site não entra");
+        assert_eq!(cookies.len(), 2, "sid and the expired one; the one from another site does not get in");
         assert_eq!(cookies[0].name, "sid");
         assert_eq!(cookies[0].value, "segredo");
         assert!(cookies[0].secure);
         assert_eq!(skipped, 0);
         drop_expired(&mut cookies, &mut skipped);
-        assert_eq!(cookies.len(), 1, "o expirado sai no filtro comum");
+        assert_eq!(cookies.len(), 1, "the expired one is dropped by the common filter");
         assert_eq!(skipped, 1);
         drop(copy);
 
@@ -1729,13 +1729,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    // -- helpers de teste --
+    // -- test helpers --
 
     fn hex_string(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 
-    /// AES-128-CBC de ida, só para os testes (o produto não cifra nada).
+    /// AES-128-CBC forward, for the tests only (the product encrypts nothing).
     fn encrypt_for_test(key: &[u8; 16], iv: &[u8; 16], plain: &[u8]) -> Vec<u8> {
         let padded = {
             let padding = 16 - (plain.len() % 16);

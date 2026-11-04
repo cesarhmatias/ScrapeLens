@@ -1,75 +1,77 @@
-# Empacotamento — bundle final validado
+# Packaging — final validated bundle
 
-Estado do pacote entregue nesta rodada. Serve como evidência reprodutível: os
-comandos abaixo geram exatamente o artefato descrito, na mesma máquina e nas
-mesmas condições.
+Status of the package delivered in this round. It serves as reproducible evidence:
+the commands below produce exactly the artifact described, on the same machine and
+under the same conditions.
 
-## macOS — exportação completa opcional (2026-11-04, vigente)
+## macOS — optional full export (2026-11-04, current)
 
-Código App: `71d9f7c`. O diálogo **Exportar / Sanitizar…** mantém a cópia
-sanitizada por padrão. O checkbox **Incluir dados sensíveis** habilita a captura
-completa (sessão, anexos e os artefatos presentes `cdp-events.jsonl`, `netlog.json`,
-`cdp-bodies.jsonl`), sem redações, com aviso destacado e destino sugerido `-full`.
-O destino continua sujeito às mesmas recusas: origem, pasta interna, symlinks ou
-pasta ocupada. Arquivos brutos especiais/symlinks são recusados; cópia em fluxo
-com `O_NOFOLLOW`, arquivos 0600 e diretório 0700. Nada da origem é alterado.
+App code: `71d9f7c`. The **Export / Sanitize…** dialog keeps the sanitized copy
+by default. The **Include sensitive data** checkbox enables the full capture
+(session, attachments and the artifacts present `cdp-events.jsonl`, `netlog.json`,
+`cdp-bodies.jsonl`), without redactions, with a highlighted warning and suggested
+destination `-full`. The destination remains subject to the same refusals: source,
+internal folder, symlinks or an occupied folder. Special raw files/symlinks are
+refused; copy is streamed with `O_NOFOLLOW`, files 0600 and directory 0700.
+Nothing from the source is changed.
 
 Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
-SHA-256 de `Contents/MacOS/scrapelens` (18.268.880 bytes):
+SHA-256 of `Contents/MacOS/scrapelens` (18.268.880 bytes):
 `bd8d10a6b753287ad85235c7a48a3b6a3659f612d7e9e2b08cc55feb40fd5d71`.
-Assinado com `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
-aprovado e DR preservado (`d0a53befa59a447043abc9e58a3381addbbf1751`).
-Nenhuma janela aberta ou ativada. Linux não recompilado nesta tarefa.
+Signed with `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
+passed and DR preserved (`d0a53befa59a447043abc9e58a3381addbbf1751`).
+No window opened or activated. Linux not rebuilt in this task.
 
-Validação: `cargo test --locked` 60 aprovados, 0 falhas, 8 ignorados;
-clippy `--locked --all-targets -- -D warnings` limpo; `npm test` (sete suítes),
-typecheck e build aprovados. Testes Rust preservam segredos das fixtures em
-cookies/corpos/artefatos, verificam permissões e recusas de destino/symlinks.
-`app/src/Export.test.tsx` exercita o checkbox, chamadas de prévia e salvamento
-com `includeSensitive=true`, alternância do destino sugerido e preservação de
-caminho editado. Teste de componente React, sem automação do diálogo nativo.
+Validation: `cargo test --locked` 60 passed, 0 failed, 8 ignored;
+clippy `--locked --all-targets -- -D warnings` clean; `npm test` (seven suites),
+typecheck and build passed. Rust tests preserve the fixtures' secrets in
+cookies/bodies/artifacts, and verify permissions and destination/symlink refusals.
+`app/src/Export.test.tsx` exercises the checkbox, preview and save calls with
+`includeSensitive=true`, switching of the suggested destination, and preservation
+of an edited path. React component test, without automating the native dialog.
 Logs: `/tmp/sl-full-{rust,clippy,front,bundle}.log`.
 
-## macOS — seletor de cookies de navegador (vigente)
+## macOS — browser cookie selector (current)
 
-Origem: `3e09738`, sobre `2a52152`, árvore limpa antes do build.
-O seletor **Cookies** ao lado de URL inicial lista os perfis detectados e
-salva somente o identificador em preferências privadas. Uma fonte removida
-volta para sessão limpa; fonte inválida passada ao comando é recusada. Com URL
-vazia, a captura ignora a fonte e a UI avisa para informar a URL inicial.
-O DTO não expõe o caminho do banco. Os cookies seguem para `CaptureConfig`
-e são importados pela crate de captura antes de navegar; falhas são mostradas
-pelo aviso de início da captura.
+Source: `3e09738`, on top of `2a52152`, clean tree before the build.
+The **Cookies** selector next to Start URL lists the detected profiles and saves
+only the identifier in private preferences. A removed source falls back to a clean
+session; an invalid source passed to the command is refused. With an empty URL,
+the capture ignores the source and the UI warns to enter the start URL.
+The DTO does not expose the database path. Cookies flow into `CaptureConfig` and
+are imported by the capture crate before navigating; failures are shown by the
+capture start warning.
 
 Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
-Executável interno `Contents/MacOS/scrapelens`: **18.277.584 bytes**,
+Internal executable `Contents/MacOS/scrapelens`: **18.277.584 bytes**,
 SHA-256 `9645c147f2f43b3286421d94e7e0a39376b2add404f0e22b0502fe0bff8a80c8`.
-O hash identifica o executável, não o diretório `.app`.
-Assinatura `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
-aprovado; DR preservado (`d0a53befa59a447043abc9e58a3381addbbf1751`).
-Bundle pronto para o usuário abrir, sem abrir/ativar janelas nesta execução.
-A instância existente não foi encerrada nem substituída em execução.
+The hash identifies the executable, not the `.app` directory.
+Signature `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
+passed; DR preserved (`d0a53befa59a447043abc9e58a3381addbbf1751`).
+Bundle ready for the user to open; no windows opened or activated in this run.
+The existing instance was not terminated or replaced while running.
 
-Validação: `cargo test --locked` **58 aprovados, 0 falhas, 8 ignorados**;
-`cargo clippy --locked --all-targets -- -D warnings` limpo; seis suítes front
+Validation: `cargo test --locked` **58 passed, 0 failed, 8 ignored**;
+`cargo clippy --locked --all-targets -- -D warnings` clean; six front suites
 (`test:cookie-source`, `test:shortcuts`, `test:adapter`, `test:capture-url`,
-`test:paged`, `test:list-view`), typecheck e build aprovados. Novos testes cobrem
-preferências legadas/persistência, validação de IDs, ausência de caminho do banco
-no DTO e markup do seletor (escolha salva, sessão limpa, bloqueio e dica de URL).
-Não foi realizada importação real de cookies pessoais nem teste GUI do seletor.
-Linux não foi recompilado nesta tarefa; os pacotes abaixo seguem em `22854c3`.
+`test:paged`, `test:list-view`), typecheck and build passed. New tests cover legacy
+preferences/persistence, ID validation, absence of the database path in the DTO,
+and the selector markup (saved choice, clean session, blocking and URL hint).
+No real import of personal cookies and no GUI test of the selector were performed.
+Linux was not rebuilt in this task; the packages below remain at `22854c3`.
 Logs: `/tmp/sl-cookie-rust.log`, `/tmp/sl-cookie-validation.log`,
-`/tmp/sl-cookie-validation.json` e `/tmp/sl-cookie-bundle.log`.
+`/tmp/sl-cookie-validation.json` and `/tmp/sl-cookie-bundle.log`.
 
-## Release rodada 16 — 2026-11-03 (vigente)
+## Release round 16 — 2026-11-03 (current)
 
-Esta seção substitui os hashes e a origem das rodadas anteriores abaixo.
-Origem: `22854c3` (árvore limpa antes dos builds), incluindo `f377617`
-(validação FIFO/wrappers da Captura) e `ad4f5c1` (parser NetLog em fluxo P4), com fechamento de clippy/Core e semântica de `events` duplicado em `22854c3`.
-Builds executados até o término neste turno, sem callback, sem abrir ou ativar
-janelas macOS, sem tocar nas VMs e sem push.
+This section replaces the hashes and source of the earlier rounds below.
+Source: `22854c3` (clean tree before the builds), including `f377617`
+(Capture FIFO/wrappers validation) and `ad4f5c1` (NetLog parser streamed, P4), with
+clippy/Core closure and duplicated `events` semantics in `22854c3`.
+Builds run to completion in this turn, with no callback, without opening or
+activating macOS windows, without touching the VMs and without a push.
 
-| Artefato (relativo à raiz) | Bytes | SHA-256 |
+| Artifact (relative to the root) | Bytes | SHA-256 |
 |---|---:|---|
 | `src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens` | 18089024 | `cbebd19d9c2339774fb6e959ae136439c896d69efd747f4bdf53d07f4c9ccf3f` |
 | `src-tauri/linux/out/amd64/ScrapeLens_0.1.0_amd64.deb` | 6404930 | `871a04eb10e79ca291de16ca113a60dc766c733f84fad98a6ec8cdc6c479be15` |
@@ -79,90 +81,90 @@ janelas macOS, sem tocar nas VMs e sem push.
 | `src-tauri/linux/out/arm64/ScrapeLens_0.1.0_aarch64.AppImage` | 82569736 | `5fb8f9138ef3dd65cb3af26a08f0a4801381de4b37729f8331df1502aa76aef6` |
 | `src-tauri/linux/out/arm64/scrapelens` | 20702552 | `f9e0ecf0d2ffeafbee2ed69e5678d4eac1fa85841b09c18c246fed543b2116d5` |
 
-macOS arm64: `cargo test --locked` **56 aprovados, 0 falhas, 8 ignorados**;
-`cargo clippy --locked --all-targets -- -D warnings`, cinco testes front
+macOS arm64: `cargo test --locked` **56 passed, 0 failed, 8 ignored**;
+`cargo clippy --locked --all-targets -- -D warnings`, five front tests
 (`test:shortcuts`, `test:list-view`, `test:paged`, `test:capture-url`,
-`test:adapter`), typecheck e build Vite aprovados. Bundle assinado com
-`ScrapeLens Local Signing`; `codesign --verify --deep --strict` aprovado.
-DR preservado: `identifier "app.scrapelens.desktop" and certificate root =
+`test:adapter`), typecheck and Vite build passed. Bundle signed with
+`ScrapeLens Local Signing`; `codesign --verify --deep --strict` passed.
+DR preserved: `identifier "app.scrapelens.desktop" and certificate root =
 H"d0a53befa59a447043abc9e58a3381addbbf1751"`.
-O hash macOS identifica o executável dentro do `.app`, não o diretório.
-Não foi executado smoke GUI macOS nesta rodada.
+The macOS hash identifies the executable inside the `.app`, not the directory.
+No macOS GUI smoke test was run in this round.
 
-Linux amd64 (emulado) e arm64 (nativo) via Docker/Ubuntu 22.04:
-`cargo test --locked` **56 aprovados, 0 falhas, 8 ignorados** em cada arquitetura;
-clippy com `-D warnings`, os mesmos cinco testes front e typecheck aprovados;
-`.deb` e AppImage gerados. Smoke Xvfb com `SCRAPELENS_TEST_MODE=1 --import-har`
-gravou `session.json` com **1 requisição** em cada arquitetura e encerrou o
-executável por SIGTERM. O smoke usa o executável avulso: não executa o AppImage
-nem testa instalação dos pacotes ou atalhos via X11. Não houve nova validação
-em Ubuntu 24.04/Debian 12. Sem assinatura Linux; conferir com
-`sha256sum -c SHA256SUMS` no respectivo diretório de saída.
-A receita fixa toolchains/lockfiles, mas não promete reprodução bit a bit.
+Linux amd64 (emulated) and arm64 (native) via Docker/Ubuntu 22.04:
+`cargo test --locked` **56 passed, 0 failed, 8 ignored** on each architecture;
+clippy with `-D warnings`, the same five front tests and typecheck passed;
+`.deb` and AppImage generated. Xvfb smoke with `SCRAPELENS_TEST_MODE=1 --import-har`
+wrote `session.json` with **1 request** on each architecture and terminated the
+executable by SIGTERM. The smoke uses the standalone executable: it does not run the
+AppImage nor test installation of the packages or shortcuts via X11. There was no
+new validation on Ubuntu 24.04/Debian 12. No Linux signature; verify with
+`sha256sum -c SHA256SUMS` in the respective output directory.
+The recipe pins toolchains/lockfiles, but does not promise bit-for-bit reproduction.
 
-Evidências: `/tmp/sl-r16-{macos,amd64,arm64}.log`,
-`/tmp/sl-r16-result.json`, `/tmp/sl-r16-final-hashes.json` e
+Evidence: `/tmp/sl-r16-{macos,amd64,arm64}.log`,
+`/tmp/sl-r16-result.json`, `/tmp/sl-r16-final-hashes.json` and
 `src-tauri/linux/out/{amd64,arm64}/{build.log,smoke.log,SHA256SUMS}`.
 
-O primeiro `docker run` amd64 falhou com snapshot pai ausente no daemon;
-a repetição do mesmo comando concluiu com código 0. Log da tentativa bem-sucedida:
-`/tmp/sl-r16-amd64-retry.log` (o JSON do script conserva `run=125` da primeira tentativa).
+The first amd64 `docker run` failed with a missing parent snapshot in the daemon;
+rerunning the same command completed with exit code 0. Log of the successful attempt:
+`/tmp/sl-r16-amd64-retry.log` (the script's JSON keeps `run=125` from the first attempt).
 
-## Fontes do build
+## Build sources
 
-| Item | Valor |
+| Item | Value |
 |---|---|
-| Repositório | `/Users/cesar/Projects/scrapelens` |
-| Commit do app no momento do build | `f81ea80` (HEAD limpo; rodada 13 onda 1 + P5 paginado + adendo 9; `f81ea80` só acrescenta o log de `list_requests` no stderr sob `SCRAPELENS_TEST_MODE=1`, usado como evidência) + identidade local `ScrapeLens Local Signing` |
-| Commits de exportação incluídos | `eaf5471` (shell Tauri), `0a6e696` (UI), `0446f18`/`12457cd` (formatação), `3a3c676` (ajuste da prévia) |
-| Contrato da rodada | `4c97bc9` (`docs/07-exportacao-ui.md`); multi-alvo `docs/14-captura-multi-alvo.md` + UI `9a06463` |
-| Core | path `scrapelens-core`; `3fe7efc` (A9-B1/A9-B2) com P1/P2/P3/P6/P7 (validação em fluxo, correlação por índice, `session.json` compacto, `sanitize_bundle_owned`) |
-| Captura | crate `capture/`; gravação por descritor em `capture/src/fdio.rs`; CDP por pipe; `SCRAPELENS_CDP_TRANSPORT=port` volta ao modo antigo (`737290a`) |
-| Data do build | 2026-11-02 (UTC−03) |
-| Working tree | HEAD `f81ea80` limpo; `src-tauri/Cargo.lock` sem alteração; `SCRAPELENS_TEST_MODE=1 --open-capture tests/capture/runs/20261027T0730Z/session-har` preencheu a lista pelo contrato paginado (`list_requests offset=0 items=15 matched=15 total=15`); `--open-capture /private/tmp/big20k` paginou 20.002 requisições em 11 páginas de 2.000 |
+| Repository | `/Users/cesar/Projects/scrapelens` |
+| App commit at build time | `f81ea80` (clean HEAD; round 13 wave 1 + P5 paginated + addendum 9; `f81ea80` only adds the `list_requests` log to stderr under `SCRAPELENS_TEST_MODE=1`, used as evidence) + local identity `ScrapeLens Local Signing` |
+| Export commits included | `eaf5471` (Tauri shell), `0a6e696` (UI), `0446f18`/`12457cd` (formatting), `3a3c676` (preview adjustment) |
+| Round contract | `4c97bc9` (`docs/07-exportacao-ui.md`); multi-target `docs/14-captura-multi-alvo.md` + UI `9a06463` |
+| Core | path `scrapelens-core`; `3fe7efc` (A9-B1/A9-B2) with P1/P2/P3/P6/P7 (streamed validation, index-based correlation, compact `session.json`, `sanitize_bundle_owned`) |
+| Capture | crate `capture/`; descriptor-based writing in `capture/src/fdio.rs`; CDP over pipe; `SCRAPELENS_CDP_TRANSPORT=port` returns to the old mode (`737290a`) |
+| Build date | 2026-11-02 (UTC−03) |
+| Working tree | clean HEAD `f81ea80`; `src-tauri/Cargo.lock` unchanged; `SCRAPELENS_TEST_MODE=1 --open-capture tests/capture/runs/20261027T0730Z/session-har` filled the list through the paginated contract (`list_requests offset=0 items=15 matched=15 total=15`); `--open-capture /private/tmp/big20k` paginated 20.002 requests in 11 pages of 2.000 |
 
-Não há sidecar, processo auxiliar nem runtime Node/Python no produto.
+There is no sidecar, helper process or Node/Python runtime in the product.
 
-## Comandos executados
+## Commands run
 
 ```sh
-# na raiz do repositório
-cd app && npm install                     # uma vez
-cd ../app && npx tsc --noEmit             # typecheck do frontend — sem saída
-cd ../app && npm run build                # bundle Vite — 590,75 kB (gzip 123,89 kB)
-cd ../app && npm run test:paged           # contrato paginado (lista + detalhe)
-cd ../core && cargo test                  # ok (358 passam, 0 falham, 1 ignorado)
-cd ../src-tauri && cargo test             # 55 passam, 8 ignorados; 0 falhas
+# at the repository root
+cd app && npm install                     # once
+cd ../app && npx tsc --noEmit             # frontend typecheck — no output
+cd ../app && npm run build                # Vite bundle — 590,75 kB (gzip 123,89 kB)
+cd ../app && npm run test:paged           # paginated contract (list + detail)
+cd ../core && cargo test                  # ok (358 passed, 0 failed, 1 ignored)
+cd ../src-tauri && cargo test             # 55 passed, 8 ignored; 0 failed
 cd ../src-tauri && cargo clippy --all-targets
 cd .. && ./app/node_modules/.bin/tauri build --bundles app
 # tauri.conf.json → bundle.macOS.signingIdentity = "ScrapeLens Local Signing"
-# (o Tauri assina sozinho; re-sign manual equivalente:)
+# (Tauri signs by itself; equivalent manual re-sign:)
 cd src-tauri/target/release/bundle/macos
 codesign --force --deep --options runtime --sign "ScrapeLens Local Signing" ScrapeLens.app
 codesign --verify --deep --strict ScrapeLens.app
-codesign -dr - ScrapeLens.app   # DR estável: certificate root, não cdhash
+codesign -dr - ScrapeLens.app   # stable DR: certificate root, not cdhash
 ```
 
-Ferramentas usadas: rustc 1.99.0, Node 26.8.1, macOS 26.5.2 (arm64).
+Tools used: rustc 1.99.0, Node 26.8.1, macOS 26.5.2 (arm64).
 
-## Identidade local de Code Signing
+## Local code signing identity
 
-**Não é Developer ID.** Não serve para distribuição, Gatekeeper nem notarização.
-É só um certificado autoassinado no login keychain do desenvolvedor, para o
-designated requirement do bundle citar o certificado (estável entre builds)
-em vez do cdhash ad-hoc (que muda a cada re-sign e quebra o TCC / App Management).
+**Not a Developer ID.** It is not for distribution, Gatekeeper or notarization.
+It is only a self-signed certificate in the developer's login keychain, so that the
+bundle's designated requirement cites the certificate (stable across builds) instead
+of the ad-hoc cdhash (which changes on every re-sign and breaks TCC / App Management).
 
-| Item | Valor |
+| Item | Value |
 |---|---|
-| Nome / CN | `ScrapeLens Local Signing` |
+| Name / CN | `ScrapeLens Local Signing` |
 | Keychain | login (`~/Library/Keychains/login.keychain-db`) |
 | Designated requirement | `identifier "app.scrapelens.desktop" and certificate root = H"d0a53befa59a447043abc9e58a3381addbbf1751"` |
-| Estabilidade | igual em dois `tauri build` seguidos (conferido) |
+| Stability | same across two consecutive `tauri build` runs (verified) |
 
-### Como recriar (máquina nova / keychain limpa)
+### How to recreate (new machine / clean keychain)
 
-Arquivos temporários só em `/tmp`; apagar a chave e o `.p12` depois do import.
-Nunca versionar a chave privada.
+Temporary files only in `/tmp`; delete the key and the `.p12` after import.
+Never commit the private key.
 
 ```sh
 TMP=$(mktemp -d /tmp/scrapelens-codesign.XXXXXX)
@@ -191,178 +193,183 @@ security import "$TMP/scrapelens.p12" -k ~/Library/Keychains/login.keychain-db \
 unset P12PASS
 security add-trusted-cert -r trustRoot -p codeSign \
   -k ~/Library/Keychains/login.keychain-db "$TMP/scrapelens.crt"
-# Opcional (pede a senha do login keychain se a sessão não estiver desbloqueada):
+# Optional (asks for the login keychain password if the session is not unlocked):
 # security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
 #   -D "ScrapeLens Local Signing" -t private ~/Library/Keychains/login.keychain-db
 rm -f "$TMP/scrapelens.key" "$TMP/scrapelens.p12" "$TMP/scrapelens.crt" "$TMP/codesign.cnf"
 rmdir "$TMP"
-security find-identity -v -p codesigning   # deve listar "ScrapeLens Local Signing"
+security find-identity -v -p codesigning   # should list "ScrapeLens Local Signing"
 ```
 
-Se `security import` ou `set-key-partition-list` pedirem a senha do Keychain, rode o
-comando no Terminal (não grave a senha em arquivo nem no chat).
+If `security import` or `set-key-partition-list` asks for the Keychain password, run the
+command in Terminal (do not save the password to a file or in the chat).
 
-## Artefato
+## Artifact
 
-| Item | Valor |
+| Item | Value |
 |---|---|
 | Bundle | `src-tauri/target/release/bundle/macos/ScrapeLens.app` |
-| Executável | `ScrapeLens.app/Contents/MacOS/scrapelens` |
-| Arquitetura | `Mach-O 64-bit executable arm64`, thin (sem universal binary) |
-| Tamanho do bundle | 18.332 KiB (`du -sk`) |
-| Tamanho do executável | 18.015.088 bytes |
-| SHA-256 do executável | `fcdc4bd26a71a4e31e5366d7e2b881e0c5cd63911589186d70db17068ad4acde` |
-| Identificador | `app.scrapelens.desktop` |
-| Assinatura | `ScrapeLens Local Signing` (`flags=0x10000(runtime)`, `TeamIdentifier=not set`) — **não** Developer ID |
+| Executable | `ScrapeLens.app/Contents/MacOS/scrapelens` |
+| Architecture | `Mach-O 64-bit executable arm64`, thin (no universal binary) |
+| Bundle size | 18.332 KiB (`du -sk`) |
+| Executable size | 18.015.088 bytes |
+| Executable SHA-256 | `fcdc4bd26a71a4e31e5366d7e2b881e0c5cd63911589186d70db17068ad4acde` |
+| Identifier | `app.scrapelens.desktop` |
+| Signature | `ScrapeLens Local Signing` (`flags=0x10000(runtime)`, `TeamIdentifier=not set`) — **not** Developer ID |
 | Designated requirement | `identifier "app.scrapelens.desktop" and certificate root = H"d0a53befa59a447043abc9e58a3381addbbf1751"` |
-| `codesign --verify --deep --strict` | exit 0 (valid on disk, satisfaz o Designated Requirement) |
-| `spctl -a` | rejeitado — esperado: sem Developer ID e sem notarização |
+| `codesign --verify --deep --strict` | exit 0 (valid on disk, satisfies the Designated Requirement) |
+| `spctl -a` | rejected — expected: no Developer ID and no notarization |
 
-Rodada 13 D7 rebuild limpo HEAD `885b592` (2026-11-03; Captura `e8ae66c`/`885b592` suprime o aviso de automação em toda captura; aberto e fechado uma vez com `open -g`, sem ativar a janela; SHA `fcdc4bd2…` substitui `78155379…`). Antes: rodada 13 onda 2 rebuild limpo HEAD `291fae4` (2026-11-02; rede aberta na captura com `SCRAPELENS_CAPTURE_NETWORK=loopback` só para testes (Captura `3dda266`), lista paginada sob demanda (`6f11440`), demo sem chips vazios e selo de gravação só na sessão gravada (`f00a2e4`), sem janela decorativa interna (`312c891`), clippy `-D warnings` limpo; SHA `78155379…` substitui `52cd14fd…`). Antes: rodada 13 onda 1 rebuild limpo HEAD `f81ea80` (2026-11-02; contrato paginado P5, abertura/importação/encerramento fora da thread principal, estado `starting`, sessão por nome com qualquer nome; SHA `52cd14fd…` substitui `2691f152…`). Antes: rodada 12 adendo 8 rebuild limpo HEAD `ce68eb9` (2026-11-02; CLI de teste exige `SCRAPELENS_TEST_MODE=1`; SHA `2691f152…` substitui `405b77fa…`). Antes: rodada 12 onda 1 rebuild limpo HEAD `737290a` (2026-11-02; modo de teste por CLI conferido no bundle; SHA `405b77fa…` substitui `f3039e58…`). Antes: rodada 12 rebuild limpo HEAD `fc5ca18` (2026-11-01; Core `73e457d`/`fc5ca18` completeness + sessionSetup; SHA `f3039e58…` substitui `65a6529c…`). Antes: rodada 11 rebuild limpo HEAD `1f7d7d5` (2026-11-01; core sem rustix; SHA `65a6529c…` substitui `d30af7f4…` inválido). Antes: rodada 11 rebuild limpo (HEAD `517b949`, `core/` = `868127b`, 2026-11-01; SHA `d30af7f4…` substitui `39f1233d…` gerado com árvore suja). Antes: rodada 11 rebuild captura+core `0b94424`/`39826a3`/`93361b8`/`e6fc955`/`868127b` (HEAD de origem `868127b`, 2026-11-01; rustix no core; SHA `39f1233d…`; hash anterior `114614c2…`). Antes: rodada 11 rebuild captura+core `daa3414`/`e6a9edd`/`952921a`/`d50a19f` (HEAD de origem `d50a19f`, 2026-10-31; SHA `114614c2…`; hash anterior `57264aed…`). Antes: rodada 11 rebuild captura `23bcba6`/`0997a3b` (HEAD de origem `d8ad643`, 2026-10-31; SHA `57264aed…`; hash anterior `8558470b…`). Antes: rodada 11 rebuild captura `62afa63` (HEAD de origem `61ad875`, 2026-10-31; SHA `8558470b…`; hash anterior `4636a3cf…`). Antes: rodada 11 rebuild captura (HEAD de origem `03ee85c`, 2026-10-31; codesign Chrome `--deep`, NetLog no perfil, CLOEXEC, prazo navigate; SHA `4636a3cf…`; hash anterior `6c0092c3…`). Antes: rodada 11 (HEAD de origem `eb66afa`, 2026-10-31; captura em `capture/`; CDP por pipe por padrão, `SCRAPELENS_CDP_TRANSPORT=port` para o modo antigo; SHA `6c0092c3…`; hash anterior `1901f3b4…`). Antes: rodada 10 assinatura estável (HEAD de origem 0ddd387, 2026-10-31; cert local `ScrapeLens Local Signing`; DR por certificate root, estável em 2 builds; hash anterior `b3e12edc…`). Antes: rodada 10 limpeza órfãos (HEAD de origem 8fd4f6d, 2026-10-31; setup Tauri chama `capture::cleanup_orphans` em thread; teste `startup_removes_orphan_capture_with_dead_owner`; hash anterior `7a46fa4c…`). Antes: rodada 10 definitiva (HEAD de origem 66e97e3, 2026-10-31; UI `target.notes` + `cdp.target_setup_error`/`timeout` em Limites; captura `/multi/` com “não confirmada” no sw-intercept e Limites sem aviso de setup; print 44; hash anterior `02e6ef30…`). Antes: rodada 10 final (HEAD de origem 8cfe828, 2026-10-30; Captura 1716d39–8cfe828 + Core df421cf/7892303; SW sem cópias na lista, sw-intercept ligado como ambígua, Limites sem “não anexou” falso; sessão antiga sem sessionId sem coluna Alvo; prints 42/44/47; hash anterior `77cf7355…`). Antes: rodada 10 (HEAD de origem 881fa0d, 2026-10-30; bundle com captura multi-alvo d60c1ae+, UI Alvo `9a06463`, aceite das Testes; captura ao vivo `/multi/` pelo `.app` com coluna Alvo e filtro de alvos; evidência `evidence/busca-corpos/46-multi-alvo-bundle.png`; hash anterior `d1136cbb…`). Antes: rodada 9, onda B, 3ª vez (HEAD de origem 7410fa4, 2026-10-29; bundle com `plan.parameters` isento só com plano verificado — versão atual, hash e alvo conferidos; correção só de core, traces e tela sem mudança; hash anterior `a4fe000a…`). Antes: rodada 9, onda B, 2ª vez (HEAD de origem 39410bf, 2026-10-29; bundle recompilado com a isenção de `parameters` restrita ao par (name, part) do plano — correção só de core, traces e tela sem mudança; hash anterior `860c2008…`). Antes: rodada 9, onda B (HEAD de origem 31bcaa9, 2026-10-29; plan.version 2 no trace, traces ok/403/incompleta regenerados contra o detran-sim e validação sem avisos espúrios na trace fiel; inclui o cleanup_on_start de 4a81cb0 e o plan.parameters de d83d620; hash anterior `bdce5796…`). Antes: rodada 9, 3ª vez (HEAD de origem a37cd60, 2026-10-29; temporária do trace com guardar/descartar, limite de 64 MiB, vereditos novos do validate com plan.hash do core; hash anterior `0b49ba0c…`). Antes: rodada 9, 2ª vez (HEAD de origem 2a5c533, 2026-10-29; validate com adaptador e classe "parâmetro do usuário"; hash anterior `48e1ab6d…`). Antes: rodada 9 (HEAD de origem 744df02, 2026-10-29; linha do tempo, "Validar execução…" com import-trace em pasta nova e validate; hash anterior `bda06a2d…`). Antes: build final que encerra a rodada 8 (HEAD de origem dc14ac3, 2026-10-29; estrito como padrão nas partes do adaptador; opção avançada "partes tolerantes" (`lenient_parts`) no script de priming, desligada por padrão; hash anterior `0eb5632a…`). Antes: build final da rodada 8, 2ª vez (HEAD de origem c07b514, 2026-10-29; inclui b4511fb e c07b514 da Captura; hash anterior `bee5f6d6…`). Antes: build final da rodada 8 (HEAD de origem 5d2c6e6, 2026-10-29; inclui 391db16, 5d2c6e6 da Captura, 3ba9486 do Core e o corte de partes da visão do adaptador; hash anterior `53009655…`). Antes: rebuild final da rodada 8 (HEAD de origem b0ce0f0, 2026-10-29; inclui limites da gramática da Captura, core c61d407 e o limite por campo da visão do adaptador; hash anterior `9aec2199…`). Antes: rebuild da rodada 8 (HEAD de origem aab8559, 2026-10-29; adaptador `natural-ajax` por dependência de path em origins/chain/compare/priming, visão estruturada e aba "Script de priming"; hash anterior `6e301e70…`). Antes: rebuild final (HEAD de origem 4b16b0e, 2026-10-29; inclui cf015b2 initiator do CDP e 6a85676 detectores do priming; hash anterior `1a097cd0…`). Antes: rebuild 7e (leitura de `assess-rules.json` só como arquivo regular sem symlink, até 256 KiB, erro de parse sem eco; hash anterior `56514c8b…`). Antes: rebuild 7d (avisos de `AssessRules::warnings()` devolvidos por `assess_session` e mostrados na lista e na aba Aplicação; hash anterior `0dba0476…`). Antes: rebuild 7c (filtros separados "Falhas da aplicação" = app-error e "Possíveis bloqueios?" = blocked?, combináveis; hash anterior `aa066f1a…`). Antes: rebuild 7b-2 (`counts` do assess com `VerdictKind::count_key()`, chaves kebab-case iguais ao `verdictKind`; hash anterior `83d67718…`). Antes: rebuild do ajuste 7b (verdict `not-assessed` neutro; hash anterior `0f6d04bf…`). Antes: rebuild da onda 7b (comando `assess_session`, coluna/filtro/aba "Aplicação", veredito na cadeia e no compare; hash anterior `4f7ca2aa…`). Antes: rebuild com frames auxiliares e iniciador (hash anterior `1697321d…`). Antes: rebuild da onda 6b (controle HTML, contexto estático, páginas de contexto, avisos de HAR sem cookies, compare por rodadas com opções, sanitização de negócio; hash anterior `f777988f…`). Antes: rebuild da dica de reordenação ligada a `SessionComparison.reordered` (hash anterior `21824159…`). Antes: rebuild do ajuste de layout do compare (chips quebram linha; dica de reordenação opcional); hash anterior `ac7213b2…`. Antes: rebuild com os rótulos do core (possível origem) e fixtures regeneradas; hash anterior `31ec27c3…`. Antes: rebuild das correções da revisão da rodada 5 (possível origem, confiança por passo, comparação paginada, caminhos canônicos, partsCounts; hash anterior `c1783a57…`). Antes: rebuild da onda 5b (aba Origem, cadeia de priming, comparação A × B, exportação com origens anotadas; hash anterior `2f08150d…`). Antes: rebuild do acabamento da rodada 4 (legenda de realce só quando há tracejado, nota discreta para `chrome-decoded`, aviso para `charset:*`/`lossy-postData`); hash anterior `0e2754f4…`. Antes: rebuild com busca preguiçosa do core (LazySession + search_lazy), realce sólido/tracejado e texto da fixture sintética; hash anterior `f9c0acec…`. Antes: rebuild das correções da revisão 4b (rótulos de origem, realce pelo intervalo do core, cache do bundle de busca, recusa de symlink em anexos, `transformed`; hash anterior `56ee754b…`). Antes: rebuild da onda 4b (busca no payload e painel de corpos: commands `search_session` e `read_body`, UI; 28+2 ignorados em src-tauri, 16/16 em tests/exportacao, `npm run test:adapter` ok; evidência em `evidence/busca-corpos/`). Hash anterior `9c04b98b…` substituído. Histórico: rebuild de 0d4dbab (`fix(app)`: adapter tolera campos omitidos que o core aceita via serde default; teste `npm run test:adapter` com a fixture mínima; 15+1 ignorado Tauri, 16/16 regressões tests/exportacao). Hash anterior `5934556c…` (16015a1) substituído. Antes: rebuild com validação de todos os ancestrais do destino (F1/F2): o hash acima é deste build. O SHA-256 é do executável **após** o re-sign ad-hoc. Um `tauri build` limpo
-produz um binário byte-diferente (o linker assina antes do bundle), por isso o
-hash identifica este artefato, não a saída de qualquer build. O build anterior
-desta mesma rodada, sem o ajuste `3a3c676`, tinha
-`ee127a56fa51a1403616dc4cb3796afd3bb5ec4d595c6da699c0cac1a16d9344`; ele foi
-substituído por este.
+Round 13 D7 clean rebuild HEAD `885b592` (2026-11-03; Capture `e8ae66c`/`885b592` suppresses the automation warning in every capture; opened and closed once with `open -g`, without activating the window; SHA `fcdc4bd2…` replaces `78155379…`). Before: round 13 wave 2 clean rebuild HEAD `291fae4` (2026-11-02; network open in capture with `SCRAPELENS_CAPTURE_NETWORK=loopback` for tests only (Capture `3dda266`), on-demand paginated list (`6f11440`), demo without empty chips and recording badge only on the recorded session (`f00a2e4`), no internal decorative window (`312c891`), clippy `-D warnings` clean; SHA `78155379…` replaces `52cd14fd…`). Before: round 13 wave 1 clean rebuild HEAD `f81ea80` (2026-11-02; paginated contract P5, open/import/shutdown moved off the main thread, `starting` state, session by name with any name; SHA `52cd14fd…` replaces `2691f152…`). Before: round 12 addendum 8 clean rebuild HEAD `ce68eb9` (2026-11-02; test CLI requires `SCRAPELENS_TEST_MODE=1`; SHA `2691f152…` replaces `405b77fa…`). Before: round 12 wave 1 clean rebuild HEAD `737290a` (2026-11-02; CLI test mode verified in the bundle; SHA `405b77fa…` replaces `f3039e58…`). Before: round 12 clean rebuild HEAD `fc5ca18` (2026-11-01; Core `73e457d`/`fc5ca18` completeness + sessionSetup; SHA `f3039e58…` replaces `65a6529c…`). Before: round 11 clean rebuild HEAD `1f7d7d5` (2026-11-01; core without rustix; SHA `65a6529c…` replaces the invalid `d30af7f4…`). Before: round 11 clean rebuild (HEAD `517b949`, `core/` = `868127b`, 2026-11-01; SHA `d30af7f4…` replaces `39f1233d…`, generated with a dirty tree). Before: round 11 capture+core rebuild `0b94424`/`39826a3`/`93361b8`/`e6fc955`/`868127b` (source HEAD `868127b`, 2026-11-01; rustix in core; SHA `39f1233d…`; previous hash `114614c2…`). Before: round 11 capture+core rebuild `daa3414`/`e6a9edd`/`952921a`/`d50a19f` (source HEAD `d50a19f`, 2026-10-31; SHA `114614c2…`; previous hash `57264aed…`). Before: round 11 capture rebuild `23bcba6`/`0997a3b` (source HEAD `d8ad643`, 2026-10-31; SHA `57264aed…`; previous hash `8558470b…`). Before: round 11 capture rebuild `62afa63` (source HEAD `61ad875`, 2026-10-31; SHA `8558470b…`; previous hash `4636a3cf…`). Before: round 11 capture rebuild (source HEAD `03ee85c`, 2026-10-31; Chrome codesign `--deep`, NetLog in profile, CLOEXEC, navigate deadline; SHA `4636a3cf…`; previous hash `6c0092c3…`). Before: round 11 (source HEAD `eb66afa`, 2026-10-31; capture in `capture/`; CDP over pipe by default, `SCRAPELENS_CDP_TRANSPORT=port` for the old mode; SHA `6c0092c3…`; previous hash `1901f3b4…`). Before: round 10 stable signing (source HEAD 0ddd387, 2026-10-31; local cert `ScrapeLens Local Signing`; DR by certificate root, stable across 2 builds; previous hash `b3e12edc…`). Before: round 10 orphan cleanup (source HEAD 8fd4f6d, 2026-10-31; Tauri setup calls `capture::cleanup_orphans` in a thread; test `startup_removes_orphan_capture_with_dead_owner`; previous hash `7a46fa4c…`). Before: round 10 definitive (source HEAD 66e97e3, 2026-10-31; UI `target.notes` + `cdp.target_setup_error`/`timeout` in Limits; capture `/multi/` with "not confirmed" on sw-intercept and Limits without setup warning; screenshot 44; previous hash `02e6ef30…`). Before: round 10 final (source HEAD 8cfe828, 2026-10-30; Capture 1716d39–8cfe828 + Core df421cf/7892303; SW without copies in the list, sw-intercept enabled as ambiguous, Limits without a false "did not attach"; old session without sessionId and without the Target column; screenshots 42/44/47; previous hash `77cf7355…`). Before: round 10 (source HEAD 881fa0d, 2026-10-30; bundle with multi-target capture d60c1ae+, UI Target `9a06463`, Tests acceptance; live capture `/multi/` via the `.app` with Target column and target filter; evidence `evidence/busca-corpos/46-multi-alvo-bundle.png`; previous hash `d1136cbb…`). Before: round 9, wave B, 3rd time (source HEAD 7410fa4, 2026-10-29; bundle with `plan.parameters` exempt only with a verified plan — current version, hash and target checked; core-only fix, traces and screen unchanged; previous hash `a4fe000a…`). Before: round 9, wave B, 2nd time (source HEAD 39410bf, 2026-10-29; bundle rebuilt with the `parameters` exemption restricted to the (name, part) pair of the plan — core-only fix, traces and screen unchanged; previous hash `860c2008…`). Before: round 9, wave B (source HEAD 31bcaa9, 2026-10-29; plan.version 2 in the trace, traces ok/403/incomplete regenerated against detran-sim and validation with no spurious warnings on the faithful trace; includes cleanup_on_start from 4a81cb0 and plan.parameters from d83d620; previous hash `bdce5796…`). Before: round 9, 3rd time (source HEAD a37cd60, 2026-10-29; trace temporary with keep/discard, 64 MiB limit, new validate verdicts with core plan.hash; previous hash `0b49ba0c…`). Before: round 9, 2nd time (source HEAD 2a5c533, 2026-10-29; validate with adapter and class "user parameter"; previous hash `48e1ab6d…`). Before: round 9 (source HEAD 744df02, 2026-10-29; timeline, "Validate execution…" with import-trace into a new folder and validate; previous hash `bda06a2d…`). Before: final build closing round 8 (source HEAD dc14ac3, 2026-10-29; strict as default for adapter parts; advanced option "lenient parts" (`lenient_parts`) in the priming script, off by default; previous hash `0eb5632a…`). Before: final build of round 8, 2nd time (source HEAD c07b514, 2026-10-29; includes b4511fb and c07b514 from Capture; previous hash `bee5f6d6…`). Before: final build of round 8 (source HEAD 5d2c6e6, 2026-10-29; includes 391db16, 5d2c6e6 from Capture, 3ba9486 from Core and the adapter view's part cut; previous hash `53009655…`). Before: final rebuild of round 8 (source HEAD b0ce0f0, 2026-10-29; includes Capture grammar limits, core c61d407 and the adapter view's per-field limit; previous hash `9aec2199…`). Before: round 8 rebuild (source HEAD aab8559, 2026-10-29; `natural-ajax` adapter via path dependency in origins/chain/compare/priming, structured view and "Priming script" tab; previous hash `6e301e70…`). Before: final rebuild (source HEAD 4b16b0e, 2026-10-29; includes cf015b2 CDP initiator and 6a85676 priming detectors; previous hash `1a097cd0…`). Before: rebuild 7e (reading `assess-rules.json` only as a regular file without symlink, up to 256 KiB, parse error without echo; previous hash `56514c8b…`). Before: rebuild 7d (`AssessRules::warnings()` warnings returned by `assess_session` and shown in the list and in the Application tab; previous hash `0dba0476…`). Before: rebuild 7c (separate filters "Application failures" = app-error and "Possible blocks?" = blocked?, combinable; previous hash `aa066f1a…`). Before: rebuild 7b-2 (assess `counts` with `VerdictKind::count_key()`, kebab-case keys equal to `verdictKind`; previous hash `83d67718…`). Before: rebuild of the 7b adjustment (verdict `not-assessed` neutral; previous hash `0f6d04bf…`). Before: rebuild of wave 7b (command `assess_session`, column/filter/"Application" tab, verdict in the chain and in compare; previous hash `4f7ca2aa…`). Before: rebuild with auxiliary frames and initiator (previous hash `1697321d…`). Before: rebuild of wave 6b (HTML control, static context, context pages, HAR warnings without cookies, compare by rounds with options, business sanitization; previous hash `f777988f…`). Before: rebuild of the reorder hint tied to `SessionComparison.reordered` (previous hash `21824159…`). Before: rebuild of the compare layout adjustment (chips wrap lines; optional reorder hint); previous hash `ac7213b2…`. Before: rebuild with core labels (possible origin) and regenerated fixtures; previous hash `31ec27c3…`. Before: rebuild of round 5 review fixes (possible origin, confidence per step, paginated comparison, canonical paths, partsCounts; previous hash `c1783a57…`). Before: rebuild of wave 5b (Origin tab, priming chain, A × B comparison, export with annotated origins; previous hash `2f08150d…`). Before: rebuild of round 4 polish (highlight legend only when there is a dashed line, discreet note for `chrome-decoded`, warning for `charset:*`/`lossy-postData`); previous hash `0e2754f4…`. Before: rebuild with core lazy search (LazySession + search_lazy), solid/dashed highlighting and synthetic fixture text; previous hash `f9c0acec…`. Before: rebuild of round 4b review fixes (origin labels, highlight by core range, search bundle cache, symlink refusal in attachments, `transformed`; previous hash `56ee754b…`). Before: rebuild of wave 4b (search in payload and bodies panel: commands `search_session` and `read_body`, UI; 28+2 ignored in src-tauri, 16/16 in tests/exportacao, `npm run test:adapter` ok; evidence in `evidence/busca-corpos/`). Previous hash `9c04b98b…` replaced. History: rebuild of 0d4dbab (`fix(app)`: adapter tolerates fields omitted that core accepts via serde default; test `npm run test:adapter` with the minimal fixture; 15+1 ignored Tauri, 16/16 regressions in tests/exportacao). Previous hash `5934556c…` (16015a1) replaced. Before: rebuild with validation of all ancestors of the destination (F1/F2): the hash above is from this build. The SHA-256 is of the executable **after** the ad-hoc re-sign. A clean `tauri build`
+produces a byte-different binary (the linker signs before the bundle), so the hash identifies this artifact, not the output of any build. The previous build of this same round, without the `3a3c676` adjustment, had
+`ee127a56fa51a1403616dc4cb3796afd3bb5ec4d595c6da699c0cac1a16d9344`; it was replaced by this one.
 
-## Validação de execução
+## Execution validation
 
-- Bundle iniciado pelo drive de automação (`app.scrapelens.desktop`), janela
-  única 1440×920, sem telemetria.
-- `cargo test` no `src-tauri` cobre a ponte de exportação: prévia cURL/Python,
-  escaping de aspas, corpo `captured` vs `unavailable`, recusa de sobrescrita,
-  recusa de link simbólico e origem intacta após sanitizar.
-- `cargo test` no `core` cobre os exportadores e a sanitização usados aqui; não
-  houve alteração no core nesta rodada.
+- Bundle launched by the automation driver (`app.scrapelens.desktop`), single window
+  1440×920, no telemetry.
+- `cargo test` in `src-tauri` covers the export bridge: cURL/Python preview, quote
+  escaping, `captured` vs `unavailable` body, overwrite refusal, symbolic-link refusal,
+  and the source left intact after sanitizing.
+- `cargo test` in `core` covers the exporters and sanitization used here; there were
+  no changes to core in this round.
 
-### Contrato paginado no bundle (rodada 13)
+### Paginated contract in the bundle (round 13)
 
 - `SCRAPELENS_TEST_MODE=1 ScrapeLens.app/Contents/MacOS/scrapelens --open-capture
-  tests/capture/runs/20261027T0730Z/session-har` → stderr com
-  `list_requests offset=0 items=15 matched=15 total=15`; janela fechada por SIGTERM.
-  O log só existe no modo de teste; a lista veio pelo contrato novo, não por
-  `session.json` inteiro no front.
-- `--open-capture /private/tmp/big20k` (session de 20.002 requisições) → 11 páginas
-  de 2.000 + 2 finais, `matched=20002 total=20002`. RSS do processo
-  `WebKit.WebContent` ao abrir: **181.488 KiB (~177 MiB)**; processo principal
-  **1.334.736 KiB (~1,27 GiB)**.
-- A janela precisa estar ativa: com o app em segundo plano o WebKit não executou
-  as chamadas de `list_requests` até a ativação (throttling/App Nap do macOS).
-  A medição e a confirmação da lista foram feitas com a janela ativa; sem ativação,
-  o CLI abriu a sessão mas a lista ficou pendente. O front também refez a varredura
-  completa três vezes (33 chamadas) ao montar a tela.
-- Onda 2 (HEAD `291fae4`, bundle `78155379…`): a mesma abertura de `/private/tmp/big20k`
-  com a janela ativada (por `System Events`, sem clique) fez **2** chamadas de
-  `list_requests` até a primeira tela (`offset=0` e `offset=2000`, página visível + 1 de
-  folga, `matched=20002`), contra 33 na onda 1. A janela continua precisando estar ativa.
-- `/tmp/big20k` não é aceito como caminho: `/tmp` é symlink para `/private/tmp` e a
-  CLI recusa symlink em qualquer componente (comportamento esperado, A8-B6).
+  tests/capture/runs/20261027T0730Z/session-har` → stderr with
+  `list_requests offset=0 items=15 matched=15 total=15`; window closed by SIGTERM.
+  The log exists only in test mode; the list came through the new contract, not from
+  the whole `session.json` in the front end.
+- `--open-capture /private/tmp/big20k` (session of 20.002 requests) → 11 pages of
+  2.000 + 2 final, `matched=20002 total=20002`. RSS of the `WebKit.WebContent` process
+  on open: **181.488 KiB (~177 MiB)**; main process **1.334.736 KiB (~1,27 GiB)**.
+- The window must be active: with the app in the background, WebKit did not run the
+  `list_requests` calls until activation (macOS throttling/App Nap).
+  The measurement and list confirmation were done with the window active; without
+  activation, the CLI opened the session but the list stayed pending. The front end
+  also redid the full scan three times (33 calls) when mounting the screen.
+- Wave 2 (HEAD `291fae4`, bundle `78155379…`): the same opening of
+  `/private/tmp/big20k` with the window activated (via `System Events`, no click) made
+  **2** `list_requests` calls until the first screen (`offset=0` and `offset=2000`,
+  visible page + 1 spare, `matched=20002`), versus 33 in wave 1. The window still
+  needs to be active.
+- `/tmp/big20k` is not accepted as a path: `/tmp` is a symlink to `/private/tmp` and
+  the CLI refuses symlinks in any component (expected behavior, A8-B6).
 
-## Linux (rodada 14)
+## Linux (round 14)
 
-Build em container, sem nada instalado no macOS: `src-tauri/linux/Dockerfile`
-(Ubuntu 22.04 fixado por digest `sha256:076e7bf8…5e11`, Rust 1.98.1, Node 26.8.1
-conferido pelo `SHASUMS256.txt` oficial, `cargo --locked` e `npm ci`) e
-`src-tauri/linux/build.sh` (testes, `tauri build --bundles deb,appimage`, smoke com Xvfb).
+Build in a container, with nothing installed on macOS: `src-tauri/linux/Dockerfile`
+(Ubuntu 22.04 pinned by digest `sha256:076e7bf8…5e11`, Rust 1.98.1, Node 26.8.1
+checked against the official `SHASUMS256.txt`, `cargo --locked` and `npm ci`) and
+`src-tauri/linux/build.sh` (tests, `tauri build --bundles deb,appimage`, Xvfb smoke).
 
 ```bash
-# na raiz do repositório; ARCH=amd64 (emulado no OrbStack) ou arm64 (nativo)
+# at the repository root; ARCH=amd64 (emulated in OrbStack) or arm64 (native)
 docker build --platform linux/$ARCH -f src-tauri/linux/Dockerfile -t scrapelens-linux:$ARCH .
 docker run --rm --platform linux/$ARCH -v "$PWD/src-tauri/linux/out:/out" scrapelens-linux:$ARCH
-# saída: src-tauri/linux/out/$ARCH/{*.deb,*.AppImage,scrapelens,SHA256SUMS,build.log,smoke.log}
+# output: src-tauri/linux/out/$ARCH/{*.deb,*.AppImage,scrapelens,SHA256SUMS,build.log,smoke.log}
 ```
 
-Os artefatos em `src-tauri/linux/out/` ficam fora do git (`.gitignore`).
+Artifacts in `src-tauri/linux/out/` are kept out of git (`.gitignore`).
 
-| Artefato (HEAD de origem `98ab629`, árvore limpa, atalhos Linux corrigidos e porte de `capture/` incluído) | SHA-256 |
+| Artifact (source HEAD `98ab629`, clean tree, Linux shortcuts fixed and `capture/` port included) | SHA-256 |
 |---|---|
 | `amd64/ScrapeLens_0.1.0_amd64.deb` | `5d288b32575bd8a12bb65f59178534cf4f34e447fd0ec3e5485ff35115df53ac` |
 | `amd64/ScrapeLens_0.1.0_amd64.AppImage` | `64b08eb83747f4dec1205c7f99f83e5219d0e2c4df6119d474f4993e88c40ec5` |
-| `amd64/scrapelens` (executável) | `cd606a5d08aae7de7ce98f05c9183cbd3d06a7c3edafed1bf944c6d1d7f9367b` |
+| `amd64/scrapelens` (executable) | `cd606a5d08aae7de7ce98f05c9183cbd3d06a7c3edafed1bf944c6d1d7f9367b` |
 | `arm64/ScrapeLens_0.1.0_arm64.deb` | `a43397f34591c707d6c4f34f2321bd7d67750572efedce4880a7879ef35fde09` |
 | `arm64/ScrapeLens_0.1.0_aarch64.AppImage` | `7c291e0b0ba29508b3e157ccf5ef334ff3fb89f723d02f34de89fff0a40d66f1` |
-| `arm64/scrapelens` (executável) | `fc667f779f0f017c4844f7994bf321500dc8cf21ded8a38f712f7d4dbf1debf3` |
+| `arm64/scrapelens` (executable) | `fc667f779f0f017c4844f7994bf321500dc8cf21ded8a38f712f7d4dbf1debf3` |
 
-Sem assinatura no Linux. Para verificar: `sha256sum -c SHA256SUMS` na pasta do
-artefato, ou `sha256sum ScrapeLens_0.1.0_amd64.deb` comparado com a tabela acima.
-O build **não é bit a bit reprodutível**: dois builds arm64 seguidos deram hashes
-diferentes (o hash identifica o artefato, não a receita). Toolchain e dependências
-são fixas; o que varia é o conteúdo gerado (ids de build, timestamps internos).
+No signature on Linux. To verify: `sha256sum -c SHA256SUMS` in the artifact's folder,
+or `sha256sum ScrapeLens_0.1.0_amd64.deb` compared with the table above.
+The build is **not bit-for-bit reproducible**: two consecutive arm64 builds produced
+different hashes (the hash identifies the artifact, not the recipe). Toolchain and
+dependencies are pinned; what varies is the generated content (build IDs, internal
+timestamps).
 
-Resultado nos containers (amd64 e arm64 iguais): `cargo test` 56/0/8, clippy
-`-D warnings` limpo, `test:shortcuts`, `test:list-view`, `test:paged`, `test:capture-url`,
-`test:adapter` e `tsc` ok; smoke com `SCRAPELENS_TEST_MODE=1 --import-har
-fixtures/aceite/headers-cookies/headers-cookies.har` sob `xvfb-run` gravou
-`~/.local/share/app.scrapelens.desktop/sessions/har-…/session.json` (1 requisição)
-e o app foi fechado por SIGTERM. Os dois smokes emitiram aviso AT-SPI de bus de acessibilidade ausente, sem impedir a importação nem a listagem. Evidência deste rebuild: `/tmp/sl-shortcuts-{amd64,arm64}.log`, `/tmp/sl-shortcuts-result.json` e `src-tauri/linux/out/{amd64,arm64}/{build.log,smoke.log,SHA256SUMS}`. Não houve teste dos atalhos via X11 nem reinstalação destes pacotes nas VMs nesta execução; a validação dos atalhos aqui é automatizada no front. No build anterior (árvore suja), o `.deb` amd64 instalou com `apt install ./…deb` em
-`ubuntu:24.04` e `debian:12`, sem biblioteca faltando no `ldd`. O AppImage não foi
-executado (precisaria de FUSE ou `--appimage-extract-and-run`); 24.04/Debian 12
-foram só instalação, sem abrir a janela.
+Results in the containers (amd64 and arm64 identical): `cargo test` 56/0/8, clippy
+`-D warnings` clean, `test:shortcuts`, `test:list-view`, `test:paged`, `test:capture-url`,
+`test:adapter` and `tsc` ok; smoke with `SCRAPELENS_TEST_MODE=1 --import-har
+fixtures/aceite/headers-cookies/headers-cookies.har` under `xvfb-run` wrote
+`~/.local/share/app.scrapelens.desktop/sessions/har-…/session.json` (1 request)
+and the app was closed by SIGTERM. Both smokes emitted an AT-SPI warning about a missing
+accessibility bus, without preventing the import or the listing. Evidence for this rebuild:
+`/tmp/sl-shortcuts-{amd64,arm64}.log`, `/tmp/sl-shortcuts-result.json` and
+`src-tauri/linux/out/{amd64,arm64}/{build.log,smoke.log,SHA256SUMS}`. There was no X11
+test of the shortcuts nor reinstallation of these packages on the VMs in this run; the
+shortcut validation here is automated in the front end. In the previous build (dirty tree),
+the amd64 `.deb` installed with `apt install ./…deb` on
+`ubuntu:24.04` and `debian:12`, with no missing library in `ldd`. The AppImage was not
+run (it would need FUSE or `--appimage-extract-and-run`); 24.04/Debian 12
+were installation-only, without opening the window.
 
-Diferenças de plataforma: atalhos aparecem como `Ctrl+`/`Shift+` (o menu já usa
-`CmdOrCtrl`); preferências em `$XDG_CONFIG_HOME/app.scrapelens.desktop` (0700/0600,
-mesma escrita atômica); "Mostrar no gerenciador de arquivos" abre a pasta com
-`xdg-open` (não seleciona o arquivo). O porte Linux de `capture/` está incluído. Os atalhos de captura, importação, demo e cópia de URL também são tratados no `keydown` fora do macOS (`98ab629`), com as guardas de estado dos botões.
+Platform differences: shortcuts appear as `Ctrl+`/`Shift+` (the menu already uses
+`CmdOrCtrl`); preferences in `$XDG_CONFIG_HOME/app.scrapelens.desktop` (0700/0600,
+same atomic write); "Show in file manager" opens the folder with `xdg-open` (it does
+not select the file). The Linux port of `capture/` is included. The capture, import,
+demo and copy-URL shortcuts are also handled in `keydown` outside macOS (`98ab629`),
+with the button state guards.
 
-## Evidência da exportação/sanitização
+## Export/sanitization evidence
 
-Pasta: `src-tauri/evidence/exportacao/`.
+Folder: `src-tauri/evidence/exportacao/`.
 
-| Arquivo | Conteúdo |
+| File | Content |
 |---|---|
-| `command-output.txt` | saída real (gerada por exemplo `export_dump`, já removido do repositório): prévias cURL/Python, prévia da sanitização e resultado gravado |
-| `preview-curl.json`, `preview-python.json` | respostas literais de `export::preview` (1317 e 1745 bytes de texto) |
-| `sanitize-preview.json`, `sanitize-saved.json` | 24 requisições, 152 redações (`cookie`, `header:cookie`, `header:set-cookie`, `setCookie`), destino sugerido e resultado |
-| `05`–`14-*.png` | telas do app: demo, sessão aberta, detalhe, diálogo cURL, diálogo Python, cancelamento, arquivo salvo, sanitização, resultado e sessão sanitizada aberta |
-| `ui-harness.mjs` | harness Playwright que exercita os componentes React |
-| `ui-harness-result.json` | resumo: cópia e arquivo salvos idênticos à prévia Python (`copied_matches_python`, `saved_matches_python`) |
-| `saved-har-0002.sh` | texto exato que o diálogo de salvamento entregou ao command |
-| `prepare-payloads.py` | recria os payloads grandes usados pelo harness |
+| `command-output.txt` | real output (generated by the `export_dump` example, already removed from the repository): cURL/Python previews, sanitization preview and the saved result |
+| `preview-curl.json`, `preview-python.json` | literal responses of `export::preview` (1317 and 1745 bytes of text) |
+| `sanitize-preview.json`, `sanitize-saved.json` | 24 requests, 152 redactions (`cookie`, `header:cookie`, `header:set-cookie`, `setCookie`), suggested destination and result |
+| `05`–`14-*.png` | app screens: demo, open session, detail, cURL dialog, Python dialog, cancel, saved file, sanitization, result and opened sanitized session |
+| `ui-harness.mjs` | Playwright harness that exercises the React components |
+| `ui-harness-result.json` | summary: copied and saved file identical to the Python preview (`copied_matches_python`, `saved_matches_python`) |
+| `saved-har-0002.sh` | exact text that the save dialog handed to the command |
+| `prepare-payloads.py` | recreates the large payloads used by the harness |
 
-Sessão usada: `~/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2`
-(24 requisições, importada de HAR sintético de `127.0.0.1:8781`). A pasta
-sanitizada de referência (0700/0600, `session.json` com 872.082 bytes) foi
-gerada em `evidence/exportacao/sanitized-har-synthetic/` e conferida por busca
-de marcadores: `fromjs`, `sc_a=alpha` e `sc_b=beta` não aparecem em nenhum
-arquivo sanitizado. Ela é derivada e por isso não entra no git; o exemplo `export_dump` que a gerava foi removido — recrie-a pelo comando de sanitização do app.
+Session used: `~/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2`
+(24 requests, imported from synthetic HAR at `127.0.0.1:8781`). The reference
+sanitized folder (0700/0600, `session.json` with 872.082 bytes) was generated in
+`evidence/exportacao/sanitized-har-synthetic/` and checked by searching for markers:
+`fromjs`, `sc_a=alpha` and `sc_b=beta` do not appear in any sanitized file. It is
+derived and therefore not in git; the `export_dump` example that generated it was
+removed — recreate it with the app's sanitization command.
 
-**O que o harness prova e o que não prova.** O harness serve o `dist/` real do
-frontend, injeta um stub de `__TAURI_INTERNALS__` e usa as respostas **reais**
-gravadas pelo Rust; apenas os diálogos nativos, o clipboard e o file picker são
-simulados. Ele prova o comportamento dos componentes React (alternância
-cURL/Python, texto copiado/salvo igual à prévia, cancelamento sem gravação,
-abertura da sessão sanitizada). Ele **não** prova o diálogo nativo do macOS nem
-a gravação real do arquivo pelo usuário; esses caminhos são cobertos pelos
-testes Rust (`write_text_file`, `sanitize_to`) e pelo bundle, mas a passagem
-manual pelo `NSSavePanel` não foi automatizada nesta rodada.
+**What the harness proves and what it does not.** The harness serves the real `dist/`
+of the front end, injects a `__TAURI_INTERNALS__` stub and uses the **real** responses
+written by Rust; only the native dialogs, the clipboard and the file picker are
+simulated. It proves the behavior of the React components (cURL/Python switching,
+copied/saved text equal to the preview, cancel without writing, opening the sanitized
+session). It does **not** prove the native macOS dialog nor the real file write by the
+user; these paths are covered by the Rust tests (`write_text_file`, `sanitize_to`) and
+by the bundle, but the manual pass through `NSSavePanel` was not automated in this round.
 
-## Prints
+## Screenshots
 
-| Arquivo | Conteúdo |
+| File | Content |
 |---|---|
-| `src-tauri/evidence/exportacao/08-dialog-curl.png` | prévia cURL com estado do corpo, avisos e aviso de não execução |
-| `src-tauri/evidence/exportacao/09-dialog-python.png` | mesma requisição em Python (`http.client`) |
-| `src-tauri/evidence/exportacao/10-dialog-cancel.png` | cancelamento do diálogo nativo: nada gravado |
-| `src-tauri/evidence/exportacao/11-dialog-saved.png` | arquivo salvo com caminho e bytes |
-| `src-tauri/evidence/exportacao/12-dialog-sanitize.png` | prévia de sanitização com redações por origem |
-| `src-tauri/evidence/exportacao/14-sanitized-session.png` | sessão sanitizada aberta no app |
+| `src-tauri/evidence/exportacao/08-dialog-curl.png` | cURL preview with body state, warnings and a not-executed notice |
+| `src-tauri/evidence/exportacao/09-dialog-python.png` | same request in Python (`http.client`) |
+| `src-tauri/evidence/exportacao/10-dialog-cancel.png` | native dialog cancelled: nothing written |
+| `src-tauri/evidence/exportacao/11-dialog-saved.png` | saved file with path and bytes |
+| `src-tauri/evidence/exportacao/12-dialog-sanitize.png` | sanitization preview with redactions by source |
+| `src-tauri/evidence/exportacao/14-sanitized-session.png` | sanitized session opened in the app |
 
-## Limitações que este pacote mantém
+## Limitations this package keeps
 
-- Sem assinatura Apple Developer ID e sem notarização; distribuição fora desta
-  máquina exige `xattr -d com.apple.quarantine` ou assinatura/notarização reais.
-- Apenas arm64 compilado e testado; Intel não validado.
-- Captura multi-alvo: página, popup, `_blank`, OOPIF, worker e service worker;
-  documento `_blank` pode vir só do NetLog.
-- Corpos vindos do CDP ficam `unavailable` (não são baixados); a UI mostra o
-  motivo em vez de inventar conteúdo. Nenhuma sessão capturada nesta máquina
-  tem corpo; só o teste unitário cobre o caso `captured`.
-- `--remote-allow-origins=*` no endpoint CDP (ver `src-tauri/src/capture.rs`);
-  risco limitado a loopback, porta efêmera e à janela da captura.
-- O fluxo manual de salvar pelo `NSSavePanel` dentro do bundle não foi
-  automatizado: o painel nativo do macOS não expõe AX para o driver
-  (`off_space_or_ax_unresolved`) e a tentativa em foreground atingiu outro app.
-  Roteiro para validar em 2 minutos: abrir `ScrapeLens.app`, `Abrir captura…` →
-  `har-3dbc391c02a985c5-2`, abrir a requisição `/setcookie`, `Exportar…`,
-  `Salvar…`, escolher pasta nova e conferir o arquivo 0600; depois `Sanitizar…`
-  e `Abrir sessão sanitizada`.
+- No Apple Developer ID signature and no notarization; distribution outside this
+  machine requires `xattr -d com.apple.quarantine` or real signing/notarization.
+- Only arm64 built and tested; Intel not validated.
+- Multi-target capture: page, popup, `_blank`, OOPIF, worker and service worker;
+  a `_blank` document may come only from the NetLog.
+- Bodies coming from CDP stay `unavailable` (they are not downloaded); the UI shows the
+  reason instead of inventing content. No session captured on this machine has a body;
+  only the unit test covers the `captured` case.
+- `--remote-allow-origins=*` on the CDP endpoint (see `src-tauri/src/capture.rs`);
+  risk limited to loopback, the ephemeral port and the capture window.
+- The manual save flow through `NSSavePanel` inside the bundle was not automated: the
+  native macOS panel does not expose AX to the driver (`off_space_or_ax_unresolved`),
+  and the foreground attempt hit another app.
+  Two-minute validation script: open `ScrapeLens.app`, `Open capture…` →
+  `har-3dbc391c02a985c5-2`, open the `/setcookie` request, `Export…`, `Save…`, choose a
+  new folder and check that the file is 0600; then `Sanitize…` and `Open sanitized session`.

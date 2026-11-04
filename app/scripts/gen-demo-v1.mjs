@@ -1,6 +1,6 @@
-// Gera a fixture v1 (contrato docs/03-contratos.md) a partir da sessão demo
-// original em scripts/legacy-demo-session.ts. A saída é sintética e marcada com
-// "synthetic-fixture": nenhum dado é real.
+// Generates the v1 fixture (contract docs/03-contratos.md) from the original demo
+// session in scripts/legacy-demo-session.ts. The output is synthetic and marked with
+// "synthetic-fixture": no data is real.
 //
 //   node scripts/gen-demo-v1.mjs
 //
@@ -44,7 +44,7 @@ function provenance(verification, fallbackSource = "cdp") {
   if (!verification || verification.status === "unverified") {
     return {
       source: fallbackSource,
-      method: verification?.reason ?? "sem evidência",
+      method: verification?.reason ?? "no evidence",
       verification: "unverified",
       notes: verification?.reason ? [verification.reason] : undefined,
     };
@@ -75,7 +75,7 @@ function headerView(pairs, verification) {
     ...(pseudoHeaders.length ? { pseudoHeaders } : {}),
     headers,
     orderState: "sourceOrder",
-    ...(h1 ? { notes: ["origem HTTP/1.1: sem pseudoheaders"] } : {}),
+    ...(h1 ? { notes: ["HTTP/1.1 origin: no pseudoheaders"] } : {}),
   };
 }
 
@@ -115,7 +115,7 @@ function parseSetCookie(raw) {
   const tokens = raw.split(";").map((t) => t.trim()).filter(Boolean);
   const [pair, ...attrs] = tokens;
   const eq = pair.indexOf("=");
-  if (eq <= 0) return { parsed: null, parseError: "Set-Cookie sem par nome=valor" };
+  if (eq <= 0) return { parsed: null, parseError: "Set-Cookie without a name=value pair" };
   const parsed = {
     name: pair.slice(0, eq).trim(),
     value: pair.slice(eq + 1),
@@ -151,8 +151,8 @@ function mapCookies(req, requestProv) {
     raw: `${c.name}=${c.value}`,
     ...cookieProv,
   }));
-  // Demonstração da divisão de Cookie no fio (h2/h3): só onde o payload do
-  // exemplo deixa claro que são linhas sintéticas. O campo bruto permanece.
+  // Demo of Cookie splitting on the wire (h2/h3): only where the example payload makes
+  // clear the lines are synthetic. The raw field stays.
   const fragmented = req.id === "req-0008" && rawValues.length === 1;
   const wireLines = fragmented
     ? [rawValues[0].split("; ").slice(0, 2).join("; "), rawValues[0].split("; ").slice(2).join("; ")]
@@ -162,7 +162,7 @@ function mapCookies(req, requestProv) {
     pairs,
     wireLines,
     unparsed: [],
-    ...(fragmented ? { notes: ["demonstração sintética: duas linhas Cookie no fio"] } : {}),
+    ...(fragmented ? { notes: ["synthetic demo: two Cookie lines on the wire"] } : {}),
     provenance: cookieProv,
   };
 }
@@ -173,7 +173,7 @@ function setCookies(req) {
     raw: c.raw,
     ...parseSetCookie(c.raw),
     ...prov,
-    notes: ["fixture sintética"],
+    notes: ["synthetic fixture"],
   }));
 }
 
@@ -214,8 +214,8 @@ for (const req of legacy.requests) {
   const candidates =
     matched === "ambiguous"
       ? [
-          { entityId: `${req.id}-candidate-a`, score: 62, reasons: ["URL igual", "método igual", "janela de 2 ms"] },
-          { entityId: `${req.id}-candidate-b`, score: 58, reasons: ["URL igual", "método igual", "outro loaderId"] },
+          { entityId: `${req.id}-candidate-a`, score: 62, reasons: ["same URL", "same method", "2 ms window"] },
+          { entityId: `${req.id}-candidate-b`, score: 58, reasons: ["same URL", "same method", "different loaderId"] },
         ]
       : undefined;
 
@@ -288,13 +288,13 @@ for (const req of legacy.requests) {
         protocol: protocol(hop.protocol),
         ...(hop.status ? { status: hop.status } : {}),
         outcome: "completed",
-        requestHeaders: { headers: [], orderState: "unknown", notes: ["headers deste hop não foram preservados na fixture"] },
-        responseHeaders: { headers: [], orderState: "unknown", notes: ["headers deste hop não foram preservados na fixture"] },
+        requestHeaders: { headers: [], orderState: "unknown", notes: ["headers of this hop were not preserved in the fixture"] },
+        responseHeaders: { headers: [], orderState: "unknown", notes: ["headers of this hop were not preserved in the fixture"] },
         cookie: { raw: [], pairs: [], wireLines: [], unparsed: [], provenance: provenance(undefined) },
         setCookies: [],
         headerEvidence: [],
-        requestBody: { state: "unavailable", note: "hop sem corpo na fixture", provenance: provenance(undefined) },
-        responseBody: { state: "unavailable", note: "hop sem corpo na fixture", provenance: provenance(undefined) },
+        requestBody: { state: "unavailable", note: "hop without body in the fixture", provenance: provenance(undefined) },
+        responseBody: { state: "unavailable", note: "hop without body in the fixture", provenance: provenance(undefined) },
         netlog: {},
         match: "unmatched",
         provenance: provenance(undefined),
@@ -339,7 +339,7 @@ for (const req of legacy.requests) {
   if (matched === "ambiguous") {
     warnings.push({
       code: "correlation.ambiguous",
-      message: "Duas tentativas NetLog compatíveis com a mesma URL e janela de tempo; nenhuma foi escolhida.",
+      message: "Two NetLog attempts match the same URL and time window; neither was chosen.",
       severity: "warning",
       entity: req.id,
       detail: { candidates: candidates?.map((c) => c.entityId) },
@@ -349,13 +349,13 @@ for (const req of legacy.requests) {
 
 warnings.unshift({
   code: "fixture.synthetic",
-  message: "Fixture sintética do contrato v1: nenhum byte foi capturado de um site real.",
+  message: "Synthetic v1 contract fixture: no bytes were captured from a real site.",
   severity: "info",
   entity: "demo-sintetica-01",
 });
 warnings.push({
   code: "capture.body.discarded",
-  message: "Corpo descartado por política de captura sensível; não é recuperável.",
+  message: "Body discarded by the sensitive-capture policy; not recoverable.",
   severity: "warning",
   entity: "req-0013",
 });
@@ -367,7 +367,7 @@ const session = {
     browser: {
       name: "Chrome",
       version: "156.0.8079.0",
-      platform: "macOS arm64 (build de teste)",
+      platform: "macOS arm64 (test build)",
       userAgent:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
     },
@@ -392,10 +392,10 @@ const session = {
       mode: "cdp+netlog",
       browserBinary: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
       headless: false,
-      notes: "Fixture sintética de demonstração; nenhum Chrome foi iniciado para gerar este arquivo.",
+      notes: "Synthetic demo fixture; no Chrome was started to generate this file.",
     },
     labels: ["synthetic-fixture", "demo"],
-    notes: [...legacy.notes, "Arquivo gerado por app/scripts/gen-demo-v1.mjs a partir da fixture demo da onda 1."],
+    notes: [...legacy.notes, "File generated by app/scripts/gen-demo-v1.mjs from the wave-1 demo fixture."],
   },
   requests,
   connections: [...connections.values()],
@@ -412,6 +412,6 @@ fs.writeFileSync(outAttachments, JSON.stringify(attachments, null, 2) + "\n");
 fs.writeFileSync(rustCopy, JSON.stringify(session, null, 2) + "\n");
 
 console.log(`session v1: ${requests.length} requests, ${warnings.length} warnings`);
-console.log(`attachments: ${Object.keys(attachments).length} prévias`);
-console.log(`escrito: ${outJson}`);
-console.log(`escrito: ${rustCopy}`);
+console.log(`attachments: ${Object.keys(attachments).length} previews`);
+console.log(`written: ${outJson}`);
+console.log(`written: ${rustCopy}`);

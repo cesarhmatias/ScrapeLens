@@ -1,4 +1,4 @@
-//! Round-trip do formato v1 e exportação sanitizada em disco.
+//! Round-trip of the v1 format and sanitized export to disk.
 
 use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
 use scrapelens_core::model::Body;
@@ -71,7 +71,7 @@ fn sanitized_session_writes_only_sanitized_attachments_and_no_raw_events() {
     let mut imported = import_har(&har()).unwrap();
     imported.bundle.cdp_events_jsonl = Some(b"{\"method\":\"Network.x\"}".to_vec());
     imported.bundle.netlog_json = Some(b"{}".to_vec());
-    // Adiciona um header sensível para provar a redação no disco.
+    // Add a sensitive header to prove redaction on disk.
     let request = &mut imported.bundle.session.requests[0];
     let provenance = request.request_headers.headers[0].provenance.clone();
     request
@@ -103,7 +103,7 @@ fn sanitized_session_writes_only_sanitized_attachments_and_no_raw_events() {
         .labels
         .iter()
         .any(|label| label == "sanitized"));
-    // Nenhum anexo original é copiado; corpo text/plain não estruturado é omitido.
+    // No original attachment is copied; unstructured text/plain body is omitted.
     assert!(!reimported
         .bundle
         .attachments
@@ -123,7 +123,7 @@ fn sanitize_refuses_to_overwrite_an_existing_session_dir() {
     let dir = root.path().join("sanitized");
     export.write_to(&dir).unwrap();
     let error = export.write_to(&dir).unwrap_err();
-    assert!(error.to_string().contains("já contém uma sessão"));
+    assert!(error.to_string().contains("already contains a session"));
 }
 
 #[test]

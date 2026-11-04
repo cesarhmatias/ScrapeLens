@@ -1,4 +1,4 @@
-//! Bundle preguiçoso: mesma busca que o eager, sem reter bytes, com recusas.
+//! Lazy bundle: same search as the eager one, without retaining bytes, with refusals.
 
 use scrapelens_core::lazy::BODY_READ_LIMIT;
 use scrapelens_core::search::{search, search_lazy, SearchQuery};
@@ -53,7 +53,7 @@ fn lazy_search_equals_eager_and_retains_no_bytes() {
     let (lazy, report) = open_session_dir_lazy(dir.path()).unwrap();
     assert_eq!(
         report.attachments_loaded, 0,
-        "nenhum anexo lido na abertura"
+        "no attachment read on open"
     );
     for text in [
         "cmd_consultar_placa",
@@ -97,7 +97,7 @@ fn lazy_refuses_symlinks_and_reports_missing() {
     let found = search_lazy(&lazy, &SearchQuery::new("segredo"));
     assert!(
         found.matches.is_empty(),
-        "conteúdo fora da sessão não pode ser lido"
+        "content outside the session must not be readable"
     );
 }
 

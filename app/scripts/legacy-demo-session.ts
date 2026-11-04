@@ -1,9 +1,9 @@
 // @ts-nocheck
-// Fixture demo da onda 1, mantida apenas como entrada de gen-demo-v1.mjs.
+// Wave-1 demo fixture, kept only as input for gen-demo-v1.mjs.
 
-// SESSÃO SINTÉTICA DE DEMONSTRAÇÃO.
-// Nenhum dado aqui foi capturado. Domínios usam .invalid (RFC 2606) de propósito.
-// A UI marca este arquivo como demo em todos os níveis.
+// SYNTHETIC DEMO SESSION.
+// No data here was captured. Domains use .invalid (RFC 2606) on purpose.
+// The UI marks this file as demo at every level.
 
 const pair =
   (name: string, value: string, note?: string) =>
@@ -78,7 +78,7 @@ const req1: RequestRecord = {
   type: "document",
   startedAt: "2026-10-26T18:02:11.418Z",
   durationMs: 412,
-  initiator: "navegação do usuário",
+  initiator: "user navigation",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "demo-loja.invalid"],
@@ -105,7 +105,7 @@ const req1: RequestRecord = {
     ["cache-control", "no-cache"],
     ["vary", "Accept-Encoding"],
     ["set-cookie", "session=9c1f…e2; Path=/; Secure; HttpOnly; SameSite=Lax"],
-    ["set-cookie", "_ga=GA1.1.5543…; Path=/; Domain=demo-loja.invalid; Max-Age=31536000", "duplicata — segunda linha Set-Cookie"],
+    ["set-cookie", "_ga=GA1.1.5543…; Path=/; Domain=demo-loja.invalid; Max-Age=31536000", "duplicate — second Set-Cookie line"],
     ["alt-svc", 'h3=":443"; ma=86400'],
     ["x-request-id", "b7c2f1a0-4d3e-4b6a-9e21-0a1c5f7d9e33"],
     ["strict-transport-security", "max-age=15552000; includeSubDomains"],
@@ -127,25 +127,25 @@ const req1: RequestRecord = {
     encodedSize: 18422,
     decodedSize: 96311,
     truncatedAt: 4096,
-    reason: "prévia HTML limitada a 4 KiB; o corpo completo fica no arquivo da sessão",
+    reason: "HTML preview limited to 4 KiB; the full body stays in the session file",
     preview:
       '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' +
-      "<title>Demo Loja — vitrine sintética</title>" +
-      '<meta name="description" content="Dados fictícios de demonstração do ScrapeLens.">' +
+      "<title>Demo Loja — synthetic showcase</title>" +
+      '<meta name="description" content="Fictional demo data from ScrapeLens.">' +
       '<link rel="preload" as="style" href="/assets/app.9f3c1a.css">…</head><body>…',
     captureRef: "cdp:Network.getResponseBody",
   },
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:11.470Z", "evento CDP bruto, headers como recebidos")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:11.512Z", "evento CDP bruto, linhas Set-Cookie separadas")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.001Z", "derivação local do ScrapeLens"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:11.470Z", "pares Cookie parseados a partir do header bruto")),
-    payload: unverified("GET sem corpo — nada a verificar"),
-    responseBody: partial(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:11.690Z", "chamada CDP, resposta truncada na gravação"), "restam 14 KiB fora desta prévia"),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:11.502Z", "evento NetLog de sessão HTTP/2")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:11.830Z", "timestamps do CDP, relógio do navegador")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:11.470Z", "raw CDP event, headers as received")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:11.512Z", "raw CDP event, separate Set-Cookie lines")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.001Z", "local ScrapeLens derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:11.470Z", "Cookie pairs parsed from the raw header")),
+    payload: unverified("GET without body — nothing to verify"),
+    responseBody: partial(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:11.690Z", "CDP call, response truncated in the recording"), "14 KiB remain outside this preview"),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:11.502Z", "NetLog event for HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:11.830Z", "CDP timestamps, browser clock")),
   },
 };
 
@@ -161,7 +161,7 @@ const req2: RequestRecord = {
   type: "stylesheet",
   startedAt: "2026-10-26T18:02:11.612Z",
   durationMs: 38,
-  initiator: "parser HTML — <link rel=stylesheet>",
+  initiator: "HTML parser — <link rel=stylesheet>",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "demo-loja.invalid"],
@@ -184,7 +184,7 @@ const req2: RequestRecord = {
     ["cache-control", "public, max-age=31536000, immutable"],
     ["etag", '"9f3c1a-7a2"'],
     ["x-cache", "HIT"],
-    ["x-cache", "HIT", "duplicata — duas linhas x-cache, valor idêntico"],
+    ["x-cache", "HIT", "duplicate — two x-cache lines, identical value"],
     ["age", "1821"],
   ]),
   cookiesSent: [],
@@ -201,14 +201,14 @@ const req2: RequestRecord = {
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:11.640Z", "evento CDP bruto")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:11.648Z", "evento CDP bruto, duplicata preservada")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.002Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: unverified("nenhum header Cookie nesta requisição"),
-    payload: unverified("GET sem corpo"),
-    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:11.652Z", "corpo completo em cache local")),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:11.644Z", "reuso da sessão HTTP/2 do documento")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:11.650Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:11.640Z", "raw CDP event")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:11.648Z", "raw CDP event, duplicate preserved")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.002Z", "local derivation"), "derived view, not transmitted"),
+    cookies: unverified("no Cookie header in this request"),
+    payload: unverified("GET without body"),
+    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:11.652Z", "full body in local cache")),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:11.644Z", "reuse of the document's HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:11.650Z", "CDP timestamps")),
   },
 };
 
@@ -224,7 +224,7 @@ const req3: RequestRecord = {
   type: "script",
   startedAt: "2026-10-26T18:02:11.618Z",
   durationMs: 96,
-  initiator: "parser HTML — <script type=module>",
+  initiator: "HTML parser — <script type=module>",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "demo-loja.invalid"],
@@ -255,20 +255,20 @@ const req3: RequestRecord = {
     availability: "omitted",
     contentType: "text/javascript",
     encodedSize: 88210,
-    reason: "corpo de script não é exibido por padrão nesta fatia (economia de memória)",
-    captureRef: "cdp:Network.getResponseBody — não solicitado",
+    reason: "script body is not shown by default in this slice (memory saving)",
+    captureRef: "cdp:Network.getResponseBody — not requested",
   },
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:11.646Z", "evento CDP bruto")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:11.651Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.003Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: unverified("nenhum header Cookie nesta requisição"),
-    payload: unverified("GET sem corpo"),
-    responseBody: unverified("corpo descartado por política de prévia — nenhuma evidência de conteúdo"),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:11.649Z", "reuso da sessão HTTP/2")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:11.714Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:11.646Z", "raw CDP event")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:11.651Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.003Z", "local derivation"), "derived view, not transmitted"),
+    cookies: unverified("no Cookie header in this request"),
+    payload: unverified("GET without body"),
+    responseBody: unverified("body discarded by preview policy — no content evidence"),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:11.649Z", "reuse of HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:11.714Z", "CDP timestamps")),
   },
 };
 
@@ -291,7 +291,7 @@ const req4: RequestRecord = {
     [":scheme", "https"],
     [":path", "/api/v1/produtos?pagina=1&ordenar=preco"],
     ["accept", "application/json"],
-    ["accept", "text/plain", "duplicata — o cliente envia Accept duas vezes"],
+    ["accept", "text/plain", "duplicate — the client sends Accept twice"],
     ["accept-language", "pt-BR,pt;q=0.9,en;q=0.8"],
     ["content-type", "application/json"],
     ["user-agent", UA_156],
@@ -314,7 +314,7 @@ const req4: RequestRecord = {
     ["server-timing", "db;dur=38, app;dur=61"],
     ["vary", "Accept-Encoding, Cookie"],
     ["x-ratelimit-remaining", "118"],
-    ["x-ratelimit-remaining", "118", "duplicata — linha repetida pelo balanceador"],
+    ["x-ratelimit-remaining", "118", "duplicate — line repeated by the load balancer"],
   ]),
   cookiesSent: [
     { index: 0, name: "session", value: "9c1f…e2" },
@@ -332,23 +332,23 @@ const req4: RequestRecord = {
   "por_pagina": 24,
   "total": 137,
   "itens": [
-    { "sku": "DEMO-8812", "nome": "Produto sintético 8812", "preco": 249.9, "estoque": 12 },
-    { "sku": "DEMO-4410", "nome": "Produto sintético 4410", "preco": 89.5, "estoque": 0 }
+    { "sku": "DEMO-8812", "nome": "Synthetic product 8812", "preco": 249.9, "estoque": 12 },
+    { "sku": "DEMO-4410", "nome": "Synthetic product 4410", "preco": 89.5, "estoque": 0 }
   ]
 }`,
-    captureRef: "cdp:Network.getResponseBody — 8 KiB completos",
+    captureRef: "cdp:Network.getResponseBody — 8 KiB complete",
   },
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.131Z", "evento CDP bruto; Accept duplicado preservado")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:12.176Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.500Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.131Z", "pares Cookie na ordem do header")),
-    payload: unverified("GET sem corpo"),
-    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:12.318Z", "corpo completo, decodificado de br")),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:12.128Z", "nova sessão HTTP/2 para api.*")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:12.318Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.131Z", "raw CDP event; duplicate Accept preserved")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:12.176Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.500Z", "local derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.131Z", "Cookie pairs in header order")),
+    payload: unverified("GET without body"),
+    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:12.318Z", "full body, decoded from br")),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:12.128Z", "new HTTP/2 session for api.*")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:12.318Z", "CDP timestamps")),
   },
 };
 
@@ -402,9 +402,9 @@ const req5: RequestRecord = {
     decodedSize: 2140,
     preview: `{
   "sku": "DEMO-8812",
-  "nome": "Produto sintético 8812",
+  "nome": "Synthetic product 8812",
   "preco": 249.9,
-  "descricao": "Descrição gerada apenas para demonstração da interface.",
+  "descricao": "Description generated only for interface demo.",
   "atributos": { "cor": "azul", "tamanho": "M" }
 }`,
     captureRef: "cdp:Network.getResponseBody",
@@ -412,14 +412,14 @@ const req5: RequestRecord = {
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.428Z", "evento CDP bruto")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:12.461Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.700Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.428Z", "pares Cookie na ordem do header")),
-    payload: unverified("GET sem corpo"),
-    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:12.544Z", "corpo completo")),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:12.425Z", "reuso da sessão HTTP/2")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:12.544Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.428Z", "raw CDP event")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:12.461Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.700Z", "local derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.428Z", "Cookie pairs in header order")),
+    payload: unverified("GET without body"),
+    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:12.544Z", "full body")),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:12.425Z", "reuse of HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:12.544Z", "CDP timestamps")),
   },
 };
 
@@ -435,7 +435,7 @@ const req6: RequestRecord = {
   type: "image",
   startedAt: "2026-10-26T18:02:12.760Z",
   durationMs: 74,
-  initiator: "parser HTML — <img srcset>",
+  initiator: "HTML parser — <img srcset>",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "cdn.demo-loja.invalid"],
@@ -464,23 +464,23 @@ const req6: RequestRecord = {
     availability: "omitted",
     contentType: "image/webp",
     encodedSize: 48211,
-    reason: "binário não exibido como texto; arquivo disponível no diretório da sessão",
+    reason: "binary not shown as text; file available in the session directory",
     captureRef: "session:blobs/req-0006.webp",
   },
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.781Z", "evento CDP bruto")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:12.795Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.900Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: unverified("nenhum header Cookie nesta requisição"),
-    payload: unverified("GET sem corpo"),
-    responseBody: unverified("binário não lido; nenhuma prévia textual"),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:12.781Z", "raw CDP event")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:12.795Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:12.900Z", "local derivation"), "derived view, not transmitted"),
+    cookies: unverified("no Cookie header in this request"),
+    payload: unverified("GET without body"),
+    responseBody: unverified("binary not read; no text preview"),
     protocol: partial(
-      ev("netlog", "QUIC_SESSION — ausente", "2026-10-26T18:02:12.790Z", "deduzido de Alt-Svc + event source de stream"),
-      "alt-svc sugere h3, mas não há evento QUIC no NetLog desta captura",
+      ev("netlog", "QUIC_SESSION — absent", "2026-10-26T18:02:12.790Z", "inferred from Alt-Svc + stream event source"),
+      "alt-svc suggests h3, but there is no QUIC event in this capture's NetLog",
     ),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:12.834Z", "timestamps do CDP")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:12.834Z", "CDP timestamps")),
   },
 };
 
@@ -510,20 +510,20 @@ const req7: RequestRecord = {
     availability: "omitted",
     contentType: "font/woff2",
     encodedSize: 61244,
-    reason: "binário não exibido como texto",
+    reason: "binary not shown as text",
     captureRef: "session:blobs/req-0007.woff2",
   },
   redirects: [],
   primarySource: "netlog",
   verification: {
-    requestHeaders: unverified("headers de requisição não apareceram em nenhum evento CDP; o NetLog só registrou a URL"),
-    responseHeaders: partial(ev("netlog", "URL_REQUEST_REDIRECT", "2026-10-26T18:02:12.996Z", "evento NetLog; apenas status e content-type"), "faltam as demais linhas de header"),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:13.020Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: unverified("nenhum header Cookie observado"),
-    payload: unverified("GET sem corpo"),
-    responseBody: unverified("corpo binário não lido"),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:12.994Z", "sessão HTTP/2 reutilizada")),
-    timings: unverified("sem evento de conclusão correspondente; duração é estimativa da UI"),
+    requestHeaders: unverified("request headers did not appear in any CDP event; NetLog only recorded the URL"),
+    responseHeaders: partial(ev("netlog", "URL_REQUEST_REDIRECT", "2026-10-26T18:02:12.996Z", "NetLog event; only status and content-type"), "remaining header lines are missing"),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:13.020Z", "local derivation"), "derived view, not transmitted"),
+    cookies: unverified("no Cookie header observed"),
+    payload: unverified("GET without body"),
+    responseBody: unverified("binary body not read"),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:12.994Z", "HTTP/2 session reused")),
+    timings: unverified("no matching completion event; duration is a UI estimate"),
   },
 };
 
@@ -591,14 +591,14 @@ const req8: RequestRecord = {
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:14.246Z", "evento CDP bruto")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:14.301Z", "evento CDP bruto, dois Set-Cookie separados")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:14.500Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:14.246Z", "pares Cookie na ordem do header")),
-    payload: verified(ev("cdp", "Network.getRequestPostData", "2026-10-26T18:02:14.250Z", "corpo de requisição lido pelo CDP")),
-    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:14.398Z", "corpo completo")),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:14.242Z", "reuso da sessão HTTP/2")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:14.398Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:14.246Z", "raw CDP event")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:14.301Z", "raw CDP event, two separate Set-Cookie")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:14.500Z", "local derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:14.246Z", "Cookie pairs in header order")),
+    payload: verified(ev("cdp", "Network.getRequestPostData", "2026-10-26T18:02:14.250Z", "request body read by CDP")),
+    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:14.398Z", "full body")),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:14.242Z", "reuse of HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:14.398Z", "CDP timestamps")),
   },
 };
 
@@ -662,14 +662,14 @@ const req9: RequestRecord = {
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:15.134Z", "evento CDP bruto — ordem preservada")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:15.188Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:15.400Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:15.134Z", "pares Cookie na ordem do header")),
-    payload: unverified("GET sem corpo"),
-    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:15.240Z", "corpo completo")),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:15.130Z", "reuso da sessão HTTP/2")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:15.240Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:15.134Z", "raw CDP event — order preserved")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:15.188Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:15.400Z", "local derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:15.134Z", "Cookie pairs in header order")),
+    payload: unverified("GET without body"),
+    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:15.240Z", "full body")),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:15.130Z", "reuse of HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:15.240Z", "CDP timestamps")),
   },
 };
 
@@ -685,7 +685,7 @@ const req10: RequestRecord = {
   type: "fetch",
   startedAt: "2026-10-26T18:02:15.910Z",
   durationMs: 92,
-  initiator: "app.4b81de.js:640 — retry após 403",
+  initiator: "app.4b81de.js:640 — retry after 403",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "api.demo-loja.invalid"],
@@ -725,19 +725,19 @@ const req10: RequestRecord = {
     contentType: "application/json",
     encodedSize: 0,
     reason: "resposta declarou content-length: 0 — não há corpo para recuperar",
-    captureRef: "cdp:Network.getResponseBody — vazio",
+    captureRef: "cdp:Network.getResponseBody — empty",
   },
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:15.936Z", "evento CDP bruto — cabeçalho extra de depuração presente")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:15.991Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:16.200Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:15.936Z", "pares Cookie na ordem do header")),
-    payload: unverified("GET sem corpo"),
-    responseBody: unverified("content-length 0: corpo ausente comprovado, não descartado"),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:15.932Z", "reuso da sessão HTTP/2")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:16.002Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:15.936Z", "raw CDP event — extra debug header present")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:15.991Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:16.200Z", "local derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:15.936Z", "Cookie pairs in header order")),
+    payload: unverified("GET without body"),
+    responseBody: unverified("content-length 0: missing body proven, not discarded"),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:15.932Z", "reuse of HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:16.002Z", "CDP timestamps")),
   },
 };
 
@@ -753,7 +753,7 @@ const req11: RequestRecord = {
   type: "document",
   startedAt: "2026-10-26T18:02:16.640Z",
   durationMs: 118,
-  initiator: "navegação — link de campanha",
+  initiator: "navigation — campaign link",
   requestHeaders: headers([
     ["host", "demo-loja.invalid"],
     ["user-agent", UA_156],
@@ -793,14 +793,14 @@ const req11: RequestRecord = {
   ],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:16.668Z", "evento CDP bruto")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:16.704Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:16.900Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:16.668Z", "par Cookie único")),
-    payload: unverified("GET sem corpo"),
-    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:16.750Z", "página de erro do servidor, texto puro")),
-    protocol: verified(ev("netlog", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", "2026-10-26T18:02:16.700Z", "transação HTTP/1.1 no NetLog")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:16.758Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:16.668Z", "raw CDP event")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:16.704Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:16.900Z", "local derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:16.668Z", "single Cookie pair")),
+    payload: unverified("GET without body"),
+    responseBody: verified(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:16.750Z", "server error page, plain text")),
+    protocol: verified(ev("netlog", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", "2026-10-26T18:02:16.700Z", "HTTP/1.1 transaction in NetLog")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:16.758Z", "CDP timestamps")),
   },
 };
 
@@ -816,7 +816,7 @@ const req12: RequestRecord = {
   type: "document",
   startedAt: "2026-10-26T18:02:16.820Z",
   durationMs: 196,
-  initiator: "redirect de req-0011",
+  initiator: "redirect from req-0011",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "demo-loja.invalid"],
@@ -839,7 +839,7 @@ const req12: RequestRecord = {
     ["content-length", "15220"],
     ["cache-control", "no-cache"],
     ["link", "</assets/app.9f3c1a.css>; rel=preload; as=style"],
-    ["link", "</assets/app.4b81de.js>; rel=modulepreload", "duplicata — segundo header Link"],
+    ["link", "</assets/app.4b81de.js>; rel=modulepreload", "duplicate — second Link header"],
     ["set-cookie", "ab_cat=b; Path=/; Max-Age=86400"],
   ]),
   cookiesSent: [{ index: 0, name: "session", value: "9c1f…e2" }],
@@ -851,24 +851,24 @@ const req12: RequestRecord = {
     encodedSize: 15220,
     decodedSize: 71204,
     truncatedAt: 2048,
-    reason: "prévia limitada a 2 KiB nesta fatia",
+    reason: "preview limited to 2 KiB in this slice",
     preview:
       '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' +
-      "<title>Catálogo — Demo Loja</title></head><body>" +
+      "<title>Catalog — Demo Loja</title></head><body>" +
       '<main data-page="catalogo">…</main></body></html>',
     captureRef: "cdp:Network.getResponseBody",
   },
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:16.844Z", "evento CDP bruto da continuação")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:16.902Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:17.100Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:16.844Z", "par Cookie único")),
-    payload: unverified("GET sem corpo"),
-    responseBody: partial(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:16.980Z", "corpo truncado na gravação"), "68 KiB fora desta prévia"),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:16.840Z", "nova sessão HTTP/2")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:17.016Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:16.844Z", "raw CDP event of the continuation")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:16.902Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:17.100Z", "local derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:16.844Z", "single Cookie pair")),
+    payload: unverified("GET without body"),
+    responseBody: partial(ev("cdp", "Network.getResponseBody", "2026-10-26T18:02:16.980Z", "body truncated in the recording"), "68 KiB outside this preview"),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:16.840Z", "new HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:17.016Z", "CDP timestamps")),
   },
 };
 
@@ -914,35 +914,35 @@ const req13: RequestRecord = {
     availability: "discarded",
     contentType: "application/json",
     encodedSize: 58,
-    reason: "corpo descartado na finalização: a sessão estava marcada como sensível",
-    captureRef: "cdp:Network.getResponseBody — bloqueado por política de captura",
+    reason: "body discarded at finalization: the session was marked as sensitive",
+    captureRef: "cdp:Network.getResponseBody — blocked by capture policy",
   },
   redirects: [],
   primarySource: "cdp",
   verification: {
-    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:18.420Z", "evento CDP bruto")),
-    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:18.448Z", "evento CDP bruto")),
-    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:18.600Z", "derivação local"), "visão derivada, não transmitida"),
-    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:18.420Z", "par Cookie único")),
-    payload: unverified("GET sem corpo"),
-    responseBody: unverified("corpo descartado por política; conteúdo não é recuperável desta sessão"),
-    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:18.416Z", "reuso da sessão HTTP/2")),
-    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:18.457Z", "timestamps do CDP")),
+    requestHeaders: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:18.420Z", "raw CDP event")),
+    responseHeaders: verified(ev("cdp", "Network.responseReceivedExtraInfo", "2026-10-26T18:02:18.448Z", "raw CDP event")),
+    normalizedHeaders: partial(ev("session", "derive:normalizeHeaders", "2026-10-26T18:02:18.600Z", "local derivation"), "derived view, not transmitted"),
+    cookies: verified(ev("cdp", "Network.requestWillBeSentExtraInfo", "2026-10-26T18:02:18.420Z", "single Cookie pair")),
+    payload: unverified("GET without body"),
+    responseBody: unverified("body discarded by policy; content not recoverable from this session"),
+    protocol: verified(ev("netlog", "HTTP2_SESSION", "2026-10-26T18:02:18.416Z", "reuse of HTTP/2 session")),
+    timings: verified(ev("cdp", "Network.loadingFinished", "2026-10-26T18:02:18.457Z", "CDP timestamps")),
   },
 };
 
 export const demoSession: SessionRecord = {
   id: "demo-sintetica-01",
-  label: "Demonstração — vitrine sintética",
+  label: "Demo — synthetic showcase",
   synthetic: true,
   createdAt: "2026-10-26T18:02:11.418Z",
-  chromeVersion: "Chrome 156.0.7492.0 (build de teste)",
+  chromeVersion: "Chrome 156.0.7492.0 (test build)",
   capture: { cdpEvents: 1482, netlogBytes: 3481600, status: "closed" },
   requests: [req1, req2, req3, req4, req5, req6, req7, req8, req9, req10, req11, req12, req13],
   sources: ["cdp", "netlog"],
   notes: [
-    "Sessão inteiramente sintética: nenhum byte foi capturado de um site real.",
-    "Domínios .invalid são reservados para documentação (RFC 2606).",
-    "Headers repetidos e pseudoheaders existem aqui para exercitar a UI antes do contrato oficial.",
+    "Fully synthetic session: no bytes were captured from a real site.",
+    "The .invalid domains are reserved for documentation (RFC 2606).",
+    "Repeated headers and pseudoheaders exist here to exercise the UI before the official contract.",
   ],
 };

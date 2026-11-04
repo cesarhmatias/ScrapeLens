@@ -1,9 +1,9 @@
 //! ScrapeLens — shell Tauri 2.
 //!
-//! A UI React (app/) consome o contrato v1 (`docs/03-contratos.md`). Os commands
-//! de captura, importação e abertura operam dados reais via `scrapelens-core`
-//! (dependência crate, sem sidecar); a fixture sintética existe apenas para o
-//! modo demo do navegador e chega rotulada como `synthetic: true`.
+//! The React UI (app/) consumes the v1 contract (`docs/03-contratos.md`). The capture,
+//! import and open commands operate on real data via `scrapelens-core`
+//! (crate dependency, no sidecar); the synthetic fixture exists only for the
+//! browser demo mode and arrives labeled as `synthetic: true`.
 
 pub mod adapters;
 pub mod capture;
@@ -28,18 +28,18 @@ pub struct AppState {
     pub chrome_path: Mutex<Option<PathBuf>>,
     pub last_session_dir: Mutex<Option<PathBuf>>,
     pub capture: Mutex<Option<capture::CaptureSession>>,
-    /// Ação CLI de teste (`--import-har` / `--import-netlog` / `--open-capture`), consumida uma vez.
+    /// Test CLI action (`--import-har` / `--import-netlog` / `--open-capture`), consumed once.
     pub pending_cli: Mutex<Option<CliAction>>,
-    /// Erro ou aviso da CLI de teste para a janela mostrar (consumido uma vez).
+    /// Error or warning from the test CLI for the window to show (consumed once).
     pub cli_message: Mutex<Option<(String, String)>>,
-    /// Gravação em andamento; lido pelo menu sem bloquear (A9-B8).
+    /// Recording in progress; read by the menu without blocking (A9-B8).
     pub recording: std::sync::atomic::AtomicBool,
-    /// Abertura/importação/encerramento em andamento: recusa uma segunda em paralelo.
+    /// Opening/importing/closing in progress: refuses a second one in parallel.
     pub loading: std::sync::atomic::AtomicBool,
 }
 
-/// Partida do app: limpa Chrome/perfil de capturas cujo dono morreu (ex.: SIGKILL).
-/// Nunca propaga erro — falha vira log. Pode rodar fora da thread de UI.
+/// App startup: cleans up Chrome/profile of captures whose owner died (e.g. SIGKILL).
+/// Never propagates errors — a failure becomes a log entry. May run off the UI thread.
 pub fn cleanup_orphans_on_start(state_root: &Path) {
     let report = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         capture::cleanup_orphans(state_root)
@@ -52,7 +52,7 @@ pub fn cleanup_orphans_on_start(state_root: &Path) {
             );
         }
         Err(_) => {
-            eprintln!("scrapelens: cleanup_orphans falhou (ignorado; a abertura do app segue)");
+            eprintln!("scrapelens: cleanup_orphans failed (ignored; app startup continues)");
         }
     }
 }
@@ -80,15 +80,15 @@ pub fn run() {
                     *state.cli_message.lock().expect("cli_message lock") = Some(("warning".into(), warning));
                 }
                 cli::CliOutcome::Error(error) => {
-                    eprintln!("scrapelens: argumento CLI inválido: {error}");
+                    eprintln!("scrapelens: invalid CLI argument: {error}");
                     *state.cli_message.lock().expect("cli_message lock") = Some(("error".into(), error));
                 }
             }
-            // sobras de validações de execução (crash/kill): o trace guarda dados da sessão
+            // leftovers from execution validations (crash/kill): the trace keeps session data
             if let Ok(data) = app.path().app_data_dir() {
                 validation::cleanup_on_start(&data);
             }
-            // Chrome/perfil órfãos após SIGKILL do app — uma vez, fora da thread de UI.
+            // Orphaned Chrome/profile after the app was SIGKILLed — once, off the UI thread.
             std::thread::spawn(|| {
                 cleanup_orphans_on_start(&capture::default_state_root());
             });
@@ -133,7 +133,7 @@ pub fn run() {
             commands::reveal_path,
         ])
         .build(tauri::generate_context!())
-        .expect("erro ao iniciar o ScrapeLens")
+        .expect("error starting ScrapeLens")
         .run(|handle, event| {
             if let tauri::RunEvent::Exit = event {
                 if let Ok(data) = handle.path().app_data_dir() {
@@ -164,7 +164,7 @@ mod tests {
         pid
     }
 
-    /// Espelha o contrato do marcador da Captura (ownerPid morto → limpeza).
+    /// Mirrors the capture marker contract (dead ownerPid → cleanup).
     #[test]
     fn startup_removes_orphan_capture_with_dead_owner() {
         let tag = format!("app-startup-{}-{}", std::process::id(), millis());
@@ -190,12 +190,12 @@ mod tests {
         assert!(marker.exists());
         assert!(profile.exists());
 
-        // mesma entrada que o setup do Tauri chama (aqui síncrono, como cleanup_on_start)
+        // same entry point that Tauri's setup calls (synchronous here, like cleanup_on_start)
         cleanup_orphans_on_start(&root);
 
-        assert!(root.is_dir(), "a raiz de estado continua");
-        assert!(!marker.exists(), "marcador de PID morto foi removido");
-        assert!(!profile.exists(), "perfil dedicado do marcador foi removido");
+        assert!(root.is_dir(), "the state root still exists");
+        assert!(!marker.exists(), "dead-PID marker was removed");
+        assert!(!profile.exists(), "dedicated profile of the marker was removed");
 
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&profile);

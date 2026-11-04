@@ -58,7 +58,7 @@ import {
   type TargetFilter,
 } from "./target";
 
-/** Página de `list_requests` (máximo do backend). */
+/** Page size for `list_requests` (the backend maximum). */
 const PAGE = 2000;
 
 type View = "session" | "detail" | "compare" | "capture-compare" | "timeline" | "validate";
@@ -93,36 +93,36 @@ const initialA = params.get("a") ?? "req-0009";
 const initialB = params.get("b") ?? "req-0010";
 
 const verificationLabels: Record<VerificationKey, string> = {
-  requestHeaders: "Headers da requisição",
-  responseHeaders: "Headers da resposta",
-  normalizedHeaders: "Visão normalizada",
+  requestHeaders: "Request headers",
+  responseHeaders: "Response headers",
+  normalizedHeaders: "Normalized view",
   cookies: "Cookies",
   payload: "Payload",
-  responseBody: "Corpo da resposta",
-  protocol: "Protocolo",
-  timings: "Tempos",
+  responseBody: "Response body",
+  protocol: "Protocol",
+  timings: "Timings",
 };
 
 const sourceLabels: Record<string, string> = {
   cdp: "CDP",
   netlog: "NetLog",
   har: "HAR",
-  ownFormat: "Formato próprio",
-  capture: "Captura",
-  derived: "Derivada",
+  ownFormat: "Own format",
+  capture: "Capture",
+  derived: "Derived",
   manual: "Manual",
-  session: "Sessão",
+  session: "Session",
 };
 
 const typeLabels: Record<string, string> = {
-  document: "documento",
-  stylesheet: "estilo",
+  document: "document",
+  stylesheet: "stylesheet",
   script: "script",
   xhr: "xhr",
   fetch: "fetch",
-  image: "imagem",
-  font: "fonte",
-  other: "outro",
+  image: "image",
+  font: "font",
+  other: "other",
 };
 
 const methodClass: Record<string, string> = {
@@ -167,14 +167,14 @@ function verifyClass(status: Verification["status"]) {
 function verificationTitle(verification: Verification) {
   if (verification.status === "unverified") return verification.reason;
   const evidence = verification.evidence;
-  const missing = verification.status === "partial" ? ` · falta: ${verification.missing}` : "";
+  const missing = verification.status === "partial" ? ` · missing: ${verification.missing}` : "";
   return `${sourceLabels[evidence.source] ?? evidence.source} · ${evidence.event} · ${evidence.method}${missing}`;
 }
 
 const matchLabels = {
-  matched: "correspondida",
-  ambiguous: "ambígua",
-  unmatched: "sem par",
+  matched: "matched",
+  ambiguous: "ambiguous",
+  unmatched: "unpaired",
 } as const;
 
 const matchClass = {
@@ -184,9 +184,9 @@ const matchClass = {
 } as const;
 
 const verifyText: Record<Verification["status"], string> = {
-  verified: "verificada",
-  partial: "parcial",
-  unverified: "não verificada",
+  verified: "verified",
+  partial: "partial",
+  unverified: "not verified",
 };
 
 function dupeNames(pairs: HeaderPair[]) {
@@ -215,7 +215,7 @@ function HeaderBlock({
       <header className="block-head">
         <h3>{title}</h3>
         <span className="block-meta">
-          {pairs.length} pares · {regular} regulares · {pairs.length - regular}{" "}
+          {pairs.length} pairs · {regular} regular · {pairs.length - regular}{" "}
           {pairs.length - regular === 1 ? "pseudoheader" : "pseudoheaders"}
         </span>
         <span className={`chip ${verifyClass(verification.status)}`} title={verificationTitle(verification)}>
@@ -224,9 +224,9 @@ function HeaderBlock({
       </header>
       {pairs.length === 0 ? (
         <div className="empty">
-          Nenhuma linha observada pela fonte desta captura.
+          No lines were observed by this capture's source.
           <br />
-          Header ausente não é reconstruído — estado: não verificado.
+          A missing header is not reconstructed — state: not verified.
         </div>
       ) : (
         <ol className="header-list">
@@ -236,14 +236,14 @@ function HeaderBlock({
               <span className="h-name">{p.name}</span>
               <span className="h-value">{p.value}</span>
               {dupes.get(p.name)! > 1 && (
-                <span className="tag tag-dup" title="O mesmo nome aparece mais de uma vez na sequência da fonte">
-                  duplicata ×{dupes.get(p.name)}
+                <span className="tag tag-dup" title="The same name appears more than once in the source sequence">
+                  duplicate ×{dupes.get(p.name)}
                 </span>
               )}
               <button
                 className="icon-btn copy"
-                title={`Copiar ${p.name}${p.source ? ` · fonte ${p.source}${p.wallTime ? ` · ${p.wallTime}` : ""}` : ""}`}
-                aria-label={`Copiar ${p.name}`}
+                title={`Copy ${p.name}${p.source ? ` · source ${p.source}${p.wallTime ? ` · ${p.wallTime}` : ""}` : ""}`}
+                aria-label={`Copy ${p.name}`}
                 onClick={() => onCopy(p.value, p.name)}
               >
                 ⧉
@@ -254,8 +254,8 @@ function HeaderBlock({
       )}
       <footer className="block-foot">
         {pairs.length === 0
-          ? "Sem linhas: a fonte não entregou esta lista nesta captura."
-          : "Ordem preservada da fonte — nada foi ordenado nem agrupado nesta visão."}
+          ? "No lines: the source did not deliver this list in this capture."
+          : "Source order preserved — nothing was sorted or grouped in this view."}
       </footer>
     </section>
   );
@@ -263,11 +263,11 @@ function HeaderBlock({
 
 const scopeLabels: Record<SearchScope, string> = {
   url: "URL",
-  requestHeaders: "header (env.)",
-  responseHeaders: "header (rec.)",
+  requestHeaders: "header (req.)",
+  responseHeaders: "header (resp.)",
   cookies: "cookies",
-  requestBody: "corpo req.",
-  responseBody: "corpo resp.",
+  requestBody: "req. body",
+  responseBody: "resp. body",
 };
 const ALL_SCOPES = Object.keys(scopeLabels) as SearchScope[];
 
@@ -275,16 +275,16 @@ const PREVIEW_LIMIT = 262_144;
 const COPY_LIMIT = 16 * 1024 * 1024;
 const MAX_HIGHLIGHTS = 300;
 
-/** Nós React com os trechos dos achados do core realçados (texto escapado). */
+/** React nodes with the core's match snippets highlighted (escaped text). */
 function highlightMatches(text: string, matches: SearchMatch[], needle?: string, caseSensitive = false): { nodes: (string | ReactElement)[] | string; shown: number; beyond: number; dashed: number } {
   const { ranges, beyond } = matchRanges(text, matches, needle, caseSensitive);
   const nodes: (string | ReactElement)[] = [];
   let from = 0;
   for (const range of ranges.slice(0, MAX_HIGHLIGHTS)) {
-    if (range.start < from || range.end <= range.start) continue; // sobreposto: o anterior já cobre
+    if (range.start < from || range.end <= range.start) continue; // overlapping: the previous one already covers it
     if (range.start > from) nodes.push(text.slice(from, range.start));
     nodes.push(
-      <mark key={range.start} className={range.decoded ? "decoded" : undefined} title={range.decoded ? "achado na visão decodificada" : "achado da busca"}>
+      <mark key={range.start} className={range.decoded ? "decoded" : undefined} title={range.decoded ? "match in the decoded view" : "search match"}>
         {text.slice(range.start, range.end)}
       </mark>,
     );
@@ -301,7 +301,7 @@ function OriginTag({ session, long }: { session: SessionRecord; long?: boolean }
   if (!origin.real) return <span className="tag tag-synthetic" title={origin.label}>{origin.tag}</span>;
   return (
     <span className="tag tag-real" title={origin.label}>
-      {long ? `SESSÃO REAL · ${origin.label}` : origin.tag}
+      {long ? `REAL SESSION · ${origin.label}` : origin.tag}
     </span>
   );
 }
@@ -320,7 +320,7 @@ function BodyPanel({
   kind: "payload" | "response";
   onCopy?: (value: string, label: string) => void;
   sessionDir?: string;
-  /** Achados do core para este corpo (mesmo escopo e tentativa). */
+  /** Core matches for this body (same scope and attempt). */
   matches?: SearchMatch[];
   highlightNeedle?: { text: string; caseSensitive: boolean };
 }) {
@@ -375,90 +375,90 @@ function BodyPanel({
       <header className="block-head">
         <h3>{title}</h3>
         <span className="block-meta">
-          {body.contentType ?? "tipo desconhecido"} · {fmtBytes(body.decodedSize ?? body.encodedSize)}
+          {body.contentType ?? "unknown type"} · {fmtBytes(body.decodedSize ?? body.encodedSize)}
           {body.attachment ? <span className="mono"> · {body.attachment}</span> : null}
         </span>
         <span className={`chip ${stateClass}`}>{availabilityLabels[body.availability]}</span>
         {text !== undefined && onCopy && (
-          <button className="ghost-btn small" onClick={() => void copyBody()} title="Copiar corpo como texto">
-            Copiar corpo
+          <button className="ghost-btn small" onClick={() => void copyBody()} title="Copy body as text">
+            Copy body
           </button>
         )}
       </header>
       {transforms.warn.length > 0 && (
         <div className="body-flag flag-truncated">
-          <strong>Não idêntico aos bytes trafegados</strong>
-          <span>Transformações: {[...(transforms.chromeDecoded ? ["chrome-decoded"] : []), ...transforms.warn].join(", ")}</span>
+          <strong>Not identical to the bytes transferred</strong>
+          <span>Transforms: {[...(transforms.chromeDecoded ? ["chrome-decoded"] : []), ...transforms.warn].join(", ")}</span>
         </div>
       )}
       {flagged && (
         <div className={`body-flag flag-${body.availability}`}>
           <strong>
             {body.availability === "truncated"
-              ? `Corpo truncado na captura: ${fmtBytes(body.truncatedAt)} capturados de ${fmtBytes(body.encodedSize)} (originalSize)`
+              ? `Body truncated in capture: ${fmtBytes(body.truncatedAt)} captured of ${fmtBytes(body.encodedSize)} (originalSize)`
               : body.availability === "discarded"
-                ? "Corpo descartado — não recuperável"
+                ? "Body discarded — not recoverable"
                 : body.availability === "omitted"
-                  ? "Corpo não exibido"
-                  : "Corpo indisponível"}
+                  ? "Body not shown"
+                  : "Body unavailable"}
           </strong>
-          <span>{body.reason ?? "sem motivo registrado pela fonte"}</span>
+          <span>{body.reason ?? "no reason recorded by the source"}</span>
         </div>
       )}
       {text !== undefined ? (
         <>
           <pre className="code">{lit.nodes}</pre>
           <div className="body-foot">
-            {lit.shown > 0 && lit.nodes !== text ? `${lit.shown} achado(s) da busca realçado(s)${lit.dashed > 0 ? "; realce tracejado = trecho derivado/decodificado, diferente do texto buscado" : ""}. ` : ""}
-            {transforms.chromeDecoded && transforms.warn.length === 0 ? "Texto decodificado pelo Chrome. " : ""}
-            {lit.beyond > 0 ? `${lit.beyond} achado(s) além da parte exibida. ` : ""}
-            {data?.cut ? `Exibindo os primeiros ${fmtBytes(data.shownBytes)} de ${fmtBytes(data.bytes)}; “Copiar corpo” entrega até ${fmtBytes(COPY_LIMIT)}. ` : ""}
+            {lit.shown > 0 && lit.nodes !== text ? `${lit.shown} search match(es) highlighted${lit.dashed > 0 ? "; dashed highlight = derived/decoded snippet, differs from the searched text" : ""}. ` : ""}
+            {transforms.chromeDecoded && transforms.warn.length === 0 ? "Text decoded by Chrome. " : ""}
+            {lit.beyond > 0 ? `${lit.beyond} match(es) beyond the shown portion. ` : ""}
+            {data?.cut ? `Showing the first ${fmtBytes(data.shownBytes)} of ${fmtBytes(data.bytes)}; “Copy body” delivers up to ${fmtBytes(COPY_LIMIT)}. ` : ""}
             {body.contentType?.includes("html")
-              ? "HTML exibido como texto — nunca renderizado como interface."
-              : "Texto UTF-8 exibido sem interpretação."}
+              ? "HTML shown as text — never rendered as UI."
+              : "UTF-8 text shown without interpretation."}
             {body.captureRef ? <span className="mono dim"> · {body.captureRef}</span> : null}
           </div>
         </>
       ) : data?.kind === "binary" ? (
         <>
           <div className="empty">
-            <strong>Conteúdo binário ({fmtBytes(data.bytes)}) — não renderizado.</strong>
+            <strong>Binary content ({fmtBytes(data.bytes)}) — not rendered.</strong>
             <br />
-            Primeiros {data.shownBytes} bytes em hexadecimal:
+            First {data.shownBytes} bytes in hexadecimal:
           </div>
           <pre className="code small hex">{data.hex}</pre>
         </>
       ) : loadError ? (
         <div className="empty">
-          <strong>Não foi possível ler o anexo.</strong>
+          <strong>Could not read the attachment.</strong>
           <br />
           {loadError}
         </div>
       ) : body.attachment && sessionDir && !data ? (
-        <div className="empty">Carregando corpo…</div>
+        <div className="empty">Loading body…</div>
       ) : body.availability === "empty" ? (
         <div className="empty">
-          <strong>Corpo vazio (0 B).</strong>
+          <strong>Empty body (0 B).</strong>
           <br />
-          {body.reason ?? "A fonte informou que não há corpo nesta mensagem."}
+          {body.reason ?? "The source reported that this message has no body."}
         </div>
       ) : body.availability === "available" ? (
         <div className="empty">
-          <strong>Corpo capturado em anexo.</strong>
+          <strong>Body captured as attachment.</strong>
           <br />
           {body.attachment
-            ? `Arquivo: ${body.attachment}. A prévia textual é carregada sob demanda nesta sessão.`
-            : "A fonte marcou o corpo como capturado, mas não há anexo associado."}
+            ? `File: ${body.attachment}. The text preview is loaded on demand in this session.`
+            : "The source marked the body as captured, but no attachment is associated."}
         </div>
       ) : (
-        <div className="empty">Nenhum conteúdo textual disponível para exibir.</div>
+        <div className="empty">No text content available to display.</div>
       )}
       {kind === "response" &&
         body.encodedSize !== undefined &&
         body.decodedSize !== undefined &&
         body.encodedSize !== body.decodedSize && (
           <div className="body-foot">
-            Tamanho na rede {fmtBytes(body.encodedSize)} · decodificado {fmtBytes(body.decodedSize)}
+            Size on the wire {fmtBytes(body.encodedSize)} · decoded {fmtBytes(body.decodedSize)}
           </div>
         )}
     </section>
@@ -472,44 +472,44 @@ function BodyContext({ req }: { req: RequestRecord }) {
   return (
     <div className="meta-grid">
       <section className="meta-card">
-        <h3>Metadados de conteúdo</h3>
+        <h3>Content metadata</h3>
         <dl className="kv tight">
-          <dt>Tipo</dt>
+          <dt>Type</dt>
           <dd>{typeLabels[req.type]} · {req.method} {fmtStatus(req.status)}</dd>
           <dt>Payload</dt>
           <dd className="mono">
-            {req.payload.contentType ?? "sem corpo"}
+            {req.payload.contentType ?? "no body"}
             {requestContentEncoding ? ` · ${requestContentEncoding}` : ""}
           </dd>
-          <dt>Resposta</dt>
+          <dt>Response</dt>
           <dd className="mono">
-            {req.responseBody.contentType ?? "tipo não informado"}
+            {req.responseBody.contentType ?? "type not reported"}
             {responseContentEncoding ? ` · ${responseContentEncoding}` : ""}
           </dd>
-          <dt>Tamanho na rede</dt>
+          <dt>Size on the wire</dt>
           <dd>{fmtBytes(req.payload.encodedSize)} / {fmtBytes(req.responseBody.encodedSize)}</dd>
-          <dt>Decodificado</dt>
+          <dt>Decoded</dt>
           <dd>{fmtBytes(req.payload.decodedSize)} / {fmtBytes(req.responseBody.decodedSize)}</dd>
-          <dt>Prévia</dt>
+          <dt>Preview</dt>
           <dd>
             {req.payload.availability === "truncated" || req.responseBody.availability === "truncated"
-              ? "parcial (truncada na gravação)"
-              : "como registrada pela fonte"}
+              ? "partial (truncated during recording)"
+              : "as recorded by the source"}
           </dd>
-          <dt>Verificação</dt>
+          <dt>Verification</dt>
           <dd>
             <span className={`chip ${verifyClass(verification("payload").status)}`}>payload {verifyText[verification("payload").status]}</span>{" "}
-            <span className={`chip ${verifyClass(verification("responseBody").status)}`}>resposta {verifyText[verification("responseBody").status]}</span>
+            <span className={`chip ${verifyClass(verification("responseBody").status)}`}>response {verifyText[verification("responseBody").status]}</span>
           </dd>
         </dl>
       </section>
       <section className="meta-card">
-        <h3>Regras de exibição</h3>
+        <h3>Display rules</h3>
         <ul className="rules">
-          <li>HTML e JSON capturados aparecem como texto — nunca executados como interface.</li>
-          <li>Corpo ausente, truncado ou descartado mostra o motivo; nada é reconstruído.</li>
-          <li>Binários não são convertidos em texto: o arquivo fica na pasta da sessão.</li>
-          <li>Copiar usa o valor bruto do evento, não o texto abreviado da tabela.</li>
+          <li>Captured HTML and JSON appear as text — never executed as UI.</li>
+          <li>A missing, truncated, or discarded body shows the reason; nothing is reconstructed.</li>
+          <li>Binaries are not converted to text: the file stays in the session folder.</li>
+          <li>Copy uses the event's raw value, not the table's abbreviated text.</li>
         </ul>
       </section>
     </div>
@@ -517,16 +517,16 @@ function BodyContext({ req }: { req: RequestRecord }) {
 }
 
 const availabilityLabels: Record<BodyInfo["availability"], string> = {
-  available: "disponível",
-  empty: "vazio",
-  truncated: "truncado",
-  discarded: "descartado",
-  omitted: "não exibido",
-  unavailable: "indisponível",
+  available: "available",
+  empty: "empty",
+  truncated: "truncated",
+  discarded: "discarded",
+  omitted: "not shown",
+  unavailable: "unavailable",
 };
 
 function bodyState(body: BodyInfo) {
-  if (body.availability === "unavailable" && body.encodedSize === undefined) return "sem corpo";
+  if (body.availability === "unavailable" && body.encodedSize === undefined) return "no body";
   return availabilityLabels[body.availability];
 }
 
@@ -545,24 +545,24 @@ function CaptureLimits({
   const uniqueSetup = [...new Map(setupWarns.map((w) => [w.message, w])).values()];
   return (
     <ul>
-      <li>Headers sem evento correspondente aparecem como “não verificada”, nunca como fato.</li>
-      <li>Corpo omitido, truncado ou descartado mostra o motivo — nada é reconstruído.</li>
-      <li>HTML capturado nunca é executado como interface; o contrato é o v1 do core.</li>
+      <li>Headers with no matching event appear as “not verified”, never as fact.</li>
+      <li>An omitted, truncated, or discarded body shows the reason — nothing is reconstructed.</li>
+      <li>Captured HTML is never executed as UI; the contract is the core's v1.</li>
       <li>
-        Documento de aba <span className="mono">target=_blank</span> pode vir só do NetLog (sem{" "}
-        <span className="mono">requestWillBeSent</span> na sessão filha); a UI marca “alvo desconhecido
-        (só NetLog)” e não inventa headers CDP.
+        A tab document with <span className="mono">target=_blank</span> may come only from NetLog (without{" "}
+        <span className="mono">requestWillBeSent</span> in the child session); the UI marks it “unknown target
+        (NetLog only)” and does not invent CDP headers.
       </li>
       {showTargets && targets.length > 0 && (
         <li>
-          Alvos acompanhados nesta captura:
+          Targets tracked in this capture:
           <ul className="limits-targets">
             {targets.map((t) => (
               <li key={`${t.kind}-${t.url}`}>
                 <span className="chip tag">{t.kind}</span>{" "}
                 <span className="mono">{t.url}</span>
                 {t.attached === false ? (
-                  <span className="chip v-partial">não anexado</span>
+                  <span className="chip v-partial">not attached</span>
                 ) : null}{" "}
                 <span className="dim">({t.count} req.)</span>
               </li>
@@ -572,7 +572,7 @@ function CaptureLimits({
       )}
       {uniqueFails.length > 0 && (
         <li>
-          Falhas ao anexar alvo ({uniqueFails.length}):
+          Target attach failures ({uniqueFails.length}):
           <ul className="limits-targets">
             {uniqueFails.map((w) => (
               <li key={w.message}>
@@ -584,7 +584,7 @@ function CaptureLimits({
       )}
       {uniqueSetup.length > 0 && (
         <li>
-          Avisos de configuração de alvo ({uniqueSetup.length}):
+          Target configuration warnings ({uniqueSetup.length}):
           <ul className="limits-targets">
             {uniqueSetup.map((w) => (
               <li key={w.message}>
@@ -596,8 +596,8 @@ function CaptureLimits({
       )}
       <li>
         {session.synthetic
-          ? "Sessão sintética: nenhum byte saiu do computador — sem telemetria, sem rede."
-          : "Captura local: sem telemetria; os anexos ficam na pasta da sessão."}
+          ? "Synthetic session: no bytes left this computer — no telemetry, no network."
+          : "Local capture: no telemetry; attachments stay in the session folder."}
       </li>
     </ul>
   );
@@ -619,24 +619,24 @@ function VerificationPanel({
         <h3>Fonte</h3>
         <div className="source-row">
           <span className={`src-chip ${req.primarySource === "cdp" ? "src-cdp" : "src-netlog"}`}>
-            {sourceLabels[req.primarySource]} · primária
+            {sourceLabels[req.primarySource]} · primary
           </span>
           {session.sources.includes("cdp") && session.sources.includes("netlog") ? (
             <span className="src-chip src-muted">
-              {req.primarySource === "cdp" ? "NetLog" : "CDP"} · cruzamento
+              {req.primarySource === "cdp" ? "NetLog" : "CDP"} · cross-check
             </span>
           ) : (
-            <span className="src-chip src-muted">fonte única nesta sessão</span>
+            <span className="src-chip src-muted">single source in this session</span>
           )}
         </div>
         <dl className="kv">
-          <dt>Requisição</dt>
+          <dt>Request</dt>
           <dd className="mono">{req.id}</dd>
-          <dt>Início</dt>
+          <dt>Start</dt>
           <dd className="mono">{fmtTime(req.startedAt)}</dd>
-          <dt>Iniciador</dt>
-          <dd>{req.initiator ?? "não informado"}</dd>
-          <dt>Sessão</dt>
+          <dt>Initiator</dt>
+          <dd>{req.initiator ?? "not reported"}</dd>
+          <dt>Session</dt>
           <dd>
             <span className="mono">{session.id}</span>{" "}
             <OriginTag session={session} />
@@ -646,13 +646,13 @@ function VerificationPanel({
 
       <div className="side-card">
         <div className="side-head">
-          <h3>Correspondência CDP × NetLog</h3>
+          <h3>CDP × NetLog matching</h3>
           <span className={`chip ${matchClass[req.match.state]}`}>{matchLabels[req.match.state]}</span>
         </div>
         {req.match.state === "ambiguous" ? (
           <>
             <p className="verif-reason">
-              Mais de um candidato compatível: nenhuma associação silenciosa. Veja a aba Tentativas.
+              More than one compatible candidate: no silent association. See the Attempts tab.
             </p>
             <ul className="candidate-list">
               {req.match.candidates.map((candidate) => (
@@ -663,9 +663,9 @@ function VerificationPanel({
             </ul>
           </>
         ) : req.match.state === "unmatched" ? (
-          <p className="verif-reason">A fonte oposta não registrou esta requisição; nada foi inferido.</p>
+          <p className="verif-reason">The opposite source did not record this request; nothing was inferred.</p>
         ) : (
-          <p className="verif-reason">Chaves explícitas da fonte; a tentativa corresponde à contraparte.</p>
+          <p className="verif-reason">Explicit keys from the source; the attempt matches its counterpart.</p>
         )}
       </div>
 
@@ -685,8 +685,8 @@ function VerificationPanel({
 
       <div className="side-card">
         <div className="side-head">
-          <h3>Estado de verificação</h3>
-          <span className="hint">por informação</span>
+          <h3>Verification status</h3>
+          <span className="hint">per item</span>
         </div>
         <ul className="verif-list">
           {keys.map((key) => {
@@ -698,7 +698,7 @@ function VerificationPanel({
                   <span className={`chip ${verifyClass(v.status)}`}>{verifyText[v.status]}</span>
                 </div>
                 {v.status === "unverified" ? (
-                  <p className="verif-reason">Sem evidência: {v.reason}</p>
+                  <p className="verif-reason">No evidence: {v.reason}</p>
                 ) : (
                   <>
                     <p className="verif-evidence mono">
@@ -707,11 +707,11 @@ function VerificationPanel({
                     <p className="verif-line">
                       {fmtTime(v.evidence.timestamp) ||
                         (v.evidence.sourceTime !== undefined
-                          ? `t=${v.evidence.sourceTime.toFixed(3)} s (relógio da fonte)`
-                          : "sem horário")}{" "}
+                          ? `t=${v.evidence.sourceTime.toFixed(3)} s (source clock)`
+                          : "no time")}{" "}
                       · {v.evidence.method}
                     </p>
-                    {v.status === "partial" && <p className="verif-reason">Falta: {v.missing}</p>}
+                    {v.status === "partial" && <p className="verif-reason">Missing: {v.missing}</p>}
                   </>
                 )}
               </li>
@@ -720,10 +720,10 @@ function VerificationPanel({
         </ul>
         <button
           className="ghost-btn wide"
-          title="Ver a tabela de eventos brutos que sustentam estes dados"
+          title="See the raw event table behind this data"
           onClick={onOpenEvent}
         >
-          Ver eventos originais ↗
+          View original events ↗
         </button>
       </div>
     </aside>
@@ -769,23 +769,23 @@ function DetailView({
   const bodyMatches = (scope: SearchScope, body: BodyInfo) =>
     matches.filter((m) => m.scope === scope && body.attachment?.startsWith(`${m.attemptId}.`));
   const tabs: { id: DetailTab; label: string; count?: number }[] = [
-    { id: "headers", label: "Headers brutos", count: req.requestHeaders.length + req.responseHeaders.length },
-    { id: "normalized", label: "Normalizado" },
+    { id: "headers", label: "Raw headers", count: req.requestHeaders.length + req.responseHeaders.length },
+    { id: "normalized", label: "Normalized" },
     { id: "cookies", label: "Cookies", count: req.cookiesSent.length + req.cookiesReceived.length },
     { id: "payload", label: "Payload" },
-    { id: "response", label: "Resposta" },
+    { id: "response", label: "Response" },
     { id: "redirects", label: "Redirects", count: req.redirects.length },
-    { id: "attempts", label: "Tentativas", count: req.attempts.length },
-    { id: "app", label: "Aplicação" },
-    { id: "origins", label: "Origem" },
-    { id: "event", label: "Evento" },
+    { id: "attempts", label: "Attempts", count: req.attempts.length },
+    { id: "app", label: "App" },
+    { id: "origins", label: "Origin" },
+    { id: "event", label: "Event" },
   ];
 
   return (
     <div className="detail">
       <div className="detail-top">
         <button className="back" onClick={onBack}>
-          ← Sessão
+          ← Session
         </button>
         <div className="crumbs">
           <span className="mono">{session.id}</span>
@@ -805,8 +805,8 @@ function DetailView({
         </div>
         <div className="dh-sub">
           <span className="mono url">{req.url}</span>
-          <button className="ghost-btn small" title="Copiar URL completa" onClick={() => onCopy(req.url, "URL")}>
-            Copiar URL
+          <button className="ghost-btn small" title="Copy full URL" onClick={() => onCopy(req.url, "URL")}>
+            Copy URL
           </button>
           <button
             className="ghost-btn small"
@@ -814,14 +814,14 @@ function DetailView({
             disabled={!session.sourcePath}
             title={
               session.sourcePath
-                ? "Prévia cURL/Python gerada no Rust; copie ou salve sem executar nada"
-                : "Exportação indisponível: esta sessão não tem pasta persistida (demo ou modo navegador)"
+                ? "cURL/Python preview generated in Rust; copy or save without running anything"
+                : "Export unavailable: this session has no persisted folder (demo or browser mode)"
             }
           >
-            Exportar…
+            Export…
           </button>
           <span className="dot">·</span>
-          <span className="mono" title={req.verification.timings.status === "unverified" ? "Tempos não verificados: duração estimada pela UI" : "Duração medida pela fonte"}>
+          <span className="mono" title={req.verification.timings.status === "unverified" ? "Timings not verified: duration estimated by the UI" : "Duration measured by the source"}>
             {fmtDuration(req)}
           </span>
           <span className="dot">·</span>
@@ -831,7 +831,7 @@ function DetailView({
             return badge ? (
               <>
                 <span className="dot">·</span>
-                <span className="chip tag target-chip" title="Alvo CDP desta requisição">
+                <span className="chip tag target-chip" title="CDP target of this request">
                   {badge}
                 </span>
               </>
@@ -841,46 +841,46 @@ function DetailView({
       </header>
 
       {(req.target || req.netlogOnlyUnknownTarget || req.links.length > 0) && (
-        <section className="target-panel" aria-label="Alvo da requisição">
-          <h3>Alvo</h3>
+        <section className="target-panel" aria-label="Request target">
+          <h3>Target</h3>
           {req.netlogOnlyUnknownTarget && !req.target ? (
             <p className="notice notice-info">
               <span className="notice-icon">i</span>
               <span>
-                Alvo desconhecido (só NetLog): esta requisição não tem proveniência CDP. Documento de aba{" "}
-                <span className="mono">target=_blank</span> pode aparecer só no NetLog.
+                Unknown target (NetLog only): this request has no CDP provenance. A tab document with{" "}
+                <span className="mono">target=_blank</span> may appear only in NetLog.
               </span>
             </p>
           ) : null}
           {req.target && (
             <dl className="kv target-kv">
-              <dt>Tipo</dt>
+              <dt>Type</dt>
               <dd>{targetKindLabel(req.target)}</dd>
-              <dt>URL do alvo</dt>
+              <dt>Target URL</dt>
               <dd className="mono">
                 {req.target.url ?? (
                   <span className="dim" title={req.url}>
-                    não informada no Target.* · requisição {shortTargetUrl(req.url) || req.path}
+                    not reported in Target.* · request {shortTargetUrl(req.url) || req.path}
                   </span>
                 )}
               </dd>
-              <dt>Aberto por</dt>
-              <dd className="mono">{req.target.openerId ?? "— (página principal ou sem opener)"}</dd>
-              <dt>Sessão pai</dt>
+              <dt>Opened by</dt>
+              <dd className="mono">{req.target.openerId ?? "— (main page or no opener)"}</dd>
+              <dt>Parent session</dt>
               <dd className="mono">{req.target.parentSessionId ?? "—"}</dd>
               <dt>targetId</dt>
               <dd className="mono">{req.target.targetId ?? "—"}</dd>
-              <dt>Anexado</dt>
+              <dt>Attached</dt>
               <dd>
                 {req.target.attached === true
-                  ? "sim"
+                  ? "yes"
                   : req.target.attached === false
-                    ? "não (fica só com o NetLog)"
-                    : "não informado"}
+                    ? "no (stays with NetLog only)"
+                    : "not reported"}
               </dd>
               {req.target.notes.length > 0 && (
                 <>
-                  <dt>Notas</dt>
+                  <dt>Notes</dt>
                   <dd>
                     <ul className="target-notes">
                       {req.target.notes.map((note) => (
@@ -894,10 +894,10 @@ function DetailView({
           )}
           {req.links.length > 0 && (
             <div className="target-links">
-              <h4>Observações ligadas (service worker)</h4>
+              <h4>Linked observations (service worker)</h4>
               <p className="dim">
-                A mesma requisição lógica pode aparecer na página e no service worker. Navegue entre as
-                observações; ambiguidade nunca vira duplicata silenciosa.
+                The same logical request may appear in the page and in the service worker. Navigate between the
+                observations; ambiguity never becomes a silent duplicate.
               </p>
               <ul className="link-list">
                 {req.links.map((link) => (
@@ -909,7 +909,7 @@ function DetailView({
                       type="button"
                       className="link mono"
                       onClick={() => onOpenRequest(link.request)}
-                      title="Abrir a outra observação"
+                      title="Open the other observation"
                     >
                       {link.request}
                     </button>
@@ -925,9 +925,9 @@ function DetailView({
       )}
 
       {matches.length > 0 && (
-        <section className="match-box" aria-label="Achados da busca">
+        <section className="match-box" aria-label="Search matches">
           <h3>
-            Achados da busca <span className="count">{matches.length}</span>
+            Search matches <span className="count">{matches.length}</span>
           </h3>
           <ul>
             {matches.slice(0, 50).map((m, index) => {
@@ -936,21 +936,21 @@ function DetailView({
                 <li key={index}>
                   <span className="chip mono">{scopeLabels[m.scope]}</span>
                   {m.field ? <span className="mono"> {m.field}</span> : null}
-                  <span className="dim"> · tentativa {attemptIndex >= 0 ? attemptIndex + 1 : m.attemptId}</span>
+                  <span className="dim"> · attempt {attemptIndex >= 0 ? attemptIndex + 1 : m.attemptId}</span>
                   {m.byteOffset !== null ? <span className="dim"> · byte {m.byteOffset}</span> : null}
-                  {m.htmlControl && <span className="chip tag" title="O achado está num controle de formulário HTML (input/textarea/select) da resposta">controle HTML</span>}
-                  {m.decoded && <span className="chip v-partial" title="Achado após decodificar form-urlencoded/JSON; o byte bruto pode diferir">visão decodificada</span>}
+                  {m.htmlControl && <span className="chip tag" title="The match is in an HTML form control (input/textarea/select) of the response">HTML control</span>}
+                  {m.decoded && <span className="chip v-partial" title="Match after decoding form-urlencoded/JSON; the raw byte may differ">decoded view</span>}
                   <div className="mono snippet">{m.snippet}</div>
                   {m.decoded && (
                     <div className="dim">
-                      Trecho acima é a visão decodificada do campo (derivada); o corpo bruto, exibido na aba Payload/Resposta, é o dado primário.
+                      The snippet above is the decoded view of the field (derived); the raw body, shown in the Payload/Response tab, is the primary data.
                     </div>
                   )}
                 </li>
               );
             })}
           </ul>
-          {matches.length > 50 && <p className="dim">+{matches.length - 50} achados não listados aqui.</p>}
+          {matches.length > 50 && <p className="dim">+{matches.length - 50} matches not listed here.</p>}
         </section>
       )}
 
@@ -974,22 +974,22 @@ function DetailView({
           {tab === "headers" && (
             <>
               <div className="seq-banner">
-                <span className="tag tag-seq">sequência da fonte</span>
-                Índices 0–{Math.max(req.requestHeaders.length - 1, 0)} (requisição) e 0–{Math.max(req.responseHeaders.length - 1, 0)} (resposta).
-                Pseudoheaders HTTP/2 aparecem antes dos regulares, como chegaram.
+                <span className="tag tag-seq">source sequence</span>
+                Indices 0–{Math.max(req.requestHeaders.length - 1, 0)} (request) and 0–{Math.max(req.responseHeaders.length - 1, 0)} (response).
+                HTTP/2 pseudoheaders appear before the regular ones, as they arrived.
                 {req.protocol === "HTTP/1.1" && (
-                  <span className="seq-extra">Origem HTTP/1.1: sem pseudoheaders, apenas linhas nominais.</span>
+                  <span className="seq-extra">HTTP/1.1 origin: no pseudoheaders, only named lines.</span>
                 )}
               </div>
               <HeaderBlock
-                title="Headers da requisição"
+                title="Request headers"
                 pairs={req.requestHeaders}
                 side="req"
                 verification={req.verification.requestHeaders}
                 onCopy={onCopy}
               />
               <HeaderBlock
-                title="Headers da resposta"
+                title="Response headers"
                 pairs={req.responseHeaders}
                 side="res"
                 verification={req.verification.responseHeaders}
@@ -1001,27 +1001,27 @@ function DetailView({
           {tab === "normalized" && (
             <>
               <div className="norm-banner">
-                <strong>Visão normalizada — não é a sequência transmitida.</strong>
+                <strong>Normalized view — not the transmitted sequence.</strong>
                 <span>
-                  Derivada localmente: agrupada por nome, em ordem alfabética, duplicatas preservadas e contadas.
-                  Use a aba “Headers brutos” para a ordem da fonte.
+                  Derived locally: grouped by name, in alphabetical order, duplicates kept and counted.
+                  Use the “Raw headers” tab for the source order.
                 </span>
               </div>
               {[
-                { title: "Requisição (normalizada)", rows: reqNorm },
-                { title: "Resposta (normalizada)", rows: resNorm },
+                { title: "Request (normalized)", rows: reqNorm },
+                { title: "Response (normalized)", rows: resNorm },
               ].map(({ title, rows }) => (
                 <section className="norm-block" key={title}>
                   <header className="block-head">
                     <h3>{title}</h3>
-                    <span className="block-meta">{rows.length} nomes únicos</span>
+                    <span className="block-meta">{rows.length} unique names</span>
                   </header>
                   <table className="norm-table">
                     <thead>
                       <tr>
-                        <th>Nome</th>
-                        <th>Valores (na ordem da fonte)</th>
-                        <th className="num">Ocorrências</th>
+                        <th>Name</th>
+                        <th>Values (in source order)</th>
+                        <th className="num">Occurrences</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1043,7 +1043,7 @@ function DetailView({
                       ))}
                     </tbody>
                   </table>
-                  <footer className="block-foot">Visão derivada — estado de verificação: parcial.</footer>
+                  <footer className="block-foot">Derived view — verification status: partial.</footer>
                 </section>
               ))}
             </>
@@ -1053,50 +1053,50 @@ function DetailView({
             <div className="cookies">
               <section className="header-block">
                 <header className="block-head">
-                  <h3>Cookies enviados</h3>
-                  <span className="block-meta">header Cookie parseado · {req.cookiesSent.length} pares</span>
+                  <h3>Cookies sent</h3>
+                  <span className="block-meta">parsed Cookie header · {req.cookiesSent.length} pairs</span>
                 </header>
                 <div className="cookie-grid">
-                  {req.cookiesSent.length === 0 && <div className="empty">Nenhum cookie enviado nesta requisição.</div>}
+                  {req.cookiesSent.length === 0 && <div className="empty">No cookies sent in this request.</div>}
                   {req.cookiesSent.map((c) => (
                     <div className="cookie-card" key={`${c.name}-${c.index}`}>
                       <div className="cookie-name mono">{c.name}</div>
                       <div className="cookie-value mono">{c.value}</div>
-                      <div className="cookie-meta">par #{c.index} · ordem do header</div>
+                      <div className="cookie-meta">pair #{c.index} · header order</div>
                     </div>
                   ))}
                 </div>
                 <footer className="block-foot">
-                  Pares internos preservados; valores longos encurtados aqui para leitura.
+                  Inner pairs preserved; long values shortened here for readability.
                 </footer>
               </section>
 
               {(req.cookieRaw.length > 0 || req.cookieWireLines.length > 0) && (
                 <section className="header-block">
                   <header className="block-head">
-                    <h3>Cookie enviado — campo bruto e linhas do fio</h3>
+                    <h3>Cookie sent — raw field and wire lines</h3>
                     <span className="block-meta">
-                      {req.cookieRaw.length} campo(s) bruto(s) · {req.cookieWireLines.length} linha(s) no fio
+                      {req.cookieRaw.length} raw field(s) · {req.cookieWireLines.length} wire line(s)
                     </span>
                   </header>
                   <div className="cookie-raw">
                     {req.cookieRaw.map((line, index) => (
                       <div key={`raw-${index}`} className="raw-line">
-                        <span className="tag">campo bruto</span>
+                        <span className="tag">raw field</span>
                         <span className="mono">{line}</span>
                       </div>
                     ))}
                     {req.cookieWireLines.map((line, index) => (
                       <div key={`wire-${index}`} className="raw-line">
-                        <span className="tag tag-seq">linha do fio</span>
+                        <span className="tag tag-seq">wire line</span>
                         <span className="mono">{line}</span>
                       </div>
                     ))}
                   </div>
                   <footer className="block-foot">
                     {req.cookieWireLines.length > req.cookieRaw.length
-                      ? "O fio mostra mais linhas Cookie que o campo original — divisão preservada, nada fundido."
-                      : "Divisão no fio não observada nesta requisição."}
+                      ? "The wire shows more Cookie lines than the original field — split preserved, nothing merged."
+                      : "No split on the wire observed in this request."}
                     {req.cookieNotes?.length ? ` ${req.cookieNotes.join(" · ")}` : ""}
                   </footer>
                 </section>
@@ -1104,19 +1104,19 @@ function DetailView({
 
               <section className="header-block">
                 <header className="block-head">
-                  <h3>Cookies recebidos</h3>
-                  <span className="block-meta">linhas Set-Cookie separadas · {req.cookiesReceived.length}</span>
+                  <h3>Cookies received</h3>
+                  <span className="block-meta">separate Set-Cookie lines · {req.cookiesReceived.length}</span>
                 </header>
                 {req.cookiesReceived.length === 0 ? (
-                  <div className="empty">Nenhum Set-Cookie nesta resposta.</div>
+                  <div className="empty">No Set-Cookie in this response.</div>
                 ) : (
                   <table className="norm-table cookies-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Nome</th>
-                        <th>Valor</th>
-                        <th>Atributos</th>
+                        <th>Name</th>
+                        <th>Value</th>
+                        <th>Attributes</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1139,19 +1139,19 @@ function DetailView({
                   </table>
                 )}
                 <footer className="block-foot">
-                  Linha bruta preservada no evento de origem; a tabela não junta Set-Cookie com “;”.
+                  The raw line is preserved in the source event; the table does not join Set-Cookie with “;”.
                 </footer>
               </section>
 
               {req.cookiesReceived.length > 0 && (
                 <section className="header-block">
                   <header className="block-head">
-                    <h3>Linhas Set-Cookie brutas</h3>
-                    <span className="block-meta">como o evento entregou · ordem da fonte</span>
+                    <h3>Raw Set-Cookie lines</h3>
+                    <span className="block-meta">as the event delivered them · source order</span>
                   </header>
                   <pre className="code small">{req.cookiesReceived.map((c) => c.raw).join("\n")}</pre>
                   <footer className="block-foot">
-                    A tabela acima é derivada destas linhas; nenhum atributo é inventado ou reordenado.
+                    The table above is derived from these lines; no attribute is invented or reordered.
                   </footer>
                 </section>
               )}
@@ -1160,15 +1160,15 @@ function DetailView({
 
           {tab === "payload" && (
             <>
-              <BodyPanel title="Payload da requisição" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("requestBody", effectivePayload)} highlightNeedle={needle} />
+              <BodyPanel title="Request payload" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("requestBody", effectivePayload)} highlightNeedle={needle} />
               <AdapterViewPanel sessionDir={session.sourcePath} requestId={req.id} side="request" />
               <BodyContext req={req} />
-              <BodyPanel title="Corpo da resposta (referência)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
+              <BodyPanel title="Response body (reference)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
             </>
           )}
           {tab === "response" && (
             <>
-              <BodyPanel title="Corpo da resposta" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
+              <BodyPanel title="Response body" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
               <AdapterViewPanel sessionDir={session.sourcePath} requestId={req.id} side="response" />
               <BodyContext req={req} />
             </>
@@ -1177,13 +1177,13 @@ function DetailView({
           {tab === "redirects" &&
             (req.redirects.length === 0 ? (
               <div className="empty big">
-                <strong>Sem redirects nem tentativas registradas.</strong>
-                <span>Nenhum hop nesta requisição; nada a comparar.</span>
+                <strong>No redirects or attempts recorded.</strong>
+                <span>No hops in this request; nothing to compare.</span>
               </div>
             ) : (
               <section className="header-block">
                 <header className="block-head">
-                  <h3>Cadeia de redirects e tentativas</h3>
+                  <h3>Redirect chain and attempts</h3>
                   <span className="block-meta">{req.redirects.length} hops</span>
                 </header>
                 <ol className="hop-list">
@@ -1200,7 +1200,7 @@ function DetailView({
                   ))}
                 </ol>
                 <footer className="block-foot">
-                  Salto HTTP/1.1 → HTTP/2 registrado como dois hops; cada hop tem evidência própria.
+                  An HTTP/1.1 → HTTP/2 jump is recorded as two hops; each hop has its own evidence.
                 </footer>
               </section>
             ))}
@@ -1208,15 +1208,15 @@ function DetailView({
           {tab === "attempts" &&
             (req.attempts.length === 0 ? (
               <div className="empty big">
-                <strong>Nenhuma tentativa registrada.</strong>
-                <span>O contrato v1 não trouxe Attempts para esta requisição lógica.</span>
+                <strong>No attempts recorded.</strong>
+                <span>The v1 contract did not include Attempts for this logical request.</span>
               </div>
             ) : (
               <section className="header-block">
                 <header className="block-head">
-                  <h3>Tentativas da requisição lógica</h3>
+                  <h3>Attempts of the logical request</h3>
                   <span className="block-meta">
-                    {req.attempts.length} tentativa(s) · correlação {matchLabels[req.match.state]}
+                    {req.attempts.length} attempt(s) · correlation {matchLabels[req.match.state]}
                   </span>
                 </header>
                 <table className="norm-table event-table">
@@ -1225,10 +1225,10 @@ function DetailView({
                       <th>#</th>
                       <th>ID</th>
                       <th>Status</th>
-                      <th>Protocolo</th>
-                      <th>Resultado</th>
+                      <th>Protocol</th>
+                      <th>Outcome</th>
                       <th>Headers (req/res)</th>
-                      <th>Correspondência</th>
+                      <th>Matching</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1249,18 +1249,18 @@ function DetailView({
                 </table>
                 {req.match.state === "ambiguous" && (
                   <div className="body-flag flag-truncated">
-                    <strong>Correspondência ambígua — nenhuma fonte foi escolhida</strong>
+                    <strong>Ambiguous match — no source was chosen</strong>
                     <span>
-                      {req.match.candidates.length} candidato(s):{" "}
+                      {req.match.candidates.length} candidate(s):{" "}
                       {req.match.candidates
                         .map((candidate) => `${candidate.entityId} (${candidate.score})`)
                         .join(", ")}
-                      . O ScrapeLens não associa silenciosamente.
+                      . ScrapeLens does not associate silently.
                     </span>
                   </div>
                 )}
                 <footer className="block-foot">
-                  Cada tentativa mantém seus próprios headers, Cookie, corpos e proveniência.
+                  Each attempt keeps its own headers, Cookie, bodies, and provenance.
                 </footer>
               </section>
             ))}
@@ -1276,16 +1276,16 @@ function DetailView({
           {tab === "event" && (
             <section className="header-block">
               <header className="block-head">
-                <h3>Eventos originais</h3>
-                <span className="block-meta">somente leitura · dados sintéticos</span>
+                <h3>Original events</h3>
+                <span className="block-meta">read-only · synthetic data</span>
               </header>
               <table className="norm-table event-table">
                 <thead>
                   <tr>
-                    <th>Fonte</th>
-                    <th>Evento</th>
+                    <th>Source</th>
+                    <th>Event</th>
                     <th>Timestamp</th>
-                    <th>Como foi obtido</th>
+                    <th>How it was obtained</th>
                     <th>Ref.</th>
                   </tr>
                 </thead>
@@ -1296,7 +1296,7 @@ function DetailView({
                         <tr key={key} className="row-missing">
                           <td>—</td>
                           <td>{verificationLabels[key as VerificationKey]}</td>
-                          <td className="dim">sem evento</td>
+                          <td className="dim">no event</td>
                           <td className="dim">{v.reason}</td>
                           <td className="dim">—</td>
                         </tr>
@@ -1317,7 +1317,7 @@ function DetailView({
                 </tbody>
               </table>
               <footer className="block-foot">
-                O evento bruto é a autoridade; a tabela acima só o referencia.
+                The raw event is the authority; the table above only references it.
               </footer>
             </section>
           )}
@@ -1325,8 +1325,8 @@ function DetailView({
           <section className="limits-strip">
             <div className="limits-head">
               <OriginTag session={session} long />
-              <h3>Limites desta captura</h3>
-              <span className="hint">visível em todas as abas</span>
+              <h3>Limits of this capture</h3>
+              <span className="hint">visible on all tabs</span>
             </div>
             <CaptureLimits session={session} requests={limitsRequests} />
           </section>
@@ -1338,7 +1338,7 @@ function DetailView({
   );
 }
 
-/** Comparação: o seletor usa os resumos; as duas requisições vêm sob demanda (P5). */
+/** Comparison: the selector uses the summaries; the two requests are fetched on demand (P5). */
 function CompareView(props: {
   aId: string;
   bId: string;
@@ -1369,10 +1369,10 @@ function CompareView(props: {
   }
   return (
     <div className="empty big">
-      <strong>{pair?.error ? "Não foi possível carregar as requisições." : "Carregando as duas requisições…"}</strong>
+      <strong>{pair?.error ? "Could not load the requests." : "Loading both requests…"}</strong>
       {pair?.error ? <span>{pair.error}</span> : null}
       <button className="link" onClick={props.onBack}>
-        Voltar
+        Back
       </button>
     </div>
   );
@@ -1411,7 +1411,7 @@ function CompareBody({
             <span className="mono dvalue">{row.a.value}</span>
           </>
         ) : (
-          <span className="absent">— ausente em A</span>
+          <span className="absent">— missing in A</span>
         )}
       </div>
       <div className="diff-flag">
@@ -1425,7 +1425,7 @@ function CompareBody({
             <span className="mono dvalue">{row.b.value}</span>
           </>
         ) : (
-          <span className="absent">ausente em B —</span>
+          <span className="absent">missing in B —</span>
         )}
       </div>
     </div>
@@ -1448,21 +1448,21 @@ function CompareBody({
     <div className="compare">
       <div className="detail-top">
         <button className="back" onClick={onBack}>
-          ← Sessão
+          ← Session
         </button>
         <div className="crumbs">
           <span className="mono">{session.id}</span>
           <span className="sep">/</span>
-          <span>comparação</span>
+          <span>comparison</span>
           <OriginTag session={session} />
         </div>
       </div>
 
       <header className="compare-head">
         <div>
-          <h2>Comparar duas requisições</h2>
+          <h2>Compare two requests</h2>
           <p className="sub">
-            Lado a lado, na sequência das fontes. Pares repetidos são casados por valor, nunca por posição.
+            Side by side, in source order. Repeated pairs are matched by value, never by position.
           </p>
         </div>
         <div className="compare-pickers">
@@ -1473,16 +1473,16 @@ function CompareBody({
       </header>
 
       <div className="compare-summary">
-        <span className="summary-total">{total} diferenças</span>
-        <span className="chip k-added">+{counts.added} {counts.added === 1 ? "adicionado" : "adicionados"}</span>
-        <span className="chip k-removed">−{counts.removed} {counts.removed === 1 ? "removido" : "removidos"}</span>
-        <span className="chip k-changed">~{counts.changed} {counts.changed === 1 ? "alterado" : "alterados"}</span>
-        <span className="chip k-reordered">↕{counts.reordered} {counts.reordered === 1 ? "reordenado" : "reordenados"}</span>
+        <span className="summary-total">{total} differences</span>
+        <span className="chip k-added">+{counts.added} {counts.added === 1 ? "added" : "added"}</span>
+        <span className="chip k-removed">−{counts.removed} {counts.removed === 1 ? "removed" : "removed"}</span>
+        <span className="chip k-changed">~{counts.changed} {counts.changed === 1 ? "changed" : "changed"}</span>
+        <span className="chip k-reordered">↕{counts.reordered} {counts.reordered === 1 ? "reordered" : "reordered"}</span>
         <span className="summary-note">
           {a.protocol === b.protocol ? (
-            <>Protocolo igual: <span className="mono">{a.protocol}</span></>
+            <>Same protocol: <span className="mono">{a.protocol}</span></>
           ) : (
-            <>Protocolo difere: <span className="mono">{a.protocol}</span> → <span className="mono">{b.protocol}</span></>
+            <>Protocol differs: <span className="mono">{a.protocol}</span> → <span className="mono">{b.protocol}</span></>
           )}
         </span>
       </div>
@@ -1511,31 +1511,31 @@ function CompareBody({
 
       <section className="diff-section">
         <header className="diff-head">
-          <h3>Headers da requisição</h3>
-          <span className="block-meta">{a.requestHeaders.length} vs {b.requestHeaders.length} pares · posição original à esquerda</span>
+          <h3>Request headers</h3>
+          <span className="block-meta">{a.requestHeaders.length} vs {b.requestHeaders.length} pairs · original position on the left</span>
         </header>
         <div className="diff-rows">{headerDiff.rows.map(headerRow)}</div>
       </section>
 
       {counts.reordered > 0 && (
         <p className="reorder-note">
-          <span className="chip k-reordered">reordenado</span> mesmo par nos dois lados, ordem relativa invertida —
-          os índices mostram a posição original em cada sequência.
+          <span className="chip k-reordered">reordered</span> same pair on both sides, relative order inverted —
+          the indices show the original position in each sequence.
         </p>
       )}
 
       <section className="diff-section">
         <header className="diff-head">
-          <h3>Headers da resposta</h3>
-          <span className="block-meta">{resDiff.rows.length} nomes · {resDiff.counts.changed} alterados, {resDiff.counts.added} adicionados, {resDiff.counts.removed} removidos</span>
+          <h3>Response headers</h3>
+          <span className="block-meta">{resDiff.rows.length} names · {resDiff.counts.changed} changed, {resDiff.counts.added} added, {resDiff.counts.removed} removed</span>
         </header>
         <div className="diff-rows">{resDiff.rows.map(headerRow)}</div>
       </section>
 
       <section className="diff-section">
         <header className="diff-head">
-          <h3>Cookies enviados</h3>
-          <span className="block-meta">casamento por nome e valor</span>
+          <h3>Cookies sent</h3>
+          <span className="block-meta">matched by name and value</span>
         </header>
         <div className="diff-rows">
           {cookieDiff.map((row) => (
@@ -1548,7 +1548,7 @@ function CompareBody({
                     <span className="mono dvalue">{row.a.value}</span>
                   </>
                 ) : (
-                  <span className="absent">— cookie ausente em A</span>
+                  <span className="absent">— cookie missing in A</span>
                 )}
               </div>
               <div className="diff-flag">
@@ -1562,7 +1562,7 @@ function CompareBody({
                     <span className="mono dvalue">{row.b.value}</span>
                   </>
                 ) : (
-                  <span className="absent">cookie ausente em B —</span>
+                  <span className="absent">cookie missing in B —</span>
                 )}
               </div>
             </div>
@@ -1572,8 +1572,8 @@ function CompareBody({
 
       <section className="diff-section bodies">
         <header className="diff-head">
-          <h3>Corpo e protocolo</h3>
-          <span className="block-meta">sem normalização de conteúdo</span>
+          <h3>Body and protocol</h3>
+          <span className="block-meta">no content normalization</span>
         </header>
         <div className="body-compare">
           {[
@@ -1588,18 +1588,18 @@ function CompareBody({
               </div>
               <dl className="kv tight">
                 <dt>Payload</dt>
-                <dd>{r.payload.preview ? `${r.payload.preview.length} caracteres` : bodyState(r.payload)}</dd>
-                <dt>Resposta</dt>
+                <dd>{r.payload.preview ? `${r.payload.preview.length} characters` : bodyState(r.payload)}</dd>
+                <dt>Response</dt>
                 <dd>{bodyState(r.responseBody)} · {fmtBytes(r.responseBody.decodedSize ?? r.responseBody.encodedSize)}</dd>
                 <dt>Set-Cookie</dt>
-                <dd>{r.cookiesReceived.length} linha(s)</dd>
+                <dd>{r.cookiesReceived.length} line(s)</dd>
               </dl>
               {r.responseBody.preview ? (
                 <pre className="code small">{r.responseBody.preview}</pre>
               ) : (
                 <div className="body-flag flag-unavailable">
-                  <strong>Sem corpo para comparar</strong>
-                  <span>{r.responseBody.reason ?? "a fonte não forneceu prévia"}</span>
+                  <strong>No body to compare</strong>
+                  <span>{r.responseBody.reason ?? "the source did not provide a preview"}</span>
                 </div>
               )}
             </div>
@@ -1667,13 +1667,13 @@ export default function App() {
 
   const session = loaded.session;
   const desktop = isTauri();
-  // P5: sessão paginada → resumos via list_requests e detalhe via get_request;
-  // sessão em memória (demonstração, modo navegador) → mesmos resumos derivados localmente.
+  // P5: paged session → summaries via list_requests and detail via get_request;
+  // in-memory session (demo, browser mode) → the same summaries, derived locally.
   const pagedDir = session.paged && session.sourcePath ? session.sourcePath : undefined;
   const memorySummaries = useMemo(() => session.requests.map(summaryOfRecord), [session.requests]);
   const [remoteAll, setRemoteAll] = useState<{ dir: string; items: RequestSummary[]; first?: RequestPageDto } | null>(null);
-  // A lista inteira só é varrida quando uma tela precisa dela (detalhe, linha do tempo, comparação);
-  // a tela principal usa `PagedList` (páginas visíveis + 1) e as contagens do backend.
+  // The whole list is only scanned when a view needs it (detail, timeline, comparison);
+  // the main view uses `PagedList` (visible pages + 1) and the backend counts.
   const needFull = Boolean(pagedDir) && (view === "detail" || view === "timeline" || view === "compare");
   useEffect(() => {
     if (!pagedDir) {
@@ -1695,7 +1695,7 @@ export default function App() {
         }
         if (alive) setRemoteAll({ dir: pagedDir, items, first });
       } catch (error) {
-        if (alive) setNotice({ kind: "error", text: "Não foi possível listar as requisições.", detail: String(error) });
+        if (alive) setNotice({ kind: "error", text: "Could not list the requests.", detail: String(error) });
       }
     })();
     return () => {
@@ -1719,7 +1719,7 @@ export default function App() {
     async (id: string): Promise<RequestRecord> => {
       if (!pagedDir) {
         const found = session.requests.find((r) => r.id === id);
-        if (!found) throw new Error(`requisição ${id} não encontrada`);
+        if (!found) throw new Error(`request ${id} not found`);
         return found;
       }
       const detail = await bridge.getRequest(pagedDir, id);
@@ -1756,12 +1756,12 @@ export default function App() {
     try {
       const dirB = await bridge.pickCompareSession();
       if (!dirB) return;
-      setBusy("Comparando capturas…");
+      setBusy("Comparing captures…");
       const summary = await bridge.compareOpen(session.sourcePath, dirB);
       setCaptureCmp({ summary, dirA: session.sourcePath, dirB, labelA: session.label, labelB: dirB.split("/").filter(Boolean).pop() ?? dirB });
       setView("capture-compare");
     } catch (error) {
-      setNotice({ kind: "error", text: "Não foi possível comparar as capturas.", detail: String(error) });
+      setNotice({ kind: "error", text: "Could not compare the captures.", detail: String(error) });
     } finally {
       setBusy(null);
     }
@@ -1786,11 +1786,11 @@ export default function App() {
     if (payload.notice) setNotice({ kind: "info", text: payload.notice });
   }, []);
 
-  // Uma abertura/importação por vez (o backend também recusa a segunda).
+  // One open/import at a time (the backend also rejects a second one).
   const loadingRef = useRef(false);
   const beginLoading = useCallback(() => {
     if (loadingRef.current) {
-      setNotice({ kind: "info", text: "Já há uma sessão sendo aberta ou importada. Aguarde terminar." });
+      setNotice({ kind: "info", text: "A session is already being opened or imported. Please wait for it to finish." });
       return false;
     }
     loadingRef.current = true;
@@ -1804,17 +1804,17 @@ export default function App() {
     if (!desktop) {
       setNotice({
         kind: "info",
-        text: "Abrir captura usa o diálogo nativo do macOS e só existe no app desktop.",
+        text: "Open capture uses the native macOS dialog and is only available in the desktop app.",
         detail: "Rode `npm run tauri dev` para abrir o shell Tauri.",
       });
       return;
     }
     if (!beginLoading()) return;
-    setBusy("Abrindo sessão… (sessões grandes levam alguns segundos)");
+    setBusy("Opening session… (large sessions take a few seconds)");
     try {
       applyPayload(await bridge.pickAndOpenSession());
     } catch (error) {
-      setNotice({ kind: "error", text: "Não foi possível abrir a sessão.", detail: String(error), action: "open" });
+      setNotice({ kind: "error", text: "Could not open the session.", detail: String(error), action: "open" });
     } finally {
       endLoading();
       setBusy(null);
@@ -1823,7 +1823,7 @@ export default function App() {
 
   const validationRef = useRef(validation);
   validationRef.current = validation;
-  // Fechar a tela de validação apaga a sessão temporária do trace (a menos que tenha sido guardada).
+  // Closing the validation view deletes the trace's temporary session (unless it was kept).
   const closeValidation = useCallback(() => {
     const current = validationRef.current;
     setView("session");
@@ -1840,13 +1840,13 @@ export default function App() {
     try {
       const tracePath = again?.tracePath ?? (await bridge.pickTraceFile());
       if (!tracePath) return;
-      setBusy("Importando o trace e validando…");
+      setBusy("Importing the trace and validating…");
       const result = await bridge.validateExecution(dir, tracePath, again?.mapOrigin);
       if (validationRef.current && !validationRef.current.kept) void bridge.discardValidation(validationRef.current.result.traceDir).catch(() => {});
       setValidation({ result, tracePath });
       setView("validate");
     } catch (error) {
-      setNotice({ kind: "error", text: "Não foi possível validar a execução.", detail: String(error) });
+      setNotice({ kind: "error", text: "Could not validate the execution.", detail: String(error) });
     } finally {
       setBusy(null);
     }
@@ -1855,19 +1855,19 @@ export default function App() {
   const importCapture = useCallback(
     async (kind: "har" | "netlog") => {
       if (!desktop) {
-        setNotice({ kind: "info", text: `Importar ${kind.toUpperCase()} só está disponível no app desktop.` });
+        setNotice({ kind: "info", text: `Importing ${kind.toUpperCase()} is only available in the desktop app.` });
         return;
       }
       if (recording) {
-        setNotice({ kind: "info", text: "Há uma captura em andamento. Encerre a gravação antes de importar." });
+        setNotice({ kind: "info", text: "A capture is in progress. Stop the recording before importing." });
         return;
       }
       if (!beginLoading()) return;
-      setBusy(kind === "har" ? "Importando HAR…" : "Importando NetLog…");
+      setBusy(kind === "har" ? "Importing HAR…" : "Importing NetLog…");
       try {
         applyPayload(kind === "har" ? await bridge.importHar() : await bridge.importNetlog());
       } catch (error) {
-        setNotice({ kind: "error", text: `A importação de ${kind.toUpperCase()} falhou.`, detail: String(error) });
+        setNotice({ kind: "error", text: `The ${kind.toUpperCase()} import failed.`, detail: String(error) });
       } finally {
         endLoading();
         setBusy(null);
@@ -1881,27 +1881,27 @@ export default function App() {
       const info = await bridge.chooseChrome();
       if (info) {
         setChrome(info);
-        setNotice({ kind: "success", text: `Chrome configurado: ${info.path ?? "caminho salvo"}` });
+        setNotice({ kind: "success", text: `Chrome configured: ${info.path ?? "saved path"}` });
       }
     } catch (error) {
-      setNotice({ kind: "error", text: "O caminho escolhido não é um Chrome utilizável.", detail: String(error) });
+      setNotice({ kind: "error", text: "The chosen path is not a usable Chrome.", detail: String(error) });
     }
   }, []);
 
   const startCapture = useCallback(async () => {
     if (!desktop) {
-      setNotice({ kind: "info", text: "A captura ao vivo usa o Chrome externo e só existe no app desktop." });
+      setNotice({ kind: "info", text: "Live capture uses an external Chrome and is only available in the desktop app." });
       return;
     }
     if (!cookieSourcesReady || busy || recording) return;
     const resolved = resolveCaptureStartUrl(startUrl);
     if (!resolved.ok) {
       setStartUrlError(resolved.error);
-      setNotice({ kind: "error", text: "URL inicial inválida.", detail: resolved.error, action: "start" });
+      setNotice({ kind: "error", text: "Invalid start URL.", detail: resolved.error, action: "start" });
       return;
     }
     setStartUrlError(null);
-    setBusy("Abrindo Chrome com perfil dedicado e conectando ao CDP…");
+    setBusy("Opening Chrome with a dedicated profile and connecting to CDP…");
     try {
       const payload = await bridge.startSession(trimUrl(startUrl) ? trimUrl(startUrl) : undefined, cookieSource || undefined);
       if (!payload) return;
@@ -1912,13 +1912,13 @@ export default function App() {
         events: 0,
         pageUrl: resolved.url,
       });
-      setNotice({ kind: "info", text: payload.notice ?? "Captura iniciada. Navegue no Chrome e clique em Encerrar." });
+      setNotice({ kind: "info", text: payload.notice ?? "Capture started. Browse in Chrome and click Stop." });
     } catch (error) {
       const info = await bridge.detectChrome().catch(() => null);
       if (info) setChrome(info);
       setNotice({
         kind: "error",
-        text: "Não foi possível iniciar a captura.",
+        text: "Could not start the capture.",
         detail: String(error),
         action: info && !info.found ? "chrome" : "start",
       });
@@ -1928,17 +1928,17 @@ export default function App() {
   }, [desktop, startUrl, cookieSource, cookieSourcesReady, busy, recording]);
 
   const stopCapture = useCallback(async () => {
-    setBusy("Encerrando o Chrome, aguardando o NetLog e importando a sessão…");
+    setBusy("Stopping Chrome, waiting for NetLog and importing the session…");
     try {
       const payload = await bridge.stopSession();
       setRecording(null);
       if (payload) applyPayload(payload);
-      else setNotice({ kind: "error", text: "A captura terminou sem sessão.", action: "start" });
+      else setNotice({ kind: "error", text: "The capture ended without a session.", action: "start" });
     } catch (error) {
       setRecording(null);
       setNotice({
         kind: "error",
-        text: "Não foi possível encerrar/importar a captura.",
+        text: "Could not stop/import the capture.",
         detail: String(error),
         action: "start",
       });
@@ -1947,11 +1947,11 @@ export default function App() {
     }
   }, [applyPayload]);
 
-  const copy = useCallback(async (text: string, label = "Valor copiado") => {
+  const copy = useCallback(async (text: string, label = "Value") => {
     const ok = await bridge.copyText(text);
     setNotice({
       kind: ok ? "success" : "error",
-      text: ok ? `${label} para a área de transferência.` : "Não foi possível copiar.",
+      text: ok ? `${label} copied to the clipboard.` : "Could not copy.",
     });
     window.setTimeout(() => setNotice((current) => (current?.kind === "success" ? null : current)), 2400);
   }, []);
@@ -1968,7 +1968,7 @@ export default function App() {
       setCookieSources(payload.sources);
       setCookieSource(payload.selected ?? "");
     }).catch((error) => {
-      setNotice({ kind: "error", text: "Não foi possível listar as fontes de cookies. A captura usará sessão limpa.", detail: String(error) });
+      setNotice({ kind: "error", text: "Could not list the cookie sources. The capture will use a clean session.", detail: String(error) });
     }).finally(() => setCookieSourcesReady(true));
     void bridge.captureStartUrl().then((url) => {
       setStartUrl(url);
@@ -1989,17 +1989,17 @@ export default function App() {
         if (action.kind === "error" || action.kind === "warning") {
           setNotice({
             kind: action.kind === "error" ? "error" : "info",
-            text: action.kind === "error" ? "Argumento de linha de comando inválido." : "Argumentos de linha de comando ignorados.",
+            text: action.kind === "error" ? "Invalid command-line argument." : "Command-line arguments ignored.",
             detail: action.message,
           });
           return;
         }
         setBusy(
           action.kind === "import-har"
-            ? "Importando HAR (CLI)…"
+            ? "Importing HAR (CLI)…"
             : action.kind === "import-netlog"
-              ? "Importando NetLog (CLI)…"
-              : "Abrindo captura (CLI)…",
+              ? "Importing NetLog (CLI)…"
+              : "Opening capture (CLI)…",
         );
         const payload =
           action.kind === "import-har"
@@ -2010,7 +2010,7 @@ export default function App() {
         if (!cancelled) applyPayload(payload);
       } catch (error) {
         if (!cancelled) {
-          setNotice({ kind: "error", text: "Falha no argumento CLI de abertura.", detail: String(error) });
+          setNotice({ kind: "error", text: "Failed to handle the CLI open argument.", detail: String(error) });
         }
       } finally {
         if (!cancelled) setBusy(null);
@@ -2027,9 +2027,9 @@ export default function App() {
       .then((payload) => {
         setLoaded(adaptSession(payload.session, {}));
         setIsLargeDemo(true);
-        setNotice({ kind: "info", text: payload.notice ?? "Sessão sintética de estresse." });
+        setNotice({ kind: "info", text: payload.notice ?? "Synthetic stress session." });
       })
-      .catch((error) => setNotice({ kind: "error", text: "Falha ao gerar a sessão de estresse.", detail: String(error) }));
+      .catch((error) => setNotice({ kind: "error", text: "Failed to generate the stress session.", detail: String(error) }));
   }, []);
 
   useEffect(() => {
@@ -2070,7 +2070,7 @@ export default function App() {
         else if (shortcut === "har") void importCapture("har");
         else if (shortcut === "netlog") void importCapture("netlog");
         else if (shortcut === "demo") void bridge.demoSession().then(applyPayload);
-        else if (shortcut === "copy" && selected) void copy(selected.url, "URL da requisição");
+        else if (shortcut === "copy" && selected) void copy(selected.url, "Request URL");
         return;
       }
       if (event.shiftKey) return;
@@ -2091,7 +2091,7 @@ export default function App() {
         const hasSelection = (window.getSelection()?.toString() ?? "").length > 0;
         if (!typing && !hasSelection && selected) {
           event.preventDefault();
-          void copy(selected.url, "URL da requisição");
+          void copy(selected.url, "Request URL");
         }
       }
     };
@@ -2184,7 +2184,7 @@ export default function App() {
       if (protocol !== "all" && r.protocol !== protocol) return false;
       if (!q) return true;
       if (payloadSearch) {
-        // Busca do core: só as requisições com achado (id/método/status continuam valendo).
+        // Core search: only requests with a match (id/method/status still apply).
         return (
           matchesById.has(r.id) ||
           r.id.includes(q) ||
@@ -2214,7 +2214,7 @@ export default function App() {
     outcomes,
   ]);
 
-  // Filtro no backend (P5): mesma semântica de `localFiltered`, em src-tauri/src/listing.rs.
+  // Backend filter (P5): same semantics as `localFiltered`, in src-tauri/src/listing.rs.
   const remoteFilter = useMemo<ListFilter>(() => {
     const restrict =
       failFilter || blockFilter
@@ -2236,7 +2236,7 @@ export default function App() {
   const remoteFilterRef = useRef(remoteFilter);
   remoteFilterRef.current = remoteFilter;
   const [, bumpList] = useReducer((n: number) => n + 1, 0);
-  // Uma `PagedList` por (sessão, filtro): troca só quando a chave muda, não a cada render.
+  // One `PagedList` per (session, filter): replaced only when the key changes, not on every render.
   const pagedList = useMemo(() => {
     if (!pagedDir) return null;
     const filter = remoteFilterRef.current;
@@ -2256,7 +2256,7 @@ export default function App() {
     if (pagedList?.meta) setListMeta(pagedList.meta);
   });
   useEffect(() => {
-    if (pagedList?.error) setNotice({ kind: "error", text: "Falha ao listar as requisições.", detail: pagedList.error });
+    if (pagedList?.error) setNotice({ kind: "error", text: "Failed to list the requests.", detail: pagedList.error });
   }, [pagedList, pagedList?.error]);
   useEffect(() => {
     if (!pagedDir) setListMeta(undefined);
@@ -2306,7 +2306,7 @@ export default function App() {
 
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endIndex = Math.min(filteredLength, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
-  // Na sessão paginada, pede só a janela visível (+1 página); linhas ainda não chegadas ficam de fora.
+  // In the paged session, only the visible window (+1 page) is requested; rows not yet arrived are left out.
   pagedList?.ensure(startIndex, Math.max(endIndex, Math.ceil(viewportH / ROW_HEIGHT) + OVERSCAN));
   const visibleRows: RequestSummary[] = [];
   for (let i = startIndex; i < endIndex; i++) {
@@ -2326,11 +2326,11 @@ export default function App() {
         <div className="toolbar-top" id="scrapelens-toolbar">
           <div className="title-actions">
             <OriginTag session={session} />
-            <span className="tag tag-synthetic">{desktop ? "Tauri 2" : "modo navegador"}</span>
+            <span className="tag tag-synthetic">{desktop ? "Tauri 2" : "browser mode"}</span>
             <button
               className="icon-btn theme"
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-              title={`Tema ${theme === "light" ? "claro" : "escuro"} — alternar`}
+              title={`${theme === "light" ? "Light" : "Dark"} theme — toggle`}
             >
               {theme === "light" ? "◐" : "◑"}
             </button>
@@ -2343,14 +2343,14 @@ export default function App() {
             <p>
               {session.sourcePath ? (
                 <>
-                  <strong>Fixture sintética:</strong> valores inventados com a forma de um caso real; nada foi
-                  capturado. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.
+                  <strong>Synthetic fixture:</strong> made-up values shaped like a real case; nothing was
+                  captured. To capture for real, use Start session (external Chrome) or Open capture….
                 </>
               ) : (
                 <>
-                  <strong>Sessão sintética (contrato v1).</strong> Nenhum byte foi capturado: domínios{" "}
-                  <span className="mono">.invalid</span>, corpos inventados e eventos simulados servem para revisar a
-                  interface. Para capturar de verdade, use Iniciar sessão (Chrome externo) ou Abrir captura.
+                  <strong>Synthetic session (v1 contract).</strong> No bytes were captured: the{" "}
+                  <span className="mono">.invalid</span> domains, invented bodies, and simulated events are there to
+                  review the interface. To capture for real, use Start session (external Chrome) or Open capture….
                 </>
               )}
             </p>
@@ -2360,10 +2360,10 @@ export default function App() {
           <div className="real-banner">
             <OriginTag session={session} long />
             <p>
-              <strong>{session.label}</strong> · {session.completeness.state === "complete" ? "completa" : "parcial"}
+              <strong>{session.label}</strong> · {session.completeness.state === "complete" ? "complete" : "partial"}
               {session.sourcePath ? <> · <span className="mono">{session.sourcePath}</span></> : null}
             </p>
-            <span className="demo-right mono">{warningTotal} aviso(s)</span>
+            <span className="demo-right mono">{warningTotal} warning(s)</span>
           </div>
         )}
 
@@ -2373,9 +2373,9 @@ export default function App() {
               .filter((warning) => warning.code === "har.cookies_absent")
               .map((warning) => (
                 <div className="body-flag flag-truncated warn-strip" role="alert" key={warning.code}>
-                  <strong>HAR sem cookies — origem de cookies não avaliável</strong>
+                  <strong>HAR without cookies — cookie origin cannot be assessed</strong>
                   <span>
-                    {warning.message} Para avaliar cookies, use <strong>Iniciar sessão</strong> (captura ao vivo CDP/NetLog).
+                    {warning.message} To assess cookies, use <strong>Start session</strong> (live CDP/NetLog capture).
                   </span>
                 </div>
               ))}
@@ -2387,24 +2387,24 @@ export default function App() {
                   <OriginTag session={session} />
                   {sessionIsRecording(session, recording) ? (
                     <span className="tag tag-recording">
-                      <span className="rec-dot" /> gravando
+                      <span className="rec-dot" /> recording
                     </span>
                   ) : (
                     <span className="tag tag-state">
-                      {session.completeness.state === "complete" ? "sessão completa" : "sessão parcial"}
+                      {session.completeness.state === "complete" ? "complete session" : "partial session"}
                     </span>
                   )}
-                  {isLargeDemo && <span className="tag">estresse 12k</span>}
+                  {isLargeDemo && <span className="tag">stress 12k</span>}
                 </div>
                 <div className="sid-meta mono">
-                  {session.id} · {session.chromeVersion ?? "navegador não informado"} · criada{" "}
-                  {fmtTime(session.createdAt)} · {requestCount} requisições ·{" "}
-                  {session.capture.mode ?? "modo não informado"}
+                  {session.id} · {session.chromeVersion ?? "browser not reported"} · created{" "}
+                  {fmtTime(session.createdAt)} · {requestCount} requests ·{" "}
+                  {session.capture.mode ?? "mode not reported"}
                 </div>
               </div>
               <div className="session-actions">
                 <label className="start-url-field" htmlFor="scrapelens-start-url">
-                  <span className="start-url-label">URL inicial</span>
+                  <span className="start-url-label">Start URL</span>
                   <input
                     id="scrapelens-start-url"
                     className="start-url-input mono"
@@ -2413,7 +2413,7 @@ export default function App() {
                     placeholder="http://127.0.0.1:8781/page"
                     value={startUrl}
                     disabled={!desktop || !!recording || !!busy}
-                    aria-label="URL inicial da captura"
+                    aria-label="Capture start URL"
                     aria-invalid={!!startUrlError}
                     onChange={(event) => {
                       const value = event.target.value;
@@ -2442,11 +2442,11 @@ export default function App() {
                   startUrl={startUrl}
                   disabled={!desktop || !!recording || !!busy || !cookieSourcesReady}
                   onChange={(value) => {
-                    setBusy("Salvando fonte de cookies…");
+                    setBusy("Saving cookie source…");
                     void bridge.setCaptureCookieSource(value || null).then((saved) => {
                       setCookieSource(saved ?? "");
                     }).catch((error) => {
-                      setNotice({ kind: "error", text: "Não foi possível salvar a fonte de cookies.", detail: String(error) });
+                      setNotice({ kind: "error", text: "Could not save the cookie source.", detail: String(error) });
                     }).finally(() => setBusy(null));
                   }}
                 />
@@ -2455,38 +2455,38 @@ export default function App() {
                   className="btn primary"
                   onClick={() => void startCapture()}
                   disabled={!desktop || !!recording || !!busy || !!startUrlError || !cookieSourcesReady}
-                  aria-label="Iniciar sessão"
+                  aria-label="Start session"
                   title={
                     desktop
-                      ? "Abrir Chrome com perfil dedicado e gravar CDP+NetLog — " + shortcutLabel("⌘⇧R")
-                      : "Captura ao vivo só no app desktop (Tauri)"
+                      ? "Open Chrome with a dedicated profile and record CDP+NetLog — " + shortcutLabel("⌘⇧R")
+                      : "Live capture is only available in the desktop app (Tauri)"
                   }
                 >
-                  Iniciar sessão
+                  Start session
                 </button>
                 <button
                   id="scrapelens-stop-session"
                   className="btn"
                   onClick={() => void stopCapture()}
                   disabled={!recording || !!busy}
-                  aria-label="Encerrar sessão"
-                  title={"Sair do Chrome, aguardar o flush do NetLog, importar com o core e abrir a sessão — " + shortcutLabel("⌘.")}
+                  aria-label="Stop session"
+                  title={"Quit Chrome, wait for the NetLog flush, import with the core and open the session — " + shortcutLabel("⌘.")}
                 >
-                  Encerrar
+                  Stop
                 </button>
                 <button
                   id="scrapelens-open-capture"
                   className="btn"
                   onClick={() => void openSession()}
                   disabled={!desktop || !!recording}
-                  aria-label="Abrir captura"
+                  aria-label="Open capture"
                   title={
                     desktop
-                      ? "Abrir uma pasta de sessão v1 (session.json) com diálogo nativo — " + shortcutLabel("⌘O")
-                      : "Abrir captura usa o diálogo nativo do macOS; disponível no app Tauri."
+                      ? "Open a v1 session folder (session.json) with a native dialog — " + shortcutLabel("⌘O")
+                      : "Open capture uses the native macOS dialog; available in the Tauri app."
                   }
                 >
-                  Abrir captura…
+                  Open capture…
                 </button>
                 <button
                   className="btn"
@@ -2494,21 +2494,21 @@ export default function App() {
                   disabled={!desktop || !session.sourcePath || !!recording || !!busy}
                   title={
                     !desktop
-                      ? "Sanitização usa o diálogo nativo do macOS e só existe no app desktop."
+                      ? "Sanitizing uses the native macOS dialog and is only available in the desktop app."
                       : !session.sourcePath
-                        ? "Sanitização indisponível: esta sessão não tem pasta persistida (demo ou modo navegador)."
-                        : "Redigir credenciais da sessão inteira e gravar em uma pasta nova; a origem não é alterada"
+                        ? "Sanitizing unavailable: this session has no persisted folder (demo or browser mode)."
+                        : "Redact credentials across the whole session and write to a new folder; the source is not changed"
                   }
                 >
-                  Exportar / Sanitizar…
+                  Export / Sanitize…
                 </button>
                 <button
                   className="btn"
                   onClick={() => setView("timeline")}
                   disabled={!session.sourcePath || !!recording || !!busy}
-                  title={session.sourcePath ? "Eventos da aplicação na ordem, sem o ruído da proteção" : "Linha do tempo indisponível: esta sessão não tem pasta persistida."}
+                  title={session.sourcePath ? "Application events in order, without the protection noise" : "Timeline unavailable: this session has no persisted folder."}
                 >
-                  Linha do tempo
+                  Timeline
                 </button>
                 <button
                   className="btn"
@@ -2516,11 +2516,11 @@ export default function App() {
                   disabled={!desktop || !session.sourcePath || !!recording || !!busy}
                   title={
                     !desktop
-                      ? "Validar execução usa o seletor nativo do macOS e só existe no app desktop."
-                      : "Importa o trace do script (--trace) e compara a execução com esta captura; nada é executado pelo ScrapeLens"
+                      ? "Validate execution uses the native macOS picker and is only available in the desktop app."
+                      : "Imports the script's trace (--trace) and compares the execution with this capture; ScrapeLens runs nothing"
                   }
                 >
-                  Validar execução…
+                  Validate execution…
                 </button>
               </div>
             </div>
@@ -2528,16 +2528,16 @@ export default function App() {
             {recording && (
               <div className="recording-banner" id="scrapelens-recording-banner">
                 <span className="rec-dot" />
-                <strong>Gravando com Chrome externo</strong>
+                <strong>Recording with external Chrome</strong>
                 <span>
-                  sessão <span className="mono">{recording.sessionId}</span> · {recording.events} evento(s) CDP
+                  session <span className="mono">{recording.sessionId}</span> · {recording.events} CDP event(s)
                   {recording.pageUrl ? (
                     <span className="mono dim"> · {recording.pageUrl}</span>
                   ) : null}
                 </span>
                 {(!recording.pageUrl || recording.pageUrl === "about:blank") && (
                   <span className="recording-blank-warn" role="status">
-                    a captura começou em branco; navegue no Chrome ou informe a URL
+                    the capture started blank; browse in Chrome or enter a URL
                   </span>
                 )}
                 <span className="grow" />
@@ -2546,9 +2546,9 @@ export default function App() {
                   className="ghost-btn small"
                   onClick={() => void stopCapture()}
                   disabled={!!busy}
-                  aria-label="Encerrar e abrir"
+                  aria-label="Stop and open"
                 >
-                  Encerrar e abrir
+                  Stop and open
                 </button>
               </div>
             )}
@@ -2562,20 +2562,20 @@ export default function App() {
                 </span>
                 {notice.action === "chrome" && desktop && (
                   <button className="ghost-btn small" onClick={() => void chooseChrome()}>
-                    Selecionar Chrome…
+                    Select Chrome…
                   </button>
                 )}
                 {notice.action === "open" && desktop && (
                   <button className="ghost-btn small" onClick={() => void openSession()}>
-                    Escolher outro…
+                    Choose another…
                   </button>
                 )}
                 {notice.action === "start" && desktop && (
                   <button className="ghost-btn small" onClick={() => void startCapture()}>
-                    Tentar de novo
+                    Try again
                   </button>
                 )}
-                <button className="icon-btn" onClick={() => setNotice(null)} title="Fechar aviso">
+                <button className="icon-btn" onClick={() => setNotice(null)} title="Close notice">
                   ×
                 </button>
               </div>
@@ -2591,7 +2591,7 @@ export default function App() {
             {!busy && pagedList && !pagedList.meta && requestCount > 0 && (
               <div className="notice notice-info" role="status" aria-live="polite">
                 <span className="notice-icon">…</span>
-                <span>Carregando a lista de {requestCount} requisições…</span>
+                <span>Loading the list of {requestCount} requests…</span>
               </div>
             )}
 
@@ -2599,11 +2599,11 @@ export default function App() {
               <div className="notice notice-warn">
                 <span className="notice-icon">!</span>
                 <span>
-                  <strong>Chrome não encontrado</strong> em /Applications. A captura precisa de um Chrome externo —
-                  selecione manualmente o <span className="mono">Google Chrome.app</span>.
+                  <strong>Chrome not found</strong> in /Applications. Capture needs an external Chrome —
+                  select <span className="mono">Google Chrome.app</span> manually.
                 </span>
                 <button className="ghost-btn small" onClick={() => void chooseChrome()}>
-                  Selecionar Chrome…
+                  Select Chrome…
                 </button>
               </div>
             )}
@@ -2615,13 +2615,13 @@ export default function App() {
                   ref={searchRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar domínio, caminho, id, status…"
-                  aria-label="Buscar requisições"
+                  placeholder="Search domain, path, id, status…"
+                  aria-label="Search requests"
                 />
                 <kbd>{shortcutLabel("⌘F")}</kbd>
               </div>
               {searchDir && (
-                <div className="search-opts" role="group" aria-label="Escopos da busca">
+                <div className="search-opts" role="group" aria-label="Search scopes">
                   {ALL_SCOPES.map((scope) => (
                     <label key={scope} className={scopes.includes(scope) ? "chip-filter active" : "chip-filter"}>
                       <input
@@ -2650,11 +2650,11 @@ export default function App() {
               <div className="filters">
                 {(
                   [
-                    ["all", "Todos"],
+                    ["all", "All"],
                     ["fetch", "Fetch/XHR"],
-                    ["document", "Documento"],
-                    ["media", "Mídia"],
-                    ["error", "Erros 4xx/5xx"],
+                    ["document", "Document"],
+                    ["media", "Media"],
+                    ["error", "Errors 4xx/5xx"],
                   ] as [TypeFilter, string][]
                 ).map(([id, label]) => (
                   <button
@@ -2670,23 +2670,23 @@ export default function App() {
                   className={failFilter ? "chip-filter active" : "chip-filter"}
                   disabled={outcomeChipDisabled(failCount, failFilter)}
                   onClick={() => setFailFilter((v) => !v)}
-                  title="Respostas com falha da aplicação afirmada (app-error), mesmo com HTTP 200"
+                  title="Responses with a declared application failure (app-error), even with HTTP 200"
                 >
-                  Falhas da aplicação
+                  App failures
                   <span className="count">{failCount}</span>
                 </button>
                 <button
                   className={blockFilter ? "chip-filter active" : "chip-filter"}
                   disabled={outcomeChipDisabled(blockCount, blockFilter)}
                   onClick={() => setBlockFilter((v) => !v)}
-                  title="Possíveis bloqueios (blocked?): evidência, não confirmação"
+                  title="Possible blocks (blocked?): evidence, not confirmation"
                 >
-                  Possíveis bloqueios?
+                  Possible blocks?
                   <span className="count">{blockCount}</span>
                 </button>
               </div>
               {showTargetColumn && (
-                <div className="filters target-filters" aria-label="Filtro por tipo de alvo">
+                <div className="filters target-filters" aria-label="Filter by target type">
                   {TARGET_FILTERS.filter(
                     (f) => f.id === "all" || targetCount(f.id) > 0,
                   ).map((f) => (
@@ -2694,7 +2694,7 @@ export default function App() {
                       key={f.id}
                       className={targetFilter === f.id ? "chip-filter active" : "chip-filter"}
                       onClick={() => setTargetFilter(f.id)}
-                      title="Filtrar pela proveniência do alvo CDP"
+                      title="Filter by CDP target provenance"
                     >
                       {f.label}
                       <span className="count">{targetCount(f.id)}</span>
@@ -2703,13 +2703,13 @@ export default function App() {
                 </div>
               )}
               <label className="proto-select">
-                <span>Protocolo</span>
+                <span>Protocol</span>
                 <select value={protocol} onChange={(e) => setProtocol(e.target.value as typeof protocol)}>
-                  <option value="all">todos</option>
+                  <option value="all">all</option>
                   <option value="HTTP/1.1">HTTP/1.1</option>
                   <option value="HTTP/2">HTTP/2</option>
                   <option value="HTTP/3">HTTP/3</option>
-                  <option value="desconhecido">desconhecido</option>
+                  <option value="desconhecido">unknown</option>
                 </select>
               </label>
               <div className="toolbar-actions">
@@ -2718,8 +2718,8 @@ export default function App() {
                   className="btn small"
                   onClick={() => void importCapture("har")}
                   disabled={!desktop || !!recording}
-                  aria-label="Importar HAR"
-                  title={desktop ? "Importar HAR — " + shortcutLabel("⌘⇧H") : "Importação só no app desktop"}
+                  aria-label="Import HAR"
+                  title={desktop ? "Import HAR — " + shortcutLabel("⌘⇧H") : "Import is only available in the desktop app"}
                 >
                   HAR
                 </button>
@@ -2728,8 +2728,8 @@ export default function App() {
                   className="btn small"
                   onClick={() => void importCapture("netlog")}
                   disabled={!desktop || !!recording}
-                  aria-label="Importar NetLog"
-                  title={desktop ? "Importar NetLog — " + shortcutLabel("⌘⇧N") : "Importação só no app desktop"}
+                  aria-label="Import NetLog"
+                  title={desktop ? "Import NetLog — " + shortcutLabel("⌘⇧N") : "Import is only available in the desktop app"}
                 >
                   NetLog
                 </button>
@@ -2737,17 +2737,17 @@ export default function App() {
                   className="btn"
                   onClick={() => setView("compare")}
                   disabled={requestCount < 2}
-                  title={requestCount < 2 ? "São necessárias duas requisições" : "Comparar duas requisições"}
+                  title={requestCount < 2 ? "Two requests are required" : "Compare two requests"}
                 >
-                  Comparar…
+                  Compare…
                 </button>
                 <button
                   className="btn"
                   onClick={() => void compareCaptures()}
                   disabled={!desktop || !session.sourcePath || !!recording}
-                  title={session.sourcePath ? "Comparar esta captura com outra sessão (pasta)" : "Exige uma sessão com pasta persistida"}
+                  title={session.sourcePath ? "Compare this capture with another session (folder)" : "Requires a session with a persisted folder"}
                 >
-                  Comparar capturas…
+                  Compare captures…
                 </button>
               </div>
             </div>
@@ -2755,26 +2755,26 @@ export default function App() {
             {searchText && (
               <div className="search-status" role="status">
                 {!searchDir ? (
-                  <span>Busca só em metadados (URL, id, status): a busca no payload exige uma sessão real aberta no app.</span>
+                  <span>Search covers metadata only (URL, id, status): payload search requires a real session open in the app.</span>
                 ) : !searchResult && !searchState?.error ? (
-                  <span>Buscando no payload…</span>
+                  <span>Searching payloads…</span>
                 ) : searchState?.error ? (
-                  <span className="err">Busca falhou: {searchState.error}</span>
+                  <span className="err">Search failed: {searchState.error}</span>
                 ) : searchResult ? (
                   <>
                     <span>
-                      {searchResult.matches.length} achado(s) em {matchesById.size} requisição(ões)
+                      {searchResult.matches.length} match(es) in {matchesById.size} request(s)
                     </span>
                     {searchResult.limitReached && (
-                      <span className="chip v-partial">limite atingido: há mais achados não listados</span>
+                      <span className="chip v-partial">limit reached: more matches are not listed</span>
                     )}
                     {searchResult.partial && (
                       <span className="chip v-partial" title={searchResult.partialAttempts.join(", ")}>
-                        busca parcial: {searchResult.partialAttempts.length} corpo(s) truncado(s)
+                        partial search: {searchResult.partialAttempts.length} truncated body(ies)
                       </span>
                     )}
                     {searchResult.skippedBinary > 0 && (
-                      <span className="chip tag">{searchResult.skippedBinary} corpo(s) binário(s) não pesquisado(s)</span>
+                      <span className="chip tag">{searchResult.skippedBinary} binary body(ies) not searched</span>
                     )}
                   </>
                 ) : null}
@@ -2786,15 +2786,15 @@ export default function App() {
                 <thead>
                   <tr>
                     <th className="col-idx">#</th>
-                    <th className="col-method">Método</th>
-                    <th className="col-domain">Domínio</th>
-                    <th className="col-path">Caminho</th>
-                    {showTargetColumn && <th className="col-target">Alvo</th>}
+                    <th className="col-method">Method</th>
+                    <th className="col-domain">Domain</th>
+                    <th className="col-path">Path</th>
+                    {showTargetColumn && <th className="col-target">Target</th>}
                     <th className="col-status">Status</th>
-                    <th className="col-app" title="Sucesso da aplicação (≠ status HTTP)">Aplicação</th>
-                    <th className="col-proto">Protocolo</th>
-                    <th className="col-type">Tipo</th>
-                    <th className="col-time num">Duração</th>
+                    <th className="col-app" title="Application success (≠ HTTP status)">App</th>
+                    <th className="col-proto">Protocol</th>
+                    <th className="col-type">Type</th>
+                    <th className="col-time num">Duration</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2810,7 +2810,7 @@ export default function App() {
                       key={r.id}
                       className={selected?.id === r.id ? "selected" : undefined}
                       onClick={() => openDetail(r.id)}
-                      title="Abrir painel de detalhe"
+                      title="Open detail panel"
                     >
                       <td className="mono dim">{String(startIndex + i + 1).padStart(2, "0")}</td>
                       <td>
@@ -2824,9 +2824,9 @@ export default function App() {
                             className={`chip tag target-chip${
                               !badge || r.netlogOnlyUnknownTarget ? " v-partial" : ""
                             }`}
-                            title={badge ?? "alvo desconhecido (só NetLog)"}
+                            title={badge ?? "unknown target (NetLog only)"}
                           >
-                            {badge ?? "alvo desconhecido (só NetLog)"}
+                            {badge ?? "unknown target (NetLog only)"}
                           </span>
                         </td>
                       )}
@@ -2857,8 +2857,8 @@ export default function App() {
                       <td colSpan={colCount}>
                         <div className="empty">
                           {requestCount === 0
-                            ? "Esta sessão não tem requisições."
-                            : `Nenhuma requisição corresponde aos filtros ativos: ${activeFilterLabels({ query, typeFilter, targetFilter, protocol, failFilter, blockFilter }).join(", ") || "nenhum"}.`}
+                            ? "This session has no requests."
+                            : `No requests match the active filters: ${activeFilterLabels({ query, typeFilter, targetFilter, protocol, failFilter, blockFilter }).join(", ") || "none"}.`}
                           <button
                             className="link"
                             onClick={() => {
@@ -2870,7 +2870,7 @@ export default function App() {
                               setProtocol("all");
                             }}
                           >
-                            Limpar busca e filtros
+                            Clear search and filters
                           </button>
                         </div>
                       </td>
@@ -2882,20 +2882,20 @@ export default function App() {
 
             <div className="statusbar">
               <span>
-                {filteredLength} de {requestCount} requisições
+                {filteredLength} of {requestCount} requests
               </span>
               <span className="sep">·</span>
-              <span>{visibleRows.length} linhas renderizadas (virtualização)</span>
+              <span>{visibleRows.length} rows rendered (virtualized)</span>
               <span className="sep">·</span>
-              <span>{session.capture.mode ?? "fonte não informada"}</span>
+              <span>{session.capture.mode ?? "source not reported"}</span>
               <span className="sep">·</span>
               <span>
                 {session.completeness.state === "complete"
-                  ? "sessão completa"
-                  : `parcial: ${session.completeness.reasons[0] ?? "motivo não informado"}`}
+                  ? "complete session"
+                  : `partial: ${session.completeness.reasons[0] ?? "reason not reported"}`}
               </span>
               <span className="grow" />
-              <span className="mono dim">{`${shortcutLabel("⌘O")} abrir · ${shortcutLabel("⌘F")} buscar · ${shortcutLabel("⌘C")} copiar · ${shortcutLabel("⌘⇧C")} URL`}</span>
+              <span className="mono dim">{`${shortcutLabel("⌘O")} open · ${shortcutLabel("⌘F")} search · ${shortcutLabel("⌘C")} copy · ${shortcutLabel("⌘⇧C")} URL`}</span>
             </div>
           </>
         )}
@@ -2924,20 +2924,20 @@ export default function App() {
 
         {view === "detail" && detailPending && (
           <div className="empty big">
-            <strong>{remoteDetail?.error ? "Não foi possível carregar a requisição." : "Carregando a requisição…"}</strong>
+            <strong>{remoteDetail?.error ? "Could not load the request." : "Loading the request…"}</strong>
             {remoteDetail?.error ? <span>{remoteDetail.error}</span> : null}
             <button className="link" onClick={() => setView("session")}>
-              Voltar
+              Back
             </button>
           </div>
         )}
 
         {view === "detail" && !selected && !detailPending && (
           <div className="empty big">
-            <strong>Sessão sem requisições.</strong>
-            <span>O session.json foi lido, mas não há nenhuma LogicalRequest nele.</span>
+            <strong>Session has no requests.</strong>
+            <span>session.json was read, but it contains no LogicalRequest.</span>
             <button className="link" onClick={() => setView("session")}>
-              Voltar
+              Back
             </button>
           </div>
         )}
@@ -2994,10 +2994,10 @@ export default function App() {
 
         {view === "compare" && requests.length < 2 && (
           <div className="empty big">
-            <strong>Comparação precisa de duas requisições.</strong>
-            <span>Esta sessão tem {requestCount}.</span>
+            <strong>Comparison needs two requests.</strong>
+            <span>This session has {requestCount}.</span>
             <button className="link" onClick={() => setView("session")}>
-              Voltar
+              Back
             </button>
           </div>
         )}
@@ -3015,7 +3015,7 @@ export default function App() {
             session={{ ...session, id: "script-trace", sourcePath: sanitizeTraceDir }}
             onClose={() => setSanitizeTraceDir(null)}
             onOpened={(payload) => {
-              closeValidation(); // a sessão sanitizada passa a ser a aberta; a temporária do trace é apagada
+              closeValidation(); // the sanitized session becomes the open one; the trace's temporary session is deleted
               applyPayload(payload);
             }}
           />

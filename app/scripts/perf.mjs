@@ -1,5 +1,5 @@
-// Mede a lista virtualizada com a sessão sintética de estresse (12.000
-// requisições). Só relata números medidos; não é benchmark de captura.
+// Measures the virtualized list with the synthetic stress session (12,000
+// requests). Reports only measured numbers; it is not a capture benchmark.
 //
 //   node scripts/perf.mjs
 
@@ -31,7 +31,7 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 const started = Date.now();
 await page.goto("http://127.0.0.1:4174/index.html?demo=large&theme=light", { waitUntil: "load" });
-await page.waitForFunction(() => document.body.innerText.includes("12.000 requisições"), null, { timeout: 120000 });
+await page.waitForFunction(() => document.body.innerText.includes("12,000 requests"), null, { timeout: 120000 });
 const loadMs = Date.now() - started;
 await page.waitForTimeout(300);
 

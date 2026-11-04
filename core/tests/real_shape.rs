@@ -1,5 +1,5 @@
-//! Rodada 6 — fidelidade ao caso real (docs/10): respostas HTML com controles de
-//! formulário, HAR sem cookies, rodadas, campos de negócio. Mini-fixtures próprias.
+//! Round 6 — fidelity to the real case (docs/10): HTML responses with form controls,
+//! HAR without cookies, rounds, business fields. Own mini-fixtures.
 
 use scrapelens_core::compare::{compare_sessions, CompareOptions, RequestRange};
 use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
@@ -98,11 +98,11 @@ fn entry<'a>(o: &'a ValueOrigins, field: &str) -> &'a ValueOrigin {
     o.values
         .iter()
         .find(|v| v.field == field && v.parent.is_none())
-        .unwrap_or_else(|| panic!("{field} ausente"))
+        .unwrap_or_else(|| panic!("{field} missing"))
 }
 
-/// Resposta do Connector na forma real: HTML com script antes, controles com
-/// aspas duplas/simples/sem aspas, maiúsculas, entidades e textarea com `<` escapado.
+/// Connector response in the real shape: HTML with a script before, controls with
+/// double/single/no quotes, uppercase, entities and a textarea with an escaped `<`.
 fn connector_html(stamp: &str, delta: &str) -> String {
     format!(
         "<html><head><script>var f5 = \"<input name='STAMP' value='9999'>\"; function x(){{}}</script></head>\n<body><FORM method=post>\n\
@@ -138,21 +138,21 @@ fn l1_html_controls_feed_same_field_and_value_match() {
     });
     let b = s.build();
     let o = origins(&b, "1.2");
-    // STAMP: same-field forte, vindo de <input hidden> (e não do script do F5)
+    // STAMP: strong same-field, coming from <input hidden> (and not from the F5 script)
     let stamp = entry(&o, "STAMP");
     assert_eq!(stamp.status, OriginStatus::Origin);
     assert_eq!(stamp.confidence, Some(Confidence::Strong));
     assert_eq!(stamp.evidences[0].kind, EvidenceKind::SameField);
     assert!(stamp.evidences[0].html_control);
     assert_eq!(stamp.evidences[0].request_id, lid(&b, "1.1"));
-    // entidades decodificadas no valor
+    // entities decoded in the value
     assert_eq!(entry(&o, "ECHO").status, OriginStatus::Origin);
-    // delta: trecho do XML vindo da textarea anterior (value-match, offset no original)
+    // delta: XML fragment coming from the previous textarea (value-match, offset in the original)
     let delta = o
         .values
         .iter()
         .find(|v| v.parent.as_deref() == Some("XML") && v.value.contains("DLTA0005"))
-        .expect("trecho do delta");
+        .expect("delta fragment");
     assert!(!delta.evidences.is_empty());
     let e = &delta.evidences[0];
     assert!(e.html_control);
@@ -186,7 +186,7 @@ fn l1_search_sees_html_controls_by_name() {
         .matches
         .iter()
         .find(|m| m.field.as_deref() == Some("XML"))
-        .expect("achado na textarea");
+        .expect("finding in the textarea");
     assert!(m.decoded && m.html_control);
     let r = search(&b, &SearchQuery::new("a&b!"));
     assert!(
@@ -256,7 +256,7 @@ fn l2_har_without_cookies_warns_and_origins_repeat_it() {
         .warnings
         .iter()
         .any(|w| w.contains("não contém cookies")));
-    // com cookie em alguma entrada: sem aviso
+    // with a cookie in some entry: no warning
     let with = scrapelens_core::import_har(&har(true)).unwrap();
     assert!(with
         .bundle
@@ -277,7 +277,7 @@ fn l7_har_get_head_options_without_postdata_are_empty_not_applicable() {
             Some("não aplicável: método sem corpo")
         );
     }
-    // POST sem postData: corpo esperado que não veio
+    // POST without postData: expected body that did not arrive
     assert_eq!(rs[3].request_body.state, BodyState::Unavailable);
     assert_eq!(rs[4].request_body.state, BodyState::Captured);
 }
@@ -323,7 +323,7 @@ fn l4_context_pages_by_referer_are_not_producers_or_steps() {
     );
     let b = s.build();
     let chain = priming_chain(&b.session, &b, &lid(&b, "1.3"), &FlowOptions::default()).unwrap();
-    assert_eq!(chain.steps.len(), 1, "o POST do Connector entra por STAMP");
+    assert_eq!(chain.steps.len(), 1, "the Connector POST enters via STAMP");
     assert_eq!(chain.steps[0].request_id, lid(&b, "1.2"));
     assert_eq!(chain.steps[0].confidence, Confidence::Strong);
     assert_eq!(chain.pages.len(), 1);
@@ -370,10 +370,10 @@ fn l5_business_fields_are_redacted_in_opaque_values_and_propagated() {
     assert!(before.contains("TST0T00") && before.contains("12345678901"));
     let export = sanitize_bundle(&b, &SanitizeOptions::default());
     let after = all_text(&export.bundle);
-    assert!(!after.contains("TST0T00"), "placa vazou");
-    assert!(!after.contains("12345678901"), "CPF vazou");
+    assert!(!after.contains("TST0T00"), "plate leaked");
+    assert!(!after.contains("12345678901"), "CPF leaked");
     assert!(!after.contains("123456789&") && !after.contains("renavam=123456789"));
-    // relatório por tipo, sem valores
+    // report by type, without values
     assert!(
         export
             .redactions
@@ -390,7 +390,7 @@ fn l5_business_fields_are_redacted_in_opaque_values_and_propagated() {
         "{:?}",
         export.redactions
     );
-    // valor fora do formato: aviso, sem redação silenciosa
+    // value outside the format: warning, no silent redaction
     let warn = export
         .warnings
         .iter()
@@ -401,7 +401,7 @@ fn l5_business_fields_are_redacted_in_opaque_values_and_propagated() {
         after.contains("v_placaXY"),
         "valor fora do formato permanece (com aviso)"
     );
-    // lista configurável
+    // configurable list
     let options = SanitizeOptions {
         business_fields: vec!["matricula".to_string()],
         ..Default::default()
@@ -421,7 +421,7 @@ fn l5_business_fields_are_redacted_in_opaque_values_and_propagated() {
     let b = s.build();
     let after = all_text(&sanitize_bundle(&b, &options).bundle);
     assert!(!after.contains("MAT99887766"));
-    assert!(after.contains("TST0T00"), "fora da lista configurada");
+    assert!(after.contains("TST0T00"), "outside the configured list");
 }
 
 // ---- L6 ---------------------------------------------------------------------------------
@@ -513,7 +513,7 @@ fn l6_compare_by_rounds_application_only_with_unpaired_rounds_and_ranges() {
         },
     );
     assert!(all.groups.is_empty() && all.pairs.len() > r.pairs.len());
-    // faixa explícita: só a 2ª rodada de B (requisições 5..8)
+    // faixa explícita: only B's 2nd round (requests 5..8)
     let ranged = compare_sessions(
         &a.session,
         &a,
@@ -588,7 +588,7 @@ fn l8_unobservable_points_to_the_equivalent_occurrence_in_the_next_round() {
         },
     );
     let mut b = s.build();
-    // a resposta do cmd_filtro da 1ª rodada não está no HAR
+    // the cmd_filtro response of the 1st round is not in the HAR
     let first = lid(&b, "1.1");
     for r in &mut b.session.requests {
         if r.id == first {
@@ -613,7 +613,7 @@ fn l8_unobservable_points_to_the_equivalent_occurrence_in_the_next_round() {
 
 #[test]
 fn composite_rule_needs_full_cover_by_two_producers_and_partial_prefix_is_not_an_origin() {
-    // a 2ª peça vem de uma folha JSON de outra resposta
+    // the 2nd piece comes from a JSON leaf of another response
     let mut s2 = S::default();
     s2.req(
         "1.1",
@@ -666,7 +666,7 @@ fn composite_rule_needs_full_cover_by_two_producers_and_partial_prefix_is_not_an
     producers.sort();
     producers.dedup();
     assert_eq!(producers, vec![lid(&b, "1.1"), lid(&b, "1.2")]);
-    // só o prefixo tem produtor: cobertura parcial não vale
+    // only the prefix has a producer: partial coverage does not count
     let partial = entry(&o, "token2");
     assert_eq!(partial.status, OriginStatus::None);
     assert!(partial.evidences.is_empty());
@@ -692,7 +692,7 @@ fn natural_variable_names_prefixed_with_v_are_business_fields() {
     let b = s.build();
     let export = sanitize_bundle(&b, &SanitizeOptions::default());
     let after = all_text(&export.bundle);
-    assert!(!after.contains("00000000191"), "CPF vazou");
+    assert!(!after.contains("00000000191"), "CPF leaked");
     assert!(
         after.contains("v_renavam12"),
         "valor fora do formato permanece, com aviso"
@@ -706,7 +706,7 @@ fn natural_variable_names_prefixed_with_v_are_business_fields() {
 
 #[test]
 fn partial_composition_hint_for_known_part_plus_unsourced_part() {
-    // SESSIONID real: literal de 9 chars + "_" + 12 dígitos sem fonte observada
+    // Real SESSIONID: 9-char literal + "_" + 12 digits without an observed source
     let mut s = S::default();
     s.req(
         "1.1",
@@ -732,7 +732,7 @@ fn partial_composition_hint_for_known_part_plus_unsourced_part() {
     let b = s.build();
     let o = origins(&b, "1.2");
     let v = entry(&o, "SESSIONID");
-    assert_eq!(v.status, OriginStatus::None, "não é origem");
+    assert_eq!(v.status, OriginStatus::None, "not an origin");
     assert!(v.evidences.is_empty());
     assert_eq!(v.partial_composition.len(), 1);
     let h = &v.partial_composition[0];
@@ -744,10 +744,10 @@ fn partial_composition_hint_for_known_part_plus_unsourced_part() {
         .starts_with("sem origem observada; contém o valor de m_currentSessionId de "));
     assert!(v.label.contains("provável composição no cliente"));
     assert!(entry(&o, "other").partial_composition.is_empty());
-    // sem passo na cadeia
+    // no step in the chain
     let chain = priming_chain(&b.session, &b, &lid(&b, "1.2"), &FlowOptions::default()).unwrap();
     assert!(chain.steps.is_empty(), "{:?}", chain.steps);
-    // caso TIEVALUE da R5, sem separador: nenhuma dica
+    // R5's TIEVALUE case, no separator: no hint
     let mut s = S::default();
     s.req(
         "1.1",
@@ -777,8 +777,8 @@ fn partial_composition_hint_for_known_part_plus_unsourced_part() {
 
 #[test]
 fn delta_at_the_end_survives_a_one_byte_overlap_with_a_longer_constant() {
-    // A constante comum (13 bytes) engole 1 byte do "x06TOKEN" final: o delta
-    // continua resolvido pelo trecho aparado.
+    // The common constant (13 bytes) swallows 1 byte of the final "x06TOKEN": the delta
+    // is still resolved by the trimmed fragment.
     let mut s = S::default();
     let tail = "cISAddons.focusItemNamex06DLTC07";
     let prev = format!(
@@ -872,7 +872,7 @@ fn l4b_pages_come_only_from_application_steps_and_aux_frames_are_collapsed() {
             ..Default::default()
         },
     );
-    // proteção cujo Referer é um frame auxiliar que só serve a ela
+    // protection whose Referer is an auxiliary frame that only serves it
     s.req(
         "1.5",
         1.4,
@@ -1003,8 +1003,8 @@ fn init_stamp_is_defined_by_a_page_and_compares_as_static() {
 
 #[test]
 fn partial_composition_hint_also_on_repeated_values_and_in_unresolved() {
-    // o valor já circulou em requisições anteriores (repeated); a dica usa só
-    // produtores anteriores à 1ª ocorrência
+    // the value already circulated in earlier requests (repeated); the hint uses only
+    // producers prior to the 1st occurrence
     let mut s = S::default();
     s.req(
         "1.1",
@@ -1094,7 +1094,7 @@ fn r6_single_producer_is_not_ambiguous_and_buttons_are_not_producers() {
     let b = s.build();
     let o = origins(&b, "1.2");
     let x = entry(&o, "x");
-    // `h` e `x` com o mesmo valor: o same-field `x` basta; nunca ambíguo por duplicata
+    // `h` and `x` with the same value: the same-field `x` is enough; never ambiguous by duplication
     assert_eq!(x.status, OriginStatus::Origin, "{x:?}");
     assert_eq!(
         x.evidences
@@ -1103,11 +1103,11 @@ fn r6_single_producer_is_not_ambiguous_and_buttons_are_not_producers() {
             .count(),
         1
     );
-    // botão não é produtor
+    // button is not a producer
     let acao = entry(&o, "acao");
     assert!(acao.evidences.is_empty(), "{acao:?}");
     assert_eq!(entry(&o, "img").evidences.len(), 0);
-    // text pré-preenchido: no máximo média
+    // pre-filled text: at most medium
     let nome = entry(&o, "nome");
     assert!(nome
         .evidences
@@ -1141,11 +1141,11 @@ fn r6_business_names_are_exact_or_separated_and_formats_and_entities_are_covered
     ] {
         assert!(!after.contains(leaked), "vazou {leaked}");
     }
-    assert!(!after.contains("TST0T00"), "vazou via entidade no nome");
+    assert!(!after.contains("TST0T00"), "leaked via entity in the name");
     assert!(!after.contains("TST1T11"));
-    // `template`/`kevin` não são campos de negócio (sufixo sem separador)
+    // `template`/`kevin` are not business fields (suffix without separator)
     assert!(after.contains("ZZZPLATE99") && after.contains("KEVINVALUE1"));
-    // sufixo depois de separador continua valendo
+    // suffix after a separator still counts
     assert!(!after.contains("39053344705"));
 }
 
@@ -1175,7 +1175,7 @@ fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() 
             r.warnings
         );
     }
-    // reload da entrada sem passo de aplicação entre as ocorrências: 1 rodada só
+    // entry reload without an application step between the occurrences: only 1 round
     let mut sr = S::default();
     sr.req(
         "1.1",
@@ -1231,8 +1231,8 @@ fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() 
     );
     let c = sr.build();
     let r = compare_sessions(&c.session, &c, &c.session, &c, &CompareOptions::default());
-    assert_eq!(r.rounds.len(), 2, "reload não abre rodada: {:?}", r.rounds);
-    // pages por initiator.url (sem Referer) e sem aviso de initiator ausente
+    assert_eq!(r.rounds.len(), 2, "reload does not open a round: {:?}", r.rounds);
+    // pages by initiator.url (no Referer) and no warning for a missing initiator
     let mut sp = S::default();
     sp.req(
         "1.1",
@@ -1269,11 +1269,11 @@ fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() 
     );
 }
 
-// ---- Rodada 7: cadeia na rodada do consumidor e scripts fora dos passos -----------------------
+// ---- Round 7: chain in the consumer's round and scripts outside the steps -----------------------
 
-/// Um valor constante do protocolo (STAMP=INIT) tem produtores em todas as rodadas.
-/// A cadeia usa o produtor da própria rodada do consumidor (produced ou reissued);
-/// a rodada anterior não entra por causa dele.
+/// A protocol constant value (STAMP=INIT) has producers in all rounds.
+/// The chain uses the producer of the consumer's own round (produced or reissued);
+/// the previous round does not enter because of it.
 #[test]
 fn r7_chain_uses_the_producer_of_the_targets_round() {
     let mut s = S::default();
@@ -1331,7 +1331,7 @@ fn r7_chain_uses_the_producer_of_the_targets_round() {
         vec![lid(&b, "2.1"), lid(&b, "2.2")],
         "pages só da rodada do consumidor"
     );
-    // As origens continuam listando todos os produtores, com o status de hoje.
+    // The origins keep listing all producers, with today's status.
     let o = origins(&b, "2.3");
     let st = entry(&o, "STAMP");
     assert_eq!(st.status, OriginStatus::Origin);
@@ -1358,7 +1358,7 @@ fn r7_chain_uses_the_producer_of_the_targets_round() {
     );
 }
 
-/// Recurso estático nunca é passo: na forma real, nenhum `.js` entra em `steps`.
+/// A static resource is never a step: in the real shape, no `.js` enters `steps`.
 #[test]
 fn r7_real_shape_steps_have_no_static_script() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1374,7 +1374,7 @@ fn r7_real_shape_steps_have_no_static_script() {
         .map(|s| s.url.split('?').next().unwrap_or(""))
         .filter(|p| p.ends_with(".js") || p.ends_with(".mjs"))
         .collect();
-    assert!(scripts.is_empty(), "scripts em steps: {scripts:?}");
+    assert!(scripts.is_empty(), "scripts in steps: {scripts:?}");
     let pages: std::collections::BTreeSet<&str> =
         chain.pages.iter().map(|p| p.request_id.as_str()).collect();
     assert_eq!(
@@ -1385,8 +1385,8 @@ fn r7_real_shape_steps_have_no_static_script() {
     );
 }
 
-/// Rodadas: frame iniciado pelo parser (cscform/JLIBS) não é entrada de rodada,
-/// nem serve de fronteira. Duas rodadas de verdade continuam duas.
+/// Rounds: a frame started by the parser (cscform/JLIBS) is not a round entry,
+/// nor serves as a boundary. Two real rounds remain two.
 #[test]
 fn r7_compare_rounds_ignore_parser_frames_when_detecting_the_entry() {
     let build = || {
@@ -1450,9 +1450,9 @@ fn r7_compare_rounds_ignore_parser_frames_when_detecting_the_entry() {
     );
 }
 
-/// F3: a cadeia de um alvo da 2ª rodada não repete a 1ª. A fronteira é a
-/// ocorrência mais recente do documento de entrada (o POST do Connector tem
-/// Referer do próprio Connector, então a raiz de Referer não basta).
+/// F3: the chain of a 2nd-round target does not repeat the 1st. The boundary is the
+/// most recent occurrence of the entry document (the Connector POST has
+/// the Connector's own Referer, so the Referer root is not enough).
 #[test]
 fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1461,7 +1461,7 @@ fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
     let b = scrapelens_core::import_har(&bytes)
         .expect("importa HAR")
         .bundle;
-    // har-0031 é o easynat-app que abre a 2ª rodada; har-0056 é o alvo.
+    // har-0031 is the easynat-app that opens the 2nd round; har-0056 is the target.
     let chain = priming_chain(&b.session, &b, "har-0056", &FlowOptions::default()).unwrap();
     let round_one: Vec<&str> = chain
         .steps
@@ -1469,7 +1469,7 @@ fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
         .map(|s| s.request_id.as_str())
         .filter(|id| *id < "har-0031")
         .collect();
-    assert!(round_one.is_empty(), "passos da rodada 1: {round_one:?}");
+    assert!(round_one.is_empty(), "steps of round 1: {round_one:?}");
     assert!(
         chain.steps.iter().any(|s| s.request_id == "har-0031"),
         "a entrada da rodada 2 é passo: {:?}",
@@ -1490,9 +1490,9 @@ fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
     );
 }
 
-/// F3: dentro da rodada, uma constante reemitida por várias páginas (STAMP=INIT)
-/// não repete cada reemissão. O passo é o primeiro produtor da rodada; a página
-/// que só reemite o mesmo valor fica em `pages` (contexto), não em `steps`.
+/// F3: within the round, a constant reissued by several pages (STAMP=INIT)
+/// does not repeat each reissue. The step is the first producer of the round; the page
+/// that only reissues the same value stays in `pages` (context), not in `steps`.
 #[test]
 fn r7_chain_does_not_repeat_reissued_constants() {
     let mut s = S::default();
@@ -1506,7 +1506,7 @@ fn r7_chain_does_not_repeat_reissued_constants() {
             ..Default::default()
         },
     );
-    // Primeiro produtor de STAMP=INIT na rodada.
+    // First producer of STAMP=INIT in the round.
     s.req(
         "1.2",
         1.1,
@@ -1518,7 +1518,7 @@ fn r7_chain_does_not_repeat_reissued_constants() {
             ..Default::default()
         },
     );
-    // POST que também devolve um valor de negócio consumido pelo alvo.
+    // POST that also returns a business value consumed by the target.
     s.req(
         "1.3",
         1.2,
@@ -1531,7 +1531,7 @@ fn r7_chain_does_not_repeat_reissued_constants() {
             ..Default::default()
         },
     );
-    // Segunda página só reemite a mesma constante.
+    // Second page only reissues the same constant.
     s.req(
         "1.4",
         1.3,
@@ -1568,7 +1568,7 @@ fn r7_chain_does_not_repeat_reissued_constants() {
         pages.contains(&lid(&b, "1.4")),
         "a página que só reemite fica como contexto: {pages:?}"
     );
-    // As origens continuam listando todos os produtores da constante.
+    // The origins keep listing all producers of the constant.
     let o = origins(&b, "1.5");
     let st = entry(&o, "STAMP");
     let reissued: Vec<&str> = st
@@ -1580,9 +1580,9 @@ fn r7_chain_does_not_repeat_reissued_constants() {
     assert_eq!(reissued, vec![lid(&b, "1.4")], "{:?}", st.evidences);
 }
 
-/// Exceção da rodada: um valor FORTE cujo único produtor ficou na rodada anterior
-/// (cookie definido uma única vez) entra na cadeia. Fragmentos médios de XML não
-/// justificam subir (ver o teste da constante reemitida).
+/// Round exception: a STRONG value whose only producer was in the previous round
+/// (cookie set only once) enters the chain. Medium XML fragments do not
+/// justify going up (see the reissued-constant test).
 #[test]
 fn r7_chain_climbs_to_a_one_time_cookie_from_the_previous_round() {
     let mk = |started: &str,
@@ -1614,7 +1614,7 @@ fn r7_chain_climbs_to_a_one_time_cookie_from_the_previous_round() {
     "entries": [
         mk("2026-10-26T20:00:00.000Z", "GET", "https://x.test/app/entry",
             json!([]), json!([]), with_cookie, "<html>entrada</html>"),
-        // 2ª rodada: mesmo documento de entrada, sem reemitir o cookie.
+        // 2nd round: same entry document, without reissuing the cookie.
         mk("2026-10-26T20:00:05.000Z", "GET", "https://x.test/app/entry",
             json!([]), json!([]), html.clone(), "<html>entrada 2</html>"),
         mk("2026-10-26T20:00:06.000Z", "POST", "https://x.test/app/Connector",
@@ -1640,9 +1640,9 @@ fn r7_chain_climbs_to_a_one_time_cookie_from_the_previous_round() {
     assert_eq!(once.evidences[0].kind, EvidenceKind::CookieJar);
 }
 
-/// Item 2 da revisão 8 (cr3): o SESSIONID só é produzido no easynat-app da rodada 1
-/// como value-match do valor INTEIRO de um campo. Sem produtor na rodada do alvo,
-/// a cadeia sobe para esse produtor em vez de sair sem ele.
+/// Item 2 of review 8 (cr3): SESSIONID is only produced in the round 1 easynat-app
+/// as a value-match of a field's WHOLE value. Without a producer in the target's round,
+/// the chain goes up to that producer instead of leaving without it.
 #[test]
 fn r8_chain_climbs_to_a_whole_value_session_id_from_the_previous_round() {
     let mut s = S::default();
@@ -1704,8 +1704,8 @@ fn r8_chain_climbs_to_a_whole_value_session_id_from_the_previous_round() {
     assert_eq!(entry(&o, "SESSIONID").status, OriginStatus::Origin);
 }
 
-/// Item 2 da revisão 8: fragmento de campo opaco não sobe de rodada, mas não
-/// desaparece em silêncio: fica em `unresolved` com o motivo e o produtor antigo.
+/// Item 2 of review 8: an opaque field fragment does not go up a round, but does not
+/// disappear silently: it stays in `unresolved` with the reason and the old producer.
 #[test]
 fn r8_chain_withholds_opaque_fragment_and_reports_it() {
     let mut s = S::default();
@@ -1774,9 +1774,9 @@ fn r8_chain_withholds_opaque_fragment_and_reports_it() {
     );
 }
 
-/// Item 3 da revisão 8: corpo JS com atribuição a membro (`window.cfg={"tok":"V"}`)
-/// não é formulário. Sem a guarda de mídia, `=` + nome com ponto fazia o objeto
-/// virar um único campo e o literal interno deixava de ser candidato.
+/// Item 3 of review 8: JS body with member assignment (`window.cfg={"tok":"V"}`)
+/// is not a form. Without the media guard, `=` + a dotted name made the object
+/// become a single field and the inner literal stopped being a candidate.
 #[test]
 fn r8_js_member_assignment_literal_is_a_candidate() {
     let mut s = S::default();
@@ -1810,9 +1810,9 @@ fn r8_js_member_assignment_literal_is_a_candidate() {
     assert_eq!(x.evidences[0].request_id, lid(&b, "1.1"));
 }
 
-/// Item 4 da revisão 8: nome de negócio colado a uma letra, no meio de um token
-/// de campo opaco e seguido de valor no formato (`…aplacaQWE1234`), vazava sem
-/// redação nem aviso. Agora redige e conta, como no `v_placa`.
+/// Item 4 of review 8: business name glued to a letter, in the middle of a token
+/// of an opaque field and followed by a value in the format (`…aplacaQWE1234`), leaked without
+/// redaction or warning. Now it redacts and counts, as in `v_placa`.
 #[test]
 fn r8_business_name_glued_to_letters_is_redacted() {
     let mut s = S::default();
@@ -1831,7 +1831,7 @@ fn r8_business_name_glued_to_letters_is_redacted() {
     assert!(all_text(&b).contains("QWE1234"));
     let export = sanitize_bundle(&b, &SanitizeOptions::default());
     let after = all_text(&export.bundle);
-    assert!(!after.contains("QWE1234"), "placa colada vazou: {after}");
+    assert!(!after.contains("QWE1234"), "glued plate leaked: {after}");
     assert!(
         export
             .redactions
@@ -1844,8 +1844,8 @@ fn r8_business_name_glued_to_letters_is_redacted() {
     );
 }
 
-/// Item 5 da revisão 8: reload da entrada no meio da aplicação abre rodada nova
-/// (heurística mantida), mas uma rodada bem menor que a mediana gera aviso.
+/// Item 5 of review 8: entry reload in the middle of the application opens a new round
+/// (heuristic kept), but a round much smaller than the median raises a warning.
 #[test]
 fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
     let mut s = S::default();
@@ -1872,8 +1872,8 @@ fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
             ..Default::default()
         },
     );
-    // Reload da entrada depois dos passos de aplicação: abre a 2ª rodada, que
-    // fica com 2 passos contra 5 da primeira.
+    // Entry reload after the application steps: opens the 2nd round, which
+    // has 2 steps against 5 in the first.
     s.req(
         "2.1",
         5.0,
@@ -1897,7 +1897,7 @@ fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
     );
     let b = s.build();
     let r = compare_sessions(&b.session, &b, &b.session, &b, &CompareOptions::default());
-    assert_eq!(r.rounds.len(), 2, "reload abre rodada: {:?}", r.rounds);
+    assert_eq!(r.rounds.len(), 2, "reload opens a round: {:?}", r.rounds);
     assert!(
         r.warnings
             .iter()
@@ -1907,8 +1907,8 @@ fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
     );
 }
 
-/// Item 6 da revisão 8: a mesma pendência consumida pelo alvo e por um passo da
-/// cadeia (ex.: `n` em cr3) aparece uma vez, com a lista de consumidores.
+/// Item 6 of review 8: the same pending item consumed by the target and by a step of the
+/// chain (e.g. `n` in cr3) appears once, with the list of consumers.
 #[test]
 fn r8_unresolved_groups_the_same_field_with_all_consumers() {
     let mut s = S::default();
@@ -1979,7 +1979,7 @@ fn r8_unresolved_groups_the_same_field_with_all_consumers() {
             .collect::<Vec<_>>()
     );
     let pending: Vec<_> = chain.unresolved.iter().filter(|u| u.field == "n").collect();
-    assert_eq!(pending.len(), 1, "campo agrupado: {:?}", chain.unresolved);
+    assert_eq!(pending.len(), 1, "grouped field: {:?}", chain.unresolved);
     assert!(
         pending[0].request_ids.contains(&target) && pending[0].request_ids.contains(&step),
         "consumidores: {:?}",
@@ -1987,8 +1987,8 @@ fn r8_unresolved_groups_the_same_field_with_all_consumers() {
     );
 }
 
-/// Item 5 (revisão 9): rodada de 3 passos contra mediana 5 também avisa; o
-/// critério antigo (`n*2 < mediana`) só pegava menos da metade.
+/// Item 5 (review 9): a round of 3 steps against median 5 also warns; the
+/// old criterion (`n*2 < median`) only caught less than half.
 #[test]
 fn r9_compare_warns_for_a_three_step_reload_against_five() {
     let mut s = S::default();
@@ -2040,7 +2040,7 @@ fn r9_compare_warns_for_a_three_step_reload_against_five() {
     }
     let b = s.build();
     let r = compare_sessions(&b.session, &b, &b.session, &b, &CompareOptions::default());
-    assert_eq!(r.rounds.len(), 2, "reload abre rodada: {:?}", r.rounds);
+    assert_eq!(r.rounds.len(), 2, "reload opens a round: {:?}", r.rounds);
     assert!(
         r.warnings
             .iter()

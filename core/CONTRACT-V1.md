@@ -1,24 +1,24 @@
-# ScrapeLens — formato de sessão v1 (implementação do core)
+# ScrapeLens — session format v1 (core implementation)
 
-Este documento descreve o JSON produzido/consumido por `core/`. Ele segue
-`docs/03-contratos.md` e a matriz `docs/02-matriz-fidelidade.md`; em caso de
-divergência, os docs oficiais vencem.
+This document describes the JSON produced/consumed by `core/`. It follows
+`docs/03-contratos.md` and the matrix `docs/02-matriz-fidelidade.md`; in case of
+divergence, the official docs prevail.
 
-## Diretório
+## Directory
 
 ```
-<sessao>/
-  session.json        # documento completo (metadados + requests + entidades + warnings)
-  cdp-events.jsonl    # eventos CDP brutos, um JSON por linha (opcional)
-  netlog.json         # NetLog original do Chrome (opcional)
-  attachments/        # corpos, nomes relativos citados em body.attachment
+<session>/
+  session.json        # full document (metadata + requests + entities + warnings)
+  cdp-events.jsonl    # raw CDP events, one JSON per line (optional)
+  netlog.json         # original Chrome NetLog (optional)
+  attachments/        # bodies, relative names cited in body.attachment
 ```
 
-`session.json` é autossuficiente para a UI. Os artefatos brutos são preservados
-ao lado para auditoria e nunca reescritos pelo importador. Escrita do core:
-diretório `0700`, arquivos `0600`, rename atômico.
+`session.json` is self-sufficient for the UI. The raw artifacts are kept
+alongside for auditing and are never rewritten by the importer. Core writes:
+directory `0700`, files `0600`, atomic rename.
 
-## Documento
+## Document
 
 ```json
 {
@@ -49,21 +49,21 @@ diretório `0700`, arquivos `0600`, rename atômico.
 }
 ```
 
-- `completeness.state`: `complete | partial`. `partial` significa captura
-  interrompida, artefato ausente/inválido ou erro de parse. Ambiguidade de
-  correlação é um estado de `match`, não rebaixa `completeness`.
-  `reasons` explica cada caso; inferência de completude nunca é silenciosa.
-- `labels`: `synthetic-fixture` em fixtures; `sanitized` em exportação
-  sanitizada; `har-import`/`netlog-import` nos importadores correspondentes.
-- `completeness.counts.sourceEvents*` é persistido por HAR/NetLog/CDP e
-  sobrevive ao fechar e reabrir a sessão; não é apenas um aviso de importação.
-- `warnings`: lista persistida de tudo que foi desconhecido, omitido ou
-  truncado. `severity` é `info | warning | error`.
+- `completeness.state`: `complete | partial`. `partial` means an interrupted
+  capture, a missing/invalid artifact, or a parse error. Correlation ambiguity
+  is a `match` state, it does not downgrade `completeness`.
+  `reasons` explains each case; completeness inference is never silent.
+- `labels`: `synthetic-fixture` in fixtures; `sanitized` in sanitized export;
+  `har-import`/`netlog-import` in the corresponding importers.
+- `completeness.counts.sourceEvents*` is persisted by HAR/NetLog/CDP and
+  survives closing and reopening the session; it is not just an import warning.
+- `warnings`: persisted list of everything that was unknown, omitted or
+  truncated. `severity` is `info | warning | error`.
 
 ## HeaderView
 
-Headers são **arrays ordenados de pares**, nunca dicionário. Duplicatas e caixa
-original são preservadas. Pseudoheaders ficam em lista separada.
+Headers are **ordered arrays of pairs**, never a dictionary. Duplicates and the
+original casing are preserved. Pseudoheaders are kept in a separate list.
 
 ```json
 {
@@ -82,18 +82,18 @@ original são preservadas. Pseudoheaders ficam em lista separada.
 ```
 
 - `orderState`: `sourceOrder | reconstructed | normalized | unknown`.
-- `rawBlock` é o texto original quando a fonte o fornece (h1 `headersText` do
-  CDP ou linha de request h1 do NetLog); nos demais eventos os pares ordenados
-  já são o original e não são duplicados. Visões normalizadas **não**
-  substituem este bloco.
-- Cada header carrega `provenance` (campos achatados no próprio objeto):
-  `source`, `event?`, `sourceId?`, `timestamp?` (segundos), `wallTime?`,
+- `rawBlock` is the original text when the source provides it (h1 `headersText` of
+  CDP or the h1 request line of NetLog); in the other events the ordered pairs
+  already are the original and are not duplicated. Normalized views **do not**
+  replace this block.
+- Each header carries `provenance` (fields flattened into the object itself):
+  `source`, `event?`, `sourceId?`, `timestamp?` (seconds), `wallTime?`,
   `browserVersion?`, `method`, `verification`, `notes?`.
-- `verification` é **por informação**: `verified | partial | unverified`.
-  Nunca existe selo de sessão. A política está em
-  `core/src/model/provenance.rs::policy` e reproduz D2.
+- `verification` is **per piece of information**: `verified | partial | unverified`.
+  There is never a session-wide seal. The policy lives in
+  `core/src/model/provenance.rs::policy` and reproduces D2.
 
-## Cookie e Set-Cookie
+## Cookie and Set-Cookie
 
 ```json
 "cookie": {
@@ -108,17 +108,17 @@ original são preservadas. Pseudoheaders ficam em lista separada.
 }
 ```
 
-- `raw` preserva o campo da fonte (0..N campos).
-- `pairs` são os pares internos parseados, com o texto original de cada par.
-- `wireLines` são as linhas `Cookie` observadas na fonte. O NetLog pode mostrar
-  1 campo enquanto o fio h3 recebe N (cookie crumble); o core **não inventa**
-  os campos que a fonte não mostra — registra a limitação em `notes`.
+- `raw` preserves the source field (0..N fields).
+- `pairs` are the internally parsed pairs, with the original text of each pair.
+- `wireLines` are the `Cookie` lines observed in the source. NetLog may show
+  1 field while the h3 wire carries N (cookie crumble); the core **does not invent**
+  the fields the source does not show — it records the limitation in `notes`.
 - `Set-Cookie`: `{ "raw": "...", "parsed": { name, value, domain?, path?,
   expires?, maxAge?, secure, httpOnly, sameSite?, partitioned, extensions?,
-  notes? }, "parseError?", ...provenance }`. Linhas brutas repetidas são
-  registros separados, na ordem.
+  notes? }, "parseError?", ...provenance }`. Repeated raw lines are
+  separate records, in order.
 
-## Entidades
+## Entities
 
 ### LogicalRequest
 
@@ -134,7 +134,7 @@ original são preservadas. Pseudoheaders ficam em lista separada.
   "netlog": { "sourceIds": [77], "streamIds": [1], "dependencyIds": [84] },
   "attempts": [ /* Attempt */ ],
   "redirects": [ /* Redirect */ ],
-  "requestHeaders": { /* HeaderView da tentativa final */ },
+  "requestHeaders": { /* HeaderView of the final attempt */ },
   "responseHeaders": { /* HeaderView */ },
   "cookie": { /* CookieField */ },
   "setCookies": [ /* SetCookieRecord */ ],
@@ -147,17 +147,16 @@ original são preservadas. Pseudoheaders ficam em lista separada.
 }
 ```
 
-`match`: `matched | ambiguous | unmatched`. `ambiguous` sempre traz
-`matchCandidates` com `entityId`, `score` e `reasons`; nenhum candidato é
-escolhido silenciosamente. `requestHeaders`/`responseHeaders` no nível lógico
-são a **visão primária selecionada**; todo original fica em
-`attempts[].headerEvidence`.
+`match`: `matched | ambiguous | unmatched`. `ambiguous` always carries
+`matchCandidates` with `entityId`, `score` and `reasons`; no candidate is
+chosen silently. `requestHeaders`/`responseHeaders` at the logical level are the
+**selected primary view**; every original stays in `attempts[].headerEvidence`.
 
 ### Attempt
 
-Campos de `LogicalRequest` que variam por tentativa (`url`, `method`,
+Fields of `LogicalRequest` that vary per attempt (`url`, `method`,
 `protocol`, `status`, `requestHeaders`, `responseHeaders`, `cookie`,
-`setCookies`, `requestBody`, `responseBody`, corpos, `timings`,
+`setCookies`, `requestBody`, `responseBody`, bodies, `timings`,
 `headerEvidence`, `connectionId`, `streamSessionId`, `failure`, `outcome`,
 `match`). `outcome`: `completed | failed | aborted | pending | unknown`.
 
@@ -171,9 +170,9 @@ Campos de `LogicalRequest` que variam por tentativa (`url`, `method`,
   netlogSessionId?, provenance }`.
 
 `headerEvidence[]`: `{ id, role: "request"|"response", protocol, event,
-sourceId?, streamId?, view }`. Guarda o bloco de cada fonte (CDP Blink,
-CDP ExtraInfo, NetLog transacional, NetLog de sessão) mesmo depois de a visão
-primária passar de uma fonte para outra.
+sourceId?, streamId?, view }`. It keeps the block from each source (CDP Blink,
+CDP ExtraInfo, NetLog transactional, NetLog session) even after the primary
+view moves from one source to another.
 
 ## Body
 
@@ -183,28 +182,28 @@ primária passar de uma fonte para outra.
   "contentEncoding": null, "note": null, "provenance": { ... } }
 ```
 
-`state`: `captured | empty | truncated | unavailable | discarded`. Ausência de
-corpo **não** significa vazio: use `empty` só quando a fonte afirma 0 bytes;
-`unavailable` e `discarded` têm `note`. `attachment` é relativo a
-`attachments/` e validado contra path traversal na leitura.
+`state`: `captured | empty | truncated | unavailable | discarded`. Absence of a
+body **does not** mean empty: use `empty` only when the source states 0 bytes;
+`unavailable` and `discarded` have a `note`. `attachment` is relative to
+`attachments/` and is validated against path traversal on read.
 
-## Regras de verificação (D2 resumido)
+## Verification rules (D2 summary)
 
-| Informação | Fonte | Estado |
+| Information | Source | State |
 |---|---|---|
-| request h1 ordem+duplicatas | NetLog `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` | verified |
-| response h1/h2/h3 ordem+duplicatas | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | verified |
-| request h2/h3 ordem | NetLog sessão/transação | partial (Cookie pode estar fundido no log) |
-| response h2/h3 repetições | NetLog sessão, NUL expandido | partial |
+| request h1 order+duplicates | NetLog `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` | verified |
+| response h1/h2/h3 order+duplicates | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | verified |
+| request h2/h3 order | NetLog session/transaction | partial (Cookie may be merged in the log) |
+| response h2/h3 repetitions | NetLog session, NUL expanded | partial |
 | response h1 `headersText` | CDP ExtraInfo | verified |
-| objetos CDP `headers` | CDP | unverified (ASCII, duplicatas colapsadas) |
-| HAR | HAR 1.2 | unverified (ordem não comprovada) |
+| CDP `headers` objects | CDP | unverified (ASCII, duplicates collapsed) |
+| HAR | HAR 1.2 | unverified (order not proven) |
 
-O core expande repetições `\x00` dos eventos de sessão h2/h3 e re-dividindo
-`Set-Cookie` fundido por `\n` no objeto CDP apenas para o parse, preservando o
-valor bruto original no `HeaderView`.
+The core expands the `\x00` repetitions of h2/h3 session events and re-splits
+`Set-Cookie` merged by `\n` in the CDP object only for parsing, preserving the
+original raw value in the `HeaderView`.
 
-## API Rust
+## Rust API
 
 ```rust
 use scrapelens_core::{import_har, import_netlog, import_session_dir};
@@ -218,38 +217,38 @@ use scrapelens_core::export::python::to_python;
 use scrapelens_core::export::sanitize::{sanitize_bundle, SanitizeOptions};
 ```
 
-Cada importador devolve `ImportedSession { bundle, report }`; `bundle.session` é
-`SessionV1`, `bundle.attachments` são os bytes carregados, e `report` traz
-contagens/avisos da importação. Nenhuma função abre conexão de rede.
+Each importer returns `ImportedSession { bundle, report }`; `bundle.session` is
+`SessionV1`, `bundle.attachments` are the loaded bytes, and `report` carries the
+import counts/warnings. No function opens a network connection.
 
 ## CLI
 
 ```
-scrapelens-core inspect <sessao>
-scrapelens-core import-har <har> --out <sessao>
-scrapelens-core import-netlog <netlog> --out <sessao>
-scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao>
-scrapelens-core export-curl <sessao> <requestId> [--out arquivo]
-scrapelens-core export-python <sessao> <requestId> [--out arquivo]
-scrapelens-core sanitize <sessao> <saida>
-scrapelens-core diff <sessao> <requestIdA> <requestIdB>
+scrapelens-core inspect <session>
+scrapelens-core import-har <har> --out <session>
+scrapelens-core import-netlog <netlog> --out <session>
+scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <session>
+scrapelens-core export-curl <session> <requestId> [--out file]
+scrapelens-core export-python <session> <requestId> [--out file]
+scrapelens-core sanitize <session> <output>
+scrapelens-core diff <session> <requestIdA> <requestIdB>
 ```
 
-## Limites explícitos
+## Explicit limits
 
-- Exportadores cURL/Python reproduzem a requisição HTTP, **não** TLS, JA3/JA4,
-  ordem de frames, HPACK/QPACK ou fingerprint do navegador.
-- cURL usa quoting bash/POSIX (`$'...'` para bytes de controle). Headers com
-  CR/LF/NUL são descartados com aviso; `Content-Length` é removido quando o
-  corpo não acompanha a exportação.
-- Sanitização é **heurística**: cobre nomes de parâmetros/headers conhecidos
-  (`token`, `sid`, `jsessionid`, `phpsessid`, ...), prefixos de autenticação
-  (`Bearer`, `Basic`, `Digest`, `Token`) e corpos estruturados. Não detecta
-  tokens embutidos em segmentos de path, HTML/JS livre ou texto não
-  estruturado; esses corpos são omitidos com aviso. Nomes e contagem de
-  headers/cookies são preservados para auditoria. Notas da sessão e metadados
-  de conexão são preservados; revise-os antes de compartilhar.
-- HAR não comprova ordem/duplicatas; NetLog h3 mostra Cookie fundido, embora o
-  fio possa receber N campos.
-- O NetLog isolado não prova cobertura de sessão CDP; a sessão resultante fica
-  `partial` até ser correlacionada com uma captura CDP.
+- cURL/Python exporters reproduce the HTTP request, **not** TLS, JA3/JA4,
+  frame order, HPACK/QPACK or the browser fingerprint.
+- cURL uses bash/POSIX quoting (`$'...'` for control bytes). Headers with
+  CR/LF/NUL are discarded with a warning; `Content-Length` is removed when the
+  body does not accompany the export.
+- Sanitization is **heuristic**: it covers known parameter/header names
+  (`token`, `sid`, `jsessionid`, `phpsessid`, ...), authentication prefixes
+  (`Bearer`, `Basic`, `Digest`, `Token`) and structured bodies. It does not detect
+  tokens embedded in path segments, free-form HTML/JS or unstructured text; these
+  bodies are omitted with a warning. Header/cookie names and counts are preserved
+  for auditing. Session notes and connection metadata are preserved; review them
+  before sharing.
+- HAR does not prove order/duplicates; NetLog h3 shows a merged Cookie, although
+  the wire may carry N fields.
+- The standalone NetLog does not prove CDP session coverage; the resulting session
+  stays `partial` until it is correlated with a CDP capture.

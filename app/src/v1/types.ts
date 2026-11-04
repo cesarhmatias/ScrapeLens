@@ -1,5 +1,5 @@
-// Tipos do contrato oficial v1 — espelham core/src/model/*.rs (serde camelCase).
-// Não são um contrato paralelo: são a projeção TypeScript de docs/03-contratos.md.
+// Official v1 contract types — mirror core/src/model/*.rs (serde camelCase).
+// They are not a parallel contract: they are the TypeScript projection of docs/03-contratos.md.
 
 export type Source = "cdp" | "netlog" | "har" | "ownFormat" | "capture" | "derived" | "manual";
 export type Verification = "verified" | "partial" | "unverified";
@@ -12,9 +12,9 @@ export interface Provenance {
   source: Source;
   event?: string;
   sourceId?: string;
-  /** Segundos, relógio da fonte. */
+  /** Seconds, source clock. */
   timestamp?: number;
-  /** Instante absoluto ISO 8601, quando a fonte fornece. */
+  /** Absolute ISO 8601 instant, when the source provides it. */
   wallTime?: string;
   browserVersion?: string;
   method: string;
@@ -44,7 +44,7 @@ export interface Body {
   contentType?: string;
   contentEncoding?: string;
   note?: string;
-  /** Transformações aplicadas ao corpo (ex.: chrome-decoded); vazio = bytes do fio. */
+  /** Transformations applied to the body (e.g. chrome-decoded); empty = wire bytes. */
   transformed?: string[];
   provenance: Provenance;
 }
@@ -150,7 +150,7 @@ export interface Initiator {
 }
 
 export interface Attempt {
-  /** Quem iniciou a tentativa (CDP initiator, HAR _initiator), quando conhecido. */
+  /** Who started the attempt (CDP initiator, HAR _initiator), when known. */
   initiator?: Initiator;
   id: string;
   logicalId: string;
@@ -194,7 +194,7 @@ export interface TargetProvenance {
   openerId?: string;
   parentSessionId?: string;
   attached?: boolean;
-  /** Notas informativas (ex.: alvo encerrado durante a configuração). */
+  /** Informational notes (e.g. target closed during setup). */
   notes?: string[];
 }
 
@@ -213,9 +213,9 @@ export interface LogicalRequest {
   status?: number;
   resourceType?: string;
   cdp?: CdpRef;
-  /** Alvo CDP (page/iframe/worker/…); ausente em arquivo antigo e NetLog-only. */
+  /** CDP target (page/iframe/worker/…); absent in old files and NetLog-only. */
   target?: TargetProvenance;
-  /** Observações irmãs (service worker); `linked` ou `ambiguous`. */
+  /** Sibling observations (service worker); `linked` or `ambiguous`. */
   links?: RequestLink[];
   netlog?: NetlogRefs;
   attempts: Attempt[];
@@ -230,7 +230,7 @@ export interface LogicalRequest {
   match: MatchState;
   matchCandidates?: MatchCandidate[];
   provenance: Provenance;
-  /** A UI acrescenta este campo ao abrir a sessão (não faz parte do JSON). */
+  /** The UI adds this field when opening the session (not part of the JSON). */
   sessionId?: string;
 }
 
@@ -300,7 +300,7 @@ export interface SessionV1 {
   warnings?: Warning[];
 }
 
-/** Resumo cru de `list_requests` (src-tauri/src/listing.rs). */
+/** Raw `list_requests` summary (src-tauri/src/listing.rs). */
 export interface RawRequestSummary {
   id: string;
   url: string;
@@ -312,21 +312,21 @@ export interface RawRequestSummary {
   totalMs?: number;
   estimated?: boolean;
   initiator?: { kind: string; url?: string };
-  /** Índice em `RequestPageDto.targets`. */
+  /** Index into `RequestPageDto.targets`. */
   target?: number;
   links?: RequestLink[];
   source: Provenance["source"];
   warningCount: number;
 }
 
-/** Detalhe de `get_request`. */
+/** `get_request` detail. */
 export interface RawRequestDetail {
   request: LogicalRequest;
   warnings: Warning[];
   streamSessions: StreamSession[];
 }
 
-/** Cabeçalho de `open_session` (P5): sem requisições. */
+/** Header of `open_session` (P5): no requests. */
 export interface SessionHeaderV1 extends SessionV1 {
   requestCount?: number;
   sources?: Provenance["source"][];

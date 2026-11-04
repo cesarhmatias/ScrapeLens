@@ -115,7 +115,7 @@ kbd {
   flex-direction: column;
 }
 
-/* ---------- barra de ferramentas (a barra de título é a nativa do macOS) ---------- */
+/* ---------- toolbar (the title bar is the native macOS one) ---------- */
 .toolbar-top {
   display: flex;
   justify-content: flex-end;
@@ -1179,7 +1179,7 @@ kbd {
 .raw-line { display: flex; gap: 8px; align-items: baseline; overflow-wrap: anywhere; }
 .raw-line .mono { font-size: 10.5px; color: var(--fg-muted); }
 
-/* ---------- captura ao vivo ---------- */
+/* ---------- live capture ---------- */
 .tag-recording {
   color: var(--err);
   background: var(--err-bg);
@@ -1210,7 +1210,7 @@ kbd {
 .recording-banner .grow { flex: 1; }
 .recording-banner strong { color: var(--err); }
 
-/* ---------- exportação e sanitização ---------- */
+/* ---------- export and sanitization ---------- */
 .modal-backdrop {
   position: fixed;
   inset: 0;

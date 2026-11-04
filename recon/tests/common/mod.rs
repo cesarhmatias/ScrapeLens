@@ -1,5 +1,5 @@
-//! Sessões sintéticas em memória (nenhuma rede, nenhum site real). Cada
-//! requisição é descrita com o que a detecção lê.
+//! Synthetic in-memory sessions (no network, no real site). Each
+//! request is described with what the detection reads.
 #![allow(dead_code)]
 
 use scrapelens_core::model::{
@@ -20,8 +20,8 @@ pub struct Req {
     pub resp_headers: Vec<(String, String)>,
     pub set_cookies: Vec<String>,
     pub cookie_header: Option<String>,
-    pub request_body: Option<(String, String)>,  // (content-type, texto)
-    pub response_body: Option<(String, String)>, // (content-type, texto)
+    pub request_body: Option<(String, String)>,  // (content-type, text)
+    pub response_body: Option<(String, String)>, // (content-type, text)
     pub failure: Option<String>,
 }
 
@@ -129,7 +129,7 @@ pub fn build(reqs: Vec<Req>) -> SessionBundle {
     bundle
 }
 
-/// Documento principal 200 + os pedidos extras.
+/// Main document 200 + the extra requests.
 pub fn with_main(extra: Vec<Req>) -> SessionBundle {
     let mut reqs = vec![Req::doc("r0", "https://app.test/", 200).resp_body("text/html", "<html></html>")];
     reqs.extend(extra);

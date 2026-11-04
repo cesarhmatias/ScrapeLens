@@ -1,6 +1,6 @@
-//! As nove ferramentas, como funções puras sobre [`Ctx`]. O servidor rmcp
-//! (`server.rs`) só traduz parâmetros e resultados; os testes chamam estas
-//! funções diretamente.
+//! The nine tools, as pure functions over [`Ctx`]. The rmcp server
+//! (`server.rs`) only translates parameters and results; the tests call these
+//! functions directly.
 
 use std::collections::HashSet;
 use std::io::Write;
@@ -28,7 +28,7 @@ const DEFAULT_INLINE: usize = 32 * 1024;
 const MAX_INLINE: usize = 256 * 1024;
 
 // ---------------------------------------------------------------------------
-// utilidades
+// utilities
 // ---------------------------------------------------------------------------
 
 fn page(
@@ -41,7 +41,7 @@ fn page(
     let limit = limit.unwrap_or(default);
     if limit == 0 || limit > max {
         return Err(ToolError::invalid(format!(
-            "limit deve estar entre 1 e {max}"
+            "limit must be between 1 and {max}"
         )));
     }
     let start = match cursor {
@@ -49,7 +49,7 @@ fn page(
         Some(text) => text
             .strip_prefix('o')
             .and_then(|n| n.parse::<usize>().ok())
-            .ok_or_else(|| ToolError::invalid(format!("cursor inválido: {text:?}")))?,
+            .ok_or_else(|| ToolError::invalid(format!("invalid cursor: {text:?}")))?,
     };
     let start = start.min(total);
     Ok((start, (start + limit).min(total)))
@@ -79,7 +79,7 @@ fn with_view<R>(
 fn find_request<'a>(view: &'a View<'_>, id: &str) -> Result<&'a LogicalRequest, ToolError> {
     view.session.find_request(id).ok_or_else(|| {
         ToolError::not_found(format!(
-            "requisição {id:?} não encontrada na sessão {:?} (use list_requests)",
+            "request {id:?} not found in session {:?} (use list_requests)",
             view.entry.handle
         ))
     })
@@ -100,9 +100,9 @@ fn finish(mut object: Map<String, Value>, view: &View<'_>) -> ToolResult {
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct ListSessionsParams {
-    /// Cursor opaco devolvido por uma chamada anterior (`nextCursor`).
+    /// Opaque cursor returned by a previous call (`nextCursor`).
     pub cursor: Option<String>,
-    /// Itens por página (padrão 50, máximo 200).
+    /// Items per page (default 50, maximum 200).
     pub limit: Option<usize>,
 }
 
@@ -168,12 +168,12 @@ pub fn list_sessions(ctx: &Ctx, params: ListSessionsParams) -> ToolResult {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImportSessionParams {
-    /// Caminho de um HAR, NetLog, diretório de sessão nativa (com session.json)
-    /// ou diretório de captura (cdp-events.jsonl + NetLog).
+    /// Path to a HAR, NetLog, native session directory (with session.json)
+    /// or capture directory (cdp-events.jsonl + NetLog).
     pub path: String,
-    /// `auto` (padrão), `har`, `netlog`, `session` ou `capture`.
+    /// `auto` (default), `har`, `netlog`, `session` or `capture`.
     pub format: Option<String>,
-    /// Nome do handle (letras, números, `.`, `_`, `-`). Padrão: derivado do arquivo.
+    /// Handle name (letters, numbers, `.`, `_`, `-`). Default: derived from the file.
     pub name: Option<String>,
 }
 
@@ -182,7 +182,7 @@ fn read_limited(ctx: &Ctx, path: &Path) -> Result<Vec<u8>, ToolError> {
         .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
     if !meta.is_file() {
         return Err(ToolError::invalid(format!(
-            "{} não é um arquivo regular",
+            "{} is not a regular file",
             path.display()
         )));
     }
@@ -190,7 +190,7 @@ fn read_limited(ctx: &Ctx, path: &Path) -> Result<Vec<u8>, ToolError> {
         return Err(ToolError::new(
             "too_large",
             format!(
-                "{} tem {} bytes (limite {}; ajuste --max-import-bytes)",
+                "{} has {} bytes (limit {}; adjust --max-import-bytes)",
                 path.display(),
                 meta.len(),
                 ctx.cfg.max_import_bytes
@@ -202,9 +202,9 @@ fn read_limited(ctx: &Ctx, path: &Path) -> Result<Vec<u8>, ToolError> {
 }
 
 fn sniff_file_format(bytes: &[u8]) -> Result<&'static str, ToolError> {
-    // Só as chaves de topo importam; o parse completo é do importador.
+    // Only the top-level keys matter; the full parse is done by the importer.
     let value: Value = serde_json::from_slice(bytes)
-        .map_err(|error| ToolError::new("import_failed", format!("JSON inválido: {error}")))?;
+        .map_err(|error| ToolError::new("import_failed", format!("invalid JSON: {error}")))?;
     let object = value.as_object();
     if object.is_some_and(|o| o.contains_key("log")) {
         Ok("har")
@@ -213,7 +213,7 @@ fn sniff_file_format(bytes: &[u8]) -> Result<&'static str, ToolError> {
     } else {
         Err(ToolError::new(
             "import_failed",
-            "formato não reconhecido (esperado HAR, NetLog, sessão nativa ou diretório de captura)",
+            "unrecognized format (expected HAR, NetLog, native session or capture directory)",
         ))
     }
 }
@@ -247,14 +247,14 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
     let requested = params.format.as_deref().unwrap_or("auto");
     if !["auto", "har", "netlog", "session", "capture"].contains(&requested) {
         return Err(ToolError::invalid(format!(
-            "format inválido: {requested:?} (auto|har|netlog|session|capture)"
+            "invalid format: {requested:?} (auto|har|netlog|session|capture)"
         )));
     }
     if let Some(name) = &params.name {
         if !valid_name(name) {
             return Err(ToolError::new(
                 "outside_allowed_dir",
-                format!("name inválido: {name:?} (use letras, números, '.', '_' e '-'; sem '/' nem '..')"),
+                format!("invalid name: {name:?} (use letters, numbers, '.', '_' and '-'; no '/' or '..')"),
             ));
         }
     }
@@ -267,7 +267,7 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
             "auto" => {
                 return Err(ToolError::new(
                     "import_failed",
-                    "diretório sem session.json nem cdp-events.jsonl",
+                    "directory has neither session.json nor cdp-events.jsonl",
                 ))
             }
             other => other,
@@ -280,7 +280,7 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
             "capture" => {
                 let cdp_path = input.join("cdp-events.jsonl");
                 let netlog_path = find_netlog(&input).ok_or_else(|| {
-                    ToolError::new("import_failed", "diretório de captura sem arquivo NetLog")
+                    ToolError::new("import_failed", "capture directory has no NetLog file")
                 })?;
                 let cdp = read_limited(ctx, &cdp_path)?;
                 let netlog = read_limited(ctx, &netlog_path)?;
@@ -303,7 +303,7 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
             }
             other => {
                 return Err(ToolError::invalid(format!(
-                    "{} é um diretório; format {other:?} não se aplica",
+                    "{} is a directory; format {other:?} does not apply",
                     input.display()
                 )))
             }
@@ -316,7 +316,7 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
             "netlog" => "netlog",
             other => {
                 return Err(ToolError::invalid(format!(
-                    "{} é um arquivo; format {other:?} exige diretório",
+                    "{} is a file; format {other:?} requires a directory",
                     input.display()
                 )))
             }
@@ -351,7 +351,7 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
     let handle = params.name.clone().unwrap_or(derived);
     if !valid_name(&handle) {
         return Err(ToolError::invalid(format!(
-            "handle derivado inválido: {handle:?}"
+            "invalid derived handle: {handle:?}"
         )));
     }
     let target = ctx.cfg.sessions_dir.join(&handle);
@@ -366,7 +366,7 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
         } else {
             return Err(ToolError::new(
                 "exists",
-                format!("já existe uma sessão {handle:?} com outro conteúdo; use outro name"),
+                format!("a session {handle:?} already exists with other content; use another name"),
             ));
         }
     } else {
@@ -417,7 +417,7 @@ fn write_import(
     if !is_within(&ctx.cfg.sessions_dir, &temp) || !is_within(&ctx.cfg.sessions_dir, target) {
         return Err(ToolError::new(
             "outside_allowed_dir",
-            "destino fora de --sessions-dir",
+            "destination outside --sessions-dir",
         ));
     }
     let result = write_session_dir(bundle, &temp)
@@ -438,19 +438,19 @@ fn write_import(
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExportSessionParams {
-    /// Id da sessão (de `list_sessions`).
+    /// Session id (from `list_sessions`).
     pub session_id: String,
-    /// Nome dentro de `--out-dir` (ex.: `minha-exportacao`) ou caminho absoluto
-    /// de um diretório novo/vazio. Sem isso: `<session_id>-sanitized` (com
-    /// sufixo `-2`, `-3`...) ou `<session_id>-full`.
+    /// Name inside `--out-dir` (e.g. `my-export`) or absolute path
+    /// of a new/empty directory. Without it: `<session_id>-sanitized` (with
+    /// suffix `-2`, `-3`...) or `<session_id>-full`.
     pub destination: Option<String>,
-    /// `false` (padrão) grava a sessão sanitizada. `true` grava a captura
-    /// completa, com os dados sensíveis sem redação, em diretório 0700.
+    /// `false` (default) writes the sanitized session. `true` writes the full capture
+    /// with the sensitive data unredacted, in a 0700 directory.
     pub include_sensitive: Option<bool>,
 }
 
-/// Alias de sistema do macOS na raiz (`/var`, `/tmp`, `/etc` → `/private/...`):
-/// é o único symlink ancestral aceito, como no App (`src-tauri/src/export.rs`).
+/// macOS system alias at the root (`/var`, `/tmp`, `/etc` → `/private/...`):
+/// the only accepted ancestor symlink, as in the App (`src-tauri/src/export.rs`).
 fn is_system_alias(path: &Path) -> bool {
     matches!(path.to_str(), Some("/var") | Some("/tmp") | Some("/etc"))
         && std::fs::read_link(path)
@@ -460,19 +460,19 @@ fn is_system_alias(path: &Path) -> bool {
             .unwrap_or(false)
 }
 
-/// `true` se o caminho existe (inclusive como symlink quebrado).
+/// `true` if the path exists (including as a broken symlink).
 fn path_exists(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok()
 }
 
-/// Confere que `path` não existe ou é um diretório vazio; devolve se ele já existia.
+/// Checks that `path` does not exist or is an empty directory; returns whether it already existed.
 fn check_empty_destination(path: &Path) -> Result<bool, ToolError> {
     match std::fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(ToolError::new("io", format!("{}: {error}", path.display()))),
         Ok(meta) if !meta.is_dir() => Err(ToolError::new(
             "invalid_argument",
-            format!("o destino existe e não é um diretório: {}", path.display()),
+            format!("the destination exists and is not a directory: {}", path.display()),
         )),
         Ok(_) => {
             let mut entries = std::fs::read_dir(path)
@@ -481,7 +481,7 @@ fn check_empty_destination(path: &Path) -> Result<bool, ToolError> {
                 return Err(ToolError::new(
                     "invalid_argument",
                     format!(
-                        "o diretório de destino não está vazio: {}; escolha um novo",
+                        "the destination directory is not empty: {}; choose a new one",
                         path.display()
                     ),
                 ));
@@ -491,8 +491,8 @@ fn check_empty_destination(path: &Path) -> Result<bool, ToolError> {
     }
 }
 
-/// Resolve e cria o destino da exportação. Devolve o caminho canônico do
-/// diretório (0700) e se ele foi criado agora.
+/// Resolves and creates the export destination. Returns the canonical path of the
+/// directory (0700) and whether it was just created.
 fn export_destination(
     ctx: &Ctx,
     source: &Path,
@@ -505,7 +505,7 @@ fn export_destination(
     let dest = match requested {
         Some(text) => {
             if text.chars().any(char::is_control) {
-                return Err(ToolError::invalid("destination com caractere de controle"));
+                return Err(ToolError::invalid("destination contains a control character"));
             }
             let path = PathBuf::from(text);
             if path.is_absolute() {
@@ -513,13 +513,13 @@ fn export_destination(
             } else if !text.contains('/') && !text.contains('\\') {
                 if !valid_name(text) {
                     return Err(ToolError::invalid(format!(
-                        "destination inválido: {text:?} (nome simples com letras, números, '.', '_' e '-', ou caminho absoluto)"
+                        "invalid destination: {text:?} (a simple name with letters, numbers, '.', '_' and '-', or an absolute path)"
                     )));
                 }
                 base.join(text)
             } else {
                 return Err(ToolError::invalid(
-                    "destination relativo com separadores não é aceito: use um nome simples ou um caminho absoluto",
+                    "relative destination with separators is not accepted: use a simple name or an absolute path",
                 ));
             }
         }
@@ -534,7 +534,7 @@ fn export_destination(
                     return Err(ToolError::new(
                         "exists",
                         format!(
-                            "{} já existe; informe destination para escolher outro diretório",
+                            "{} already exists; pass destination to choose another directory",
                             candidate.display()
                         ),
                     ));
@@ -552,14 +552,14 @@ fn export_destination(
         }
     };
 
-    // Nenhum componente existente do caminho pedido pode ser symlink (o destino
-    // é criado por nós; seguir um link escreveria fora dele).
+    // No existing component of the requested path may be a symlink (the destination
+    // is created by us; following a link would write outside it).
     for ancestor in dest.ancestors() {
         match std::fs::symlink_metadata(ancestor) {
             Ok(meta) if meta.file_type().is_symlink() && !is_system_alias(ancestor) => {
                 return Err(ToolError::new(
                     "outside_allowed_dir",
-                    format!("{} é um link simbólico; recusado", ancestor.display()),
+                    format!("{} is a symbolic link; refused", ancestor.display()),
                 ))
             }
             _ => {}
@@ -568,36 +568,36 @@ fn export_destination(
     let parent = dest
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
-        .ok_or_else(|| ToolError::invalid("destination sem diretório pai"))?;
+        .ok_or_else(|| ToolError::invalid("destination has no parent directory"))?;
     if !parent.is_dir() {
         return Err(ToolError::invalid(format!(
-            "o diretório pai não existe: {}",
+            "the parent directory does not exist: {}",
             parent.display()
         )));
     }
     let file_name = dest
         .file_name()
-        .ok_or_else(|| ToolError::invalid("destination sem nome final"))?;
+        .ok_or_else(|| ToolError::invalid("destination has no final name"))?;
     let canonical_parent = parent
         .canonicalize()
         .map_err(|error| ToolError::new("io", format!("{}: {error}", parent.display())))?;
     let resolved = canonical_parent.join(file_name);
 
-    // Fora da sessão de origem, de qualquer outra sessão e das raízes reservadas.
+    // Outside the source session, any other session and the reserved roots.
     let source_canonical = source
         .canonicalize()
         .map_err(|error| ToolError::new("io", format!("{}: {error}", source.display())))?;
     if resolved == source_canonical || resolved.starts_with(&source_canonical) {
         return Err(ToolError::new(
             "outside_allowed_dir",
-            "o destino não pode ser a sessão de origem nem ficar dentro dela",
+            "the destination cannot be the source session or be inside it",
         ));
     }
     for (_, (dir, _)) in ctx.handles() {
         if resolved == dir || resolved.starts_with(&dir) {
             return Err(ToolError::new(
                 "outside_allowed_dir",
-                format!("o destino fica dentro da sessão {}", dir.display()),
+                format!("the destination is inside session {}", dir.display()),
             ));
         }
     }
@@ -608,7 +608,7 @@ fn export_destination(
         if resolved == *reserved {
             return Err(ToolError::new(
                 "outside_allowed_dir",
-                "o destino não pode ser uma raiz de sessões/exportação; use um subdiretório",
+                "the destination cannot be a sessions/export root; use a subdirectory",
             ));
         }
     }
@@ -619,7 +619,7 @@ fn export_destination(
     Ok((resolved, !existed))
 }
 
-/// Grava um artefato bruto com 0600, recusando symlink no destino.
+/// Writes a raw artifact with 0600, refusing a symlink at the destination.
 fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
     if std::fs::symlink_metadata(path)
         .map(|meta| meta.file_type().is_symlink())
@@ -627,7 +627,7 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
     {
         return Err(ToolError::new(
             "outside_allowed_dir",
-            format!("{} é um link simbólico; recusado", path.display()),
+            format!("{} is a symbolic link; refused", path.display()),
         ));
     }
     std::fs::write(path, bytes)
@@ -640,8 +640,8 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
     Ok(())
 }
 
-/// Copia um artefato bruto da sessão de origem, se existir como arquivo regular.
-/// Symlink ou tipo especial é ignorado (não é copiado nem listado).
+/// Copies a raw artifact from the source session, if it exists as a regular file.
+/// Symlinks or special types are ignored (not copied or listed).
 fn copy_raw_artifact(source: &Path, dest: &Path, name: &str) -> Result<bool, ToolError> {
     let path = source.join(name);
     let meta = match std::fs::symlink_metadata(&path) {
@@ -669,7 +669,7 @@ pub fn export_session(ctx: &Ctx, params: ExportSessionParams) -> ToolResult {
     let imported = scrapelens_core::import_session_dir(&entry.dir).map_err(|error| {
         ToolError::new(
             "io",
-            format!("não foi possível carregar {}: {error}", entry.dir.display()),
+            format!("could not load {}: {error}", entry.dir.display()),
         )
     })?;
     let bundle = imported.bundle;
@@ -683,8 +683,8 @@ pub fn export_session(ctx: &Ctx, params: ExportSessionParams) -> ToolResult {
 
     let outcome = (|| -> ToolResult {
         if include_sensitive {
-            // Captura completa, sem redação: só os metadados saem no JSON; os
-            // segredos ficam nos arquivos 0600 do destino 0700.
+            // Full capture, without redaction: only the metadata goes out in the JSON; the
+            // secrets stay in the 0600 files of the 0700 destination.
             write_session_dir(&bundle, &dest)?;
             let mut raw_written = Vec::new();
             for name in ["cdp-events.jsonl", "netlog.json", "cdp-bodies.jsonl"] {
@@ -744,22 +744,22 @@ pub enum StatusParam {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListRequestsParams {
-    /// Id da sessão (de list_sessions).
+    /// Session id (from list_sessions).
     pub session_id: String,
-    /// Host (host[:porta]) exato, sem diferenciar maiúsculas.
+    /// Exact host (host[:port]), case-insensitive.
     pub host: Option<String>,
-    /// Método HTTP, sem diferenciar maiúsculas.
+    /// HTTP method, case-insensitive.
     pub method: Option<String>,
-    /// Status: 200, "200", "2xx"/"4xx"... ou "none" (sem resposta).
+    /// Status: 200, "200", "2xx"/"4xx"... or "none" (no response).
     pub status: Option<StatusParam>,
-    /// Tipo de recurso (Document, XHR, Fetch, Script...), sem diferenciar maiúsculas.
+    /// Resource type (Document, XHR, Fetch, Script...), case-insensitive.
     pub resource_type: Option<String>,
-    /// Substring (sem diferenciar maiúsculas) na URL. Para corpos use search_bodies.
+    /// Substring (case-insensitive) in the URL. For bodies use search_bodies.
     pub text: Option<String>,
     pub cursor: Option<String>,
-    /// Itens por página (padrão 50, máximo 200).
+    /// Items per page (default 50, maximum 200).
     pub limit: Option<usize>,
-    /// true devolve valores reais (exige --allow-reveal no servidor).
+    /// true returns real values (requires --allow-reveal on the server).
     pub reveal: Option<bool>,
 }
 
@@ -786,7 +786,7 @@ fn parse_status(param: &StatusParam) -> Result<StatusFilter, ToolError> {
             }
             text.parse::<u16>().map(StatusFilter::Exact).map_err(|_| {
                 ToolError::invalid(format!(
-                    "status inválido: {text:?} (ex.: 200, \"2xx\", \"none\")"
+                    "invalid status: {text:?} (e.g.: 200, \"2xx\", \"none\")"
                 ))
             })
         }
@@ -863,9 +863,9 @@ pub fn list_requests(ctx: &Ctx, params: ListRequestsParams) -> ToolResult {
 pub struct GetRequestParams {
     pub session_id: String,
     pub request_id: String,
-    /// Id (ou índice, 0-based) da tentativa. Padrão: visão primária.
+    /// Attempt id (or 0-based index). Default: primary view.
     pub attempt: Option<String>,
-    /// true inclui a proveniência por header (fonte, método, verificação, evento).
+    /// true includes per-header provenance (source, method, verification, event).
     pub verbose: Option<bool>,
     pub reveal: Option<bool>,
 }
@@ -888,7 +888,7 @@ pub fn get_request(ctx: &Ctx, params: GetRequestParams) -> ToolResult {
                     })
                     .ok_or_else(|| {
                         ToolError::not_found(format!(
-                            "tentativa {selector:?} não encontrada em {}",
+                            "attempt {selector:?} not found in {}",
                             request.id
                         ))
                     })?,
@@ -907,7 +907,7 @@ pub fn get_request(ctx: &Ctx, params: GetRequestParams) -> ToolResult {
         };
         out.insert("sessionId".into(), json!(view.entry.handle));
         if view.masked {
-            // O sanitizador do core não toca em target/initiator: mascara aqui.
+            // The core sanitizer does not touch target/initiator: mask them here.
             for key in ["target", "initiator"] {
                 if let Some(value) = out.get_mut(key) {
                     mask_url_fields(value);
@@ -934,13 +934,13 @@ pub fn get_request(ctx: &Ctx, params: GetRequestParams) -> ToolResult {
 pub struct GetBodyParams {
     pub session_id: String,
     pub request_id: String,
-    /// `response` (padrão) ou `request`.
+    /// `response` (default) or `request`.
     pub part: Option<String>,
-    /// Byte inicial (padrão 0).
+    /// Start byte (default 0).
     pub offset: Option<u64>,
-    /// Bytes a devolver (padrão: até o fim do que foi lido).
+    /// Bytes to return (default: up to the end of what was read).
     pub length: Option<u64>,
-    /// Limite inline em bytes (padrão 32768, máximo 262144); acima vai para arquivo.
+    /// Inline limit in bytes (default 32768, maximum 262144); above it goes to a file.
     pub max_inline_bytes: Option<usize>,
     pub reveal: Option<bool>,
 }
@@ -949,13 +949,13 @@ pub fn get_body(ctx: &Ctx, params: GetBodyParams) -> ToolResult {
     let part = params.part.as_deref().unwrap_or("response");
     if part != "response" && part != "request" {
         return Err(ToolError::invalid(
-            "part deve ser \"response\" ou \"request\"",
+            "part must be \"response\" or \"request\"",
         ));
     }
     let max_inline = params.max_inline_bytes.unwrap_or(DEFAULT_INLINE);
     if max_inline > MAX_INLINE {
         return Err(ToolError::invalid(format!(
-            "max_inline_bytes máximo é {MAX_INLINE}"
+            "max_inline_bytes maximum is {MAX_INLINE}"
         )));
     }
     with_view(ctx, &params.session_id, params.reveal, |view| {
@@ -986,19 +986,19 @@ pub fn get_body(ctx: &Ctx, params: GetBodyParams) -> ToolResult {
             if masked_out {
                 out.insert(
                     "hint".into(),
-                    json!("corpo não estruturado retido por padrão; use reveal=true (exige --allow-reveal) para lê-lo"),
+                    json!("unstructured body withheld by default; use reveal=true (requires --allow-reveal) to read it"),
                 );
             }
             return finish(out, view);
         };
         let (bytes, cut) = view
             .read_attachment(name, BODY_READ_LIMIT)
-            .ok_or_else(|| ToolError::new("io", format!("anexo {name} indisponível na sessão")))?;
+            .ok_or_else(|| ToolError::new("io", format!("attachment {name} unavailable in session")))?;
         let total = body.bytes.unwrap_or(bytes.len() as u64);
         let offset = params.offset.unwrap_or(0);
         if offset > bytes.len() as u64 {
             return Err(ToolError::invalid(format!(
-                "offset {offset} além do corpo lido ({} bytes)",
+                "offset {offset} beyond the body read ({} bytes)",
                 bytes.len()
             )));
         }
@@ -1043,7 +1043,7 @@ pub fn get_body(ctx: &Ctx, params: GetBodyParams) -> ToolResult {
     })
 }
 
-/// Hash FNV-1a de 32 bits, só para desambiguar nomes que o `slug` fundiria.
+/// 32-bit FNV-1a hash, only to disambiguate names that `slug` would merge.
 fn short_hash(text: &str) -> String {
     let mut hash: u32 = 0x811c_9dc5;
     for byte in text.bytes() {
@@ -1053,17 +1053,17 @@ fn short_hash(text: &str) -> String {
     format!("{hash:08x}")
 }
 
-/// Cria `dir` (0700) sem seguir symlink: um componente que já seja symlink é
-/// recusado ANTES de qualquer `mkdir`/`chmod`.
+/// Creates `dir` (0700) without following symlinks: a component that is already a symlink is
+/// refused BEFORE any `mkdir`/`chmod`.
 fn private_dir_no_follow(dir: &Path) -> Result<(), ToolError> {
     match std::fs::symlink_metadata(dir) {
         Ok(meta) if meta.file_type().is_symlink() => Err(ToolError::new(
             "outside_allowed_dir",
-            format!("{} é um link simbólico; recusado", dir.display()),
+            format!("{} is a symbolic link; refused", dir.display()),
         )),
         Ok(meta) if !meta.is_dir() => Err(ToolError::new(
             "io",
-            format!("{} não é um diretório", dir.display()),
+            format!("{} is not a directory", dir.display()),
         )),
         Ok(_) => Ok(ensure_private_dir(dir)?),
         Err(_) => Ok(ensure_private_dir(dir)?),
@@ -1092,7 +1092,7 @@ fn spill(
     if !is_within(&ctx.cfg.out_dir, &canonical) {
         return Err(ToolError::new(
             "outside_allowed_dir",
-            "destino fora de --out-dir",
+            "destination outside --out-dir",
         ));
     }
     let file_name = format!(
@@ -1104,8 +1104,8 @@ fn spill(
         if textual { "txt" } else { "bin" }
     );
     let path = canonical.join(file_name);
-    // Nome temporário único e criado com O_EXCL (`create_new`): se o nome já
-    // existir, mesmo como symlink, a abertura falha em vez de seguir o link.
+    // Unique temporary name created with O_EXCL (`create_new`): if the name already
+    // exists, even as a symlink, the open fails instead of following the link.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -1135,8 +1135,8 @@ fn spill(
         file.write_all(bytes)
             .and_then(|()| file.sync_all())
             .map_err(|error| ToolError::new("io", error.to_string()))?;
-        // `rename` troca a entrada de diretório: se `path` for um symlink, o
-        // próprio link é substituído, nunca o alvo.
+        // `rename` replaces the directory entry: if `path` is a symlink, the
+        // link itself is replaced, never the target.
         std::fs::rename(&tmp, &path)
             .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))
     };
@@ -1155,10 +1155,10 @@ fn spill(
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchBodiesParams {
     pub session_id: String,
-    /// Texto literal a procurar.
+    /// Literal text to search for.
     pub query: String,
-    /// Escopos: url, requestHeaders, responseHeaders, cookies, requestBody,
-    /// responseBody. Vazio = todos.
+    /// Scopes: url, requestHeaders, responseHeaders, cookies, requestBody,
+    /// responseBody. Empty = all.
     pub scopes: Option<Vec<String>>,
     pub case_sensitive: Option<bool>,
     pub cursor: Option<String>,
@@ -1168,13 +1168,13 @@ pub struct SearchBodiesParams {
 
 pub fn search_bodies(ctx: &Ctx, params: SearchBodiesParams) -> ToolResult {
     if params.query.is_empty() {
-        return Err(ToolError::invalid("query não pode ser vazia"));
+        return Err(ToolError::invalid("query cannot be empty"));
     }
     let mut scopes = Vec::new();
     for name in params.scopes.iter().flatten() {
         scopes.push(Scope::parse(name).ok_or_else(|| {
             ToolError::invalid(format!(
-                "escopo inválido: {name:?} (url, requestHeaders, responseHeaders, cookies, requestBody, responseBody)"
+                "invalid scope: {name:?} (url, requestHeaders, responseHeaders, cookies, requestBody, responseBody)"
             ))
         })?);
     }
@@ -1234,9 +1234,9 @@ pub struct DiffRequestsParams {
     pub session_id: String,
     pub request_a: String,
     pub request_b: String,
-    /// Sessão de request_b (padrão: a mesma de request_a).
+    /// Session of request_b (default: same as request_a).
     pub other_session_id: Option<String>,
-    /// Nomes de header/cookie ignorados na saída (sem diferenciar maiúsculas).
+    /// Header/cookie names ignored in the output (case-insensitive).
     pub ignore: Option<Vec<String>>,
     pub reveal: Option<bool>,
 }
@@ -1307,7 +1307,7 @@ pub fn diff_requests_tool(ctx: &Ctx, params: DiffRequestsParams) -> ToolResult {
     if !reveal {
         out.insert(
             "maskNote".into(),
-            json!("valores mascarados diferentes aparecem iguais ([REDACTED]); use reveal=true para compará-los"),
+            json!("different masked values appear equal ([REDACTED]); use reveal=true to compare them"),
         );
     }
     out.insert("revealed".into(), json!(reveal));
@@ -1320,9 +1320,9 @@ pub fn diff_requests_tool(ctx: &Ctx, params: DiffRequestsParams) -> ToolResult {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MapOriginParam {
-    /// Origem em A (https://host[:porta]).
+    /// Origin in A (https://host[:port]).
     pub from: String,
-    /// Origem em B.
+    /// Origin in B.
     pub to: String,
 }
 
@@ -1330,17 +1330,17 @@ pub struct MapOriginParam {
 pub struct DiffSessionsParams {
     pub session_id_a: String,
     pub session_id_b: String,
-    /// Trata dois hosts como o mesmo ao alinhar.
+    /// Treats two hosts as the same when aligning.
     pub map_origin: Option<MapOriginParam>,
-    /// Faixa de A: "de:ate" (ids ou números 1-based).
+    /// Range of A: "from:to" (ids or 1-based numbers).
     pub a_range: Option<String>,
     pub b_range: Option<String>,
-    /// Inclui proteção e recursos estáticos no alinhamento.
+    /// Includes protection and static resources in the alignment.
     pub include_all: Option<bool>,
-    /// Só campos que não são estáticos em cada par (padrão true).
+    /// Only fields that are not static in each pair (default true).
     pub only_changed: Option<bool>,
     pub cursor: Option<String>,
-    /// Pares por página (padrão 10, máximo 50).
+    /// Pairs per page (default 10, maximum 50).
     pub limit: Option<usize>,
     pub reveal: Option<bool>,
 }
@@ -1359,7 +1359,7 @@ pub fn diff_sessions(ctx: &Ctx, params: DiffSessionsParams) -> ToolResult {
         text.as_ref()
             .map(|t| {
                 RequestRange::parse(t)
-                    .ok_or_else(|| ToolError::invalid(format!("{name}: faixa inválida {t:?}")))
+                    .ok_or_else(|| ToolError::invalid(format!("{name}: invalid range {t:?}")))
             })
             .transpose()
     };
@@ -1372,7 +1372,7 @@ pub fn diff_sessions(ctx: &Ctx, params: DiffSessionsParams) -> ToolResult {
             .as_ref()
             .map(|m| {
                 OriginMap::parse(&format!("{}={}", m.from, m.to)).ok_or_else(|| {
-                    ToolError::invalid("map_origin: from/to devem ser origens (https://host)")
+                    ToolError::invalid("map_origin: from/to must be origins (https://host)")
                 })
             })
             .transpose()?,
@@ -1415,7 +1415,7 @@ pub fn diff_sessions(ctx: &Ctx, params: DiffSessionsParams) -> ToolResult {
     if !reveal {
         out.insert(
             "maskNote".into(),
-            json!("valores mascarados diferentes aparecem iguais ([REDACTED]); o core classifica esses campos como redacted"),
+            json!("different masked values appear equal ([REDACTED]); the core classifies these fields as redacted"),
         );
     }
     out.insert("revealed".into(), json!(reveal));
@@ -1429,15 +1429,15 @@ pub fn diff_sessions(ctx: &Ctx, params: DiffSessionsParams) -> ToolResult {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TraceValueParams {
     pub session_id: String,
-    /// Modo 1: nome de um cookie.
+    /// Mode 1: name of a cookie.
     pub cookie: Option<String>,
-    /// Modo 2: valor literal (token, id).
+    /// Mode 2: literal value (token, id).
     pub value: Option<String>,
-    /// Modo 3: requisição cujos valores consumidos serão rastreados.
+    /// Mode 3: request whose consumed values will be traced.
     pub request_id: Option<String>,
-    /// Modo 3: restringe a um campo (header, cookie, parâmetro).
+    /// Mode 3: restricts to one field (header, cookie, parameter).
     pub field: Option<String>,
-    /// Máximo por lista (padrão 50, máximo 200).
+    /// Maximum per list (default 50, maximum 200).
     pub limit: Option<usize>,
     pub reveal: Option<bool>,
 }
@@ -1450,7 +1450,7 @@ pub fn trace_value(ctx: &Ctx, params: TraceValueParams) -> ToolResult {
     ];
     if modes.iter().filter(|m| **m).count() != 1 {
         return Err(ToolError::invalid(
-            "informe exatamente um de: cookie, value, request_id",
+            "provide exactly one of: cookie, value, request_id",
         ));
     }
     let reveal = params.reveal.unwrap_or(false);
@@ -1458,22 +1458,22 @@ pub fn trace_value(ctx: &Ctx, params: TraceValueParams) -> ToolResult {
     let limit = params.limit.unwrap_or(DEFAULT_LIMIT);
     if limit == 0 || limit > MAX_LIMIT {
         return Err(ToolError::invalid(format!(
-            "limit deve estar entre 1 e {MAX_LIMIT}"
+            "limit must be between 1 and {MAX_LIMIT}"
         )));
     }
-    // O cálculo usa sempre a sessão original; a saída é que é mascarada.
+    // The computation always uses the original session; only the output is masked.
     let entry = ctx.open(&params.session_id)?;
     let view = View::original(&entry);
     let mut out = if let Some(name) = &params.cookie {
         trace_cookie(&view, name, limit, reveal)
     } else if let Some(value) = &params.value {
-        // Um valor fornecido pelo agente só pode ser procurado por quem pode ver
-        // o conteúdo: sem `reveal` a resposta (casou ou não) seria um oráculo
-        // sobre segredos redigidos (força bruta, reimportação, estrutura conhecida).
+        // A value supplied by the agent can only be searched by someone who can see
+        // the content: without `reveal` the response (matched or not) would be an oracle
+        // about redacted secrets (brute force, reimport, known structure).
         if !reveal {
             return Err(ToolError::new(
                 "reveal_required",
-                "o modo value exige reveal=true (e o servidor com --allow-reveal): sem isso, achar ou não achar um valor revelaria conteúdo mascarado; use os modos cookie ou request_id",
+                "value mode requires reveal=true (and the server with --allow-reveal): without it, finding or not finding a value would reveal masked content; use the cookie or request_id modes",
             ));
         }
         trace_literal(&view, value, limit, reveal)?
@@ -1485,10 +1485,10 @@ pub fn trace_value(ctx: &Ctx, params: TraceValueParams) -> ToolResult {
     Ok(Value::Object(out))
 }
 
-/// Requisições em ordem cronológica. `session.requests` não é cronológica em
-/// capturas reais (vem por id); ordena por `Attempt.started_at` quando todas as
-/// requisições têm tempo, senão mantém a ordem da sessão. O booleano diz se a
-/// ordem é cronológica.
+/// Requests in chronological order. `session.requests` is not chronological in
+/// real captures (it comes by id); sorts by `Attempt.started_at` when all
+/// requests have a time, otherwise keeps the session order. The boolean says whether the
+/// order is chronological.
 fn chronological<'a>(view: &View<'a>) -> (Vec<&'a LogicalRequest>, bool) {
     let mut list: Vec<&LogicalRequest> = view.session.requests.iter().collect();
     let start = |r: &LogicalRequest| {
@@ -1511,13 +1511,13 @@ fn chronological<'a>(view: &View<'a>) -> (Vec<&'a LogicalRequest>, bool) {
 
 fn order_note(chronological: bool) -> &'static str {
     if chronological {
-        "ordem cronológica por startedAt (session.requests não é cronológica em capturas reais)"
+        "chronological order by startedAt (session.requests is not chronological in real captures)"
     } else {
-        "sem startedAt em todas as requisições: usada a ordem da sessão, que pode não ser cronológica"
+        "no startedAt on all requests: session order used, which may not be chronological"
     }
 }
 
-/// Mascara tokens de query/fragmento em todo campo `url` de um objeto JSON.
+/// Masks query/fragment tokens in every `url` field of a JSON object.
 fn mask_url_fields(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -1536,7 +1536,7 @@ fn mask_url_fields(value: &mut Value) {
     }
 }
 
-/// URL como aparece na saída: tokens de query/fragmento mascarados sem reveal.
+/// URL as shown in the output: query/fragment tokens masked without reveal.
 pub(crate) fn shown_url(url: &str, reveal: bool) -> String {
     if reveal {
         url.to_string()
@@ -1610,10 +1610,10 @@ fn trace_cookie(view: &View<'_>, name: &str, limit: usize, reveal: bool) -> Map<
     }
     let mut notes = vec![order_note(chrono).to_string()];
     if setters_total == 0 {
-        notes.push("nenhuma resposta observada define este cookie; ele pode vir de document.cookie, do perfil do navegador ou de captura incompleta — a origem não é afirmada".to_string());
+        notes.push("no observed response sets this cookie; it may come from document.cookie, the browser profile or an incomplete capture — the origin is not asserted".to_string());
     }
     if users_total == 0 {
-        notes.push("nenhuma requisição observada envia este cookie".to_string());
+        notes.push("no observed request sends this cookie".to_string());
     }
     let mut out = Map::new();
     out.insert("mode".into(), json!("cookie"));
@@ -1642,7 +1642,7 @@ fn trace_literal(
     reveal: bool,
 ) -> Result<Map<String, Value>, ToolError> {
     if value.is_empty() {
-        return Err(ToolError::invalid("value não pode ser vazio"));
+        return Err(ToolError::invalid("value cannot be empty"));
     }
     let query = SearchQuery {
         text: value.to_string(),
@@ -1694,14 +1694,14 @@ fn trace_literal(
     let consumers: Vec<&_> = matches.iter().filter(|m| !is_producer(m.scope)).collect();
     let mut warnings: Vec<String> = Vec::new();
     if first_producer.is_none() {
-        warnings.push("nenhuma resposta observada contém este valor: ele pode ter sido gerado no cliente, vir de um corpo não capturado ou de captura incompleta".to_string());
+        warnings.push("no observed response contains this value: it may have been generated on the client, come from an uncaptured body or from an incomplete capture".to_string());
     }
     if result.partial {
-        warnings.push("busca parcial: algum corpo truncado foi pesquisado".to_string());
+        warnings.push("partial search: some truncated body was searched".to_string());
     }
     if result.skipped_binary > 0 {
         warnings.push(format!(
-            "{} corpo(s) binário(s) não pesquisados",
+            "{} binary body(ies) not searched",
             result.skipped_binary
         ));
     }
@@ -1757,8 +1757,8 @@ fn trace_request(
             });
         }
         if !reveal {
-            // Nada derivado do valor sem reveal: nem a prévia, nem o comprimento,
-            // nem posições/tamanhos de trechos dentro dele.
+            // Nothing derived from the value without reveal: neither the preview, nor the length,
+            // nor the positions/sizes of excerpts within it.
             for item in values.iter_mut() {
                 if item.get("value").is_some() {
                     item["value"] = json!(PLACEHOLDER);
@@ -1794,21 +1794,21 @@ fn trace_request(
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SiteProfileParams {
     pub session_id: String,
-    /// Requisição cujos tokens serão rastreados (padrão: as últimas XHR/fetch
-    /// bem-sucedidas da aplicação).
+    /// Request whose tokens will be traced (default: the application's last successful XHR/fetch
+    /// requests).
     pub target_request_id: Option<String>,
 }
 
-/// Reconhecimento do site (proteções, bloqueios, cookies e tokens) com
-/// evidência. A função do `recon` já redige valores (`[redigido, N bytes]`) e
-/// tira a query das URLs, então roda sobre a sessão original (precisa dos
-/// valores reais para rastrear tokens) sem vazar; as URLs passam por
-/// `sanitize_url` mesmo assim.
+/// Site reconnaissance (protections, blocks, cookies and tokens) with
+/// evidence. The `recon` function already redacts values (`[redigido, N bytes]`) and
+/// strips the query from the URLs, so it runs over the original session (it needs the
+/// real values to trace tokens) without leaking; the URLs still pass through
+/// `sanitize_url` anyway.
 pub fn site_profile(ctx: &Ctx, params: SiteProfileParams) -> ToolResult {
     let entry = ctx.open(&params.session_id)?;
     if let Some(id) = &params.target_request_id {
         entry.lazy.session.find_request(id).ok_or_else(|| {
-            ToolError::not_found(format!("requisição {id:?} não encontrada na sessão"))
+            ToolError::not_found(format!("request {id:?} not found in session"))
         })?;
     }
     let options = scrapelens_recon::ProfileOptions {
@@ -1825,15 +1825,15 @@ pub fn site_profile(ctx: &Ctx, params: SiteProfileParams) -> ToolResult {
     Ok(value)
 }
 
-/// Rede de segurança final de TODA saída sem `reveal`: em qualquer string, o
-/// valor de parâmetro de query com nome sensível vira `[REDACTED]`. Roda sobre
-/// o JSON inteiro, não só sobre campos conhecidos. Defesa em profundidade: o
-/// sanitizador do core já cobre os campos do modelo.
+/// Final safety net for EVERY output without `reveal`: in any string, the
+/// value of a query parameter with a sensitive name becomes `[REDACTED]`. Runs over
+/// the whole JSON, not only known fields. Defense in depth: the
+/// core sanitizer already covers the model's fields.
 pub fn scrub_output(value: &mut Value) {
     fn walk(value: &mut Value, options: &scrapelens_core::export::sanitize::SanitizeOptions) {
         match value {
-            // Mesmas regras do sanitizador (query, fragmento, matriz, userinfo,
-            // `nome=valor`, URL aninhada), em toda string; é defesa em profundidade.
+            // Same rules as the sanitizer (query, fragment, matrix, userinfo,
+            // `name=value`, nested URL), applied to every string; it is defense in depth.
             Value::String(text) => {
                 let scrubbed = scrapelens_core::export::sanitize::sanitize_text(text, options);
                 if scrubbed != *text {

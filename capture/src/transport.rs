@@ -1,11 +1,11 @@
-//! Transporte do CDP: WebSocket em `127.0.0.1` (porta efêmera) ou pipe
-//! (`--remote-debugging-pipe`, sem porta alguma).
+//! CDP transport: WebSocket on `127.0.0.1` (ephemeral port) or pipe
+//! (`--remote-debugging-pipe`, no port at all).
 //!
-//! O pipe usa dois descritores herdados pelo Chrome: ele LÊ comandos no fd 3 e
-//! ESCREVE respostas e eventos no fd 4, mensagens JSON terminadas em NUL. Só
-//! o processo que criou os pipes fala com o navegador; não há porta para outro
-//! processo local, e o Chrome sai sozinho quando o pipe fecha (inclusive se o
-//! ScrapeLens morrer por SIGKILL).
+//! The pipe uses two descriptors inherited by Chrome: it READS commands on fd 3
+//! and WRITES responses and events on fd 4, JSON messages terminated by NUL. Only
+//! the process that created the pipes talks to the browser; there is no port for
+//! another local process, and Chrome exits on its own when the pipe closes (even
+//! if ScrapeLens dies by SIGKILL).
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Write};
@@ -22,20 +22,20 @@ use tungstenite::protocol::WebSocketConfig;
 use tungstenite::client::connect_with_config;
 use tungstenite::{Message, WebSocket};
 
-/// Como o nosso cliente fala com o Chrome.
+/// How our client talks to Chrome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CdpTransport {
-    /// WebSocket em `127.0.0.1:<porta efêmera>` (necessário se o agente também
-    /// vai se conectar: `expose_cdp`).
+    /// WebSocket on `127.0.0.1:<ephemeral port>` (required if the agent will also
+    /// connect: `expose_cdp`).
     #[default]
     Port,
-    /// `--remote-debugging-pipe`: nenhuma porta aberta.
+    /// `--remote-debugging-pipe`: no open port.
     Pipe,
 }
 
 impl CdpTransport {
-    /// `SCRAPELENS_CDP_TRANSPORT=pipe|port` troca o padrão da captura comum do
-    /// App (instrumento de medição e de volta atrás).
+    /// `SCRAPELENS_CDP_TRANSPORT=pipe|port` changes the default of the App's regular
+    /// capture (a measurement instrument and a way back).
     pub fn from_env(default: CdpTransport) -> CdpTransport {
         Self::parse(std::env::var("SCRAPELENS_CDP_TRANSPORT").ok().as_deref(), default)
     }
@@ -57,7 +57,7 @@ pub(crate) enum Incoming {
 }
 
 pub(crate) enum ReadError {
-    /// Nada chegou dentro do prazo curto de leitura.
+    /// Nothing arrived within the short read deadline.
     WouldBlock,
     Fatal(String),
 }
@@ -67,10 +67,10 @@ pub(crate) enum Transport {
     Pipe(PipeTransport),
 }
 
-/// WebSocket do modo porta. Depois de qualquer erro de leitura o socket NUNCA
-/// mais é tocado: o tungstenite deixa o buffer de entrada cheio depois de
-/// estourar o limite e uma nova leitura derruba a thread com um `debug_assert`
-/// (A4-B2). O motivo anormal (`frame_too_large`) fica guardado.
+/// WebSocket of port mode. After any read error the socket is NEVER touched
+/// again: tungstenite leaves the input buffer full after exceeding the limit, and
+/// a new read brings the thread down with a `debug_assert` (A4-B2). The abnormal
+/// reason (`frame_too_large`) is kept.
 pub(crate) struct WsTransport {
     socket: Box<WebSocket<MaybeTlsStream<TcpStream>>>,
     dead: bool,
@@ -78,7 +78,7 @@ pub(crate) struct WsTransport {
 }
 
 impl Transport {
-    /// Conecta ao WebSocket do navegador, com tentativas por até 10 s.
+    /// Connects to the browser's WebSocket, retrying for up to 10 s.
     pub(crate) fn connect_ws(url: &str) -> Result<Transport, String> {
         Self::connect_ws_with_limit(url, MAX_PIPE_MESSAGE_BYTES)
     }
@@ -87,8 +87,8 @@ impl Transport {
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut last_error = String::new();
         while Instant::now() < deadline {
-            // Mesmo teto do pipe, na mensagem e no quadro (o padrão da biblioteca
-            // é 64 MiB/16 MiB): a porta e o pipe se comportam igual.
+            // Same cap as the pipe, for the message and the frame (the library default is
+            // 64 MiB/16 MiB): the port and the pipe behave the same.
             let config = WebSocketConfig::default()
                 .max_message_size(Some(limit))
                 .max_frame_size(Some(limit));
@@ -109,7 +109,7 @@ impl Transport {
                 }
             }
         }
-        Err(format!("Não foi possível conectar ao CDP local: {last_error}"))
+        Err(format!("Could not connect to the local CDP: {last_error}"))
     }
 
     pub(crate) fn pipe(writer: File, reader: File) -> Transport {
@@ -135,7 +135,7 @@ impl Transport {
                     Err(error) => {
                         ws.dead = true;
                         if matches!(error, tungstenite::Error::Capacity(_)) {
-                            eprintln!("CDP: mensagem do WebSocket acima do teto: {error}; transporte encerrado");
+                            eprintln!("CDP: WebSocket message above the limit: {error}; transport closed");
                             ws.abnormal = Some("frame_too_large");
                         }
                         Err(ReadError::Fatal(error.to_string()))
@@ -148,7 +148,7 @@ impl Transport {
 
     pub(crate) fn send_text(&mut self, text: String) -> Result<(), String> {
         match self {
-            Transport::Ws(ws) if ws.dead => Err("WebSocket do CDP fechado".to_string()),
+            Transport::Ws(ws) if ws.dead => Err("CDP WebSocket closed".to_string()),
             Transport::Ws(ws) => ws
                 .socket
                 .send(Message::Text(text.into()))
@@ -157,8 +157,9 @@ impl Transport {
         }
     }
 
-    /// O transporte já fechou (EOF do pipe, teto estourado, WebSocket sem leitura)?
-    /// Quem espera por eventos usa isto para não girar até o prazo.
+    /// Has the transport already closed (pipe EOF, limit exceeded, WebSocket that
+    /// can no longer read)? Whoever waits for events uses this so as not to spin
+    /// until the deadline.
     pub(crate) fn is_closed(&self) -> bool {
         match self {
             Transport::Ws(ws) => ws.dead || !ws.socket.can_read(),
@@ -166,8 +167,8 @@ impl Transport {
         }
     }
 
-    /// Motivo do fechamento quando NÃO foi um fim normal: hoje só
-    /// `frame_too_large` (mensagem do pipe acima do teto).
+    /// Reason for closing when it was NOT a normal end: today only
+    /// `frame_too_large` (pipe message above the limit).
     pub(crate) fn abnormal_close_reason(&self) -> Option<&'static str> {
         match self {
             Transport::Pipe(pipe) if pipe.too_large.load(Ordering::SeqCst) => Some("frame_too_large"),
@@ -199,15 +200,15 @@ impl Transport {
 enum PipeEvent {
     Text(String),
     Eof,
-    /// Uma mensagem passou do teto e a leitura parou (R12).
+    /// A message exceeded the limit and reading stopped (R12).
     TooLarge,
 }
 
-/// Teto de uma mensagem do pipe, em bytes (R12). O WebSocket antigo tinha 64
-/// MiB; uma resposta legítima fica abaixo (`maxResourceBufferSize` ≈ 67 MB de
-/// base64 só no pior caso de corpo), então 128 MiB não corta nada real e impede
-/// que um Chrome com defeito, ou um alvo hostil, encha a memória com uma
-/// mensagem sem fim.
+/// Cap for one pipe message, in bytes (R12). The old WebSocket had 64 MiB; a
+/// legitimate response stays below it (`maxResourceBufferSize` ≈ 67 MB of base64
+/// only in the worst body case), so 128 MiB cuts nothing real and prevents a
+/// faulty Chrome, or a hostile target, from filling memory with an endless
+/// message.
 pub(crate) const MAX_PIPE_MESSAGE_BYTES: usize = 128 * 1024 * 1024;
 
 enum Frame {
@@ -216,8 +217,8 @@ enum Frame {
     TooLarge,
 }
 
-/// Lê uma mensagem terminada em NUL para `buf` sem nunca guardar mais de `max`
-/// bytes. Fim do fluxo no meio da mensagem descarta o pedaço (`Eof`).
+/// Reads a NUL-terminated message into `buf` without ever keeping more than `max`
+/// bytes. End of stream in the middle of a message discards the piece (`Eof`).
 fn read_frame<R: BufRead>(reader: &mut R, buf: &mut Vec<u8>, max: usize) -> std::io::Result<Frame> {
     buf.clear();
     loop {
@@ -254,8 +255,8 @@ pub(crate) struct PipeTransport {
     writer: Option<File>,
     rx: Receiver<PipeEvent>,
     eof: bool,
-    /// Ligado pela thread de leitura assim que uma mensagem passa do teto, sem
-    /// depender de alguém consumir o evento (A3-B2).
+    /// Set by the read thread as soon as a message exceeds the limit, without
+    /// depending on someone consuming the event (A3-B2).
     too_large: Arc<AtomicBool>,
 }
 
@@ -280,7 +281,7 @@ impl PipeTransport {
                         }
                     }
                     Ok(Frame::TooLarge) => {
-                        eprintln!("CDP: mensagem do pipe acima de {max_message} bytes; transporte encerrado");
+                        eprintln!("CDP: pipe message above {max_message} bytes; transport closed");
                         flag.store(true, Ordering::SeqCst);
                         let _ = tx.send(PipeEvent::TooLarge);
                         return;
@@ -315,7 +316,7 @@ impl PipeTransport {
     }
 
     fn send(&mut self, text: &str) -> Result<(), String> {
-        let writer = self.writer.as_mut().ok_or_else(|| "pipe do CDP fechado".to_string())?;
+        let writer = self.writer.as_mut().ok_or_else(|| "CDP pipe closed".to_string())?;
         let mut framed = Vec::with_capacity(text.len() + 1);
         framed.extend_from_slice(text.as_bytes());
         framed.push(0);
@@ -326,46 +327,48 @@ impl PipeTransport {
     }
 
     fn close(&mut self) {
-        // Fechar a ponta de escrita avisa o Chrome (EOF no fd 3).
+        // Closing the write end notifies Chrome (EOF on fd 3).
         self.writer = None;
     }
 }
 
-/// As quatro pontas de dois pipes: o Chrome lê no fd 3 e escreve no fd 4.
+/// The four ends of two pipes: Chrome reads on fd 3 and writes on fd 4.
 pub(crate) struct PipeEnds {
-    /// Do Chrome: vira o fd 3 no filho (ele LÊ comandos aqui).
+    /// From Chrome: becomes fd 3 in the child (it READS commands here).
     pub child_read: OwnedFd,
-    /// Do Chrome: vira o fd 4 no filho (ele ESCREVE aqui).
+    /// From Chrome: becomes fd 4 in the child (it WRITES here).
     pub child_write: OwnedFd,
     pub parent_write: File,
     pub parent_read: File,
 }
 
-/// Duplica o descritor para um número alto com FD_CLOEXEC e fecha o original
-/// (evita colidir com os fds 3 e 4 do filho e vazar para outros processos).
+/// Duplicates the descriptor to a high number with FD_CLOEXEC and closes the
+/// original (avoids colliding with the child's fds 3 and 4 and leaking to other
+/// processes).
 fn high_cloexec(fd: i32) -> std::io::Result<OwnedFd> {
-    // SAFETY: `fd` é um descritor válido recém-criado por `pipe`.
+    // SAFETY: `fd` is a valid descriptor just created by `pipe`.
     let dup = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 10) };
     let error = std::io::Error::last_os_error();
-    // SAFETY: fecha o original, que não é mais usado.
+    // SAFETY: closes the original, which is no longer used.
     unsafe { libc::close(fd) };
     if dup < 0 {
         return Err(error);
     }
-    // SAFETY: `dup` é um descritor novo e exclusivo nosso.
+    // SAFETY: `dup` is a new descriptor that is exclusively ours.
     Ok(unsafe { OwnedFd::from_raw_fd(dup) })
 }
 
-/// Um `pipe()` com as duas pontas já em CLOEXEC quando o sistema permite: no Linux
-/// `pipe2(O_CLOEXEC)` é atômico (sem a janela entre `pipe()` e o `fcntl` que um
-/// `exec` concorrente poderia herdar); no macOS não existe `pipe2`, então a janela
-/// mínima continua e é fechada logo por `high_cloexec` (docs/16b §2.1).
+/// A `pipe()` with both ends already in CLOEXEC when the system allows it: on
+/// Linux `pipe2(O_CLOEXEC)` is atomic (no window between `pipe()` and the `fcntl`
+/// that a concurrent `exec` could inherit); on macOS there is no `pipe2`, so the
+/// minimal window remains and is closed right away by `high_cloexec`
+/// (docs/16b §2.1).
 fn cloexec_pipe(fds: &mut [libc::c_int; 2]) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
-    // SAFETY: array de 2 inteiros, como `pipe2(2)` exige.
+    // SAFETY: array of 2 integers, as `pipe2(2)` requires.
     let rc = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
     #[cfg(not(target_os = "linux"))]
-    // SAFETY: array de 2 inteiros, como `pipe(2)` exige.
+    // SAFETY: array of 2 integers, as `pipe(2)` requires.
     let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
     if rc != 0 {
         return Err(std::io::Error::last_os_error());
@@ -374,11 +377,11 @@ fn cloexec_pipe(fds: &mut [libc::c_int; 2]) -> std::io::Result<()> {
 }
 
 pub(crate) fn make_pipe_ends() -> std::io::Result<PipeEnds> {
-    let mut to_chrome = [0i32; 2]; // [leitura do Chrome, escrita do pai]
-    let mut from_chrome = [0i32; 2]; // [leitura do pai, escrita do Chrome]
+    let mut to_chrome = [0i32; 2]; // [Chrome read, parent write]
+    let mut from_chrome = [0i32; 2]; // [parent read, Chrome write]
     cloexec_pipe(&mut to_chrome)?;
     if let Err(error) = cloexec_pipe(&mut from_chrome) {
-        // SAFETY: fecha o primeiro par, que ficou aberto.
+        // SAFETY: closes the first pair, which was left open.
         unsafe {
             libc::close(to_chrome[0]);
             libc::close(to_chrome[1]);
@@ -409,8 +412,8 @@ mod tests {
         assert_eq!(CdpTransport::parse(Some("lixo"), CdpTransport::Pipe), CdpTransport::Pipe);
     }
 
-    /// Um "Chrome" de mentira nas pontas do pipe: lê mensagens terminadas em NUL
-    /// no lado dele e responde `{"eco":<mensagem>}` + NUL; termina no EOF.
+    /// A fake "Chrome" on the pipe ends: reads NUL-terminated messages on its side
+    /// and replies `{"eco":<message>}` + NUL; ends on EOF.
     fn fake_chrome(ends: PipeEnds) -> (Transport, thread::JoinHandle<Vec<String>>) {
         let PipeEnds { child_read, child_write, parent_write, parent_read } = ends;
         let handle = thread::spawn(move || {
@@ -446,12 +449,12 @@ mod tests {
                 _ => continue,
             }
         }
-        panic!("sem mensagem");
+        panic!("no message");
     }
 
-    /// A4-B2: no modo porta uma mensagem acima do teto fecha o transporte com
-    /// motivo explícito e NUNCA mais toca o socket (o tungstenite derruba a thread
-    /// com um `debug_assert` se for lido de novo depois do estouro).
+    /// A4-B2: in port mode a message above the limit closes the transport with an
+    /// explicit reason and NEVER touches the socket again (tungstenite brings the
+    /// thread down with a `debug_assert` if it is read again after the overflow).
     #[test]
     fn a4_b2_websocket_message_cap_closes_with_a_reason_and_never_panics() {
         use std::net::TcpListener;
@@ -473,14 +476,14 @@ mod tests {
                     fatal = true;
                     break;
                 }
-                Ok(Incoming::Text(text)) => panic!("mensagem acima do teto entregue: {} bytes", text.len()),
+                Ok(Incoming::Text(text)) => panic!("message above the limit delivered: {} bytes", text.len()),
                 _ => {}
             }
         }
-        assert!(fatal, "esperava erro de capacidade");
+        assert!(fatal, "expected a capacity error");
         assert_eq!(t.abnormal_close_reason(), Some("frame_too_large"));
         assert!(t.is_closed());
-        // Leituras, envios e fechamento depois do estouro não tocam o socket.
+        // Reads, sends and closing after the overflow do not touch the socket.
         for _ in 0..3 {
             assert!(matches!(t.read(), Ok(Incoming::Close)));
         }
@@ -493,24 +496,24 @@ mod tests {
     fn r12_read_frame_enforces_the_message_cap_without_buffering_past_it() {
         use std::io::Cursor;
         let mut buf = Vec::new();
-        // Dentro do teto, incluindo exatamente no limite.
+        // Within the limit, including exactly at the cap.
         let mut ok = Cursor::new(b"abcd\0ef\0".to_vec());
         assert!(matches!(read_frame(&mut ok, &mut buf, 4).unwrap(), Frame::Message));
         assert_eq!(buf, b"abcd");
         assert!(matches!(read_frame(&mut ok, &mut buf, 4).unwrap(), Frame::Message));
         assert_eq!(buf, b"ef");
         assert!(matches!(read_frame(&mut ok, &mut buf, 4).unwrap(), Frame::Eof));
-        // Um byte acima do teto, com ou sem o NUL à vista.
+        // One byte above the limit, with or without the NUL in sight.
         let mut over = Cursor::new(b"abcde\0".to_vec());
         assert!(matches!(read_frame(&mut over, &mut buf, 4).unwrap(), Frame::TooLarge));
-        assert!(buf.len() <= 4, "nunca guarda além do teto: {}", buf.len());
-        // Mensagem sem fim (sem NUL): para no teto, em vez de crescer.
+        assert!(buf.len() <= 4, "never keeps more than the limit: {}", buf.len());
+        // Endless message (no NUL): stops at the limit instead of growing.
         let endless = vec![b'x'; 1_000_000];
         let mut cursor = Cursor::new(endless);
         let mut reader = BufReader::with_capacity(8, &mut cursor);
         assert!(matches!(read_frame(&mut reader, &mut buf, 100).unwrap(), Frame::TooLarge));
         assert!(buf.len() <= 100, "{}", buf.len());
-        // Fim do fluxo no meio de uma mensagem: descarta.
+        // End of stream in the middle of a message: discards it.
         let mut cut = Cursor::new(b"parcial".to_vec());
         assert!(matches!(read_frame(&mut cut, &mut buf, 100).unwrap(), Frame::Eof));
     }
@@ -524,8 +527,8 @@ mod tests {
             let _keep_open = File::from(child_read);
             let mut writer = File::from(child_write);
             writer.write_all(b"{\"ok\":1}\0").unwrap();
-            // 200 bytes sem NUL: passa do teto de 64. Para na leitura; o Chrome
-            // de verdade recebe EPIPE ao escrever depois disso.
+            // 200 bytes without NUL: exceeds the 64 limit. Stops at the read; the real
+            // Chrome gets EPIPE when writing after that.
             let _ = writer.write_all(&[b'y'; 200]);
             let _ = writer.write_all(&[0]);
         });
@@ -537,15 +540,15 @@ mod tests {
                     closed = true;
                     break;
                 }
-                Ok(Incoming::Text(text)) => panic!("mensagem acima do teto entregue: {} bytes", text.len()),
+                Ok(Incoming::Text(text)) => panic!("message above the limit delivered: {} bytes", text.len()),
                 _ => {}
             }
         }
-        assert!(closed, "o transporte devia fechar ao passar do teto");
-        // A3-B2: o motivo fica registrado e o transporte se declara fechado.
+        assert!(closed, "the transport should close when it exceeds the limit");
+        // A3-B2: the reason is recorded and the transport declares itself closed.
         assert_eq!(t.abnormal_close_reason(), Some("frame_too_large"));
         assert!(t.is_closed());
-        // Fechado de vez: continua fechado.
+        // Closed for good: it stays closed.
         assert!(matches!(t.read(), Ok(Incoming::Close)));
         handle.join().unwrap();
     }
@@ -553,24 +556,24 @@ mod tests {
     #[test]
     fn pipe_frames_messages_with_nul_in_both_directions_and_closes_on_eof() {
         let ends = make_pipe_ends().unwrap();
-        // Os fds do pai e as pontas do filho NÃO são o 3 nem o 4 (o filho os
-        // recebe por dup2) e não vazam por exec (FD_CLOEXEC).
+        // The parent's fds and the child's ends are NOT 3 or 4 (the child receives
+        // them via dup2) and do not leak through exec (FD_CLOEXEC).
         use std::os::fd::AsRawFd;
         for fd in [ends.child_read.as_raw_fd(), ends.child_write.as_raw_fd(), ends.parent_write.as_raw_fd(), ends.parent_read.as_raw_fd()] {
             assert!(fd >= 10, "fd {fd}");
             let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
-            assert!(flags & libc::FD_CLOEXEC != 0, "fd {fd} sem CLOEXEC");
+            assert!(flags & libc::FD_CLOEXEC != 0, "fd {fd} without CLOEXEC");
         }
         let (mut t, child) = fake_chrome(ends);
         t.send_text("{\"id\":1,\"method\":\"A\"}".to_string()).unwrap();
-        // Uma mensagem grande (maior que o buffer de um pipe comum) e com acentos.
+        // A large message (bigger than a common pipe buffer) with accents.
         let big = format!("{{\"id\":2,\"p\":\"{}ç\"}}", "x".repeat(200_000));
         t.send_text(big.clone()).unwrap();
         assert_eq!(next_text(&mut t), "{\"eco\":{\"id\":1,\"method\":\"A\"}}");
         assert_eq!(next_text(&mut t), format!("{{\"eco\":{big}}}"));
-        // Sem nada a ler: o prazo curto vira WouldBlock, não erro.
+        // Nothing to read: the short deadline becomes WouldBlock, not an error.
         assert!(matches!(t.read(), Err(ReadError::WouldBlock)));
-        // Fechar a nossa ponta de escrita dá EOF ao "Chrome", que termina e fecha a dele.
+        // Closing our write end gives EOF to the "Chrome", which ends and closes its own.
         t.close();
         let seen = child.join().unwrap();
         assert_eq!(seen.len(), 2);
@@ -585,9 +588,9 @@ mod tests {
                 _ => continue,
             }
         }
-        assert!(closed, "EOF do Chrome deve virar Close");
-        assert!(t.send_text("{}".to_string()).is_err(), "pipe já fechado");
-        // Um EOF no meio de uma mensagem é descartado, não vira texto.
+        assert!(closed, "Chrome's EOF should become Close");
+        assert!(t.send_text("{}".to_string()).is_err(), "pipe already closed");
+        // An EOF in the middle of a message is discarded, not turned into text.
         let ends = make_pipe_ends().unwrap();
         let PipeEnds { child_read, child_write, parent_write, parent_read } = ends;
         drop(child_read);

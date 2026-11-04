@@ -1,5 +1,5 @@
-//! Assinaturas como DADOS (`signatures.json`), cada uma com fonte consultada.
-//! Sem fonte (`source.url` e `source.quote`), a assinatura é recusada na carga.
+//! Signatures as DATA (`signatures.json`), each with a consulted source.
+//! Without a source (`source.url` and `source.quote`), the signature is rejected on load.
 
 use std::collections::BTreeSet;
 
@@ -35,9 +35,9 @@ impl SigKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Weight {
-    /// O produto está presente; não prova bloqueio.
+    /// The product is present; does not prove a block.
     Present,
-    /// Pela própria documentação do fornecedor, a resposta é um desafio/bloqueio.
+    /// Per the vendor's own documentation, the response is a challenge/block.
     Block,
 }
 
@@ -76,28 +76,28 @@ pub struct Signature {
     pub weight: Weight,
     pub summary: String,
     pub source: Source,
-    /// Cookie: nomes exatos.
+    /// Cookie: exact names.
     #[serde(default)]
     pub names: Vec<String>,
-    /// Cookie: prefixos.
+    /// Cookie: prefixes.
     #[serde(default)]
     pub prefixes: Vec<String>,
-    /// Cabeçalho / campo de formulário: nome.
+    /// Header / form field: name.
     #[serde(default)]
     pub name: Option<String>,
-    /// Cabeçalho: só casa com um destes valores (minúsculos).
+    /// Header: matches only one of these values (lowercase).
     #[serde(default)]
     pub values: Vec<String>,
-    /// Cabeçalho: valores que significam bloqueio/desafio.
+    /// Header: values that mean block/challenge.
     #[serde(default)]
     pub block_values: Vec<String>,
-    /// Cabeçalho: qualquer valor FORA desta lista significa bloqueio/desafio.
+    /// Header: any value OUTSIDE this list means block/challenge.
     #[serde(default)]
     pub block_unless: Vec<String>,
-    /// Cabeçalho: status HTTP documentado para cada valor de bloqueio.
+    /// Header: documented HTTP status for each block value.
     #[serde(default)]
     pub value_status: std::collections::BTreeMap<String, u16>,
-    /// Host: igual a / sufixo de.
+    /// Host: equal to / suffix of.
     #[serde(default)]
     pub host: Option<String>,
     #[serde(default)]
@@ -106,7 +106,7 @@ pub struct Signature {
     pub path_prefix: Option<String>,
     #[serde(default)]
     pub path_contains: Option<String>,
-    /// O cookie indica que um desafio foi resolvido neste navegador.
+    /// The cookie indicates that a challenge was solved in this browser.
     #[serde(default)]
     pub clearance: bool,
 }
@@ -123,15 +123,15 @@ pub struct SignatureSet {
 }
 
 impl SignatureSet {
-    /// A tabela entregue com o crate.
+    /// The table shipped with the crate.
     pub fn embedded() -> SignatureSet {
-        SignatureSet::from_json(EMBEDDED).expect("signatures.json embutido é válido")
+        SignatureSet::from_json(EMBEDDED).expect("embedded signatures.json is valid")
     }
 
     pub fn from_json(text: &str) -> Result<SignatureSet, String> {
         let file: File = serde_json::from_str(text).map_err(|e| format!("signatures.json: {e}"))?;
         if file.schema != SIGNATURES_SCHEMA {
-            return Err(format!("esquema desconhecido: {}", file.schema));
+            return Err(format!("unknown schema: {}", file.schema));
         }
         let set = SignatureSet {
             signatures: file.signatures,
@@ -144,10 +144,10 @@ impl SignatureSet {
         let mut ids = BTreeSet::new();
         for s in &self.signatures {
             if !ids.insert(s.id.clone()) {
-                return Err(format!("id repetido: {}", s.id));
+                return Err(format!("repeated id: {}", s.id));
             }
             if s.source.url.trim().is_empty() || s.source.quote.trim().is_empty() {
-                return Err(format!("{}: assinatura sem fonte (url e citação são obrigatórias)", s.id));
+                return Err(format!("{}: signature without source (url and quote are required)", s.id));
             }
             let ok = match s.kind {
                 SigKind::Cookie => !s.names.is_empty() || !s.prefixes.is_empty(),
@@ -157,13 +157,13 @@ impl SignatureSet {
                 SigKind::Path => s.path_prefix.is_some(),
             };
             if !ok {
-                return Err(format!("{}: campos obrigatórios do tipo {:?} ausentes", s.id, s.kind));
+                return Err(format!("{}: required fields for type {:?} are missing", s.id, s.kind));
             }
             if s.weight == Weight::Block
                 && s.block_values.is_empty()
                 && s.block_unless.is_empty()
             {
-                return Err(format!("{}: weight=block exige block_values ou block_unless", s.id));
+                return Err(format!("{}: weight=block requires block_values or block_unless", s.id));
             }
         }
         Ok(())

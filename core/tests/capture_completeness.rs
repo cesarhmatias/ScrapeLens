@@ -1,5 +1,5 @@
-//! Captura sem requisições: a razão de completude vinda do CDP sobrevive à
-//! importação conjunta com o NetLog, e `Capture.sessionSetup` é um evento conhecido.
+//! Capture without requests: the completeness reason coming from CDP survives the
+//! joint import with NetLog, and `Capture.sessionSetup` is a known event.
 
 use scrapelens_core::correlate::CorrelationOptions;
 use scrapelens_core::model::CompletenessState;
@@ -79,7 +79,7 @@ fn capture_without_requests_is_partial_with_an_explicit_reason() {
             .completeness
             .reasons
             .iter()
-            .any(|r| r.contains("nenhuma requisição CDP utilizável")),
+            .any(|r| r.contains("no usable CDP request")),
         "{:?}",
         session.session.completeness.reasons
     );
@@ -102,13 +102,13 @@ fn netlog_events_without_any_cdp_request_are_listed_as_a_reason() {
     assert!(
         reasons
             .iter()
-            .any(|r| r.contains("nenhuma requisição CDP utilizável")),
+            .any(|r| r.contains("no usable CDP request")),
         "{reasons:?}"
     );
     assert!(
         reasons
             .iter()
-            .any(|r| r.contains("NetLog") && r.contains("sem correspondência")),
+            .any(|r| r.contains("NetLog") && r.contains("no CDP match")),
         "{reasons:?}"
     );
 }

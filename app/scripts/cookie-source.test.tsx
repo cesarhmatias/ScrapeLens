@@ -7,11 +7,11 @@ const props = {
   value: "chrome:Default", startUrl: "", disabled: false, onChange: () => {},
 };
 const blank = renderToStaticMarkup(<CookieSourceSelect {...props} />);
-assert.match(blank, /aria-label="Importar cookies do navegador"/);
-assert.match(blank, /Sem cookies \(sessão limpa\)/);
+assert.match(blank, /aria-label="Import cookies from browser"/);
+assert.match(blank, /No cookies \(clean session\)/);
 assert.match(blank, /value="chrome:Default" selected=""/);
-assert.match(blank, /Informe a URL inicial para importar cookies/);
-assert.match(blank, /Com URL vazia, a captura usa sessão limpa/);
+assert.match(blank, /Enter the start URL to import cookies/);
+assert.match(blank, /With an empty URL, capture uses a clean session/);
 const withUrl = renderToStaticMarkup(<CookieSourceSelect {...props} startUrl="https://example.org" disabled />);
 assert.match(withUrl, /disabled=""/);
 assert.doesNotMatch(withUrl, /id="cookie-source-hint"/);

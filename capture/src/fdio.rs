@@ -1,10 +1,10 @@
-//! Operações relativas a descritor de diretório (`openat`, `renameat`,
-//! `unlinkat`...). Tudo aqui age sobre o diretório que o descritor aberto
-//! representa, mesmo que o NOME dele seja trocado ou movido depois (A6-B5): não
-//! existe janela de resolução de caminho entre uma escrita e a seguinte.
+//! Operations relative to a directory descriptor (`openat`, `renameat`,
+//! `unlinkat`...). Everything here acts on the directory that the open descriptor
+//! represents, even if its NAME is later changed or moved (A6-B5): there is no
+//! path-resolution window between one write and the next.
 //!
-//! Nomes de entrada nunca podem ter `/`, NUL, nem ser `.` ou `..`: o chamador
-//! passa só o nome de uma entrada do próprio diretório.
+//! Entry names must never contain `/` or NUL, nor be `.` or `..`: the caller
+//! passes only the name of an entry in the directory itself.
 
 use std::ffi::{CStr, CString};
 use std::fs::File;
@@ -23,10 +23,10 @@ fn name_c(name: &str) -> io::Result<CString> {
     if name.is_empty() || name == "." || name == ".." || name.contains('/') {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("nome de entrada inválido: {name:?}"),
+            format!("invalid entry name: {name:?}"),
         ));
     }
-    CString::new(name).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "nome com NUL"))
+    CString::new(name).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "name with NUL"))
 }
 
 fn check(result: libc::c_int) -> io::Result<libc::c_int> {
@@ -38,14 +38,14 @@ fn check(result: libc::c_int) -> io::Result<libc::c_int> {
 }
 
 fn to_file(fd: libc::c_int) -> File {
-    // SAFETY: `fd` é um descritor novo, aberto agora e só nosso.
+    // SAFETY: `fd` is a new descriptor, just opened and exclusively ours.
     unsafe { File::from_raw_fd(fd) }
 }
 
-/// Tipo da entrada SEM seguir symlink; `None` se não existe.
+/// Entry type WITHOUT following symlinks; `None` if it does not exist.
 pub(crate) fn kind_of(dir: &File, name: &str) -> io::Result<Option<EntryKind>> {
     let cname = name_c(name)?;
-    // SAFETY: `stat` é preenchido pelo `fstatat`; o descritor e o nome são válidos.
+    // SAFETY: `stat` is filled in by `fstatat`; the descriptor and the name are valid.
     let mut stat: libc::stat = unsafe { std::mem::zeroed() };
     let result =
         unsafe { libc::fstatat(dir.as_raw_fd(), cname.as_ptr(), &mut stat, libc::AT_SYMLINK_NOFOLLOW) };
@@ -61,10 +61,10 @@ pub(crate) fn kind_of(dir: &File, name: &str) -> io::Result<Option<EntryKind>> {
     }
 }
 
-/// Entradas do diretório (sem `.` e `..`), pelo descritor.
+/// Directory entries (without `.` and `..`), via the descriptor.
 pub(crate) fn list(dir: &File) -> io::Result<Vec<(String, EntryKind)>> {
-    // SAFETY: `dup` do descritor aberto; `fdopendir` assume a cópia e `closedir`
-    // a fecha; `readdir` devolve entradas válidas até NULL.
+    // SAFETY: `dup` of the open descriptor; `fdopendir` takes over the copy and
+    // `closedir` closes it; `readdir` returns valid entries until NULL.
     unsafe {
         let copy = check(libc::dup(dir.as_raw_fd()))?;
         let stream = libc::fdopendir(copy);
@@ -97,23 +97,23 @@ pub(crate) fn list(dir: &File) -> io::Result<Vec<(String, EntryKind)>> {
     }
 }
 
-/// Remove o NOME (arquivo ou symlink; nunca segue o link nem apaga diretório).
+/// Removes the NAME (file or symlink; never follows the link nor deletes a directory).
 pub(crate) fn unlink(dir: &File, name: &str) -> io::Result<()> {
     let cname = name_c(name)?;
-    // SAFETY: descritor e nome válidos.
+    // SAFETY: descriptor and name are valid.
     check(unsafe { libc::unlinkat(dir.as_raw_fd(), cname.as_ptr(), 0) }).map(|_| ())
 }
 
 fn rmdir(dir: &File, name: &str) -> io::Result<()> {
     let cname = name_c(name)?;
-    // SAFETY: descritor e nome válidos.
+    // SAFETY: descriptor and name are valid.
     check(unsafe { libc::unlinkat(dir.as_raw_fd(), cname.as_ptr(), libc::AT_REMOVEDIR) }).map(|_| ())
 }
 
-/// Abre o subdiretório sem seguir link.
+/// Opens the subdirectory without following links.
 pub(crate) fn open_dir_at(dir: &File, name: &str) -> io::Result<File> {
     let cname = name_c(name)?;
-    // SAFETY: descritor e nome válidos.
+    // SAFETY: descriptor and name are valid.
     let fd = check(unsafe {
         libc::openat(
             dir.as_raw_fd(),
@@ -126,23 +126,23 @@ pub(crate) fn open_dir_at(dir: &File, name: &str) -> io::Result<File> {
 
 fn mkdir_at(dir: &File, name: &str, mode: u32) -> io::Result<()> {
     let cname = name_c(name)?;
-    // SAFETY: descritor e nome válidos.
+    // SAFETY: descriptor and name are valid.
     check(unsafe { libc::mkdirat(dir.as_raw_fd(), cname.as_ptr(), mode as libc::mode_t) }).map(|_| ())
 }
 
 fn rename_at(src: &File, from: &str, dst: &File, to: &str) -> io::Result<()> {
     let (cfrom, cto) = (name_c(from)?, name_c(to)?);
-    // SAFETY: descritores e nomes válidos.
+    // SAFETY: descriptors and names are valid.
     check(unsafe { libc::renameat(src.as_raw_fd(), cfrom.as_ptr(), dst.as_raw_fd(), cto.as_ptr()) })
         .map(|_| ())
 }
 
-/// Cria um arquivo NOVO 0600 (O_EXCL, O_NOFOLLOW) no diretório do descritor.
-/// Aberto para leitura e escrita: quem precisa reler pelo mesmo descritor (os
-/// corpos, no resgate) clona o `File`.
+/// Creates a NEW 0600 file (O_EXCL, O_NOFOLLOW) in the descriptor's directory.
+/// Opened for reading and writing: whoever needs to reread through the same
+/// descriptor (the bodies, during recovery) clones the `File`.
 pub(crate) fn create_new_at(dir: &File, name: &str) -> io::Result<File> {
     let cname = name_c(name)?;
-    // SAFETY: descritor e nome válidos.
+    // SAFETY: descriptor and name are valid.
     let fd = check(unsafe {
         libc::openat(
             dir.as_raw_fd(),
@@ -154,10 +154,10 @@ pub(crate) fn create_new_at(dir: &File, name: &str) -> io::Result<File> {
     Ok(to_file(fd))
 }
 
-/// Abre um arquivo para leitura sem seguir link.
+/// Opens a file for reading without following links.
 pub(crate) fn open_read_at(dir: &File, name: &str) -> io::Result<File> {
     let cname = name_c(name)?;
-    // SAFETY: descritor e nome válidos.
+    // SAFETY: descriptor and name are valid.
     let fd = check(unsafe {
         libc::openat(
             dir.as_raw_fd(),
@@ -168,10 +168,10 @@ pub(crate) fn open_read_at(dir: &File, name: &str) -> io::Result<File> {
     Ok(to_file(fd))
 }
 
-/// Cria `name` NOVO no diretório do descritor. Se o nome já existe (arquivo antigo
-/// ou symlink plantado), remove o NOME (nunca o alvo) e cria de novo; se alguém o
-/// replantar entre as duas chamadas, falha em vez de seguir o link. Relativo ao
-/// descritor: nenhum caminho é resolvido.
+/// Creates a NEW `name` in the descriptor's directory. If the name already exists
+/// (an old file or a planted symlink), removes the NAME (never the target) and
+/// creates it again; if someone plants it again between the two calls, it fails
+/// instead of following the link. Relative to the descriptor: no path is resolved.
 pub(crate) fn create_replacing_at(dir: &File, name: &str) -> io::Result<File> {
     match create_new_at(dir, name) {
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -190,9 +190,9 @@ fn unique_tmp(name: &str) -> String {
     format!(".{name}.tmp-{}-{nanos}", std::process::id())
 }
 
-/// Grava `bytes` em `<dir>/<name>` de forma atômica e relativa ao descritor:
-/// temporário novo (`O_EXCL`) + `renameat`, que substitui o próprio nome (inclusive
-/// um symlink) sem escrever no alvo dele. Nenhum caminho é resolvido.
+/// Writes `bytes` to `<dir>/<name>` atomically and relative to the descriptor:
+/// new temporary file (`O_EXCL`) + `renameat`, which replaces the name itself
+/// (including a symlink) without writing to its target. No path is resolved.
 pub(crate) fn write_private_at(dir: &File, name: &str, bytes: &[u8]) -> io::Result<()> {
     name_c(name)?;
     let tmp = unique_tmp(name);
@@ -208,8 +208,8 @@ pub(crate) fn write_private_at(dir: &File, name: &str, bytes: &[u8]) -> io::Resu
     result
 }
 
-/// Copia um arquivo regular entre diretórios (plano B quando o `renameat` cruza
-/// sistemas de arquivos: EXDEV). Ordem: copia, troca o nome, apaga a origem.
+/// Copies a regular file between directories (plan B when `renameat` crosses file
+/// systems: EXDEV). Order: copy, swap the name, delete the source.
 fn copy_file_at(src: &File, dst: &File, name: &str) -> io::Result<()> {
     let mut from = open_read_at(src, name)?;
     let mut bytes = Vec::new();
@@ -218,14 +218,15 @@ fn copy_file_at(src: &File, dst: &File, name: &str) -> io::Result<()> {
     unlink(src, name)
 }
 
-/// Move a entrada `name` de `src` para `dst` (ambos descritores), substituindo o
-/// que estiver no destino, sem seguir link em nenhum ponto. Devolve os nomes de
-/// symlinks que existiam no destino e foram substituídos (nunca o alvo deles).
+/// Moves the entry `name` from `src` to `dst` (both descriptors), replacing
+/// whatever is in the destination, without following links at any point. Returns
+/// the names of symlinks that existed in the destination and were replaced (never
+/// their targets).
 ///
-/// - arquivo: `renameat` (atômico); EXDEV copia;
-/// - diretório: `renameat`; se o destino é um diretório não vazio ou o `rename`
-///   cruza sistemas de arquivos, mescla entrada por entrada;
-/// - um diretório no destino com o nome de um arquivo é erro (não apagamos pastas).
+/// - file: `renameat` (atomic); EXDEV copies;
+/// - directory: `renameat`; if the destination is a non-empty directory or the
+///   `rename` crosses file systems, merges entry by entry;
+/// - a directory in the destination with the name of a file is an error (we do not delete folders).
 pub(crate) fn move_entry(src: &File, dst: &File, name: &str) -> io::Result<Vec<String>> {
     let mut replaced = Vec::new();
     let Some(kind) = kind_of(src, name)? else {
@@ -235,7 +236,7 @@ pub(crate) fn move_entry(src: &File, dst: &File, name: &str) -> io::Result<Vec<S
     if at_dst == Some(EntryKind::Symlink) {
         replaced.push(name.to_string());
         if kind == EntryKind::Dir {
-            // `rename(dir, symlink)` falha; o NOME do link sai antes.
+            // `rename(dir, symlink)` fails; the link's NAME goes first.
             unlink(dst, name)?;
         }
     }
@@ -249,7 +250,7 @@ pub(crate) fn move_entry(src: &File, dst: &File, name: &str) -> io::Result<Vec<S
             Err(error) => Err(error),
         },
         EntryKind::Symlink => Err(io::Error::other(format!(
-            "{name}: link simbólico na origem; recusado"
+            "{name}: symbolic link at the source; refused"
         ))),
         EntryKind::Dir => match rename_at(src, name, dst, name) {
             Ok(()) => Ok(replaced),
@@ -323,17 +324,17 @@ mod tests {
     #[test]
     fn write_private_at_follows_the_descriptor_after_the_dir_is_moved() {
         let base = scratch("moved");
-        let dir_path = base.join("sessao");
+        let dir_path = base.join("session");
         std::fs::create_dir(&dir_path).unwrap();
         let handle = open(&dir_path);
-        // Troca o nome por um link para OUT: a escrita vai para a pasta ORIGINAL.
+        // Swap the name for a link to OUT: the write goes to the ORIGINAL folder.
         let out = base.join("OUT");
         std::fs::create_dir(&out).unwrap();
-        let moved = base.join("sessao.moved");
+        let moved = base.join("session.moved");
         std::fs::rename(&dir_path, &moved).unwrap();
         symlink(&out, &dir_path).unwrap();
         write_private_at(&handle, "session.json", b"{}").unwrap();
-        assert_eq!(names(&out), Vec::<String>::new(), "nada pode cair em OUT");
+        assert_eq!(names(&out), Vec::<String>::new(), "nothing may land in OUT");
         assert_eq!(std::fs::read(moved.join("session.json")).unwrap(), b"{}");
         assert_eq!(std::fs::metadata(moved.join("session.json")).unwrap().permissions().mode() & 0o777, 0o600);
         let _ = std::fs::remove_dir_all(base);
@@ -342,12 +343,12 @@ mod tests {
     #[test]
     fn create_replacing_at_never_writes_through_a_planted_link_nor_into_a_swapped_dir() {
         let base = scratch("create");
-        let dir_path = base.join("sessao");
+        let dir_path = base.join("session");
         std::fs::create_dir(&dir_path).unwrap();
         let victim = base.join("VICTIM.txt");
         std::fs::write(&victim, "ORIGINAL\n").unwrap();
         std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o644)).unwrap();
-        // 1. Symlink plantado no nome: o NOME é substituído, o alvo não é tocado.
+        // 1. Symlink planted at the name: the NAME is replaced, the target is not touched.
         symlink(&victim, dir_path.join("cdp-bodies.jsonl")).unwrap();
         let handle = open(&dir_path);
         let mut file = create_replacing_at(&handle, "cdp-bodies.jsonl").unwrap();
@@ -357,22 +358,22 @@ mod tests {
         let meta = std::fs::symlink_metadata(dir_path.join("cdp-bodies.jsonl")).unwrap();
         assert!(meta.file_type().is_file());
         assert_eq!(meta.permissions().mode() & 0o777, 0o600);
-        // O mesmo descritor também LÊ (o resgate relê os corpos): clone + seek.
+        // The same descriptor also READS (recovery rereads the bodies): clone + seek.
         let mut reader = file.try_clone().unwrap();
         std::io::Seek::seek(&mut reader, std::io::SeekFrom::Start(0)).unwrap();
         let mut back = String::new();
         reader.read_to_string(&mut back).unwrap();
         assert_eq!(back, "corpo\n");
-        // 2. A pasta é trocada por um link para OUT ANTES da criação: o arquivo
-        //    nasce na pasta ORIGINAL.
+        // 2. The folder is swapped for a link to OUT BEFORE creation: the file
+        //    is created in the ORIGINAL folder.
         let out = base.join("OUT");
         std::fs::create_dir(&out).unwrap();
-        let moved = base.join("sessao.moved");
+        let moved = base.join("session.moved");
         std::fs::rename(&dir_path, &moved).unwrap();
         symlink(&out, &dir_path).unwrap();
         std::fs::remove_file(moved.join("cdp-bodies.jsonl")).unwrap();
         create_replacing_at(&handle, "cdp-bodies.jsonl").unwrap();
-        assert_eq!(names(&out), Vec::<String>::new(), "nada em OUT");
+        assert_eq!(names(&out), Vec::<String>::new(), "nothing in OUT");
         assert!(moved.join("cdp-bodies.jsonl").is_file());
         let _ = std::fs::remove_dir_all(base);
     }
@@ -393,7 +394,7 @@ mod tests {
     #[test]
     fn move_entry_replaces_files_and_symlinks_and_reports_the_links() {
         let base = scratch("move");
-        let (src, dst) = (base.join("stage"), base.join("sessao"));
+        let (src, dst) = (base.join("stage"), base.join("session"));
         std::fs::create_dir(&src).unwrap();
         std::fs::create_dir(&dst).unwrap();
         let victim = base.join("VICTIM.txt");
@@ -417,21 +418,21 @@ mod tests {
     #[test]
     fn move_entry_handles_attachments_dirs_symlinked_or_populated() {
         let base = scratch("movedir");
-        let (src, dst) = (base.join("stage"), base.join("sessao"));
+        let (src, dst) = (base.join("stage"), base.join("session"));
         std::fs::create_dir_all(src.join("attachments")).unwrap();
         std::fs::create_dir(&dst).unwrap();
         std::fs::write(src.join("attachments/a.bin"), "A").unwrap();
         std::fs::write(src.join("attachments/b.bin"), "B").unwrap();
-        // 1. `attachments` é um symlink para um diretório de fora.
-        let outside = base.join("DIR-FORA");
+        // 1. `attachments` is a symlink to a directory outside.
+        let outside = base.join("DIR-OUTSIDE");
         std::fs::create_dir(&outside).unwrap();
         std::fs::write(outside.join("keep.txt"), "K").unwrap();
         symlink(&outside, dst.join("attachments")).unwrap();
         let (s, d) = (open(&src), open(&dst));
         assert_eq!(move_entry(&s, &d, "attachments").unwrap(), ["attachments"]);
         assert_eq!(names(&dst.join("attachments")), ["a.bin", "b.bin"]);
-        assert_eq!(names(&outside), ["keep.txt"], "diretório de fora intacto");
-        // 2. Destino já tem um `attachments` não vazio: mescla, substituindo iguais.
+        assert_eq!(names(&outside), ["keep.txt"], "directory outside intact");
+        // 2. Destination already has a non-empty `attachments`: merges, replacing matching files.
         std::fs::create_dir_all(src.join("attachments")).unwrap();
         std::fs::write(src.join("attachments/a.bin"), "A2").unwrap();
         std::fs::write(src.join("attachments/c.bin"), "C").unwrap();
@@ -445,30 +446,30 @@ mod tests {
     #[test]
     fn move_entry_into_a_moved_dir_never_lands_in_the_swapped_target() {
         let base = scratch("swapped");
-        let (src, dst) = (base.join("stage"), base.join("sessao"));
+        let (src, dst) = (base.join("stage"), base.join("session"));
         std::fs::create_dir(&src).unwrap();
         std::fs::create_dir(&dst).unwrap();
         std::fs::write(src.join("session.json"), "novo").unwrap();
         let d = open(&dst);
         let out = base.join("OUT");
         std::fs::create_dir(&out).unwrap();
-        std::fs::rename(&dst, base.join("sessao.moved")).unwrap();
+        std::fs::rename(&dst, base.join("session.moved")).unwrap();
         symlink(&out, &dst).unwrap();
         move_entry(&open(&src), &d, "session.json").unwrap();
         assert_eq!(names(&out), Vec::<String>::new());
-        assert_eq!(std::fs::read(base.join("sessao.moved/session.json")).unwrap(), b"novo");
+        assert_eq!(std::fs::read(base.join("session.moved/session.json")).unwrap(), b"novo");
         let _ = std::fs::remove_dir_all(base);
     }
 
     #[test]
     fn move_entry_refuses_to_replace_a_directory_with_a_file() {
         let base = scratch("isdir");
-        let (src, dst) = (base.join("stage"), base.join("sessao"));
+        let (src, dst) = (base.join("stage"), base.join("session"));
         std::fs::create_dir(&src).unwrap();
         std::fs::create_dir_all(dst.join("session.json")).unwrap();
         std::fs::write(src.join("session.json"), "novo").unwrap();
         assert!(move_entry(&open(&src), &open(&dst), "session.json").is_err());
-        assert!(dst.join("session.json").is_dir(), "a pasta do destino não é apagada");
+        assert!(dst.join("session.json").is_dir(), "the destination folder is not deleted");
         let _ = std::fs::remove_dir_all(base);
     }
 }

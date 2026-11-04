@@ -1,4 +1,4 @@
-//! O guarda do `Client` não deixa `fake_server` órfão, nem em panic.
+//! The `Client` guard does not leave `fake_server` orphaned, even on panic.
 
 mod common;
 
@@ -26,10 +26,10 @@ fn client_drop_reaps_the_server_even_when_the_test_panics() {
         );
         client.handshake();
         seen.store(client.child.id(), std::sync::atomic::Ordering::SeqCst);
-        panic!("falha simulada com o servidor vivo");
+        panic!("simulated failure with the server alive");
     });
     assert!(result.is_err());
     let pid = pid.load(std::sync::atomic::Ordering::SeqCst);
     assert_ne!(pid, 0);
-    assert!(!alive(pid), "o servidor {pid} sobreviveu ao panic do teste");
+    assert!(!alive(pid), "the server {pid} survived the test's panic");
 }

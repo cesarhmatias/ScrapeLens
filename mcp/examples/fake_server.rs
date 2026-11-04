@@ -1,6 +1,6 @@
-//! Servidor MCP com navegador FALSO, só para os testes ponta a ponta: usa a
-//! `Allowlist` real, mas não abre Chrome nem rede. `stop` grava uma sessão
-//! sintética (HAR com sinais de Cloudflare inventados, domínio `.invalid`).
+//! MCP server with a FAKE browser, only for the end-to-end tests: it uses the
+//! real `Allowlist`, but does not open Chrome or the network. `stop` writes a
+//! synthetic session (HAR with invented Cloudflare signals, `.invalid` domain).
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -97,7 +97,7 @@ impl LiveCapture for FakeLive {
     }
 
     fn stop(self: Box<Self>) -> Result<StopReport, String> {
-        // Teste de SIGTERM durante o stop: o encerramento demora a gravar.
+        // SIGTERM test during stop: the shutdown takes time to write.
         if let Some(ms) = std::env::var("FAKE_STOP_DELAY_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
@@ -125,7 +125,7 @@ impl LiveCapture for FakeLive {
             waited_ms: 1,
             allowlist: report,
             warnings: vec![
-                "violação: http://site.invalid.test:9/p;jsessionid=SEGREDO-VIOL?x=1&k=SEGREDO-VIOLQ#access_token=SEGREDO-VIOLF fora da allowlist".into(),
+                "violation: http://site.invalid.test:9/p;jsessionid=SEGREDO-VIOL?x=1&k=SEGREDO-VIOLQ#access_token=SEGREDO-VIOLF outside the allowlist".into(),
             ],
             outcome: None,
         })
@@ -143,7 +143,7 @@ impl CaptureBackend for FakeBackend {
     ) -> Result<(Box<dyn LiveCapture>, StartInfo), StartError> {
         let allowlist = Allowlist::new(&config.allowed_hosts, &config.third_party_hosts)
             .map_err(StartError::Allowlist)?;
-        // Teste de encerramento durante o início: o "Chrome" demora a subir.
+        // Shutdown-during-start test: the "Chrome" takes time to come up.
         if let Some(ms) = std::env::var("FAKE_START_DELAY_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
@@ -162,7 +162,7 @@ impl CaptureBackend for FakeBackend {
             chrome_pid: 4242,
             browser: BrowserInfo {
                 path: config.chrome.display().to_string(),
-                version: Some("Chrome/0 (falso)".into()),
+                version: Some("Chrome/0 (fake)".into()),
                 user_agent: None,
             },
             allowlist: AllowlistInfo {

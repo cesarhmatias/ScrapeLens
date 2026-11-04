@@ -1,11 +1,11 @@
-// Transformações do corpo (Body.transformed). `chrome-decoded` é universal em
-// respostas de texto (o CDP entrega o corpo já decodificado): vira só uma nota.
-// Qualquer outra (charset:*, lossy-postData, desconhecidas) é aviso.
+// Body transformations (Body.transformed). `chrome-decoded` is universal in
+// text responses (CDP delivers the body already decoded): it becomes just a note.
+// Any other (charset:*, lossy-postData, unknown) is a warning.
 
 export interface TransformView {
-  /** Transformações que tornam o corpo não idêntico ao fio de forma relevante. */
+  /** Transformations that make the body meaningfully different from the wire bytes. */
   warn: string[];
-  /** true se havia `chrome-decoded`. */
+  /** true if `chrome-decoded` was present. */
   chromeDecoded: boolean;
 }
 

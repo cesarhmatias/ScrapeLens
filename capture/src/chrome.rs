@@ -1,6 +1,6 @@
-//! Detecção e seleção manual do Chrome externo. O ScrapeLens nunca usa o
-//! perfil pessoal: o launcher do core/ abre um perfil dedicado. Aqui só
-//! localizamos/validamos o binário.
+//! Detection and manual selection of the external Chrome. ScrapeLens never uses
+//! the personal profile: the launcher in core/ opens a dedicated profile. Here we
+//! only locate and validate the binary.
 
 use std::path::{Path, PathBuf};
 
@@ -36,12 +36,12 @@ fn home_candidates() -> Vec<PathBuf> {
     Vec::new()
 }
 
-/// Onde procurar o navegador, do preferido ao alternativo. No Linux o Google
-/// Chrome estável vem primeiro; o Chromium é alternativa (e é o único navegador
-/// possível no arm64, onde o Chrome estável não tem build) e é MARCADO como tal
-/// (`BrowserKind::Chromium`). Prefere o binário real (`/opt/google/chrome/chrome`,
-/// `/usr/lib/chromium/chromium`) ao script `google-chrome`/`chromium` que só o
-/// chama.
+/// Where to look for the browser, from preferred to alternative. On Linux, stable
+/// Google Chrome comes first; Chromium is the alternative (and the only browser
+/// possible on arm64, where stable Chrome has no build) and is MARKED as such
+/// (`BrowserKind::Chromium`). Prefers the real binary (`/opt/google/chrome/chrome`,
+/// `/usr/lib/chromium/chromium`) over the `google-chrome`/`chromium` script that
+/// only calls it.
 pub fn candidates() -> Vec<String> {
     let mut paths: Vec<PathBuf> = if cfg!(target_os = "macos") {
         vec![
@@ -71,8 +71,8 @@ pub fn candidates() -> Vec<String> {
         .collect()
 }
 
-/// Normaliza o que o usuário escolheu no diálogo: aceita `.app`, o diretório
-/// `Contents/MacOS` ou o binário direto.
+/// Normalizes what the user picked in the dialog: accepts `.app`, the
+/// `Contents/MacOS` directory or the binary itself.
 pub fn normalize_binary_path(chosen: &Path) -> Option<PathBuf> {
     let chosen = chosen.to_path_buf();
     if chosen.is_file() {
@@ -134,19 +134,19 @@ pub fn detect(saved: Option<&Path>) -> ChromeInfo {
 }
 
 // ---------------------------------------------------------------------------
-// Validação estrita do navegador da CAPTURA CONTROLADA (docs/16b §2.1)
+// Strict validation of the CONTROLLED CAPTURE browser (docs/16b §2.1)
 // ---------------------------------------------------------------------------
 
-/// Identificador do bundle e Team ID da Google para o Chrome estável.
+/// Bundle identifier and Google Team ID for stable Chrome.
 #[cfg(target_os = "macos")]
 const CHROME_BUNDLE_ID: &str = "com.google.Chrome";
 #[cfg(target_os = "macos")]
 const CHROME_TEAM_ID: &str = "EQHXZ8M8AV";
-/// Requisito de código que o Chrome estável precisa satisfazer.
+/// Code requirement that stable Chrome must satisfy.
 pub const CHROME_REQUIREMENT: &str = "anchor apple generic and identifier \"com.google.Chrome\" and certificate leaf[subject.OU] = \"EQHXZ8M8AV\"";
 
-/// Qual navegador é. O Chromium é aceito no Linux como alternativa (no arm64 é o
-/// único, o Chrome estável não tem build) e fica MARCADO na sessão.
+/// Which browser it is. Chromium is accepted on Linux as an alternative (on arm64
+/// it is the only one, since stable Chrome has no build) and is MARKED in the session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BrowserKind {
@@ -162,7 +162,7 @@ impl BrowserKind {
         }
     }
 
-    /// Pelo nome do executável (para o `run()` da captura comum, que só tem o caminho).
+    /// By executable name (for the common capture's `run()`, which only has the path).
     pub fn from_path(path: &Path) -> BrowserKind {
         let name = path
             .file_name()
@@ -177,38 +177,38 @@ impl BrowserKind {
     }
 }
 
-/// Chrome aceito para a captura controlada. No macOS é lido sem executar o
-/// binário; no Linux o `--version` só roda depois das checagens de dono e permissão.
+/// Chrome accepted for the controlled capture. On macOS it is read without running
+/// the binary; on Linux `--version` only runs after the owner and permission checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedChrome {
-    /// Binário executável, com symlinks resolvidos.
+    /// Executable binary, with symlinks resolved.
     pub binary: PathBuf,
-    /// macOS: o `.app`. Linux: o diretório do binário.
+    /// macOS: the `.app`. Linux: the binary's directory.
     pub app: PathBuf,
-    /// macOS: `CFBundleShortVersionString`. Linux: a versão de `--version`.
+    /// macOS: `CFBundleShortVersionString`. Linux: the version from `--version`.
     pub version: String,
-    /// macOS: o Team ID da Google. Linux: vazio (não existe assinatura de código).
+    /// macOS: the Google Team ID. Linux: empty (there is no code signature).
     pub team_id: String,
     pub kind: BrowserKind,
-    /// Linux: pacote dono do binário (`dpkg -S` ou `rpm -qf`), quando o sistema sabe
-    /// dizer. Informativo: a validação não depende dele.
+    /// Linux: the package that owns the binary (`dpkg -S` or `rpm -qf`), when the
+    /// system can tell. Informational: validation does not depend on it.
     pub package: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChromeError {
     NotFound(String),
-    /// Não é o binário dentro de um `.app` (ex.: `/bin/echo`, um script).
+    /// Not the binary inside a `.app` (e.g. `/bin/echo`, a script).
     NotABundle(String),
-    /// O caminho tem caractere de controle (quebra de linha, NUL, TAB...) ou não
-    /// é UTF-8: nunca é um Chrome legítimo e engana quem faz parse de texto.
+    /// The path has a control character (line break, NUL, TAB...) or is not UTF-8:
+    /// it is never a legitimate Chrome and it misleads whoever parses text.
     UnsafePath(String),
-    /// Bundle de outro produto (não é o Chrome estável).
+    /// Bundle of another product (not stable Chrome).
     UnexpectedBundle(String),
     NoVersion,
     BadSignature(String),
-    /// Linux: o binário ou um diretório acima não é de root, ou é gravável por
-    /// outros usuários / pelo usuário atual (docs/21-linux.md §3).
+    /// Linux: the binary or a directory above it is not owned by root, or is
+    /// writable by other users / the current user (docs/21-linux.md §3).
     Untrusted(String),
     UnsupportedPlatform,
 }
@@ -222,30 +222,30 @@ impl ChromeError {
 impl std::fmt::Display for ChromeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ChromeError::NotFound(p) => write!(f, "navegador não encontrado: {p}"),
+            ChromeError::NotFound(p) => write!(f, "browser not found: {p}"),
             ChromeError::NotABundle(why) => write!(
                 f,
-                "só o Chrome estável instalado é aceito (no macOS um .app da Google; no Linux o binário do pacote do Chrome, ou do Chromium); este caminho não é: {why}"
+                "only the installed stable Chrome is accepted (on macOS a Google .app; on Linux the binary from the Chrome package, or from Chromium); this path is not one: {why}"
             ),
             ChromeError::Untrusted(why) => write!(
                 f,
-                "o navegador não é confiável (precisa ser de root e fora do alcance do usuário): {why}"
+                "the browser is not trusted (it must belong to root and be out of the user's reach): {why}"
             ),
             ChromeError::UnsafePath(shown) => write!(
                 f,
-                "o caminho do navegador tem caractere de controle ou não é UTF-8 e foi recusado: {shown}"
+                "the browser path has a control character or is not UTF-8 and was refused: {shown}"
             ),
             ChromeError::UnexpectedBundle(id) => write!(
                 f,
-                "o produto é {id:?}, não o Chrome estável (macOS: com.google.Chrome; Linux: Google Chrome <versão> ou Chromium)"
+                "the product is {id:?}, not stable Chrome (macOS: com.google.Chrome; Linux: Google Chrome <version> or Chromium)"
             ),
-            ChromeError::NoVersion => write!(f, "o Info.plist do navegador não informa a versão"),
+            ChromeError::NoVersion => write!(f, "the browser's Info.plist does not report a version"),
             ChromeError::BadSignature(why) => {
-                write!(f, "a assinatura do navegador não confere com a Google: {why}")
+                write!(f, "the browser's signature does not match Google's: {why}")
             }
             ChromeError::UnsupportedPlatform => write!(
                 f,
-                "a validação do navegador da captura controlada só existe para macOS e Linux nesta versão"
+                "validation of the controlled-capture browser only exists for macOS and Linux in this version"
             ),
         }
     }
@@ -253,24 +253,23 @@ impl std::fmt::Display for ChromeError {
 
 impl std::error::Error for ChromeError {}
 
-/// Aceita só o **Chrome estável** da Google: o binário precisa estar em
-/// `<X>.app/Contents/MacOS/<CFBundleExecutable>`, o `Info.plist` precisa ter o
-/// identificador `com.google.Chrome` e uma versão, e a assinatura de código
-/// precisa satisfazer o requisito explícito [`CHROME_REQUIREMENT`] em
-/// `codesign --verify --deep` (o código de saída decide; nada da saída de texto
-/// é interpretado). Nada é executado: só `plutil` e `codesign` do sistema, por
-/// caminho absoluto, leem o bundle. Recusa `/bin/echo`, scripts, `.app` falsos
-/// (mesmo com `Info.plist` mentindo), caminhos com caractere de controle e
-/// cópias do Chrome com um Helper/framework trocado (o `--deep` cobre os
-/// aninhados). Sem `--strict`: o Chrome instalado tem atributos de Finder que
-/// ele rejeita. O resultado não é guardado em cache: cada chamada reverifica.
+/// Accepts only the **stable Google Chrome**: the binary must be at
+/// `<X>.app/Contents/MacOS/<CFBundleExecutable>`, the `Info.plist` must have the
+/// identifier `com.google.Chrome` and a version, and the code signature must
+/// satisfy the explicit requirement [`CHROME_REQUIREMENT`] in
+/// `codesign --verify --deep` (the exit code decides; nothing from the text
+/// output is interpreted). Nothing is executed: only the system's `plutil` and
+/// `codesign`, by absolute path, read the bundle. Refuses `/bin/echo`, scripts,
+/// fake `.app`s (even with a lying `Info.plist`), paths with control characters,
+/// and copies of Chrome with a swapped Helper/framework (`--deep` covers the
+/// nested ones). No `--strict`: the installed Chrome has Finder attributes that
+/// it rejects. The result is not cached: each call re-verifies.
 ///
-/// O `binary` devolvido é o caminho canônico validado e é exatamente o que deve
-/// ser executado. Sobra uma janela entre esta verificação e o `exec` (um
-/// processo do mesmo usuário com escrita no bundle poderia trocar um arquivo
-/// depois): `/Applications` é do grupo admin, e uma cópia em pasta do usuário é
-/// do próprio usuário, que já poderia executar qualquer coisa. Documentado em
-/// docs/16b §2.1.
+/// The returned `binary` is the validated canonical path and is exactly what must
+/// be executed. A window remains between this check and the `exec` (a process of
+/// the same user with write access to the bundle could swap a file afterwards):
+/// `/Applications` belongs to the admin group, and a copy in a user folder belongs
+/// to the user, who could already run anything. Documented in docs/16b §2.1.
 pub fn validate_chrome(chosen: &Path) -> Result<ValidatedChrome, ChromeError> {
     #[cfg(target_os = "macos")]
     {
@@ -287,15 +286,15 @@ pub fn validate_chrome(chosen: &Path) -> Result<ValidatedChrome, ChromeError> {
     }
 }
 
-/// Resolve o Chrome estável para a captura controlada: o `explicit` (se
-/// houver) é validado e nunca substituído; sem ele, o primeiro candidato
-/// instalado que passa em [`validate_chrome`]. É o que o servidor MCP deve
-/// chamar para escolher e mostrar o navegador na confirmação.
+/// Resolves stable Chrome for the controlled capture: the `explicit` one (if any)
+/// is validated and never replaced; without it, the first installed candidate
+/// that passes [`validate_chrome`]. This is what the MCP server must call to
+/// choose and show the browser in the confirmation.
 pub fn resolve_stable_chrome(explicit: Option<&Path>) -> Result<ValidatedChrome, ChromeError> {
     if let Some(path) = explicit {
         return validate_chrome(path);
     }
-    let mut last = ChromeError::NotFound("Chrome estável instalado".to_string());
+    let mut last = ChromeError::NotFound("installed stable Chrome".to_string());
     for candidate in candidates() {
         match validate_chrome(Path::new(&candidate)) {
             Ok(found) => return Ok(found),
@@ -306,8 +305,8 @@ pub fn resolve_stable_chrome(explicit: Option<&Path>) -> Result<ValidatedChrome,
     Err(last)
 }
 
-/// Recusa caminho que não é UTF-8 ou tem caractere de controle (`\n`, `\r`,
-/// TAB, NUL, DEL, C1). Vale para o caminho dado e para o canônico.
+/// Refuses a path that is not UTF-8 or has a control character (`\n`, `\r`,
+/// TAB, NUL, DEL, C1). Applies to both the given path and the canonical one.
 fn reject_unsafe_path(path: &Path) -> Result<(), ChromeError> {
     match path.to_str() {
         Some(text) if !text.chars().any(char::is_control) => Ok(()),
@@ -325,7 +324,7 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
     let resolved = std::fs::canonicalize(chosen)
         .map_err(|_| ChromeError::NotFound(chosen.display().to_string()))?;
     reject_unsafe_path(&resolved)?;
-    // Aceita o `.app`, o binário dentro dele ou o diretório `Contents/MacOS`.
+    // Accepts the `.app`, the binary inside it, or the `Contents/MacOS` directory.
     let binary = if resolved.extension().and_then(|e| e.to_str()) == Some("app") {
         None
     } else {
@@ -337,7 +336,7 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
             .ancestors()
             .find(|a| a.extension().and_then(|e| e.to_str()) == Some("app"))
             .map(Path::to_path_buf)
-            .ok_or_else(|| ChromeError::NotABundle(format!("{} não está dentro de um .app", b.display())))?,
+            .ok_or_else(|| ChromeError::NotABundle(format!("{} is not inside a .app", b.display())))?,
     };
     let plist = app.join("Contents/Info.plist");
     let output = Command::new("/usr/bin/plutil")
@@ -346,10 +345,10 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
         .output()
         .map_err(|e| ChromeError::NotABundle(format!("plutil: {e}")))?;
     if !output.status.success() {
-        return Err(ChromeError::NotABundle(format!("sem Info.plist legível em {}", app.display())));
+        return Err(ChromeError::NotABundle(format!("no readable Info.plist in {}", app.display())));
     }
     let info: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|_| ChromeError::NotABundle("Info.plist inválido".to_string()))?;
+        .map_err(|_| ChromeError::NotABundle("invalid Info.plist".to_string()))?;
     let text = |key: &str| info.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string();
     let id = text("CFBundleIdentifier");
     if id != CHROME_BUNDLE_ID {
@@ -358,13 +357,13 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
     let executable = text("CFBundleExecutable");
     let expected = app.join("Contents/MacOS").join(&executable);
     if executable.is_empty() || executable.contains('/') {
-        return Err(ChromeError::NotABundle("CFBundleExecutable inválido".to_string()));
+        return Err(ChromeError::NotABundle("invalid CFBundleExecutable".to_string()));
     }
     let binary = match binary {
         Some(b) if b == expected => b,
         Some(b) => {
             return Err(ChromeError::NotABundle(format!(
-                "{} não é o executável do bundle ({})",
+                "{} is not the bundle's executable ({})",
                 b.display(),
                 expected.display()
             )))
@@ -379,18 +378,18 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&binary).map(|m| m.permissions().mode()).unwrap_or(0);
         if mode & 0o111 == 0 {
-            return Err(ChromeError::NotABundle("o binário não é executável".to_string()));
+            return Err(ChromeError::NotABundle("the binary is not executable".to_string()));
         }
     }
     let version = text("CFBundleShortVersionString");
     if version.trim().is_empty() {
         return Err(ChromeError::NoVersion);
     }
-    // Assinatura: requisito explícito, com o código de saída como único
-    // veredito. `--deep` verifica também os bundles aninhados (Helpers,
-    // frameworks). O requisito ancora na CA da Apple e exige o identificador e
-    // o Team ID da Google no certificado folha, então um bundle assinado ad hoc
-    // ou por outro certificado não satisfaz. Nada da saída de texto é lido.
+    // Signature: explicit requirement, with the exit code as the only verdict.
+    // `--deep` also verifies the nested bundles (Helpers, frameworks). The
+    // requirement anchors to Apple's CA and requires Google's identifier and
+    // Team ID in the leaf certificate, so an ad hoc signed bundle or one signed
+    // by another certificate does not satisfy it. None of the text output is read.
     let verify = Command::new("/usr/bin/codesign")
         .args(["--verify", "--deep"])
         .arg(format!("-R={CHROME_REQUIREMENT}"))
@@ -400,17 +399,17 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
         .map_err(|e| ChromeError::BadSignature(format!("codesign: {e}")))?;
     if !verify.status.success() {
         let stderr = String::from_utf8_lossy(&verify.stderr);
-        // Mostra só a primeira linha e sem controles: a mensagem vai ao agente.
+        // Show only the first line and no control characters: the message goes to the agent.
         let why: String = stderr
             .lines()
             .next()
-            .unwrap_or("assinatura inválida")
+            .unwrap_or("invalid signature")
             .chars()
             .filter(|c| !c.is_control())
             .take(200)
             .collect();
         return Err(ChromeError::BadSignature(format!(
-            "não satisfaz o requisito da Google ({CHROME_BUNDLE_ID} / {CHROME_TEAM_ID}): {why}"
+            "does not satisfy Google's requirement ({CHROME_BUNDLE_ID} / {CHROME_TEAM_ID}): {why}"
         )));
     }
     let team_id = CHROME_TEAM_ID.to_string();
@@ -425,33 +424,33 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
 }
 
 // ---------------------------------------------------------------------------
-// Linux: validação equivalente à assinatura de código do macOS (docs/21-linux.md §3)
+// Linux: validation equivalent to the macOS code signature (docs/21-linux.md §3)
 // ---------------------------------------------------------------------------
 
-/// Aceita o Google Chrome estável (ou o Chromium, marcado) instalado pelo sistema.
-/// Não existe `codesign` no Linux; o equivalente que este módulo verifica, SEM
-/// executar nada até o fim das checagens:
+/// Accepts the stable Google Chrome (or Chromium, marked) installed on the system.
+/// There is no `codesign` on Linux; the equivalent this module checks, WITHOUT
+/// running anything until the end of the checks:
 ///
-/// 1. o caminho (dado e canônico) não tem caractere de controle nem é não-UTF-8;
-/// 2. o caminho é resolvido ao canônico (symlinks de `/usr/bin/google-chrome-stable`
-///    → `/etc/alternatives/...` → `/opt/google/chrome/google-chrome`) e, se cair num
-///    script (`#!`), só aceita nome de wrapper conhecido (`google-chrome`,
-///    `google-chrome-stable`, `chromium`, `chromium-browser`) e troca pelo binário
-///    real ao lado (`chrome`, `/usr/lib/chromium/chromium`); o que roda é um **ELF**;
-/// 3. o binário é arquivo regular, **de dono `trusted_uid`** (root), executável, **sem
-///    escrita para grupo/outros**, e **cada diretório acima, até `/`**, é do mesmo
-///    dono e sem escrita para grupo/outros; quando o usuário atual não é esse dono,
-///    `access(W_OK)` precisa falhar para o arquivo e para cada diretório (cobre ACL e
-///    montagem somente leitura ao contrário: o usuário não escreve). O tipo é conferido
-///    no descritor aberto com `O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC`: FIFO, socket
-///    e device são recusados sem bloquear (um FIFO sem escritor bloquearia `open`);
-/// 4. SÓ DEPOIS disso roda `<binário> --version` (ambiente limpo, 10 s de limite): o
-///    produto e a versão vêm dele (`Google Chrome 156...`, `Chromium 126...`);
-/// 5. o pacote dono (`dpkg -S` ou `rpm -qf`) é consultado e registrado, mas a
-///    validação não depende dele.
+/// 1. the path (given and canonical) has no control character and is not non-UTF-8;
+/// 2. the path is resolved to the canonical one (symlinks from `/usr/bin/google-chrome-stable`
+///    → `/etc/alternatives/...` → `/opt/google/chrome/google-chrome`) and, if it lands on a
+///    script (`#!`), only accepts a known wrapper name (`google-chrome`,
+///    `google-chrome-stable`, `chromium`, `chromium-browser`) and swaps it for the
+///    real binary beside it (`chrome`, `/usr/lib/chromium/chromium`); what runs is an **ELF**;
+/// 3. the binary is a regular file, **owned by `trusted_uid`** (root), executable, **with no
+///    write for group/others**, and **each directory above it, up to `/`**, is owned by the same
+///    owner and has no write for group/others; when the current user is not that owner,
+///    `access(W_OK)` must fail for the file and for each directory (covers ACLs and
+///    read-only mounts the other way around: the user cannot write). The type is checked
+///    on the open descriptor with `O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC`: FIFOs, sockets
+///    and devices are refused without blocking (a FIFO with no writer would block `open`);
+/// 4. ONLY AFTER that does `<binary> --version` run (clean environment, 10 s limit): the
+///    product and the version come from it (`Google Chrome 156...`, `Chromium 126...`);
+/// 5. the owning package (`dpkg -S` or `rpm -qf`) is queried and recorded, but
+///    validation does not depend on it.
 ///
-/// Fica uma janela entre a checagem e o `exec` (TOCTOU), como no macOS: o binário e
-/// os diretórios são de root e fora do alcance do usuário, então só root a explora.
+/// A window remains between the check and the `exec` (TOCTOU), as on macOS: the binary and
+/// the directories belong to root and are out of the user's reach, so only root can exploit it.
 #[cfg(target_os = "linux")]
 pub(crate) fn validate_chrome_linux(
     chosen: &Path,
@@ -460,9 +459,9 @@ pub(crate) fn validate_chrome_linux(
     validate_chrome_linux_from(chosen, trusted_uid, Path::new("/"))
 }
 
-/// Como [`validate_chrome_linux`], mas os diretórios são conferidos só até `anchor`
-/// (inclusive; `/` na produção). Existe para os testes poderem montar uma árvore
-/// própria sem exigir que `/tmp` seja de root.
+/// Like [`validate_chrome_linux`], but the directories are checked only up to `anchor`
+/// (inclusive; `/` in production). It exists so tests can build their own tree
+/// without requiring `/tmp` to be owned by root.
 #[cfg(target_os = "linux")]
 pub(crate) fn validate_chrome_linux_from(
     chosen: &Path,
@@ -477,44 +476,44 @@ pub(crate) fn validate_chrome_linux_from(
     reject_unsafe_path(&resolved)?;
     let binary = linux_real_binary(&resolved)?;
     reject_unsafe_path(&binary)?;
-    // Só um executável com nome de navegador roda `--version` (nunca um binário
-    // qualquer que o agente aponte).
+    // Only an executable with a browser name runs `--version` (never an arbitrary
+    // binary the agent points to).
     let name = binary.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if !["chrome", "chromium", "chromium-browser"].contains(&name) {
         return Err(ChromeError::NotABundle(format!(
-            "{} não tem nome de navegador (chrome, chromium ou chromium-browser)",
+            "{} does not have a browser name (chrome, chromium or chromium-browser)",
             binary.display()
         )));
     }
 
-    // 3. dono, modo e diretórios acima.
+    // 3. owner, mode and directories above.
     let meta = std::fs::symlink_metadata(&binary)
         .map_err(|_| ChromeError::NotFound(binary.display().to_string()))?;
     if !meta.file_type().is_file() {
-        return Err(ChromeError::NotABundle(format!("{} não é arquivo regular", binary.display())));
+        return Err(ChromeError::NotABundle(format!("{} is not a regular file", binary.display())));
     }
     if meta.uid() != trusted_uid {
         return Err(ChromeError::Untrusted(format!(
-            "{} é do usuário {} (esperado {trusted_uid})",
+            "{} is owned by user {} (expected {trusted_uid})",
             binary.display(),
             meta.uid()
         )));
     }
     if meta.mode() & 0o022 != 0 {
         return Err(ChromeError::Untrusted(format!(
-            "{} é gravável por grupo ou outros (modo {:o})",
+            "{} is writable by group or others (mode {:o})",
             binary.display(),
             meta.mode() & 0o7777
         )));
     }
     if meta.mode() & 0o111 == 0 {
-        return Err(ChromeError::NotABundle(format!("{} não é executável", binary.display())));
+        return Err(ChromeError::NotABundle(format!("{} is not executable", binary.display())));
     }
-    // SAFETY: `geteuid` não tem pré-condições.
+    // SAFETY: `geteuid` has no preconditions.
     let euid = unsafe { libc::geteuid() };
     let user_must_not_write = euid != trusted_uid && euid != 0;
     if user_must_not_write && linux_can_write(&binary) {
-        return Err(ChromeError::Untrusted(format!("o usuário atual consegue gravar em {}", binary.display())));
+        return Err(ChromeError::Untrusted(format!("the current user can write to {}", binary.display())));
     }
     for dir in binary.ancestors().skip(1) {
         if !dir.starts_with(anchor) {
@@ -523,30 +522,30 @@ pub(crate) fn validate_chrome_linux_from(
         let dir_meta = std::fs::symlink_metadata(dir)
             .map_err(|e| ChromeError::Untrusted(format!("{}: {e}", dir.display())))?;
         if !dir_meta.file_type().is_dir() {
-            return Err(ChromeError::Untrusted(format!("{} não é um diretório", dir.display())));
+            return Err(ChromeError::Untrusted(format!("{} is not a directory", dir.display())));
         }
         if dir_meta.uid() != trusted_uid {
             return Err(ChromeError::Untrusted(format!(
-                "o diretório {} é do usuário {} (esperado {trusted_uid})",
+                "the directory {} is owned by user {} (expected {trusted_uid})",
                 dir.display(),
                 dir_meta.uid()
             )));
         }
         if dir_meta.mode() & 0o022 != 0 {
             return Err(ChromeError::Untrusted(format!(
-                "o diretório {} é gravável por grupo ou outros (modo {:o})",
+                "the directory {} is writable by group or others (mode {:o})",
                 dir.display(),
                 dir_meta.mode() & 0o7777
             )));
         }
         if user_must_not_write && linux_can_write(dir) {
-            return Err(ChromeError::Untrusted(format!("o usuário atual consegue gravar em {}", dir.display())));
+            return Err(ChromeError::Untrusted(format!("the current user can write to {}", dir.display())));
         }
     }
 
-    // 4. Só agora o binário roda, e só com `--version`.
+    // 4. Only now does the binary run, and only with `--version`.
     let (kind, version) = linux_version(&binary)?;
-    // 5. Pacote dono (informativo).
+    // 5. Owning package (informational).
     let package = linux_owning_package(&binary);
     let app = binary.parent().map(Path::to_path_buf).unwrap_or_else(|| binary.clone());
     Ok(ValidatedChrome {
@@ -563,16 +562,16 @@ pub(crate) fn validate_chrome_linux_from(
 fn linux_can_write(path: &Path) -> bool {
     use std::os::unix::ffi::OsStrExt;
     match std::ffi::CString::new(path.as_os_str().as_bytes()) {
-        // SAFETY: `access` só lê o caminho NUL-terminado.
+        // SAFETY: `access` only reads the NUL-terminated path.
         Ok(c) => unsafe { libc::access(c.as_ptr(), libc::W_OK) == 0 },
         Err(_) => true,
     }
 }
 
-/// Abre o caminho só para leitura, sem seguir symlink e sem bloquear, e exige que o
-/// descritor **aberto** seja um arquivo regular. Um FIFO, socket ou device é recusado
-/// na hora: abrir um FIFO sem escritor bloquearia para sempre e o limite de 10 s do
-/// `--version` nunca chegaria a valer (achado da revisão da rodada 14).
+/// Opens the path read-only, without following symlinks and without blocking, and
+/// requires the **open** descriptor to be a regular file. A FIFO, socket or device is
+/// refused right away: opening a FIFO with no writer would block forever and the
+/// 10 s limit of `--version` would never take effect (finding from review round 14).
 #[cfg(target_os = "linux")]
 fn linux_open_regular(path: &Path) -> Result<std::fs::File, ChromeError> {
     use std::os::unix::ffi::OsStrExt;
@@ -580,8 +579,8 @@ fn linux_open_regular(path: &Path) -> Result<std::fs::File, ChromeError> {
 
     let c = std::ffi::CString::new(path.as_os_str().as_bytes())
         .map_err(|_| ChromeError::UnsafePath(path.display().to_string()))?;
-    // SAFETY: `c` é NUL-terminado e as flags são válidas; o descritor devolvido é
-    // nosso e passa a ser dono do `File`.
+    // SAFETY: `c` is NUL-terminated and the flags are valid; the returned descriptor is
+    // ours and becomes owned by the `File`.
     let fd = unsafe {
         libc::open(
             c.as_ptr(),
@@ -591,21 +590,21 @@ fn linux_open_regular(path: &Path) -> Result<std::fs::File, ChromeError> {
     if fd < 0 {
         return Err(ChromeError::NotFound(path.display().to_string()));
     }
-    // SAFETY: `fd` acabou de ser aberto aqui e não é usado em outro lugar.
+    // SAFETY: `fd` was just opened here and is not used anywhere else.
     let file = unsafe { std::fs::File::from_raw_fd(fd) };
     let meta = file
         .metadata()
         .map_err(|_| ChromeError::NotFound(path.display().to_string()))?;
     if !meta.file_type().is_file() {
         return Err(ChromeError::NotABundle(format!(
-            "{} não é arquivo regular",
+            "{} is not a regular file",
             path.display()
         )));
     }
     Ok(file)
 }
 
-/// Os primeiros bytes do arquivo: `\x7fELF` ou `#!`.
+/// The first bytes of the file: `\x7fELF` or `#!`.
 #[cfg(target_os = "linux")]
 fn linux_head(path: &Path) -> Result<[u8; 4], ChromeError> {
     use std::io::Read;
@@ -623,8 +622,8 @@ fn linux_head(path: &Path) -> Result<[u8; 4], ChromeError> {
     Ok(head)
 }
 
-/// O executável ELF a rodar: o próprio caminho se for ELF; se for o script que só
-/// chama o binário (`google-chrome`, `chromium`), o binário real ao lado.
+/// The ELF executable to run: the path itself if it is ELF; if it is the script that
+/// only calls the binary (`google-chrome`, `chromium`), the real binary beside it.
 #[cfg(target_os = "linux")]
 fn linux_real_binary(resolved: &Path) -> Result<PathBuf, ChromeError> {
     let head = linux_head(resolved)?;
@@ -632,11 +631,11 @@ fn linux_real_binary(resolved: &Path) -> Result<PathBuf, ChromeError> {
         return Ok(resolved.to_path_buf());
     }
     if &head[..2] == b"#!" {
-        // O script só vale se for o wrapper CONHECIDO do pacote: o `google-chrome`
-        // e o `google-chrome-stable` ao lado do `chrome` real (`/opt/google/chrome/`),
-        // ou o `chromium` do Debian/Ubuntu (`/usr/bin/chromium` →
-        // `/usr/lib/chromium/chromium`). Um script de nome arbitrário nunca é trocado
-        // por um binário de outro lugar (achado da revisão da rodada 14).
+        // The script only counts if it is the KNOWN wrapper of the package: `google-chrome`
+        // and `google-chrome-stable` beside the real `chrome` (`/opt/google/chrome/`),
+        // or Debian/Ubuntu's `chromium` (`/usr/bin/chromium` →
+        // `/usr/lib/chromium/chromium`). A script with an arbitrary name is never swapped
+        // for a binary from elsewhere (finding from review round 14).
         let name = resolved.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let mapped = match (name, resolved.to_str()) {
             ("chromium", Some("/usr/bin/chromium")) => Some(PathBuf::from("/usr/lib/chromium/chromium")),
@@ -654,15 +653,15 @@ fn linux_real_binary(resolved: &Path) -> Result<PathBuf, ChromeError> {
             }
         }
         return Err(ChromeError::NotABundle(format!(
-            "{} é um script e não há binário ELF do navegador ao lado",
+            "{} is a script and there is no ELF browser binary beside it",
             resolved.display()
         )));
     }
-    Err(ChromeError::NotABundle(format!("{} não é um binário ELF", resolved.display())))
+    Err(ChromeError::NotABundle(format!("{} is not an ELF binary", resolved.display())))
 }
 
-/// `<binário> --version` com ambiente limpo e 10 s de limite. Devolve o produto e a
-/// versão; recusa qualquer produto que não seja o Google Chrome estável ou o Chromium.
+/// `<binary> --version` with a clean environment and a 10 s limit. Returns the product and
+/// the version; refuses any product that is not stable Google Chrome or Chromium.
 #[cfg(target_os = "linux")]
 fn linux_version(binary: &Path) -> Result<(BrowserKind, String), ChromeError> {
     use std::process::{Command, Stdio};
@@ -697,8 +696,8 @@ fn linux_version(binary: &Path) -> Result<(BrowserKind, String), ChromeError> {
 }
 
 /// `Google Chrome 156.0.7778.56`, `Chromium 126.0.6478.182 built on Debian…`.
-/// O Chrome estável só tem o número depois do nome (Beta/Dev/for Testing trazem mais
-/// palavras e são recusados).
+/// Stable Chrome has only the number after the name (Beta/Dev/for Testing carry more
+/// words and are refused).
 #[cfg(target_os = "linux")]
 pub(crate) fn parse_linux_version(line: &str) -> Result<(BrowserKind, String), ChromeError> {
     let line = line.trim();
@@ -710,7 +709,7 @@ pub(crate) fn parse_linux_version(line: &str) -> Result<(BrowserKind, String), C
             return Ok((BrowserKind::GoogleChrome, version.to_string()));
         }
         return Err(ChromeError::UnexpectedBundle(format!(
-            "{line:?} (só o Chrome estável é aceito, não Beta, Dev ou for Testing)"
+            "{line:?} (only stable Chrome is accepted, not Beta, Dev or for Testing)"
         )));
     }
     if let Some(rest) = line.strip_prefix("Chromium ") {
@@ -722,7 +721,7 @@ pub(crate) fn parse_linux_version(line: &str) -> Result<(BrowserKind, String), C
     Err(ChromeError::UnexpectedBundle(format!("{line:?}")))
 }
 
-/// Pacote dono do arquivo (`dpkg -S`, depois `rpm -qf`), ou `None`. Informativo.
+/// Package that owns the file (`dpkg -S`, then `rpm -qf`), or `None`. Informational.
 #[cfg(target_os = "linux")]
 fn linux_owning_package(binary: &Path) -> Option<String> {
     use std::process::{Command, Stdio};
@@ -742,7 +741,7 @@ fn linux_owning_package(binary: &Path) -> Option<String> {
         output.status.success().then(|| String::from_utf8_lossy(&output.stdout).to_string())
     };
     if let Some(out) = run("/usr/bin/dpkg", &["-S"]) {
-        // `google-chrome-stable: /opt/google/chrome/chrome` (ou `pkg:arch: caminho`).
+        // `google-chrome-stable: /opt/google/chrome/chrome` (or `pkg:arch: path`).
         let first = out.lines().next()?;
         let package = first.rsplit_once(": ").map(|(p, _)| p.trim())?;
         return (!package.is_empty()).then(|| package.to_string());
@@ -778,8 +777,8 @@ mod tests {
     #[test]
     fn missing_chrome_is_reported_with_candidates() {
         let info = detect(Some(Path::new("/caminho/inexistente/Google Chrome")));
-        // Nesta máquina o Chrome existe; o teste aceita ambos os estados e só
-        // exige que a decisão seja coerente com o disco.
+        // Chrome exists on this machine; the test accepts both states and only
+        // requires the decision to be consistent with the disk.
         if let Some(path) = &info.path {
             assert!(Path::new(path).is_file());
             assert!(info.found);
@@ -827,7 +826,7 @@ mod tests {
             assert_eq!(err.code(), "browser_invalid");
             if cfg!(target_os = "macos") {
                 assert!(matches!(err, ChromeError::NotABundle(_)), "{path}: {err:?}");
-                assert!(err.to_string().contains("Chrome estável"), "{err}");
+                assert!(err.to_string().contains("stable Chrome"), "{err}");
             }
         }
     }
@@ -859,12 +858,12 @@ mod tests {
         use std::os::unix::fs::{symlink, PermissionsExt};
 
         fn euid() -> u32 {
-            // SAFETY: `geteuid` não tem pré-condições.
+            // SAFETY: `geteuid` has no preconditions.
             unsafe { libc::geteuid() }
         }
 
-        /// Árvore de teste: `<raiz>/opt/chrome/chrome` (cópia de um ELF real, modo 0755)
-        /// com diretórios 0755, todos do usuário atual.
+        /// Test tree: `<root>/opt/chrome/chrome` (copy of a real ELF, mode 0755)
+        /// with 0755 directories, all owned by the current user.
         fn tree(tag: &str) -> (PathBuf, PathBuf) {
             let root = scratch(tag);
             let dir = root.join("opt/chrome");
@@ -909,8 +908,8 @@ mod tests {
         #[test]
         fn a_regular_trusted_elf_passes_every_check_and_only_then_runs_version() {
             let (root, binary) = tree("lx-ok");
-            // O ELF é o `true` do coreutils: passa dono/modo/diretórios e SÓ ENTÃO roda
-            // `--version`, cuja saída não é a de um navegador.
+            // The ELF is coreutils' `true`: it passes owner/mode/directories and ONLY THEN
+            // runs `--version`, whose output is not a browser's.
             let err = validate_chrome_linux_from(&binary, euid(), &root).unwrap_err();
             assert!(matches!(err, ChromeError::UnexpectedBundle(_)), "{err:?}");
             let _ = std::fs::remove_dir_all(root);
@@ -921,7 +920,7 @@ mod tests {
             let (root, binary) = tree("lx-w");
             std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o775)).unwrap();
             let err = validate_chrome_linux_from(&binary, euid(), &root).unwrap_err();
-            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("gravável")), "{err:?}");
+            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("writable")), "{err:?}");
             std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o757)).unwrap();
             assert!(matches!(validate_chrome_linux_from(&binary, euid(), &root).unwrap_err(), ChromeError::Untrusted(_)));
             let _ = std::fs::remove_dir_all(root);
@@ -932,7 +931,7 @@ mod tests {
             let (root, binary) = tree("lx-dir");
             std::fs::set_permissions(root.join("opt"), std::fs::Permissions::from_mode(0o777)).unwrap();
             let err = validate_chrome_linux_from(&binary, euid(), &root).unwrap_err();
-            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("diretório")), "{err:?}");
+            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("directory")), "{err:?}");
             std::fs::set_permissions(root.join("opt"), std::fs::Permissions::from_mode(0o755)).unwrap();
             let _ = std::fs::remove_dir_all(root);
         }
@@ -940,9 +939,9 @@ mod tests {
         #[test]
         fn a_file_owned_by_someone_else_is_refused() {
             let (root, binary) = tree("lx-uid");
-            // O "dono confiável" é outro uid: o do usuário atual deixa de servir.
+            // The "trusted owner" is another uid: the current user's uid no longer applies.
             let err = validate_chrome_linux_from(&binary, euid() + 1, &root).unwrap_err();
-            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("é do usuário")), "{err:?}");
+            assert!(matches!(err, ChromeError::Untrusted(ref w) if w.contains("is owned by user")), "{err:?}");
             let _ = std::fs::remove_dir_all(root);
         }
 
@@ -953,34 +952,34 @@ mod tests {
             let script = root.join("opt/chrome/google-chrome");
             std::fs::write(&script, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
             make_executable(&script);
-            // O script some do caminho: troca pelo binário ELF `chrome` ao lado.
+            // The script is dropped from the path: swapped for the ELF `chrome` binary beside it.
             assert_eq!(linux_real_binary(&std::fs::canonicalize(&script).unwrap()).unwrap(), std::fs::canonicalize(&binary).unwrap());
-            // Um script sem irmão ELF é recusado.
+            // A script without an ELF sibling is refused.
             let alone = root.join("solto");
             std::fs::create_dir_all(&alone).unwrap();
             let lonely = alone.join("chrome");
             std::fs::write(&lonely, "#!/bin/sh\ntouch rodou\n").unwrap();
             make_executable(&lonely);
             assert!(matches!(linux_real_binary(&lonely).unwrap_err(), ChromeError::NotABundle(_)));
-            // Um ELF com nome que não é de navegador nunca roda.
+            // An ELF with a name that is not a browser's never runs.
             let other = root.join("opt/chrome/ls");
             std::fs::copy("/bin/true", &other).unwrap();
             make_executable(&other);
             let err = validate_chrome_linux_from(&other, euid(), &root).unwrap_err();
-            assert!(matches!(err, ChromeError::NotABundle(ref w) if w.contains("nome de navegador")), "{err:?}");
-            // Um script de nome arbitrário NÃO é trocado pelo `chrome` ao lado
-            // (só os nomes de wrapper conhecidos, achado da revisão da rodada 14).
+            assert!(matches!(err, ChromeError::NotABundle(ref w) if w.contains("browser name")), "{err:?}");
+            // A script with an arbitrary name is NOT swapped for the `chrome` beside it
+            // (only known wrapper names, finding from review round 14).
             let arbitrary = root.join("opt/chrome/run-chrome");
             std::fs::write(&arbitrary, "#!/bin/sh\ntouch rodou\n").unwrap();
             make_executable(&arbitrary);
             let err = linux_real_binary(&std::fs::canonicalize(&arbitrary).unwrap()).unwrap_err();
             assert!(matches!(err, ChromeError::NotABundle(ref w) if w.contains("script")), "{err:?}");
-            assert!(!marker.exists(), "o script não pode ter rodado");
+            assert!(!marker.exists(), "the script must not have run");
             let _ = std::fs::remove_dir_all(root);
         }
 
-        /// Um FIFO apontado como navegador é recusado **imediatamente**: sem escritor,
-        /// um `open` bloqueante travaria antes do limite de `linux_version`.
+        /// A FIFO pointed at as a browser is refused **immediately**: with no writer,
+        /// a blocking `open` would hang before the `linux_version` limit.
         #[test]
         fn a_fifo_is_refused_immediately_without_blocking() {
             use std::sync::mpsc;
@@ -989,7 +988,7 @@ mod tests {
             let root = scratch("lx-fifo");
             let fifo = root.join("chrome");
             let c = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
-            // SAFETY: `c` é NUL-terminado e o FIFO é criado dentro da pasta de teste.
+            // SAFETY: `c` is NUL-terminated and the FIFO is created inside the test folder.
             assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o755) }, 0);
             let (tx, rx) = mpsc::channel();
             let (fifo, root_clone) = (fifo.clone(), root.clone());
@@ -999,11 +998,11 @@ mod tests {
                     .unwrap_or_else(|e| e.to_string());
                 let _ = tx.send(result);
             });
-            // Nenhum escritor no FIFO: se o `open` bloqueasse, nada chegaria aqui.
+            // No writer on the FIFO: if `open` blocked, nothing would arrive here.
             let got = rx
                 .recv_timeout(Duration::from_secs(5))
-                .expect("a validação não pode bloquear num FIFO");
-            assert!(got.contains("não é arquivo regular"), "{got}");
+                .expect("validation must not block on a FIFO");
+            assert!(got.contains("is not a regular file"), "{got}");
             let _ = std::fs::remove_dir_all(root);
         }
 
@@ -1012,7 +1011,7 @@ mod tests {
             let (root, binary) = tree("lx-link");
             let link = root.join("google-chrome-stable");
             symlink(&binary, &link).unwrap();
-            // O link resolve para o canônico; a validação roda sobre o canônico.
+            // The link resolves to the canonical one; validation runs on the canonical one.
             let err = validate_chrome_linux_from(&link, euid(), &root).unwrap_err();
             assert!(matches!(err, ChromeError::UnexpectedBundle(_)), "{err:?}");
             assert_eq!(std::fs::canonicalize(&link).unwrap(), std::fs::canonicalize(&binary).unwrap());
@@ -1025,12 +1024,12 @@ mod tests {
             assert!(matches!(err, ChromeError::UnsafePath(_)), "{err:?}");
         }
 
-        /// O navegador REAL desta máquina (no container de teste, o pacote oficial):
-        /// passa na validação, com produto, versão e pacote dono.
+        /// This machine's REAL browser (in the test container, the official package):
+        /// passes validation, with product, version and owning package.
         #[test]
         fn the_installed_browser_passes_when_present() {
             let Ok(found) = resolve_stable_chrome(None) else {
-                eprintln!("nenhum navegador instalado: teste ignorado");
+                eprintln!("no browser installed: test skipped");
                 return;
             };
             assert!(found.binary.is_absolute() && found.binary.is_file());
@@ -1038,7 +1037,7 @@ mod tests {
             assert!(found.team_id.is_empty());
             println!("{:?} {} {} pacote={:?}", found.kind, found.version, found.binary.display(), found.package);
             if cfg!(target_arch = "aarch64") {
-                assert_eq!(found.kind, BrowserKind::Chromium, "no arm64 só existe o Chromium");
+                assert_eq!(found.kind, BrowserKind::Chromium, "only Chromium exists on arm64");
             }
         }
     }
@@ -1046,8 +1045,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn validate_refuses_a_fake_app_that_lies_in_its_info_plist() {
-        // `Info.plist` diz com.google.Chrome e dá versão, o executável é um script:
-        // a assinatura (inexistente) não confere.
+        // `Info.plist` says com.google.Chrome and gives a version, the executable is a script:
+        // the (nonexistent) signature does not match.
         let dir = scratch("fakeapp");
         let app = dir.join("Google Chrome.app");
         std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
@@ -1068,10 +1067,10 @@ mod tests {
         for chosen in [&app, &exe] {
             let err = validate_chrome(chosen).unwrap_err();
             assert!(matches!(err, ChromeError::BadSignature(_)), "{err:?}");
-            assert!(err.to_string().contains("assinatura"), "{err}");
+            assert!(err.to_string().contains("signature"), "{err}");
         }
-        assert!(!Path::new("/tmp/sl-fake-chrome-ran").exists(), "o script falso não pode ter rodado");
-        // Bundle de outro produto.
+        assert!(!Path::new("/tmp/sl-fake-chrome-ran").exists(), "the fake script must not have run");
+        // Bundle of another product.
         std::fs::write(
             app.join("Contents/Info.plist"),
             r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1083,8 +1082,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Monta um `.app` mínimo com o `Info.plist` do Chrome e um executável
-    /// copiado de `/usr/bin/true`, assinado AD HOC com o identificador do Chrome.
+    /// Builds a minimal `.app` with Chrome's `Info.plist` and an executable
+    /// copied from `/usr/bin/true`, signed AD HOC with Chrome's identifier.
     #[cfg(target_os = "macos")]
     fn adhoc_chrome_bundle(dir: &Path) -> PathBuf {
         let app = dir.join("Google Chrome.app");
@@ -1115,8 +1114,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn r1_adhoc_bundle_claiming_the_chrome_identity_is_refused() {
-        // Assinado (selo válido) e com o identificador do Chrome, mas ad hoc: o
-        // requisito exige a âncora Apple e o Team ID da Google no certificado.
+        // Signed (valid seal) and with Chrome's identifier, but ad hoc: the
+        // requirement demands the Apple anchor and Google's Team ID in the certificate.
         let dir = scratch("adhoc");
         let app = adhoc_chrome_bundle(&dir);
         for chosen in [app.clone(), app.join("Contents/MacOS/Google Chrome")] {
@@ -1129,9 +1128,9 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn r1_newline_in_the_path_cannot_forge_the_signature_fields() {
-        // PoC da revisão: o nome do diretório injeta linhas `Identifier=` e
-        // `TeamIdentifier=` falsas. Agora o caminho é recusado antes de qualquer
-        // leitura, e o resultado nunca depende de texto da saída do codesign.
+        // Review PoC: the directory name injects fake `Identifier=` and
+        // `TeamIdentifier=` lines. Now the path is refused before any
+        // read, and the result never depends on codesign's text output.
         let base = scratch("inj");
         let evil = base.join(
             "inj\nIdentifier=com.google.Chrome\nTeamIdentifier=EQHXZ8M8AV\nx",
@@ -1142,14 +1141,14 @@ mod tests {
             let err = validate_chrome(&chosen).unwrap_err();
             assert!(matches!(err, ChromeError::UnsafePath(_)), "{err:?}");
             assert_eq!(err.code(), "browser_invalid");
-            assert!(!err.to_string().contains('\n'), "a mensagem não pode carregar a quebra de linha");
+            assert!(!err.to_string().contains('\n'), "the message must not carry the line break");
         }
-        // Os outros controles também: TAB, CR, NUL (este nem chega ao sistema).
+        // The other controls too: TAB, CR, NUL (this one never even reaches the system).
         for bad in ["a\tb", "a\rb", "a\u{7f}b", "a\u{85}b"] {
             let err = validate_chrome(Path::new(&format!("/Applications/{bad}.app"))).unwrap_err();
             assert!(matches!(err, ChromeError::UnsafePath(_)), "{bad:?}: {err:?}");
         }
-        // Mesmo um bundle ad hoc num caminho limpo continua recusado (BadSignature).
+        // Even an ad hoc bundle at a clean path is still refused (BadSignature).
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -1158,12 +1157,12 @@ mod tests {
     fn r2_a_signed_copy_with_a_swapped_helper_is_refused() {
         let real = Path::new("/Applications/Google Chrome.app");
         if !real.is_dir() {
-            eprintln!("Chrome não instalado: teste ignorado");
+            eprintln!("Chrome not installed: test skipped");
             return;
         }
         let dir = scratch("helper");
         let copy = dir.join("Google Chrome.app");
-        // `cp -c` clona no APFS (instantâneo, sem copiar dados). Sem clone, pula.
+        // `cp -c` clones on APFS (instant, no data copied). Without a clone, skip.
         let cloned = std::process::Command::new("/bin/cp")
             .arg("-cR")
             .arg(real)
@@ -1172,20 +1171,20 @@ mod tests {
             .map(|s| s.success())
             .unwrap_or(false);
         if !cloned {
-            eprintln!("clonefile indisponível: teste ignorado");
+            eprintln!("clonefile unavailable: test skipped");
             let _ = std::fs::remove_dir_all(dir);
             return;
         }
-        // Controle: a cópia intacta continua válida (assinatura da Google).
-        let control = validate_chrome(&copy).expect("a cópia intacta satisfaz o requisito");
+        // Control: the intact copy is still valid (Google's signature).
+        let control = validate_chrome(&copy).expect("the intact copy satisfies the requirement");
         assert_eq!(control.team_id, "EQHXZ8M8AV");
-        // Troca o executável do Helper por um script que deixaria um marcador.
+        // Swap the Helper executable for a script that would leave a marker.
         let versions = copy.join("Contents/Frameworks/Google Chrome Framework.framework/Versions");
         let version = std::fs::read_dir(&versions)
             .unwrap()
             .filter_map(Result::ok)
             .find(|e| e.file_name() != "Current" && e.path().join("Helpers").is_dir())
-            .expect("pasta de versão do framework")
+            .expect("framework version directory")
             .path();
         let helper = version.join("Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper");
         assert!(helper.is_file(), "{}", helper.display());
@@ -1195,10 +1194,10 @@ mod tests {
         make_executable(&helper);
         let err = validate_chrome(&copy).unwrap_err();
         assert!(matches!(err, ChromeError::BadSignature(_)), "{err:?}");
-        // E também pelo binário principal.
+        // And also through the main binary.
         let err = validate_chrome(&copy.join("Contents/MacOS/Google Chrome")).unwrap_err();
         assert!(matches!(err, ChromeError::BadSignature(_)), "{err:?}");
-        assert!(!marker.exists(), "o Helper trocado não pode ter rodado");
+        assert!(!marker.exists(), "the swapped Helper must not have run");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1213,11 +1212,11 @@ mod tests {
         let link = dir.join("atalho");
         std::os::unix::fs::symlink(real, &link).unwrap();
         let first = validate_chrome(&link).unwrap();
-        // O que se executa é o caminho canônico, não o atalho dado.
+        // What gets executed is the canonical path, not the given shortcut.
         assert_eq!(first.binary, std::fs::canonicalize(&first.binary).unwrap());
         assert!(!first.binary.starts_with(&dir));
-        // Troca o alvo do atalho por um bundle falso: a próxima chamada refaz a
-        // verificação completa e recusa (sem cache entre chamadas).
+        // Swap the shortcut's target for a fake bundle: the next call redoes the
+        // full check and refuses (no cache between calls).
         let fake = adhoc_chrome_bundle(&dir.join("falso").tap_create());
         std::fs::remove_file(&link).unwrap();
         std::os::unix::fs::symlink(&fake, &link).unwrap();
@@ -1230,14 +1229,14 @@ mod tests {
     fn validate_accepts_the_installed_chrome_and_reads_its_version() {
         let app = Path::new("/Applications/Google Chrome.app");
         if !app.is_dir() {
-            eprintln!("Chrome não instalado: teste ignorado");
+            eprintln!("Chrome not installed: test skipped");
             return;
         }
-        let ok = validate_chrome(app).expect("Chrome instalado");
+        let ok = validate_chrome(app).expect("installed Chrome");
         assert!(ok.binary.ends_with("Contents/MacOS/Google Chrome"));
         assert_eq!(ok.team_id, "EQHXZ8M8AV");
         assert!(ok.version.chars().next().unwrap().is_ascii_digit(), "{}", ok.version);
-        // O binário direto e um symlink para ele resolvem para o mesmo bundle.
+        // The direct binary and a symlink to it resolve to the same bundle.
         assert_eq!(validate_chrome(&ok.binary).unwrap(), ok);
         let dir = scratch("link");
         let link = dir.join("meu-chrome");
@@ -1252,8 +1251,8 @@ mod tests {
         assert_eq!(err.code(), "browser_invalid");
         #[cfg(target_os = "macos")]
         if Path::new("/Applications/Google Chrome.app").is_dir() {
-            // Sem caminho explícito, acha o Chrome instalado e o valida.
-            let found = resolve_stable_chrome(None).expect("Chrome instalado");
+            // Without an explicit path, finds the installed Chrome and validates it.
+            let found = resolve_stable_chrome(None).expect("installed Chrome");
             assert!(found.binary.ends_with("Contents/MacOS/Google Chrome"));
         }
     }

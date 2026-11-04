@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 license = "MIT"
-description = "Captura ao vivo do ScrapeLens: Chrome com perfil dedicado, CDP + NetLog, allowlist, captura controlada (sem Tauri)"
+description = "Live capture for ScrapeLens: Chrome with a dedicated profile, CDP + NetLog, allowlist, controlled capture (no Tauri)"
 publish = false
 
 [dependencies]

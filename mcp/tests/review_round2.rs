@@ -1,5 +1,5 @@
-//! Regressões do adendo 2 da revisão (docs/17): R1, R4, R5, R7 (e, nos blocos
-//! seguintes, R10 e R14).
+//! Regressions from addendum 2 of the review (docs/17): R1, R4, R5, R7 (and, in the
+//! following blocks, R10 and R14).
 
 mod common;
 
@@ -18,7 +18,7 @@ fn fake(work: &std::path::Path, policy: Elicit, extra: &[&str]) -> Client {
     client
 }
 
-// ---- R1: caracteres de controle não injetam linhas falsas na confirmação ---------------
+// ---- R1: control characters don't inject fake lines into the confirmation ---------------
 
 #[test]
 fn escape_display_neutralises_control_and_bidi_characters() {
@@ -49,12 +49,12 @@ fn confirmation_text_never_carries_injected_lines() {
             );
         }
     }
-    // Se algo foi aberto, a captura é válida; senão foi recusada antes de perguntar.
+    // If something was opened, the capture is valid; otherwise it was refused before asking.
     let _ = out;
     client.finish();
 }
 
-// ---- R4: expose_cdp avisa que a porta não tem autenticação --------------------------------
+// ---- R4: expose_cdp warns that the port has no authentication --------------------------------
 
 #[test]
 fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
@@ -66,10 +66,10 @@ fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
     );
     let message = client.elicitations[0].clone();
     for needle in ["não tem autenticação", "qualquer processo local", "controlar o Chrome inteiro"] {
-        assert!(message.contains(needle), "faltou {needle:?}: {message}");
+        assert!(message.contains(needle), "missing {needle:?}: {message}");
     }
     client.finish();
-    // Sem expose_cdp, o aviso não aparece.
+    // Without expose_cdp, the warning doesn't appear.
     let work = tempfile::tempdir().unwrap();
     let mut client = fake(work.path(), Elicit::Decline, &[]);
     client.tool("start_capture", json!({"allowed_hosts": ["site.invalid.test"], "headless": true}));
@@ -77,7 +77,7 @@ fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
     client.finish();
 }
 
-// ---- R7: valores multibyte não derrubam trace_value -------------------------------------
+// ---- R7: multibyte values don't crash trace_value -------------------------------------
 
 #[test]
 fn trace_value_does_not_panic_on_multibyte_header_values() {
@@ -100,7 +100,7 @@ fn trace_value_does_not_panic_on_multibyte_header_values() {
     let _: Value = Value::Null;
 }
 
-// ---- R14: scrub_output cobre todas as formas, em toda string ----------------------------
+// ---- R14: scrub_output covers all forms, in every string ----------------------------
 
 #[test]
 fn scrub_output_masks_fragment_matrix_userinfo_bare_and_nested_forms() {
@@ -121,7 +121,7 @@ fn scrub_output_masks_fragment_matrix_userinfo_bare_and_nested_forms() {
     assert_eq!(value["h"], "ok sem segredo: page=2");
 }
 
-// ---- R10: SIGTERM durante o stop não perde o session.json ------------------------------
+// ---- R10: SIGTERM during stop doesn't lose session.json ------------------------------
 
 #[test]
 fn sigterm_during_stop_still_writes_the_session() {
@@ -140,7 +140,7 @@ fn sigterm_during_stop_still_writes_the_session() {
     );
     let id = started["captureId"].as_str().unwrap().to_string();
     client.call_nowait("stop_capture", json!({"capture_id": id}));
-    std::thread::sleep(std::time::Duration::from_millis(300)); // o stop está em andamento
+    std::thread::sleep(std::time::Duration::from_millis(300)); // the stop is in progress
     let status = std::process::Command::new("kill")
         .args(["-TERM", &client.child.id().to_string()])
         .status()
@@ -157,11 +157,11 @@ fn sigterm_during_stop_still_writes_the_session() {
     assert_eq!(dirs.len(), 1, "{dirs:?}");
     assert!(
         dirs[0].join("session.json").is_file(),
-        "o stop em andamento terminou e gravou antes de sair"
+        "the stop in progress finished and wrote before exiting"
     );
 }
 
-// ---- A3-B: mensagens de erro e caracteres invisíveis -------------------------------------
+// ---- A3-B: error messages and invisible characters -------------------------------------
 
 #[test]
 fn error_messages_escape_bidi_and_invisible_characters() {
@@ -181,7 +181,7 @@ fn error_messages_escape_bidi_and_invisible_characters() {
 
 #[test]
 fn escape_display_uses_unicode_categories_not_a_range_list() {
-    // Mn, Me, Cf, Zs (exceto o espaço comum), Co, Cn, controles e seletores E0100–E01EF.
+    // Mn, Me, Cf, Zs (except the plain space), Co, Cn, controls and selectors E0100–E01EF.
     for ch in [
         '\u{05B4}', '\u{064B}', '\u{0489}', '\u{0600}', '\u{070F}', '\u{115F}', '\u{1160}',
         '\u{1680}', '\u{17B4}', '\u{FFA0}', '\u{1D173}', '\u{13430}', '\u{1BCA0}', '\u{E0100}',
@@ -192,7 +192,7 @@ fn escape_display_uses_unicode_categories_not_a_range_list() {
         assert!(!shown.contains(ch), "U+{:04X} passou cru", ch as u32);
         assert!(shown.starts_with("a\\u{"), "{shown}");
     }
-    // Texto comum, acentuado (letras compostas), CJK, emoji e o espaço comum ficam.
+    // Plain text, accented (composed letters), CJK, emoji and the plain space are kept.
     assert_eq!(escape_display("ação – 日本語 😀 a b"), "ação – 日本語 😀 a b");
 }
 

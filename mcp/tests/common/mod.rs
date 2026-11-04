@@ -1,4 +1,4 @@
-//! Apoio dos testes: HAR sintético com fluxo de cookie/token/CSRF e helpers.
+//! Test support: synthetic HAR with a cookie/token/CSRF flow, and helpers.
 #![allow(dead_code)]
 
 pub mod client;
@@ -14,7 +14,7 @@ pub const TOKEN: &str = "TOKEN-ABCDEFGH-0123";
 pub const PASSWORD: &str = "PW-SECRET-1";
 pub const REFRESH: &str = "REFRESH-9999999999";
 pub const CSRF: &str = "CSRF-VALUE-123456789";
-/// Segredos que a política de máscara do core tem de esconder.
+/// Secrets that the core's masking policy must hide.
 pub const MASKED_SECRETS: [&str; 4] = [SID, TOKEN, PASSWORD, REFRESH];
 
 pub fn repo(path: &str) -> PathBuf {
@@ -67,8 +67,8 @@ fn entry(
     })
 }
 
-/// HAR sintético (dados inventados, domínios `.invalid`). `variant` muda o
-/// token para o `diff_sessions` ter o que comparar.
+/// Synthetic HAR (made-up data, `.invalid` domains). `variant` changes the
+/// token so `diff_sessions` has something to compare.
 pub fn flow_har(variant: &str) -> String {
     let token = format!("{TOKEN}{variant}");
     let html = format!(
@@ -81,7 +81,7 @@ pub fn flow_har(variant: &str) -> String {
     let set_refresh = format!("refresh={REFRESH}; Path=/; Secure");
     let bearer = format!("Bearer {token}");
     let big = "A".repeat(100_000);
-    // 300 bytes não-UTF-8 (PNG fictício).
+    // 300 non-UTF-8 bytes (fake PNG).
     let mut png = vec![0x89u8, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe];
     png.extend((0..290).map(|i| (i % 251) as u8 | 0x80));
     let png_b64 = base64_encode(&png);
@@ -216,7 +216,7 @@ impl Env {
         path
     }
 
-    /// Importa o HAR de fluxo e devolve o session_id.
+    /// Imports the flow HAR and returns the session_id.
     pub fn import_flow(&self, name: &str, variant: &str) -> String {
         let path = self.write(&format!("{name}.har"), &flow_har(variant));
         let out = scrapelens_mcp::tools::import_session(
@@ -236,15 +236,15 @@ pub fn text(value: &Value) -> String {
     value.to_string()
 }
 
-/// Nenhum segredo conhecido pode aparecer na saída mascarada.
+/// No known secret may appear in the masked output.
 pub fn assert_no_secrets(value: &Value, what: &str) {
     let text = text(value);
     for secret in MASKED_SECRETS {
-        assert!(!text.contains(secret), "{what}: vazou {secret}\n{text}");
+        assert!(!text.contains(secret), "{what}: leaked {secret}\n{text}");
     }
 }
 
-/// HAR sintético com sinais inventados de Cloudflare (domínio `.invalid`).
+/// Synthetic HAR with invented Cloudflare signals (`.invalid` domain).
 pub const CF_SECRET: &str = "SEGREDO-BM-1";
 
 pub fn cf_har() -> String {
