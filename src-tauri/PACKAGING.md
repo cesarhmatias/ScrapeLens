@@ -4,7 +4,27 @@ Status of the package delivered in this round. It serves as reproducible evidenc
 the commands below produce exactly the artifact described, on the same machine and
 under the same conditions.
 
-## macOS — English interface (2026-11-05, current)
+## macOS — English demo data (2026-11-05, current)
+
+Bundle built from the clean tree at `a7d8519` (provisional commit; it will be
+remapped when the history is rewritten, so do not treat it as final). The synthetic
+demo data embedded in the binary (`src-tauri/demo/session.json`) is now in English:
+domains stay `.invalid` (`demo-shop.invalid`), and the paths, fields, ids, headers
+and bodies are translated. Structure, statuses, durations and counts are unchanged;
+the only structural change is the cart POST body, 32 bytes instead of 34.
+Screenshots `01`–`15` were regenerated from this build's UI and checked one by one.
+Screenshots `16`–`24` were removed earlier and are not part of the package.
+SHA-256 of `Contents/MacOS/scrapelens` (18,268,880 bytes):
+`46cd37efe468330ded3a98f401f4e3f21666fd7361b7034977b8f395a9c97b32`.
+Signed with `ScrapeLens Local Signing`; `codesign --verify --deep --strict` passed;
+designated requirement certificate root `d0a53befa59a447043abc9e58a3381addbbf1751`.
+Built with `./app/node_modules/.bin/tauri build --bundles app`. No window was opened
+or activated, and the running ScrapeLens instance was not closed.
+Validation: `npm --prefix app test` (seven suites), typecheck and build passed;
+`cargo test` 60 passed, 0 failed, 8 ignored; `cargo clippy --all-targets -- -D warnings`
+passed.
+
+## macOS — English interface (2026-11-05, previous)
 
 Bundle built with the English UI from the clean tree at `4445160` (provisional
 commit; it will be remapped when the history is rewritten, so do not treat it as
