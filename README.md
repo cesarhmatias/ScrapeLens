@@ -2,7 +2,7 @@
 
 # 🔍 ScrapeLens
 
-**Inspetor local de sessões HTTP de alta fidelidade e servidor MCP para engenharia reversa de fluxos web e scraping.**
+**Local high-fidelity HTTP session inspector and MCP server for reverse engineering web flows and scraping.**
 
 [![Release](https://img.shields.io/github/v/release/cesarhmatias/ScrapeLens?style=flat-square&color=0066cc)](https://github.com/cesarhmatias/ScrapeLens/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
@@ -11,224 +11,224 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-24c8db?style=flat-square&logo=tauri)](src-tauri/tauri.conf.json)
 [![MCP](https://img.shields.io/badge/MCP-15%20Tools-8a2be2?style=flat-square)](docs/16-mcp-contrato.md)
 
-[Instalação](#-instalação-e-pacotes) •
-[Destaques](#-principais-recursos) •
-[App Desktop](#-uso-do-app-desktop) •
-[Servidor MCP](#-servidor-mcp-para-agentes-llm) •
-[Arquitetura](#-arquitetura-do-repositório) •
-[Desenvolvimento](#-desenvolvimento-e-build) •
-[Licença](#-licença)
+[Installation](#-installation-and-packages) •
+[Highlights](#-key-features) •
+[Desktop App](#-desktop-app-usage) •
+[MCP Server](#-mcp-server-for-llm-agents) •
+[Architecture](#-repository-architecture) •
+[Development](#-development-and-build) •
+[License](#-license)
 
 </div>
 
 ---
 
-O **ScrapeLens** captura tráfego de navegadores Chromium (Chrome, Brave, Arc, Edge, CloakBrowser) combinando **Chrome DevTools Protocol (CDP)** por pipe e **NetLog** em fluxo contínuo, ou importa arquivos **HAR** e **NetLog** existentes. Diferente de ferramentas convencionais que normalizam cabeçalhos em dicionários, o ScrapeLens preserva a **sequência exata reportada pela fonte**, cabeçalhos duplicados, capitalização original, pseudo-headers HTTP/2 e HTTP/3 (`:method`, `:path`, `:authority`, `:scheme`), cadeias de redirecionamento, tentativas de rede e **proveniência explícita por campo**.
+**ScrapeLens** captures traffic from Chromium browsers (Chrome, Brave, Arc, Edge, CloakBrowser) by combining **Chrome DevTools Protocol (CDP)** over a pipe with a streaming **NetLog**, or imports existing **HAR** and **NetLog** files. Unlike conventional tools that normalize headers into dictionaries, ScrapeLens preserves the **exact sequence reported by the source**, duplicate headers, original capitalization, HTTP/2 and HTTP/3 pseudo-headers (`:method`, `:path`, `:authority`, `:scheme`), redirect chains, network attempts and **explicit per-field provenance**.
 
-Construído em **Tauri 2 + React/TypeScript + Rust**, roda **100% localmente**, sem sidecars externos, sem nuvem e **sem telemetria**.
+Built with **Tauri 2 + React/TypeScript + Rust**, it runs **100% locally**, with no external sidecars, no cloud and **no telemetry**.
 
-![Interface principal do ScrapeLens](docs/screenshots/22-final-app.png)
+![ScrapeLens main interface](docs/screenshots/22-final-app.png)
 
 ---
 
-## ✨ Principais Recursos
+## ✨ Key Features
 
-| Recurso | Descrição |
+| Feature | Description |
 |---|---|
-| **Fidelidade de Protocolo & Proveniência** | Preserva arrays ordenados de headers com duplicatas e caixa original. Distingue visualmente entre ordem **verificada no fio** (`NetLog` / `headersText` HTTP/1.1) e ordem **não verificada** (objetos CDP/HAR). |
-| **Captura Multi-Alvo por Pipe (`fd 3`/`fd 4`)** | Anexa automaticamente a páginas, popups, `iframes` cross-origin (`OOPIF`), Service Workers e Shared Workers usando pipe nativo do DevTools (`--remote-debugging-pipe`), sem abrir portas TCP locais por padrão. |
-| **Importação de Cookies do Navegador** | Opcionalmente importa e decifra em memória cookies de uma sessão existente (Chrome, Brave, Arc, Edge, Chromium, Firefox ou Safari no macOS/Linux) antes da primeira navegação para já iniciar autenticado. |
-| **Rastreamento de Origem e Priming** | Rastreia de onde surgiu cada cookie, token CSRF, ViewState ou parâmetro dinâmico ao longo da sessão e gera scripts Python (`requests.Session`) de **priming** de múltiplas etapas sem segredos embutidos. |
-| **Adaptadores de Protocolo (Natural for Ajax)** | Decodifica, compara e recodifica protocolos legados baseados em XML/formulários dinâmicos (`adapters/natural-ajax` — ex.: `natparamext`, `F-STAMP`, `SUBPAGE`), com validação de execução integrada. |
-| **Exportação Sanitizada ou Completa** | Gere comandos `cURL` e scripts Python por requisição, ou exporte a sessão inteira: **sanitizada por padrão** (redigindo cookies, tokens, senhas e omitindo eventos brutos) ou **captura completa com dados sensíveis** mediante confirmação explícita (checkbox na UI ou `include_sensitive: true` no MCP). |
-| **Servidor MCP Nativo (`scrapelens-mcp`)** | Expõe **15 ferramentas MCP** sobre `stdio` para que agentes de IA inspecionem sessões, busquem corpos, rastreiem tokens, comparem requisições, exportem capturas e dirijam o navegador com confirmação humana (elicitação MCP). |
-| **Escalabilidade para Grandes Sessões** | Parser NetLog em streaming (`O(requisições HTTP)`), armazenamento de anexos deduplicado com escrita segura (`0700`/`0600`, `O_NOFOLLOW`), paginação no backend e lista virtualizada no front-end. |
+| **Protocol Fidelity & Provenance** | Preserves ordered header arrays with duplicates and original case. Visually distinguishes between order **verified on the wire** (`NetLog` / `headersText` HTTP/1.1) and **unverified** order (CDP/HAR objects). |
+| **Multi-Target Capture over Pipe (`fd 3`/`fd 4`)** | Automatically attaches to pages, popups, cross-origin `iframes` (`OOPIF`), Service Workers and Shared Workers using the native DevTools pipe (`--remote-debugging-pipe`), without opening local TCP ports by default. |
+| **Browser Cookie Import** | Optionally imports and decrypts in memory the cookies of an existing session (Chrome, Brave, Arc, Edge, Chromium, Firefox or Safari on macOS/Linux) before the first navigation, so the capture starts already authenticated. |
+| **Origin Tracing and Priming** | Traces where each cookie, CSRF token, ViewState or dynamic parameter came from throughout the session and generates multi-step **priming** Python scripts (`requests.Session`) with no embedded secrets. |
+| **Protocol Adapters (Natural for Ajax)** | Decodes, compares and re-encodes legacy protocols based on XML/dynamic forms (`adapters/natural-ajax` — e.g. `natparamext`, `F-STAMP`, `SUBPAGE`), with built-in execution validation. |
+| **Sanitized or Full Export** | Generate `cURL` commands and Python scripts per request, or export the whole session: **sanitized by default** (redacting cookies, tokens, passwords and omitting raw events) or a **full capture with sensitive data** upon explicit confirmation (checkbox in the UI or `include_sensitive: true` in MCP). |
+| **Native MCP Server (`scrapelens-mcp`)** | Exposes **15 MCP tools** over `stdio` so AI agents can inspect sessions, search bodies, trace tokens, compare requests, export captures and drive the browser with human confirmation (MCP elicitation). |
+| **Scalability for Large Sessions** | Streaming NetLog parser (`O(HTTP requests)`), deduplicated attachment storage with safe writes (`0700`/`0600`, `O_NOFOLLOW`), backend pagination and a virtualized list in the front end. |
 
 <details>
-<summary><b>📸 Ver mais capturas de tela</b></summary>
+<summary><b>📸 See more screenshots</b></summary>
 <br>
 
-| Detalhe Verificado (Headers & Proveniência) | Comparação Lado a Lado (Diff) |
+| Verified Detail (Headers & Provenance) | Side-by-Side Comparison (Diff) |
 |---|---|
-| ![Detalhe verificado](docs/screenshots/23-final-detalhe-verificado.png) | ![Comparação](docs/screenshots/10-comparacao-escuro.png) |
+| ![Verified detail](docs/screenshots/23-final-detalhe-verificado.png) | ![Comparison](docs/screenshots/10-comparacao-escuro.png) |
 
-| Inspeção de Cookies (`Cookie` vs `Set-Cookie`) | Exportação Sanitizada |
+| Cookie Inspection (`Cookie` vs `Set-Cookie`) | Sanitized Export |
 |---|---|
-| ![Cookies](docs/screenshots/19-real-cookies.png) | ![Exportação sanitizada](docs/screenshots/24-exportacao-sanitizada-aberta.png) |
+| ![Cookies](docs/screenshots/19-real-cookies.png) | ![Sanitized export](docs/screenshots/24-exportacao-sanitizada-aberta.png) |
 
 </details>
 
 ---
 
-## 📦 Instalação e Pacotes
+## 📦 Installation and Packages
 
-Baixe os binários pré-compilados na aba [**Releases**](https://github.com/cesarhmatias/ScrapeLens/releases):
+Download the pre-built binaries from the [**Releases**](https://github.com/cesarhmatias/ScrapeLens/releases) tab:
 
 - **macOS (Apple Silicon `arm64`)**: `ScrapeLens-0.1.0-macos-arm64.zip` (`ScrapeLens.app`)
-- **Linux (`x86_64` / `amd64`)**: `ScrapeLens_0.1.0_amd64.deb` e `ScrapeLens_0.1.0_amd64.AppImage`
-- **Linux (`aarch64` / `arm64`)**: `ScrapeLens_0.1.0_arm64.deb` e `ScrapeLens_0.1.0_aarch64.AppImage`
+- **Linux (`x86_64` / `amd64`)**: `ScrapeLens_0.1.0_amd64.deb` and `ScrapeLens_0.1.0_amd64.AppImage`
+- **Linux (`aarch64` / `arm64`)**: `ScrapeLens_0.1.0_arm64.deb` and `ScrapeLens_0.1.0_aarch64.AppImage`
 
-### Executando no macOS
+### Running on macOS
 
-Descompacte o `ScrapeLens.app` (ou use o bundle compilado em `src-tauri/target/release/bundle/macos/ScrapeLens.app`) e mova para `/Applications` ou abra via terminal:
+Unzip `ScrapeLens.app` (or use the bundle built at `src-tauri/target/release/bundle/macos/ScrapeLens.app`) and move it to `/Applications` or open it from the terminal:
 
 ```sh
 open src-tauri/target/release/bundle/macos/ScrapeLens.app
 ```
 
-> **Nota sobre assinatura:** O pacote utiliza assinatura local (`ScrapeLens Local Signing` / ad-hoc), sem notarização da Apple. Caso o Gatekeeper bloqueie a primeira abertura, execute `xattr -dr com.apple.quarantine /Applications/ScrapeLens.app` ou abra via clique secundário → **Abrir**. Detalhes e hashes `SHA-256` em [`src-tauri/EMPACOTAMENTO.md`](src-tauri/EMPACOTAMENTO.md).
+> **Note on signing:** The package uses local signing (`ScrapeLens Local Signing` / ad-hoc), without Apple notarization. If Gatekeeper blocks the first launch, run `xattr -dr com.apple.quarantine /Applications/ScrapeLens.app` or open it via secondary click → **Open**. Details and `SHA-256` hashes in [`src-tauri/EMPACOTAMENTO.md`](src-tauri/EMPACOTAMENTO.md).
 
 ---
 
-## 🖥️ Uso do App Desktop
+## 🖥️ Desktop App Usage
 
-1. **Capturar sessão ao vivo**:
-   - Informe opcionalmente a **URL inicial** e, se desejar entrar já logado, selecione o navegador de origem no menu **Cookies** (ou mantenha `Sessão limpa`).
-   - Clique em **Iniciar sessão**. O ScrapeLens abrirá uma instância isolada do Chrome com perfil temporário (`0700`).
-   - Execute o fluxo desejado no navegador e clique em **Encerrar** no ScrapeLens.
-2. **Abrir ou Importar** (`⌘O`):
-   - Abra uma pasta de sessão nativa (`session.json`) ou importe arquivos **HAR** e **NetLog** pelos botões dedicados na barra superior.
-3. **Inspecionar e Buscar**:
-   - Filtre por texto, método, status, protocolo, tipo MIME ou alvo (`target`).
-   - Use a **Busca em corpos** para localizar chaves JSON, parâmetros de formulário, regex ou valores em headers/cookies/payloads.
-   - Inspecione **Headers**, **Cookies**, **Payload**, **Resposta**, **Redirects**, **Tentativas**, **Proveniência** e **Linha do tempo**.
-4. **Comparar e Rastrear**:
-   - Clique em **Comparar…** para diff estrutural entre duas requisições da mesma sessão ou entre sessões diferentes.
-5. **Exportar e Sanitizar**:
-   - Em qualquer requisição, clique em **Exportar…** para gerar `cURL`, script `Python (requests)` ou script de **Priming** (com suporte opcional ao wrapper `Natural for Ajax`), além de **Validar execução…** contra o alvo.
-   - Na barra superior, clique em **Exportar / Sanitizar…** para gravar uma cópia da sessão em disco (`0700`/`0600`):
-     - **Desmarcado (padrão):** gera `<sessao>-sanitized` com redação conservadora de segredos e remoção de eventos brutos.
-     - **Marcado (`Incluir dados sensíveis`):** gera `<sessao>-full` preservando integralmente cookies, tokens, corpos e os arquivos brutos (`cdp-events.jsonl`, `netlog.json`, `cdp-bodies.jsonl`).
+1. **Capture a live session**:
+   - Optionally enter the **Start URL** and, if you want to start already logged in, select the source browser in the **Cookies** menu (or keep `No cookies (clean session)`).
+   - Click **Start session**. ScrapeLens will open an isolated Chrome instance with a temporary profile (`0700`).
+   - Run the desired flow in the browser and click **Stop** in ScrapeLens.
+2. **Open or Import** (`⌘O`):
+   - Open a native session folder (`session.json`) with **Open capture…**, or import **HAR** and **NetLog** files with the dedicated **HAR** and **NetLog** buttons in the top bar.
+3. **Inspect and Search**:
+   - Filter by text, method, status, protocol, MIME type or target (`target`).
+   - Use the search field with the body scopes (**req. body**, **resp. body**) to locate JSON keys, form parameters, regex or values in headers/cookies/payloads.
+   - Inspect **Raw headers**, **Cookies**, **Payload**, **Response**, **Redirects**, **Attempts**, **Origin** and **Timeline**.
+4. **Compare and Trace**:
+   - Click **Compare…** for a structural diff between two requests of the same session, or **Compare captures…** for different sessions.
+5. **Export and Sanitize**:
+   - On any request, click **Export…** to generate `cURL`, a `Python (requests)` script or a **Priming script** (with optional support for the `Natural for Ajax` wrapper), plus **Validate execution…** against the target.
+   - In the top bar, click **Export / Sanitize…** to write a copy of the session to disk (`0700`/`0600`):
+     - **Unchecked (default):** generates `<session>-sanitized` with conservative redaction of secrets and removal of raw events.
+     - **Checked (`Include sensitive data`):** generates `<session>-full`, fully preserving cookies, tokens, bodies and the raw files (`cdp-events.jsonl`, `netlog.json`, `cdp-bodies.jsonl`).
 
-### Atalhos de Teclado
+### Keyboard Shortcuts
 
-| Atalho | Ação |
+| Shortcut | Action |
 |---|---|
-| `⌘O` / `Ctrl+O` | Abrir pasta de sessão |
-| `⌘F` / `Ctrl+F` | Focar busca de requisições |
-| `⌘⇧C` / `Ctrl+Shift+C` | Copiar URL da requisição selecionada |
-| `↑` / `↓` | Navegar pela lista de requisições |
-| `Esc` | Fechar modal / limpar seleção |
+| `⌘O` / `Ctrl+O` | Open session folder |
+| `⌘F` / `Ctrl+F` | Focus request search |
+| `⌘⇧C` / `Ctrl+Shift+C` | Copy the selected request's URL |
+| `↑` / `↓` | Navigate the request list |
+| `Esc` | Close modal / clear selection |
 
 ---
 
-## 🤖 Servidor MCP para Agentes LLM
+## 🤖 MCP Server for LLM Agents
 
-O binário `scrapelens-mcp` implementa o **Model Context Protocol (MCP)** sobre `stdio`, permitindo que assistentes de IA (Claude Desktop, Cursor, OpenCode, etc.) analisem capturas e conduzam sessões de engenharia reversa com proteção contra vazamento acidental de segredos.
+The `scrapelens-mcp` binary implements the **Model Context Protocol (MCP)** over `stdio`, allowing AI assistants (Claude Desktop, Cursor, OpenCode, etc.) to analyze captures and run reverse-engineering sessions with protection against accidental leakage of secrets.
 
-### Compilando e configurando o MCP
+### Building and configuring MCP
 
 ```sh
 cargo build --manifest-path mcp/Cargo.toml --release
 ```
 
-Exemplo de configuração (`mcpServers`):
+Example configuration (`mcpServers`):
 
 ```json
 {
   "mcpServers": {
     "scrapelens": {
-      "command": "/caminho/para/ScrapeLens/mcp/target/release/scrapelens-mcp",
+      "command": "/path/to/ScrapeLens/mcp/target/release/scrapelens-mcp",
       "args": [
         "--sessions-dir",
-        "/Users/voce/Library/Application Support/app.scrapelens.desktop/sessions"
+        "/Users/you/Library/Application Support/app.scrapelens.desktop/sessions"
       ]
     }
   }
 }
 ```
 
-### As 15 Ferramentas do `scrapelens-mcp`
+### The 15 Tools of `scrapelens-mcp`
 
-| Categoria | Ferramenta | Descrição |
+| Category | Tool | Description |
 |---|---|---|
-| **Sessões** | `list_sessions` | Lista sessões disponíveis no diretório de trabalho e diretórios extras (somente leitura). |
-| | `import_session` | Importa um arquivo `.har`, `.json` (NetLog) ou diretório de captura para o cofre de sessões. |
-| | `export_session` | Exporta uma sessão para disco: sanitizada por padrão (`include_sensitive: false`) ou **completa com dados sensíveis e artefatos brutos** (`include_sensitive: true`). |
-| | `site_profile` | Resume hosts, protocolos (`h1`/`h2`/`h3`), status, cookies, autenticação e possíveis desafios/CAPTCHAs da sessão. |
-| **Inspeção & Busca** | `list_requests` | Lista e filtra requisições por host, método, status, texto, domínio ou paginação (`cursor`). |
-| | `get_request` | Retorna detalhes completos da requisição/resposta, headers na ordem original, cookies e proveniência. |
-| | `get_body` | Lê o corpo capturado (inline para textos pequenos ou gravado em `--out-dir` para payloads grandes/binários). |
-| | `search_bodies` | Busca textual/estrutural em URLs, headers, cookies e corpos capturados. |
-| **Análise & Diff** | `trace_value` | Rastreia onde um cookie, header ou valor dinâmico apareceu pela primeira vez (`firstSetter`) e onde foi consumido. |
-| | `diff_requests` | Compara duas requisições da mesma sessão (URL, query, headers, cookies e campos de corpo). |
-| | `diff_sessions` | Emparelha e compara requisições equivalentes entre duas sessões distintas. |
-| **Captura ao Vivo** | `start_capture` | Inicia captura controlada em navegador Chromium/CloakBrowser com escopo de hosts e confirmação do usuário via elicitação MCP (suporta `cookie_source` para importar cookies). |
-| | `navigate` | Navega a aba monitorada para uma nova URL dentro dos hosts autorizados. |
-| | `capture_status` | Consulta contagens de eventos, requisições e avisos da captura ativa. |
-| | `stop_capture` | Encerra a captura, persiste a sessão correlacionada (`CDP + NetLog`) e devolve o `sessionId`. |
+| **Sessions** | `list_sessions` | Lists sessions available in the working directory and extra directories (read-only). |
+| | `import_session` | Imports a `.har` file, a `.json` (NetLog) file or a capture directory into the session vault. |
+| | `export_session` | Exports a session to disk: sanitized by default (`include_sensitive: false`) or **full with sensitive data and raw artifacts** (`include_sensitive: true`). |
+| | `site_profile` | Summarizes the session's hosts, protocols (`h1`/`h2`/`h3`), status, cookies, authentication and possible challenges/CAPTCHAs. |
+| **Inspection & Search** | `list_requests` | Lists and filters requests by host, method, status, text, domain or pagination (`cursor`). |
+| | `get_request` | Returns full request/response details, headers in original order, cookies and provenance. |
+| | `get_body` | Reads the captured body (inline for small texts or written to `--out-dir` for large/binary payloads). |
+| | `search_bodies` | Textual/structural search across URLs, headers, cookies and captured bodies. |
+| **Analysis & Diff** | `trace_value` | Traces where a cookie, header or dynamic value first appeared (`firstSetter`) and where it was consumed. |
+| | `diff_requests` | Compares two requests of the same session (URL, query, headers, cookies and body fields). |
+| | `diff_sessions` | Pairs and compares equivalent requests across two distinct sessions. |
+| **Live Capture** | `start_capture` | Starts a controlled capture in a Chromium/CloakBrowser browser with a host scope and user confirmation via MCP elicitation (supports `cookie_source` to import cookies). |
+| | `navigate` | Navigates the monitored tab to a new URL within the authorized hosts. |
+| | `capture_status` | Queries event, request and warning counts of the active capture. |
+| | `stop_capture` | Ends the capture, persists the correlated session (`CDP + NetLog`) and returns the `sessionId`. |
 
-> Consulte o contrato completo em [`docs/16-mcp-contrato.md`](docs/16-mcp-contrato.md) e o guia de navegador/cookies em [`docs/16b-mcp-navegador.md`](docs/16b-mcp-navegador.md).
+> See the full contract in [`docs/16-mcp-contrato.md`](docs/16-mcp-contrato.md) and the browser/cookies guide in [`docs/16b-mcp-navegador.md`](docs/16b-mcp-navegador.md).
 
 ---
 
-## 🏗️ Arquitetura do Repositório
+## 🏗️ Repository Architecture
 
 ```text
 ScrapeLens/
-├── app/                  # Interface desktop em React 18 + TypeScript + Vite
-├── src-tauri/            # Shell nativo Tauri 2 (macOS & Linux), comandos IPC, preferências e exportação
-├── core/                 # Modelo de domínio, parsers (HAR, NetLog streaming, CDP), correlação, diff, priming, sanitização e CLI
-├── capture/              # Motor de captura ao vivo (CDP via pipe fd 3/4, NetLog, multi-target, importação de cookies)
-├── mcp/                  # Servidor Model Context Protocol (15 ferramentas stdio + scrub de segredos + elicitação)
-├── recon/                # Diagnóstico de superfície de sites, detecção de WAF/CAPTCHA e perfilamento
+├── app/                  # Desktop interface in React 18 + TypeScript + Vite
+├── src-tauri/            # Native Tauri 2 shell (macOS & Linux), IPC commands, preferences and export
+├── core/                 # Domain model, parsers (HAR, NetLog streaming, CDP), correlation, diff, priming, sanitization and CLI
+├── capture/              # Live capture engine (CDP via pipe fd 3/4, NetLog, multi-target, cookie import)
+├── mcp/                  # Model Context Protocol server (15 stdio tools + secret scrubbing + elicitation)
+├── recon/                # Site surface diagnostics, WAF/CAPTCHA detection and profiling
 ├── adapters/
-│   └── natural-ajax/     # Parser, diff e encoder para o protocolo Natural for Ajax
-├── testserver/           # Servidores locais de teste (HTTP/1.1, HTTP/2, HTTP/3 e simulador DETRAN)
-├── fixtures/             # Fixtures sintéticas e casos de aceite
-├── tests/                # Bateria automatizada de aceite e integração ponta a ponta
-└── docs/                 # Especificações de arquitetura, matriz de fidelidade, contratos e relatórios
+│   └── natural-ajax/     # Parser, diff and encoder for the Natural for Ajax protocol
+├── testserver/           # Local test servers (HTTP/1.1, HTTP/2, HTTP/3 and DETRAN simulator)
+├── fixtures/             # Synthetic fixtures and acceptance cases
+├── tests/                # Automated acceptance and end-to-end integration suite
+└── docs/                 # Architecture specifications, fidelity matrix, contracts and reports
 ```
 
 ---
 
-## 🛠️ Desenvolvimento e Build
+## 🛠️ Development and Build
 
-### Pré-requisitos
+### Prerequisites
 
 - **Rust** `1.88+` (`cargo`, `clippy`)
 - **Node.js** `20+` e `npm`
-- **Xcode Command Line Tools** (no macOS) ou dependências WebKitGTK/Tauri (no Linux — veja [`docs/21-linux.md`](docs/21-linux.md))
+- **Xcode Command Line Tools** (on macOS) or WebKitGTK/Tauri dependencies (on Linux — see [`docs/21-linux.md`](docs/21-linux.md))
 
-### Comandos principais (a partir da raiz)
+### Main commands (from the root)
 
 ```sh
-# 1. Instalar dependências e validar front-end
+# 1. Install dependencies and validate the front end
 npm --prefix app ci
 npm --prefix app run typecheck
 npm --prefix app test
 npm --prefix app run build
 
-# 2. Executar suítes de testes Rust
+# 2. Run the Rust test suites
 cargo test --manifest-path core/Cargo.toml
 cargo test --manifest-path capture/Cargo.toml
 cargo test --manifest-path mcp/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path adapters/natural-ajax/Cargo.toml
 
-# 3. Executar em modo desenvolvimento
+# 3. Run in development mode
 ./app/node_modules/.bin/tauri dev
 
-# 4. Gerar bundle macOS (.app)
+# 4. Build the macOS bundle (.app)
 ./app/node_modules/.bin/tauri build --bundles app
 ```
 
-Para usar o CLI de desenvolvimento do `core` diretamente:
+To use the development CLI of `core` directly:
 
 ```sh
 cargo build --manifest-path core/Cargo.toml --release
-./core/target/release/scrapelens-core inspect /caminho/da/sessao
-./core/target/release/scrapelens-core export-curl /caminho/da/sessao cdp-r0001
-./core/target/release/scrapelens-core export-python /caminho/da/sessao cdp-r0001
-./core/target/release/scrapelens-core sanitize /caminho/da/sessao /caminho/saida-sanitizada
+./core/target/release/scrapelens-core inspect /path/to/session
+./core/target/release/scrapelens-core export-curl /path/to/session cdp-r0001
+./core/target/release/scrapelens-core export-python /path/to/session cdp-r0001
+./core/target/release/scrapelens-core sanitize /path/to/session /path/to/sanitized-output
 ```
 
-Para diretrizes de contribuição, consulte [`CONTRIBUTING.md`](CONTRIBUTING.md).
+For contribution guidelines, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 
-## 📄 Licença
+## 📄 License
 
-Distribuído sob a licença **MIT**. Veja o arquivo [`LICENSE`](LICENSE) para o texto completo.
+Distributed under the **MIT** license. See the [`LICENSE`](LICENSE) file for the full text.
 
 Copyright © 2026 Cesar Matias.
