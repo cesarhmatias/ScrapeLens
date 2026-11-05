@@ -3,7 +3,7 @@
  "id": "detran-pb",
  "label": "sanitized-shape-real-case",
  "origin": "shape of a real case; synthetic values",
- "note": "Forma do fluxo DETRAN-PB (docs/05-caso-referencia-detran.md). SESSIONID, cookies, STAMP, delta, timestamps e placas são sintéticos; nenhum byte do HAR original foi copiado.",
+ "note": "Shape of the DETRAN-PB flow (docs/05-caso-referencia-detran.md). SESSIONID, cookies, STAMP, delta, timestamps and plates are synthetic; no byte of the original HAR was copied.",
  "files": {
   "har": "detran-pb-sanitized.har",
   "har_blocked": "detran-pb-blocked.har",
@@ -39,7 +39,7 @@
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/easynat-app?op=S37",
    "event": "",
-   "purpose": "entrada: m_currentSessionId, m_currentProcessId, pageInitParam"
+   "purpose": "entry: m_currentSessionId, m_currentProcessId, pageInitParam"
   },
   {
    "index": 1,
@@ -47,7 +47,7 @@
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/TSPD/?type=18",
    "event": "",
-   "purpose": "ruído de proteção (TS*)"
+   "purpose": "protection noise (TS*)"
   },
   {
    "index": 2,
@@ -55,7 +55,7 @@
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/cisnatural/NatLogon.html",
    "event": "",
-   "purpose": "página de logon com modelo"
+   "purpose": "logon page with model"
   },
   {
    "index": 3,
@@ -71,7 +71,7 @@
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/SIM1000X.html",
    "event": "",
-   "purpose": "abrir serviços"
+   "purpose": "open services"
   },
   {
    "index": 5,
@@ -95,7 +95,7 @@
    "method": "GET",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/UIC-SERVICOS/VES0009X.html",
    "event": "",
-   "purpose": "abrir consulta de pátio"
+   "purpose": "open yard query"
   },
   {
    "index": 8,
@@ -111,7 +111,7 @@
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "cmd_filtro",
-   "purpose": "selecionar filtro"
+   "purpose": "select filter"
   },
   {
    "index": 10,
@@ -119,7 +119,7 @@
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "cmd_consultar_placa",
-   "purpose": "consultar placa (corpo completo)"
+   "purpose": "query plate (full body)"
   },
   {
    "index": 11,
@@ -127,7 +127,7 @@
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "cmd_nova",
-   "purpose": "limpar resultado"
+   "purpose": "clear result"
   },
   {
    "index": 12,
@@ -135,7 +135,7 @@
    "method": "POST",
    "url": "https://wsdetran.pb.gov.br/detran-portal-servicos/servlet/Connector",
    "event": "cmd_consultar_placa",
-   "purpose": "consultar placa (resposta delta sem v_situacao_atual)"
+   "purpose": "query plate (delta response without v_situacao_atual)"
   }
  ],
  "netlog": {
@@ -339,7 +339,7 @@
     10,
     12
    ],
-   "reason": "mesmo método e URL (POST /servlet/Connector); só o corpo e o STAMP distinguem as duas consultas"
+   "reason": "same method and URL (POST /servlet/Connector); only the body and the STAMP tell the two queries apart"
   },
   "cdp_vs_netlog": "requestId do CDP não equivale ao source id do NetLog; correlacionar por URL+método+horário e marcar ambiguidade"
  },
@@ -386,7 +386,7 @@
    "plate": "TST0T00"
   },
   "origins_4_1": {
-   "note": "producer = requestId CDP; o Core devolve o id lógico (cdp-rNNNN) ao qual este requestId pertence",
+   "note": "producer = CDP requestId; Core returns the logical id (cdp-rNNNN) that this requestId belongs to",
    "fields": [
     {
      "field": "SESSIONID",
@@ -394,56 +394,56 @@
      "producer": "1001.1",
      "literal": "m_currentSessionId",
      "role": "produced",
-     "status_label": "possível origem (value-match)",
+     "status_label": "possible origin (value-match)",
      "confidence": "possible",
      "reissued_by": [
       "1005.5",
       "1008.8"
      ],
      "ambiguous": false,
-     "why": "a página easynat-app define m_currentSessionId (produz); as páginas SIM1000X e VES0009X reemitem o literal (role reissued); NatLogon (truncada) não é observável"
+     "why": "the easynat-app page defines m_currentSessionId (produces); the SIM1000X and VES0009X pages re-emit the literal (role reissued); NatLogon (truncated) is not observable"
     },
     {
      "field": "STAMP",
      "evidence": "same-field",
      "producer": "1010.10",
-     "status_label": "origem observada",
+     "status_label": "observed origin",
      "confidence": "strong",
      "value": "2005",
-     "why": "STAMP da resposta do POST anterior (cmd_filtro)"
+     "why": "STAMP from the response to the previous POST (cmd_filtro)"
     },
     {
      "field": "XML:delta",
      "evidence": "value-match",
      "producer": "1010.10",
-     "status_label": "possível origem (value-match)",
+     "status_label": "possible origin (value-match)",
      "confidence": "possible",
      "value": "DLTA0005",
-     "why": "delta na resposta do POST anterior, dentro do campo opaco XML"
+     "why": "delta in the response to the previous POST, inside the opaque XML field"
     },
     {
      "field": "cookie:JSESSIONID",
      "evidence": "cookie-jar",
      "producer": "1001.1",
-     "status_label": "origem observada",
+     "status_label": "observed origin",
      "confidence": "strong",
-     "why": "Set-Cookie da resposta do easynat-app"
+     "why": "Set-Cookie from the easynat-app response"
     },
     {
      "field": "cookie:TS01a1b2c3",
      "evidence": "cookie-jar",
      "producer": "1002.2",
      "protection": true,
-     "status_label": "origem observada",
+     "status_label": "observed origin",
      "confidence": "strong",
-     "why": "Set-Cookie de /TSPD/ (proteção)"
+     "why": "Set-Cookie from /TSPD/ (protection)"
     },
     {
      "field": "XML:v_placa",
      "evidence": "sem origem observada",
      "producer": null,
      "value": "TST0T00",
-     "why": "entrada do usuário"
+     "why": "user input"
     }
    ],
    "negative_4_3": {
@@ -459,7 +459,7 @@
      "repeated",
      "none"
     ],
-    "why": "valor curto (<8) igual por acaso a x-seq-hint, mas com outro nome: não é origem (o core pode marcar 'repeated' por circular em POSTs anteriores, nunca produzido por r(9))"
+    "why": "short value (<8) that coincidentally equals x-seq-hint, but under another name: not an origin (the core may mark 'repeated' for circulating in earlier POSTs; never produced by r(9))"
    }
   },
   "chain_4_1": {
@@ -558,7 +558,7 @@
      "class": "dinâmico",
      "runtime": false,
      "origin": null,
-     "label": "dinâmico sem origem"
+     "label": "dynamic without origin"
     },
     {
      "field": "XML:cmd_consultar_placa",
@@ -602,13 +602,13 @@
     "consumer": "2009.9",
     "producer": "2008.8",
     "field": "slow_token",
-    "expect": "sem origem (a resposta de 2008.8 termina depois do início de 2009.9)"
+    "expect": "no origin (the response of 2008.8 ends after the start of 2009.9)"
    },
    "sequential_control": {
     "consumer": "2011.11",
     "producer": "2010.10",
     "field": "ctl_token",
-    "expect": "origem forte (same-field) com produtor 2010.10"
+    "expect": "strong origin (same-field) with producer 2010.10"
    }
   },
   "sanitized_4_4": {

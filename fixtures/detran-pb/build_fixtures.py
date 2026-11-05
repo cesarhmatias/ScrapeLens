@@ -454,7 +454,7 @@ def detran_bodies() -> list[dict]:
         elif i == 2:    # NatLogon page cut by a (reduced) per-body limit
             raw = text.encode()
             rows.append(body_line(rid, 0, "response", "truncated", raw[:96].decode("utf-8", "ignore"), src,
-                                  reason="corpo acima do limite por corpo (limite sintético 96 B)",
+                                  reason="body above the per-body limit (synthetic limit 96 B)",
                                   original=len(raw), ts=rts))
         elif i == 12:   # evicted resource (last query: produces nothing used later)
             rows.append(body_line(rid, 0, "response", "unavailable", None, src,
@@ -489,7 +489,7 @@ def edge_cdp_and_bodies() -> tuple[list[dict], list[dict]]:
                          "mimeType": mime, "protocol": "http/1.1"}}})
         ev.append({"method": "Network.loadingFinished", "params": {"requestId": rid, "timestamp": round(ts + 0.01, 3), "encodedDataLength": 0}})
 
-    redirect_reason = "resposta de redirect: CDP não fornece corpo"
+    redirect_reason = "redirect response: CDP does not provide a body"
     # E1: 302 -> /json (attempt 0 redirect, attempt 1 final JSON)
     r = "2001.1"
     req(r, f"{H}/redirect302", ts=t); req(r, f"{H}/json", redirect_from=(f"{H}/redirect302", 302), ts=t + .01)
@@ -523,7 +523,7 @@ def edge_cdp_and_bodies() -> tuple[list[dict], list[dict]]:
     r = "2006.6"
     req(r, f"{H}/big", ts=t + 5); done(r, f"{H}/big", 200, "text/plain", t + 5.03)
     bodies.append(body_line(r, 0, "response", "truncated", "scrapelens-big-body 0123456789abcdef synthetic line\n" * 2, "Network.getResponseBody",
-                            reason="corpo acima do limite (5242880 B); prefixo sintético reduzido", original=6291456, ts=t + 5.04))
+                            reason="body above the limit (5242880 B); synthetic prefix reduced", original=6291456, ts=t + 5.04))
     # E7: 204 -> empty with evidence
     r = "2007.7"
     req(r, f"{H}/empty", ts=t + 6); done(r, f"{H}/empty", 204, "text/plain", t + 6.03)
@@ -559,21 +559,21 @@ def chain_compare_expectations() -> dict:
         "contract": "docs/09-cadeia-comparacao.md §4",
         "target": {"requestId": target, "event": "cmd_consultar_placa", "plate": PLATE_A},
         "origins_4_1": {
-            "note": "producer = requestId CDP; o Core devolve o id lógico (cdp-rNNNN) ao qual este requestId pertence",
+            "note": "producer = CDP requestId; Core returns the logical id (cdp-rNNNN) that this requestId belongs to",
             "fields": [
-                o("SESSIONID", "value-match", r(0), literal="m_currentSessionId", role="produced", status_label="possível origem (value-match)", confidence="possible",
+                o("SESSIONID", "value-match", r(0), literal="m_currentSessionId", role="produced", status_label="possible origin (value-match)", confidence="possible",
                   reissued_by=[r(4), r(7)], ambiguous=False,
-                  why="a página easynat-app define m_currentSessionId (produz); as páginas SIM1000X e VES0009X reemitem o literal (role reissued); NatLogon (truncada) não é observável"),
-                o("STAMP", "same-field", r(9), status_label="origem observada", confidence="strong", value=str(2005 - 2000 + STAMP_BASE), why="STAMP da resposta do POST anterior (cmd_filtro)"),
-                o("XML:delta", "value-match", r(9), status_label="possível origem (value-match)", confidence="possible", value=f"{DELTA_PREFIX}0005", why="delta na resposta do POST anterior, dentro do campo opaco XML"),
-                o("cookie:JSESSIONID", "cookie-jar", r(0), status_label="origem observada", confidence="strong", why="Set-Cookie da resposta do easynat-app"),
-                o(f"cookie:{TS_COOKIE}", "cookie-jar", r(1), protection=True, status_label="origem observada", confidence="strong", why="Set-Cookie de /TSPD/ (proteção)"),
-                o("XML:v_placa", "sem origem observada", None, value=PLATE_A, why="entrada do usuário"),
+                  why="the easynat-app page defines m_currentSessionId (produces); the SIM1000X and VES0009X pages re-emit the literal (role reissued); NatLogon (truncated) is not observable"),
+                o("STAMP", "same-field", r(9), status_label="observed origin", confidence="strong", value=str(2005 - 2000 + STAMP_BASE), why="STAMP from the response to the previous POST (cmd_filtro)"),
+                o("XML:delta", "value-match", r(9), status_label="possible origin (value-match)", confidence="possible", value=f"{DELTA_PREFIX}0005", why="delta in the response to the previous POST, inside the opaque XML field"),
+                o("cookie:JSESSIONID", "cookie-jar", r(0), status_label="observed origin", confidence="strong", why="Set-Cookie from the easynat-app response"),
+                o(f"cookie:{TS_COOKIE}", "cookie-jar", r(1), protection=True, status_label="observed origin", confidence="strong", why="Set-Cookie from /TSPD/ (protection)"),
+                o("XML:v_placa", "sem origem observada", None, value=PLATE_A, why="user input"),
             ],
             "negative_4_3": {
                 "field": "header:x-page-seq", "value": "3", "evidence": "sem origem observada",
                 "coincidence": {"requestId": r(9), "header": "x-seq-hint", "value": "3"},
-                "status": ["repeated", "none"], "why": "valor curto (<8) igual por acaso a x-seq-hint, mas com outro nome: não é origem (o core pode marcar 'repeated' por circular em POSTs anteriores, nunca produzido por r(9))",
+                "status": ["repeated", "none"], "why": "short value (<8) that coincidentally equals x-seq-hint, but under another name: not an origin (the core may mark 'repeated' for circulating in earlier POSTs; never produced by r(9))",
             },
         },
         "chain_4_1": {
@@ -603,7 +603,7 @@ def chain_compare_expectations() -> dict:
                 {"field": "XML:delta", "class": "dinâmico", "runtime": True, "origin": r(9), "possible": True},
                 {"field": "cookie:JSESSIONID", "class": "dinâmico", "runtime": True, "origin": r(0)},
                 {"field": f"cookie:{TS_COOKIE}", "class": "dinâmico", "runtime": True, "origin": r(1), "protection": True},
-                {"field": "XML:v_placa", "class": "dinâmico", "runtime": False, "origin": None, "label": "dinâmico sem origem"},
+                {"field": "XML:v_placa", "class": "dinâmico", "runtime": False, "origin": None, "label": "dynamic without origin"},
                 {"field": "XML:cmd_consultar_placa", "class": "estático"},
                 {"field": "PAGEINITPARAM", "class": "estático", "value": ""},
                 {"field": "ERRORMESSAGE", "class": "estático", "value": ""},
@@ -615,9 +615,9 @@ def chain_compare_expectations() -> dict:
         "edge_regressions": {
             "session": "detran-pb-edge",
             "slow_overlapping_producer": {"consumer": "2009.9", "producer": "2008.8", "field": "slow_token",
-                                          "expect": "sem origem (a resposta de 2008.8 termina depois do início de 2009.9)"},
+                                          "expect": "no origin (the response of 2008.8 ends after the start of 2009.9)"},
             "sequential_control": {"consumer": "2011.11", "producer": "2010.10", "field": "ctl_token",
-                                   "expect": "origem forte (same-field) com produtor 2010.10"},
+                                   "expect": "strong origin (same-field) with producer 2010.10"},
         },
         "sanitized_4_4": {
             "session": "A sanitizada (scrapelens-core sanitize)",
@@ -680,14 +680,14 @@ def build() -> None:
     # 1 entry
     add("GET", f"{APP}/servlet/easynat-app?op=S37", 200, "text/html",
         page_html("DETRAN-PB", MODEL_LOGON, "op=S37&xciParameters.natsession=acesso&PAGEURL=/cisnatural/NatLogon.html"),
-        kind="entry", purpose="entrada: m_currentSessionId, m_currentProcessId, pageInitParam")
+        kind="entry", purpose="entry: m_currentSessionId, m_currentProcessId, pageInitParam")
     # 2 protection noise
     add("GET", f"{BASE}/TSPD/?type=18", 200, "text/javascript",
         "/* synthetic TSPD bootstrap (no application content) */\n",
-        extra=[("content-type", "text/javascript")], purpose="ruído de proteção (TS*)")
+        extra=[("content-type", "text/javascript")], purpose="protection noise (TS*)")
     # 3 logon page
     add("GET", f"{APP}/cisnatural/NatLogon.html", 200, "text/html",
-        page_html("NatLogon", MODEL_LOGON), purpose="página de logon com modelo")
+        page_html("NatLogon", MODEL_LOGON), purpose="logon page with model")
     # 4 connector init NatLogon
     init_props = {"pageInitParam": "op=S37&xciParameters.natsession=acesso&PAGEURL=/cisnatural/NatLogon.html",
                   "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"}
@@ -698,7 +698,7 @@ def build() -> None:
         kind="page", purpose="init NatLogon", event="init")
     # 5 SIM page
     add("GET", f"{APP}/UIC-SERVICOS/SIM1000X.html", 200, "text/html",
-        page_html("SIM1000X", MODEL_SIM), purpose="abrir serviços")
+        page_html("SIM1000X", MODEL_SIM), purpose="open services")
     # 6 init SIM1000X
     body = serialize(SID, PID, MODEL_SIM, "/UIC-SERVICOS/SIM1000X.html", "", {
         "pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"}, f"{DELTA_PREFIX}0001", init=True)
@@ -717,7 +717,7 @@ def build() -> None:
         purpose="on_interceptor S37", event="on_interceptor", referer=f"{APP}/UIC-SERVICOS/SIM1000X.html")
     # 8 VES page
     add("GET", f"{APP}/UIC-SERVICOS/VES0009X.html", 200, "text/html",
-        page_html("VES0009X", MODEL_VES), purpose="abrir consulta de pátio")
+        page_html("VES0009X", MODEL_VES), purpose="open yard query")
     # 9 init VES0009X
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "", {
         "pageInitParam": "", "pagePixelHeight": "0", "pagePixelWidth": "0", "timeZoneOffset": "-180"}, f"{DELTA_PREFIX}0003", init=True)
@@ -732,7 +732,7 @@ def build() -> None:
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
         connector_response([("v_filtro_sel", "2.0")], str(2005 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0005"),
         [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2004 - 2000 + STAMP_BASE))],
-        extra=[("x-seq-hint", "3")], purpose="selecionar filtro", event="cmd_filtro")
+        extra=[("x-seq-hint", "3")], purpose="select filter", event="cmd_filtro")
     # 11 query (full body, with v_situacao_atual)
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_consultar_placa", {
         "v_filtro_error": "", "v_placa": PLATE_A, "#f12_selected": "2.0",
@@ -748,7 +748,7 @@ def build() -> None:
             ("v_tmp", "x"),
         ], str(2006 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0006"),
         [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2005 - 2000 + STAMP_BASE))],
-        purpose="consultar placa (corpo completo)", event="cmd_consultar_placa")
+        purpose="query plate (full body)", event="cmd_consultar_placa")
     # 12 cmd_nova
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_nova", {
         "#f12_selected": "2.0",
@@ -756,7 +756,7 @@ def build() -> None:
     add("POST", f"{APP}/servlet/Connector", 200, "text/html",
         connector_response([("v_situacao_atual", "")], str(2007 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0007"),
         [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2006 - 2000 + STAMP_BASE))],
-        purpose="limpar resultado", event="cmd_nova")
+        purpose="clear result", event="cmd_nova")
     # 13 second query: delta response omits v_situacao_atual
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_consultar_placa", {
         "v_filtro_error": "", "v_placa": PLATE_B, "#f12_selected": "2.0",
@@ -770,7 +770,7 @@ def build() -> None:
             ("v_tmp", "y"),
         ], str(2008 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0008"),
         [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2007 - 2000 + STAMP_BASE))],
-        purpose="consultar placa (resposta delta sem v_situacao_atual)",
+        purpose="query plate (delta response without v_situacao_atual)",
         event="cmd_consultar_placa")
 
     har = {
@@ -784,7 +784,7 @@ def build() -> None:
                 "pageTimings": {"onContentLoad": 900, "onLoad": 1300},
             }],
             "entries": [],
-            "_comment": "Forma do caso DETRAN-PB; valores 100% sintéticos; nenhum byte do HAR original.",
+            "_comment": "Shape of the DETRAN-PB case; 100% synthetic values; no byte of the original HAR.",
         }
     }
     for step in steps:
@@ -818,15 +818,15 @@ def build() -> None:
             "entries": [
                 add_blocked("GET", f"{APP}/servlet/easynat-app?op=S37", 200, "text/html",
                             "<html><body><script>var _tsChallenge = 'SYNTH-CHALLENGE';</script>challenge</body></html>",
-                            "desafio de proteção: 200 sem parâmetros da aplicação"),
+                            "protection challenge: 200 without application parameters"),
                 add_blocked("POST", f"{APP}/servlet/Connector", 200, "text/html",
                             "<html><body>request rejected</body></html>",
-                            "Connector sem XML/STAMP (200 não é sucesso da aplicação)"),
+                            "Connector without XML/STAMP (200 is not application success)"),
                 add_blocked("GET", f"{APP}/UIC-SERVICOS/VES0009X.html", 403, "text/html",
                             "<html><body>Forbidden</body></html>",
-                            "bloqueio explícito"),
+                            "explicit block"),
             ],
-            "_comment": "Caminho de bloqueio; valores sintéticos.",
+            "_comment": "Blocking path; synthetic values.",
         }
     }
 
@@ -835,7 +835,7 @@ def build() -> None:
         "id": "detran-pb",
         "label": "sanitized-shape-real-case",
         "origin": "shape of a real case; synthetic values",
-        "note": "Forma do fluxo DETRAN-PB (docs/05-caso-referencia-detran.md). SESSIONID, cookies, STAMP, delta, timestamps e placas são sintéticos; nenhum byte do HAR original foi copiado.",
+        "note": "Shape of the DETRAN-PB flow (docs/05-caso-referencia-detran.md). SESSIONID, cookies, STAMP, delta, timestamps and plates are synthetic; no byte of the original HAR was copied.",
         "files": {
             "har": "detran-pb-sanitized.har",
             "har_blocked": "detran-pb-blocked.har",
@@ -911,7 +911,7 @@ def build() -> None:
         "correlation": {
             "expect_ambiguity": {
                 "entries": [10, 12],
-                "reason": "mesmo método e URL (POST /servlet/Connector); só o corpo e o STAMP distinguem as duas consultas",
+                "reason": "same method and URL (POST /servlet/Connector); only the body and the STAMP tell the two queries apart",
             },
             "cdp_vs_netlog": "requestId do CDP não equivale ao source id do NetLog; correlacionar por URL+método+horário e marcar ambiguidade",
         },
@@ -943,7 +943,7 @@ def build() -> None:
                        "jsessionid": JSESSION_VALUE, "stamp_base": STAMP_BASE, "delta_prefix": DELTA_PREFIX},
             "counts": {"entries": len(steps), "cdp_events": len(cdp_events()), "netlog_events": len(netlog_events()["events"])},
             "pair_of": "../detran-pb/manifest.json (chain_compare)",
-            "note": "Mesmas páginas, modelos e constantes da A; SESSIONID, processId, cookies TS*/JSESSIONID, STAMP, delta e placas diferentes.",
+            "note": "Same pages, models and constants as A; SESSIONID, processId, TS*/JSESSIONID cookies, STAMP, delta and plates differ.",
         }
     (OUT / f"{PREFIX}-sanitized.har").write_text(json.dumps(har, indent=1, ensure_ascii=False) + "\n")
     (OUT / f"{PREFIX}.cdp.jsonl").write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in cdp_events()) + "\n")

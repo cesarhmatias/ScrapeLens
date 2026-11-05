@@ -27,5 +27,5 @@
   "netlog_events": 52
  },
  "pair_of": "../detran-pb/manifest.json (chain_compare)",
- "note": "Mesmas páginas, modelos e constantes da A; SESSIONID, processId, cookies TS*/JSESSIONID, STAMP, delta e placas diferentes."
+ "note": "Same pages, models and constants as A; SESSIONID, processId, TS*/JSESSIONID cookies, STAMP, delta and plates differ."
 }

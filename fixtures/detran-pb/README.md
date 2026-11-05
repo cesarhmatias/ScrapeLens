@@ -147,9 +147,9 @@ assert this on every import.
   consistent), so a producer always ends before the consumer. The NetLog
   previously had offsets inherited from microseconds (`+90000`); now they are
   `+1/+2/+90` ms.
-- **Expectations by rule**: cookie-jar and same-field (STAMP) = `origem observada`/strong;
-  SESSIONID and delta (value-match) = `possível origem (value-match)`/medium;
-  in compare `obter em runtime (origem possível: …)`; confidence of the chain
+- **Expectations by rule**: cookie-jar and same-field (STAMP) = `observed origin`/strong;
+  SESSIONID and delta (value-match) = `possible origin (value-match)`/medium;
+  in compare `get at runtime (origin: …)`; confidence of the chain
   step = strong if any reason is strong (r0001 strong via JSESSIONID).
   (These quoted labels are the ones in `manifest.json` and are kept as data.)
 - **Causality regression** (`detran-pb-edge`, manifest `chain_compare.edge_regressions`):

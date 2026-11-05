@@ -3,7 +3,7 @@
 
 The shape was taken from the STRUCTURE of the real HARs (no value or byte copied):
   * Connector responses = ~10 KB HTML with a fictitious script before, then
-    <textarea name="XML">, <textarea name="ERRORMESSAGE"> e <input type="hidden" name="STAMP" value>;
+    <textarea name="XML">, <textarea name="ERRORMESSAGE"> and <input type="hidden" name="STAMP" value>;
     the payload inside the textarea uses HTML entities (&amp; &lt; &gt; &quot; &#x27;);
   * DevTools HAR: creator WebInspector, WITHOUT Cookie/Set-Cookie/cookies[];
   * protection noise (/TSPD/...) between the steps and static resources (jquery-ui, cis*) that
@@ -288,14 +288,14 @@ def build():
         return {
             "target": ids["consultar1"],
             "origins": {
-                "STAMP": {"status": "origin", "label": "origem observada", "kind": "same-field", "strength": "strong",
-                          "producer": ids["cmd_filtro"], "note": "<input type=hidden name=STAMP> da resposta HTML anterior"},
+                "STAMP": {"status": "origin", "label": "observed origin", "kind": "same-field", "strength": "strong",
+                          "producer": ids["cmd_filtro"], "note": "<input type=hidden name=STAMP> from the previous HTML response"},
                 "delta": {"parent": "XML", "value_prefix": r["delta_prefix"], "kind": "value-match", "producer": ids["cmd_filtro"],
-                          "note": "trecho do XML da <textarea> da resposta anterior (entidades HTML decodificadas)"},
-                "SESSIONID": {"status": ["none", "repeated"], "label": "sem origem observada",
+                          "note": "fragment of the XML in the <textarea> of the previous response (HTML entities decoded)"},
+                "SESSIONID": {"status": ["none", "repeated"], "label": "no observed origin",
                               "composition": {"head_len": 9, "separator": "_", "tail_len": 12, "head_source": ids["easynat"] + " (literal m_currentSessionId)", "tail_source": None},
-                              "justification_composite": "regra do valor composto: campo nomeado < 40 B só ganha origem por decomposição se coberto POR INTEIRO por >= 2 valores de produtores + separadores (_ - . : |); prefixo parcial não vale. No real o SESSIONID = literal de 9 chars do easynat-app + '_' + 12 dígitos sem fonte observada: cobertura parcial => 'sem origem observada' (o prefixo de 9 chars não vale como origem do campo).",
-                              "justification": "regra canônica (docs/09 R5): 'reissued' só se o valor circulou numa requisição entre o 1º produtor e o seguinte; 'ambiguous' + oldest se há 2+ produtores. Nos HARs reais só o easynat-app contém o valor (as páginas NatLogon/SIM1000X/VES0009X não) e nenhuma requisição entre a resposta do easynat-app e a da NatLogon o leva (nem na URL, nem no Referer): produtor único => origin, sem reissued. A fixture reflete isso."},
+                              "justification_composite": "composite-value rule: a named field < 40 B gets an origin by decomposition only if it is covered ENTIRELY by >= 2 producer values + separators (_ - . : |); a partial prefix does not count. In the real case SESSIONID = the 9-char literal of easynat-app + '_' + 12 digits with no observed source: partial coverage => 'no observed origin' (the 9-char prefix does not count as the field's origin).",
+                              "justification": "canonical rule (docs/09 R5): 'reissued' only if the value circulated in a request between the 1st producer and the next one; 'ambiguous' + oldest if there are 2+ producers. In the real HARs only easynat-app contains the value (the NatLogon/SIM1000X/VES0009X pages do not), and no request between the easynat-app response and the NatLogon response carries it (neither in the URL nor in the Referer): single producer => origin, no reissued. The fixture reflects that."},
                 "v_placa": {"status": "none", "plate": r["plates"][0]},
             },
             "chain": {
@@ -336,7 +336,7 @@ def build():
         "expectations": {
             "import": {
                 "warning_code": "har.cookies_absent",
-                "get_request_body": {"state": "empty", "reason_contains": "não aplicável"},
+                "get_request_body": {"state": "empty", "reason_contains": "not applicable"},
                 "label_set": ["har-import", "synthetic-fixture"],
             },
             "aceite_1_origins_chain": {"A": {**expect(ids_a, ROUNDS["a1"])},
@@ -353,9 +353,9 @@ def build():
             "composite_rule": {
                 "har": "real-shape-composite.har",
                 "full_cover": {"request": cids["use_full"], "field": "token", "status": "composite", "confidence": "possible",
-                               "producers": [cids["part_a"], cids["part_b"]], "why": "token = ALPHA0001 (literal de part_a) + '_' + 987654321012 (folha JSON de part_b): coberto por inteiro por 2 produtores"},
-                "partial_cover": {"request": cids["use_partial"], "field": "token2", "status": ["none", "repeated"], "label": "sem origem observada",
-                                  "why": "só o prefixo ALPHA0001 tem produtor; o sufixo de 12 dígitos não tem fonte observada: cobertura parcial não vale"},
+                               "producers": [cids["part_a"], cids["part_b"]], "why": "token = ALPHA0001 (literal from part_a) + '_' + 987654321012 (JSON leaf from part_b): fully covered by 2 producers"},
+                "partial_cover": {"request": cids["use_partial"], "field": "token2", "status": ["none", "repeated"], "label": "no observed origin",
+                                  "why": "only the prefix ALPHA0001 has a producer; the 12-digit suffix has no observed source: partial coverage does not count"},
             },
             "aceite_4_cookies": {"warning_code": "har.cookies_absent", "origins_and_chain_repeat_warning": True},
         },
