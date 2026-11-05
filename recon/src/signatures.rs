@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 pub const SIGNATURES_SCHEMA: &str = "scrapelens.recon-signatures/1";
 const EMBEDDED: &str = include_str!("../signatures.json");
@@ -73,12 +73,28 @@ pub struct Source {
     pub quote: String,
 }
 
+/// Categories are English; the legacy Portuguese values are still accepted on
+/// input (a custom signature file written before the rename).
+fn legacy_category<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let raw = String::deserialize(deserializer)?;
+    let normalized = match raw.as_str() {
+        "desafio" => "challenge",
+        "protecao" => "protection",
+        "bloqueio" => "block",
+        "protocolo" => "protocol",
+        "terceiro-bloqueado" => "third-party-blocked",
+        _ => return Ok(raw),
+    };
+    Ok(normalized.to_string())
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Signature {
     pub id: String,
     pub vendor: String,
     pub kind: SigKind,
+    #[serde(deserialize_with = "legacy_category")]
     pub category: String,
     pub weight: Weight,
     pub summary: String,

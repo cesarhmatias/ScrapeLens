@@ -660,3 +660,39 @@ fn legacy_portuguese_wire_values_still_deserialize() {
     let set = SignatureSet::from_json(legacy).unwrap();
     assert_eq!(set.signatures[0].source.kind, SourceKind::Vendor);
 }
+
+// A custom signature file written before the rename: the legacy Portuguese
+// category is normalized on load, so detection behaves as with the English value.
+#[test]
+fn legacy_portuguese_category_in_a_custom_signature_set_is_normalized() {
+    for (legacy, english) in [
+        ("desafio", "challenge"),
+        ("protecao", "protection"),
+        ("bloqueio", "block"),
+        ("protocolo", "protocol"),
+        ("terceiro-bloqueado", "third-party-blocked"),
+    ] {
+        let json = format!(
+            r#"{{"schema":"scrapelens.recon-signatures/1","signatures":[
+              {{"id":"t-2","vendor":"teste","kind":"response-header","name":"x-teste","category":"{legacy}","weight":"block","block_values":["challenge"],"summary":"teste",
+               "source":{{"kind":"fornecedor","url":"docs/16b-mcp-navegador.md","quote":"fixture"}}}}]}}"#
+        );
+        let set = SignatureSet::from_json(&json).unwrap();
+        assert_eq!(set.signatures[0].category, english, "{legacy}");
+    }
+
+    // Detection: the legacy and the English file produce the same category.
+    let run = |category: &str| {
+        let json = format!(
+            r#"{{"schema":"scrapelens.recon-signatures/1","signatures":[
+              {{"id":"t-2","vendor":"teste","kind":"response-header","name":"x-teste","category":"{category}","weight":"block","block_values":["challenge"],"summary":"teste",
+               "source":{{"kind":"fornecedor","url":"docs/16b-mcp-navegador.md","quote":"fixture"}}}}]}}"#
+        );
+        let set = SignatureSet::from_json(&json).unwrap();
+        let bundle = with_main(vec![Req::xhr("x", "GET", "https://app.test/a", 200).rh("X-Teste", "challenge")]);
+        let p = site_profile_with(&bundle.session, &bundle, &ProfileOptions::default(), &set);
+        p.findings.iter().find(|f| f.signature_id.as_deref() == Some("t-2")).unwrap().category.clone()
+    };
+    assert_eq!(run("desafio"), "challenge");
+    assert_eq!(run("challenge"), "challenge");
+}
