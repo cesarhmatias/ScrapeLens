@@ -52,7 +52,7 @@ const shots = [
   { name: "09-comparison-light", query: "view=compare&a=req-0009&b=req-0010&theme=light", w: 1440, h: 1000, fullPage: true },
   { name: "10-comparison-dark", query: "view=compare&a=req-0009&b=req-0010&theme=dark", w: 1440, h: 1000, fullPage: true },
   { name: "11-detail-verification-dark", query: "view=detail&id=req-0007&tab=headers&theme=dark", w: 1440, h: 1000, fullPage: true },
-  { name: "12-main-search-light", query: "view=session&q=produtos&theme=light", w: 1440, h: 620, fullPage: false },
+  { name: "12-main-search-light", query: "view=session&q=products&theme=light", w: 1440, h: 620, fullPage: false },
   { name: "13-main-filter-errors-dark", query: "view=session&filter=error&theme=dark", w: 1440, h: 620, fullPage: false },
   { name: "15-detail-attempts-ambiguous", query: "view=detail&id=req-0011&tab=attempts&theme=light", w: 1440, h: 1000, fullPage: true },
 ];

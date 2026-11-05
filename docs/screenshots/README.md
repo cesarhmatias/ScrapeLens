@@ -22,7 +22,7 @@ must be new English captures against the local test server.
 | `09-comparison-light.png` | A/B comparison: added, removed, changed, reordered; cookies and body |
 | `10-comparison-dark.png` | Same comparison in the dark theme |
 | `11-detail-verification-dark.png` | NetLog-only case: missing headers, “not verified” status, estimated duration `≈` |
-| `12-main-search-light.png` | Search “produtos” (a term from the synthetic URL paths) with count “2 of 13” |
+| `12-main-search-light.png` | Search “products” (a term from the synthetic URL paths) with count “2 of 13” |
 | `13-main-filter-errors-dark.png` | “Errors 4xx/5xx” filter (403, 403, 401) |
 | `14-list-12k-virtualized.png` | Virtualized list with 12,000 synthetic requests (24 rows in the DOM) |
 | `15-detail-attempts-ambiguous.png` | Attempts + ambiguous match with explicit candidates |

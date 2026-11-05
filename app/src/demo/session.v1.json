@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "session": {
-    "id": "demo-sintetica-01",
+    "id": "demo-synthetic-01",
     "browser": {
       "name": "Chrome",
       "version": "156.0.8079.0",
@@ -45,7 +45,7 @@
   "requests": [
     {
       "id": "req-0001",
-      "url": "https://demo-loja.invalid/",
+      "url": "https://demo-shop.invalid/",
       "method": "GET",
       "protocol": "h2",
       "status": 200,
@@ -67,11 +67,11 @@
           "id": "req-0001-a0",
           "logicalId": "req-0001",
           "index": 0,
-          "url": "https://demo-loja.invalid/",
+          "url": "https://demo-shop.invalid/",
           "method": "GET",
           "protocol": "h2",
           "status": 200,
-          "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0001",
           "outcome": "completed",
           "requestHeaders": {
@@ -89,7 +89,7 @@
               },
               {
                 "name": ":authority",
-                "value": "demo-loja.invalid",
+                "value": "demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-1",
@@ -157,7 +157,7 @@
               },
               {
                 "name": "accept-language",
-                "value": "pt-BR,pt;q=0.9,en;q=0.8",
+                "value": "en-US,en;q=0.9",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-1",
@@ -340,7 +340,7 @@
               },
               {
                 "name": "set-cookie",
-                "value": "_ga=GA1.1.5543…; Path=/; Domain=demo-loja.invalid; Max-Age=31536000",
+                "value": "_ga=GA1.1.5543…; Path=/; Domain=demo-shop.invalid; Max-Age=31536000",
                 "source": "cdp",
                 "event": "Network.responseReceivedExtraInfo",
                 "sourceId": "ev-2",
@@ -384,7 +384,7 @@
               },
               {
                 "name": "content-security-policy",
-                "value": "default-src 'self'; img-src 'self' https://cdn.demo-loja.invalid data:",
+                "value": "default-src 'self'; img-src 'self' https://cdn.demo-shop.invalid data:",
                 "source": "cdp",
                 "event": "Network.responseReceivedExtraInfo",
                 "sourceId": "ev-2",
@@ -476,7 +476,7 @@
               ]
             },
             {
-              "raw": "_ga=GA1.1.5543…; Path=/; Domain=demo-loja.invalid; Max-Age=31536000",
+              "raw": "_ga=GA1.1.5543…; Path=/; Domain=demo-shop.invalid; Max-Age=31536000",
               "parsed": {
                 "name": "_ga",
                 "value": "GA1.1.5543…",
@@ -484,7 +484,7 @@
                 "httpOnly": false,
                 "partitioned": false,
                 "path": "/",
-                "domain": "demo-loja.invalid",
+                "domain": "demo-shop.invalid",
                 "maxAge": 31536000
               },
               "source": "cdp",
@@ -571,7 +571,7 @@
           },
           {
             "name": ":authority",
-            "value": "demo-loja.invalid",
+            "value": "demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-1",
@@ -639,7 +639,7 @@
           },
           {
             "name": "accept-language",
-            "value": "pt-BR,pt;q=0.9,en;q=0.8",
+            "value": "en-US,en;q=0.9",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-1",
@@ -822,7 +822,7 @@
           },
           {
             "name": "set-cookie",
-            "value": "_ga=GA1.1.5543…; Path=/; Domain=demo-loja.invalid; Max-Age=31536000",
+            "value": "_ga=GA1.1.5543…; Path=/; Domain=demo-shop.invalid; Max-Age=31536000",
             "source": "cdp",
             "event": "Network.responseReceivedExtraInfo",
             "sourceId": "ev-2",
@@ -866,7 +866,7 @@
           },
           {
             "name": "content-security-policy",
-            "value": "default-src 'self'; img-src 'self' https://cdn.demo-loja.invalid data:",
+            "value": "default-src 'self'; img-src 'self' https://cdn.demo-shop.invalid data:",
             "source": "cdp",
             "event": "Network.responseReceivedExtraInfo",
             "sourceId": "ev-2",
@@ -958,7 +958,7 @@
           ]
         },
         {
-          "raw": "_ga=GA1.1.5543…; Path=/; Domain=demo-loja.invalid; Max-Age=31536000",
+          "raw": "_ga=GA1.1.5543…; Path=/; Domain=demo-shop.invalid; Max-Age=31536000",
           "parsed": {
             "name": "_ga",
             "value": "GA1.1.5543…",
@@ -966,7 +966,7 @@
             "httpOnly": false,
             "partitioned": false,
             "path": "/",
-            "domain": "demo-loja.invalid",
+            "domain": "demo-shop.invalid",
             "maxAge": 31536000
           },
           "source": "cdp",
@@ -1031,7 +1031,7 @@
     },
     {
       "id": "req-0002",
-      "url": "https://demo-loja.invalid/assets/app.9f3c1a.css",
+      "url": "https://demo-shop.invalid/assets/app.9f3c1a.css",
       "method": "GET",
       "protocol": "h2",
       "status": 200,
@@ -1053,11 +1053,11 @@
           "id": "req-0002-a0",
           "logicalId": "req-0002",
           "index": 0,
-          "url": "https://demo-loja.invalid/assets/app.9f3c1a.css",
+          "url": "https://demo-shop.invalid/assets/app.9f3c1a.css",
           "method": "GET",
           "protocol": "h2",
           "status": 200,
-          "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0002",
           "outcome": "completed",
           "requestHeaders": {
@@ -1075,7 +1075,7 @@
               },
               {
                 "name": ":authority",
-                "value": "demo-loja.invalid",
+                "value": "demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-8",
@@ -1143,7 +1143,7 @@
               },
               {
                 "name": "referer",
-                "value": "https://demo-loja.invalid/",
+                "value": "https://demo-shop.invalid/",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-8",
@@ -1387,7 +1387,7 @@
           },
           {
             "name": ":authority",
-            "value": "demo-loja.invalid",
+            "value": "demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-8",
@@ -1455,7 +1455,7 @@
           },
           {
             "name": "referer",
-            "value": "https://demo-loja.invalid/",
+            "value": "https://demo-shop.invalid/",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-8",
@@ -1677,7 +1677,7 @@
     },
     {
       "id": "req-0003",
-      "url": "https://demo-loja.invalid/assets/app.4b81de.js",
+      "url": "https://demo-shop.invalid/assets/app.4b81de.js",
       "method": "GET",
       "protocol": "h2",
       "status": 200,
@@ -1699,11 +1699,11 @@
           "id": "req-0003-a0",
           "logicalId": "req-0003",
           "index": 0,
-          "url": "https://demo-loja.invalid/assets/app.4b81de.js",
+          "url": "https://demo-shop.invalid/assets/app.4b81de.js",
           "method": "GET",
           "protocol": "h2",
           "status": 200,
-          "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0003",
           "outcome": "completed",
           "requestHeaders": {
@@ -1721,7 +1721,7 @@
               },
               {
                 "name": ":authority",
-                "value": "demo-loja.invalid",
+                "value": "demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-14",
@@ -1789,7 +1789,7 @@
               },
               {
                 "name": "referer",
-                "value": "https://demo-loja.invalid/",
+                "value": "https://demo-shop.invalid/",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-14",
@@ -2010,7 +2010,7 @@
           },
           {
             "name": ":authority",
-            "value": "demo-loja.invalid",
+            "value": "demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-14",
@@ -2078,7 +2078,7 @@
           },
           {
             "name": "referer",
-            "value": "https://demo-loja.invalid/",
+            "value": "https://demo-shop.invalid/",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-14",
@@ -2277,7 +2277,7 @@
     },
     {
       "id": "req-0004",
-      "url": "https://api.demo-loja.invalid/api/v1/produtos?pagina=1&ordenar=preco",
+      "url": "https://api.demo-shop.invalid/api/v1/products?page=1&sort=price",
       "method": "GET",
       "protocol": "h2",
       "status": 200,
@@ -2299,11 +2299,11 @@
           "id": "req-0004-a0",
           "logicalId": "req-0004",
           "index": 0,
-          "url": "https://api.demo-loja.invalid/api/v1/produtos?pagina=1&ordenar=preco",
+          "url": "https://api.demo-shop.invalid/api/v1/products?page=1&sort=price",
           "method": "GET",
           "protocol": "h2",
           "status": 200,
-          "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0004",
           "outcome": "completed",
           "requestHeaders": {
@@ -2321,7 +2321,7 @@
               },
               {
                 "name": ":authority",
-                "value": "api.demo-loja.invalid",
+                "value": "api.demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-19",
@@ -2343,7 +2343,7 @@
               },
               {
                 "name": ":path",
-                "value": "/api/v1/produtos?pagina=1&ordenar=preco",
+                "value": "/api/v1/products?page=1&sort=price",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-19",
@@ -2378,7 +2378,7 @@
               },
               {
                 "name": "accept-language",
-                "value": "pt-BR,pt;q=0.9,en;q=0.8",
+                "value": "en-US,en;q=0.9",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-19",
@@ -2433,7 +2433,7 @@
               },
               {
                 "name": "origin",
-                "value": "https://demo-loja.invalid",
+                "value": "https://demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-19",
@@ -2444,7 +2444,7 @@
               },
               {
                 "name": "referer",
-                "value": "https://demo-loja.invalid/",
+                "value": "https://demo-shop.invalid/",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-19",
@@ -2729,7 +2729,7 @@
           },
           {
             "name": ":authority",
-            "value": "api.demo-loja.invalid",
+            "value": "api.demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-19",
@@ -2751,7 +2751,7 @@
           },
           {
             "name": ":path",
-            "value": "/api/v1/produtos?pagina=1&ordenar=preco",
+            "value": "/api/v1/products?page=1&sort=price",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-19",
@@ -2786,7 +2786,7 @@
           },
           {
             "name": "accept-language",
-            "value": "pt-BR,pt;q=0.9,en;q=0.8",
+            "value": "en-US,en;q=0.9",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-19",
@@ -2841,7 +2841,7 @@
           },
           {
             "name": "origin",
-            "value": "https://demo-loja.invalid",
+            "value": "https://demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-19",
@@ -2852,7 +2852,7 @@
           },
           {
             "name": "referer",
-            "value": "https://demo-loja.invalid/",
+            "value": "https://demo-shop.invalid/",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-19",
@@ -3115,7 +3115,7 @@
     },
     {
       "id": "req-0005",
-      "url": "https://api.demo-loja.invalid/api/v1/produtos/8812",
+      "url": "https://api.demo-shop.invalid/api/v1/products/8812",
       "method": "GET",
       "protocol": "h2",
       "status": 200,
@@ -3137,11 +3137,11 @@
           "id": "req-0005-a0",
           "logicalId": "req-0005",
           "index": 0,
-          "url": "https://api.demo-loja.invalid/api/v1/produtos/8812",
+          "url": "https://api.demo-shop.invalid/api/v1/products/8812",
           "method": "GET",
           "protocol": "h2",
           "status": 200,
-          "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0005",
           "outcome": "completed",
           "requestHeaders": {
@@ -3159,7 +3159,7 @@
               },
               {
                 "name": ":authority",
-                "value": "api.demo-loja.invalid",
+                "value": "api.demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-26",
@@ -3181,7 +3181,7 @@
               },
               {
                 "name": ":path",
-                "value": "/api/v1/produtos/8812",
+                "value": "/api/v1/products/8812",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-26",
@@ -3205,7 +3205,7 @@
               },
               {
                 "name": "accept-language",
-                "value": "pt-BR,pt;q=0.9,en;q=0.8",
+                "value": "en-US,en;q=0.9",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-26",
@@ -3249,7 +3249,7 @@
               },
               {
                 "name": "origin",
-                "value": "https://demo-loja.invalid",
+                "value": "https://demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-26",
@@ -3490,7 +3490,7 @@
           },
           {
             "name": ":authority",
-            "value": "api.demo-loja.invalid",
+            "value": "api.demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-26",
@@ -3512,7 +3512,7 @@
           },
           {
             "name": ":path",
-            "value": "/api/v1/produtos/8812",
+            "value": "/api/v1/products/8812",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-26",
@@ -3536,7 +3536,7 @@
           },
           {
             "name": "accept-language",
-            "value": "pt-BR,pt;q=0.9,en;q=0.8",
+            "value": "en-US,en;q=0.9",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-26",
@@ -3580,7 +3580,7 @@
           },
           {
             "name": "origin",
-            "value": "https://demo-loja.invalid",
+            "value": "https://demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-26",
@@ -3799,7 +3799,7 @@
     },
     {
       "id": "req-0006",
-      "url": "https://cdn.demo-loja.invalid/img/8812.webp",
+      "url": "https://cdn.demo-shop.invalid/img/8812.webp",
       "method": "GET",
       "protocol": "h3",
       "status": 200,
@@ -3819,11 +3819,11 @@
           "id": "req-0006-a0",
           "logicalId": "req-0006",
           "index": 0,
-          "url": "https://cdn.demo-loja.invalid/img/8812.webp",
+          "url": "https://cdn.demo-shop.invalid/img/8812.webp",
           "method": "GET",
           "protocol": "h3",
           "status": 200,
-          "connectionId": "conn-cdn.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-cdn.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0006",
           "outcome": "completed",
           "requestHeaders": {
@@ -3841,7 +3841,7 @@
               },
               {
                 "name": ":authority",
-                "value": "cdn.demo-loja.invalid",
+                "value": "cdn.demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-33",
@@ -3898,7 +3898,7 @@
               },
               {
                 "name": "referer",
-                "value": "https://demo-loja.invalid/",
+                "value": "https://demo-shop.invalid/",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-33",
@@ -4106,7 +4106,7 @@
           },
           {
             "name": ":authority",
-            "value": "cdn.demo-loja.invalid",
+            "value": "cdn.demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-33",
@@ -4163,7 +4163,7 @@
           },
           {
             "name": "referer",
-            "value": "https://demo-loja.invalid/",
+            "value": "https://demo-shop.invalid/",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-33",
@@ -4351,7 +4351,7 @@
     },
     {
       "id": "req-0007",
-      "url": "https://cdn.demo-loja.invalid/fonts/inter-var.woff2",
+      "url": "https://cdn.demo-shop.invalid/fonts/inter-var.woff2",
       "method": "GET",
       "protocol": "h2",
       "status": 200,
@@ -4369,11 +4369,11 @@
           "id": "req-0007-a0",
           "logicalId": "req-0007",
           "index": 0,
-          "url": "https://cdn.demo-loja.invalid/fonts/inter-var.woff2",
+          "url": "https://cdn.demo-shop.invalid/fonts/inter-var.woff2",
           "method": "GET",
           "protocol": "h2",
           "status": 200,
-          "connectionId": "conn-cdn.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-cdn.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0007",
           "outcome": "completed",
           "requestHeaders": {
@@ -4601,7 +4601,7 @@
     },
     {
       "id": "req-0008",
-      "url": "https://api.demo-loja.invalid/api/v1/carrinho/itens",
+      "url": "https://api.demo-shop.invalid/api/v1/cart/items",
       "method": "POST",
       "protocol": "h2",
       "status": 201,
@@ -4623,11 +4623,11 @@
           "id": "req-0008-a0",
           "logicalId": "req-0008",
           "index": 0,
-          "url": "https://api.demo-loja.invalid/api/v1/carrinho/itens",
+          "url": "https://api.demo-shop.invalid/api/v1/cart/items",
           "method": "POST",
           "protocol": "h2",
           "status": 201,
-          "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0008",
           "outcome": "completed",
           "requestHeaders": {
@@ -4645,7 +4645,7 @@
               },
               {
                 "name": ":authority",
-                "value": "api.demo-loja.invalid",
+                "value": "api.demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-41",
@@ -4667,7 +4667,7 @@
               },
               {
                 "name": ":path",
-                "value": "/api/v1/carrinho/itens",
+                "value": "/api/v1/cart/items",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-41",
@@ -4713,7 +4713,7 @@
               },
               {
                 "name": "accept-language",
-                "value": "pt-BR,pt;q=0.9,en;q=0.8",
+                "value": "en-US,en;q=0.9",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-41",
@@ -4768,7 +4768,7 @@
               },
               {
                 "name": "origin",
-                "value": "https://demo-loja.invalid",
+                "value": "https://demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-41",
@@ -4779,7 +4779,7 @@
               },
               {
                 "name": "referer",
-                "value": "https://demo-loja.invalid/produtos/8812",
+                "value": "https://demo-shop.invalid/products/8812",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-41",
@@ -4874,7 +4874,7 @@
               },
               {
                 "name": "location",
-                "value": "/api/v1/carrinho/itens/44",
+                "value": "/api/v1/cart/items/44",
                 "source": "cdp",
                 "event": "Network.responseReceivedExtraInfo",
                 "sourceId": "ev-42",
@@ -5041,7 +5041,7 @@
           "requestBody": {
             "state": "captured",
             "attachment": "req-0008.request.txt",
-            "bytes": 34,
+            "bytes": 32,
             "contentType": "application/json",
             "provenance": {
               "source": "cdp",
@@ -5107,7 +5107,7 @@
           },
           {
             "name": ":authority",
-            "value": "api.demo-loja.invalid",
+            "value": "api.demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-41",
@@ -5129,7 +5129,7 @@
           },
           {
             "name": ":path",
-            "value": "/api/v1/carrinho/itens",
+            "value": "/api/v1/cart/items",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-41",
@@ -5175,7 +5175,7 @@
           },
           {
             "name": "accept-language",
-            "value": "pt-BR,pt;q=0.9,en;q=0.8",
+            "value": "en-US,en;q=0.9",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-41",
@@ -5230,7 +5230,7 @@
           },
           {
             "name": "origin",
-            "value": "https://demo-loja.invalid",
+            "value": "https://demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-41",
@@ -5241,7 +5241,7 @@
           },
           {
             "name": "referer",
-            "value": "https://demo-loja.invalid/produtos/8812",
+            "value": "https://demo-shop.invalid/products/8812",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-41",
@@ -5336,7 +5336,7 @@
           },
           {
             "name": "location",
-            "value": "/api/v1/carrinho/itens/44",
+            "value": "/api/v1/cart/items/44",
             "source": "cdp",
             "event": "Network.responseReceivedExtraInfo",
             "sourceId": "ev-42",
@@ -5502,7 +5502,7 @@
       "requestBody": {
         "state": "captured",
         "attachment": "req-0008.request.txt",
-        "bytes": 34,
+        "bytes": 32,
         "contentType": "application/json",
         "provenance": {
           "source": "cdp",
@@ -5547,7 +5547,7 @@
     },
     {
       "id": "req-0009",
-      "url": "https://api.demo-loja.invalid/api/v1/recomendacoes?slot=home-bottom&limite=6",
+      "url": "https://api.demo-shop.invalid/api/v1/recommendations?slot=home-bottom&limit=6",
       "method": "GET",
       "protocol": "h2",
       "status": 403,
@@ -5569,11 +5569,11 @@
           "id": "req-0009-a0",
           "logicalId": "req-0009",
           "index": 0,
-          "url": "https://api.demo-loja.invalid/api/v1/recomendacoes?slot=home-bottom&limite=6",
+          "url": "https://api.demo-shop.invalid/api/v1/recommendations?slot=home-bottom&limit=6",
           "method": "GET",
           "protocol": "h2",
           "status": 403,
-          "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0009",
           "outcome": "completed",
           "requestHeaders": {
@@ -5591,7 +5591,7 @@
               },
               {
                 "name": ":authority",
-                "value": "api.demo-loja.invalid",
+                "value": "api.demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-49",
@@ -5613,7 +5613,7 @@
               },
               {
                 "name": ":path",
-                "value": "/api/v1/recomendacoes?slot=home-bottom&limite=6",
+                "value": "/api/v1/recommendations?slot=home-bottom&limit=6",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-49",
@@ -5648,7 +5648,7 @@
               },
               {
                 "name": "accept-language",
-                "value": "pt-BR,pt;q=0.9,en;q=0.8",
+                "value": "en-US,en;q=0.9",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-49",
@@ -5692,7 +5692,7 @@
               },
               {
                 "name": "referer",
-                "value": "https://demo-loja.invalid/",
+                "value": "https://demo-shop.invalid/",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-49",
@@ -5966,7 +5966,7 @@
           },
           {
             "name": ":authority",
-            "value": "api.demo-loja.invalid",
+            "value": "api.demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-49",
@@ -5988,7 +5988,7 @@
           },
           {
             "name": ":path",
-            "value": "/api/v1/recomendacoes?slot=home-bottom&limite=6",
+            "value": "/api/v1/recommendations?slot=home-bottom&limit=6",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-49",
@@ -6023,7 +6023,7 @@
           },
           {
             "name": "accept-language",
-            "value": "pt-BR,pt;q=0.9,en;q=0.8",
+            "value": "en-US,en;q=0.9",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-49",
@@ -6067,7 +6067,7 @@
           },
           {
             "name": "referer",
-            "value": "https://demo-loja.invalid/",
+            "value": "https://demo-shop.invalid/",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-49",
@@ -6319,7 +6319,7 @@
     },
     {
       "id": "req-0010",
-      "url": "https://api.demo-loja.invalid/api/v1/recomendacoes?slot=home-bottom&limite=6",
+      "url": "https://api.demo-shop.invalid/api/v1/recommendations?slot=home-bottom&limit=6",
       "method": "GET",
       "protocol": "h2",
       "status": 403,
@@ -6341,11 +6341,11 @@
           "id": "req-0010-a0",
           "logicalId": "req-0010",
           "index": 0,
-          "url": "https://api.demo-loja.invalid/api/v1/recomendacoes?slot=home-bottom&limite=6",
+          "url": "https://api.demo-shop.invalid/api/v1/recommendations?slot=home-bottom&limit=6",
           "method": "GET",
           "protocol": "h2",
           "status": 403,
-          "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0010",
           "outcome": "completed",
           "requestHeaders": {
@@ -6363,7 +6363,7 @@
               },
               {
                 "name": ":authority",
-                "value": "api.demo-loja.invalid",
+                "value": "api.demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-56",
@@ -6385,7 +6385,7 @@
               },
               {
                 "name": ":path",
-                "value": "/api/v1/recomendacoes?slot=home-bottom&limite=6",
+                "value": "/api/v1/recommendations?slot=home-bottom&limit=6",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-56",
@@ -6420,7 +6420,7 @@
               },
               {
                 "name": "accept-language",
-                "value": "pt-BR,pt;q=0.9,en;q=0.8",
+                "value": "en-US,en;q=0.9",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-56",
@@ -6453,7 +6453,7 @@
               },
               {
                 "name": "referer",
-                "value": "https://demo-loja.invalid/",
+                "value": "https://demo-shop.invalid/",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-56",
@@ -6738,7 +6738,7 @@
           },
           {
             "name": ":authority",
-            "value": "api.demo-loja.invalid",
+            "value": "api.demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-56",
@@ -6760,7 +6760,7 @@
           },
           {
             "name": ":path",
-            "value": "/api/v1/recomendacoes?slot=home-bottom&limite=6",
+            "value": "/api/v1/recommendations?slot=home-bottom&limit=6",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-56",
@@ -6795,7 +6795,7 @@
           },
           {
             "name": "accept-language",
-            "value": "pt-BR,pt;q=0.9,en;q=0.8",
+            "value": "en-US,en;q=0.9",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-56",
@@ -6828,7 +6828,7 @@
           },
           {
             "name": "referer",
-            "value": "https://demo-loja.invalid/",
+            "value": "https://demo-shop.invalid/",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-56",
@@ -7091,7 +7091,7 @@
     },
     {
       "id": "req-0011",
-      "url": "http://demo-loja.invalid/catalogo?utm_source=newsletter",
+      "url": "http://demo-shop.invalid/catalog?utm_source=newsletter",
       "method": "GET",
       "protocol": "h1",
       "status": 301,
@@ -7111,18 +7111,18 @@
           "id": "req-0011-a0",
           "logicalId": "req-0011",
           "index": 0,
-          "url": "http://demo-loja.invalid/catalogo?utm_source=newsletter",
+          "url": "http://demo-shop.invalid/catalog?utm_source=newsletter",
           "method": "GET",
           "protocol": "h1",
           "status": 301,
-          "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0011",
           "outcome": "completed",
           "requestHeaders": {
             "headers": [
               {
                 "name": "host",
-                "value": "demo-loja.invalid",
+                "value": "demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-62",
@@ -7166,7 +7166,7 @@
               },
               {
                 "name": "accept-language",
-                "value": "pt-BR,pt;q=0.9,en;q=0.8",
+                "value": "en-US,en;q=0.9",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-62",
@@ -7284,7 +7284,7 @@
               },
               {
                 "name": "location",
-                "value": "https://demo-loja.invalid/catalogo",
+                "value": "https://demo-shop.invalid/catalog",
                 "source": "cdp",
                 "event": "Network.responseReceivedExtraInfo",
                 "sourceId": "ev-63",
@@ -7424,7 +7424,7 @@
           "id": "req-0011-a1",
           "logicalId": "req-0011",
           "index": 1,
-          "url": "https://demo-loja.invalid/catalogo",
+          "url": "https://demo-shop.invalid/catalog",
           "method": "GET",
           "protocol": "h2",
           "status": 200,
@@ -7490,8 +7490,8 @@
           "fromAttemptId": "req-0011-a0",
           "toAttemptId": "req-0011-a1",
           "status": 200,
-          "fromUrl": "http://demo-loja.invalid/catalogo?utm_source=newsletter",
-          "toUrl": "https://demo-loja.invalid/catalogo",
+          "fromUrl": "http://demo-shop.invalid/catalog?utm_source=newsletter",
+          "toUrl": "https://demo-shop.invalid/catalog",
           "provenance": {
             "source": "cdp",
             "event": "Network.responseReceivedExtraInfo",
@@ -7507,7 +7507,7 @@
         "headers": [
           {
             "name": "host",
-            "value": "demo-loja.invalid",
+            "value": "demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-62",
@@ -7551,7 +7551,7 @@
           },
           {
             "name": "accept-language",
-            "value": "pt-BR,pt;q=0.9,en;q=0.8",
+            "value": "en-US,en;q=0.9",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-62",
@@ -7669,7 +7669,7 @@
           },
           {
             "name": "location",
-            "value": "https://demo-loja.invalid/catalogo",
+            "value": "https://demo-shop.invalid/catalog",
             "source": "cdp",
             "event": "Network.responseReceivedExtraInfo",
             "sourceId": "ev-63",
@@ -7801,7 +7801,7 @@
     },
     {
       "id": "req-0012",
-      "url": "https://demo-loja.invalid/catalogo",
+      "url": "https://demo-shop.invalid/catalog",
       "method": "GET",
       "protocol": "h2",
       "status": 200,
@@ -7823,11 +7823,11 @@
           "id": "req-0012-a0",
           "logicalId": "req-0012",
           "index": 0,
-          "url": "https://demo-loja.invalid/catalogo",
+          "url": "https://demo-shop.invalid/catalog",
           "method": "GET",
           "protocol": "h2",
           "status": 200,
-          "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0012",
           "outcome": "completed",
           "requestHeaders": {
@@ -7845,7 +7845,7 @@
               },
               {
                 "name": ":authority",
-                "value": "demo-loja.invalid",
+                "value": "demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-69",
@@ -7867,7 +7867,7 @@
               },
               {
                 "name": ":path",
-                "value": "/catalogo",
+                "value": "/catalog",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-69",
@@ -7913,7 +7913,7 @@
               },
               {
                 "name": "accept-language",
-                "value": "pt-BR,pt;q=0.9,en;q=0.8",
+                "value": "en-US,en;q=0.9",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-69",
@@ -8203,7 +8203,7 @@
           },
           {
             "name": ":authority",
-            "value": "demo-loja.invalid",
+            "value": "demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-69",
@@ -8225,7 +8225,7 @@
           },
           {
             "name": ":path",
-            "value": "/catalogo",
+            "value": "/catalog",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-69",
@@ -8271,7 +8271,7 @@
           },
           {
             "name": "accept-language",
-            "value": "pt-BR,pt;q=0.9,en;q=0.8",
+            "value": "en-US,en;q=0.9",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-69",
@@ -8539,7 +8539,7 @@
     },
     {
       "id": "req-0013",
-      "url": "https://api.demo-loja.invalid/api/v1/perfil",
+      "url": "https://api.demo-shop.invalid/api/v1/profile",
       "method": "GET",
       "protocol": "h2",
       "status": 401,
@@ -8561,11 +8561,11 @@
           "id": "req-0013-a0",
           "logicalId": "req-0013",
           "index": 0,
-          "url": "https://api.demo-loja.invalid/api/v1/perfil",
+          "url": "https://api.demo-shop.invalid/api/v1/profile",
           "method": "GET",
           "protocol": "h2",
           "status": 401,
-          "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+          "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
           "streamSessionId": "stream-req-0013",
           "outcome": "completed",
           "requestHeaders": {
@@ -8583,7 +8583,7 @@
               },
               {
                 "name": ":authority",
-                "value": "api.demo-loja.invalid",
+                "value": "api.demo-shop.invalid",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-76",
@@ -8605,7 +8605,7 @@
               },
               {
                 "name": ":path",
-                "value": "/api/v1/perfil",
+                "value": "/api/v1/profile",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-76",
@@ -8651,7 +8651,7 @@
               },
               {
                 "name": "referer",
-                "value": "https://demo-loja.invalid/",
+                "value": "https://demo-shop.invalid/",
                 "source": "cdp",
                 "event": "Network.requestWillBeSentExtraInfo",
                 "sourceId": "ev-76",
@@ -8879,7 +8879,7 @@
           },
           {
             "name": ":authority",
-            "value": "api.demo-loja.invalid",
+            "value": "api.demo-shop.invalid",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-76",
@@ -8901,7 +8901,7 @@
           },
           {
             "name": ":path",
-            "value": "/api/v1/perfil",
+            "value": "/api/v1/profile",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-76",
@@ -8947,7 +8947,7 @@
           },
           {
             "name": "referer",
-            "value": "https://demo-loja.invalid/",
+            "value": "https://demo-shop.invalid/",
             "source": "cdp",
             "event": "Network.requestWillBeSentExtraInfo",
             "sourceId": "ev-76",
@@ -9154,9 +9154,9 @@
   ],
   "connections": [
     {
-      "id": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "id": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "netlogId": 40,
-      "host": "demo-loja.invalid",
+      "host": "demo-shop.invalid",
       "port": 443,
       "tlsVersion": "TLS 1.3",
       "reused": false,
@@ -9171,9 +9171,9 @@
       }
     },
     {
-      "id": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "id": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "netlogId": 41,
-      "host": "api.demo-loja.invalid",
+      "host": "api.demo-shop.invalid",
       "port": 443,
       "tlsVersion": "TLS 1.3",
       "reused": true,
@@ -9188,9 +9188,9 @@
       }
     },
     {
-      "id": "conn-cdn.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "id": "conn-cdn.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "netlogId": 42,
-      "host": "cdn.demo-loja.invalid",
+      "host": "cdn.demo-shop.invalid",
       "port": 443,
       "tlsVersion": "TLS 1.3",
       "reused": true,
@@ -9211,7 +9211,7 @@
   "streamSessions": [
     {
       "id": "stream-req-0001",
-      "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 1,
       "attemptId": "req-0001-a0",
       "netlogSessionId": 41,
@@ -9227,7 +9227,7 @@
     },
     {
       "id": "stream-req-0002",
-      "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 2,
       "attemptId": "req-0002-a0",
       "netlogSessionId": 41,
@@ -9243,7 +9243,7 @@
     },
     {
       "id": "stream-req-0003",
-      "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 3,
       "attemptId": "req-0003-a0",
       "netlogSessionId": 41,
@@ -9259,7 +9259,7 @@
     },
     {
       "id": "stream-req-0004",
-      "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 4,
       "attemptId": "req-0004-a0",
       "netlogSessionId": 42,
@@ -9275,7 +9275,7 @@
     },
     {
       "id": "stream-req-0005",
-      "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 5,
       "attemptId": "req-0005-a0",
       "netlogSessionId": 42,
@@ -9291,7 +9291,7 @@
     },
     {
       "id": "stream-req-0006",
-      "connectionId": "conn-cdn.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-cdn.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 6,
       "attemptId": "req-0006-a0",
       "netlogSessionId": 43,
@@ -9310,7 +9310,7 @@
     },
     {
       "id": "stream-req-0007",
-      "connectionId": "conn-cdn.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-cdn.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 7,
       "attemptId": "req-0007-a0",
       "netlogSessionId": 43,
@@ -9326,7 +9326,7 @@
     },
     {
       "id": "stream-req-0008",
-      "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 8,
       "attemptId": "req-0008-a0",
       "netlogSessionId": 43,
@@ -9342,7 +9342,7 @@
     },
     {
       "id": "stream-req-0009",
-      "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 9,
       "attemptId": "req-0009-a0",
       "netlogSessionId": 43,
@@ -9358,7 +9358,7 @@
     },
     {
       "id": "stream-req-0010",
-      "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 10,
       "attemptId": "req-0010-a0",
       "netlogSessionId": 43,
@@ -9374,7 +9374,7 @@
     },
     {
       "id": "stream-req-0011",
-      "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 11,
       "attemptId": "req-0011-a0",
       "netlogSessionId": 43,
@@ -9390,7 +9390,7 @@
     },
     {
       "id": "stream-req-0012",
-      "connectionId": "conn-demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 12,
       "attemptId": "req-0012-a0",
       "netlogSessionId": 43,
@@ -9406,7 +9406,7 @@
     },
     {
       "id": "stream-req-0013",
-      "connectionId": "conn-api.demo-loja.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
+      "connectionId": "conn-api.demo-shop.invalid-function protocol(value) {\n  if (value === \"HTTP/1.1\") return \"h1\";\n  if (value === \"HTTP/2\") return \"h2\";\n  if (value === \"HTTP/3\") return \"h3\";\n  return \"unknown\";\n}",
       "streamId": 13,
       "attemptId": "req-0013-a0",
       "netlogSessionId": 43,
@@ -9426,7 +9426,7 @@
       "code": "fixture.synthetic",
       "message": "Synthetic v1 contract fixture: no bytes were captured from a real site.",
       "severity": "info",
-      "entity": "demo-sintetica-01"
+      "entity": "demo-synthetic-01"
     },
     {
       "code": "correlation.ambiguous",

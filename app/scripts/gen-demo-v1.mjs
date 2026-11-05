@@ -351,7 +351,7 @@ warnings.unshift({
   code: "fixture.synthetic",
   message: "Synthetic v1 contract fixture: no bytes were captured from a real site.",
   severity: "info",
-  entity: "demo-sintetica-01",
+  entity: "demo-synthetic-01",
 });
 warnings.push({
   code: "capture.body.discarded",
@@ -363,7 +363,7 @@ warnings.push({
 const session = {
   schemaVersion: 1,
   session: {
-    id: "demo-sintetica-01",
+    id: "demo-synthetic-01",
     browser: {
       name: "Chrome",
       version: "156.0.8079.0",

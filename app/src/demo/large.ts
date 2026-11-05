@@ -12,8 +12,8 @@ export function buildLargeSession(count = 12000): SessionV1 {
   for (let i = 0; i < count; i += 1) {
     const seed = seeds[i % seeds.length];
     const id = `req-${String(i + 1).padStart(6, "0")}`;
-    const suffix = `/item/${i}?lote=${i % 97}`;
-    const url = `https://api.demo-loja.invalid/api/v1/produtos${suffix}`;
+    const suffix = `/item/${i}?batch=${i % 97}`;
+    const url = `https://api.demo-shop.invalid/api/v1/products${suffix}`;
     const attempt = seed.attempts[0];
     requests.push({
       ...seed,
@@ -42,7 +42,7 @@ export function buildLargeSession(count = 12000): SessionV1 {
     requests,
     session: {
       ...source.session,
-      id: "demo-estresse-12000",
+      id: "demo-stress-12000",
       notes: ["Synthetic stress session to measure virtualization; no real bytes."],
       completeness: {
         ...source.session.completeness,
