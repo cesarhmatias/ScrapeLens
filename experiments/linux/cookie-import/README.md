@@ -12,10 +12,20 @@ shortcut, and a loopback page server that records the `Cookie` header it receive
 - The page receives `sid=…` on its first navigation.
 - The session records `Capture.cookiesImported` with `importedCount: 1`.
 
+## Browsers and keyring states
+
+- `BROWSER=chromium|chrome|edge|firefox` (default `chromium`): the browser that makes the
+  cookie. Chromium-family browsers store it under the Secret Service; Firefox stores it in
+  `cookies.sqlite`. Non-Chrome images also install Google Chrome, which the App captures with.
+- `KEYRING=unlocked|locked|absent` (default `unlocked`): the keyring state when the App starts.
+  `locked` restarts gnome-keyring without its password; `absent` runs the App without a D-Bus
+  session. Both should show the real keyring error in the App, not a timeout.
+
 ## Run
 
     experiments/linux/cookie-import/run.sh linux/arm64 path/to/ScrapeLens_0.1.0_arm64.deb out/arm64-deb
-    experiments/linux/cookie-import/run.sh linux/arm64 path/to/ScrapeLens_0.1.0_aarch64.AppImage out/arm64-appimage
+    BROWSER=firefox experiments/linux/cookie-import/run.sh linux/amd64 path/to/ScrapeLens_0.1.0_amd64.AppImage out/ff
+    BROWSER=chrome KEYRING=locked experiments/linux/cookie-import/run.sh linux/amd64 path/to/ScrapeLens_0.1.0_amd64.deb out/locked
 
 Use `linux/amd64` for the amd64 packages. The `out` directory receives `e2e-raw.txt`
 (the report), `after-start.png` and `end.png` (screenshots of the App), `srv.log` and
