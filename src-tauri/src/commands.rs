@@ -534,7 +534,7 @@ pub fn start_session(
     let mut starting = StartingGuard::begin(&state.recording, move |recording| {
         crate::menu::set_recording_menu(&menu_app, recording)
     });
-    let mut slot = state.capture.lock().map_err(|_| "capture state unavailable")?;
+    let slot = state.capture.lock().map_err(|_| "capture state unavailable")?;
     if slot.is_some() {
         return Err("A capture is already in progress. Click Stop before starting another.".to_string());
     }
@@ -598,14 +598,14 @@ pub fn start_session(
     let (ready_tx, ready_rx) = mpsc::channel();
     let join = thread::spawn(move || capture::run(config, thread_status, stop_rx, ready_tx));
 
-    let join = match await_capture_ready(&ready_rx, &stop_tx, join, CAPTURE_READY_TIMEOUT) {
-        Ok(join) => join,
-        Err(error) => {
-            let _ = std::fs::remove_dir_all(&dir);
-            return Err(error);
-        }
+    // The capture lock is released while the capture starts: Stop and the other commands
+    // never wait for a start that is stuck (for example a keyring prompt nobody answers).
+    drop(slot);
+    let join = await_capture_ready(&ready_rx, &stop_tx, join, &dir, CAPTURE_READY_TIMEOUT)?;
+    let Ok(mut slot) = state.capture.lock() else {
+        let _ = stop_tx.send(());
+        return Err("capture state unavailable".to_string());
     };
-
     *slot = Some(CaptureSession {
         id: session_id.clone(),
         dir: dir.clone(),
@@ -2358,42 +2358,71 @@ mod tests {
 /// How long the capture thread may take to report that Chrome is ready.
 const CAPTURE_READY_TIMEOUT: Duration = Duration::from_secs(35);
 
-/// Waits for the capture thread to report readiness. Errors that happen before Chrome
-/// starts (cookie import, profile, executable) are returned as the thread reported
-/// them. The timeout is only for a thread that is still running but silent.
+/// Waits for the capture thread to report readiness. Errors before Chrome starts (cookie
+/// import, profile, executable) come back as the thread reported them.
+///
+/// A thread that does not answer within `timeout` is asked to stop and then detached: a
+/// background reaper joins it and removes its session folder only when it really ends,
+/// so the app never waits for a thread blocked in the keyring or elsewhere.
 fn await_capture_ready<T: Send + 'static>(
     ready_rx: &mpsc::Receiver<Result<(), String>>,
     stop_tx: &mpsc::Sender<()>,
     join: thread::JoinHandle<Result<T, String>>,
+    dir: &Path,
     timeout: Duration,
 ) -> Result<thread::JoinHandle<Result<T, String>>, String> {
     match ready_rx.recv_timeout(timeout) {
         Ok(Ok(())) => Ok(join),
         Ok(Err(error)) => {
-            let _ = join.join();
+            detach_and_reap(join, dir);
             Err(error)
         }
-        // The thread ended without reporting readiness: its own error is the answer.
-        Err(mpsc::RecvTimeoutError::Disconnected) => Err(match join.join() {
-            Ok(Err(error)) => error,
-            Ok(Ok(_)) => "The capture ended before Chrome was ready.".to_string(),
-            Err(_) => "The capture thread stopped unexpectedly before Chrome was ready.".to_string(),
-        }),
+        // The thread drops its ready sender as it returns, so joining here is immediate.
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let error = match join.join() {
+                Ok(Err(error)) => error,
+                Ok(Ok(_)) => "The capture ended before Chrome was ready.".to_string(),
+                Err(_) => "The capture thread stopped unexpectedly before Chrome was ready.".to_string(),
+            };
+            let _ = fs::remove_dir_all(dir);
+            Err(error)
+        }
         Err(mpsc::RecvTimeoutError::Timeout) => {
             let _ = stop_tx.send(());
-            let _ = join.join();
-            Err("The capture was not ready within 35 s. Check whether Chrome opened and try again.".to_string())
+            detach_and_reap(join, dir);
+            Err("The capture was not ready within 35 s. If the browser or the keyring asks for permission, answer it and try again; otherwise check whether Chrome opened.".to_string())
         }
     }
+}
+
+/// Joins a thread the app no longer waits for, off the calling path, then removes the
+/// session folder it may still be writing. A thread that never ends keeps only this
+/// reaper; it cannot block the app or start a second capture.
+fn detach_and_reap<T: Send + 'static>(join: thread::JoinHandle<Result<T, String>>, dir: &Path) {
+    let dir = dir.to_path_buf();
+    thread::spawn(move || {
+        let _ = join.join();
+        let _ = fs::remove_dir_all(&dir);
+    });
 }
 
 #[cfg(test)]
 mod capture_start_tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use std::time::Instant;
+
+    fn temp_session_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("sl-start-{name}-{}-{nanos}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     #[test]
     fn startup_error_from_the_capture_thread_is_shown_not_the_timeout() {
+        let dir = temp_session_dir("early-error");
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let (stop_tx, _stop_rx) = mpsc::channel::<()>();
         let message = "cookies could not be read: the profile database is locked; close Chrome and try again";
@@ -2403,14 +2432,16 @@ mod capture_start_tests {
             Err::<(), String>(message.to_string())
         });
         let started = Instant::now();
-        let error = await_capture_ready(&ready_rx, &stop_tx, join, CAPTURE_READY_TIMEOUT).err().unwrap();
+        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, CAPTURE_READY_TIMEOUT).err().unwrap();
         assert_eq!(error, message);
         assert!(!error.contains("not ready within"));
         assert!(started.elapsed() < Duration::from_secs(5), "must not wait for the 35 s timeout");
+        assert!(!dir.exists(), "the session folder of a failed start is removed");
     }
 
     #[test]
     fn silent_thread_still_times_out_and_is_stopped() {
+        let dir = temp_session_dir("silent");
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let join = thread::spawn(move || {
@@ -2419,12 +2450,53 @@ mod capture_start_tests {
             let _ = stop_rx.recv();
             Err::<(), String>("stopped".to_string())
         });
-        let error = await_capture_ready(&ready_rx, &stop_tx, join, Duration::from_millis(50)).err().unwrap();
+        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, Duration::from_millis(50)).err().unwrap();
         assert!(error.contains("not ready within"), "{error}");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while dir.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!dir.exists(), "the reaper removes the folder after the thread ends");
+    }
+
+    #[test]
+    fn stuck_capture_thread_never_blocks_the_start_and_is_reaped_later() {
+        // The thread ignores the stop request until something external releases it, like a
+        // keyring unlock prompt that never completes. The start must still return promptly.
+        let dir = temp_session_dir("stuck");
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stopped_in_thread = stopped.clone();
+        let join = thread::spawn(move || {
+            let _keep = ready_tx;
+            let _ = release_rx.recv(); // blocked "in the keyring"; does not read `stop` yet
+            if stop_rx.try_recv().is_ok() {
+                stopped_in_thread.store(true, Ordering::SeqCst);
+            }
+            Err::<(), String>("cookie key lookup was abandoned".to_string())
+        });
+
+        let started = Instant::now();
+        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, Duration::from_millis(50)).err().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(5), "the start must not wait for the stuck thread");
+        assert!(error.contains("not ready within"), "{error}");
+        assert!(dir.exists(), "the folder stays until the thread really ends");
+
+        // The thread ends later: the reaper removes its folder and the stop request was sent.
+        release_tx.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while dir.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!dir.exists(), "the reaper removes the folder once the thread ends");
+        assert!(stopped.load(Ordering::SeqCst), "the stop request reached the thread");
     }
 
     #[test]
     fn ready_signal_returns_the_running_capture() {
+        let dir = temp_session_dir("ready");
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let join = thread::spawn(move || {
@@ -2432,9 +2504,10 @@ mod capture_start_tests {
             let _ = stop_rx.recv();
             Ok::<(), String>(())
         });
-        let join = await_capture_ready(&ready_rx, &stop_tx, join, CAPTURE_READY_TIMEOUT).expect("ready");
+        let join = await_capture_ready(&ready_rx, &stop_tx, join, &dir, CAPTURE_READY_TIMEOUT).expect("ready");
         let _ = stop_tx.send(());
         assert!(join.join().unwrap().is_ok());
+        let _ = fs::remove_dir_all(&dir);
     }
 }
 

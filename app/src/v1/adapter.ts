@@ -94,7 +94,11 @@ const protocolLabel = (p: string): Protocol =>
  */
 export function networkStateOf(request: { networkState?: string; attempts?: { networkState?: string }[] }) {
   if (request.networkState === "not-sent") return "not-sent" as const;
-  if (request.attempts?.some((attempt) => attempt.networkState === "not-sent")) return "not-sent" as const;
+  // The core marks the request only when every attempt was not sent; one such attempt is not enough.
+  const attempts = request.attempts ?? [];
+  if (attempts.length > 0 && attempts.every((attempt) => attempt.networkState === "not-sent")) {
+    return "not-sent" as const;
+  }
   return undefined;
 }
 

@@ -71,6 +71,17 @@ const attemptOnly = adaptSession(
 assert.equal(attemptOnly.networkState, "not-sent");
 assert.equal(attemptOnly.attempts[0].networkState, "not-sent");
 
+// Only some attempts not sent: the request is not marked (same rule as the core).
+const someAttempts = session({
+  attempts: [
+    { ...session({}).requests[0].attempts[0], id: "a0", networkState: "not-sent" },
+    { ...session({}).requests[0].attempts[0], id: "a1" },
+  ] as LogicalRequest["attempts"],
+}).requests[0];
+const partlyNotSent = adaptSession(session({ attempts: someAttempts.attempts as unknown as LogicalRequest["attempts"] })).session.requests[0];
+assert.equal(partlyNotSent.networkState, undefined, "one not-sent attempt out of two does not mark the request");
+assert.equal(partlyNotSent.attempts[0].networkState, "not-sent");
+
 // --- Without the field: unchanged behaviour ---
 const plain = adaptSession(session({})).session.requests[0];
 assert.equal(plain.networkState, undefined);
