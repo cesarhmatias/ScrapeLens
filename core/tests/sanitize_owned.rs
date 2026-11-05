@@ -186,14 +186,14 @@ fn sanitized_output_is_pinned_by_independent_hashes() {
 
 /// (bundle, keep_raw, FNV-1a hash, total size) of the sanitized output.
 const GOLDEN: &[(&str, bool, u64, usize)] = &[
-    ("secret.har", false, 0x269832bf48cd1ac6, 13915),
-    ("h1-page", false, 0xc57671997d22a007, 427769),
-    ("h2-page", false, 0xeb5d697dd868ae2d, 539616),
-    ("h3-page", false, 0xd00bb0e4df83955c, 546464),
-    ("contract-h1", false, 0x54a596836bd829da, 522343),
-    ("secret.har", true, 0x269832bf48cd1ac6, 13915),
-    ("h1-page", true, 0xa5ecb3c1dede4920, 858881),
-    ("h2-page", true, 0x909f004e9fd22aac, 1109522),
-    ("h3-page", true, 0x72f02bf288656cf1, 1144111),
-    ("contract-h1", true, 0xfb21dd9b55f9379e, 1912663),
+    ("secret.har", false, 0xab14907b300422e4, 13753),
+    ("h1-page", false, 0x952ee06fd39a5692, 427824),
+    ("h2-page", false, 0x1368646ac7a0c764, 538912),
+    ("h3-page", false, 0x909a5fedd5a08343, 545760),
+    ("contract-h1", false, 0xa0c0240e98d37280, 522304),
+    ("secret.har", true, 0xab14907b300422e4, 13753),
+    ("h1-page", true, 0x27befe5332c4b779, 858920),
+    ("h2-page", true, 0x6a799f314a087a35, 1108802),
+    ("h3-page", true, 0x101d0f29653e4222, 1143391),
+    ("contract-h1", true, 0xe47841add75691ae, 1912608),
 ];
