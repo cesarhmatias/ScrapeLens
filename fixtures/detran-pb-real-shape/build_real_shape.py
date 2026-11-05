@@ -303,7 +303,7 @@ def build():
                 "pages_include": [ids["page_logon"], ids["page_sim"], ids["page_ves"]],
                 "protection_include": sorted(v for k, v in ids.items() if k.startswith("tspd:") and v < ids["consultar1"]),
                 "never_steps": [ids["static_jquery"], ids["static_cis"], ids["consultar1"], ids["cmd_nova"], ids["consultar2"]],
-                "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`",
+                "never_in_steps_or_pages_as_producer": "static scripts become at most `context`",
                 "pages_exact": [ids["easynat"], ids["page_logon"], ids["page_sim"], ids["page_ves"]],
                 "auxiliary_include": [ids["csc_logon"], ids["csc_sim"], ids["csc_ves"], ids["jlibs_sim"], ids["jlibs_ves"]],
                 "auxiliary_not_on_path": [ids["jlibs_logon"], ids["blank_logon"]],

@@ -298,7 +298,7 @@
       "har-0028",
       "har-0030"
      ],
-     "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`",
+     "never_in_steps_or_pages_as_producer": "static scripts become at most `context`",
      "pages_exact": [
       "har-0001",
       "har-0005",
@@ -405,7 +405,7 @@
       "har-0058",
       "har-0060"
      ],
-     "never_in_steps_or_pages_as_producer": "scripts estáticos viram no máximo `context`",
+     "never_in_steps_or_pages_as_producer": "static scripts become at most `context`",
      "pages_exact": [
       "har-0031",
       "har-0035",
