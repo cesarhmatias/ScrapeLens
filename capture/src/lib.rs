@@ -696,7 +696,7 @@ fn recorded_chrome_args(args: &[String]) -> Vec<String> {
         .filter(|a| *a != "about:blank")
         .map(|a| {
             if a.starts_with("--user-data-dir=") {
-                "--user-data-dir=<perfil-temporário>".to_string()
+                "--user-data-dir=<temporary-profile>".to_string()
             } else if a.starts_with("--log-net-log=") {
                 "--log-net-log=<netlog>".to_string()
             } else {
@@ -3787,7 +3787,7 @@ mod tests {
         let recorded = recorded_chrome_args(&args);
         assert!(recorded.contains(&"--disable-blink-features=AutomationControlled".to_string()), "{recorded:?}");
         assert!(recorded.iter().all(|a| !a.contains("/x/profile") && a != "about:blank"), "{recorded:?}");
-        assert!(recorded.contains(&"--user-data-dir=<perfil-temporário>".to_string()));
+        assert!(recorded.contains(&"--user-data-dir=<temporary-profile>".to_string()));
         assert!(recorded.contains(&"--log-net-log=<netlog>".to_string()));
     }
 
