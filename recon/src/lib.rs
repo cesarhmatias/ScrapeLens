@@ -1,8 +1,8 @@
 //! `site_profile`: recognition of the site from a captured session
 //! (`docs/16b-mcp-navegador.md` §5). Identifies anti-bot protections, blocks and
 //! requirements, **each finding with evidence** (Core ids) and a confidence level,
-//! and recommends "normal Chrome is enough" / "needs priming" / "candidate for
-//! CloakBrowser" (or "indeterminate").
+//! and recommends "regular Chrome suffices" / "needs priming" / "candidate for
+//! CloakBrowser" (or "undetermined").
 //!
 //! Principles:
 //! - signatures are data with a source (`signatures.json`); without a source, they are not used;
@@ -19,7 +19,7 @@ mod signatures;
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use scrapelens_core::model::{CompletenessState, SessionV1};
 use scrapelens_core::search::BodySource;
@@ -28,20 +28,25 @@ pub use signatures::{Signature, SignatureSet, SigKind, SourceKind, Weight, SIGNA
 
 pub const PROFILE_SCHEMA: &str = "scrapelens.site-profile/1";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+/// Wire values are English (`low`, `medium`, `high`); the legacy Portuguese
+/// values are still accepted on input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Confidence {
-    Baixa,
-    Media,
-    Alta,
+    #[serde(alias = "baixa")]
+    Low,
+    #[serde(alias = "media")]
+    Medium,
+    #[serde(alias = "alta")]
+    High,
 }
 
 impl Confidence {
     pub fn as_str(self) -> &'static str {
         match self {
-            Confidence::Baixa => "baixa",
-            Confidence::Media => "media",
-            Confidence::Alta => "alta",
+            Confidence::Low => "low",
+            Confidence::Medium => "medium",
+            Confidence::High => "high",
         }
     }
 }
@@ -77,8 +82,8 @@ pub struct SourceRef {
 #[serde(rename_all = "camelCase")]
 pub struct Finding {
     pub id: String,
-    /// `protecao`, `desafio`, `captcha`, `bloqueio`, `cookie`, `token`,
-    /// `protocolo`, `terceiro-bloqueado`.
+    /// `protection`, `challenge`, `captcha`, `block`, `cookie`, `token`,
+    /// `protocol`, `third-party-blocked`.
     pub category: String,
     pub vendor: Option<String>,
     pub kind: String,
@@ -94,16 +99,17 @@ pub struct Finding {
     pub limits: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// Wire values are English; the legacy Portuguese values are still accepted on input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RecommendationValue {
-    #[serde(rename = "chrome-normal-basta")]
-    ChromeNormalBasta,
-    #[serde(rename = "precisa-de-priming")]
-    PrecisaDePriming,
-    #[serde(rename = "candidato-a-cloakbrowser")]
-    CandidatoACloakbrowser,
-    #[serde(rename = "indeterminado")]
-    Indeterminado,
+    #[serde(rename = "regular-chrome-suffices", alias = "chrome-normal-basta")]
+    RegularChromeSuffices,
+    #[serde(rename = "needs-priming", alias = "precisa-de-priming")]
+    NeedsPriming,
+    #[serde(rename = "cloakbrowser-candidate", alias = "candidato-a-cloakbrowser")]
+    CloakbrowserCandidate,
+    #[serde(rename = "undetermined", alias = "indeterminado")]
+    Undetermined,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]

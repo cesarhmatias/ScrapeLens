@@ -26,12 +26,12 @@ pub(crate) fn recommend(
     ];
     let blocked_hosts: Vec<String> = findings
         .iter()
-        .filter(|f| f.category == "terceiro-bloqueado")
+        .filter(|f| f.category == "third-party-blocked")
         .map(|f| f.summary.clone())
         .collect();
     if !blocked_hosts.is_empty() {
         limits.push(format!(
-            "third-party hosts were blocked by the allowlist and may hide protection ({} host(s)); see the `terceiro-bloqueado` findings",
+            "third-party hosts were blocked by the allowlist and may hide protection ({} host(s)); see the `third-party-blocked` findings",
             blocked_hosts.len()
         ));
     }
@@ -55,8 +55,8 @@ pub(crate) fn recommend(
     }
     if !why.is_empty() {
         return Recommendation {
-            value: RecommendationValue::Indeterminado,
-            confidence: Confidence::Baixa,
+            value: RecommendationValue::Undetermined,
+            confidence: Confidence::Low,
             reasons: why,
             limits,
             based_on: Vec::new(),
@@ -67,8 +67,8 @@ pub(crate) fn recommend(
     let hard: Vec<&Finding> = findings
         .iter()
         .filter(|f| {
-            matches!(f.category.as_str(), "desafio" | "bloqueio")
-                && f.confidence == Confidence::Alta
+            matches!(f.category.as_str(), "challenge" | "block")
+                && f.confidence == Confidence::High
                 && f.resolved_later == Some(false)
         })
         .collect();
@@ -88,8 +88,8 @@ pub(crate) fn recommend(
             "this does NOT prove that CloakBrowser would pass; it is the trigger to revisit this topic (D6)".to_string(),
         );
         return Recommendation {
-            value: RecommendationValue::CandidatoACloakbrowser,
-            confidence: if main_blocked && vendor_based { Confidence::Alta } else { Confidence::Media },
+            value: RecommendationValue::CloakbrowserCandidate,
+            confidence: if main_blocked && vendor_based { Confidence::High } else { Confidence::Medium },
             reasons,
             limits,
             based_on: hard.iter().map(|f| f.id.clone()).collect(),
@@ -99,7 +99,7 @@ pub(crate) fn recommend(
     // 3. Needs priming.
     let resolved_challenges: Vec<&Finding> = findings
         .iter()
-        .filter(|f| f.category == "desafio" && f.resolved_later == Some(true))
+        .filter(|f| f.category == "challenge" && f.resolved_later == Some(true))
         .collect();
     let tokens: Vec<&Finding> = findings.iter().filter(|f| f.kind == "token-origin").collect();
     // Only a reused CLEARANCE cookie (cf_clearance, aws-waf-token) counts as
@@ -152,14 +152,14 @@ pub(crate) fn recommend(
             "\"needs priming\" is what the capture OBSERVED circulating; that each item is required is only proven by removing it (validate_run)".to_string(),
         );
         let confidence = if !resolved_challenges.is_empty() {
-            Confidence::Alta
-        } else if !protection_cookie_flow.is_empty() || tokens.iter().any(|f| f.confidence >= Confidence::Media) {
-            Confidence::Media
+            Confidence::High
+        } else if !protection_cookie_flow.is_empty() || tokens.iter().any(|f| f.confidence >= Confidence::Medium) {
+            Confidence::Medium
         } else {
-            Confidence::Baixa // only "possible origin" of token
+            Confidence::Low // only "possible origin" of token
         };
         return Recommendation {
-            value: RecommendationValue::PrecisaDePriming,
+            value: RecommendationValue::NeedsPriming,
             confidence,
             reasons,
             limits,
@@ -170,7 +170,7 @@ pub(crate) fn recommend(
     // 4. Chrome normal basta.
     let protections: Vec<&Finding> = findings
         .iter()
-        .filter(|f| f.category == "protecao" || f.category == "captcha")
+        .filter(|f| f.category == "protection" || f.category == "captcha")
         .collect();
     let mut reasons = vec![format!(
         "main document responded {} and no application route was blocked",
@@ -190,8 +190,8 @@ pub(crate) fn recommend(
         ));
     }
     Recommendation {
-        value: RecommendationValue::ChromeNormalBasta,
-        confidence: if sample.requests >= 5 { Confidence::Media } else { Confidence::Baixa },
+        value: RecommendationValue::RegularChromeSuffices,
+        confidence: if sample.requests >= 5 { Confidence::Medium } else { Confidence::Low },
         reasons,
         limits,
         based_on: protections.iter().map(|f| f.id.clone()).collect(),

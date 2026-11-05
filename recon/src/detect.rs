@@ -503,10 +503,10 @@ fn resolved_after(
 
 fn confidence_of(sig: &Signature, block: bool) -> Confidence {
     match (sig.source.kind, block) {
-        (SourceKind::Fornecedor, true) => Confidence::Alta,
-        (_, true) => Confidence::Media,
-        (SourceKind::Fornecedor, false) => Confidence::Media,
-        (SourceKind::Projeto, false) | (SourceKind::Secundaria, false) => Confidence::Baixa,
+        (SourceKind::Vendor, true) => Confidence::High,
+        (_, true) => Confidence::Medium,
+        (SourceKind::Vendor, false) => Confidence::Medium,
+        (SourceKind::Project, false) | (SourceKind::Secondary, false) => Confidence::Low,
     }
 }
 
@@ -568,7 +568,7 @@ fn signature_findings(
                     .to_string(),
             );
         }
-        if sig.source.kind != SourceKind::Fornecedor {
+        if sig.source.kind != SourceKind::Vendor {
             limits.push(format!(
                 "signature from source {}: indication, not proof",
                 sig.source.kind.as_str()
@@ -586,7 +586,7 @@ fn signature_findings(
                 hosts.into_iter().collect::<Vec<_>>().join(", "),
                 targets.iter().cloned().collect::<Vec<_>>().join(", ")
             ));
-            confidence = Confidence::Baixa;
+            confidence = Confidence::Low;
         }
         // Observed status differs from the documented one (AWS WAF: 202/405): it is not
         // the documented action, so it is not a challenge.
@@ -596,7 +596,7 @@ fn signature_findings(
             limits.push(format!(
                 "observed status {seen} differs from the documented one ({expected}) for this value: product presence, not a challenge served"
             ));
-            confidence = Confidence::Baixa;
+            confidence = Confidence::Low;
         }
         // Presence only in body, query or request cookie: low.
         if !foreign_only && used.iter().all(|h| is_weak_scope(&h.evidence.scope)) {
@@ -605,7 +605,7 @@ fn signature_findings(
                 "evidence only in {}: may be reflected text, a query controllable by third parties, or a cookie created by the page's JavaScript",
                 scopes.into_iter().collect::<Vec<_>>().join(", ")
             ));
-            confidence = Confidence::Baixa;
+            confidence = Confidence::Low;
         }
         let resolved_later = any_block.then(|| used.iter().all(|h| resolved_after(vs, sigs, h)));
         let evidence_list: Vec<Evidence> = used
@@ -614,9 +614,9 @@ fn signature_findings(
             .map(|h| h.evidence.clone())
             .collect();
         let mut category = sig.category.clone();
-        if !any_block && category == "desafio" {
+        if !any_block && category == "challenge" {
             // E.g.: X-DataDomeResponse: 200 — the product is present, it did not challenge.
-            category = "protecao".to_string();
+            category = "protection".to_string();
         }
         findings.push(Finding {
             id: String::new(),
@@ -643,16 +643,16 @@ fn signature_findings(
         .iter()
         .filter(|f| {
             f.kind != "form-field"
-                && f.confidence >= Confidence::Media
-                && f.source.as_ref().map(|s| s.kind.as_str()) == Some("fornecedor")
+                && f.confidence >= Confidence::Medium
+                && f.source.as_ref().map(|s| s.kind.as_str()) == Some("vendor")
                 && f.evidence.iter().any(|e| !e.third_party || f.kind == "script-host")
         })
         .filter_map(|f| Some((f.vendor.clone()?, f.signature_id.clone()?)))
         .collect();
     for f in &mut findings {
-        if f.kind == "form-field" && f.confidence == Confidence::Baixa {
+        if f.kind == "form-field" && f.confidence == Confidence::Low {
             if let Some(other) = f.vendor.as_ref().and_then(|v| strong_vendors.get(v)) {
-                f.confidence = Confidence::Media;
+                f.confidence = Confidence::Medium;
                 f.limits.push(format!("corroborated by {other} from the same vendor"));
             }
         }
@@ -661,7 +661,7 @@ fn signature_findings(
     // vendor are raised to `media`.
     let mut secondary: BTreeMap<String, usize> = BTreeMap::new();
     for f in &findings {
-        if f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria") && f.limits.iter().all(|l| !l.contains("another host")) {
+        if f.source.as_ref().map(|s| s.kind.as_str()) == Some("secondary") && f.limits.iter().all(|l| !l.contains("another host")) {
             if let Some(v) = &f.vendor {
                 *secondary.entry(v.clone()).or_default() += 1;
             }
@@ -674,11 +674,11 @@ fn signature_findings(
             .map(|v| secondary.get(v).copied().unwrap_or(0) >= 2)
             .unwrap_or(false);
         if multi
-            && f.source.as_ref().map(|s| s.kind.as_str()) == Some("secundaria")
-            && f.confidence == Confidence::Baixa
+            && f.source.as_ref().map(|s| s.kind.as_str()) == Some("secondary")
+            && f.confidence == Confidence::Low
             && f.limits.iter().all(|l| !l.contains("another host") && !l.contains("evidence only in"))
         {
-            f.confidence = Confidence::Media;
+            f.confidence = Confidence::Medium;
             f.limits.push("two or more secondary-source indications from the same vendor".to_string());
         }
     }
@@ -724,11 +724,11 @@ fn status_findings(
         let main_blocked = list.iter().any(|v| Some(&v.req.id) == first_doc.as_ref());
         let app_unresolved = unresolved > 0;
         let confidence = if foreign {
-            Confidence::Baixa
+            Confidence::Low
         } else if app_unresolved && (main_blocked || list.iter().any(|v| is_document(v.req) || is_xhr_like(v.req))) {
-            Confidence::Alta
+            Confidence::High
         } else {
-            Confidence::Media
+            Confidence::Medium
         };
         let mut evidence_list: Vec<Evidence> = Vec::new();
         for v in list.iter().take(opts.max_evidence) {
@@ -756,7 +756,7 @@ fn status_findings(
         };
         out.push(Finding {
             id: String::new(),
-            category: "bloqueio".to_string(),
+            category: "block".to_string(),
             vendor: None,
             kind: "status".to_string(),
             signature_id: None,
@@ -866,12 +866,12 @@ fn protocol_findings(session: &SessionV1, vs: &[View<'_>], opts: &ProfileOptions
             .collect();
         out.push(Finding {
             id: String::new(),
-            category: "protocolo".to_string(),
+            category: "protocol".to_string(),
             vendor: None,
             kind: "protocol".to_string(),
             signature_id: None,
             summary: format!("protocol observed on {origin}: {}", list.join(", ")),
-            confidence: Confidence::Media,
+            confidence: Confidence::Medium,
             occurrences: evidence_list.len(),
             evidence: evidence_list,
             source: None,
@@ -936,7 +936,7 @@ fn cookie_flow_findings(vs: &[View<'_>], sigs: &SignatureSet, opts: &ProfileOpti
                 route_key(p.url),
                 list.len()
             ),
-            confidence: Confidence::Media,
+            confidence: Confidence::Medium,
             occurrences: list.len(),
             evidence: evidence_list,
             source: None,
@@ -1034,7 +1034,7 @@ fn token_findings(
                     route_key(producer.url),
                     producer_scope
                 ),
-                confidence: if strong { Confidence::Media } else { Confidence::Baixa },
+                confidence: if strong { Confidence::Medium } else { Confidence::Low },
                 occurrences: 1,
                 evidence: vec![
                     evidence(consumer, scope_name, Some(&value.field), Some(redacted(value.length)), None),
@@ -1088,14 +1088,14 @@ fn blocked_host_findings(session: &SessionV1) -> Vec<Finding> {
             .unwrap_or(0) as usize;
         out.push(Finding {
             id: String::new(),
-            category: "terceiro-bloqueado".to_string(),
+            category: "third-party-blocked".to_string(),
             vendor: None,
             kind: "blocked-host".to_string(),
             signature_id: None,
             summary: format!(
                 "the page tried to load {host} ({requests} request(s)) and the allowlist blocked it; a protection or resource may be hidden"
             ),
-            confidence: Confidence::Alta,
+            confidence: Confidence::High,
             occurrences: requests,
             evidence: Vec::new(),
             source: None,

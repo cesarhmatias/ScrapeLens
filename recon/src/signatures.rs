@@ -41,20 +41,27 @@ pub enum Weight {
     Block,
 }
 
+/// Wire values are English; the legacy Portuguese values are still accepted on input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceKind {
-    Fornecedor,
-    Secundaria,
-    Projeto,
+    /// The vendor's own documentation.
+    #[serde(alias = "fornecedor")]
+    Vendor,
+    /// Citable third-party source (limits confidence).
+    #[serde(alias = "secundaria")]
+    Secondary,
+    /// Project fixture or document in this repository.
+    #[serde(alias = "projeto")]
+    Project,
 }
 
 impl SourceKind {
     pub fn as_str(self) -> &'static str {
         match self {
-            SourceKind::Fornecedor => "fornecedor",
-            SourceKind::Secundaria => "secundaria",
-            SourceKind::Projeto => "projeto",
+            SourceKind::Vendor => "vendor",
+            SourceKind::Secondary => "secondary",
+            SourceKind::Project => "project",
         }
     }
 }
