@@ -29,7 +29,7 @@ EXPECTED=(
   sw-intercept-1 sw-own-1 sw-own-post-1
 )
 
-if [[ ! -x "${CHROME}" ]]; then echo "Chrome não encontrado em ${CHROME}" >&2; exit 1; fi
+if [[ ! -x "${CHROME}" ]]; then echo "Chrome not found at ${CHROME}" >&2; exit 1; fi
 
 cargo build --release --offline --quiet
 BIN=target/release/scrapelens-testserver
@@ -51,7 +51,7 @@ for _ in $(seq 1 100); do
 done
 curl -fsS -m 2 "http://${H1}/healthz" >/dev/null
 
-echo "== /multi/ em http://${H1}/multi/ (Chrome headless)"
+echo "== /multi/ at http://${H1}/multi/ (Chrome headless)"
 "${CHROME}" \
   --headless=new \
   --user-data-dir="${PROFILE}" \
@@ -87,8 +87,8 @@ summary = {
     "by_marker": by_marker,
 }
 open(out_path, "w", encoding="utf-8").write(json.dumps(summary, indent=1, ensure_ascii=False) + "\n")
-print(f"marcadores: {len(seen)}/{len(expected)}")
+print(f"markers: {len(seen)}/{len(expected)}")
 for m in expected:
-    print(("  ok  " if m in seen else "  FALTA ") + m)
+    print(("  ok  " if m in seen else "  MISSING ") + m)
 sys.exit(1 if missing else 0)
 PY

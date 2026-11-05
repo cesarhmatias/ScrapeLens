@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Simulador LOCAL e FICTÍCIO do fluxo DETRAN-PB (forma real) para validar o script de priming.
+"""LOCAL, FICTITIOUS simulator of the DETRAN-PB flow (real shape) to validate the priming script.
 
-Só biblioteca padrão; escuta APENAS em 127.0.0.1 (padrão 8791). Sem rede externa, sem telemetria.
-Cada GET em /servlet/easynat-app abre uma sessão NOVA (SESSIONID-prefixo, processId, STAMP, delta novos);
-valores capturados em outra sessão são rejeitados (ERRORMESSAGE), então só vale quem extrai da resposta.
-Modos (global; `--mode` ou GET /__sim/mode?m=...): ok | error | nocontrols | 403 | strict.
-strict = ok + valida a gramática do campo XML (prefixos em unidades UTF-16, como `serialize`/`jslen`) e gera valores de
-tamanhos diferentes das fixtures (SESSIONID e delta mais longos, delta com acento).
-Documentação das rotas: testserver/detran-sim/README.md.
+Standard library only; listens ONLY on 127.0.0.1 (default 8791). No external network, no telemetry.
+Each GET to /servlet/easynat-app opens a NEW session (SESSIONID prefix, processId, STAMP and delta are new);
+values captured in another session are rejected (ERRORMESSAGE), so only values extracted from the response are valid.
+Modes (global; `--mode` or GET /__sim/mode?m=...): ok | error | nocontrols | 403 | strict.
+strict = ok + validates the grammar of the XML field (prefixes in UTF-16 units, as `serialize`/`jslen`) and generates values of
+sizes different from the fixtures (longer SESSIONID and delta, delta with an accent).
+Route documentation: testserver/detran-sim/README.md.
 """
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def new_session() -> dict:
 
 
 def parse_request_xml(xml: str) -> dict | None:
-    """Inverso do bf.serialize: kind, partes, props e delta."""
+    """Inverse of bf.serialize: kind, parts, props and delta."""
     widths = [2, 2, 2, 2, 2, 3, 5, 1]
     if not xml or xml[0] not in "iv" or not xml[1:1 + sum(widths)].isdigit():
         return None
@@ -73,33 +73,33 @@ def parse_request_xml(xml: str) -> dict | None:
 
 
 def parse_request_xml_strict(xml: str, sid: str) -> tuple[dict | None, str]:
-    """Gramática estrita do XML de requisição; todos os comprimentos em unidades UTF-16 (jslen).
-    Devolve (req, "") ou (None, motivo). Não normaliza nem corrige: prefixo que não bate = erro."""
+    """Strict grammar of the request XML; all lengths in UTF-16 units (jslen).
+    Returns (req, "") or (None, reason). Does not normalize or fix anything: a prefix that does not match = error."""
     u = xml.encode("utf-16-le", "surrogatepass")
     total, pos = len(u) // 2, 0
 
     def take(n):
         nonlocal pos
         if n < 0 or pos + n > total:
-            raise ValueError(f"leitura além do fim (pos {pos}, n {n}, total {total})")
+            raise ValueError(f"read past the end (pos {pos}, n {n}, total {total})")
         out = u[pos * 2:(pos + n) * 2].decode("utf-16-le", "surrogatepass"); pos += n
         return out
 
     def num(w):
         t = take(w)
         if len(t) != w or not t.isascii() or not t.isdigit():
-            raise ValueError(f"prefixo de largura {w} não numérico")
+            raise ValueError(f"prefix of width {w} is not numeric")
         return int(t)
     try:
         kind = take(1)
         if kind not in ("i", "v"):
-            return None, "tipo de mensagem inválido"
+            return None, "invalid message type"
         lens = [num(w) for w in (2, 2, 2, 2, 2, 3, 5, 1)]
         parts = [take(n) for n in lens]
         if parts[0] != sid:
-            return None, "prefixo de comprimento do SESSIONID não bate (sid do XML != SESSIONID)"
+            return None, "SESSIONID length prefix does not match (XML sid != SESSIONID)"
         if parts[2] != "" or parts[4] != "dummy" or parts[7] != "false":
-            return None, "campos fixos do cabeçalho não batem"
+            return None, "fixed header fields do not match"
         props = {}
         while True:
             op = take(1)
@@ -110,11 +110,11 @@ def parse_request_xml_strict(xml: str, sid: str) -> tuple[dict | None, str]:
                 delta = take(num(2))
                 break
             else:
-                return None, f"operação inesperada {op!r} (prefixo de comprimento errado?)"
+                return None, f"unexpected operation {op!r} (wrong length prefix?)"
         if pos != total:
-            return None, f"{total - pos} unidades UTF-16 sobrando após o delta (prefixo errado)"
+            return None, f"{total - pos} UTF-16 units left after the delta (wrong prefix)"
     except ValueError as e:
-        return None, "gramática do XML: " + str(e)
+        return None, "XML grammar: " + str(e)
     return {"init": kind == "i", "sid": parts[0], "pid": parts[1], "model": parts[3], "page": parts[5],
             "event": parts[6], "props": props, "delta": delta}, ""
 
@@ -167,11 +167,11 @@ class H(BaseHTTPRequestHandler):
             with LOCK:
                 s = new_session()
             page = brs.page_html("DETRAN-PB", MODELS["logon"], s["head"], s["pid"], "op=S37&xciParameters.natsession=acesso")
-            self._rec(p, 200, "sessão nova " + s["head"][:4] + "…")
+            self._rec(p, 200, "new session " + s["head"][:4] + "…")
             return self._send(200, page)
         if p in PAGES:
             title, key = PAGES[p]
-            self._rec(p, 200, "página")
+            self._rec(p, 200, "page")
             return self._send(200, brs.page_html(title, MODELS[key], None, None))
         m = re.fullmatch(r"/(cisnatural|UIC-SERVICOS)/(\w+)_JLIBS\.html", p)
         if m:
@@ -183,11 +183,11 @@ class H(BaseHTTPRequestHandler):
         if p.endswith("/aboutBlank.html"):
             return self._send(200, "<!doctype html><html><body></body></html>\n")
         if p.startswith("/TSPD/"):
-            self._rec(p, 200, "ruído de proteção sintético")
+            self._rec(p, 200, "synthetic protection noise")
             return self._send(200, "/* synthetic guard noise */\n", "text/javascript")
         if p.endswith(".js"):
             return self._send(200, brs.static_js(p.rsplit("/", 1)[-1]), "application/javascript")
-        self._rec(p, 404, "rota desconhecida")
+        self._rec(p, 404, "unknown route")
         self._send(404, "not found\n", "text/plain")
 
     def do_POST(self):
@@ -195,7 +195,7 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(n).decode("utf-8", "replace")
         if p != "/servlet/Connector":
-            self._rec(p, 404, "rota desconhecida")
+            self._rec(p, 404, "unknown route")
             return self._send(404, "not found\n", "text/plain")
         form = dict(parse_qsl(raw, keep_blank_values=True))
         with LOCK:
@@ -211,25 +211,25 @@ class H(BaseHTTPRequestHandler):
             else:
                 req = parse_request_xml(form.get("XML", ""))
             if mode == "nocontrols":
-                self._rec(p, 200, "modo nocontrols: 200 sem XML/STAMP")
+                self._rec(p, 200, "nocontrols mode: 200 without XML/STAMP")
                 return self._send(200, "<html><body><h1>Servico indisponivel</h1><p>tente novamente (sintético)</p></body></html>\n")
             problems = []
             if s is None:
-                problems.append("sessão desconhecida (SESSIONID de outra sessão)")
+                problems.append("unknown session (SESSIONID from another session)")
             elif not re.fullmatch(r"\d{12}", sid.partition("_")[2]):
-                problems.append("SESSIONID sem o sufixo montado no cliente (12 dígitos)")
+                problems.append("SESSIONID without the suffix built by the client (12 digits)")
             if req is None:
-                problems.append(strict_err or "XML ilegível")
+                problems.append(strict_err or "unreadable XML")
             if s and req:
                 if req["pid"] != s["pid"]:
-                    problems.append("processId diferente")
+                    problems.append("processId mismatch")
                 expected = "INIT" if req["init"] else s["stamp"]
                 if form.get("STAMP") != expected:
-                    problems.append("STAMP inválido")
+                    problems.append("invalid STAMP")
                 if req["delta"] != s["delta"]:
-                    problems.append("delta inválido")
+                    problems.append("invalid delta")
             if problems or mode == "error" and req and req["event"] == "cmd_consultar_placa":
-                msg = "; ".join(problems) or "Placa não encontrada (modo error, sintético)"
+                msg = "; ".join(problems) or "Plate not found (error mode, synthetic)"
                 xml = bf.response_stream([("nextPage", PAGES_NEXT.get(req["page"] if req else "", "/UIC-SERVICOS/VES0009X.html"))],
                                          s["delta"] if s else "inittini")
                 stamp = (s["stamp"] or "INIT") if s else "INIT"
@@ -258,13 +258,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=8791)
     ap.add_argument("--mode", choices=MODES, default="ok")
-    ap.add_argument("--seed", type=int, help="semente (reprodutível); padrão: aleatório por execução")
+    ap.add_argument("--seed", type=int, help="seed (reproducible); default: random per run")
     a = ap.parse_args()
     STATE["mode"] = a.mode
     if a.seed is not None:
         STATE["rng"] = random.Random(a.seed)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), H)
-    print(f"detran-sim em http://127.0.0.1:{a.port}{PREFIX}/ (modo {a.mode}); Ctrl-C para sair", flush=True)
+    print(f"detran-sim at http://127.0.0.1:{a.port}{PREFIX}/ (mode {a.mode}); Ctrl-C to exit", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

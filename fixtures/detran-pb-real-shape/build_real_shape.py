@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Fixtures com a FORMA REAL do caso DETRAN-PB (docs/10-fidelidade-caso-real.md). Valores 100% fictícios.
+"""Fixtures with the REAL SHAPE of the DETRAN-PB case (docs/10-fidelidade-caso-real.md). 100% fictitious values.
 
-A forma foi tirada da ESTRUTURA dos HARs reais (nenhum valor, nenhum byte copiado):
-  * respostas do Connector = HTML de ~10 KB com um script fictício antes, depois
+The shape was taken from the STRUCTURE of the real HARs (no value or byte copied):
+  * Connector responses = ~10 KB HTML with a fictitious script before, then
     <textarea name="XML">, <textarea name="ERRORMESSAGE"> e <input type="hidden" name="STAMP" value>;
-    o payload dentro da textarea usa entidades HTML (&amp; &lt; &gt; &quot; &#x27;);
-  * HAR do DevTools: criador WebInspector, SEM Cookie/Set-Cookie/cookies[];
-  * ruído de proteção (/TSPD/...) entre os passos e recursos estáticos (jquery-ui, cis*) que
-    CONTÊM constantes do protocolo (ruído L3);
-  * placa e CPF fictícios dentro do XML (L5) e um valor fora de formato (v_renavam curto);
-  * GETs sem postData (L7);
-  * capturas: A = 1 rodada; B = 2 rodadas completas (como o H2 real).
+    the payload inside the textarea uses HTML entities (&amp; &lt; &gt; &quot; &#x27;);
+  * DevTools HAR: creator WebInspector, WITHOUT Cookie/Set-Cookie/cookies[];
+  * protection noise (/TSPD/...) between the steps and static resources (jquery-ui, cis*) that
+    CONTAIN protocol constants (L3 noise);
+  * fictitious plate and CPF inside the XML (L5) and a value out of format (short v_renavam);
+  * GETs without postData (L7);
+  * captures: A = 1 round; B = 2 complete rounds (like the real H2).
 
-Saídas: real-shape-1round.har, real-shape-2rounds.har, manifest.json.
+Outputs: real-shape-1round.har, real-shape-2rounds.har, manifest.json.
 Run: python3 fixtures/detran-pb-real-shape/build_real_shape.py
 """
 from __future__ import annotations
@@ -30,11 +30,11 @@ import build_fixtures as bf  # noqa: E402  (jslen, serialize, response_stream, f
 BASE, APP, HOST = bf.BASE, bf.APP, bf.HOST
 MODELS = {"logon": "SA90001_CSAN00000", "sim": "SA90002_CSAN00000", "ves": "SA90003_CSAN00000"}
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
-START_MS = 1_793_132_400_000  # 2026-10-27T23:00:00Z, fixo
+START_MS = 1_793_132_400_000  # 2026-10-27T23:00:00Z, fixed
 STEP_MS = 250
-# Forma do `_initiator` do DevTools (conferida só pela estrutura nos HARs reais):
-#   other  -> {type}                          (navegação/entrada, POST de formulário)
-#   parser -> {type, url, lineNumber}         (recurso/frame iniciado pelo parser HTML da página `url`)
+# Shape of the DevTools `_initiator` (checked only by structure in the real HARs):
+#   other  -> {type}                          (navigation/entry, form POST)
+#   parser -> {type, url, lineNumber}         (resource/frame initiated by the HTML parser of the page `url`)
 #   script -> {type, stack:{callFrames:[{functionName,scriptId,url,lineNumber,columnNumber}]}}
 INIT_OTHER = {"type": "other"}
 
@@ -49,7 +49,7 @@ def init_script(url: str) -> dict:
 
 
 def csc_html(model: str) -> str:
-    """Frame auxiliar cscform: formulário do cliente com o STAMP inicial (INIT)."""
+    """Auxiliary cscform frame: client form with the initial STAMP (INIT)."""
     return (f'<!doctype html>\n<html><body>\n<form name="cscform" method="post" data-model="{model}">\n'
             '<input type="hidden" name="STAMP" id="STAMP" value="INIT">\n</form>\n</body></html>\n')
 
@@ -59,7 +59,7 @@ def jlibs_html(model: str) -> str:
 
 
 def fake_guard_script(seed: int, size: int = 9700) -> str:
-    """Script fictício no lugar do F5: lixo determinístico, sem STAMP/XML/ERRORMESSAGE."""
+    """Fictitious script in place of F5: deterministic filler, without STAMP/XML/ERRORMESSAGE."""
     x, out = seed, ["<SYNTHETIC_GUARD_DO_NOT_TOUCH>\n<script type=\"text/javascript\">\n(function(){"]
     while sum(len(s) for s in out) < size:
         x = (x * 1103515245 + 12345) & 0x7FFFFFFF
@@ -80,11 +80,11 @@ def connector_html(seed: int, xml: str, stamp: str) -> str:
 
 
 def page_html(title: str, model: str, sid: str | None, pid: str | None, init_param: str = "") -> str:
-    """Só a página de entrada (easynat-app) define m_currentSessionId/m_currentProcessId.
+    """Only the entry page (easynat-app) defines m_currentSessionId/m_currentProcessId.
 
-    Nos HARs reais (conferido só pela estrutura) NatLogon/SIM1000X/VES0009X NÃO contêm o SESSIONID nem o
-    processId, e nenhuma requisição entre a resposta do easynat-app e a da NatLogon leva o valor: o SESSIONID
-    tem um único produtor. As demais páginas só carregam o modelo (constante do protocolo)."""
+    In the real HARs (checked only by structure) NatLogon/SIM1000X/VES0009X do NOT contain the SESSIONID nor the
+    processId, and no request between the easynat-app response and the NatLogon one carries the value: the SESSIONID
+    has a single producer. The other pages only load the model (a protocol constant)."""
     ids = ""
     if sid is not None:
         ids = f'var m_currentSessionId = "{sid}";\nvar m_currentProcessId = "{pid}";\nvar pageInitParam = "{init_param}";\n'
@@ -154,8 +154,8 @@ def tspd(h: Har, tag: str, referer: str, kind: int = 9):
 
 
 def frame(h: Har, k: str, name: str, page_url: str, base: str, title: str, model: str, blank: bool = False):
-    """Frames auxiliares (iniciados pelo parser) da página `page_url`: *_JLIBS.html e cscform.html
-    (com <input hidden STAMP value=INIT>); opcionalmente aboutBlank.html. Referer = a página."""
+    """Auxiliary frames (initiated by the parser) of the page `page_url`: *_JLIBS.html and cscform.html
+    (with <input hidden STAMP value=INIT>); optionally aboutBlank.html. Referer = the page."""
     jl, csc = f"{base}/{title}_JLIBS.html", f"{base}/cscform.html?page={title}"
     h.add(f"{k}:jlibs_{name}", "GET", jl, 200, "text/html;charset=UTF-8", jlibs_html(title), "document", page_url,
           initiator=init_parser(page_url, 21))
@@ -170,7 +170,7 @@ def frame(h: Har, k: str, name: str, page_url: str, base: str, title: str, model
 
 
 def round_flow(h: Har, r: dict, seed: int) -> dict:
-    """Um fluxo completo. Devolve ids lógicos por papel (com prefixo da rodada)."""
+    """One complete flow. Returns logical IDs per role (with the round prefix)."""
     k = r["tag"]
     sid, pid, sb, dp = r["sid"], r["pid"], r["stamp_base"], r["delta_prefix"]
     dseq = [0]
@@ -247,9 +247,9 @@ def round_flow(h: Har, r: dict, seed: int) -> dict:
     return out
 
 
-# SESSIONID real = literal m_currentSessionId (9 chars, do easynat-app) + "_" + sufixo de 12 dígitos SEM fonte observada
-# (conferido nos HARs reais, só pela estrutura: o sufixo não aparece em nenhuma resposta/requisição anterior ao
-# 1º POST; o processId do corpo é o literal m_currentProcessId, de 32 chars). Valores fictícios, mesma composição.
+# Real SESSIONID = m_currentSessionId literal (9 chars, from easynat-app) + "_" + 12-digit suffix with NO observed source
+# (checked in the real HARs, by structure only: the suffix does not appear in any response/request before the
+# 1st POST; the body processId is the m_currentProcessId literal, 32 chars). Fictitious values, same composition.
 def mk(tag, head, tail, pidn, base, dp, plates, cpfs):
     return dict(tag=tag, head=head, tail=tail, sid=f"{head}_{tail}", pid="SYNTHPID" + f"{pidn:024d}",
                 stamp_base=base, delta_prefix=dp, plates=plates, cpfs=cpfs)
@@ -263,8 +263,8 @@ ROUNDS = {
 
 
 def build_composite():
-    """Regra do valor composto (campo nomeado < 40 B): só ganha origem por decomposição se coberto POR INTEIRO
-    por >= 2 valores de produtores + separadores; prefixo parcial não vale."""
+    """Composite value rule (named field < 40 B): it only gets an origin by decomposition if covered ENTIRELY
+    by >= 2 producer values + separators; a partial prefix does not count."""
     h = Har()
     h.add("part_a", "GET", f"{APP}/compose/a", 200, "text/html;charset=UTF-8",
           '<html><script>var part_a = "ALPHA0001";</script></html>\n', "document", None)

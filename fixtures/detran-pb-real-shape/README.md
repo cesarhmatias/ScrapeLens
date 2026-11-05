@@ -1,21 +1,14 @@
-# detran-pb-real-shape — forma real do caso DETRAN-PB (rodada 6)
+# detran-pb-real-shape — real shape of the DETRAN-PB case (round 6)
 
-Rótulo: **sanitizado de caso real** (forma real, valores 100% fictícios). A *estrutura* foi tirada dos HARs
-reais (somente leitura, sem copiar valores nem bytes); nenhum HAR bruto entra no repositório.
+Label: **sanitized from a real case** (real shape, 100% fictitious values). The *structure* was taken from the real HARs (read-only, without copying values or bytes); no raw HAR enters the repository.
 
-| Arquivo | Conteúdo |
+| File | Contents |
 |---|---|
-| `real-shape-1round.har` | A: 1 rodada completa (23 entradas, 8 POSTs do Connector) |
-| `real-shape-2rounds.har` | B: 2 rodadas completas (46 entradas, 16 POSTs), SESSIONID/STAMP/delta/placas diferentes por rodada |
-| `manifest.json` | IDs lógicos (`har-NNNN`) por papel e as expectativas dos Aceite 1–4 de `docs/10-fidelidade-caso-real.md` |
-| `build_real_shape.py` / `validate.py` | gerador determinístico / validação da forma |
+| `real-shape-1round.har` | A: 1 complete round (23 entries, 8 Connector POSTs) |
+| `real-shape-2rounds.har` | B: 2 complete rounds (46 entries, 16 POSTs), SESSIONID/STAMP/delta/plates differ per round |
+| `manifest.json` | logical IDs (`har-NNNN`) per role and the expectations of Acceptance 1–4 of `docs/10-fidelidade-caso-real.md` |
+| `build_real_shape.py` / `validate.py` | deterministic generator / shape validation |
 
-Forma reproduzida: Connector = HTML (~9,8 KB) com script fictício antes (`<SYNTHETIC_GUARD_DO_NOT_TOUCH>`, no
-lugar do F5), `<textarea name="XML">` com entidades HTML, `<textarea name="ERRORMESSAGE">` e
-`<input type="hidden" name="STAMP" value>`; HAR de criador `WebInspector` sem Cookie/Set-Cookie/`cookies[]`;
-ruído `/TSPD/…` entre os passos; `jquery-ui.min.js` e `CIS_V1_SYNTH.js` com constantes do protocolo (L3);
-placa (`TST0T1x`) e CPF (`000000001xx`) fictícios dentro do XML; `v_renavam=12` fora de formato (L5); GETs sem
-postData (L7).
+Shape reproduced: Connector = HTML (~9.8 KB) with a fictitious script before it (`<SYNTHETIC_GUARD_DO_NOT_TOUCH>`, in place of F5), `<textarea name="XML">` with HTML entities, `<textarea name="ERRORMESSAGE">` and `<input type="hidden" name="STAMP" value>`; HAR creator `WebInspector` without Cookie/Set-Cookie/`cookies[]`; `/TSPD/…` noise between the steps; `jquery-ui.min.js` and `CIS_V1_SYNTH.js` with protocol constants (L3); fictitious plate (`TST0T1x`) and CPF (`000000001xx`) inside the XML; `v_renavam=12` out of format (L5); GETs without postData (L7).
 
-Aceite: `python3 tests/aceite/check_real_shape.py` (falha até o Core fechar L1–L8). Revalidação nos HARs reais
-do usuário (só agregados): `python3 tests/aceite/check_real_detran.py <har>…`.
+Acceptance: `python3 tests/aceite/check_real_shape.py` (fails until Core closes L1–L8). Revalidation on the user's real HARs (aggregates only): `python3 tests/aceite/check_real_detran.py <har>…`.

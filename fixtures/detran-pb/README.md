@@ -1,148 +1,157 @@
-# detran-pb — fixture do caso de referência (forma real, valores sintéticos)
+# detran-pb — reference-case fixture (real shape, synthetic values)
 
-Caso de aceite: reconstrução da sessão DETRAN-PB descrita em
-`docs/05-caso-referencia-detran.md`. Esta fixture existe para os testes de
-**importação, busca no corpo, agrupamento proteção × aplicação, campos
-dinâmicos e correlação CDP×NetLog**.
+Acceptance case: reconstruction of the DETRAN-PB session described in
+`docs/05-caso-referencia-detran.md`. This fixture exists for the tests of
+**import, body search, grouping protection × application, dynamic fields and
+CDP×NetLog correlation**.
 
-**Rótulo:** `sanitized-shape-real-case` — a *forma* do fluxo veio do caso real;
-todos os valores são sintéticos e **nenhum byte dos HARs originais foi
-copiado** para o repositório.
+**Label:** `sanitized-shape-real-case` — the *shape* of the flow came from the
+real case; all values are synthetic and **no byte of the original HARs was
+copied** into the repository.
 
-## Arquivos
+## Files
 
-| Arquivo | Conteúdo |
+| File | Contents |
 |---|---|
-| `detran-pb-sanitized.har` | 13 entradas: entrada → NatLogon → SIM1000X → on_interceptor → VES0009X → cmd_filtro → cmd_consultar_placa → cmd_nova → cmd_consultar_placa |
-| `detran-pb-blocked.har` | 3 entradas de bloqueio: 200 sem XML/STAMP, Connector sem modelo, 403 |
-| `detran-pb.cdp.jsonl` | 47 eventos CDP sintéticos (`requestWillBeSent`, `requestWillBeSentExtraInfo` só nos POSTs, `responseReceived`, `loadingFinished`) |
-| `detran-pb.netlog.json` | 52 eventos NetLog no formato de `fixtures/aceite` (URL_REQUEST, headers enviados/recebidos, stream job) |
-| `manifest.json` | fluxo esperado, cadeia de STAMP, casos de busca, ambiguidade, listas de campos dinâmicos/estáticos |
-| `build_fixtures.py` | gerador determinístico (relógio fixo 2026-10-26T23:00Z) |
-| `validate.py` | verifica estrutura, fluxo, tamanhos, busca, ambiguidade e ausência de marcadores reais |
+| `detran-pb-sanitized.har` | 13 entries: entry → NatLogon → SIM1000X → on_interceptor → VES0009X → cmd_filtro → cmd_consultar_placa → cmd_nova → cmd_consultar_placa |
+| `detran-pb-blocked.har` | 3 block entries: 200 without XML/STAMP, Connector without model, 403 |
+| `detran-pb.cdp.jsonl` | 47 synthetic CDP events (`requestWillBeSent`, `requestWillBeSentExtraInfo` only on the POSTs, `responseReceived`, `loadingFinished`) |
+| `detran-pb.netlog.json` | 52 NetLog events in the format of `fixtures/aceite` (URL_REQUEST, headers sent/received, stream job) |
+| `manifest.json` | expected flow, STAMP chain, search cases, ambiguity, dynamic/static field lists |
+| `build_fixtures.py` | deterministic generator (fixed clock 2026-10-26T23:00Z) |
+| `validate.py` | checks structure, flow, sizes, search, ambiguity and absence of real markers |
 
 ```sh
-python3 fixtures/detran-pb/build_fixtures.py   # regenera
-python3 fixtures/detran-pb/validate.py         # OK: 13 entradas, 8 Connector posts...
+python3 fixtures/detran-pb/build_fixtures.py   # regenerates
+python3 fixtures/detran-pb/validate.py         # OK: 13 HAR entries, 8 Connector posts...
 ```
 
-## O que a forma preserva
+## What the shape preserves
 
-- Endpoints e páginas: `/servlet/easynat-app?op=S37`, `/cisnatural/NatLogon.html`,
+- Endpoints and pages: `/servlet/easynat-app?op=S37`, `/cisnatural/NatLogon.html`,
   `/UIC-SERVICOS/SIM1000X.html`, `/UIC-SERVICOS/VES0009X.html`,
-  `POST /servlet/Connector`. Ruído de proteção: `GET /TSPD/?type=18`.
-- Formulário: `SESSIONID`, `PAGEINITPARAM`, `XML`, (`ERRORMESSAGE`), `STAMP` —
-  `STAMP=INIT` na inicialização e o último STAMP nas demais chamadas.
-- Protocolo textual no campo `XML` (não é XML): comprimentos em unidades
-  UTF-16, opcodes de requisição `i/v/p/x` e de resposta `l/p/q/z/w/b/c/s/k/x`.
-  O `delta` inicial é `inittini`; as respostas trazem delta novo a cada passo.
-- Eventos: `on_interceptor` (S37 no item 1), `cmd_filtro`, `cmd_consultar_placa`,
-  `cmd_nova`, `cmd_consultar_placa` (segunda placa).
-- Corpo completo × delta: a primeira consulta traz `v_situacao_atual`
-  (`Veículo Apreendido`) e histórico; a segunda **omite** `v_situacao_atual`,
-  mantém `vp_situacao_atual=true` e as linhas `situacao_rows.items[...]`.
-- Duas consultas com **mesma URL e método**, diferenciadas só pelo corpo/STAMP —
-  caso de ambiguidade para correlação (não associar por URL).
-- HTTP 200 que **não** é sucesso da aplicação (desafio/`request rejected`).
+  `POST /servlet/Connector`. Protection noise: `GET /TSPD/?type=18`.
+- Form: `SESSIONID`, `PAGEINITPARAM`, `XML`, (`ERRORMESSAGE`), `STAMP` —
+  `STAMP=INIT` at initialization and the last STAMP in the other calls.
+- Textual protocol in the `XML` field (it is not XML): lengths in UTF-16 units,
+  request opcodes `i/v/p/x` and response opcodes `l/p/q/z/w/b/c/s/k/x`.
+  The initial `delta` is `inittini`; the responses carry a new delta at each step.
+- Events: `on_interceptor` (S37 in item 1), `cmd_filtro`, `cmd_consultar_placa`,
+  `cmd_nova`, `cmd_consultar_placa` (second plate).
+- Full body × delta: the first query carries `v_situacao_atual`
+  (`Veículo Apreendido`) and history; the second **omits** `v_situacao_atual`,
+  keeps `vp_situacao_atual=true` and the `situacao_rows.items[...]` rows.
+- Two queries with the **same URL and method**, told apart only by body/STAMP —
+  an ambiguity case for correlation (do not associate by URL).
+- HTTP 200 that is **not** application success (challenge/`request rejected`).
 
-As respostas do Connector foram verificadas contra o decodificador de referência
-do caso (`decode_stream`): decodificam na ordem, com os campos e o delta
-esperados. O decodificador não faz parte desta fixture nem do MVP.
+The Connector responses were checked against the case's reference decoder
+(`decode_stream`): they decode in order, with the expected fields and delta.
+The decoder is part of neither this fixture nor the MVP.
 
-## Valores sintéticos
+## Synthetic values
 
-| Item | Valor |
+| Item | Value |
 |---|---|
-| `SESSIONID` | `CSAN00000_000000000001` (22 caracteres, mesma forma) |
+| `SESSIONID` | `CSAN00000_000000000001` (22 characters, same shape) |
 | `m_currentProcessId` | `100000000001` |
-| placas | `TST0T00`, `TST0T01` (formato Mercosul, inexistentes por convenção `TST`) |
+| plates | `TST0T00`, `TST0T01` (Mercosul format, nonexistent by the `TST` convention) |
 | STAMP | `INIT`, `2001`..`2008` |
 | delta | `inittini`, `DLTA0001`..`DLTA0008` |
-| cookies | `TS01a1b2c3=0189…f0` e `JSESSIONID=SYNTH…0001` |
-| IP do servidor | `198.51.100.10` (TEST-NET-2) |
-| modelo Natural | `SA90001_CSAN00000`, `SA90002_…`, `SA90003_…` |
+| cookies | `TS01a1b2c3=0189…f0` and `JSESSIONID=SYNTH…0001` |
+| server IP | `198.51.100.10` (TEST-NET-2) |
+| Natural model | `SA90001_CSAN00000`, `SA90002_…`, `SA90003_…` |
 
-Ausentes por construção: cookies/TS* reais, SESSIONID real, placas de terceiros,
-tokens STAMP/delta reais, HTML original, IP real, dados pessoais, `Authorization`.
-O gerador recusa qualquer valor vindo dos HARs; `validate.py` falha se um
-marcador real aparecer (`CASA`, `NUPP`, `082b79`, nomes dos HARs etc.).
+Absent by construction: real cookies/TS*, real SESSIONID, third-party plates,
+real STAMP/delta tokens, original HTML, real IP, personal data, `Authorization`.
+The generator refuses any value coming from the HARs; `validate.py` fails if a
+real marker appears (`CASA`, `NUPP`, `082b79`, HAR names, etc.).
 
-## Como usar nos testes
+## How to use in tests
 
-- **Busca no corpo**: `cmd_consultar_placa` deve achar as entradas 10 e 12;
-  `cmd_nova` a 11; `on_interceptor` a 6. Busca por URL é insuficiente para as
-  consultas.
-- **Proteção × aplicação**: `/TSPD/` é ruído; o Connector é a aplicação.
-  Uma resposta 200 com `challenge` e sem `XML`/`STAMP` não é sucesso.
-- **Campos dinâmicos**: `SESSIONID`, `STAMP`, `delta`, timestamps do stream e
-  `pageInitParam` mudam entre sessões; endpoints, eventos e nomes de campo não.
-- **Correlação**: `requestId` do CDP ≠ `source.id` do NetLog; `time` do NetLog é
-  em **milissegundos de ticks** (convenção do Chrome 156 nesta máquina) e o
-  relógio de parede é `timeTickOffset + time`. As duas consultas
-  têm a mesma URL, então a associação precisa de corpo/horário e deve poder
-  declarar ambiguidade. `headersText` do `requestWillBeSentExtraInfo` preserva a
-  ordem dos headers; o objeto `headers` do CDP não.
-- **Timeline**: `cmd_nova` entre consultas é visível como passo próprio.
+- **Body search**: `cmd_consultar_placa` must find entries 10 and 12;
+  `cmd_nova` finds 11; `on_interceptor` finds 6. Search by URL is insufficient
+  for the queries.
+- **Protection × application**: `/TSPD/` is noise; the Connector is the
+  application. A 200 response with `challenge` and without `XML`/`STAMP` is not success.
+- **Dynamic fields**: `SESSIONID`, `STAMP`, `delta`, stream timestamps and
+  `pageInitParam` change between sessions; endpoints, events and field names do not.
+- **Correlation**: CDP `requestId` ≠ NetLog `source.id`; NetLog `time` is in
+  **tick milliseconds** (Chrome 156 convention on this machine) and the wall
+  clock is `timeTickOffset + time`. The two queries have the same URL, so the
+  association needs body/time and must be able to declare ambiguity.
+  `headersText` of `requestWillBeSentExtraInfo` preserves the header order; the
+  CDP `headers` object does not.
+- **Timeline**: `cmd_nova` between queries is visible as its own step.
 
-## Limites
+## Limits
 
-- Não reproduz TSPD, CAPTCHA, cookies de proteção reais, TLS/JA3 nem ordem de
-  headers transmitida (a matriz de fidelidade cobre isso com o `testserver/`).
-- Os caminhos e nomes de evento são os do caso; qualquer semelhança de valor é
-  coincidência dos formatos (placa, STAMP), não dado real.
-- Fixture estática: não execute os endpoints nem navegue para o domínio real.
+- Does not reproduce TSPD, CAPTCHA, real protection cookies, TLS/JA3 or the
+  order of headers sent (the fidelity matrix covers that with `testserver/`).
+- Paths and event names are those of the case; any resemblance in values is a
+  coincidence of formats (plate, STAMP), not real data.
+- Static fixture: do not run the endpoints or navigate to the real domain.
 
-## Corpos CDP (rodada 4, docs/08-corpos-busca.md)
+## CDP bodies (round 4, docs/08-corpos-busca.md)
 
-Marcadas como **sanitizadas de caso real** (forma real, valores sintéticos):
+Marked as **sanitized from a real case** (real shape, synthetic values):
 
-- `detran-pb.cdp-bodies.jsonl` (formato §1): os 8 corpos form-urlencoded dos
-  POSTs, 13 respostas — 11 `captured` (uma em `base64` binário: TSPD, entrada 1),
-  1 `truncated` (NatLogon, entrada 2, `originalSize` 415) e 1 `unavailable`
-  (entrada 12, última consulta; não produz valor usado depois; "No resource with given identifier found"). `requestId` =
-  `1001.1`…`1013.13` (índice+1), `attemptIndex` 0 (sem redirects neste fluxo).
-- `detran-pb-edge.cdp.jsonl` + `detran-pb-edge.cdp-bodies.jsonl`: cenários
-  no formato do `testserver/` (302 com tentativa 0 `unavailable`, 307 com corpo
-  nas duas tentativas, JSON, binário base64, gzip já decodificado, 6 MiB
-  `truncated` com `originalSize` 6291456, 204 `empty` com evidência).
-- Casos de busca esperados: `manifest.json` → `bodies_search_cases` e `bodies`.
-  Aceite automático: `python3 tests/aceite/check_bodies_search.py <sessão>`.
+- `detran-pb.cdp-bodies.jsonl` (§1 format): the 8 form-urlencoded POST bodies,
+  13 responses — 11 `captured` (one in binary `base64`: TSPD, entry 1),
+  1 `truncated` (NatLogon, entry 2, `originalSize` 415) and 1 `unavailable`
+  (entry 12, last query; it does not produce a value used later;
+  "No resource with given identifier found"). `requestId` =
+  `1001.1`…`1013.13` (index+1), `attemptIndex` 0 (no redirects in this flow).
+- `detran-pb-edge.cdp.jsonl` + `detran-pb-edge.cdp-bodies.jsonl`: scenarios
+  in the `testserver/` format (302 with attempt 0 `unavailable`, 307 with a body
+  in both attempts, JSON, binary base64, already decoded gzip, 6 MiB `truncated`
+  with `originalSize` 6291456, 204 `empty` with evidence).
+- Expected search cases: `manifest.json` → `bodies_search_cases` and `bodies`.
+  Automatic acceptance: `python3 tests/aceite/check_bodies_search.py <session>`.
 
-## Rótulos de origem (Core d9aba1c)
+## Origin labels (Core d9aba1c)
 
-Toda importação destas fixtures passa `--label synthetic-fixture`, para o app
-não mostrá-las como sessão real. Rótulos esperados em `session.labels`:
+Every import of these fixtures passes `--label synthetic-fixture`, so the app
+does not show them as a real session. Expected labels in `session.labels`:
 `import-capture` → `["capture-import","synthetic-fixture"]`; `import-har` →
 `["har-import","synthetic-fixture"]`; `import-netlog` → `["netlog-import","synthetic-fixture"]`.
-`tests/aceite/check_bodies_search.py --import-fixture` e `run_acceptance.py`
-asseveram isso a cada importação.
+`tests/aceite/check_bodies_search.py --import-fixture` and `run_acceptance.py`
+assert this on every import.
 
-## 2ª captura (B) e cadeia de origem (rodada 5, docs/09-cadeia-comparacao.md)
+## 2nd capture (B) and origin chain (round 5, docs/09-cadeia-comparacao.md)
 
-- `fixtures/detran-pb-b/` (`python3 fixtures/detran-pb/build_fixtures.py b`): mesmo fluxo de 13
-  passos, mesmas páginas, modelos e constantes; **diferem** SESSIONID (`…0002`), processId, cookies
-  TS*/JSESSIONID, STAMP (3001…3008), delta (`DLTB…`), horário (+1 h) e placas `TST0T02`/`TST0T03`.
-- Cadeia de valores (A e B, conferida por `validate.py`): SESSIONID nasce no HTML do easynat-app
-  (`m_currentSessionId`); STAMP e delta vêm da resposta do POST anterior; o JSESSIONID vem do
-  Set-Cookie do easynat-app (a 1ª requisição não envia cookie) e o cookie TS* só do Set-Cookie de
-  `/TSPD/` (proteção). A fixture A foi ajustada para isso (antes todas as respostas repetiam os dois
-  Set-Cookie e todas as requisições enviavam cookie); contagens (13/8/47/52) e testes do core
-  continuam iguais.
-- Caso negativo §4.3: header `x-page-seq: 3` nos POSTs coincide por acaso com `x-seq-hint: 3` da
-  resposta do `cmd_filtro` (valor <8, nome diferente: não é origem).
-- Expectativas: `manifest.json` → `chain_compare` (origens §4.1, cadeia, comparação §4.2, sanitizada
-  §4.4). Aceite: `python3 tests/aceite/check_chain_compare.py` (falha até o Core entregar
-  `origins|chain|compare`; o adaptador de formato JSON é tolerante e deve ser ajustado ao contrato final).
+- `fixtures/detran-pb-b/` (`python3 fixtures/detran-pb/build_fixtures.py b`):
+  same 13-step flow, same pages, models and constants; **they differ** in
+  SESSIONID (`…0002`), processId, TS*/JSESSIONID cookies, STAMP (3001…3008),
+  delta (`DLTB…`), time (+1 h) and plates `TST0T02`/`TST0T03`.
+- Value chain (A and B, checked by `validate.py`): SESSIONID originates in the
+  easynat-app HTML (`m_currentSessionId`); STAMP and delta come from the
+  previous POST's response; the JSESSIONID comes from the easynat-app's
+  Set-Cookie (the 1st request sends no cookie) and the TS* cookie only from the
+  Set-Cookie of `/TSPD/` (protection). Fixture A was adjusted for this (before,
+  all responses repeated both Set-Cookies and all requests sent a cookie);
+  counts (13/8/47/52) and the core tests remain the same.
+- Negative case §4.3: header `x-page-seq: 3` on the POSTs coincides by chance
+  with `x-seq-hint: 3` from the `cmd_filtro` response (value <8, different
+  name: it is not an origin).
+- Expectations: `manifest.json` → `chain_compare` (origins §4.1, chain,
+  comparison §4.2, sanitized §4.4). Acceptance:
+  `python3 tests/aceite/check_chain_compare.py` (fails until Core delivers
+  `origins|chain|compare`; the JSON format adapter is tolerant and must be
+  adjusted to the final contract).
 
-## Revisão da rodada 5 (tempos, confiança e causalidade)
+## Round 5 review (timing, confidence and causality)
 
-- **Tempos sequenciais**: cada passo começa 250 ms depois do anterior e cada resposta termina em
-  start+100 ms (CDP `loadingFinished`, NetLog em ms e HAR coerentes), então um produtor sempre termina
-  antes do consumidor. O NetLog antes tinha offsets herdados dos microssegundos (`+90000`); agora
+- **Sequential times**: each step starts 250 ms after the previous one and each
+  response ends at start+100 ms (CDP `loadingFinished`, NetLog in ms and HAR
+  consistent), so a producer always ends before the consumer. The NetLog
+  previously had offsets inherited from microseconds (`+90000`); now they are
   `+1/+2/+90` ms.
-- **Expectativas por regra**: cookie-jar e same-field (STAMP) = `origem observada`/strong; SESSIONID e delta
-  (value-match) = `possível origem (value-match)`/medium; no compare `obter em runtime (origem possível: …)`;
-  confiança do passo da cadeia = strong se algum motivo é forte (r0001 strong pelo JSESSIONID).
-- **Regressão de causalidade** (`detran-pb-edge`, manifest `chain_compare.edge_regressions`): `2008.8`
-  (produtor lento, termina após o início de `2009.9`) → `slow_token` sem origem; `2010.10`→`2011.11`
-  (sequencial) → origem forte same-field.
+- **Expectations by rule**: cookie-jar and same-field (STAMP) = `origem observada`/strong;
+  SESSIONID and delta (value-match) = `possível origem (value-match)`/medium;
+  in compare `obter em runtime (origem possível: …)`; confidence of the chain
+  step = strong if any reason is strong (r0001 strong via JSESSIONID).
+  (These quoted labels are the ones in `manifest.json` and are kept as data.)
+- **Causality regression** (`detran-pb-edge`, manifest `chain_compare.edge_regressions`):
+  `2008.8` (slow producer, ends after the start of `2009.9`) → `slow_token` without
+  origin; `2010.10`→`2011.11` (sequential) → strong same-field origin.

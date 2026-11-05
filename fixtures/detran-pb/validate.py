@@ -31,7 +31,7 @@ def form(text: str) -> dict:
 
 
 def check_chain(label: str, har: dict, netlog: dict, sid: str, jsession: str, ts_value: str, delta_prefix: str) -> None:
-    """Valores dinâmicos nascem nas respostas certas (docs/09 §4.1)."""
+    """Dynamic values originate in the right responses (docs/09 §4.1)."""
     es = har["log"]["entries"]
     jar: dict[str, str] = {}
     last_stamp = last_delta = None
@@ -39,34 +39,34 @@ def check_chain(label: str, har: dict, netlog: dict, sid: str, jsession: str, ts
         req, resp = e["request"], e["response"]
         sent = {c["name"]: c["value"] for c in req["cookies"]}
         header_cookie = [h["value"] for h in req["headers"] if h["name"] == "cookie"]
-        check((not header_cookie) == (not sent), f"{label}[{i}]: cookie header x cookies divergem")
+        check((not header_cookie) == (not sent), f"{label}[{i}]: cookie header and cookies diverge")
         for n, v in sent.items():
-            check(jar.get(n) == v, f"{label}[{i}]: cookie {n} enviado sem Set-Cookie anterior com o mesmo valor")
+            check(jar.get(n) == v, f"{label}[{i}]: cookie {n} sent without a previous Set-Cookie with the same value")
         if i == 0:
-            check(not sent, f"{label}[0]: primeira requisição não deve enviar cookie")
-            check(f'm_currentSessionId = "{sid}"' in resp["content"]["text"], f"{label}[0]: SESSIONID deve nascer no HTML do easynat-app")
+            check(not sent, f"{label}[0]: first request must not send a cookie")
+            check(f'm_currentSessionId = "{sid}"' in resp["content"]["text"], f"{label}[0]: SESSIONID must originate in the easynat-app HTML")
         for h in resp["headers"]:
             if h["name"] == "set-cookie":
                 n, _, v = h["value"].split(";")[0].partition("=")
                 jar[n] = v
         if req["method"] == "POST":
             f = form(req["postData"]["text"])
-            check(f["SESSIONID"] == sid, f"{label}[{i}]: SESSIONID da requisição")
+            check(f["SESSIONID"] == sid, f"{label}[{i}]: SESSIONID of the request")
             if f["STAMP"] != "INIT":
-                check(f["STAMP"] == last_stamp, f"{label}[{i}]: STAMP {f['STAMP']} != resposta anterior {last_stamp}")
+                check(f["STAMP"] == last_stamp, f"{label}[{i}]: STAMP {f['STAMP']} != previous response {last_stamp}")
             xml = f["XML"]
             if last_delta and not xml.startswith("i"):
-                check(last_delta in xml, f"{label}[{i}]: delta {last_delta} da resposta anterior ausente no XML")
+                check(last_delta in xml, f"{label}[{i}]: delta {last_delta} from the previous response is missing from the XML")
             if xml.startswith("i") and last_delta and i > 3:
-                check(last_delta in xml, f"{label}[{i}]: delta do init vem da resposta anterior")
+                check(last_delta in xml, f"{label}[{i}]: init delta comes from the previous response")
             r = form(resp["content"]["text"])
             last_stamp = r["STAMP"]
             m = re.search(r"x\d\d(" + delta_prefix + r"\d{4})$", r["XML"])
-            check(bool(m), f"{label}[{i}]: delta na resposta")
+            check(bool(m), f"{label}[{i}]: delta in the response")
             last_delta = m.group(1) if m else None
     check(jar.get("JSESSIONID") == jsession and jar.get("TS01a1b2c3") == ts_value, f"{label}: jar final")
     ts_set = [i for i, e in enumerate(es) if any(h["name"] == "set-cookie" and h["value"].startswith("TS01") for h in e["response"]["headers"])]
-    check(ts_set == [1], f"{label}: TS* deve vir só de /TSPD/ (entrada 1), veio de {ts_set}")
+    check(ts_set == [1], f"{label}: TS* must come only from /TSPD/ (entry 1), came from {ts_set}")
     for e in netlog["events"]:
         pass
 
@@ -155,7 +155,7 @@ def main() -> int:
     same = [i for i, e in enumerate(entries)
             if e["request"]["url"].endswith("/servlet/Connector")
             and "cmd_consultar_placa" in urllib.parse.unquote_plus((e["request"].get("postData") or {}).get("text", ""))]
-    check(same == [10, 12], f"consultar entries -> {same}, expected [10, 12]")
+    check(same == [10, 12], f"query entries -> {same}, expected [10, 12]")
     if len(same) == 2:
         check(entries[10]["request"]["url"] == entries[12]["request"]["url"], "ambiguity case must share the URL")
         check(entries[10]["request"]["postData"]["text"] != entries[12]["request"]["postData"]["text"],
@@ -175,7 +175,7 @@ def main() -> int:
         check(re.search(r"p\d{2}\d{5}", xml) is not None, f"entry {i}: XML stream has no p-group")
         check(xml.endswith("inittini") or re.search(r"x\d{2}", xml), f"entry {i}: XML stream lacks x+delta")
         if "cmd_consultar_placa" in xml:
-            check("p0700007v_placa" in xml or "v_placa" in xml, f"entry {i}: placa field missing")
+            check("p0700007v_placa" in xml or "v_placa" in xml, f"entry {i}: plate field missing")
         if "cmd_nova" in xml:
             check("cmd_nova" in xml, f"entry {i}: cmd_nova missing")
 
@@ -221,7 +221,7 @@ def main() -> int:
     check(len(netlog["events"]) == len(entries) * 4, "NetLog event count mismatch")
     for e in netlog["events"]:
         if by_type[e["type"]] == "HTTP_TRANSACTION_SEND_REQUEST_HEADERS":
-            pass  # cookies por passo são conferidos em check_chain()
+            pass  # per-step cookies are checked in check_chain()
 
     # --- bodies (docs/08-corpos-busca.md §1) -------------------------------
     import base64
@@ -264,18 +264,18 @@ def main() -> int:
     check(len([r for r in main_rows if r["kind"] == "request"]) == 8, "main: 8 request bodies (POSTs) expected")
     check({r["state"] for r in main_rows} >= {"captured", "truncated", "unavailable"}, "main: needs captured/truncated/unavailable")
     check(any(r["encoding"] == "base64" for r in main_rows), "main: needs a base64 binary body")
-    consultas = [r for r in main_rows if r["kind"] == "request" and "cmd_consultar_placa" in
+    queries = [r for r in main_rows if r["kind"] == "request" and "cmd_consultar_placa" in
                  urllib.parse.parse_qs(r["data"])["XML"][0]]
-    check([r["requestId"] for r in consultas] == ["1011.11", "1013.13"], "two consultas distinguished by request body")
-    check(len({r["data"] for r in consultas}) == 2, "the two consultas must differ in body")
-    check("TST0T00" in urllib.parse.parse_qs(consultas[0]["data"])["XML"][0]
-          and "TST0T01" in urllib.parse.parse_qs(consultas[1]["data"])["XML"][0], "plates per consulta")
+    check([r["requestId"] for r in queries] == ["1011.11", "1013.13"], "two queries distinguished by request body")
+    check(len({r["data"] for r in queries}) == 2, "the two queries must differ in body")
+    check("TST0T00" in urllib.parse.parse_qs(queries[0]["data"])["XML"][0]
+          and "TST0T01" in urllib.parse.parse_qs(queries[1]["data"])["XML"][0], "plates per query")
     edge = [json.loads(l) for l in (HERE / "detran-pb-edge.cdp-bodies.jsonl").read_text().splitlines() if l]
     check(sum(1 for r in edge if r["state"] == "unavailable" and "redirect" in (r["reason"] or "")) == 2, "edge: 2 redirect unavailable")
     check(len([r for r in edge if r["requestId"] == "2002.2" and r["kind"] == "request"]) == 2, "edge: 307 body in each attempt")
     check(any(r["state"] == "empty" for r in edge) and any(r["state"] == "truncated" for r in edge), "edge: empty+truncated")
 
-    # --- cadeia de origem dos valores (A e B) --------------------------------
+    # --- origin chain of the values (A and B) --------------------------------
     check_chain("A", har, netlog, "CSAN00000_000000000001", "SYNTH00000000000000000000000001",
                 "0189a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0", "DLTA")
     bdir = HERE.parent / "detran-pb-b"
@@ -285,28 +285,28 @@ def main() -> int:
     check_chain("B", har_b, netlog_b, "CSAN00000_000000000002", "SYNTH00000000000000000000000002",
                 "01b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7", "DLTB")
     ea, eb = har["log"]["entries"], har_b["log"]["entries"]
-    check(len(eb) == 13 and bman["counts"]["entries"] == 13, "B: 13 passos")
+    check(len(eb) == 13 and bman["counts"]["entries"] == 13, "B: 13 steps")
     for i, (x, y) in enumerate(zip(ea, eb)):
-        check((x["request"]["method"], x["request"]["url"]) == (y["request"]["method"], y["request"]["url"]), f"B[{i}]: método/URL diferem da A")
+        check((x["request"]["method"], x["request"]["url"]) == (y["request"]["method"], y["request"]["url"]), f"B[{i}]: method/URL differ from A")
         if x["request"]["method"] == "GET" and i not in (1,):
             ta = x["response"]["content"]["text"].replace("CSAN00000_000000000001", "X").replace("100000000001", "P")
             tb = y["response"]["content"]["text"].replace("CSAN00000_000000000002", "X").replace("100000000002", "P")
-            check(ta == tb, f"B[{i}]: páginas e constantes devem ser iguais, exceto SESSIONID/processId")
+            check(ta == tb, f"B[{i}]: pages and constants must be equal, except SESSIONID/processId")
         if x["request"]["method"] == "POST":
             fa, fb = form(x["request"]["postData"]["text"]), form(y["request"]["postData"]["text"])
-            check(set(fa) == set(fb), f"B[{i}]: mesmos campos de formulário")
-            check(fa["SESSIONID"] != fb["SESSIONID"], f"B[{i}]: SESSIONID deve diferir")
-            check(fa["PAGEINITPARAM"] == fb["PAGEINITPARAM"], f"B[{i}]: PAGEINITPARAM igual")
+            check(set(fa) == set(fb), f"B[{i}]: same form fields")
+            check(fa["SESSIONID"] != fb["SESSIONID"], f"B[{i}]: SESSIONID must differ")
+            check(fa["PAGEINITPARAM"] == fb["PAGEINITPARAM"], f"B[{i}]: PAGEINITPARAM equal")
     plates_b = set(re.findall(r"TST0T\d\d", "\n".join((bdir / n).read_text() for n in ("detran-pb-b-sanitized.har", "detran-pb-b.cdp.jsonl", "detran-pb-b.cdp-bodies.jsonl"))))
-    check(plates_b == {"TST0T02", "TST0T03"}, f"B: placas {plates_b}")
+    check(plates_b == {"TST0T02", "TST0T03"}, f"B: plates {plates_b}")
     for n in ("detran-pb-b-sanitized.har", "detran-pb-b.cdp.jsonl", "detran-pb-b.netlog.json", "detran-pb-b.cdp-bodies.jsonl"):
         t = (bdir / n).read_text()
         for bad in ("CSAN00000_000000000001", "SYNTH00000000000000000000000001", "0189a1b2c3d4e5f6", "DLTA", "TST0T00", "TST0T01"):
-            check(bad not in t, f"B/{n}: valor da A vazou ({bad})")
-    # caso negativo §4.3 existe na fixture: x-seq-hint=3 (resposta do cmd_filtro) e x-page-seq=3 nas requisições
-    check(any(h["name"] == "x-seq-hint" and h["value"] == "3" for h in ea[9]["response"]["headers"]), "negativo 4.3: x-seq-hint")
-    check(all(any(h["name"] == "x-page-seq" and h["value"] == "3" for h in e["request"]["headers"]) for e in ea if e["request"]["method"] == "POST"), "negativo 4.3: x-page-seq")
-    check("chain_compare" in manifest, "manifest: chain_compare ausente")
+            check(bad not in t, f"B/{n}: value from A leaked ({bad})")
+    # negative case §4.3 exists in the fixture: x-seq-hint=3 (cmd_filtro response) and x-page-seq=3 on the requests
+    check(any(h["name"] == "x-seq-hint" and h["value"] == "3" for h in ea[9]["response"]["headers"]), "negative 4.3: x-seq-hint")
+    check(all(any(h["name"] == "x-page-seq" and h["value"] == "3" for h in e["request"]["headers"]) for e in ea if e["request"]["method"] == "POST"), "negative 4.3: x-page-seq")
+    check("chain_compare" in manifest, "manifest: chain_compare missing")
 
     # --- sanitization ----------------------------------------------------
     blob = "\n".join(

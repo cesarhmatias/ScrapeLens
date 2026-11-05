@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Smoke do detran-sim: percorre o fluxo extraindo valores novos em runtime (como o priming deve fazer),
-confere que valores de outra sessão são rejeitados e que os modos de erro respondem como documentado.
-Sobe o simulador em porta livre, sem rede externa.   python3 testserver/detran-sim/smoke.py"""
+"""Smoke test for detran-sim: walks the flow, extracting new values at runtime (as the priming must do),
+checks that values from another session are rejected and that the error modes respond as documented.
+Starts the simulator on a free port, with no external network.   python3 testserver/detran-sim/smoke.py"""
 import html, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
@@ -65,32 +65,32 @@ def main():
             except Exception: time.sleep(0.1)
         V = ("/UIC-SERVICOS/VES0009X.html", ds.MODELS["ves"])
         sa, sb = session(), session()
-        ok(sa["sid"][:9] != sb["sid"][:9] and sa["pid"] != sb["pid"], "sessões devem ter valores novos")
+        ok(sa["sid"][:9] != sb["sid"][:9] and sa["pid"] != sb["pid"], "sessions must have new values")
         for s in (sa,):
-            st, b = post(s, *V, "", {"pageInitParam": ""}, init=True); ok(st == 200 and control(b, "ERRORMESSAGE") == "", "init deve passar"); absorb(s, b)
-            st, b = post(s, *V, "cmd_filtro", {"v_filtro_sel": "2.0"}); ok(control(b, "ERRORMESSAGE") == "", "cmd_filtro com STAMP/delta novos deve passar: " + control(b, "ERRORMESSAGE")); absorb(s, b)
+            st, b = post(s, *V, "", {"pageInitParam": ""}, init=True); ok(st == 200 and control(b, "ERRORMESSAGE") == "", "init must pass"); absorb(s, b)
+            st, b = post(s, *V, "cmd_filtro", {"v_filtro_sel": "2.0"}); ok(control(b, "ERRORMESSAGE") == "", "cmd_filtro with new STAMP/delta must pass: " + control(b, "ERRORMESSAGE")); absorb(s, b)
             stale = dict(s); st, b = post(s, *V, "cmd_consultar_placa", {"v_placa": "TST0T99", "v_cpf": "00000000191"})
-            ok(control(b, "ERRORMESSAGE") == "" and "TST0T99" in control(b, "XML"), "consultar com valores novos deve ecoar a placa")
+            ok(control(b, "ERRORMESSAGE") == "" and "TST0T99" in control(b, "XML"), "query with new values must echo the plate")
             absorb(s, b)
-        # valor capturado (STAMP/delta antigos) deve ser rejeitado
+        # value captured earlier (old STAMP/delta) must be rejected
         st, b = post({**sa, "stamp": "1", "delta": "inittini"}, *V, "cmd_nova", {})
-        ok("STAMP inválido" in control(b, "ERRORMESSAGE"), "STAMP antigo deve dar ERRORMESSAGE")
-        # SESSIONID/pid de outra sessão
+        ok("invalid STAMP" in control(b, "ERRORMESSAGE"), "old STAMP must give ERRORMESSAGE")
+        # SESSIONID/pid from another session
         st, b = post({**sb, "sid": sa["sid"], "pid": sb["pid"]}, *V, "", {}, init=True)
-        ok("processId diferente" in control(b, "ERRORMESSAGE"), "pid de outra sessão deve dar ERRORMESSAGE")
+        ok("processId mismatch" in control(b, "ERRORMESSAGE"), "pid from another session must give ERRORMESSAGE")
         st, b = post({"sid": "CSAN00000_000000000000", "pid": sa["pid"], "stamp": "INIT", "delta": "x"}, *V, "", {}, init=True)
-        ok("sessão desconhecida" in control(b, "ERRORMESSAGE"), "sessão desconhecida deve dar ERRORMESSAGE")
+        ok("unknown session" in control(b, "ERRORMESSAGE"), "unknown session must give ERRORMESSAGE")
         # modos
         ctl("error"); s = session(); post(s, *V, "", {}, init=True)
-        st, b = post(sb, *V, "cmd_consultar_placa", {"v_placa": "TST0T98"}); ok(st == 200 and control(b, "ERRORMESSAGE") != "", "modo error: ERRORMESSAGE preenchido")
-        ctl("nocontrols"); st, b = post(sa, *V, "cmd_filtro", {}); ok(st == 200 and "name=\"XML\"" not in b and "STAMP" not in b, "modo nocontrols: 200 sem controles")
-        ctl("403"); st, b = post(sa, *V, "cmd_filtro", {}); ok(st == 403, "modo 403: HTTP 403")
-        ctl("ok"); st, _ = req("/TSPD/0000SYNTH?type=17"); ok(st == 200, "TSPD sintético")
+        st, b = post(sb, *V, "cmd_consultar_placa", {"v_placa": "TST0T98"}); ok(st == 200 and control(b, "ERRORMESSAGE") != "", "error mode: ERRORMESSAGE filled")
+        ctl("nocontrols"); st, b = post(sa, *V, "cmd_filtro", {}); ok(st == 200 and "name=\"XML\"" not in b and "STAMP" not in b, "nocontrols mode: 200 without controls")
+        ctl("403"); st, b = post(sa, *V, "cmd_filtro", {}); ok(st == 403, "403 mode: HTTP 403")
+        ctl("ok"); st, _ = req("/TSPD/0000SYNTH?type=17"); ok(st == 200, "synthetic TSPD")
     finally:
         p.terminate()
     if FAILS:
         print("FAIL:"); [print(" -", f) for f in FAILS]; return 1
-    print("OK: detran-sim — sessões novas, valores antigos rejeitados, modos error/nocontrols/403"); return 0
+    print("OK: detran-sim — new sessions, old values rejected, error/nocontrols/403 modes"); return 0
 
 
 if __name__ == "__main__":

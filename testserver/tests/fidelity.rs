@@ -481,7 +481,7 @@ fn multi_target_page_marks_every_request_kind() {
         "serviceWorker.register('/multi/sw.js'",
         "/multi/sw-fetch?m=sw-intercept-1",
     ] {
-        assert!(html.contains(needle), "page sem {needle}");
+        assert!(html.contains(needle), "page without {needle}");
     }
 
     let js = h1_request(
@@ -529,7 +529,7 @@ fn multi_target_page_marks_every_request_kind() {
     // Evidence keeps the marker; the compact multi.jsonl has it first.
     let rows = read_evidence(&evdir, "h1.jsonl");
     let marked: Vec<&Value> = rows.iter().filter(|r| r["marker"] == "main-post-1").collect();
-    assert_eq!(marked.len(), 1, "marker no JSONL de evidência");
+    assert_eq!(marked.len(), 1, "marker in the evidence JSONL");
     assert_eq!(marked[0]["method"], "POST");
     let multi = read_evidence(&dir, "multi.jsonl");
     assert!(multi.iter().any(|r| r["marker"] == "main-post-1" && r["body_text"] == post_body));

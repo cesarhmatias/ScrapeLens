@@ -83,7 +83,7 @@ HEADERS_XHR = [
     ("sec-fetch-site", "same-origin"),
     ("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"),
     ("x-requested-with", "XMLHttpRequest"),
-    ("x-page-seq", "3"),  # constante curta; coincide por acaso com x-seq-hint de uma resposta (caso negativo §4.3)
+    ("x-page-seq", "3"),  # short constant; coincides by chance with the x-seq-hint of a response (negative case §4.3)
 ]
 
 COOKIE_REQUEST = f"{TS_COOKIE}={TS_VALUE}; {JSESSION}"
@@ -528,8 +528,8 @@ def edge_cdp_and_bodies() -> tuple[list[dict], list[dict]]:
     r = "2007.7"
     req(r, f"{H}/empty", ts=t + 6); done(r, f"{H}/empty", 204, "text/plain", t + 6.03)
     bodies.append(body_line(r, 0, "response", "empty", "", "Network.getResponseBody", reason="HTTP 204", original=0, ts=t + 6.04))
-    # E8/E9: produtor LENTO sobreposto. A resposta de E8 só termina depois que E9 (consumidor) começou:
-    # causalidade (docs/09, revisão da rodada 5): não é origem.
+    # E8/E9: SLOW overlapping producer. The response of E8 only ends after E9 (the consumer) has started:
+    # causality (docs/09, round 5 review): not an origin.
     slow_tok = "SLOWTOKEN-0123456789"
     r = "2008.8"
     req(r, f"{H}/json", ts=t + 7); done(r, f"{H}/json", 200, "application/json", t + 8.5)
@@ -538,7 +538,7 @@ def edge_cdp_and_bodies() -> tuple[list[dict], list[dict]]:
     req(r, f"{H}/sink", "POST", json.dumps({"slow_token": slow_tok}), ts=t + 8.0); done(r, f"{H}/sink", 200, "application/json", t + 8.1)
     bodies.append(body_line(r, 0, "request", "captured", json.dumps({"slow_token": slow_tok}), "requestWillBeSent.postData", ts=t + 8.0))
     bodies.append(body_line(r, 0, "response", "captured", '{"schema": "scrapelens.testserver.sink/1"}', "Network.getResponseBody", ts=t + 8.12))
-    # E10/E11: controle sequencial (a resposta termina antes do consumidor): é origem forte (same-field).
+    # E10/E11: sequential control (the response ends before the consumer): strong origin (same-field).
     ctl_tok = "CONTROLTOKEN-ABCDEF"
     r = "2010.10"
     req(r, f"{H}/json", ts=t + 9); done(r, f"{H}/json", 200, "application/json", t + 9.03)
@@ -551,7 +551,7 @@ def edge_cdp_and_bodies() -> tuple[list[dict], list[dict]]:
 
 
 def chain_compare_expectations() -> dict:
-    """Expectativas de docs/09-cadeia-comparacao.md §4 (A = esta captura; B = ../detran-pb-b)."""
+    """Expectations from docs/09-cadeia-comparacao.md §4 (A = this capture; B = ../detran-pb-b)."""
     r = rid_of
     target = r(10)
     o = lambda field, kind, producer, **kw: {"field": field, "evidence": kind, "producer": producer, **kw}
@@ -663,7 +663,7 @@ def build() -> None:
     def add(method, url, status, mime, body, fields=None, kind="page", extra=None,
             purpose="", event="", referer=f"{APP}/UIC-SERVICOS/VES0009X.html"):
         nonlocal t
-        t += 250  # sequencial: cada resposta (100 ms) termina antes da próxima requisição
+        t += 250  # sequential: each response (100 ms) ends before the next request
         idx = len(steps)
         entry = entry_har(method, url, status, mime, body, fields, kind, extra, referer,
                           cookie_mode={0: "none", 1: "js"}.get(idx, "both"),
@@ -733,7 +733,7 @@ def build() -> None:
         connector_response([("v_filtro_sel", "2.0")], str(2005 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0005"),
         [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2004 - 2000 + STAMP_BASE))],
         extra=[("x-seq-hint", "3")], purpose="selecionar filtro", event="cmd_filtro")
-    # 11 consultar (full body, with v_situacao_atual)
+    # 11 query (full body, with v_situacao_atual)
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_consultar_placa", {
         "v_filtro_error": "", "v_placa": PLATE_A, "#f12_selected": "2.0",
         "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, f"{DELTA_PREFIX}0005")
@@ -757,7 +757,7 @@ def build() -> None:
         connector_response([("v_situacao_atual", "")], str(2007 - 2000 + STAMP_BASE), f"{DELTA_PREFIX}0007"),
         [("SESSIONID", SID), ("PAGEINITPARAM", ""), ("XML", body), ("ERRORMESSAGE", ""), ("STAMP", str(2006 - 2000 + STAMP_BASE))],
         purpose="limpar resultado", event="cmd_nova")
-    # 13 segunda consulta: resposta delta omite v_situacao_atual
+    # 13 second query: delta response omits v_situacao_atual
     body = serialize(SID, PID, MODEL_VES, "/UIC-SERVICOS/VES0009X.html", "cmd_consultar_placa", {
         "v_filtro_error": "", "v_placa": PLATE_B, "#f12_selected": "2.0",
         "cISAddons.focusProject": "", "cISAddons.focusPage": "", "cISAddons.focusItemName": ""}, f"{DELTA_PREFIX}0007")
