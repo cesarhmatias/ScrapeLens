@@ -21,7 +21,7 @@ HAR/NetLog imports; no synthetic data is presented as a capture.
 | `11-detail-verification-dark.png` | NetLog-only case: missing headers, “não verificada” (not verified), estimated duration `≈` |
 | `12-main-search-light.png` | Search “produtos” (products) with count “2 de 13” (2 of 13) |
 | `13-main-filter-errors-dark.png` | “Erros 4xx/5xx” (Errors 4xx/5xx) filter (403, 403, 401) |
-| `14-list-12k-virtualizada.png` | Virtualized list with 12.000 synthetic requests (24 rows in the DOM) |
+| `14-list-12k-virtualizada.png` | Virtualized list with 12,000 synthetic requests (24 rows in the DOM) |
 | `15-detail-attempts-ambiguous.png` | Attempts + ambiguous match with explicit candidates |
 | `16-tauri-shell-dark.png` | Real Tauri 2 shell window (local ad-hoc build) with native title, single window and demo session |
 | `17-real-capture-main.png` | Real capture: external Chrome 156 on the local testserver page (11 requests, `cdp+netlog`) |

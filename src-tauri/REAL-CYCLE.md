@@ -1,7 +1,7 @@
 # Validated real cycle — macOS arm64
 
 Date: 2026-10-26 (local time). Chrome 156.0.8078.48. Tauri App 2.12.5
-(`ScrapeLens.app` release, ad-hoc signature, 13,26 MiB) with `scrapelens-core`
+(`ScrapeLens.app` release, ad-hoc signature, 13.26 MiB) with `scrapelens-core`
 as a crate dependency (no sidecar). Local h1 testserver at
 `127.0.0.1:8781` (synthetic fixtures from the testserver; the capture is real Chrome).
 
@@ -15,7 +15,7 @@ Sessions (app data directory):
 
 - `~/Library/Application Support/app.scrapelens.desktop/sessions/capture-1793057139842`
   — 11 requests, `completeness=complete`, `capture.mode=cdp+netlog`,
-  5.036 CDP+NetLog events used, 4 warnings (2 `correlate.ambiguous` on the two identical
+  5,036 CDP+NetLog events used, 4 warnings (2 `correlate.ambiguous` on the two identical
   concurrent requests), h1 headers with
   `verification=verified` and `source=netlog` (`HTTP_TRANSACTION_SEND_REQUEST_HEADERS`).
   Used in screenshots 17–19.
@@ -25,7 +25,7 @@ Sessions (app data directory):
 - `.../sessions/capture-1793056304065` — first capture of the validation session
   (same cycle; used for the real NetLog imported below).
 
-Sources observed: `netlog.json` (1,3–2,1 MiB), `cdp-events.jsonl`
+Sources observed: `netlog.json` (1.3–2.1 MiB), `cdp-events.jsonl`
 (31–371 KiB), `session.json` (105–856 KiB), `attachments/` empty (CDP bodies were not
 downloaded in this round — explicit `unavailable` state).
 
@@ -48,7 +48,7 @@ downloaded in this round — explicit `unavailable` state).
   cycle; run with `--ignored`: 11 real requests, session imported).
 - `cd app && npx tsc --noEmit` and `npm run build` — no errors.
 - `./app/node_modules/.bin/tauri build --bundles app` — `ScrapeLens.app`
-  13,26 MiB, Mach-O arm64, `adhoc,linker-signed` (no Apple certificate).
+  13.26 MiB, Mach-O arm64, `adhoc,linker-signed` (no Apple certificate).
 - Release app launched, opened the real session via the native dialog (`⌘O`), and
   started and stopped a new capture with the core.
 

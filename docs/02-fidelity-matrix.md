@@ -208,7 +208,7 @@ manually with `curl_cffi`):
   was not measured here — if something must be asserted about 141, run this same
   harness with that build.
 
-Two-minute check for the real case, once attribution is available: open the
+2-minute check for the real case, once attribution is available: open the
 capture with NetLog, take the application's request (POST Connector) and compare
 `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` with the order HAR/DevTools shows.
 Order divergence in the HAR is expected; what matters is what NetLog says.

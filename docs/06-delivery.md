@@ -37,7 +37,7 @@ No additional core fix or new product build was needed.
 ## Artifact and installation
 
 - Package: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
-- Approximate size: 13,2 MiB; one Mach-O arm64 executable, 13.119.296 bytes.
+- Approximate size: 13.2 MiB; one Mach-O arm64 executable, 13,119,296 bytes.
 - SHA-256 of the signed executable:
   `a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0`.
 - Ad-hoc signature verified with `codesign --verify --deep --strict` by
@@ -76,8 +76,8 @@ New harness capture: 27 requests, h1/h2/h3, stable evidence in
 156.0.8078.48, 15 experiments and 60 requests, with h3 observed on aioquic and
 the quiche scenario blocked. Full HTTP/3 coverage is not claimed.
 
-Current large import: 20.000 requests, HAR 16,6 MiB in 0,96 s;
-20.000 small attachments in 3,30 s. Inspect reaches 2.415 MiB RSS when serializing
+Current large import: 20,000 requests, HAR 16.6 MiB in 0.96 s;
+20,000 small attachments in 3.30 s. Inspect reaches 2,415 MiB RSS when serializing
 the full JSON; responsiveness/memory profile still deserves attention.
 
 ## Available features
@@ -125,7 +125,7 @@ the import. Tests verified the new sessions before approving (77c32a7):
   no DEMO and zero headers classified as verified. Method/URL sequence
   identical to the 24 entries of the prepared HAR.
 - NetLog `netlog-1704043c442dcbd1-2`: 32 h1/h2/h3 requests, 36 attempts,
-  9 connections, 4 redirects, 15 StreamSessions and 5.354 sourceEvents. Partial with
+  9 connections, 4 redirects, 15 StreamSessions and 5,354 sourceEvents. Partial with
   explicit reason for the absence of CDP; warning about assumed time unit.
   Persisted NetLog artifact byte-for-byte identical to the prepared source.
 - Directories 0700 and files 0600; inspect re-reads 24/32 requests without modifying

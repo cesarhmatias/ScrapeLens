@@ -174,7 +174,7 @@ APPROVED; Part B (app) APPROVED, with a caveat: live app not opened by the
 reviewer. No critical or high failures. Test suite: cargo test core and src-tauri
 (36 ok/3 ignored), tests/export 18/18, run_acceptance 10/10,
 check_bodies_search detran 5/5 / edge 2/2 / sanitized OK, run_bodies 20/20
-live. Search memory on the large session: peak 1,75 GB → 257 MB. Bundle
+live. Search memory on the large session: peak 1.75 GB → 257 MB. Bundle
 0e2754f4….
 
 Finishing touches (non-blocking), delegated:

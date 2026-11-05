@@ -104,26 +104,26 @@ result of the whole-session adapter.
 - In-memory sessions (demonstration, browser mode, `?demo=large`) use the same
   summaries, derived locally by `summaryOfRecord`, and the equivalent local filter.
 
-## Memory (session of 20.002 captured requests, docs/18)
+## Memory (session of 20,002 captured requests, docs/18)
 
 Measured with `src-tauri/examples/mem_open.rs` (one mode per process, `--release`,
-macOS arm64, RSS peak by `getrusage`), on `/tmp/big20k` (`session.json` of 1,19 GB):
+macOS arm64, RSS peak by `getrusage`), on `/tmp/big20k` (`session.json` of 1.19 GB):
 
 | Path | RSS peak | Sent to the front end |
 |---|---:|---:|
-| old (`read_to_string` + `Value` + serialization) | **7.108 MiB** | 681 MB |
-| new: open typed + header + all pages + one detail | **1.161 MiB** | 1,4 KB + 5,4 MB (all pages) + 32 KB |
+| old (`read_to_string` + `Value` + serialization) | **7,108 MiB** | 681 MB |
+| new: open typed + header + all pages + one detail | **1,161 MiB** | 1.4 KB + 5.4 MB (all pages) + 32 KB |
 
-- Goal of the round: open the 20-thousand session with a peak below 1,5 GiB. Met
-  in the backend (1.161 MiB, −84 %).
+- Goal of the round: open the 20-thousand session with a peak below 1.5 GiB. Met
+  in the backend (1,161 MiB, −84 %).
 - Summary: 268 B per row on average, with the page overhead; a single row is
   ~240 B (URL and `wallTime` dominate). It is above the 100 to 200 B estimate of docs/18.
-- Time: the typed read takes ~9,9 s, against ~4,4 s for the old path, which uses more
+- Time: the typed read takes ~9.9 s, against ~4.4 s for the old path, which uses more
   memory. The 11 pages of `list_requests`, with header and detail, take ~70 ms.
   `open_session`, `import_*` and `stop_session` run in `spawn_blocking`, and the interface
   does not freeze. Open and import use the `loading` signal, which refuses a second
   one in parallel; the screen shows an indicator during the read and the list load.
-- What dominates is the typed `SessionV1` (~1.160 MiB, like the `lazy` of docs/18). P6/P8
+- What dominates is the typed `SessionV1` (~1,160 MiB, like the `lazy` of docs/18). P6/P8
   would reduce that in the core.
 - Not measured: the WebView memory. The summaries of 20 thousand requests add up to ~5 MB of
   JSON in the transfer.

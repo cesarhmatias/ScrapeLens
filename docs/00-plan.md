@@ -16,7 +16,7 @@ developers. Full specification:
   live with explicit state and `transformed`; search over 6 scopes with decoded
   view and exact range; sanitization by value propagation (fail-closed);
   origin labels; truncated NetLog repaired; search with attachments on demand
-  (peak 1,75 GB → 257 MB). Non-blocking polish in progress.
+  (peak 1.75 GB → 257 MB). Non-blocking polish in progress.
 - Round 5 (docs/09), origin of values, priming chain and comparison between
   captures: completed and approved in the re-review (bundle ac7213b2…). Next:
   validation on the real DETRAN case (local HARs, no data in the repository)

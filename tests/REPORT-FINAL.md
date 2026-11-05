@@ -65,7 +65,7 @@ Result: **all green, 0 failures.** Criterion 9 of run_acceptance uses the live c
 - **HEAD tested:** 0d98615 (capture in f1493ab, core in 66e97e3, bundle in 0d98615)
 - **Date:** 2026-10-31
 - **Build:** `core`, `testserver` and `adapters/natural-ajax` rebuilt in release before the suite.
-- **Accepted bundle:** `7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c` (16.582.144 bytes, arm64, ad-hoc, single binary),
+- **Accepted bundle:** `7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c` (16,582,144 bytes, arm64, ad-hoc, single binary),
   checked by `shasum -a 256` and by the path of the running process; `EXPECTED_APP_SHA256` in `tests/acceptance/run_acceptance.py` points to the same hash.
 - **Data:** synthetic; real HARs (H1–H3) only as aggregates.
 
@@ -161,22 +161,22 @@ nothing was sent or changed beyond the navigation/scrolling. Temporary synthetic
 ## Round 13 — large session memory (P1–P7) and D7
 
 - **Date:** 2026-11-02 (wave 1) and 2026-11-03 (wave 2/D7). **Machine:** macOS arm64, 64 GiB, Chrome 156, `--release` binaries.
-- **Load:** synthetic through real capture on loopback (`capture/examples/capture_big.rs`), 2.002 / 5.002 / 20.002 requests; `session.json` from 1.133 MiB to 20 thousand. RSS peak measured per stage in `experiments/session-memory` (one stage per process).
-- **Where the peak was (`docs/18` §3, 20.002 req.):** opening in the App (`app-open-ipc`) 7.101 MiB; `inspect` 9.305 MiB; 1st masked MCP call 5.654 MiB; `capture-write` 9.189 MiB and 263 s; `capture-full` 6.993 MiB and 249 s; `session.json` 1.133 MiB.
+- **Load:** synthetic through real capture on loopback (`capture/examples/capture_big.rs`), 2,002 / 5,002 / 20,002 requests; `session.json` from 1,133 MiB to 20 thousand. RSS peak measured per stage in `experiments/session-memory` (one stage per process).
+- **Where the peak was (`docs/18` §3, 20,002 req.):** opening in the App (`app-open-ipc`) 7,101 MiB; `inspect` 9,305 MiB; 1st masked MCP call 5,654 MiB; `capture-write` 9,189 MiB and 263 s; `capture-full` 6,993 MiB and 249 s; `session.json` 1,133 MiB.
 
-**Core/MCP fixes (measured, `docs/18` §7, same loads of 20.002 requests):**
+**Core/MCP fixes (measured, `docs/18` §7, same loads of 20,002 requests):**
 
 | Item | Commit | Before → after |
 |---|---|---|
-| P1 — validate `netlog.json` and CDP in a stream, without DOM | `87bd164` | `import-eager` 4.727 → **1.580 MiB** (−67 %); 17.8 → 10.1 s |
-| P2 — `inspect`/`assess` in a stream with borrowed struct | `752230e` | `inspect` 9.305 → **1.656 MiB** (−82 %); 11.5 s; output byte for byte identical |
+| P1 — validate `netlog.json` and CDP in a stream, without DOM | `87bd164` | `import-eager` 4,727 → **1,580 MiB** (−67 %); 17.8 → 10.1 s |
+| P2 — `inspect`/`assess` in a stream with borrowed struct | `752230e` | `inspect` 9,305 → **1,656 MiB** (−82 %); 11.5 s; output byte for byte identical |
 | P3 — correlation by index (method, canonical URL, id) | `4d82e36` | `capture-full` 248.9 s → **9.3 s**; memory the same (the NetLog DOM remains); output identical against baseline `aefacc9` on 29 captures/fixtures |
-| P6 — compact `session.json` above 50 MiB | `2550041` | 5.002 req.: 283 → **162 MiB** (−43 %); `capture-write` 9.189 → 7.580 MiB, 263 → 16.2 s |
-| P7 — `sanitize_bundle_owned` without masked copy | `b438945` | 1st masked MCP call 5.654 → **1.649 MiB** (−71 %) |
+| P6 — compact `session.json` above 50 MiB | `2550041` | 5,002 req.: 283 → **162 MiB** (−43 %); `capture-write` 9,189 → 7,580 MiB, 263 → 16.2 s |
+| P7 — `sanitize_bundle_owned` without masked copy | `b438945` | 1st masked MCP call 5,654 → **1,649 MiB** (−71 %) |
 
 P4 (NetLog DOM), P5 and P8 were not done in the core; P5 was done in the App. What remains of memory in `stop_capture` is the NetLog DOM (P4).
 
-**App — P5, paginated contract (`6b6bdff`, `docs/19-app-contract.md`):** the backend reads a typed `SessionV1` and the front receives the header, pages of 2.000 summaries and the detail on demand (`open_session`, `list_requests`, `get_request`). Measured with `src-tauri/examples/mem_open.rs` on `/private/tmp/big20k` (`session.json` 1.19 GB): **7.108 → 1.161 MiB (−84 %)**; to the front go 1.4 KB of header + 5.4 MB of all pages + 32 KB of one detail (before, 681 MB). Bundles: wave 1 `52cd14fd` (HEAD `f81ea80`); wave 2 `78155379` (HEAD `291fae4`; on-demand list `6f11440`, network open by default `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), with **2** `list_requests` calls until the first screen against 33 in wave 1 (`src-tauri/PACKAGING.md`).
+**App — P5, paginated contract (`6b6bdff`, `docs/19-app-contract.md`):** the backend reads a typed `SessionV1` and the front receives the header, pages of 2,000 summaries and the detail on demand (`open_session`, `list_requests`, `get_request`). Measured with `src-tauri/examples/mem_open.rs` on `/private/tmp/big20k` (`session.json` 1.19 GB): **7,108 → 1,161 MiB (−84 %)**; to the front go 1.4 KB of header + 5.4 MB of all pages + 32 KB of one detail (before, 681 MB). Bundles: wave 1 `52cd14fd` (HEAD `f81ea80`); wave 2 `78155379` (HEAD `291fae4`; on-demand list `6f11440`, network open by default `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), with **2** `list_requests` calls until the first screen against 33 in wave 1 (`src-tauri/PACKAGING.md`).
 
 **Review A9 (core and App):** `3fe7efc` (A9-B1: in a path, `,` or `|` followed by `/` ends the value; list without space preserves the next item; path fuzz with 3 seeds without leak), `0d9d935` (A9-B2: `=` entities with any number of escape layers — `&amp;`, `&#38;`, `&#x26;` — failing closed above 256; corpus +8) and `727e657` (A9-B3..B8 in the App and A8-B7 ⌘⇧R).
 
@@ -233,15 +233,15 @@ Independent review in `/Users/cesar/OpenBot/Shared/scrapelens-revisao-r15-r16.md
 - **P4:** the NetLog `events` array is read as a stream by a `Visitor`, without the `serde_json::Value` DOM of the whole file, in two passes (the first resolves `constants`, time unit, chains and unknown types; the second builds the records). Duplicate `"events"` key at the root keeps the last array, same as the old `Value` (`22854c3`).
 - **Quality:** `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings` with **0 warnings**; **362 tests** passed in `core/`; deterministic fuzzing of the sanitizer in the full round (`FUZZ_N=150000`, `SOUP_N=100000`) without failures.
 
-**P4 measured (`docs/18` §8, synthetic session of 20.002 requests, same harness):**
+**P4 measured (`docs/18` §8, synthetic session of 20,002 requests, same harness):**
 
 | Stage | Before (R13) → P4 | Time at 20 thousand |
 |---|---:|---:|
-| `netlog-only` (NetLog parse) | 4.759 → **1.615 MiB** (−66.1 %) | 5.0 → 3.5 s |
-| `capture-full` (parse + correlation) | 7.110 → **4.200 MiB** (−40.9 %) | 9.3 → 8.1 s |
-| `capture-write` (+ writing) | 7.580 → **4.629 MiB** (−38.9 %) | 16.2 → 15.9 s |
+| `netlog-only` (NetLog parse) | 4,759 → **1,615 MiB** (−66.1 %) | 5.0 → 3.5 s |
+| `capture-full` (parse + correlation) | 7,110 → **4,200 MiB** (−40.9 %) | 9.3 → 8.1 s |
+| `capture-write` (+ writing) | 7,580 → **4,629 MiB** (−38.9 %) | 16.2 → 15.9 s |
 
-The NetLog DOM (~3.1 GiB) no longer exists; the floor is now the typed session (~1.15 GiB) plus the `session.json` of ~650 MiB. Against the round 12 baseline, `capture-full` went from 6.993 to 4.200 MiB (−40 %) and `capture-write` from 9.189 to 4.629 MiB (−50 %).
+The NetLog DOM (~3.1 GiB) no longer exists; the floor is now the typed session (~1.15 GiB) plus the `session.json` of ~650 MiB. Against the round 12 baseline, `capture-full` went from 6,993 to 4,200 MiB (−40 %) and `capture-write` from 9,189 to 4,629 MiB (−50 %).
 
 **Independent review (revalidation of `22854c3`):** **approved** — differential harness old×new with **3.170/3.170** cases without divergence and **25/25** extra combinations of duplicate `"events"` identical. Caveats from the original review (`fed9b61`, clippy and the duplicate `events` case) were closed in `22854c3`. The reviewer did not rerun the 20-thousand benchmarks or live Linux tests.
 
@@ -249,11 +249,11 @@ The NetLog DOM (~3.1 GiB) no longer exists; the floor is now the typed session (
 
 | Artifact | Bytes | SHA-256 |
 |---|---:|---|
-| macOS `ScrapeLens.app` (`Contents/MacOS/ScrapeLens`) | 18.089.024 | `cbebd19d9c2339774fb6e959ae136439c896d69efd747f4bdf53d07f4c9ccf3f` |
-| Linux amd64 `.deb` | 6.404.930 | `871a04eb10e79ca291de16ca113a60dc766c733f84fad98a6ec8cdc6c479be15` |
-| Linux amd64 `AppImage` | 84.404.728 | `d06c7d80d5bcb99d648944571cb704e72c71d11356b18eb1160c7721bb47039c` |
-| Linux arm64 `.deb` | 6.504.416 | `11161abc54774b9ce94f7d140645c0120c24f76b4f27d12bdc2db33e1571a410` |
-| Linux arm64 `AppImage` | 82.569.736 | `5fb8f9138ef3dd65cb3af26a08f0a4801381de4b37729f8331df1502aa76aef6` |
+| macOS `ScrapeLens.app` (`Contents/MacOS/ScrapeLens`) | 18,089,024 | `cbebd19d9c2339774fb6e959ae136439c896d69efd747f4bdf53d07f4c9ccf3f` |
+| Linux amd64 `.deb` | 6,404,930 | `871a04eb10e79ca291de16ca113a60dc766c733f84fad98a6ec8cdc6c479be15` |
+| Linux amd64 `AppImage` | 84,404,728 | `d06c7d80d5bcb99d648944571cb704e72c71d11356b18eb1160c7721bb47039c` |
+| Linux arm64 `.deb` | 6,504,416 | `11161abc54774b9ce94f7d140645c0120c24f76b4f27d12bdc2db33e1571a410` |
+| Linux arm64 `AppImage` | 82,569,736 | `5fb8f9138ef3dd65cb3af26a08f0a4801381de4b37729f8331df1502aa76aef6` |
 
 Builds: Rust **56 passed, 0 failures, 8 ignored** on the three platforms; `clippy -D warnings` clean; five front-end suites and `typecheck` passed; `codesign --verify --deep --strict` passed on macOS (local identity, DR preserved). Linux amd64 (emulated) and arm64 (native): same 56/0/8 and Xvfb smoke with `SCRAPELENS_TEST_MODE=1 --import-har` writing `session.json` with **1 request** on each architecture. The smoke uses the standalone executable: it does not run the AppImage, does not install the `.deb` and does not test X11 shortcuts; there was no new validation on Ubuntu 24.04/Debian 12 in this round.
 
@@ -263,7 +263,7 @@ Builds: Rust **56 passed, 0 failures, 8 ignored** on the three platforms; `clipp
 - **Date:** 2026-10-29
 - **Build:** `core` and `adapters/natural-ajax` (natural-core) rebuilt in release before the suite.
 - **Accepted bundle:** `d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f`
-  (16.384.352 bytes, arm64, ad-hoc), checked by `shasum -a 256` on the executable of the `.app`; `tests/acceptance/run_acceptance.py`
+  (16,384,352 bytes, arm64, ad-hoc), checked by `shasum -a 256` on the executable of the `.app`; `tests/acceptance/run_acceptance.py`
   (`EXPECTED_APP_SHA256`) and `src-tauri/PACKAGING.md` point to the same hash.
 - **Data:** synthetic; real HARs (H1–H3) only as aggregates.
 

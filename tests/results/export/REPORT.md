@@ -2,7 +2,7 @@
 
 Status: **APPROVED (final addendum below)**. Original body = round 1, partial; see "Addendum". No production code
 was edited. Observed bundle: `a58db574771fcd6058bc63a8080e0ba2f9bdf1aeb671bf9c56d4bf221fab26cf`,
-13.969.728 bytes, ad-hoc signature verified (exit 0). Source audited: `2c6765e`.
+13,969,728 bytes, ad-hoc signature verified (exit 0). Source audited: `2c6765e`.
 
 ## Executed result
 

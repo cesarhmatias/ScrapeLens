@@ -461,7 +461,7 @@ Tests `r12_read_frame_enforces_the_message_cap_without_buffering_past_it`,
 `r12_oversized_pipe_message_closes_the_transport_and_smaller_ones_still_pass`,
 `a3_b2_closed_transport_marks_the_session_incomplete_with_an_explicit_reason` and the
 live `live_oversized_pipe_message_marks_the_capture_incomplete` (the PoC of the
-140 MB `console.log`: `navigate` in 2,7 s, `graceful:false`, state ≠ complete).
+140 MB `console.log`: `navigate` in 2.7 s, `graceful:false`, state ≠ complete).
 The queue between the reader thread and the loop remains **without a count limit**
 on purpose: limiting it would block the read and deadlock both sides of the pipe
 (the loop writes, Chrome writes), so memory follows the pace of the loop.
@@ -577,7 +577,7 @@ Errors: `url_not_allowed` (with the reason), `capture_stopped`, `navigate_failed
 **Deadline (R12).** `timeout_ms` applies to the whole `navigate` (the
 `Page.navigate` command and the load wait share a single deadline), with a floor of 2 s and
 a 5 s margin for the caller. With Chrome stopped (`SIGSTOP`), the
-`navigate(timeout_ms=3000)` that took 30,4 s now returns in 3,3 s with
+`navigate(timeout_ms=3000)` that took 30.4 s now returns in 3.3 s with
 `navigate_timeout` (the `Page.navigate` without a response within the deadline); `navigate_timeout`
 also covers the case in which the capture loop itself does not respond. Live test
 `live_navigate_honours_its_timeout_when_chrome_is_frozen`. Side effect: the

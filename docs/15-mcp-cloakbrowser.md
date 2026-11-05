@@ -73,7 +73,7 @@ README.md:850-858 ("Platforms" table) and `cloakbrowser/config.py:20-31`:
 | macOS arm64 | **Chromium 145.0.7632.109.2, 26 patches** | **Chromium 155 (README.md:155, 87 patches); the README says the free "latest" build is already 156 (README.md:189, :219)** |
 
 - Keyless release, macOS arm64: tag `chromium-v145.0.7632.109.2` (2026-03-04),
-  `cloakbrowser-darwin-arm64.tar.gz`, **147.384.149 bytes**, SHA-256
+  `cloakbrowser-darwin-arm64.tar.gz`, **147,384,149 bytes**, SHA-256
   `505582aa1bd3971c577f70e0cbbe016431702bdb693529abfd943b5bd9120c1c` (from the
   `SHA256SUMS` published in the release; consulted, not downloaded).
 - The Pro releases on GitHub only have `SHA256SUMS`/`.sig`; the Pro binary comes from
@@ -289,7 +289,7 @@ Issues (all open on 31/10; maintainer text = vendor claim):
 
 | # | Subject | What the issue and the maintainer say | Impact for ScrapeLens |
 |---|---|---|---|
-| 575 | **Crash on macOS arm64** | Build `154.0.8037.57.1` (Pro, free key): the renderer crashes in ~1,5 s on every Google Maps page (GPU path); `--disable-gpu` avoids it. Maintainer (06/10): "bug in our 154 build"; fix "in the next macOS release". The report confirms that the wrapper passes `--no-sandbox --fingerprint=… --fingerprint-platform=macos` | The macOS manifest lists `155.0.8059.39.1` (20/10), but `…39.2` (27/10) shipped only for Linux. **Nobody confirmed in the issue that 155 fixes it.** B1 must include a GPU/WebGL-heavy page, besides loopback |
+| 575 | **Crash on macOS arm64** | Build `154.0.8037.57.1` (Pro, free key): the renderer crashes in ~1.5 s on every Google Maps page (GPU path); `--disable-gpu` avoids it. Maintainer (06/10): "bug in our 154 build"; fix "in the next macOS release". The report confirms that the wrapper passes `--no-sandbox --fingerprint=… --fingerprint-platform=macos` | The macOS manifest lists `155.0.8059.39.1` (20/10), but `…39.2` (27/10) shipped only for Linux. **Nobody confirmed in the issue that 155 fixes it.** B1 must include a GPU/WebGL-heavy page, besides loopback |
 | 614 | **Detection** (Fingerprint.com: `ChromiumAutomation`) | Reproduced on `155.0.8059.39.1`. Maintainer: fixed in `…39.3`, "no release yet, about a week"; subscribers can pin; the free tier receives it automatically. A user got a 404 when requesting `…39.3` (22/10) | Detection is a continuous race and the free tier trails the paid one. The advertised benefit has a short shelf life |
 | 598 | **Detection** (Outlook, GitHub, Facebook) | It was account registration. Maintainer: "not a supported use case", forbidden by the license (automatic account creation) | Nothing technical. Reinforces that use stays restricted to own or authorized targets (BINARY-LICENSE.md:113-122) |
 | 611 | **Detection** (Cloudflare) | Report without content (empty template). Maintainer asked for the "best-flow" with key, proxy and `preview` channel | No technical evidence |
@@ -331,7 +331,7 @@ it stays on hold until express authorization. Everything below is local, disposa
 
 | # | Artifact | Source | Size | Verification |
 |---|---|---|---|---|
-| 1 | `cloakbrowser-darwin-arm64.tar.gz` | `https://github.com/CloakHQ/cloakbrowser/releases/download/chromium-v145.0.7632.109.2/cloakbrowser-darwin-arm64.tar.gz` | 147.384.149 bytes | SHA-256 `505582aa…120c1c` checked against the release's `SHA256SUMS`; **Ed25519 signature of `SHA256SUMS.sig`** against the key in `config.py:42` (Python `cryptography` with `python3 -I`, or `openssl` 3) |
+| 1 | `cloakbrowser-darwin-arm64.tar.gz` | `https://github.com/CloakHQ/cloakbrowser/releases/download/chromium-v145.0.7632.109.2/cloakbrowser-darwin-arm64.tar.gz` | 147,384,149 bytes | SHA-256 `505582aa…120c1c` checked against the release's `SHA256SUMS`; **Ed25519 signature of `SHA256SUMS.sig`** against the key in `config.py:42` (Python `cryptography` with `python3 -I`, or `openssl` 3) |
 | 2 | `SHA256SUMS` and `SHA256SUMS.sig` | same release | 412 and 88 bytes | already read in phase A |
 
 - Download with `gh release download` or `curl`, **not** with `pip install

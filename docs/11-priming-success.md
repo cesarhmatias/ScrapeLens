@@ -204,7 +204,7 @@ flow, only the plate and the SESSIONID suffix as parameters, 0 literals and no
 false positive from the filter. detran-sim approved in the 4 modes.
 
 Delegated finishing work: detectors for a plate with a hyphen (ABC-1234), 17-character VIN/chassis,
-+55 phone with 12–13 digits, series-2 card (2221–2720)
++55 phone with 12–13 digits, series 2 card (2221–2720)
 and 19-digit card, and fullwidth digits; filter also applied to path
 segments, form keys and header values. Accepted limit: free text without a
 format (name, address, obfuscated e-mail) in query, header and path, and

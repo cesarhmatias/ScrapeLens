@@ -135,8 +135,8 @@ Final re-review (at 4206ae5): the reviewer said "almost approved" and
 conditioned approval on a single item, the quadratic cost of scan_business
 in sanitization. Fixed in 7a11441 (interval BTreeMap; the same pattern
 was removed in `changed` of the Propagator). The leader checked with the
-reviewer's own probe (/tmp/rev6/p/sz.py) at HEAD: `placa1` ×200 thousand in 0,22 s,
-`"cpf 123"` ×200 thousand in 0,18 s, linear scaling (before, 26,7 s and 31,6 s).
+reviewer's own probe (/tmp/rev6/p/sz.py) at HEAD: `placa1` ×200 thousand in 0.22 s,
+`"cpf 123"` ×200 thousand in 0.18 s, linear scaling (before, 26.7 s and 31.6 s).
 Round 6 APPROVED.
 
 Result on the real case (3 user HARs, aggregated): STAMP and delta resolved

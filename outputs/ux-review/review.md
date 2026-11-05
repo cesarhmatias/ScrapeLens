@@ -120,7 +120,7 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P1 · 07 — Small technical hierarchy and advanced details competing with the data
 
-**Observed problem:** the detail reserves a permanent column for source, correlation and eight verifications, in all tabs. Many values/metadata use 9,5–11 px. The frame, outer padding and HTML window bar add to the native macOS window. Evidence: [detail](before/02-detail-1440.jpg), [desktop](before/08-desktop-har-synthetic.png), [notebook](before/06-session-1280.jpg).
+**Observed problem:** the detail reserves a permanent column for source, correlation and eight verifications, in all tabs. Many values/metadata use 9.5–11 px. The frame, outer padding and HTML window bar add to the native macOS window. Evidence: [detail](before/02-detail-1440.jpg), [desktop](before/08-desktop-har-synthetic.png), [notebook](before/06-session-1280.jpg).
 
 **Task impaired:** reading long values on a laptop and concentrating on the header being sought.
 

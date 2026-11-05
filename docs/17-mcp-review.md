@@ -262,7 +262,7 @@ All the earlier findings are fixed or are now reported as the contract foresees.
 | M1 Chrome orphaned by EOF or SIGTERM at start | Fixed | No process, profile or marker is left. |
 | M4 write through symlink (spill, `write_atomic`, `open_private`) | Fixed | The outside files stay intact; the NetLog still leaks (R3). |
 | B1–B4 (chmod before `is_within`, race, `session.json` through symlink, slug collision) | Fixed | 400 concurrent calls with no error; the slug gained a hash suffix. |
-| B6 DevTools port and `remote-allow-origins=*` | Fixed with the pipe | With `expose_cdp=false` there is no port. With `expose_cdp=true`, the port answers before the gate (at 0,78 s; the start returns at 6,52 s), an accepted risk. A forged Origin gets 403. |
+| B6 DevTools port and `remote-allow-origins=*` | Fixed with the pipe | With `expose_cdp=false` there is no port. With `expose_cdp=true`, the port answers before the gate (at 0.78 s; the start returns at 6.52 s), an accepted risk. A forged Origin gets 403. |
 | P2 cancel and then accept | Fixed | The slot is released and the late accept is ignored. |
 | SIGKILL of the server | Fixed with the pipe | Chrome exits in under 1 s. In port mode, it stays alive until the next start cleans it up. |
 | M3 `binary_path=/bin/echo` | Fixed | `NotABundle`. The new bypasses are in R1 and R2. |
@@ -292,7 +292,7 @@ All the earlier findings are fixed or are now reported as the contract foresees.
 
 **R3. Chrome writes the NetLog through a symlink (CONFIRMED).**
 - **Location:** `capture/src/lib.rs:173` creates and closes `netlog.json`, then Chrome opens the file by path (`lib.rs:479`, following the symlink); `lib.rs:366` rereads it by path.
-- **Scenario:** with `poc_netlog_race.py`, a process of the same user swapped the file for a symlink. An outside file, with mode 0644, received 236.913 bytes of full NetLog, with cookies and headers. It is the M4 class again, through another path.
+- **Scenario:** with `poc_netlog_race.py`, a process of the same user swapped the file for a symlink. An outside file, with mode 0644, received 236,913 bytes of full NetLog, with cookies and headers. It is the M4 class again, through another path.
 
 **R4. The elicitation text does not warn about the lack of authentication with `expose_cdp=true`.**
 - **What the contract requires:** 16b §2.5 says "The port has no authentication…" and "the elicitation must show this warning" (line 209).
@@ -302,7 +302,7 @@ All the earlier findings are fixed or are now reported as the contract foresees.
 
 **R5. Brute force of the whole value in `trace_value` (CONFIRMED).**
 - **Location:** `mcp/src/tools.rs:1458` (`trace_exact`). There is no rate limit, and a hit names the field.
-- **Scenario:** 10.000 guesses of 4 digits took 10,8 s (debug build) and found `4821@requestBody:pin` and `7351@cookies:sid`. A 6-digit code takes about 18 min.
+- **Scenario:** 10,000 guesses of 4 digits took 10.8 s (debug build) and found `4821@requestBody:pin` and `7351@cookies:sid`. A 6-digit code takes about 18 min.
 - **Aggravating factor:** `trace_value(cookie)` also exposes `valueLength` (`tools.rs:1272/1295`).
 
 **R6. Nested percent-encoded URL is not redacted (CONFIRMED; old gap).**
@@ -323,7 +323,7 @@ All the earlier findings are fixed or are now reported as the contract foresees.
 - **R11. Race between validating and executing the binary (CONFIRMED, 1 in 60).** Location: `browser.rs:212` and `lib.rs:534`. R2 makes the race unnecessary.
 - **R12. Pipe messages without a size limit, and navigate timeout not enforced.**
   - **Pipe:** `transport.rs:154` has no ceiling; the old WebSocket had 64 MiB.
-  - **Navigate:** with Chrome frozen, `navigate(timeout_ms=3000)` took 30,4 s.
+  - **Navigate:** with Chrome frozen, `navigate(timeout_ms=3000)` took 30.4 s.
 - **R13. Too much redaction (CONFIRMED).** Location: `sanitize.rs:1136-1142`. A whole support `ticket` object, `pin: true`, `jwtExpiresIn` and `shotp` are redacted.
 - **R14. The final `scrub_output` scan fell behind.** Location: `tools.rs:1809`; it only looks at strings with `?`. No real output depends on it today.
 - **Informational:**
@@ -338,7 +338,7 @@ All the earlier findings are fixed or are now reported as the contract foresees.
   - the shutdown flag and the in-flight starts counter are correctly ordered.
 - **Pipe transport:**
   - a message without a terminator or a Chrome that dies in the middle of a message end the capture cleanly;
-  - with Chrome stopped by SIGSTOP, the stop finishes in 22,5 s by killing the process;
+  - with Chrome stopped by SIGSTOP, the stop finishes in 22.5 s by killing the process;
   - Chrome's helper processes do not inherit the pipes.
 - **Chrome accepted in the validation:**
   - a symlink to the `.app` or to the binary resolves to `/Applications`;
@@ -379,7 +379,7 @@ There are two **confirmed medium** findings, and one of them is a regression int
 | R9 inherited fds | Fixed | `launcher-secret` does not appear in any Chrome pid; in pipe mode, fds 3 and 4 are still pipes. |
 | R10 SIGTERM during the stop | Fixed | With pipe, with port and with EOF, the `session.json` is written and no Chrome is left. The wait has a ceiling of 120 s (`live.rs:617`), with no deadlock. |
 | R11 TOCTOU between the check and the exec | Still reproduces (accepted risk) | Won 2 of 5 attempts. It is documented in 16b, lines 64-70. |
-| R12 pipe and navigate | Fixed | Navigate with Chrome stopped fails in 3,3 s (before, 30,4 s). A 140 MB message hits the ceiling. |
+| R12 pipe and navigate | Fixed | Navigate with Chrome stopped fails in 3.3 s (before, 30.4 s). A 140 MB message hits the ceiling. |
 | R13 too much redaction | Partial | `pin:true`, `jwtExpiresIn` and `shotp:1` now appear. The `ticket:{id,title}` object is still entirely redacted (Low). |
 | R14 `scrub_output` | Fixed | `#id_token=`, `token=` without `?` and userinfo come out masked. |
 
@@ -392,7 +392,7 @@ There are two **confirmed medium** findings, and one of them is a regression int
 - **Why the 16-character minimum is not enough:** when a short secret comes inside a known structure, the guess includes that known part, for example:
   - `Basic base64("admin:PIN")`, which has exactly 16 characters;
   - an id with a fixed prefix, such as `acct-000000000000-NNNN`.
-- **Evidence:** 11.064 queries and 222 reimports in 34,8 s recovered `4821` from the Authorization and `5531` from X-Session.
+- **Evidence:** 11,064 queries and 222 reimports in 34.8 s recovered `4821` from the Authorization and `5531` from X-Session.
 - **Side effects:**
   - each reimport writes a full copy of the session to disk;
   - `trace_value(cookie)` still exposes `valueLength` without reveal (`tools.rs:1282/1305`).
@@ -480,13 +480,13 @@ There is one **confirmed medium regression** (A4-M1), introduced by `d2a0ca6`. T
 
 | Item | State | Evidence |
 |---|---|---|
-| A3-M1 (brute force on `trace_value`) | Fixed | Without reveal, `trace_value(value)` always returns `reveal_required`, including after reimporting; the r27 brute force (10.000 queries, 200 reimports) found nothing. With `reveal=true` without `--allow-reveal`, it returns `reveal_disabled`. Cookie mode no longer carries `valueLength`. |
+| A3-M1 (brute force on `trace_value`) | Fixed | Without reveal, `trace_value(value)` always returns `reveal_required`, including after reimporting; the r27 brute force (10,000 queries, 200 reimports) found nothing. With `reveal=true` without `--allow-reveal`, it returns `reveal_disabled`. Cookie mode no longer carries `valueLength`. |
 | A3-M2 (regression from `5cdac78`) | Fixed in the reported cases | `Refresh: 0;url=/d?pin=%5BREDACTED%5D&page=2` comes out. The X-Note redirect, `next=/cb?token=` in JSON and in free text, `?next=/cb?token=URL1x` and the Location also come out masked. |
 | A3-B1 (double encoding) | Fixed | `%253F`, triple and quadruple encoding, `token+%3D`, `token%20%3D` and `token%2B%3D` come out masked. With 5 levels of encoding it still gets through, because the ceiling is 4 rounds (informational). |
-| A3-B2 (large message on the pipe) | Fixed in pipe mode | Navigate fails in 2,6 s with `frame_too_large`, the session comes out `partial` and the reason is `capture.cdp_transport_closed`. |
+| A3-B2 (large message on the pipe) | Fixed in pipe mode | Navigate fails in 2.6 s with `frame_too_large`, the session comes out `partial` and the reason is `capture.cdp_transport_closed`. |
 | A3-B3 (symlink at `netlog.json`) | Fixed for the 3 names | The stop finishes with the warning "havia um link simbólico" (there was a symbolic link), writes `netlog.json` as a regular 0600 file from memory, and the victim file stays intact. |
 | A3-B4 (Bearer/Basic in free text) | Fixed | `bearer\t`, `BEARER  x`, `Basic` followed by U+3000 and lowercase `basic` come out masked. |
-| navigate_timeout | Fixed | With Chrome stopped by SIGSTOP, it returns `navigate_timeout` in 3,3 s. |
+| navigate_timeout | Fixed | With Chrome stopped by SIGSTOP, it returns `navigate_timeout` in 3.3 s. |
 | escape_display | Partial | See A4-I1. |
 | Regressions of r25/r26/r26b and R1–R12 | No regression | Outputs compared with r27; R1, R2, R3, R4, R9, R10 and R12 pass. There is no excess redaction in `page`, `opinion`, `ticket_type`, `sort` and `q`. |
 
@@ -593,15 +593,15 @@ All the addendum 4 items are fixed.
 
 | Input | HEAD | bacdc30 |
 |---|---|---|
-| matrix `;a=%3Fb%3D` (worst case) | 3,0 s | 204 ms |
-| matrix `;a=b=c` | 2,2 s | 348 ms |
-| nested `%25` | 1,4 s | 42 ms |
-| `a=%3Fb%3Dc&` | 1,2 s | 593 ms |
-| repeated `a=` | 1,0 s | 8,4 ms |
+| matrix `;a=%3Fb%3D` (worst case) | 3.0 s | 204 ms |
+| matrix `;a=b=c` | 2.2 s | 348 ms |
+| nested `%25` | 1.4 s | 42 ms |
+| `a=%3Fb%3Dc&` | 1.2 s | 593 ms |
+| repeated `a=` | 1.0 s | 8.4 ms |
 | encoding with 4, 8 and 9 levels | 457 / 315 / 172 ms | 250 / 88 / 84 ms |
 | nesting of 100 thousand levels | 50 ms | — |
 
-The cost grows linearly on all inputs, with no panic and no stack overflow. The worst case is about 3,6× that of r28. The 8 rounds are not the cause of the increase; it comes from three points:
+The cost grows linearly on all inputs, with no panic and no stack overflow. The worst case is about 3.6× that of r28. The 8 rounds are not the cause of the increase; it comes from three points:
 - the scan restarts at every `=` (`sanitize.rs:1110`);
 - `effective_name` allocates memory for each candidate;
 - the matrix goes over the text twice.
@@ -643,7 +643,7 @@ Severity: Low.
     - a `.tmp-*` is left behind.
   - Nothing was written to the swap target in 13 attempts.
 - **A5-B3. The rescue keeps the whole Chrome profile without cleanup (CONFIRMED).**
-  - It is 8,7 MB, including Cookies, Login Data and History.
+  - It is 8.7 MB, including Cookies, Login Data and History.
   - The permissions are correct (0700/0600), and the path cannot be planted beforehand because the directory is created new.
   - The orphan marker is removed at the end of the capture, so `cleanup_orphans` never deletes this profile. The only clue to it is the error message.
   - `cdp-bodies.jsonl` is not rescued.
@@ -704,7 +704,7 @@ There is one **confirmed medium regression** (A6-M1) and one **confirmed medium 
 ### New tokenizer (`core/src/export/scrub.rs`)
 
 **Fuzz, in release:**
-- **150 thousand structured cases:** 0 panics, 0 fidelity losses, 0 non-idempotent outputs. There were 14.417 leaks, all with exactly 8 levels of encoding (A6-B1). `49f` had 89.757 leaks at all depths.
+- **150 thousand structured cases:** 0 panics, 0 fidelity losses, 0 non-idempotent outputs. There were 14,417 leaks, all with exactly 8 levels of encoding (A6-B1). `49f` had 89,757 leaks at all depths.
 - **300 thousand random inputs:** 0 panics, 0 leaks and 5 non-idempotent outputs (Info: two adjacent placeholders).
 
 **Boundaries:** clean for split UTF-8, `%FF`, overlong encodings, escapes that form new escapes, truncated escapes, end of string, Unicode spaces and placeholder forms.
@@ -713,11 +713,11 @@ There is one **confirmed medium regression** (A6-M1) and one **confirmed medium 
 
 | Input | HEAD | 49f |
 |---|---|---|
-| matrix `;a=%3Fb%3D`, 4 MB | 0,32 s | 3,0 s |
-| repeated `a=`, 4 MB | 0,04 s | 1,0 s |
-| nested `%25`, 16 MB | 1,2 s | 5,7 s |
-| `%25`×8 with `3D`, `=` and `&` in URL, 4 MB | **0,95 s** | 0,30 s |
-| chain `%`+`25`×n, 16 MB | **1,4 s** | 0,44 s |
+| matrix `;a=%3Fb%3D`, 4 MB | 0.32 s | 3.0 s |
+| repeated `a=`, 4 MB | 0.04 s | 1.0 s |
+| nested `%25`, 16 MB | 1.2 s | 5.7 s |
+| `%25`×8 with `3D`, `=` and `&` in URL, 4 MB | **0.95 s** | 0.30 s |
+| chain `%`+`25`×n, 16 MB | **1.4 s** | 0.44 s |
 
 The announced ceiling of 324 ms does not hold for URL inputs of 4 MB. The probable cause, not verified, is `sanitize_query` (`sanitize.rs:903`) calling `scrub()` once per `&` pair.
 
@@ -749,10 +749,10 @@ The announced ceiling of 324 ms does not hold for URL inputs of 4 MB. The probab
 
   | 16 MB input | HEAD | 49f |
   |---|---|---|
-  | `%2525…` | 1,31 GB | 197 MB |
-  | nested construction | 2,19 GB | 1,05 GB |
+  | `%2525…` | 1.31 GB | 197 MB |
+  | nested construction | 2.19 GB | 1.05 GB |
 
-  Bodies have a ceiling of 8 MB (about 0,65 GB); headers and URLs are limited only by the size of the HAR.
+  Bodies have a ceiling of 8 MB (about 0.65 GB); headers and URLs are limited only by the size of the HAR.
 - **A6-B4. Forms that already leaked before:**
   - HTML entities of `=`: `&#0061;`, `&#x003D;`, `&#61` without `;`, `&amp;#61;` and `token &#61; X` (`scrub.rs:542`);
   - the full-width `＝`;
@@ -815,12 +815,12 @@ The accepted risks do not count either: the gap after the final recheck, the `de
 | A6-M2 (truncation in the text path) | Partial | The text no longer alters an already sanitized URL, and idempotence is back. Raw text still loses `/b/c?x=1` (A7-B5). |
 | A6-B1 (8 levels of encoding) | Fixed | From the 8th to the 10th level it comes out masked, with the suffix and the outer `&page` preserved. |
 | A6-B2 (`\|`, `[`, `{` in the value) | Fixed | `AB\|X`, `AB[X]`, `AB{X}` and `[abc]TAIL` come out masked. |
-| A6-B3 (memory) | Fixed | RSS peak with 16 MB: 34 MB on the chain, 34 MB on the construction and 125 MB on the groups of about 1 MB. Part of the 2,19 GB of r30 came from the input generator. |
+| A6-B3 (memory) | Fixed | RSS peak with 16 MB: 34 MB on the chain, 34 MB on the construction and 125 MB on the groups of about 1 MB. Part of the 2.19 GB of r30 came from the input generator. |
 | A6-B4 (entities and variants of `=`) | Partial | 6 forms fixed; `&amp;#61;` and a lone `＝` still leak (A7-B1, A7-B2). |
 | A6-B5 (folder swap) | Fixed | In 32 swaps (16 debug, 16 release, from 0 to 30 ms), **nothing was written to the target**. In 31 the stop fails and the content goes to `.moved` and to the rescue. 1 got through after the final recheck, which is the accepted gap. |
 | A6-B6 (rescue failure) | Fixed | Real ENOSPC on a 64 MB RAM disk. Plan B deletes Cookies, History, Login Data and Local State and keeps events, bodies, NetLog and `motivo.txt` (0700/0600) with a marker. At 8 days, the next startup deletes the folder. |
 | A6-B7 (forged marker) | Fixed | Forged markers do not delete a recent rescue. `touch -t` on the folder deletes, but this requires the same user and is documented (16b, l.269-271). |
-| Cost | OK | Linear growth. Worst case: 438 ms with 4 MB (the promise was under 400 ms; `d50` gave 433 ms) and 1,7 s with 16 MB. |
+| Cost | OK | Linear growth. Worst case: 438 ms with 4 MB (the promise was under 400 ms; `d50` gave 433 ms) and 1.7 s with 16 MB. |
 | Capture regressions | All pass | R1–R4, R9, R10, R12, A3-B2, A3-B3, A4-B2 to A4-B5, A5-B2 to A5-B4 and `navigate_timeout`. |
 
 ### Fuzz (release, 4 seeds)
@@ -828,10 +828,10 @@ The accepted risks do not count either: the gap after the final recheck, the `de
 Each seed ran 150 thousand structured cases and 900 thousand random inputs:
 - 0 leaks and 0 panics;
 - 0 non-idempotent outputs in the structured cases;
-- about 18,3 thousand fidelity losses per seed, all within the accepted fail-closed: only the inner sibling is lost with 8 levels (7 with redirect context);
-- between 76 and 104 non-idempotent outputs per seed on the random inputs (under 0,1 %).
+- about 18.3 thousand fidelity losses per seed, all within the accepted fail-closed: only the inner sibling is lost with 8 levels (7 with redirect context);
+- between 76 and 104 non-idempotent outputs per seed on the random inputs (under 0.1 %).
 
-For comparison, `d50` had 14.417 leaks on seed 1.
+For comparison, `d50` had 14,417 leaks on seed 1.
 
 ### Corpus coverage
 
@@ -921,7 +921,7 @@ There are three **confirmed medium** findings and no high one:
 | A7-B3 `\X`, `"X`, `&#61;X` | masked | leaks | Fixed |
 | A7-B4 `'a'"X`, `"a"(X)`, `[a][X]`, `(token=AB(c)X)` | masked | leaks | Fixed |
 | A7-B5 `;jsessionid=X/b/c?x=1` (request line, header, JSON) and `/a;v=2/session=keep/b` | `/b/c?x=1` and `/b` preserved | lost | Fixed |
-| A7-B6 4 MB group without sensitive name / with sensitive name | preserved whole (4,2 MB in `get_body`) / redacted | 14 B / redacted | Fixed |
+| A7-B6 4 MB group without sensitive name / with sensitive name | preserved whole (4.2 MB in `get_body`) / redacted | 14 B / redacted | Fixed |
 | A7-B7 `cdp-bodies.jsonl` | `capture/src/lib.rs:179` uses `fdio::create_replacing_at` (O_EXCL, O_NOFOLLOW, 0600); the 8 `fdio` tests pass | — | Fixed by code reading, with no live race |
 | 16b §2.4 | lines 213-225 describe A7-B7; the message at lines 244-256 became coherent and carries the `.moved` path | — | Fixed |
 
@@ -964,9 +964,9 @@ There are three **confirmed medium** findings and no high one:
 
   | | Seed 1 | Seed 2 |
   |---|---|---|
-  | Leaks at HEAD | 45,6 thousand | 45,1 thousand |
-  | Leaks at a7087f4 | 17,9 thousand | 17,5 thousand |
-  | Fidelity losses at HEAD | 10,6 thousand | 10,6 thousand |
+  | Leaks at HEAD | 45.6 thousand | 45.1 thousand |
+  | Leaks at a7087f4 | 17.9 thousand | 17.5 thousand |
+  | Fidelity losses at HEAD | 10.6 thousand | 10.6 thousand |
   | Fidelity losses at a7087f4 | 107 thousand | 107 thousand |
 
   The new rule greatly improved fidelity, but opened leaks:
@@ -980,10 +980,10 @@ There are three **confirmed medium** findings and no high one:
 
 | Input | HEAD | a7087f4 |
 |---|---|---|
-| 1 MB of `/a;token=` + (`A`×16 + `/`)… | 1,4 s | 8 ms |
+| 1 MB of `/a;token=` + (`A`×16 + `/`)… | 1.4 s | 8 ms |
 | 4 MB of the same input | 21 s | 23 ms |
 | 4 MB of repeated `A=/` | 121 s | 18 ms |
-| 4 MB JSON body via MCP `get_body` | **22,05 s** | 0,10 s |
+| 4 MB JSON body via MCP `get_body` | **22.05 s** | 0.10 s |
 
 - **Extrapolation, not measured:** 16 MB would take 6 to 30 min.
 - **Outside the problem:** the inputs `/a;token=x/` and `/t=x/` remain linear (at most 468 ms with 16 MB).
@@ -1075,7 +1075,7 @@ Left out, by decision of the leader:
 | Item | State | Evidence |
 |---|---|---|
 | A8-M1 (secret with `/`) | Fixed | R01–R30: H leaks in 1 case (R06, out of scope); P leaks in 21 and B in 15. In the MCP (`get_request`, `get_body`, `search_bodies`, `list_requests`), H leaks none of the 60 markers; P leaks 25 and B leaks 21. Query, ` HTTP/1.1` and `&z=1` are preserved. |
-| A8-M2 (quadratic cost) | Fixed | Linear cost: `/a;token=`+(16A+`/`) takes 7, 26 and 69 ms with 1, 4 and 16 MB (P: 1,4 s with 1 MB); `A=/` with 16 MB takes 77 ms (P: 7,9 s with 1 MB); a 4 MB `get_body` takes 0,12 s (P: 21,8 s). |
+| A8-M2 (quadratic cost) | Fixed | Linear cost: `/a;token=`+(16A+`/`) takes 7, 26 and 69 ms with 1, 4 and 16 MB (P: 1.4 s with 1 MB); `A=/` with 16 MB takes 77 ms (P: 7.9 s with 1 MB); a 4 MB `get_body` takes 0.12 s (P: 21.8 s). |
 | A8-M3 (start URL in the clear) | Fixed, with residues | The preferences do not store userinfo, query or fragment. An already existing directory with 0755 goes to 0700, and the file comes out 0600. The temporary is born with 0600 and O_NOFOLLOW, with no window at 0644. A symlink and a directory at the destination are refused. Residues: A9-B3 and A9-B4. |
 | A8-B1 (`&amp;amp;#61;`) | Fixed | `&amp;amp;#61;`, `&amp;amp;amp;#x3d;`, `equals;`, `&AMP;Amp;` and `#0061` come out masked, including end to end. |
 | A8-B2 (`＝` inside URL) | Fixed | `sanitize_url("/s;token＝X/…")` comes out masked, including end to end. |
@@ -1089,10 +1089,10 @@ Left out, by decision of the leader:
 
 | Seed | H: leaks | H: losses A7-B5 / others | P: leaks / losses | B: leaks / losses |
 |---|---|---|---|---|
-| 1 | **0** | 107.352 / **0** | 45.596 / 10.578 | 17.870 / 107.352 |
-| 2 | **0** | 107.136 / **0** | 45.086 / 10.721 | 17.471 / 107.136 |
-| 3 | **0** | 107.253 / **0** | 45.604 / 10.778 | 17.883 / 107.253 |
-| 4 | **0** | 107.209 / **0** | 45.170 / 10.656 | 17.699 / 107.209 |
+| 1 | **0** | 107,352 / **0** | 45,596 / 10,578 | 17,870 / 107,352 |
+| 2 | **0** | 107,136 / **0** | 45,086 / 10,721 | 17,471 / 107,136 |
+| 3 | **0** | 107,253 / **0** | 45,604 / 10,778 | 17,883 / 107,253 |
+| 4 | **0** | 107,209 / **0** | 45,170 / 10,656 | 17,699 / 107,209 |
 
 - **Extra variants:** Link, JSON with two keys and a comma-plus-space list (about 107 thousand each) had no leaks, and the following item was always preserved.
 - **Repository tests:** `cargo test --offline --release --test corpus --test corpus_fuzz --test corpus_fuzz_path` passes 5/5.

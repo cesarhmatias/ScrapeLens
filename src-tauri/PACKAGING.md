@@ -16,7 +16,7 @@ refused; copy is streamed with `O_NOFOLLOW`, files 0600 and directory 0700.
 Nothing from the source is changed.
 
 Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
-SHA-256 of `Contents/MacOS/scrapelens` (18.268.880 bytes):
+SHA-256 of `Contents/MacOS/scrapelens` (18,268,880 bytes):
 `bd8d10a6b753287ad85235c7a48a3b6a3659f612d7e9e2b08cc55feb40fd5d71`.
 Signed with `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
 passed and DR preserved (`d0a53befa59a447043abc9e58a3381addbbf1751`).
@@ -43,7 +43,7 @@ are imported by the capture crate before navigating; failures are shown by the
 capture start warning.
 
 Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
-Internal executable `Contents/MacOS/scrapelens`: **18.277.584 bytes**,
+Internal executable `Contents/MacOS/scrapelens`: **18,277,584 bytes**,
 SHA-256 `9645c147f2f43b3286421d94e7e0a39376b2add404f0e22b0502fe0bff8a80c8`.
 The hash identifies the executable, not the `.app` directory.
 Signature `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
@@ -121,7 +121,7 @@ rerunning the same command completed with exit code 0. Log of the successful att
 | Core | path `scrapelens-core`; `3fe7efc` (A9-B1/A9-B2) with P1/P2/P3/P6/P7 (streamed validation, index-based correlation, compact `session.json`, `sanitize_bundle_owned`) |
 | Capture | crate `capture/`; descriptor-based writing in `capture/src/fdio.rs`; CDP over pipe; `SCRAPELENS_CDP_TRANSPORT=port` returns to the old mode (`737290a`) |
 | Build date | 2026-11-02 (UTC−03) |
-| Working tree | clean HEAD `f81ea80`; `src-tauri/Cargo.lock` unchanged; `SCRAPELENS_TEST_MODE=1 --open-capture tests/capture/runs/20261027T0730Z/session-har` filled the list through the paginated contract (`list_requests offset=0 items=15 matched=15 total=15`); `--open-capture /private/tmp/big20k` paginated 20.002 requests in 11 pages of 2.000 |
+| Working tree | clean HEAD `f81ea80`; `src-tauri/Cargo.lock` unchanged; `SCRAPELENS_TEST_MODE=1 --open-capture tests/capture/runs/20261027T0730Z/session-har` filled the list through the paginated contract (`list_requests offset=0 items=15 matched=15 total=15`); `--open-capture /private/tmp/big20k` paginated 20,002 requests in 11 pages of 2,000 |
 
 There is no sidecar, helper process or Node/Python runtime in the product.
 
@@ -211,8 +211,8 @@ command in Terminal (do not save the password to a file or in the chat).
 | Bundle | `src-tauri/target/release/bundle/macos/ScrapeLens.app` |
 | Executable | `ScrapeLens.app/Contents/MacOS/scrapelens` |
 | Architecture | `Mach-O 64-bit executable arm64`, thin (no universal binary) |
-| Bundle size | 18.332 KiB (`du -sk`) |
-| Executable size | 18.015.088 bytes |
+| Bundle size | 18,332 KiB (`du -sk`) |
+| Executable size | 18,015,088 bytes |
 | Executable SHA-256 | `fcdc4bd26a71a4e31e5366d7e2b881e0c5cd63911589186d70db17068ad4acde` |
 | Identifier | `app.scrapelens.desktop` |
 | Signature | `ScrapeLens Local Signing` (`flags=0x10000(runtime)`, `TeamIdentifier=not set`) — **not** Developer ID |
@@ -241,9 +241,9 @@ produces a byte-different binary (the linker signs before the bundle), so the ha
   `list_requests offset=0 items=15 matched=15 total=15`; window closed by SIGTERM.
   The log exists only in test mode; the list came through the new contract, not from
   the whole `session.json` in the front end.
-- `--open-capture /private/tmp/big20k` (session of 20.002 requests) → 11 pages of
-  2.000 + 2 final, `matched=20002 total=20002`. RSS of the `WebKit.WebContent` process
-  on open: **181.488 KiB (~177 MiB)**; main process **1.334.736 KiB (~1,27 GiB)**.
+- `--open-capture /private/tmp/big20k` (session of 20,002 requests) → 11 pages of
+  2,000 + 2 final, `matched=20002 total=20002`. RSS of the `WebKit.WebContent` process
+  on open: **181,488 KiB (~177 MiB)**; main process **1,334,736 KiB (~1.27 GiB)**.
 - The window must be active: with the app in the background, WebKit did not run the
   `list_requests` calls until activation (macOS throttling/App Nap).
   The measurement and list confirmation were done with the window active; without
@@ -329,7 +329,7 @@ Folder: `src-tauri/evidence/export/`.
 
 Session used: `~/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2`
 (24 requests, imported from synthetic HAR at `127.0.0.1:8781`). The reference
-sanitized folder (0700/0600, `session.json` with 872.082 bytes) was generated in
+sanitized folder (0700/0600, `session.json` with 872,082 bytes) was generated in
 `evidence/export/sanitized-har-synthetic/` and checked by searching for markers:
 `fromjs`, `sc_a=alpha` and `sc_b=beta` do not appear in any sanitized file. It is
 derived and therefore not in git; the `export_dump` example that generated it was
@@ -370,6 +370,6 @@ by the bundle, but the manual pass through `NSSavePanel` was not automated in th
 - The manual save flow through `NSSavePanel` inside the bundle was not automated: the
   native macOS panel does not expose AX to the driver (`off_space_or_ax_unresolved`),
   and the foreground attempt hit another app.
-  Two-minute validation script: open `ScrapeLens.app`, `Open capture…` →
+  2-minute validation script: open `ScrapeLens.app`, `Open capture…` →
   `har-3dbc391c02a985c5-2`, open the `/setcookie` request, `Export…`, `Save…`, choose a
   new folder and check that the file is 0600; then `Sanitize…` and `Open sanitized session`.

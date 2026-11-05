@@ -10,7 +10,7 @@ Captured during this evaluation, from the running implementation. All photograph
 | `04-comparison-1440.jpg` | Default comparison req-0009/req-0010 |
 | `05-no-results-1440.jpg` | Search with no results and clear action |
 | `06-session-1280.jpg` | Browser, 1280 × 800 viewport |
-| `07-many-requests-1440.jpg` | Original stress fixture of 12.000 records; no real capture |
+| `07-many-requests-1440.jpg` | Original stress fixture of 12,000 records; no real capture |
 | `08-desktop-har-synthetic.png` | Isolated Tauri instance, real import of the fictitious 64-call HAR |
 | `09-desktop-filter-api-empty.png` | Fetch/XHR returns zero after the import; `_resourceType` not carried over |
 | `10-desktop-session-reopened.png` | Native reopening of the persisted folder, 64 calls |
