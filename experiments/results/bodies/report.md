@@ -1,6 +1,6 @@
-# Corpos ao vivo — Google Chrome 156.0.8078.73
+# Live bodies — Google Chrome 156.0.8078.73
 
-| caso | ok | estado(s) | detalhe |
+| case | ok | state(s) | detail |
 |---|---|---|---|
 | form | ✓ | request:captured, response:captured | |
 | json | ✓ | request:captured, response:captured | |

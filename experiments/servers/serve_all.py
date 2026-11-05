@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Sobe os três servidores de observação em um processo (h1, h2, h3).
+"""Starts the three observation servers in one process (h1, h2, h3).
 
-Uso: serve_all.py --outdir results/<exp> [--certs certs/] [--port-base 8781]
-Grava: server-h1.jsonl, server-h2.jsonl, server-h3.jsonl
+Usage: serve_all.py --outdir results/<exp> [--certs certs/] [--port-base 8781]
+Writes: server-h1.jsonl, server-h2.jsonl, server-h3.jsonl
 """
 from __future__ import annotations
 

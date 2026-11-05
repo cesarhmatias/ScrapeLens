@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * CDP multi-alvo: Target.setDiscoverTargets + setAutoAttach recursivo,
- * Network.enable antes de Runtime.runIfWaitingForDebugger em cada sessão.
+ * CDP multi-target: Target.setDiscoverTargets + recursive setAutoAttach,
+ * Network.enable before Runtime.runIfWaitingForDebugger in each session.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -227,7 +227,7 @@ async function main() {
     }
   }
   if (!rootSession) {
-    throw new Error(`sessão principal não anexada para target ${mainTargetId}`);
+    throw new Error(`main session not attached for target ${mainTargetId}`);
   }
 
   const S = (method, params) => send(method, params, rootSession);

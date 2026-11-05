@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Servidor HTTP/1.1 de observação, sem biblioteca HTTP.
+"""HTTP/1.1 observation server, without an HTTP library.
 
-Lê bytes crus de um socket TCP e registra os headers na ordem e com as
-repetições em que apareceram na linha de decodificação. Não há normalização,
-junção de duplicatas nem dicionário: a lista de pares é a evidência.
+Reads raw bytes from a TCP socket and records the headers in the order and with the
+repetitions in which they appeared on the decoding line. There is no normalization,
+duplicate merging or dictionary: the list of pairs is the evidence.
 """
 from __future__ import annotations
 

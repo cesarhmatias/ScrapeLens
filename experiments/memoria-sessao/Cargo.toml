@@ -3,7 +3,7 @@ name = "memoria-sessao"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Mede o pico de memória (RSS) de cada etapa de abrir uma sessão grande (docs/18-memoria-sessoes-grandes.md). Só leitura: não altera o core."
+description = "Measures the peak memory (RSS) of each step of opening a large session (docs/18-memoria-sessoes-grandes.md). Read-only: does not change the core."
 
 [dependencies]
 scrapelens-core = { path = "../../core" }

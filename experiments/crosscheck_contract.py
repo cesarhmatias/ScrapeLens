@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Cross-check: o mesmo pipeline CDP/NetLog contra os servidores do contrato
-(`testserver/`, Rust + httlib-hpack + quiche) em vez do mock Python.
+"""Cross-check: the same CDP/NetLog pipeline against the contract servers
+(`testserver/`, Rust + httlib-hpack + quiche) instead of the Python mock.
 
-Objetivo: confirmar que as conclusões da matriz não dependem da implementação
-do servidor de referência.
+Goal: confirm that the matrix conclusions do not depend on the implementation
+of the reference server.
 
-Uso:
+Usage:
   .venv/bin/python crosscheck_contract.py --proto all
-Saída: results/contract-<proto>/{layers.json,report.md,server-h*.jsonl,evidence/}
-Somente leitura em testserver/ e fixtures/ — nada é editado lá.
+Output: results/contract-<proto>/{layers.json,report.md,server-h*.jsonl,evidence/}
+Read-only on testserver/ and fixtures/ — nothing is edited there.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ SPKI_FILE = REPO / "fixtures" / "tls" / "spki-sha256-base64.txt"
 PY = str(HERE / ".venv" / "bin" / "python")
 NODE = shutil.which("node") or "/opt/homebrew/bin/node"
 
-# O testserver pode ser Rust ou Go; o contrato (portas/endpoints/JSONL) é o mesmo.
+# The testserver may be Rust or Go; the contract (ports/endpoints/JSONL) is the same.
 BIN_CANDIDATES = [
     REPO / "testserver" / "target" / "release" / "scrapelens-testserver",
     REPO / "testserver" / "target" / "debug" / "scrapelens-testserver",
@@ -51,8 +51,8 @@ def discover_bin(explicit: str | None = None) -> pathlib.Path:
     if found:
         return pathlib.Path(found)
     raise SystemExit(
-        "binário do testserver não encontrado; passe --bin CAMINHO "
-        f"(procurei em: {', '.join(str(c) for c in BIN_CANDIDATES)})"
+        "testserver binary not found; pass --bin PATH "
+        f"(searched in: {', '.join(str(c) for c in BIN_CANDIDATES)})"
     )
 
 PORTS = {"h1": 8781, "h2": 8782, "h3": 8783}
@@ -63,8 +63,8 @@ def plan_for(proto: str) -> dict:
     if proto == "h1":
         base = "http://127.0.0.1:8781"
     elif proto == "h3":
-        # O testserver serve h3 no mesmo origin do h2 (listener UDP extra na 8782);
-        # é assim que o próprio scripts/chrome-probe.sh mede h3.
+        # The testserver serves h3 on the same origin as h2 (extra UDP listener on 8782);
+        # this is how scripts/chrome-probe.sh itself measures h3.
         base = "https://127.0.0.1:8782"
     else:
         base = f"https://127.0.0.1:{PORTS[proto]}"
@@ -84,10 +84,10 @@ def wait_line(proc: subprocess.Popen, needle: str, timeout: float = 30.0) -> Non
             if needle in line:
                 return
         elif proc.poll() is not None:
-            raise RuntimeError(f"testserver morreu antes de '{needle}'")
+            raise RuntimeError(f"testserver died before '{needle}'")
         else:
             time.sleep(0.05)
-    raise RuntimeError(f"timeout esperando '{needle}'")
+    raise RuntimeError(f"timeout waiting for '{needle}'")
 
 
 def convert(src: pathlib.Path, dst: pathlib.Path, proto: str) -> int:
@@ -169,17 +169,17 @@ def run_proto(proto: str, bin_path: pathlib.Path) -> dict:
 
     src = outdir / "evidence" / proto / f"{proto}.jsonl"
     if not src.exists():
-        raise RuntimeError(f"evidência do contrato ausente: {src}")
+        raise RuntimeError(f"contract evidence missing: {src}")
     n = convert(src, outdir / f"server-{proto}.jsonl", proto)
     (outdir / "run.json").write_text(json.dumps({"experiment": outdir.name, "chrome": {"Browser": "Chrome/156.0.8078.48"}, "source": "testserver"}, indent=2))
-    print(f"{proto}: {n} requisições convertidas de {src}")
+    print(f"{proto}: {n} requests converted from {src}")
     return {"proto": proto, "rows": n, "dir": str(outdir)}
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--proto", default="all", choices=["h1", "h2", "h3", "all"])
-    ap.add_argument("--bin", help="binário do testserver (Rust ou Go); padrão: autodetecção")
+    ap.add_argument("--bin", help="testserver binary (Rust or Go); default: auto-detect")
     args = ap.parse_args()
     bin_path = discover_bin(args.bin)
     print(f"testserver: {bin_path}")

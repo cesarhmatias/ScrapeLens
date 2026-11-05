@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analisa captura multi-alvo: NetLog × CDP × log do servidor por marcador ?m=."""
+"""Analyzes multi-target capture: NetLog × CDP × server log per ?m= marker."""
 from __future__ import annotations
 
 import argparse
@@ -309,7 +309,7 @@ def build_summary(report: dict) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run", type=pathlib.Path, required=True, help="dir with wait-debugger run")
+    ap.add_argument("--run", type=pathlib.Path, required=True, help="directory with the wait-debugger run")
     ap.add_argument("--run-no-wait", type=pathlib.Path, help="variant without waitForDebuggerOnStart")
     ap.add_argument("--out", type=pathlib.Path, required=True)
     args = ap.parse_args()

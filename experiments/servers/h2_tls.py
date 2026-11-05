@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Servidor HTTP/2 (TLS/ALPN) que registra a lista de headers decodificada.
+"""HTTP/2 server (TLS/ALPN) that records the decoded list of headers.
 
-Usa a biblioteca `h2`, cujo evento RequestReceived entrega `headers` como
-lista ordenada de pares — resultado direto da decodificação HPACK, antes de
-qualquer conversão para dicionário. Duplicatas aparecem como pares repetidos.
+Uses the `h2` library, whose RequestReceived event delivers `headers` as an
+ordered list of pairs — the direct result of HPACK decoding, before any
+conversion into a dictionary. Duplicates appear as repeated pairs.
 """
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Prova mínima: setAutoAttach na sessão da página + recursivo em iframe/worker,
- * com log de attaches e comandos CDP por sessão. Só /multi/ (sem blank/popup extra).
+ * Minimal probe: setAutoAttach on the page session + recursive on iframe/worker,
+ * with a log of attaches and CDP commands per session. Only /multi/ (no extra blank/popup).
  */
 import fs from "node:fs";
 import path from "node:path";

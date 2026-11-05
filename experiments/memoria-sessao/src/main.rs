@@ -1,11 +1,11 @@
-//! Mede, uma etapa por processo, o pico de RSS de abrir uma sessão grande.
+//! Measures, one stage per process, the peak RSS of opening a large session.
 //!
-//! Uso: `memoria-sessao <etapa> <pasta-da-sessao>`; imprime uma linha JSON por
-//! checkpoint (`rss` atual e `peak` até ali, em MiB) e uma linha final.
-//! Etapas: base, app-open, app-open-ipc, import-eager, import-eager-pretty,
+//! Usage: `memoria-sessao <stage> <session-dir>`; prints one JSON line per
+//! checkpoint (current `rss` and `peak` up to that point, in MiB) and a final line.
+//! Stages: base, app-open, app-open-ipc, import-eager, import-eager-pretty,
 //! import-eager-sanitize, lazy, lazy-search, netlog-only, cdp-only, capture-full,
-//! capture-write. Cada etapa roda num processo novo para o pico ser só dela.
-//! Só lê a sessão; `capture-write` grava numa pasta temporária.
+//! capture-write. Each stage runs in a new process so the peak belongs only to it.
+//! Only reads the session; `capture-write` writes to a temporary directory.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,7 +18,7 @@ fn mib(bytes: u64) -> f64 {
     (bytes as f64 / (1024.0 * 1024.0) * 10.0).round() / 10.0
 }
 
-/// Pico de RSS do processo até agora (macOS: bytes; Linux: KiB).
+/// Peak RSS of the process so far (macOS: bytes; Linux: KiB).
 fn peak_mib() -> f64 {
     // SAFETY: `getrusage` preenche a estrutura passada.
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
@@ -31,7 +31,7 @@ fn peak_mib() -> f64 {
     }
 }
 
-/// RSS atual (`ps`), em MiB.
+/// Current RSS (`ps`), in MiB.
 fn rss_mib() -> f64 {
     let out = Command::new("ps")
         .args(["-o", "rss=", "-p", &std::process::id().to_string()])
@@ -57,7 +57,7 @@ impl Meter {
     }
 }
 
-/// Descarta os bytes e só os conta (o que importa é a memória, não o destino).
+/// Discards the bytes and only counts them (memory is what matters, not the destination).
 struct CountingSink(u64);
 
 impl std::io::Write for CountingSink {
@@ -96,14 +96,14 @@ fn read(path: &Path) -> Vec<u8> {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let stage = args.next().expect("uso: memoria-sessao <etapa> <pasta>");
-    let dir = PathBuf::from(args.next().expect("pasta da sessão"));
+    let stage = args.next().expect("usage: memoria-sessao <stage> <session-dir>");
+    let dir = PathBuf::from(args.next().expect("session directory"));
     let m = Meter { stage: stage.clone(), started: Instant::now() };
-    m.check("início");
+    m.check("start");
     match stage.as_str() {
         "base" => {}
-        // Composição do session.json: bytes serializados por campo da 1ª requisição
-        // e média por campo (amostra de até 200 requisições).
+        // Composition of session.json: serialized bytes per field of the 1st request
+        // and the average per field (sample of up to 200 requests).
         "shape" => {
             let imported = scrapelens_core::import_session_dir(&dir).unwrap();
             let requests = &imported.bundle.session.requests;
@@ -132,37 +132,37 @@ fn main() {
                 }
             }
         }
-        // Só validar que o netlog.json é JSON: DOM completo (o que o core faz hoje em
-        // `import_session_dir`) contra validação em fluxo sem DOM (`IgnoredAny`).
+        // Only validate that netlog.json is JSON: full DOM (what the core does today in
+        // `import_session_dir`) versus streaming validation without a DOM (`IgnoredAny`).
         "validate-value" | "validate-ignored" => {
             let bytes = read(&dir.join("netlog.json"));
-            m.check("ler netlog.json");
+            m.check("read netlog.json");
             let ok = if stage == "validate-value" {
                 serde_json::from_slice::<Value>(&bytes).is_ok()
             } else {
                 serde_json::from_slice::<serde::de::IgnoredAny>(&bytes).is_ok()
             };
-            m.check("validar");
+            m.check("validate");
             println!("{}", json!({"valid": ok}));
         }
-        // Aproximação da PROPOSTA para o `import_session_dir`: o mesmo trabalho, mas
-        // com o netlog.json validado em fluxo (`IgnoredAny`) em vez de virar um DOM.
+        // Approximation of the PROPOSAL for `import_session_dir`: the same work, but
+        // with netlog.json validated as a stream (`IgnoredAny`) instead of becoming a DOM.
         "eager-ignored" => {
             let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&dir).unwrap();
-            m.check("sessão tipada (open_session_dir_lazy)");
+            m.check("typed session (open_session_dir_lazy)");
             let cdp = read(&dir.join("cdp-events.jsonl"));
             let netlog = read(&dir.join("netlog.json"));
-            m.check("bytes de cdp-events + netlog");
+            m.check("cdp-events + netlog bytes");
             let ok = serde_json::from_slice::<serde::de::IgnoredAny>(&netlog).is_ok();
-            m.check("validação em fluxo do netlog");
-            // Os anexos entram na memória como no `import_session_dir` (lidos um a um).
+            m.check("streaming validation of netlog");
+            // Attachments enter memory as in `import_session_dir` (read one by one).
             let mut attachments: Vec<Vec<u8>> = Vec::new();
             if let Ok(entries) = std::fs::read_dir(dir.join("attachments")) {
                 for entry in entries.flatten() {
                     attachments.push(std::fs::read(entry.path()).unwrap_or_default());
                 }
             }
-            m.check("anexos para a memória");
+            m.check("attachments into memory");
             println!("{}", json!({"valid": ok, "cdpMiB": mib(cdp.len() as u64), "attachments": attachments.len(),
                 "requests": lazy.session.requests.len()}));
         }
@@ -177,15 +177,15 @@ fn main() {
                        "attachmentsMiB": mib(att), "attachmentFiles": n})
             );
         }
-        // Mesmo caminho do App ao abrir (`read_session_payload`): texto inteiro + DOM.
+        // Same path as the App on open (`read_session_payload`): whole text + DOM.
         "app-open" | "app-open-ipc" => {
             let raw = std::fs::read_to_string(dir.join("session.json")).unwrap();
             m.check("read_to_string");
             let session: Value = serde_json::from_str(&raw).unwrap();
             m.check("serde_json::Value (DOM)");
             if stage == "app-open-ipc" {
-                // O payload do comando é MOVIDO (sem clone) e serializado para o
-                // front-end (IPC do Tauri), como em `SessionPayload`.
+                // The command payload is MOVED (no clone) and serialized for the
+                // front-end (Tauri IPC), as in `SessionPayload`.
                 #[derive(serde::Serialize)]
                 struct Payload {
                     session: Value,
@@ -193,25 +193,25 @@ fn main() {
                 }
                 let payload = Payload { session, session_dir: dir.display().to_string() };
                 let wire = serde_json::to_string(&payload).unwrap();
-                m.check("serialização do IPC (payload movido)");
+                m.check("IPC serialization (payload moved)");
                 println!("{}", json!({"wireMiB": mib(wire.len() as u64)}));
             }
         }
-        // Mesmo caminho do servidor MCP na primeira chamada mascarada e do CLI `inspect`.
-        // P7: consome o bundle e sanitiza no lugar (caminho do MCP e do CLI `sanitize`).
+        // Same path as the MCP server on the first masked call and the `inspect` CLI.
+        // P7: consumes the bundle and sanitizes in place (MCP and `sanitize` CLI path).
         "import-eager-sanitize-owned" => {
             let imported = scrapelens_core::import_session_dir(&dir).unwrap();
-            m.check("import_session_dir (sessão + anexos em memória)");
+            m.check("import_session_dir (session + attachments in memory)");
             let sanitized = scrapelens_core::export::sanitize::sanitize_bundle_owned(
                 imported.bundle,
                 &scrapelens_core::export::sanitize::SanitizeOptions::default(),
             );
-            m.check("sanitize_bundle_owned (no lugar)");
+            m.check("sanitize_bundle_owned (in place)");
             println!("{}", json!({"sanitizedRequests": sanitized.bundle.session.requests.len()}));
         }
         "import-eager" | "import-eager-pretty" | "import-eager-stream" | "import-eager-sanitize" => {
             let imported = scrapelens_core::import_session_dir(&dir).unwrap();
-            m.check("import_session_dir (sessão + anexos em memória)");
+            m.check("import_session_dir (session + attachments in memory)");
             println!(
                 "{}",
                 json!({"requests": imported.bundle.session.requests.len(),
@@ -222,12 +222,12 @@ fn main() {
                 let text = serde_json::to_string_pretty(&json!({
                     "session": imported.bundle.session, "report": imported.report}))
                 .unwrap();
-                m.check("to_string_pretty do CLI inspect");
+                m.check("to_string_pretty for the inspect CLI");
                 println!("{}", json!({"prettyMiB": mib(text.len() as u64)}));
             }
             if stage == "import-eager-stream" {
-                // Proposta para o `inspect`: struct tipada + escrita em fluxo, sem `json!`
-                // (que cria um DOM) e sem a `String` gigante.
+                // Proposal for `inspect`: typed struct + streaming write, without `json!`
+                // (which builds a DOM) and without the huge `String`.
                 #[derive(serde::Serialize)]
                 struct Out<'a> {
                     session: &'a scrapelens_core::SessionV1,
@@ -239,7 +239,7 @@ fn main() {
                     &Out { session: &imported.bundle.session, report: &imported.report },
                 )
                 .unwrap();
-                m.check("to_writer_pretty em fluxo");
+                m.check("streaming to_writer_pretty");
                 println!("{}", json!({"prettyMiB": mib(sink.0)}));
             }
             if stage == "import-eager-sanitize" {
@@ -247,46 +247,46 @@ fn main() {
                     &imported.bundle,
                     &scrapelens_core::export::sanitize::SanitizeOptions::default(),
                 );
-                m.check("sanitize_bundle (cópia mascarada)");
+                m.check("sanitize_bundle (masked copy)");
                 println!("{}", json!({"sanitizedRequests": sanitized.bundle.session.requests.len()}));
             }
         }
-        // Mesmo caminho da busca do App: anexos sob demanda.
+        // Same path as the App's search: attachments on demand.
         "lazy" | "lazy-search" => {
             let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&dir).unwrap();
             m.check("open_session_dir_lazy");
             if stage == "lazy-search" {
                 use scrapelens_core::search::{search_lazy, SearchQuery};
                 let result = search_lazy(&lazy, &SearchQuery::new("bigfixture-item-19999"));
-                m.check("search_lazy (todos os escopos)");
+                m.check("search_lazy (all scopes)");
                 println!("{}", json!({"matches": result.matches.len()}));
             }
         }
-        // Importação de uma captura (parse de CDP, NetLog, corpos e correlação).
+        // Import of a capture (CDP, NetLog, bodies and correlation parsing).
         "netlog-only" => {
             let netlog = read(&dir.join("netlog.json"));
-            m.check("ler netlog.json");
+            m.check("read netlog.json");
             let imported = scrapelens_core::import_netlog(&netlog).unwrap();
             m.check("import_netlog (parse)");
             println!("{}", json!({"requests": imported.bundle.session.requests.len()}));
         }
         "cdp-only" => {
             let cdp = read(&dir.join("cdp-events.jsonl"));
-            m.check("ler cdp-events.jsonl");
+            m.check("read cdp-events.jsonl");
             let imported = scrapelens_core::import_capture(
                 &cdp,
                 br#"{"constants":{},"events":[]}"#,
                 CorrelationOptions::default(),
             )
             .unwrap();
-            m.check("import_capture sem NetLog (parse CDP)");
+            m.check("import_capture without NetLog (CDP parse)");
             println!("{}", json!({"requests": imported.bundle.session.requests.len()}));
         }
         "capture-full" | "capture-write" => {
             let cdp = read(&dir.join("cdp-events.jsonl"));
             let netlog = read(&dir.join("netlog.json"));
             let bodies = std::fs::read(dir.join("cdp-bodies.jsonl")).ok();
-            m.check("ler cdp + netlog + corpos");
+            m.check("read cdp + netlog + bodies");
             let imported = scrapelens_core::import_capture_labeled(
                 &cdp,
                 &netlog,
@@ -295,7 +295,7 @@ fn main() {
                 CorrelationOptions::default(),
             )
             .unwrap();
-            m.check("import_capture_labeled (parse + correlação)");
+            m.check("import_capture_labeled (parse + correlation)");
             println!(
                 "{}",
                 json!({"requests": imported.bundle.session.requests.len(),
@@ -308,7 +308,7 @@ fn main() {
                 let _ = std::fs::remove_dir_all(out);
             }
         }
-        other => panic!("etapa desconhecida: {other}"),
+        other => panic!("unknown stage: {other}"),
     }
     println!("{}", json!({"stage": stage, "totalMs": m.started.elapsed().as_millis() as u64, "peakMiB": peak_mib()}));
 }

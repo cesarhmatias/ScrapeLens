@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prova setAutoAttach recursivo (OOPIF + worker) headless/headful."""
+"""Probes recursive setAutoAttach (OOPIF + worker) in headless/headful modes."""
 from __future__ import annotations
 
 import argparse

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Cliente CDP mínimo (sem dependências) para os experimentos de fidelidade.
+ * Minimal CDP client (no dependencies) for the fidelity experiments.
  *
- * Grava todos os eventos Network.* (e Fetch.requestPaused) em cdp-events.jsonl,
- * na ordem em que o Chrome os emitiu, sem normalizar params.headers.
+ * Records all Network.* events (and Fetch.requestPaused) to cdp-events.jsonl,
+ * in the order Chrome emitted them, without normalizing params.headers.
  *
- * Uso:
+ * Usage:
  *   node cdp_capture.mjs --port 9222 --outdir results/exp1 --plan plan.json
  */
 import fs from "node:fs";
@@ -114,7 +114,7 @@ async function main() {
   const uaInitial = (await S("Runtime.evaluate", { expression: "navigator.userAgent" })).result.value;
   if (plan.userAgent) await S("Network.setUserAgentOverride", { userAgent: plan.userAgent });
 
-  // HAR nativo, se esta versão do Chrome expuser Network.getHAR.
+  // Native HAR, if this Chrome version exposes Network.getHAR.
   let harNote = null;
   let harAvailable = false;
   try {
@@ -171,7 +171,7 @@ async function main() {
         returnByValue: true,
       });
     } catch {
-      /* página sem script */
+      /* page without script */
     }
     navigations.push({ url, navigate: res, probe: probe?.result?.value ?? null });
   }

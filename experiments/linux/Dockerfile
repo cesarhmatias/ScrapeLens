@@ -1,11 +1,11 @@
-# Ambiente de teste Linux do ScrapeLens (docs/21-linux.md). Só dentro do container:
-# nada é instalado no macOS do usuário. Sem site real; tudo em loopback.
+# ScrapeLens Linux test environment (docs/21-linux.md). Only inside the container:
+# nothing is installed on the user's macOS. No real site; everything on loopback.
 #
-#   Chrome estável (amd64):  --platform linux/amd64 --build-arg BASE=ubuntu:24.04 --build-arg BROWSER=chrome
+#   Stable Chrome (amd64):   --platform linux/amd64 --build-arg BASE=ubuntu:24.04 --build-arg BROWSER=chrome
 #   Chromium (arm64):        --platform linux/arm64 --build-arg BASE=debian:12      --build-arg BROWSER=chromium
 #
-# O Google Chrome estável NÃO tem build Linux arm64; no arm64 o navegador aceito é o
-# Chromium (pacote `chromium` do Debian, binário real em /usr/lib/chromium/chromium).
+# Stable Google Chrome has NO Linux arm64 build; on arm64 the accepted browser is
+# Chromium (Debian's `chromium` package, real binary at /usr/lib/chromium/chromium).
 ARG BASE=ubuntu:24.04
 FROM ${BASE}
 ARG BROWSER=chrome
@@ -23,10 +23,10 @@ RUN set -eux; \
         apt-get update; apt-get install -y --no-install-recommends chromium; \
     fi; \
     rm -rf /var/lib/apt/lists/*
-# cmake: o testserver (quiche → BoringSSL) só compila com ele.
+# cmake: the testserver (quiche → BoringSSL) only compiles with it.
 RUN apt-get update && apt-get install -y --no-install-recommends cmake clang \
     && rm -rf /var/lib/apt/lists/*
-# Usuário comum (a validação do navegador exige binário de root, fora do alcance do usuário).
+# Regular user (browser validation requires a root-owned binary, out of the user's reach).
 RUN useradd -m -u 1001 tester && mkdir /cache /work && chown tester /cache /work
 USER tester
 ENV HOME=/home/tester PATH=/home/tester/.cargo/bin:$PATH

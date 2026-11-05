@@ -1,14 +1,14 @@
-# Captura multi-alvo (Rodada 10, onda 1)
+# Multi-target capture (Round 10, wave 1)
 
-Contrato: [`docs/14-captura-multi-alvo.md`](../../docs/14-captura-multi-alvo.md).
+Contract: [`docs/14-captura-multi-alvo.md`](../../docs/14-captura-multi-alvo.md).
 
-Harness Chrome + NetLog + CDP com `Target.setDiscoverTargets`, `Target.setAutoAttach`
-(flatten, `waitForDebuggerOnStart` configurável) e `Network.enable` antes de
-`Runtime.runIfWaitingForDebugger` em cada sessão filha.
+Chrome + NetLog + CDP harness with `Target.setDiscoverTargets`, `Target.setAutoAttach`
+(flatten, configurable `waitForDebuggerOnStart`) and `Network.enable` before
+`Runtime.runIfWaitingForDebugger` in each child session.
 
-## Reproduzir
+## Reproduce
 
-Smoke local (até `testserver` expor `GET /multi/`):
+Local smoke (until `testserver` exposes `GET /multi/`):
 
 ```bash
 cd experiments
@@ -19,14 +19,14 @@ python3 multi_target/analyze_multi.py \
   --out results/multi-target-smoke/analysis.json
 ```
 
-Quando a Testes publicar `/multi/`:
+Once the tests publish `/multi/`:
 
 ```bash
 python3 multi_target/run_multi.py --testserver --port 8781 --out results/multi-target
 ```
 
-Saídas por variante (`with-wait`, `no-wait`):
+Outputs per variant (`with-wait`, `no-wait`):
 
 - `cdp-events.jsonl`, `cdp-sessions.json`, `cdp-bodies.jsonl`
 - `chrome-netlog.json`, `plan.json`, `server.jsonl`
-- `analysis.json` (comparativo)
+- `analysis.json` (comparison)

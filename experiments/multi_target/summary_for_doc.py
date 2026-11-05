@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gera trecho Markdown para docs/02-matriz-fidelidade.md a partir de analysis.json."""
+"""Generates a Markdown section for docs/02-matriz-fidelidade.md from analysis.json."""
 from __future__ import annotations
 
 import argparse
@@ -8,11 +8,11 @@ import pathlib
 
 KINDS = [
     ("popup", "Popup (`window.open`)"),
-    ("target_blank", "Aba nova (`target=_blank`)"),
-    ("oophif", "Iframe OOPIF (outra porta)"),
-    ("dedicated_worker", "Worker dedicado"),
-    ("service_worker", "Service worker (intercept + fetch próprio)"),
-    ("page", "Documento principal"),
+    ("target_blank", "New tab (`target=_blank`)"),
+    ("oophif", "OOPIF iframe (other port)"),
+    ("dedicated_worker", "Dedicated worker"),
+    ("service_worker", "Service worker (intercept + own fetch)"),
+    ("page", "Main document"),
 ]
 
 
@@ -25,14 +25,14 @@ def agg(analysis: dict, key: str) -> dict[str, dict]:
     for kind, _label in KINDS:
         rows = by_kind.get(kind, [])
         if not rows:
-            out[kind] = {"server": "não verificado", "netlog": "não verificado", "cdp": "não verificado"}
+            out[kind] = {"server": "not verified", "netlog": "not verified", "cdp": "not verified"}
             continue
         out[kind] = {
-            "server": "sim" if any(r["server"] for r in rows) else "não",
-            "netlog": "sim" if any(r["netlog"] for r in rows) else "não",
-            "cdp": "sim" if any(r["cdp"] for r in rows) else "não",
-            "extra_info": "sim" if any(r.get("headers_extra_info") == "sim" for r in rows) else "parcial",
-            "bodies": "sim" if any(r.get("bodies_cdp") is True for r in rows) else "parcial",
+            "server": "yes" if any(r["server"] for r in rows) else "no",
+            "netlog": "yes" if any(r["netlog"] for r in rows) else "no",
+            "cdp": "yes" if any(r["cdp"] for r in rows) else "no",
+            "extra_info": "yes" if any(r.get("headers_extra_info") == "sim" for r in rows) else "partial",
+            "bodies": "yes" if any(r.get("bodies_cdp") is True for r in rows) else "partial",
             "sw_page": any(r.get("fromServiceWorker") for r in rows),
             "sw_source": next((r.get("serviceWorkerResponseSource") for r in rows if r.get("serviceWorkerResponseSource")), None),
         }
@@ -57,19 +57,19 @@ def main() -> None:
     cmp_ = data.get("variant_compare", {})
 
     lines = [
-        "## Captura multi-alvo (CDP auto-attach × NetLog)",
+        "## Multi-target capture (CDP auto-attach × NetLog)",
         "",
-        "Contrato: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`.",
+        "Contract: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`.",
         "",
-        "| Item | Valor |",
+        "| Item | Value |",
         "|---|---|",
-        f"| Navegador | Chrome headless=new (ver `cdp-sessions.json`) |",
+        f"| Browser | Chrome headless=new (see `cdp-sessions.json`) |",
         f"| CDP | `Target.setDiscoverTargets` + `setAutoAttach` (flatten, `waitForDebuggerOnStart` true/false) |",
-        f"| Evidência preliminar | `experiments/results/multi-target-smoke/` (smoke local; **repetir** com `testserver` `GET /multi/` quando a Testes publicar) |",
+        f"| Preliminary evidence | `experiments/results/multi-target-smoke/` (local smoke; **repeat** with `testserver` `GET /multi/` once the tests are published) |",
         "",
-        "### Tabela por tipo de alvo (marcador `?m=`, variante **com** `waitForDebuggerOnStart`)",
+        "### Table by target type (marker `?m=`, **with** `waitForDebuggerOnStart` variant)",
         "",
-        "| Tipo de alvo | Servidor (JSONL) | NetLog | CDP (sessão filha) | ExtraInfo (ordem) | Corpos CDP | SW `fromServiceWorker` |",
+        "| Target type | Server (JSONL) | NetLog | CDP (child session) | ExtraInfo (order) | CDP bodies | SW `fromServiceWorker` |",
         "|---|---|---|---|---|---|---|",
     ]
     for kind, label in KINDS:
@@ -77,37 +77,37 @@ def main() -> None:
         if kind.startswith("_"):
             continue
         lines.append(
-            f"| {label} | {c.get('server', 'não verificado')} | {c.get('netlog', 'não verificado')} | "
-            f"{c.get('cdp', 'não verificado')} | {c.get('extra_info', 'não verificado')} | "
-            f"{c.get('bodies', 'não verificado')} | "
-            f"{('sim' if c.get('sw_page') else '—') if c.get('cdp') != 'não verificado' else 'não verificado'} |"
+            f"| {label} | {c.get('server', 'not verified')} | {c.get('netlog', 'not verified')} | "
+            f"{c.get('cdp', 'not verified')} | {c.get('extra_info', 'not verified')} | "
+            f"{c.get('bodies', 'not verified')} | "
+            f"{('yes' if c.get('sw_page') else '—') if c.get('cdp') != 'not verified' else 'not verified'} |"
         )
 
     lines.extend(
         [
             "",
-            "### Variante **sem** `waitForDebuggerOnStart`",
+            "### Variant **without** `waitForDebuggerOnStart`",
             "",
-            f"- Primeira requisição perdida no CDP (marcadores `popup-first` / `blank-first` / `oophif-first`): "
-            f"{cmp_.get('first_request_lost_without_wait') or 'não verificado (smoke incompleto nesta execução)'}",
-            f"- Sessões CDP: {n.get('_cost', {}).get('sessions', 'não verificado')}; "
-            f"eventos Network: {n.get('_cost', {}).get('network_events', 'não verificado')}",
+            f"- First request lost in CDP (markers `popup-first` / `blank-first` / `oophif-first`): "
+            f"{cmp_.get('first_request_lost_without_wait') or 'not verified (smoke incomplete in this run)'}",
+            f"- CDP sessions: {n.get('_cost', {}).get('sessions', 'not verified')}; "
+            f"Network events: {n.get('_cost', {}).get('network_events', 'not verified')}",
             "",
-            "### Colisão de `requestId` entre sessões",
+            "### `requestId` collision across sessions",
             "",
-            f"Com wait: **{w.get('_cost', {}).get('requestId_collisions', '?')}** pares `(requestId)` vistos em mais de uma sessão "
-            f"(correlação correta exige `(sessionId, requestId)`). Sem wait: "
-            f"**{n.get('_cost', {}).get('requestId_collisions', 'não verificado')}**.",
+            f"With wait: **{w.get('_cost', {}).get('requestId_collisions', '?')}** pairs `(requestId)` seen in more than one session "
+            f"(correct correlation requires `(sessionId, requestId)`). Without wait: "
+            f"**{n.get('_cost', {}).get('requestId_collisions', 'not verified')}**.",
             "",
-            "### Custo (variante com wait, smoke)",
+            "### Cost (with-wait variant, smoke)",
             "",
-            f"| Sessões CDP | Eventos totais | Eventos Network.* | Tempo captura |",
+            f"| CDP sessions | Total events | Network.* events | Capture time |",
             f"|---:|---:|---:|---:|",
             f"| {w.get('_cost', {}).get('sessions')} | {w.get('_cost', {}).get('events')} | "
             f"{w.get('_cost', {}).get('network_events')} | {w.get('_cost', {}).get('elapsed_ms')} ms |",
             "",
-            "**Recomendação (1 linha):** usar auto-attach com `waitForDebuggerOnStart` e chave `(sessionId, requestId)`; "
-            "alvos sem sessão CDP continuam só no NetLog; repetir medição oficial contra `testserver` `/multi/` antes de fixar o produto.",
+            "**Recommendation (1 line):** use auto-attach with `waitForDebuggerOnStart` and key `(sessionId, requestId)`; "
+            "targets without a CDP session stay NetLog-only; repeat the official measurement against `testserver` `/multi/` before fixing the product.",
             "",
         ]
     )

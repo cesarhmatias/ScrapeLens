@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 /**
- * HAR 1.2 reconstruído a partir dos eventos CDP — NÃO é o exportador do
- * DevTools. Existe por dois motivos:
- *   1. o Chrome 156 não expõe `Network.getHAR` (verificado neste experimento);
- *   2. o Core/importadores precisa de uma fixture HAR realista, com headers
- *      como lista de pares (não dicionário).
+ * HAR 1.2 rebuilt from CDP events — NOT the DevTools exporter. It exists for two reasons:
+ *   1. Chrome 156 does not expose `Network.getHAR` (verified in this experiment);
+ *   2. the Core/importers need a realistic HAR fixture, with headers
+ *      as a list of pairs (not a dictionary).
  *
- * O campo `log.creator.name` declara a origem. A ordem gravada é a ordem de
- * enumeração do objeto CDP: para headers de requisição isso significa ordem
- * ASCII do map interno do Chrome, não a ordem do fio.
+ * The field `log.creator.name` declares the origin. The recorded order is the
+ * enumeration order of the CDP object: for request headers that means the
+ * ASCII order of Chrome's internal map, not the wire order.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -54,8 +53,8 @@ for (const ev of events) {
   } else if (ev.method === "Network.requestWillBeSentExtraInfo") {
     const e = entryFor(p.requestId);
     const extra = Object.entries(p.headers || {}).flatMap(([n, v]) => splitJoined(n, v));
-    // Mescla como o exportador do DevTools: entradas do ExtraInfo substituem as
-    // do requestWillBeSent e são acrescentadas ao final.
+    // Merges like the DevTools exporter: ExtraInfo entries replace the
+    // requestWillBeSent ones and are appended at the end.
     const byName = new Map(e.request.headers.map((h) => [h.name.toLowerCase(), h]));
     for (const h of extra) byName.set(h.name.toLowerCase(), h);
     e.request.headers = [...e.request.headers.filter((h) => !extra.some((x) => x.name.toLowerCase() === h.name.toLowerCase())), ...extra];
@@ -89,4 +88,4 @@ const har = {
 };
 const out = path.join(dir, "har-derived.json");
 fs.writeFileSync(out, JSON.stringify(har, null, 2));
-console.log(`${out}: ${har.log.entries.length} entradas`);
+console.log(`${out}: ${har.log.entries.length} entries`);

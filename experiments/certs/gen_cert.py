@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Gera certificado autoassinado sintético para 127.0.0.1 (h2 e h3 de laboratório).
+"""Generates a synthetic self-signed certificate for 127.0.0.1 (lab h2 and h3).
 
-Nenhum certificado é instalado no sistema. O Chrome recebe apenas
---ignore-certificate-errors-spki-list=<hash da chave pública>, o que dispensa
-tocar no chaveiro do usuário.
+No certificate is installed in the system. Chrome receives only
+--ignore-certificate-errors-spki-list=<public key hash>, which avoids
+touching the user's keychain.
 """
 from __future__ import annotations
 

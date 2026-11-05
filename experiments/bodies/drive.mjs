@@ -1,7 +1,7 @@
-// Dirige a página do Chrome da captura (same-origin com o testserver h1) via
-// um segundo cliente CDP. Cada caso grava o que a PÁGINA enviou/recebeu
-// (sha256) para comparar com cdp-bodies.jsonl e com o servidor.
-// uso: node drive.mjs <tmpdir> <base-url> <out.json> <stop-file>
+// Drives the capture's Chrome page (same-origin with the testserver h1) via
+// a second CDP client. Each case records what the PAGE sent/received
+// (sha256) to compare with cdp-bodies.jsonl and with the server.
+// usage: node drive.mjs <tmpdir> <base-url> <out.json> <stop-file>
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -20,7 +20,7 @@ async function findPort() {
     }
     await sleep(200);
   }
-  throw new Error('DevToolsActivePort não apareceu');
+  throw new Error('DevToolsActivePort did not appear');
 }
 
 const port = await findPort();
@@ -30,7 +30,7 @@ for (let i = 0; i < 100 && !page; i++) {
   page = list.find((t) => t.type === 'page' && t.url.startsWith(base));
   if (!page) await sleep(200);
 }
-if (!page) throw new Error('página da captura não encontrada');
+if (!page) throw new Error('capture page not found');
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => (ws.onopen = r));

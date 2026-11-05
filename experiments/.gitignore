@@ -5,13 +5,13 @@ results/**/chrome-profile/
 __pycache__/
 *.pyc
 
-# run_bodies.py --keep (centenas de MB)
+# run_bodies.py --keep (hundreds of MB)
 results/bodies/session/
 results/bodies/server/
 results/bodies/tmp/
 results/bodies/stop
 
-# multi-target: brutos locais (só analysis/summary commitados)
+# multi-target: local raw files (only analysis/summary committed)
 results/multi-target-*/**/cdp-events.jsonl
 results/multi-target-*/**/cdp-bodies.jsonl
 results/multi-target-*/**/chrome-netlog.json

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Orquestra um experimento completo: servidores -> Chrome -> CDP -> análise.
+"""Orchestrates one full experiment: servers -> Chrome -> CDP -> analysis.
 
-Uso:
+Usage:
   python3 run_experiment.py --exp h1-native
   python3 run_experiment.py --all
   python3 run_experiment.py --list
@@ -124,10 +124,10 @@ def wait_line(proc: subprocess.Popen, needle: str, timeout: float = 20.0) -> str
             if needle in line:
                 return line
         elif proc.poll() is not None:
-            raise RuntimeError(f"processo morreu antes de '{needle}' (rc={proc.returncode})")
+            raise RuntimeError(f"process died before '{needle}' (rc={proc.returncode})")
         else:
             time.sleep(0.05)
-    raise RuntimeError(f"timeout esperando '{needle}'")
+    raise RuntimeError(f"timeout waiting for '{needle}'")
 
 
 def start_servers(outdir: pathlib.Path, cert: pathlib.Path, key: pathlib.Path, base: int):
@@ -220,7 +220,7 @@ def main() -> None:
         return
     names = sorted(EXPERIMENTS) if args.all else [args.exp]
     if not names or names == [None]:
-        ap.error("use --exp NOME ou --all")
+        ap.error("use --exp NAME or --all")
     for name in names:
         print(f"=== {name} ===")
         run_one(name, keep_profile=args.keep_profile)

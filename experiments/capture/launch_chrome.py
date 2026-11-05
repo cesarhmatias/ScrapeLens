@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Launcher do Chrome para experimentos de captura.
+"""Chrome launcher for capture experiments.
 
-Regras de segurança aplicadas aqui:
-  * --user-data-dir dedicado e temporário (nunca o perfil pessoal);
-  * debug exposto apenas em 127.0.0.1;
-  * encerra somente o PID que este módulo iniciou;
-  * certificado autoassinado dispensado por SPKI hash (nada é instalado).
+Safety rules applied here:
+  * dedicated, temporary --user-data-dir (never the personal profile);
+  * debug exposed only on 127.0.0.1;
+  * terminates only the PID this module started;
+  * self-signed certificate waived by SPKI hash (nothing is installed).
 
-Uso direto (launcher apenas):
+Direct use (launcher only):
   python3 launch_chrome.py --profile /tmp/x --netlog /tmp/n.json [--headless]
 """
 from __future__ import annotations
@@ -120,14 +120,14 @@ class ChromeSession:
         last: Exception | None = None
         while time.time() < deadline:
             if self.proc.poll() is not None:
-                raise RuntimeError(f"Chrome saiu imediatamente (rc={self.proc.returncode})")
+                raise RuntimeError(f"Chrome exited immediately (rc={self.proc.returncode})")
             try:
                 with urllib.request.urlopen(f"http://{DEBUG_HOST}:{self.port}/json/version", timeout=1) as r:
                     return json.loads(r.read().decode())
             except Exception as exc:  # noqa: BLE001
                 last = exc
                 time.sleep(0.2)
-        raise RuntimeError(f"DevTools não respondeu em {timeout}s: {last}")
+        raise RuntimeError(f"DevTools did not respond within {timeout}s: {last}")
 
     def wait_exit(self, timeout: float = 25.0) -> int | None:
         if self.proc is None:
@@ -138,7 +138,7 @@ class ChromeSession:
             return None
 
     def terminate(self) -> None:
-        """Encerra apenas o processo iniciado aqui (e seus filhos no mesmo grupo)."""
+        """Terminates only the process started here (and its children in the same group)."""
         if self.proc is None or self.proc.poll() is not None:
             return
         try:
@@ -155,7 +155,7 @@ class ChromeSession:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--profile", help="diretório de dados dedicado (padrão: temporário)")
+    ap.add_argument("--profile", help="dedicated data directory (default: temporary)")
     ap.add_argument("--netlog", required=True)
     ap.add_argument("--port", type=int, default=DEBUG_PORT)
     ap.add_argument("--headless", action="store_true")

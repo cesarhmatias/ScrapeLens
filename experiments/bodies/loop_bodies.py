@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Repete o ciclo ao vivo N vezes e registra a taxa de falha.
+"""Repeats the live cycle N times and records the failure rate.
 
-uso: python3 loop_bodies.py [N=20]   → ../results/bodies/cycles.json
+usage: python3 loop_bodies.py [N=20]   → ../results/bodies/cycles.json
 """
 import json, pathlib, re, subprocess, sys, time
 
@@ -14,7 +14,7 @@ for i in range(1, n + 1):
     p = subprocess.run([sys.executable, str(HERE / "run_bodies.py")], capture_output=True, text=True)
     log = (RES / "capture.log").read_text() if (RES / "capture.log").exists() else ""
     m = re.search(r"capture shutdown: (.*)", log)
-    err = re.search(r"captura importada: (.*)", log)
+    err = re.search(r"(?:captura importada|capture imported): (.*)", log)
     rows.append({"cycle": i, "ok": p.returncode == 0, "seconds": round(time.time() - t0, 1),
                  "shutdown": m.group(1) if m else None, "error": (err.group(1) if err else p.stderr.strip()[-300:] or None) if p.returncode else None})
     print(rows[-1], flush=True)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Servidor HTTP/3 (QUIC + QPACK via aioquic) que registra headers decodificados.
+"""HTTP/3 server (QUIC + QPACK via aioquic) that records decoded headers.
 
-O evento HeadersReceived traz a lista de pares já decodificada do QPACK, na
-ordem recebida e com pseudoheaders. É a referência para o lado h3.
+The HeadersReceived event carries the list of pairs already decoded by QPACK, in the
+order received and with pseudoheaders. It is the reference for the h3 side.
 """
 from __future__ import annotations
 

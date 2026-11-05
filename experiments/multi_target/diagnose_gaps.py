@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Diagnóstico das lacunas CDP (with-wait): uma hipótese por marcador ausente."""
+"""Diagnoses CDP gaps (with-wait): one hypothesis per missing marker."""
 from __future__ import annotations
 
 import argparse

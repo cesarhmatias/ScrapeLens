@@ -1,8 +1,8 @@
-"""Utilidades compartilhadas pelos servidores de observação.
+"""Shared utilities for the observation servers.
 
-A referência de ordem é SEMPRE a lista de pares (nome, valor) no ponto em que o
-protocolo foi decodificado, antes de qualquer normalização para dicionário.
-Cada requisição vira uma linha JSONL.
+The order reference is ALWAYS the list of (name, value) pairs at the point where the
+protocol was decoded, before any normalization into a dictionary.
+Each request becomes one JSONL line.
 """
 from __future__ import annotations
 
@@ -21,13 +21,13 @@ def _now() -> str:
 
 
 class Recorder:
-    """Append-only JSONL: uma linha por requisição observada."""
+    """Append-only JSONL: one line per observed request."""
 
     def __init__(self, path: str | os.PathLike[str], protocol: str) -> None:
         self.path = pathlib.Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.protocol = protocol
-        self.path.write_text("")  # cada execução recomeça limpa
+        self.path.write_text("")  # each run starts clean
 
     def record(
         self,
@@ -97,7 +97,7 @@ def body_payload(
     return json.dumps(payload, ensure_ascii=False).encode()
 
 
-# Resposta comum: /setcookie devolve dois Set-Cookie e um header duplicado.
+# Common response: /setcookie returns two Set-Cookie headers and one duplicate header.
 BASE_RESPONSE_HEADERS: list[tuple[str, str]] = [
     ("content-type", "application/json; charset=utf-8"),
     ("cache-control", "no-store"),
@@ -108,8 +108,8 @@ BASE_RESPONSE_HEADERS: list[tuple[str, str]] = [
 
 def response_headers(path: str, protocol: str) -> list[tuple[str, str]]:
     headers = list(BASE_RESPONSE_HEADERS)
-    # Sem Alt-Svc: o experimento h3 usa --origin-to-force-quic-on para não
-    # contaminar os resultados de h2 com tráfego migrado para h3.
+    # No Alt-Svc: the h3 experiment uses --origin-to-force-quic-on so that it does not
+    # contaminate the h2 results with traffic migrated to h3.
     if path == "/set3":
         headers.append(("set-cookie", "sc_a=alpha; Path=/; SameSite=Lax"))
         headers.append(("set-cookie", "sc_b=beta; Path=/; SameSite=Lax"))

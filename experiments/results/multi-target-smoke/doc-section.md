@@ -1,38 +1,38 @@
-## Captura multi-alvo (CDP auto-attach × NetLog)
+## Multi-target capture (CDP auto-attach × NetLog)
 
-Contrato: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`.
+Contract: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`.
 
-| Item | Valor |
+| Item | Value |
 |---|---|
-| Navegador | Chrome headless=new (ver `cdp-sessions.json`) |
+| Browser | Chrome headless=new (see `cdp-sessions.json`) |
 | CDP | `Target.setDiscoverTargets` + `setAutoAttach` (flatten, `waitForDebuggerOnStart` true/false) |
-| Evidência preliminar | `experiments/results/multi-target-smoke/` (smoke local; **repetir** com `testserver` `GET /multi/` quando a Testes publicar) |
+| Preliminary evidence | `experiments/results/multi-target-smoke/` (local smoke; **repeat** with `testserver` `GET /multi/` once the tests are published) |
 
-### Tabela por tipo de alvo (marcador `?m=`, variante **com** `waitForDebuggerOnStart`)
+### Table by target type (marker `?m=`, **with** `waitForDebuggerOnStart` variant)
 
-| Tipo de alvo | Servidor (JSONL) | NetLog | CDP (sessão filha) | ExtraInfo (ordem) | Corpos CDP | SW `fromServiceWorker` |
+| Target type | Server (JSONL) | NetLog | CDP (child session) | ExtraInfo (order) | CDP bodies | SW `fromServiceWorker` |
 |---|---|---|---|---|---|---|
-| Popup (`window.open`) | sim | sim | sim | sim | sim | — |
-| Aba nova (`target=_blank`) | não verificado | não verificado | não verificado | não verificado | não verificado | não verificado |
-| Iframe OOPIF (outra porta) | sim | sim | sim | sim | sim | — |
-| Worker dedicado | não verificado | não verificado | não verificado | não verificado | não verificado | não verificado |
-| Service worker (intercept + fetch próprio) | não verificado | não verificado | não verificado | não verificado | não verificado | não verificado |
-| Documento principal | não verificado | não verificado | não verificado | não verificado | não verificado | não verificado |
+| Popup (`window.open`) | yes | yes | yes | yes | yes | — |
+| New tab (`target=_blank`) | not verified | not verified | not verified | not verified | not verified | not verified |
+| OOPIF iframe (other port) | yes | yes | yes | yes | yes | — |
+| Dedicated worker | not verified | not verified | not verified | not verified | not verified | not verified |
+| Service worker (intercept + own fetch) | not verified | not verified | not verified | not verified | not verified | not verified |
+| Main document | not verified | not verified | not verified | not verified | not verified | not verified |
 
-### Variante **sem** `waitForDebuggerOnStart`
+### Variant **without** `waitForDebuggerOnStart`
 
-- Primeira requisição perdida no CDP (marcadores `popup-first` / `blank-first` / `oophif-first`): não verificado (smoke incompleto nesta execução)
-- Sessões CDP: 5; eventos Network: 15
+- First request lost in CDP (markers `popup-first` / `blank-first` / `oophif-first`): not verified (smoke incomplete in this run)
+- CDP sessions: 5; Network events: 15
 
-### Colisão de `requestId` entre sessões
+### `requestId` collision across sessions
 
-Com wait: **3** pares `(requestId)` vistos em mais de uma sessão (correlação correta exige `(sessionId, requestId)`). Sem wait: **1**.
+With wait: **3** pairs `(requestId)` seen in more than one session (correct correlation requires `(sessionId, requestId)`). Without wait: **1**.
 
-### Custo (variante com wait, smoke)
+### Cost (with-wait variant, smoke)
 
-| Sessões CDP | Eventos totais | Eventos Network.* | Tempo captura |
+| CDP sessions | Total events | Network.* events | Capture time |
 |---:|---:|---:|---:|
 | 11 | 135 | 50 | 32999 ms |
 
-**Recomendação (1 linha):** usar auto-attach com `waitForDebuggerOnStart` e chave `(sessionId, requestId)`; alvos sem sessão CDP continuam só no NetLog; repetir medição oficial contra `testserver` `/multi/` antes de fixar o produto.
+**Recommendation (1 line):** use auto-attach with `waitForDebuggerOnStart` and key `(sessionId, requestId)`; targets without a CDP session stay NetLog-only; repeat the official measurement against `testserver` `/multi/` before fixing the product.
 

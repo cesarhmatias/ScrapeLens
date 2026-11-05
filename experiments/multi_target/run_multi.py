@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Orquestra captura multi-alvo (NetLog + CDP auto-attach), variantes com/sem wait."""
+"""Orchestrates multi-target capture (NetLog + CDP auto-attach), with/without-wait variants."""
 from __future__ import annotations
 
 import argparse
@@ -39,7 +39,7 @@ def wait_http(url: str, timeout: float = 30.0) -> None:
         except Exception as exc:  # noqa: BLE001
             last = exc
         time.sleep(0.15)
-    raise RuntimeError(f"URL não respondeu: {url} ({last})")
+    raise RuntimeError(f"URL did not respond: {url} ({last})")
 
 
 def testserver_bin() -> pathlib.Path:
@@ -49,21 +49,21 @@ def testserver_bin() -> pathlib.Path:
     ):
         if p.is_file():
             return p
-    raise FileNotFoundError("scrapelens-testserver não encontrado; rode cargo build em testserver/")
+    raise FileNotFoundError("scrapelens-testserver not found; run cargo build in testserver/")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=pathlib.Path, default=HERE.parent / "results" / "multi-target")
-    ap.add_argument("--port", type=int, default=9881, help="porta h1 smoke ou testserver h1")
+    ap.add_argument("--port", type=int, default=9881, help="h1 smoke or testserver h1 port")
     ap.add_argument(
         "--page-url",
-        help="URL da página multi (padrão: http://127.0.0.1:PORT/multi/)",
+        help="URL of the multi page (default: http://127.0.0.1:PORT/multi/)",
     )
-    ap.add_argument("--smoke", action="store_true", help="usa smoke_server.py local (pré-/multi/ oficial)")
-    ap.add_argument("--testserver", action="store_true", help="sobe testserver serve --only h1")
-    ap.add_argument("--skip-run", action="store_true", help="só escreve plan.json")
-    ap.add_argument("--only-wait", action="store_true", help="só variante with-wait (debug)")
+    ap.add_argument("--smoke", action="store_true", help="use the local smoke_server.py (before the official /multi/)")
+    ap.add_argument("--testserver", action="store_true", help="start testserver serve --only h1")
+    ap.add_argument("--skip-run", action="store_true", help="only write plan.json")
+    ap.add_argument("--only-wait", action="store_true", help="only the with-wait variant (debug)")
     args = ap.parse_args()
 
     out = args.out
@@ -116,7 +116,7 @@ def main() -> None:
         except RuntimeError:
             meta["multi_route"] = "missing"
             probe.terminate()
-            print("AVISO: /multi/ ausente no testserver.", file=sys.stderr)
+            print("WARNING: /multi/ missing from testserver.", file=sys.stderr)
             sys.exit(2)
         probe.terminate()
         probe.wait(timeout=5)

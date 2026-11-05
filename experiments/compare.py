@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Compara as três camadas de evidência de cada experimento.
+"""Compares the three evidence layers of each experiment.
 
-(a) ordem apresentada pela fonte: objeto CDP (requestWillBeSent.headers,
-    requestWillBeSentExtraInfo.headers), headersText de resposta, HAR derivado.
-(b) ordem entregue ao codificador: eventos *SEND_REQUEST_HEADERS / *_SEND_HEADERS
-    do NetLog.
-(c) ordem decodificada na transmissão: JSONL gravado pelo servidor de observação.
+(a) order as presented by the source: CDP object (requestWillBeSent.headers,
+    requestWillBeSentExtraInfo.headers), response headersText, derived HAR.
+(b) order handed to the encoder: *SEND_REQUEST_HEADERS / *_SEND_HEADERS
+    events of the NetLog.
+(c) order decoded on the wire: JSONL written by the observation server.
 
-Saída: results/<exp>/layers.json e results/<exp>/report.md + results/matrix.json
+Output: results/<exp>/layers.json and results/<exp>/report.md + results/matrix.json
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ NETLOG_EVENTS = {
     "h2": ["HTTP2_SESSION_SEND_HEADERS", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"],
     "h3": ["QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS", "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"],
 }
-# Evento que representa o ponto de entrada do codificador (HPACK/QPACK).
+# Event that represents the encoder entry point (HPACK/QPACK).
 PREFERRED = {
     "h1": "HTTP_TRANSACTION_SEND_REQUEST_HEADERS",
     "h2": "HTTP2_SESSION_SEND_HEADERS",
@@ -43,7 +43,7 @@ def load_jsonl(path: pathlib.Path) -> list[dict]:
 
 
 def split_netlog_header(raw: str) -> tuple[str, str]:
-    # Formato NetLog: "Nome: valor" (h1) ou ":pseudo: valor" (h2/h3).
+    # NetLog format: "Name: value" (h1) or ":pseudo: value" (h2/h3).
     name, _, value = raw.partition(": ")
     return name.strip(), value.strip()
 
@@ -53,7 +53,7 @@ def names(seq: list[list[str]] | list[tuple[str, str]]) -> list[str]:
 
 
 def verdict(observed: list[str], reference: list[str]) -> str:
-    """Classifica a relação entre uma ordem observada e a referência do servidor."""
+    """Classifies the relation between an observed order and the server reference."""
     if not observed:
         return "não observada"
     if observed == reference:
@@ -72,7 +72,7 @@ def verdict(observed: list[str], reference: list[str]) -> str:
 
 
 def cdp_requests(events: list[dict]) -> list[dict]:
-    """Reconstrói requisições a partir dos eventos CDP, sem normalizar headers."""
+    """Rebuilds requests from CDP events, without normalizing headers."""
     by_id: OrderedDict[str, dict] = OrderedDict()
     for ev in events:
         m = ev["method"]
@@ -203,7 +203,7 @@ def analyze_response(
     ref_pairs = [[n, v] for n, v in row.get("response_headers", [])]
     ref_names = drop_status([n for n, _ in ref_pairs])
     key = resp_key([(n, v) for n, v in ref_pairs])
-    # requisições idênticas geram respostas idênticas: casa pela ordem de ocorrência
+    # identical requests produce identical responses: match by occurrence order
     cand = [r for r in recvs if resp_key(r["pairs"]) == key] if key[0] else []
     out: dict = {"server_order": ref_names, "nul_joined": False}
 
@@ -356,64 +356,64 @@ def analyze(exp_dir: pathlib.Path) -> dict:
 
 def report(layer: dict) -> str:
     lines = [
-        f"# Experimento `{layer['experiment']}` — {layer['protocol']}",
+        f"# Experiment `{layer['experiment']}` — {layer['protocol']}",
         "",
-        f"- Navegador: `{layer['browser']}`",
+        f"- Browser: `{layer['browser']}`",
         f"- User-Agent: `{layer['userAgent']}`",
-        f"- URL inicial: `{layer['plan']['urls'][0]}`",
+        f"- Initial URL: `{layer['plan']['urls'][0]}`",
         "",
     ]
     for r in layer["requests"]:
         lines += [
             f"## `{r['method']} {r['target']}`",
             "",
-            f"Referência do servidor (ordem decodificada): `{', '.join(r['reference_names'])}`",
-            f"Duplicatas observadas: {r['duplicates'] or 'nenhuma'}",
+            f"Server reference (decoded order): `{', '.join(r['reference_names'])}`",
+            f"Observed duplicates: {r['duplicates'] or 'none'}",
             "",
-            "| Camada | Fonte | Ordem | Veredito |",
+            "| Layer | Source | Order | Verdict |",
             "|---|---|---|---|",
-            f"| (c) decodificada | servidor JSONL | `{', '.join(r['reference_names'])}` | referência |",
-            f"| (b) codificador | NetLog `{r['b_netlog']['event'] or '-'}` | `{', '.join(r['b_netlog']['order']) or '-'}` | {r['b_netlog']['verdict']} |",
+            f"| (c) decoded | server JSONL | `{', '.join(r['reference_names'])}` | reference |",
+            f"| (b) encoder | NetLog `{r['b_netlog']['event'] or '-'}` | `{', '.join(r['b_netlog']['order']) or '-'}` | {r['b_netlog']['verdict']} |",
             *(
                 [
-                    f"| (b) pré-sessão | NetLog `{r['b_netlog_pre_session']['event']}` | `{', '.join(r['b_netlog_pre_session']['order'])}` | {r['b_netlog_pre_session']['verdict']} |"
+                    f"| (b) pre-session | NetLog `{r['b_netlog_pre_session']['event']}` | `{', '.join(r['b_netlog_pre_session']['order'])}` | {r['b_netlog_pre_session']['verdict']} |"
                 ]
                 if r.get("b_netlog_pre_session")
                 else []
             ),
-            f"| (a) fonte | CDP `requestWillBeSent.headers` | `{', '.join(r['a_cdp']['rws']['order']) or '-'}` | {r['a_cdp']['rws']['verdict']} |",
-            f"| (a) fonte | CDP `requestWillBeSentExtraInfo.headers` | `{', '.join(r['a_cdp']['extra']['order']) or '-'}` | {r['a_cdp']['extra']['verdict']} |",
+            f"| (a) source | CDP `requestWillBeSent.headers` | `{', '.join(r['a_cdp']['rws']['order']) or '-'}` | {r['a_cdp']['rws']['verdict']} |",
+            f"| (a) source | CDP `requestWillBeSentExtraInfo.headers` | `{', '.join(r['a_cdp']['extra']['order']) or '-'}` | {r['a_cdp']['extra']['verdict']} |",
             "",
-            "Resposta (Set-Cookie / duplicatas):",
+            "Response (Set-Cookie / duplicates):",
             "",
-            "| Camada | Fonte | Ordem | Veredito |",
+            "| Layer | Source | Order | Verdict |",
             "|---|---|---|---|",
-            f"| (c) escrita | servidor JSONL | `{', '.join(r['response']['server_order'])}` | referência |",
-            f"| (a) leitura | NetLog `{r['response']['netlog_session']['event'] or '-'}` | `{', '.join(r['response']['netlog_session']['order']) or '-'}` | {r['response']['netlog_session']['verdict']} |",
+            f"| (c) written | server JSONL | `{', '.join(r['response']['server_order'])}` | reference |",
+            f"| (a) read | NetLog `{r['response']['netlog_session']['event'] or '-'}` | `{', '.join(r['response']['netlog_session']['order']) or '-'}` | {r['response']['netlog_session']['verdict']} |",
         ]
         if r["response"]["netlog_session"].get("nul_joined"):
             lines.append("")
-            lines.append("- NetLog no nível de sessão fundiu valores duplicados com `\\x00`.")
+            lines.append("- NetLog at session level merged duplicate values with `\\x00`.")
         if r["response"].get("netlog_other"):
             o = r["response"]["netlog_other"]
-            lines.append(f"- Evento alternativo `{o['event']}`: {o['verdict']} (duplicatas {len(o['order']) - len({n.lower() for n in o['order']})}).")
+            lines.append(f"- Alternative event `{o['event']}`: {o['verdict']} (duplicates {len(o['order']) - len({n.lower() for n in o['order']})}).")
         if r["response"].get("cdp_headersText"):
-            lines.append(f"- CDP `headersText` (bruto): {r['response']['cdp_headersText']['verdict']}.")
+            lines.append(f"- CDP `headersText` (raw): {r['response']['cdp_headersText']['verdict']}.")
         if r["response"].get("cdp_object"):
             o = r["response"]["cdp_object"]
-            lines.append(f"- CDP objeto de headers: {o['verdict']}; ordenado ASCII={o['sorted_ascii']}; valores fundidos={len(o['joined_values'])}.")
+            lines.append(f"- CDP headers object: {o['verdict']}; ASCII-sorted={o['sorted_ascii']}; merged values={len(o['joined_values'])}.")
         if r["a_cdp"]["extra"].get("sorted_ascii"):
-            lines.append("- `ExtraInfo.headers` está em ordem ASCII/case-sensitive, não na ordem do fio.")
+            lines.append("- `ExtraInfo.headers` is in ASCII/case-sensitive order, not in wire order.")
         if r["b_netlog"]["ambiguous"]:
-            lines.append(f"- Ambiguidade: {r['b_netlog']['candidates']} eventos NetLog casaram com este caminho.")
+            lines.append(f"- Ambiguity: {r['b_netlog']['candidates']} NetLog events matched this path.")
         if r["a_cdp"].get("headersText"):
-            lines.append("- `responseReceivedExtraInfo.headersText` presente (ordem bruta da resposta em h1).")
+            lines.append("- `responseReceivedExtraInfo.headersText` present (raw response order in h1).")
         lines.append("")
     return "\n".join(lines)
 
 
 def main() -> None:
-    # contract-* são o cross-check (crosscheck_contract.py) e têm resumo próprio
+    # contract-* are the cross-check (crosscheck_contract.py) and have their own summary
     exps = sorted(
         p
         for p in RESULTS.iterdir()
@@ -439,7 +439,7 @@ def main() -> None:
                 for r in layer["requests"]
             ],
         }
-        print(f"{exp.name}: {len(layer['requests'])} requisições")
+        print(f"{exp.name}: {len(layer['requests'])} requests")
     (RESULTS / "matrix.json").write_text(json.dumps(matrix, indent=2, ensure_ascii=False))
     agg: dict[str, Counter] = {}
     for name, m in matrix.items():

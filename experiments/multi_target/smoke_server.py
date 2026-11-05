@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Servidor smoke local para validar o harness multi-alvo antes de testserver /multi/.
+"""Local smoke server to validate the multi-target harness before testserver /multi/.
 
-Não substitui a rota oficial (testserver/). Grava JSONL com marcador ?m= na URL.
-Duas origens: 127.0.0.1:PORT (principal) e 127.0.0.1:PORT+1 (OOPIF, outra porta).
+Does not replace the official route (testserver/). Writes JSONL with the ?m= marker in the URL.
+Two origins: 127.0.0.1:PORT (main) and 127.0.0.1:PORT+1 (OOPIF, other port).
 """
 from __future__ import annotations
 

@@ -1,106 +1,106 @@
-# experiments/ — prova de fidelidade de captura
+# experiments/ — capture fidelity proof
 
-Pergunta: **quais fontes e eventos preservam qual sequência de headers em
-HTTP/1.1, h2 e h3 no Chrome 156.0.8078.48?**
+Question: **which sources and events preserve which header sequence in
+HTTP/1.1, h2 and h3 in Chrome 156.0.8078.48?**
 
-Resultado consolidado em [`../docs/02-matriz-fidelidade.md`](../docs/02-matriz-fidelidade.md).
-Tudo aqui é sintético, local (127.0.0.1) e temporário.
+The consolidated result is in [`../docs/02-matriz-fidelidade.md`](../docs/02-matriz-fidelidade.md).
+Everything here is synthetic, local (127.0.0.1) and temporary.
 
-## O que roda
+## What runs
 
-| Peça | Arquivo | Papel |
+| Part | File | Role |
 |---|---|---|
-| Servidor h1 | `servers/h1_raw.py` | socket cru, sem biblioteca HTTP: ordem e repetição exatas |
-| Servidor h2 | `servers/h2_tls.py` | `h2`/HPACK: lista de pares decodificada |
-| Servidor h3 | `servers/h3_quic.py` | `aioquic`/QPACK: lista de pares decodificada |
-| Launcher | `capture/launch_chrome.py` | perfil dedicado temporário, debug só em 127.0.0.1, `--log-net-log` |
-| Cliente CDP | `capture/cdp_capture.mjs` | grava eventos Network.* crus, sem normalizar headers |
-| Orquestrador | `run_experiment.py` | servidores → Chrome → CDP → NetLog → análise |
-| Comparador | `compare.py` | três camadas por requisição + `layers.json`/`report.md` |
-| HAR derivado | `har_from_cdp.mjs` | HAR 1.2 a partir de CDP (fixture; não é o exportador do DevTools) |
-| Cross-check | `crosscheck_contract.py` | mesmo pipeline contra `testserver/` (Rust/httlib-hpack/quiche) |
+| h1 server | `servers/h1_raw.py` | raw socket, no HTTP library: exact order and repetition |
+| h2 server | `servers/h2_tls.py` | `h2`/HPACK: decoded list of pairs |
+| h3 server | `servers/h3_quic.py` | `aioquic`/QPACK: decoded list of pairs |
+| Launcher | `capture/launch_chrome.py` | temporary dedicated profile, debug only on 127.0.0.1, `--log-net-log` |
+| CDP client | `capture/cdp_capture.mjs` | records raw Network.* events, without normalizing headers |
+| Orchestrator | `run_experiment.py` | servers → Chrome → CDP → NetLog → analysis |
+| Comparator | `compare.py` | three layers per request + `layers.json`/`report.md` |
+| Derived HAR | `har_from_cdp.mjs` | HAR 1.2 from CDP (fixture; not the DevTools exporter) |
+| Cross-check | `crosscheck_contract.py` | same pipeline against `testserver/` (Rust/httlib-hpack/quiche) |
 
-Portas: **8781** h1, **8782** h2/TLS, **8783** h3/QUIC. Certificado autoassinado
-gerado em `certs/` e dispensado no Chrome por `--ignore-certificate-errors-spki-list`
-(nada é instalado no sistema). h3 é forçado com `--origin-to-force-quic-on`,
-sem desabilitar QUIC.
+Ports: **8781** h1, **8782** h2/TLS, **8783** h3/QUIC. Self-signed certificate
+generated in `certs/` and waived in Chrome by `--ignore-certificate-errors-spki-list`
+(nothing is installed on the system). h3 is forced with `--origin-to-force-quic-on`,
+without disabling QUIC.
 
-## Reproduzir
+## Reproduce
 
 ```bash
 cd experiments
 python3 -m venv .venv
 .venv/bin/pip install h2 aioquic
 .venv/bin/python certs/gen_cert.py
-.venv/bin/python run_experiment.py --all     # 15 experimentos, ~5 min
+.venv/bin/python run_experiment.py --all     # 15 experiments, ~5 min
 .venv/bin/python compare.py                  # layers.json + report.md + matrix.json
 node har_from_cdp.mjs results/h1-page
 ```
 
-Um experimento isolado:
+A single experiment:
 
 ```bash
 .venv/bin/python run_experiment.py --exp h2-ordered
 .venv/bin/python compare.py
 ```
 
-Cross-check contra os servidores do contrato (somente leitura em
-`testserver/` e `fixtures/`):
+Cross-check against the contract servers (read-only on
+`testserver/` and `fixtures/`):
 
 ```bash
-.venv/bin/python crosscheck_contract.py --proto all   # h1, h2 e h3
+.venv/bin/python crosscheck_contract.py --proto all   # h1, h2 and h3
 ```
 
-O binário do `testserver/` é autodetectado (Rust `target/{release,debug}` ou Go
-`bin/`), então a troca de linguagem dos servidores de referência não quebra este
-script. Para apontar outro build: `--bin CAMINHO` ou `SCRAPELENS_TESTSERVER_BIN`.
+The `testserver/` binary is auto-detected (Rust `target/{release,debug}` or Go
+`bin/`), so switching the language of the reference servers does not break this
+script. To point at another build: `--bin PATH` or `SCRAPELENS_TESTSERVER_BIN`.
 
-Resultado: h1 14/14 idêntico; h2 confirma o `cookie` fundido no log; **h3 falha
-no servidor de contrato** (`ERR_QUIC_PROTOCOL_ERROR` / `CERTIFICATE_VERIFY_FAILED`,
-reproduzido também com um cliente `aioquic`), então a linha h3 vem do mock.
+Result: h1 14/14 identical; h2 confirms the merged `cookie` in the log; **h3 fails
+on the contract server** (`ERR_QUIC_PROTOCOL_ERROR` / `CERTIFICATE_VERIFY_FAILED`,
+also reproduced with an `aioquic` client), so the h3 line comes from the mock.
 
-`run_experiment.py --list` mostra os nomes. Cada execução grava em
-`results/<experimento>/`:
+`run_experiment.py --list` shows the names. Each run writes to
+`results/<experiment>/`:
 
-- `plan.json` — URLs, modo (`native`/`ordered`), headers injetados;
-- `cdp-events.jsonl` — todo evento Network.* na ordem de emissão;
-- `fetch-decisions.jsonl` — header list entregue a `Fetch.continueRequest`;
+- `plan.json` — URLs, mode (`native`/`ordered`), injected headers;
+- `cdp-events.jsonl` — every Network.* event in emission order;
+- `fetch-decisions.jsonl` — header list delivered to `Fetch.continueRequest`;
 - `chrome-netlog.json` — NetLog (`--net-log-capture-mode=Everything`);
-- `server-h{1,2,3}.jsonl` — referência: pares decodificados + headers de resposta;
-- `layers.json` — as três camadas comparadas por requisição;
-- `report.md` — leitura humana; `run.json` — versão do Chrome e integridade do NetLog.
+- `server-h{1,2,3}.jsonl` — reference: decoded pairs + response headers;
+- `layers.json` — the three layers compared per request;
+- `report.md` — human-readable report; `run.json` — Chrome version and NetLog integrity.
 
-## Experimentos
+## Experiments
 
-| Nome | O que exercita |
+| Name | What it exercises |
 |---|---|
-| `h1-plain` / `h2-plain` / `h3-plain` | navegação GET simples |
-| `h1-page` / `h2-page` / `h3-page` | `/setcookie` (2× Set-Cookie) e `/page`: cada documento dispara 2 GET, 1 POST e 1 fetch com `Headers` da Fetch API, todos com cookies |
-| `h1-ordered` / `h2-ordered` / `h3-ordered` | ordem + duplicatas impostas por `Fetch.continueRequest` |
-| `h1/h2/h3-cookieprobe` | 3 cookies de valor longo via `document.cookie` |
-| `h1/h2/h3-set3` | 3 cookies idênticos aos do contrato (`Set-Cookie` + `SameSite=Lax`) |
+| `h1-plain` / `h2-plain` / `h3-plain` | simple GET navigation |
+| `h1-page` / `h2-page` / `h3-page` | `/setcookie` (2× Set-Cookie) and `/page`: each document fires 2 GET, 1 POST and 1 fetch with `Headers` from the Fetch API, all with cookies |
+| `h1-ordered` / `h2-ordered` / `h3-ordered` | order + duplicates imposed by `Fetch.continueRequest` |
+| `h1/h2/h3-cookieprobe` | 3 long-value cookies via `document.cookie` |
+| `h1/h2/h3-set3` | 3 cookies identical to the contract ones (`Set-Cookie` + `SameSite=Lax`) |
 
-## Achados que a matriz usa
+## Findings the matrix uses
 
-1. `requestWillBeSentExtraInfo.headers` é um **mapa ordenado em ASCII** e já vem
-   sem duplicatas; `requestWillBeSent.headers` é só o subconjunto do Blink.
-2. `responseReceivedExtraInfo.headersText` (h1) é o único lugar do CDP com a
-   ordem bruta da resposta; o objeto `headers` funde repetições com `\n`.
-3. NetLog de envio h1 preserva ordem, caixa e duplicatas; em h2/h3 o evento de
-   sessão pode inverter `priority`/`cookie`, e o `Cookie` aparece como 1 campo
-   mesmo quando o fio leva N.
-4. NetLog de recepção h2/h3 funde duplicatas com `\x00`; o evento
-   `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` mantém as repetições separadas.
-5. Header fornecido por API não sai como entrou: `Fetch.continueRequest` com 6
-   pares (3 duplicados) chega como 3 pares (último valor vence); `Headers` da
-   Fetch API funde `append()` em `"a, b"`.
+1. `requestWillBeSentExtraInfo.headers` is an **ASCII-ordered map** and already comes
+   without duplicates; `requestWillBeSent.headers` is only the Blink subset.
+2. `responseReceivedExtraInfo.headersText` (h1) is the only place in CDP with the
+   raw response order; the `headers` object merges repetitions with `\n`.
+3. h1 send NetLog preserves order, case and duplicates; in h2/h3 the session event
+   may swap `priority`/`cookie`, and `Cookie` appears as 1 field even when the wire
+   carries N.
+4. h2/h3 receive NetLog merges duplicates with `\x00`; the
+   `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` event keeps the repetitions separate.
+5. A header supplied by API does not come out as it went in: `Fetch.continueRequest` with 6
+   pairs (3 duplicated) arrives as 3 pairs (last value wins); the Fetch API `Headers`
+   merges `append()` into `"a, b"`.
 
-## Cuidados aplicados
+## Precautions applied
 
-- Perfil em `results/<exp>/chrome-profile` (apagado ao final); nunca o perfil pessoal.
-- `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`: nenhum tráfego externo.
-- Encerra apenas o processo iniciado pelo launcher (`os.killpg` do grupo criado).
-- NetLog em modo `Everything` contém cookies — todos sintéticos (`sl_a`, `sl_b`).
-  O produto deve avisar o usuário antes de usar esse modo.
-- NetLog inválido/truncado é registrado como `netlog_valid_json: false`, sem
-  descartar a sessão parcial.
+- Profile at `results/<exp>/chrome-profile` (deleted at the end); never the personal profile.
+- `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`: no external traffic.
+- Terminates only the process started by the launcher (`os.killpg` of the group created).
+- NetLog in `Everything` mode contains cookies — all synthetic (`sl_a`, `sl_b`).
+  The product must warn the user before using this mode.
+- Invalid/truncated NetLog is recorded as `netlog_valid_json: false`, without
+  discarding the partial session.

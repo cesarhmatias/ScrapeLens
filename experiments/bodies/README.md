@@ -1,84 +1,83 @@
-# Corpos na captura ao vivo (`cdp-bodies.jsonl`)
+# Bodies in the live capture (`cdp-bodies.jsonl`)
 
-Verifica `src-tauri/src/capture.rs` contra o `testserver` h1 local (Chrome 156,
-127.0.0.1, dados sintéticos, sem rede externa).
+Checks `src-tauri/src/capture.rs` against the local `testserver` h1 (Chrome 156,
+127.0.0.1, synthetic data, no external network).
 
 ```bash
-cd experiments/bodies && python3 run_bodies.py        # porta 9781; ~15 s
+cd experiments/bodies && python3 run_bodies.py        # port 9781; ~15 s
 ```
 
-`run_bodies.py` sobe o testserver, roda `cargo test live_bodies_cycle --ignored`
-(captura real), dirige a página same-origin por um segundo cliente CDP
-(`drive.mjs`) e compara três fontes independentes: o que a página enviou/recebeu
-(sha256), o que o servidor registrou (`/sink`) ou serve (bytes regenerados no
-verificador) e `cdp-bodies.jsonl`. Saída em `../results/bodies/`
-(`verification.json`, `report.md`, `sample-lines.jsonl`; com `--keep` a sessão e o NetLog,
-centenas de MB, ficam em `session/` e `server/`, ignorados pelo git; sem `--keep` são apagados ao fim).
+`run_bodies.py` starts the testserver, runs `cargo test live_bodies_cycle --ignored`
+(real capture), drives the same-origin page through a second CDP client
+(`drive.mjs`) and compares three independent sources: what the page sent/received
+(sha256), what the server recorded (`/sink`) or serves (bytes regenerated in the
+verifier) and `cdp-bodies.jsonl`. Output goes to `../results/bodies/`
+(`verification.json`, `report.md`, `sample-lines.jsonl`; with `--keep` the session and the NetLog,
+hundreds of MB, stay in `session/` and `server/`, ignored by git; without `--keep` they are deleted at the end).
 
-## Resultado (Chrome 156.0.8078.73, h1)
+## Result (Chrome 156.0.8078.73, h1)
 
-| caso | estado gravado | bytes |
+| case | recorded state | bytes |
 |---|---|---|
-| POST form-urlencoded | req `captured` utf8 (postDataEntries) | = enviado = servidor |
-| POST JSON | req `captured` utf8 | = enviado = servidor |
-| POST binário (0xFF 0xC0 0x00…) | req `captured` base64 | = enviado = servidor |
-| eco binário | resposta `captured` base64 | = servido |
-| POST 6 MiB texto / binário | req `truncated`, `originalSize` 6291456, 5242880 gravados | prefixo = enviado |
-| GET 6 MiB | resposta `truncated`, mesmos tamanhos | prefixo = servido |
-| gzip | resposta `captured` utf8 | = servido, já decodificado pelo Chrome |
-| 302 | tentativa 0 `unavailable` ("resposta de redirect…"); tentativa 1 `captured` | tentativa 1 = servido |
-| 307 com corpo | corpo da requisição `captured` nas duas tentativas; resposta 0 `unavailable` | iguais entre si e ao enviado |
-| 204 / Content-Length: 0 | `empty` com a evidência no `reason` | — |
-| conexão recusada | `unavailable` "loadingFailed: net::ERR_CONNECTION_REFUSED" | — |
+| POST form-urlencoded | req `captured` utf8 (postDataEntries) | = sent = server |
+| POST JSON | req `captured` utf8 | = sent = server |
+| POST binary (0xFF 0xC0 0x00…) | req `captured` base64 | = sent = server |
+| binary echo | response `captured` base64 | = served |
+| POST 6 MiB text / binary | req `truncated`, `originalSize` 6291456, 5242880 recorded | prefix = sent |
+| GET 6 MiB | response `truncated`, same sizes | prefix = served |
+| gzip | response `captured` utf8 | = served, already decoded by Chrome |
+| 302 | attempt 0 `unavailable` ("redirect response…" (legacy: "resposta de redirect…")); attempt 1 `captured` | attempt 1 = served |
+| 307 with body | request body `captured` in both attempts; response 0 `unavailable` | equal to each other and to the sent bytes |
+| 204 / Content-Length: 0 | `empty` with the evidence in `reason` | — |
+| refused connection | `unavailable` "loadingFailed: net::ERR_CONNECTION_REFUSED" | — |
 
-## O que o CDP não fornece (observado)
+## What CDP does not provide (observed)
 
-- **`request.postData` é lossy para binário**: o Chrome converte para string e
-  bytes inválidos viram U+FFFD (4099 bytes enviados → 6149 em UTF-8). Por isso
-  `postDataEntries` (bytes exatos) tem prioridade; `postData` só é usado sem entries.
-- **Corpo de 6 MiB não vem no evento (limiar exato não medido)**: só `hasPostData`; os bytes vêm de
-  `Network.getRequestPostData` (binário voltou com `base64Encoded:true`, exato).
-- **Corpo de resposta de redirect**: não existe (`getResponseBody` não serve).
-- **gzip**: só o corpo já decodificado; os bytes do fio não são acessíveis.
-- **`empty`** exige 204/205/304, HEAD ou `Content-Length: 0` visto nos headers do CDP;
-  0 bytes sem isso vira `unavailable`.
-- Não exercitado ao vivo (o testserver não tem o endpoint): SSE, WebSocket,
-  corpos `Blob`/stream de requisição, h2 e h3. SSE/WebSocket, orçamento de
-  256 MiB e falhas de comando têm teste unitário (`cargo test capture::`).
+- **`request.postData` is lossy for binary**: Chrome converts it to a string and
+  invalid bytes become U+FFFD (4099 bytes sent → 6149 in UTF-8). That is why
+  `postDataEntries` (exact bytes) takes priority; `postData` is only used without entries.
+- **6 MiB body is not in the event (exact threshold not measured)**: only `hasPostData`; the bytes come from
+  `Network.getRequestPostData` (binary came back with `base64Encoded:true`, exact).
+- **Redirect response body**: does not exist (`getResponseBody` does not serve it).
+- **gzip**: only the already decoded body; the wire bytes are not accessible.
+- **`empty`** requires 204/205/304, HEAD or `Content-Length: 0` seen in the CDP headers;
+  0 bytes without that becomes `unavailable`.
+- Not exercised live (the testserver does not have the endpoint): SSE, WebSocket,
+  `Blob`/request-stream bodies, h2 and h3. SSE/WebSocket, the 256 MiB budget
+  and command failures have unit tests (`cargo test capture::`).
 
-## Campo `transformed` (revisão 4a)
+## `transformed` field (review 4a)
 
-- Corpo de resposta que não vem em base64 → `"transformed":["chrome-decoded"]`: o
-  `getResponseBody` entrega texto já decodificado pelo Chrome. Com charset
-  declarado diferente de UTF-8 soma `"charset:<x>->utf-8"`. Caso ao vivo
-  `latin1`: fio `53 e3 6f` ("São", ISO-8859-1) → CDP `53 c3 a3 6f`, marcado.
-  Os bytes do fio não são reconstruídos.
-- `postDataEntries` incompleto → tenta `Network.getRequestPostData`; se só restar
-  o `postData` do evento, grava marcado `"lossy-postData"` (teste unitário; o
-  Chrome 156 não produziu entradas incompletas nos casos ao vivo).
-- Os bytes idênticos ao fio valem só para linhas sem `transformed`.
+- Response body that does not come in base64 → `"transformed":["chrome-decoded"]`: the
+  `getResponseBody` delivers text already decoded by Chrome. With a declared charset
+  other than UTF-8 it adds `"charset:<x>->utf-8"`. Live case
+  `latin1`: wire `53 e3 6f` ("São", ISO-8859-1) → CDP `53 c3 a3 6f`, marked.
+  The wire bytes are not reconstructed.
+- Incomplete `postDataEntries` → tries `Network.getRequestPostData`; if only the event's
+  `postData` remains, it is recorded marked `"lossy-postData"` (unit test; Chrome 156
+  did not produce incomplete entries in the live cases).
+- Bytes identical to the wire only hold for lines without `transformed`.
 
-## Observação de estabilidade
+## Stability note
 
-Em 1 de ~6 execuções o ciclo ao vivo falhou na importação: "JSON inválido em
-NetLog … line 3661" (NetLog não finalizado ao encerrar o Chrome). Não
-reproduzido nas 5 execuções seguintes; não corrigido aqui.
+In 1 of ~6 runs the live cycle failed on import: "invalid JSON in NetLog … line 3661"
+(legacy: "JSON inválido em NetLog … line 3661"; NetLog not finalized when Chrome shut down). Not
+reproduced in the next 5 runs; not fixed here.
 
-## NetLog truncado (diagnóstico e correção)
+## Truncated NetLog (diagnosis and fix)
 
-- **Falha original**: 1 ciclo ("JSON inválido em NetLog … line 3661"); o NetLog terminava em
-  evento completo + vírgula, sem `]}`. Esse ciclo veio logo após uma execução em que o
-  driver falhou e deixou a captura (teste + Chrome) viva, escrevendo no mesmo diretório.
-  **Não reproduzido**: 12 ciclos com diagnóstico e 20 ciclos finais, todos com
-  `Browser.close` ok e saída graciosa do Chrome (0,2–2,4 s). A causa provável é essa captura
-  órfã (harness), mas não está provada.
-- **Defesa**: `run_bodies.py` encerra a captura própria no `finally`, recusa rodar se já
-  houver `live_bodies_cycle` e `capture.rs` registra como o Chrome saiu.
-- **Em `capture.rs`**: `cdp-events.jsonl` é gravado antes de qualquer passo que possa falhar.
-  NetLog truncado é reparado (corta no último evento completo, fecha `]}`; o original fica em
-  `netlog.original.json`); irreparável/ausente → importa só CDP+corpos. Em ambos:
-  `completeness` parcial + aviso `capture.netlog_incomplete` / `capture.netlog_unusable`;
-  Chrome morto à força → `capture.chrome_killed`. Nunca descarta a sessão em silêncio.
-  Provado por testes unitários com NetLog real do Chrome cortado em 6 pontos (o core importa o
-  reparado); não há prova ao vivo do reparo porque a falha não reproduziu.
-- `python3 loop_bodies.py 20` → `results/bodies/cycles.json` (20 ciclos, 0 falhas).
+- **Original failure**: 1 cycle ("invalid JSON in NetLog … line 3661"; legacy: "JSON inválido em NetLog … line 3661"); the NetLog ended at a complete event plus a comma, without `]}`. That cycle came right after a run in which the
+  driver failed and left the capture (test + Chrome) alive, writing to the same directory.
+  **Not reproduced**: 12 diagnostic cycles and 20 final cycles, all with
+  `Browser.close` ok and graceful Chrome exit (0.2–2.4 s). The likely cause is that orphan
+  capture (harness), but it is not proven.
+- **Defense**: `run_bodies.py` terminates its own capture in the `finally`, refuses to run if
+  a `live_bodies_cycle` is already running, and `capture.rs` records how Chrome exited.
+- **In `capture.rs`**: `cdp-events.jsonl` is written before any step that can fail.
+  A truncated NetLog is repaired (cut at the last complete event, close with `]}`; the original is kept in
+  `netlog.original.json`); unrepairable/absent → imports only CDP+bodies. In both cases:
+  partial `completeness` + warning `capture.netlog_incomplete` / `capture.netlog_unusable`;
+  Chrome forcibly killed → `capture.chrome_killed`. It never discards the session silently.
+  Proven by unit tests with a real Chrome NetLog cut at 6 points (the core imports the
+  repaired one); there is no live proof of the repair because the failure did not reproduce.
+- `python3 loop_bodies.py 20` → `results/bodies/cycles.json` (20 cycles, 0 failures).
