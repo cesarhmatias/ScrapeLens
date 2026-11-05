@@ -440,7 +440,7 @@
     },
     {
      "field": "XML:v_placa",
-     "evidence": "sem origem observada",
+     "evidence": "no observed origin",
      "producer": null,
      "value": "TST0T00",
      "why": "user input"
@@ -449,7 +449,7 @@
    "negative_4_3": {
     "field": "header:x-page-seq",
     "value": "3",
-    "evidence": "sem origem observada",
+    "evidence": "no observed origin",
     "coincidence": {
      "requestId": "1010.10",
      "header": "x-seq-hint",
@@ -522,66 +522,66 @@
    "fields": [
     {
      "field": "SESSIONID",
-     "class": "dinâmico",
+     "class": "dynamic",
      "runtime": true,
      "origin": "1001.1",
      "possible": true
     },
     {
      "field": "STAMP",
-     "class": "dinâmico",
+     "class": "dynamic",
      "runtime": true,
      "origin": "1010.10"
     },
     {
      "field": "XML:delta",
-     "class": "dinâmico",
+     "class": "dynamic",
      "runtime": true,
      "origin": "1010.10",
      "possible": true
     },
     {
      "field": "cookie:JSESSIONID",
-     "class": "dinâmico",
+     "class": "dynamic",
      "runtime": true,
      "origin": "1001.1"
     },
     {
      "field": "cookie:TS01a1b2c3",
-     "class": "dinâmico",
+     "class": "dynamic",
      "runtime": true,
      "origin": "1002.2",
      "protection": true
     },
     {
      "field": "XML:v_placa",
-     "class": "dinâmico",
+     "class": "dynamic",
      "runtime": false,
      "origin": null,
      "label": "dynamic without origin"
     },
     {
      "field": "XML:cmd_consultar_placa",
-     "class": "estático"
+     "class": "static"
     },
     {
      "field": "PAGEINITPARAM",
-     "class": "estático",
+     "class": "static",
      "value": ""
     },
     {
      "field": "ERRORMESSAGE",
-     "class": "estático",
+     "class": "static",
      "value": ""
     },
     {
      "field": "XML:#f12_selected",
-     "class": "estático",
+     "class": "static",
      "value": "2.0"
     },
     {
      "field": "header:x-page-seq",
-     "class": "estático",
+     "class": "static",
      "value": "3"
     }
    ],
