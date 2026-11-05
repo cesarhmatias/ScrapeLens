@@ -66,9 +66,9 @@ These screenshots are real captures: headless Chrome 156 with a dedicated test p
 
 Download the pre-built binaries from the [**Releases**](https://github.com/cesarhmatias/ScrapeLens/releases) tab:
 
-- **macOS (Apple Silicon `arm64`)**: `ScrapeLens-0.1.0-macos-arm64.zip` (`ScrapeLens.app`)
-- **Linux (`x86_64` / `amd64`)**: `ScrapeLens_0.1.0_amd64.deb` and `ScrapeLens_0.1.0_amd64.AppImage`
-- **Linux (`aarch64` / `arm64`)**: `ScrapeLens_0.1.0_arm64.deb` and `ScrapeLens_0.1.0_aarch64.AppImage`
+- **macOS (Apple Silicon `arm64`)**: `ScrapeLens-0.1.1-macos-arm64.zip` (`ScrapeLens.app`)
+- **Linux (`x86_64` / `amd64`)**: `ScrapeLens_0.1.1_amd64.deb` and `ScrapeLens_0.1.1_amd64.AppImage`
+- **Linux (`aarch64` / `arm64`)**: `ScrapeLens_0.1.1_arm64.deb` and `ScrapeLens_0.1.1_aarch64.AppImage`
 
 ### Running on macOS
 
