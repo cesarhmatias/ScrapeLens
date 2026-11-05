@@ -174,26 +174,46 @@ expired ones. `CaptureConfig.initial_cookies` lets the caller supply the ready l
 non-empty, it wins over the source.
 
 - **The user's database is never opened in place.** `cookies.rs` copies `Cookies`/`cookies.sqlite`
-  (with `-wal`/`-shm`) to a temporary 0700 folder and deletes it on `Drop`; the read is by the
-  system `sqlite3` (macOS already has it; the Linux test images install the `sqlite3` package).
+  (with `-wal`/`-shm`/`-journal`) to a temporary 0700 folder and deletes it on `Drop`. A copy that
+  cannot take a sidecar is reported in the notes. Copies left by a killed or rebooted import
+  (a process that is gone, or older than a day) are removed at the start of the next import; only
+  this user's directories with mode 0700 and not symlinks are touched. The read is by the system
+  SQLite library, loaded at run time (`dlopen` of `libsqlite3.so.0`; macOS uses the `sqlite3`
+  command); no package has to be installed, and an AppImage's own libraries cannot break it.
 - **Decryption:** pure Rust (`SHA-1`/`SHA-256`/`PBKDF2-HMAC-SHA1`/`AES-128-CBC`), without
   OpenSSL. Chromium `v10` on macOS uses the Keychain password `"<Product> Safe Storage"` (one
   call per capture; macOS may ask for authorization) with PBKDF2 1003 iterations and salt
-  `"saltysalt"`; on Linux `v10` uses `"peanuts"` with 1 iteration and `v11` tries `secret-tool`
-  (libsecret), with a clear warning when the password is not there. On Chrome 130+ (`meta.version >= 24`)
+  `"saltysalt"`; on Linux `v10` uses `"peanuts"` with 1 iteration and `v11` takes the password from the
+  keyring (libsecret, see below). On Chrome 130+ (`meta.version >= 24`)
   the 32-byte prefix `SHA-256(host_key)` is removed. Firefox (`moz_cookies`) and Safari
   (`Cookies.binarycookies`) are plain text/without Keychain.
+- **Linux keys (`v10` and `v11`):** each value is decrypted with the key of its own prefix, cached
+  per prefix, so a profile that mixes `v10` and `v11` rows keeps both readable. On Linux `v11`
+  takes the password from the Secret Service through libsecret (`dlopen` of `libsecret-1.so.0`),
+  bounded to 20 s; `secret-tool` is only the fallback when libsecret is missing, and it is bounded
+  the same way. When the keyring is locked, or has no entry for the browser, the cookies of that
+  key cannot be read and the message says `keyring is locked or has no entry for this browser:
+  unlock it and try again`. If the site has encrypted cookies and none can be read, the import
+  fails with that reason; if some can, they are imported and the rest are counted in
+  `undecryptable` with the reason (in the notice and in `Capture.cookiesImported`).
 - **Injection:** in `Cdp::setup_inner`, `Network.setCookies` on the page session **before**
   `Page.navigate`; the first request already carries `Cookie`. A
-  `Capture.cookiesImported` event in `cdp-events.jsonl` records `source`, `domain`, `importedCount`
-  and `skippedCount` — **without the values**. The capture's `notice` gains
-  ` · N cookie(s) imported from <source>`.
+  `Capture.cookiesImported` event in `cdp-events.jsonl` records `source`, `domain`, `importedCount`,
+  `skippedCount`, `undecryptableCount` and `undecryptableReason` (`null` when everything was read)
+  — **without the values**. The capture's `notice` gains ` · N cookie(s) imported from <source>` and,
+  when some could not be decrypted, `; M cookie(s) could not be decrypted: <reason>`.
 - **Privacy:** the imported values appear in the CDP/NetLog `Cookie` headers like
   any session cookie; the sensitive-data notice applies (`browser::SENSITIVE_NOTICE`).
   The import is opt-in (`cookie_source`/`initial_cookies`), only for the start site, and does not write
   values to the summary or to any log.
 - **Tests:** official vectors for SHA-1/SHA-256/PBKDF2 (RFC 6070)/AES-128-CBC (NIST SP 800-38A);
-  Chrome 130+ prefix; synthetic Chromium and Firefox SQLite databases; site filter
+  Chrome 130+ prefix; a committed synthetic Chromium database read without the `sqlite3` command;
+  mixed `v10`/`v11` rows with their own keys; a locked `v11` key with the readable `v10` cookies
+  imported and the rest reported; a one- or two-byte encrypted value counted, not a panic; the
+  "nothing readable" failure with its reason; the 20 s bound on keyring lookups (including the
+  `secret-tool` command, killed at the deadline); the sweep of stale copies; the sidecar note;
+  the notice text; the Chrome 130+ prefix; synthetic Chromium and Firefox SQLite databases
+  (`sqlite_roundtrip` fails without the `sqlite3` command, it does not pass empty); site filter
   (`.example.com.br` and `login.example.com.br` are included for `app.example.com.br`,
   `other.com.br` is not); synthetic `Cookies.binarycookies`; `Network.setCookies` payload; and the
   live `live_imported_cookies_are_sent_with_the_first_navigation` (loopback: the server sees

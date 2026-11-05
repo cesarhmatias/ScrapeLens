@@ -147,6 +147,17 @@ pub(crate) struct RunOptions {
     pub transport: CdpTransport,
 }
 
+/// What the `Capture.cookiesImported` event records about an import: counts and the reason
+/// encrypted cookies could not be read. Never cookie values.
+#[derive(Clone, Copy)]
+struct CookieAudit<'a> {
+    source: &'a str,
+    domain: &'a str,
+    skipped: usize,
+    undecryptable: usize,
+    undecryptable_reason: Option<&'a str>,
+}
+
 /// Shutdown data that the App does not use, but the controlled mode returns.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RunReport {
@@ -192,6 +203,8 @@ fn run_inner(
     let mut cookie_source_label: Option<String> = None;
     let mut cookie_domain = String::new();
     let mut cookie_skipped = 0usize;
+    let mut cookie_undecryptable = 0usize;
+    let mut cookie_undecryptable_reason: Option<String> = None;
     if imported_cookies.is_empty() {
         if let Some(source_id) = &config.cookie_source {
             let outcome = cookies::load_cookies_for_url(source_id, &config.start_url)?;
@@ -199,6 +212,8 @@ fn run_inner(
             cookie_source_label = Some(outcome.label);
             cookie_domain = outcome.domain;
             cookie_skipped = outcome.skipped;
+            cookie_undecryptable = outcome.undecryptable;
+            cookie_undecryptable_reason = outcome.undecryptable_reason;
             for note in &outcome.notes {
                 eprintln!("cookies: {note}");
             }
@@ -206,8 +221,17 @@ fn run_inner(
     } else if let Some(domain) = imported_cookies.first().map(|c| c.domain.clone()) {
         cookie_domain = domain;
     }
+    let undecryptable_suffix = match (cookie_undecryptable, &cookie_undecryptable_reason) {
+        (0, _) => String::new(),
+        (count, reason) => format!(
+            "; {count} cookie(s) could not be decrypted: {}",
+            reason.as_deref().unwrap_or("unknown reason")
+        ),
+    };
     let cookie_suffix = match (&cookie_source_label, imported_cookies.len()) {
-        (Some(label), count) => format!(" · {count} cookie(s) imported from {label}"),
+        (Some(label), count) => {
+            format!(" · {count} cookie(s) imported from {label}{undecryptable_suffix}")
+        }
         (None, count) if count > 0 => format!(" · {count} cookie(s) imported"),
         _ => String::new(),
     };
@@ -321,11 +345,13 @@ fn run_inner(
     };
 
     let cookie_audit = if cookie_source_label.is_some() || !imported_cookies.is_empty() {
-        Some((
-            cookie_source_label.as_deref().unwrap_or("initialCookies"),
-            cookie_domain.as_str(),
-            cookie_skipped,
-        ))
+        Some(CookieAudit {
+            source: cookie_source_label.as_deref().unwrap_or("initialCookies"),
+            domain: cookie_domain.as_str(),
+            skipped: cookie_skipped,
+            undecryptable: cookie_undecryptable,
+            undecryptable_reason: cookie_undecryptable_reason.as_deref(),
+        })
     } else {
         None
     };
@@ -2012,7 +2038,7 @@ impl Cdp {
         socket: &mut Transport,
         start_url: &str,
         cookies: &[cookies::ImportedCookie],
-        audit: Option<(&str, &str, usize)>,
+        audit: Option<CookieAudit<'_>>,
     ) -> Result<(), String> {
         let setup_result = self.setup_inner(socket, start_url, cookies, audit);
         if setup_result.is_ok() {
@@ -2028,7 +2054,7 @@ impl Cdp {
         socket: &mut Transport,
         start_url: &str,
         cookies: &[cookies::ImportedCookie],
-        audit: Option<(&str, &str, usize)>,
+        audit: Option<CookieAudit<'_>>,
     ) -> Result<(), String> {
         self.send(
             socket,
@@ -2113,15 +2139,17 @@ impl Cdp {
                             Duration::from_secs(10),
                         )?;
                     }
-                    if let Some((source, domain, skipped)) = audit {
+                    if let Some(audit) = audit {
                         self.push_event_line(
                             &page_session,
                             "Capture.cookiesImported",
                             &json!({
-                                "source": source,
-                                "domain": domain,
+                                "source": audit.source,
+                                "domain": audit.domain,
                                 "importedCount": cookies.len(),
-                                "skippedCount": skipped,
+                                "skippedCount": audit.skipped,
+                                "undecryptableCount": audit.undecryptable,
+                                "undecryptableReason": audit.undecryptable_reason,
                             }),
                             None,
                         );

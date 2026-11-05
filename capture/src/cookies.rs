@@ -82,8 +82,9 @@ pub struct ImportedCookie {
     pub expires: Option<i64>,
 }
 
-/// Result of an import. `skipped` counts database cookies left out (expired, from
-/// another site, `v11` without a key, non-UTF-8 value).
+/// Result of an import. `skipped` counts database cookies left out on purpose (expired,
+/// from another site, not a cookie). `undecryptable` counts encrypted cookies of the site
+/// that could not be read, and `undecryptable_reason` says why (no cookie values).
 #[derive(Debug, Clone)]
 pub struct CookieImportOutcome {
     pub source_id: String,
@@ -91,6 +92,8 @@ pub struct CookieImportOutcome {
     pub domain: String,
     pub cookies: Vec<ImportedCookie>,
     pub skipped: usize,
+    pub undecryptable: usize,
+    pub undecryptable_reason: Option<String>,
     /// Structural warnings (no cookie values), for the session/UI.
     pub notes: Vec<String>,
 }
@@ -98,11 +101,54 @@ pub struct CookieImportOutcome {
 impl CookieImportOutcome {
     /// Suffix for the capture's `notice`, without values.
     pub fn notice_suffix(&self) -> String {
-        format!(
+        let mut text = format!(
             " · {} cookie(s) imported from {}",
             self.cookies.len(),
             self.label
+        );
+        if self.undecryptable > 0 {
+            text.push_str(&format!(
+                "; {} cookie(s) could not be decrypted: {}",
+                self.undecryptable,
+                self.undecryptable_reason.as_deref().unwrap_or("unknown reason")
+            ));
+        }
+        text
+    }
+}
+
+/// Counts and reasons collected while reading one database. Passed down to the loaders.
+#[derive(Debug, Default)]
+struct ImportTally {
+    skipped: usize,
+    undecryptable: usize,
+    /// Reason → number of cookies it applies to (sorted, so the text is stable).
+    reasons: std::collections::BTreeMap<String, usize>,
+    notes: Vec<String>,
+}
+
+impl ImportTally {
+    fn undecryptable(&mut self, reason: String) {
+        self.undecryptable += 1;
+        *self.reasons.entry(reason).or_insert(0) += 1;
+    }
+
+    /// `reason (n); other reason (m)`, or `None` when every cookie was read.
+    fn reason_text(&self) -> Option<String> {
+        if self.reasons.is_empty() {
+            return None;
+        }
+        Some(
+            self.reasons
+                .iter()
+                .map(|(reason, count)| format!("{reason} ({count})"))
+                .collect::<Vec<_>>()
+                .join("; "),
         )
+    }
+
+    fn first_reason(&self) -> Option<String> {
+        self.reasons.keys().next().cloned()
     }
 }
 
@@ -336,6 +382,7 @@ fn linux_sources() -> Vec<BrowserCookieSource> {
 /// Linux profile discovery under `home`: native installs, Flatpak and Snap packages.
 /// Flatpak and Snap keep their data under their own roots and are checked separately.
 #[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn linux_sources_in(home: &Path) -> Vec<BrowserCookieSource> {
     let mut out = Vec::new();
     let config = home.join(".config");
@@ -487,6 +534,8 @@ fn cookie_matches_host(cookie_domain: &str, host: &str) -> bool {
 struct CookieDbCopy {
     dir: PathBuf,
     db: PathBuf,
+    /// Problems copying the sidecar files (WAL, shared memory, journal): the copy may be stale.
+    notes: Vec<String>,
 }
 
 impl Drop for CookieDbCopy {
@@ -495,7 +544,16 @@ impl Drop for CookieDbCopy {
     }
 }
 
+/// Name prefix of a private copy: `scrapelens-cookies-<pid>-<nanos>`.
+const COPY_PREFIX: &str = "scrapelens-cookies-";
+/// A copy this old is removed even if its process id is taken (pid reuse after a reboot).
+const STALE_COPY_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
 fn copy_cookie_db(source: &Path) -> Result<CookieDbCopy, String> {
+    copy_cookie_db_in(source, &crate::private_base_dir())
+}
+
+fn copy_cookie_db_in(source: &Path, base: &Path) -> Result<CookieDbCopy, String> {
     let meta = std::fs::metadata(source)
         .map_err(|error| format!("cookie database inaccessible ({}): {error}", source.display()))?;
     if !meta.is_file() {
@@ -504,8 +562,9 @@ fn copy_cookie_db(source: &Path) -> Result<CookieDbCopy, String> {
             source.display()
         ));
     }
-    let dir = crate::private_base_dir().join(format!(
-        "scrapelens-cookies-{}-{}",
+    sweep_stale_copies(base);
+    let dir = base.join(format!(
+        "{COPY_PREFIX}{}-{}",
         std::process::id(),
         unix_nanos()
     ));
@@ -519,6 +578,7 @@ fn copy_cookie_db(source: &Path) -> Result<CookieDbCopy, String> {
     // WAL, SHM and the rollback journal follow the copy: without them SQLite does not
     // see the most recent cookies (Chrome keeps its writes in the WAL), and a copy taken
     // in the middle of a transaction is only consistent with its hot journal.
+    let mut notes = Vec::new();
     for suffix in ["-wal", "-shm", "-journal"] {
         let mut name = source.as_os_str().to_os_string();
         name.push(suffix);
@@ -526,10 +586,64 @@ fn copy_cookie_db(source: &Path) -> Result<CookieDbCopy, String> {
         if side.is_file() {
             let mut dest = db.as_os_str().to_os_string();
             dest.push(suffix);
-            let _ = std::fs::copy(&side, PathBuf::from(dest));
+            if let Err(error) = std::fs::copy(&side, PathBuf::from(dest)) {
+                notes.push(format!(
+                    "could not copy the {suffix} file next to the cookie database ({error}); the most recent cookies may be missing"
+                ));
+            }
         }
     }
-    Ok(CookieDbCopy { dir, db })
+    Ok(CookieDbCopy { dir, db, notes })
+}
+
+/// Removes private copies left behind by an import that was killed, crashed or cut off by
+/// a reboot. Only directories of this user, with the copy's name, mode 0700 and not a
+/// symlink are touched, and only when their process is gone or they are over a day old.
+/// A running import's copy (this process included) is never removed.
+fn sweep_stale_copies(base: &Path) {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
+    // SAFETY: getuid has no failure mode and no arguments.
+    let me = unsafe { libc::getuid() };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some(rest) = name.strip_prefix(COPY_PREFIX) else { continue };
+        let Some(pid) = rest.split('-').next().and_then(|p| p.parse::<i32>().ok()) else {
+            continue;
+        };
+        if pid <= 0 {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.uid() != me || meta.permissions().mode() & 0o777 != 0o700 {
+            continue;
+        }
+        let old = meta
+            .modified()
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > STALE_COPY_AGE);
+        if !old && process_alive(pid) {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(&path);
+    }
+}
+
+/// Whether a process id belongs to a live process (or one we may not signal).
+fn process_alive(pid: i32) -> bool {
+    // SAFETY: signal 0 only checks that the process exists; it sends nothing.
+    if unsafe { libc::kill(pid, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 fn unix_nanos() -> u128 {
@@ -934,68 +1048,170 @@ fn keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-#[cfg(target_os = "linux")]
-fn linux_v11_key(product: &ChromiumProduct) -> Result<Vec<u8>, String> {
-    match native::secret_lookup(product.linux_secret_app) {
-        Some(Ok(password)) if password.is_empty() => Err(format!(
-            "v11 cookie of {}: the keyring has no password for this browser; unlock the keyring and try again",
-            product.browser
-        )),
-        Some(Ok(password)) => Ok(pbkdf2_sha1(&password, b"saltysalt", 1, 16)),
-        Some(Err(why)) => Err(format!(
-            "v11 cookie of {}: the keyring did not return the browser password ({why}); unlock the keyring and try again",
-            product.browser
-        )),
-        // libsecret is not installed: fall back to the command.
-        None => linux_v11_key_with(Path::new("secret-tool"), product),
+/// How long the browser's key may take to come back from the keyring. A locked keyring
+/// waits for the user to unlock it; past this the import reports it instead of waiting.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const KEYRING_DEADLINE: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// The error for a keyring that is locked, or whose unlock prompt was not answered.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn keyring_locked_error(browser: &str) -> String {
+    format!("v11 cookie of {browser}: keyring is locked: unlock it and try again")
+}
+
+/// Outcome of a call bounded in time.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+enum Bounded<T> {
+    Done(T),
+    TimedOut,
+    Failed,
+}
+
+/// Runs `work` on a throwaway thread and waits at most `deadline` for its result. A call
+/// that does not finish is left behind on its own thread; the capture never waits for it.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn bounded<T: Send + 'static>(
+    deadline: std::time::Duration,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Bounded<T> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    match receiver.recv_timeout(deadline) {
+        Ok(value) => Bounded::Done(value),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Bounded::TimedOut,
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Bounded::Failed,
     }
 }
 
-/// The Secret Service password the browser stores for its cookies (`v11`). Every
-/// failure says what to do: a missing package, or a keyring that is locked or has no
-/// entry (the password can be empty when the browser never used the keyring).
 #[cfg(target_os = "linux")]
-fn linux_v11_key_with(secret_tool: &Path, product: &ChromiumProduct) -> Result<Vec<u8>, String> {
-    let output = helper_command(secret_tool)
+fn linux_v11_key(product: &ChromiumProduct) -> Result<Vec<u8>, String> {
+    let application = product.linux_secret_app;
+    match bounded(KEYRING_DEADLINE, move || native::secret_lookup(application)) {
+        Bounded::TimedOut => Err(keyring_locked_error(product.browser)),
+        Bounded::Failed => Err(format!(
+            "v11 cookie of {}: the keyring lookup failed; try again",
+            product.browser
+        )),
+        // libsecret is not installed: fall back to the command.
+        Bounded::Done(None) => linux_v11_key_with(Path::new("secret-tool"), product),
+        Bounded::Done(Some(Ok(password))) => browser_key_from_password(product, password),
+        Bounded::Done(Some(Err(why))) => Err(keyring_error(product.browser, &why)),
+    }
+}
+
+/// Maps a keyring error text to the message the user acts on: a locked keyring asks for
+/// an unlock; any other error is reported with its text.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn keyring_error(browser: &str, why: &str) -> String {
+    let lowered = why.to_ascii_lowercase();
+    if lowered.contains("lock") || lowered.contains("prompt") || lowered.contains("unlock") {
+        return keyring_locked_error(browser);
+    }
+    format!(
+        "v11 cookie of {browser}: the keyring did not return the browser password ({why}); unlock the keyring and try again"
+    )
+}
+
+/// The browser's keyring password to the cookie key (PBKDF2 with one iteration, as
+/// Chromium derives it on Linux).
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn browser_key_from_password(product: &ChromiumProduct, password: Vec<u8>) -> Result<Vec<u8>, String> {
+    if password.is_empty() {
+        // The Secret Service answers an empty result for a locked collection too (it does
+        // not prompt), so the two cases share the message that fixes both.
+        return Err(format!(
+            "v11 cookie of {}: keyring is locked or has no entry for this browser: unlock it and try again",
+            product.browser
+        ));
+    }
+    Ok(pbkdf2_sha1(&password, b"saltysalt", 1, 16))
+}
+
+/// The `secret-tool` command, bounded by `deadline`. A locked keyring makes it wait for
+/// the prompt: past the deadline the process is killed and the locked message is returned.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn secret_tool_password(
+    program: &Path,
+    browser: &str,
+    application: &str,
+    deadline: std::time::Duration,
+) -> Result<Vec<u8>, String> {
+    let mut child = helper_command(program)
         .args([
             "lookup",
             "xdg:schema",
             "chrome_libsecret_os_crypt_password_v2",
             "application",
-            product.linux_secret_app,
+            application,
         ])
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
                 format!(
-                    "v11 cookie of {}: the secret-tool command is not installed; install it (Debian/Ubuntu package `libsecret-tools`)",
-                    product.browser
+                    "v11 cookie of {browser}: the secret-tool command is not installed; install it (Debian/Ubuntu package `libsecret-tools`)"
                 )
             } else {
-                format!("v11 cookie of {}: secret-tool could not run: {error}", product.browser)
+                format!("v11 cookie of {browser}: secret-tool could not run: {error}")
             }
         })?;
+    let until = std::time::Instant::now() + deadline;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < until => {
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(keyring_locked_error(browser));
+            }
+            Err(error) => {
+                return Err(format!("v11 cookie of {browser}: secret-tool could not be waited for: {error}"));
+            }
+        }
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("v11 cookie of {browser}: secret-tool output: {error}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let first = stderr.lines().next().unwrap_or("").trim();
-        return Err(format!(
-            "v11 cookie of {}: the keyring did not return the browser password ({}); unlock the keyring and try again",
-            product.browser,
-            if first.is_empty() { "no entry found" } else { first }
-        ));
-    }
-    if output.stdout.is_empty() {
-        return Err(format!(
-            "v11 cookie of {}: the keyring has no password for this browser; unlock the keyring and try again",
-            product.browser
+        return Err(keyring_error(
+            browser,
+            if first.is_empty() { "no entry found" } else { first },
         ));
     }
     let mut password = output.stdout;
     while matches!(password.last(), Some(b'\n') | Some(b'\r')) {
         password.pop();
     }
-    Ok(pbkdf2_sha1(&password, b"saltysalt", 1, 16))
+    Ok(password)
+}
+
+/// The `secret-tool` path, used only when libsecret cannot be loaded. The same bounds apply.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn linux_v11_key_with(secret_tool: &Path, product: &ChromiumProduct) -> Result<Vec<u8>, String> {
+    let password = secret_tool_password(
+        secret_tool,
+        product.browser,
+        product.linux_secret_app,
+        KEYRING_DEADLINE,
+    )?;
+    browser_key_from_password(product, password)
 }
 
 /// `v10`/`v11` + AES-128-CBC (IV = 16 spaces, PKCS#7). In Chrome 130+ the
@@ -1051,16 +1267,16 @@ pub fn load_cookies_for_url(
     let site = registrable_domain(&host).unwrap_or_else(|| host.clone());
 
     let copy = copy_cookie_db(&source.db_path)?;
-    let mut skipped = 0usize;
-    let mut notes = Vec::new();
-    let mut cookies = match source.kind {
-        BrowserKind::Chromium => {
-            load_chromium(&source, &copy.db, &host, &mut skipped, &mut notes)?
-        }
-        BrowserKind::Firefox => load_firefox(&copy.db, &host, &mut skipped, &mut notes)?,
-        BrowserKind::Safari => load_safari(&copy.db, &host, &mut skipped, &mut notes)?,
+    let mut tally = ImportTally {
+        notes: copy.notes.clone(),
+        ..ImportTally::default()
     };
-    drop_expired(&mut cookies, &mut skipped);
+    let mut cookies = match source.kind {
+        BrowserKind::Chromium => load_chromium(&source, &copy.db, &host, &mut tally)?,
+        BrowserKind::Firefox => load_firefox(&copy.db, &host, &mut tally)?,
+        BrowserKind::Safari => load_safari(&copy.db, &host, &mut tally)?,
+    };
+    drop_expired(&mut cookies, &mut tally.skipped);
     cookies.sort_by(|a, b| {
         (&a.domain, &a.path, &a.name).cmp(&(&b.domain, &b.path, &b.name))
     });
@@ -1070,8 +1286,10 @@ pub fn load_cookies_for_url(
         label: source.label,
         domain: site,
         cookies,
-        skipped,
-        notes,
+        skipped: tally.skipped,
+        undecryptable: tally.undecryptable,
+        undecryptable_reason: tally.reason_text(),
+        notes: tally.notes,
     })
 }
 
@@ -1083,47 +1301,59 @@ fn drop_expired(cookies: &mut Vec<ImportedCookie>, skipped: &mut usize) {
     *skipped += before - cookies.len();
 }
 
-fn load_chromium(
-    source: &BrowserCookieSource,
-    db: &Path,
+/// Decrypts one encrypted value. The key comes from the value's own prefix (`v10` or
+/// `v11`) and is cached per prefix, so a profile that mixes both versions keeps each
+/// value readable. A key that cannot be had fails only the values it covers.
+fn decrypt_row(
+    encrypted: &[u8],
+    host_key: &str,
+    version: Option<i64>,
+    keys: &mut std::collections::HashMap<Vec<u8>, Result<Vec<u8>, String>>,
+    key_for: &mut impl FnMut(&[u8]) -> Result<Vec<u8>, String>,
+) -> Result<String, String> {
+    if encrypted.len() < 3 {
+        return Err("encrypted value is too short to decrypt".to_string());
+    }
+    let prefix = &encrypted[..3];
+    if prefix != b"v10" && prefix != b"v11" {
+        return Err("unknown encryption prefix".to_string());
+    }
+    match keys
+        .entry(prefix.to_vec())
+        .or_insert_with(|| key_for(prefix))
+    {
+        Ok(key) => decrypt_chromium_value(encrypted, key, host_key, version)
+            .map_err(|why| format!("could not decrypt: {why}")),
+        Err(why) => Err(why.clone()),
+    }
+}
+
+/// Reads the rows of a Chromium `cookies` table for `host`, decrypting what can be read.
+/// Rows of other sites are skipped; encrypted rows that cannot be read are counted in the
+/// tally with the reason. `key_for` gives the key for a value prefix (it is called once
+/// per prefix).
+fn read_chromium_rows(
+    rows: &[Vec<String>],
     host: &str,
-    skipped: &mut usize,
-    notes: &mut Vec<String>,
-) -> Result<Vec<ImportedCookie>, String> {
-    let product = product_for_slug(product_slug(&source.id))
-        .ok_or_else(|| format!("unknown Chromium product: {}", source.id))?;
-    let version = sqlite_rows(db, "SELECT value FROM meta WHERE key='version'")
-        .ok()
-        .and_then(|rows| rows.first().and_then(|r| r.first().cloned()))
-        .and_then(|v| v.trim().parse::<i64>().ok());
-    let hosts = host_candidates(host);
-    let list = hosts
-        .iter()
-        .map(|h| sql_quote(h))
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "SELECT hex(host_key), hex(name), hex(value), hex(encrypted_value), hex(path), \
-         expires_utc, is_secure, is_httponly, samesite, is_persistent FROM cookies \
-         WHERE host_key IN ({list})"
-    );
-    let rows = sqlite_rows(db, &sql)?;
-    let mut key: Option<Vec<u8>> = None;
-    let mut key_error: Option<String> = None;
+    version: Option<i64>,
+    tally: &mut ImportTally,
+    mut key_for: impl FnMut(&[u8]) -> Result<Vec<u8>, String>,
+) -> Vec<ImportedCookie> {
+    let mut keys = std::collections::HashMap::new();
     let mut cookies = Vec::new();
     for row in rows {
         if row.len() < 10 {
-            *skipped += 1;
+            tally.skipped += 1;
             continue;
         }
         let host_key = unhex_text(&row[0]);
         if !cookie_matches_host(&host_key, host) {
-            *skipped += 1;
+            tally.skipped += 1;
             continue;
         }
         let name = unhex_text(&row[1]);
         if name.is_empty() {
-            *skipped += 1;
+            tally.skipped += 1;
             continue;
         }
         let stored_value = unhex_text(&row[2]);
@@ -1131,24 +1361,10 @@ fn load_chromium(
         let value = if encrypted.is_empty() {
             stored_value
         } else {
-            if key.is_none() && key_error.is_none() {
-                match chromium_key(product, &encrypted[..3]) {
-                    Ok(found) => key = Some(found),
-                    Err(why) => {
-                        notes.push(format!("{why} (encrypted cookies ignored)"));
-                        key_error = Some(why);
-                    }
-                }
-            }
-            let Some(found) = key.as_deref() else {
-                *skipped += 1;
-                continue;
-            };
-            match decrypt_chromium_value(&encrypted, found, &host_key, version) {
+            match decrypt_row(&encrypted, &host_key, version, &mut keys, &mut key_for) {
                 Ok(value) => value,
                 Err(why) => {
-                    *skipped += 1;
-                    notes.push(format!("{why} ({} cookie ignored)", source.label));
+                    tally.undecryptable(why);
                     continue;
                 }
             }
@@ -1178,21 +1394,57 @@ fn load_chromium(
             expires,
         });
     }
-    // Nothing could be read because the browser password is unavailable: say so, with
-    // the fix, instead of importing zero cookies without a reason.
+    cookies
+}
+
+/// When the site had encrypted cookies and none could be read, the import fails with the
+/// reason (the caller shows it), instead of importing zero cookies without one.
+fn finish_chromium(
+    cookies: Vec<ImportedCookie>,
+    tally: &ImportTally,
+) -> Result<Vec<ImportedCookie>, String> {
     if cookies.is_empty() {
-        if let Some(why) = key_error {
+        if let Some(why) = tally.first_reason() {
             return Err(why);
         }
     }
     Ok(cookies)
 }
 
+fn load_chromium(
+    source: &BrowserCookieSource,
+    db: &Path,
+    host: &str,
+    tally: &mut ImportTally,
+) -> Result<Vec<ImportedCookie>, String> {
+    let product = product_for_slug(product_slug(&source.id))
+        .ok_or_else(|| format!("unknown Chromium product: {}", source.id))?;
+    let version = sqlite_rows(db, "SELECT value FROM meta WHERE key='version'")
+        .ok()
+        .and_then(|rows| rows.first().and_then(|r| r.first().cloned()))
+        .and_then(|v| v.trim().parse::<i64>().ok());
+    let hosts = host_candidates(host);
+    let list = hosts
+        .iter()
+        .map(|h| sql_quote(h))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT hex(host_key), hex(name), hex(value), hex(encrypted_value), hex(path), \
+         expires_utc, is_secure, is_httponly, samesite, is_persistent FROM cookies \
+         WHERE host_key IN ({list})"
+    );
+    let rows = sqlite_rows(db, &sql)?;
+    let cookies = read_chromium_rows(&rows, host, version, tally, |prefix| {
+        chromium_key(product, prefix)
+    });
+    finish_chromium(cookies, tally)
+}
+
 fn load_firefox(
     db: &Path,
     host: &str,
-    skipped: &mut usize,
-    notes: &mut Vec<String>,
+    tally: &mut ImportTally,
 ) -> Result<Vec<ImportedCookie>, String> {
     let hosts = host_candidates(host);
     let list = hosts
@@ -1208,17 +1460,17 @@ fn load_firefox(
     let mut cookies = Vec::new();
     for row in rows {
         if row.len() < 8 {
-            *skipped += 1;
+            tally.skipped += 1;
             continue;
         }
         let host_key = unhex_text(&row[0]);
         if !cookie_matches_host(&host_key, host) {
-            *skipped += 1;
+            tally.skipped += 1;
             continue;
         }
         let name = unhex_text(&row[1]);
         if name.is_empty() {
-            *skipped += 1;
+            tally.skipped += 1;
             continue;
         }
         let expiry = row[4].trim().parse::<i64>().unwrap_or(0);
@@ -1240,22 +1492,20 @@ fn load_firefox(
             expires: (expiry > 0).then_some(expiry),
         });
     }
-    let _ = notes;
     Ok(cookies)
 }
 
 fn load_safari(
     db: &Path,
     host: &str,
-    skipped: &mut usize,
-    notes: &mut Vec<String>,
+    tally: &mut ImportTally,
 ) -> Result<Vec<ImportedCookie>, String> {
     let bytes = std::fs::read(db).map_err(|error| format!("ler Cookies.binarycookies: {error}"))?;
     let raw = parse_binarycookies(&bytes)?;
     let mut cookies = Vec::new();
     for cookie in raw {
         if !cookie_matches_host(&cookie.domain, host) {
-            *skipped += 1;
+            tally.skipped += 1;
             continue;
         }
         cookies.push(ImportedCookie {
@@ -1273,7 +1523,6 @@ fn load_safari(
             expires: (cookie.expires > 0).then_some(cookie.expires),
         });
     }
-    let _ = notes;
     Ok(cookies)
 }
 
@@ -1790,9 +2039,8 @@ mod tests {
             kind: BrowserKind::Chromium,
             db_path: source.clone(),
         };
-        let mut skipped = 0;
-        let mut notes = Vec::new();
-        let cookies = load_chromium(&source_info, &copy.db, "127.0.0.1", &mut skipped, &mut notes).unwrap();
+        let mut tally = ImportTally::default();
+        let cookies = load_chromium(&source_info, &copy.db, "127.0.0.1", &mut tally).unwrap();
         assert_eq!(cookies.len(), 1);
         assert_eq!(cookies[0].name, "sid");
         assert_eq!(cookies[0].value, "synthetic-plain");
@@ -2065,12 +2313,247 @@ mod tests {
         assert!(decrypt_chromium_value(b"v12abcdef", &key, "h", None).is_err());
     }
 
+    /// One `cookies` row in the order `read_chromium_rows` expects.
+    fn chromium_row(host_key: &str, name: &str, value: &str, encrypted: &[u8]) -> Vec<String> {
+        vec![
+            hex_string(host_key.as_bytes()),
+            hex_string(name.as_bytes()),
+            hex_string(value.as_bytes()),
+            hex_string(encrypted),
+            hex_string(b"/"),
+            "0".into(),
+            "0".into(),
+            "0".into(),
+            "-1".into(),
+            "1".into(),
+        ]
+    }
+
+    /// `v10`/`v11` + AES-128-CBC of `plain`, as the browser writes it (test data only).
+    fn encrypted_value(prefix: &[u8; 3], key: &[u8], plain: &str) -> Vec<u8> {
+        let key: [u8; 16] = key.try_into().unwrap();
+        let mut out = prefix.to_vec();
+        out.extend(encrypt_for_test(&key, &[0x20u8; 16], plain.as_bytes()));
+        out
+    }
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "scrapelens-{label}-{}-{}",
+            std::process::id(),
+            unix_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
     #[test]
-    fn sqlite_roundtrip_reads_chromium_and_firefox_tables() {
-        if !sqlite3_available() {
-            eprintln!("sqlite3 missing: database test skipped");
+    fn each_row_is_decrypted_with_the_key_of_its_own_version() {
+        // A profile that migrated to the keyring mixes `v11` and `v10` rows. The first row
+        // is `v11`: the later `v10` rows must still decrypt with their own key.
+        let v10_key = pbkdf2_sha1(b"peanuts", b"saltysalt", 1, 16);
+        let v11_key = pbkdf2_sha1(b"keyring password", b"saltysalt", 1, 16);
+        let rows = vec![
+            chromium_row(".example.com.br", "a", "", &encrypted_value(b"v11", &v11_key, "from-v11")),
+            chromium_row(".example.com.br", "b", "", &encrypted_value(b"v10", &v10_key, "from-v10-1")),
+            chromium_row(".example.com.br", "c", "", &encrypted_value(b"v10", &v10_key, "from-v10-2")),
+        ];
+        let lookups = std::cell::Cell::new(0);
+        let mut tally = ImportTally::default();
+        let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |prefix| {
+            lookups.set(lookups.get() + 1);
+            if prefix == b"v10" {
+                Ok(v10_key.clone())
+            } else {
+                Ok(v11_key.clone())
+            }
+        });
+        let values: Vec<(&str, &str)> = cookies.iter().map(|c| (c.name.as_str(), c.value.as_str())).collect();
+        assert_eq!(values, vec![("a", "from-v11"), ("b", "from-v10-1"), ("c", "from-v10-2")]);
+        assert_eq!(tally.undecryptable, 0);
+        assert_eq!(lookups.get(), 2, "one key lookup per version, not one per row");
+    }
+
+    #[test]
+    fn a_locked_v11_key_still_imports_the_readable_v10_cookies_and_reports_the_rest() {
+        let v10_key = pbkdf2_sha1(b"peanuts", b"saltysalt", 1, 16);
+        let rows = vec![
+            chromium_row(".example.com.br", "login", "", &encrypted_value(b"v11", &[1u8; 16], "x")),
+            chromium_row(".example.com.br", "plain", "", &encrypted_value(b"v10", &v10_key, "readable")),
+            chromium_row(".example.com.br", "more", "", &encrypted_value(b"v11", &[1u8; 16], "y")),
+        ];
+        let mut tally = ImportTally::default();
+        let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |prefix| {
+            if prefix == b"v10" {
+                Ok(v10_key.clone())
+            } else {
+                Err(keyring_locked_error("Chromium"))
+            }
+        });
+        assert_eq!(cookies.len(), 1);
+        assert_eq!(cookies[0].value, "readable");
+        assert_eq!(tally.undecryptable, 2);
+        assert_eq!(
+            tally.reason_text().as_deref(),
+            Some("v11 cookie of Chromium: keyring is locked: unlock it and try again (2)")
+        );
+        assert!(finish_chromium(cookies, &tally).is_ok(), "readable cookies are still returned");
+    }
+
+    #[test]
+    fn short_or_unknown_encrypted_values_are_counted_without_a_panic() {
+        // A one- or two-byte value used to index past its end; it must be counted instead.
+        let rows = vec![
+            chromium_row(".example.com.br", "one", "", &[0x01]),
+            chromium_row(".example.com.br", "two", "", &[0x01, 0x02]),
+            chromium_row(".example.com.br", "three", "", b"v12abcdefghijklmnop"),
+        ];
+        let mut tally = ImportTally::default();
+        let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |_| {
+            Err("no key is expected for these values".to_string())
+        });
+        assert!(cookies.is_empty());
+        assert_eq!(tally.undecryptable, 3);
+        let error = finish_chromium(cookies, &tally).unwrap_err();
+        assert!(error.contains("too short"), "{error}");
+    }
+
+    #[test]
+    fn nothing_readable_because_the_keyring_is_locked_fails_with_the_reason() {
+        // Also the macOS-visible rule: encrypted cookies exist, none can be read, so the
+        // import fails with the reason instead of importing zero cookies silently.
+        let rows = vec![chromium_row(".example.com.br", "login", "", &encrypted_value(b"v11", &[1u8; 16], "x"))];
+        let mut tally = ImportTally::default();
+        let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |_| {
+            Err(keyring_locked_error("Chromium"))
+        });
+        let error = finish_chromium(cookies, &tally).unwrap_err();
+        assert_eq!(error, "v11 cookie of Chromium: keyring is locked: unlock it and try again");
+    }
+
+    #[test]
+    fn a_site_without_encrypted_cookies_imports_nothing_without_an_error() {
+        let rows = vec![chromium_row(".other.test", "x", "y", b"")];
+        let mut tally = ImportTally::default();
+        let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |_| {
+            panic!("no key is needed")
+        });
+        assert!(finish_chromium(cookies, &tally).unwrap().is_empty());
+        assert_eq!(tally.undecryptable, 0);
+    }
+
+    #[test]
+    fn the_notice_says_how_many_cookies_could_not_be_decrypted_and_why() {
+        let outcome = CookieImportOutcome {
+            source_id: "chromium:Default".into(),
+            label: "Chromium — Default".into(),
+            domain: "example.com.br".into(),
+            cookies: Vec::new(),
+            skipped: 0,
+            undecryptable: 2,
+            undecryptable_reason: Some("v11 cookie of Chromium: keyring is locked: unlock it and try again (2)".into()),
+            notes: Vec::new(),
+        };
+        let text = outcome.notice_suffix();
+        assert!(text.contains("2 cookie(s) could not be decrypted"), "{text}");
+        assert!(text.contains("keyring is locked: unlock it and try again"), "{text}");
+    }
+
+    #[test]
+    fn bounded_calls_give_up_at_the_deadline_and_quick_results_come_back() {
+        assert!(matches!(bounded(std::time::Duration::from_secs(5), || 7), Bounded::Done(7)));
+        let started = std::time::Instant::now();
+        let outcome = bounded(std::time::Duration::from_millis(150), || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            1
+        });
+        assert!(matches!(outcome, Bounded::TimedOut));
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_secret_tool_waiting_for_an_unlock_is_stopped_at_the_deadline() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("secret-tool-test");
+        let script = dir.join("secret-tool");
+        std::fs::write(&script, "#!/bin/sh\nsleep 30\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let started = std::time::Instant::now();
+        let error = secret_tool_password(&script, "Chromium", "chromium", std::time::Duration::from_millis(300))
+            .unwrap_err();
+        assert_eq!(error, keyring_locked_error("Chromium"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stale_copies_of_gone_processes_are_removed_and_live_ones_are_kept() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let base = temp_dir("sweep-test");
+        let dead_pid = {
+            let mut child = Command::new("true").spawn().unwrap();
+            let pid = child.id() as i32;
+            child.wait().unwrap();
+            pid
+        };
+        let make = |name: String, mode: u32| {
+            let dir = base.join(name);
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(mode)).unwrap();
+            dir
+        };
+        let stale = make(format!("{COPY_PREFIX}{dead_pid}-1"), 0o700);
+        std::fs::write(stale.join("cookies.db"), b"x").unwrap();
+        let live = make(format!("{COPY_PREFIX}{}-2", std::process::id()), 0o700);
+        let loose = make(format!("{COPY_PREFIX}{dead_pid}-4"), 0o755);
+        let target = base.join("elsewhere");
+        std::fs::create_dir(&target).unwrap();
+        let link = base.join(format!("{COPY_PREFIX}{dead_pid}-3"));
+        symlink(&target, &link).unwrap();
+
+        sweep_stale_copies(&base);
+
+        assert!(!stale.exists(), "the copy of a process that is gone is removed");
+        assert!(live.exists(), "the copy of a running process (this one) is kept");
+        assert!(loose.exists(), "a directory that is not mode 0700 is not removed");
+        assert!(link.symlink_metadata().is_ok(), "a symlink is not followed or removed");
+        assert!(target.exists(), "the symlink target is untouched");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sidecar_that_cannot_be_copied_is_reported_as_a_note() {
+        use std::os::unix::fs::PermissionsExt;
+        // SAFETY: geteuid has no failure mode and no arguments.
+        if unsafe { libc::geteuid() } == 0 {
+            // Root can read a file whatever its mode, so the copy cannot fail: explicit skip.
+            eprintln!("skipped: run the tests as a normal user to exercise an unreadable sidecar");
             return;
         }
+        let base = temp_dir("sidecar-test");
+        let source = base.join("Cookies");
+        std::fs::write(&source, b"db").unwrap();
+        let wal = base.join("Cookies-wal");
+        std::fs::write(&wal, b"wal").unwrap();
+        std::fs::set_permissions(&wal, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let copy = copy_cookie_db_in(&source, &base).unwrap();
+        assert!(
+            copy.notes.iter().any(|note| note.contains("-wal")),
+            "the stale-copy risk must be visible: {:?}",
+            copy.notes
+        );
+        drop(copy);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn sqlite_roundtrip_reads_chromium_and_firefox_tables() {
+        // Builds the fixtures with the `sqlite3` command. Without it the test must fail,
+        // not pass with nothing checked: install `sqlite3`, or run only the fixture test.
+        assert!(sqlite3_available(), "the sqlite3 command is needed to build this test's databases");
         let dir = crate::private_base_dir().join(format!(
             "scrapelens-cookies-test-{}-{}",
             std::process::id(),
@@ -2104,24 +2587,20 @@ mod tests {
             kind: BrowserKind::Chromium,
             db_path: chromium_db,
         };
-        let mut skipped = 0;
-        let mut notes = Vec::new();
+        let mut tally = ImportTally::default();
         let copy = copy_cookie_db(&source.db_path).unwrap();
-        let mut cookies = load_chromium(&source, &copy.db, "app.example.com.br", &mut skipped, &mut notes).unwrap();
+        let mut cookies = load_chromium(&source, &copy.db, "app.example.com.br", &mut tally).unwrap();
         assert_eq!(cookies.len(), 2, "sid and the expired one; the one from another site does not get in");
         assert_eq!(cookies[0].name, "sid");
         assert_eq!(cookies[0].value, "segredo");
         assert!(cookies[0].secure);
-        assert_eq!(skipped, 0);
-        drop_expired(&mut cookies, &mut skipped);
+        assert_eq!(tally.skipped, 0);
+        drop_expired(&mut cookies, &mut tally.skipped);
         assert_eq!(cookies.len(), 1, "the expired one is dropped by the common filter");
-        assert_eq!(skipped, 1);
+        assert_eq!(tally.skipped, 1);
         drop(copy);
 
-        let mut skipped = 0;
-        let mut notes = Vec::new();
-        let copy = copy_cookie_db(&source.db_path).unwrap();
-        let _ = copy;
+        let mut tally = ImportTally::default();
         let fsource = BrowserCookieSource {
             id: "firefox:test".to_string(),
             browser: "Firefox".to_string(),
@@ -2131,7 +2610,7 @@ mod tests {
             db_path: firefox_db,
         };
         let copy = copy_cookie_db(&fsource.db_path).unwrap();
-        let cookies = load_firefox(&copy.db, "app.example.com.br", &mut skipped, &mut notes).unwrap();
+        let cookies = load_firefox(&copy.db, "app.example.com.br", &mut tally).unwrap();
         assert_eq!(cookies.len(), 1);
         assert_eq!(cookies[0].name, "ff");
         assert_eq!(cookies[0].value, "valor");
