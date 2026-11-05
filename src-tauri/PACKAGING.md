@@ -4,7 +4,27 @@ Status of the package delivered in this round. It serves as reproducible evidenc
 the commands below produce exactly the artifact described, on the same machine and
 under the same conditions.
 
-## macOS — English demo data (2026-11-05, current)
+## macOS — release bundle, English (2026-11-05, current)
+
+Bundle built from the clean tree at `8c999aa` (provisional commit; it will be
+remapped when the history is rewritten). It includes the core, capture and recon
+changes after `f6f5282`, `2ac129b` and `a32cbd1`.
+
+Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
+SHA-256 of `Contents/MacOS/scrapelens` (18,268,880 bytes):
+`aca3840f4620f4cddca7821a2a2c55e6082a5ab0e62c014975ecc0b8a6709883`.
+Release archive: `/tmp/sl-release-en/macos/ScrapeLens-0.1.0-macos-arm64.zip`
+(6,147,181 bytes, `ditto -c -k --keepParent`), SHA-256
+`e687241b86e231a78c37c86d2ac3a54e08463243ace0bedc72213b2e9ff712a0`. Extracted
+from the zip, the app still passes `codesign --verify --deep --strict`.
+Signed with `ScrapeLens Local Signing`; designated requirement certificate root
+`d0a53befa59a447043abc9e58a3381addbbf1751`.
+Built with `./app/node_modules/.bin/tauri build --bundles app`. No window was opened
+or activated, and the running ScrapeLens instance was not closed.
+Validation: `cargo test` 60 passed, 0 failed, 8 ignored; `npm --prefix app test`
+(seven suites), typecheck and build passed.
+
+## macOS — English demo data (2026-11-05, previous)
 
 Bundle built from the clean tree at `a7d8519` (provisional commit; it will be
 remapped when the history is rewritten, so do not treat it as final). The synthetic
