@@ -31,7 +31,16 @@ import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibl
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { cookieImportNotice, type CookieImportReport } from "./cookieImport";
-import { IS_MAC, activeFilterLabels, outcomeChipDisabled, PagedList, sessionIsRecording, shortcutLabel } from "./listView";
+import {
+  IS_MAC,
+  NATIVE_DIALOG,
+  activeFilterLabels,
+  chromeNotFoundCopy,
+  outcomeChipDisabled,
+  PagedList,
+  sessionIsRecording,
+  shortcutLabel,
+} from "./listView";
 import { adaptRequestDetail, adaptSession, protocolText, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
 import type {
@@ -1810,7 +1819,7 @@ export default function App() {
     if (!desktop) {
       setNotice({
         kind: "info",
-        text: "Open capture uses the native macOS dialog and is only available in the desktop app.",
+        text: `Open capture uses the ${NATIVE_DIALOG} and is only available in the desktop app.`,
         detail: "Run `npm run tauri dev` to open the Tauri shell.",
       });
       return;
@@ -2490,7 +2499,7 @@ export default function App() {
                   title={
                     desktop
                       ? "Open a v1 session folder (session.json) with a native dialog — " + shortcutLabel("⌘O")
-                      : "Open capture uses the native macOS dialog; available in the Tauri app."
+                      : `Open capture uses the ${NATIVE_DIALOG}; available in the Tauri app.`
                   }
                 >
                   Open capture…
@@ -2501,7 +2510,7 @@ export default function App() {
                   disabled={!desktop || !session.sourcePath || !!recording || !!busy}
                   title={
                     !desktop
-                      ? "Sanitizing uses the native macOS dialog and is only available in the desktop app."
+                      ? `Sanitizing uses the ${NATIVE_DIALOG} and is only available in the desktop app.`
                       : !session.sourcePath
                         ? "Sanitizing unavailable: this session has no persisted folder (demo or browser mode)."
                         : "Redact credentials across the whole session and write to a new folder; the source is not changed"
@@ -2523,7 +2532,7 @@ export default function App() {
                   disabled={!desktop || !session.sourcePath || !!recording || !!busy}
                   title={
                     !desktop
-                      ? "Validate execution uses the native macOS picker and is only available in the desktop app."
+                      ? `Validate execution uses the ${NATIVE_DIALOG.replace("dialog", "picker")} and is only available in the desktop app.`
                       : "Imports the script's trace (--trace) and compares the execution with this capture; ScrapeLens runs nothing"
                   }
                 >
@@ -2620,8 +2629,15 @@ export default function App() {
               <div className="notice notice-warn">
                 <span className="notice-icon">!</span>
                 <span>
-                  <strong>Chrome not found</strong> in /Applications. Capture needs an external Chrome —
-                  select <span className="mono">Google Chrome.app</span> manually.
+                  {(() => {
+                    const copy = chromeNotFoundCopy(chrome.candidates ?? []);
+                    return (
+                      <>
+                        <strong>{copy.title}</strong> {copy.text}
+                        {copy.detail && <span className="notice-detail mono"> {copy.detail}</span>}
+                      </>
+                    );
+                  })()}
                 </span>
                 <button className="ghost-btn small" onClick={() => void chooseChrome()}>
                   Select Chrome…

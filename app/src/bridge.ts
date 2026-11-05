@@ -18,6 +18,7 @@ import type { RawRequestDetail, RawRequestSummary, SessionV1, TargetProvenance }
 import type { AssessResult, VerdictKind } from "./assess";
 import type { ComparePage, CompareSummary, FieldDiff, PrimingChain, ValueOrigins } from "./flow";
 import type { CookieImportReport } from "./cookieImport";
+import { chromePickerOptions } from "./listView";
 
 export interface SessionPayload {
   session: SessionV1;
@@ -396,8 +397,7 @@ export const bridge = {
     if (!isTauri()) return null;
     const picked = await openDialog({
       title: "Select Google Chrome",
-      message: "Choose Google Chrome.app (or the binary inside Contents/MacOS).",
-      directory: true,
+      ...chromePickerOptions(),
       multiple: false,
     });
     if (!picked) return null;

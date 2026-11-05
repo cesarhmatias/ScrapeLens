@@ -115,6 +115,37 @@ export class PagedList<Row, Meta extends { matched: number }> {
 /** macOS shows ⌘/⇧; Linux and Windows show Ctrl+/Shift+. */
 export const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
 
+/** Linux desktop (not macOS): Chrome lives under /usr or /opt, and dialogs pick files. */
+export const IS_LINUX = typeof navigator !== "undefined" && /Linux/i.test(navigator.platform || navigator.userAgent) && !IS_MAC;
+
+/** Name of the native dialog in messages ("native macOS dialog" only on macOS). */
+export const NATIVE_DIALOG = IS_MAC ? "native macOS dialog" : "native file dialog";
+
+/** "Chrome not found" copy: names the places that were searched, for each platform. */
+export function chromeNotFoundCopy(
+  candidates: string[],
+  isMac: boolean = IS_MAC,
+): { title: string; text: string; detail?: string } {
+  if (isMac) {
+    return {
+      title: "Chrome not found",
+      text: "in /Applications. Capture needs an external Chrome: select Google Chrome.app manually.",
+    };
+  }
+  return {
+    title: "Chrome not found",
+    text: "in the usual Linux locations. Capture needs an external Chrome: select the google-chrome or chromium executable manually.",
+    detail: candidates.length > 0 ? `Searched: ${candidates.join(", ")}` : undefined,
+  };
+}
+
+/** The "Select Chrome" dialog: a folder or .app on macOS, an executable file on Linux. */
+export function chromePickerOptions(isMac: boolean = IS_MAC): { message: string; directory: boolean } {
+  return isMac
+    ? { message: "Choose Google Chrome.app (or the binary inside Contents/MacOS).", directory: true }
+    : { message: "Choose the Chrome or Chromium executable (for example google-chrome or chromium).", directory: false };
+}
+
 /** Shortcut label from "⌘⇧R" (the canonical form used in the code). */
 export function shortcutLabel(mac: string, isMac: boolean = IS_MAC): string {
   if (isMac) return mac;
