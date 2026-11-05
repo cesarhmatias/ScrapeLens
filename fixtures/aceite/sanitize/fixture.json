@@ -1,6 +1,6 @@
 {
  "label": "synthetic-fixture",
  "origin": "synthetic",
- "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
- "purpose": "Sanitização de credenciais, cookies, token em URL, corpos e eventos brutos."
+ "note": "Invented data for the acceptance suite; no real traffic.",
+ "purpose": "Sanitization of credentials, cookies, token in URL, bodies and raw events."
 }

@@ -1,6 +1,6 @@
 {
  "label": "synthetic-fixture",
  "origin": "synthetic",
- "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
- "purpose": "Diff com headers duplicados, reordenação e um header novo."
+ "note": "Invented data for the acceptance suite; no real traffic.",
+ "purpose": "Diff with duplicated headers, reordering and one new header."
 }

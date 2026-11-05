@@ -44,7 +44,7 @@
     "headers": [
      "Host: 127.0.0.1:9999",
      "x-ok: 1",
-     "linha sem separador",
+     "line without separator",
      "x-ok: 2"
     ],
     "line": "GET /dup?case=headers HTTP/1.1\r\n"

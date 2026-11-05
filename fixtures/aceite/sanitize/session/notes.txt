@@ -1,1 +1,1 @@
-fixture sintética; contém segredos apenas para o teste de sanitização
+synthetic fixture; contains secrets only for the sanitization test

@@ -1,8 +1,8 @@
 {
  "label": "synthetic-fixture",
  "origin": "synthetic",
- "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
- "purpose": "Escaping de URL, headers e corpo hostis em cURL e Python.",
+ "note": "Invented data for the acceptance suite; no real traffic.",
+ "purpose": "URL, header and hostile-body escaping in cURL and Python.",
  "requestIds": [
   "har-0001",
   "har-0002"

@@ -1,6 +1,6 @@
 {
  "label": "synthetic-fixture",
  "origin": "synthetic",
- "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
- "purpose": "Headers repetidos, caixa original e cookies em HAR e NetLog h1."
+ "note": "Invented data for the acceptance suite; no real traffic.",
+ "purpose": "Repeated headers, original casing and cookies in HAR and h1 NetLog."
 }
