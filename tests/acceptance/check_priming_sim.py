@@ -88,8 +88,8 @@ def captured_clients(har_path):
 
 
 def required_params(py, script, cwd):
-    """With `--confirmar` and no inputs, the script fails before any request, listing what it requires (F1)."""
-    p = subprocess.run([py, "-I", str(script), "--confirmar"], capture_output=True, text=True, timeout=60, cwd=cwd)
+    """With `--confirm` and no inputs, the script fails before any request, listing what it requires (F1)."""
+    p = subprocess.run([py, "-I", str(script), "--confirm"], capture_output=True, text=True, timeout=60, cwd=cwd)
     m = re.search(r"required parameters missing: (.+)", p.stderr)
     if not m:
         return None
@@ -99,7 +99,7 @@ def required_params(py, script, cwd):
 def run_script(py, script, base, cwd, client, confirm=True, extra=()):
     argv = [py, "-I", str(script)]
     if confirm:
-        argv.append("--confirmar")
+        argv.append("--confirm")
     argv += ["--base-url", base, "--placa", PLACA, "--cpf", CPF, "--sessionid-cliente", client, *extra]
     return subprocess.run(argv, capture_output=True, text=True, timeout=120, cwd=cwd)
 
@@ -144,7 +144,7 @@ def main():
                                   "client_novo_vs_har": client[1:] not in cap_tails,
                                   "required_params": req, "required_params_extra": extra_req,
                                   "extra_synthetic_filled": sorted({n for n in extra_req})}
-        check(req is not None, "the script did not list the required inputs when run with --confirmar and no inputs")
+        check(req is not None, "the script did not list the required inputs when run with --confirm and no inputs")
         if req is not None:
             check("--placa" in req and "--sessionid-cliente" in req,
                   f"the script should require --placa and --sessionid-cliente; it required {req}")

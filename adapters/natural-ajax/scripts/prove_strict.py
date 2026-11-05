@@ -30,7 +30,7 @@ def pick_python(arg):
 
 
 def run(py, script, base, client):
-    argv = [py, "-I", str(script), "--confirmar", "--base-url", base, "--placa", PLACA, "--cpf", CPF,
+    argv = [py, "-I", str(script), "--confirm", "--base-url", base, "--placa", PLACA, "--cpf", CPF,
             "--sessionid-cliente", client]
     return subprocess.run(argv, capture_output=True, text=True, timeout=120)
 

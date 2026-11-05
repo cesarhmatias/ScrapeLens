@@ -4,7 +4,7 @@
   python3 tests/acceptance/check_real_priming.py <har> [<har> ...] [--core BIN]
 
 Read-only HARs; sessions and scripts in mkdtemp 0700, deleted at the end. The generated script is NEVER run
-with `--confirmar` nor against the network: only the plan mode (without --confirmar), which prints and exits. No real
+with `--confirm` nor against the network: only the plan mode (without --confirm), which prints and exits. No real
 value is printed or written: captured values are only used in memory to COUNT literal occurrences in the script.
 
 For the 1st cmd_consultar_placa of each HAR: number of steps, Connector POSTs, order × manual flow
@@ -280,7 +280,7 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
         fails.append("delta/XML without an excerpt extracted at runtime")
     if "placa" not in req:
         fails.append("placa is not a required parameter")
-    # plan mode (without --confirmar)
+    # plan mode (without --confirm)
     pl = subprocess.run([sys.executable, "-I", str(spath)], capture_output=True, text=True, timeout=30)
     nlines = len(re.findall(r"^\s+\d+\. (GET|POST) ", pl.stdout, re.M))
     out["plan_mode"] = {"rc": pl.returncode, "plan_lines": nlines, "nothing_sent_notice": "Nothing was sent" in pl.stdout}

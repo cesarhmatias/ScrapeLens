@@ -223,7 +223,7 @@ def execute(py, script, base, label, extra_args=(), trace_name=None, expect="com
         req = ps.required_params(py, script, work) or []
         synth = {"--placa": "TST0T10", "--sessionid-cliente": "_" + "0" * 12, "--cpf": ps.CPF}
         req_args = [x for n in req for x in (n, synth.get(n, "synthetic"))]
-        p = subprocess.run([py, "-I", str(wrap), str(script), "--confirmar", "--base-url", base, *req_args, *extra_args, *targs],
+        p = subprocess.run([py, "-I", str(wrap), str(script), "--confirm", "--base-url", base, *req_args, *extra_args, *targs],
                            capture_output=True, text=True, cwd=work, timeout=120,
                            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})  # no .pyc: any remaining write is from the script
         m = re.search(r"AUDIT_JSON:(.*)", p.stderr)

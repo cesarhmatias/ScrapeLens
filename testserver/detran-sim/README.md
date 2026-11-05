@@ -3,7 +3,7 @@
 Python 3 standard library only, `127.0.0.1` only, no external network and no telemetry.
 It imitates the **shape** of the real flow (pages, frames, Connector in HTML with `XML`/`ERRORMESSAGE`/`STAMP`);
 all values are fictitious and **new in every session**. It serves so that the Testing agent can run the generated
-priming script (not ScrapeLens) with `--confirmar` and prove that the chain uses new values, never the captured ones.
+priming script (not ScrapeLens) with `--confirm` and prove that the chain uses new values, never the captured ones.
 
 ```sh
 python3 testserver/detran-sim/detran_sim.py [--port 8791] [--mode ok|error|nocontrols|403] [--seed N]

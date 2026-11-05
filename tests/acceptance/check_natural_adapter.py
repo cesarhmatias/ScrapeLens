@@ -74,7 +74,7 @@ def request_xmls(har: Path):
 
 
 def run(py, script, base, cwd, client, extra=()):
-    argv = [py, "-I", str(script), "--confirmar", "--base-url", base, "--placa", PLACA_MERCOSUL, "--cpf", ps.CPF,
+    argv = [py, "-I", str(script), "--confirm", "--base-url", base, "--placa", PLACA_MERCOSUL, "--cpf", ps.CPF,
             "--sessionid-cliente", client, *extra]
     return subprocess.run(argv, capture_output=True, text=True, timeout=120, cwd=cwd)
 

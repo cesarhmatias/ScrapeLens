@@ -339,7 +339,8 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
     assert!(script.contains("Semantic reproduction"));
     assert!(script.contains("are NOT guaranteed"));
     assert!(script.contains("Not executed by ScrapeLens"));
-    assert!(script.contains("--confirmar"));
+    assert!(script.contains("--confirm"));
+    assert!(script.contains("--confirmar"), "legacy spelling is still accepted");
     // STAMP from the HTML control; delta from the textarea fragment (context).
     assert!(script.contains("('STAMP', html_control(R["));
     assert!(script.contains("html_control(R['har-0024'], 'XML', 0") || script.contains("'XML', 0"));
@@ -746,7 +747,7 @@ fn without_confirm_only_prints_plan_and_exits() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("priming.py");
     std::fs::write(&path, &script).unwrap();
-    // Without --confirmar: runs without `requests`, prints the plan and exits with 0.
+    // Without --confirm (or --confirmar): runs without `requests`, prints the plan and exits with 0.
     let out = python(&[], &path);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -758,15 +759,47 @@ fn without_confirm_only_prints_plan_and_exits() {
     assert!(stdout.contains("(changes state)"));
     assert!(stdout.contains("Nothing was sent"));
     assert!(!stdout.contains("HTTP 200"), "no request sent");
-    // With --confirmar and without required parameters: refuses before sending.
+    // With --confirm and without required parameters: refuses before sending.
     let out = Command::new("python3")
         .args(["-I"])
         .arg(&path)
-        .arg("--confirmar")
+        .arg("--confirm")
         .output()
         .unwrap();
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("required parameters missing"));
+}
+
+#[test]
+fn each_confirm_spelling_is_accepted_and_without_one_nothing_is_sent() {
+    let bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
+    let script = generate(&bundle, &first_placa_request(&bundle));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("priming.py");
+    std::fs::write(&path, &script).unwrap();
+    // Neither spelling: the plan is printed and nothing is sent.
+    let out = python(&[], &path);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Nothing was sent"), "{stdout}");
+    assert!(!stdout.contains("HTTP 200"), "no request sent: {stdout}");
+    // Each spelling passes the confirmation gate and reaches the required-parameter check.
+    for flag in ["--confirm", "--confirmar"] {
+        let out = Command::new("python3")
+            .args(["-I"])
+            .arg(&path)
+            .arg(flag)
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{flag}: refuses without the required parameters");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(!stdout.contains("Nothing was sent"), "{flag} must pass the gate: {stdout}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("required parameters missing"),
+            "{flag}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
 }
 
 #[test]
@@ -986,7 +1019,7 @@ print(len(bad))
     let path = dir.path().join("priming.py");
     let out = python(&["-c", probe], &path);
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "0");
-    // Without --confirmar prints the plan and exits.
+    // Without --confirm prints the plan and exits.
     let out = python(&[], &path);
     assert!(
         out.status.success(),
@@ -1949,7 +1982,7 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
     );
 
     // Without --trace, nothing is created; in plan mode (step that changes state, without
-    // --confirmar), nothing is written.
+    // --confirm), nothing is written.
     let post = custom_bundle(&[(
         "POST",
         "https://h.example.test/alvo",
@@ -2031,7 +2064,7 @@ fn trace_lists_user_parameters_with_their_parts_and_never_values() {
         &script,
         200,
         &[
-            "--confirmar",
+            "--confirm",
             "--placa",
             "ZZZ9Z99",
             "--trace",
@@ -2270,7 +2303,7 @@ fn plan_hash_is_computed_at_generation_by_the_core_and_the_script_has_no_hashlib
         &path,
         200,
         &[
-            "--confirmar",
+            "--confirm",
             "--placa",
             "ZZZ9Z99",
             "--trace",
@@ -2305,7 +2338,7 @@ fn overriding_an_optional_parameter_changes_neither_plan_hash_nor_plan_parameter
     std::fs::write(&path, &script).unwrap();
     let run = |extra: &[&str], name: &str| {
         let trace = dir.path().join(name);
-        let mut args = vec!["--confirmar", "--placa", "ZZZ9Z99"];
+        let mut args = vec!["--confirm", "--placa", "ZZZ9Z99"];
         args.extend_from_slice(extra);
         args.extend_from_slice(&["--trace", trace.to_str().unwrap()]);
         let out = trace_run(&path, 200, &args);

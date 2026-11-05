@@ -49,7 +49,7 @@ def main():
             def run_script(name, extra):
                 urllib.request.urlopen(base + "/__sim/reset"); urllib.request.urlopen(base + "/__sim/mode?m=" + mode)
                 out = tmp / name
-                proc = subprocess.run([py, "-I", str(tmp / "p.py"), "--confirmar", "--base-url", base, "--placa", "TST1A23",
+                proc = subprocess.run([py, "-I", str(tmp / "p.py"), "--confirm", "--base-url", base, "--placa", "TST1A23",
                                        "--cpf", "00000000191", "--sessionid-cliente",
                                        "_" + "".join(random.choice("0123456789") for _ in range(12)), "--trace", str(out), *extra],
                                       capture_output=True, text=True)

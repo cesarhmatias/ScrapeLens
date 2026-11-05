@@ -42,7 +42,7 @@ uses `priming_chain` + `value_origins`:
 - Client: `requests.Session` (cookie jar). Script header: "semantic
   reproduction; header order and transport fidelity (TLS, HTTP/2,
   fingerprint) are NOT guaranteed"; "not executed by ScrapeLens";
-  "steps that change state require `--confirmar`". Non-idempotent requests
+  "steps that change state require `--confirm`". Non-idempotent requests
   (POST/PUT/PATCH/DELETE) only run with the explicit flag;
   without it, the script prints the plan and exits.
 - Escaping: Python strings via `repr`; captured data never enters
@@ -75,11 +75,11 @@ controls, protection marker) and `verdict`: `app-ok`,
    cmd_consultar_placa has only the application steps in order and extracts STAMP
    from the HTML control, delta from the textarea excerpt, SESSIONID with the
    partial-composition comment, and the plate as a parameter. `ast.parse` passes.
-   Without `--confirmar`, it only prints the plan. No sensitive value captured
+   Without `--confirm`, it only prints the plan. No sensitive value captured
    as a default.
 2. Offline simulation: a fictional local server (testserver) that emits the
    same controls with new values. The script, run by the Tests agent
-   (not by ScrapeLens) against 127.0.0.1 with `--confirmar`, completes the
+   (not by ScrapeLens) against 127.0.0.1 with `--confirm`, completes the
    chain using the new values, never the captured ones. No external network.
 3. assess: on the DETRAN block fixture (200 without XML/STAMP, Connector without
    model, 403), the verdicts are consistent `app-error`/`undetermined`/`blocked?`.

@@ -8,7 +8,7 @@
     order of the manual flow (init, init, on_interceptor, init, cmd_filtro, cmd_consultar_placa; per round), labels
     `event @ page`, protection collapsed (no standalone /TSPD/ entry). On the real HARs (H1–H3 default), aggregate only:
     counts and label order (event and page names, never values).
-(2) priming script of the real-shape, run BY THIS TEST against detran-sim with `--confirmar --base-url --trace`;
+(2) priming script of the real-shape, run BY THIS TEST against detran-sim with `--confirm --base-url --trace`;
     `import-trace`; `validate <capture> <trace>` (scrapelens.validate/1; core 94478de): all trace steps paired, no
     Connector POST left over only in the capture, only the expected dynamic values differ (STAMP, delta, SESSIONID + what
     is inherent to the host switch), assess app-ok, and the summary "equivalent".
@@ -606,7 +606,7 @@ def main():
             ps.http(base, "/__sim/reset"); ps.http(base, f"/__sim/mode?m={mode}")
             client = ps.new_client_part()
             trace = tmp / f"trace-{mode}.json"
-            p = sh([py, "-I", script, "--confirmar", "--base-url", base, "--placa", PLACA, "--cpf", ps.CPF,
+            p = sh([py, "-I", script, "--confirm", "--base-url", base, "--placa", PLACA, "--cpf", ps.CPF,
                     "--sessionid-cliente", client, "--trace", trace], cwd=tmp)
             log = ps.http(base, "/__sim/log")["log"]
             first_bad = next((i for i, x in enumerate(log, 1) if x["path"].endswith("/servlet/Connector") and
