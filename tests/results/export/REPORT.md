@@ -77,7 +77,7 @@ Native proof: operated by the leader via computer_use (NSOpenPanel/NSSavePanel i
 | NSSavePanel save Python (`native.py`, 1157 B) | **passed**; 0600, `cmp` identical to `expected.py` (Tests) |
 | Cancel Save | **passed**: UI "Salvamento cancelado; nada foi gravado" (legacy); no `captured.sh/.py` exists (Tests) |
 | Native clipboard (Copy) | **passed** by the leader: `pbpaste` with UTF-8 identical to `expected.py`. Without LANG UTF-8 `pbpaste` differs in the em dash: a pbpaste artifact. Not re-verified by Tests (volatile clipboard) |
-| Sanitize → save → reopen | **passed**: folder 0700; `session.json` and `attachments/sanitized-request.json` 0600; no `cdp-events.jsonl`/`netlog.json`; no `ONLY_SYNTHETIC`; URL reopened `https://fixture.invalid/echo?sid=%5BREDACTED%5D` (Tests read session.json). Screenshot screenshot removed (it showed the Portuguese UI and a personal path) |
+| Sanitize → save → reopen | **passed**: folder 0700; `session.json` and `attachments/sanitized-request.json` 0600; no `cdp-events.jsonl`/`netlog.json`; no `ONLY_SYNTHETIC`; URL reopened `https://fixture.invalid/echo?sid=%5BREDACTED%5D` (Tests read session.json). Screenshot removed (it showed the Portuguese UI and a personal path); the image reference was dropped |
 | Source intact | **passed**: SHA of the 3 manifest files identical |
 
 Regressions: `cargo test --manifest-path tests/export/Cargo.toml --offline`
