@@ -1,74 +1,74 @@
-# Rodada 14 — validação Linux (ScrapeLens)
+# Round 14 — Linux validation (ScrapeLens)
 
-Artefatos: `src-tauri/linux/out/` (commit `e6d5fc6`, origem `98ab629`). SHA-256 conferidos no macOS e
-dentro de cada máquina antes de rodar:
+Artifacts: `src-tauri/linux/out/` (commit `e6d5fc6`, source `98ab629`). SHA-256 checked on macOS and
+inside each machine before running:
 - amd64: `ScrapeLens_0.1.0_amd64.deb` `5d288b32…15df53ac`; `ScrapeLens_0.1.0_amd64.AppImage` `64b08eb8…3e88c40ec5`
 - arm64: `ScrapeLens_0.1.0_arm64.deb` `a43397f3…9ef35fde09`; `ScrapeLens_0.1.0_aarch64.AppImage` `7c291e0b…a40d66f1`
 
-## Placar final (roteiro `tests/linux/acceptance.sh`, revisão com atalhos de teclado)
+## Final scoreboard (script `tests/linux/acceptance.sh`, review with keyboard shortcuts)
 
-| Máquina | Execução | Navegador | Falhas | Iniciar | Encerrar | Captura | HAR | NetLog | `navigator.webdriver` | LISTEN do Chrome |
+| Machine | Run | Browser | Failures | Start | Stop | Capture | HAR | NetLog | `navigator.webdriver` | Chrome LISTEN |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `sl-ubuntu-amd64` (x86_64) | **ROSETTA** (host arm64) | Google Chrome 156.0.8078.79 (repositório oficial) | **0** | `Ctrl+Shift+R`, teclado puro | `Ctrl+.`, teclado puro | complete, 11 req | complete, 24 | partial, 32 | `false` | nenhum (`ss -ltnp` sem o pid do Chrome) |
-| `sl-ubuntu-arm64` (aarch64) | **NATIVA** | Chromium 156.0.8078.47 (snap) | **0** | `Ctrl+Shift+R`, teclado puro | `Ctrl+.`, teclado puro | complete, 11 req | complete, 24 | partial, 32 | `false` | nenhum (`ss -ltnp` sem o pid do Chrome) |
+| `sl-ubuntu-amd64` (x86_64) | **ROSETTA** (arm64 host) | Google Chrome 156.0.8078.79 (official repository) | **0** | `Ctrl+Shift+R`, keyboard only | `Ctrl+.`, keyboard only | complete, 11 req | complete, 24 | partial, 32 | `false` | none (`ss -ltnp` without the Chrome pid) |
+| `sl-ubuntu-arm64` (aarch64) | **NATIVE** | Chromium 156.0.8078.47 (snap) | **0** | `Ctrl+Shift+R`, keyboard only | `Ctrl+.`, keyboard only | complete, 11 req | complete, 24 | partial, 32 | `false` | none (`ss -ltnp` without the Chrome pid) |
 
-Pasta de cada execução: `amd64/` e `arm64/` (summary.txt, atalhos.txt, contagens.txt,
+Folder of each run: `amd64/` and `arm64/` (summary.txt, atalhos.txt, contagens.txt,
 ss-durante-captura.txt, print-captura.png, print-final.png, probe.jsonl, logs).
 
-## Atalhos de teclado (o que esta revisão prova)
+## Keyboard shortcuts (what this review proves)
 
-- Iniciar e Encerrar dispararam com **teclado puro**: `xdotool windowactivate --sync` na janela principal
-  e `xdotool key --clearmodifiers`, sem clique em botão e sem clique neutro de foco
+- Start and Stop fired with **keyboard only**: `xdotool windowactivate --sync` on the main window
+  and `xdotool key --clearmodifiers`, with no click on a button and no neutral focus click
   (`atalhos.txt`: `cliques em coordenadas de botão …: 0`, `cliques neutros de foco …: 0`).
-- Nas duas máquinas e nas duas capturas do roteiro (a principal e a da sonda `navigator.webdriver`).
-- O foco precisa ser reativado antes de cada atalho: ao iniciar a captura, o foco X vai para a janela do
-  Chrome. Sem `windowactivate`, o `Ctrl+.` vai para o Chrome e não encerra nada — foi o que aconteceu na
-  verificação manual que motivou esta revisão.
-- Tela virtual `:99` (Xvfb 1600x1000 + openbox) dentro da VM; nenhuma tecla ou clique no macOS.
+- On both machines and in both captures of the script (the main one and the `navigator.webdriver` probe).
+- Focus must be reactivated before each shortcut: when the capture starts, the X focus moves to the
+  Chrome window. Without `windowactivate`, `Ctrl+.` goes to Chrome and stops nothing — this is what happened in the
+  manual check that prompted this review.
+- Virtual display `:99` (Xvfb 1600x1000 + openbox) inside the VM; no key or click on macOS.
 
-Passos do roteiro (todos `OK` em ambas): instalar o `.deb`; pacote `scrape-lens` instalado; testserver
-responde `/page`; janela do ScrapeLens; Iniciar pelo atalho; nenhum LISTEN do Chrome da captura;
-print durante a captura; Encerrar pelo atalho; sessão no disco com 11 requisições; imports
-`--import-har` e `--import-netlog`; HAR complete 24; NetLog partial 32; `navigator.webdriver === false`;
-nenhum clique nos botões; atalhos de iniciar e encerrar confirmados.
+Script steps (all `OK` on both): install the `.deb`; `scrape-lens` package installed; testserver
+answers `/page`; ScrapeLens window; Start via shortcut; no LISTEN from the capture's Chrome;
+screenshot during the capture; Stop via shortcut; session on disk with 11 requests; imports
+`--import-har` and `--import-netlog`; HAR complete 24; NetLog partial 32; `navigator.webdriver === false`;
+no clicks on buttons; start and stop shortcuts confirmed.
 
-## Como foi medido
-- **Rosetta vs nativo:** amd64 roda sobre Rosetta (uname x86_64 num host arm64); arm64 roda nativo (aarch64).
-  Os resultados são de máquinas diferentes e não se misturam.
-- **Início e fim da captura:** atalhos do WebView (`ctrl+shift+r`, `ctrl+period`) via XTEST. O script
-  identifica a janela real do app (maior área) e não o helper `InputOnly` 10x10 que também se chama
+## How it was measured
+- **Rosetta vs native:** amd64 runs under Rosetta (uname x86_64 on an arm64 host); arm64 runs natively (aarch64).
+  The results come from different machines and are not mixed.
+- **Start and end of capture:** WebView shortcuts (`ctrl+shift+r`, `ctrl+period`) via XTEST. The script
+  identifies the app's real window (largest area), not the 10x10 `InputOnly` helper that is also called
   "ScrapeLens".
-- **`ss -ltnp` durante a captura:** a única porta de escuta é a do testserver (127.0.0.1:8781), do próprio
-  roteiro; no arm64 também aparece `:631` (cups do sistema). Nenhum socket de escuta pertence ao Chrome da captura.
-- **`navigator.webdriver`:** lido por `tests/linux/probe_server.py`, uma página em 127.0.0.1:8791 que envia o
-  valor para o próprio servidor. A captura usa CDP por pipe, então não há porta de depuração a consultar.
-- **Prints:** a tela virtual inteira (1600x1000), porque o X reporta a janela cliente como 10x10 (a moldura
-  do openbox não tem geometria própria). A tela contém só o openbox e as janelas do app (Chrome de teste e
-  a janela do ScrapeLens).
+- **`ss -ltnp` during the capture:** the only listening port is the testserver's (127.0.0.1:8781), from the
+  script itself; on arm64 `:631` (system cups) also appears. No listening socket belongs to the capture's Chrome.
+- **`navigator.webdriver`:** read by `tests/linux/probe_server.py`, a page at 127.0.0.1:8791 that sends the
+  value to the server itself. The capture uses CDP over a pipe, so there is no debugging port to query.
+- **Screenshots:** the whole virtual screen (1600x1000), because X reports the client window as 10x10 (the
+  openbox frame has no geometry of its own). The screen contains only openbox and the app windows (test Chrome and
+  the ScrapeLens window).
 
-## Histórico
-1. Rodada 14 original (artefatos `25248f3`, origem `fa89c25`): atalhos `Ctrl+Shift+R` / `Ctrl+.` não
-   iniciavam nem encerravam; o roteiro usava cliques nos botões e fechou 0 falhas nas duas máquinas.
-2. App corrigiu o listener `keydown` para Linux (`98ab629`) e regenerou os pacotes (`e6d5fc6`).
-3. Esta revisão: atalhos refeitos no roteiro e **ambos disparam**. Duas observações de execução:
-   o print inicial pode sair preto se for tirado antes do WebView pintar (a espera agora é pela janela
-   real, não pelo helper 10x10); e o `Ctrl+.` só funciona com o ScrapeLens em foco, porque o Chrome assume
-   o foco ao abrir.
-4. Execuções anteriores: imports levam ~16 s para gravar `session.json` (espera até 60 s); `import -window`
-   travou com janela obsoleta (print passou a ser da tela inteira); no amd64 houve uma falha de início por
-   janela ainda não pronta (espera de 20 s + 3 tentativas).
+## History
+1. Original round 14 (artifacts `25248f3`, source `fa89c25`): shortcuts `Ctrl+Shift+R` / `Ctrl+.` did not
+   start or stop; the script used clicks on the buttons and closed with 0 failures on both machines.
+2. The app fixed the `keydown` listener for Linux (`98ab629`) and regenerated the packages (`e6d5fc6`).
+3. This review: shortcuts redone in the script and **both fire**. Two run observations:
+   the initial screenshot can come out black if taken before the WebView paints (the wait is now for the
+   real window, not the 10x10 helper); and `Ctrl+.` only works with ScrapeLens focused, because Chrome takes
+   focus when it opens.
+4. Earlier runs: imports take ~16 s to write `session.json` (wait up to 60 s); `import -window`
+   hung on a stale window (the screenshot is now of the whole screen); on amd64 there was one start failure from a
+   window not yet ready (20 s wait + 3 attempts).
 
-## Observações de produto (para o App)
-- `Ctrl+Shift+R` e `Ctrl+.` funcionam no Linux pelo listener do WebView, mas **só com foco na janela do app**.
-  Ao iniciar a captura o Chrome toma o foco; o usuário precisa clicar na janela do ScrapeLens (ou usar o
-  botão Encerrar) antes de `Ctrl+.`. Se quiser `Ctrl+.` global, falta um atalho de nível GTK/janela.
-- Atalhos de menu declarados como aceleradores GTK continuam não chegando ao WebView.
-- Chromium por snap no arm64 funciona para a captura (aceito; não foi preciso PPA ou apt).
-- Pacote `scrape-lens` depende de `libwebkit2gtk-4.1-0`; `dpkg -i` sozinho deixa o pacote quebrado até
-  `apt-get install <deb>` resolver as dependências.
+## Product observations (for the App)
+- `Ctrl+Shift+R` and `Ctrl+.` work on Linux through the WebView listener, but **only with focus on the app window**.
+  When the capture starts, Chrome takes focus; the user has to click the ScrapeLens window (or use the
+  Stop button) before `Ctrl+.`. For a global `Ctrl+.`, a GTK/window-level shortcut is missing.
+- Menu shortcuts declared as GTK accelerators still do not reach the WebView.
+- Chromium via snap on arm64 works for the capture (accepted; no PPA or apt needed).
+- The `scrape-lens` package depends on `libwebkit2gtk-4.1-0`; `dpkg -i` alone leaves the package broken until
+  `apt-get install <deb>` resolves the dependencies.
 
-## Máquinas
-- `sl-ubuntu-amd64` (192.168.139.105) e `sl-ubuntu-arm64` (192.168.139.230): running, **não apagadas**.
-- Dentro das máquinas ficam Xvfb `:99` e openbox (desktop virtual), por escolha do roteiro; nenhum app,
-  Chrome de captura, testserver ou sonda ficou rodando após a bateria.
-- Artefatos novos copiados para `~/artifacts-r14b/` nas duas máquinas.
+## Machines
+- `sl-ubuntu-amd64` (192.168.139.105) and `sl-ubuntu-arm64` (192.168.139.230): running, **not deleted**.
+- Inside the machines, Xvfb `:99` and openbox (virtual desktop) are left running, by choice of the script; no app,
+  capture Chrome, testserver or probe was left running after the run.
+- New artifacts copied to `~/artifacts-r14b/` on both machines.

@@ -1,254 +1,253 @@
-# Relatório final de aceite — ScrapeLens
+# Final acceptance report — ScrapeLens
 
-- **HEAD testado:** 6a85676 (`fix(priming): placa com hífen, chassi, +55, ...`)
-- **Última atualização:** 2026-11-03 (rodadas 13 a 16; seções próprias abaixo)
-- **Data:** 2026-10-29
-- **Máquina:** macOS arm64, Chrome 156.0.8078.73, sem rede externa (Chrome restrito a 127.0.0.1).
-- **Dados:** sintéticos; HARs reais só em agregados, lidos em modo somente leitura (temporários 0700 apagados).
+- **HEAD tested:** 6a85676 (`fix(priming): placa com hífen, chassi, +55, ...`)
+- **Last update:** 2026-11-03 (rounds 13 to 16; own sections below)
+- **Date:** 2026-10-29
+- **Machine:** macOS arm64, Chrome 156.0.8078.73, no external network (Chrome restricted to 127.0.0.1).
+- **Data:** synthetic; real HARs only as aggregates, read in read-only mode (temporaries 0700 deleted).
 
-## Critério 9 — feito AO VIVO nesta rodada
-`tests/capture/run-cycle.sh live-final` rodou o ciclo real (Chrome + testserver h1/h2/h3, CDP + NetLog) no HEAD acima
-e `run_acceptance.py --capture tests/capture/runs/live-final` o consumiu — não é replay da captura antiga.
-Captura: 2 pernas, 27 requisições, 4 ambíguas, 6 redirects, 14 streams h3; HAR nativo importado: 15 requisições (complete);
-nenhum certificado instalado. `initiator` nos eventos CDP crus: presente (19 eventos em h1h2, tipo `other`);
-o Core ainda mexe no iniciador em paralelo — qualquer divergência na sessão importada é esperada até o commit dele.
-(O diretório `runs/live-final` fica fora do git, 12 MB; a cópia estável está em `tests/results/capture-latest/`.)
+## Criterion 9 — done LIVE in this round
+`tests/capture/run-cycle.sh live-final` ran the real cycle (Chrome + testserver h1/h2/h3, CDP + NetLog) at the HEAD above
+and `run_acceptance.py --capture tests/capture/runs/live-final` consumed it — it is not a replay of the old capture.
+Capture: 2 legs, 27 requests, 4 ambiguous, 6 redirects, 14 h3 streams; native HAR imported: 15 requests (complete);
+no certificate installed. `initiator` in the raw CDP events: present (19 events in h1h2, type `other`);
+the Core is still changing the initiator in parallel — any divergence in the imported session is expected until its commit lands.
+(The directory `runs/live-final` is outside git, 12 MB; the stable copy is in `tests/results/capture-latest/`.)
 
-## Placar
-| Bateria | Resultado |
+## Scoreboard
+| Suite | Result |
 |---|---|
-| run_acceptance (10 critérios, com captura ao vivo) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 asserções, 0 falhas) |
-| check_bodies_search | OK, 5 casos |
+| run_acceptance (10 criteria, with live capture) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 assertions, 0 failures) |
+| check_bodies_search | OK, 5 cases |
 | check_chain_compare | OK |
 | check_real_shape | OK |
 | check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
 | check_priming_injection | OK |
-| tests/exportacao (cargo test) | 19 passaram, 0 falhas |
-| cargo test core | 250 passaram, 0 falhas (1 ignorado) |
-| cargo test src-tauri | 42 passaram, 0 falhas (6 ignorados) |
-| check_real_detran (H1, H2, H3) | OK: STAMP e delta 100%, 0 placas após sanitize |
-| check_real_priming (H1, H2, H3) | OK: params_required = [sessionid_cliente, placa], 0 literais capturados |
+| tests/exportacao (cargo test) | 19 passed, 0 failures |
+| cargo test core | 250 passed, 0 failures (1 ignored) |
+| cargo test src-tauri | 42 passed, 0 failures (6 ignored) |
+| check_real_detran (H1, H2, H3) | OK: STAMP and delta 100%, 0 plates after sanitize |
+| check_real_priming (H1, H2, H3) | OK: params_required = [sessionid_cliente, placa], 0 captured literals |
 
-Resultado: **tudo verde, 0 falhas.**
+Result: **all green, 0 failures.**
 
-## Nota de execução
-O primeiro passe da bateria rodou com `core/target/release` mais antigo que `core/src` e `check_real_detran`/`check_real_priming`
-recusaram (rc 1); depois de `cargo build --release` a bateria inteira foi repetida e é a que consta acima.
+## Execution note
+The first pass of the suite ran with `core/target/release` older than `core/src`, and `check_real_detran`/`check_real_priming`
+refused (rc 1); after `cargo build --release` the whole suite was rerun and is the one listed above.
 
-## Rodada 8 — adaptador Natural for Ajax
+## Round 8 — Natural for Ajax adapter
 
-- **HEAD testado:** dc14ac3 (`feat(priming): event/page/model do cabeçalho são estrutura do protocolo no modo estrito`)
-- **Data:** 2026-10-29
-- **Build:** `core` e `adapters/natural-ajax` (natural-core) recompilados em release antes da bateria.
-- **Dados:** sintéticos; HARs reais só em agregados (H1/H2/H3), temporários apagados.
+- **HEAD tested:** dc14ac3 (`feat(priming): event/page/model do cabeçalho são estrutura do protocolo no modo estrito`)
+- **Date:** 2026-10-29
+- **Build:** `core` and `adapters/natural-ajax` (natural-core) rebuilt in release before the suite.
+- **Data:** synthetic; real HARs (H1/H2/H3) only as aggregates, temporaries deleted.
 
-| Bateria | Resultado |
+| Suite | Result |
 |---|---|
-| run_acceptance (captura ao vivo da rodada final, `live-final`) | 10/10 OK |
-| check_bodies_search | OK, 5 casos |
+| run_acceptance (live capture of the final round, `live-final`) | 10/10 OK |
+| check_bodies_search | OK, 5 cases |
 | check_chain_compare | OK |
 | check_real_shape | OK |
 | check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
 | check_priming_injection | OK |
-| check_natural_adapter (detran-sim `strict`) | OK: (a) controle sem adaptador falha; (b) com adaptador 2 sessões completas; (c) round-trip 0 divergências |
+| check_natural_adapter (detran-sim `strict`) | OK: (a) control without adapter fails; (b) with adapter 2 complete sessions; (c) round-trip 0 divergences |
 | prove_strict (adapters/natural-ajax/scripts) | OK, `fails: []` |
-| tests/exportacao | 19 passaram, 0 falhas |
-| cargo test core / src-tauri / natural-ajax | 259 / 45 / 28 passaram, 0 falhas |
+| tests/exportacao | 19 passed, 0 failures |
+| cargo test core / src-tauri / natural-ajax | 259 / 45 / 28 passed, 0 failures |
 | check_real_detran (H1, H2, H3) | OK |
-| check_real_priming sem `--wrapper` | OK |
-| check_real_priming com `--wrapper` (natural-core) | OK: alvo com resposta anterior capturada gera script com `natural_ajax_encode`; "primeiro" de H2/H3 segue recusado (respostas sem corpo) |
+| check_real_priming without `--wrapper` | OK |
+| check_real_priming with `--wrapper` (natural-core) | OK: target with captured previous response generates a script with `natural_ajax_encode`; the "first" of H2/H3 remains refused (responses without body) |
 
-Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa a captura ao vivo de 2026-10-29 (`live-final`); não foi refeita nesta rodada.
+Result: **all green, 0 failures.** Criterion 9 of run_acceptance uses the live capture of 2026-10-29 (`live-final`); it was not redone in this round.
 
-## Rodada 10 — captura multi-alvo (rodada oficial final, bundle definitivo)
+## Round 10 — multi-target capture (official final round, final bundle)
 
-- **HEAD testado:** 0d98615 (captura em f1493ab, core em 66e97e3, bundle em 0d98615)
-- **Data:** 2026-10-31
-- **Build:** `core`, `testserver` e `adapters/natural-ajax` recompilados em release antes da bateria.
-- **Bundle aceito:** `7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c` (16.582.144 bytes, arm64, ad-hoc, binário único),
-  conferido por `shasum -a 256` e pelo caminho do processo em execução; `EXPECTED_APP_SHA256` em `tests/aceite/run_acceptance.py` aponta o mesmo hash.
-- **Dados:** sintéticos; HARs reais (H1–H3) só em agregados.
+- **HEAD tested:** 0d98615 (capture in f1493ab, core in 66e97e3, bundle in 0d98615)
+- **Date:** 2026-10-31
+- **Build:** `core`, `testserver` and `adapters/natural-ajax` rebuilt in release before the suite.
+- **Accepted bundle:** `7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c` (16.582.144 bytes, arm64, ad-hoc, single binary),
+  checked by `shasum -a 256` and by the path of the running process; `EXPECTED_APP_SHA256` in `tests/aceite/run_acceptance.py` points to the same hash.
+- **Data:** synthetic; real HARs (H1–H3) only as aggregates.
 
-### Aceite multi-alvo — 5 rodadas com `--self-test`
+### Multi-target acceptance — 5 rounds with `--self-test`
 
-`python3 tests/aceite/check_multi_target.py --port 896N --self-test` (captura real do produto, Chrome headless, `testserver /multi/`).
+`python3 tests/aceite/check_multi_target.py --port 896N --self-test` (real product capture, Chrome headless, `testserver /multi/`).
 
-| Rodada | NetLog | CDP | Requisições | SW por `targetId` | Link página↔SW | `attachFailed` | avisos `target_setup_timeout`/`setup_error` | Autoteste | Falhas |
+| Round | NetLog | CDP | Requests | SW by `targetId` | Page↔SW link | `attachFailed` | `target_setup_timeout`/`setup_error` warnings | Self-test | Failures |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0014 ↔ cdp-r0016 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
-| 2 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0004 ↔ cdp-r0013 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
-| 3 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0010 ↔ cdp-r0016 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
-| 4 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0014 ↔ cdp-r0019 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
-| 5 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0012 ↔ cdp-r0018 `ambiguous`, mesmo caminho | 0 | 0 | 9/9 como esperado | 0 |
+| 1 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0014 ↔ cdp-r0016 `ambiguous`, same path | 0 | 0 | 9/9 as expected | 0 |
+| 2 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0004 ↔ cdp-r0013 `ambiguous`, same path | 0 | 0 | 9/9 as expected | 0 |
+| 3 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0010 ↔ cdp-r0016 `ambiguous`, same path | 0 | 0 | 9/9 as expected | 0 |
+| 4 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0014 ↔ cdp-r0019 `ambiguous`, same path | 0 | 0 | 9/9 as expected | 0 |
+| 5 | 16/16 | 16/16 | 22 | 1 + 1 | cdp-r0012 ↔ cdp-r0018 `ambiguous`, same path | 0 | 0 | 9/9 as expected | 0 |
 
-- **Critério 6 endurecido:** o `sw-intercept-1` da página tem de estar ligado ao candidato de mesmo método e mesmo caminho (`/multi/sw-fetch`) e a nenhum `sw-own-*`;
-  link para `sw-own-*` reprova (`links_para_sw_own` registrado). Nas 5 rodadas: `links_para_sw_own` vazio e o link é só com o `sw-fetch` do SW
-  (evidência "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada").
-- **Critério novo:** qualquer aviso `cdp.target_setup_timeout`, `setup_error` ou `setup_aborted` na captura ao vivo reprova. As 5 rodadas: 0 avisos (nas anteriores eram 1–2 por rodada).
-- **9 mutações do autoteste** (esperado → obtido, iguais nas 5): fusão de dois pares FAIL→FAIL; links do SW removidos FAIL→FAIL; `kind` trocado FAIL→FAIL; corpo alterado FAIL→FAIL;
-  cópia de SW na mesma sessão FAIL→FAIL; cópia de SW em outra sessão do mesmo `targetId` FAIL→FAIL; **`sw-intercept` ligado a `sw-own-*` FAIL→FAIL (nova)**;
-  colisão injetada separada PASS→PASS; colisão injetada fundida FAIL→FAIL.
-- **Defeito meu achado pelo próprio autoteste:** a primeira versão do critério endurecido parava no primeiro link válido (`break`) e deixava passar um segundo link para `sw-own-*`;
-  o autoteste reprovou nas 5 rodadas ("NÃO falhou"), corrigi o laço e refiz as 5.
-- **Rodada 1 descartada uma vez:** um `testserver` órfão na porta 8961 (de uma execução que eu interrompi) respondeu no lugar do servidor da rodada ("POST não chegou ao servidor");
-  foi causa do harness, não da captura. Servidor morto, rodada refeita em outra porta: OK.
+- **Criterion 6 hardened:** the page's `sw-intercept-1` must be linked to the candidate with the same method and path (`/multi/sw-fetch`) and to no `sw-own-*`;
+  a link to `sw-own-*` fails (`links_para_sw_own` recorded). In the 5 rounds: `links_para_sw_own` empty and the link is only to the SW's `sw-fetch` (evidence
+  "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada" (legacy)).
+- **New criterion:** any `cdp.target_setup_timeout`, `setup_error` or `setup_aborted` warning in the live capture fails. The 5 rounds: 0 warnings (in the earlier ones there were 1–2 per round).
+- **9 self-test mutations** (expected → obtained, the same in all 5): merging two FAIL→FAIL pairs; SW links removed FAIL→FAIL; `kind` changed FAIL→FAIL; body changed FAIL→FAIL;
+  SW copy in the same session FAIL→FAIL; SW copy in another session of the same `targetId` FAIL→FAIL; **`sw-intercept` linked to `sw-own-*` FAIL→FAIL (new)**;
+  separate injected collision PASS→PASS; merged injected collision FAIL→FAIL.
+- **Defect of mine found by the self-test itself:** the first version of the hardened criterion stopped at the first valid link (`break`) and let a second link to `sw-own-*` pass;
+  the self-test failed in the 5 rounds ("did NOT fail"), I fixed the loop and redid the 5.
+- **Round 1 discarded once:** an orphan `testserver` on port 8961 (from a run I had interrupted) answered in place of the round's server ("POST did not reach the server");
+  it was a harness cause, not a capture one. Server killed, round redone on another port: OK.
 
-Saída por rodada em `tests/results/multi-target-rodada10-final.json`; última captura em `tests/results/multi-target.json`.
+Output per round in `tests/results/multi-target-rodada10-final.json`; last capture in `tests/results/multi-target.json`.
 
-### Bateria completa (HEAD 0d98615)
+### Full suite (HEAD 0d98615)
 
-| Bateria | Resultado |
+| Suite | Result |
 |---|---|
-| run_acceptance (10 critérios, com `app-latest` do bundle novo) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 asserções, 0 falhas) |
-| check_bodies_search / check_chain_compare / check_real_shape | OK (5 casos / OK / OK) |
+| run_acceptance (10 criteria, with `app-latest` of the new bundle) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 assertions, 0 failures) |
+| check_bodies_search / check_chain_compare / check_real_shape | OK (5 cases / OK / OK) |
 | check_priming_sim / check_priming_injection | OK / OK |
 | check_natural_adapter (sim `strict`) / check_timeline_validacao / prove_strict | OK / OK / OK |
-| tests/exportacao | 19 passaram, 0 falhas |
-| cargo test core / src-tauri / natural-ajax | 316 / 52 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
+| tests/exportacao | 19 passed, 0 failures |
+| cargo test core / src-tauri / natural-ajax | 316 / 52 / 32 passed, 0 failures (1 / 8 / 0 ignored) |
 | check_real_detran (H1–H3) | OK |
-| check_real_priming sem / com `--wrapper` (H1–H3) | OK / OK |
-| ciclo real de uma aba (`live_bodies_cycle`) | OK, exercitado 5× (+1) pelo check multi-alvo |
+| check_real_priming without / with `--wrapper` (H1–H3) | OK / OK |
+| real cycle of one tab (`live_bodies_cycle`) | OK, exercised 5× (+1) by the multi-target check |
 
-Resultado: **tudo verde, 0 falhas.**
+Result: **all green, 0 failures.**
 
-### Ciclo real no bundle definitivo
+### Real cycle on the final bundle
 
-`ScrapeLens.app` (`7a46fa4c…05d2b7c`): **Iniciar sessão** → `testserver` h1 em `127.0.0.1:8781/page` → **Encerrar**.
-Captura `capture-1793454692088`: 11 requisições, `complete`, `cdp+netlog`, 2 ambíguas, 154 headers verificados, 14 linhas no testserver h1
-(`tests/results/app-latest/testserver/app-20261031a`). HAR e NetLog reimportados pela UI (`har-3dbc391c02a985c5-7`, 24 requisições, `complete`;
-`netlog-1704043c442dcbd1-7`, 32 requisições, `partial`). O painel nativo "Open" é instável sob automação; o HAR foi escolhido por clique e o NetLog por teclado (seta + Return).
-**Incidente:** com o Brave do usuário em primeiro plano, alguns cliques de tela meus (coordenadas de desktop) caíram nele e navegaram uma aba para uma página do Ratos de IA;
-nada foi enviado ou alterado além da navegação/rolagem. Cópias sintéticas temporárias em `~/Desktop` removidas. Prints em `tests/results/app-latest/`.
+`ScrapeLens.app` (`7a46fa4c…05d2b7c`): **Start session** → `testserver` h1 at `127.0.0.1:8781/page` → **Stop** (UI labels `Iniciar sessão` / `Encerrar` (legacy)).
+Capture `capture-1793454692088`: 11 requests, `complete`, `cdp+netlog`, 2 ambiguous, 154 headers verified, 14 lines in the testserver h1
+(`tests/results/app-latest/testserver/app-20261031a`). HAR and NetLog re-imported through the UI (`har-3dbc391c02a985c5-7`, 24 requests, `complete`;
+`netlog-1704043c442dcbd1-7`, 32 requests, `partial`). The native "Open" panel is unstable under automation; the HAR was chosen by click and the NetLog by keyboard (arrow + Return).
+**Incident:** with the user's Brave in the foreground, some of my screen clicks (desktop coordinates) landed on it and navigated a tab to a page of Ratos de IA;
+nothing was sent or changed beyond the navigation/scrolling. Temporary synthetic copies in `~/Desktop` removed. Screenshots in `tests/results/app-latest/`.
 
+### Final bundle (closing)
 
-### Bundle final (fechamento)
+- **Final bundle:** `b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157` (App b684c1a, `capture::cleanup_orphans` in setup), source HEAD b684c1a; `EXPECTED_APP_SHA256` and `app-latest` updated; item 9 recomputes the hash on disk. Real cycle redone only by AX and keyboard, without desktop clicks (`capture-1793456763837`: 11 req, complete, cdp+netlog; HAR `-8` 24 req complete; NetLog `-8` 32 req partial). run_acceptance 10/10 (item 9: 121 assertions), check_multi_target --self-test OK (9/9 mutations as expected, 0 setup warnings), cargo test core 316 / src-tauri 59 / natural-ajax 32, 0 failures.
 
-- **Bundle final:** `b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157` (App b684c1a, `capture::cleanup_orphans` no setup), HEAD de origem b684c1a; `EXPECTED_APP_SHA256` e `app-latest` atualizados; o item 9 recalcula o hash em disco. Ciclo real refeito só por AX e teclado, sem cliques de desktop (`capture-1793456763837`: 11 req, complete, cdp+netlog; HAR `-8` 24 req complete; NetLog `-8` 32 req partial). run_acceptance 10/10 (item 9: 121 asserções), check_multi_target --self-test OK (9/9 mutações como esperado, 0 avisos de setup), cargo test core 316 / src-tauri 59 / natural-ajax 32, 0 falhas.
+- **Bundle with stable signature (c2d2b8f):** SHA `1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a`, local identity "ScrapeLens Local Signing"; `EXPECTED_APP_SHA256` and `app-latest` updated. Item 9 accepts ad-hoc or local identity and requires `codesign --verify --deep --strict` (recorded in run.json and recomputed on disk). Real cycle redone by AX and keyboard (`capture-1793464319852`: 11 req, complete; HAR `-9` 24 req; NetLog `-9` 32 req partial). run_acceptance 10/10 (item 9: 123 assertions).
 
-- **Bundle com assinatura estável (c2d2b8f):** SHA `1901f3b499bbf4e946aa7b995ab70cad5027d25087ccbbe6d282302d5b94605a`, identidade local "ScrapeLens Local Signing"; `EXPECTED_APP_SHA256` e `app-latest` atualizados. O item 9 aceita ad-hoc ou identidade local e exige `codesign --verify --deep --strict` (registrado no run.json e recalculado em disco). Ciclo real refeito por AX e teclado (`capture-1793464319852`: 11 req, complete; HAR `-9` 24 req; NetLog `-9` 32 req partial). run_acceptance 10/10 (item 9: 123 asserções).
+## Round 11 — MCP (acceptance item 11)
 
-## Rodada 11 — MCP (item 11 do aceite)
+- **HEAD tested:** core `e37d42d` (sanitizer covers `startLine`), mcp `6cca5aa`; tests in `tests/` from `e8ea7f7`.
+- **Date:** 2026-10-31. Binaries: `cargo test` without filter in `mcp/` (rebuilds `fake_server`), `core` in release.
+- **`run_acceptance` scoreboard:** 11/11 OK (items 1–10 unchanged; item 11 with 34 assertions, 0 failures).
 
-- **HEAD testado:** core `e37d42d` (sanitizador cobre `startLine`), mcp `6cca5aa`; testes em `tests/` a partir de `e8ea7f7`.
-- **Data:** 2026-10-31. Binários: `cargo test` sem filtro em `mcp/` (reconstrói `fake_server`), `core` em release.
-- **Placar `run_acceptance`:** 11/11 OK (itens 1–10 inalterados; item 11 com 34 asserções, 0 falhas).
-
-| Comando | rc | Resultado |
+| Command | rc | Result |
 |---|---|---|
-| `cargo test` mcp | 0 | 37 passaram, 0 falharam |
-| `cargo test` capture | 0 | 41 passaram, 0 falharam |
-| `cargo test` recon | 0 | 23 passaram, 0 falharam |
-| `cargo test --test e2e_live -- --ignored` (mcp, Chrome real) | 0 | 1 passou |
-| `recon/scripts/live_e2e.sh` | 0 | 4 passaram |
-| `tests/aceite/mcp_flow.py` (cliente stdio independente) | 0 | 28 checagens, 0 falharam |
+| `cargo test` mcp | 0 | 37 passed, 0 failed |
+| `cargo test` capture | 0 | 41 passed, 0 failed |
+| `cargo test` recon | 0 | 23 passed, 0 failed |
+| `cargo test --test e2e_live -- --ignored` (mcp, real Chrome) | 0 | 1 passed |
+| `recon/scripts/live_e2e.sh` | 0 | 4 passed |
+| `tests/aceite/mcp_flow.py` (independent stdio client) | 0 | 28 checks, 0 failed |
 
-- **Fluxo:** start_capture (elicitação aceita) → navigate → stop_capture (NetLog completo) → list_requests → get_request (ordem dos headers = ordem recebida pelo servidor local = bloco bruto do NetLog) → trace_value do cookie mascarado → site_profile.
-- **Negativos:** elicitação recusada não cria Chrome da captura; navigate fora da allowlist recusado com `url_not_allowed` e sem chegar ao servidor; `reveal=true` sem `--allow-reveal` recusado; nenhum valor de cookie/token na saída inteira do MCP sem reveal.
-- **Achado da rodada 11 anterior:** `get_request` vazava o token da query em `request.startLine` sem reveal; corrigido no core `e37d42d` e no mcp `6cca5aa`, reproduzido e verificado de novo aqui.
-- **Evidência:** `tests/results/mcp/run.json` (comandos) e `tests/results/mcp/flow.json` (checagens do fluxo, sem o valor do segredo).
+- **Flow:** start_capture (elicitation accepted) → navigate → stop_capture (complete NetLog) → list_requests → get_request (header order = order received by the local server = raw NetLog block) → trace_value of the masked cookie → site_profile.
+- **Negative cases:** a refused elicitation does not create the capture Chrome; navigate outside the allowlist refused with `url_not_allowed` and without reaching the server; `reveal=true` without `--allow-reveal` refused; no cookie/token value in the whole MCP output without reveal.
+- **Finding from the previous round 11:** `get_request` leaked the query token in `request.startLine` without reveal; fixed in core `e37d42d` and in mcp `6cca5aa`, reproduced and verified again here.
+- **Evidence:** `tests/results/mcp/run.json` (commands) and `tests/results/mcp/flow.json` (flow checks, without the secret value).
 
-- **Bundle eb66afa (CDP por pipe):** `ScrapeLens.app` SHA `6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9` (assinatura local), `EXPECTED_APP_SHA256` e `app-latest` atualizados; ciclo real só por AX e teclado (`capture-1793485447342`: 11 req, complete; HAR `-10` 24 req complete; NetLog `-10` 32 req partial); `lsof` durante a captura: o Chrome da captura não tem socket TCP nem LISTEN; `run_acceptance` 11/11 com os três vivos de capture/ (1 teste cada) e `e2e_live` 3/3; `cargo test` mcp 51/0. Evidência: `tests/results/app-latest/lsof-captura-r11.txt`.
+- **Bundle eb66afa (CDP over pipe):** `ScrapeLens.app` SHA `6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9` (local signature), `EXPECTED_APP_SHA256` and `app-latest` updated; real cycle only by AX and keyboard (`capture-1793485447342`: 11 req, complete; HAR `-10` 24 req complete; NetLog `-10` 32 req partial); `lsof` during the capture: the capture's Chrome has no TCP socket or LISTEN; `run_acceptance` 11/11 with the three live capture/ tests (1 test each) and `e2e_live` 3/3; `cargo test` mcp 51/0. Evidence: `tests/results/app-latest/lsof-captura-r11.txt`.
 
-- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — PARCIAL:** `EXPECTED_APP_SHA256` atualizado para `4636a3cf…043860`; `app-latest` ainda é do bundle `6c0092c3` e o item 9 reprova até o ciclo real ser refeito. Bloqueio: o Mac está sem usuário ativo (`UserIsActive 0`), o desktop vem preto, e a janela do ScrapeLens (pid 9430 após reinício) fica sem AX resolvido (`ax_unresolved`); `bring_to_front` não verificou o foco (a frente é a janela do OpenBot), então não há como agir sem clicar sobre janelas do usuário. Pendentes: ciclo Iniciar/Encerrar + HAR/NetLog no bundle 4636a3cf e `lsof` durante a captura. Feito: `cargo build --examples` e `cargo test` em mcp: 58/0; `run_acceptance` 10/11 itens OK, item 11 OK (39 asserções) com os cinco vivos de capture/ (1 teste cada, `--test-threads=1`), e2e_live 3/0, live_e2e.sh 4/0, fluxo stdio 28/0.
+- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — PARTIAL:** `EXPECTED_APP_SHA256` updated to `4636a3cf…043860`; `app-latest` is still from bundle `6c0092c3` and item 9 fails until the real cycle is redone. Blocker: the Mac has no active user (`UserIsActive 0`), the desktop comes up black, and the ScrapeLens window (pid 9430 after restart) stays without resolved AX (`ax_unresolved`); `bring_to_front` did not verify focus (the front is the OpenBot window), so there is no way to act without clicking over the user's windows. Pending: Start/Stop cycle + HAR/NetLog in bundle 4636a3cf and `lsof` during the capture. Done: `cargo build --examples` and `cargo test` in mcp: 58/0; `run_acceptance` 10/11 items OK, item 11 OK (39 assertions) with the five live capture/ tests (1 test each, `--test-threads=1`), e2e_live 3/0, live_e2e.sh 4/0, stdio flow 28/0.
 
-- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — FECHADO:** item 9 refeito. Ciclo real por teclado (a AX do botão foi recusada com `element_outside_target_window` mesmo com a janela verificada em foco; Tab até "Iniciar sessão"/"Encerrar" e Return, depois HAR e NetLog pela janela Open): `capture-1793491743660` (11 req, complete, cdp+netlog); HAR `-11` 24 req complete; NetLog `-11` 32 req partial. `lsof` durante a captura (Chrome pid 25252): sem LISTEN nem socket TCP. `run_acceptance` 11/11 (item 11 com os cinco vivos de capture/, 1 thread, e `e2e_live`). Evidência: `tests/results/app-latest/lsof-captura-r11b.txt`.
+- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — CLOSED:** item 9 redone. Real cycle by keyboard (the AX of the button was refused with `element_outside_target_window` even with the window verified in focus; Tab to "Iniciar sessão" (legacy)/"Encerrar" (legacy) and Return, then HAR and NetLog through the Open window): `capture-1793491743660` (11 req, complete, cdp+netlog); HAR `-11` 24 req complete; NetLog `-11` 32 req partial. `lsof` during the capture (Chrome pid 25252): no LISTEN or TCP socket. `run_acceptance` 11/11 (item 11 with the five live capture/ tests, 1 thread, and `e2e_live`). Evidence: `tests/results/app-latest/lsof-captura-r11b.txt`.
 
-- **Rodada 11 — bundle f3039e58 (HEAD fc5ca18, commit 88c69f7) — PARCIAL 10/11:** app aberto com `SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page` (pid 70761). Captura `capture-1793562925684` (11 req, complete, cdp+netlog; testserver `app-20261101c`); HAR `har-3dbc391c02a985c5-12` (24 req, complete) e NetLog `netlog-1704043c442dcbd1-12` (32 req, partial), importados pela UI a partir de `har-derived.json` e `h1h2h3.chrome-netlog.json`. `run_acceptance` 10/10 nos itens 1–8, 10 e 11; item 9 segue vermelho só por falta dos prints do ciclo (`screenshot-app-live.png` e `screenshot-app-imports.png` precisam ser deste bundle). Pasta `~/Desktop/sl-import-tmp` apagada; testserver, fake_server e Chrome da captura encerrados; pid 8911 ausente.
+- **Round 11 — bundle f3039e58 (HEAD fc5ca18, commit 88c69f7) — PARTIAL 10/11:** app opened with `SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page` (pid 70761). Capture `capture-1793562925684` (11 req, complete, cdp+netlog; testserver `app-20261101c`); HAR `har-3dbc391c02a985c5-12` (24 req, complete) and NetLog `netlog-1704043c442dcbd1-12` (32 req, partial), imported through the UI from `har-derived.json` and `h1h2h3.chrome-netlog.json`. `run_acceptance` 10/10 on items 1–8, 10 and 11; item 9 stays red only for lack of the cycle screenshots (`screenshot-app-live.png` and `screenshot-app-imports.png` must be from this bundle). Folder `~/Desktop/sl-import-tmp` deleted; testserver, fake_server and the capture Chrome stopped; pid 8911 absent.
 
-- **Rodada 11 — FECHADA com ressalva (10/11):** o item 9 está sem os prints do bundle f3039e58; a evidência funcional é `capture-1793562925684` (11 req, complete), o lsof sem LISTEN, o HAR `-12` (24 req) e o NetLog `-12` (32 req), importados pelo usuário em 02/11; os prints ficam para a rodada 12, com atalhos de teclado no app. `run_acceptance` não foi afrouxado: o item 9 segue vermelho em `aceite.json`.
+- **Round 11 — CLOSED with caveat (10/11):** item 9 lacks the screenshots of bundle f3039e58; the functional evidence is `capture-1793562925684` (11 req, complete), the lsof with no LISTEN, the HAR `-12` (24 req) and the NetLog `-12` (32 req), imported by the user on 02/11; the screenshots are left for round 12, with keyboard shortcuts in the app. `run_acceptance` was not loosened: item 9 stays red in `aceite.json`.
 
-- **Rodada 12 — bundle 2691f152 (HEAD ce68eb9, commit e7cfc38) — FECHADA (11/11):** app aberto com `SCRAPELENS_TEST_MODE=1` e `SCRAPELENS_CAPTURE_URL` apontando para o testserver `app-20261102r12`. Captura ao vivo por `invoke_menu` (Captura > Iniciar sessão / Encerrar), `capture-1793651039927` (11 req, complete), sem LISTEN no Chrome da captura (lsof). HAR `har-3dbc391c02a985c5-13` (24 req, complete) e NetLog `netlog-1704043c442dcbd1-13` (32 req, partial), importados pela CLI de teste a partir de `tests/.work/r12-import`. Print `screenshot-app-imports.png` só da janela do ScrapeLens; `screenshot-app-live.png` é o mesmo print, posterior à captura (ver nota no `run.json`). `run_acceptance` 11/11 com `EXPECTED_APP_SHA256` = `2691f152…`. Órfãos: testserver encerrado; app encerrado; pid 8911 ausente.
+- **Round 12 — bundle 2691f152 (HEAD ce68eb9, commit e7cfc38) — CLOSED (11/11):** app opened with `SCRAPELENS_TEST_MODE=1` and `SCRAPELENS_CAPTURE_URL` pointing to the testserver `app-20261102r12`. Live capture by `invoke_menu` (Capture > Start session / Stop; menu labels `Captura > Iniciar sessão / Encerrar` (legacy)), `capture-1793651039927` (11 req, complete), no LISTEN from the capture's Chrome (lsof). HAR `har-3dbc391c02a985c5-13` (24 req, complete) and NetLog `netlog-1704043c442dcbd1-13` (32 req, partial), imported by the test CLI from `tests/.work/r12-import`. Screenshot `screenshot-app-imports.png` only of the ScrapeLens window; `screenshot-app-live.png` is the same screenshot, taken after the capture (see the note in `run.json`). `run_acceptance` 11/11 with `EXPECTED_APP_SHA256` = `2691f152…`. Orphans: testserver stopped; app stopped; pid 8911 absent.
 
-## Rodada 13 — memória de sessões grandes (P1–P7) e D7
+## Round 13 — large session memory (P1–P7) and D7
 
-- **Data:** 2026-11-02 (onda 1) e 2026-11-03 (onda 2/D7). **Máquina:** macOS arm64, 64 GiB, Chrome 156, binários `--release`.
-- **Carga:** sintética por captura real em loopback (`capture/examples/capture_big.rs`), 2.002 / 5.002 / 20.002 requisições; `session.json` de 1.133 MiB a 20 mil. Pico de RSS medido por etapa em `experiments/memoria-sessao` (uma etapa por processo).
-- **Onde estava o pico (`docs/18` §3, 20.002 req.):** abrir no App (`app-open-ipc`) 7.101 MiB; `inspect` 9.305 MiB; 1ª chamada mascarada do MCP 5.654 MiB; `capture-write` 9.189 MiB e 263 s; `capture-full` 6.993 MiB e 249 s; `session.json` 1.133 MiB.
+- **Date:** 2026-11-02 (wave 1) and 2026-11-03 (wave 2/D7). **Machine:** macOS arm64, 64 GiB, Chrome 156, `--release` binaries.
+- **Load:** synthetic through real capture on loopback (`capture/examples/capture_big.rs`), 2.002 / 5.002 / 20.002 requests; `session.json` from 1.133 MiB to 20 thousand. RSS peak measured per stage in `experiments/memoria-sessao` (one stage per process).
+- **Where the peak was (`docs/18` §3, 20.002 req.):** opening in the App (`app-open-ipc`) 7.101 MiB; `inspect` 9.305 MiB; 1st masked MCP call 5.654 MiB; `capture-write` 9.189 MiB and 263 s; `capture-full` 6.993 MiB and 249 s; `session.json` 1.133 MiB.
 
-**Correções no core/MCP (medidas, `docs/18` §7, mesmas cargas de 20.002 requisições):**
+**Core/MCP fixes (measured, `docs/18` §7, same loads of 20.002 requests):**
 
-| Item | Commit | Antes → depois |
+| Item | Commit | Before → after |
 |---|---|---|
-| P1 — validar `netlog.json` e CDP em fluxo, sem DOM | `87bd164` | `import-eager` 4.727 → **1.580 MiB** (−67 %); 17,8 → 10,1 s |
-| P2 — `inspect`/`assess` em fluxo com struct emprestada | `752230e` | `inspect` 9.305 → **1.656 MiB** (−82 %); 11,5 s; saída byte a byte igual |
-| P3 — correlação por índice (método, URL canônica, id) | `4d82e36` | `capture-full` 248,9 s → **9,3 s**; memória igual (o DOM do NetLog continua); saída idêntica contra baseline `aefacc9` em 29 capturas/fixtures |
-| P6 — `session.json` compacto acima de 50 MiB | `2550041` | 5.002 req.: 283 → **162 MiB** (−43 %); `capture-write` 9.189 → 7.580 MiB, 263 → 16,2 s |
-| P7 — `sanitize_bundle_owned` sem cópia mascarada | `b438945` | 1ª chamada mascarada do MCP 5.654 → **1.649 MiB** (−71 %) |
+| P1 — validate `netlog.json` and CDP in a stream, without DOM | `87bd164` | `import-eager` 4.727 → **1.580 MiB** (−67 %); 17,8 → 10,1 s |
+| P2 — `inspect`/`assess` in a stream with borrowed struct | `752230e` | `inspect` 9.305 → **1.656 MiB** (−82 %); 11,5 s; output byte for byte identical |
+| P3 — correlation by index (method, canonical URL, id) | `4d82e36` | `capture-full` 248,9 s → **9,3 s**; memory the same (the NetLog DOM remains); output identical against baseline `aefacc9` on 29 captures/fixtures |
+| P6 — compact `session.json` above 50 MiB | `2550041` | 5.002 req.: 283 → **162 MiB** (−43 %); `capture-write` 9.189 → 7.580 MiB, 263 → 16,2 s |
+| P7 — `sanitize_bundle_owned` without masked copy | `b438945` | 1st masked MCP call 5.654 → **1.649 MiB** (−71 %) |
 
-P4 (DOM do NetLog), P5 e P8 não foram feitos no core; P5 foi feito no App. O que resta de memória no `stop_capture` é o DOM do NetLog (P4).
+P4 (NetLog DOM), P5 and P8 were not done in the core; P5 was done in the App. What remains of memory in `stop_capture` is the NetLog DOM (P4).
 
-**App — P5, contrato paginado (`6b6bdff`, `docs/19-contrato-app.md`):** o backend lê `SessionV1` tipado e o front recebe cabeçalho, páginas de 2.000 resumos e o detalhe sob demanda (`open_session`, `list_requests`, `get_request`). Medido com `src-tauri/examples/mem_open.rs` em `/private/tmp/big20k` (`session.json` 1,19 GB): **7.108 → 1.161 MiB (−84 %)**; ao front vão 1,4 KB de cabeçalho + 5,4 MB de todas as páginas + 32 KB de um detalhe (antes, 681 MB). Bundles: onda 1 `52cd14fd` (HEAD `f81ea80`); onda 2 `78155379` (HEAD `291fae4`; lista sob demanda `6f11440`, rede aberta por padrão `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), com **2** chamadas de `list_requests` até a primeira tela contra 33 na onda 1 (`src-tauri/EMPACOTAMENTO.md`).
+**App — P5, paginated contract (`6b6bdff`, `docs/19-contrato-app.md`):** the backend reads a typed `SessionV1` and the front receives the header, pages of 2.000 summaries and the detail on demand (`open_session`, `list_requests`, `get_request`). Measured with `src-tauri/examples/mem_open.rs` on `/private/tmp/big20k` (`session.json` 1,19 GB): **7.108 → 1.161 MiB (−84 %)**; to the front go 1,4 KB of header + 5,4 MB of all pages + 32 KB of one detail (before, 681 MB). Bundles: wave 1 `52cd14fd` (HEAD `f81ea80`); wave 2 `78155379` (HEAD `291fae4`; on-demand list `6f11440`, network open by default `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), with **2** `list_requests` calls until the first screen against 33 in wave 1 (`src-tauri/EMPACOTAMENTO.md`).
 
-**Revisão A9 (core e App):** `3fe7efc` (A9-B1: em caminho, `,` ou `|` seguido de `/` encerra o valor; lista sem espaço preserva o item seguinte; fuzz de caminho com 3 sementes sem vazamento), `0d9d935` (A9-B2: entidades de `=` com qualquer número de camadas de escape — `&amp;`, `&#38;`, `&#x26;` — falhando fechado acima de 256; corpus +8) e `727e657` (A9-B3..B8 no App e A8-B7 ⌘⇧R).
+**Review A9 (core and App):** `3fe7efc` (A9-B1: in a path, `,` or `|` followed by `/` ends the value; list without space preserves the next item; path fuzz with 3 seeds without leak), `0d9d935` (A9-B2: `=` entities with any number of escape layers — `&amp;`, `&#38;`, `&#x26;` — failing closed above 256; corpus +8) and `727e657` (A9-B3..B8 in the App and A8-B7 ⌘⇧R).
 
-**D7 — aviso de automação suprimido em toda captura (2026-11-03):** `e8ae66c` passa `--disable-blink-features=AutomationControlled` em toda captura (App, MCP controlado, pipe e porta; combina com `--disable-blink-features` já presente, sem duplicar), grava `capture.chromeArgs`/`capture.notes` e expõe `site_profile.captureContext.automationFlagSuppressed` (`recon/src/lib.rs`); `885b592` registra a decisão em `docs/01`, 16b §2.1b e `docs/20`; `a3b24f5` gera o bundle `fcdc4bd2` do HEAD `885b592` (substitui `78155379`). Medição de `docs/20` §4.2: `navigator.webdriver` é `true` com qualquer `--remote-debugging-pipe` (CDP reduzido ou completo) e volta a `false` com a flag — é o valor que a captura passa a entregar ao site. Testes: `capture/src/lib.rs` (`AUTOMATION_FEATURE` e combinação de flags) e `capture/src/browser.rs` (flag em toda captura e notas na sessão).
+**D7 — automation warning suppressed in every capture (2026-11-03):** `e8ae66c` passes `--disable-blink-features=AutomationControlled` in every capture (App, controlled MCP, pipe and port; combined with `--disable-blink-features` already present, without duplicating), records `capture.chromeArgs`/`capture.notes` and exposes `site_profile.captureContext.automationFlagSuppressed` (`recon/src/lib.rs`); `885b592` records the decision in `docs/01`, 16b §2.1b and `docs/20`; `a3b24f5` generates the bundle `fcdc4bd2` of HEAD `885b592` (replaces `78155379`). Measurement of `docs/20` §4.2: `navigator.webdriver` is `true` with any `--remote-debugging-pipe` (reduced or full CDP) and goes back to `false` with the flag — it is the value that the capture now delivers to the site. Tests: `capture/src/lib.rs` (`AUTOMATION_FEATURE` and flag combination) and `capture/src/browser.rs` (flag in every capture and notes in the session).
 
-## Rodada 14 — versão Linux (porte, pacotes e aceite em VMs)
+## Round 14 — Linux version (port, packages and acceptance in VMs)
 
-- **Data:** 2026-11-03. **Alvo:** Ubuntu 24.04 (noble) em duas máquinas OrbStack — `sl-ubuntu-amd64` (amd64 em Rosetta sobre host arm64) e `sl-ubuntu-arm64` (nativa).
-- **Porte:** `3b56ae3` porta `capture/` para Linux (validação do navegador sem codesign, Chromium marcado, `XDG_RUNTIME_DIR`/`TMPDIR`, `close_range`, `pipe2`, `/proc`; macOS inalterado) e `fa89c25` registra `docs/21-linux.md` + `experiments/linux` (Dockerfile, `run.sh`, `inside.sh`, shim).
-- **App e pacotes:** `878010a` (atalhos Ctrl/Shift fora do macOS, revelar com `xdg-open`, bundle deb/appimage com dependências), `bdab18e` (Dockerfile Ubuntu 22.04, Rust 1.98.1, Node 26.8.1, `cargo --locked`, `npm ci`; `build.sh` com testes e smoke em Xvfb), `98ab629` (listener `keydown` para `Ctrl+Shift+R`, `Ctrl+.` e `Ctrl+Shift+H`/`N` no Linux) e `e6d5fc6` (artefatos). Saída em `src-tauri/linux/out/{amd64,arm64}/`:
+- **Date:** 2026-11-03. **Target:** Ubuntu 24.04 (noble) on two OrbStack machines — `sl-ubuntu-amd64` (amd64 under Rosetta on an arm64 host) and `sl-ubuntu-arm64` (native).
+- **Port:** `3b56ae3` ports `capture/` to Linux (browser validation without codesign, marked Chromium, `XDG_RUNTIME_DIR`/`TMPDIR`, `close_range`, `pipe2`, `/proc`; macOS unchanged) and `fa89c25` records `docs/21-linux.md` + `experiments/linux` (Dockerfile, `run.sh`, `inside.sh`, shim).
+- **App and packages:** `878010a` (Ctrl/Shift shortcuts outside macOS, reveal with `xdg-open`, deb/appimage bundle with dependencies), `bdab18e` (Ubuntu 22.04 Dockerfile, Rust 1.98.1, Node 26.8.1, `cargo --locked`, `npm ci`; `build.sh` with tests and smoke under Xvfb), `98ab629` (`keydown` listener for `Ctrl+Shift+R`, `Ctrl+.` and `Ctrl+Shift+H`/`N` on Linux) and `e6d5fc6` (artifacts). Output in `src-tauri/linux/out/{amd64,arm64}/`:
   - amd64: `.deb` `5d288b32…15df53ac`; `AppImage` `64b08eb8…3e88c40ec5`
   - arm64: `.deb` `a43397f3…9ef35fde09`; `AppImage` `7c291e0b…a40d66f1`
-  - SHA-256 conferidos no macOS e dentro de cada VM antes de instalar/rodar.
+  - SHA-256 checked on macOS and inside each VM before installing/running.
 
-**Aceite (`tests/linux/acceptance.sh`), 0 falhas em cada máquina:**
+**Acceptance (`tests/linux/acceptance.sh`), 0 failures on each machine:**
 
-| Item | `sl-ubuntu-amd64` (Rosetta) | `sl-ubuntu-arm64` (nativa) |
+| Item | `sl-ubuntu-amd64` (Rosetta) | `sl-ubuntu-arm64` (native) |
 |---|---|---|
-| Navegador | Google Chrome 156.0.8078.79 (repositório oficial) | Chromium 156.0.8078.47 (snap) |
-| `.deb` / pacote `scrape-lens` | OK / OK | OK / OK |
-| Iniciar | `Ctrl+Shift+R` por teclado puro | idem |
-| Encerrar | `Ctrl+.` por teclado puro | idem |
-| Captura | `complete`, 11 req | `complete`, 11 req |
+| Browser | Google Chrome 156.0.8078.79 (official repository) | Chromium 156.0.8078.47 (snap) |
+| `.deb` / `scrape-lens` package | OK / OK | OK / OK |
+| Start | `Ctrl+Shift+R` keyboard only | same |
+| Stop | `Ctrl+.` keyboard only | same |
+| Capture | `complete`, 11 req | `complete`, 11 req |
 | HAR / NetLog | `complete` 24 / `partial` 32 | `complete` 24 / `partial` 32 |
-| `ss -ltnp` na captura | nenhum LISTEN do Chrome | nenhum LISTEN do Chrome |
+| `ss -ltnp` during capture | no LISTEN from Chrome | no LISTEN from Chrome |
 | `navigator.webdriver` | `false` | `false` |
-| Falhas | **0** | **0** |
+| Failures | **0** | **0** |
 
-Teclado puro = `xdotool windowactivate --sync` + `xdotool key --clearmodifiers` na tela Xvfb `:99`, sem clique em botão e sem clique de foco (`atalhos.txt`: 0 e 0). O foco é reativado antes de cada atalho porque o Chrome assume o foco ao iniciar. Prints da tela virtual (1600×1000), que contém só openbox, o Chrome de teste e a janela do ScrapeLens.
+Keyboard only = `xdotool windowactivate --sync` + `xdotool key --clearmodifiers` on the Xvfb screen `:99`, with no click on a button and no focus click (`atalhos.txt`: 0 and 0). Focus is reactivated before each shortcut because Chrome takes focus when it starts. Screenshots of the virtual screen (1600×1000), which contain only openbox, the test Chrome and the ScrapeLens window.
 
-Primeira bateria (`1ee0783`, artefatos `25248f3`, origem `fa89c25`) também fechou 0 falhas, mas por clique nos botões: os atalhos ainda não disparavam. Depois de `98ab629`, a revisão `a837465` refez a bateria com os atalhos e é a que consta acima.
+First run (`1ee0783`, artifacts `25248f3`, source `fa89c25`) also closed with 0 failures, but by clicking the buttons: the shortcuts did not fire yet. After `98ab629`, the review `a837465` redid the run with the shortcuts and is the one listed above.
 
-**Limitações registradas:** `Ctrl+.` só encerra com foco na janela do ScrapeLens (para atalho global falta um caminho de nível GTK); aceleradores de menu GTK continuam não chegando ao WebView; no arm64 o Chromium por snap foi aceito pela captura (não foi preciso apt/PPA); `dpkg -i` sozinho deixa o pacote quebrado até `apt-get install <deb>` resolver `libwebkit2gtk-4.1-0`.
+**Recorded limitations:** `Ctrl+.` only stops with focus on the ScrapeLens window (a global shortcut needs a GTK-level path); GTK menu accelerators still do not reach the WebView; on arm64 the snap Chromium was accepted by the capture (no apt/PPA needed); `dpkg -i` alone leaves the package broken until `apt-get install <deb>` resolves `libwebkit2gtk-4.1-0`.
 
-Evidência: `tests/results/linux/README.md`, `tests/results/linux/{amd64,arm64}/` (summary, atalhos, contagens, `ss-durante-captura.txt`, prints), `tests/linux/acceptance.sh`, commit `a837465`. As VMs foram preservadas.
+Evidence: `tests/results/linux/README.md`, `tests/results/linux/{amd64,arm64}/` (summary, shortcuts, counts, `ss-durante-captura.txt`, screenshots), `tests/linux/acceptance.sh`, commit `a837465`. The VMs were preserved.
 
-## Rodada 15 — fechamento dos cinco achados baixos da revisão R13+R14
+## Round 15 — closing the five low findings of the R13+R14 review
 
-- **Data:** 2026-11-03. **Base:** `578f367` (core/tests), `f377617` (capture), `4e19d6c` e `13b9164` (docs/relatórios).
+- **Date:** 2026-11-03. **Base:** `578f367` (core/tests), `f377617` (capture), `4e19d6c` and `13b9164` (docs/reports).
 
-| Achado | Correção | Commit |
+| Finding | Fix | Commit |
 |---|---|---|
-| P3 dependia de capturas locais | `correlation_identity` separa as **23 capturas rastreadas** no git (obrigatórias em clone limpo) das **6 locais opcionais** `multi-target-*` | `578f367` |
-| P7 sem oráculo independente | `sanitize_owned.rs` fixa **10 hashes FNV-1a** (sessão, anexos, brutos, contadores e avisos) como proteção de regressão do sanitizador | `578f367` |
-| FIFO/device podiam bloquear a leitura do cabeçalho | `linux_open_regular`/`linux_head` abrem com `O_RDONLY \| O_NONBLOCK \| O_NOFOLLOW \| O_CLOEXEC` e validam `S_IFREG` por `fstat` antes de ler (FIFO/device/symlink recusados de imediato) | `f377617` |
-| Wrapper arbitrário virava navegador | `linux_real_binary` restrito a `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser` | `f377617` |
-| Documentação desalinhada | `docs/21-linux.md`/`docs/16b` alinhados; item 9 do aceite pela CLI de teste e rodadas 13/14 no relatório final | `4e19d6c`, `13b9164` |
+| P3 depended on local captures | `correlation_identity` separates the **23 captures tracked in git** (required in a clean clone) from the **6 optional local** `multi-target-*` | `578f367` |
+| P7 without an independent oracle | `sanitize_owned.rs` pins **10 FNV-1a hashes** (session, attachments, raws, counters and warnings) as regression protection for the sanitizer | `578f367` |
+| FIFO/device could block the header read | `linux_open_regular`/`linux_head` open with `O_RDONLY \| O_NONBLOCK \| O_NOFOLLOW \| O_CLOEXEC` and validate `S_IFREG` by `fstat` before reading (FIFO/device/symlink refused immediately) | `f377617` |
+| Arbitrary wrapper became the browser | `linux_real_binary` restricted to `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser` | `f377617` |
+| Documentation misaligned | `docs/21-linux.md`/`docs/16b` aligned; item 9 of the acceptance via the test CLI and rounds 13/14 in the final report | `4e19d6c`, `13b9164` |
 
-Parecer independente em `/Users/cesar/OpenBot/Shared/scrapelens-revisao-r15-r16.md`: os cinco itens foram conferidos; o teste FIFO/device foi feito com a função extraída no macOS, então comprova o comportamento POSIX da abertura, **não** uma execução integrada do ramo Linux (os testes Linux novos são `cfg`).
+Independent review in `/Users/cesar/OpenBot/Shared/scrapelens-revisao-r15-r16.md`: the five items were checked; the FIFO/device test was done with the function extracted on macOS, so it proves the POSIX behavior of the open, **not** an integrated run of the Linux branch (the new Linux tests are `cfg`-gated).
 
-## Rodada 16 — P4 (parser de NetLog em fluxo) e fechamento de qualidade
+## Round 16 — P4 (streaming NetLog parser) and quality closing
 
-- **Data:** 2026-11-03. **Commits:** `ad4f5c1` (P4), `fed9b61` (medição), `22854c3` (fechamento), `e91cadf` (pacotes finais).
-- **P4:** o array `events` do NetLog é lido em fluxo por um `Visitor`, sem o DOM `serde_json::Value` do arquivo inteiro, em duas passadas (a primeira resolve `constants`, unidade de tempo, cadeias e tipos desconhecidos; a segunda constrói os registros). Chave `"events"` duplicada na raiz mantém o último array, igual ao `Value` antigo (`22854c3`).
-- **Qualidade:** `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings` com **0 warnings**; **362 testes** aprovados em `core/`; fuzzing determinístico do sanitizador na rodada completa (`FUZZ_N=150000`, `SOUP_N=100000`) sem falhas.
+- **Date:** 2026-11-03. **Commits:** `ad4f5c1` (P4), `fed9b61` (measurement), `22854c3` (closing), `e91cadf` (final packages).
+- **P4:** the NetLog `events` array is read as a stream by a `Visitor`, without the `serde_json::Value` DOM of the whole file, in two passes (the first resolves `constants`, time unit, chains and unknown types; the second builds the records). Duplicate `"events"` key at the root keeps the last array, same as the old `Value` (`22854c3`).
+- **Quality:** `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings` with **0 warnings**; **362 tests** passed in `core/`; deterministic fuzzing of the sanitizer in the full round (`FUZZ_N=150000`, `SOUP_N=100000`) without failures.
 
-**P4 medido (`docs/18` §8, sessão sintética de 20.002 requisições, mesmo harness):**
+**P4 measured (`docs/18` §8, synthetic session of 20.002 requests, same harness):**
 
-| Etapa | Antes (R13) → P4 | Tempo a 20 mil |
+| Stage | Before (R13) → P4 | Time at 20 thousand |
 |---|---:|---:|
-| `netlog-only` (parse do NetLog) | 4.759 → **1.615 MiB** (−66,1 %) | 5,0 → 3,5 s |
-| `capture-full` (parse + correlação) | 7.110 → **4.200 MiB** (−40,9 %) | 9,3 → 8,1 s |
-| `capture-write` (+ gravação) | 7.580 → **4.629 MiB** (−38,9 %) | 16,2 → 15,9 s |
+| `netlog-only` (NetLog parse) | 4.759 → **1.615 MiB** (−66,1 %) | 5,0 → 3,5 s |
+| `capture-full` (parse + correlation) | 7.110 → **4.200 MiB** (−40,9 %) | 9,3 → 8,1 s |
+| `capture-write` (+ writing) | 7.580 → **4.629 MiB** (−38,9 %) | 16,2 → 15,9 s |
 
-O DOM do NetLog (~3,1 GiB) deixou de existir; o piso agora é a sessão tipada (~1,15 GiB) mais o `session.json` de ~650 MiB. Contra a linha de base da rodada 12, `capture-full` caiu de 6.993 para 4.200 MiB (−40 %) e `capture-write` de 9.189 para 4.629 MiB (−50 %).
+The NetLog DOM (~3,1 GiB) no longer exists; the floor is now the typed session (~1,15 GiB) plus the `session.json` of ~650 MiB. Against the round 12 baseline, `capture-full` went from 6.993 to 4.200 MiB (−40 %) and `capture-write` from 9.189 to 4.629 MiB (−50 %).
 
-**Revisão independente (revalidação de `22854c3`):** **aprovada** — harness diferencial antigo×novo com **3.170/3.170** casos sem divergência e **25/25** combinações extras de `"events"` duplicado idênticas. Ressalvas do parecer original (`fed9b61`, clippy e o caso de `events` duplicado) foram encerradas em `22854c3`. O revisor não reexecutou os benchmarks de 20 mil nem testes Linux vivos.
+**Independent review (revalidation of `22854c3`):** **approved** — differential harness old×new with **3.170/3.170** cases without divergence and **25/25** extra combinations of duplicate `"events"` identical. Caveats from the original review (`fed9b61`, clippy and the duplicate `events` case) were closed in `22854c3`. The reviewer did not rerun the 20-thousand benchmarks or live Linux tests.
 
-**Pacotes finais (`e91cadf`, origem `22854c3`, árvore limpa):**
+**Final packages (`e91cadf`, source `22854c3`, clean tree):**
 
-| Artefato | Bytes | SHA-256 |
+| Artifact | Bytes | SHA-256 |
 |---|---:|---|
 | macOS `ScrapeLens.app` (`Contents/MacOS/ScrapeLens`) | 18.089.024 | `cbebd19d9c2339774fb6e959ae136439c896d69efd747f4bdf53d07f4c9ccf3f` |
 | Linux amd64 `.deb` | 6.404.930 | `871a04eb10e79ca291de16ca113a60dc766c733f84fad98a6ec8cdc6c479be15` |
@@ -256,85 +255,85 @@ O DOM do NetLog (~3,1 GiB) deixou de existir; o piso agora é a sessão tipada (
 | Linux arm64 `.deb` | 6.504.416 | `11161abc54774b9ce94f7d140645c0120c24f76b4f27d12bdc2db33e1571a410` |
 | Linux arm64 `AppImage` | 82.569.736 | `5fb8f9138ef3dd65cb3af26a08f0a4801381de4b37729f8331df1502aa76aef6` |
 
-Builds: Rust **56 aprovados, 0 falhas, 8 ignorados** nas três plataformas; `clippy -D warnings` limpo; cinco suítes front-end e `typecheck` aprovados; `codesign --verify --deep --strict` aprovado no macOS (identidade local, DR preservado). Linux amd64 (emulado) e arm64 (nativo): mesmos 56/0/8 e smoke Xvfb com `SCRAPELENS_TEST_MODE=1 --import-har` gravando `session.json` com **1 requisição** em cada arquitetura. O smoke usa o executável avulso: não executa o AppImage, não instala o `.deb` e não testa atalhos X11; não houve nova validação em Ubuntu 24.04/Debian 12 nesta rodada.
+Builds: Rust **56 passed, 0 failures, 8 ignored** on the three platforms; `clippy -D warnings` clean; five front-end suites and `typecheck` passed; `codesign --verify --deep --strict` passed on macOS (local identity, DR preserved). Linux amd64 (emulated) and arm64 (native): same 56/0/8 and Xvfb smoke with `SCRAPELENS_TEST_MODE=1 --import-har` writing `session.json` with **1 request** on each architecture. The smoke uses the standalone executable: it does not run the AppImage, does not install the `.deb` and does not test X11 shortcuts; there was no new validation on Ubuntu 24.04/Debian 12 in this round.
 
-## Rodada 9, onda B — bundle final, plano versionado e `parameters`/`plan.parameters` sem isenção indevida
+## Round 9, wave B — final bundle, versioned plan and `parameters`/`plan.parameters` without undue exemption
 
-- **HEAD testado:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)
-- **Data:** 2026-10-29
-- **Build:** `core` e `adapters/natural-ajax` (natural-core) recompilados em release antes da bateria.
-- **Bundle aceito:** `d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f`
-  (16.384.352 bytes, arm64, ad-hoc), conferido por `shasum -a 256` no executável do `.app`; `tests/aceite/run_acceptance.py`
-  (`EXPECTED_APP_SHA256`) e `src-tauri/EMPACOTAMENTO.md` apontam o mesmo hash.
-- **Dados:** sintéticos; HARs reais (H1–H3) só em agregados.
+- **HEAD tested:** bf0a41b (`build(app): bundle recompilado no HEAD 7410fa4 (plan.parameters só com plano verificado)`)
+- **Date:** 2026-10-29
+- **Build:** `core` and `adapters/natural-ajax` (natural-core) rebuilt in release before the suite.
+- **Accepted bundle:** `d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f`
+  (16.384.352 bytes, arm64, ad-hoc), checked by `shasum -a 256` on the executable of the `.app`; `tests/aceite/run_acceptance.py`
+  (`EXPECTED_APP_SHA256`) and `src-tauri/EMPACOTAMENTO.md` point to the same hash.
+- **Data:** synthetic; real HARs (H1–H3) only as aggregates.
 
-| Bateria | Resultado |
+| Suite | Result |
 |---|---|
-| run_acceptance (10 critérios, com `app-latest`) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 asserções, 0 falhas) |
-| check_bodies_search / check_chain_compare / check_real_shape | OK (5 casos / OK / OK) |
+| run_acceptance (10 criteria, with `app-latest`) | 10/10 OK (29+26+19+12+16+14+23+19+118+7 assertions, 0 failures) |
+| check_bodies_search / check_chain_compare / check_real_shape | OK (5 cases / OK / OK) |
 | check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
-| check_priming_injection | OK; `hashlib` proibido (o script usa `PLAN_HASH`); `os` só em `trace_*`; 12 corridas não vazias por variante |
+| check_priming_injection | OK; `hashlib` forbidden (the script uses `PLAN_HASH`); `os` only in `trace_*`; 12 non-empty runs per variant |
 | check_natural_adapter (sim `strict`) | OK |
-| check_timeline_validacao | OK, com `plan.version`, fuga de `parameters` e plano não verificado (abaixo) |
+| check_timeline_validacao | OK, with `plan.version`, `parameters` leak and unverified plan (below) |
 | prove_strict (adapters/natural-ajax) | OK, `fails: []` |
-| tests/exportacao | 19 passaram, 0 falhas |
-| cargo test core / src-tauri / natural-ajax | 298 / 48 / 32 passaram, 0 falhas (1 / 8 / 0 ignorados) |
+| tests/exportacao | 19 passed, 0 failures |
+| cargo test core / src-tauri / natural-ajax | 298 / 48 / 32 passed, 0 failures (1 / 8 / 0 ignored) |
 | check_real_detran (H1–H3) | OK |
-| check_real_priming sem / com `--wrapper` (H1–H3) | OK / OK |
+| check_real_priming without / with `--wrapper` (H1–H3) | OK / OK |
 
-**Ciclo real do app refeito no bundle final.** `Iniciar sessão` → `Encerrar` no `ScrapeLens.app` d1136cbb:
-captura `capture-1793302372326`, 11 requisições, `complete`, `cdp+netlog`, 2 ambíguas, 154 headers verificados,
-14 linhas no testserver h1; HAR e NetLog reimportados pela UI no mesmo bundle (`har-3dbc391c02a985c5-5`, 24 requisições
-complete, e `netlog-1704043c442dcbd1-5`, 32 requisições partial). Prints novos em
-`tests/results/app-latest/screenshot-app-live.png` e `screenshot-app-imports.png`; `run.json` regenerado por
-`tests/capture/app_validate.py` (bundle novo, sessões novas, `testserver/app-20261029c`).
+**Real cycle of the app redone on the final bundle.** `Start session` → `Stop` on `ScrapeLens.app` d1136cbb (UI labels `Iniciar sessão` → `Encerrar` (legacy)):
+capture `capture-1793302372326`, 11 requests, `complete`, `cdp+netlog`, 2 ambiguous, 154 headers verified,
+14 lines in the testserver h1; HAR and NetLog re-imported through the UI in the same bundle (`har-3dbc391c02a985c5-5`, 24 requests
+complete, and `netlog-1704043c442dcbd1-5`, 32 requests partial). New screenshots in
+`tests/results/app-latest/screenshot-app-live.png` and `screenshot-app-imports.png`; `run.json` regenerated by
+`tests/capture/app_validate.py` (new bundle, new sessions, `testserver/app-20261029c`).
 
-**Plano versionado (`plan.version` 2) no `check_timeline_validacao`:**
-- trace fiel gerado pelo script atual declara `plan.version: 2` → `equivalent`, ZERO avisos de parâmetro ou de plano;
-- `plan.version` ausente → `equivalent` + aviso "plano de versão anterior (v1): gere o script de novo…", sem divergir;
-- `plan.version: 2` com o `PLAN_HASH` de outro alvo da MESMA captura (har-0030, `26fdb4657a22511f`) → `diverges`
-  no passo 1, "plano diferente do gerado a partir desta captura" (não ficou em aviso).
+**Versioned plan (`plan.version` 2) in `check_timeline_validacao`:**
+- faithful trace generated by the current script declares `plan.version: 2` → `equivalent`, ZERO parameter or plan warnings;
+- `plan.version` absent → `equivalent` + warning "plano de versão anterior (v1): gere o script de novo…" (legacy), without diverging;
+- `plan.version: 2` with the `PLAN_HASH` of another target of the SAME capture (har-0030, `26fdb4657a22511f`) → `diverges`
+  at step 1, "plano diferente do gerado a partir desta captura" (legacy) (did not stay as a warning).
 
-**Fuga de `parameters` (39410bf): a isenção vale só para o par (name, part) que o plano produz.**
-Sobre a trace autêntica do detran-sim (captura `real-shape-1round`, alvo har-0026; delta capturado `DLTC0005`,
-STAMP `4105`), com o par forjado sob um nome do plano:
-- delta congelado + `{cpf → XML.delta}` → `diverges` no passo 10, "valor congelado: igual ao capturado e ausente da resposta pareada";
-- delta inventado + o mesmo item → `diverges`, "valor sem origem no trace";
-- STAMP congelado ou inventado + `{cpf → STAMP}` → `diverges` nos dois, com "valor congelado" e "sem origem";
-- `{sessionid_cliente → sig}` → só aviso "parâmetro não corresponde ao plano: sessionid_cliente → sig", `equivalent`;
-- trace fiel → `equivalent`, nenhum aviso além do de origem mapeada.
+**`parameters` leak (39410bf): the exemption applies only to the (name, part) pair that the plan produces.**
+On the authentic trace of detran-sim (capture `real-shape-1round`, target har-0026; captured delta `DLTC0005`,
+STAMP `4105`), with the pair forged under a plan name:
+- frozen delta + `{cpf → XML.delta}` → `diverges` at step 10, "valor congelado: igual ao capturado e ausente da resposta pareada" (legacy);
+- invented delta + the same item → `diverges`, "valor sem origem no trace" (legacy);
+- frozen or invented STAMP + `{cpf → STAMP}` → `diverges` in both, with "valor congelado" (legacy) and "sem origem" (legacy);
+- `{sessionid_cliente → sig}` → only warning "parâmetro não corresponde ao plano: sessionid_cliente → sig" (legacy), `equivalent`;
+- faithful trace → `equivalent`, no warning beyond the mapped-origin one.
 
-**`plan.parameters` só isenta com plano verificado (7410fa4 — L13–L15, N1/N3).**
-Na mesma trace autêntica, `plan.parameters += "XML.delta"` com o plano não verificado:
-- v1 (`plan.version: 1`) + delta congelado ou inventado → `diverges` no passo 10 ("valor congelado" / "valor sem origem");
-- sem `plan.version` + delta congelado ou inventado → `diverges`, mesmos motivos;
-- v2 sem `plan.hash` + delta congelado ou inventado → `diverges`, mesmos motivos (aviso "plano sem impressão");
-- nas três variantes, a trace sem valor trocado fica `equivalent` (o `XML.delta` do plano passa a gerar
-  "parâmetro inválido: `XML.delta` tem origem na captura", provando que não foi isentado);
-- v1 fiel (sem o item de `plan.parameters`) → `equivalent`, só com o aviso "plano de versão anterior (v1)".
+**`plan.parameters` only exempts with a verified plan (7410fa4 — L13–L15, N1/N3).**
+On the same authentic trace, `plan.parameters += "XML.delta"` with the unverified plan:
+- v1 (`plan.version: 1`) + frozen or invented delta → `diverges` at step 10 ("valor congelado" (legacy) / "valor sem origem" (legacy));
+- no `plan.version` + frozen or invented delta → `diverges`, same reasons;
+- v2 without `plan.hash` + frozen or invented delta → `diverges`, same reasons (warning "plano sem impressão" (legacy));
+- in the three variants, the trace without the swapped value stays `equivalent` (the plan's `XML.delta` now generates
+  "parâmetro inválido: `XML.delta` tem origem na captura" (legacy), proving it was not exempted);
+- faithful v1 (without the `plan.parameters` item) → `equivalent`, only with the warning "plano de versão anterior (v1)" (legacy).
 
-Resultado: **tudo verde, 0 falhas.** O critério 9 do run_acceptance usa `tests/results/app-latest` regenerado nesta
-rodada; a captura `live-final` de 2026-10-29 segue como evidência do ciclo CDP/NetLog do `run-cycle.sh`.
+Result: **all green, 0 failures.** Criterion 9 of run_acceptance uses `tests/results/app-latest` regenerated in this
+round; the `live-final` capture of 2026-10-29 remains as evidence of the CDP/NetLog cycle of `run-cycle.sh`.
 
-## Rodada 9 — linha do tempo e validação da execução
+## Round 9 — timeline and execution validation
 
-- **HEAD testado:** a37cd60 (`feat(priming): plan.hash calculado na geração por validate::plan_hash (sem hashlib no script)`)
-- **Data:** 2026-10-29
-- **Build:** `core` e `adapters/natural-ajax` (natural-core) recompilados em release antes da bateria.
-- **Dados:** sintéticos; HARs reais só em agregados.
+- **HEAD tested:** a37cd60 (`feat(priming): plan.hash calculado na geração por validate::plan_hash (sem hashlib no script)`)
+- **Date:** 2026-10-29
+- **Build:** `core` and `adapters/natural-ajax` (natural-core) rebuilt in release before the suite.
+- **Data:** synthetic; real HARs only as aggregates.
 
-| Bateria | Resultado |
+| Suite | Result |
 |---|---|
-| run_acceptance (captura ao vivo `live-final`) | 10/10 OK |
+| run_acceptance (live capture `live-final`) | 10/10 OK |
 | check_bodies_search / check_chain_compare / check_real_shape | OK |
 | check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
-| check_priming_injection | OK; `hashlib` volta a ser proibido (import falha); `os` só em `trace_*`; 12 corridas não vazias por variante (completed com POSTs>0 ou falha declarada `priming:`) |
+| check_priming_injection | OK; `hashlib` forbidden again (import fails); `os` only in `trace_*`; 12 non-empty runs per variant (completed with POSTs>0 or declared failure `priming:`) |
 | check_natural_adapter (sim `strict`) | OK |
-| check_timeline_validacao | OK: timeline com `event @ page` (incl. `init`) e proteção recolhida; validate equivalent/diverges nos 4 modos do sim; trace 0600 + sanitize; casos do revisor V1–V18 com o motivo esperado |
+| check_timeline_validacao | OK: timeline with `event @ page` (incl. `init`) and protection collapsed; validate equivalent/diverges in the 4 sim modes; trace 0600 + sanitize; reviewer cases V1–V18 with the expected reason |
 | prove_strict (adapters/natural-ajax) | OK |
-| tests/exportacao | 19 passaram |
-| cargo test core / src-tauri / natural-ajax | 292 / 47 / 31 passaram, 0 falhas |
+| tests/exportacao | 19 passed |
+| cargo test core / src-tauri / natural-ajax | 292 / 47 / 31 passed, 0 failures |
 | check_real_detran (H1–H3) | OK |
-| check_real_priming sem / com `--wrapper` (H1–H3) | OK / OK |
+| check_real_priming without / with `--wrapper` (H1–H3) | OK / OK |
 
-Resultado: **tudo verde, 0 falhas.** Critério 9 do run_acceptance segue com a captura ao vivo de 2026-10-29 (`live-final`), não refeita nesta rodada.
+Result: **all green, 0 failures.** Criterion 9 of run_acceptance still uses the live capture of 2026-10-29 (`live-final`), not redone in this round.

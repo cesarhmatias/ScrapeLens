@@ -1,183 +1,183 @@
-# Relatório de aceite — ScrapeLens MVP
+# Acceptance report — ScrapeLens MVP
 
-Execução: 2026-11-02T20:30:26Z · binário do core `c695ceb63355` (3898528 bytes) · commit `6224956`
+Run: 2026-11-02T20:30:26Z · core binary `c695ceb63355` (3898528 bytes) · commit `6224956`
 
-Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
+Environment: macOS 26.5.2 · arm64 · Python 3.14.8
 
-| # | Critério da spec | Status | Asserções |
+| # | Spec criterion | Status | Assertions |
 |---|---|---|---|
-| 1 | Headers repetidos e cookies preservados nas fixtures | **aprovado** | 29/29 |
-| 2 | HAR e NetLog válidos, incompletos e com eventos desconhecidos | **aprovado** | 26/26 |
-| 3 | Requisições simultâneas idênticas sem associação falsa | **aprovado** | 19/19 |
-| 4 | Redirects e múltiplas tentativas | **aprovado** | 12/12 |
-| 5 | Corpos ausentes/truncados/descartados explícitos | **aprovado** | 16/16 |
-| 6 | Diff sem perder duplicatas | **aprovado** | 14/14 |
-| 7 | Exportação cURL/Python com caracteres especiais | **aprovado** | 23/23 |
-| 8 | Sanitização incluindo eventos brutos | **aprovado** | 19/19 |
-| 9 | Ciclo real de captura no macOS | **aprovado** | 123/123 |
-| 10 | Importação grande com tamanho documentado | **aprovado** | 7/7 |
-| 11 | MCP: testes dos crates, vivos e fluxo completo por stdio | **aprovado** | 39/39 |
+| 1 | Repeated headers and cookies preserved in the fixtures | **passed** | 29/29 |
+| 2 | HAR and NetLog valid, incomplete and with unknown events | **passed** | 26/26 |
+| 3 | Simultaneous identical requests without false association | **passed** | 19/19 |
+| 4 | Redirects and multiple attempts | **passed** | 12/12 |
+| 5 | Missing/truncated/discarded bodies made explicit | **passed** | 16/16 |
+| 6 | Diff without losing duplicates | **passed** | 14/14 |
+| 7 | cURL/Python export with special characters | **passed** | 23/23 |
+| 8 | Sanitization including raw events | **passed** | 19/19 |
+| 9 | Real capture cycle on macOS | **passed** | 123/123 |
+| 10 | Large import with documented size | **passed** | 7/7 |
+| 11 | MCP: crate tests, live tests and full flow over stdio | **passed** | 39/39 |
 
-Resumo: 11/11 critérios aprovados; 327/327 asserções passaram.
+Summary: 11/11 criteria passed; 327/327 assertions passed.
 
-Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/incompletos/desconhecidos, (3) simultâneas idênticas sem associação falsa, (4) redirects/tentativas, (5) corpos explícitos, (6) diff com duplicatas, (7) escaping cURL/Python, (8) sanitização com eventos brutos, (9) ciclo real macOS, (10) importação grande medida.
+Criteria of the request: (1) repeated headers/cookies, (2) HAR/NetLog valid/incomplete/unknown, (3) simultaneous identical requests without false association, (4) redirects/retries, (5) explicit bodies, (6) diff with duplicates, (7) cURL/Python escaping, (8) sanitization with raw events, (9) real macOS cycle, (10) large import measured.
 
-Escopo das evidências:
+Scope of the evidence:
 
-- Novo nesta rodada: captura CLI `tests/capture/runs/live-final` (2026-10-29T04:20:57Z), com os dois legs (h1h2 e h3) e o HAR derivado do CDP.
-- Novo nesta rodada: sessão ao vivo `capture-1793651039927` iniciada e encerrada pelo bundle final (`2691f1528a6b`).
-- Novo nesta rodada: importações HAR/NetLog no bundle final pela CLI de teste (`SCRAPELENS_TEST_MODE=1 --import-har` / `--import-netlog`), a partir das cópias em `tests/.work/r12-import` (har `har-3dbc391c02a985c5-13`, netlog `netlog-1704043c442dcbd1-13`), com verificação independente por SHA-256 e sequência contra `har-derived.json` e `h1h2h3.chrome-netlog.json`.
+- New in this round: CLI capture `tests/capture/runs/live-final` (2026-10-29T04:20:57Z), with both legs (h1h2 and h3) and the HAR derived from CDP.
+- New in this round: live session `capture-1793651039927` started and stopped by the final bundle (`2691f1528a6b`).
+- New in this round: HAR/NetLog imports in the final bundle through the test CLI (`SCRAPELENS_TEST_MODE=1 --import-har` / `--import-netlog`), from the copies in `tests/.work/r12-import` (har `har-3dbc391c02a985c5-13`, netlog `netlog-1704043c442dcbd1-13`), with independent verification by SHA-256 and sequence against `har-derived.json` and `h1h2h3.chrome-netlog.json`.
 
-## 1. Headers repetidos e cookies preservados nas fixtures — aprovado
+## 1. Repeated headers and cookies preserved in the fixtures — passed
 
-Evidência:
+Evidence:
 
 - `scrapelens-core import-har fixtures/aceite/headers-cookies/headers-cookies.har --out tests/.work/run/item1/har`
 - `scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`
-- asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte
+- assertions: sequence/case/duplicates, raw Cookie + pairs, raw Set-Cookie + parsed, verification by source
 
-Asserções: 29 passaram, 0 falharam (0.07 s).
+Assertions: 29 passed, 0 failed (0.07 s).
 
-## 2. HAR e NetLog válidos, incompletos e com eventos desconhecidos — aprovado
+## 2. HAR and NetLog valid, incomplete and with unknown events — passed
 
-Evidência:
+Evidence:
 
 - `scrapelens-core import-har fixtures/aceite/parsers/incomplete.har --out tests/.work/run/item2/incomplete-har`
 - `scrapelens-core import-netlog fixtures/aceite/parsers/unknown-events.netlog.json --out tests/.work/run/item2/unknown`
 - `scrapelens-core import-netlog fixtures/aceite/parsers/no-constants.netlog.json --out tests/.work/run/item2/no-constants`
-- casos inválidos: retorno ≠ 0 com `erro:` no stderr (HAR sem entries, NetLog truncado)
+- invalid cases: return ≠ 0 with `erro:` (legacy) on stderr (HAR without entries, truncated NetLog)
 
-> HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.
+> HAR does not prove order/duplicates: imported entries stay `unverified`, as in the contract.
 
-> Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura (correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos.
+> The `completeness.counts.sourceEvents*` counts are now persisted and survive re-reading (core fix in this wave); the warnings still carry samples of the unknown types.
 
-Asserções: 26 passaram, 0 falharam (0.15 s).
+Assertions: 26 passed, 0 failed (0.15 s).
 
-## 3. Requisições simultâneas idênticas sem associação falsa — aprovado
+## 3. Simultaneous identical requests without false association — passed
 
-Evidência:
+Evidence:
 
 - `scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl fixtures/aceite/ambiguous/netlog-ambiguous.json --out tests/.work/run/item3/capture`
 
-> A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade.
+> The NetLog order/duplication is preserved, but it does not become the primary view while there is ambiguity.
 
-> Diagnóstico da falha do líder: a fixture declarava `wallTime` sem o `timestamp` monotônico (`1793046000.0`), e o core de `f6c6bdd` calibrava `time` como microssegundos; o NetLog ficava 2 s à frente e as duas requisições viravam `unmatched`. O Chrome real satisfaz `wallTime = timeTickOffset/1000 + timestamp` (desvio medido < 1 ms), equação agora usada na fixture. Era defeito da fixture, não do core; a falha original está preservada em `tests/results/aceite-criterio3-falha-lider.json` e `RELATORIO-criterio3-falha-lider.md`.
+> Leader's failure diagnosis: the fixture declared `wallTime` without the monotonic `timestamp` (`1793046000.0`), and the core of `f6c6bdd` calibrated `time` as microseconds; the NetLog ran 2 s ahead and the two requests became `unmatched`. Real Chrome satisfies `wallTime = timeTickOffset/1000 + timestamp` (measured deviation < 1 ms), an equation now used in the fixture. It was a defect of the fixture, not of the core; the original failure is preserved in `tests/results/aceite-criterio3-falha-lider.json` and `RELATORIO-criterio3-falha-lider.md`.
 
-> Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`.
+> New assertions in this round: clock coherence of the fixture (CDP×NetLog) and calibrated unit `milliseconds`. The ambiguity test remains strict: the two requests at 20 ms are still ambiguous, each with the same 2 candidates and 2 `correlate.ambiguous` warnings.
 
-Asserções: 19 passaram, 0 falharam (0.05 s).
+Assertions: 19 passed, 0 failed (0.05 s).
 
-## 4. Redirects e múltiplas tentativas — aprovado
+## 4. Redirects and multiple attempts — passed
 
-Evidência:
+Evidence:
 
 - `scrapelens-core import-netlog fixtures/aceite/redirects/redirect-chain.netlog.json --out tests/.work/run/item4/netlog`
 - `scrapelens-core import-har fixtures/aceite/redirects/redirect-chain.har --out tests/.work/run/item4/har`
 
-> O redirect é um elo entre tentativas, não uma requisição separada.
+> The redirect is a link between attempts, not a separate request.
 
-Asserções: 12 passaram, 0 falharam (0.05 s).
+Assertions: 12 passed, 0 failed (0.05 s).
 
-## 5. Corpos ausentes/truncados/descartados explícitos — aprovado
+## 5. Missing/truncated/discarded bodies made explicit — passed
 
-Evidência:
+Evidence:
 
 - `scrapelens-core inspect fixtures/aceite/bodies/session`
 
-> `empty` só é usado quando a fonte afirma zero bytes; ausência vira `unavailable` com nota.
+> `empty` is only used when the source asserts zero bytes; absence becomes `unavailable` with a note.
 
-Asserções: 16 passaram, 0 falharam (0.01 s).
+Assertions: 16 passed, 0 failed (0.01 s).
 
-## 6. Diff sem perder duplicatas — aprovado
+## 6. Diff without losing duplicates — passed
 
-Evidência:
+Evidence:
 
 - `scrapelens-core diff fixtures/aceite/diff/session har-0001 har-0002`
 
-> O diff compara ocorrências; `reordered` usa os índices originais de A e B.
+> The diff compares occurrences; `reordered` uses the original indices of A and B.
 
-Asserções: 14 passaram, 0 falharam (0.01 s).
+Assertions: 14 passed, 0 failed (0.01 s).
 
-## 7. Exportação cURL/Python com caracteres especiais — aprovado
+## 7. cURL/Python export with special characters — passed
 
-Evidência:
+Evidence:
 
-- `scrapelens-core export-curl fixtures/aceite/export-special/session har-0001` → `bash -n` + execução com stub que registra argv
-- `scrapelens-core export-python fixtures/aceite/export-special/session har-0001` → `python3 -m py_compile` + AST com literais
-- comandos gerados: tests/.work/run/item7/export.sh, tests/.work/run/item7/export.py
+- `scrapelens-core export-curl fixtures/aceite/export-special/session har-0001` → `bash -n` + execution with a stub that records argv
+- `scrapelens-core export-python fixtures/aceite/export-special/session har-0001` → `python3 -m py_compile` + AST with literals
+- generated commands: tests/.work/run/item7/export.sh, tests/.work/run/item7/export.py
 
-> Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK).
+> The exporters promise the HTTP request, not TLS/fingerprint (JA3/JA4, frames, HPACK).
 
-Asserções: 23 passaram, 0 falharam (0.14 s).
+Assertions: 23 passed, 0 failed (0.14 s).
 
-## 8. Sanitização incluindo eventos brutos — aprovado
+## 8. Sanitization including raw events — passed
 
-Evidência:
+Evidence:
 
 - `scrapelens-core sanitize fixtures/aceite/sanitize/session tests/.work/run/item8/sanitized`
-- permissões: `0o700` no diretório e `0o600` no session.json
-- varredura recursiva por 10 marcadores SECRET-* + e-mail: nenhuma ocorrência
+- permissions: `0o700` on the directory and `0o600` on session.json
+- recursive scan for 10 SECRET-* markers + e-mail: no occurrences
 
-> Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso.
+> Sanitization does not promise to detect tokens in path/free HTML; those bodies are omitted with a warning.
 
-Asserções: 19 passaram, 0 falharam (0.04 s).
+Assertions: 19 passed, 0 failed (0.04 s).
 
-## 9. Ciclo real de captura no macOS — aprovado
+## 9. Real capture cycle on macOS — passed
 
-Evidência:
+Evidence:
 
-- execução real: `tests/capture/runs/live-final` (gerada por `tests/capture/run-cycle.sh`); cópia estável em `tests/results/capture-latest/run.json`
-- app empacotado: `ScrapeLens.app` 17.07 MiB, arm64, assinatura local-identity, binário único, executável `2691f1528a6b5b6009d8cc29c049f1e500093d6aab9f2163bcc4aad60df18156`; captura ao vivo capture-1793651039927 (11 req, 154 headers verificados, 2 ambíguas); importação HAR pela CLI de teste `har-3dbc391c02a985c5-13` (24 req, ['h1', 'h2'], 24 sourceEvents); importação NetLog pela CLI de teste `netlog-1704043c442dcbd1-13` (32 req, ['h1', 'h2', 'h3', 'unknown'], 15 StreamSessions, 5354 sourceEvents).
-- sessões reais do app: `/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions` · prints `tests/results/app-latest/screenshot-app-live.png` e `tests/results/app-latest/screenshot-app-imports.png`
-- CLI: Chrome 156.0.8078.73; 27 requisições; 14 StreamSessions h3; 2 ambíguas; redirects=6
+- real run: `tests/capture/runs/live-final` (generated by `tests/capture/run-cycle.sh`); stable copy at `tests/results/capture-latest/run.json`
+- packaged app: `ScrapeLens.app` 17.07 MiB, arm64, local-identity signature, single binary, executable `2691f1528a6b5b6009d8cc29c049f1e500093d6aab9f2163bcc4aad60df18156`; live capture capture-1793651039927 (11 req, 154 headers verified, 2 ambiguous); HAR import through the test CLI `har-3dbc391c02a985c5-13` (24 req, ['h1', 'h2'], 24 sourceEvents); NetLog import through the test CLI `netlog-1704043c442dcbd1-13` (32 req, ['h1', 'h2', 'h3', 'unknown'], 15 StreamSessions, 5354 sourceEvents).
+- real app sessions: `/Users/cesar/Library/Application Support/app.scrapelens.desktop/sessions` · screenshots `tests/results/app-latest/screenshot-app-live.png` and `tests/results/app-latest/screenshot-app-imports.png`
+- CLI: Chrome 156.0.8078.73; 27 requests; 14 StreamSessions h3; 2 ambiguous; redirects=6
 
-> A página real `/page` exercitou redirects e POSTs.
+> The real page `/page` exercised redirects and POSTs.
 
-> O HAR do ciclo é reconstruído do CDP (`experiments/har_from_cdp.mjs`), porque o Chrome 156 não expõe `Network.getHAR`; o creator declara a origem e a ordem não é comprovada (unverified).
+> The HAR of the cycle is rebuilt from CDP (`experiments/har_from_cdp.mjs`), because Chrome 156 does not expose `Network.getHAR`; the creator declares the origin and the order is not proven (unverified).
 
-> O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.
+> The real cycle uses CDP, which does not fetch bodies: all bodies stay `unavailable` with a note. Body capture (Network.getResponseBody) is not yet on the live path.
 
-> Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final `2691f1528a6b` (HEAD `ce68eb9`, registro em `e7cfc38`; captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.
+> In this round the Start/Stop cycle was redone in the final bundle `2691f1528a6b` (HEAD `ce68eb9`, record in `e7cfc38`; multi-target capture); the live session above is new, not reused.
 
-> As importações HAR e NetLog também foram refeitas no bundle final (`har-3dbc391c02a985c5-13` e `netlog-1704043c442dcbd1-13`), agora pela CLI de teste (`SCRAPELENS_TEST_MODE=1 --import-har` / `--import-netlog`), com os arquivos copiados para `tests/.work/r12-import`; nenhum diálogo nativo, clique ou tecla foi usado. A verificação não depende de confirmação humana: o HAR gravado reproduz a sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). Importações repetidas dos mesmos arquivos (sufixos `-N` em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`) têm `session.json` idêntico, sem efeito na validação. O NetLog isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog não pode ser calibrada — a limitação fica explícita na sessão.
+> The HAR and NetLog imports were also redone in the final bundle (`har-3dbc391c02a985c5-13` and `netlog-1704043c442dcbd1-13`), now through the test CLI (`SCRAPELENS_TEST_MODE=1 --import-har` / `--import-netlog`), with the files copied to `tests/.work/r12-import`; no native dialog, click or key was used. Verification does not depend on human confirmation: the saved HAR reproduces the method/URL sequence of `har-derived.json` (24 entries) and the persisted `netlog.json` is byte-identical to `h1h2h3.chrome-netlog.json` (SHA-256). Repeated imports of the same files (`-N` suffixes on `har-3dbc391c02a985c5` and `netlog-1704043c442dcbd1`) have an identical `session.json`, with no effect on validation. The isolated NetLog warns `netlog.time_unit_assumed` because, without CDP, the NetLog clock unit cannot be calibrated — the limitation is made explicit in the session.
 
-Asserções: 123 passaram, 0 falharam (0.13 s).
+Assertions: 123 passed, 0 failed (0.13 s).
 
-## 10. Importação grande com tamanho documentado — aprovado
+## 10. Large import with documented size — passed
 
-Evidência:
+Evidence:
 
-- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requisições, 0.97 s, pico 822 MiB RSS
-- sessão gravada: session.json 236.3 MiB
-- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.74 s, pico 1598 MiB RSS
-- complementar, 20,000 anexos de 20 B: import 3.72 s, pico 795 MiB, sessão 228.9 MiB
+- `/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` → HAR 16.6 MiB, 20,000 requests, 0.97 s, peak 822 MiB RSS
+- session written: session.json 236.3 MiB
+- `/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` → 2.74 s, peak 1598 MiB RSS
+- complementary, 20,000 attachments of 20 B: import 3.72 s, peak 795 MiB, session 228.9 MiB
 
-> HAR principal: 20,000 requisições, 16.6 MiB, sem corpos (o caminho patológico com 20 mil anexos é medido à parte).
+> Main HAR: 20,000 requests, 16.6 MiB, no bodies (the pathological case with 20 thousand attachments is measured separately).
 
-> `inspect` materializa o JSON pretty da sessão inteira (236.3 MiB); o pico de 1598 MiB vem da serialização, não do parser.
+> `inspect` materializes the pretty JSON of the whole session (236.3 MiB); the 1598 MiB peak comes from the serialization, not from the parser.
 
-> Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por diretório — 20,000 anexos de 20 B importam em 3.72 s (eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.
+> Core fix confirmed: above 256 attachments, `fsync` becomes batched per directory — 20,000 attachments of 20 B import in 3.72 s (they took 128 s in the previous battery). Small sessions keep `fsync` per file.
 
-Asserções: 7 passaram, 0 falharam (8.90 s).
+Assertions: 7 passed, 0 failed (8.90 s).
 
-## 11. MCP: testes dos crates, vivos e fluxo completo por stdio — aprovado
+## 11. MCP: crate tests, live tests and full flow over stdio — passed
 
-Evidência:
+Evidence:
 
-- `tests/results/mcp/run.json` e `tests/results/mcp/flow.json` (saídas dos comandos e do fluxo)
+- `tests/results/mcp/run.json` and `tests/results/mcp/flow.json` (outputs of the commands and of the flow)
 
-> Cliente do fluxo: `tests/aceite/mcp_flow.py`, JSON-RPC por stdio em Python, sem o harness Rust; servidor HTTP local em 127.0.0.1, Chrome real headless, nada externo.
+> Flow client: `tests/aceite/mcp_flow.py`, JSON-RPC over stdio in Python, without the Rust harness; local HTTP server on 127.0.0.1, real headless Chrome, nothing external.
 
-Asserções: 39 passaram, 0 falharam (249.92 s).
+Assertions: 39 passed, 0 failed (249.92 s).
 
-## Como reproduzir
+## How to reproduce
 
 ```sh
 cd /Users/cesar/Projects/scrapelens
 python3 tests/aceite/run_acceptance.py --build-fixtures
 python3 tests/aceite/run_acceptance.py
 tests/capture/run-cycle.sh
-python3 tests/aceite/run_acceptance.py   # usa a última captura registrada
+python3 tests/aceite/run_acceptance.py   # uses the last recorded capture
 ```
 
-Tudo offline: fixtures sintéticas em `fixtures/aceite/`, domínios `.invalid`; o critério 9 usa Chrome com perfil temporário dedicado e servidores locais. Nada é publicado e nenhuma telemetria é gerada.
+All offline: synthetic fixtures in `fixtures/aceite/`, `.invalid` domains; criterion 9 uses Chrome with a dedicated temporary profile and local servers. Nothing is published and no telemetry is generated.

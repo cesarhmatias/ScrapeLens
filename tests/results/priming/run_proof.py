@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Prova do aceite 2 e 4 da rodada 7: roda o script de priming GERADO contra o
-simulador local (127.0.0.1:8791, sem rede externa). Quem executa é este
-script de teste, não o ScrapeLens.
+"""Proof for acceptance items 2 and 4 of round 7: runs the GENERATED priming
+script against the local simulator (127.0.0.1:8791, no external network). This
+test script is what runs it, not ScrapeLens.
 
-Uso: python3 run_proof.py [--python /caminho/python-com-requests]
-Requer `requests` no interpretador passado em --python.
+Usage: python3 run_proof.py [--python /path/to/python-with-requests]
+Requires `requests` in the interpreter passed via --python.
 """
 import argparse, json, os, re, signal, subprocess, sys, tempfile, time, urllib.request
 from pathlib import Path
@@ -55,9 +55,9 @@ def main():
                 urllib.request.urlopen(BASE + "/healthz"); break
             except OSError:
                 time.sleep(0.1)
-        # Parâmetros públicos: navegação fixa do portal (op/page) e o sufixo do
-        # SESSIONID que a aplicação monta no cliente. Nenhum valor capturado de
-        # servidor (STAMP/delta/sessão-prefixo) é passado aqui.
+        # Public parameters: fixed portal navigation (op/page) and the SESSIONID
+        # suffix that the application assembles on the client. No value captured
+        # from the server (STAMP/delta/session prefix) is passed here.
         params = ["--confirmar", "--base-url", BASE,
                   "--op", "S37", "--page", "NatLogon",
                   "--page-2", "SIM1000X", "--page-3", "VES0009X",
@@ -66,7 +66,7 @@ def main():
 
         plan = run([args.python, script])
         result["checks"]["plan_only_without_confirmar"] = (
-            plan.returncode == 0 and "Nada foi enviado" in plan.stdout and sim_log() == [])
+            plan.returncode == 0 and "Nothing was sent" in plan.stdout and sim_log() == [])
         (HERE / "plan-only.log").write_text(clean(plan.stdout))
 
         runs = []
@@ -86,8 +86,8 @@ def main():
         result["checks"]["chain_completes_run2"] = runs[1]["returncode"] == 0 and runs[1]["connector_posts"] == 6
         result["checks"]["no_app_error_in_sim_notes"] = runs[0]["no_error_note"] and runs[1]["no_error_note"]
 
-        # Controle negativo: reenviar os valores CAPTURADOS (STAMP/delta/sessão do
-        # HAR) a uma sessão nova do simulador tem de dar ERRORMESSAGE.
+        # Negative control: resending the CAPTURED values (STAMP/delta/session from
+        # the HAR) to a new simulator session must give ERRORMESSAGE.
         import requests
         har = json.load(open(HAR))
         entries = [e for e in har["log"]["entries"] if e["request"]["url"].endswith("/Connector")]
@@ -103,13 +103,13 @@ def main():
         result["negative_control"] = {"http": resp.status_code, "ERRORMESSAGE": err[:120]}
         result["checks"]["captured_values_rejected_by_simulator"] = resp.status_code == 200 and bool(err)
         (HERE / "negative-control.log").write_text(
-            f"POST com valores capturados -> HTTP {resp.status_code}; ERRORMESSAGE={err[:120]!r}\n")
+            f"POST with captured values -> HTTP {resp.status_code}; ERRORMESSAGE={err[:120]!r}\n")
     finally:
         sim.send_signal(signal.SIGTERM); sim.wait(timeout=5)
 
     result["ok"] = all(result["checks"].values())
     (HERE / "proof.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
-    print(json.dumps(result["checks"], indent=2)); print("OK" if result["ok"] else "FALHOU")
+    print(json.dumps(result["checks"], indent=2)); print("OK" if result["ok"] else "FAILED")
     return 0 if result["ok"] else 1
 
 

@@ -1,39 +1,39 @@
-# Relatório de aceite — ScrapeLens MVP
+# Acceptance report — ScrapeLens MVP
 
-Execução: 2026-10-27T07:08:05Z · binário do core `10f3b76b637b` (2176608 bytes) · commit `453d717`
+Run: 2026-10-27T07:08:05Z · core binary `10f3b76b637b` (2176608 bytes) · commit `453d717`
 
-Ambiente: macOS 26.5.2 · arm64 · Python 3.14.8
+Environment: macOS 26.5.2 · arm64 · Python 3.14.8
 
-| # | Critério da spec | Status | Asserções |
+| # | Spec criterion | Status | Assertions |
 |---|---|---|---|
-| 3 | Requisições simultâneas idênticas sem associação falsa | **falhou** | 4/7 |
+| 3 | Simultaneous identical requests without false association | **failed** | 4/7 |
 
-Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/incompletos/desconhecidos, (3) simultâneas idênticas sem associação falsa, (4) redirects/tentativas, (5) corpos explícitos, (6) diff com duplicatas, (7) escaping cURL/Python, (8) sanitização com eventos brutos, (9) ciclo real macOS, (10) importação grande medida.
+Criteria of the request: (1) repeated headers/cookies, (2) HAR/NetLog valid/incomplete/unknown, (3) simultaneous identical requests without false association, (4) redirects/retries, (5) explicit bodies, (6) diff with duplicates, (7) cURL/Python escaping, (8) sanitization with raw events, (9) real macOS cycle, (10) large import measured.
 
-## 3. Requisições simultâneas idênticas sem associação falsa — falhou
+## 3. Simultaneous identical requests without false association — failed
 
-Evidência:
+Evidence:
 
 - `scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl fixtures/aceite/ambiguous/netlog-ambiguous.json --out tests/.work/run/item3/capture`
 
-Falhas:
+Failures:
 
-- ambas marcadas match=ambiguous (nenhuma associação silenciosa): esperado 2, obtido 0
-- as duas requisições veem o mesmo conjunto de candidatos (não houve escolha cruzada): esperado 1, obtido 0
-- dois avisos correlate.ambiguous persistidos: esperado 2, obtido 0
+- both marked match=ambiguous (no silent association): expected 2, got 0
+- the two requests see the same set of candidates (no cross choice): expected 1, got 0
+- two correlate.ambiguous warnings persisted: expected 2, got 0
 
-> A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade.
+> The NetLog order/duplication is preserved, but it does not become the primary view while there is ambiguity.
 
-Asserções: 4 passaram, 3 falharam (0.06 s).
+Assertions: 4 passed, 3 failed (0.06 s).
 
-## Como reproduzir
+## How to reproduce
 
 ```sh
 cd /Users/cesar/Projects/scrapelens
 python3 tests/aceite/run_acceptance.py --build-fixtures
 python3 tests/aceite/run_acceptance.py
 tests/capture/run-cycle.sh
-python3 tests/aceite/run_acceptance.py   # usa a última captura registrada
+python3 tests/aceite/run_acceptance.py   # uses the last recorded capture
 ```
 
-Tudo offline: fixtures sintéticas em `fixtures/aceite/`, domínios `.invalid`; o critério 9 usa Chrome com perfil temporário dedicado e servidores locais. Nada é publicado e nenhuma telemetria é gerada.
+All offline: synthetic fixtures in `fixtures/aceite/`, `.invalid` domains; criterion 9 uses Chrome with a dedicated temporary profile and local servers. Nothing is published and no telemetry is generated.
