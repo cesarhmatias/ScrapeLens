@@ -219,7 +219,7 @@ fn end_during_start(sigterm: bool) {
         assert!(ok, "{stderr}");
         // Proof that the test caught the window: Chrome was starting up and was stopped by the server.
         assert!(
-            stderr.contains("que subia durante o encerramento foi parada"),
+            stderr.contains("the capture that was starting during shutdown was stopped"),
             "{stderr}"
         );
     }

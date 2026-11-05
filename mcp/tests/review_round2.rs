@@ -110,15 +110,15 @@ fn scrub_output_masks_fragment_matrix_userinfo_bare_and_nested_forms() {
         "c": "/h;jsessionid=SEG-MATRIX/y",
         "d": "5; token=SEG-BARE",
         "e": "/cb?redirect_uri=https%3A%2F%2Fa.invalid%2Fx%3Ftoken%3DSEG-NESTED",
-        "f": ["texto jwt=SEG-JWT fim", {"g": "senha=SEG-SENHA&page=2"}],
-        "h": "ok sem segredo: page=2",
+        "f": ["text jwt=SEG-JWT end", {"g": "senha=SEG-SENHA&page=2"}],
+        "h": "ok no secret: page=2",
     });
     scrub_output(&mut value);
     let out = value.to_string();
     for secret in ["SEG-FRAG", "SEG-USERINFO", "SEG-MATRIX", "SEG-BARE", "SEG-NESTED", "SEG-JWT", "SEG-SENHA"] {
         assert!(!out.contains(secret), "{secret} em {out}");
     }
-    assert_eq!(value["h"], "ok sem segredo: page=2");
+    assert_eq!(value["h"], "ok no secret: page=2");
 }
 
 // ---- R10: SIGTERM during stop doesn't lose session.json ------------------------------
