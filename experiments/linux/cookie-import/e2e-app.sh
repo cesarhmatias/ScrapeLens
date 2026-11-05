@@ -3,7 +3,7 @@
 # (keyring for Chromium-family, plain file for Firefox), preferences that select it, the App
 # started by its own shortcut, then the server log and the session.
 # Usage: e2e-app.sh <launch command...>
-# Env: BROWSER=chromium|chrome|edge|firefox (the browser that made the cookie; the image's browser)
+# Env: BROWSER=chromium|chrome|edge|brave|firefox (the browser that made the cookie; the image's browser)
 #      KEYRING=unlocked|locked|absent (Chromium-family only: keyring state when the App starts)
 set -u
 BROWSER=${BROWSER:-chromium}; KEYRING=${KEYRING:-unlocked}
@@ -14,6 +14,7 @@ case "$BROWSER" in
   chromium) BIN=chromium;              PROFILE_ROOT=.config/chromium;      SRC=chromium:Default ;;
   chrome)   BIN=google-chrome-stable;  PROFILE_ROOT=.config/google-chrome; SRC=chrome:Default ;;
   edge)     BIN=microsoft-edge-stable; PROFILE_ROOT=.config/microsoft-edge; SRC=edge:Default ;;
+  brave)    BIN=brave-browser;         PROFILE_ROOT=.config/BraveSoftware/Brave-Browser; SRC=brave:Default ;;
   firefox)  BIN=firefox-esr;           PROFILE_ROOT=.mozilla/firefox/sl.e2e; SRC=firefox:sl.e2e ;;
   *) echo "unknown BROWSER: $BROWSER" >&2; exit 2 ;;
 esac

@@ -1,6 +1,6 @@
 # Desktop-like Debian 12 user for the cookie-import end-to-end check (docs/16b §2.1c).
 # A default desktop install: the Secret Service (gnome-keyring), D-Bus, X and screenshot
-# tools, and ONE browser chosen with --build-arg BROWSER=chromium|chrome|edge|firefox.
+# tools, and ONE browser chosen with --build-arg BROWSER=chromium|chrome|edge|brave|firefox.
 # Every browser comes from its own vendor source (Google, Microsoft, Debian). Nothing here
 # installs sqlite3 or libsecret-tools: the App must not need them.
 FROM debian:12
@@ -21,6 +21,10 @@ RUN set -eux; \
         curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg; \
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list; \
         apt-get update; apt-get install -y --no-install-recommends microsoft-edge-stable ;; \
+      brave) \
+        curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg; \
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" > /etc/apt/sources.list.d/brave-browser-release.list; \
+        apt-get update; apt-get install -y --no-install-recommends brave-browser ;; \
       firefox) apt-get update; apt-get install -y --no-install-recommends firefox-esr ;; \
       *) echo "unknown BROWSER: $BROWSER" >&2; exit 2 ;; \
     esac; \

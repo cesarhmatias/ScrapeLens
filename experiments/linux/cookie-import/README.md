@@ -14,9 +14,11 @@ shortcut, and a loopback page server that records the `Cookie` header it receive
 
 ## Browsers and keyring states
 
-- `BROWSER=chromium|chrome|edge|firefox` (default `chromium`): the browser that makes the
+- `BROWSER=chromium|chrome|edge|brave|firefox` (default `chromium`): the browser that makes the
   cookie. Chromium-family browsers store it under the Secret Service; Firefox stores it in
   `cookies.sqlite`. Non-Chrome images also install Google Chrome, which the App captures with.
+  Brave comes from its apt repository (`brave-browser`, profile under
+  `.config/BraveSoftware/Brave-Browser`, cookie source `brave:Default`).
 - `KEYRING=unlocked|locked|absent` (default `unlocked`): the keyring state when the App starts.
   `locked` restarts gnome-keyring without its password; `absent` runs the App without a D-Bus
   session. Both should show the real keyring error in the App, not a timeout.

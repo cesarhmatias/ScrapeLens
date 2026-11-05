@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end check of the cookie import on a desktop-like Linux user, with the packaged App.
-# Usage: [BROWSER=chromium|chrome|edge|firefox] [KEYRING=unlocked|locked|absent] \
+# Usage: [BROWSER=chromium|chrome|edge|brave|firefox] [KEYRING=unlocked|locked|absent] \
 #        experiments/linux/cookie-import/run.sh <platform> <package-file> <out-dir>
 #   <platform>: linux/arm64 or linux/amd64
 #   <package-file>: a .deb (installed) or an AppImage (run in place)
