@@ -9,7 +9,7 @@
 # The Start (1044,178) and Stop (1138,178) buttons are NOT clicked in any step.
 # Focus: windowactivate --sync on the main window (no click). If the key does not reach the
 # WebView, the script retries with at most one neutral click at (700,900) — an empty area,
-# far from any control — only to give focus, and records the case in atalhos.txt.
+# far from any control — only to give focus, and records the case in shortcuts.txt.
 set -uo pipefail
 ARCH_LABEL="$1"; APPIMAGE="$2"; DEB="${3:-}"
 TESTSERVER="${4:-$HOME/scrapelens/testserver/target/release/scrapelens-testserver}"
@@ -165,14 +165,14 @@ start_capture && check 0 "start via Ctrl+Shift+R shortcut (no button click)" || 
 log "start shortcut: ${START_MODE:-did not fire}"
 sleep 3
 CHROME_PID="$(capture_chrome)"
-ss -ltnp > "$OUT/ss-durante-captura.txt" 2>&1
+ss -ltnp > "$OUT/ss-durante-capture.txt" 2>&1
 if [ -n "$CHROME_PID" ]; then
   L="$(ss -ltnp | grep "pid=$CHROME_PID," || true)"
   [ -z "$L" ] && check 0 "no LISTEN socket of the capture Chrome (pid $CHROME_PID)" || check 1 "no LISTEN socket of the capture Chrome"
 else
   check 1 "capture Chrome found (profile scrapelens-chrome-*)"
 fi
-shot_window "$WID" "$OUT/print-captura.png"; check $? "window screenshot during capture"
+shot_window "$WID" "$OUT/print-capture.png"; check $? "window screenshot during capture"
 
 # 5. Stop via the Ctrl+. shortcut and the session on disk.
 stop_capture && check 0 "stop via Ctrl+. shortcut (no button click)" || check 1 "stop via Ctrl+. shortcut"
@@ -206,7 +206,7 @@ else
 fi
 
 # 7. Counts on disk: HAR complete 24, NetLog partial 32 (only this run's sessions).
-python3 - "$DATA" "$OUT/contagens.txt" <<'PY' || true
+python3 - "$DATA" "$OUT/counts.txt" <<'PY' || true
 import json,glob,os,sys
 root,out=sys.argv[1],sys.argv[2]; rows=[]
 for d in sorted(glob.glob(os.path.join(root,'*'))):
@@ -216,8 +216,8 @@ for d in sorted(glob.glob(os.path.join(root,'*'))):
     rows.append(f"{os.path.basename(d)} {s['completeness']['state']} {s['completeness']['counts'].get('requests')}")
 open(out,'w').write("\n".join(rows)+"\n")
 PY
-grep -q "^har-.* complete 24$" "$OUT/contagens.txt" 2>/dev/null && check 0 "HAR complete with 24 requests" || check 1 "HAR complete with 24 requests"
-grep -q "^netlog-.* partial 32$" "$OUT/contagens.txt" 2>/dev/null && check 0 "NetLog partial with 32 requests" || check 1 "NetLog partial with 32 requests"
+grep -q "^har-.* complete 24$" "$OUT/counts.txt" 2>/dev/null && check 0 "HAR complete with 24 requests" || check 1 "HAR complete with 24 requests"
+grep -q "^netlog-.* partial 32$" "$OUT/counts.txt" 2>/dev/null && check 0 "NetLog partial with 32 requests" || check 1 "NetLog partial with 32 requests"
 
 # 8. navigator.webdriver: new capture with the probe page (loopback), expected value false.
 PROBE_LOG="$OUT/probe.jsonl"; : > "$PROBE_LOG"
@@ -246,10 +246,10 @@ kill $APP2 $PROBE_PID $TS 2>/dev/null
   echo "method: xdotool windowactivate --sync + xdotool key --clearmodifiers (XTEST, screen :99)"
   echo "clicks at Start (1044,178) / Stop (1138,178) button coordinates: $CLICKS_BUTTON"
   echo "neutral focus clicks at ($NEUTRAL_X,$NEUTRAL_Y): $NEUTRAL_CLICKS"
-} > "$OUT/atalhos.txt"
+} > "$OUT/shortcuts.txt"
 [ "$CLICKS_BUTTON" -eq 0 ] && check 0 "no click on the Start/Stop buttons" || check 1 "no click on the Start/Stop buttons"
-grep -q "^start (Ctrl+Shift+R): fired" "$OUT/atalhos.txt" && check 0 "start fired via keyboard shortcut" || check 1 "start fired via keyboard shortcut"
-grep -q "^stop (Ctrl+.): fired" "$OUT/atalhos.txt" && check 0 "stop fired via keyboard shortcut" || check 1 "stop fired via keyboard shortcut"
+grep -q "^start (Ctrl+Shift+R): fired" "$OUT/shortcuts.txt" && check 0 "start fired via keyboard shortcut" || check 1 "start fired via keyboard shortcut"
+grep -q "^stop (Ctrl+.): fired" "$OUT/shortcuts.txt" && check 0 "stop fired via keyboard shortcut" || check 1 "stop fired via keyboard shortcut"
 
 log "FAILURES=$FAILS · output in $OUT"
 exit $FAILS

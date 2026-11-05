@@ -138,7 +138,7 @@ All below 1.6 s and 130 MiB; no performance problem.
 
 ## Round 6 — revalidation (core fc4aa29, `check_real_detran.py`, aggregates only)
 
-Rerun on the same 3 HARs with `python3 tests/aceite/check_real_detran.py <H1> <H2> <H3>` (temporary directory
+Rerun on the same 3 HARs with `python3 tests/acceptance/check_real_detran.py <H1> <H2> <H3>` (temporary directory
 0700, deleted; no value printed). Core release rebuilt from HEAD.
 
 | Metric | Before (fa54020) | After (fc4aa29) |
@@ -178,7 +178,7 @@ must be grouped as sub-documents or omitted.
 
 ## Round 7 — priming script and assess on the real HARs (generator f858b17, assess c28533b)
 
-`python3 tests/aceite/check_real_priming.py <H1> <H2> <H3>` (HARs read-only; session and scripts in `/tmp` 0700,
+`python3 tests/acceptance/check_real_priming.py <H1> <H2> <H3>` (HARs read-only; session and scripts in `/tmp` 0700,
 deleted; aggregates only; the generated script was **not** executed: only the plan mode, without `--confirmar`, and no network).
 Captured values were used only in memory to count literal occurrences.
 

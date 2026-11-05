@@ -91,13 +91,13 @@ await page.waitForTimeout(400);
 
 results.targetFilters = await page.locator(".target-filters .chip-filter").allInnerTexts();
 results.targetColumn = await page.locator("th.col-target").count();
-await shot("42-multi-lista-filtro.png");
+await shot("42-multi-list-filter.png");
 
 const popupFilter = page.locator(".target-filters .chip-filter", { hasText: /^popup/ });
 if ((await popupFilter.count()) > 0) {
   await popupFilter.click();
   await page.waitForTimeout(300);
-  await shot("42b-multi-filtro-popup.png");
+  await shot("42b-multi-filter-popup.png");
 }
 {
   // Prefere popup.html (window.open) a blank (_blank).
@@ -119,7 +119,7 @@ if ((await popupFilter.count()) > 0) {
 }
 await page.waitForSelector(".target-panel");
 results.popupTarget = await page.locator(".target-panel").innerText();
-await shot("43-multi-detalhe-popup.png", true);
+await shot("43-multi-detail-popup.png", true);
 
 await page.getByRole("button", { name: /Sessão/ }).first().click();
 await page.waitForSelector("tbody tr:not(.spacer)");
@@ -145,12 +145,12 @@ if (!swOpened && swN > 0) await swRows.first().click();
 await page.waitForSelector(".target-panel");
 results.swPanel = await page.locator(".target-panel").innerText();
 results.swLinks = await page.locator(".target-links li").count();
-await shot("44-multi-detalhe-sw.png", true);
+await shot("44-multi-detail-sw.png", true);
 
 // Limites: rolar até a faixa no detalhe
 await page.locator(".limits-strip").scrollIntoViewIfNeeded();
 results.limits = await page.locator(".limits-strip").innerText();
-await shot("45-multi-limites.png", true);
+await shot("45-multi-limits.png", true);
 
 results.pageErrors = errors.filter((e) => !e.includes("unregisterListener"));
 results.ignoredStubErrors = errors.length - results.pageErrors.length;

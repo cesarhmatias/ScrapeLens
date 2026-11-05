@@ -1,4 +1,4 @@
-// v1 contract adapter (docs/03-contratos.md) → display model.
+// v1 contract adapter (docs/03-contracts.md) → display model.
 // Rule: nothing is sorted or merged here. Headers follow pseudo + regular order in
 // the source's order; the normalized view is derived in the UI and labeled.
 

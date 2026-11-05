@@ -1,7 +1,7 @@
 {
   "schema": "scrapelens.recon-signatures/1",
   "consulted": "2026-10-31",
-  "note": "Each signature has a consulted source. source.kind: vendor = the vendor's own documentation; secondary = citable third-party source (limits confidence); project = project fixture. Legacy Portuguese values (fornecedor, secundaria, projeto) are still accepted. Without a confirmed source: excluded (docs/16b-mcp-navegador.md §6.2).",
+  "note": "Each signature has a consulted source. source.kind: vendor = the vendor's own documentation; secondary = citable third-party source (limits confidence); project = project fixture. Legacy Portuguese values (fornecedor, secundaria, projeto) are still accepted. Without a confirmed source: excluded (docs/16b-mcp-browser.md §6.2).",
   "signatures": [
     { "id": "cf-001", "vendor": "cloudflare", "kind": "cookie", "names": ["__cf_bm"], "category": "protection", "weight": "present",
       "summary": "Cookie __cf_bm (Cloudflare bot management)",
@@ -86,6 +86,6 @@
       "source": { "kind": "vendor", "url": "https://docs.hcaptcha.com/", "quote": "adds an `h-captcha-response` token to the form submission" } },
     { "id": "f5-001", "vendor": "f5", "kind": "path", "path_prefix": "/TSPD/", "category": "protection", "weight": "present",
       "summary": "Path /TSPD/ (F5 protection in the reference case; the citation alone does not indicate a block)",
-      "source": { "kind": "project", "url": "docs/05-caso-referencia-detran.md; core/src/assess.rs (marker /TSPD/)", "quote": "Separar proteção (/TSPD/, cookies TS*) da aplicação" } }
+      "source": { "kind": "project", "url": "docs/05-case-reference-detran.md; core/src/assess.rs (marker /TSPD/)", "quote": "Separar proteção (/TSPD/, cookies TS*) da aplicação" } }
   ]
 }

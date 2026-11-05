@@ -1,7 +1,7 @@
 # Round 11, wave 1 — browser tools and site reconnaissance (contract)
 
-Date: 2026-10-31. Owner: Capture. Complements `docs/16-mcp-contrato.md` (Core:
-read tools) and part of decision D6 (`docs/01-decisoes.md`) and of phase
+Date: 2026-10-31. Owner: Capture. Complements `docs/16-mcp-contract.md` (Core:
+read tools) and part of decision D6 (`docs/01-decisions.md`) and of phase
 A (`docs/15-mcp-cloakbrowser.md`). **The contract is written before the code.**
 This document does not define the MCP server (transport, rmcp, elicitation): that
 is not assigned to Capture. It defines what the MCP server will call.
@@ -141,7 +141,7 @@ loading a site; these are the ones that change what the server sees):
 | `--headless=new` (only with `headless`) | the User-Agent and the browser fingerprint change (`HeadlessChrome`); the App default is a visible window. **Relevant to `site_profile`**: an anti-bot challenge under headless may not occur with regular Chrome |
 
 **Automation notice suppressed by default (D7, 2026-11-03).** By user decision
-(`docs/01-decisoes.md` D7), **every** capture carries `--disable-blink-features=AutomationControlled`:
+(`docs/01-decisions.md` D7), **every** capture carries `--disable-blink-features=AutomationControlled`:
 the App's regular one and the MCP's controlled one, on pipe and on port (`expose_cdp`), in any
 `NetworkMode`, with or without `headless`. The flag goes into `chrome_args()`; if there is already
 a `--disable-blink-features` with other values, the values are **merged into a single flag**
@@ -478,7 +478,7 @@ Leader's decision and current state:
   line has `--remote-debugging-pipe` and does not have `--remote-debugging-port`, and
   `lsof -iTCP -sTCP:LISTEN` on the browser process lists nothing. It also applies
   to `BrowserCapture::start` and to the App's `run()` (see below).
-- **Fidelity measured before switching** (`tests/aceite/check_multi_target.py`,
+- **Fidelity measured before switching** (`tests/acceptance/check_multi_target.py`,
   which runs the App's real capture against `testserver /multi/`; Chrome 156,
   macOS arm64; the choice goes through `SCRAPELENS_CDP_TRANSPORT=pipe|port`):
 
@@ -799,7 +799,7 @@ Rules from the security review (docs/17, R1 to R4), each with a test in
   by id; measured on a real session: `cdp-r0004` was the first request). "Before"
   and "after" use the attempt start (`startedAt`) when all have a time, and the
   session order only as a fallback. Suggestion to the Core: document this in
-  `docs/16-mcp-contrato.md` for whoever reads `list_requests`.
+  `docs/16-mcp-contract.md` for whoever reads `list_requests`.
 - **Third-party hosts blocked by the allowlist** (`ERR_NAME_NOT_RESOLVED`):
   `third-party-blocked` finding (§2.2).
 
@@ -877,7 +877,7 @@ confidence to `low`/`medium`); **P** = project fixture.
 | rc-003 | Google reCAPTCHA | field `g-recaptcha-response` | token | F https://developers.google.com/recaptcha/docs/display | "g-recaptcha-response POST parameter" |
 | hc-001 | hCaptcha | script `js.hcaptcha.com/1/api.js` | widget | F https://docs.hcaptcha.com/ | "https://js.hcaptcha.com/1/api.js" |
 | hc-002 | hCaptcha | field `h-captcha-response` | token | F (same) | "adds an `h-captcha-response` token to the form submission" |
-| f5-001 | F5 | path `/TSPD/` | protection (a reference alone does not block) | P `core/src/assess.rs` (rules `marker("/TSPD/")`) and `docs/05-caso-referencia-detran.md` (capture of the reference case) | "Separar proteção (/TSPD/, cookies TS*) da aplicação" (Separate protection (/TSPD/, TS* cookies) from the application) |
+| f5-001 | F5 | path `/TSPD/` | protection (a reference alone does not block) | P `core/src/assess.rs` (rules `marker("/TSPD/")`) and `docs/05-case-reference-detran.md` (capture of the reference case) | "Separar proteção (/TSPD/, cookies TS*) da aplicação" (Separate protection (/TSPD/, TS* cookies) from the application) |
 
 Synthetic fixtures (loopback) that **imitate** each signal above for the tests
 are labeled as such (`synthetic`): they prove the detector, not the existence
@@ -903,7 +903,7 @@ Only the interface is agreed; the Core does not need to change the model:
 2. The evidence ids are those of `LogicalRequest.id`/`Attempt.id`.
 3. Value redaction follows the Core policy (redacted by default).
 4. Request to the Core: expose `site_profile` as a read tool in
-   `docs/16-mcp-contrato.md` (`site_profile(session_id, target_request_id?)`),
+   `docs/16-mcp-contract.md` (`site_profile(session_id, target_request_id?)`),
    calling `scrapelens_recon::site_profile`. Capture delivers the function; the
    registration of the tool in the MCP server belongs to the Core/server.
 
@@ -939,7 +939,7 @@ review findings (M2, M3, R1 to R4):
 | `recon/` `cargo test` | 26 passed (table = §6.1, one fixture per signature, confidence, recommendation in the 4 values, redaction, order in time, R1 to R4); clippy clean |
 | `recon/scripts/live_e2e.sh` | 3/3: ordinary site → `regular-chrome-suffices`; unsolved challenge → `cloakbrowser-candidate` (high); challenge resolved → `needs-priming` (high) |
 | `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy clean (thin adapter of the App) |
-| `tests/aceite/check_multi_target.py` (regular capture, via the App's `live_bodies_cycle`) | OK: 16/16 NetLog, ≥15/16 CDP |
+| `tests/acceptance/check_multi_target.py` (regular capture, via the App's `live_bodies_cycle`) | OK: 16/16 NetLog, ≥15/16 CDP |
 
 The numbers above are from the 2026-10-31 closing. The current scoreboards of `capture`, `recon` and
 `src-tauri` on the platforms (macOS and Linux) are in `docs/21-linux.md` §1 and §7.1.

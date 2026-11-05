@@ -1,7 +1,7 @@
 # ScrapeLens — macOS app (Tauri 2) + React interface
 
 Implementation of the desktop shell and the interface over the **v1 contract**
-(`docs/03-contratos.md`). The UI has no contract of its own: it consumes
+(`docs/03-contracts.md`). The UI has no contract of its own: it consumes
 `session.json` v1 via `core/` and via Tauri commands.
 
 ## Current status (wave 2)

@@ -1,6 +1,6 @@
 //! ScrapeLens — shell Tauri 2.
 //!
-//! The React UI (app/) consumes the v1 contract (`docs/03-contratos.md`). The capture,
+//! The React UI (app/) consumes the v1 contract (`docs/03-contracts.md`). The capture,
 //! import and open commands operate on real data via `scrapelens-core`
 //! (crate dependency, no sidecar); the synthetic fixture exists only for the
 //! browser demo mode and arrives labeled as `synthetic: true`.

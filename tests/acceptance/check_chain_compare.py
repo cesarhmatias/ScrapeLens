@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round 5 (docs/09-cadeia-comparacao.md §4): value origins, chain and comparison.
+"""Round 5 (docs/09-chain-comparison.md §4): value origins, chain and comparison.
 
 Imports the synthetic fixtures A (fixtures/detran-pb) and B (fixtures/detran-pb-b) with
 `--label synthetic-fixture`, runs `scrapelens-core origins|chain|compare` and checks
@@ -9,7 +9,7 @@ The JSON format is the real one from the core (docs/09 e2c4da0+): origins.values
 evidences[]; chain.steps/protection/unresolved; compare.pairs[].fields[] with label/originLabel/parts.
 Expectations are not relaxed: any deviation fails (exit 1).
 
-  python3 tests/aceite/check_chain_compare.py [--core BIN]
+  python3 tests/acceptance/check_chain_compare.py [--core BIN]
 """
 from __future__ import annotations
 

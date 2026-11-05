@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
-BASE = ROOT / 'tests/.work/exportacao-manual'
+BASE = ROOT / 'tests/.work/export-manual'
 SOURCE = BASE / 'source'
 
 def main():

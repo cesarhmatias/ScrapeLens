@@ -31,8 +31,8 @@ Scope of the evidence:
 
 Evidence:
 
-- `scrapelens-core import-har fixtures/aceite/headers-cookies/headers-cookies.har --out tests/.work/run/item1/har`
-- `scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`
+- `scrapelens-core import-har fixtures/acceptance/headers-cookies/headers-cookies.har --out tests/.work/run/item1/har`
+- `scrapelens-core import-netlog fixtures/acceptance/headers-cookies/headers-cookies.netlog.json --out tests/.work/run/item1/netlog`
 - assertions: sequence/case/duplicates, raw Cookie + pairs, raw + parsed Set-Cookie, verification by source
 
 Assertions: 29 passed, 0 failed (0.19 s).
@@ -41,9 +41,9 @@ Assertions: 29 passed, 0 failed (0.19 s).
 
 Evidence:
 
-- `scrapelens-core import-har fixtures/aceite/parsers/incomplete.har --out tests/.work/run/item2/incomplete-har`
-- `scrapelens-core import-netlog fixtures/aceite/parsers/unknown-events.netlog.json --out tests/.work/run/item2/unknown`
-- `scrapelens-core import-netlog fixtures/aceite/parsers/no-constants.netlog.json --out tests/.work/run/item2/no-constants`
+- `scrapelens-core import-har fixtures/acceptance/parsers/incomplete.har --out tests/.work/run/item2/incomplete-har`
+- `scrapelens-core import-netlog fixtures/acceptance/parsers/unknown-events.netlog.json --out tests/.work/run/item2/unknown`
+- `scrapelens-core import-netlog fixtures/acceptance/parsers/no-constants.netlog.json --out tests/.work/run/item2/no-constants`
 - invalid cases: return ≠ 0 with `erro:` on stderr (HAR without entries, truncated NetLog)
 
 > HAR does not prove order/duplicates: imported entries stay `unverified`, as in the contract.
@@ -56,11 +56,11 @@ Assertions: 26 passed, 0 failed (0.27 s).
 
 Evidence:
 
-- `scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl fixtures/aceite/ambiguous/netlog-ambiguous.json --out tests/.work/run/item3/capture`
+- `scrapelens-core import-capture fixtures/acceptance/ambiguous/cdp-ambiguous.jsonl fixtures/acceptance/ambiguous/netlog-ambiguous.json --out tests/.work/run/item3/capture`
 
 > The NetLog order/duplicates are preserved, but they do not become the primary view while there is ambiguity.
 
-> Diagnosis of the leader's failure: the fixture declared `wallTime` without the monotonic `timestamp` (`1793046000.0`), and the core of `f6c6bdd` calibrated `time` as microseconds; the NetLog ended up 2 s ahead and the two requests became `unmatched`. Real Chrome satisfies `wallTime = timeTickOffset/1000 + timestamp` (measured deviation < 1 ms), an equation now used in the fixture. It was a fixture defect, not a core one; the original failure is preserved in `tests/results/aceite-criterio3-falha-lider.json` and `RELATORIO-criterio3-falha-lider.md`.
+> Diagnosis of the leader's failure: the fixture declared `wallTime` without the monotonic `timestamp` (`1793046000.0`), and the core of `f6c6bdd` calibrated `time` as microseconds; the NetLog ended up 2 s ahead and the two requests became `unmatched`. Real Chrome satisfies `wallTime = timeTickOffset/1000 + timestamp` (measured deviation < 1 ms), an equation now used in the fixture. It was a fixture defect, not a core one; the original failure is preserved in `tests/results/acceptance-criterion3-leader-failure.json` and `REPORT-criterion3-leader-failure.md`.
 
 > New assertions in this round: clock coherence of the fixture (CDP×NetLog) and calibrated unit `milliseconds`. The ambiguity test remains strict: the two requests 20 ms apart are still ambiguous, each with the same 2 candidates and 2 `correlate.ambiguous` warnings.
 
@@ -70,8 +70,8 @@ Assertions: 18 passed, 0 failed (0.09 s).
 
 Evidence:
 
-- `scrapelens-core import-netlog fixtures/aceite/redirects/redirect-chain.netlog.json --out tests/.work/run/item4/netlog`
-- `scrapelens-core import-har fixtures/aceite/redirects/redirect-chain.har --out tests/.work/run/item4/har`
+- `scrapelens-core import-netlog fixtures/acceptance/redirects/redirect-chain.netlog.json --out tests/.work/run/item4/netlog`
+- `scrapelens-core import-har fixtures/acceptance/redirects/redirect-chain.har --out tests/.work/run/item4/har`
 
 > The redirect is a link between attempts, not a separate request.
 
@@ -81,7 +81,7 @@ Assertions: 12 passed, 0 failed (0.06 s).
 
 Evidence:
 
-- `scrapelens-core inspect fixtures/aceite/bodies/session`
+- `scrapelens-core inspect fixtures/acceptance/bodies/session`
 
 > `empty` is only used when the source states zero bytes; absence becomes `unavailable` with a note.
 
@@ -91,7 +91,7 @@ Assertions: 16 passed, 0 failed (0.01 s).
 
 Evidence:
 
-- `scrapelens-core diff fixtures/aceite/diff/session har-0001 har-0002`
+- `scrapelens-core diff fixtures/acceptance/diff/session har-0001 har-0002`
 
 > The diff compares occurrences; `reordered` uses the original indices of A and B.
 
@@ -101,8 +101,8 @@ Assertions: 14 passed, 0 failed (0.01 s).
 
 Evidence:
 
-- `scrapelens-core export-curl fixtures/aceite/export-special/session har-0001` → `bash -n` + execution with a stub that records argv
-- `scrapelens-core export-python fixtures/aceite/export-special/session har-0001` → `python3 -m py_compile` + AST with literals
+- `scrapelens-core export-curl fixtures/acceptance/export-special/session har-0001` → `bash -n` + execution with a stub that records argv
+- `scrapelens-core export-python fixtures/acceptance/export-special/session har-0001` → `python3 -m py_compile` + AST with literals
 - generated commands: tests/.work/run/item7/export.sh, tests/.work/run/item7/export.py
 
 > The exporters promise the HTTP request, not TLS/fingerprint (JA3/JA4, frames, HPACK).
@@ -113,7 +113,7 @@ Assertions: 23 passed, 0 failed (0.13 s).
 
 Evidence:
 
-- `scrapelens-core sanitize fixtures/aceite/sanitize/session tests/.work/run/item8/sanitized`
+- `scrapelens-core sanitize fixtures/acceptance/sanitize/session tests/.work/run/item8/sanitized`
 - permissions: `0o700` on the directory and `0o600` on session.json
 - recursive scan for 10 SECRET-* markers + email: no occurrence
 
@@ -163,10 +163,10 @@ Assertions: 7 passed, 0 failed (13.91 s).
 
 ```sh
 cd /Users/cesar/Projects/scrapelens
-python3 tests/aceite/run_acceptance.py --build-fixtures
-python3 tests/aceite/run_acceptance.py
+python3 tests/acceptance/run_acceptance.py --build-fixtures
+python3 tests/acceptance/run_acceptance.py
 tests/capture/run-cycle.sh
-python3 tests/aceite/run_acceptance.py   # uses the last recorded capture
+python3 tests/acceptance/run_acceptance.py   # uses the last recorded capture
 ```
 
-Everything offline: synthetic fixtures in `fixtures/aceite/`, `.invalid` domains; criterion 9 uses Chrome with a dedicated temporary profile and local servers. Nothing is published and no telemetry is generated.
+Everything offline: synthetic fixtures in `fixtures/acceptance/`, `.invalid` domains; criterion 9 uses Chrome with a dedicated temporary profile and local servers. Nothing is published and no telemetry is generated.

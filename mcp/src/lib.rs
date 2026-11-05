@@ -1,5 +1,5 @@
 //! ScrapeLens local, read-only MCP server. Contract:
-//! `docs/16-mcp-contrato.md`.
+//! `docs/16-mcp-contract.md`.
 
 #![forbid(unsafe_code)]
 

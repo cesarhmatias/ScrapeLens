@@ -8,7 +8,7 @@ The product already has strong foundations: virtualized table, visible search an
 
 ## What was actually investigated
 
-I read `CONTRIBUTING.md`, `docs/01-decisoes.md`, `docs/03-contratos.md`, `docs/04-propriedade.md`, the frontend and shell READMEs, the React implementation, styles, adapter v1, diff, the Tauri bridge, commands and the HAR importer.
+I read `CONTRIBUTING.md`, `docs/01-decisions.md`, `docs/03-contracts.md`, `docs/04-ownership.md`, the frontend and shell READMEs, the React implementation, styles, adapter v1, diff, the Tauri bridge, commands and the HAR importer.
 
 I ran the existing frontend with `cd app && npm run dev -- --host 127.0.0.1`. I used the interface rendered in Brave with the embedded fixture of 13 calls and the stress fixture of 12,000 calls. The earlier captures from this work are in [before](before/README.md); I did not reuse old images as evidence of the current inspection.
 
@@ -34,7 +34,7 @@ I also opened the macOS application. The main window had an active recording dur
 | Task | Observed result | Limit |
 |---|---|---|
 | A. Open without a session | A new instance opens the 13-call demonstration directly. I did not find a "no session" initial state | The proposal's empty entry is new UX |
-| B. Start or import | Native import of `catalogo-sintetico.har`: 64 calls, zero warnings, folder saved | Real capture not started by the evaluation; NetLog not imported in this test |
+| B. Start or import | Native import of `catalogo-synthetic.har`: 64 calls, zero warnings, folder saved | Real capture not started by the evaluation; NetLog not imported in this test |
 | C. Find API | Search + Fetch/XHR work in the embedded demo. In the imported HAR, all calls become "other"; Fetch/XHR returns zero | The fixture contains `_resourceType`; the current importer does not carry it |
 | D. Locate header/cookie | Headers have individual copy; Cookies separates sent, raw and Set-Cookie. There is no search inside the headers | Copying a header in the detail showed no confirmation there |
 | E. Protocol and sequence | Protocol per call is in the list and in the detail. There is source and verification per item | "Verified", next to "source sequence", does not specify the object of the verification |
@@ -48,11 +48,11 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P0 · 01 — The interface may suggest a certainty the source does not provide
 
-**Observed problem:** the demo shows "source sequence" and "verified" for CDP headers. The full explanation sits in the side panel, alongside several different verifications. The imported synthetic HAR receives "REAL SESSION". The absence of the internal label `synthetic-fixture` is used as the counterpoint to "real"; this does not authenticate an import. Evidence: [current detail](before/02-detalhe-1440.jpg), [fictitious HAR with real label](before/08-desktop-har-sintetico.png).
+**Observed problem:** the demo shows "source sequence" and "verified" for CDP headers. The full explanation sits in the side panel, alongside several different verifications. The imported synthetic HAR receives "REAL SESSION". The absence of the internal label `synthetic-fixture` is used as the counterpoint to "real"; this does not authenticate an import. Evidence: [current detail](before/02-detail-1440.jpg), [fictitious HAR with real label](before/08-desktop-har-synthetic.png).
 
 **Task impaired:** deciding whether the transmitted order was preserved and correctly trusting a browser × scraper comparison.
 
-**Concrete change:** replace the collection of badges with one line per direction: "NetLog · source sequence. Transmission not verified (partial evidence)", with "Understand" and the full event on demand. Use "Imported HAR", "Local capture" and "Demonstration" as origin, separate from "ended/partial/recording" and from the HTTP status. Do not infer "transmission confirmed" solely from `verification === verified`. Solution: [detail](after/03-detalhe-1440.jpg), [explanation](after/07-evidencia-1440.jpg).
+**Concrete change:** replace the collection of badges with one line per direction: "NetLog · source sequence. Transmission not verified (partial evidence)", with "Understand" and the full event on demand. Use "Imported HAR", "Local capture" and "Demonstration" as origin, separate from "ended/partial/recording" and from the HTTP status. Do not infer "transmission confirmed" solely from `verification === verified`. Solution: [detail](after/03-detail-1440.jpg), [explanation](after/07-evidence-1440.jpg).
 
 **Expected benefit:** reduce incorrect conclusions about order, authenticity and fidelity.
 
@@ -60,11 +60,11 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P0 · 02 — The API filter hides APIs after the HAR import
 
-**Observed problem:** in the 64-call HAR, all types are "other"; Fetch/XHR 0 produces an empty list, even though there are JSON calls and `_resourceType: fetch`. `core/src/parse/har.rs` does not fill in `resourceType`; the adapter falls back to `other`. Evidence: [import](before/08-desktop-har-sintetico.png), [empty filter](before/09-desktop-filtro-api-vazio.png).
+**Observed problem:** in the 64-call HAR, all types are "other"; Fetch/XHR 0 produces an empty list, even though there are JSON calls and `_resourceType: fetch`. `core/src/parse/har.rs` does not fill in `resourceType`; the adapter falls back to `other`. Evidence: [import](before/08-desktop-har-synthetic.png), [empty filter](before/09-desktop-filter-api-empty.png).
 
 **Task impaired:** finding the call that carries data among many assets.
 
-**Concrete change:** in the UI, differentiate "type not provided" from "other" and explain the limitation when the filter returns zero for lack of types. Add an independent "JSON" filter, based on the MIME already available, without calling it Fetch. In the importer integration, preserve `_resourceType` when it exists; for a HAR without that extension, keep showing unknown type. The proposal demonstrates Fetch/XHR using a classification **explicitly provided by the fixture**, not a fix already delivered in the importer: [proposed filter](after/06-filtro-api-1440.jpg).
+**Concrete change:** in the UI, differentiate "type not provided" from "other" and explain the limitation when the filter returns zero for lack of types. Add an independent "JSON" filter, based on the MIME already available, without calling it Fetch. In the importer integration, preserve `_resourceType` when it exists; for a HAR without that extension, keep showing unknown type. The proposal demonstrates Fetch/XHR using a classification **explicitly provided by the fixture**, not a fix already delivered in the importer: [proposed filter](after/06-filter-api-1440.jpg).
 
 **Expected benefit:** do not induce "there was no API"; offer a useful search even when the initiator type is absent.
 
@@ -72,11 +72,11 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P1 · 03 — The first screen starts on the example, without a clear choice of work
 
-**Observed problem:** opening an isolated installation loads the demo. Capture, open and import appear spread across two bars. The demo is well identified, but it takes the place of the entry. Evidence: [current start](before/01-inicio-demo-1440.jpg).
+**Observed problem:** opening an isolated installation loads the demo. Capture, open and import appear spread across two bars. The demo is well identified, but it takes the place of the entry. Evidence: [current start](before/01-start-demo-1440.jpg).
 
 **Task impaired:** starting a capture or resuming earlier work.
 
-**Concrete change:** a "No session open" state with start capture, choose file, open session folder and optional demonstration. Name HAR/NetLog in full in the initial flow; distinguish importing a file from opening a v1 bundle. Solution: [entry](after/01-entrada-1440.jpg).
+**Concrete change:** a "No session open" state with start capture, choose file, open session folder and optional demonstration. Name HAR/NetLog in full in the initial flow; distinguish importing a file from opening a v1 bundle. Solution: [entry](after/01-entry-1440.jpg).
 
 **Expected benefit:** make the next action evident and reduce the need to interpret the example session.
 
@@ -84,11 +84,11 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P1 · 04 — Inspecting removes the context of the list
 
-**Observed problem:** clicking a row swaps the entire screen. To investigate the neighbor, go back and choose another. ⌘F in the detail also takes you back to the session. Evidence: [list](before/01-inicio-demo-1440.jpg), [detail without list](before/02-detalhe-1440.jpg).
+**Observed problem:** clicking a row swaps the entire screen. To investigate the neighbor, go back and choose another. ⌘F in the detail also takes you back to the session. Evidence: [list](before/01-start-demo-1440.jpg), [detail without list](before/02-detail-1440.jpg).
 
 **Task impaired:** going through candidates, checking cookies in similar calls and returning to the comparison.
 
-**Concrete change:** a simple selection updates a preview; Enter or "Inspect call" opens the detail on the right. Keep list, filters, selection, scroll position and tabs. During inspection, move the search to the list column and narrow its secondary columns. Solutions: [session](after/02-sessao-1440.jpg), [detail](after/03-detalhe-1440.jpg).
+**Concrete change:** a simple selection updates a preview; Enter or "Inspect call" opens the detail on the right. Keep list, filters, selection, scroll position and tabs. During inspection, move the search to the list column and narrow its secondary columns. Solutions: [session](after/02-session-1440.jpg), [detail](after/03-detail-1440.jpg).
 
 **Expected benefit:** reduce screen switches and preserve the investigation's reference.
 
@@ -108,11 +108,11 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P1 · 06 — The comparison takes a while to reach the relevant differences
 
-**Observed problem:** the global button opens two default selections, not the current call; the selects display long URLs. All equal rows take up height before cookies and bodies. "7 differences" in the demo counts only sent headers; there are differences in the response and cookies outside this total. The comparison does not bring the limit of the evidence next to the indices. Evidence: [current comparison](before/04-comparacao-1440.jpg).
+**Observed problem:** the global button opens two default selections, not the current call; the selects display long URLs. All equal rows take up height before cookies and bodies. "7 differences" in the demo counts only sent headers; there are differences in the response and cookies outside this total. The comparison does not bring the limit of the evidence next to the indices. Evidence: [current comparison](before/04-comparison-1440.jpg).
 
 **Task impaired:** comparing browser with scraper, especially two nearly identical requests.
 
-**Concrete change:** "Compare selected" fills in A; choose B by search in the session list. Pin A/B, method, endpoint, status and protocol in the header. Tabs Headers, Sent cookies, Payload, Protocol and Response/Set-Cookie with their own counts. "Differences only" by default; text and symbols for addition, removal, value and position. Original indices, repeated occurrences and the clarification "positions in the sources" when necessary. Raw as a complementary action. Solution: [comparison](after/04-comparacao-1440.jpg).
+**Concrete change:** "Compare selected" fills in A; choose B by search in the session list. Pin A/B, method, endpoint, status and protocol in the header. Tabs Headers, Sent cookies, Payload, Protocol and Response/Set-Cookie with their own counts. "Differences only" by default; text and symbols for addition, removal, value and position. Original indices, repeated occurrences and the clarification "positions in the sources" when necessary. Raw as a complementary action. Solution: [comparison](after/04-comparison-1440.jpg).
 
 **Expected benefit:** locate the useful difference without going through equal pairs; avoid an incomplete total and a conclusion about wire order.
 
@@ -120,11 +120,11 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P1 · 07 — Small technical hierarchy and advanced details competing with the data
 
-**Observed problem:** the detail reserves a permanent column for source, correlation and eight verifications, in all tabs. Many values/metadata use 9,5–11 px. The frame, outer padding and HTML window bar add to the native macOS window. Evidence: [detail](before/02-detalhe-1440.jpg), [desktop](before/08-desktop-har-sintetico.png), [notebook](before/06-sessao-1280.jpg).
+**Observed problem:** the detail reserves a permanent column for source, correlation and eight verifications, in all tabs. Many values/metadata use 9,5–11 px. The frame, outer padding and HTML window bar add to the native macOS window. Evidence: [detail](before/02-detail-1440.jpg), [desktop](before/08-desktop-har-synthetic.png), [notebook](before/06-session-1280.jpg).
 
 **Task impaired:** reading long values on a laptop and concentrating on the header being sought.
 
-**Concrete change:** fill the usable area, use a 13 px system font in controls and 11–12 px mono for data depending on the column; raise priority values to 12 px. Remove the frame/shadow and simulated window controls on desktop. Short contextual evidence next to the table, event/correlation details in Evidence. Local search by name/value. Collapsible pseudoheaders with count and explicit indices; normalization remains opt-in and labeled. Solutions: [detail](after/03-detalhe-1440.jpg), [1280 × 800](after/03-detalhe-1280.jpg).
+**Concrete change:** fill the usable area, use a 13 px system font in controls and 11–12 px mono for data depending on the column; raise priority values to 12 px. Remove the frame/shadow and simulated window controls on desktop. Short contextual evidence next to the table, event/correlation details in Evidence. Local search by name/value. Collapsible pseudoheaders with count and explicit indices; normalization remains opt-in and labeled. Solutions: [detail](after/03-detail-1440.jpg), [1280 × 800](after/03-detail-1280.jpg).
 
 **Expected benefit:** more width for values and less effort to find a header.
 
@@ -132,7 +132,7 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P1 · 08 — Copy works without confirmation at the place of the action
 
-**Observed problem:** copy buttons exist in `HeaderBlock`; the message is written to `notice`, but the notice is rendered only in the session view. When copying in the detail, no visible confirmation appeared. Parsed cookies have no equivalent per-pair copy action. Evidence: [headers](before/02-detalhe-1440.jpg), [cookies](before/03-cookies-1440.jpg).
+**Observed problem:** copy buttons exist in `HeaderBlock`; the message is written to `notice`, but the notice is rendered only in the session view. When copying in the detail, no visible confirmation appeared. Parsed cookies have no equivalent per-pair copy action. Evidence: [headers](before/02-detail-1440.jpg), [cookies](before/03-cookies-1440.jpg).
 
 **Task impaired:** transferring an exact value to the scraper without repeating clicks or manually selecting long text.
 
@@ -148,7 +148,7 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 **Task impaired:** taking an investigated call to a reproduction outside the browser.
 
-**Concrete change:** a "Code…" button in the detail and in the A reference, opening a preview and an explanation of the limitations before copying/saving. Connect to the existing exporters and their warnings about bodies, pseudoheaders and protocol. Do not promise wire preservation by presenting an ordered list of headers in the script. Solution: [code preview](after/08-codigo-1440.jpg).
+**Concrete change:** a "Code…" button in the detail and in the A reference, opening a preview and an explanation of the limitations before copying/saving. Connect to the existing exporters and their warnings about bodies, pseudoheaders and protocol. Do not promise wire preservation by presenting an ordered list of headers in the script. Solution: [code preview](after/08-code-1440.jpg).
 
 **Expected benefit:** complete the path from inspection to reproduction.
 
@@ -156,7 +156,7 @@ P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = us
 
 ### P2 · 10 — Existing persistence is poorly explained; errors could better guide recovery
 
-**Observed problem:** the import saves automatically and reopens through a folder dialog. The path appears as long text in the banner. There is no "Save as". The invalid HAR shows the reason and keeps the session, which must be preserved. Evidence: [reopening](before/10-desktop-sessao-reaberta.png), [error](before/11-desktop-erro-importacao.png).
+**Observed problem:** the import saves automatically and reopens through a folder dialog. The path appears as long text in the banner. There is no "Save as". The invalid HAR shows the reason and keeps the session, which must be preserved. Evidence: [reopening](before/10-desktop-session-reopened.png), [error](before/11-desktop-error-import.png).
 
 **Task impaired:** knowing whether the work is saved and repeating an import that failed.
 
@@ -186,13 +186,13 @@ Preserve in production: repeated pairs; pseudoheader group; original Cookie, par
 
 Open [the prototype](http://127.0.0.1:4174/?view=entry) with the local server active. [Full instructions](proposal/README.md).
 
-![Entry and session opening](after/01-entrada-1440.jpg)
+![Entry and session opening](after/01-entry-1440.jpg)
 
-![Session with many assets and APIs](after/02-sessao-1440.jpg)
+![Session with many assets and APIs](after/02-session-1440.jpg)
 
-![Detail with evidence and repeated headers](after/03-detalhe-1440.jpg)
+![Detail with evidence and repeated headers](after/03-detail-1440.jpg)
 
-![Browser and scraper comparison](after/04-comparacao-1440.jpg)
+![Browser and scraper comparison](after/04-comparison-1440.jpg)
 
 The fictitious session has 64 records: 55 assets, one document and eight Fetch calls. #18 and #64 use the same endpoint; A sends `session` and page 1; B omits `session`, uses page 2 and returns 403. There is a repeated Accept, two independent Set-Cookie, long values/URLs, h1/h2/h3 assigned by the fixture and an Alt-Svc announcement without promoting it to the call's protocol.
 

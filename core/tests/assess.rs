@@ -1,4 +1,4 @@
-//! Application success × HTTP (docs/11-priming-sucesso.md §2, acceptance 3).
+//! Application success × HTTP (docs/11-priming-success.md §2, acceptance 3).
 
 use std::path::PathBuf;
 

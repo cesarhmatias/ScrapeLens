@@ -1,6 +1,6 @@
 //! Measures, one stage per process, the peak RSS of opening a large session.
 //!
-//! Usage: `memoria-sessao <stage> <session-dir>`; prints one JSON line per
+//! Usage: `session-memory <stage> <session-dir>`; prints one JSON line per
 //! checkpoint (current `rss` and `peak` up to that point, in MiB) and a final line.
 //! Stages: base, app-open, app-open-ipc, import-eager, import-eager-pretty,
 //! import-eager-sanitize, lazy, lazy-search, netlog-only, cdp-only, capture-full,
@@ -96,7 +96,7 @@ fn read(path: &Path) -> Vec<u8> {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let stage = args.next().expect("usage: memoria-sessao <stage> <session-dir>");
+    let stage = args.next().expect("usage: session-memory <stage> <session-dir>");
     let dir = PathBuf::from(args.next().expect("session directory"));
     let m = Meter { stage: stage.clone(), started: Instant::now() };
     m.check("start");
@@ -302,7 +302,7 @@ fn main() {
                        "attachments": imported.bundle.attachments.len()})
             );
             if stage == "capture-write" {
-                let out = std::env::temp_dir().join(format!("memoria-sessao-out-{}", std::process::id()));
+                let out = std::env::temp_dir().join(format!("session-memory-out-{}", std::process::id()));
                 scrapelens_core::store::write_session_dir(&imported.bundle, &out).unwrap();
                 m.check("write_session_dir");
                 let _ = std::fs::remove_dir_all(out);

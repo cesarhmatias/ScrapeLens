@@ -31,7 +31,7 @@ The leader's re-run revealed three failures in criterion 3. Tests showed
 that the fixture declared a wallTime incompatible with the monotonic timestamp;
 it fixed the equation without reducing the ambiguity requirements. Commits
 `87d7b61` and `364bddb`; original failure preserved in
-`tests/results/aceite-criterio3-falha-lider.json` and the corresponding report.
+`tests/results/acceptance-criterion3-leader-failure.json` and the corresponding report.
 No additional core fix or new product build was needed.
 
 ## Artifact and installation
@@ -48,7 +48,7 @@ No additional core fix or new product build was needed.
 - External Chrome required for capture; Node/Python/Rust not required
   to run the app. The export CLI is a separate tool.
 
-Build/signing commands and environment in `src-tauri/EMPACOTAMENTO.md`.
+Build/signing commands and environment in `src-tauri/PACKAGING.md`.
 The hash identifies this artifact; it does not guarantee a byte-for-byte reproducible build.
 
 ## Confirmed validation
@@ -60,7 +60,7 @@ The hash identifies this artifact; it does not guarantee a byte-for-byte reprodu
 | TypeScript and Vite | App: typecheck and build pass |
 | Tauri build | App: exit 0, core recompiled as a crate dependency |
 | Signature/hash/architecture | App + leader: valid codesign, SHA-256 above, arm64 |
-| Acceptance battery | Tests: 282/282, 10/10, commit 77c32a7; promoted to docs/05-aceite.md |
+| Acceptance battery | Tests: 282/282, 10/10, commit 77c32a7; promoted to docs/05-acceptance.md |
 | New capture in the final bundle | Tests: Start/Stop through the UI, session capture-1793085113332 |
 | New HAR/NetLog | Final bundle UI: HAR 24 and NetLog 32 requests, sources checked |
 | Visual inspection | App: screenshots 22/23; leader inspected screenshot 23; Tests recorded screenshot-app-live.png and screenshot-app-imports.png |
@@ -88,7 +88,7 @@ requests with duplicates. Headers in the source sequence; provenance and
 verification per item. HAR/CDP objects do not prove transmitted order;
 NetLog and h1 headersText provide specific evidence. Ties stay
 ambiguous. cURL/Python export and sanitization work in the core/CLI and, since
-the following round, also through the interface (result in `docs/07-exportacao-ui.md`).
+the following round, also through the interface (result in `docs/07-export-ui.md`).
 
 ## Limitations and remaining priorities
 
@@ -157,7 +157,7 @@ New features:
   values or PII, no cross-origin redirect, stop at the bad step) and the
   application success verdict × HTTP.
 
-Acceptance: `tests/RELATORIO-FINAL.md` (4b16b0e). 10/10 criteria with a new live
+Acceptance: `tests/REPORT-FINAL.md` (4b16b0e). 10/10 criteria with a new live
 capture (criterion 9), all batteries green, cargo test core 250 and
 src-tauri 42. On the user's 3 real HARs (aggregate): STAMP and delta 100%,
 script with 11 steps in the order of the manual flow, only plate and SESSIONID suffix
@@ -191,7 +191,7 @@ CLI `natural-core --adapter natural-ajax`). It brings:
   strict, with the control without the adapter failing).
 
 The adapter's parts follow strict mode by default (`--lenient-parts`
-optional). Acceptance: tests/RELATORIO-FINAL.md, section "Rodada 8" (Round 8), all green
+optional). Acceptance: tests/REPORT-FINAL.md, section "Rodada 8" (Round 8), all green
 (core 259, src-tauri 45, natural-ajax 28; 3 real HARs with and without adapter).
 Independent review approved, with the accepted residuals recorded in
 docs/12.

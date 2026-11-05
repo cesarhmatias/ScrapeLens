@@ -26,7 +26,7 @@ developers. Full specification:
 - Round 7 (docs/11), priming script and application success × HTTP:
   APPROVED (1bdd8b9); detector polish in 6a85676.
 - Final package: bundle 6e301e70… (c5d1f61), final acceptance green
-  (tests/RELATORIO-FINAL.md, 4b16b0e), delivery in docs/06-entrega.md.
+  (tests/REPORT-FINAL.md, 4b16b0e), delivery in docs/06-delivery.md.
   Pending: manual test of the .app with the native picker (user).
 - Round 8 (docs/12), Natural for Ajax adapter outside the core: APPROVED
   (c07b514, polish in progress). UTF-16 prefixes recalculated in the priming
@@ -37,7 +37,7 @@ developers. Full specification:
 - Automated acceptance: 10/10 criteria (283 checks in 229b623).
 - New capture and HAR/NetLog imports through the UI of the final bundle validated.
   Manual selection by the user and independent check of the persisted files.
-- Closing report: `docs/06-entrega.md`; nothing published.
+- Closing report: `docs/06-delivery.md`; nothing published.
 - Repository created at `/Users/cesar/Projects/scrapelens`.
 
 ## Models in use
@@ -82,7 +82,7 @@ Team (OpenBot section "ScrapeLens"):
 ## Waves (max. 3 simultaneous executors)
 
 - Wave 1 (completed): Capture/protocols + Tests/servers — fidelity
-  experiments for HTTP/1.1, h2, h3; matrix `docs/02-matriz-fidelidade.md`.
+  experiments for HTTP/1.1, h2, h3; matrix `docs/02-matrix-fidelity.md`.
 - Wave 2 (completed): consolidated contracts → Core/importers +
   App/interface + Tests (full slice: launch Chrome → capture → UI).
 - Wave 3 (implementation/review completed; caveats in the final report): comparison, export, sanitization; independent review;
@@ -90,4 +90,4 @@ Team (OpenBot section "ScrapeLens"):
 
 ## Acceptance criteria
 
-Per the specification (10 items). See `docs/05-aceite.md` when created.
+Per the specification (10 items). See `docs/05-acceptance.md` when created.

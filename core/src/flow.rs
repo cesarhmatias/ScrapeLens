@@ -1,4 +1,4 @@
-//! Origin of values and the priming chain (`docs/09-cadeia-comparacao.md` §1).
+//! Origin of values and the priming chain (`docs/09-chain-comparison.md` §1).
 //!
 //! API for the App:
 //!

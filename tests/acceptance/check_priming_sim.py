@@ -2,7 +2,7 @@
 """Round 7, Acceptance 2: the priming script (real-shape, 1 round) RUN BY THIS TEST against detran-sim
 (127.0.0.1, no external network). The test runs it, never ScrapeLens.
 
-  python3 tests/aceite/check_priming_sim.py [--core BIN] [--python PY_COM_REQUESTS] [--port 8791]
+  python3 tests/acceptance/check_priming_sim.py [--core BIN] [--python PY_COM_REQUESTS] [--port 8791]
 
 The script's interpreter needs `requests` (e.g.: python3 -m venv /tmp/v && /tmp/v/bin/pip install requests).
 Operator inputs (F1, 48b3cdb): the script requires the plate and the SESSIONID part built on the client (`_` + 12
@@ -11,7 +11,7 @@ as the browser would, never a value captured from the HAR; any other required in
 with a clear message.
 Scenarios: ok (full chain; 2 runs with different sessions; captured values rejected by the simulator),
 error / nocontrols / 403 (the script must fail with a clear message and must NOT go on: the run ends
-at the very step that received the bad response). Result in tests/results/priming/aceite2-sim.json.
+at the very step that received the bad response). Result in tests/results/priming/acceptance2-sim.json.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ import check_bodies_search as cb  # noqa: E402
 ROOT = cb.ROOT
 SIM = ROOT / "testserver" / "detran-sim" / "detran_sim.py"
 HAR = ROOT / "fixtures" / "detran-pb-real-shape" / "real-shape-1round.har"
-OUT = ROOT / "tests" / "results" / "priming" / "aceite2-sim.json"
+OUT = ROOT / "tests" / "results" / "priming" / "acceptance2-sim.json"
 PLACA = "TST0T10"      # synthetic
 CPF = "00000000191"    # synthetic
 # Operator inputs the script may require (F1): plate and the SESSIONID part built on the client.

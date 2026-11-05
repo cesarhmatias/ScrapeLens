@@ -6,10 +6,10 @@
 
 [![Release](https://img.shields.io/github/v/release/cesarhmatias/ScrapeLens?style=flat-square&color=0066cc)](https://github.com/cesarhmatias/ScrapeLens/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20(arm64)%20%7C%20Linux%20(amd64%2C%20arm64)-lightgrey?style=flat-square)](src-tauri/EMPACOTAMENTO.md)
+[![Platform](https://img.shields.io/badge/platform-macOS%20(arm64)%20%7C%20Linux%20(amd64%2C%20arm64)-lightgrey?style=flat-square)](src-tauri/PACKAGING.md)
 [![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?style=flat-square&logo=rust)](core/Cargo.toml)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-24c8db?style=flat-square&logo=tauri)](src-tauri/tauri.conf.json)
-[![MCP](https://img.shields.io/badge/MCP-15%20Tools-8a2be2?style=flat-square)](docs/16-mcp-contrato.md)
+[![MCP](https://img.shields.io/badge/MCP-15%20Tools-8a2be2?style=flat-square)](docs/16-mcp-contract.md)
 
 [Installation](#-installation-and-packages) •
 [Highlights](#-key-features) •
@@ -50,11 +50,11 @@ Built with **Tauri 2 + React/TypeScript + Rust**, it runs **100% locally**, with
 
 | Verified Detail (Headers & Provenance) | Side-by-Side Comparison (Diff) |
 |---|---|
-| ![Verified detail](docs/screenshots/23-final-detalhe-verificado.png) | ![Comparison](docs/screenshots/10-comparacao-escuro.png) |
+| ![Verified detail](docs/screenshots/23-final-detail-verified.png) | ![Comparison](docs/screenshots/10-comparison-dark.png) |
 
 | Cookie Inspection (`Cookie` vs `Set-Cookie`) | Sanitized Export |
 |---|---|
-| ![Cookies](docs/screenshots/19-real-cookies.png) | ![Sanitized export](docs/screenshots/24-exportacao-sanitizada-aberta.png) |
+| ![Cookies](docs/screenshots/19-real-cookies.png) | ![Sanitized export](docs/screenshots/24-export-sanitized-open.png) |
 
 </details>
 
@@ -76,7 +76,7 @@ Unzip `ScrapeLens.app` (or use the bundle built at `src-tauri/target/release/bun
 open src-tauri/target/release/bundle/macos/ScrapeLens.app
 ```
 
-> **Note on signing:** The package uses local signing (`ScrapeLens Local Signing` / ad-hoc), without Apple notarization. If Gatekeeper blocks the first launch, run `xattr -dr com.apple.quarantine /Applications/ScrapeLens.app` or open it via secondary click → **Open**. Details and `SHA-256` hashes in [`src-tauri/EMPACOTAMENTO.md`](src-tauri/EMPACOTAMENTO.md).
+> **Note on signing:** The package uses local signing (`ScrapeLens Local Signing` / ad-hoc), without Apple notarization. If Gatekeeper blocks the first launch, run `xattr -dr com.apple.quarantine /Applications/ScrapeLens.app` or open it via secondary click → **Open**. Details and `SHA-256` hashes in [`src-tauri/PACKAGING.md`](src-tauri/PACKAGING.md).
 
 ---
 
@@ -158,7 +158,7 @@ Example configuration (`mcpServers`):
 | | `capture_status` | Queries event, request and warning counts of the active capture. |
 | | `stop_capture` | Ends the capture, persists the correlated session (`CDP + NetLog`) and returns the `sessionId`. |
 
-> See the full contract in [`docs/16-mcp-contrato.md`](docs/16-mcp-contrato.md) and the browser/cookies guide in [`docs/16b-mcp-navegador.md`](docs/16b-mcp-navegador.md).
+> See the full contract in [`docs/16-mcp-contract.md`](docs/16-mcp-contract.md) and the browser/cookies guide in [`docs/16b-mcp-browser.md`](docs/16b-mcp-browser.md).
 
 ---
 

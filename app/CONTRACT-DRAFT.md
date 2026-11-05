@@ -1,12 +1,12 @@
 # Session contract — DRAFT (provisional, not official)
 
-> **REPLACED in wave 2.** The official contract is `docs/03-contratos.md`
-> (session format v1), with decisions in `docs/01-decisoes.md`. The UI has
+> **REPLACED in wave 2.** The official contract is `docs/03-contracts.md`
+> (session format v1), with decisions in `docs/01-decisions.md`. The UI has
 > consumed `src/v1/types.ts` + `src/v1/adapter.ts` since the wave 2 commit. This
 > file is kept only as the history of wave 1.
 
 Status: **provisional**, written by the owner of `app/` to unblock the UI slice.
-It replaces nothing: the official contract will be `docs/03-contratos.md` (owner:
+It replaces nothing: the official contract will be `docs/03-contracts.md` (owner:
 leader). Once the official one exists, this file is discarded and the adapter in
 `src/demo/adapter.ts` is the only place to rewrite.
 

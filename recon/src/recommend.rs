@@ -1,4 +1,4 @@
-//! Deterministic recommendation (`docs/16b-mcp-navegador.md` §5.3).
+//! Deterministic recommendation (`docs/16b-mcp-browser.md` §5.3).
 
 use scrapelens_core::model::SessionV1;
 

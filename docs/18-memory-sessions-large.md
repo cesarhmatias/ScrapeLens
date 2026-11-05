@@ -2,7 +2,7 @@
 
 Round 12, wave 1. **Measurement only**: no code in `core/`, `mcp/` or `src-tauri/`
 was changed. This document measures where the memory peak is when opening a very
-large session (the open item "about 2.4 GB", `docs/06-entrega.md`) and proposes
+large session (the open item "about 2.4 GB", `docs/06-delivery.md`) and proposes
 reductions, each with the estimate and what was actually measured.
 
 ## 1. How it was measured
@@ -13,7 +13,7 @@ reductions, each with the estimate and what was actually measured.
   headers). Stable Chrome is driven by `BrowserCapture` (CDP + NetLog
   `Everything`, allowlist only `localhost:<port>`, pipe). Synthetic data
   (`bigfixture-*`); no third-party site; no proxy; no CloakBrowser.
-- **Per-stage harness.** `experiments/memoria-sessao/` (independent crate, read-only)
+- **Per-stage harness.** `experiments/session-memory/` (independent crate, read-only)
   runs **one stage per process** and prints the peak RSS (`getrusage`
   `ru_maxrss`) and the current RSS (`ps`) at each checkpoint, plus the time. Each stage
   imitates a real consumer:
@@ -33,8 +33,8 @@ reductions, each with the estimate and what was actually measured.
   ```
   cd capture && cargo build --release --example capture_big
   ./target/release/examples/capture_big /tmp/big20k 20000     # ~5 min
-  cd ../experiments/memoria-sessao && cargo build --release
-  ./target/release/memoria-sessao import-eager /tmp/big20k   # one stage at a time
+  cd ../experiments/session-memory && cargo build --release
+  ./target/release/session-memory import-eager /tmp/big20k   # one stage at a time
   ```
   Note: the measurements were made on a clean snapshot of `HEAD` (`git archive`) because
   the core working tree was being edited by another agent.
@@ -48,7 +48,7 @@ reductions, each with the estimate and what was actually measured.
 | 20.002 | **1.133 MiB** | 313 MiB | 90 MiB | 27 MiB | 20.002 files (18 MiB) |
 
 A captured request weighs **~59 KiB in `session.json`** (pretty) and ~34 KiB in
-compact JSON. The reference in `docs/06-entrega.md` (20.000 HAR requests,
+compact JSON. The reference in `docs/06-delivery.md` (20.000 HAR requests,
 `inspect` at 2.415 MiB) comes from a session that is much lighter per request; the same
 `inspect` over 20.000 **captured** requests peaks at 9.305 MiB (3,9×), and
 the 2.4 GB corresponds to only ~**5 thousand** captured requests (2.611 MiB in
@@ -202,7 +202,7 @@ recursion limit of 128 levels: `IgnoredAny` does not work because it skips it), 
 keys also indexed), **P6** (`2550041`: compact `session.json` when the indented JSON passes
 50 MiB) and **P7** (`b438945`: `sanitize_bundle_owned` consumes the bundle and sanitizes in place; CLI
 `sanitize` and the MCP registry use it). **P4** was left for round 16 and is measured in §8 (`ad4f5c1`);
-**P5** was done by the App and is also measured (`docs/19-contrato-app.md`: 1.161 MiB when opening the
+**P5** was done by the App and is also measured (`docs/19-contract-app.md`: 1.161 MiB when opening the
 20 thousand session). **P8 was not done.**
 
 **P3 requirement, identical output.** `core/tests/correlation_identity.rs` imports the 29 captures and
@@ -210,7 +210,7 @@ versioned fixtures (HTTP/1.1, h2, h3, contracts, multi-target, `src-tauri/eviden
 checks the indented `session.json` and the attachments, byte for byte (64-bit FNV-1a + size), against the
 hashes recorded BEFORE the change (commit `aefacc9`); it passes equally after. One more unit test in
 `correlate.rs` shows that the index never discards a pair that the scan of all pairs would accept,
-and `tests/aceite/check_multi_target.py` (real multi-target capture) passed.
+and `tests/acceptance/check_multi_target.py` (real multi-target capture) passed.
 
 **Measured after** (same synthetic sessions as §2, same harness, `--release`, RSS peaks in MiB;
 the new stage `import-eager-sanitize-owned` was added to the harness; `inspect` is the binary
@@ -241,7 +241,7 @@ Reading:
 - `capture-write` dropped from 9,2 to 7,6 GiB and from 263 to 16 s; what remains is the NetLog parse
   (P4), resolved in round 16 (§8).
 - Variation: ±1 % in memory; the short times vary with the disk cache (±30 %).
-- Reproduce: `cd experiments/memoria-sessao && cargo build --release && ./target/release/memoria-sessao
+- Reproduce: `cd experiments/session-memory && cargo build --release && ./target/release/session-memory
   <stage> /tmp/big20k` (one stage per process); `inspect`: `/usr/bin/time -l
   core/target/release/scrapelens-core inspect /tmp/big20k > /dev/null`.
 
@@ -252,7 +252,7 @@ Reading:
 | `inspect` (CLI) | 9,3 GiB | **1,6 GiB** | 1,6 GiB (P4 does not apply to `inspect`) |
 | MCP 1st masked call | 5,7 GiB | **1,6 GiB** | 1,6 GiB |
 | `stop_capture` (imports the capture) | 7,0 GiB, 249 s | **7,1 GiB, 9,3 s** | **4,2 GiB, 8,1 s** (§8; with the write, 4,6 GiB, 17,1 s) |
-| Open in the App (P5) | 7,1 GiB | 7,1 GiB | **1,16 GiB** (`docs/19-contrato-app.md`) |
+| Open in the App (P5) | 7,1 GiB | 7,1 GiB | **1,16 GiB** (`docs/19-contract-app.md`) |
 
 ## 8. Round 16: P4 measured (streaming NetLog parser)
 
@@ -287,7 +287,7 @@ Reading:
   ±30 % disk cache variation already recorded in §7).
 - **P5 (App), measured:** opening the 20 thousand session in the App dropped from 7.108 to **1.161 MiB** (−84 %)
   with the typed path + paginated list, and what goes to the front end dropped from 681 MB to ~5,4 MB
-  (`docs/19-contrato-app.md`, `src-tauri/examples/mem_open.rs`). It is the "Open in the App" row of the
+  (`docs/19-contract-app.md`, `src-tauri/examples/mem_open.rs`). It is the "Open in the App" row of the
   table in §7.
 - **What is left:** the floor is now the typed session (~1,15 GiB at 20 thousand) and the ~650 MiB
   `session.json` written by P6. The next memory item is **P8** (schema, ~−65 % of the size per
@@ -296,8 +296,8 @@ Reading:
 Reproduce (one stage per process):
 
 ```
-cd experiments/memoria-sessao && cargo build --release
-./target/release/memoria-sessao netlog-only   /tmp/big20k
-./target/release/memoria-sessao capture-full  /tmp/big20k
-./target/release/memoria-sessao capture-write /tmp/big20k
+cd experiments/session-memory && cargo build --release
+./target/release/session-memory netlog-only   /tmp/big20k
+./target/release/session-memory capture-full  /tmp/big20k
+./target/release/session-memory capture-write /tmp/big20k
 ```

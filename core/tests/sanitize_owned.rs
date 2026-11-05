@@ -21,7 +21,7 @@ fn repo(path: &str) -> std::path::PathBuf {
 
 fn bundles() -> Vec<(String, scrapelens_core::SessionBundle)> {
     let mut out = Vec::new();
-    let har = std::fs::read(repo("fixtures/aceite/sanitize/secret.har")).unwrap();
+    let har = std::fs::read(repo("fixtures/acceptance/sanitize/secret.har")).unwrap();
     out.push((
         "secret.har".into(),
         scrapelens_core::import_har(&har).unwrap().bundle,

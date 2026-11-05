@@ -1,7 +1,7 @@
 # src-tauri — Tauri 2 shell
 
 The UI in `app/` is embedded in the binary; no Node/Rust/Python is required of the
-end user. The data contract is the v1 of `docs/03-contratos.md`.
+end user. The data contract is the v1 of `docs/03-contracts.md`.
 
 ## Build and tests
 

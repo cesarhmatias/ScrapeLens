@@ -1,9 +1,9 @@
 [package]
-name = "memoria-sessao"
+name = "session-memory"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Measures the peak memory (RSS) of each step of opening a large session (docs/18-memoria-sessoes-grandes.md). Read-only: does not change the core."
+description = "Measures the peak memory (RSS) of each step of opening a large session (docs/18-memory-sessions-large.md). Read-only: does not change the core."
 
 [dependencies]
 scrapelens-core = { path = "../../core" }

@@ -1,7 +1,7 @@
 //! NetLog importer for Chrome.
 //!
 //! NetLog is the only source that proves transmission order (see
-//! `docs/02-matriz-fidelidade.md`). This module preserves:
+//! `docs/02-matrix-fidelity.md`). This module preserves:
 //! - pairs in event order, with duplicates;
 //! - pseudoheaders separados;
 //! - repeats merged by `\x00` in h2/h3 session events (expanded);

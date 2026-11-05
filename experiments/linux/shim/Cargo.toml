@@ -3,7 +3,7 @@ name = "scrapelens-linux-shim"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Stand-in for src-tauri ONLY for the Linux container: exposes the live_bodies_cycle test over the capture crate, so tests/aceite/check_multi_target.py runs without Tauri (docs/21-linux.md). Not part of the product."
+description = "Stand-in for src-tauri ONLY for the Linux container: exposes the live_bodies_cycle test over the capture crate, so tests/acceptance/check_multi_target.py runs without Tauri (docs/21-linux.md). Not part of the product."
 
 [dependencies]
 scrapelens-capture = { path = "../capture" }

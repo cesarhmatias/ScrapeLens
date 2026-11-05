@@ -94,10 +94,10 @@ results.originRows = await page.locator(".origin-table tbody tr").count();
 results.originText = await page.locator(".origin-table").innerText();
 results.chainText = await page.locator(".chain-list").first().innerText();
 results.protectionSection = await page.getByText("Proteção (não é lógica da aplicação)").count();
-await shot("12-origem-valores.png");
+await shot("12-origin-values.png");
 await page.locator(".chain-list").first().scrollIntoViewIfNeeded();
 await page.evaluate(() => document.querySelector(".chain-list")?.scrollIntoView({ block: "start" }));
-await shot("13-cadeia-priming.png");
+await shot("13-chain-priming.png");
 // navegação pela requisição produtora
 const firstLink = page.locator(".origin-table .link-req").first();
 results.firstLink = await firstLink.innerText();
@@ -115,7 +115,7 @@ results.plainHasOriginComment = (await page.locator(".export-code, pre").first()
 await page.getByLabel("anotar origens").check();
 await page.waitForTimeout(700);
 results.annotatedHasOriginComment = (await page.locator(".export-code, pre").first().innerText()).includes("obter em runtime");
-await shot("14-export-anotado.png");
+await shot("14-export-annotated.png");
 await page.keyboard.press("Escape");
 
 // Comparação A × B
@@ -128,7 +128,7 @@ results.pairs = await page.locator(".cmp-pair").count();
 await page.locator(".cmp-pair").nth(3).getByRole("button", { name: /campos/ }).click();
 await page.waitForSelector(".cmp-field");
 results.compareHeader = await page.locator(".body-panel .block-meta").first().innerText();
-await shot("15-comparacao-ab.png");
+await shot("15-comparison-ab.png");
 // Larguras 1024–1440: nenhum chip/coluna do compare pode ultrapassar a janela.
 results.overflow = {};
 for (const width of [1024, 1280, 1440]) {
@@ -139,7 +139,7 @@ for (const width of [1024, 1280, 1440]) {
     const bad = [...document.querySelectorAll(".cmp-field .chip, .cmp-field, .cmp-pair")].filter((el) => el.getBoundingClientRect().right > w + 1).length;
     return { clientWidth: w, scrollWidth: document.documentElement.scrollWidth, elementsPastEdge: bad };
   });
-  if (width === 1024) await shot("15b-comparacao-ab-1024.png");
+  if (width === 1024) await shot("15b-comparison-ab-1024.png");
 }
 await page.setViewportSize({ width: 1440, height: 1000 });
 await page.getByLabel(/só dinâmicos/).check();
@@ -148,7 +148,7 @@ await page.waitForSelector(".cmp-field");
 await page.waitForTimeout(300);
 results.dynamicOnlyFields = await page.locator(".cmp-field").count();
 results.staticLeft = await page.locator(".cmp-field:not(.cmp-dynamic)").count();
-await shot("16-comparacao-so-dinamicos.png");
+await shot("16-comparison-only-dynamic.png");
 
 // Reordenação: B2 = B com cdp-r0004 movido para o fim (derivada de B, editada à mão).
 if (process.argv[7]) {
@@ -160,7 +160,7 @@ if (process.argv[7]) {
   await page.locator(".link-req", { hasText: "cdp-r0004" }).first().click();
   await page.waitForTimeout(600);
   results.navigatedTo = await page.evaluate(() => document.getElementById("only-B-cdp-r0004") !== null);
-  await shot("17-comparacao-reordenada.png");
+  await shot("17-comparison-reordered.png");
 }
 results.pageErrors = errors.filter((e) => !e.includes("unregisterListener"));
 fs.writeFileSync(path.join(outDir, "ui-harness-flow-result.json"), JSON.stringify(results, null, 2));

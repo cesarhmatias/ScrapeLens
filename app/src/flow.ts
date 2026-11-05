@@ -1,5 +1,5 @@
 // TypeScript projection of the core's output: flow::value_origins, flow::priming_chain
-// and compare::compare_sessions (docs/09-cadeia-comparacao.md). The UI only shows what
+// and compare::compare_sessions (docs/09-chain-comparison.md). The UI only shows what
 // the core returns; "value-match" is never presented as certainty.
 
 export type EvidenceKind = "cookie-jar" | "same-field" | "value-match" | "initiator" | string;

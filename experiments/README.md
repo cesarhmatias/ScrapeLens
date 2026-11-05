@@ -3,7 +3,7 @@
 Question: **which sources and events preserve which header sequence in
 HTTP/1.1, h2 and h3 in Chrome 156.0.8078.48?**
 
-The consolidated result is in [`../docs/02-matriz-fidelidade.md`](../docs/02-matriz-fidelidade.md).
+The consolidated result is in [`../docs/02-matrix-fidelity.md`](../docs/02-matrix-fidelity.md).
 Everything here is synthetic, local (127.0.0.1) and temporary.
 
 ## What runs

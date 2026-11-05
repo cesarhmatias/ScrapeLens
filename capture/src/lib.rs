@@ -5,7 +5,7 @@
 //! - our client talks to Chrome over a **pipe** (`--remote-debugging-pipe`,
 //!   no open port) by default; only with `expose_cdp` (external agent) does
 //!   Chrome open the debugging port, **only on 127.0.0.1**, on an ephemeral port
-//!   (see `docs/16b-mcp-navegador.md` §2.5 for the risk);
+//!   (see `docs/16b-mcp-browser.md` §2.5 for the risk);
 //! - it only terminates the process this module started;
 //! - the NetLog is written to the session directory and imported by the core;
 //! - no network beyond local debugging; no certificate is installed;
@@ -647,7 +647,7 @@ fn run_inner(
     }
 }
 
-/// Blink feature disabled in every capture (D7, `docs/01-decisoes.md`).
+/// Blink feature disabled in every capture (D7, `docs/01-decisions.md`).
 pub const AUTOMATION_FEATURE: &str = "AutomationControlled";
 
 /// Ensures ONE single `--disable-blink-features=` with `features` combined with the ones
@@ -2987,7 +2987,7 @@ fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 // ---------------------------------------------------------------------------
-// Bodies (docs/08-corpos-busca.md §1): collection without blocking the event loop.
+// Bodies (docs/08-bodies-search.md §1): collection without blocking the event loop.
 // ---------------------------------------------------------------------------
 
 /// Limit per body (decoded bytes).

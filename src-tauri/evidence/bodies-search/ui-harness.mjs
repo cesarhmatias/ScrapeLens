@@ -104,7 +104,7 @@ await openSession(detranDir);
 results.originBanner = await page.locator(".real-banner, .demo-banner").first().innerText();
 results.originTags = await page.locator(".tag").allInnerTexts();
 results.detranRows = await rows();
-await shot("01-detran-lista.png");
+await shot("01-detran-list.png");
 
 // Busca no payload: só os 2 POSTs com o comando, nenhum pela URL.
 const search = page.getByLabel("Buscar requisições");
@@ -113,7 +113,7 @@ await page.waitForSelector(".search-status .chip", { timeout: 8000 }).catch(asyn
 await page.waitForTimeout(400);
 results.searchRows = await rows();
 results.searchStatus = await page.locator(".search-status").innerText();
-await shot("02-busca-payload.png");
+await shot("02-search-payload.png");
 
 // Escopo só URL: nenhuma requisição.
 for (const label of ["header (env.)", "header (rec.)", "cookies", "corpo req.", "corpo resp."]) {
@@ -122,7 +122,7 @@ for (const label of ["header (env.)", "header (rec.)", "cookies", "corpo req.", 
 await page.waitForTimeout(600);
 results.urlOnlyRows = await rows();
 results.urlOnlyStatus = await page.locator(".search-status").innerText();
-await shot("03-busca-escopo-url.png");
+await shot("03-search-scope-url.png");
 await page.locator(".search-opts label", { hasText: "corpo req." }).click();
 await page.waitForTimeout(600);
 results.afterRestoreRows = await rows();
@@ -137,7 +137,7 @@ results.highlightMarks = await page.locator(".body-panel pre.code mark").count()
 results.markText = await page.locator(".body-panel pre.code mark").allInnerTexts();
 results.markDashed = await page.locator(".body-panel pre.code mark.decoded").count();
 results.syntheticBanner = await page.locator(".demo-banner p").first().innerText().catch(() => null);
-await shot("04-detalhe-match.png");
+await shot("04-detail-match.png");
 results.copyBody = null;
 await page.getByRole("button", { name: "Copiar corpo" }).first().click();
 await page.waitForTimeout(300);
@@ -149,7 +149,7 @@ await page.waitForSelector(".body-panel pre.code");
 results.iframes = await page.locator("iframe").count();
 results.htmlRenderedInPanel = await page.locator(".body-panel .code > *:not(mark)").count();
 results.responseFoot = await page.locator(".body-panel .body-foot").first().innerText();
-await shot("05-resposta-html-como-texto.png");
+await shot("05-response-html-as-text.png");
 
 // Sessão edge: truncado, vazio, binário, indisponível, redirect 307.
 await page.getByRole("button", { name: /Sessão/ }).first().click().catch(() => {});
@@ -176,7 +176,7 @@ await page.locator("tbody tr:not(.spacer)").nth(1).click();
 await page.getByRole("button", { name: /Exportar/ }).first().click().catch(() => {});
 await page.waitForTimeout(600);
 results.redirectWarning = await page.locator("[role=alert]").allInnerTexts();
-await shot("10-export-aviso-307.png");
+await shot("10-export-warning-307.png");
 
 // Painel de transformações (sessão sintética rotulada, `transformed` editado à mão no session.json).
 if (process.argv[6]) {
@@ -188,7 +188,7 @@ if (process.argv[6]) {
   await page.getByRole("tab", { name: /Resposta/ }).click();
   await page.waitForTimeout(400);
   results.transformCharset = await page.locator(".body-panel").first().innerText();
-  await shot("11-corpo-charset.png");
+  await shot("11-body-charset.png");
   await page.getByRole("button", { name: /Sessão/ }).first().click();
   await page.locator("tbody tr:not(.spacer)").nth(2).click();
   await page.getByRole("tab", { name: /Resposta/ }).click();

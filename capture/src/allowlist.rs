@@ -1,4 +1,4 @@
-//! Host allowlist for controlled capture (`docs/16b-mcp-navegador.md` §2.2).
+//! Host allowlist for controlled capture (`docs/16b-mcp-browser.md` §2.2).
 //!
 //! **Official semantics:** the browser enforces the **host** (all ports); the
 //! **port** is only enforced in `navigate`. Chrome does not know about ports in

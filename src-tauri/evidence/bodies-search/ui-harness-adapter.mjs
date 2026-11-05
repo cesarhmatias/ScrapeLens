@@ -79,20 +79,20 @@ await page.getByRole("tab", { name: /Origem/ }).click();
 await page.waitForSelector(".origin-table");
 results.originFields = await page.locator(".origin-table tbody tr").evaluateAll((rows) => rows.map((r) => r.innerText.replace(/\s+/g, " ").slice(0, 140)).filter((t) => /XML/.test(t)));
 await page.locator(".origin-table").first().scrollIntoViewIfNeeded();
-await shot("34-origem-nomes-adaptador.png");
+await shot("34-origin-names-adapter.png");
 // Visão estruturada no painel de payload (bruto primário acima, visão derivada abaixo)
 await page.getByRole("tab", { name: /Payload/ }).click();
 await page.waitForSelector("text=Visão do adaptador Natural (derivada)");
 results.viewHeading = await page.locator("h3", { hasText: "Visão do adaptador" }).first().innerText();
 results.viewRows = await page.locator("section:has(h3:has-text('Visão do adaptador')) tbody tr").evaluateAll((rows) => rows.map((r) => r.innerText.replace(/\s+/g, " ")));
 await page.locator("h3", { hasText: "Visão do adaptador" }).first().scrollIntoViewIfNeeded();
-await shot("35-visao-adaptador-natural.png");
+await shot("35-view-adapter-natural.png");
 if (process.env.HARNESS_ERR) {
   // Painel de erro de decode (campo grande demais) com a visão real do Rust sobre um corpo de 512 KiB + 10.
   await page.getByRole("tab", { name: /Payload/ }).click();
   await page.waitForSelector("text=Não foi possível decodificar o campo");
   results.errorPanel = await page.locator("section:has(h3:has-text('Visão do adaptador')) .body-flag").first().innerText();
-  await shot("37-visao-adaptador-campo-grande.png");
+  await shot("37-view-adapter-field-large.png");
   results.pageErrors = errors;
   fs.writeFileSync(path.join(outDir, "ui-harness-adapter-error-result.json"), JSON.stringify(results, null, 2));
   console.log(JSON.stringify(results, null, 2));
@@ -104,7 +104,7 @@ await page.getByRole("tab", { name: /Script de priming/ }).click();
 await page.waitForSelector("text=codificador do adaptador");
 results.primingNote = await page.locator(".notice-info").last().innerText();
 results.primingHasEncoder = (await page.locator("body").innerText()).includes("natural_ajax_encode");
-await shot("36-exportar-priming-adaptador.png");
+await shot("36-export-priming-adapter.png");
 results.pageErrors = errors;
 fs.writeFileSync(path.join(outDir, "ui-harness-adapter-result.json"), JSON.stringify(results, null, 2));
 console.log(JSON.stringify(results, null, 2));

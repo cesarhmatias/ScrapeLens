@@ -23,7 +23,7 @@ cp /src/src-tauri/target/release/scrapelens "$OUT/scrapelens"
 step "smoke (Xvfb, --import-har)"
 export HOME=/tmp/smokehome; rm -rf "$HOME"; mkdir -p "$HOME"
 export SCRAPELENS_TEST_MODE=1 XDG_DATA_HOME=$HOME/.local/share XDG_CONFIG_HOME=$HOME/.config
-HAR=/src/fixtures/aceite/headers-cookies/headers-cookies.har
+HAR=/src/fixtures/acceptance/headers-cookies/headers-cookies.har
 xvfb-run -a -s "-screen 0 1440x920x24" dbus-run-session -- "$OUT/scrapelens" --import-har "$HAR" >"$OUT/smoke.log" 2>&1 &
 pid=$!; ok=0
 for i in $(seq 1 60); do

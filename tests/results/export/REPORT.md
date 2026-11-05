@@ -42,8 +42,8 @@ on the file. With `alias -> real`, existing `real/sub`, the call
 Reproduction without GUI/network, in their own temporary folders:
 
 ```sh
-cargo test --manifest-path tests/exportacao/Cargo.toml --offline --test bridge export_rejects_symlink_in_ancestor
-cargo test --manifest-path tests/exportacao/Cargo.toml --offline --test bridge sanitization_rejects_symlink_in_ancestor
+cargo test --manifest-path tests/export/Cargo.toml --offline --test bridge export_rejects_symlink_in_ancestor
+cargo test --manifest-path tests/export/Cargo.toml --offline --test bridge sanitization_rejects_symlink_in_ancestor
 ```
 
 Both fail at 2c6765e because they received Ok. They were not ignored and their asserts were not loosened. Fix the path validation across the whole chosen chain,
@@ -52,8 +52,8 @@ with an explicit policy for known macOS aliases, without simply removing the gua
 ## Native flow and next steps
 
 1. App fixes F1/F2, runs the regressions, rebuilds and records the new hash/bundle.
-2. Run the single script in `tests/exportacao/README.md`. The private fixture with a captured body and fictitious markers has already been prepared in
-   `tests/.work/exportacao-manual/source`. Saved code and the sanitized session can be checked by `verify_manual.py` without running exports.
+2. Run the single script in `tests/export/README.md`. The private fixture with a captured body and fictitious markers has already been prepared in
+   `tests/.work/export-manual/source`. Saved code and the sanitized session can be checked by `verify_manual.py` without running exports.
 3. Check the native clipboard after the Copy action (UI label `Copiar` (legacy)) and compare it with the preview. Separately, prove Save, Cancel and Open the sanitized session (UI labels `Salvar` (legacy), `Cancelar` (legacy), `Abrir sessão sanitizada` (legacy)) in the corrected bundle.
    Do not repeat the already blocked NSSavePanel automation; request human selection if there is no accessible route. There is still no proof of this cycle in this validation.
 
@@ -77,10 +77,10 @@ Native proof: operated by the leader via computer_use (NSOpenPanel/NSSavePanel i
 | NSSavePanel save Python (`native.py`, 1157 B) | **passed**; 0600, `cmp` identical to `expected.py` (Tests) |
 | Cancel Save | **passed**: UI "Salvamento cancelado; nada foi gravado" (legacy); no `captured.sh/.py` exists (Tests) |
 | Native clipboard (Copy) | **passed** by the leader: `pbpaste` with UTF-8 identical to `expected.py`. Without LANG UTF-8 `pbpaste` differs in the em dash: a pbpaste artifact. Not re-verified by Tests (volatile clipboard) |
-| Sanitize → save → reopen | **passed**: folder 0700; `session.json` and `attachments/sanitized-request.json` 0600; no `cdp-events.jsonl`/`netlog.json`; no `ONLY_SYNTHETIC`; URL reopened `https://fixture.invalid/echo?sid=%5BREDACTED%5D` (Tests read session.json). Screenshot `docs/screenshots/24-exportacao-sanitizada-aberta.png` |
+| Sanitize → save → reopen | **passed**: folder 0700; `session.json` and `attachments/sanitized-request.json` 0600; no `cdp-events.jsonl`/`netlog.json`; no `ONLY_SYNTHETIC`; URL reopened `https://fixture.invalid/echo?sid=%5BREDACTED%5D` (Tests read session.json). Screenshot `docs/screenshots/24-export-sanitized-open.png` |
 | Source intact | **passed**: SHA of the 3 manifest files identical |
 
-Regressions: `cargo test --manifest-path tests/exportacao/Cargo.toml --offline`
+Regressions: `cargo test --manifest-path tests/export/Cargo.toml --offline`
 → **16/16 pass** after `16015a1` (F1/F2 closed).
 
 `verify_manual.py` now explicitly ignores only files named `.DS_Store` in the source
@@ -98,7 +98,7 @@ Limits: export does not run/replay requests; clipboard and dialogs depend on for
 
 | Check | Result |
 |---|---|
-| Bridge (`tests/exportacao`) | **18/18** (16 previous + 2 new alias-policy tests) |
+| Bridge (`tests/export`) | **18/18** (16 previous + 2 new alias-policy tests) |
 | src-tauri | 15 ok, 1 ignored |
 | core | 91 ok, 1 ignored |
 | typecheck (`tsc --noEmit`) | passes |

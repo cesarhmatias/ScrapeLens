@@ -1,7 +1,7 @@
 # detran-pb — reference-case fixture (real shape, synthetic values)
 
 Acceptance case: reconstruction of the DETRAN-PB session described in
-`docs/05-caso-referencia-detran.md`. This fixture exists for the tests of
+`docs/05-case-reference-detran.md`. This fixture exists for the tests of
 **import, body search, grouping protection × application, dynamic fields and
 CDP×NetLog correlation**.
 
@@ -16,7 +16,7 @@ copied** into the repository.
 | `detran-pb-sanitized.har` | 13 entries: entry → NatLogon → SIM1000X → on_interceptor → VES0009X → cmd_filtro → cmd_consultar_placa → cmd_nova → cmd_consultar_placa |
 | `detran-pb-blocked.har` | 3 block entries: 200 without XML/STAMP, Connector without model, 403 |
 | `detran-pb.cdp.jsonl` | 47 synthetic CDP events (`requestWillBeSent`, `requestWillBeSentExtraInfo` only on the POSTs, `responseReceived`, `loadingFinished`) |
-| `detran-pb.netlog.json` | 52 NetLog events in the format of `fixtures/aceite` (URL_REQUEST, headers sent/received, stream job) |
+| `detran-pb.netlog.json` | 52 NetLog events in the format of `fixtures/acceptance` (URL_REQUEST, headers sent/received, stream job) |
 | `manifest.json` | expected flow, STAMP chain, search cases, ambiguity, dynamic/static field lists |
 | `build_fixtures.py` | deterministic generator (fixed clock 2026-10-26T23:00Z) |
 | `validate.py` | checks structure, flow, sizes, search, ambiguity and absence of real markers |
@@ -92,7 +92,7 @@ real marker appears (`CASA`, `NUPP`, `082b79`, HAR names, etc.).
   coincidence of formats (plate, STAMP), not real data.
 - Static fixture: do not run the endpoints or navigate to the real domain.
 
-## CDP bodies (round 4, docs/08-corpos-busca.md)
+## CDP bodies (round 4, docs/08-bodies-search.md)
 
 Marked as **sanitized from a real case** (real shape, synthetic values):
 
@@ -107,7 +107,7 @@ Marked as **sanitized from a real case** (real shape, synthetic values):
   in both attempts, JSON, binary base64, already decoded gzip, 6 MiB `truncated`
   with `originalSize` 6291456, 204 `empty` with evidence).
 - Expected search cases: `manifest.json` → `bodies_search_cases` and `bodies`.
-  Automatic acceptance: `python3 tests/aceite/check_bodies_search.py <session>`.
+  Automatic acceptance: `python3 tests/acceptance/check_bodies_search.py <session>`.
 
 ## Origin labels (Core d9aba1c)
 
@@ -115,10 +115,10 @@ Every import of these fixtures passes `--label synthetic-fixture`, so the app
 does not show them as a real session. Expected labels in `session.labels`:
 `import-capture` → `["capture-import","synthetic-fixture"]`; `import-har` →
 `["har-import","synthetic-fixture"]`; `import-netlog` → `["netlog-import","synthetic-fixture"]`.
-`tests/aceite/check_bodies_search.py --import-fixture` and `run_acceptance.py`
+`tests/acceptance/check_bodies_search.py --import-fixture` and `run_acceptance.py`
 assert this on every import.
 
-## 2nd capture (B) and origin chain (round 5, docs/09-cadeia-comparacao.md)
+## 2nd capture (B) and origin chain (round 5, docs/09-chain-comparison.md)
 
 - `fixtures/detran-pb-b/` (`python3 fixtures/detran-pb/build_fixtures.py b`):
   same 13-step flow, same pages, models and constants; **they differ** in
@@ -136,7 +136,7 @@ assert this on every import.
   name: it is not an origin).
 - Expectations: `manifest.json` → `chain_compare` (origins §4.1, chain,
   comparison §4.2, sanitized §4.4). Acceptance:
-  `python3 tests/aceite/check_chain_compare.py` (fails until Core delivers
+  `python3 tests/acceptance/check_chain_compare.py` (fails until Core delivers
   `origins|chain|compare`; the JSON format adapter is tolerant and must be
   adjusted to the final contract).
 

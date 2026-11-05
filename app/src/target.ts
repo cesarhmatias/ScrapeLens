@@ -1,4 +1,4 @@
-// Labels and filters for the CDP target (docs/14-captura-multi-alvo.md). The UI only
+// Labels and filters for the CDP target (docs/14-capture-multi-target.md). The UI only
 // shows what the core writes to `target`/`links`; it does not invent provenance.
 
 import type { RequestLinkView, RequestSummary, TargetKind, TargetView } from "./types";

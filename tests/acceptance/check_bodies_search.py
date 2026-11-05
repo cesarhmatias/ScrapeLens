@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Round 4 (docs/08-corpos-busca.md §3.1): checks the search over the payload.
+"""Round 4 (docs/08-bodies-search.md §3.1): checks the search over the payload.
 
 Given the folder of an imported session, runs `scrapelens-core search` for each
 case in fixtures/detran-pb/manifest.json (`bodies_search_cases`, and `bodies.edge.search`
 with --fixture edge) and compares the expected requestId/field/decoded. Expectations
 are not relaxed: any divergence fails (exit 1).
 
-  python3 tests/aceite/check_bodies_search.py <session>            # DETRAN-PB
-  python3 tests/aceite/check_bodies_search.py <session> --fixture edge
-  python3 tests/aceite/check_bodies_search.py --import-fixture    # imports and checks
-  python3 tests/aceite/check_bodies_search.py <sanitized-session> --sanitized MARKER...
+  python3 tests/acceptance/check_bodies_search.py <session>            # DETRAN-PB
+  python3 tests/acceptance/check_bodies_search.py <session> --fixture edge
+  python3 tests/acceptance/check_bodies_search.py --import-fixture    # imports and checks
+  python3 tests/acceptance/check_bodies_search.py <sanitized-session> --sanitized MARKER...
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 # ScrapeLens — Official contracts (wave 2)
 
-They replace `app/CONTRACT-DRAFT.md` (provisional). Provenance and verdicts: `docs/02-matriz-fidelidade.md`; decisions: `docs/01-decisoes.md`.
+They replace `app/CONTRACT-DRAFT.md` (provisional). Provenance and verdicts: `docs/02-matrix-fidelity.md`; decisions: `docs/01-decisions.md`.
 
 ## 1. Own session format (v1)
 
@@ -19,7 +19,7 @@ Rules:
 - Pseudo-headers separated (`:method`, `:path`, etc.), never mixed with regular headers.
 - `Cookie` field: preserve (a) the original value from the source, (b) the parsed inner pairs, (c) the split lines observed on the wire (h2/h3). `Set-Cookie`: raw lines + parsed.
 - Each unit of information carries `provenance`: `{source, event, timestamp, browserVersion, method, verification}`.
-- `verification` per piece of information: `verified | partial | unverified` (matrix D2 in `docs/01-decisoes.md`). "unverified" = the UI shows "not verified".
+- `verification` per piece of information: `verified | partial | unverified` (matrix D2 in `docs/01-decisions.md`). "unverified" = the UI shows "not verified".
 - Normalized views (for search/diff) are derived, and never replace the original.
 
 ## 2. Correlation

@@ -50,7 +50,7 @@ fn sanitize_text_masks_only_sensitive_query_params() {
 fn marked_secret_in_query_survives_nowhere_in_the_sanitized_session() {
     let har = std::fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/aceite/sanitize/secret.har"),
+            .join("../fixtures/acceptance/sanitize/secret.har"),
     )
     .unwrap();
     let mut imported = scrapelens_core::import_har(&har).unwrap();
@@ -212,7 +212,7 @@ fn credential_header_names_and_schemes_are_redacted() {
 fn set_cookie_parse_error_does_not_carry_the_raw_value() {
     let har = std::fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/aceite/sanitize/secret.har"),
+            .join("../fixtures/acceptance/sanitize/secret.har"),
     )
     .unwrap();
     let mut imported = scrapelens_core::import_har(&har).unwrap();

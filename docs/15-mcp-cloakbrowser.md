@@ -213,12 +213,12 @@ Consequence for the design (only hypotheses to measure, in order of preference):
 3. **NetLog only** (no debugging port): preserves bytes and header order at the
    network level and the correlation by time, but loses bodies via CDP,
    per-request `ExtraInfo` and per-target attribution (see
-   `docs/02-matriz-fidelidade.md`). An AI agent still needs **a control
+   `docs/02-matrix-fidelity.md`). An AI agent still needs **a control
    channel** for the browser; if it uses CDP (Playwright/MCP), CDP will already be
    connected anyway, and the question becomes only whether our second
    client adds signals.
 4. **Proxy**: outside our scope, which forbids MITM and our own certificates
-   (`docs/01-decisoes.md`, line 9). A proxy that does not decrypt TLS does not see HTTPS headers.
+   (`docs/01-decisions.md`, line 9). A proxy that does not decrypt TLS does not see HTTPS headers.
    Only the leader can change that decision.
 
 ### 6. Version, update, telemetry and risks
@@ -267,7 +267,7 @@ Consequence for the design (only hypotheses to measure, in order of preference):
   on 22/02/2026; the free tier for macOS does not receive the current build. ScrapeLens
   must not depend on it: an **optional** browser, with Chrome as the default.
 
-### 7. Confirmation of the points in `docs/15a-mercado-mcp.md`
+### 7. Confirmation of the points in `docs/15a-market-mcp.md`
 
 Complement requested by the leader. Each point of the market research was checked
 against clone `b860957` (and, for the issues, against the public GitHub API, read-only). The
@@ -304,7 +304,7 @@ how Playwright/MCP drives it), so "no CDP" only removes **our**
 client, not the control channel; (b) without `Browser.close` the NetLog is only
 finalized if Chrome exits gracefully (`cloakserve` uses SIGINT
 for this reason, CHANGELOG.md:17); partial captures are already marked incomplete.
-Comparison, based on `docs/02-matriz-fidelidade.md` and `docs/14`:
+Comparison, based on `docs/02-matrix-fidelity.md` and `docs/14`:
 
 | Item | With CDP (today) | NetLog only |
 |---|---|---|
@@ -361,7 +361,7 @@ to a plain run with the monitoring of item 5):
 2. **Header-order `experiments/`** (already existing) against the binary, over
    local HTTP/1.1, h2 and h3: are the wire order and capitalization those of Chrome?
    Difference = fidelity finding.
-3. **`tests/aceite/check_multi_target.py`** with `CaptureConfig.chrome` pointing
+3. **`tests/acceptance/check_multi_target.py`** with `CaptureConfig.chrome` pointing
    to the binary (today the capture accepts any Chrome-like executable):
    16/16 NetLog, ≥15/16 CDP, target types, POST bodies, service worker. Runs only
    on loopback, like the current test.
@@ -414,7 +414,7 @@ to a plain run with the monitoring of item 5):
    MITM. Keep it? I recommend keeping it: HTTPS header fidelity comes from NetLog.
 4. **Bundling:** ScrapeLens points to the user's binary (as with Chrome)
    and never embeds it; the MCP must not be offered to third parties as a service without
-   an OEM license. I recommend recording this in `docs/01-decisoes.md`.
+   an OEM license. I recommend recording this in `docs/01-decisions.md`.
 5. **Two CDP clients:** the AI agent (Playwright/MCP) and ScrapeLens will
    need the same browser. That forces `--remote-debugging-port` (default
    Playwright uses a pipe). The MCP design must decide who launches the

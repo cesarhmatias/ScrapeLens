@@ -5,7 +5,7 @@
 Live capture does not record bodies. `core/src/parse/cdp.rs` marks every
 request and response as `unavailable` ("CDP body not loaded"). The UI search
 filters metadata only. The DETRAN-PB reference case
-(`docs/05-caso-referencia-detran.md`) needs to find `cmd_consultar_placa` in
+(`docs/05-case-reference-detran.md`) needs to find `cmd_consultar_placa` in
 the form-urlencoded body and tell apart two POSTs with the same URL and the
 same method. Specification: "Payload and bodies when available", "Search and
 filters" and "Show unavailable, truncated or discarded bodies explicitly".
@@ -115,8 +115,8 @@ Rules:
    204, `Content-Length: 0`).
 5. Sanitization: bodies are still redacted by the current policy. Search
    in a sanitized session does not find the sensitive markers.
-6. Green test suite: `cargo test` (core, src-tauri), `tests/exportacao`,
-   acceptance `tests/aceite/run_acceptance.py` with no regression.
+6. Green test suite: `cargo test` (core, src-tauri), `tests/export`,
+   acceptance `tests/acceptance/run_acceptance.py` with no regression.
 
 Conventional Commits per owner, no push or publication, no execution of
 exported code and no external network.
@@ -172,7 +172,7 @@ Reviewer: partial, with 1 high failure. Fixes:
 Independent re-review up to 71eef98: Part A (core, capture, fixtures)
 APPROVED; Part B (app) APPROVED, with a caveat: live app not opened by the
 reviewer. No critical or high failures. Test suite: cargo test core and src-tauri
-(36 ok/3 ignored), tests/exportacao 18/18, run_acceptance 10/10,
+(36 ok/3 ignored), tests/export 18/18, run_acceptance 10/10,
 check_bodies_search detran 5/5 / edge 2/2 / sanitized OK, run_bodies 20/20
 live. Search memory on the large session: peak 1,75 GB → 257 MB. Bundle
 0e2754f4….
@@ -182,7 +182,7 @@ Finishing touches (non-blocking), delegated:
   double percent-encoding variant in propagation; provenance of GET
   `empty`.
 - App: highlight legend consistent with the visible highlight; remove
-  `evidence/busca-corpos/debug.png`; less noisy `chrome-decoded` warning
+  `evidence/bodies-search/debug.png`; less noisy `chrome-decoded` warning
   (discreet summary and emphasis only for charset/lossy).
 
 Accepted as a limitation: raw HAR/CDP files imported without `--label`

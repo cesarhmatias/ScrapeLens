@@ -1,4 +1,4 @@
-//! Python priming script (docs/11-priming-sucesso.md §1, acceptance 1 and 4).
+//! Python priming script (docs/11-priming-success.md §1, acceptance 1 and 4).
 
 use std::path::PathBuf;
 use std::process::Command;

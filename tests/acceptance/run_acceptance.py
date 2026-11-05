@@ -2,16 +2,16 @@
 """Acceptance suite for the ScrapeLens MVP (the 10 criteria of the specification).
 
 Drives the core CLI (`core/target/release/scrapelens-core`) and the synthetic
-fixtures in `fixtures/aceite/`. No step opens the network: the servers and the
+fixtures in `fixtures/acceptance/`. No step opens the network: the servers and the
 Chrome of criterion 9 are local and orchestrated by `tests/capture/run-cycle.sh`.
 
 Usage:
-  python3 tests/aceite/run_acceptance.py                       # items 1-8,10
-  python3 tests/aceite/run_acceptance.py --capture RUN_DIR     # + item 9
-  python3 tests/aceite/run_acceptance.py --only 1,3,6
-  python3 tests/aceite/run_acceptance.py --build-fixtures
+  python3 tests/acceptance/run_acceptance.py                       # items 1-8,10
+  python3 tests/acceptance/run_acceptance.py --capture RUN_DIR     # + item 9
+  python3 tests/acceptance/run_acceptance.py --only 1,3,6
+  python3 tests/acceptance/run_acceptance.py --build-fixtures
 
-Output: `tests/results/aceite.json` and `tests/RELATORIO.md`.
+Output: `tests/results/acceptance.json` and `tests/REPORT.md`.
 Exit code 0 only if no selected item failed.
 """
 from __future__ import annotations
@@ -33,13 +33,13 @@ import unicodedata
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CORE = ROOT / "core" / "target" / "release" / "scrapelens-core"
-FIX = ROOT / "fixtures" / "aceite"
+FIX = ROOT / "fixtures" / "acceptance"
 WORK = ROOT / "tests" / ".work"
 RESULTS = ROOT / "tests" / "results"
-REPORT = ROOT / "tests" / "RELATORIO.md"
+REPORT = ROOT / "tests" / "REPORT.md"
 
 # SHA-256 of the final bundle executable accepted in this round, documented in
-# `src-tauri/EMPACOTAMENTO.md`. A legitimate rebuild changes the hash: update both
+# `src-tauri/PACKAGING.md`. A legitimate rebuild changes the hash: update both
 # places together, so the suite never approves an undocumented artifact.
 APP_EXECUTABLE = pathlib.Path(os.environ.get("SL_APP_EXECUTABLE") or (
     pathlib.Path(__file__).resolve().parents[2] / "src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
@@ -190,8 +190,8 @@ def item_1(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     imported_har = import_to("import-har", folder / "headers-cookies.har", har_session)
     imported_nl = import_to("import-netlog", folder / "headers-cookies.netlog.json", nl_session)
     evidence += [
-        f"`scrapelens-core import-har fixtures/aceite/headers-cookies/headers-cookies.har --out {rel(har_session)}`",
-        f"`scrapelens-core import-netlog fixtures/aceite/headers-cookies/headers-cookies.netlog.json --out {rel(nl_session)}`",
+        f"`scrapelens-core import-har fixtures/acceptance/headers-cookies/headers-cookies.har --out {rel(har_session)}`",
+        f"`scrapelens-core import-netlog fixtures/acceptance/headers-cookies/headers-cookies.netlog.json --out {rel(nl_session)}`",
     ]
 
     for label, document in (("HAR", imported_har), ("NetLog h1", imported_nl)):
@@ -329,9 +329,9 @@ def item_2(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     exp.contains(truncated.stderr, "error:", "truncated NetLog: error on stderr")
 
     evidence += [
-        f"`scrapelens-core import-har fixtures/aceite/parsers/incomplete.har --out {rel(base / 'incomplete-har')}`",
-        f"`scrapelens-core import-netlog fixtures/aceite/parsers/unknown-events.netlog.json --out {rel(base / 'unknown')}`",
-        f"`scrapelens-core import-netlog fixtures/aceite/parsers/no-constants.netlog.json --out {rel(base / 'no-constants')}`",
+        f"`scrapelens-core import-har fixtures/acceptance/parsers/incomplete.har --out {rel(base / 'incomplete-har')}`",
+        f"`scrapelens-core import-netlog fixtures/acceptance/parsers/unknown-events.netlog.json --out {rel(base / 'unknown')}`",
+        f"`scrapelens-core import-netlog fixtures/acceptance/parsers/no-constants.netlog.json --out {rel(base / 'no-constants')}`",
         "invalid cases: return code ≠ 0 with `error:` on stderr (HAR without entries, truncated NetLog)",
     ]
     notes.append("HAR does not prove order/duplicates: imported entries stay `unverified`, as in the contract.")
@@ -371,8 +371,8 @@ def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     session = inspect(session_dir)
     exp.eq(sorted(session["session"].get("labels", [])), SYNTHETIC_LABELS, "imported session labeled as synthetic fixture")
     evidence.append(
-        "`scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl "
-        "fixtures/aceite/ambiguous/netlog-ambiguous.json --out "
+        "`scrapelens-core import-capture fixtures/acceptance/ambiguous/cdp-ambiguous.jsonl "
+        "fixtures/acceptance/ambiguous/netlog-ambiguous.json --out "
         f"{rel(session_dir)}`"
     )
 
@@ -412,7 +412,7 @@ def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                  "2 s ahead and both requests became `unmatched`. Real Chrome satisfies "
                  "`wallTime = timeTickOffset/1000 + timestamp` (measured deviation < 1 ms), an equation now used in the "
                  "fixture. It was a fixture defect, not a core defect; the original failure is preserved in "
-                 "`tests/results/aceite-criterio3-falha-lider.json` and `RELATORIO-criterio3-falha-lider.md`.")
+                 "`tests/results/acceptance-criterion3-leader-failure.json` and `REPORT-criterion3-leader-failure.md`.")
     notes.append("New assertions in this round: fixture clock consistency (CDP×NetLog) and calibrated unit "
                  "`milliseconds`. The ambiguity test stays strict: the two requests at 20 ms remain ambiguous, "
                  "each with the same 2 candidates and 2 `correlate.ambiguous` warnings.")
@@ -454,8 +454,8 @@ def item_4(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
            "HAR: final response body captured")
 
     evidence += [
-        f"`scrapelens-core import-netlog fixtures/aceite/redirects/redirect-chain.netlog.json --out {rel(base / 'netlog')}`",
-        f"`scrapelens-core import-har fixtures/aceite/redirects/redirect-chain.har --out {rel(base / 'har')}`",
+        f"`scrapelens-core import-netlog fixtures/acceptance/redirects/redirect-chain.netlog.json --out {rel(base / 'netlog')}`",
+        f"`scrapelens-core import-har fixtures/acceptance/redirects/redirect-chain.har --out {rel(base / 'har')}`",
     ]
     notes.append("The redirect is a link between attempts, not a separate request.")
     return exp.rows, evidence, notes
@@ -1219,14 +1219,14 @@ def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     run_cmd("live recon live_e2e.sh", ["sh", "scripts/live_e2e.sh"], ROOT / "recon")
 
     started = time.time()
-    full = subprocess.run([sys.executable, "-I", str(ROOT / "tests" / "aceite" / "mcp_flow.py")],
+    full = subprocess.run([sys.executable, "-I", str(ROOT / "tests" / "acceptance" / "mcp_flow.py")],
                           cwd=ROOT, capture_output=True, text=True, timeout=900)
     try:
         flow_json = json.loads(full.stdout)
     except json.JSONDecodeError:
         flow_json = {"ok": False, "checks": [{"name": "flow output is JSON", "ok": False,
                                              "detail": (full.stdout + full.stderr)[-300:]}]}
-    commands.append({"label": "stdio flow (independent client)", "cmd": "python3 -I tests/aceite/mcp_flow.py",
+    commands.append({"label": "stdio flow (independent client)", "cmd": "python3 -I tests/acceptance/mcp_flow.py",
                      "rc": full.returncode, "passed": flow_json.get("passed"), "failed": flow_json.get("failed"),
                      "seconds": round(time.time() - started, 2), "tail": full.stderr[-400:]})
     rows.append({"ok": full.returncode == 0 and bool(flow_json.get("ok")),
@@ -1243,7 +1243,7 @@ def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                          "failed": flow_json.get("failed"), "checks": flow_json.get("checks", [])}}
     (out_dir / "run.json").write_text(json.dumps(run_json, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     evidence.append(f"`{rel(out_dir / 'run.json')}` and `{rel(out_dir / 'flow.json')}` (command and flow outputs)")
-    notes.append("Flow client: `tests/aceite/mcp_flow.py`, JSON-RPC over stdio in Python, without the Rust harness; "
+    notes.append("Flow client: `tests/acceptance/mcp_flow.py`, JSON-RPC over stdio in Python, without the Rust harness; "
                  "local HTTP server on 127.0.0.1, real headless Chrome, nothing external.")
     return rows, evidence, notes
 
@@ -1373,13 +1373,13 @@ def render(report: dict) -> str:
     lines.append("")
     lines.append("```sh")
     lines.append("cd /Users/cesar/Projects/scrapelens")
-    lines.append("python3 tests/aceite/run_acceptance.py --build-fixtures")
-    lines.append("python3 tests/aceite/run_acceptance.py")
+    lines.append("python3 tests/acceptance/run_acceptance.py --build-fixtures")
+    lines.append("python3 tests/acceptance/run_acceptance.py")
     lines.append("tests/capture/run-cycle.sh")
-    lines.append("python3 tests/aceite/run_acceptance.py   # uses the last recorded capture")
+    lines.append("python3 tests/acceptance/run_acceptance.py   # uses the last recorded capture")
     lines.append("```")
     lines.append("")
-    lines.append("Everything offline: synthetic fixtures in `fixtures/aceite/`, `.invalid` domains; "
+    lines.append("Everything offline: synthetic fixtures in `fixtures/acceptance/`, `.invalid` domains; "
                  "criterion 9 uses Chrome with a dedicated temporary profile and local servers. "
                  "Nothing is published and no telemetry is generated.")
     lines.append("")
@@ -1392,13 +1392,13 @@ def main() -> int:
     parser.add_argument("--capture", help="real run directory of tests/capture/run-cycle.sh")
     parser.add_argument("--app-run", help="run.json of the cycle through the packaged app "
                                          "(default: tests/results/app-latest/run.json)")
-    parser.add_argument("--build-fixtures", action="store_true", help="regenerates fixtures/aceite before running")
+    parser.add_argument("--build-fixtures", action="store_true", help="regenerates fixtures/acceptance before running")
     parser.add_argument("--large-bodies", action="store_true",
                         help="also measures the worst case of 20 thousand attachments (slow, ~100 s)")
     args = parser.parse_args()
 
     if args.build_fixtures:
-        subprocess.run([sys.executable, str(ROOT / "tests" / "aceite" / "fixtures.py")], check=True)
+        subprocess.run([sys.executable, str(ROOT / "tests" / "acceptance" / "fixtures.py")], check=True)
 
     if not CORE.exists():
         print(f"core binary missing: {CORE}\nrun: cd core && cargo build --release", file=sys.stderr)
@@ -1438,7 +1438,7 @@ def main() -> int:
     }
     report["scope"] = evidence_scope(capture, app_run)
     RESULTS.mkdir(parents=True, exist_ok=True)
-    (RESULTS / "aceite.json").write_text(json.dumps(report, indent=1, ensure_ascii=False) + "\n",
+    (RESULTS / "acceptance.json").write_text(json.dumps(report, indent=1, ensure_ascii=False) + "\n",
                                          encoding="utf-8")
     REPORT.write_text(render(report), encoding="utf-8")
 

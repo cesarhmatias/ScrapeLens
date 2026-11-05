@@ -5,7 +5,7 @@ Rust core) for inspecting the real header sequence of HTTP sessions.
 
 ## Before you start
 
-- Read `docs/03-contratos.md` (session contract v1) and `docs/01-decisoes.md`.
+- Read `docs/03-contracts.md` (session contract v1) and `docs/01-decisions.md`.
 - The contract is the source of truth: headers are ordered arrays of pairs, with
   duplicates and pseudo-headers; provenance and verification are **per piece of information**.
 - No fictitious data presented as real: fixtures use
@@ -50,7 +50,7 @@ cd src-tauri && cargo test
 
 - UI in the browser only (no Tauri commands): `cd app && npm run dev`.
 - Type check: `cd app && npx tsc --noEmit`.
-- Acceptance suite: `python3 tests/aceite/run_acceptance.py` (the product's
+- Acceptance suite: `python3 tests/acceptance/run_acceptance.py` (the product's
   tests do not require Python; the acceptance harness is a development
   tool).
 - Real test capture (external Chrome against the local testserver):
@@ -83,13 +83,13 @@ development/test hooks; they are not part of the interface.
 | `experiments/` | fidelity matrix evidence (history) |
 | `docs/` | decisions, contracts, matrix and acceptance |
 
-Respect the ownership described in `docs/04-propriedade.md`: changes in areas
+Respect the ownership described in `docs/04-ownership.md`: changes in areas
 owned by others must be agreed on the project channel.
 
 ## Contribution style
 
 - **Conventional Commits** at every step (`feat`, `fix`, `docs`, `test`, `chore`,
-  `perf`, with scope: `core`, `app`, `tauri`, `sanitize`, `aceite`…).
+  `perf`, with scope: `core`, `app`, `tauri`, `sanitize`, `acceptance`…).
 - Changed behavior? Update the test and the documentation in the same PR/commit.
 - Run `cargo fmt`, `cargo clippy --offline --all-targets` and the tests of the
   touched crate before submitting.

@@ -2,7 +2,7 @@
 """Round 7, Acceptance 4: INJECTION. Hostile synthetic session -> priming script -> proof that nothing beyond
 HTTP requests to 127.0.0.1 is executed.
 
-  python3 tests/aceite/check_priming_injection.py [--core BIN] [--python PY_COM_REQUESTS]
+  python3 tests/acceptance/check_priming_injection.py [--core BIN] [--python PY_COM_REQUESTS]
 
 A hostile synthetic HAR (names and values with newline, triple quotes, trailing `\\`, bidi, NUL and
 `__import__('os').system(...)` in query, headers, form fields, HTML controls and extracted values) is imported, the
@@ -37,7 +37,7 @@ import check_bodies_search as cb  # noqa: E402
 import check_priming_sim as ps  # noqa: E402
 
 ROOT = cb.ROOT
-OUT = ROOT / "tests" / "results" / "priming" / "aceite4-injecao.json"
+OUT = ROOT / "tests" / "results" / "priming" / "acceptance4-injection.json"
 APP = "https://wsdetran.pb.gov.br/detran-portal-servicos"
 FAILS: list[str] = []
 MARK = "PWNED_MARKER_7f3a"

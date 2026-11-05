@@ -63,7 +63,7 @@ completed delivery, with no push/release/publication.
 
 Completed. arm64 ad-hoc bundle, SHA-256 of the executable
 `9c04b98b30b3d6451ee53fa5eee589aaba0cd4e5d3185894e39facb0335bdbe5`
-(source and signature in `src-tauri/EMPACOTAMENTO.md`).
+(source and signature in `src-tauri/PACKAGING.md`).
 
 - Implementation (App): `eaf5471`…`2c6765e`; no changes to the core.
 - Independent validation (Tests, `a83d985`/`ffc7fc1`): 14/16 on the first
@@ -79,8 +79,8 @@ Completed. arm64 ad-hoc bundle, SHA-256 of the executable
   (`adc56ab`): open session, save cURL and Python (0600, identical to the preview),
   cancel without writing, copy identical to the preview, sanitize into a new folder
   0700/0600 with no raw events or markers, reopen the sanitized one with a redacted URL,
-  origin byte-identical. Report: `tests/results/exportacao/RELATORIO.md`;
-  screenshot `docs/screenshots/24-exportacao-sanitizada-aberta.png`.
+  origin byte-identical. Report: `tests/results/export/REPORT.md`;
+  screenshot `docs/screenshots/24-export-sanitized-open.png`.
 
 Open items and limitations: directory races not tested; sanitization remains
 heuristic; export does not replicate TLS/JA3/JA4/HPACK; sessions labeled

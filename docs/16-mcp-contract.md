@@ -1,7 +1,7 @@
 # ScrapeLens MCP contract (round 11, wave 1)
 
 Owner: Core and importers. Code: `mcp/` (crate `scrapelens-mcp`, binary
-`scrapelens-mcp`). Basis: `docs/15a-mercado-mcp.md` (tools section). This
+`scrapelens-mcp`). Basis: `docs/15a-market-mcp.md` (tools section). This
 document comes before the code; contract changes go through the leader.
 
 ## 1. What it is
@@ -380,9 +380,9 @@ JSON: it returns only path and counts.
 ## 6. Required tests
 
 - Unit tests per tool, against the existing fixtures
-  (`fixtures/aceite/*`, HARs from `fixtures/`, captures from `experiments/results/`),
+  (`fixtures/acceptance/*`, HARs from `fixtures/`, captures from `experiments/results/`),
   without editing them.
-- Masking: secrets from `fixtures/aceite/sanitize` do not appear in any
+- Masking: secrets from `fixtures/acceptance/sanitize` do not appear in any
   output without `reveal`; `reveal` refused without `--allow-reveal`.
 - Path limits: `name` with `..`/`/`, `session_id` with a path, write outside
   the directory.
@@ -398,7 +398,7 @@ JSON: it returns only path and counts.
 ## 6b. Browser and site profile (round 11, wave 2)
 
 Five tools connect `scrapelens-capture` (`capture/`) and `scrapelens-recon`
-(`recon/`) to the server, with the schemas of `docs/16b-mcp-navegador.md` (§3, §4,
+(`recon/`) to the server, with the schemas of `docs/16b-mcp-browser.md` (§3, §4,
 §5). Dependencies by path; the server reimplements nothing of the capture.
 
 - `start_capture {allowed_hosts[], third_party_hosts?[], start_url?,

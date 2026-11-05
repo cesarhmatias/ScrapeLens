@@ -105,7 +105,7 @@ const backToSession = async () => { await page.getByRole("button", { name: /Sess
 await page.goto(url, { waitUntil: "networkidle" });
 await openSession(d1);
 results.cookieWarning = await page.locator(".warn-strip").allInnerTexts();
-await shot("20-aviso-har-sem-cookies.png");
+await shot("20-warning-har-no-cookies.png");
 
 // 1º cmd_consultar_placa (har-0019): STAMP por controle HTML, delta (trechos do XML), SESSIONID
 const first = core("search", d1, "cmd_consultar_placa").matches[0].requestId;
@@ -118,7 +118,7 @@ await page.locator("tbody tr:not(.spacer)").first().click();
 await page.waitForSelector(".match-box");
 results.matchBox = await page.locator(".match-box").innerText();
 results.htmlControlChip = await page.locator(".match-box .chip", { hasText: "controle HTML" }).count();
-await shot("24-busca-controle-html.png");
+await shot("24-search-control-html.png");
 await backToSession();
 await page.getByLabel("Buscar requisições").fill("");
 await page.waitForTimeout(400);
@@ -129,18 +129,18 @@ await page.waitForSelector(".origin-table");
 await page.waitForSelector(".chain-list");
 results.warnings = await page.locator("[role=alert]").allInnerTexts();
 results.originSummary = (await page.locator(".origin-table").innerText()).split("\n").filter((l) => /STAMP|controle|possível|origem observada/.test(l)).slice(0, 8);
-await shot("18-origem-controle-html.png");
+await shot("18-origin-control-html.png");
 const stampRow = page.locator(".origin-table tbody tr", { hasText: "STAMP" }).last();
 await stampRow.scrollIntoViewIfNeeded();
 results.stampRow = await stampRow.innerText();
-await page.screenshot({ path: path.join(outDir, "18b-origem-stamp-controle-html.png") });
+await page.screenshot({ path: path.join(outDir, "18b-origin-stamp-control-html.png") });
 await page.evaluate(() => document.querySelector(".chain-list")?.scrollIntoView({ block: "start" }));
 results.pagesGroup = await page.getByText(/Páginas de contexto/).count();
 results.protectionGroup = await page.getByText(/Proteção \(não é lógica/).count();
 results.auxiliaryGroup = await page.getByText(/Frames auxiliares/).count();
 results.auxiliaryInjectedByHand = injectedAux;
 await page.locator("summary", { hasText: "Frames auxiliares" }).click();
-await shot("19-cadeia-paginas-protecao.png");
+await shot("19-chain-pages-protection.png");
 
 // Composite (campo curto com componentes)
 await backToSession();
@@ -149,7 +149,7 @@ await page.locator("tbody tr:not(.spacer)").nth(2).click();
 await page.getByRole("tab", { name: /Origem/ }).click();
 await page.waitForSelector(".origin-table");
 results.compositeRows = (await page.locator(".origin-table").innerText()).split("\n").filter((l) => /composto|token|↳/.test(l)).slice(0, 6);
-await shot("21-origem-composite.png");
+await shot("21-origin-composite.png");
 
 // Compare 1 × 2 rodadas
 await backToSession();
@@ -162,7 +162,7 @@ results.roundHeaders = await page.locator(".cmp-round").allInnerTexts();
 results.unpaired = await page.getByText(/Rodadas sem par/).count();
 results.groups = await page.locator(".cmp-group > summary").allInnerTexts();
 results.ambiguities = (await page.getByText(/Ambiguidades no alinhamento/).allInnerTexts());
-await shot("22-compare-rodadas.png");
+await shot("22-compare-rounds.png");
 // incluir tudo + faixa
 await page.getByLabel(/incluir tudo/).check();
 await page.getByLabel("Faixa A").fill("1:12");
@@ -170,7 +170,7 @@ await page.getByRole("button", { name: "Recomparar" }).click();
 await page.waitForTimeout(1500);
 results.afterOptions = await page.locator(".body-panel .block-meta").first().innerText();
 results.groupsAfter = await page.locator(".cmp-group > summary").count();
-await shot("22b-compare-incluir-tudo-faixa.png");
+await shot("22b-compare-include-all-range.png");
 
 // Sanitização
 await backToSession();
@@ -178,7 +178,7 @@ await page.getByRole("button", { name: /Sanitizar/ }).click();
 await page.waitForSelector(".redaction-list");
 results.redactions = await page.locator(".redaction-list").innerText();
 results.businessWarning = await page.getByText(/Campo de negócio sem valor/).count();
-await shot("23-sanitizar-previa.png");
+await shot("23-sanitize-preview.png");
 
 results.pageErrors = errors.filter((e) => !e.includes("unregisterListener"));
 fs.writeFileSync(path.join(outDir, "ui-harness-real-result.json"), JSON.stringify(results, null, 2));

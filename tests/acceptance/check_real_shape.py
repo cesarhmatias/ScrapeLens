@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round 6 (docs/10-fidelidade-caso-real.md, Acceptance 1–4): fixtures with the REAL DETRAN SHAPE.
+"""Round 6 (docs/10-fidelity-case-real.md, Acceptance 1–4): fixtures with the REAL DETRAN SHAPE.
 
 Imports fixtures/detran-pb-real-shape (DevTools HAR without cookies; Connector in HTML with
 <textarea name=XML>/<input name=STAMP>) with `--label synthetic-fixture` and checks the manifest:
@@ -11,7 +11,7 @@ Imports fixtures/detran-pb-real-shape (DevTools HAR without cookies; Connector i
   + GET without postData = empty/"not applicable" (L7).
 Fails until the Core delivers L1–L8; the expectations are not relaxed.
 
-  python3 tests/aceite/check_real_shape.py [--core BIN]
+  python3 tests/acceptance/check_real_shape.py [--core BIN]
 """
 from __future__ import annotations
 

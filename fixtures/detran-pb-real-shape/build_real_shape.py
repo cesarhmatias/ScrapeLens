@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fixtures with the REAL SHAPE of the DETRAN-PB case (docs/10-fidelidade-caso-real.md). 100% fictitious values.
+"""Fixtures with the REAL SHAPE of the DETRAN-PB case (docs/10-fidelity-case-real.md). 100% fictitious values.
 
 The shape was taken from the STRUCTURE of the real HARs (no value or byte copied):
   * Connector responses = ~10 KB HTML with a fictitious script before, then

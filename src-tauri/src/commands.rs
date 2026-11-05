@@ -1,4 +1,4 @@
-//! Commands for the UI ↔ shell bridge. Contract v1: docs/03-contratos.md.
+//! Commands for the UI ↔ shell bridge. Contract v1: docs/03-contracts.md.
 //!
 //! Integration note: `start_session`, `import_har` and `import_netlog` call
 //! `scrapelens-core` (a crate dependency, no sidecar) and operate on real data. The
@@ -2243,7 +2243,7 @@ mod tests {
     }
 
     fn sim_trace(name: &str) -> String {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("evidence/busca-corpos").join(name).display().to_string()
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("evidence/bodies-search").join(name).display().to_string()
     }
 
     #[test]
@@ -2282,7 +2282,7 @@ mod tests {
         );
         let bad = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-403.json"), None).unwrap();
         assert!(bad.validation.summary.starts_with("diverges at step 3"), "{}", bad.validation.summary);
-        let down = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-incompleta.json"), None).unwrap();
+        let down = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-incomplete.json"), None).unwrap();
         assert_eq!(serde_json::to_value(down.validation.verdict).unwrap(), "incomplete");
         assert!(down.validation.summary.starts_with("incomplete: stopped at step 1"), "{}", down.validation.summary);
         assert_ne!(ok.trace_dir, bad.trace_dir);

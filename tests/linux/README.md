@@ -34,7 +34,7 @@ the script's output folder has `host:` and `execution type:` in its first lines.
    (XTEST) on the virtual screen `:99`, with the main window focused by `xdotool windowactivate --sync`:
    `ctrl+shift+r` (Start session) and `ctrl+period` (Stop). Focus must be re-activated before each
    shortcut, because when the capture starts the focus moves to the Chrome window. The buttons (1044,178) and (1138,178)
-   are not clicked in any step; if the key does not reach the WebView, the script retries with a single neutral click at (700,900) — an empty area, far from any control — only to give focus, and records the case in `atalhos.txt`.
+   are not clicked in any step; if the key does not reach the WebView, the script retries with a single neutral click at (700,900) — an empty area, far from any control — only to give focus, and records the case in `shortcuts.txt`.
    During capture: `ss -ltnp` and confirmation that no LISTEN socket belongs to the capture Chrome.
 5. Checks the session on disk (`~/.local/share/app.scrapelens.desktop/sessions`).
 6. Imports with `--import-har` and `--import-netlog` through the test CLI.
@@ -48,11 +48,11 @@ Output: `~/sl-acceptance-<arch>-<timestamp>/summary.txt` on the machine; `FAILUR
 ## Known limits
 - The script sends keys via `xdotool` on the machine's virtual screen (nothing on macOS). Shortcuts only work
   with focus on the WebView; that is why each shortcut is preceded by `windowactivate --sync`. The neutral focus click
-  at (700,900) is the last resort and is recorded in `atalhos.txt`.
+  at (700,900) is the last resort and is recorded in `shortcuts.txt`.
 - The app window only appears with a usable area ≥ 100 px a few seconds after launch; the wait is for the
   real window (not the 10x10 `InputOnly` helper), up to 60 s.
 - X reports the app's client window as 10x10 (the openbox frame has no geometry of its own),
   so the screenshots are of the whole virtual screen (1600x1000), which contains only openbox and the app windows.
 - The capture uses CDP over a pipe (no TCP port), so `navigator.webdriver` is read by the probe page
   and not by CDP in the browser.
-- This README does not record results: they go to `tests/RELATORIO-FINAL.md` when the suite runs.
+- This README does not record results: they go to `tests/REPORT-FINAL.md` when the suite runs.

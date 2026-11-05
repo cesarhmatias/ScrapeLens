@@ -6,7 +6,7 @@
   - `capture/src/{allowlist,browser}.rs`, plus `capture/src/{lib,chrome}.rs` when the flow goes through them;
   - `recon/`;
   - the sanitizer in `core/src/export/sanitize.rs`, commits `85e7c13` and `e37d42d`.
-- **Contracts:** `docs/16-mcp-contrato.md` and `docs/16b-mcp-navegador.md`.
+- **Contracts:** `docs/16-mcp-contract.md` and `docs/16b-mcp-browser.md`.
 - **Method:** code reading and executed PoCs.
   - The PoCs run through the real stdio server (`fake_server`), going through `reply()` and `scrub_output`.
   - To run some tests, they were temporarily copied into the clone and deleted afterwards. The clone's `git status` ended clean.

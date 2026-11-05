@@ -59,9 +59,9 @@ const INPUTS: &[(&str, &str)] = &[
         "experiments/results/multi-target-smoke/with-wait",
         "chrome-netlog.json",
     ),
-    ("fixtures/aceite/sanitize/session", "netlog.json"),
+    ("fixtures/acceptance/sanitize/session", "netlog.json"),
     (
-        "src-tauri/evidence/busca-corpos/multi-alvo-session",
+        "src-tauri/evidence/bodies-search/multi-target-session",
         "netlog.json",
     ),
     (
@@ -226,12 +226,12 @@ const VERSIONED: &[(&str, u64, usize)] = &[
     ("experiments/results/h3-plain", 0xfcc91782a91e955c, 149932),
     ("experiments/results/h3-set3", 0x8d827d4e71deeada, 165964),
     (
-        "fixtures/aceite/sanitize/session",
+        "fixtures/acceptance/sanitize/session",
         0x4969b4ef50ddbb95,
         15159,
     ),
     (
-        "src-tauri/evidence/busca-corpos/multi-alvo-session",
+        "src-tauri/evidence/bodies-search/multi-target-session",
         0x8e251f85855a93ff,
         1619435,
     ),

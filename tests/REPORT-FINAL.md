@@ -23,7 +23,7 @@ the Core is still changing the initiator in parallel — any divergence in the i
 | check_real_shape | OK |
 | check_priming_sim | OK (ok 2×, error, nocontrols, 403) |
 | check_priming_injection | OK |
-| tests/exportacao (cargo test) | 19 passed, 0 failures |
+| tests/export (cargo test) | 19 passed, 0 failures |
 | cargo test core | 250 passed, 0 failures (1 ignored) |
 | cargo test src-tauri | 42 passed, 0 failures (6 ignored) |
 | check_real_detran (H1, H2, H3) | OK: STAMP and delta 100%, 0 plates after sanitize |
@@ -52,7 +52,7 @@ refused (rc 1); after `cargo build --release` the whole suite was rerun and is t
 | check_priming_injection | OK |
 | check_natural_adapter (detran-sim `strict`) | OK: (a) control without adapter fails; (b) with adapter 2 complete sessions; (c) round-trip 0 divergences |
 | prove_strict (adapters/natural-ajax/scripts) | OK, `fails: []` |
-| tests/exportacao | 19 passed, 0 failures |
+| tests/export | 19 passed, 0 failures |
 | cargo test core / src-tauri / natural-ajax | 259 / 45 / 28 passed, 0 failures |
 | check_real_detran (H1, H2, H3) | OK |
 | check_real_priming without `--wrapper` | OK |
@@ -66,12 +66,12 @@ Result: **all green, 0 failures.** Criterion 9 of run_acceptance uses the live c
 - **Date:** 2026-10-31
 - **Build:** `core`, `testserver` and `adapters/natural-ajax` rebuilt in release before the suite.
 - **Accepted bundle:** `7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c` (16.582.144 bytes, arm64, ad-hoc, single binary),
-  checked by `shasum -a 256` and by the path of the running process; `EXPECTED_APP_SHA256` in `tests/aceite/run_acceptance.py` points to the same hash.
+  checked by `shasum -a 256` and by the path of the running process; `EXPECTED_APP_SHA256` in `tests/acceptance/run_acceptance.py` points to the same hash.
 - **Data:** synthetic; real HARs (H1–H3) only as aggregates.
 
 ### Multi-target acceptance — 5 rounds with `--self-test`
 
-`python3 tests/aceite/check_multi_target.py --port 896N --self-test` (real product capture, Chrome headless, `testserver /multi/`).
+`python3 tests/acceptance/check_multi_target.py --port 896N --self-test` (real product capture, Chrome headless, `testserver /multi/`).
 
 | Round | NetLog | CDP | Requests | SW by `targetId` | Page↔SW link | `attachFailed` | `target_setup_timeout`/`setup_error` warnings | Self-test | Failures |
 |---|---|---|---|---|---|---|---|---|---|
@@ -93,7 +93,7 @@ Result: **all green, 0 failures.** Criterion 9 of run_acceptance uses the live c
 - **Round 1 discarded once:** an orphan `testserver` on port 8961 (from a run I had interrupted) answered in place of the round's server ("POST did not reach the server");
   it was a harness cause, not a capture one. Server killed, round redone on another port: OK.
 
-Output per round in `tests/results/multi-target-rodada10-final.json`; last capture in `tests/results/multi-target.json`.
+Output per round in `tests/results/multi-target-round10-final.json`; last capture in `tests/results/multi-target.json`.
 
 ### Full suite (HEAD 0d98615)
 
@@ -103,7 +103,7 @@ Output per round in `tests/results/multi-target-rodada10-final.json`; last captu
 | check_bodies_search / check_chain_compare / check_real_shape | OK (5 cases / OK / OK) |
 | check_priming_sim / check_priming_injection | OK / OK |
 | check_natural_adapter (sim `strict`) / check_timeline_validacao / prove_strict | OK / OK / OK |
-| tests/exportacao | 19 passed, 0 failures |
+| tests/export | 19 passed, 0 failures |
 | cargo test core / src-tauri / natural-ajax | 316 / 52 / 32 passed, 0 failures (1 / 8 / 0 ignored) |
 | check_real_detran (H1–H3) | OK |
 | check_real_priming without / with `--wrapper` (H1–H3) | OK / OK |
@@ -139,29 +139,29 @@ nothing was sent or changed beyond the navigation/scrolling. Temporary synthetic
 | `cargo test` recon | 0 | 23 passed, 0 failed |
 | `cargo test --test e2e_live -- --ignored` (mcp, real Chrome) | 0 | 1 passed |
 | `recon/scripts/live_e2e.sh` | 0 | 4 passed |
-| `tests/aceite/mcp_flow.py` (independent stdio client) | 0 | 28 checks, 0 failed |
+| `tests/acceptance/mcp_flow.py` (independent stdio client) | 0 | 28 checks, 0 failed |
 
 - **Flow:** start_capture (elicitation accepted) → navigate → stop_capture (complete NetLog) → list_requests → get_request (header order = order received by the local server = raw NetLog block) → trace_value of the masked cookie → site_profile.
 - **Negative cases:** a refused elicitation does not create the capture Chrome; navigate outside the allowlist refused with `url_not_allowed` and without reaching the server; `reveal=true` without `--allow-reveal` refused; no cookie/token value in the whole MCP output without reveal.
 - **Finding from the previous round 11:** `get_request` leaked the query token in `request.startLine` without reveal; fixed in core `e37d42d` and in mcp `6cca5aa`, reproduced and verified again here.
 - **Evidence:** `tests/results/mcp/run.json` (commands) and `tests/results/mcp/flow.json` (flow checks, without the secret value).
 
-- **Bundle eb66afa (CDP over pipe):** `ScrapeLens.app` SHA `6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9` (local signature), `EXPECTED_APP_SHA256` and `app-latest` updated; real cycle only by AX and keyboard (`capture-1793485447342`: 11 req, complete; HAR `-10` 24 req complete; NetLog `-10` 32 req partial); `lsof` during the capture: the capture's Chrome has no TCP socket or LISTEN; `run_acceptance` 11/11 with the three live capture/ tests (1 test each) and `e2e_live` 3/3; `cargo test` mcp 51/0. Evidence: `tests/results/app-latest/lsof-captura-r11.txt`.
+- **Bundle eb66afa (CDP over pipe):** `ScrapeLens.app` SHA `6c0092c3c73c779c2ded59d324c7cc739b462cf308c46069f3f06e47ec4759e9` (local signature), `EXPECTED_APP_SHA256` and `app-latest` updated; real cycle only by AX and keyboard (`capture-1793485447342`: 11 req, complete; HAR `-10` 24 req complete; NetLog `-10` 32 req partial); `lsof` during the capture: the capture's Chrome has no TCP socket or LISTEN; `run_acceptance` 11/11 with the three live capture/ tests (1 test each) and `e2e_live` 3/3; `cargo test` mcp 51/0. Evidence: `tests/results/app-latest/lsof-capture-r11.txt`.
 
 - **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — PARTIAL:** `EXPECTED_APP_SHA256` updated to `4636a3cf…043860`; `app-latest` is still from bundle `6c0092c3` and item 9 fails until the real cycle is redone. Blocker: the Mac has no active user (`UserIsActive 0`), the desktop comes up black, and the ScrapeLens window (pid 9430 after restart) stays without resolved AX (`ax_unresolved`); `bring_to_front` did not verify focus (the front is the OpenBot window), so there is no way to act without clicking over the user's windows. Pending: Start/Stop cycle + HAR/NetLog in bundle 4636a3cf and `lsof` during the capture. Done: `cargo build --examples` and `cargo test` in mcp: 58/0; `run_acceptance` 10/11 items OK, item 11 OK (39 assertions) with the five live capture/ tests (1 test each, `--test-threads=1`), e2e_live 3/0, live_e2e.sh 4/0, stdio flow 28/0.
 
-- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — CLOSED:** item 9 redone. Real cycle by keyboard (the AX of the button was refused with `element_outside_target_window` even with the window verified in focus; Tab to "Start session" (legacy: "Iniciar sessão") / "Stop" (legacy: "Encerrar") and Return, then HAR and NetLog through the Open window): `capture-1793491743660` (11 req, complete, cdp+netlog); HAR `-11` 24 req complete; NetLog `-11` 32 req partial. `lsof` during the capture (Chrome pid 25252): no LISTEN or TCP socket. `run_acceptance` 11/11 (item 11 with the five live capture/ tests, 1 thread, and `e2e_live`). Evidence: `tests/results/app-latest/lsof-captura-r11b.txt`.
+- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — CLOSED:** item 9 redone. Real cycle by keyboard (the AX of the button was refused with `element_outside_target_window` even with the window verified in focus; Tab to "Start session" (legacy: "Iniciar sessão") / "Stop" (legacy: "Encerrar") and Return, then HAR and NetLog through the Open window): `capture-1793491743660` (11 req, complete, cdp+netlog); HAR `-11` 24 req complete; NetLog `-11` 32 req partial. `lsof` during the capture (Chrome pid 25252): no LISTEN or TCP socket. `run_acceptance` 11/11 (item 11 with the five live capture/ tests, 1 thread, and `e2e_live`). Evidence: `tests/results/app-latest/lsof-capture-r11b.txt`.
 
 - **Round 11 — bundle f3039e58 (HEAD fc5ca18, commit 88c69f7) — PARTIAL 10/11:** app opened with `SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page` (pid 70761). Capture `capture-1793562925684` (11 req, complete, cdp+netlog; testserver `app-20261101c`); HAR `har-3dbc391c02a985c5-12` (24 req, complete) and NetLog `netlog-1704043c442dcbd1-12` (32 req, partial), imported through the UI from `har-derived.json` and `h1h2h3.chrome-netlog.json`. `run_acceptance` 10/10 on items 1–8, 10 and 11; item 9 stays red only for lack of the cycle screenshots (`screenshot-app-live.png` and `screenshot-app-imports.png` must be from this bundle). Folder `~/Desktop/sl-import-tmp` deleted; testserver, fake_server and the capture Chrome stopped; pid 8911 absent.
 
-- **Round 11 — CLOSED with caveat (10/11):** item 9 lacks the screenshots of bundle f3039e58; the functional evidence is `capture-1793562925684` (11 req, complete), the lsof with no LISTEN, the HAR `-12` (24 req) and the NetLog `-12` (32 req), imported by the user on 02/11; the screenshots are left for round 12, with keyboard shortcuts in the app. `run_acceptance` was not loosened: item 9 stays red in `aceite.json`.
+- **Round 11 — CLOSED with caveat (10/11):** item 9 lacks the screenshots of bundle f3039e58; the functional evidence is `capture-1793562925684` (11 req, complete), the lsof with no LISTEN, the HAR `-12` (24 req) and the NetLog `-12` (32 req), imported by the user on 02/11; the screenshots are left for round 12, with keyboard shortcuts in the app. `run_acceptance` was not loosened: item 9 stays red in `acceptance.json`.
 
 - **Round 12 — bundle 2691f152 (HEAD ce68eb9, commit e7cfc38) — CLOSED (11/11):** app opened with `SCRAPELENS_TEST_MODE=1` and `SCRAPELENS_CAPTURE_URL` pointing to the testserver `app-20261102r12`. Live capture by `invoke_menu` (Capture > Start session / Stop (legacy: "Captura > Iniciar sessão / Encerrar")), `capture-1793651039927` (11 req, complete), no LISTEN from the capture's Chrome (lsof). HAR `har-3dbc391c02a985c5-13` (24 req, complete) and NetLog `netlog-1704043c442dcbd1-13` (32 req, partial), imported by the test CLI from `tests/.work/r12-import`. Screenshot `screenshot-app-imports.png` only of the ScrapeLens window; `screenshot-app-live.png` is the same screenshot, taken after the capture (see the note in `run.json`). `run_acceptance` 11/11 with `EXPECTED_APP_SHA256` = `2691f152…`. Orphans: testserver stopped; app stopped; pid 8911 absent.
 
 ## Round 13 — large session memory (P1–P7) and D7
 
 - **Date:** 2026-11-02 (wave 1) and 2026-11-03 (wave 2/D7). **Machine:** macOS arm64, 64 GiB, Chrome 156, `--release` binaries.
-- **Load:** synthetic through real capture on loopback (`capture/examples/capture_big.rs`), 2.002 / 5.002 / 20.002 requests; `session.json` from 1.133 MiB to 20 thousand. RSS peak measured per stage in `experiments/memoria-sessao` (one stage per process).
+- **Load:** synthetic through real capture on loopback (`capture/examples/capture_big.rs`), 2.002 / 5.002 / 20.002 requests; `session.json` from 1.133 MiB to 20 thousand. RSS peak measured per stage in `experiments/session-memory` (one stage per process).
 - **Where the peak was (`docs/18` §3, 20.002 req.):** opening in the App (`app-open-ipc`) 7.101 MiB; `inspect` 9.305 MiB; 1st masked MCP call 5.654 MiB; `capture-write` 9.189 MiB and 263 s; `capture-full` 6.993 MiB and 249 s; `session.json` 1.133 MiB.
 
 **Core/MCP fixes (measured, `docs/18` §7, same loads of 20.002 requests):**
@@ -176,7 +176,7 @@ nothing was sent or changed beyond the navigation/scrolling. Temporary synthetic
 
 P4 (NetLog DOM), P5 and P8 were not done in the core; P5 was done in the App. What remains of memory in `stop_capture` is the NetLog DOM (P4).
 
-**App — P5, paginated contract (`6b6bdff`, `docs/19-contrato-app.md`):** the backend reads a typed `SessionV1` and the front receives the header, pages of 2.000 summaries and the detail on demand (`open_session`, `list_requests`, `get_request`). Measured with `src-tauri/examples/mem_open.rs` on `/private/tmp/big20k` (`session.json` 1.19 GB): **7.108 → 1.161 MiB (−84 %)**; to the front go 1.4 KB of header + 5.4 MB of all pages + 32 KB of one detail (before, 681 MB). Bundles: wave 1 `52cd14fd` (HEAD `f81ea80`); wave 2 `78155379` (HEAD `291fae4`; on-demand list `6f11440`, network open by default `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), with **2** `list_requests` calls until the first screen against 33 in wave 1 (`src-tauri/EMPACOTAMENTO.md`).
+**App — P5, paginated contract (`6b6bdff`, `docs/19-contract-app.md`):** the backend reads a typed `SessionV1` and the front receives the header, pages of 2.000 summaries and the detail on demand (`open_session`, `list_requests`, `get_request`). Measured with `src-tauri/examples/mem_open.rs` on `/private/tmp/big20k` (`session.json` 1.19 GB): **7.108 → 1.161 MiB (−84 %)**; to the front go 1.4 KB of header + 5.4 MB of all pages + 32 KB of one detail (before, 681 MB). Bundles: wave 1 `52cd14fd` (HEAD `f81ea80`); wave 2 `78155379` (HEAD `291fae4`; on-demand list `6f11440`, network open by default `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), with **2** `list_requests` calls until the first screen against 33 in wave 1 (`src-tauri/PACKAGING.md`).
 
 **Review A9 (core and App):** `3fe7efc` (A9-B1: in a path, `,` or `|` followed by `/` ends the value; list without space preserves the next item; path fuzz with 3 seeds without leak), `0d9d935` (A9-B2: `=` entities with any number of escape layers — `&amp;`, `&#38;`, `&#x26;` — failing closed above 256; corpus +8) and `727e657` (A9-B3..B8 in the App and A8-B7 ⌘⇧R).
 
@@ -205,13 +205,13 @@ P4 (NetLog DOM), P5 and P8 were not done in the core; P5 was done in the App. Wh
 | `navigator.webdriver` | `false` | `false` |
 | Failures | **0** | **0** |
 
-Keyboard only = `xdotool windowactivate --sync` + `xdotool key --clearmodifiers` on the Xvfb screen `:99`, with no click on a button and no focus click (`atalhos.txt`: 0 and 0). Focus is reactivated before each shortcut because Chrome takes focus when it starts. Screenshots of the virtual screen (1600×1000), which contain only openbox, the test Chrome and the ScrapeLens window.
+Keyboard only = `xdotool windowactivate --sync` + `xdotool key --clearmodifiers` on the Xvfb screen `:99`, with no click on a button and no focus click (`shortcuts.txt`: 0 and 0). Focus is reactivated before each shortcut because Chrome takes focus when it starts. Screenshots of the virtual screen (1600×1000), which contain only openbox, the test Chrome and the ScrapeLens window.
 
 First run (`1ee0783`, artifacts `25248f3`, source `fa89c25`) also closed with 0 failures, but by clicking the buttons: the shortcuts did not fire yet. After `98ab629`, the review `a837465` redid the run with the shortcuts and is the one listed above.
 
 **Recorded limitations:** `Ctrl+.` only stops with focus on the ScrapeLens window (a global shortcut needs a GTK-level path); GTK menu accelerators still do not reach the WebView; on arm64 the snap Chromium was accepted by the capture (no apt/PPA needed); `dpkg -i` alone leaves the package broken until `apt-get install <deb>` resolves `libwebkit2gtk-4.1-0`.
 
-Evidence: `tests/results/linux/README.md`, `tests/results/linux/{amd64,arm64}/` (summary, shortcuts, counts, `ss-durante-captura.txt`, screenshots), `tests/linux/acceptance.sh`, commit `a837465`. The VMs were preserved.
+Evidence: `tests/results/linux/README.md`, `tests/results/linux/{amd64,arm64}/` (summary, shortcuts, counts, `ss-durante-capture.txt`, screenshots), `tests/linux/acceptance.sh`, commit `a837465`. The VMs were preserved.
 
 ## Round 15 — closing the five low findings of the R13+R14 review
 
@@ -263,8 +263,8 @@ Builds: Rust **56 passed, 0 failures, 8 ignored** on the three platforms; `clipp
 - **Date:** 2026-10-29
 - **Build:** `core` and `adapters/natural-ajax` (natural-core) rebuilt in release before the suite.
 - **Accepted bundle:** `d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f`
-  (16.384.352 bytes, arm64, ad-hoc), checked by `shasum -a 256` on the executable of the `.app`; `tests/aceite/run_acceptance.py`
-  (`EXPECTED_APP_SHA256`) and `src-tauri/EMPACOTAMENTO.md` point to the same hash.
+  (16.384.352 bytes, arm64, ad-hoc), checked by `shasum -a 256` on the executable of the `.app`; `tests/acceptance/run_acceptance.py`
+  (`EXPECTED_APP_SHA256`) and `src-tauri/PACKAGING.md` point to the same hash.
 - **Data:** synthetic; real HARs (H1–H3) only as aggregates.
 
 | Suite | Result |
@@ -276,7 +276,7 @@ Builds: Rust **56 passed, 0 failures, 8 ignored** on the three platforms; `clipp
 | check_natural_adapter (sim `strict`) | OK |
 | check_timeline_validacao | OK, with `plan.version`, `parameters` leak and unverified plan (below) |
 | prove_strict (adapters/natural-ajax) | OK, `fails: []` |
-| tests/exportacao | 19 passed, 0 failures |
+| tests/export | 19 passed, 0 failures |
 | cargo test core / src-tauri / natural-ajax | 298 / 48 / 32 passed, 0 failures (1 / 8 / 0 ignored) |
 | check_real_detran (H1–H3) | OK |
 | check_real_priming without / with `--wrapper` (H1–H3) | OK / OK |
@@ -331,7 +331,7 @@ round; the `live-final` capture of 2026-10-29 remains as evidence of the CDP/Net
 | check_natural_adapter (sim `strict`) | OK |
 | check_timeline_validacao | OK: timeline with `event @ page` (incl. `init`) and protection collapsed; validate equivalent/diverges in the 4 sim modes; trace 0600 + sanitize; reviewer cases V1–V18 with the expected reason |
 | prove_strict (adapters/natural-ajax) | OK |
-| tests/exportacao | 19 passed |
+| tests/export | 19 passed |
 | cargo test core / src-tauri / natural-ajax | 292 / 47 / 31 passed, 0 failures |
 | check_real_detran (H1–H3) | OK |
 | check_real_priming without / with `--wrapper` (H1–H3) | OK / OK |

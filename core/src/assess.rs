@@ -1,4 +1,4 @@
-//! Application success × HTTP success (docs/11-priming-sucesso.md §2).
+//! Application success × HTTP success (docs/11-priming-success.md §2).
 //!
 //! An HTTP 200 does not prove that the application responded: it may be a
 //! protection page, a response without the usual fields or a filled

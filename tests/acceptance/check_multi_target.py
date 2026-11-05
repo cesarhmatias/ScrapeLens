@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round 10, wave 2 (docs/14-captura-multi-alvo.md): acceptance of the multi-target capture.
+"""Round 10, wave 2 (docs/14-capture-multi-target.md): acceptance of the multi-target capture.
 
 Runs the REAL product capture (`src-tauri` `capture::run`, via the ignored test `live_bodies_cycle`) against
 `testserver /multi/`, with headless Chrome, and checks:
@@ -12,9 +12,9 @@ Runs the REAL product capture (`src-tauri` `capture::run`, via the ignored test 
  (6) `/multi/sw-fetch`: two observations linked with evidence or explicit ambiguity — never a silent duplicate.
 
 Usage:
-  python3 tests/aceite/check_multi_target.py                     # starts everything
-  python3 tests/aceite/check_multi_target.py --capture-dir DIR   # reuses a session
-  python3 tests/aceite/check_multi_target.py --port 8911 --keep  # keeps the temporary files
+  python3 tests/acceptance/check_multi_target.py                     # starts everything
+  python3 tests/acceptance/check_multi_target.py --capture-dir DIR   # reuses a session
+  python3 tests/acceptance/check_multi_target.py --port 8911 --keep  # keeps the temporary files
 
 Output: tests/results/multi-target.json. Exit code 0 only if everything passes. It fails until the Capture
 (sessionId/Target.*) and the Core (provenance/ambiguity) deliver; nothing is relaxed. Data 100% synthetic,

@@ -22,7 +22,7 @@ Negative cases:
 Output: JSON on stdout with `checks` (name, ok, detail) and overall `ok`. Exit code 0 only
 if everything passes. Does not terminate any process it did not start.
 
-Usage: python3 tests/aceite/mcp_flow.py [--binary PATH]
+Usage: python3 tests/acceptance/mcp_flow.py [--binary PATH]
 """
 from __future__ import annotations
 

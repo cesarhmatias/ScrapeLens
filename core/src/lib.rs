@@ -1,6 +1,6 @@
 //! ScrapeLens core.
 //!
-//! Implements the session format v1 (`docs/03-contratos.md`), importers for
+//! Implements the session format v1 (`docs/03-contracts.md`), importers for
 //! HAR/NetLog/own format, CDP×NetLog correlation with explicit ambiguity,
 //! derived normalized views, diff and exporters.
 //!

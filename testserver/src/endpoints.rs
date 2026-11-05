@@ -12,7 +12,7 @@
 //! * `GET  /redirect?n=`— `n` redirects (302) then a small body.
 //! * `GET  /healthz`    — liveness probe.
 //!
-//! Multi-target probes (round 10, docs/14-captura-multi-alvo.md):
+//! Multi-target probes (round 10, docs/14-capture-multi-target.md):
 //!
 //! * `GET  /multi/`            — page that fires one request per CDP target kind
 //!   (popup, `target=_blank`, OOPIF iframe on another origin, dedicated worker,
@@ -23,7 +23,7 @@
 //! * `POST /multi/ping?m=`     — same, echoing the known body and its SHA-256.
 //! * `GET  /multi/sw-fetch?m=` — network target the service worker intercepts.
 //!
-//! Body-capture routes (round 4, docs/08-corpos-busca.md §3.2-3.3):
+//! Body-capture routes (round 4, docs/08-bodies-search.md §3.2-3.3):
 //!
 //! * `POST /sink`       — writes the received body bytes to `<body-dir>/sink-NNNN-<sha256[..12]>.bin`
 //!   and answers JSON `{len, sha256, file, content_type}` (compare with what CDP stored).
@@ -263,7 +263,7 @@ fn page(_req: &Req) -> Resp {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-target probe pages (round 10, docs/14-captura-multi-alvo.md).
+// Multi-target probe pages (round 10, docs/14-capture-multi-target.md).
 //
 // `/multi/` fires one request per CDP target kind (top-level, popup,
 // target=_blank, OOPIF iframe on another origin, dedicated worker, service

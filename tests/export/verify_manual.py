@@ -6,7 +6,7 @@ import json
 import stat
 
 ROOT=Path(__file__).resolve().parents[2]
-BASE=ROOT/'tests/.work/exportacao-manual'
+BASE=ROOT/'tests/.work/export-manual'
 SOURCE=BASE/'source'
 expected=json.loads((BASE/'source-manifest.json').read_text())
 # The only ignored file: '.DS_Store' (Finder metadata created when browsing the folder;

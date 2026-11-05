@@ -1,6 +1,6 @@
 # ScrapeLens — Architecture decisions
 
-Source of the facts: `docs/02-matriz-fidelidade.md` (evidence in `experiments/results/`, Chrome 156.0.8078.48, macOS arm64, 60 requests).
+Source of the facts: `docs/02-matrix-fidelity.md` (evidence in `experiments/results/`, Chrome 156.0.8078.48, macOS arm64, 60 requests).
 
 ## D1 — Stack (after the fidelity proof)
 
@@ -62,7 +62,7 @@ Date: 2026-10-31. Leader's decision, after feasibility phase A
 6. **B1 postponed; CloakBrowser only comes in if reconnaissance shows it is
    needed.** The flow is: an AI agent uses the ScrapeLens MCP with regular Chrome
    to understand a site's configuration (`site_profile`,
-   `docs/16b-mcp-navegador.md`); the "CloakBrowser candidate" recommendation is the
+   `docs/16b-mcp-browser.md`); the "CloakBrowser candidate" recommendation is the
    trigger to revisit the subject.
 
 ## D7 — Automation notice suppressed by default in every capture

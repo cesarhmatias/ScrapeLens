@@ -1,6 +1,6 @@
 ## Multi-target capture (CDP auto-attach × NetLog)
 
-Contract: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`.
+Contract: `docs/14-capture-multi-target.md`. Harness: `experiments/multi_target/`.
 
 | Item | Value |
 |---|---|

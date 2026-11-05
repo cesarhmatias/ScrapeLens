@@ -1,4 +1,4 @@
-// P5 (docs/19-contrato-app.md): the on-demand detail and the list summary
+// P5 (docs/19-contract-app.md): the on-demand detail and the list summary
 // produce the same output as the adapter for the whole session. Run: npm run test:paged
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

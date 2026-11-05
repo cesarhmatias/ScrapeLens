@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Round 6 (docs/10, Acceptance 5): revalidates ScrapeLens on the user's REAL HARs, with AGGREGATES only.
 
-  python3 tests/aceite/check_real_detran.py <har> [<har> ...] [--core BIN]
+  python3 tests/acceptance/check_real_detran.py <har> [<har> ...] [--core BIN]
 
 The HARs are read from where they are (read-only), imported into a temporary 0700 directory (mkdtemp)
 that is deleted at the end (also on error). Prints only counts, percentages, field names and

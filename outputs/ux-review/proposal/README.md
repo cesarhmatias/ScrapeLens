@@ -47,7 +47,7 @@ The proposal's Fetch/XHR classification comes from the fixture JSON. The product
 ## Data and sources
 
 - `fixtures/session.json`: the proposal's presentation data, generated locally.
-- `fixtures/catalogo-sintetico.har`: HAR 1.2 of the same fictitious navigation, used to test the native importer.
+- `fixtures/catalogo-synthetic.har`: HAR 1.2 of the same fictitious navigation, used to test the native importer.
 - `fixtures/invalido.har`: invalid fixture to test error recovery.
 - `fixtures/session-v1-imported/`: output of the existing CLI importer. The `synthetic-fixture` label was added to the metadata to identify it on reopening. A HAR imported directly in the app does not receive that label automatically; the “REAL SESSION” capture documents this problem.
 - `generate-fixture.py`: regenerates the JSON/HAR/invalid fixture. The CLI import to v1 is a separate step, described below.
@@ -59,7 +59,7 @@ To regenerate v1:
 ```sh
 python3 outputs/ux-review/proposal/generate-fixture.py
 ./core/target/debug/scrapelens-core import-har \
-  outputs/ux-review/proposal/fixtures/catalogo-sintetico.har \
+  outputs/ux-review/proposal/fixtures/catalogo-synthetic.har \
   --out /tmp/scrapelens-ux-session-v1
 ```
 

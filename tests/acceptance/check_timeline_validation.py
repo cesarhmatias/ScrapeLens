@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Round 9 (docs/13-timeline-validacao.md): application timeline and validation of the script execution.
+"""Round 9 (docs/13-timeline-validation.md): application timeline and validation of the script execution.
 
-  python3 tests/aceite/check_timeline_validacao.py [--core BIN] [--wrapper natural-core] [--python PY_COM_REQUESTS]
+  python3 tests/acceptance/check_timeline_validation.py [--core BIN] [--wrapper natural-core] [--python PY_COM_REQUESTS]
          [--port 8793] [HAR_REAL ...]
 
 (1) `natural-core timeline <session> --adapter natural-ajax` on the real-shape (1 and 2 rounds): application events in the
@@ -22,7 +22,7 @@ Formats not yet delivered (timeline, import-trace, --trace) are read tolerantly,
 timeline = JSON with a list of entries {label, kind[, count]}; trace = JSON `scrapelens.trace/1` with a `steps` list;
 compare = JSON of the current compare + a textual summary ("equivalent" | "diverges at step N") under any key.
 Fails until Core/Capture deliver; nothing is relaxed. Data 100% synthetic; real HARs only in aggregate.
-Result: tests/results/priming/timeline-validacao.json.
+Result: tests/results/priming/timeline-validation.json.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ import check_priming_sim as ps  # noqa: E402
 import check_priming_injection as ci  # noqa: E402  (entry(): synthetic HAR assembly)
 
 ROOT = cb.ROOT
-OUT = ROOT / "tests" / "results" / "priming" / "timeline-validacao.json"
+OUT = ROOT / "tests" / "results" / "priming" / "timeline-validation.json"
 FIX = ROOT / "fixtures" / "detran-pb-real-shape"
 EVENTS = ["init", "init", "on_interceptor", "init", "cmd_filtro", "cmd_consultar_placa"]   # manual flow up to the 1st query
 FIXTURE_ROUND = EVENTS + ["cmd_nova", "cmd_consultar_placa"]                                   # the fixture has a 2nd query

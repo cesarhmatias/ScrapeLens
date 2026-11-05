@@ -1,5 +1,5 @@
 //! `site_profile`: recognition of the site from a captured session
-//! (`docs/16b-mcp-navegador.md` §5). Identifies anti-bot protections, blocks and
+//! (`docs/16b-mcp-browser.md` §5). Identifies anti-bot protections, blocks and
 //! requirements, **each finding with evidence** (Core ids) and a confidence level,
 //! and recommends "regular Chrome suffices" / "needs priming" / "candidate for
 //! CloakBrowser" (or "undetermined").

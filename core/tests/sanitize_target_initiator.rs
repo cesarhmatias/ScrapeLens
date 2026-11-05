@@ -9,7 +9,7 @@ use scrapelens_core::model::{TargetKind, TargetProvenance};
 fn target_and_initiator_urls_are_sanitized() {
     let har = std::fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/aceite/sanitize/secret.har"),
+            .join("../fixtures/acceptance/sanitize/secret.har"),
     )
     .unwrap();
     let mut imported = scrapelens_core::import_har(&har).unwrap();

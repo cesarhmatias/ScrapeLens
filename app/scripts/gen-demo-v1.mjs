@@ -1,4 +1,4 @@
-// Generates the v1 fixture (contract docs/03-contratos.md) from the original demo
+// Generates the v1 fixture (contract docs/03-contracts.md) from the original demo
 // session in scripts/legacy-demo-session.ts. The output is synthetic and marked with
 // "synthetic-fixture": no data is real.
 //

@@ -6,7 +6,7 @@ a sessão original e a sessão sanitizada. Elas são grandes e derivadas de
 dados de sessão, então ficam fora do git; este script as recria a partir das
 pastas reais.
 
-Uso (na pasta `src-tauri/evidence/exportacao`):
+Uso (na pasta `src-tauri/evidence/export`):
 
     python3 prepare-payloads.py \
         "$HOME/Library/Application Support/app.scrapelens.desktop/sessions/har-3dbc391c02a985c5-2" \

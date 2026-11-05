@@ -12,14 +12,14 @@ inside each machine before running:
 | `sl-ubuntu-amd64` (x86_64) | **ROSETTA** (arm64 host) | Google Chrome 156.0.8078.79 (official repository) | **0** | `Ctrl+Shift+R`, keyboard only | `Ctrl+.`, keyboard only | complete, 11 req | complete, 24 | partial, 32 | `false` | none (`ss -ltnp` without the Chrome pid) |
 | `sl-ubuntu-arm64` (aarch64) | **NATIVE** | Chromium 156.0.8078.47 (snap) | **0** | `Ctrl+Shift+R`, keyboard only | `Ctrl+.`, keyboard only | complete, 11 req | complete, 24 | partial, 32 | `false` | none (`ss -ltnp` without the Chrome pid) |
 
-Folder of each run: `amd64/` and `arm64/` (summary.txt, atalhos.txt, contagens.txt,
-ss-durante-captura.txt, print-captura.png, print-final.png, probe.jsonl, logs).
+Folder of each run: `amd64/` and `arm64/` (summary.txt, shortcuts.txt, counts.txt,
+ss-durante-capture.txt, print-capture.png, print-final.png, probe.jsonl, logs).
 
 ## Keyboard shortcuts (what this review proves)
 
 - Start and Stop fired with **keyboard only**: `xdotool windowactivate --sync` on the main window
   and `xdotool key --clearmodifiers`, with no click on a button and no neutral focus click
-  (`atalhos.txt`: `cliques em coordenadas de botão …: 0`, `cliques neutros de foco …: 0`).
+  (`shortcuts.txt`: `cliques em coordenadas de botão …: 0`, `cliques neutros de foco …: 0`).
 - On both machines and in both captures of the script (the main one and the `navigator.webdriver` probe).
 - Focus must be reactivated before each shortcut: when the capture starts, the X focus moves to the
   Chrome window. Without `windowactivate`, `Ctrl+.` goes to Chrome and stops nothing — this is what happened in the

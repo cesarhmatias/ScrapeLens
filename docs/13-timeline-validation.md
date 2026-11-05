@@ -2,7 +2,7 @@
 
 ## Motivation
 
-DETRAN-PB case, requirements 8 and 10 (`docs/05-caso-referencia-detran.md`):
+DETRAN-PB case, requirements 8 and 10 (`docs/05-case-reference-detran.md`):
 - see the application's event cycle (init, on_interceptor, cmd_filtro,
   cmd_consultar_placa, cmd_nova…) on a timeline, without the protection
   noise;

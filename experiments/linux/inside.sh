@@ -33,7 +33,7 @@ for stage in "${stages[@]}"; do
             mkdir -p core/target/release && cp /cache/target-core/release/scrapelens-core core/target/release/
             rm -rf src-tauri && cp -a experiments/linux/shim src-tauri
             (cd src-tauri && cargo generate-lockfile 2>&1 | tail -1)
-            CARGO_TARGET_DIR=/cache/target-shim python3 tests/aceite/check_multi_target.py 2>&1 | tail -25 ;;
+            CARGO_TARGET_DIR=/cache/target-shim python3 tests/acceptance/check_multi_target.py 2>&1 | tail -25 ;;
     xdg)    # profile and state root under $XDG_RUNTIME_DIR (0700), without TMPDIR
             export XDG_RUNTIME_DIR="$(mktemp -d /tmp/xdg.XXXXXX)"; chmod 700 "$XDG_RUNTIME_DIR"; unset TMPDIR
             : > /tmp/xdg-raw.txt

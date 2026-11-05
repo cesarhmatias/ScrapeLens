@@ -2,7 +2,7 @@
 
 ## Motivation
 
-Validation on the user's real HARs (`tests/results/caso-real-detran/RELATORIO.md`,
+Validation on the user's real HARs (`tests/results/real-case-detran/REPORT.md`,
 fa54020) gave a partial verdict: the case is identifiable, but only partly
 analyzable. The synthetic fixtures had form-urlencoded responses, and the
 real ones bring HTML with form controls. The green of rounds 4 and 5 did not

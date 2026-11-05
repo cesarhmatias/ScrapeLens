@@ -66,7 +66,7 @@ await page.waitForSelector("tbody tr:not(.spacer)");
 await page.getByRole("button", { name: "Linha do tempo" }).click();
 await page.waitForSelector(".timeline-table tbody tr");
 results.timelineRows = (await page.locator(".timeline-table tbody tr").evaluateAll((rows) => rows.map((r) => r.innerText.replace(/\s+/g, " ").slice(0, 150)))).slice(0, 16);
-await shot("38-linha-do-tempo.png");
+await shot("38-timeline.png");
 await page.locator(".timeline-group summary").first().click();
 results.groupExpanded = await page.locator(".timeline-group .chips").first().innerText();
 // clicar abre a requisição
@@ -75,7 +75,7 @@ await page.waitForSelector(".tabs");
 results.openedFromTimeline = await page.locator("h1, .req-title, .detail-head").first().innerText().catch(() => null);
 await page.getByRole("button", { name: /Sessão/ }).first().click();
 // Validar execução: trace ok, depois 403
-for (const [n, name] of [[0, "39-validar-execucao-equivalente.png"], [1, "40-validar-execucao-diverge-403.png"], [2, "41-validar-execucao-incompleta.png"]]) {
+for (const [n, name] of [[0, "39-validate-execution-equivalent.png"], [1, "40-validate-execution-diverges-403.png"], [2, "41-validate-execution-incomplete.png"]]) {
   nextValidate = n;
   await page.getByRole("button", { name: "Validar execução…" }).click();
   await page.waitForSelector(".validation-table tbody tr");

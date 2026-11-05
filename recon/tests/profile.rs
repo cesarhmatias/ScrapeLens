@@ -425,7 +425,7 @@ fn form_field_in_html_and_query_is_found() {
 fn custom_signature_set_is_data_driven() {
     let json = r#"{"schema":"scrapelens.recon-signatures/1","signatures":[
       {"id":"t-1","vendor":"teste","kind":"response-header","name":"x-teste","category":"protection","weight":"present","summary":"teste",
-       "source":{"kind":"project","url":"docs/16b-mcp-navegador.md","quote":"fixture"}}]}"#;
+       "source":{"kind":"project","url":"docs/16b-mcp-browser.md","quote":"fixture"}}]}"#;
     let set = SignatureSet::from_json(json).unwrap();
     let bundle = with_main(vec![Req::xhr("x", "GET", "https://app.test/a", 200).rh("X-Teste", "1")]);
     let p = site_profile_with(&bundle.session, &bundle, &ProfileOptions::default(), &set);

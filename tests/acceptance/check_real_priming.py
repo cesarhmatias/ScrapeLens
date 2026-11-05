@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Round 7 (docs/11, Acceptance 5): priming script and assess on the REAL HARs, with AGGREGATES only.
 
-  python3 tests/aceite/check_real_priming.py <har> [<har> ...] [--core BIN]
+  python3 tests/acceptance/check_real_priming.py <har> [<har> ...] [--core BIN]
 
 Read-only HARs; sessions and scripts in mkdtemp 0700, deleted at the end. The generated script is NEVER run
 with `--confirmar` nor against the network: only the plan mode (without --confirmar), which prints and exits. No real

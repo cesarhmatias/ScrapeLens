@@ -7,7 +7,7 @@ use serde_json::Value;
 fn bundle() -> scrapelens_core::SessionBundle {
     let har = std::fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/aceite/sanitize/secret.har"),
+            .join("../fixtures/acceptance/sanitize/secret.har"),
     )
     .unwrap();
     scrapelens_core::import_har(&har).unwrap().bundle

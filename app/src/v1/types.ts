@@ -1,5 +1,5 @@
 // Official v1 contract types — mirror core/src/model/*.rs (serde camelCase).
-// They are not a parallel contract: they are the TypeScript projection of docs/03-contratos.md.
+// They are not a parallel contract: they are the TypeScript projection of docs/03-contracts.md.
 
 export type Source = "cdp" | "netlog" | "har" | "ownFormat" | "capture" | "derived" | "manual";
 export type Verification = "verified" | "partial" | "unverified";

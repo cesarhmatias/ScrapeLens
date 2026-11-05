@@ -34,12 +34,12 @@ assert.equal(r.attempts[0].outcome, "unknown");
 assert.equal(r.attempts[0].requestHeaderCount, 0);
 
 try {
-  const f = JSON.parse(readFileSync("../tests/.work/exportacao-manual/source/session.json", "utf8"));
+  const f = JSON.parse(readFileSync("../tests/.work/export-manual/source/session.json", "utf8"));
   const fr = run(f);
   assert.equal(fr.method, "POST");
   assert.equal(fr.requestHeaders.length, 3);
   assert.equal(fr.attempts.length, 0);
-  console.log("fixture exportacao-manual: ok");
+  console.log("fixture export-manual: ok");
 } catch (e: any) {
   if (e.code !== "ENOENT") throw e;
 }

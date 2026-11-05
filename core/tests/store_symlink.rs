@@ -11,7 +11,7 @@ use scrapelens_core::store::write_session_dir;
 
 fn bundle() -> scrapelens_core::SessionBundle {
     let har = fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/aceite/sanitize/secret.har"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/acceptance/sanitize/secret.har"),
     )
     .unwrap();
     let imported = scrapelens_core::import_har(&har).unwrap();

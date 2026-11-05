@@ -1,4 +1,4 @@
-//! Comparison between two captures of the same flow (`docs/09-cadeia-comparacao.md` §2).
+//! Comparison between two captures of the same flow (`docs/09-chain-comparison.md` §2).
 //!
 //! ```text
 //! pub fn compare_sessions(a: &SessionV1, a_source: &dyn BodySource,

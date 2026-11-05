@@ -1,32 +1,32 @@
 # tests/ — ScrapeLens MVP acceptance
 
 Suite that consumes the **core CLI** (`core/target/release/scrapelens-core`), the
-synthetic fixtures in `fixtures/aceite/` and, for criterion 9, a real Chrome
+synthetic fixtures in `fixtures/acceptance/` and, for criterion 9, a real Chrome
 capture on macOS orchestrated by `tests/capture/run-cycle.sh`.
 
 ## Commands
 
 ```sh
-python3 tests/aceite/fixtures.py              # regenerates fixtures/aceite (deterministic)
-python3 tests/aceite/run_acceptance.py       # 10 criteria; uses the last recorded capture
+python3 tests/acceptance/fixtures.py              # regenerates fixtures/acceptance (deterministic)
+python3 tests/acceptance/run_acceptance.py       # 10 criteria; uses the last recorded capture
 tests/capture/run-cycle.sh                   # real Chrome/CDP/NetLog cycle, h1+h2+h3
 python3 tests/capture/app_validate.py --run-dir tests/capture/runs/app-<id> \
   --capture-id capture-<ts> --har-id har-<id> --netlog-id netlog-<id> \
   --screenshot tests/results/app-latest/screenshot-app-live.png
-python3 tests/aceite/run_acceptance.py --capture tests/capture/runs/<id>
-python3 tests/aceite/check_multi_target.py        # real multi-target capture (popup, blank, OOPIF, worker, SW)
+python3 tests/acceptance/run_acceptance.py --capture tests/capture/runs/<id>
+python3 tests/acceptance/check_multi_target.py        # real multi-target capture (popup, blank, OOPIF, worker, SW)
 ```
 
-Results: `tests/results/aceite.json` and the report `tests/RELATORIO.md`
-(promotable to `docs/05-aceite.md`). Exit code ≠ 0 if any criterion fails.
+Results: `tests/results/acceptance.json` and the report `tests/REPORT.md`
+(promotable to `docs/05-acceptance.md`). Exit code ≠ 0 if any criterion fails.
 
 ## Structure
 
 | Path | Content |
 |---|---|
-| `aceite/fixtures.py` | generator of the synthetic fixtures (HAR, NetLog, CDP and v1 sessions) |
-| `aceite/run_acceptance.py` | the 10 criteria, assertions and report generation |
-| `aceite/check_multi_target.py` | acceptance of the multi-target capture (round 10): real capture against `testserver /multi/`, 16 markers, target types, bodies and service worker |
+| `acceptance/fixtures.py` | generator of the synthetic fixtures (HAR, NetLog, CDP and v1 sessions) |
+| `acceptance/run_acceptance.py` | the 10 criteria, assertions and report generation |
+| `acceptance/check_multi_target.py` | acceptance of the multi-target capture (round 10): real capture against `testserver /multi/`, 16 markers, target types, bodies and service worker |
 | `capture/capture_cycle.mjs` | dedicated Chrome + CDP + NetLog; no certificate installed, QUIC intact |
 | `capture/run-cycle.sh` | starts testserver, captures h1/h2/h3, imports with the core and summarizes |
 | `capture/summarize.py` | metrics of the real capture in `run.json` |

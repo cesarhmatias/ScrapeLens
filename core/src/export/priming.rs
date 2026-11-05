@@ -1,4 +1,4 @@
-//! Priming script in Python (docs/11-priming-sucesso.md §1).
+//! Priming script in Python (docs/11-priming-success.md §1).
 //!
 //! Generates a `requests.Session` script that recreates the session: each step
 //! of the chain (`flow::priming_chain`, only `steps`) is replayed in order, and

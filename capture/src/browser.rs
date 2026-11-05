@@ -1,4 +1,4 @@
-//! Controlled capture for the MCP (`docs/16b-mcp-navegador.md` §3–§4).
+//! Controlled capture for the MCP (`docs/16b-mcp-browser.md` §3–§4).
 //!
 //! `BrowserCapture` opens stable Chrome with a dedicated profile, CDP + NetLog and
 //! a **mandatory allowlist**, accepts `navigate` and shuts down gracefully. The
@@ -790,7 +790,7 @@ mod tests {
 
     /// Second CDP client (the agent) on the same Chrome, with auto-attach and
     /// `waitForDebuggerOnStart`. Measures whether it coexists with our client
-    /// (`docs/16b-mcp-navegador.md` §3.5). `cooperative`: resumes the paused
+    /// (`docs/16b-mcp-browser.md` §3.5). `cooperative`: resumes the paused
     /// targets; otherwise it never calls `runIfWaitingForDebugger`.
     fn second_cdp_client_scenario(cooperative: bool, name: &str) -> (bool, Vec<String>, String) {
         use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
@@ -1037,7 +1037,7 @@ mod tests {
     /// the FIRST action of an external agent (attach to the capture tab and navigate,
     /// without waiting for anything) is already seen by our capture, with the `Network.*`
     /// events of that same tab. Requirement from the lead, derived from finding 5 of
-    /// `docs/16b-mcp-navegador.md` §3.5.
+    /// `docs/16b-mcp-browser.md` §3.5.
     #[test]
     #[ignore]
     fn agent_first_action_is_captured() {

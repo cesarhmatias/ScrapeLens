@@ -2,7 +2,7 @@
 
 ## Motivation
 
-DETRAN-PB case (`docs/05-caso-referencia-detran.md`), derived requirements 2,
+DETRAN-PB case (`docs/05-case-reference-detran.md`), derived requirements 2,
 3 and 4: you cannot start from the lookup. You need to know where each POST
 value came from (SESSIONID, STAMP, delta, cookies) and which values change
 between two captures of the same flow, so as not to freeze HAR values.
@@ -115,7 +115,7 @@ value, and the generated code does not change behavior.
    chance (< 8 without the same name) does not become an origin.
 4. Sanitized session: the analysis runs, declares that redacted values cannot
    be traced and does not leak values.
-5. Test suite with no regression (cargo test, tests/exportacao, run_acceptance,
+5. Test suite with no regression (cargo test, tests/export, run_acceptance,
    check_bodies_search) and acceptable performance on the large session (measured).
 
 Conventional Commits per owner, no push or publication, no external

@@ -61,8 +61,8 @@ fn import_formats_and_errors() {
     let env = Env::new(false);
     // Repository HAR, repository NetLog, native session, CDP+NetLog capture.
     for (path, name, format) in [
-        ("fixtures/aceite/sanitize/secret.har", "secret", "har"),
-        ("fixtures/aceite/diff/session", "diffsession", "session"),
+        ("fixtures/acceptance/sanitize/secret.har", "secret", "har"),
+        ("fixtures/acceptance/diff/session", "diffsession", "session"),
         ("experiments/results/h1-page", "h1page", "capture"),
     ] {
         let out = import_session(
@@ -152,7 +152,7 @@ fn extra_sessions_dirs_are_read_only_and_listed() {
     let src = tempfile::tempdir().unwrap();
     let copy = src.path().join("copied");
     std::fs::create_dir_all(&copy).unwrap();
-    let from = repo("fixtures/aceite/diff/session");
+    let from = repo("fixtures/acceptance/diff/session");
     std::fs::copy(from.join("session.json"), copy.join("session.json")).unwrap();
     std::fs::create_dir_all(copy.join("attachments")).unwrap();
     for entry in std::fs::read_dir(from.join("attachments"))
@@ -372,7 +372,7 @@ fn reveal_requires_allow_reveal() {
 #[test]
 fn headers_cookies_fixture_keeps_duplicates_and_mixed_case() {
     let env = Env::new(false);
-    let path = repo("fixtures/aceite/headers-cookies/headers-cookies.har");
+    let path = repo("fixtures/acceptance/headers-cookies/headers-cookies.har");
     import_session(
         &env.ctx,
         p(json!({"path": path.to_str().unwrap(), "name": "hc"})),
@@ -485,7 +485,7 @@ fn get_body_inline_large_binary_and_masking() {
 #[test]
 fn bodies_fixture_reports_truncated_and_empty_states() {
     let env = Env::new(false);
-    let path = repo("fixtures/aceite/bodies/session");
+    let path = repo("fixtures/acceptance/bodies/session");
     import_session(
         &env.ctx,
         p(json!({"path": path.to_str().unwrap(), "name": "bodies"})),
@@ -625,7 +625,7 @@ fn diff_requests_keeps_order_and_supports_ignore_and_cross_session() {
 #[test]
 fn diff_fixture_session_has_header_changes() {
     let env = Env::new(false);
-    let path = repo("fixtures/aceite/diff/session");
+    let path = repo("fixtures/acceptance/diff/session");
     import_session(
         &env.ctx,
         p(json!({"path": path.to_str().unwrap(), "name": "d"})),
@@ -664,7 +664,7 @@ fn diff_sessions_pairs_requests_and_paginates() {
     .unwrap();
     assert_eq!(open["masked"], false);
     // The repository fixtures also compare.
-    let h = repo("fixtures/aceite/diff/session");
+    let h = repo("fixtures/acceptance/diff/session");
     import_session(
         &env.ctx,
         p(json!({"path": h.to_str().unwrap(), "name": "fx"})),
@@ -797,7 +797,7 @@ fn trace_literal_value_and_request_origins() {
 #[test]
 fn repository_secret_fixture_never_leaks_without_reveal() {
     let env = Env::new(false);
-    let har = repo("fixtures/aceite/sanitize/secret.har");
+    let har = repo("fixtures/acceptance/sanitize/secret.har");
     import_session(
         &env.ctx,
         p(json!({"path": har.to_str().unwrap(), "name": "sec"})),
@@ -854,7 +854,7 @@ fn masked_request_hides_tokens_in_target_and_initiator_urls() {
     let work = tempfile::tempdir().unwrap();
     let dir = work.path().join("native");
     std::fs::create_dir_all(dir.join("attachments")).unwrap();
-    let from = repo("fixtures/aceite/diff/session");
+    let from = repo("fixtures/acceptance/diff/session");
     let mut session: Value =
         serde_json::from_slice(&std::fs::read(from.join("session.json")).unwrap()).unwrap();
     session["requests"][0]["target"] =
@@ -1053,13 +1053,13 @@ fn export_session_include_sensitive_keeps_secrets_raw_artifacts_and_private_mode
 
     let out = export_session(
         &env.ctx,
-        p(json!({"session_id": id, "destination": "minha-exportacao", "include_sensitive": true})),
+        p(json!({"session_id": id, "destination": "my-export", "include_sensitive": true})),
     )
     .unwrap();
     assert_eq!(out["includeSensitive"], true);
     assert_eq!(out["totalRedactions"], 0);
     let dir = PathBuf::from(out["path"].as_str().unwrap());
-    assert_eq!(dir, env.ctx.cfg.out_dir.join("minha-exportacao"));
+    assert_eq!(dir, env.ctx.cfg.out_dir.join("my-export"));
     assert_eq!(mode_of(&dir), 0o700);
     assert_eq!(mode_of(&dir.join("session.json")), 0o600);
     let session = std::fs::read_to_string(dir.join("session.json")).unwrap();

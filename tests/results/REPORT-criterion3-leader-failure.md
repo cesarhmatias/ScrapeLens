@@ -14,7 +14,7 @@ Criteria of the request: (1) repeated headers/cookies, (2) HAR/NetLog valid/inco
 
 Evidence:
 
-- `scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl fixtures/aceite/ambiguous/netlog-ambiguous.json --out tests/.work/run/item3/capture`
+- `scrapelens-core import-capture fixtures/acceptance/ambiguous/cdp-ambiguous.jsonl fixtures/acceptance/ambiguous/netlog-ambiguous.json --out tests/.work/run/item3/capture`
 
 Failures:
 
@@ -30,10 +30,10 @@ Assertions: 4 passed, 3 failed (0.06 s).
 
 ```sh
 cd /Users/cesar/Projects/scrapelens
-python3 tests/aceite/run_acceptance.py --build-fixtures
-python3 tests/aceite/run_acceptance.py
+python3 tests/acceptance/run_acceptance.py --build-fixtures
+python3 tests/acceptance/run_acceptance.py
 tests/capture/run-cycle.sh
-python3 tests/aceite/run_acceptance.py   # uses the last recorded capture
+python3 tests/acceptance/run_acceptance.py   # uses the last recorded capture
 ```
 
-All offline: synthetic fixtures in `fixtures/aceite/`, `.invalid` domains; criterion 9 uses Chrome with a dedicated temporary profile and local servers. Nothing is published and no telemetry is generated.
+All offline: synthetic fixtures in `fixtures/acceptance/`, `.invalid` domains; criterion 9 uses Chrome with a dedicated temporary profile and local servers. Nothing is published and no telemetry is generated.

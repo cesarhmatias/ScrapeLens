@@ -128,7 +128,7 @@ plugins and 4 languages.
 
 ## 6. Recommendation
 
-> **Update (2026-11-03):** item 1 became decision **D7** (`docs/01-decisoes.md`):
+> **Update (2026-11-03):** item 1 became decision **D7** (`docs/01-decisions.md`):
 > `--disable-blink-features=AutomationControlled` is the DEFAULT in every capture (App, controlled
 > MCP, pipe and port), recorded in `capture.chromeArgs`/`notes` and
 > `captureContext` in the `site_profile`. Measured again on loopback with the full capture and the

@@ -118,7 +118,7 @@ await openSession(blocked);
 await page.waitForTimeout(500);
 const rows = async () => (await page.locator("tbody tr:not(.spacer)").allInnerTexts()).map((t) => t.replace(/\s+/g, " "));
 results.blockedList = await rows();
-await shot("25-lista-aplicacao-bloqueado.png");
+await shot("25-list-app-blocked.png");
 // filtro "só falhas da aplicação"
 results.failCountLabel = await page.getByRole("button", { name: /Falhas da aplicação/ }).innerText();
 results.blockCountLabel = await page.getByRole("button", { name: /Possíveis bloqueios/ }).innerText();
@@ -127,13 +127,13 @@ results.blockedFiltered = await rows();
 await page.getByRole("button", { name: /Falhas da aplicação/ }).click(); // combinados (união)
 results.combinedFiltered = await rows();
 await page.getByRole("button", { name: /Falhas da aplicação/ }).click(); // volta só bloqueios para o print
-await shot("26-filtro-falhas-aplicacao.png");
+await shot("26-filter-failures-app.png");
 // detalhe: 200 bloqueado
 await page.locator("tbody tr:not(.spacer)").first().click();
 await page.getByRole("tab", { name: /Aplicação/ }).click();
 await page.waitForSelector("text=Sucesso da aplicação");
 results.blockedDetail = await page.locator(".body-panel").first().innerText();
-await shot("27-detalhe-200-bloqueado.png");
+await shot("27-detail-200-blocked.png");
 await backToSession();
 await page.getByRole("button", { name: /Todos/ }).click();
 // o indeterminado usa cópia da sessão com assess-rules.json (requiredFields XML,STAMP) para exibir campos ausentes
@@ -147,25 +147,25 @@ await page.locator("tbody tr:not(.spacer)", { hasText: "Connector" }).first().cl
 await page.getByRole("tab", { name: /Aplicação/ }).click();
 await page.waitForSelector("text=Sucesso da aplicação");
 results.indeterminadoDetail = await page.locator(".body-panel").first().innerText();
-await shot("28-detalhe-indeterminado.png");
+await shot("28-detail-undetermined.png");
 
 // real-shape: app-ok + cadeia com veredito por passo
 await backToSession();
 await openSession(d1);
 await page.waitForTimeout(500);
 results.realList = (await rows()).slice(0, 12);
-await shot("29-lista-app-ok.png");
+await shot("29-list-app-ok.png");
 const first = core("search", d1, "cmd_consultar_placa").matches.find((m) => m.scope === "requestBody").requestId;
 await page.locator("tbody tr:not(.spacer)").nth(Number(first.split("-")[1]) - 1).click();
 await page.getByRole("tab", { name: /Aplicação/ }).click();
 await page.waitForSelector("text=Sucesso da aplicação");
 results.appOkDetail = await page.locator(".body-panel").first().innerText();
-await shot("30-detalhe-app-ok.png");
+await shot("30-detail-app-ok.png");
 await page.getByRole("tab", { name: /Origem/ }).click();
 await page.waitForSelector(".chain-list");
 results.chainVerdicts = await page.locator(".chain-list li").evaluateAll((els) => els.slice(0, 12).map((e) => e.innerText.split("\n")[0]));
 await page.evaluate(() => document.querySelector(".chain-list")?.scrollIntoView({ block: "start" }));
-await shot("31-cadeia-veredito.png");
+await shot("31-chain-verdict.png");
 // smoke do build final: frames auxiliares reais do core e iniciador no detalhe
 results.chainAuxText = (await page.locator("body").innerText()).match(/Frames auxiliares\s*\d+/)?.[0] ?? null;
 await page.getByRole("tab", { name: /Visão geral|Geral|Cabeçalhos/ }).first().click().catch(() => {});
@@ -178,7 +178,7 @@ await page.getByRole("button", { name: "Comparar capturas…" }).click();
 await page.waitForSelector(".cmp-pair");
 await page.waitForTimeout(800);
 results.comparePairs = (await page.locator(".cmp-pair > header").allInnerTexts()).slice(0, 8).map((t) => t.replace(/\s+/g, " "));
-await shot("32-compare-veredito.png");
+await shot("32-compare-verdict.png");
 
 results.pageErrors = errors.filter((e) => !e.includes("unregisterListener"));
 fs.writeFileSync(path.join(outDir, "ui-harness-assess-result.json"), JSON.stringify(results, null, 2));
