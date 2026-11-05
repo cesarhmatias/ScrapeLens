@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-"""Rodada 7 (docs/11, Aceite 5): script de priming e assess nos HARs REAIS, só com AGREGADOS.
+"""Round 7 (docs/11, Acceptance 5): priming script and assess on the REAL HARs, with AGGREGATES only.
 
   python3 tests/aceite/check_real_priming.py <har> [<har> ...] [--core BIN]
 
-HARs somente leitura; sessões e scripts em mkdtemp 0700, apagados ao fim. O script gerado NUNCA é executado
-com `--confirmar` nem contra rede: só o modo plano (sem --confirmar), que imprime e sai. Nenhum valor real é
-impresso/gravado: valores capturados só são usados em memória para CONTAR ocorrências literais no script.
+Read-only HARs; sessions and scripts in mkdtemp 0700, deleted at the end. The generated script is NEVER run
+with `--confirmar` nor against the network: only the plan mode (without --confirmar), which prints and exits. No real
+value is printed or written: captured values are only used in memory to COUNT literal occurrences in the script.
 
-Para o 1º cmd_consultar_placa de cada HAR: nº de passos, POSTs do Connector, ordem × fluxo manual
+For the 1st cmd_consultar_placa of each HAR: number of steps, Connector POSTs, order × manual flow
 (easynat-app, NatLogon, init, SIM1000X, init, on_interceptor, VES0009X, init, cmd_filtro, cmd_consultar_placa),
-tipo de extração de STAMP/delta/SESSIONID/placa, valores capturados literais, parâmetros (obrigatórios e com
-padrão), ast.parse e saída do modo plano. E do assess: contagens por veredito e vereditos do Connector.
+kind of STAMP/delta/SESSIONID/plate extraction, captured literal values, parameters (required and with
+default), ast.parse and plan mode output. And from assess: counts per verdict and Connector verdicts.
 
-Critérios (exit 1, sem afrouxar): ast OK; modo plano rc 0 e sem enviar; ordem = fluxo manual; STAMP por
-controle HTML; delta por trecho extraído; SESSIONID e placa como parâmetro/composição (nunca literal); 0 valores
-capturados literais fora de comentários; parâmetros obrigatórios ⊆ {sessionid_cliente, placa} em todo alvo
-gerado pelo caminho normal; nenhum 200 do Connector `blocked?`; respostas normais do Connector app-ok.
-O script do escape hatch `--allow-incomplete` (cadeia com produtor sem corpo) só tem os parâmetros registrados
-como informação: nele o valor sem produtor observável é, por definição, entrada do operador.
-Cadeia incompleta (F2): se o HAR tem POST do Connector sem corpo de resposta, `export-priming` tem de RECUSAR,
-listando os produtores sem corpo e a ocorrência equivalente com corpo; com `--allow-incomplete`, o script gerado
-tem `fail()` explícito e continua válido em `ast.parse`/modo plano.
+Criteria (exit 1, no relaxing): ast OK; plan mode rc 0 and sending nothing; order = manual flow; STAMP from an
+HTML control; delta from an extracted excerpt; SESSIONID and plate as parameter/composition (never literal); 0 captured
+literal values outside comments; required parameters ⊆ {sessionid_cliente, placa} in every target generated
+through the normal path; no Connector 200 `blocked?`; normal Connector responses app-ok.
+The script of the `--allow-incomplete` escape hatch (chain with a producer without a body) only has its parameters
+registered as information: in it, a value without an observable producer is, by definition, operator input.
+Incomplete chain (F2): if the HAR has a Connector POST without a response body, `export-priming` must REFUSE,
+listing the producers without a body and the equivalent occurrence with a body; with `--allow-incomplete`, the
+generated script has an explicit `fail()` and stays valid in `ast.parse`/plan mode.
 """
 from __future__ import annotations
 
@@ -45,13 +45,13 @@ import check_real_detran as rd  # noqa: E402
 
 EXPECTED = ["easynat-app", "NatLogon", "init", "SIM1000X", "init", "on_interceptor", "VES0009X", "init", "cmd_filtro", "cmd_consultar_placa"]
 PAGE_KEYS = ("easynat-app", "NatLogon", "SIM1000X", "VES0009X")
-# Entradas do operador aceitas no script gerado: a placa (busca do usuário) e a parte do SESSIONID montada no
-# cliente. Todo o resto (STAMP, delta, processId, pageInitParam, navegação) tem de ser extraído ou derivado.
+# Operator inputs accepted in the generated script: the plate (the user's search) and the SESSIONID part built on the
+# client. Everything else (STAMP, delta, processId, pageInitParam, navigation) must be extracted or derived.
 ALLOWED_REQUIRED = {"sessionid_cliente", "placa"}
 
 
 def code_without_comments(src):
-    """Texto do script sem comentários (os comentários citam IDs e motivos, não valores executáveis)."""
+    """Script text without comments (comments cite IDs and reasons, not executable values)."""
     out = []
     for tok in tokenize.generate_tokens(io.StringIO(src).readline):
         if tok.type != tokenize.COMMENT:
@@ -60,7 +60,7 @@ def code_without_comments(src):
 
 
 def captured_values(sess, posts):
-    """Valores capturados dos POSTs do Connector, só em memória: (rótulo, valor)."""
+    """Captured values from the Connector POSTs, in memory only: (label, value)."""
     vals = set()
     for r in posts:
         a = r["attempts"][0]
@@ -69,7 +69,7 @@ def captured_values(sess, posts):
         parts, g = rd.xml_groups(xml)
         vals.add(("SESSIONID", sid))
         if "_" in sid:
-            vals.add(("SESSIONID-sufixo", sid.split("_", 1)[1]))
+            vals.add(("SESSIONID-suffix", sid.split("_", 1)[1]))
         if stamp != "INIT":
             vals.add(("STAMP", stamp))
         vals.add(("processId", parts[1]))
@@ -90,18 +90,18 @@ def kind_of(r, event):
     return base.replace(".html", "") if base.replace(".html", "") in PAGE_KEYS else None
 
 
-EXPORT = lambda core: [core]   # com --wrapper: [wrapper] (export-priming com adaptador); import/assess seguem no core
+EXPORT = lambda core: [core]   # with --wrapper: [wrapper] (export-priming with the adapter); import/assess still use the core
 EXPORT_ARGS: list[str] = []
 
 
 def extraction_kinds(expr_src):
     names = set(re.findall(r"\b(html_control|body_field|ctx_extract|adapter_get|get_cookie|get_header|checked)\(", expr_src))
     kinds = []
-    if "html_control" in names: kinds.append("controle HTML")
-    if "ctx_extract" in names or "adapter_get" in names: kinds.append("trecho/literal de resposta")
-    if "body_field" in names: kinds.append("campo form/JSON")
+    if "html_control" in names: kinds.append("HTML control")
+    if "ctx_extract" in names or "adapter_get" in names: kinds.append("response excerpt/literal")
+    if "body_field" in names: kinds.append("form/JSON field")
     if "get_cookie" in names: kinds.append("cookie jar")
-    if re.search(r"\bP\[", expr_src): kinds.append("parâmetro")
+    if re.search(r"\bP\[", expr_src): kinds.append("parameter")
     return kinds or ["literal"]
 
 
@@ -133,12 +133,12 @@ def analyse(core, har, tmp, idx):
             prev_captured = (r["attempts"][0].get("responseBody") or {}).get("state") == "captured"
     out = {"connector_posts_in_har": len(posts), "consultas": len(consultas)}
     if not consultas:
-        return sess, out, ["sem cmd_consultar_placa"]
-    # alvo 1: o 1º cmd_consultar_placa; alvo 2 (se o 1º não tem a resposta anterior capturada): o 1º com a resposta anterior capturada
-    targets = [("primeiro", consultas[0])]
+        return sess, out, ["no cmd_consultar_placa"]
+    # target 1: the 1st cmd_consultar_placa; target 2 (if the 1st does not have the previous response captured): the 1st with the previous response captured
+    targets = [("first", consultas[0])]
     alt = next((c for c in consultas if ready[c]), None)
     if not ready[consultas[0]] and alt:
-        targets.append(("primeiro_com_resposta_anterior_capturada", alt))
+        targets.append(("first_with_previous_response_captured", alt))
     out["targets"] = {}
     fails = []
     for label, first in targets:
@@ -152,29 +152,29 @@ def analyse(core, har, tmp, idx):
     out["assess_connector"] = dict(cv)
     nobody = sum(1 for r in posts if (r["attempts"][0].get("responseBody") or {}).get("state") != "captured")
     out["connector_posts_without_response_body"] = nobody
-    # F2: com produtor sem corpo, a recusa é o resultado CORRETO — e a mensagem
-    # precisa listar os produtores e a ocorrência equivalente com corpo.
+    # F2: with a producer without a body, the refusal is the CORRECT result — and the message
+    # must list the producers and the equivalent occurrence with a body.
     refused = {k: v["refused"] for k, v in out["targets"].items() if "refused" in v}
     out["refusal_for_incomplete_chain"] = sorted(k for k, v in refused.items() if v["mentions_incomplete"])
     if nobody and not out["refusal_for_incomplete_chain"]:
-        fails.append(f"{nobody} resposta(s) do Connector sem corpo, mas export-priming não recusou a cadeia incompleta")
+        fails.append(f"{nobody} Connector response(s) without a body, but export-priming did not refuse the incomplete chain")
     for label, v in refused.items():
         if v["mentions_incomplete"] and not (v["lists_producers"] and v["suggests_equivalent"] and v["allow_incomplete_script"] == "OK"):
-            fails.append(f"[{label}] recusa incompleta sem produtores/sugestão/fail() explícito: {v}")
+            fails.append(f"[{label}] incomplete refusal without producers/suggestion/explicit fail(): {v}")
         elif not v["mentions_incomplete"]:
-            fails.append(f"[{label}] export-priming recusou por outro motivo: {v['message'][:200]}")
+            fails.append(f"[{label}] export-priming refused for another reason: {v['message'][:200]}")
     blocked_other = Counter()
     for o in a["outcomes"]:
         if o["verdictKind"] == "blocked" and not o["url"].endswith(rd.CONNECTOR):
             base = o["url"].split("?")[0].rsplit("/", 1)[-1]
-            blocked_other["TSPD" if "/TSPD/" in o["url"] else (base if base in ("easynat-app", "NatLogon.html", "SIM1000X.html", "VES0009X.html") else "outro")] += 1
+            blocked_other["TSPD" if "/TSPD/" in o["url"] else (base if base in ("easynat-app", "NatLogon.html", "SIM1000X.html", "VES0009X.html") else "other")] += 1
     out["assess_blocked_non_connector"] = dict(blocked_other)
     out["assess_blocked_with_explicit_evidence"] = all(o["appSignals"] for o in a["outcomes"] if o["verdictKind"] == "blocked")
     if c200.get("blocked"):
-        fails.append(f"{c200['blocked']} 200 do Connector como blocked?")
+        fails.append(f"{c200['blocked']} Connector 200 as blocked?")
     bad = set(cv) - {"app-ok"}
-    if cv.get("app-ok", 0) + nobody != len(posts) or (bad - {"indeterminado"}):
-        fails.append(f"POSTs do Connector: esperado app-ok (+ indeterminado só sem corpo capturado); obtido {dict(cv)}, sem corpo {nobody}")
+    if cv.get("app-ok", 0) + nobody != len(posts) or (bad - {"undetermined"}):
+        fails.append(f"Connector POSTs: expected app-ok (+ undetermined only without captured body); got {dict(cv)}, without body {nobody}")
     return sess, out, fails
 
 
@@ -183,18 +183,18 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     p = subprocess.run([*EXPORT(core), "export-priming", sess, first, *EXPORT_ARGS], capture_output=True, text=True)
     if p.returncode != 0:
         msg = " ".join(p.stderr.split())
-        if EXPORT_ARGS and label == "primeiro_com_resposta_anterior_capturada":
-            fails.append("com --wrapper o alvo com resposta anterior capturada DEVE gerar o script com o adaptador; "
-                         "recusa não é aceitável: " + msg[:160])
+        if EXPORT_ARGS and label == "first_with_previous_response_captured":
+            fails.append("with --wrapper the target with a previous response captured MUST generate the script with the adapter; "
+                         "refusal is not acceptable: " + msg[:160])
         out["refused"] = {
             "rc": p.returncode,
-            "mentions_incomplete": "cadeia incompleta" in msg,
-            "lists_producers": "sem corpo observável" in msg and "Respostas sem corpo:" in msg,
-            "suggests_equivalent": bool(re.search(r"(ocorrência equivalente com corpo completo: har-\d{4}|nenhuma ocorrência equivalente)", msg)),
+            "mentions_incomplete": "incomplete chain" in msg,
+            "lists_producers": "without an observable body" in msg and "Responses without a body:" in msg,
+            "suggests_equivalent": bool(re.search(r"(equivalent occurrence with a full body: har-\d{4}|no equivalent occurrence)", msg)),
             "message": msg[:400],
-            "allow_incomplete_script": "FALHOU",
+            "allow_incomplete_script": "FAILED",
         }
-        # --allow-incomplete: script gerado com fail() explícito, ainda válido em Python.
+        # --allow-incomplete: script generated with an explicit fail(), still valid Python.
         p2 = subprocess.run([*EXPORT(core), "export-priming", sess, first, "--allow-incomplete", *EXPORT_ARGS], capture_output=True, text=True)
         if p2.returncode == 0:
             script = p2.stdout
@@ -209,17 +209,17 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
                     "steps": len(ids),
                     "fail_calls": len(re.findall(r"^\s+fail\(", script, re.M)),
                     "plan_mode_rc": pl.returncode,
-                    "nothing_sent_notice": "Nada foi enviado" in pl.stdout,
+                    "nothing_sent_notice": "Nothing was sent" in pl.stdout,
                 }
-                # Escape hatch explícito (cadeia incompleta): registra o que ele exige, sem aplicar o critério
-                # de qualidade — aqui o valor sem produtor observável só pode ser entrada do operador.
+                # Explicit escape hatch (incomplete chain): records what it requires, without applying the quality
+                # criterion — here a value without an observable producer can only be operator input.
                 ap_ = re.search(r"^PARAMS = \[\n(.*?)^\]", script, re.S | re.M)
                 aprm = re.findall(r"^\s+\('([^']*)', (None|'[^']*'|\"[^\"]*\"), ", ap_.group(1), re.M) if ap_ else []
                 out["refused"]["allow_incomplete"]["params_required"] = [n for n, d in aprm if d == "None"]
-                if out["refused"]["allow_incomplete"]["fail_calls"] >= 1 and pl.returncode == 0 and "Nada foi enviado" in pl.stdout:
+                if out["refused"]["allow_incomplete"]["fail_calls"] >= 1 and pl.returncode == 0 and "Nothing was sent" in pl.stdout:
                     out["refused"]["allow_incomplete_script"] = "OK"
             except SyntaxError:
-                out["refused"]["allow_incomplete_script"] = "FALHOU"
+                out["refused"]["allow_incomplete_script"] = "FAILED"
         return out, fails
     script = p.stdout
     spath = Path(tmp) / f"priming{idx}-{label}.py"
@@ -227,12 +227,12 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     if EXPORT_ARGS:
         out["usa_adaptador_natural_ajax_encode"] = "natural_ajax_encode" in script
         if not out["usa_adaptador_natural_ajax_encode"]:
-            fails.append("com --wrapper o script gerado deveria usar o adaptador (natural_ajax_encode ausente)")
+            fails.append("with --wrapper the generated script should use the adapter (natural_ajax_encode missing)")
     try:
         ast.parse(script); out["ast_parse"] = "OK"
     except SyntaxError:
-        out["ast_parse"] = "FALHOU"; fails.append("ast.parse falhou")
-    # plano: ids dos passos
+        out["ast_parse"] = "FAILED"; fails.append("ast.parse failed")
+    # plan: step ids
     plan = re.search(r"^PLAN = \[\n(.*?)^\]", script, re.S | re.M)
     ids = re.findall(r"^\s+\('(har-\d+)', '(GET|POST)'", plan.group(1), re.M) if plan else []
     out["steps"] = len(ids)
@@ -243,8 +243,8 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     out["steps_outside_flow"] = len([rid for rid, _ in ids if kind_of(byid[rid], events.get(rid)) is None])
     out["resposta_anterior_capturada"] = strict
     if seq != EXPECTED and strict:
-        fails.append(f"ordem diferente do fluxo manual: {seq}")
-    # extração no passo-alvo
+        fails.append(f"order differs from the manual flow: {seq}")
+    # extraction at the target step
     f = target_step_fields(script)
     out["extraction"] = {k: extraction_kinds(f.get(k, "")) for k in ("STAMP", "SESSIONID", "XML") if k in f}
     params = re.search(r"^PARAMS = \[\n(.*?)^\]", script, re.S | re.M)
@@ -253,14 +253,14 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     dflt = [n for n, d in prm if d != "None"]
     out["params_required"] = req
     out["params_with_default"] = dflt
-    # Qualidade (líder, F1): só placa e sessionid_cliente podem ser exigidas; o resto é derivável.
+    # Quality (leader, F1): only placa and sessionid_cliente may be required; the rest is derivable.
     out["params_required_extra"] = [n for n in req if n not in ALLOWED_REQUIRED]
     out["params_required_only_placa_e_sessionid"] = not out["params_required_extra"]
     if out["params_required_extra"]:
-        fails.append("parâmetros obrigatórios além de sessionid_cliente/placa (o gerador deve derivá-los): "
+        fails.append("required parameters beyond sessionid_cliente/placa (the generator must derive them): "
                      + ", ".join(out["params_required_extra"]))
     out["placa_param_required"] = "placa" in req
-    # valores capturados literais (só contagem) fora de comentários
+    # captured literal values (count only) outside comments
     code = code_without_comments(script)
     vals = captured_values(sess, posts)
     short_delta = {k for k, v in vals if k == "delta" and len(v) <= 8 and v in code}
@@ -271,27 +271,27 @@ def analyse_target(core, sess, s, byid, posts, events, first, tmp, idx, label, s
     lit_in_params = Counter(k for k, v in vals if params and v in params.group(1))
     out["captured_literals_in_params_defaults"] = dict(lit_in_params) or 0
     if lit:
-        fails.append(f"valores capturados literais no código: {dict(lit)}")
+        fails.append(f"captured literal values in the code: {dict(lit)}")
     if lit_in_params:
-        fails.append(f"valor de sessão capturado como PADRÃO de parâmetro (deveria ser obrigatório): {dict(lit_in_params)}")
-    if strict and "controle HTML" not in out["extraction"].get("STAMP", []):
-        fails.append("STAMP não extraído de controle HTML")
-    if strict and not any("trecho" in k for k in out["extraction"].get("XML", [])):
-        fails.append("delta/XML sem trecho extraído em runtime")
+        fails.append(f"session value captured as a parameter DEFAULT (should be required): {dict(lit_in_params)}")
+    if strict and "HTML control" not in out["extraction"].get("STAMP", []):
+        fails.append("STAMP not extracted from an HTML control")
+    if strict and not any("excerpt" in k for k in out["extraction"].get("XML", [])):
+        fails.append("delta/XML without an excerpt extracted at runtime")
     if "placa" not in req:
-        fails.append("placa não é parâmetro obrigatório")
-    # modo plano (sem --confirmar)
+        fails.append("placa is not a required parameter")
+    # plan mode (without --confirmar)
     pl = subprocess.run([sys.executable, "-I", str(spath)], capture_output=True, text=True, timeout=30)
     nlines = len(re.findall(r"^\s+\d+\. (GET|POST) ", pl.stdout, re.M))
-    out["plan_mode"] = {"rc": pl.returncode, "plan_lines": nlines, "nothing_sent_notice": "Nada foi enviado" in pl.stdout}
-    if pl.returncode != 0 or nlines != len(ids) or "Nada foi enviado" not in pl.stdout:
-        fails.append(f"modo plano: rc={pl.returncode} linhas={nlines}/{len(ids)}")
+    out["plan_mode"] = {"rc": pl.returncode, "plan_lines": nlines, "nothing_sent_notice": "Nothing was sent" in pl.stdout}
+    if pl.returncode != 0 or nlines != len(ids) or "Nothing was sent" not in pl.stdout:
+        fails.append(f"plan mode: rc={pl.returncode} lines={nlines}/{len(ids)}")
     return out, fails
 
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("hars", nargs="+"); ap.add_argument("--core")
-    ap.add_argument("--wrapper", help="natural-core: roda export-priming COM o adaptador (--adapter natural-ajax)")
+    ap.add_argument("--wrapper", help="natural-core: runs export-priming WITH the adapter (--adapter natural-ajax)")
     a = ap.parse_args()
     if a.wrapper:
         global EXPORT, EXPORT_ARGS
@@ -308,10 +308,10 @@ def main():
             fails += [f"HAR #{i + 1}: {x}" for x in f]
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    print("temporário removido:", not os.path.exists(tmp))
+    print("temporary removed:", not os.path.exists(tmp))
     if fails:
         print(f"FAIL ({len(fails)}):"); [print(" -", x) for x in fails]; return 1
-    print("OK: priming e assess nos HARs reais (agregados)"); return 0
+    print("OK: priming and assess on the real HARs (aggregates)"); return 0
 
 
 if __name__ == "__main__":

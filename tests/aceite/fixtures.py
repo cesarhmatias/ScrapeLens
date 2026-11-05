@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Gera as fixtures sintéticas de aceite do ScrapeLens.
+"""Generates the synthetic acceptance fixtures for ScrapeLens.
 
-Tudo aqui é inventado: domínios `.invalid`, portas de documentação, horários
-fixos. Nenhuma fixture deriva de captura pessoal. Os arquivos gerados são
-commitados em `fixtures/aceite/` para que a bateria rode offline; o comando
-`run_acceptance.py --build-fixtures` regenera de forma determinística.
+Everything here is invented: `.invalid` domains, documentation ports, fixed
+timestamps. No fixture derives from a personal capture. The generated files are
+committed to `fixtures/aceite/` so the suite runs offline; the command
+`run_acceptance.py --build-fixtures` regenerates them deterministically.
 
-Uso:
-  python3 tests/aceite/fixtures.py            # gera fixtures/aceite
-  python3 tests/aceite/fixtures.py --check    # falha se algo mudaria
+Usage:
+  python3 tests/aceite/fixtures.py            # generates fixtures/aceite
+  python3 tests/aceite/fixtures.py --check    # fails if anything would change
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ FIX = ROOT / "fixtures" / "aceite"
 FIXTURE_META = {
     "label": "synthetic-fixture",
     "origin": "synthetic",
-    "note": "Dados inventados para a bateria de aceite; nenhum tráfego real.",
+    "note": "Invented data for the acceptance suite; no real traffic.",
 }
 
 
@@ -101,11 +101,11 @@ def har(entries: list[dict], creator: str = "scrapelens-aceite") -> dict:
 
 # ------------------------------------------------------------- NetLog helper
 
-# O `time` do NetLog é em milissegundos de ticks do processo e `timeTickOffset`
-# é a época (ms) no tick zero. Uma captura coerente satisfaz, para o mesmo
-# evento, `wallTime = timeTickOffset/1000 + timestamp` (nas capturas reais do
-# Chrome deste projeto a diferença é < 2 ms). Fixtures de correlação declaram
-# CDP e NetLog por essa mesma equação; sem isso o core calibra a unidade errada.
+# The NetLog `time` is in milliseconds of process ticks and `timeTickOffset`
+# is the epoch (ms) at tick zero. A coherent capture satisfies, for the same
+# event, `wallTime = timeTickOffset/1000 + timestamp` (in this project's real
+# Chrome captures the difference is < 2 ms). Correlation fixtures declare
+# CDP and NetLog by this same equation; without it the core calibrates the wrong unit.
 TICK_OFFSET_MS = 1793046000000
 
 NETLOG_TYPES = [
@@ -228,11 +228,11 @@ def build() -> None:
         shutil.rmtree(FIX)
     FIX.mkdir(parents=True)
     if not CORE.exists():
-        raise SystemExit(f"binário do core ausente: {CORE}\nrode: cd core && cargo build --release")
+        raise SystemExit(f"core binary missing: {CORE}\nrun: cd core && cargo build --release")
 
     # ---------------------------------------------------------- A1 headers
     a1_dir = FIX / "headers-cookies"
-    meta(a1_dir, "Headers repetidos, caixa original e cookies em HAR e NetLog h1.")
+    meta(a1_dir, "Repeated headers, original casing and cookies in HAR and h1 NetLog.")
     dump(a1_dir / "headers-cookies.har", har([
         har_entry(0, "https://fixture.invalid/dup?case=headers",
                   request_headers=[
@@ -252,7 +252,7 @@ def build() -> None:
 
     # ---------------------------------------------------------- A2 parsers
     a2_dir = FIX / "parsers"
-    meta(a2_dir, "HAR e NetLog válidos, incompletos, inválidos e com itens desconhecidos.")
+    meta(a2_dir, "Valid, incomplete, invalid and unknown-item HAR and NetLog files.")
     dump(a2_dir / "incomplete.har", har([
         {"startedDateTime": "2026-10-26T20:01:00.000Z", "time": 1,
          "request": {"method": "GET", "url": "https://fixture.invalid/missing-response",
@@ -284,7 +284,7 @@ def build() -> None:
         h1_request_block(303, 3_300_000, headers=[
             "Host: 127.0.0.1:9999",
             "x-ok: 1",
-            "linha sem separador",
+            "line without separator",
             "x-ok: 2",
         ])
     ))
@@ -293,7 +293,7 @@ def build() -> None:
 
     # ---------------------------------------------------------- A3 ambiguous
     a3_dir = FIX / "ambiguous"
-    meta(a3_dir, "Duas requisições simultâneas idênticas: correlação deve ser ambígua com candidatos.")
+    meta(a3_dir, "Two identical simultaneous requests: correlation must be ambiguous with candidates.")
     dump(a3_dir / "netlog-ambiguous.json",
          netlog(h1_request_block(101, 2_000_000, url="http://127.0.0.1:9999/dup?case=ambiguous",
                                  target="/dup?case=ambiguous")
@@ -307,8 +307,8 @@ def build() -> None:
             "headers": {"Accept": "*/*", "User-Agent": "ScrapelensAceite/1"},
         }
         timestamp = 2000.0 + index * 0.02
-        # wallTime na mesma equação do NetLog (`timeTickOffset/1000 + timestamp`),
-        # igual às capturas reais: os dois relógios concordam em epoch e monotônico.
+        # wallTime in the same NetLog equation (`timeTickOffset/1000 + timestamp`),
+        # as in real captures: both clocks agree on epoch and monotonic time.
         lines.append(cdp_event("Network.requestWillBeSent", {
             "requestId": request_id, "loaderId": "L" + request_id, "frameId": "F1",
             "timestamp": timestamp, "wallTime": TICK_OFFSET_MS / 1000.0 + timestamp,
@@ -328,7 +328,7 @@ def build() -> None:
 
     # ---------------------------------------------------------- A4 redirects
     a4_dir = FIX / "redirects"
-    meta(a4_dir, "Cadeia de redirect e múltiplas tentativas em HAR (3 elos) e NetLog (2 elos).")
+    meta(a4_dir, "Redirect chain and multiple attempts in HAR (3 hops) and NetLog (2 hops).")
     dump(a4_dir / "redirect-chain.har", har([
         har_entry(0, "https://fixture.invalid/a", status=302,
                   request_headers=[("x-step", "1")],
@@ -340,7 +340,7 @@ def build() -> None:
                   redirect="https://fixture.invalid/c"),
         har_entry(2, "https://fixture.invalid/c",
                   request_headers=[("x-step", "3")],
-                  response_headers=[("content-type", "text/plain")], body="fim"),
+                  response_headers=[("content-type", "text/plain")], body="end"),
     ]))
     dump(a4_dir / "redirect-chain.netlog.json", netlog([
         netlog_event("URL_REQUEST_START_JOB", 202, 4_000_000, phase=1,
@@ -364,8 +364,8 @@ def build() -> None:
 
     # ---------------------------------------------------------- A5 bodies
     a5_dir = FIX / "bodies"
-    meta(a5_dir, "Estados explícitos de corpo: captured, empty, truncated, unavailable, discarded.")
-    # Sessão própria, com 3 requisições e anexos previsíveis.
+    meta(a5_dir, "Explicit body states: captured, empty, truncated, unavailable, discarded.")
+    # Own session, with 3 requests and predictable attachments.
     dump(a5_dir / "bodies.har", har([
         har_entry(0, "https://fixture.invalid/discarded",
                   request_headers=[("x-case", "discarded")],
@@ -383,7 +383,7 @@ def build() -> None:
         requests = value["requests"]
         requests[0]["requestBody"] = {
             "state": "discarded",
-            "note": "corpo descartado pela política de captura de aceite",
+            "note": "body discarded by the acceptance capture policy",
             "provenance": {"source": "manual", "method": "aceite.fixture",
                            "verification": "unverified"},
         }
@@ -405,14 +405,14 @@ def build() -> None:
             "attachment": "har-entry-0001.response.bin",
             "bytes": 4,
             "truncatedAt": 4,
-            "note": "limite de 4 bytes da fixture",
+            "note": "4-byte limit of the fixture",
             "contentType": "text/plain",
             "provenance": {"source": "manual", "method": "aceite.fixture",
                            "verification": "unverified"},
         }
         requests[2]["requestBody"] = {
             "state": "unavailable",
-            "note": "fonte não fornece corpo de requisição",
+            "note": "source does not provide a request body",
             "provenance": {"source": "har", "method": "aceite.fixture",
                            "verification": "unverified"},
         }
@@ -424,12 +424,12 @@ def build() -> None:
         }
 
     patch_session(a5_dir / "session", mutate_bodies)
-    # O anexo truncado guarda de fato apenas os 4 bytes capturados.
+    # The truncated attachment really keeps only the 4 captured bytes.
     (a5_dir / "session" / "attachments" / "har-entry-0001.response.bin").write_bytes(b"0123")
 
     # ---------------------------------------------------------- A6 diff
     a6_dir = FIX / "diff"
-    meta(a6_dir, "Diff com headers duplicados, reordenação e um header novo.")
+    meta(a6_dir, "Diff with duplicated headers, reordering and one new header.")
     dump(a6_dir / "diff.har", har([
         har_entry(0, "https://fixture.invalid/diff-a",
                   request_headers=[("x-seq", "1"), ("X-Rep", "a"), ("x-seq", "2"),
@@ -446,10 +446,10 @@ def build() -> None:
 
     # ---------------------------------------------------------- A7 export
     a7_dir = FIX / "export-special"
-    meta(a7_dir, "Escaping de URL, headers e corpo hostis em cURL e Python.")
+    meta(a7_dir, "URL, header and hostile-body escaping in cURL and Python.")
     hostile_url = ("https://fixture.invalid/p?q=o'relly&x=$HOME&y=`id`&z=a&b=100%"
                    "&u=%C3%A7%C3%A3o&pipe=|&semi=;")
-    # Corpo de requisição com aspas, $, crase, barra invertida e conteúdo binário.
+    # Request body with quotes, $, backticks, backslash and binary content.
     request_body = b"a'b\"$HOME`id`\\\n"
     nul_body = b"bin\x00ario"
     dump(a7_dir / "special.har", har([
@@ -471,7 +471,7 @@ def build() -> None:
                   post_data={"mimeType": "application/octet-stream", "text": "bin"}),
     ]))
     import_fixture("import-har", a7_dir / "special.har", a7_dir / "session")
-    # Anexos com bytes exatos (HAR postData.text não preserva NUL).
+    # Attachments with exact bytes (HAR postData.text does not preserve NUL).
     value = json.loads((a7_dir / "session" / "session.json").read_text())
     rid = value["requests"][0]["id"]
     rid_nul = value["requests"][1]["id"]
@@ -500,12 +500,12 @@ def build() -> None:
         value["session"]["labels"] = sorted(set(value["session"].get("labels", []) + ["synthetic-fixture"]))
 
     patch_session(a7_dir / "session", mutate_export)
-    meta(a7_dir, "Escaping de URL, headers e corpo hostis em cURL e Python.",
+    meta(a7_dir, "URL, header and hostile-body escaping in cURL and Python.",
          {"requestIds": [rid, rid_nul]})
 
     # ---------------------------------------------------------- A8 sanitize
     a8_dir = FIX / "sanitize"
-    meta(a8_dir, "Sanitização de credenciais, cookies, token em URL, corpos e eventos brutos.")
+    meta(a8_dir, "Sanitization of credentials, cookies, token in URL, bodies and raw events.")
     dump(a8_dir / "secret.har", har([
         har_entry(0, "https://fixture.invalid/s?token=SECRET-URL-TOKEN#SECRET-FRAGMENT",
                   request_headers=[
@@ -524,7 +524,7 @@ def build() -> None:
         har_entry(1, "https://fixture.invalid/form",
                   request_headers=[("Content-Type", "application/x-www-form-urlencoded")],
                   response_headers=[("content-type", "text/plain")],
-                  body="SECRET-FREE-TEXT no corpo textual",
+                  body="SECRET-FREE-TEXT in the text body",
                   post_data={"mimeType": "application/x-www-form-urlencoded",
                              "text": "user=ana&password=SECRET-FORM-PASSWORD&page=2"}),
     ]))
@@ -558,7 +558,7 @@ def build() -> None:
                                          "cookie: sid=SECRET-COOKIE-VALUE"],
                              "line": "GET /s HTTP/1.1\r\n"}),
     ]))
-    # Anexo HTML não estruturado: deve ser omitido com aviso.
+    # Unstructured HTML attachment: must be omitted with a warning.
     html_request = json.loads((a8_dir / "session" / "session.json").read_text())["requests"][0]
     html_name = "fixture-unstructured.response.bin"
     shutil_copy_attachment(a8_dir / "session", html_name,
@@ -574,20 +574,20 @@ def build() -> None:
     patch_session(a8_dir / "session", lambda value: value["requests"][0].update(
         responseBody=html_request["responseBody"]))
     (a8_dir / "session" / "notes.txt").write_text(
-        "fixture sintética; contém segredos apenas para o teste de sanitização\n", encoding="utf-8")
+        "synthetic fixture; contains secrets only for the sanitization test\n", encoding="utf-8")
 
     # ---------------------------------------------------------- top README
     (FIX / "README.md").write_text(
-        "# fixtures/aceite — sintéticas\n\n"
-        "Geradas por `tests/aceite/fixtures.py`. Todos os domínios usam `.invalid`, os\n"
-        "horários são fixos e os dados são inventados. Cada diretório tem `fixture.json`\n"
-        "com `label: synthetic-fixture`.\n\n"
-        "Nenhuma fixture contém tráfego real, cookie real ou credencial válida. Os\n"
-        "segredos de `sanitize/` são marcadores (`SECRET-*`) usados para provar que a\n"
-        "sanitização os remove.\n",
+        "# fixtures/aceite — synthetic\n\n"
+        "Generated by `tests/aceite/fixtures.py`. All domains use `.invalid`, the\n"
+        "timestamps are fixed and the data is invented. Each directory has `fixture.json`\n"
+        "with `label: synthetic-fixture`.\n\n"
+        "No fixture contains real traffic, a real cookie or a valid credential. The\n"
+        "secrets in `sanitize/` are markers (`SECRET-*`) used to prove that the\n"
+        "sanitization removes them.\n",
         encoding="utf-8",
     )
-    print(f"fixtures geradas em {FIX}")
+    print(f"fixtures generated in {FIX}")
 
 
 def manifest() -> dict[str, str]:
@@ -603,8 +603,8 @@ if __name__ == "__main__":
         build()
         after = manifest()
         if before != after:
-            print("fixtures divergem do builder; rode sem --check e commite", file=sys.stderr)
+            print("fixtures diverge from the builder; run without --check and commit", file=sys.stderr)
             sys.exit(1)
-        print("fixtures em dia")
+        print("fixtures up to date")
     else:
         build()

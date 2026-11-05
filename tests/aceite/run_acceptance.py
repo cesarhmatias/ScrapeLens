@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Bateria de aceite do MVP ScrapeLens (10 critérios da especificação).
+"""Acceptance suite for the ScrapeLens MVP (the 10 criteria of the specification).
 
-Consome o CLI do core (`core/target/release/scrapelens-core`) e as fixtures
-sintéticas de `fixtures/aceite/`. Nenhuma etapa abre a rede: os servidores e o
-Chrome do critério 9 são locais e orquestrados por `tests/capture/run-cycle.sh`.
+Drives the core CLI (`core/target/release/scrapelens-core`) and the synthetic
+fixtures in `fixtures/aceite/`. No step opens the network: the servers and the
+Chrome of criterion 9 are local and orchestrated by `tests/capture/run-cycle.sh`.
 
-Uso:
-  python3 tests/aceite/run_acceptance.py                       # itens 1-8,10
+Usage:
+  python3 tests/aceite/run_acceptance.py                       # items 1-8,10
   python3 tests/aceite/run_acceptance.py --capture RUN_DIR     # + item 9
   python3 tests/aceite/run_acceptance.py --only 1,3,6
   python3 tests/aceite/run_acceptance.py --build-fixtures
 
-Saída: `tests/results/aceite.json` e `tests/RELATORIO.md`.
-Código de saída 0 somente se nenhum item selecionado falhou.
+Output: `tests/results/aceite.json` and `tests/RELATORIO.md`.
+Exit code 0 only if no selected item failed.
 """
 from __future__ import annotations
 
@@ -38,9 +38,9 @@ WORK = ROOT / "tests" / ".work"
 RESULTS = ROOT / "tests" / "results"
 REPORT = ROOT / "tests" / "RELATORIO.md"
 
-# SHA-256 do executável do bundle final aceito nesta rodada, documentado em
-# `src-tauri/EMPACOTAMENTO.md`. Um rebuild legítimo muda o hash: atualize os dois
-# lugares juntos, para que a bateria nunca aprove um artefato não documentado.
+# SHA-256 of the final bundle executable accepted in this round, documented in
+# `src-tauri/EMPACOTAMENTO.md`. A legitimate rebuild changes the hash: update both
+# places together, so the suite never approves an undocumented artifact.
 APP_EXECUTABLE = pathlib.Path(os.environ.get("SL_APP_EXECUTABLE") or (
     pathlib.Path(__file__).resolve().parents[2] / "src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
 EXPECTED_APP_SHA256 = "2691f1528a6b5b6009d8cc29c049f1e500093d6aab9f2163bcc4aad60df18156"
@@ -64,7 +64,7 @@ SECRETS = [
 
 
 class Expect:
-    """Acumula asserções; um item falha se qualquer linha falhar."""
+    """Accumulates assertions; an item fails if any row fails."""
 
     def __init__(self) -> None:
         self.rows: list[dict] = []
@@ -74,13 +74,13 @@ class Expect:
         return bool(condition)
 
     def eq(self, got, expected, label: str) -> bool:
-        return self.ok(got == expected, f"{label}: esperado {expected!r}, obtido {got!r}")
+        return self.ok(got == expected, f"{label}: expected {expected!r}, got {got!r}")
 
     def contains(self, haystack, needle, label: str) -> bool:
         present = needle in haystack
         return self.ok(present, f"{label}: {needle!r} "
-                               + ("presente" if present else "ausente")
-                               + f" em {short(haystack)}")
+                               + ("present" if present else "absent")
+                               + f" in {short(haystack)}")
 
     @property
     def failures(self) -> list[dict]:
@@ -125,12 +125,12 @@ def core_ok(*args: str, timeout: int = 300) -> str:
 
 
 def inspect(session: pathlib.Path) -> dict:
-    """Devolve o documento SessionV1 (o `session` de dentro do envelope `inspect`)."""
+    """Returns the SessionV1 document (the `session` inside the `inspect` envelope)."""
     return json.loads(core_ok("inspect", str(session)))["session"]
 
 
 SYNTHETIC_LABELS = ["capture-import", "synthetic-fixture"]  # import-capture
-# Rótulo de origem por tipo de importação (core: har.rs, netlog.rs, session.rs).
+# Origin label per import type (core: har.rs, netlog.rs, session.rs).
 ORIGIN_LABEL = {"import-har": "har-import", "import-netlog": "netlog-import", "import-capture": "capture-import"}
 
 
@@ -140,12 +140,12 @@ def import_to(kind: str, source: pathlib.Path, target: pathlib.Path) -> dict:
     session = inspect(target)
     expected = sorted([ORIGIN_LABEL[kind], "synthetic-fixture"])
     if sorted(session["session"].get("labels", [])) != expected:
-        raise SystemExit(f"rótulos da sessão importada {target.name}: {session['session'].get('labels')} != {expected}")
+        raise SystemExit(f"labels of the imported session {target.name}: {session['session'].get('labels')} != {expected}")
     return session
 
 
 def view_verification(view: dict) -> str:
-    """Estado mais fraco entre as ocorrências de um HeaderView (contrato: por informação)."""
+    """Weakest state among the occurrences of a HeaderView (contract: per information)."""
     order = {"unverified": 0, "partial": 1, "verified": 2}
     entries = list(view.get("headers", [])) + list(view.get("pseudoHeaders", []))
     if not entries:
@@ -172,14 +172,14 @@ def derive_name(base: pathlib.Path) -> str:
 
 
 def item_1(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Headers repetidos, caixa e cookies preservados nas fixtures."""
+    """Repeated headers, casing and cookies preserved in the fixtures."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
     folder = FIX / "headers-cookies"
     meta = fixture_meta(folder)
-    exp.eq(meta.get("label"), "synthetic-fixture", "fixture identificada como sintética")
-    exp.eq(meta.get("origin"), "synthetic", "origem sintética declarada")
+    exp.eq(meta.get("label"), "synthetic-fixture", "fixture identified as synthetic")
+    exp.eq(meta.get("origin"), "synthetic", "synthetic origin declared")
 
     expected_names = ["x-rep", "x-seq", "X-Rep", "x-seq", "x-mixed-Case", "x-rep"]
     expected_pairs = list(zip(expected_names, ["a", "1", "b", "2", "V", "c"]))
@@ -200,21 +200,21 @@ def item_1(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         pairs = [(entry["name"], entry["value"]) for entry in headers]
         without_cookie = [pair for pair in pairs
                           if pair[0].lower() not in {"cookie", "host"}]
-        exp.eq(without_cookie, expected_pairs, f"{label}: ordem, caixa e duplicatas da requisição")
+        exp.eq(without_cookie, expected_pairs, f"{label}: order, casing and duplicates of the request")
         exp.eq(len([name for name, _ in without_cookie if name.lower() == "x-rep"]), 3,
-               f"{label}: três ocorrências de x-rep preservadas")
+               f"{label}: three occurrences of x-rep preserved")
         exp.eq(request["requestHeaders"]["orderState"], "sourceOrder",
                f"{label}: orderState=sourceOrder")
 
         cookie = request["cookie"]
         exp.eq(cookie.get("raw"),
                ["sl_a=1; sl_b=2; sc_dup=one; sc_dup=two"],
-               f"{label}: campo Cookie bruto preservado")
+               f"{label}: raw Cookie field preserved")
         exp.eq([(pair["name"], pair["value"]) for pair in cookie.get("pairs", [])],
                [("sl_a", "1"), ("sl_b", "2"), ("sc_dup", "one"), ("sc_dup", "two")],
-               f"{label}: pares internos do Cookie, com sc_dup duplicado")
+               f"{label}: internal Cookie pairs, with sc_dup duplicated")
         exp.ok(len([p for p in cookie.get("pairs", []) if p["name"] == "sc_dup"]) == 2,
-               f"{label}: nome de cookie duplicado não foi colapsado")
+               f"{label}: duplicate cookie name was not collapsed")
 
         set_cookies = request.get("setCookies", [])
         expected_set_cookies = ["sc_a=1; Path=/; HttpOnly",
@@ -222,46 +222,46 @@ def item_1(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                                 "sc_dup=one; Path=/",
                                 "sc_dup=two; Path=/"]
         if label == "HAR":
-            # O HAR da fixture inclui Expires na terceira linha; a linha bruta é preservada.
+            # The fixture HAR includes Expires on the third line; the raw line is preserved.
             expected_set_cookies[2] = "sc_dup=one; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT"
         exp.eq([record["raw"] for record in set_cookies], expected_set_cookies,
-               f"{label}: linhas Set-Cookie na ordem da fonte")
+               f"{label}: Set-Cookie lines in source order")
         exp.eq([record.get("parsed", {}).get("name") for record in set_cookies],
                ["sc_a", "sc_b", "sc_dup", "sc_dup"],
-               f"{label}: Set-Cookie parseado, repetição preservada")
+               f"{label}: Set-Cookie parsed, repetition preserved")
         exp.ok(set_cookies[0].get("parsed", {}).get("httpOnly") is True,
-               f"{label}: HttpOnly de sc_a parseado")
+               f"{label}: HttpOnly of sc_a parsed")
         exp.ok(set_cookies[1].get("parsed", {}).get("secure") is True,
-               f"{label}: Secure de sc_b parseado")
+               f"{label}: Secure of sc_b parsed")
 
-        # Roundtrip: reabrir a sessão gravada não altera a sequência.
+        # Round trip: reopening the saved session does not change the sequence.
         reopened = inspect(har_session if label == "HAR" else nl_session)
         again = [(entry["name"], entry["value"])
                  for entry in reopened["requests"][0]["requestHeaders"]["headers"]]
         exp.eq([pair for pair in again if pair[0].lower() not in {"cookie", "host"}], expected_pairs,
-               f"{label}: sequência preservada após gravação e releitura")
+               f"{label}: sequence preserved after saving and reading back")
 
     exp.eq(view_verification(imported_nl["requests"][0]["requestHeaders"]), "verified",
-           "NetLog h1: headers de requisição verificados")
+           "NetLog h1: request headers verified")
     exp.eq(view_verification(imported_nl["requests"][0]["responseHeaders"]), "verified",
-           "NetLog h1: headers de resposta verificados")
+           "NetLog h1: response headers verified")
     exp.eq(view_verification(imported_har["requests"][0]["requestHeaders"]), "unverified",
-           "HAR: ordem permanece não verificada (não inventa selo)")
+           "HAR: order remains unverified (no seal invented)")
     response_pairs = [(entry["name"], entry["value"])
                       for entry in imported_nl["requests"][0]["responseHeaders"]["headers"]]
     exp.ok(("x-resp-order", "1") in response_pairs and ("x-resp-order", "2") in response_pairs,
-           "NetLog: duplicata de resposta x-resp-order preservada na ordem")
-    evidence.append("asserções: sequência/caixa/duplicatas, Cookie bruto+pares, Set-Cookie bruto+parseado, verificação por fonte")
+           "NetLog: duplicate response x-resp-order preserved in order")
+    evidence.append("assertions: sequence/casing/duplicates, raw Cookie + pairs, raw + parsed Set-Cookie, verification by source")
 
-    # Todas as fixtures de aceite precisam se declarar sintéticas.
+    # Every acceptance fixture must declare itself synthetic.
     missing = [str(path.relative_to(ROOT)) for path in FIX.glob("*/fixture.json")
                if json.loads(path.read_text()).get("label") != "synthetic-fixture"]
-    exp.eq(missing, [], "todas as fixtures de aceite rotuladas synthetic-fixture")
+    exp.eq(missing, [], "all acceptance fixtures labeled synthetic-fixture")
     return exp.rows, evidence, notes
 
 
 def item_2(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """HAR/NetLog válidos, incompletos, inválidos e com eventos desconhecidos."""
+    """Valid, incomplete, invalid and unknown-event HAR/NetLog inputs."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
@@ -269,90 +269,90 @@ def item_2(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     base = ctx["run"] / "item2"
 
     valid = import_to("import-har", FIX / "headers-cookies" / "headers-cookies.har", base / "valid-har")
-    exp.eq(len(valid["requests"]), 1, "HAR válido: 1 requisição importada")
+    exp.eq(len(valid["requests"]), 1, "valid HAR: 1 request imported")
 
     incomplete = import_to("import-har", parsers / "incomplete.har", base / "incomplete-har")
-    exp.eq(len(incomplete["requests"]), 2, "HAR incompleto: entradas válidas preservadas")
+    exp.eq(len(incomplete["requests"]), 2, "incomplete HAR: valid entries preserved")
     exp.eq(incomplete["session"]["completeness"]["state"], "partial",
-           "HAR incompleto: completeness=partial")
+           "incomplete HAR: completeness=partial")
     codes = {warning["code"] for warning in incomplete["warnings"]}
-    exp.contains(codes, "har.missing_response", "HAR incompleto: aviso explícito har.missing_response")
+    exp.contains(codes, "har.missing_response", "incomplete HAR: explicit har.missing_response warning")
     har_counts = incomplete["session"]["completeness"]["counts"]
-    exp.eq(har_counts.get("sourceEvents"), 2, "HAR: sourceEvents persistido (2 entradas)")
-    exp.eq(har_counts.get("sourceEventsUsed"), 2, "HAR: sourceEventsUsed persistido (2)")
+    exp.eq(har_counts.get("sourceEvents"), 2, "HAR: sourceEvents persisted (2 entries)")
+    exp.eq(har_counts.get("sourceEventsUsed"), 2, "HAR: sourceEventsUsed persisted (2)")
 
     invalid_har = core("import-har", str(parsers / "invalid.har"), "--out", str(base / "invalid-har"))
-    exp.ok(invalid_har.returncode != 0, "HAR inválido: falha explícita (não silenciosa)")
-    exp.contains(invalid_har.stderr, "erro:", "HAR inválido: mensagem de erro no stderr")
+    exp.ok(invalid_har.returncode != 0, "invalid HAR: explicit failure (not silent)")
+    exp.contains(invalid_har.stderr, "error:", "invalid HAR: error message on stderr")
 
     unknown_encoding = import_to("import-har", parsers / "unknown-encoding.har", base / "encoding")
     codes = {warning["code"] for warning in unknown_encoding["warnings"]}
-    exp.contains(codes, "har.unknown_encoding", "HAR com encoding desconhecido: aviso")
+    exp.contains(codes, "har.unknown_encoding", "HAR with unknown encoding: warning")
     exp.eq(unknown_encoding["requests"][0]["responseBody"].get("bytes"), 5,
-           "HAR com encoding desconhecido: corpo tratado como texto e medido")
+           "HAR with unknown encoding: body treated as text and measured")
 
     unknown = import_to("import-netlog", parsers / "unknown-events.netlog.json", base / "unknown")
-    exp.eq(len(unknown["requests"]), 1, "NetLog com eventos desconhecidos: requisição preservada")
+    exp.eq(len(unknown["requests"]), 1, "NetLog with unknown events: request preserved")
     unknown_warning = next((warning for warning in unknown["warnings"]
                            if warning["code"] == "netlog.unknown_event_type"), None)
-    exp.ok(unknown_warning is not None, "NetLog: aviso persistido com a contagem de desconhecidos")
+    exp.ok(unknown_warning is not None, "NetLog: warning persisted with the unknown count")
     if unknown_warning:
-        match = re.search(r"(\d+) evento", unknown_warning["message"])
+        match = re.search(r"(\d+) event", unknown_warning["message"])
         count = int(match.group(1)) if match else 0
-        exp.ok(count >= 3, f"NetLog: {count} eventos desconhecidos contabilizados no aviso")
+        exp.ok(count >= 3, f"NetLog: {count} unknown events counted in the warning")
         exp.ok(bool((unknown_warning.get("detail") or {}).get("samples")),
-               "NetLog: amostras dos tipos desconhecidos preservadas no aviso")
+               "NetLog: samples of unknown types preserved in the warning")
     codes = {warning["code"] for warning in unknown["warnings"]}
-    exp.contains(codes, "netlog.unknown_event_type", "NetLog: aviso netlog.unknown_event_type")
+    exp.contains(codes, "netlog.unknown_event_type", "NetLog: netlog.unknown_event_type warning")
     exp.eq(unknown["session"]["completeness"]["state"], "partial",
-           "NetLog com itens desconhecidos: completeness=partial")
+           "NetLog with unknown items: completeness=partial")
     unknown_counts = unknown["session"]["completeness"]["counts"]
-    exp.eq(unknown_counts.get("sourceEvents"), 7, "NetLog: sourceEvents persistido (7)")
-    exp.eq(unknown_counts.get("sourceEventsUnknown"), 3, "NetLog: sourceEventsUnknown persistido (3)")
+    exp.eq(unknown_counts.get("sourceEvents"), 7, "NetLog: sourceEvents persisted (7)")
+    exp.eq(unknown_counts.get("sourceEventsUnknown"), 3, "NetLog: sourceEventsUnknown persisted (3)")
 
     no_constants = import_to("import-netlog", parsers / "no-constants.netlog.json", base / "no-constants")
     codes = {warning["code"]: warning for warning in no_constants["warnings"]}
-    exp.contains(codes, "netlog.constants_missing", "NetLog sem constants: aviso explícito")
-    exp.contains(codes, "netlog.no_requests", "NetLog sem constants: aviso de zero requisições")
+    exp.contains(codes, "netlog.constants_missing", "NetLog without constants: explicit warning")
+    exp.contains(codes, "netlog.no_requests", "NetLog without constants: zero-requests warning")
     exp.eq(no_constants["session"]["completeness"]["state"], "partial",
-           "NetLog sem constants: completeness=partial (nunca complete)")
+           "NetLog without constants: completeness=partial (never complete)")
 
     bad_line = import_to("import-netlog", parsers / "bad-header-line.netlog.json", base / "bad-line")
-    exp.eq(len(bad_line["requests"]), 1, "NetLog com linha de header inválida: requisição preservada")
+    exp.eq(len(bad_line["requests"]), 1, "NetLog with invalid header line: request preserved")
     codes = {warning["code"] for warning in bad_line["warnings"]}
-    exp.contains(codes, "netlog.header_line_invalid", "NetLog: aviso de linha sem separador")
+    exp.contains(codes, "netlog.header_line_invalid", "NetLog: warning for a line without separator")
     names = [entry["name"] for entry in bad_line["requests"][0]["requestHeaders"]["headers"]]
-    exp.eq(names.count("x-ok"), 2, "NetLog: headers válidos ao redor da linha inválida mantidos")
+    exp.eq(names.count("x-ok"), 2, "NetLog: valid headers around the invalid line kept")
 
     truncated = core("import-netlog", str(parsers / "truncated.netlog.json"), "--out", str(base / "truncated"))
-    exp.ok(truncated.returncode != 0, "NetLog truncado: falha explícita")
-    exp.contains(truncated.stderr, "erro:", "NetLog truncado: erro no stderr")
+    exp.ok(truncated.returncode != 0, "truncated NetLog: explicit failure")
+    exp.contains(truncated.stderr, "error:", "truncated NetLog: error on stderr")
 
     evidence += [
         f"`scrapelens-core import-har fixtures/aceite/parsers/incomplete.har --out {rel(base / 'incomplete-har')}`",
         f"`scrapelens-core import-netlog fixtures/aceite/parsers/unknown-events.netlog.json --out {rel(base / 'unknown')}`",
         f"`scrapelens-core import-netlog fixtures/aceite/parsers/no-constants.netlog.json --out {rel(base / 'no-constants')}`",
-        "casos inválidos: retorno ≠ 0 com `erro:` no stderr (HAR sem entries, NetLog truncado)",
+        "invalid cases: return code ≠ 0 with `error:` on stderr (HAR without entries, truncated NetLog)",
     ]
-    notes.append("HAR não comprova ordem/duplicatas: entradas importadas ficam `unverified`, como no contrato.")
-    notes.append("Contagens `completeness.counts.sourceEvents*` agora são persistidas e sobrevivem à releitura "
-                 "(correção do core nesta onda); os avisos continuam trazendo amostras dos tipos desconhecidos.")
+    notes.append("HAR does not prove order/duplicates: imported entries stay `unverified`, as in the contract.")
+    notes.append("`completeness.counts.sourceEvents*` counts are now persisted and survive re-reading "
+                 "(core fix in this wave); the warnings still carry samples of the unknown types.")
     return exp.rows, evidence, notes
 
 
 def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Requisições simultâneas idênticas: ambiguidade explícita, sem escolha falsa."""
+    """Identical simultaneous requests: explicit ambiguity, no false choice."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
     folder = FIX / "ambiguous"
     session_dir = ctx["run"] / "item3" / "capture"
     meta = fixture_meta(folder)
-    exp.eq(meta.get("label"), "synthetic-fixture", "fixture de ambiguidade rotulada sintética")
-    # A fixture precisa ser coerente com o Chrome real: o `wallTime` do CDP é
-    # `timeTickOffset/1000 + timestamp`. Se essa equação quebrar, a calibração de
-    # unidade do core (f6c6bdd) escolhe microssegundos e a correlação zera —
-    # falha da fixture, não do core.
+    exp.eq(meta.get("label"), "synthetic-fixture", "ambiguity fixture labeled synthetic")
+    # The fixture must be consistent with real Chrome: the CDP `wallTime` is
+    # `timeTickOffset/1000 + timestamp`. If this equation breaks, the core's unit
+    # calibration (f6c6bdd) picks microseconds and the correlation drops to zero —
+    # a fixture failure, not a core failure.
     cdp_events = [json.loads(line) for line in
                   (folder / "cdp-ambiguous.jsonl").read_text(encoding="utf-8").splitlines()
                   if line.strip()]
@@ -362,14 +362,14 @@ def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                    - (offset_ms / 1000.0 + event["params"]["timestamp"])) < 1e-6
                for event in cdp_events
                if event["method"] == "Network.requestWillBeSent"),
-           "relógio da fixture coerente (wallTime = timeTickOffset/1000 + timestamp)")
+           "fixture clock consistent (wallTime = timeTickOffset/1000 + timestamp)")
 
     fresh(session_dir)
     core_ok("import-capture", str(folder / "cdp-ambiguous.jsonl"),
             str(folder / "netlog-ambiguous.json"), "--out", str(session_dir),
             "--label", "synthetic-fixture")
     session = inspect(session_dir)
-    exp.eq(sorted(session["session"].get("labels", [])), SYNTHETIC_LABELS, "sessão importada rotulada como fixture sintética")
+    exp.eq(sorted(session["session"].get("labels", [])), SYNTHETIC_LABELS, "imported session labeled as synthetic fixture")
     evidence.append(
         "`scrapelens-core import-capture fixtures/aceite/ambiguous/cdp-ambiguous.jsonl "
         "fixtures/aceite/ambiguous/netlog-ambiguous.json --out "
@@ -377,50 +377,50 @@ def item_3(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     )
 
     requests = session["requests"]
-    exp.eq(len(requests), 2, "duas requisições CDP importadas")
+    exp.eq(len(requests), 2, "two CDP requests imported")
     unit_warning = next((warning for warning in session["warnings"]
                          if warning["code"] == "netlog.time_unit_detected"), None)
-    exp.ok(unit_warning is not None, "unidade de `time` calibrada pelo relógio do CDP")
+    exp.ok(unit_warning is not None, "`time` unit calibrated by the CDP clock")
     exp.eq((unit_warning or {}).get("detail", {}).get("unit"), "milliseconds",
-           "unidade calibrada como milliseconds (a mesma do Chrome real)")
+           "unit calibrated as milliseconds (the same as real Chrome)")
     ambiguous = [request for request in requests if request.get("match") == "ambiguous"]
-    exp.eq(len(ambiguous), 2, "ambas marcadas match=ambiguous (nenhuma associação silenciosa)")
+    exp.eq(len(ambiguous), 2, "both marked match=ambiguous (no silent association)")
     for request in ambiguous:
         candidates = request.get("matchCandidates", [])
-        exp.eq(len(candidates), 2, f"{request['id']}: dois candidatos expostos")
+        exp.eq(len(candidates), 2, f"{request['id']}: two candidates exposed")
         exp.ok(all(candidate.get("score", 0) >= 55 for candidate in candidates),
-               f"{request['id']}: candidatos acima do score mínimo, apenas para exibição")
+               f"{request['id']}: candidates above the minimum score, for display only")
         exp.ok(all(candidate.get("entityId") for candidate in candidates),
-               f"{request['id']}: candidatos identificáveis (entityId)")
+               f"{request['id']}: candidates identifiable (entityId)")
         exp.eq(view_verification(request["requestHeaders"]), "unverified",
-               f"{request['id']}: visão primária não foi promovida a verified na ambiguidade")
+               f"{request['id']}: primary view was not promoted to verified under ambiguity")
     candidate_sets = sorted(tuple(sorted(c["entityId"] for c in request["matchCandidates"]))
                             for request in ambiguous)
     exp.eq(len(set(candidate_sets)), 1,
-           "as duas requisições veem o mesmo conjunto de candidatos (não houve escolha cruzada)")
+           "both requests see the same candidate set (no cross choice)")
     codes = [warning["code"] for warning in session["warnings"]]
-    exp.eq(codes.count("correlate.ambiguous"), 2, "dois avisos correlate.ambiguous persistidos")
+    exp.eq(codes.count("correlate.ambiguous"), 2, "two correlate.ambiguous warnings persisted")
 
     netlog_only = import_to("import-netlog", folder / "netlog-ambiguous.json", ctx["run"] / "item3" / "netlog")
-    exp.eq(len(netlog_only["requests"]), 2, "NetLog isolado mantém as duas tentativas")
+    exp.eq(len(netlog_only["requests"]), 2, "isolated NetLog keeps both attempts")
     exp.eq(netlog_only["session"]["completeness"]["state"], "partial",
-           "NetLog isolado sem CDP: completeness=partial (cobertura não provada)")
+           "NetLog alone without CDP: completeness=partial (coverage not proven)")
 
-    notes.append("A ordem/duplicata do NetLog é preservada, mas não vira visão primária enquanto há ambiguidade.")
-    notes.append("Diagnóstico da falha do líder: a fixture declarava `wallTime` sem o `timestamp` monotônico "
-                 "(`1793046000.0`), e o core de `f6c6bdd` calibrava `time` como microssegundos; o NetLog ficava "
-                 "2 s à frente e as duas requisições viravam `unmatched`. O Chrome real satisfaz "
-                 "`wallTime = timeTickOffset/1000 + timestamp` (desvio medido < 1 ms), equação agora usada na "
-                 "fixture. Era defeito da fixture, não do core; a falha original está preservada em "
-                 "`tests/results/aceite-criterio3-falha-lider.json` e `RELATORIO-criterio3-falha-lider.md`.")
-    notes.append("Asserções novas nesta rodada: coerência do relógio da fixture (CDP×NetLog) e unidade "
-                 "calibrada `milliseconds`. O teste de ambiguidade segue rigoroso: as duas requisições a 20 ms "
-                 "continuam ambíguas, cada uma com os mesmos 2 candidatos e 2 avisos `correlate.ambiguous`.")
+    notes.append("NetLog order/duplicates are preserved, but do not become the primary view while there is ambiguity.")
+    notes.append("Leader's failure diagnosis: the fixture declared `wallTime` without the monotonic `timestamp` "
+                 "(`1793046000.0`), and the core at `f6c6bdd` calibrated `time` as microseconds; the NetLog ran "
+                 "2 s ahead and both requests became `unmatched`. Real Chrome satisfies "
+                 "`wallTime = timeTickOffset/1000 + timestamp` (measured deviation < 1 ms), an equation now used in the "
+                 "fixture. It was a fixture defect, not a core defect; the original failure is preserved in "
+                 "`tests/results/aceite-criterio3-falha-lider.json` and `RELATORIO-criterio3-falha-lider.md`.")
+    notes.append("New assertions in this round: fixture clock consistency (CDP×NetLog) and calibrated unit "
+                 "`milliseconds`. The ambiguity test stays strict: the two requests at 20 ms remain ambiguous, "
+                 "each with the same 2 candidates and 2 `correlate.ambiguous` warnings.")
     return exp.rows, evidence, notes
 
 
 def item_4(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Redirects e múltiplas tentativas, sem perder elos."""
+    """Redirects and multiple attempts, without losing links."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
@@ -429,40 +429,40 @@ def item_4(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
 
     netlog = import_to("import-netlog", folder / "redirect-chain.netlog.json", base / "netlog")
     request = netlog["requests"][0]
-    exp.eq(len(netlog["requests"]), 1, "NetLog: um LogicalRequest para a cadeia")
+    exp.eq(len(netlog["requests"]), 1, "NetLog: one LogicalRequest for the chain")
     exp.eq([attempt["status"] for attempt in request["attempts"]], [302, 200],
-           "NetLog: status por tentativa [302, 200]")
-    exp.eq(len(request.get("redirects", [])), 1, "NetLog: um Redirect registrado")
+           "NetLog: status per attempt [302, 200]")
+    exp.eq(len(request.get("redirects", [])), 1, "NetLog: one Redirect recorded")
     redirect = request["redirects"][0]
     exp.eq(redirect.get("fromUrl"), "http://127.0.0.1:9999/a", "NetLog: redirect fromUrl")
     exp.eq(redirect.get("toUrl"), "http://127.0.0.1:9999/b", "NetLog: redirect toUrl")
-    exp.eq(redirect.get("status"), 302, "NetLog: status do redirect")
+    exp.eq(redirect.get("status"), 302, "NetLog: redirect status")
     final_headers = [(entry["name"], entry["value"])
                      for entry in request["requestHeaders"]["headers"]]
     exp.eq(final_headers, [("Host", "127.0.0.1:9999"), ("x-step", "2")],
-           "NetLog: headers da tentativa final com ordem da fonte")
+           "NetLog: final attempt headers in source order")
     exp.eq(view_verification(request["requestHeaders"]), "verified",
-           "NetLog: headers finais verificados")
+           "NetLog: final headers verified")
 
     har = import_to("import-har", folder / "redirect-chain.har", base / "har")
     har_request = har["requests"][0]
-    exp.eq(len(har["requests"]), 1, "HAR: cadeia agrupada em um LogicalRequest")
+    exp.eq(len(har["requests"]), 1, "HAR: chain grouped into one LogicalRequest")
     exp.eq([attempt["status"] for attempt in har_request["attempts"]], [302, 302, 200],
-           "HAR: três tentativas na ordem")
-    exp.eq(len(har_request.get("redirects", [])), 2, "HAR: dois Redirects")
+           "HAR: three attempts in order")
+    exp.eq(len(har_request.get("redirects", [])), 2, "HAR: two Redirects")
     exp.eq(har_request["responseBody"].get("state"), "captured",
-           "HAR: corpo da resposta final capturado")
+           "HAR: final response body captured")
 
     evidence += [
         f"`scrapelens-core import-netlog fixtures/aceite/redirects/redirect-chain.netlog.json --out {rel(base / 'netlog')}`",
         f"`scrapelens-core import-har fixtures/aceite/redirects/redirect-chain.har --out {rel(base / 'har')}`",
     ]
-    notes.append("O redirect é um elo entre tentativas, não uma requisição separada.")
+    notes.append("The redirect is a link between attempts, not a separate request.")
     return exp.rows, evidence, notes
 
 
 def item_5(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Corpos ausentes/truncados/descartados/vazios com estado explícito."""
+    """Missing/truncated/discarded/empty bodies with explicit state."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
@@ -471,46 +471,46 @@ def item_5(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     evidence.append(f"`scrapelens-core inspect {rel(session_path)}`")
 
     requests = session["requests"]
-    exp.eq(len(requests), 3, "três requisições de fixture")
+    exp.eq(len(requests), 3, "three fixture requests")
     first, second, third = requests
 
-    exp.eq(first["requestBody"].get("state"), "discarded", "req 1: corpo descartado explícito")
-    exp.contains(first["requestBody"].get("note") or "", "descartado",
-                 "req 1: nota explica o descarte")
-    exp.eq(first["responseBody"].get("state"), "captured", "req 1: resposta capturada")
+    exp.eq(first["requestBody"].get("state"), "discarded", "req 1: body explicitly discarded")
+    exp.contains(first["requestBody"].get("note") or "", "discarded",
+                 "req 1: note explains the discard")
+    exp.eq(first["responseBody"].get("state"), "captured", "req 1: response captured")
     attachment = first["responseBody"].get("attachment")
-    exp.ok(bool(attachment), "req 1: anexo referenciado")
+    exp.ok(bool(attachment), "req 1: attachment referenced")
     if attachment:
         path = session_path / "attachments" / attachment
-        exp.ok(path.exists(), f"req 1: anexo {attachment} existe")
+        exp.ok(path.exists(), f"req 1: attachment {attachment} exists")
         if path.exists():
-            exp.eq(path.read_bytes(), b"resposta", "req 1: bytes do anexo batem com o HAR")
+            exp.eq(path.read_bytes(), b"resposta", "req 1: attachment bytes match the HAR")
 
-    exp.eq(second["requestBody"].get("state"), "empty", "req 2: corpo de requisição vazio (afirmado)")
-    exp.eq(second["responseBody"].get("state"), "truncated", "req 2: resposta truncada explícita")
-    exp.eq(second["responseBody"].get("truncatedAt"), 4, "req 2: truncatedAt registrado")
-    exp.eq(second["responseBody"].get("bytes"), 4, "req 2: bytes capturados registrados")
+    exp.eq(second["requestBody"].get("state"), "empty", "req 2: request body empty (asserted)")
+    exp.eq(second["responseBody"].get("state"), "truncated", "req 2: response explicitly truncated")
+    exp.eq(second["responseBody"].get("truncatedAt"), 4, "req 2: truncatedAt recorded")
+    exp.eq(second["responseBody"].get("bytes"), 4, "req 2: captured bytes recorded")
     truncated_attachment = second["responseBody"].get("attachment")
     if truncated_attachment:
         path = session_path / "attachments" / truncated_attachment
-        exp.eq(path.read_bytes(), b"0123", "req 2: anexo truncado tem exatamente 4 bytes")
+        exp.eq(path.read_bytes(), b"0123", "req 2: truncated attachment has exactly 4 bytes")
 
     exp.eq(third["requestBody"].get("state"), "unavailable",
-           "req 3: requisição indisponível (não vazia)")
-    exp.contains(third["requestBody"].get("note") or "", "não fornece",
-                 "req 3: nota explica indisponibilidade")
-    exp.eq(third["responseBody"].get("state"), "empty", "req 3: resposta vazia (0 bytes)")
+           "req 3: request unavailable (not empty)")
+    exp.contains(third["requestBody"].get("note") or "", "does not provide",
+                 "req 3: note explains unavailability")
+    exp.eq(third["responseBody"].get("state"), "empty", "req 3: response empty (0 bytes)")
 
     states = {request["requestBody"].get("state") for request in requests} | {
         request["responseBody"].get("state") for request in requests}
     exp.eq(states, {"discarded", "captured", "empty", "truncated", "unavailable"},
-           "todos os cinco estados aparecem na fixture")
-    notes.append("`empty` só é usado quando a fonte afirma zero bytes; ausência vira `unavailable` com nota.")
+           "all five states appear in the fixture")
+    notes.append("`empty` is only used when the source states zero bytes; absence becomes `unavailable` with a note.")
     return exp.rows, evidence, notes
 
 
 def item_6(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Diff por ocorrência: duplicatas preservadas e ordem não alfabética."""
+    """Diff per occurrence: duplicates preserved and non-alphabetical order."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
@@ -519,39 +519,39 @@ def item_6(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     first, second = session["requests"]
     a_pairs = [(entry["name"], entry["value"]) for entry in first["requestHeaders"]["headers"]]
     b_pairs = [(entry["name"], entry["value"]) for entry in second["requestHeaders"]["headers"]]
-    exp.eq(a_pairs.count(("x-dup", "same")), 2, "A: duplicata x-dup:same aparece duas vezes")
-    exp.eq(b_pairs.count(("x-dup", "same")), 2, "B: duplicata x-dup:same aparece duas vezes")
+    exp.eq(a_pairs.count(("x-dup", "same")), 2, "A: duplicate x-dup:same appears twice")
+    exp.eq(b_pairs.count(("x-dup", "same")), 2, "B: duplicate x-dup:same appears twice")
 
     diff = json.loads(core_ok("diff", str(session_path), first["id"], second["id"]))
     evidence.append(f"`scrapelens-core diff {rel(session_path)} {first['id']} {second['id']}`")
     headers = diff["requestHeaders"]
     exp.eq([item["name"] for item in headers["added"]], ["x-new"],
-           "diff: apenas x-new adicionado")
+           "diff: only x-new added")
     exp.eq([(item["name"], item["value"]) for item in headers["removed"]], [("x-rep", "b")],
-           "diff: x-rep:b removido (valor não existe em B)")
-    exp.eq(headers["changed"], [], "diff: nenhum par alterado")
+           "diff: x-rep:b removed (value does not exist in B)")
+    exp.eq(headers["changed"], [], "diff: no pair changed")
     exp.ok(any(move["name"] == "x-seq" for move in headers["reordered"]),
-           "diff: reordenação de x-seq detectada como reordered")
-    exp.eq(headers["unchanged"], 6, "diff: seis ocorrências inalteradas")
+           "diff: x-seq reordering detected as reordered")
+    exp.eq(headers["unchanged"], 6, "diff: six occurrences unchanged")
     touched = {item["name"] for item in headers["added"]} | {
         item["name"] for item in headers["removed"]} | {move["name"] for move in headers["reordered"]}
-    exp.ok("x-dup" not in touched, "diff: as duas ocorrências de x-dup não foram colapsadas")
-    exp.eq(headers["added"][0].get("index"), 6, "diff: índice global da ocorrência adicionada")
+    exp.ok("x-dup" not in touched, "diff: the two x-dup occurrences were not collapsed")
+    exp.eq(headers["added"][0].get("index"), 6, "diff: global index of the added occurrence")
     exp.ok(headers["reordered"][0]["a"]["index"] == 0 and headers["reordered"][0]["b"]["index"] == 1,
-           "diff: reordenação usa índices originais (0 → 1), não ordem alfabética")
-    exp.eq(diff["responseHeaders"]["added"] or [], [], "diff: resposta sem adições")
-    exp.eq(diff["responseHeaders"]["removed"] or [], [], "diff: resposta sem remoções")
-    exp.eq(diff["cookies"]["unchanged"], 0, "diff: sem cookies nesta fixture")
+           "diff: reordering uses the original indices (0 → 1), not alphabetical order")
+    exp.eq(diff["responseHeaders"]["added"] or [], [], "diff: response with no additions")
+    exp.eq(diff["responseHeaders"]["removed"] or [], [], "diff: response with no removals")
+    exp.eq(diff["cookies"]["unchanged"], 0, "diff: no cookies in this fixture")
 
-    # A ordem original continua disponível na sessão (o diff não a reescreve).
+    # The original order remains available in the session (the diff does not rewrite it).
     exp.eq(a_pairs[:4], [("x-seq", "1"), ("X-Rep", "a"), ("x-seq", "2"), ("x-rep", "b")],
-           "A: ordem original intacta após o diff")
-    notes.append("O diff compara ocorrências; `reordered` usa os índices originais de A e B.")
+           "A: original order intact after the diff")
+    notes.append("The diff compares occurrences; `reordered` uses the original indices of A and B.")
     return exp.rows, evidence, notes
 
 
 def item_7(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Exportação cURL/Python com dados hostis e escaping correto."""
+    """cURL/Python export with hostile data and correct escaping."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
@@ -559,6 +559,7 @@ def item_7(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     session = inspect(session_path)
     request = session["requests"][0]
     nul_request = session["requests"][1]
+    # %C3%A7%C3%A3o is percent-encoded non-ASCII UTF-8 input, kept as is.
     expected_url = ("https://fixture.invalid/p?q=o'relly&x=$HOME&y=`id`&z=a&b=100%"
                     "&u=%C3%A7%C3%A3o&pipe=|&semi=;")
     expected_headers = [
@@ -569,17 +570,17 @@ def item_7(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         ("content-length", "15"),
     ]
     expected_body = b"a'b\"$HOME`id`\\\n"
-    exp.eq(len(session["requests"]), 2, "duas requisições de exportação")
+    exp.eq(len(session["requests"]), 2, "two export requests")
 
     curl = core("export-curl", str(session_path), request["id"])
-    exp.eq(curl.returncode, 0, "export-curl retorna 0")
+    exp.eq(curl.returncode, 0, "export-curl returns 0")
     exp.contains(curl.stderr, "export.header_injection",
-                 "cURL: header com CR/LF descartado com aviso")
+                 "cURL: header with CR/LF discarded with a warning")
     script = ctx["run"] / "item7" / "export.sh"
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text(curl.stdout, encoding="utf-8")
     syntax = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
-    exp.eq(syntax.returncode, 0, f"cURL: script passa em `bash -n` ({syntax.stderr.strip()})")
+    exp.eq(syntax.returncode, 0, f"cURL: script passes `bash -n` ({syntax.stderr.strip()})")
 
     stub = ctx["run"] / "item7" / "stub.sh"
     stub.write_text(
@@ -588,73 +589,73 @@ def item_7(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     runner = ctx["run"] / "item7" / "run.sh"
     runner.write_text(f". {shlex_quote(str(stub))}\n. {shlex_quote(str(script))}\n", encoding="utf-8")
     executed = subprocess.run(["bash", str(runner)], capture_output=True, text=True)
-    exp.eq(executed.returncode, 0, "cURL: execução com stub não falha")
+    exp.eq(executed.returncode, 0, "cURL: execution with stub does not fail")
     argv: list[str] = []
     for line in executed.stdout.splitlines():
         line = line.strip()
         if line.startswith("["):
             argv = json.loads(line)
-    exp.ok(bool(argv), "cURL: stub capturou argv")
+    exp.ok(bool(argv), "cURL: stub captured argv")
     if argv:
         url_index = argv.index("--url")
         exp.eq(argv[url_index + 1], expected_url,
-               "cURL: URL hostil chega intacta ao shell")
+               "cURL: hostile URL reaches the shell intact")
         got_headers = [argv[index + 1] for index, token in enumerate(argv) if token == "--header"]
         exp.eq([tuple(header.split(": ", 1)) for header in got_headers], expected_headers,
-               "cURL: headers, ordem e duplicatas chegam intactos")
-        exp.ok("--data-binary" in argv, "cURL: corpo incluído")
+               "cURL: headers, order and duplicates arrive intact")
+        exp.ok("--data-binary" in argv, "cURL: body included")
         if "--data-binary" in argv:
             exp.eq(argv[argv.index("--data-binary") + 1].encode(), expected_body,
-                   "cURL: bytes do corpo (aspas, $, crase, barra, \\n) intactos")
+                   "cURL: body bytes (quotes, $, backtick, backslash, \\n) intact")
         exp.ok(not any("x-bad" in value for value in got_headers),
-               "cURL: header x-bad (CR/LF) não é replicado")
+               "cURL: header x-bad (CR/LF) is not replicated")
 
     nul_curl = core("export-curl", str(session_path), nul_request["id"])
-    exp.eq(nul_curl.returncode, 0, "cURL: exportação com corpo NUL retorna 0")
+    exp.eq(nul_curl.returncode, 0, "cURL: export with NUL body returns 0")
     exp.contains(nul_curl.stderr, "export.body_nul",
-                 "cURL: corpo NUL omitido com aviso (não truncado em silêncio)")
+                 "cURL: NUL body omitted with a warning (not silently truncated)")
     exp.ok("--data-binary" not in nul_curl.stdout,
-           "cURL: corpo NUL não vira argumento parcial")
+           "cURL: NUL body does not become a partial argument")
 
     python_export = core("export-python", str(session_path), request["id"])
-    exp.eq(python_export.returncode, 0, "export-python retorna 0")
+    exp.eq(python_export.returncode, 0, "export-python returns 0")
     exp.contains(python_export.stderr, "export.header_injection",
-                 "Python: header com CR/LF descartado com aviso")
+                 "Python: header with CR/LF discarded with a warning")
     py_path = ctx["run"] / "item7" / "export.py"
     py_path.write_text(python_export.stdout, encoding="utf-8")
     compiled = subprocess.run([sys.executable, "-m", "py_compile", str(py_path)],
                               capture_output=True, text=True)
-    exp.eq(compiled.returncode, 0, f"Python: sintaxe válida ({compiled.stderr.strip()})")
+    exp.eq(compiled.returncode, 0, f"Python: valid syntax ({compiled.stderr.strip()})")
     method, target, sent_headers, sent_body = python_literals(py_path)
     exp.eq((method, target), ("POST", "/p?q=o'relly&x=$HOME&y=`id`&z=a&b=100%"
                               "&u=%C3%A7%C3%A3o&pipe=|&semi=;"),
-           "Python: método e target hostis intactos")
+           "Python: hostile method and target intact")
     exp.eq(sent_headers, expected_headers,
-           "Python: putheader por ocorrência, ordem e duplicatas intactas")
-    exp.eq(sent_body, expected_body, "Python: bytes do corpo intactos")
+           "Python: putheader per occurrence, order and duplicates intact")
+    exp.eq(sent_body, expected_body, "Python: body bytes intact")
     exp.ok(not any("x-bad" in name for name, _ in sent_headers),
-           "Python: header x-bad não é replicado")
+           "Python: header x-bad is not replicated")
 
     nul_python = core("export-python", str(session_path), nul_request["id"])
     nul_path = ctx["run"] / "item7" / "nul.py"
     nul_path.write_text(nul_python.stdout, encoding="utf-8")
     nul_compiled = subprocess.run([sys.executable, "-m", "py_compile", str(nul_path)],
                                   capture_output=True, text=True)
-    exp.eq(nul_compiled.returncode, 0, "Python: exportação com NUL compila")
+    exp.eq(nul_compiled.returncode, 0, "Python: export with NUL compiles")
     _, _, _, nul_sent = python_literals(nul_path)
-    exp.eq(nul_sent, b"bin\x00ario", "Python: bytes NUL preservados no corpo")
+    exp.eq(nul_sent, b"bin\x00ario", "Python: NUL bytes preserved in the body")
 
     evidence += [
-        f"`scrapelens-core export-curl {rel(session_path)} {request['id']}` → `bash -n` + execução com stub que registra argv",
-        f"`scrapelens-core export-python {rel(session_path)} {request['id']}` → `python3 -m py_compile` + AST com literais",
-        f"comandos gerados: {rel(script)}, {rel(py_path)}",
+        f"`scrapelens-core export-curl {rel(session_path)} {request['id']}` → `bash -n` + execution with a stub that records argv",
+        f"`scrapelens-core export-python {rel(session_path)} {request['id']}` → `python3 -m py_compile` + AST with literals",
+        f"generated commands: {rel(script)}, {rel(py_path)}",
     ]
-    notes.append("Os exportadores prometem a requisição HTTP, não TLS/fingerprint (JA3/JA4, frames, HPACK).")
+    notes.append("The exporters promise the HTTP request, not TLS/fingerprint (JA3/JA4, frames, HPACK).")
     return exp.rows, evidence, notes
 
 
 def item_8(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Sanitização: credenciais, cookies, token em URL, corpos e eventos brutos."""
+    """Sanitization: credentials, cookies, token in URL, bodies and raw events."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
@@ -663,25 +664,25 @@ def item_8(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     if out.exists():
         shutil.rmtree(out)
     proc = core("sanitize", str(source), str(out))
-    exp.eq(proc.returncode, 0, "sanitize retorna 0")
+    exp.eq(proc.returncode, 0, "sanitize returns 0")
     report = json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else {}
     evidence.append(f"`scrapelens-core sanitize {rel(source)} {rel(out)}`")
 
-    exp.ok(out.exists(), "diretório sanitizado criado")
+    exp.ok(out.exists(), "sanitized directory created")
     if not out.exists():
         return exp.rows, evidence, notes
-    exp.eq(stat.S_IMODE(out.stat().st_mode), 0o700, "diretório sanitizado com permissão 0700")
+    exp.eq(stat.S_IMODE(out.stat().st_mode), 0o700, "sanitized directory with mode 0700")
     session_file = out / "session.json"
-    exp.ok(session_file.exists(), "session.json presente")
-    exp.eq(stat.S_IMODE(session_file.stat().st_mode), 0o600, "session.json com permissão 0600")
+    exp.ok(session_file.exists(), "session.json present")
+    exp.eq(stat.S_IMODE(session_file.stat().st_mode), 0o600, "session.json with mode 0600")
     for name in ("cdp-events.jsonl", "netlog.json"):
-        exp.ok(not (out / name).exists(), f"evento bruto {name} não copiado para a exportação")
-    exp.contains(report.get("redactions", {}), "rawEvents", "relatório contabiliza rawEvents")
+        exp.ok(not (out / name).exists(), f"raw event {name} not copied to the export")
+    exp.contains(report.get("redactions", {}), "rawEvents", "report counts rawEvents")
     warning_codes = {warning["code"] for warning in report.get("warnings", [])}
     exp.contains(warning_codes, "sanitize.raw_events_removed",
-                 "aviso sanitize.raw_events_removed presente")
+                 "sanitize.raw_events_removed warning present")
     exp.contains(warning_codes, "sanitize.attachment_omitted",
-                 "anexo não sanitizável omitido com aviso")
+                 "non-sanitizable attachment omitted with a warning")
 
     leaks: list[str] = []
     for path in out.rglob("*"):
@@ -690,137 +691,137 @@ def item_8(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
             for secret in SECRETS:
                 if secret.encode() in data:
                     leaks.append(f"{path.relative_to(out)}:{secret}")
-    exp.eq(leaks, [], "nenhum segredo SECRET-* ou e-mail permanece na árvore sanitizada")
+    exp.eq(leaks, [], "no SECRET-* secret or e-mail remains in the sanitized tree")
 
     sanitized = json.loads(session_file.read_text(encoding="utf-8"))
     exp.contains(sanitized["session"].get("labels", []), "sanitized",
-                 "sessão marcada com label sanitized")
+                 "session marked with label sanitized")
     urls = [request["url"] for request in sanitized["requests"]]
-    exp.ok(all("SECRET" not in url for url in urls), "URLs sanitizadas sem token")
-    exp.ok(any("REDACTED" in url for url in urls), "placeholder [REDACTED] aparece na URL")
+    exp.ok(all("SECRET" not in url for url in urls), "sanitized URLs without token")
+    exp.ok(any("REDACTED" in url for url in urls), "[REDACTED] placeholder appears in the URL")
     exp.ok(all("SECRET" not in json.dumps(request.get("cookie", {}), ensure_ascii=False)
-               for request in sanitized["requests"]), "Cookie sanitizado")
+               for request in sanitized["requests"]), "Cookie sanitized")
     exp.ok(all("SECRET" not in json.dumps(request.get("setCookies", []), ensure_ascii=False)
-               for request in sanitized["requests"]), "Set-Cookie sanitizado")
+               for request in sanitized["requests"]), "Set-Cookie sanitized")
     exp.contains(session_file.read_text(encoding="utf-8"), "[REDACTED]",
-                 "valores substituídos por [REDACTED]")
+                 "values replaced by [REDACTED]")
 
     again = core("sanitize", str(source), str(out))
-    exp.ok(again.returncode != 0, "sanitize recusa sobrescrever destino já existente")
-    exp.contains(again.stderr, "já contém", "mensagem de recusa é acionável")
+    exp.ok(again.returncode != 0, "sanitize refuses to overwrite an existing destination")
+    exp.contains(again.stderr, "already contains", "refusal message is actionable")
 
     evidence += [
-        f"permissões: `{oct(stat.S_IMODE(out.stat().st_mode))}` no diretório e "
-        f"`{oct(stat.S_IMODE(session_file.stat().st_mode))}` no session.json",
-        "varredura recursiva por 10 marcadores SECRET-* + e-mail: nenhuma ocorrência",
+        f"modes: `{oct(stat.S_IMODE(out.stat().st_mode))}` on the directory and "
+        f"`{oct(stat.S_IMODE(session_file.stat().st_mode))}` on session.json",
+        "recursive scan for 10 SECRET-* markers + e-mail: no occurrences",
     ]
-    notes.append("Sanitização não promete detectar tokens em path/HTML livre; esses corpos são omitidos com aviso.")
+    notes.append("Sanitization does not promise to detect tokens in free-form path/HTML; those bodies are omitted with a warning.")
     return exp.rows, evidence, notes
 
 
 def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Ciclo real de captura no macOS com Chrome dedicado, sem certificado."""
+    """Real capture cycle on macOS with a dedicated Chrome, no certificate."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
     run_dir = ctx.get("capture")
     if not run_dir or not pathlib.Path(run_dir).exists():
-        return [], [], ["não testado: nenhuma execução de `tests/capture/run-cycle.sh` fornecida"]
+        return [], [], ["not tested: no run of `tests/capture/run-cycle.sh` provided"]
     run_dir = pathlib.Path(run_dir)
     summary_path = run_dir / "run.json"
-    exp.ok(summary_path.exists(), "run.json da captura existe")
+    exp.ok(summary_path.exists(), "capture run.json exists")
     if not summary_path.exists():
         return exp.rows, evidence, notes
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    evidence.append(f"execução real: `{rel(run_dir)}` (gerada por `tests/capture/run-cycle.sh`); "
-                    "cópia estável em `tests/results/capture-latest/run.json`")
+    evidence.append(f"real run: `{rel(run_dir)}` (generated by `tests/capture/run-cycle.sh`); "
+                    "stable copy in `tests/results/capture-latest/run.json`")
 
     for leg in summary.get("captures", []):
         meta = leg.get("meta", {})
         flags = meta.get("chromeArgs", [])
         profile = meta.get("profile", "")
-        exp.ok("--disable-quic" not in flags, f"{leg['name']}: QUIC não foi desabilitado")
+        exp.ok("--disable-quic" not in flags, f"{leg['name']}: QUIC was not disabled")
         exp.ok(any(flag.startswith("--enable-quic") for flag in flags),
-               f"{leg['name']}: --enable-quic presente")
+               f"{leg['name']}: --enable-quic present")
         exp.ok(any(flag.startswith("--ignore-certificate-errors-spki-list=") for flag in flags),
-               f"{leg['name']}: certificado dispensado por SPKI (nada instalado)")
+               f"{leg['name']}: certificate waived by SPKI (nothing installed)")
         exp.ok("--ignore-certificate-errors" not in flags,
-               f"{leg['name']}: não usa bypass global de certificado")
-        exp.ok("--user-data-dir=" in " ".join(flags), f"{leg['name']}: perfil dedicado explícito")
+               f"{leg['name']}: does not use a global certificate bypass")
+        exp.ok("--user-data-dir=" in " ".join(flags), f"{leg['name']}: explicit dedicated profile")
         exp.ok(bool(profile) and str(pathlib.Path(run_dir).resolve()) in str(pathlib.Path(profile).resolve()),
-               f"{leg['name']}: perfil dedicado dentro do diretório da execução")
+               f"{leg['name']}: dedicated profile inside the run directory")
         exp.ok("--remote-debugging-address=127.0.0.1" in flags,
-               f"{leg['name']}: debug exposto apenas em loopback")
+               f"{leg['name']}: debug exposed only on loopback")
         exp.ok(meta.get("browser", {}).get("name") == "Chrome",
-               f"{leg['name']}: navegador Chrome identificado")
+               f"{leg['name']}: Chrome browser identified")
         exp.contains(meta.get("browser", {}).get("version", ""), ".",
-                     f"{leg['name']}: versão do Chrome registrada")
+                     f"{leg['name']}: Chrome version recorded")
 
         session_dir = run_dir / leg["session"]
-        exp.ok(session_dir.exists(), f"{leg['name']}: sessão importada existe")
+        exp.ok(session_dir.exists(), f"{leg['name']}: imported session exists")
         if not session_dir.exists():
             continue
         session = inspect(session_dir)
         state = session["session"]["completeness"]["state"]
-        exp.eq(state, "complete", f"{leg['name']}: completeness=complete (flush encerrado)")
+        exp.eq(state, "complete", f"{leg['name']}: completeness=complete (flush finished)")
         requests = session["requests"]
-        exp.ok(len(requests) >= 3, f"{leg['name']}: {len(requests)} requisições reais capturadas")
+        exp.ok(len(requests) >= 3, f"{leg['name']}: {len(requests)} real requests captured")
         protocols = {request["protocol"] for request in requests}
-        exp.contains(protocols, leg.get("protocol"), f"{leg['name']}: protocolo {leg.get('protocol')} presente")
+        exp.contains(protocols, leg.get("protocol"), f"{leg['name']}: protocol {leg.get('protocol')} present")
         exp.contains(protocols - {"unknown"}, leg.get("protocol"),
-                     f"{leg['name']}: nenhum protocolo divergente")
+                     f"{leg['name']}: no divergent protocol")
         exp.ok(all(request.get("match") != "unmatched" for request in requests),
-               f"{leg['name']}: todas as requisições CDP correlacionadas (matched/ambiguous)")
+               f"{leg['name']}: all CDP requests correlated (matched/ambiguous)")
         verified = [request for request in requests
                     if view_verification(request["requestHeaders"]) == "verified"]
         if leg.get("protocol") == "h1":
-            exp.ok(bool(verified), "h1: ao menos um request com headers verificados (NetLog)")
+            exp.ok(bool(verified), "h1: at least one request with verified headers (NetLog)")
         if "h2" in protocols:
             h2_views = {view_verification(request["requestHeaders"])
                         for request in requests if request["protocol"] == "h2"}
             exp.ok(h2_views and h2_views <= {"partial"},
-                   f"h2: headers de requisição permanecem partial (visto: {sorted(h2_views)})")
+                   f"h2: request headers remain partial (seen: {sorted(h2_views)})")
         exp.ok(any(request.get("status") for request in requests),
-               f"{leg['name']}: status HTTP real presente")
+               f"{leg['name']}: real HTTP status present")
         states = [request["responseBody"].get("state") for request in requests]
         exp.ok(all(state in {"captured", "empty", "truncated", "unavailable", "discarded"}
                    for state in states),
-               f"{leg['name']}: todos os corpos têm estado explícito {sorted(set(states))}")
+               f"{leg['name']}: all bodies have explicit state {sorted(set(states))}")
         exp.ok(all(request["responseBody"].get("note")
                    for request in requests
                    if request["responseBody"].get("state") == "unavailable"),
-               f"{leg['name']}: corpo indisponível sempre acompanhado de nota")
+               f"{leg['name']}: unavailable body always accompanied by a note")
         if leg.get("protocol") == "h3":
             exp.ok(any(request["protocol"] == "h3" for request in requests),
-                   "h3: QUIC usado de fato (QUIC intacto)")
+                   "h3: QUIC actually used (QUIC intact)")
             exp.ok(len(session.get("streamSessions", [])) > 0,
-                   "h3: StreamSessions QUIC registradas")
+                   "h3: QUIC StreamSessions recorded")
 
     if summary.get("redirects", 0) >= 1:
-        notes.append("A página real `/page` exercitou redirects e POSTs.")
+        notes.append("The real page `/page` exercised redirects and POSTs.")
     else:
-        exp.ok(False, "captura real exercitou ao menos um redirect")
+        exp.ok(False, "real capture exercised at least one redirect")
     har = summary.get("har")
-    exp.ok(har is not None, "HAR reconstruído do CDP real importado sem falha")
+    exp.ok(har is not None, "HAR rebuilt from the real CDP imported without failure")
     if har:
-        exp.ok(har.get("requests", 0) > 0, f"HAR real: {har.get('requests')} requisições importadas")
+        exp.ok(har.get("requests", 0) > 0, f"real HAR: {har.get('requests')} requests imported")
         exp.ok(har.get("completeness") in {"complete", "partial"},
-               f"HAR real: completeness explícito ({har.get('completeness')})")
-    notes.append("O HAR do ciclo é reconstruído do CDP (`experiments/har_from_cdp.mjs`), porque o Chrome 156 "
-                 "não expõe `Network.getHAR`; o creator declara a origem e a ordem não é comprovada (unverified).")
+               f"real HAR: explicit completeness ({har.get('completeness')})")
+    notes.append("The cycle's HAR is rebuilt from CDP (`experiments/har_from_cdp.mjs`), because Chrome 156 "
+                 "does not expose `Network.getHAR`; the creator declares the origin and the order is not proven (unverified).")
 
     ambiguous = summary.get("ambiguous", 0)
     exp.ok(ambiguous >= 1,
-           f"captura real: {ambiguous} requisição(ões) ambígua(s) nas simultâneas idênticas")
+           f"real capture: {ambiguous} ambiguous request(s) among the identical simultaneous ones")
     exp.ok(summary.get("certificateInstalled") is False,
-           "nenhum certificado foi instalado no sistema")
+           "no certificate was installed in the system")
     for common_name in ("ScrapeLens local test server", "ScrapeLens local test CA (synthetic)"):
         found = subprocess.run(["security", "find-certificate", "-c", common_name],
                                capture_output=True, text=True)
         exp.ok(found.returncode != 0,
-               f"chaveiro do usuário não contém o certificado {common_name!r}")
-    notes.append("O ciclo real usa CDP, que não busca corpos: todos os corpos ficam `unavailable` "
-                 "com nota. A captura de corpo (Network.getResponseBody) ainda não está no caminho ao vivo.")
+               f"user keychain does not contain the certificate {common_name!r}")
+    notes.append("The real cycle uses CDP, which does not fetch bodies: all bodies stay `unavailable` "
+                 "with a note. Body capture (Network.getResponseBody) is not yet on the live path.")
 
     app_path = ctx.get("app")
     if app_path and pathlib.Path(app_path).exists():
@@ -828,185 +829,185 @@ def item_9(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         bundle = app.get("bundle", {})
         live = app.get("capture", {})
         imports = app.get("imports", {})
-        exp.ok(bundle.get("exists") is True, "app: bundle .app existe")
+        exp.ok(bundle.get("exists") is True, "app: .app bundle exists")
         exp.ok(bundle.get("arm64") is True, f"app: Mach-O arm64 ({bundle.get('machO', '')})")
         exp.ok(bundle.get("singleBinary") is True,
-               f"app: binário único sem sidecar ({bundle.get('binaries')})")
+               f"app: single binary without sidecar ({bundle.get('binaries')})")
         exp.ok(bundle.get("signature") in ("adhoc", "local-identity"),
-               f"app: assinatura ad-hoc ou identidade local 'ScrapeLens Local Signing' (sem certificado Apple): {bundle.get('signature')}")
+               f"app: ad-hoc signature or local identity 'ScrapeLens Local Signing' (no Apple certificate): {bundle.get('signature')}")
         exp.ok(bundle.get("codesignVerifyDeepStrict") is True,
-               f"app: codesign --verify --deep --strict passou ({bundle.get('codesignVerifyOutput')})")
-        # Recomputa em disco, independente do run.json.
+               f"app: codesign --verify --deep --strict passed ({bundle.get('codesignVerifyOutput')})")
+        # Recomputed on disk, independent of run.json.
         _cs = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(APP_EXECUTABLE.parents[2])],
                              capture_output=True, text=True)
-        exp.ok(_cs.returncode == 0, f"app: codesign --verify --deep --strict recalculado em disco ({(_cs.stderr or _cs.stdout).strip()[-120:]})")
+        exp.ok(_cs.returncode == 0, f"app: codesign --verify --deep --strict recomputed on disk ({(_cs.stderr or _cs.stdout).strip()[-120:]})")
         exp.ok((bundle.get("sizeBytes") or 0) > 10 * 1024 * 1024,
-               f"app: bundle com {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB")
+               f"app: bundle with {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB")
         exp.eq(bundle.get("executableSha256"), EXPECTED_APP_SHA256,
-               "app: executável é o bundle final documentado (SHA-256)")
-        # Recomputa em disco: o run.json sozinho não prova que o bundle existe.
+               "app: executable is the documented final bundle (SHA-256)")
+        # Recomputed on disk: run.json alone does not prove that the bundle exists.
         real_exe = APP_EXECUTABLE
-        exp.ok(real_exe.is_file(), f"app: executável existe em disco ({real_exe})")
+        exp.ok(real_exe.is_file(), f"app: executable exists on disk ({real_exe})")
         if real_exe.is_file():
             disk = sha256(real_exe)
             exp.eq(disk, EXPECTED_APP_SHA256,
-                   "app: SHA-256 do executável em disco = EXPECTED_APP_SHA256")
+                   "app: SHA-256 of the executable on disk = EXPECTED_APP_SHA256")
             exp.eq(disk, bundle.get("executableSha256"),
-                   "app: SHA-256 do executável em disco = o registrado no run.json")
+                   "app: SHA-256 of the executable on disk = the one recorded in run.json")
         exp.ok((bundle.get("executableBytes") or 0) > 0,
-               f"app: executável com {bundle.get('executableBytes')} bytes")
+               f"app: executable with {bundle.get('executableBytes')} bytes")
 
-        exp.eq(live.get("mode"), "cdp+netlog", "app: sessão ao vivo em modo cdp+netlog")
-        exp.eq(live.get("completeness"), "complete", "app: sessão ao vivo complete")
-        exp.ok(live.get("requests", 0) >= 10, f"app: {live.get('requests')} requisições reais na sessão")
-        exp.ok("h1" in live.get("protocols", []), f"app: protocolos reais {live.get('protocols')}")
+        exp.eq(live.get("mode"), "cdp+netlog", "app: live session in cdp+netlog mode")
+        exp.eq(live.get("completeness"), "complete", "app: live session complete")
+        exp.ok(live.get("requests", 0) >= 10, f"app: {live.get('requests')} real requests in the session")
+        exp.ok("h1" in live.get("protocols", []), f"app: real protocols {live.get('protocols')}")
         exp.ok(live.get("verifiedHeaderEntries", 0) > 0,
-               f"app: {live.get('verifiedHeaderEntries')} headers verificados")
+               f"app: {live.get('verifiedHeaderEntries')} verified headers")
         exp.eq(live.get("verifiedSources"), ["netlog"],
-               "app: headers verificados vêm do NetLog (fonte correta)")
+               "app: verified headers come from NetLog (correct source)")
         exp.ok(all("HTTP_TRANSACTION_SEND_REQUEST_HEADERS" in event
                    for event in live.get("verifiedEvents", [])),
-               "app: verificação h1 ancorada em HTTP_TRANSACTION_SEND_REQUEST_HEADERS")
+               "app: h1 verification anchored on HTTP_TRANSACTION_SEND_REQUEST_HEADERS")
         exp.ok(live.get("unmatched", 0) == 0,
-               "app: nenhuma requisição CDP ficou sem correspondência")
+               "app: no CDP request left without a match")
         ambiguous = live.get("ambiguous", [])
-        exp.ok(len(ambiguous) >= 1, f"app: {len(ambiguous)} requisições ambíguas")
+        exp.ok(len(ambiguous) >= 1, f"app: {len(ambiguous)} ambiguous requests")
         exp.ok(all(len(item.get("candidates", [])) >= 2 for item in ambiguous),
-               "app: ambiguidade sempre expõe >=2 candidatos")
+               "app: ambiguity always exposes >=2 candidates")
         exp.ok(all(item.get("candidates") and len(set(item["candidates"])) == len(item["candidates"])
-                   for item in ambiguous), "app: candidatos distintos, sem escolha silenciosa")
-        exp.eq(live.get("hasDemoLabel"), False, "app: sessão real sem rótulo demo/sintético")
-        exp.contains(live.get("cookieNames", []), "sc_dup", "app: cookie com nome duplicado preservado")
+                   for item in ambiguous), "app: distinct candidates, no silent choice")
+        exp.eq(live.get("hasDemoLabel"), False, "app: real session without demo/synthetic label")
+        exp.contains(live.get("cookieNames", []), "sc_dup", "app: cookie with duplicate name preserved")
         exp.ok(live.get("setCookieLines", 0) >= 4,
-               f"app: {live.get('setCookieLines')} linhas Set-Cookie reais")
-        exp.ok(live.get("redirects", 0) >= 1, f"app: {live.get('redirects')} redirects reais")
+               f"app: {live.get('setCookieLines')} real Set-Cookie lines")
+        exp.ok(live.get("redirects", 0) >= 1, f"app: {live.get('redirects')} real redirects")
         exp.ok(set(live.get("responseBodyStates", [])) <= {"captured", "empty", "truncated",
                                                           "unavailable", "discarded"},
-               "app: estados de corpo válidos na captura real")
+               "app: valid body states in the real capture")
         exp.ok(live.get("unavailableWithNote") is True,
-               "app: corpo unavailable sempre com nota (sem corpo inventado)")
-        exp.eq(live.get("dirMode"), "0o700", "app: diretório da sessão 0700")
+               "app: unavailable body always with a note (no invented body)")
+        exp.eq(live.get("dirMode"), "0o700", "app: session directory 0700")
         for name in ("session.json", "cdp-events.jsonl", "netlog.json"):
             artifact = live.get("rawArtifacts", {}).get(name, {})
             exp.ok(artifact.get("exists") is True and artifact.get("bytes", 0) > 0,
-                   f"app: artefato bruto {name} presente")
-            exp.eq(artifact.get("mode"), "0o600", f"app: {name} com permissão 0600")
+                   f"app: raw artifact {name} present")
+            exp.eq(artifact.get("mode"), "0o600", f"app: {name} with mode 0600")
         exp.contains(live.get("warnings", []), "correlate.ambiguous",
-                     "app: aviso correlate.ambiguous persistido")
+                     "app: correlate.ambiguous warning persisted")
         exp.ok(app.get("gui", {}).get("screenshotExists") is True,
-               "app: print do ciclo real capturado")
+               "app: screenshot of the real cycle captured")
         exp.ok(app.get("gui", {}).get("startUrl") == "http://127.0.0.1:8781/page",
-               "app: ciclo iniciado na página local do testserver")
+               "app: cycle started on the local testserver page")
         server = app.get("testserver", {})
         exp.ok(server.get("h1Lines", 0) >= 10,
-               f"app: testserver registrou {server.get('h1Lines')} requisições do Chrome")
+               f"app: testserver logged {server.get('h1Lines')} Chrome requests")
 
         har_import = imports.get("har") or {}
-        exp.ok(bool(har_import), "app: sessão HAR real importada pelo app")
+        exp.ok(bool(har_import), "app: real HAR session imported by the app")
         if har_import:
-            exp.contains(har_import.get("labels", []), "har-import", "app: HAR com label har-import")
-            exp.eq(har_import.get("mode"), "har-import", "app: HAR em modo har-import")
-            exp.eq(har_import.get("completeness"), "complete", "app: HAR completo")
+            exp.contains(har_import.get("labels", []), "har-import", "app: HAR with label har-import")
+            exp.eq(har_import.get("mode"), "har-import", "app: HAR in har-import mode")
+            exp.eq(har_import.get("completeness"), "complete", "app: HAR complete")
             exp.eq(har_import.get("requests"), 24,
-                   "app: HAR importado pela UI tem as 24 requisições do arquivo preparado")
+                   "app: HAR imported via the UI has the 24 requests of the prepared file")
             exp.ok({"h1", "h2"} <= set(har_import.get("protocols", [])),
-                   f"app: HAR cobre h1 e h2 ({har_import.get('protocols')})")
+                   f"app: HAR covers h1 and h2 ({har_import.get('protocols')})")
             har_counts = har_import.get("counts") or {}
-            exp.eq(har_counts.get("sourceEvents"), 24, "app: HAR com 24 sourceEvents persistidos")
-            exp.eq(har_counts.get("sourceEventsUsed"), 24, "app: HAR usa os 24 sourceEvents")
-            exp.eq(har_counts.get("sourceEventsUnknown"), 0, "app: HAR sem eventos-fonte desconhecidos")
+            exp.eq(har_counts.get("sourceEvents"), 24, "app: HAR with 24 sourceEvents persisted")
+            exp.eq(har_counts.get("sourceEventsUsed"), 24, "app: HAR uses the 24 sourceEvents")
+            exp.eq(har_counts.get("sourceEventsUnknown"), 0, "app: HAR without unknown source events")
             exp.ok((har_import.get("source") or {}).get("matchesSourceSequence") is True,
-                   "app: HAR gravado reproduz a sequência método/URL de har-derived.json")
+                   "app: saved HAR reproduces the method/URL sequence of har-derived.json")
             exp.eq(har_import.get("verifiedHeaderEntries"), 0,
-                   "app: HAR não alega ordem verificada (0 headers verified)")
+                   "app: HAR does not claim verified order (0 verified headers)")
             exp.eq(har_import.get("headerSources"), ["har"],
-                   "app: headers do HAR importado têm fonte har")
-            exp.eq(har_import.get("hasDemoLabel"), False, "app: HAR real sem rótulo demo")
-            exp.eq(har_import.get("dirMode"), "0o700", "app: diretório do HAR importado 0700")
+                   "app: headers of the imported HAR have source har")
+            exp.eq(har_import.get("hasDemoLabel"), False, "app: real HAR without demo label")
+            exp.eq(har_import.get("dirMode"), "0o700", "app: imported HAR directory 0700")
             exp.eq((har_import.get("rawArtifacts", {}).get("session.json") or {}).get("mode"), "0o600",
-                   "app: session.json do HAR importado 0600")
+                   "app: imported HAR session.json 0600")
             exp.ok((har_import.get("reload") or {}).get("unchangedAfterInspect") is True
                    and (har_import.get("reload") or {}).get("requestsFromInspect") == 24,
-                   "app: HAR importado relê do disco com 24 requisições, sem alterar o arquivo")
+                   "app: imported HAR rereads from disk with 24 requests, without changing the file")
         netlog_import = imports.get("netlog") or {}
-        exp.ok(bool(netlog_import), "app: sessão NetLog real importada pelo app")
+        exp.ok(bool(netlog_import), "app: real NetLog session imported by the app")
         if netlog_import:
             exp.contains(netlog_import.get("labels", []), "netlog-import",
-                         "app: NetLog com label netlog-import")
-            exp.eq(netlog_import.get("mode"), "netlog-import", "app: NetLog em modo netlog-import")
+                         "app: NetLog with label netlog-import")
+            exp.eq(netlog_import.get("mode"), "netlog-import", "app: NetLog in netlog-import mode")
             exp.eq(netlog_import.get("completeness"), "partial",
-                   "app: NetLog isolado partial com motivo")
+                   "app: NetLog alone partial with a reason")
             exp.ok(bool(netlog_import.get("completenessReasons")),
-                   "app: motivo da parcialidade declarado")
+                   "app: reason for partiality declared")
             exp.eq(netlog_import.get("requests"), 32,
-                   "app: NetLog importado pela UI tem as 32 requisições do arquivo preparado")
+                   "app: NetLog imported via the UI has the 32 requests of the prepared file")
             exp.ok({"h1", "h2", "h3"} <= set(netlog_import.get("protocols", [])),
-                   f"app: NetLog cobre h1/h2/h3 ({netlog_import.get('protocols')})")
+                   f"app: NetLog covers h1/h2/h3 ({netlog_import.get('protocols')})")
             netlog_counts = netlog_import.get("counts") or {}
             exp.eq(netlog_counts.get("sourceEvents"), 5354,
-                   "app: NetLog com 5354 sourceEvents persistidos")
-            exp.eq(netlog_counts.get("sourceEventsUsed"), 5354, "app: NetLog usa os 5354 sourceEvents")
+                   "app: NetLog with 5354 sourceEvents persisted")
+            exp.eq(netlog_counts.get("sourceEventsUsed"), 5354, "app: NetLog uses the 5354 sourceEvents")
             exp.eq(netlog_counts.get("sourceEventsUnknown"), 0,
-                   "app: NetLog sem eventos-fonte desconhecidos")
+                   "app: NetLog without unknown source events")
             exp.eq(netlog_import.get("streamSessions"), 15,
-                   "app: 15 StreamSessions h3 persistidas no NetLog")
+                   "app: 15 h3 StreamSessions persisted in the NetLog")
             exp.ok((netlog_import.get("source") or {}).get("matchesSourceBytes") is True,
-                   "app: netlog.json persistido é byte-idêntico ao h1h2h3.chrome-netlog.json preparado")
+                   "app: persisted netlog.json is byte-identical to the prepared h1h2h3.chrome-netlog.json")
             exp.ok(netlog_import.get("verifiedHeaderEntries", 0) > 0
                    and netlog_import.get("verifiedSources") == ["netlog"],
-                   f"app: {netlog_import.get('verifiedHeaderEntries')} headers verificados com fonte netlog")
+                   f"app: {netlog_import.get('verifiedHeaderEntries')} verified headers with netlog source")
             exp.eq(netlog_import.get("headerSources"), ["netlog"],
-                   "app: headers do NetLog importado têm fonte netlog")
-            exp.eq(netlog_import.get("hasDemoLabel"), False, "app: NetLog real sem rótulo demo")
-            exp.eq(netlog_import.get("dirMode"), "0o700", "app: diretório do NetLog importado 0700")
+                   "app: headers of the imported NetLog have source netlog")
+            exp.eq(netlog_import.get("hasDemoLabel"), False, "app: real NetLog without demo label")
+            exp.eq(netlog_import.get("dirMode"), "0o700", "app: imported NetLog directory 0700")
             exp.eq((netlog_import.get("rawArtifacts", {}).get("session.json") or {}).get("mode"), "0o600",
-                   "app: session.json do NetLog importado 0600")
+                   "app: imported NetLog session.json 0600")
             exp.eq((netlog_import.get("rawArtifacts", {}).get("netlog.json") or {}).get("mode"), "0o600",
-                   "app: netlog.json copiado para a sessão com 0600")
+                   "app: netlog.json copied into the session with 0600")
             exp.ok((netlog_import.get("reload") or {}).get("unchangedAfterInspect") is True
                    and (netlog_import.get("reload") or {}).get("requestsFromInspect") == 32,
-                   "app: NetLog importado relê do disco com 32 requisições, sem alterar o arquivo")
+                   "app: imported NetLog rereads from disk with 32 requests, without changing the file")
         exp.ok(app.get("gui", {}).get("importsScreenshotExists") is True,
-               "app: print da sessão importada pela UI capturado")
+               "app: screenshot of the session imported via the UI captured")
         evidence.append(
-            f"app empacotado: `ScrapeLens.app` {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB, "
-            f"arm64, assinatura {bundle.get('signature')}, binário único, executável `{bundle.get('executableSha256')}`; "
-            f"captura ao vivo {live.get('id')} "
-            f"({live.get('requests')} req, {live.get('verifiedHeaderEntries')} headers verificados, "
-            f"{len(ambiguous)} ambíguas); importação HAR pela UI `{har_import.get('id')}` "
+            f"packaged app: `ScrapeLens.app` {((bundle.get('sizeBytes') or 0) / (1024 * 1024)):.2f} MiB, "
+            f"arm64, signature {bundle.get('signature')}, single binary, executable `{bundle.get('executableSha256')}`; "
+            f"live capture {live.get('id')} "
+            f"({live.get('requests')} req, {live.get('verifiedHeaderEntries')} verified headers, "
+            f"{len(ambiguous)} ambiguous); HAR import via the UI `{har_import.get('id')}` "
             f"({har_import.get('requests')} req, {har_import.get('protocols')}, "
             f"{har_import.get('counts', {}).get('sourceEvents')} sourceEvents); "
-            f"importação NetLog pela UI `{netlog_import.get('id')}` "
+            f"NetLog import via the UI `{netlog_import.get('id')}` "
             f"({netlog_import.get('requests')} req, {netlog_import.get('protocols')}, "
             f"{netlog_import.get('streamSessions')} StreamSessions, "
             f"{netlog_import.get('counts', {}).get('sourceEvents')} sourceEvents).")
-        evidence.append(f"sessões reais do app: `{rel(pathlib.Path(app.get('appSessionsDir', '')))}` "
-                        f"· prints `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}` e "
+        evidence.append(f"real app sessions: `{rel(pathlib.Path(app.get('appSessionsDir', '')))}` "
+                        f"· screenshots `{rel(pathlib.Path(app.get('gui', {}).get('screenshot') or ''))}` and "
                         f"`{rel(pathlib.Path(app.get('gui', {}).get('importsScreenshot') or ''))}`")
-        notes.append("Nesta rodada o ciclo Iniciar/Encerrar foi refeito no bundle final "
-                     f"(`{EXPECTED_APP_SHA256[:12]}`, compilado em `c2d2b8f`, assinatura local estável, captura multi-alvo); a sessão ao vivo acima é nova, não reaproveitada.")
-        notes.append("As importações HAR e NetLog também foram refeitas no bundle final "
-                     f"(`{har_import.get('id')}` e `{netlog_import.get('id')}`), agora pela UI: o harness "
-                     "escolheu os arquivos por cliques do mouse no painel nativo (o teclado não chega "
-                     "ao seletor; na rodada 10 final foi em primeiro plano). "
-                     "A verificação é independente da confirmação do usuário: o HAR gravado reproduz a "
-                     "sequência método/URL de `har-derived.json` (24 entradas) e o `netlog.json` persistido é "
-                     "byte-idêntico ao `h1h2h3.chrome-netlog.json` (SHA-256). Importações repetidas dos mesmos "
-                     "arquivos (sufixos `-N` em `har-3dbc391c02a985c5` e `netlog-1704043c442dcbd1`) têm `session.json` idêntico, sem efeito na validação. O NetLog "
-                     "isolado avisa `netlog.time_unit_assumed` porque, sem CDP, a unidade do relógio do NetLog "
-                     "não pode ser calibrada — a limitação fica explícita na sessão.")
+        notes.append("In this round the Start/Stop cycle was redone in the final bundle "
+                     f"(`{EXPECTED_APP_SHA256[:12]}`, built at `c2d2b8f`, stable local signature, multi-target capture); the live session above is new, not reused.")
+        notes.append("The HAR and NetLog imports were also redone in the final bundle "
+                     f"(`{har_import.get('id')}` and `{netlog_import.get('id')}`), now via the UI: the harness "
+                     "chose the files by mouse clicks in the native panel (the keyboard does not reach "
+                     "the picker; in the final round 10 it was in the foreground). "
+                     "Verification is independent of the user's confirmation: the saved HAR reproduces the "
+                     "method/URL sequence of `har-derived.json` (24 entries) and the persisted `netlog.json` is "
+                     "byte-identical to `h1h2h3.chrome-netlog.json` (SHA-256). Repeated imports of the same "
+                     "files (suffixes `-N` on `har-3dbc391c02a985c5` and `netlog-1704043c442dcbd1`) have an identical `session.json`, with no effect on validation. The NetLog "
+                     "alone warns `netlog.time_unit_assumed` because, without CDP, the NetLog clock unit "
+                     "cannot be calibrated — the limitation is explicit in the session.")
     else:
-        exp.ok(False, "app: resumo do ciclo pelo .app ausente (rode tests/capture/app_validate.py)")
+        exp.ok(False, "app: cycle summary from the .app is missing (run tests/capture/app_validate.py)")
     evidence.append(
-        f"CLI: Chrome {summary.get('chromeVersion', '?')}; {summary.get('requestCount', '?')} requisições; "
+        f"CLI: Chrome {summary.get('chromeVersion', '?')}; {summary.get('requestCount', '?')} requests; "
         f"{summary.get('h3StreamSessions', 0)} StreamSessions h3; "
-        f"{len(ambiguous) if isinstance(ambiguous, list) else ambiguous} ambíguas; "
+        f"{len(ambiguous) if isinstance(ambiguous, list) else ambiguous} ambiguous; "
         f"redirects={summary.get('redirects', 0)}")
     return exp.rows, evidence, notes
 
 
 def item_10(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """Importação grande: tamanho documentado, tempo e memória medidos."""
+    """Large import: documented size, measured time and memory."""
     exp = Expect()
     evidence: list[str] = []
     notes: list[str] = []
@@ -1054,9 +1055,9 @@ def item_10(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     har_path = large / "large.har"
     write_har(har_path, with_bodies=False)
     size_mb = har_path.stat().st_size / (1024 * 1024)
-    exp.ok(size_mb > 5, f"HAR grande gerado ({size_mb:.1f} MiB)")
-    notes.append(f"HAR principal: {count:,} requisições, {size_mb:.1f} MiB, sem corpos "
-                 "(o caminho patológico com 20 mil anexos é medido à parte).")
+    exp.ok(size_mb > 5, f"large HAR generated ({size_mb:.1f} MiB)")
+    notes.append(f"Main HAR: {count:,} requests, {size_mb:.1f} MiB, without bodies "
+                 "(the pathological path with 20 thousand attachments is measured separately).")
 
     session_dir = large / "session"
     if session_dir.exists():
@@ -1065,28 +1066,28 @@ def item_10(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     session_mb = (session_dir / "session.json").stat().st_size / (1024 * 1024)
     evidence.append(
         f"`/usr/bin/time -l scrapelens-core import-har tests/.work/large/large.har --out tests/.work/large/session` "
-        f"→ HAR {size_mb:.1f} MiB, {count:,} requisições, {elapsed:.2f} s, pico {rss / (1024 * 1024):.0f} MiB RSS")
-    evidence.append(f"sessão gravada: session.json {session_mb:.1f} MiB")
+        f"→ HAR {size_mb:.1f} MiB, {count:,} requests, {elapsed:.2f} s, peak {rss / (1024 * 1024):.0f} MiB RSS")
+    evidence.append(f"saved session: session.json {session_mb:.1f} MiB")
 
     elapsed_inspect, rss_inspect = measure(["inspect", str(session_dir)])
     evidence.append(
         f"`/usr/bin/time -l scrapelens-core inspect tests/.work/large/session` "
-        f"→ {elapsed_inspect:.2f} s, pico {rss_inspect / (1024 * 1024):.0f} MiB RSS")
+        f"→ {elapsed_inspect:.2f} s, peak {rss_inspect / (1024 * 1024):.0f} MiB RSS")
 
     session = inspect(session_dir)
-    exp.eq(len(session["requests"]), count, f"todas as {count:,} requisições importadas")
+    exp.eq(len(session["requests"]), count, f"all {count:,} requests imported")
     exp.eq(session["session"]["completeness"]["state"], "complete",
-           "importação grande: completeness=complete")
-    exp.ok(elapsed < 60, f"import-har abaixo de 60 s ({elapsed:.2f} s)")
+           "large import: completeness=complete")
+    exp.ok(elapsed < 60, f"import-har under 60 s ({elapsed:.2f} s)")
     exp.ok(rss < 1536 * 1024 * 1024,
-           f"pico do import abaixo de 1,5 GiB ({rss / (1024 ** 2):.0f} MiB)")
-    exp.ok(elapsed_inspect < 60, f"inspect abaixo de 60 s ({elapsed_inspect:.2f} s)")
+           f"import peak under 1.5 GiB ({rss / (1024 ** 2):.0f} MiB)")
+    exp.ok(elapsed_inspect < 60, f"inspect under 60 s ({elapsed_inspect:.2f} s)")
     exp.ok(rss_inspect < 3584 * 1024 * 1024,
-           f"inspect com pico abaixo de 3,5 GiB ({rss_inspect / (1024 ** 2):.0f} MiB)")
-    notes.append(f"`inspect` materializa o JSON pretty da sessão inteira ({session_mb:.1f} MiB); "
-                 f"o pico de {rss_inspect / (1024 ** 2):.0f} MiB vem da serialização, não do parser.")
+           f"inspect peak under 3.5 GiB ({rss_inspect / (1024 ** 2):.0f} MiB)")
+    notes.append(f"`inspect` materializes the whole session as pretty JSON ({session_mb:.1f} MiB); "
+                 f"the peak of {rss_inspect / (1024 ** 2):.0f} MiB comes from serialization, not from the parser.")
 
-    # Medição complementar: o pior caso de anexos (20 mil corpos de 20 bytes).
+    # Supplementary measurement: the worst case of attachments (20 thousand bodies of 20 bytes).
     bodies_cache = RESULTS / "large-bodies.json"
     if ctx.get("large_bodies"):
         bodies_har = large / "large-bodies.har"
@@ -1106,19 +1107,19 @@ def item_10(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     if bodies_cache.exists():
         bodies = json.loads(bodies_cache.read_text(encoding="utf-8"))
         evidence.append(
-            f"complementar, {bodies['requests']:,} anexos de 20 B: import {bodies['seconds']:.2f} s, "
-            f"pico {bodies['peakMiB']} MiB, sessão {bodies['sessionMiB']} MiB")
-        notes.append("Correção do core confirmada: acima de 256 anexos o `fsync` passa a ser em lote por "
-                     f"diretório — {bodies['attachments']:,} anexos de 20 B importam em {bodies['seconds']:.2f} s "
-                     "(eram 128 s na bateria anterior). Sessões pequenas mantêm `fsync` por arquivo.")
+            f"supplementary, {bodies['requests']:,} attachments of 20 B: import {bodies['seconds']:.2f} s, "
+            f"peak {bodies['peakMiB']} MiB, session {bodies['sessionMiB']} MiB")
+        notes.append("Core fix confirmed: above 256 attachments, `fsync` is now batched per "
+                     f"directory — {bodies['attachments']:,} attachments of 20 B import in {bodies['seconds']:.2f} s "
+                     "(it was 128 s in the previous suite). Small sessions keep per-file `fsync`.")
     else:
-        notes.append("Medição complementar com 20 mil anexos não executada nesta rodada "
-                     "(`--large-bodies`); o caminho principal está medido acima.")
+        notes.append("Supplementary measurement with 20 thousand attachments not run in this round "
+                     "(`--large-bodies`); the main path is measured above.")
     return exp.rows, evidence, notes
 
 
 def python_literals(path: pathlib.Path) -> tuple[str, str, list[tuple[str, str]], bytes]:
-    """Extrai method/target/headers/body literais do script Python gerado."""
+    """Extracts method/target/headers/body literals from the generated Python script."""
     import ast
 
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -1142,7 +1143,7 @@ def python_literals(path: pathlib.Path) -> tuple[str, str, list[tuple[str, str]]
 
 
 def measure(args: list[str]) -> tuple[float, int]:
-    """Executa sob /usr/bin/time -l e devolve (segundos, pico RSS em bytes)."""
+    """Runs under /usr/bin/time -l and returns (seconds, peak RSS in bytes)."""
     import tempfile
 
     with tempfile.NamedTemporaryFile("w+", suffix=".txt", delete=False) as handle:
@@ -1152,11 +1153,11 @@ def measure(args: list[str]) -> tuple[float, int]:
                               capture_output=True, text=True, timeout=600)
         text = proc.stderr
         if proc.returncode != 0:
-            raise RuntimeError(f"core {args} falhou: {text[-500:]}")
+            raise RuntimeError(f"core {args} failed: {text[-500:]}")
         real = re.search(r"([0-9.]+) real", text)
         rss = re.search(r"(\d+)\s+maximum resident set size", text)
         if not real or not rss:
-            raise RuntimeError(f"saída de /usr/bin/time não reconhecida: {text[-400:]}")
+            raise RuntimeError(f"unrecognized /usr/bin/time output: {text[-400:]}")
         return float(real.group(1)), int(rss.group(1))
     finally:
         stderr_path.unlink(missing_ok=True)
@@ -1178,7 +1179,7 @@ def rel(path: pathlib.Path) -> str:
 # ------------------------------------------------------------------ execution
 
 def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
-    """MCP (rodada 11): testes dos crates, testes vivos e fluxo completo como cliente stdio."""
+    """MCP (round 11): crate tests, live tests and the full flow as a stdio client."""
     import re as _re
     rows: list[dict] = []
     evidence: list[str] = []
@@ -1198,24 +1199,24 @@ def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                  "tail": output[-800:]}
         commands.append(entry)
         rows.append({"ok": proc.returncode == 0,
-                     "label": f"MCP {label}: rc={proc.returncode}, {passed} passaram, {failed} falharam"})
+                     "label": f"MCP {label}: rc={proc.returncode}, {passed} passed, {failed} failed"})
         return entry
 
     run_cmd("cargo test mcp", ["cargo", "test", "--offline"], ROOT / "mcp")
     run_cmd("cargo test capture", ["cargo", "test", "--offline"], ROOT / "capture")
     run_cmd("cargo test recon", ["cargo", "test", "--offline"], ROOT / "recon")
-    run_cmd("vivo mcp e2e_live", ["cargo", "test", "--offline", "--test", "e2e_live", "--", "--ignored"],
+    run_cmd("live mcp e2e_live", ["cargo", "test", "--offline", "--test", "e2e_live", "--", "--ignored"],
             ROOT / "mcp")
     for live_name in ("live_pipe_opens_no_port_and_exposed_port_is_loopback_only",
                       "live_planted_symlinks_are_not_followed",
                       "live_port_gap_is_reported_on_all_paths",
                       "live_netlog_swap_race_does_not_write_through_a_symlink",
                       "live_inherited_fds_do_not_leak_into_chrome"):
-        entry = run_cmd(f"vivo capture {live_name}",
+        entry = run_cmd(f"live capture {live_name}",
                 ["cargo", "test", "--offline", "--lib", f"browser::tests::{live_name}", "--", "--ignored", "--exact", "--test-threads=1"], ROOT / "capture")
         if entry["passed"] != 1 or entry["failed"] != 0:
-            rows.append({"ok": False, "label": f"MCP vivo capture {live_name}: esperado 1 teste executado, obtido {entry['passed']}"})
-    run_cmd("vivo recon live_e2e.sh", ["sh", "scripts/live_e2e.sh"], ROOT / "recon")
+            rows.append({"ok": False, "label": f"MCP live capture {live_name}: expected 1 test run, got {entry['passed']}"})
+    run_cmd("live recon live_e2e.sh", ["sh", "scripts/live_e2e.sh"], ROOT / "recon")
 
     started = time.time()
     full = subprocess.run([sys.executable, "-I", str(ROOT / "tests" / "aceite" / "mcp_flow.py")],
@@ -1223,17 +1224,17 @@ def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
     try:
         flow_json = json.loads(full.stdout)
     except json.JSONDecodeError:
-        flow_json = {"ok": False, "checks": [{"name": "saída do fluxo é JSON", "ok": False,
+        flow_json = {"ok": False, "checks": [{"name": "flow output is JSON", "ok": False,
                                              "detail": (full.stdout + full.stderr)[-300:]}]}
-    commands.append({"label": "fluxo stdio (cliente independente)", "cmd": "python3 -I tests/aceite/mcp_flow.py",
+    commands.append({"label": "stdio flow (independent client)", "cmd": "python3 -I tests/aceite/mcp_flow.py",
                      "rc": full.returncode, "passed": flow_json.get("passed"), "failed": flow_json.get("failed"),
                      "seconds": round(time.time() - started, 2), "tail": full.stderr[-400:]})
     rows.append({"ok": full.returncode == 0 and bool(flow_json.get("ok")),
-                 "label": f"MCP fluxo stdio: rc={full.returncode}, {flow_json.get('passed')} passaram, "
-                          f"{flow_json.get('failed')} falharam"})
+                 "label": f"MCP stdio flow: rc={full.returncode}, {flow_json.get('passed')} passed, "
+                          f"{flow_json.get('failed')} failed"})
     for check_row in flow_json.get("checks", []):
         rows.append({"ok": bool(check_row.get("ok")),
-                     "label": f"fluxo: {check_row.get('name')}"
+                     "label": f"flow: {check_row.get('name')}"
                               + ("" if check_row.get("ok") else f" — {check_row.get('detail', '')}")})
 
     (out_dir / "flow.json").write_text(json.dumps(flow_json, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
@@ -1241,24 +1242,24 @@ def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
                 "flow": {"ok": flow_json.get("ok"), "passed": flow_json.get("passed"),
                          "failed": flow_json.get("failed"), "checks": flow_json.get("checks", [])}}
     (out_dir / "run.json").write_text(json.dumps(run_json, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    evidence.append(f"`{rel(out_dir / 'run.json')}` e `{rel(out_dir / 'flow.json')}` (saídas dos comandos e do fluxo)")
-    notes.append("Cliente do fluxo: `tests/aceite/mcp_flow.py`, JSON-RPC por stdio em Python, sem o harness Rust; "
-                 "servidor HTTP local em 127.0.0.1, Chrome real headless, nada externo.")
+    evidence.append(f"`{rel(out_dir / 'run.json')}` and `{rel(out_dir / 'flow.json')}` (command and flow outputs)")
+    notes.append("Flow client: `tests/aceite/mcp_flow.py`, JSON-RPC over stdio in Python, without the Rust harness; "
+                 "local HTTP server on 127.0.0.1, real headless Chrome, nothing external.")
     return rows, evidence, notes
 
 
 ITEMS = [
-    (1, "Headers repetidos e cookies preservados nas fixtures", item_1),
-    (2, "HAR e NetLog válidos, incompletos e com eventos desconhecidos", item_2),
-    (3, "Requisições simultâneas idênticas sem associação falsa", item_3),
-    (4, "Redirects e múltiplas tentativas", item_4),
-    (5, "Corpos ausentes/truncados/descartados explícitos", item_5),
-    (6, "Diff sem perder duplicatas", item_6),
-    (7, "Exportação cURL/Python com caracteres especiais", item_7),
-    (8, "Sanitização incluindo eventos brutos", item_8),
-    (9, "Ciclo real de captura no macOS", item_9),
-    (10, "Importação grande com tamanho documentado", item_10),
-    (11, "MCP: testes dos crates, vivos e fluxo completo por stdio", item_11),
+    (1, "Repeated headers and cookies preserved in the fixtures", item_1),
+    (2, "Valid, incomplete and unknown-event HAR and NetLog", item_2),
+    (3, "Identical simultaneous requests without false association", item_3),
+    (4, "Redirects and multiple attempts", item_4),
+    (5, "Explicit missing/truncated/discarded bodies", item_5),
+    (6, "Diff without losing duplicates", item_6),
+    (7, "cURL/Python export with special characters", item_7),
+    (8, "Sanitization including raw events", item_8),
+    (9, "Real capture cycle on macOS", item_9),
+    (10, "Large import with documented size", item_10),
+    (11, "MCP: crate tests, live tests and full stdio flow", item_11),
 ]
 
 
@@ -1266,13 +1267,13 @@ def run_item(number: int, title: str, fn, ctx: dict) -> dict:
     started = time.time()
     try:
         rows, evidence, notes = fn(ctx)
-    except Exception as error:  # noqa: BLE001 - o relatório precisa do erro real
-        rows, evidence, notes = [{"ok": False, "label": f"exceção: {error}"}], [], []
+    except Exception as error:  # noqa: BLE001 - the report needs the real error
+        rows, evidence, notes = [{"ok": False, "label": f"exception: {error}"}], [], []
     elapsed = time.time() - started
     if number == 9 and not rows:
-        status = "não testado"
+        status = "not tested"
     else:
-        status = "aprovado" if rows and all(row["ok"] for row in rows) else "falhou"
+        status = "approved" if rows and all(row["ok"] for row in rows) else "failed"
     return {
         "item": number,
         "title": title,
@@ -1287,7 +1288,7 @@ def run_item(number: int, title: str, fn, ctx: dict) -> dict:
 
 
 def evidence_scope(capture: str | None, app_run: str | None) -> list[str]:
-    """Separa o que foi produzido nesta rodada do que é evidência histórica."""
+    """Separates what was produced in this round from historical evidence."""
     lines: list[str] = []
     if capture and pathlib.Path(capture).exists():
         summary = pathlib.Path(capture) / "run.json"
@@ -1295,53 +1296,53 @@ def evidence_scope(capture: str | None, app_run: str | None) -> list[str]:
         if summary.exists():
             data = json.loads(summary.read_text(encoding="utf-8"))
             stamp = data.get("generatedAt") or data.get("startedAt") or ""
-        lines.append(f"Novo nesta rodada: captura CLI `{rel(pathlib.Path(capture))}`"
+        lines.append(f"New in this round: CLI capture `{rel(pathlib.Path(capture))}`"
                      + (f" ({stamp})" if stamp else "")
-                     + ", com os dois legs (h1h2 e h3) e o HAR derivado do CDP.")
+                     + ", with both legs (h1h2 and h3) and the HAR derived from CDP.")
     if app_run and pathlib.Path(app_run).exists():
         app = json.loads(pathlib.Path(app_run).read_text(encoding="utf-8"))
         live = app.get("capture", {})
         imports = app.get("imports") or {}
-        lines.append(f"Novo nesta rodada: sessão ao vivo `{live.get('id')}` iniciada e encerrada "
-                     f"pelo bundle final (`{str(app.get('bundle', {}).get('executableSha256'))[:12]}`).")
+        lines.append(f"New in this round: live session `{live.get('id')}` started and stopped "
+                     f"by the final bundle (`{str(app.get('bundle', {}).get('executableSha256'))[:12]}`).")
         historical = [f"{name} `{data.get('id')}`" for name, data in imports.items() if data]
         if historical:
-            lines.append("Novo nesta rodada: importações HAR/NetLog pela UI do bundle final ("
+            lines.append("New in this round: HAR/NetLog imports via the UI of the final bundle ("
                          + ", ".join(historical)
-                         + "), com seleção manual do usuário e verificação por SHA-256/sequência contra "
-                           "os arquivos preparados em `~/Projects/scrapelens-import-tmp`.")
+                         + "), with manual selection by the user and verification by SHA-256/sequence against "
+                           "the files prepared in `~/Projects/scrapelens-import-tmp`.")
     return lines
 
 
 def render(report: dict) -> str:
     lines: list[str] = []
-    lines.append("# Relatório de aceite — ScrapeLens MVP")
+    lines.append("# Acceptance report — ScrapeLens MVP")
     lines.append("")
-    lines.append(f"Execução: {report['generatedAt']} · binário do core `{report['coreSha256'][:12]}` "
+    lines.append(f"Run: {report['generatedAt']} · core binary `{report['coreSha256'][:12]}` "
                  f"({report['coreBytes']} bytes) · commit `{report['gitCommit']}`")
     lines.append("")
-    lines.append(f"Ambiente: macOS {report['macos']} · {report['machine']} · Python {report['python']}")
+    lines.append(f"Environment: macOS {report['macos']} · {report['machine']} · Python {report['python']}")
     lines.append("")
-    lines.append("| # | Critério da spec | Status | Asserções |")
+    lines.append("| # | Spec criterion | Status | Assertions |")
     lines.append("|---|---|---|---|")
     for entry in report["items"]:
         assertions = (f"{entry['passed']}/{entry['passed'] + entry['failed']}"
                       if entry["assertions"] else "—")
         lines.append(f"| {entry['item']} | {entry['title']} | **{entry['status']}** | {assertions} |")
     lines.append("")
-    approved = sum(1 for entry in report["items"] if entry["status"] == "aprovado")
+    approved = sum(1 for entry in report["items"] if entry["status"] == "approved")
     passed = sum(entry["passed"] for entry in report["items"])
     failed = sum(entry["failed"] for entry in report["items"])
-    lines.append(f"Resumo: {approved}/{len(report['items'])} critérios aprovados; "
-                 f"{passed}/{passed + failed} asserções passaram.")
+    lines.append(f"Summary: {approved}/{len(report['items'])} criteria approved; "
+                 f"{passed}/{passed + failed} assertions passed.")
     lines.append("")
-    lines.append("Critérios do pedido: (1) headers repetidos/cookies, (2) HAR/NetLog válidos/incompletos/desconhecidos, "
-                 "(3) simultâneas idênticas sem associação falsa, (4) redirects/tentativas, (5) corpos explícitos, "
-                 "(6) diff com duplicatas, (7) escaping cURL/Python, (8) sanitização com eventos brutos, "
-                 "(9) ciclo real macOS, (10) importação grande medida.")
+    lines.append("Requested criteria: (1) repeated headers/cookies, (2) valid/incomplete/unknown HAR/NetLog, "
+                 "(3) identical simultaneous requests without false association, (4) redirects/attempts, (5) explicit bodies, "
+                 "(6) diff with duplicates, (7) cURL/Python escaping, (8) sanitization with raw events, "
+                 "(9) real macOS cycle, (10) large import measured.")
     lines.append("")
     if report.get("scope"):
-        lines.append("Escopo das evidências:")
+        lines.append("Evidence scope:")
         lines.append("")
         for item in report["scope"]:
             lines.append(f"- {item}")
@@ -1350,13 +1351,13 @@ def render(report: dict) -> str:
         lines.append(f"## {entry['item']}. {entry['title']} — {entry['status']}")
         lines.append("")
         if entry["evidence"]:
-            lines.append("Evidência:")
+            lines.append("Evidence:")
             lines.append("")
             for evidence in entry["evidence"]:
                 lines.append(f"- {evidence}")
             lines.append("")
         if entry["failed"]:
-            lines.append("Falhas:")
+            lines.append("Failures:")
             lines.append("")
             for row in entry["assertions"]:
                 if not row["ok"]:
@@ -1365,42 +1366,42 @@ def render(report: dict) -> str:
         for note in entry["notes"]:
             lines.append(f"> {note}")
             lines.append("")
-        lines.append(f"Asserções: {entry['passed']} passaram, {entry['failed']} falharam "
+        lines.append(f"Assertions: {entry['passed']} passed, {entry['failed']} failed "
                      f"({entry['seconds']:.2f} s).")
         lines.append("")
-    lines.append("## Como reproduzir")
+    lines.append("## How to reproduce")
     lines.append("")
     lines.append("```sh")
     lines.append("cd /Users/cesar/Projects/scrapelens")
     lines.append("python3 tests/aceite/run_acceptance.py --build-fixtures")
     lines.append("python3 tests/aceite/run_acceptance.py")
     lines.append("tests/capture/run-cycle.sh")
-    lines.append("python3 tests/aceite/run_acceptance.py   # usa a última captura registrada")
+    lines.append("python3 tests/aceite/run_acceptance.py   # uses the last recorded capture")
     lines.append("```")
     lines.append("")
-    lines.append("Tudo offline: fixtures sintéticas em `fixtures/aceite/`, domínios `.invalid`; "
-                 "o critério 9 usa Chrome com perfil temporário dedicado e servidores locais. "
-                 "Nada é publicado e nenhuma telemetria é gerada.")
+    lines.append("Everything offline: synthetic fixtures in `fixtures/aceite/`, `.invalid` domains; "
+                 "criterion 9 uses Chrome with a dedicated temporary profile and local servers. "
+                 "Nothing is published and no telemetry is generated.")
     lines.append("")
     return "\n".join(lines)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only", help="lista de itens, ex.: 1,3,6")
-    parser.add_argument("--capture", help="diretório de execução real de tests/capture/run-cycle.sh")
-    parser.add_argument("--app-run", help="run.json do ciclo pelo app empacotado "
-                                         "(padrão: tests/results/app-latest/run.json)")
-    parser.add_argument("--build-fixtures", action="store_true", help="regenera fixtures/aceite antes de rodar")
+    parser.add_argument("--only", help="list of items, e.g.: 1,3,6")
+    parser.add_argument("--capture", help="real run directory of tests/capture/run-cycle.sh")
+    parser.add_argument("--app-run", help="run.json of the cycle through the packaged app "
+                                         "(default: tests/results/app-latest/run.json)")
+    parser.add_argument("--build-fixtures", action="store_true", help="regenerates fixtures/aceite before running")
     parser.add_argument("--large-bodies", action="store_true",
-                        help="mede também o pior caso de 20 mil anexos (lento, ~100 s)")
+                        help="also measures the worst case of 20 thousand attachments (slow, ~100 s)")
     args = parser.parse_args()
 
     if args.build_fixtures:
         subprocess.run([sys.executable, str(ROOT / "tests" / "aceite" / "fixtures.py")], check=True)
 
     if not CORE.exists():
-        print(f"binário do core ausente: {CORE}\nrode: cd core && cargo build --release", file=sys.stderr)
+        print(f"core binary missing: {CORE}\nrun: cd core && cargo build --release", file=sys.stderr)
         return 2
 
     last_capture = RESULTS / "last-capture.txt"
@@ -1429,7 +1430,7 @@ def main() -> int:
         "generatedAt": now_iso(),
         "coreSha256": sha256(CORE),
         "coreBytes": CORE.stat().st_size,
-        "gitCommit": git.stdout.strip() or "desconhecido",
+        "gitCommit": git.stdout.strip() or "unknown",
         "macos": platform.mac_ver()[0] or platform.release(),
         "machine": platform.machine(),
         "python": platform.python_version(),
@@ -1442,14 +1443,14 @@ def main() -> int:
     REPORT.write_text(render(report), encoding="utf-8")
 
     for entry in results:
-        mark = "OK  " if entry["status"] == "aprovado" else ("SKIP" if entry["status"] == "não testado" else "FAIL")
+        mark = "OK  " if entry["status"] == "approved" else ("SKIP" if entry["status"] == "not tested" else "FAIL")
         print(f"{mark} {entry['item']:>2}. {entry['title']} "
-              f"({entry['passed']} passaram, {entry['failed']} falharam, {entry['seconds']:.2f}s)")
+              f"({entry['passed']} passed, {entry['failed']} failed, {entry['seconds']:.2f}s)")
         for row in entry["assertions"]:
             if not row["ok"]:
                 print(f"       - {row['label']}")
-    print(f"\nrelatório: {rel(REPORT)}")
-    return 0 if all(entry["status"] != "falhou" for entry in results) else 1
+    print(f"\nreport: {rel(REPORT)}")
+    return 0 if all(entry["status"] != "failed" for entry in results) else 1
 
 
 if __name__ == "__main__":

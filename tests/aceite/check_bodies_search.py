@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Rodada 4 (docs/08-corpos-busca.md §3.1): confere a busca no payload.
+"""Round 4 (docs/08-corpos-busca.md §3.1): checks the search over the payload.
 
-Dada a pasta de uma sessão importada, roda `scrapelens-core search` para cada
-caso de fixtures/detran-pb/manifest.json (`bodies_search_cases`, e `bodies.edge.search`
-com --fixture edge) e compara requestId/field/decoded esperados. Não afrouxa
-expectativas: qualquer divergência falha (exit 1).
+Given the folder of an imported session, runs `scrapelens-core search` for each
+case in fixtures/detran-pb/manifest.json (`bodies_search_cases`, and `bodies.edge.search`
+with --fixture edge) and compares the expected requestId/field/decoded. Expectations
+are not relaxed: any divergence fails (exit 1).
 
-  python3 tests/aceite/check_bodies_search.py <sessao>            # DETRAN-PB
-  python3 tests/aceite/check_bodies_search.py <sessao> --fixture edge
-  python3 tests/aceite/check_bodies_search.py --import-fixture    # importa e confere
-  python3 tests/aceite/check_bodies_search.py <sessao-sanitizada> --sanitized MARCADOR...
+  python3 tests/aceite/check_bodies_search.py <session>            # DETRAN-PB
+  python3 tests/aceite/check_bodies_search.py <session> --fixture edge
+  python3 tests/aceite/check_bodies_search.py --import-fixture    # imports and checks
+  python3 tests/aceite/check_bodies_search.py <sanitized-session> --sanitized MARKER...
 """
 from __future__ import annotations
 
@@ -27,26 +27,26 @@ FIX = ROOT / "fixtures" / "detran-pb"
 def core_bin(arg):
     if arg:
         return arg
-    # O binário mais recente por mtime; recusa se for mais antigo que o código-fonte.
+    # The most recent binary by mtime; refuses if it is older than the source code.
     cands = [ROOT / "core" / "target" / p / "scrapelens-core" for p in ("release", "debug")]
     cands = [c for c in cands if c.exists()]
     if not cands:
-        sys.exit("scrapelens-core não encontrado; rode `cargo build` em core/ ou use --core")
+        sys.exit("scrapelens-core not found; run `cargo build` in core/ or use --core")
     best = max(cands, key=lambda c: c.stat().st_mtime)
     newest_src = max((f.stat().st_mtime for f in (ROOT / "core" / "src").rglob("*.rs")), default=0)
     if best.stat().st_mtime < newest_src:
-        sys.exit(f"{best} é mais antigo que core/src; rode `cargo build` em core/ ou use --core")
+        sys.exit(f"{best} is older than core/src; run `cargo build` in core/ or use --core")
     return str(best)
 
 
 def cdp_to_logical(session):
-    """requestId do CDP -> id lógico da sessão, pela proveniência em session.json."""
+    """CDP requestId -> logical session id, via the provenance in session.json."""
     d = json.loads((Path(session) / "session.json").read_text())
     return {r["cdp"]["requestId"]: r["id"] for r in d["requests"] if r.get("cdp", {}).get("requestId")}
 
 
 def exact_slice_failures(session, matches, query):
-    """exact=true: o trecho [byteOffset, +byteLength) do anexo original é o texto buscado."""
+    """exact=true: the slice [byteOffset, +byteLength) of the original attachment is the searched text."""
     d = json.loads((Path(session) / "session.json").read_text())
     att = {a["id"]: a for r in d["requests"] for a in r["attempts"]}
     bad = []
@@ -57,7 +57,7 @@ def exact_slice_failures(session, matches, query):
         name = att[m["attemptId"]][key]["attachment"]
         raw = (Path(session) / "attachments" / name).read_bytes()
         piece = raw[m["byteOffset"]:m["byteOffset"] + m["byteLength"]]
-        # busca sem --case-sensitive: compara sem diferenciar maiúsculas, nos bytes
+        # search without --case-sensitive: compares case-insensitively, on the bytes
         if piece.lower() != query.encode().lower():
             bad.append(f"{m['requestId']} {m['scope']}: anexo[{m['byteOffset']}:+{m['byteLength']}]={piece!r} != {query!r}")
     return bad
@@ -70,7 +70,7 @@ def rid_of_11():
 def import_fixture(core, name, tmp):
     cdp, bodies = FIX / f"{name}.cdp.jsonl", FIX / f"{name}.cdp-bodies.jsonl"
     netlog = FIX / f"{name}.netlog.json"
-    if not netlog.exists():  # edge não tem NetLog: NetLog vazio e válido
+    if not netlog.exists():  # edge has no NetLog: an empty, valid NetLog
         netlog = Path(tmp) / "empty.netlog.json"
         netlog.write_text(json.dumps({"constants": {"logEventTypes": {}, "timeTickOffset": 0}, "events": []}))
     out = Path(tmp) / "session"
@@ -81,7 +81,7 @@ def import_fixture(core, name, tmp):
         sys.exit(f"FAIL import {name}: {p.stderr.strip()[:300]}")
     labels = sorted(json.loads((out / "session.json").read_text())["session"].get("labels", []))
     if labels != ["capture-import", "synthetic-fixture"]:
-        sys.exit(f"FAIL rótulos da sessão importada: {labels} != ['capture-import', 'synthetic-fixture']")
+        sys.exit(f"FAIL labels of the imported session: {labels} != ['capture-import', 'synthetic-fixture']")
     return str(out)
 
 
@@ -101,8 +101,8 @@ def main():
     ap.add_argument("session", nargs="?")
     ap.add_argument("--core")
     ap.add_argument("--fixture", choices=["detran", "edge"], default="detran")
-    ap.add_argument("--import-fixture", action="store_true", help="importa detran-pb para uma pasta temporária (usa --bodies)")
-    ap.add_argument("--sanitized", nargs="+", metavar="MARCADOR", help="sessão sanitizada: nenhum marcador pode ser achado")
+    ap.add_argument("--import-fixture", action="store_true", help="imports detran-pb into a temporary folder (uses --bodies)")
+    ap.add_argument("--sanitized", nargs="+", metavar="MARKER", help="sanitized session: no marker may be found")
     a = ap.parse_args()
     core = core_bin(a.core)
     manifest = json.loads((FIX / "manifest.json").read_text())
@@ -111,15 +111,15 @@ def main():
         name = "detran-pb" if a.fixture == "detran" else "detran-pb-edge"
         session = import_fixture(core, name, tempfile.mkdtemp(prefix=f"sl-bodies-{a.fixture}-"))
     if not session:
-        ap.error("informe a pasta da sessão ou --import-fixture")
+        ap.error("give the session folder or --import-fixture")
 
     fails = []
     if a.sanitized:
         for m in a.sanitized:
             hits = search(core, session, m)
             if hits:
-                fails.append(f"marcador sensível {m!r} achado em sessão sanitizada ({len(hits)} matches)")
-        return report(fails, f"sanitização: {len(a.sanitized)} marcadores ausentes")
+                fails.append(f"sensitive marker {m!r} found in sanitized session ({len(hits)} matches)")
+        return report(fails, f"sanitization: {len(a.sanitized)} markers absent")
 
     if a.fixture == "detran":
         cases = manifest["bodies_search_cases"]
@@ -133,16 +133,16 @@ def main():
         try:
             expect = [(ids[r], f, d) for r, f, d in expect]
         except KeyError as e:
-            fails.append(f"{c['query']!r}: requestId CDP {e} sem requisição na sessão"); continue
+            fails.append(f"{c['query']!r}: CDP requestId {e} has no request in the session"); continue
         try:
             got = search(core, session, query, scope)
         except Exception as e:  # noqa: BLE001
             fails.append(f"{query!r}/{scope}: {e}"); continue
         got_set = sorted({(m["requestId"], m.get("field"), m.get("decoded")) for m in got})
-        if a.fixture == "edge":  # edge confere só os ids; field/decoded não fazem parte do contrato do manifest
+        if a.fixture == "edge":  # edge checks only the ids; field/decoded are not part of the manifest contract
             got_set = sorted({(m["requestId"], None, None) for m in got})
         if got_set != sorted(set(expect)):
-            fails.append(f"{query!r}/{scope}: esperado {sorted(set(expect))}, obtido {got_set}")
+            fails.append(f"{query!r}/{scope}: expected {sorted(set(expect))}, got {got_set}")
         if scope in ("requestBody", "responseBody"):
             fails += exact_slice_failures(session, got, query)
         if a.fixture == "detran" and query == "cmd_consultar_placa" and scope == "requestBody":
@@ -150,10 +150,10 @@ def main():
             row = [(m["requestId"], m.get("field"), m.get("byteOffset"), m.get("byteLength"), m.get("exact"), m.get("decoded"))
                    for m in got if m["requestId"] == want[0]]
             if row != [want]:
-                fails.append(f"cdp-r0011 XML: esperado {want}, obtido {row}")
+                fails.append(f"cdp-r0011 XML: expected {want}, got {row}")
         if scope == "url" and got:
-            fails.append(f"{query!r}: busca por URL não deve achar corpo")
-    return report(fails, f"{len(cases)} casos de busca")
+            fails.append(f"{query!r}: URL search must not find a body")
+    return report(fails, f"{len(cases)} search cases")
 
 
 def report(fails, ok):

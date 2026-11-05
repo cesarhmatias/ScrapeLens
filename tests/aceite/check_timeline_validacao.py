@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
-"""Rodada 9 (docs/13-timeline-validacao.md): linha do tempo da aplicação e validação da execução do script.
+"""Round 9 (docs/13-timeline-validacao.md): application timeline and validation of the script execution.
 
   python3 tests/aceite/check_timeline_validacao.py [--core BIN] [--wrapper natural-core] [--python PY_COM_REQUESTS]
          [--port 8793] [HAR_REAL ...]
 
-(1) `natural-core timeline <sessão> --adapter natural-ajax` na real-shape (1 e 2 rodadas): eventos da aplicação na ordem
-    do fluxo manual (init, init, on_interceptor, init, cmd_filtro, cmd_consultar_placa; por rodada), rótulos
-    `event @ page`, proteção recolhida (nenhuma entrada /TSPD/ avulsa). Nos HARs reais (H1–H3 padrão), só agregado:
-    contagens e ordem de rótulos (nomes de evento/página, nunca valores).
-(2) script de priming da real-shape rodado POR ESTE TESTE contra o detran-sim com `--confirmar --base-url --trace`;
-    `import-trace`; `validate <captura> <trace>` (scrapelens.validate/1; core 94478de): todos os passos do trace pareados, nenhum POST do Connector sobrando só na
-    captura, só dinâmicos esperados diferem (STAMP, delta, SESSIONID + o inerente à troca de host), assess app-ok, e o
-    resumo "equivalente".
-(3) modos error/nocontrols/403: o trace termina no passo ruim; compare aponta "diverge no passo N" (N = último passo do
-    trace = primeiro pedido ruim do sim) e o assess dá o veredito certo (error → app-error; 403 → blocked; nocontrols →
-    não app-ok).
-(4) o trace tem permissão 0600 e o aviso "contém dados da sua sessão"; sanitize sobre a sessão do trace remove
-    SESSIONID, cookies e placa.
+(1) `natural-core timeline <session> --adapter natural-ajax` on the real-shape (1 and 2 rounds): application events in the
+    order of the manual flow (init, init, on_interceptor, init, cmd_filtro, cmd_consultar_placa; per round), labels
+    `event @ page`, protection collapsed (no standalone /TSPD/ entry). On the real HARs (H1–H3 default), aggregate only:
+    counts and label order (event and page names, never values).
+(2) priming script of the real-shape, run BY THIS TEST against detran-sim with `--confirmar --base-url --trace`;
+    `import-trace`; `validate <capture> <trace>` (scrapelens.validate/1; core 94478de): all trace steps paired, no
+    Connector POST left over only in the capture, only the expected dynamic values differ (STAMP, delta, SESSIONID + what
+    is inherent to the host switch), assess app-ok, and the summary "equivalent".
+(3) error/nocontrols/403 modes: the trace ends at the bad step; compare points to "diverges at step N" (N = last step of
+    the trace = first bad request of the sim) and assess gives the right verdict (error → app-error; 403 → blocked;
+    nocontrols → not app-ok).
+(4) the trace has permission 0600 and the warning "contains data from your session"; sanitize on the trace's session
+    removes SESSIONID, cookies and the plate.
 
-Formatos ainda não entregues (timeline, import-trace, --trace) são lidos de forma tolerante, conforme o doc 13:
-timeline = JSON com lista de entradas {label, kind[, count]}; trace = JSON `scrapelens.trace/1` com lista `steps`;
-compare = JSON do compare atual + um resumo textual ("equivalente" | "diverge no passo N") em qualquer chave.
-Falha enquanto Core/Captura não entregarem; nada é afrouxado. Dados 100% sintéticos; HARs reais só em agregado.
-Resultado: tests/results/priming/timeline-validacao.json.
+Formats not yet delivered (timeline, import-trace, --trace) are read tolerantly, per doc 13:
+timeline = JSON with a list of entries {label, kind[, count]}; trace = JSON `scrapelens.trace/1` with a `steps` list;
+compare = JSON of the current compare + a textual summary ("equivalent" | "diverges at step N") under any key.
+Fails until Core/Capture deliver; nothing is relaxed. Data 100% synthetic; real HARs only in aggregate.
+Result: tests/results/priming/timeline-validacao.json.
 """
 from __future__ import annotations
 
@@ -32,13 +32,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_bodies_search as cb  # noqa: E402
 import check_priming_sim as ps  # noqa: E402
-import check_priming_injection as ci  # noqa: E402  (entry(): montagem de HAR sintético)
+import check_priming_injection as ci  # noqa: E402  (entry(): synthetic HAR assembly)
 
 ROOT = cb.ROOT
 OUT = ROOT / "tests" / "results" / "priming" / "timeline-validacao.json"
 FIX = ROOT / "fixtures" / "detran-pb-real-shape"
-EVENTS = ["init", "init", "on_interceptor", "init", "cmd_filtro", "cmd_consultar_placa"]   # fluxo manual até a 1ª consulta
-FIXTURE_ROUND = EVENTS + ["cmd_nova", "cmd_consultar_placa"]                                   # a fixture traz uma 2ª consulta
+EVENTS = ["init", "init", "on_interceptor", "init", "cmd_filtro", "cmd_consultar_placa"]   # manual flow up to the 1st query
+FIXTURE_ROUND = EVENTS + ["cmd_nova", "cmd_consultar_placa"]                                   # the fixture has a 2nd query
 REAL = ["/Users/cesar/Projects/scripts/detran_scraper/detran_paraiba/inputs/sem_captcha.har",
         "/Users/cesar/Downloads/wsdetran.pb.gov.br.har.txt.har",
         "/Users/cesar/Downloads/wsdetran.fluxo.captcha.solve.pgEvy4.har.txt.har"]
@@ -65,7 +65,7 @@ def jload(p, what):
     try:
         return json.loads(p.stdout)
     except Exception:
-        check(False, f"{what}: saída não é JSON")
+        check(False, f"{what}: output is not JSON")
         return None
 
 
@@ -83,11 +83,11 @@ def kind(e):
 
 
 def is_group(e):
-    return e.get("type") == "group" or "group" in kind(e) or "grupo" in kind(e)
+    return e.get("type") == "group" or "group" in kind(e) or "grupo" in kind(e)  # "grupo": legacy kind name, accepted on input
 
 
 def is_protection(e):
-    """Proteção avulsa = entrada de evento /TSPD/; o grupo `protection` (type=group) é a forma recolhida correta."""
+    """Standalone protection = /TSPD/ event entry; the `protection` group (type=group) is the correct collapsed form."""
     if is_group(e):
         return "protec" in kind(e)
     return "/TSPD/" in str(e.get("url", "")) + str(e.get("label", ""))
@@ -96,7 +96,7 @@ def is_protection(e):
 def timeline_agg(wrapper, sess, what):
     d = jload(sh([wrapper, "timeline", sess, "--adapter", "natural-ajax"]), f"{what}: timeline")
     es = entries_of(d)
-    if not check(bool(es), f"{what}: timeline sem entradas"):
+    if not check(bool(es), f"{what}: timeline has no entries"):
         return None
     posts = [e for e in es if not is_group(e) and str(e.get("url", "")).endswith("/servlet/Connector")]
     labels = [str(e.get("label", "")) for e in posts]
@@ -108,8 +108,8 @@ def timeline_agg(wrapper, sess, what):
            "sequencia_eventos": ev, "paginas": pages, "grupos_protecao": len(groups),
            "protecao_recolhida": bool(groups) and not standalone, "protecao_avulsa": len(standalone)}
     check(bool(groups) and not standalone,
-          f"{what}: proteção deveria vir recolhida em grupos com contagem ({len(groups)} grupos, {len(standalone)} entradas avulsas)")
-    check(ev.count("?") == 0, f"{what}: {ev.count('?')} de {len(posts)} POSTs do Connector sem rótulo `event @ page` com o adaptador")
+          f"{what}: protection should come collapsed into groups with a count ({len(groups)} groups, {len(standalone)} standalone entries)")
+    check(ev.count("?") == 0, f"{what}: {ev.count('?')} of {len(posts)} Connector POSTs without an `event @ page` label from the adapter")
     return agg
 
 
@@ -137,7 +137,7 @@ def diff_names(o, under=False, out=None):
     out = set() if out is None else out
     if isinstance(o, dict):
         for k, v in o.items():
-            hit = under or re.search(r"diff|changed|differ|mudou", k, re.I)
+            hit = under or re.search(r"diff|changed|differ|mudou", k, re.I)  # "mudou": legacy key name (dead helper)
             if hit and isinstance(v, (str, int)) and k not in ("count",):
                 out.add(str(v)) if isinstance(v, str) else None
             diff_names(v, bool(hit), out)
@@ -156,7 +156,7 @@ LOOP = "http://127.0.0.1:18791"
 
 
 def rv_capture(tmp, core):
-    """Captura sintética de 4 passos (casos do revisor, val1.py): STAMP novo a cada resposta, constantes longa/curta, placa."""
+    """Synthetic 4-step capture (reviewer cases, val1.py): new STAMP on each response, long/short constants, plate."""
     A = "http://app.test"
     ent = [
         ci.entry(1, "GET", f"{A}/entry", 200, "text/html", "<html>entry</html>", []),
@@ -192,32 +192,32 @@ def rv_cases():
     good = [rv_step("GET", f"{L}/entry", resp="<html>entry</html>"), rv_step("GET", f"{L}/a", resp=st(ST)) if False else rv_step("GET", f"{L}/a", resp=st(ST)),
             rv_step("POST", f"{L}/go", f"STAMP={ST}&q=cadastro&{SIG}&placa=XYZ9K88", go_resp), done]
     cases = {}
-    cases["V1 fiel (controle)"] = (good, [{"name": "placa"}], "equivalent", None, True)
-    cases["V2b prefixo (sem o alvo)"] = (good[:3], [{"name": "placa"}], "not-equivalent", r"incomplet", False)
+    cases["V1 faithful (control)"] = (good, [{"name": "placa"}], "equivalent", None, True)
+    cases["V2b prefix (without the target)"] = (good[:3], [{"name": "placa"}], "not-equivalent", r"incomplet", False)
     froz = list(good)
     froz[2] = rv_step("POST", f"{L}/go", f"STAMP=STAMPCAP1234567&q=cadastro&{SIG}&placa=XYZ9K88", go_resp)
     froz[3] = rv_step("POST", f"{L}/go2", "STAMP=STAMPCAP7654321&q=consulta", done["responseBody"]["text"])
-    cases["V3 STAMP congelado (valor da captura)"] = (froz, [{"name": "placa"}], "not-equivalent", r"congelad", True)
+    cases["V3 frozen STAMP (captured value)"] = (froz, [{"name": "placa"}], "not-equivalent", r"frozen", True)
     sig = list(good)
     sig[2] = rv_step("POST", f"{L}/go", f"STAMP={ST}&q=cadastro&sig=ffffffffffffffffffffffffffffffff&placa=XYZ9K88", go_resp)
-    cases["V5 constante longa trocada (sig)"] = (sig, [{"name": "placa"}], "not-equivalent", None, True)
+    cases["V5 long constant swapped (sig)"] = (sig, [{"name": "placa"}], "not-equivalent", None, True)
     forged = [good[0], good[1], rv_step("POST", f"{L}/go", "STAMP=INVENTED&q=OUTRA&sig=ffffffffffffffffffffffffffffffff&placa=XYZ9K88", go_resp), good[3]]
-    cases["V7 parameters forjado (q, sig, STAMP)"] = (forged, [{"name": "q"}, {"name": "sig"}, {"name": "STAMP"}, {"name": "placa"}], "not-equivalent", r"par[âa]metro inv[áa]lido", True)
-    wrong = list(good)   # origem errada: o passo 4 usa o STAMP do passo 2 (ST), não o da resposta anterior (ST2)
+    cases["V7 forged parameters (q, sig, STAMP)"] = (forged, [{"name": "q"}, {"name": "sig"}, {"name": "STAMP"}, {"name": "placa"}], "not-equivalent", r"invalid parameter", True)
+    wrong = list(good)   # wrong origin: step 4 uses the STAMP of step 2 (ST), not the one from the previous response (ST2)
     wrong[3] = rv_step("POST", f"{L}/go2", f"STAMP={ST}&q=consulta", done["responseBody"]["text"])
-    cases["V18 origem errada (STAMP de resposta antiga)"] = (wrong, [{"name": "placa"}], "not-equivalent", r"origem diferente", True)
+    cases["V18 wrong origin (STAMP from an old response)"] = (wrong, [{"name": "placa"}], "not-equivalent", r"different origin", True)
     other = [dict(x, url=x["url"].replace("127.0.0.1:18791", "evil.example")) for x in good]
-    cases["V12 host não-loopback (evil.example), sem --map-origin"] = (other, [{"name": "placa"}], "not-equivalent", None, True)
+    cases["V12 non-loopback host (evil.example), without --map-origin"] = (other, [{"name": "placa"}], "not-equivalent", None, True)
     return cases
 
 
 def plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target):
-    """Rodada 9 (7410fa4): `plan.parameters` só isenta com o plano VERIFICADO.
+    """Round 9 (7410fa4): `plan.parameters` only exempts with a VERIFIED plan.
 
-    Sobre a trace autêntica do detran-sim: v1, sem `version` e v2 sem `hash`, cada um com
-    `plan.parameters += "XML.delta"`, não podem isentar delta congelado nem inventado (L13–L15, N1/N3
-    da matriz do revisor): os seis têm de DIVERGIR. v1 fiel (sem valor trocado) fica `equivalent`,
-    só com o aviso "plano de versão anterior (v1)". Se algum caso só avisar, é falha: fica registrada.
+    On the authentic detran-sim trace: v1, without `version`, and v2 without `hash`, each with
+    `plan.parameters += "XML.delta"`, cannot exempt a frozen or invented delta (L13–L15, N1/N3 of the
+    reviewer matrix): all six must DIVERGE. A faithful v1 (no swapped value) stays `equivalent`,
+    only with the warning "plan of an earlier version (v1)". If any case only warns, it is a failure: it is recorded.
     """
     info = INFO["plano_nao_verificado"] = {}
     doc = json.loads(Path(trace_ok).read_text())
@@ -236,7 +236,7 @@ def plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target):
                 cdelta = m.group(2)
                 break
     info["delta_capturado"] = cdelta
-    if not check(bool(cdelta), f"plano não verificado: não achei o delta no corpo capturado de {target}"):
+    if not check(bool(cdelta), f"unverified plan: did not find the delta in the captured body of {target}"):
         return
 
     def last_connector(d):
@@ -261,9 +261,9 @@ def plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target):
         plan = d.setdefault("plan", {})
         if kind == "v1":
             plan["version"] = 1
-        elif kind == "sem-versao":
+        elif kind == "no-version":
             plan.pop("version", None)
-        elif kind == "v2-sem-hash":
+        elif kind == "v2-no-hash":
             plan.pop("hash", None)
         if delta_param:
             params = plan.setdefault("parameters", [])
@@ -280,7 +280,7 @@ def plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target):
         shutil.rmtree(s, ignore_errors=True)
         ip = sh([core, "import-trace", p, "--out", s])
         if not check(ip.returncode == 0,
-                     f"plano não verificado {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
+                     f"unverified plan {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
             return None
         v = sh([wrapper, "validate", cap, s, "--adapter", "natural-ajax"])
         try:
@@ -288,34 +288,34 @@ def plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target):
         except Exception:
             return None
 
-    # v1 fiel: equivalent, com o aviso de versão anterior e nenhum aviso de parâmetro
-    v = validate(variant(doc, "v1", delta_param=False), "v1-fiel")
+    # v1 faithful: equivalent, with the earlier-version warning and no parameter warning
+    v = validate(variant(doc, "v1", delta_param=False), "v1-faithful")
     if v is not None:
         avisos = [str(w) for w in v.get("warnings", [])]
         info["v1_fiel"] = {"verdict": v.get("verdict"), "avisos": avisos}
         check(v.get("verdict") == "equivalent",
-              f"plano não verificado v1 fiel: deveria ser equivalent; deu {v.get('verdict')!r} "
+              f"unverified plan v1 faithful: should be equivalent; got {v.get('verdict')!r} "
               f"({str(v.get('summary'))[:120]!r})")
-        check(any("plano de versão anterior (v1)" in w for w in avisos),
-              f"plano não verificado v1 fiel: falta o aviso 'plano de versão anterior (v1)': {avisos[:5]}")
-        check(not any(re.search(r"par[âa]metro", w, re.I) for w in avisos),
-              f"plano não verificado v1 fiel: avisos de parâmetro inesperados: {[w for w in avisos if re.search(r'par[âa]metro', w, re.I)][:4]}")
+        check(any("plan of an earlier version (v1)" in w for w in avisos),
+              f"unverified plan v1 faithful: missing warning 'plan of an earlier version (v1)': {avisos[:5]}")
+        check(not any(re.search(r"parameter", w, re.I) for w in avisos),
+              f"unverified plan v1 faithful: unexpected parameter warnings: {[w for w in avisos if re.search(r'parameter', w, re.I)][:4]}")
 
-    for kind, rotulo, motivo_plano in (("v1", "v1", r"plano de versão anterior"),
-                                       ("sem-versao", "sem versão", r"plano de versão anterior"),
-                                       ("v2-sem-hash", "v2 sem hash", r"plano sem impressão")):
+    for kind, rotulo, motivo_plano in (("v1", "v1", r"plan of an earlier version"),
+                                       ("no-version", "no version", r"plan of an earlier version"),
+                                       ("v2-no-hash", "v2 no hash", r"plan without fingerprint")):
         base = validate(variant(doc, kind), f"{kind}-base")
         if base is not None:
             info[f"{rotulo} base"] = {"verdict": base.get("verdict"),
                                       "avisos": [str(w) for w in base.get("warnings", [])]}
             check(base.get("verdict") == "equivalent",
-                  f"plano não verificado {rotulo}: trace sem valor trocado deveria ser equivalent; "
-                  f"deu {base.get('verdict')!r} ({str(base.get('summary'))[:120]!r})")
+                  f"unverified plan {rotulo}: trace without a swapped value should be equivalent; "
+                  f"got {base.get('verdict')!r} ({str(base.get('summary'))[:120]!r})")
             check(any(re.search(motivo_plano, w, re.I) for w in info[f"{rotulo} base"]["avisos"]),
-                  f"plano não verificado {rotulo}: falta o aviso do plano ({motivo_plano}): "
+                  f"unverified plan {rotulo}: missing the plan warning ({motivo_plano}): "
                   f"{info[f'{rotulo} base']['avisos'][:5]}")
-        for nome, valor, motivo in (("congelado", cdelta, r"congelad"),
-                                    ("inventado", "ZZZZ" + "0" * 8, r"sem origem|inventad")):
+        for nome, valor, motivo in (("frozen", cdelta, r"frozen"),
+                                    ("invented", "ZZZZ" + "0" * 8, r"no (observed )?origin")):
             v = validate(variant(doc, kind, delta_value=valor), f"{kind}-{nome}")
             if v is None:
                 continue
@@ -323,22 +323,22 @@ def plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target):
                                                 "resumo": str(v.get("summary"))[:180],
                                                 "avisos": [str(w) for w in v.get("warnings", [])]}
             check(v.get("verdict") == "diverges",
-                  f"plano não verificado {rotulo}, delta {nome}: deveria DIVERGIR; deu {v.get('verdict')!r} "
-                  f"({salvo['resumo']!r}) — plan.parameters de plano não verificado não pode isentar")
+                  f"unverified plan {rotulo}, delta {nome}: should DIVERGE; got {v.get('verdict')!r} "
+                  f"({salvo['resumo']!r}) — plan.parameters of an unverified plan cannot exempt")
             check(bool(re.search(motivo, json.dumps(v, ensure_ascii=False), re.I)),
-                  f"plano não verificado {rotulo}, delta {nome}: motivo sem /{motivo}/: {salvo['resumo']!r}")
-            check(not any("plano não confere" in w for w in salvo["avisos"]),
-                  f"plano não verificado {rotulo}: não deveria acusar 'plano não confere' (o hash nem é comparado): "
+                  f"unverified plan {rotulo}, delta {nome}: reason without /{motivo}/: {salvo['resumo']!r}")
+            check(not any("plan does not match" in w for w in salvo["avisos"]),
+                  f"unverified plan {rotulo}: should not warn 'plan does not match' (the hash is not even compared): "
                   f"{salvo['avisos'][:4]}")
 
 
 def fuga_cases(core, wrapper, tmp, cap, trace_ok, target):
-    """Rodada 9 (39410bf): `parameters` só isenta o par (name, part) que o plano regenerado produz.
+    """Round 9 (39410bf): `parameters` only exempts the (name, part) pair that the regenerated plan produces.
 
-    Sobre a trace AUTÊNTICA do detran-sim (mesma captura e alvo do validate), com o par forjado sob um nome
-    do plano: delta congelado/inventado + {cpf → XML.delta} DIVERGE; STAMP congelado/inventado + {cpf → STAMP}
-    DIVERGE; {sessionid_cliente → sig} só avisa "parâmetro não corresponde ao plano"; a trace fiel fica sem
-    aviso além da origem. Se algum caso só avisar, é falha do core: fica registrada, sem máscara.
+    On the AUTHENTIC detran-sim trace (same capture and target as validate), with the pair forged under a plan name:
+    frozen/invented delta + {cpf → XML.delta} DIVERGES; frozen/invented STAMP + {cpf → STAMP} DIVERGES;
+    {sessionid_cliente → sig} only warns "parameter does not match the plan"; the faithful trace has no warning
+    beyond the origin. If any case only warns, it is a core failure: it is recorded, without a mask.
     """
     info = INFO["parameters_fuga"] = {}
     doc = json.loads(Path(trace_ok).read_text())
@@ -354,10 +354,10 @@ def fuga_cases(core, wrapper, tmp, cap, trace_ok, target):
         m = re.search(r"STAMP=(\d+)", captured)
         cstamp = m.group(1) if m else None
     info["valores_capturados"] = {"XML.delta": cdelta, "STAMP": cstamp}
-    if not check(bool(cdelta) and bool(cstamp), f"fuga: não achei delta/STAMP no corpo capturado de {target}"):
+    if not check(bool(cdelta) and bool(cstamp), f"leak: did not find delta/STAMP in the captured body of {target}"):
         return
 
-    # passo mutado: o último POST do Connector com delta e STAMP (o alvo do fluxo, passo 10)
+    # mutated step: the last Connector POST with delta and STAMP (the flow's target, step 10)
     def last_step(d):
         for i in range(len(d.get("steps", [])) - 1, -1, -1):
             b = ((d["steps"][i].get("requestBody") or {}).get("text") or "")
@@ -385,13 +385,13 @@ def fuga_cases(core, wrapper, tmp, cap, trace_ok, target):
         return d
 
     def validate(doc2, label):
-        p = tmp / f"fuga-{label}.json"
+        p = tmp / f"leak-{label}.json"
         p.write_text(json.dumps(doc2, ensure_ascii=False))
-        s = tmp / f"fuga-ses-{label}"
+        s = tmp / f"leak-ses-{label}"
         shutil.rmtree(s, ignore_errors=True)
         ip = sh([core, "import-trace", p, "--out", s])
         if not check(ip.returncode == 0,
-                     f"fuga {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
+                     f"leak {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
             return None
         v = sh([wrapper, "validate", cap, s, "--adapter", "natural-ajax"])
         try:
@@ -399,25 +399,25 @@ def fuga_cases(core, wrapper, tmp, cap, trace_ok, target):
         except Exception:
             return None
 
-    # (e) trace fiel: nenhum aviso além da origem mapeada
-    base = validate(doc, "fiel")
+    # (e) faithful trace: no warning beyond the mapped origin
+    base = validate(doc, "faithful")
     if base is not None:
-        extra = [str(w) for w in base.get("warnings", []) if "origens de aplicação diferentes" not in str(w)]
+        extra = [str(w) for w in base.get("warnings", []) if "different application origins" not in str(w)]
         info["fiel"] = {"verdict": base.get("verdict"), "avisos_alem_da_origem": extra}
         check(base.get("verdict") == "equivalent" and not extra,
-              f"fuga: trace fiel deveria ser equivalent sem avisos além da origem; deu "
-              f"{base.get('verdict')!r} e {extra[:4]}")
+              f"leak: faithful trace should be equivalent without warnings beyond the origin; got "
+              f"{base.get('verdict')!r} and {extra[:4]}")
 
     casos = [
-        ("delta congelado", "delta", cdelta, "cpf", "XML.delta", r"congelad"),
-        ("delta inventado", "delta", "ZZZZ" + "0" * 8, "cpf", "XML.delta", r"sem origem|inventad"),
-        ("STAMP congelado", "stamp", cstamp, "cpf", "STAMP", r"congelad"),
-        ("STAMP inventado", "stamp", "9999", "cpf", "STAMP", r"sem origem|inventad"),
+        ("frozen delta", "delta", cdelta, "cpf", "XML.delta", r"frozen"),
+        ("invented delta", "delta", "ZZZZ" + "0" * 8, "cpf", "XML.delta", r"no (observed )?origin"),
+        ("frozen STAMP", "stamp", cstamp, "cpf", "STAMP", r"frozen"),
+        ("invented STAMP", "stamp", "9999", "cpf", "STAMP", r"no (observed )?origin"),
     ]
     for nome, kind, value, pname, part, motivo in casos:
         d = mutate(doc, kind, value)
         if d is None:
-            check(False, f"fuga {nome}: não achei passo com delta/STAMP no trace")
+            check(False, f"leak {nome}: did not find a step with delta/STAMP in the trace")
             continue
         v = validate(with_param(d, pname, part), nome.replace(" ", "-"))
         if v is None:
@@ -426,51 +426,51 @@ def fuga_cases(core, wrapper, tmp, cap, trace_ok, target):
                               "resumo": str(v.get("summary"))[:180],
                               "avisos": [str(w) for w in v.get("warnings", [])]}
         check(v.get("verdict") == "diverges",
-              f"fuga {nome} + {pname} → {part}: deveria DIVERGIR; deu {v.get('verdict')!r} "
-              f"({salvo['resumo']!r}) — parameters não pode isentar este par")
+              f"leak {nome} + {pname} → {part}: should DIVERGE; got {v.get('verdict')!r} "
+              f"({salvo['resumo']!r}) — parameters cannot exempt this pair")
         check(bool(re.search(motivo, json.dumps(v, ensure_ascii=False), re.I)),
-              f"fuga {nome}: motivo sem /{motivo}/: {salvo['resumo']!r}")
-        check(any(f"parâmetro não corresponde ao plano: {pname} → {part}" in w for w in salvo["avisos"]),
-              f"fuga {nome}: falta o aviso 'parâmetro não corresponde ao plano: {pname} → {part}': "
+              f"leak {nome}: reason without /{motivo}/: {salvo['resumo']!r}")
+        check(any(f"parameter does not match the plan: {pname} → {part}" in w for w in salvo["avisos"]),
+              f"leak {nome}: missing the warning 'parameter does not match the plan: {pname} → {part}': "
               f"{salvo['avisos'][:5]}")
 
-    # aviso de par sob nome do plano que ele não produz: não isenta e não cala
+    # warning for a pair under a plan name that it does not produce: does not exempt and does not stay silent
     v = validate(with_param(doc, "sessionid_cliente", "sig"), "sessionid-sig")
     if v is not None:
         avisos = [str(w) for w in v.get("warnings", [])]
         info["sessionid_cliente_sig"] = {"verdict": v.get("verdict"), "avisos": avisos}
-        check(any("parâmetro não corresponde ao plano: sessionid_cliente → sig" in w for w in avisos),
-              f"fuga sessionid_cliente → sig: falta o aviso 'parâmetro não corresponde ao plano': {avisos[:5]}")
+        check(any("parameter does not match the plan: sessionid_cliente → sig" in w for w in avisos),
+              f"leak sessionid_cliente → sig: missing the warning 'parameter does not match the plan': {avisos[:5]}")
         check(v.get("verdict") == "equivalent",
-              f"fuga sessionid_cliente → sig: sem valor trocado, deveria seguir equivalent; deu {v.get('verdict')!r}")
+              f"leak sessionid_cliente → sig: without a swapped value it should stay equivalent; got {v.get('verdict')!r}")
 
 
 def plan_cases(core, wrapper, tmp, cap, target, trace_path, val):
-    """Rodada 9, onda B: plano versionado no trace (`plan.version` 2, validate::PLAN_VERSION).
+    """Round 9, wave B: versioned plan in the trace (`plan.version` 2, validate::PLAN_VERSION).
 
-    Fiel v2 -> equivalent e ZERO avisos de parâmetro/plano; sem `version` -> só o aviso "plano de versão
-    anterior", sem divergir; `version` 2 com o hash de OUTRO alvo da MESMA captura -> DIVERGE
-    ("plano diferente do gerado"). Se o último caso só avisar, é falha do core: fica registrada, sem máscara.
+    Faithful v2 -> equivalent and ZERO parameter/plan warnings; without `version` -> only the "plan of an earlier
+    version" warning, without diverging; `version` 2 with the hash of ANOTHER target of the SAME capture -> DIVERGES
+    ("plan differs from the one generated"). If the last case only warns, it is a core failure: it is recorded, without a mask.
     """
     info = INFO["plano"] = {}
     doc = json.loads(trace_path.read_text())
     plan = doc.get("plan") or {}
     info["versao_no_trace"] = plan.get("version")
     check(plan.get("version") == 2,
-          f"plano: o trace do script atual deveria declarar plan.version 2; declara {plan.get('version')!r}")
+          f"plan: the current script's trace should declare plan.version 2; it declares {plan.get('version')!r}")
     warns = [str(w) for w in (val or {}).get("warnings", [])]
     info["avisos_fiel"] = warns
-    espurios = [w for w in warns if re.search(r"par[âa]metro inv[áa]lido|plano", w, re.I)]
-    check(not espurios, f"plano fiel (v2): avisos de parâmetro/plano não deveriam existir: {espurios[:6]}")
+    espurios = [w for w in warns if re.search(r"invalid parameter|plan", w, re.I)]
+    check(not espurios, f"faithful plan (v2): parameter/plan warnings should not exist: {espurios[:6]}")
 
     def validate(doc2, label):
-        p = tmp / f"plano-{label}.json"
+        p = tmp / f"plan-{label}.json"
         p.write_text(json.dumps(doc2, ensure_ascii=False))
-        s = tmp / f"plano-ses-{label}"
+        s = tmp / f"plan-ses-{label}"
         shutil.rmtree(s, ignore_errors=True)
         ip = sh([core, "import-trace", p, "--out", s])
         if not check(ip.returncode == 0,
-                     f"plano {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
+                     f"plan {label}: import-trace rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
             return None
         v = sh([wrapper, "validate", cap, s, "--adapter", "natural-ajax"])
         try:
@@ -478,52 +478,52 @@ def plan_cases(core, wrapper, tmp, cap, target, trace_path, val):
         except Exception:
             return None
 
-    # (b) versão ausente: avisa e não diverge
+    # (b) missing version: warns and does not diverge
     old = json.loads(json.dumps(doc))
     old.get("plan", {}).pop("version", None)
-    v = validate(old, "sem-versao")
+    v = validate(old, "no-version")
     if v is not None:
         info["sem_versao"] = {"verdict": v.get("verdict"), "passo": v.get("step"),
                               "avisos": [str(w) for w in v.get("warnings", [])]}
         check(v.get("verdict") == "equivalent",
-              f"plano sem versão: deveria ser equivalent (só avisa); deu {v.get('verdict')!r} "
+              f"plan without version: should be equivalent (only warns); got {v.get('verdict')!r} "
               f"({str(v.get('summary'))[:120]!r})")
-        check(any("plano de versão anterior" in w for w in info["sem_versao"]["avisos"]),
-              f"plano sem versão: falta o aviso 'plano de versão anterior': {info['sem_versao']['avisos'][:6]}")
+        check(any("plan of an earlier version" in w for w in info["sem_versao"]["avisos"]),
+              f"plan without version: missing the warning 'plan of an earlier version': {info['sem_versao']['avisos'][:6]}")
 
-    # (c) versão 2 com o hash de outro alvo da mesma captura: tem de divergir
+    # (c) version 2 with the hash of another target of the same capture: must diverge
     outro = next((r for r in ("har-0030", "har-0026", "har-0022", "har-0017", "har-0024") if r != target), None)
-    outros = dict(os.environ)  # export-priming não abre rede; só usa a captura e o alvo
+    outros = dict(os.environ)  # export-priming does not open the network; it only uses the capture and the target
     hash_outro = None
     if outro:
-        script = tmp / "plano-outro.py"
+        script = tmp / "plan-other.py"
         g = sh([wrapper, "export-priming", cap, outro, "--out", script, "--adapter", "natural-ajax"], env=outros)
         if g.returncode == 0 and script.exists():
             m = re.search(r"^PLAN_HASH\s*=\s*['\"]([0-9a-fA-F]+)['\"]", script.read_text(errors="replace"), re.M)
             hash_outro = m.group(1) if m else None
     info["alvo_do_outro_hash"] = outro
     info["hash_do_outro_alvo"] = hash_outro
-    check(bool(hash_outro), f"plano outro alvo: não obtive o PLAN_HASH de outro alvo da captura ({outro})")
+    check(bool(hash_outro), f"plan other target: did not get the PLAN_HASH of another target of the capture ({outro})")
     if hash_outro:
         check(hash_outro != plan.get("hash"),
-              "plano outro alvo: o hash de outro alvo é igual ao do alvo do trace (não prova nada)")
+              "plan other target: the hash of another target equals the trace target's hash (proves nothing)")
         cop = json.loads(json.dumps(doc))
         cop.setdefault("plan", {})["hash"] = hash_outro
-        v = validate(cop, "hash-de-outro")
+        v = validate(cop, "hash-from-other")
         if v is not None:
             info["hash_de_outro"] = {"verdict": v.get("verdict"), "passo": v.get("step"),
                                      "resumo": str(v.get("summary"))[:160], "motivo": str(v.get("reason"))[:160],
                                      "avisos": [str(w) for w in v.get("warnings", [])]}
             check(v.get("verdict") == "diverges",
-                  f"plano com hash de outro alvo: deveria DIVERGIR; deu {v.get('verdict')!r} "
-                  f"({info['hash_de_outro']['resumo']!r}) — só aviso não serve")
-            check(bool(re.search(r"plano diferente do gerado", json.dumps(v, ensure_ascii=False), re.I)),
-                  f"plano com hash de outro alvo: motivo sem 'plano diferente do gerado…': "
+                  f"plan with the hash of another target: should DIVERGE; got {v.get('verdict')!r} "
+                  f"({info['hash_de_outro']['resumo']!r}) — a warning alone is not enough")
+            check(bool(re.search(r"plan differs from the one generated", json.dumps(v, ensure_ascii=False), re.I)),
+                  f"plan with the hash of another target: reason without 'plan differs from the one generated…': "
                   f"{info['hash_de_outro']['resumo']!r} / {info['hash_de_outro']['motivo']!r}")
 
 
 def reviewer_cases(core, wrapper, tmp, info):
-    """Casos do revisor: tudo que NÃO é a execução fiel deve DIVERGIR (ou dar erro); o controle V1 deve ser equivalent."""
+    """Reviewer cases: everything that is NOT the faithful execution must DIVERGE (or error); control V1 must be equivalent."""
     cap = rv_capture(tmp, core)
     info["revisor"] = {}
     for name, (steps, params, want, reason_rx, complete) in rv_cases().items():
@@ -532,23 +532,23 @@ def reviewer_cases(core, wrapper, tmp, info):
         tp = tmp / "rv-trace.json"; tp.write_text(json.dumps(doc))
         ts = tmp / "rv-ses"; shutil.rmtree(ts, ignore_errors=True)
         ip = sh([core, "import-trace", tp, "--out", ts])
-        if ip.returncode != 0:   # recusar já na importação conta como "erro" esperado, exceto no controle
-            info["revisor"][name] = {"import": "erro", "rc": ip.returncode}
-            check(want != "equivalent", f"revisor {name}: o controle foi recusado no import-trace: {' '.join(ip.stderr.split())[:100]}")
+        if ip.returncode != 0:   # refusing at import already counts as the expected "error", except for the control
+            info["revisor"][name] = {"import": "error", "rc": ip.returncode}
+            check(want != "equivalent", f"reviewer {name}: the control was refused at import-trace: {' '.join(ip.stderr.split())[:100]}")
             continue
         v = sh([wrapper, "validate", cap, ts, "--adapter", "natural-ajax"])
         try:
             d = json.loads(v.stdout)
         except Exception:
             d = None
-        verdict = d.get("verdict") if d else f"erro(rc={v.returncode})"
+        verdict = d.get("verdict") if d else f"error(rc={v.returncode})"
         info["revisor"][name] = {"verdict": verdict, "step": d.get("step") if d else None, "resumo": str(d.get("summary", ""))[:100] if d else v.stderr.strip()[:80]}
         if want == "equivalent":
-            check(verdict == "equivalent", f"revisor {name}: controle deveria ser equivalent; deu {verdict} ({info['revisor'][name]['resumo']})")
+            check(verdict == "equivalent", f"reviewer {name}: control should be equivalent; got {verdict} ({info['revisor'][name]['resumo']})")
         else:
-            check(verdict != "equivalent", f"revisor {name}: deveria DIVERGIR (ou dar erro) mas o validate disse {verdict!r}: {info['revisor'][name]['resumo']}")
+            check(verdict != "equivalent", f"reviewer {name}: should DIVERGE (or error) but validate said {verdict!r}: {info['revisor'][name]['resumo']}")
             if reason_rx:
-                check(re.search(reason_rx, v.stdout + v.stderr, re.I), f"revisor {name}: motivo sem /{reason_rx}/: {info['revisor'][name]['resumo']!r}")
+                check(re.search(reason_rx, v.stdout + v.stderr, re.I), f"reviewer {name}: reason without /{reason_rx}/: {info['revisor'][name]['resumo']!r}")
 
 
 def main():
@@ -559,7 +559,7 @@ def main():
     a = ap.parse_args()
     core, py, wrapper = cb.core_bin(a.core), a.python or ps.default_python(), a.wrapper
     if not Path(wrapper).exists():
-        sys.exit(f"wrapper não encontrado: {wrapper}")
+        sys.exit(f"wrapper not found: {wrapper}")
     os.environ["SCRAPELENS_CORE_BIN"] = core
     base = f"http://127.0.0.1:{a.port}"
     tmp = Path(tempfile.mkdtemp(prefix="sl-timeline-")); os.chmod(tmp, 0o700)
@@ -579,22 +579,22 @@ def main():
             INFO["timeline"][name] = agg
             if agg:
                 check(agg["sequencia_eventos"] == FIXTURE_ROUND * n_round,
-                      f"{name}: eventos {agg['sequencia_eventos']} != fluxo manual {FIXTURE_ROUND * n_round}")
+                      f"{name}: events {agg['sequencia_eventos']} != manual flow {FIXTURE_ROUND * n_round}")
         INFO["timeline_real"] = {}
         if not a.hars:
-            check(False, "nenhum HAR real encontrado para o agregado da timeline")
+            check(False, "no real HAR found for the timeline aggregate")
         for i, h in enumerate(a.hars, 1):
             s = tmp / f"tl-real{i}"; sh([core, "import-har", h, "--out", s])
-            agg = timeline_agg(wrapper, s, f"HAR real #{i}")
+            agg = timeline_agg(wrapper, s, f"real HAR #{i}")
             if agg:
                 INFO["timeline_real"][f"H{i}"] = {k: agg[k] for k in ("entradas", "posts_connector", "posts_sem_rotulo_event_page", "grupos_protecao", "protecao_avulsa", "protecao_recolhida")}
                 INFO["timeline_real"][f"H{i}"]["ordem_rotulos"] = [f"{e}@{p}" for e, p in zip(agg["sequencia_eventos"], agg["paginas"])]
-                check(subsequence(agg["sequencia_eventos"], EVENTS), f"HAR real #{i}: eventos fora da ordem do fluxo manual")
+                check(subsequence(agg["sequencia_eventos"], EVENTS), f"real HAR #{i}: events outside the manual flow order")
 
-        # ---- casos do revisor (Rodada 9): validate não pode dar 'equivalente' a execução infiel
+        # ---- reviewer cases (Round 9): validate must not give 'equivalent' to an unfaithful execution
         reviewer_cases(core, wrapper, tmp, INFO)
 
-        # ---- (2)/(3)/(4) execução do script
+        # ---- (2)/(3)/(4) script execution
         cap = tmp / "cap"; sh([core, "import-har", ps.HAR, "--out", cap, "--label", "synthetic-fixture"])
         man = json.loads((FIX / "manifest.json").read_text())
         target = man["expectations"]["aceite_1_origins_chain"]["A"]["target"]
@@ -610,27 +610,27 @@ def main():
                     "--sessionid-cliente", client, "--trace", trace], cwd=tmp)
             log = ps.http(base, "/__sim/log")["log"]
             first_bad = next((i for i, x in enumerate(log, 1) if x["path"].endswith("/servlet/Connector") and
-                              (x["status"] != 200 or x["note"].startswith(("modo", "app-error")))), None)
+                              (x["status"] != 200 or x["note"].startswith(("modo", "app-error")))), None)  # detran-sim notes are still Portuguese (detran_sim.py:204, 214)
             sc = INFO["cenarios"][mode] = {"script_rc": p.returncode, "pedidos_no_sim": len(log), "primeiro_ruim": first_bad}
-            if not check(trace.exists(), f"{mode}: o script não criou o trace (--trace)"):
+            if not check(trace.exists(), f"{mode}: the script did not create the trace (--trace)"):
                 continue
             mode_bits = stat.S_IMODE(trace.stat().st_mode)
             sc["trace_modo"] = oct(mode_bits)
-            check(mode_bits == 0o600, f"{mode}: trace deveria ter 0600, tem {oct(mode_bits)}")
+            check(mode_bits == 0o600, f"{mode}: trace should be 0600, is {oct(mode_bits)}")
             raw = trace.read_text()
             try:
                 t, steps = trace_steps(trace)
             except Exception:
-                check(False, f"{mode}: trace não é JSON"); continue
+                check(False, f"{mode}: trace is not JSON"); continue
             check(t.get("schema") == "scrapelens.trace/1", f"{mode}: schema {t.get('schema')!r} != scrapelens.trace/1")
-            check("contém dados da sua sessão" in raw or "contém dados da sua sessão" in p.stdout + p.stderr,
-                  f"{mode}: sem o aviso 'contém dados da sua sessão; não compartilhe sem sanitizar'")
+            check("contains data from your session" in raw or "contains data from your session" in p.stdout + p.stderr,
+                  f"{mode}: no warning 'contains data from your session; do not share without sanitizing'")
             sc["trace_passos"] = len(steps)
             ts = tmp / f"ts-{mode}"
             ip = sh([core, "import-trace", trace, "--out", ts])
             if not check(ip.returncode == 0, f"{mode}: import-trace: rc={ip.returncode}: {' '.join(ip.stderr.split())[:120]}"):
                 continue
-            assess = jload(sh([core, "assess", ts]), f"{mode}: assess do trace")
+            assess = jload(sh([core, "assess", ts]), f"{mode}: assess of the trace")
             val = jload(sh([wrapper, "validate", cap, ts, "--adapter", "natural-ajax"]), f"{mode}: validate")
             sc["validate_doc"] = val if mode == "ok" else None
             outs = (assess or {}).get("outcomes", [])
@@ -640,12 +640,12 @@ def main():
             sc["validate"] = {"verdict": (val or {}).get("verdict"), "step": (val or {}).get("step"),
                               "summary": str((val or {}).get("summary", ""))[:140], "passos": len(vsteps)}
             if val is not None:
-                check(val.get("schema") == "scrapelens.validate/1", f"{mode}: schema do validate {val.get('schema')!r}")
+                check(val.get("schema") == "scrapelens.validate/1", f"{mode}: validate schema {val.get('schema')!r}")
             if mode == "ok":
                 check(p.returncode == 0, f"ok: script rc={p.returncode}")
-                check(len(steps) == len(log), f"ok: trace com {len(steps)} passos, sim viu {len(log)} pedidos")
-                check(conn and all(o.get("verdictKind") == "app-ok" for o in conn), f"ok: assess do trace não é app-ok em todos os POSTs: {sc['assess_connector']}")
-                check(not any(o.get("verdictKind") in ("app-error", "blocked") for o in outs), "ok: algum passo do trace com app-error/blocked")
+                check(len(steps) == len(log), f"ok: trace with {len(steps)} steps, sim saw {len(log)} requests")
+                check(conn and all(o.get("verdictKind") == "app-ok" for o in conn), f"ok: assess of the trace is not app-ok on every POST: {sc['assess_connector']}")
+                check(not any(o.get("verdictKind") in ("app-error", "blocked") for o in outs), "ok: some trace step with app-error/blocked")
                 if val:
                     g = lambda d, *k: next((d[x] for x in k if x in d), None)  # noqa: E731
                     unpaired = [x for x in vsteps if not g(x, "captureRequestId", "capture_request_id")]
@@ -654,37 +654,37 @@ def main():
                     missing = g(val, "missingInTrace", "missing_in_trace") or []
                     sc["validate"].update({"nao_pareados": len(unpaired), "inesperados": len(unexpected), "esperados_campos": expected,
                                            "missingInTrace": len(missing), "mappedOrigin": bool(g(val, "mappedOrigin", "mapped_origin"))})
-                    check(val.get("verdict") == "equivalent", f"ok: verdict {val.get('verdict')!r}, esperado equivalent ({sc['validate']['summary']})")
-                    check("equivalente" in str(val.get("summary", "")), "ok: resumo sem 'execução equivalente à captura'")
-                    check(len(vsteps) == len(steps) and not unpaired, f"ok: passos não pareados 1:1 ({len(vsteps)} passos validados, {len(steps)} no trace, {len(unpaired)} sem par)")
-                    check(not unexpected, f"ok: diferenças inesperadas (passo, campo): {unexpected[:6]}")
+                    check(val.get("verdict") == "equivalent", f"ok: verdict {val.get('verdict')!r}, expected equivalent ({sc['validate']['summary']})")
+                    check("equivalent" in str(val.get("summary", "")), "ok: summary without 'execution equivalent to capture'")
+                    check(len(vsteps) == len(steps) and not unpaired, f"ok: steps not paired 1:1 ({len(vsteps)} steps validated, {len(steps)} in the trace, {len(unpaired)} without a pair)")
+                    check(not unexpected, f"ok: unexpected differences (step, field): {unexpected[:6]}")
                     extra = [n for n in expected if not DYNAMIC_OK.search(n)]
-                    check(not extra, f"ok: diferenças esperadas fora de STAMP/delta/SESSIONID: {extra[:8]}")
-                    check(not missing, f"ok: {len(missing)} requisição(ões) da captura ausentes no trace")
+                    check(not extra, f"ok: expected differences outside STAMP/delta/SESSIONID: {extra[:8]}")
+                    check(not missing, f"ok: {len(missing)} request(s) from the capture missing in the trace")
                     check(all(str(g(x, "verdictTrace", "verdict_trace")) in ("app-ok", "not-assessed") for x in vsteps),
-                          "ok: algum passo com veredito do trace diferente de app-ok/não-avaliado")
+                          "ok: some step with a trace verdict different from app-ok/not-assessed")
             else:
-                want = {"error": {"app-error"}, "403": {"blocked"}, "nocontrols": {"indeterminate", "indeterminado", "blocked", "not-assessed", "app-error"}}[mode]
-                check(p.returncode != 0, f"{mode}: o script deveria falhar")
+                want = {"error": {"app-error"}, "403": {"blocked"}, "nocontrols": {"indeterminate", "undetermined", "blocked", "not-assessed", "app-error"}}[mode]
+                check(p.returncode != 0, f"{mode}: the script should fail")
                 check(first_bad is not None and len(steps) == first_bad,
-                      f"{mode}: o trace deveria terminar no passo ruim #{first_bad}; tem {len(steps)} passos")
+                      f"{mode}: the trace should end at the bad step #{first_bad}; it has {len(steps)} steps")
                 last = outs[-1].get("verdictKind") if outs else None
                 sc["veredito_ultimo_passo"] = last
-                check(last in want and last != "app-ok", f"{mode}: veredito do passo ruim {last!r}, esperado um de {sorted(want)}")
+                check(last in want and last != "app-ok", f"{mode}: verdict of the bad step {last!r}, expected one of {sorted(want)}")
                 if val:
-                    m = re.search(r"diverge no passo (\d+)", str(val.get("summary", "")))
-                    check(val.get("verdict") == "diverges", f"{mode}: verdict {val.get('verdict')!r}, esperado diverges")
+                    m = re.search(r"diverges at step (\d+)", str(val.get("summary", "")))
+                    check(val.get("verdict") == "diverges", f"{mode}: verdict {val.get('verdict')!r}, expected diverges")
                     check(val.get("step") == first_bad and m is not None and int(m.group(1)) == first_bad,
-                          f"{mode}: validate deveria apontar o passo {first_bad}; apontou step={val.get('step')} resumo={sc['validate']['summary']!r}")
+                          f"{mode}: validate should point to step {first_bad}; it pointed to step={val.get('step')} summary={sc['validate']['summary']!r}")
                     hint = {"error": r"app-error|ERRORMESSAGE", "403": r"403|blocked"}.get(mode)
                     if hint:
                         check(re.search(hint, str(val.get("summary", "")) + str(val.get("reason", "")), re.I),
-                              f"{mode}: motivo sem {hint!r}: {sc['validate']['summary']!r}")
-            # ---- (4) sanitize (cenário ok)
+                              f"{mode}: reason without {hint!r}: {sc['validate']['summary']!r}")
+            # ---- (4) sanitize (ok scenario)
             if mode == "ok":
                 san = tmp / "san"
                 sp = sh([core, "sanitize", ts, san])
-                check(sp.returncode == 0, f"sanitize do trace: rc={sp.returncode}")
+                check(sp.returncode == 0, f"sanitize of the trace: rc={sp.returncode}")
                 body = "".join(f.read_text(errors="replace") for f in san.rglob("*") if f.is_file()) if san.exists() else ""
                 sid = set(re.findall(r"SESSIONID=([A-Za-z0-9_]+)", raw))
                 cookies = set()
@@ -694,17 +694,17 @@ def main():
                          "cookies": [v for v in cookies if v in body], "parte_cliente": [client[1:]] if client[1:] in body else []}
                 sc["sanitize_vazamentos"] = {k: len(v) for k, v in leaks.items()}
                 sc["sanitize_valores_testados"] = {"SESSIONID": len(sid), "cookies": len(cookies)}
-                check(bool(body), "sanitize: saída vazia")
-                check(len(sid) > 0, "sanitize: nenhum SESSIONID no trace para testar a remoção")
-                check(not any(leaks.values()), f"sanitize: valores sensíveis ainda presentes: { {k: len(v) for k, v in leaks.items() if v} }")
-        # ---- (5) plano versionado no trace (Rodada 9, onda B)
+                check(bool(body), "sanitize: empty output")
+                check(len(sid) > 0, "sanitize: no SESSIONID in the trace to test the removal")
+                check(not any(leaks.values()), f"sanitize: sensitive values still present: { {k: len(v) for k, v in leaks.items() if v} }")
+        # ---- (5) versioned plan in the trace (Round 9, wave B)
         trace_ok = tmp / "trace-ok.json"
-        if check(trace_ok.exists(), "plano: o trace do cenário ok não existe"):
+        if check(trace_ok.exists(), "plan: the trace of the ok scenario does not exist"):
             plan_cases(core, wrapper, tmp, cap, target, trace_ok, INFO["cenarios"].get("ok", {}).get("validate_doc"))
-        # ---- (6) `parameters` não isenta par que o plano não produz (39410bf)
+        # ---- (6) `parameters` does not exempt a pair that the plan does not produce (39410bf)
         if trace_ok.exists():
             fuga_cases(core, wrapper, tmp, cap, trace_ok, target)
-        # ---- (7) `plan.parameters` só isenta com plano verificado (7410fa4)
+        # ---- (7) `plan.parameters` only exempts with a verified plan (7410fa4)
         if trace_ok.exists():
             plano_nao_verificado_cases(core, wrapper, tmp, cap, trace_ok, target)
     finally:
@@ -715,7 +715,7 @@ def main():
     OUT.write_text(json.dumps(INFO, indent=1, ensure_ascii=False) + "\n")
     if FAILS:
         print(f"FAIL ({len(FAILS)}):"); [print(" -", f) for f in FAILS]; return 1
-    print("OK: timeline + validação da execução (trace, import-trace, compare, sanitize)"); return 0
+    print("OK: timeline + execution validation (trace, import-trace, compare, sanitize)"); return 0
 
 
 if __name__ == "__main__":

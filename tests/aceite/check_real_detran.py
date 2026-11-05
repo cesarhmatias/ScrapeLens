@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Rodada 6 (docs/10, Aceite 5): revalida o ScrapeLens nos HARs REAIS do usuário, só com AGREGADOS.
+"""Round 6 (docs/10, Acceptance 5): revalidates ScrapeLens on the user's REAL HARs, with AGGREGATES only.
 
   python3 tests/aceite/check_real_detran.py <har> [<har> ...] [--core BIN]
 
-Os HARs são lidos de onde estão (somente leitura), importados num diretório temporário 0700 (mkdtemp)
-que é apagado ao fim (inclusive em erro). Imprime apenas contagens, porcentagens, nomes de campo e
-rótulos: nenhum valor real (SESSIONID, STAMP, delta, placa, CPF) é impresso, gravado ou versionado.
+The HARs are read from where they are (read-only), imported into a temporary 0700 directory (mkdtemp)
+that is deleted at the end (also on error). Prints only counts, percentages, field names and
+labels: no real value (SESSIONID, STAMP, delta, plate, CPF) is printed, written or versioned.
 
-Critérios (exit 1 se algum falhar, sem afrouxar):
-  * STAMP e delta com origem na resposta anterior do Connector em >= 95% dos POSTs com resposta disponível;
-  * cadeia do 1º cmd_consultar_placa com os POSTs do Connector entre os passos;
-  * 0 placas depois de sanitize;
-  * com >= 2 HARs: ambiguidades do compare do 1º × 2º, reportadas (limite 15% dos pares).
+Criteria (exit 1 if any fails, not relaxed):
+  * STAMP and delta with an origin in the previous Connector response in >= 95% of the POSTs with an available response;
+  * chain of the 1st cmd_consultar_placa with the Connector POSTs among the steps;
+  * 0 plates after sanitize;
+  * with >= 2 HARs: ambiguities of the compare of the 1st × 2nd, reported (limit 15% of the pairs).
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ CONNECTOR = "/servlet/Connector"
 def run(core, *args):
     p = subprocess.run([core, *map(str, args)], capture_output=True, text=True)
     if p.returncode != 0:
-        raise RuntimeError(f"{args[0]} falhou ({p.returncode})")
+        raise RuntimeError(f"{args[0]} failed ({p.returncode})")
     return json.loads(p.stdout) if p.stdout.strip().startswith("{") else p.stdout
 
 
@@ -75,14 +75,14 @@ def analyse(core, har, tmp, idx):
             plates.add(g["v_placa"])
         if parts[6] == "cmd_consultar_placa" and first_consulta is None:
             first_consulta = r["id"]
-        # elegível: STAMP != INIT e a resposta do POST anterior do Connector estava disponível
+        # eligible: STAMP != INIT and the previous Connector POST response was available
         if form["STAMP"][0] != "INIT" and prev_ok:
             eligible += 1
             o = run(core, "origins", sess, r["id"])
             st = [v for v in o["values"] if v["scope"] == "body" and v["field"] == "STAMP"]
             ok_stamp = bool(st) and any(e["kind"] == "same-field" and e["role"] == "produced" for v in st for e in v["evidences"])
             m = re.search(r"x(\d\d)(.+)$", form["XML"][0], re.S)
-            token = m.group(2) if m and len(m.group(2)) == int(m.group(1)) else None  # só em memória
+            token = m.group(2) if m and len(m.group(2)) == int(m.group(1)) else None  # in memory only
             dl = [v for v in o["values"] if token and v["scope"] == "body" and v.get("parent") == "XML" and token in v["value"]]
             conn_ids = {x["id"] for x in posts}
             ok_delta = any(e["kind"] == "value-match" and e["role"] in ("produced", "reissued") and e["producerRequestId"] in conn_ids
@@ -109,7 +109,7 @@ def analyse(core, har, tmp, idx):
             cat[key] = cat.get(key, 0) + 1
         out["chain"]["pages_by_kind"] = cat
         sid_vals = [v for v in run(core, "origins", sess, first_consulta)["values"] if v["scope"] == "body" and v["field"] == "SESSIONID" and v.get("parent") is None]
-        out["sessionid_composition_hint"] = "sim" if any(v.get("partialComposition") for v in sid_vals) else "não"
+        out["sessionid_composition_hint"] = "yes" if any(v.get("partialComposition") for v in sid_vals) else "no"
         out["chain_has_connector_posts"] = out["chain"]["connector_steps"] >= 3
         out["cookies_warning"] = any("cookie" in w.lower() for w in c["warnings"])
     san = str(Path(tmp) / f"san{idx}")
@@ -126,7 +126,7 @@ def analyse(core, har, tmp, idx):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("hars", nargs="+"); ap.add_argument("--core"); a = ap.parse_args()
     core = cb.core_bin(a.core)
-    tmp = tempfile.mkdtemp(prefix="sl-real-")  # 0700 por padrão
+    tmp = tempfile.mkdtemp(prefix="sl-real-")  # 0700 by default
     os.chmod(tmp, 0o700)
     fails, sessions = [], []
     try:
@@ -134,13 +134,13 @@ def main():
             sess, o = analyse(core, har, tmp, i)
             sessions.append(sess)
             print(f"HAR #{i + 1}: {json.dumps(o, ensure_ascii=False)}")
-            print(f"HAR #{i + 1}: SESSIONID com dica de composição: {o.get('sessionid_composition_hint', 'n/a')}")
+            print(f"HAR #{i + 1}: SESSIONID composition hint: {o.get('sessionid_composition_hint', 'n/a')}")
             if o["stamp_pct"] is None or o["stamp_pct"] < 95 or o["delta_pct"] < 95:
-                fails.append(f"HAR #{i + 1}: STAMP {o['stamp_pct']}% / delta {o['delta_pct']}% (mín. 95%)")
+                fails.append(f"HAR #{i + 1}: STAMP {o['stamp_pct']}% / delta {o['delta_pct']}% (min. 95%)")
             if not o.get("chain_has_connector_posts"):
-                fails.append(f"HAR #{i + 1}: cadeia sem os POSTs do Connector")
+                fails.append(f"HAR #{i + 1}: chain without the Connector POSTs")
             if o["plates_left_after_sanitize"]:
-                fails.append(f"HAR #{i + 1}: {o['plates_left_after_sanitize']} ocorrência(s) de placa após sanitize")
+                fails.append(f"HAR #{i + 1}: {o['plates_left_after_sanitize']} plate occurrence(s) after sanitize")
         if len(sessions) >= 2:
             m = run(core, "compare", sessions[0], sessions[1])
             pairs = len(m["pairs"])
@@ -148,13 +148,13 @@ def main():
                        "unpairedRounds": len(m.get("unpairedRounds") or []) if m.get("unpairedRounds") is not None else "n/a"}
             print("compare #1 x #2:", json.dumps(summary))
             if pairs and summary["ambiguities"] > 0.15 * pairs:
-                fails.append(f"compare: {summary['ambiguities']} ambiguidades em {pairs} pares (> 15%)")
+                fails.append(f"compare: {summary['ambiguities']} ambiguities in {pairs} pairs (> 15%)")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    print("temporário removido:", not os.path.exists(tmp))
+    print("temporary removed:", not os.path.exists(tmp))
     if fails:
         print(f"FAIL ({len(fails)}):"); [print(" -", f) for f in fails]; return 1
-    print("OK: STAMP/delta >= 95%, cadeia com POSTs do Connector, 0 placas após sanitize"); return 0
+    print("OK: STAMP/delta >= 95%, chain with Connector POSTs, 0 plates after sanitize"); return 0
 
 
 if __name__ == "__main__":

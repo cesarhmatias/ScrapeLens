@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Rodada 5 (docs/09-cadeia-comparacao.md §4): origem dos valores, cadeia e comparação.
+"""Round 5 (docs/09-cadeia-comparacao.md §4): value origins, chain and comparison.
 
-Importa as fixtures sintéticas A (fixtures/detran-pb) e B (fixtures/detran-pb-b) com
-`--label synthetic-fixture`, roda `scrapelens-core origins|chain|compare` e confere
-`manifest.json` → `chain_compare` (§4.1, §4.2, §4.3) e a A sanitizada (§4.4).
+Imports the synthetic fixtures A (fixtures/detran-pb) and B (fixtures/detran-pb-b) with
+`--label synthetic-fixture`, runs `scrapelens-core origins|chain|compare` and checks
+`manifest.json` → `chain_compare` (§4.1, §4.2, §4.3) and the sanitized A (§4.4).
 
-O formato JSON é o real do core (docs/09 e2c4da0+): origins.values[] com status/label/
-evidences[]; chain.steps/protection/unresolved; compare.pairs[].fields[] com label/originLabel/parts.
-Expectativas não são afrouxadas: qualquer desvio falha (exit 1).
+The JSON format is the real one from the core (docs/09 e2c4da0+): origins.values[] with status/label/
+evidences[]; chain.steps/protection/unresolved; compare.pairs[].fields[] with label/originLabel/parts.
+Expectations are not relaxed: any deviation fails (exit 1).
 
   python3 tests/aceite/check_chain_compare.py [--core BIN]
 """
@@ -35,7 +35,7 @@ def check(cond, msg):
 def run(core, *args):
     p = subprocess.run([core, *map(str, args)], capture_output=True, text=True)
     if p.returncode != 0:
-        FAILS.append(f"`{args[0]}` falhou ({p.returncode}): {p.stderr.strip().splitlines()[0] if p.stderr.strip() else ''}")
+        FAILS.append(f"`{args[0]}` failed ({p.returncode}): {p.stderr.strip().splitlines()[0] if p.stderr.strip() else ''}")
         return None, p.stdout
     return json.loads(p.stdout), p.stdout
 
@@ -48,11 +48,11 @@ def import_capture(core, folder, name, tmp, label="synthetic-fixture"):
     if p.returncode != 0:
         sys.exit(f"FAIL import {name}: {p.stderr.strip()[:300]}")
     labels = sorted(json.loads((out / "session.json").read_text())["session"].get("labels", []))
-    check(labels == ["capture-import", "synthetic-fixture"], f"{name}: rótulos {labels}")
+    check(labels == ["capture-import", "synthetic-fixture"], f"{name}: labels {labels}")
     return out
 
 
-# ---- verificações (esquema real do core: docs/09, origins/chain/compare) --------------
+# ---- checks (real core schema: docs/09, origins/chain/compare) --------------
 def vals(doc, scope=None, field=None, parent=None, contains=None):
     out = []
     for v in doc["values"]:
@@ -93,32 +93,32 @@ def check_origins(core, a, ex, ids):
             found = vals(doc, scope="body", field="XML", parent="XML", contains=needle)
         else:
             found = []
-        check(len(found) >= 1, f"origins {name}: campo ausente na saída")
+        check(len(found) >= 1, f"origins {name}: field missing from the output")
         if not found:
             continue
         v = found[0]
-        if f["evidence"] == "sem origem observada":
-            check(v["status"] == "none" and not v["evidences"] and v["label"].startswith("sem origem observada"),
-                  f"origins {name}: esperado sem origem observada, obtido {v['status']} {v['label'][:60]}")
+        if f["evidence"] == "no observed origin":
+            check(v["status"] == "none" and not v["evidences"] and v["label"].startswith("no observed origin"),
+                  f"origins {name}: expected no observed origin, got {v['status']} {v['label'][:60]}")
             continue
         kinds = {e["kind"] for e in v["evidences"]}
-        check(v["status"] in ("origin", "ambiguous") and f["evidence"] in kinds, f"origins {name}: esperado {f['evidence']}, obtido status={v['status']} kinds={kinds}")
-        check(v["label"] == f["status_label"], f"origins {name}: rótulo esperado {f['status_label']!r}, obtido {v['label']!r}")
+        check(v["status"] in ("origin", "ambiguous") and f["evidence"] in kinds, f"origins {name}: expected {f['evidence']}, got status={v['status']} kinds={kinds}")
+        check(v["label"] == f["status_label"], f"origins {name}: label expected {f['status_label']!r}, got {v['label']!r}")
         strengths = {e["strength"] for e in v["evidences"] if e["role"] == "produced"}
         want_strength = "strong" if f["confidence"] == "strong" else "medium"
-        check(strengths == {want_strength}, f"origins {name}: força do produtor esperada {want_strength}, obtida {strengths}")
+        check(strengths == {want_strength}, f"origins {name}: producer strength expected {want_strength}, got {strengths}")
         want = ids[f["producer"]]
-        check(produced_by(v) == [want], f"origins {name}: produtor esperado {want} ({f['producer']}), obtido {produced_by(v)}")
+        check(produced_by(v) == [want], f"origins {name}: producer expected {want} ({f['producer']}), got {produced_by(v)}")
         if f.get("reissued_by"):
-            check(reissued_by(v) == sorted(ids[x] for x in f["reissued_by"]), f"origins {name}: reemitido por {reissued_by(v)}")
+            check(reissued_by(v) == sorted(ids[x] for x in f["reissued_by"]), f"origins {name}: reissued by {reissued_by(v)}")
         if f.get("literal"):
-            check(any(e["field"] == f["literal"] for e in v["evidences"]), f"origins {name}: literal {f['literal']} ausente")
+            check(any(e["field"] == f["literal"] for e in v["evidences"]), f"origins {name}: literal {f['literal']} missing")
     neg = ex["origins_4_1"]["negative_4_3"]
     es = vals(doc, scope="header", field="x-page-seq")
-    check(len(es) == 1, "4.3: x-page-seq ausente")
+    check(len(es) == 1, "4.3: x-page-seq missing")
     for e in es:
-        check(e["status"] in neg["status"] and not e["evidences"] and e["label"].startswith("sem origem observada"),
-              f"4.3: x-page-seq virou origem: {e['status']} {e['label'][:80]} {e['evidences']}")
+        check(e["status"] in neg["status"] and not e["evidences"] and e["label"].startswith("no observed origin"),
+              f"4.3: x-page-seq became an origin: {e['status']} {e['label'][:80]} {e['evidences']}")
 
 
 def check_chain(core, a, ex, ids):
@@ -131,23 +131,23 @@ def check_chain(core, a, ex, ids):
     prot = [s["requestId"] for s in doc["protection"]]
     want_app = [ids[x] for x in c["application_in_flow_order"]]
     allowed = {ids[x] for x in c["allowed_extra_application"]}
-    check([x for x in app if x not in allowed] == want_app, f"chain: aplicação esperada {want_app}, obtida {app}")
-    check(set(app) - set(want_app) <= allowed, f"chain: passos extras não permitidos {set(app) - set(want_app) - allowed}")
-    check(app == sorted(app), f"chain: ordem do fluxo violada {app}")
-    check(prot == [ids[x] for x in c["protection"]], f"chain: proteção esperada {[ids[x] for x in c['protection']]}, obtida {prot}")
+    check([x for x in app if x not in allowed] == want_app, f"chain: application expected {want_app}, got {app}")
+    check(set(app) - set(want_app) <= allowed, f"chain: extra steps not allowed {set(app) - set(want_app) - allowed}")
+    check(app == sorted(app), f"chain: flow order violated {app}")
+    check(prot == [ids[x] for x in c["protection"]], f"chain: protection expected {[ids[x] for x in c['protection']]}, got {prot}")
     got_conf = {s["requestId"]: s.get("confidence") for s in doc["steps"]}
     want_conf = {ids[k]: v for k, v in c["confidence"].items()}
-    check({k: v for k, v in got_conf.items() if k in want_conf} == want_conf, f"chain: confidence esperada {want_conf}, obtida {got_conf}")
-    check(all(s.get("confidence") == "strong" for s in doc["protection"]), "chain: proteção (cookie-jar) deve ser strong")
+    check({k: v for k, v in got_conf.items() if k in want_conf} == want_conf, f"chain: confidence expected {want_conf}, got {got_conf}")
+    check(all(s.get("confidence") == "strong" for s in doc["protection"]), "chain: protection (cookie-jar) must be strong")
     check(all(s.get("class") == "protection" for s in doc["protection"]) and all(s.get("class") == "application" for s in doc["steps"]),
           "chain: classes application/protection")
     for x in c["must_exclude"]:
-        check(ids[x] not in app + prot, f"chain: {x} não deve constar")
+        check(ids[x] not in app + prot, f"chain: {x} must not appear")
     by = {s["requestId"]: s for s in doc["steps"] + doc["protection"]}
     for rid, why in c["reasons"].items():
         s = by.get(ids[rid])
-        check(bool(s and s.get("reason") and s.get("reasons")), f"chain: {rid} sem motivo ({why})")
-    check(not any(u.get("status") == "origin" for u in doc["unresolved"]), "chain: unresolved não pode conter origens resolvidas")
+        check(bool(s and s.get("reason") and s.get("reasons")), f"chain: {rid} has no reason ({why})")
+    check(not any(u.get("status") == "origin" for u in doc["unresolved"]), "chain: unresolved must not contain resolved origins")
 
 
 def part_with(parts, a_has=None, b_has=None):
@@ -159,19 +159,19 @@ def check_compare(core, a, b, ex, ida, idb):
     if doc is None:
         return
     c = ex["compare_4_2"]
-    # L6 (docs/10): o alinhamento padrão só tem requisições de aplicação; /TSPD/ vai para groups[kind=protection]
-    check(len(doc["pairs"]) == 12, f"compare: {len(doc['pairs'])} pares (esperado 12 de aplicação)")
+    # L6 (docs/10): the default alignment only has application requests; /TSPD/ goes to groups[kind=protection]
+    check(len(doc["pairs"]) == 12, f"compare: {len(doc['pairs'])} pairs (12 application expected)")
     prot = [g for g in doc.get("groups", []) if g.get("kind") == "protection"]
     check(len(prot) == 1 and len(prot[0]["a"]) == 1 and len(prot[0]["b"]) == 1 and "/TSPD/" in prot[0]["a"][0]["url"],
-          f"compare: esperado 1 grupo protection com 1 /TSPD/ em cada lado, obtido {prot}")
+          f"compare: expected 1 protection group with 1 /TSPD/ on each side, got {prot}")
     allp = run(core, "compare", a, b, "--all")[0]
-    check(allp is not None and len(allp["pairs"]) == 13, f"compare --all: esperado 13 pares, obtido {None if allp is None else len(allp['pairs'])}")
-    check(not doc["onlyInA"] and not doc["onlyInB"], f"compare: só em A/B inesperado {doc['onlyInA']} {doc['onlyInB']}")
-    check(not doc["ambiguities"], f"compare: ambiguidades {doc['ambiguities']}")
-    check(not any(p["outOfOrder"] for p in doc["pairs"]), "compare: par fora de ordem")
+    check(allp is not None and len(allp["pairs"]) == 13, f"compare --all: expected 13 pairs, got {None if allp is None else len(allp['pairs'])}")
+    check(not doc["onlyInA"] and not doc["onlyInB"], f"compare: unexpected only-in-A/B {doc['onlyInA']} {doc['onlyInB']}")
+    check(not doc["ambiguities"], f"compare: ambiguities {doc['ambiguities']}")
+    check(not any(p["outOfOrder"] for p in doc["pairs"]), "compare: pair out of order")
     for i, (ra, rb) in enumerate(c["consultas_pair_by_order"]):
         pr = [p for p in doc["pairs"] if p["a"]["requestId"] == ida[ra]]
-        check(len(pr) == 1 and pr[0]["b"]["requestId"] == idb[rb], f"compare: consulta {ra} deve parear com {rb}, obtido {[p['b']['requestId'] for p in pr]}")
+        check(len(pr) == 1 and pr[0]["b"]["requestId"] == idb[rb], f"compare: query {ra} must pair with {rb}, got {[p['b']['requestId'] for p in pr]}")
         if len(pr) != 1:
             continue
         p = pr[0]
@@ -179,8 +179,8 @@ def check_compare(core, a, b, ex, ida, idb):
         plate_a, plate_b = c["plates"]["A"][i], c["plates"]["B"][i]
         xml_parts = fields[("body", "XML")]["parts"]
         pp = part_with(xml_parts, plate_a, plate_b)
-        check(len(pp) == 1 and pp[0]["label"] == "dinâmico" and pp[0]["originLabel"] == "dinâmico sem origem",
-              f"compare par {i} XML:v_placa: esperado 'dinâmico sem origem', obtido {[(q['label'], q['originLabel']) for q in pp]}")
+        check(len(pp) == 1 and pp[0]["label"] == "dynamic" and pp[0]["originLabel"] == "dynamic without origin",
+              f"compare pair {i} XML:v_placa: expected 'dynamic without origin', got {[(q['label'], q['originLabel']) for q in pp]}")
         if i == 0:
             check_compare_fields(c, fields, xml_parts, ida, idb)
 
@@ -192,33 +192,33 @@ def check_compare_fields(c, fields, xml_parts, ida, idb):
             continue
         key = ("cookie", token) if base == "cookie" else ("header", token) if base == "header" else ("body", base)
         e = fields.get(key)
-        check(e is not None, f"compare {f['field']}: ausente")
+        check(e is not None, f"compare {f['field']}: missing")
         if e is None:
             continue
-        check(e["label"] == f["class"], f"compare {f['field']}: esperado {f['class']}, obtido {e['label']}")
+        check(e["label"] == f["class"], f"compare {f['field']}: expected {f['class']}, got {e['label']}")
         if f.get("runtime"):
-            want = f"obter em runtime (origem{' possível' if f.get('possible') else ''}: {idb[f['origin']]}"
-            check((e["originLabel"] or "").startswith(want), f"compare {f['field']}: esperado '{want}…', obtido {e['originLabel']!r}")
+            want = f"get at runtime ({'possible ' if f.get('possible') else ''}origin: {idb[f['origin']]}"
+            check((e["originLabel"] or "").startswith(want), f"compare {f['field']}: expected '{want}…', got {e['originLabel']!r}")
         if f.get("value") is not None:
-            check(e["a"] == f["value"] and e["b"] == f["value"], f"compare {f['field']}: valor estático {f['value']!r}, obtido {e['a']!r}/{e['b']!r}")
+            check(e["a"] == f["value"] and e["b"] == f["value"], f"compare {f['field']}: static value {f['value']!r}, got {e['a']!r}/{e['b']!r}")
     for f in c["fields"]:
         if not f["field"].startswith("XML:"):
             continue
         token = f["field"].split(":", 1)[1]
         if token == "delta":
             pp = part_with(xml_parts, "DLTA0005", "DLTB0005")
-            want = f"obter em runtime (origem{' possível' if f.get('possible') else ''}: {idb[f['origin']]}"
-            check(len(pp) == 1 and pp[0]["label"] == "dinâmico" and (pp[0]["originLabel"] or "").startswith(want),
-                  f"compare XML:delta: obtido {[(q['label'], q['originLabel']) for q in pp]}")
+            want = f"get at runtime ({'possible ' if f.get('possible') else ''}origin: {idb[f['origin']]}"
+            check(len(pp) == 1 and pp[0]["label"] == "dynamic" and (pp[0]["originLabel"] or "").startswith(want),
+                  f"compare XML:delta: got {[(q['label'], q['originLabel']) for q in pp]}")
         elif token == "v_placa":
-            continue  # verificado por par, acima
+            continue  # checked per pair, above
         else:
             pp = [q for q in xml_parts if token in q["a"] and token in q["b"]]
-            check(bool(pp) and all(q["label"] == f["class"] for q in pp), f"compare XML:{token}: esperado {f['class']}, obtido {[(q['label']) for q in pp]}")
+            check(bool(pp) and all(q["label"] == f["class"] for q in pp), f"compare XML:{token}: expected {f['class']}, got {[(q['label']) for q in pp]}")
 
 
 def check_edge_regressions(core, ex, tmp):
-    """Revisão da rodada 5: produtor lento sobreposto não é origem; controle sequencial é."""
+    """Round 5 review: a slow overlapping producer is not an origin; a sequential control is."""
     e = ex["edge_regressions"]
     sess = cb.import_fixture(core, e["session"], tmp)
     ids = cb.cdp_to_logical(sess)
@@ -228,16 +228,16 @@ def check_edge_regressions(core, ex, tmp):
         if doc is None:
             continue
         found = vals(doc, scope="body", field=c["field"])
-        check(len(found) == 1, f"edge {key}: campo {c['field']} ausente")
+        check(len(found) == 1, f"edge {key}: field {c['field']} missing")
         if not found:
             continue
         v = found[0]
         if strong:
-            check(v["status"] == "origin" and v["label"] == "origem observada" and produced_by(v) == [ids[c["producer"]]] and v["evidences"][0]["kind"] == "same-field",
-                  f"edge {key}: esperado origem forte de {c['producer']}, obtido {v['status']} {v['label']} {produced_by(v)}")
+            check(v["status"] == "origin" and v["label"] == "observed origin" and produced_by(v) == [ids[c["producer"]]] and v["evidences"][0]["kind"] == "same-field",
+                  f"edge {key}: expected strong origin of {c['producer']}, got {v['status']} {v['label']} {produced_by(v)}")
         else:
             check(v["status"] == "none" and not v["evidences"] and ids[c["producer"]] not in text_of(v),
-                  f"edge {key}: produtor lento não pode ser origem, obtido {v['status']} {v['label']} {v['evidences']}")
+                  f"edge {key}: slow producer cannot be an origin, got {v['status']} {v['label']} {v['evidences']}")
 
 
 def text_of(v):
@@ -248,7 +248,7 @@ def check_sanitized(core, a, ex, ids, tmp):
     san = Path(tmp) / "san"
     p = subprocess.run([core, "sanitize", a, san], capture_output=True, text=True)
     if p.returncode != 0:
-        FAILS.append(f"sanitize falhou: {p.stderr[:200]}"); return
+        FAILS.append(f"sanitize failed: {p.stderr[:200]}"); return
     d = json.loads((san / "session.json").read_text())
     sid = {r["cdp"]["requestId"]: r["id"] for r in d["requests"] if r.get("cdp", {}).get("requestId")}
     s = ex["sanitized_4_4"]
@@ -257,12 +257,12 @@ def check_sanitized(core, a, ex, ids, tmp):
         if doc is None:
             continue
         for leak in s["must_not_leak"]:
-            check(leak not in raw, f"4.4 {cmd}: vazou {leak}")
-        check(doc["redactedValues"] > 0 and any("não podem ser rastreados" in w for w in doc["warnings"]),
-              f"4.4 {cmd}: deve declarar que valores redigidos não são rastreáveis")
+            check(leak not in raw, f"4.4 {cmd}: leaked {leak}")
+        check(doc["redactedValues"] > 0 and any("cannot be traced" in w for w in doc["warnings"]),
+              f"4.4 {cmd}: must state that redacted values cannot be traced")
         if cmd == "origins":
             red = {(v["scope"], v["field"]) for v in doc["values"] if v["status"] == "redacted"}
-            check({("body", "SESSIONID"), ("cookie", "JSESSIONID")} <= red, f"4.4 origins: SESSIONID/JSESSIONID devem estar 'redacted', obtido {red}")
+            check({("body", "SESSIONID"), ("cookie", "JSESSIONID")} <= red, f"4.4 origins: SESSIONID/JSESSIONID must be 'redacted', got {red}")
 
 
 def main():
@@ -281,7 +281,7 @@ def main():
     check_sanitized(core, sa, ex, ida, tmp)
     if FAILS:
         print(f"FAIL ({len(FAILS)}):"); [print(" -", f) for f in FAILS]; return 1
-    print("OK: origens §4.1, cadeia, comparação §4.2, negativo §4.3, regressões edge (causalidade) e sanitizada §4.4"); return 0
+    print("OK: origins §4.1, chain, comparison §4.2, negative §4.3, edge regressions (causality) and sanitized §4.4"); return 0
 
 
 if __name__ == "__main__":
