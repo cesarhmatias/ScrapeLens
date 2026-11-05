@@ -41,20 +41,20 @@ await new Promise((resolve) => server.listen(4173, "127.0.0.1", resolve));
 const base = "http://127.0.0.1:4173/index.html";
 
 const shots = [
-  { name: "01-principal-claro", query: "view=session&theme=light", w: 1440, h: 900, fullPage: false },
-  { name: "02-principal-escuro", query: "view=session&theme=dark", w: 1440, h: 900, fullPage: false },
-  { name: "03-detalhe-headers-claro", query: "view=detail&id=req-0004&tab=headers&theme=light", w: 1440, h: 1000, fullPage: true },
-  { name: "04-detalhe-headers-escuro", query: "view=detail&id=req-0004&tab=headers&theme=dark", w: 1440, h: 1000, fullPage: true },
-  { name: "05-detalhe-normalizado-claro", query: "view=detail&id=req-0004&tab=normalized&theme=light", w: 1440, h: 1000, fullPage: true },
-  { name: "06-detalhe-cookies-claro", query: "view=detail&id=req-0001&tab=cookies&theme=light", w: 1440, h: 1000, fullPage: true },
-  { name: "07-detalhe-payload-claro", query: "view=detail&id=req-0008&tab=payload&theme=light", w: 1440, h: 1000, fullPage: true },
-  { name: "08-detalhe-redirects-escuro", query: "view=detail&id=req-0011&tab=redirects&theme=dark", w: 1440, h: 1000, fullPage: true },
-  { name: "09-comparacao-claro", query: "view=compare&a=req-0009&b=req-0010&theme=light", w: 1440, h: 1000, fullPage: true },
-  { name: "10-comparacao-escuro", query: "view=compare&a=req-0009&b=req-0010&theme=dark", w: 1440, h: 1000, fullPage: true },
-  { name: "11-detalhe-verificacao-escuro", query: "view=detail&id=req-0007&tab=headers&theme=dark", w: 1440, h: 1000, fullPage: true },
-  { name: "12-principal-busca-claro", query: "view=session&q=produtos&theme=light", w: 1440, h: 620, fullPage: false },
-  { name: "13-principal-filtro-erros-escuro", query: "view=session&filter=error&theme=dark", w: 1440, h: 620, fullPage: false },
-  { name: "15-detalhe-tentativas-ambigua", query: "view=detail&id=req-0011&tab=attempts&theme=light", w: 1440, h: 1000, fullPage: true },
+  { name: "01-main-light", query: "view=session&theme=light", w: 1440, h: 900, fullPage: false },
+  { name: "02-main-dark", query: "view=session&theme=dark", w: 1440, h: 900, fullPage: false },
+  { name: "03-detail-headers-light", query: "view=detail&id=req-0004&tab=headers&theme=light", w: 1440, h: 1000, fullPage: true },
+  { name: "04-detail-headers-dark", query: "view=detail&id=req-0004&tab=headers&theme=dark", w: 1440, h: 1000, fullPage: true },
+  { name: "05-detail-normalized-light", query: "view=detail&id=req-0004&tab=normalized&theme=light", w: 1440, h: 1000, fullPage: true },
+  { name: "06-detail-cookies-light", query: "view=detail&id=req-0001&tab=cookies&theme=light", w: 1440, h: 1000, fullPage: true },
+  { name: "07-detail-payload-light", query: "view=detail&id=req-0008&tab=payload&theme=light", w: 1440, h: 1000, fullPage: true },
+  { name: "08-detail-redirects-dark", query: "view=detail&id=req-0011&tab=redirects&theme=dark", w: 1440, h: 1000, fullPage: true },
+  { name: "09-comparison-light", query: "view=compare&a=req-0009&b=req-0010&theme=light", w: 1440, h: 1000, fullPage: true },
+  { name: "10-comparison-dark", query: "view=compare&a=req-0009&b=req-0010&theme=dark", w: 1440, h: 1000, fullPage: true },
+  { name: "11-detail-verification-dark", query: "view=detail&id=req-0007&tab=headers&theme=dark", w: 1440, h: 1000, fullPage: true },
+  { name: "12-main-search-light", query: "view=session&q=produtos&theme=light", w: 1440, h: 620, fullPage: false },
+  { name: "13-main-filter-errors-dark", query: "view=session&filter=error&theme=dark", w: 1440, h: 620, fullPage: false },
+  { name: "15-detail-attempts-ambiguous", query: "view=detail&id=req-0011&tab=attempts&theme=light", w: 1440, h: 1000, fullPage: true },
 ];
 
 const browser = await chromium.launch({ headless: true });
@@ -62,8 +62,8 @@ const context = await browser.newContext({
   viewport: { width: 1440, height: 900 },
   deviceScaleFactor: 2,
   reducedMotion: "reduce",
-  locale: "pt-BR",
-  timezoneId: "America/Sao_Paulo",
+  locale: "en-US",
+  timezoneId: "UTC",
 });
 const page = await context.newPage();
 
