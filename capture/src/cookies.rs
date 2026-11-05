@@ -982,25 +982,28 @@ fn unix_now() -> i64 {
 // Chromium decryption (v10/v11)
 // ---------------------------------------------------------------------------
 
-fn chromium_key(product: &ChromiumProduct, version_prefix: &[u8]) -> Result<Vec<u8>, String> {
+/// The candidate keys for a value prefix, in the order they are tried. Each candidate is a
+/// key, or the reason it could not be had. A value takes the first candidate that decrypts it.
+fn chromium_keys(product: &ChromiumProduct, version_prefix: &[u8]) -> Vec<Result<Vec<u8>, String>> {
     #[cfg(target_os = "macos")]
     {
         let _ = version_prefix;
-        let password = keychain_password(product.keychain_service, product.keychain_account)?;
-        Ok(pbkdf2_sha1(&password, b"saltysalt", 1003, 16))
+        let key = keychain_password(product.keychain_service, product.keychain_account)
+            .map(|password| pbkdf2_sha1(&password, b"saltysalt", 1003, 16));
+        vec![key]
     }
     #[cfg(target_os = "linux")]
     {
         if version_prefix == b"v11" {
-            return linux_v11_key(product);
+            return linux_v11_keys(product);
         }
         let _ = version_prefix;
-        Ok(pbkdf2_sha1(b"peanuts", b"saltysalt", 1, 16))
+        vec![Ok(pbkdf2_sha1(b"peanuts", b"saltysalt", 1, 16))]
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (product, version_prefix);
-        Err("cookie decryption is not supported on this platform".to_string())
+        vec![Err("cookie decryption is not supported on this platform".to_string())]
     }
 }
 
@@ -1089,19 +1092,53 @@ fn bounded<T: Send + 'static>(
     }
 }
 
+/// Keyring item names a browser's cookie key may be stored under, in the order tried: its
+/// own name first, then the names other Chromium builds use. Microsoft Edge writes
+/// `application=chromium` (label "Chromium Safe Storage"). A key is only used when it
+/// decrypts a value (see `decrypt_chromium_value`), so a wrong name cannot give garbage.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn linux_secret_applications(product: &ChromiumProduct) -> Vec<&'static str> {
+    let mut names = vec![product.linux_secret_app];
+    for other in ["chromium", "chrome"] {
+        if !names.contains(&other) {
+            names.push(other);
+        }
+    }
+    names
+}
+
+/// The candidate v11 keys: one per keyring name, from libsecret (one bounded call for all
+/// names) or, when libsecret is not installed, from `secret-tool` under the same deadline.
 #[cfg(target_os = "linux")]
-fn linux_v11_key(product: &ChromiumProduct) -> Result<Vec<u8>, String> {
-    let application = product.linux_secret_app;
-    match bounded(KEYRING_DEADLINE, move || native::secret_lookup(application)) {
-        Bounded::TimedOut => Err(keyring_locked_error(product.browser)),
-        Bounded::Failed => Err(format!(
+fn linux_v11_keys(product: &ChromiumProduct) -> Vec<Result<Vec<u8>, String>> {
+    let names = linux_secret_applications(product);
+    let lookups = names.clone();
+    match bounded(KEYRING_DEADLINE, move || {
+        lookups
+            .iter()
+            .map(|application| native::secret_lookup(application))
+            .collect::<Vec<_>>()
+    }) {
+        Bounded::TimedOut => vec![Err(keyring_locked_error(product.browser))],
+        Bounded::Failed => vec![Err(format!(
             "v11 cookie of {}: the keyring lookup failed; try again",
             product.browser
-        )),
-        // libsecret is not installed: fall back to the command.
-        Bounded::Done(None) => linux_v11_key_with(Path::new("secret-tool"), product),
-        Bounded::Done(Some(Ok(password))) => browser_key_from_password(product, password),
-        Bounded::Done(Some(Err(why))) => Err(keyring_error(product.browser, &why)),
+        ))],
+        Bounded::Done(results) if results.iter().all(Option::is_none) => {
+            linux_v11_keys_with(Path::new("secret-tool"), product)
+        }
+        Bounded::Done(results) => results
+            .into_iter()
+            .map(|result| match result {
+                None => Err(format!(
+                    "v11 cookie of {}: the keyring is not available; try again",
+                    product.browser
+                )),
+                Some(Ok(password)) => browser_key_from_password(product, password),
+                Some(Err(why)) => Err(keyring_error(product.browser, &why)),
+            })
+            .collect(),
     }
 }
 
@@ -1135,15 +1172,16 @@ fn browser_key_from_password(product: &ChromiumProduct, password: Vec<u8>) -> Re
     Ok(pbkdf2_sha1(&password, b"saltysalt", 1, 16))
 }
 
-/// The `secret-tool` command, bounded by `deadline`. A locked keyring makes it wait for
-/// the prompt: past the deadline the process is killed and the locked message is returned.
+/// The `secret-tool` command for one keyring name, bounded by `until`. A locked keyring makes
+/// it wait for the prompt: past the deadline the process is killed and the locked message is
+/// returned.
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn secret_tool_password(
     program: &Path,
     browser: &str,
     application: &str,
-    deadline: std::time::Duration,
+    until: std::time::Instant,
 ) -> Result<Vec<u8>, String> {
     let mut child = helper_command(program)
         .args([
@@ -1166,7 +1204,6 @@ fn secret_tool_password(
                 format!("v11 cookie of {browser}: secret-tool could not run: {error}")
             }
         })?;
-    let until = std::time::Instant::now() + deadline;
     loop {
         match child.try_wait() {
             Ok(Some(_)) => break,
@@ -1201,22 +1238,40 @@ fn secret_tool_password(
     Ok(password)
 }
 
-/// The `secret-tool` path, used only when libsecret cannot be loaded. The same bounds apply.
+/// The `secret-tool` path, used only when libsecret cannot be loaded: every keyring name, under
+/// one shared deadline.
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn linux_v11_key_with(secret_tool: &Path, product: &ChromiumProduct) -> Result<Vec<u8>, String> {
-    let password = secret_tool_password(
-        secret_tool,
-        product.browser,
-        product.linux_secret_app,
-        KEYRING_DEADLINE,
-    )?;
-    browser_key_from_password(product, password)
+fn linux_v11_keys_with(secret_tool: &Path, product: &ChromiumProduct) -> Vec<Result<Vec<u8>, String>> {
+    let until = std::time::Instant::now() + KEYRING_DEADLINE;
+    linux_secret_applications(product)
+        .into_iter()
+        .map(|application| {
+            secret_tool_password(secret_tool, product.browser, application, until)
+                .and_then(|password| browser_key_from_password(product, password))
+        })
+        .collect()
 }
 
-/// `v10`/`v11` + AES-128-CBC (IV = 16 spaces, PKCS#7). In Chrome 130+ the
-/// plaintext starts with 32 bytes of SHA-256(host_key); the prefix is only removed
-/// when it matches exactly.
+/// The error for a key that does not decrypt a value. A wrong key never yields a value.
+const WRONG_KEY: &str = "the key does not decrypt this value";
+
+/// Removes PKCS#7 padding; `None` when the padding is not valid (a wrong key almost always
+/// leaves invalid padding).
+fn pkcs7_unpad(data: &[u8]) -> Option<Vec<u8>> {
+    let padding = *data.last()? as usize;
+    if !(1..=16).contains(&padding) || data.len() < padding {
+        return None;
+    }
+    if data[data.len() - padding..].iter().any(|b| *b as usize != padding) {
+        return None;
+    }
+    Some(data[..data.len() - padding].to_vec())
+}
+
+/// `v10`/`v11` + AES-128-CBC (IV = 16 spaces, PKCS#7). In Chrome 130+ (`meta.version >= 24`)
+/// the plaintext starts with 32 bytes of SHA-256(host_key), and a key that does not produce
+/// that prefix does not decrypt the value. Padding and UTF-8 are checked for every version.
 fn decrypt_chromium_value(
     encrypted: &[u8],
     key: &[u8],
@@ -1229,15 +1284,20 @@ fn decrypt_chromium_value(
     if &encrypted[..3] != b"v10" && &encrypted[..3] != b"v11" {
         return Err("unknown encryption prefix".to_string());
     }
-    let mut plain = aes_128_cbc_decrypt(key, &[0x20u8; 16], &encrypted[3..])?;
+    let padded = aes_128_cbc_decrypt(key, &[0x20u8; 16], &encrypted[3..])?;
+    let mut plain = pkcs7_unpad(&padded).ok_or_else(|| WRONG_KEY.to_string())?;
     let hash = sha256(host_key.as_bytes());
     let has_hash_prefix = plain.len() >= 32 && plain[..32] == hash[..];
-    // Chrome 130+ (meta.version >= 24) prefixes SHA-256(host_key). With no version
-    // in the database, an exact match of the 32 bytes is enough; with an old version, it does not remove.
-    if has_hash_prefix && value_version.map_or(true, |v| v >= 24) {
+    if value_version.is_some_and(|v| v >= 24) {
+        if !has_hash_prefix {
+            return Err(WRONG_KEY.to_string());
+        }
+        plain.drain(..32);
+    } else if has_hash_prefix && value_version.is_none() {
+        // No version in the database: the exact 32-byte prefix is removed, as before.
         plain.drain(..32);
     }
-    String::from_utf8(plain).map_err(|_| "cookie value is not UTF-8".to_string())
+    String::from_utf8(plain).map_err(|_| WRONG_KEY.to_string())
 }
 
 fn same_site_from_db(value: i64) -> Option<String> {
@@ -1308,8 +1368,8 @@ fn decrypt_row(
     encrypted: &[u8],
     host_key: &str,
     version: Option<i64>,
-    keys: &mut std::collections::HashMap<Vec<u8>, Result<Vec<u8>, String>>,
-    key_for: &mut impl FnMut(&[u8]) -> Result<Vec<u8>, String>,
+    keys: &mut std::collections::HashMap<Vec<u8>, Vec<Result<Vec<u8>, String>>>,
+    key_for: &mut impl FnMut(&[u8]) -> Vec<Result<Vec<u8>, String>>,
 ) -> Result<String, String> {
     if encrypted.len() < 3 {
         return Err("encrypted value is too short to decrypt".to_string());
@@ -1318,13 +1378,30 @@ fn decrypt_row(
     if prefix != b"v10" && prefix != b"v11" {
         return Err("unknown encryption prefix".to_string());
     }
-    match keys
+    let candidates = keys
         .entry(prefix.to_vec())
-        .or_insert_with(|| key_for(prefix))
-    {
-        Ok(key) => decrypt_chromium_value(encrypted, key, host_key, version)
-            .map_err(|why| format!("could not decrypt: {why}")),
-        Err(why) => Err(why.clone()),
+        .or_insert_with(|| key_for(prefix));
+    let mut tried = false;
+    let mut first_missing: Option<String> = None;
+    for candidate in candidates.iter() {
+        match candidate {
+            Ok(key) => {
+                tried = true;
+                if let Ok(value) = decrypt_chromium_value(encrypted, key, host_key, version) {
+                    return Ok(value);
+                }
+            }
+            Err(why) => {
+                if first_missing.is_none() {
+                    first_missing = Some(why.clone());
+                }
+            }
+        }
+    }
+    if tried {
+        Err("could not decrypt: none of the keys this browser has decrypts the value".to_string())
+    } else {
+        Err(first_missing.unwrap_or_else(|| "no key for this browser".to_string()))
     }
 }
 
@@ -1337,7 +1414,7 @@ fn read_chromium_rows(
     host: &str,
     version: Option<i64>,
     tally: &mut ImportTally,
-    mut key_for: impl FnMut(&[u8]) -> Result<Vec<u8>, String>,
+    mut key_for: impl FnMut(&[u8]) -> Vec<Result<Vec<u8>, String>>,
 ) -> Vec<ImportedCookie> {
     let mut keys = std::collections::HashMap::new();
     let mut cookies = Vec::new();
@@ -1436,7 +1513,7 @@ fn load_chromium(
     );
     let rows = sqlite_rows(db, &sql)?;
     let cookies = read_chromium_rows(&rows, host, version, tally, |prefix| {
-        chromium_key(product, prefix)
+        chromium_keys(product, prefix)
     });
     finish_chromium(cookies, tally)
 }
@@ -1975,8 +2052,7 @@ fn aes128_decrypt_block(key: &[u8; 16], block: &[u8; 16]) -> [u8; 16] {
     state
 }
 
-/// AES-128-CBC decrypt with optional PKCS#7 (invalid padding is kept as it came:
-/// some profiles store values with zero padding).
+/// AES-128-CBC decrypt, raw: no padding is removed here (see `pkcs7_unpad`).
 pub fn aes_128_cbc_decrypt(key: &[u8], iv: &[u8; 16], ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     if key.len() != 16 {
         return Err("AES-128 key must be 16 bytes".to_string());
@@ -1995,15 +2071,7 @@ pub fn aes_128_cbc_decrypt(key: &[u8], iv: &[u8; 16], ciphertext: &[u8]) -> Resu
         }
         previous = block;
     }
-    if let Some(&padding) = out.last() {
-        let padding = padding as usize;
-        if (1..=16).contains(&padding)
-            && out.len() >= padding
-            && out[out.len() - padding..].iter().all(|b| *b == padding as u8)
-        {
-            out.truncate(out.len() - padding);
-        }
-    }
+    // Raw output: the padding is removed by the caller, which must check it.
     Ok(out)
 }
 
@@ -2104,7 +2172,11 @@ mod tests {
     #[test]
     fn missing_secret_tool_says_which_package_to_install() {
         let product = CHROMIUM_PRODUCTS.iter().find(|p| p.slug == "chromium").unwrap();
-        let error = linux_v11_key_with(Path::new("/nonexistent/scrapelens-secret-tool"), product).unwrap_err();
+        let error = linux_v11_keys_with(Path::new("/nonexistent/scrapelens-secret-tool"), product)
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap_err();
         assert!(error.contains("libsecret-tools"), "{error}");
         assert!(error.contains("Chromium"), "{error}");
     }
@@ -2363,9 +2435,9 @@ mod tests {
         let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |prefix| {
             lookups.set(lookups.get() + 1);
             if prefix == b"v10" {
-                Ok(v10_key.clone())
+                vec![Ok(v10_key.clone())]
             } else {
-                Ok(v11_key.clone())
+                vec![Ok(v11_key.clone())]
             }
         });
         let values: Vec<(&str, &str)> = cookies.iter().map(|c| (c.name.as_str(), c.value.as_str())).collect();
@@ -2385,9 +2457,9 @@ mod tests {
         let mut tally = ImportTally::default();
         let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |prefix| {
             if prefix == b"v10" {
-                Ok(v10_key.clone())
+                vec![Ok(v10_key.clone())]
             } else {
-                Err(keyring_locked_error("Chromium"))
+                vec![Err(keyring_locked_error("Chromium"))]
             }
         });
         assert_eq!(cookies.len(), 1);
@@ -2410,7 +2482,7 @@ mod tests {
         ];
         let mut tally = ImportTally::default();
         let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |_| {
-            Err("no key is expected for these values".to_string())
+            vec![Err("no key is expected for these values".to_string())]
         });
         assert!(cookies.is_empty());
         assert_eq!(tally.undecryptable, 3);
@@ -2425,7 +2497,7 @@ mod tests {
         let rows = vec![chromium_row(".example.com.br", "login", "", &encrypted_value(b"v11", &[1u8; 16], "x"))];
         let mut tally = ImportTally::default();
         let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |_| {
-            Err(keyring_locked_error("Chromium"))
+            vec![Err(keyring_locked_error("Chromium"))]
         });
         let error = finish_chromium(cookies, &tally).unwrap_err();
         assert_eq!(error, "v11 cookie of Chromium: keyring is locked: unlock it and try again");
@@ -2480,8 +2552,8 @@ mod tests {
         std::fs::write(&script, "#!/bin/sh\nsleep 30\n").unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         let started = std::time::Instant::now();
-        let error = secret_tool_password(&script, "Chromium", "chromium", std::time::Duration::from_millis(300))
-            .unwrap_err();
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(300);
+        let error = secret_tool_password(&script, "Chromium", "chromium", until).unwrap_err();
         assert_eq!(error, keyring_locked_error("Chromium"));
         assert!(started.elapsed() < std::time::Duration::from_secs(10));
         let _ = std::fs::remove_dir_all(dir);
@@ -2548,6 +2620,103 @@ mod tests {
         drop(copy);
         let _ = std::fs::remove_dir_all(base);
     }
+
+    /// The value of a row encrypted with `key` for `host_key`, the way Chrome 130+ writes it:
+    /// the 32-byte SHA-256(host_key) prefix, then the value.
+    fn encrypted_value_with_host_hash(prefix: &[u8; 3], key: &[u8], host_key: &str, plain: &str) -> Vec<u8> {
+        let mut body = sha256(host_key.as_bytes()).to_vec();
+        body.extend_from_slice(plain.as_bytes());
+        let key: [u8; 16] = key.try_into().unwrap();
+        let mut out = prefix.to_vec();
+        out.extend(encrypt_for_test(&key, &[0x20u8; 16], &body));
+        out
+    }
+
+    #[test]
+    fn a_candidate_key_that_does_not_decrypt_is_skipped_for_the_next_one() {
+        // The first keyring candidate is another application's key: the value must come
+        // from the second candidate, never from the wrong one.
+        let wrong = pbkdf2_sha1(b"another application", b"saltysalt", 1, 16);
+        let right = pbkdf2_sha1(b"keyring password", b"saltysalt", 1, 16);
+        let rows = vec![chromium_row(
+            ".example.com.br",
+            "sid",
+            "",
+            &encrypted_value_with_host_hash(b"v11", &right, ".example.com.br", "secret-value"),
+        )];
+        let mut tally = ImportTally::default();
+        let cookies = read_chromium_rows(&rows, "app.example.com.br", Some(24), &mut tally, |_| {
+            vec![Ok(wrong.clone()), Ok(right.clone())]
+        });
+        assert_eq!(cookies.len(), 1);
+        assert_eq!(cookies[0].value, "secret-value");
+        assert_eq!(tally.undecryptable, 0);
+    }
+
+    #[test]
+    fn a_wrong_key_never_yields_a_value() {
+        // Chrome 130+ writes the host hash: no candidate produces it, so the cookie is not
+        // imported and is counted with the reason.
+        let wrong = pbkdf2_sha1(b"another application", b"saltysalt", 1, 16);
+        let right = pbkdf2_sha1(b"keyring password", b"saltysalt", 1, 16);
+        let rows = vec![chromium_row(
+            ".example.com.br",
+            "sid",
+            "",
+            &encrypted_value_with_host_hash(b"v11", &right, ".example.com.br", "secret-value"),
+        )];
+        let mut tally = ImportTally::default();
+        let cookies = read_chromium_rows(&rows, "app.example.com.br", Some(24), &mut tally, |_| {
+            vec![Ok(wrong.clone())]
+        });
+        assert!(cookies.is_empty(), "a value decrypted with the wrong key must not be imported");
+        assert_eq!(tally.undecryptable, 1);
+        assert_eq!(
+            tally.reason_text().as_deref(),
+            Some("could not decrypt: none of the keys this browser has decrypts the value (1)")
+        );
+    }
+
+    #[test]
+    fn version_24_values_need_the_host_hash_and_valid_padding() {
+        let key = pbkdf2_sha1(b"keyring password", b"saltysalt", 1, 16);
+        // With the prefix: decrypts.
+        let good = encrypted_value_with_host_hash(b"v11", &key, ".example.com.br", "ok");
+        assert_eq!(decrypt_chromium_value(&good, &key, ".example.com.br", Some(24)).unwrap(), "ok");
+        // Without the prefix at version 24: refused, not returned as garbage.
+        let bare = encrypted_value(b"v11", &key, "ok");
+        assert!(decrypt_chromium_value(&bare, &key, ".example.com.br", Some(24)).is_err());
+        // Without the prefix at an old version: the value is returned as written.
+        assert_eq!(decrypt_chromium_value(&bare, &key, ".example.com.br", Some(20)).unwrap(), "ok");
+        // Bad padding (a value that does not end in valid PKCS#7): refused.
+        let mut bad_padding = encrypted_value(b"v11", &key, "AAAAAAAAAAAAAAA");
+        let last = bad_padding.len() - 1;
+        bad_padding[last] ^= 0x01; // corrupt the last ciphertext block: padding no longer valid
+        assert!(decrypt_chromium_value(&bad_padding, &key, ".example.com.br", None).is_err());
+    }
+
+    #[test]
+    fn pkcs7_unpad_accepts_only_valid_padding() {
+        assert_eq!(pkcs7_unpad(b"abc\x0d\x0d\x0d\x0d\x0d\x0d\x0d\x0d\x0d\x0d\x0d\x0d\x0d"), Some(b"abc".to_vec()));
+        assert_eq!(pkcs7_unpad(b"abcdefghijklmnop"), None, "last byte 'p' is not a padding length");
+        assert_eq!(pkcs7_unpad(b"abc\x02\x03"), None, "padding bytes must all match");
+        assert_eq!(pkcs7_unpad(b""), None);
+        assert_eq!(pkcs7_unpad(b"\x00"), None, "a zero padding length is invalid");
+    }
+
+    #[test]
+    fn linux_candidates_are_the_browsers_own_name_then_the_chromium_names() {
+        let names = |slug: &str| {
+            let product = CHROMIUM_PRODUCTS.iter().find(|p| p.slug == slug).unwrap();
+            linux_secret_applications(product)
+        };
+        // Edge stores its key as application=chromium (label "Chromium Safe Storage").
+        assert_eq!(names("edge"), vec!["microsoft-edge", "chromium", "chrome"]);
+        assert_eq!(names("brave"), vec!["brave", "chromium", "chrome"]);
+        assert_eq!(names("chrome"), vec!["chrome", "chromium"]);
+        assert_eq!(names("chromium"), vec!["chromium", "chrome"]);
+    }
+
 
     #[test]
     fn sqlite_roundtrip_reads_chromium_and_firefox_tables() {
