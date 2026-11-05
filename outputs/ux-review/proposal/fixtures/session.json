@@ -1,5 +1,5 @@
 {
-  "name": "Catálogo · outono 2026",
+  "name": "Catalog · autumn 2026",
   "synthetic": true,
   "requests": [
     {
@@ -531,12 +531,12 @@
         ]
       ],
       "payload": {
-        "busca": "jaqueta impermeável",
+        "busca": "waterproof jacket",
         "pagina": 1,
         "limite": 24,
         "filtros": {
           "cor": [
-            "azul"
+            "blue"
           ],
           "disponivel": true
         }
@@ -547,7 +547,7 @@
         "produtos": [
           {
             "sku": "JKT-8812",
-            "nome": "Jaqueta Storm Azul",
+            "nome": "Storm Blue Jacket",
             "preco": 349.9,
             "estoque": 12
           }
@@ -1784,19 +1784,19 @@
         ]
       ],
       "payload": {
-        "busca": "jaqueta impermeável",
+        "busca": "waterproof jacket",
         "pagina": 2,
         "limite": 24,
         "filtros": {
           "cor": [
-            "azul"
+            "blue"
           ],
           "disponivel": true
         }
       },
       "response": {
         "erro": "session_required",
-        "mensagem": "Cookie de sessão ausente"
+        "mensagem": "Session cookie missing"
       },
       "evidence": "unverified"
     }

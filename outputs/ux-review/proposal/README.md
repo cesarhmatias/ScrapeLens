@@ -26,19 +26,19 @@ It uses no CDN, remote fonts, external service or AI API. The `.invalid` domains
 
 1. On the entry screen, open the demonstration. There are 64 requests with assets and APIs mixed together.
 2. Filter Fetch/XHR and search `produtos` (products). See #18 (browser, 200/h2) and #64 (scraper, 403/h1).
-3. Select the call with a click or ↑/↓; Enter or “Inspecionar chamada” (Inspect call) opens the detail.
+3. Select the call with a click or ↑/↓; Enter or “Inspect call” opens the detail.
 4. In the Headers tab, search `text/plain`. Occurrence 2 of 2 keeps index 5. Copy the value.
-5. Expand pseudo-headers or switch to “Normalizada · alfabética” (Normalized · alphabetical). “Entender” (Understand) explains the limits of the sequence.
+5. Expand pseudo-headers or switch to “Normalized · alphabetical”. “Understand” explains the limits of the sequence.
 6. See Cookies: sent pairs, Cookie field and two independent Set-Cookie lines. Storage and wire lines are unavailable in the fixture.
-7. Compare A/B. Switch Headers, Cookies, Payload, Protocol and Response; uncheck “Somente diferenças” (Differences only); swap A/B.
-8. “Código…” (Code…) opens a synthetic cURL example. The copy contains the full value and repeated headers.
-9. “Nova captura” (New capture) opens a **simulated** flow, without starting Chrome or traffic. End the simulation to return to the demo.
+7. Compare A/B. Switch Headers, Cookies, Payload, Protocol and Response; uncheck “Differences only”; swap A/B.
+8. “Code…” opens a synthetic cURL example. The copy contains the full value and repeated headers.
+9. “New capture” opens a **simulated** flow, without starting Chrome or traffic. End the simulation to return to the demo.
 
 Keyboard: Tab/Shift+Tab, ↑/↓ in the list, Enter, Escape, ←/→ in the tabs, ⌘F/Ctrl+F and ⌘O/Ctrl+O. Dialogs use `<dialog>` and visible focus. There is no command to run the exported code.
 
 ## Save and import in this demonstration
 
-“Salvar cópia…” (Save copy…) downloads `scrapelens-demo-ux.json`, a demonstration-specific format, **not** the product's v1 bundle. “Abrir sessão…” (Open session…) recognizes that JSON and the included HAR fixture; the scope is deliberately limited to this same demonstration. It is not a generic importer and does not read NetLog.
+“Save copy…” downloads `scrapelens-demo-ux.json`, a demonstration-specific format, **not** the product's v1 bundle. “Open session…” recognizes that JSON and the included HAR fixture; the scope is deliberately limited to this same demonstration. It is not a generic importer and does not read NetLog.
 
 The downloaded copy was checked on disk and is identical to the fixture (64 calls). The browser automation's file picker timed out; reopening the JSON through the prototype was not validated end to end. HAR import, persistence and v1 reopening were validated in the **current native application**, separately.
 
@@ -49,7 +49,7 @@ The proposal's Fetch/XHR classification comes from the fixture JSON. The product
 - `fixtures/session.json`: the proposal's presentation data, generated locally.
 - `fixtures/catalogo-sintetico.har`: HAR 1.2 of the same fictitious navigation, used to test the native importer.
 - `fixtures/invalido.har`: invalid fixture to test error recovery.
-- `fixtures/session-v1-imported/`: output of the existing CLI importer. The `synthetic-fixture` label was added to the metadata to identify it on reopening. A HAR imported directly in the app does not receive that label automatically; the “SESSÃO REAL” (REAL SESSION) capture documents this problem.
+- `fixtures/session-v1-imported/`: output of the existing CLI importer. The `synthetic-fixture` label was added to the metadata to identify it on reopening. A HAR imported directly in the app does not receive that label automatically; the “REAL SESSION” capture documents this problem.
 - `generate-fixture.py`: regenerates the JSON/HAR/invalid fixture. The CLI import to v1 is a separate step, described below.
 
 The proposal JSON assigns a NetLog + CDP source to #18 to demonstrate the UX for partial evidence, and HAR to #64. **This is not an executed correlation.** When the generated HAR is imported into the core, the source becomes HAR for all calls. These are controlled representations of the same scenario, with different limits, deliberately made explicit.

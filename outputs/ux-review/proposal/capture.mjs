@@ -1,4 +1,4 @@
-// Reproduzir imagens da proposta; não integra o frontend de produção.
+// Reproduces the proposal images; does not integrate the production frontend.
 import { chromium } from '../../../app/node_modules/playwright/index.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
