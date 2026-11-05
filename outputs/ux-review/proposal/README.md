@@ -1,60 +1,60 @@
-# Protótipo navegável — ScrapeLens
+# Navigable prototype — ScrapeLens
 
-Protótipo isolado em HTML/CSS/JavaScript, com dados sintéticos. Não altera `app/src`, `core/src` nem `src-tauri/src`. O desenho pode ser integrado aos componentes React existentes; o JavaScript desta demonstração não é substituto do adaptador, diff ou exportadores de produção.
+Isolated prototype in HTML/CSS/JavaScript, with synthetic data. It does not change `app/src`, `core/src` or `src-tauri/src`. The design can be integrated into the existing React components; this demonstration's JavaScript is not a substitute for the production adapter, diff or exporters.
 
-## Abrir
+## Open
 
-Na raiz do repositório:
+At the repository root:
 
 ```sh
 python3 -m http.server 4174 --bind 127.0.0.1 --directory outputs/ux-review/proposal
 ```
 
-Abra **http://127.0.0.1:4174/?view=entry**. Não abrir `index.html` por `file://`: a fixture é carregada com `fetch` local.
+Open **http://127.0.0.1:4174/?view=entry**. Do not open `index.html` via `file://`: the fixture is loaded with a local `fetch`.
 
-Links diretos:
+Direct links:
 
-- [Entrada](http://127.0.0.1:4174/?view=entry)
-- [Sessão](http://127.0.0.1:4174/?view=session)
-- [Detalhe](http://127.0.0.1:4174/?view=detail&id=18&tab=headers)
+- [Entry](http://127.0.0.1:4174/?view=entry)
+- [Session](http://127.0.0.1:4174/?view=session)
+- [Detail](http://127.0.0.1:4174/?view=detail&id=18&tab=headers)
 - [Cookies](http://127.0.0.1:4174/?view=detail&id=18&tab=cookies)
-- [Comparação](http://127.0.0.1:4174/?view=compare)
+- [Comparison](http://127.0.0.1:4174/?view=compare)
 
-Não usa CDN, fontes remotas, serviço externo nem API de IA. Os domínios `.invalid` são dados exibidos e não são acessados.
+It uses no CDN, remote fonts, external service or AI API. The `.invalid` domains are displayed data and are never accessed.
 
-## Percurso recomendado
+## Recommended walkthrough
 
-1. Na entrada, abra a demonstração. Há 64 requisições com assets e APIs misturados.
-2. Filtre Fetch/XHR e busque `produtos`. Veja #18 (navegador, 200/h2) e #64 (scraper, 403/h1).
-3. Selecione a chamada com clique ou ↑/↓; Enter ou “Inspecionar chamada” abre o detalhe.
-4. Na aba Headers, busque `text/plain`. A ocorrência 2 de 2 continua com o índice 5. Copie o valor.
-5. Expanda pseudoheaders ou mude para “Normalizada · alfabética”. “Entender” explica os limites da sequência.
-6. Veja Cookies: pares enviados, campo Cookie e dois Set-Cookie independentes. Armazenamento e linhas do fio estão indisponíveis na fixture.
-7. Compare A/B. Troque Headers, Cookies, Payload, Protocolo e Resposta; desmarque “Somente diferenças”; inverta A/B.
-8. “Código…” abre exemplo cURL sintético. A cópia contém o valor completo e headers repetidos.
-9. “Nova captura” abre um fluxo **simulado**, sem iniciar Chrome ou tráfego. Encerre a simulação para voltar à demo.
+1. On the entry screen, open the demonstration. There are 64 requests with assets and APIs mixed together.
+2. Filter Fetch/XHR and search `produtos` (products). See #18 (browser, 200/h2) and #64 (scraper, 403/h1).
+3. Select the call with a click or ↑/↓; Enter or “Inspecionar chamada” (Inspect call) opens the detail.
+4. In the Headers tab, search `text/plain`. Occurrence 2 of 2 keeps index 5. Copy the value.
+5. Expand pseudo-headers or switch to “Normalizada · alfabética” (Normalized · alphabetical). “Entender” (Understand) explains the limits of the sequence.
+6. See Cookies: sent pairs, Cookie field and two independent Set-Cookie lines. Storage and wire lines are unavailable in the fixture.
+7. Compare A/B. Switch Headers, Cookies, Payload, Protocol and Response; uncheck “Somente diferenças” (Differences only); swap A/B.
+8. “Código…” (Code…) opens a synthetic cURL example. The copy contains the full value and repeated headers.
+9. “Nova captura” (New capture) opens a **simulated** flow, without starting Chrome or traffic. End the simulation to return to the demo.
 
-Teclado: Tab/Shift+Tab, ↑/↓ na lista, Enter, Escape, ←/→ nas abas, ⌘F/Ctrl+F e ⌘O/Ctrl+O. Diálogos usam `<dialog>` e foco visível. Não há comando de executar o código exportado.
+Keyboard: Tab/Shift+Tab, ↑/↓ in the list, Enter, Escape, ←/→ in the tabs, ⌘F/Ctrl+F and ⌘O/Ctrl+O. Dialogs use `<dialog>` and visible focus. There is no command to run the exported code.
 
-## Salvar e importar nesta demonstração
+## Save and import in this demonstration
 
-“Salvar cópia…” baixa `scrapelens-demo-ux.json`, formato próprio de demonstração, **não** o bundle v1 do produto. “Abrir sessão…” reconhece esse JSON e a fixture HAR incluída; o escopo é deliberadamente limitado à mesma demonstração. Não é um importador genérico nem lê NetLog.
+“Salvar cópia…” (Save copy…) downloads `scrapelens-demo-ux.json`, a demonstration-specific format, **not** the product's v1 bundle. “Abrir sessão…” (Open session…) recognizes that JSON and the included HAR fixture; the scope is deliberately limited to this same demonstration. It is not a generic importer and does not read NetLog.
 
-A cópia baixada foi conferida em disco e é idêntica à fixture (64 chamadas). O seletor de arquivos da automação do navegador deu timeout; a reabertura do JSON pelo protótipo não foi validada de ponta a ponta. A importação HAR, persistência e reabertura v1 foram validadas no **aplicativo nativo atual**, separadamente.
+The downloaded copy was checked on disk and is identical to the fixture (64 calls). The browser automation's file picker timed out; reopening the JSON through the prototype was not validated end to end. HAR import, persistence and v1 reopening were validated in the **current native application**, separately.
 
-A classificação Fetch/XHR da proposta vem do JSON da fixture. O importador HAR de produção atualmente perde `_resourceType`; isso está documentado como P0, com dependência Rust, e não foi corrigido aqui.
+The proposal's Fetch/XHR classification comes from the fixture JSON. The production HAR importer currently loses `_resourceType`; this is documented as P0, with a Rust dependency, and was not fixed here.
 
-## Dados e fontes
+## Data and sources
 
-- `fixtures/session.json`: dados de apresentação da proposta, gerados localmente.
-- `fixtures/catalogo-sintetico.har`: HAR 1.2 da mesma navegação fictícia, usado para testar o importador nativo.
-- `fixtures/invalido.har`: fixture inválida para testar recuperação de erro.
-- `fixtures/session-v1-imported/`: saída do importador CLI existente. Foi acrescentada a label `synthetic-fixture` ao metadado para identificá-la ao reabrir. O HAR importado diretamente no app não recebe essa label automaticamente; a captura “SESSÃO REAL” documenta esse problema.
-- `generate-fixture.py`: regenera JSON/HAR/fixture inválida. A importação CLI para v1 é uma etapa separada, descrita abaixo.
+- `fixtures/session.json`: the proposal's presentation data, generated locally.
+- `fixtures/catalogo-sintetico.har`: HAR 1.2 of the same fictitious navigation, used to test the native importer.
+- `fixtures/invalido.har`: invalid fixture to test error recovery.
+- `fixtures/session-v1-imported/`: output of the existing CLI importer. The `synthetic-fixture` label was added to the metadata to identify it on reopening. A HAR imported directly in the app does not receive that label automatically; the “SESSÃO REAL” (REAL SESSION) capture documents this problem.
+- `generate-fixture.py`: regenerates the JSON/HAR/invalid fixture. The CLI import to v1 is a separate step, described below.
 
-O JSON da proposta atribui fonte NetLog + CDP a #18 para demonstrar a UX de evidência parcial e HAR a #64. **Isso não é uma correlação executada.** Ao importar o HAR gerado no core, a fonte passa a ser HAR para todas as chamadas. São representações controladas do mesmo cenário, com limites diferentes, deliberadamente explicitados.
+The proposal JSON assigns a NetLog + CDP source to #18 to demonstrate the UX for partial evidence, and HAR to #64. **This is not an executed correlation.** When the generated HAR is imported into the core, the source becomes HAR for all calls. These are controlled representations of the same scenario, with different limits, deliberately made explicit.
 
-Para regenerar o v1:
+To regenerate v1:
 
 ```sh
 python3 outputs/ux-review/proposal/generate-fixture.py
@@ -63,29 +63,29 @@ python3 outputs/ux-review/proposal/generate-fixture.py
   --out /tmp/scrapelens-ux-session-v1
 ```
 
-Se quiser reabrir essa saída como demonstração no app, adicionar `synthetic-fixture` a `session.labels`. Isso identifica a fixture; não muda as evidências HTTP. Não reclassificar capturas reais dessa maneira.
+If you want to reopen that output as a demonstration in the app, add `synthetic-fixture` to `session.labels`. This identifies the fixture; it does not change the HTTP evidence. Do not reclassify real captures this way.
 
-## Reproduzir a instância desktop isolada
+## Reproduce the isolated desktop instance
 
-Na raiz do repositório, com dependências existentes:
+At the repository root, with existing dependencies:
 
 ```sh
 ./app/node_modules/.bin/tauri build --debug --bundles app \
   --config outputs/ux-review/proposal/desktop-review.conf.json
 ```
 
-Abra `src-tauri/target/debug/bundle/macos/ScrapeLens UX Review.app`. Identificador de dados: `app.scrapelens.uxreview`. O override modifica somente nome, identificador e geometria da janela. Não iniciar gravação na instância original durante a avaliação. O build isolado não precisa ser distribuído nem versionado.
+Open `src-tauri/target/debug/bundle/macos/ScrapeLens UX Review.app`. Data identifier: `app.scrapelens.uxreview`. The override changes only the name, identifier and window geometry. Do not start recording in the original instance during the evaluation. The isolated build does not need to be distributed or versioned.
 
-## Capturas e verificação visual
+## Screenshots and visual verification
 
-As capturas entregues em `../after/` foram feitas no navegador real e examinadas individualmente. As quatro vistas principais existem em 1440 × 900 e 1280 × 800. `viewport-checks-*.json` registra as dimensões observadas e a ausência de overflow de página. As regiões de dados têm rolagem interna; não se pretende exibir 64 linhas ou todo valor extenso simultaneamente.
+The screenshots delivered in `../after/` were taken in the real browser and examined individually. The four main views exist at 1440 × 900 and 1280 × 800. `viewport-checks-*.json` records the observed dimensions and the absence of page overflow. The data regions scroll internally; the intent is not to show 64 rows or every long value at once.
 
-Para repetir as quatro capturas principais com o Playwright já instalado no projeto, mantenha o servidor acima ativo e execute, da raiz:
+To repeat the four main screenshots with the Playwright already installed in the project, keep the server above running and execute, from the root:
 
 ```sh
 node outputs/ux-review/proposal/capture.mjs
 ```
 
-O script grava em `../after/recapture/`, preservando as imagens revisadas. Ele espera o componente renderizado antes de fotografar, evitando captura vazia antes do `fetch` da fixture. **Reabrir e revisar as imagens é obrigatório** após qualquer alteração; executar o script por si só não constitui revisão visual.
+The script writes to `../after/recapture/`, preserving the reviewed images. It waits for the component to render before photographing, avoiding an empty capture before the fixture's `fetch`. **Reopening and reviewing the images is mandatory** after any change; running the script by itself does not constitute visual review.
 
-Limites: protótipo de 64 itens sem virtualização; um tema; não é uma nova implementação do capturador, parser genérico, diff de produção, Python exporter, armazenamento de cookies ou formato v1. Não substitui teste de acessibilidade com VoiceOver nem avaliação com usuários.
+Limits: 64-item prototype without virtualization; one theme; it is not a new implementation of the capturer, a generic parser, the production diff, the Python exporter, cookie storage or the v1 format. It does not replace accessibility testing with VoiceOver or evaluation with users.

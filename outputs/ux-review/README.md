@@ -1,14 +1,14 @@
-# Revisão de UX — ScrapeLens
+# UX review — ScrapeLens
 
-- [Diagnóstico priorizado e proposta visual](review.md)
-- [Plano de implementação e dependências](implementation-plan.md)
-- [Abrir protótipo local](http://127.0.0.1:4174/?view=entry)
-- [Instruções do protótipo](proposal/README.md)
-- [Capturas atuais](before/README.md)
-- [Capturas da proposta](after/README.md)
+- [Prioritized diagnosis and visual proposal](review.md)
+- [Implementation plan and dependencies](implementation-plan.md)
+- [Open local prototype](http://127.0.0.1:4174/?view=entry)
+- [Prototype instructions](proposal/README.md)
+- [Current screenshots](before/README.md)
+- [Proposal screenshots](after/README.md)
 
-A interface de produção foi preservada. O protótipo usa somente dados fictícios. A importação e a reabertura foram testadas no app nativo em uma instância isolada; a captura real não foi testada nesta revisão.
+The production interface was preserved. The prototype uses fictitious data only. Import and reopening were tested in the native app in an isolated instance; real capture was not tested in this review.
 
-Ordem recomendada: fidelidade/origem → descoberta de APIs importadas → lista/detalhe e teclado → comparação → integração de código. Persistência e refinamentos vêm depois.
+Recommended order: fidelity/origin → discovery of imported APIs → list/detail and keyboard → comparison → code integration. Persistence and refinements come later.
 
-Cópia para Obsidian: `/Users/cesar/Notas/scrapelens/ux-review/`. O conteúdo mantém os caminhos relativos de imagens e documentos.
+Copy for Obsidian: `/Users/cesar/Notas/scrapelens/ux-review/`. The content keeps the relative paths of images and documents.

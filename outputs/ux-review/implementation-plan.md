@@ -1,28 +1,28 @@
-# ScrapeLens — plano de implementação da proposta de UX
+# ScrapeLens — implementation plan for the UX proposal
 
-Este plano descreve mudanças futuras. **Nenhuma foi aplicada ao frontend de produção nesta revisão.** Diagnóstico, evidências e imagens: [review.md](review.md). Protótipo e limitações: [proposal/README.md](proposal/README.md).
+This plan describes future changes. **None was applied to the production frontend in this review.** Diagnosis, evidence and images: [review.md](review.md). Prototype and limitations: [proposal/README.md](proposal/README.md).
 
-## Ordem recomendada
+## Recommended order
 
-| Ordem | Prioridade | Entrega concreta | Componentes/arquivos afetados | Dependência | Porte relativo |
+| Order | Priority | Concrete delivery | Affected components/files | Dependency | Relative size |
 |---|---|---|---|---|---|
-| 1 | P0 | Separar origem, estado da sessão e confirmação da sequência | `App.tsx`: banners, `HeaderBlock`, `VerificationPanel`, `CompareView`; `types.ts`; `v1/adapter.ts` | Auditoria da semântica de proveniência v1 e matriz existente | M |
-| 2 | P0 | Não esconder APIs de HAR por ausência de tipo | Filtros em `App.tsx`, `v1/adapter.ts`; opcionalmente `core/src/parse/har.rs` | UI de tipo desconhecido independente; `_resourceType` depende de importador | S na UI / M na integração |
-| 3 | P1 | Entrada vazia, lista persistente, foco e seleção por teclado | `App.tsx`: estado de sessão, tabela, `DetailView`; `styles.css`; menu Tauri | Preservar virtualização e comandos existentes | M–L |
-| 4 | P1 | Busca local de headers, cookies em tabela e cópia com retorno | `HeaderBlock`, conteúdo de Cookies, `BodyPanel`, `VerificationPanel`; estilos e clipboard | Layout e política de evidência da etapa 1 | M |
-| 5 | P1 | Comparação a partir da seleção, categorias e “somente diferenças” | `CompareView`, `diff.ts`, estado de A/B, reutilização de tabela seletora | Identidade de ocorrências e direção A→B estáveis | M |
-| 6 | P1 | Expor exportadores existentes em “Código…” | `bridge.ts`, `src-tauri/src/commands.rs`, registro de commands, core export existente | Contrato de erros/avisos e resolução de anexos | M |
-| 7 | P2 | Salva localmente, Mostrar no Finder, recuperação de importação | Cabeçalho, notices, `bridge.revealPath`, menu nativo | `sessionDir` já fornecido | S |
-| 8 | P2 | Salvar cópia do bundle e reabrir por histórico, se priorizado | Commands, diálogo de destino e armazenamento de recentes | Operações adicionais no shell; não necessárias ao novo inspetor | M–L |
+| 1 | P0 | Separate origin, session state and sequence confirmation | `App.tsx`: banners, `HeaderBlock`, `VerificationPanel`, `CompareView`; `types.ts`; `v1/adapter.ts` | Audit of the v1 provenance semantics and the existing matrix | M |
+| 2 | P0 | Do not hide HAR APIs because of a missing type | Filters in `App.tsx`, `v1/adapter.ts`; optionally `core/src/parse/har.rs` | Unknown-type UI is independent; `_resourceType` depends on the importer | S in the UI / M in the integration |
+| 3 | P1 | Empty entry, persistent list, focus and keyboard selection | `App.tsx`: session state, table, `DetailView`; `styles.css`; Tauri menu | Preserve virtualization and existing commands | M–L |
+| 4 | P1 | Local header search, cookies in a table and copy with feedback | `HeaderBlock`, Cookies content, `BodyPanel`, `VerificationPanel`; styles and clipboard | Layout and evidence policy from step 1 | M |
+| 5 | P1 | Comparison from the selection, categories and “differences only” | `CompareView`, `diff.ts`, A/B state, reuse of the selector table | Stable occurrence identity and A→B direction | M |
+| 6 | P1 | Expose existing exporters in “Code…” | `bridge.ts`, `src-tauri/src/commands.rs`, command registration, existing core export | Error/warning contract and attachment resolution | M |
+| 7 | P2 | Saved locally, Show in Finder, import recovery | Header, notices, `bridge.revealPath`, native menu | `sessionDir` already provided | S |
+| 8 | P2 | Save a bundle copy and reopen from history, if prioritized | Commands, destination dialog and recents storage | Additional shell operations; not needed by the new inspector | M–L |
 
-S/M/L representam comparação de esforço entre itens, não estimativas de prazo.
+S/M/L represent effort comparison between items, not schedule estimates.
 
-## 1. Corrigir a linguagem de fidelidade antes do desenho
+## 1. Fix the fidelity language before the design
 
-Reaproveitar a proveniência por informação existente, mantendo arrays intactos. Expor um pequeno modelo de apresentação para cada direção de headers:
+Reuse the existing per-piece provenance, keeping arrays intact. Expose a small presentation model for each header direction:
 
 ```ts
-// Exemplo de contrato de UI futuro; não é um novo contrato de captura.
+// Example of a future UI contract; it is not a new capture contract.
 type HeaderSequencePresentation = {
   view: 'source' | 'normalized';
   transmission: 'confirmed' | 'unverified' | 'unavailable';
@@ -32,133 +32,133 @@ type HeaderSequencePresentation = {
 };
 ```
 
-“Sequência da fonte” é modo de visualização; não um nível intermediário entre confirmado e não verificado. `partial` deve continuar visível na explicação de “não verificada”. Normalizada é derivada e precisa de indicação sempre que selecionada.
+“Source sequence” is a viewing mode; not an intermediate level between confirmed and not verified. `partial` must remain visible in the “not verified” explanation. Normalized is derived and needs an indication whenever it is selected.
 
-Não mapear `HeaderPair.verification === 'verified'` diretamente para “ordem transmitida confirmada”. A verificação precisa se referir explicitamente à sequência, na direção/protocolo suportados e à evidência aprovada. A fixture atual contém verificação CDP que não deve se tornar uma promessa de ordem no fio. Se essa distinção não for recuperável da proveniência disponível, apresentar “não verificada” com motivo; não bloquear o inspetor nem enriquecer o backend apenas para sustentar o desenho.
+Do not map `HeaderPair.verification === 'verified'` directly to “transmitted order confirmed”. The verification must explicitly refer to the sequence, in the supported direction/protocol and to the approved evidence. The current fixture contains CDP verification that must not become a promise of wire order. If this distinction cannot be recovered from the available provenance, present “not verified” with a reason; do not block the inspector or enrich the backend just to support the design.
 
-O adaptador já recebe o v1 bruto. Campos de proveniência disponíveis mas hoje descartados para exibição podem ser expostos ao painel avançado sem mudar o formato persistido. Um atributo novo que certifique especificamente a ordem transmitida, se necessário, é evolução de contrato/core e deve ser aprovado em trabalho separado.
+The adapter already receives the raw v1. Provenance fields that are available but currently discarded for display can be exposed in the advanced panel without changing the persisted format. A new attribute that specifically certifies the transmitted order, if needed, is a contract/core evolution and must be approved in separate work.
 
-Trocar `SESSÃO REAL` por uma origem factual: “HAR importado”, “NetLog importado” ou “Captura local”. Estado “encerrada/parcial/gravando” não usa o mesmo tratamento do status HTTP. Demonstração tem indicação única e persistente. Atualizar mensagens/tooltips antigos que ainda dizem que a importação é demo até integrar o core: ela já está integrada.
+Replace `SESSÃO REAL` (REAL SESSION) with a factual origin: “Imported HAR”, “Imported NetLog” or “Local capture”. A “ended/partial/recording” state does not use the same treatment as the HTTP status. The demonstration has a single, persistent indication. Update old messages/tooltips that still say the import is a demo until the core is integrated: it is already integrated.
 
-**Aceite:** HAR sintético não é certificado como real; request h2/h3 parcial não aparece como transmissão confirmada; nenhum array é ordenado para fabricar uma sequência; enviado e recebido podem ter certezas diferentes; falta de dados não aparece como ausência legítima.
+**Acceptance:** a synthetic HAR is not certified as real; a partial h2/h3 request does not appear as confirmed transmission; no array is sorted to fabricate a sequence; sent and received can have different certainty; missing data does not appear as legitimate absence.
 
-## 2. Recuperar a descoberta de chamadas importadas
+## 2. Recover the discovery of imported calls
 
-A UI deve apresentar “tipo não informado” quando `request.resourceType` estiver ausente. O filtro Fetch/XHR não deve fazer a pessoa concluir que não houve API. Quando toda a sessão estiver sem tipo, mostrar explicação contextual e ação para limpar esse filtro.
+The UI must present “type not provided” when `request.resourceType` is absent. The Fetch/XHR filter must not lead the person to conclude there was no API. When the whole session has no type, show a contextual explanation and an action to clear that filter.
 
-Uma melhoria disponível com os dados existentes é filtro de MIME: “JSON”, contando respostas com Content-Type compatível. Não classificar JSON como Fetch, nem inferir o mecanismo de carregamento só por `/api/` na URL. Busca por URL/domínio continua independente.
+An improvement available with the existing data is a MIME filter: “JSON”, counting responses with a compatible Content-Type. Do not classify JSON as Fetch, nor infer the loading mechanism just from `/api/` in the URL. Search by URL/domain remains independent.
 
-**Dependência externa ao frontend:** preservar a extensão HAR `_resourceType` no campo `LogicalRequest.resource_type`. O teste sintético já fornece a extensão; o parser atual não a transporta. Não é requisito da especificação HAR básica e não resolve arquivos que legitimamente não contenham esse campo.
+**Dependency outside the frontend:** preserve the HAR extension `_resourceType` in the `LogicalRequest.resource_type` field. The synthetic test already provides the extension; the current parser does not carry it. It is not a requirement of the basic HAR specification and does not solve files that legitimately do not contain this field.
 
-Na proposta, a classificação já vem em `proposal/fixtures/session.json`. O filtro Fetch/XHR funcional no protótipo **não demonstra que a importação de produção foi corrigida**. O filtro JSON e o estado de tipo ausente são recomendações documentadas, ainda não implementadas no protótipo.
+In the proposal, the classification already comes from `proposal/fixtures/session.json`. The working Fetch/XHR filter in the prototype **does not demonstrate that the production import was fixed**. The JSON filter and the missing-type state are documented recommendations, not yet implemented in the prototype.
 
-**Aceite:** o HAR de teste preserva tipos quando informados; um HAR sem tipos não fabrica Fetch/XHR; tipo ausente e MIME podem ser filtrados separadamente; limpar filtros sempre recupera os 64 registros.
+**Acceptance:** the test HAR preserves types when provided; a HAR without types does not fabricate Fetch/XHR; missing type and MIME can be filtered separately; clearing filters always recovers the 64 records.
 
-## 3. Transformar as três vistas em um espaço de inspeção
+## 3. Turn the three views into an inspection space
 
-Manter o App e o contrato v1. Extrair, se necessário, componentes locais como `RequestList`, `RequestPreview`, `HeaderSequenceNote` e `CopyStatus`; são divisões de apresentação, não mudança de arquitetura.
+Keep the App and the v1 contract. Extract, if needed, local components such as `RequestList`, `RequestPreview`, `HeaderSequenceNote` and `CopyStatus`; these are presentation splits, not an architecture change.
 
-Na entrada, usar estado de sessão ausente. A demonstração passa a ser escolha explícita. Reutilizar `start_session`, `import_har`, `import_netlog` e `open_session`; preservar diálogos e menus nativos.
+On the entry screen, use the no-session state. The demonstration becomes an explicit choice. Reuse `start_session`, `import_har`, `import_netlog` and `open_session`; preserve native dialogs and menus.
 
-No trabalho diário:
+In daily work:
 
-- Lista larga + prévia para localizar a chamada; seleção não navega imediatamente.
-- Lista estreita + detalhe para inspeção. Busca/filtros ficam na coluna da lista.
-- Comparação ocupa a área de dados, mantendo identificação da sessão, referências A/B e retorno à seleção anterior.
-- Estado de filtros/seleção/aba e posição da lista sobrevive às trocas. Foco precisa ser restaurado em um controle existente, especialmente após filtrar e voltar.
+- Wide list + preview to locate the call; selection does not navigate immediately.
+- Narrow list + detail for inspection. Search/filters stay in the list column.
+- Comparison occupies the data area, keeping the session identification, the A/B references and the return to the previous selection.
+- Filter/selection/tab state and list position survive the switches. Focus must be restored to an existing control, especially after filtering and going back.
 
-Preservar a lista virtualizada. O protótipo usa 43 px com caminho e domínio em duas linhas; **não basta alterar a altura no CSS de produção**, pois `ROW_HEIGHT` e os cálculos de início/fim dependem dela. Escolher 41–43 px conforme o layout final e atualizar uma única constante usada pelo cálculo e estilo. Não adicionar altura variável às linhas virtualizadas sem necessidade.
+Preserve the virtualized list. The prototype uses 43 px with the path and domain on two lines; **changing the height in the production CSS is not enough**, since `ROW_HEIGHT` and the start/end calculations depend on it. Choose 41–43 px according to the final layout and update a single constant used by both the calculation and the style. Do not add variable height to the virtualized rows unless necessary.
 
-Teclado: um ponto de Tab na seleção, setas para percorrer e atualizar prévia, Enter para detalhe, Escape para prévia, ←/→ nas abas, foco visível. Respeitar seleção de texto e manter ⌘C nativo; atalho explícito de URL pode ser ⌘⇧C, como no menu atual. ⌘F concentra a busca da lista sem desmontar o detalhe.
+Keyboard: a single Tab stop on the selection, arrows to move through and update the preview, Enter for the detail, Escape for the preview, ←/→ in the tabs, visible focus. Respect text selection and keep native ⌘C; an explicit URL shortcut can be ⌘⇧C, as in the current menu. ⌘F focuses the list search without unmounting the detail.
 
-**Aceite:** repetir a tarefa de duas chamadas vizinhas sem voltar a uma tela anterior; seleção nunca fica perdida fora da região visível; 12 mil itens mantêm virtualização; busca vazia tem recuperação; navegação completa mouse/teclado em 1440 × 900 e 1280 × 800.
+**Acceptance:** repeat the two-neighboring-calls task without going back to a previous screen; selection is never lost outside the visible region; 12 thousand items keep virtualization; an empty search has recovery; full mouse/keyboard navigation at 1440 × 900 and 1280 × 800.
 
-## 4. Tornar o detalhe legível sem reduzir dados
+## 4. Make the detail readable without reducing data
 
-Reutilizar `HeaderBlock`, `BodyPanel` e a lógica de cookies. A proposta mantém:
+Reuse `HeaderBlock`, `BodyPanel` and the cookie logic. The proposal keeps:
 
-| Região | Alteração de apresentação | Dados preservados |
+| Region | Presentation change | Data preserved |
 |---|---|---|
-| Cabeçalho | Caminho em destaque, URL completa selecionável e copiável, protocolo por chamada | URL exata, método, status, duração e protocolo |
-| Headers | Busca por nome/valor; enviado/recebido; seletor fonte/normalizada | Índice original e multiplicidade; pseudoheaders em grupo próprio |
-| Evidência | Uma linha contextual + explicação ao abrir | Fonte, evento, horário, método, limite e verificação por informação |
-| Cookies | Tabela enviada + Cookie bruto + Set-Cookie independentes | Pares repetidos, atributos, erro de parse, wire lines quando disponíveis |
-| Corpos | Estado e motivo próximos da prévia | Capturado/vazio/truncado/descartado/indisponível e anexos |
-| Avançado | Evidência/Tentativas/Redirects/candidatos sob demanda | Dados atuais, inclusive ambiguidade e warnings importantes |
+| Header | Path highlighted, full URL selectable and copyable, protocol per call | Exact URL, method, status, duration and protocol |
+| Headers | Search by name/value; sent/received; source/normalized selector | Original index and multiplicity; pseudo-headers in their own group |
+| Evidence | One contextual line + explanation when opened | Source, event, time, method, limit and per-piece verification |
+| Cookies | Sent table + raw Cookie + independent Set-Cookie | Repeated pairs, attributes, parse error, wire lines when available |
+| Bodies | State and reason next to the preview | Captured/empty/truncated/discarded/unavailable and attachments |
+| Advanced | Evidence/Attempts/Redirects/candidates on demand | Current data, including ambiguity and important warnings |
 
-Na busca de header, manter o índice e a ocorrência **anteriores ao filtro**. Exemplo da fixture: buscar `text/plain` continua mostrando `#5`, accept, ocorrência 2 de 2. A visão normalizada pode ordenar uma cópia derivada; não mutar o array da fonte.
+In the header search, keep the index and the occurrence **from before the filter**. Fixture example: searching `text/plain` keeps showing `#5`, accept, occurrence 2 of 2. The normalized view can sort a derived copy; do not mutate the source array.
 
-Pseudoheaders podem iniciar recolhidos, com “4 pseudoheaders · índices 0–3 · mostrar”. Busca por pseudoheader deve encontrá-lo sem exigir expansão manual. A indicação evita que o usuário leia o índice 4 como início original da sequência.
+Pseudo-headers can start collapsed, with “4 pseudo-headers · indices 0–3 · show”. Searching for a pseudo-header must find it without requiring manual expansion. The indication prevents the user from reading index 4 as the original start of the sequence.
 
-Mover `notice` de cópia para um status global, fora da condição `view === 'session'`. Erros de importação pertencem à sessão/operação, falhas HTTP pertencem à linha. Explicação de falha de clipboard oferece seleção manual.
+Move the copy `notice` to a global status, outside the `view === 'session'` condition. Import errors belong to the session/operation, HTTP failures belong to the row. The explanation of a clipboard failure offers manual selection.
 
-**Aceite:** duplicatas, Cookie e Set-Cookie não são fundidos; nenhum valor é cortado no dado copiado; não inferir armazenamento a partir de Set-Cookie; não derivar protocolo de Alt-Svc; HTML capturado continua sendo texto.
+**Acceptance:** duplicates, Cookie and Set-Cookie are not merged; no value is cut in the copied data; do not infer storage from Set-Cookie; do not derive protocol from Alt-Svc; captured HTML remains text.
 
-## 5. Comparar a tarefa, mantendo a precisão do diff
+## 5. Compare the task, keeping the diff's precision
 
-Reaproveitar `diffHeaders` e `diffCookies`. O casamento por nome/valor/multiplicidade é uma base útil. Auditar casos de mesma chave repetida com valores idênticos; o índice de uma ocorrência não pode ser recuperado só com `findIndex` de nome/valor em produção. Preservar a identidade da ocorrência durante o casamento.
+Reuse `diffHeaders` and `diffCookies`. Matching by name/value/multiplicity is a useful base. Audit cases of the same repeated key with identical values; an occurrence's index cannot be recovered with just a name/value `findIndex` in production. Preserve the occurrence identity during matching.
 
-A seleção atual preenche A; selecionar B por busca na lista da sessão, com método/domínio/status. A proposta usa select nativo por ser uma fixture pequena; não levar uma lista de 12 mil URLs a um select de produção.
+The current selection fills A; select B by searching the session list, with method/domain/status. The proposal uses a native select because it is a small fixture; do not bring a list of 12 thousand URLs into a production select.
 
-Contar diferenças por categoria, em vez de um total global parcial. A categoria Headers recebe enviado/recebido ou a resposta fica em categoria própria. Payload compara campos quando conteúdo JSON for capturado e parseável, com bruto disponível e indicação de visão derivada. Payload ausente/truncado/inacessível não vira objeto vazio. Conteúdo não JSON pode começar com diff textual, sem tentar inferir estrutura.
+Count differences per category, instead of a partial global total. The Headers category receives sent/received, or the response gets its own category. Payload compares fields when JSON content is captured and parseable, with the raw one available and an indication of a derived view. Missing/truncated/inaccessible payload does not become an empty object. Non-JSON content can start with a textual diff, without trying to infer structure.
 
-Exibir posições como diferenças na fonte quando a transmissão não estiver confirmada em ambos os lados. Comparar ordem relativa entre pares estáveis; inserir um header anterior não deve marcar todos os seguintes como reordenados. Distinguir alteração de valor e posição quando ambas ocorrerem, sem apagar informação. Evitar equiparar Host h1 e pseudoheaders h2 como campos regulares comuns.
+Display positions as differences in the source when transmission is not confirmed on both sides. Compare relative order between stable pairs; inserting an earlier header must not mark all the following ones as reordered. Distinguish value change from position change when both occur, without erasing information. Avoid equating h1 Host and h2 pseudo-headers as common regular fields.
 
-**Aceite:** +adicionado, −removido, ~valor, ↕posição reconhecíveis sem cor; iguais consultáveis; URLs/valores longos não deslocam as colunas; Cookie removido, página alterada e protocolo diferente têm categorias visíveis; dados brutos são complemento; nenhum texto afirma causa do 403.
+**Acceptance:** +added, −removed, ~value, ↕position recognizable without color; equal ones can be consulted; long URLs/values do not shift the columns; removed Cookie, changed page and different protocol have visible categories; raw data is a complement; no text asserts the cause of the 403.
 
-## 6. Completar o caminho até o código
+## 6. Complete the path to code
 
-Adicionar commands finos sobre `core::export` e entrada correspondente na ponte; reusar `read_attachment`/bundle para resolver corpos. Não criar outro exportador de produção no React.
+Add thin commands over `core::export` and a corresponding entry in the bridge; reuse `read_attachment`/bundle to resolve bodies. Do not create another production exporter in React.
 
-“Código…” abre formato, prévia, avisos do exportador e ações de copiar/salvar. Não gerar pseudoheaders como headers regulares. Preservar headers repetidos quando o formato permitir, informar remoções necessárias e ausência/truncamento de corpo. Avisar que o cliente pode escolher outro protocolo/reorganizar headers. A ordem dos argumentos não é garantia de sequência na transmissão.
+“Code…” opens format, preview, exporter warnings and copy/save actions. Do not generate pseudo-headers as regular headers. Preserve repeated headers when the format allows it, report necessary removals and body absence/truncation. Warn that the client may choose another protocol/reorder headers. The order of the arguments is not a guarantee of the transmission sequence.
 
-A demonstração só mostra cURL com dados sintéticos. Python e exportação do bundle são dependências futuras de integração já identificadas, não funcionalidades concluídas.
+The demonstration only shows cURL with synthetic data. Python and bundle export are future integration dependencies already identified, not completed features.
 
-**Aceite:** comportamento consistente com o core atual; nenhum corpo ausente é fabricado; anexos não são interpretados como UI; códigos copiados correspondem à chamada escolhida e aos avisos apresentados.
+**Acceptance:** behavior consistent with the current core; no missing body is fabricated; attachments are not interpreted as UI; copied code matches the chosen call and the warnings presented.
 
-## Tokens e regras visuais recomendadas
+## Recommended tokens and visual rules
 
-Reaproveitar as variáveis CSS de `.app`. Valores de referência do protótipo, ajustáveis na integração:
+Reuse the CSS variables of `.app`. Prototype reference values, adjustable at integration:
 
-| Papel | Referência |
+| Role | Reference |
 |---|---|
-| Área de dados | `#ffffff` |
-| Fundo auxiliar | `#f6f7f9` |
+| Data area | `#ffffff` |
+| Auxiliary background | `#f6f7f9` |
 | Sidebar | `#eef0f3` |
-| Texto | `#202a38` |
-| Texto secundário | `#5d6b7e` |
-| Divisor | `#dce1e7` |
-| Ação/foco | `#245bdd` |
-| Seleção | `#e9f0ff`, barra lateral e `aria-selected` |
-| Sucesso/adição | `#17704e` + texto/símbolo |
-| Falha/remoção | `#b32632` + texto/símbolo |
-| Valor alterado | `#8d5c0c` + `~ Valor` |
-| Tipografia | Sistema macOS para UI; SF Mono/Menlo para nomes/valores/URLs |
-| Tamanhos | UI 13 px; dado prioritário 12 px; metadados 11 px; somente índices e rótulos auxiliares 10 px |
-| Geometria | Divisores de 1 px; raio 5–6 px; evitar cartões envolvendo cada campo |
+| Text | `#202a38` |
+| Secondary text | `#5d6b7e` |
+| Divider | `#dce1e7` |
+| Action/focus | `#245bdd` |
+| Selection | `#e9f0ff`, side bar and `aria-selected` |
+| Success/addition | `#17704e` + text/symbol |
+| Failure/removal | `#b32632` + text/symbol |
+| Changed value | `#8d5c0c` + `~ Value` |
+| Typography | macOS system font for UI; SF Mono/Menlo for names/values/URLs |
+| Sizes | UI 13 px; priority data 12 px; metadata 11 px; only indices and auxiliary labels 10 px |
+| Geometry | 1 px dividers; 5–6 px radius; avoid cards wrapping each field |
 
-No Tauri, usar controles e barra de título nativos, sem círculos HTML decorativos duplicados. O protótipo web desenha um shell ilustrativo para avaliação. Manter claro/escuro existentes; resolver um tema primeiro, sem apagar a preferência do usuário.
+In Tauri, use native controls and title bar, without duplicated decorative HTML circles. The web prototype draws an illustrative shell for evaluation. Keep the existing light/dark; resolve one theme first, without erasing the user's preference.
 
-## Dependências novas, separadas do frontend
+## New dependencies, separate from the frontend
 
-| Item | Requer novo backend/dado? | Tratamento nesta entrega |
+| Item | Requires new backend/data? | Handling in this delivery |
 |---|---|---|
-| Lista/detalhe, busca de header, foco, banners, diff por categoria | Não; usa v1 e cálculo local | Demonstrado com fixture |
-| Filtro por MIME/JSON | Não, quando Content-Type já existe | Recomendado no plano; não prototipado |
-| Preservar `_resourceType` do HAR | Sim, ajuste no parser existente | Problema reproduzido, não corrigido |
-| Confirmar ordem quando proveniência não distingue a semântica | Talvez, metadado/contrato explícito | Sempre conservador; não inventar certeza |
-| Exportar cURL/Python na UI | Integração Tauri nova, exportador já existe | Prévia cURL sintética no protótipo |
-| Mostrar no Finder | Command já existe | Recomendação, sem serviço novo |
-| Salvar cópia do bundle v1 | Operação/diálogo no shell | JSON próprio de demonstração, não bundle v1 |
-| Histórico de recentes | Persistência de referências e tratamento de caminho ausente | Não desenhado como funcionalidade pronta |
-| Cookies armazenados | Snapshot adicional, ausente neste modelo de tela | Indisponível; não inferir de enviados/recebidos |
-| Corpos CDP reais | Captura/download ainda incompleto conforme README | Proposta respeita indisponível; não promete resolver |
-| Comparar sessões independentes/importar somente B | Novo fluxo/estado e seleção cruzada | Fora do protótipo; #64 já faz parte da fixture |
+| List/detail, header search, focus, banners, diff by category | No; uses v1 and local computation | Demonstrated with fixture |
+| MIME/JSON filter | No, when Content-Type already exists | Recommended in the plan; not prototyped |
+| Preserve HAR `_resourceType` | Yes, adjustment to the existing parser | Problem reproduced, not fixed |
+| Confirm order when provenance does not distinguish the semantics | Maybe, explicit metadata/contract | Always conservative; do not invent certainty |
+| Export cURL/Python in the UI | New Tauri integration, exporter already exists | Synthetic cURL preview in the prototype |
+| Show in Finder | Command already exists | Recommendation, no new service |
+| Save v1 bundle copy | Operation/dialog in the shell | Own demonstration JSON, not a v1 bundle |
+| Recents history | Persistence of references and handling of a missing path | Not designed as a ready feature |
+| Stored cookies | Additional snapshot, absent from this screen model | Unavailable; do not infer from sent/received |
+| Real CDP bodies | Capture/download still incomplete per README | Proposal respects unavailable; does not promise to solve it |
+| Compare independent sessions/import only B | New flow/state and cross selection | Outside the prototype; #64 is already part of the fixture |
 
-## Verificação na implementação futura
+## Verification in the future implementation
 
-Usar fixtures sintéticas/sanitizadas: h1 confirmado quando suportado pela matriz, h2/h3 parcial, HAR sem tipo, headers repetidos idênticos/diferentes, Cookie dividido, dois Set-Cookie, correlação ambígua e corpo indisponível. Verificar o critério de cada etapa antes de ampliar o escopo.
+Use synthetic/sanitized fixtures: h1 confirmed when supported by the matrix, h2/h3 partial, HAR without type, identical/different repeated headers, split Cookie, two Set-Cookie, ambiguous correlation and unavailable body. Verify each step's criterion before widening the scope.
 
-Testes prioritários são semânticos e de integração: limite de evidência, perda de `_resourceType`, preservação de ocorrências no diff, navegação da lista virtualizada e exportação de corpo/headers. Não há motivo para criar snapshots de CSS como prova de fidelidade HTTP.
+Priority tests are semantic and integration tests: evidence limit, loss of `_resourceType`, preservation of occurrences in the diff, virtualized list navigation and body/header export. There is no reason to create CSS snapshots as proof of HTTP fidelity.
 
-Repetir a inspeção visual nas duas dimensões, com teclado, filtro ativo e valores longos. Para performance, repetir o cenário de 12 mil linhas após integrar as linhas de duas alturas de texto. Realizar a validação completa de captura posteriormente contra `testserver/`, sem perfis pessoais ou credenciais reais.
+Repeat the visual inspection at both dimensions, with keyboard, active filter and long values. For performance, repeat the 12 thousand row scenario after integrating the two-text-line rows. Perform the full capture validation later against `testserver/`, without personal profiles or real credentials.

@@ -1,214 +1,214 @@
-# ScrapeLens — revisão de UX da implementação
+# ScrapeLens — UX review of the implementation
 
-Data: 27/10/2026 · base inspecionada: `51e77aa` · tema recomendado: claro.
+Date: 27/10/2026 · base inspected: `51e77aa` · recommended theme: light.
 
-**Direção recomendada:** um inspetor com lista persistente, prévia rápida e detalhe no mesmo espaço de trabalho. A fonte e o limite da evidência ficam próximos dos headers; a comparação começa pela seleção atual e se organiza por categoria.
+**Recommended direction:** an inspector with a persistent list, quick preview and detail in the same workspace. The source and the limit of the evidence stay close to the headers; comparison starts from the current selection and is organized by category.
 
-O produto já tem fundamentos fortes: tabela virtualizada, busca e filtros visíveis, valores técnicos selecionáveis, cópia de headers, arrays com duplicatas, visão normalizada identificada, cookies brutos e parseados separados e erros que preservam a sessão anterior. A proposta mantém esses fundamentos. Os principais problemas são interpretação da evidência, descoberta de APIs em HAR importado, perda de contexto e a ausência de um caminho de exportação na interface.
+The product already has strong foundations: virtualized table, visible search and filters, selectable technical values, header copy, arrays with duplicates, an identified normalized view, raw and parsed cookies kept separate, and errors that preserve the previous session. The proposal keeps these foundations. The main problems are interpretation of the evidence, discovery of APIs in an imported HAR, loss of context, and the absence of an export path in the interface.
 
-## O que foi realmente investigado
+## What was actually investigated
 
-Li `CONTRIBUTING.md`, `docs/01-decisoes.md`, `docs/03-contratos.md`, `docs/04-propriedade.md`, os READMEs do frontend e shell, a implementação React, estilos, adaptador v1, diff, ponte Tauri, comandos e importador HAR.
+I read `CONTRIBUTING.md`, `docs/01-decisoes.md`, `docs/03-contratos.md`, `docs/04-propriedade.md`, the frontend and shell READMEs, the React implementation, styles, adapter v1, diff, the Tauri bridge, commands and the HAR importer.
 
-Executei o frontend existente com `cd app && npm run dev -- --host 127.0.0.1`. Usei a interface renderizada no Brave com a fixture embutida de 13 chamadas e a fixture de estresse de 12.000 chamadas. As capturas anteriores deste trabalho estão em [before](before/README.md); não reutilizei imagens antigas como evidência da inspeção atual.
+I ran the existing frontend with `cd app && npm run dev -- --host 127.0.0.1`. I used the interface rendered in Brave with the embedded fixture of 13 calls and the stress fixture of 12,000 calls. The earlier captures from this work are in [before](before/README.md); I did not reuse old images as evidence of the current inspection.
 
-Abri também o aplicativo macOS. A janela principal passou a ter uma gravação ativa durante a investigação; não a interrompi. Para os testes nativos restantes, gerei um build do **mesmo frontend e backend**, alterando somente nome, título e identificador por configuração externa. A instância `app.scrapelens.uxreview` usa uma pasta de dados própria. Nela, importei um HAR sintético, reabri a sessão salva automaticamente e provoquei erro com um HAR inválido.
+I also opened the macOS application. The main window had an active recording during the investigation; I did not stop it. For the remaining native tests, I generated a build of the **same frontend and backend**, changing only the name, title and identifier through external configuration. The instance `app.scrapelens.uxreview` uses its own data folder. In it, I imported a synthetic HAR, reopened the automatically saved session and provoked an error with an invalid HAR.
 
-**Não testei captura real neste trabalho.** Os protocolos, cookies, corpos e eventos exibidos na proposta são fictícios. O comando nativo de importação foi executado de fato; o conteúdo importado foi deliberadamente construído, sem tráfego de rede.
+**I did not test real capture in this work.** The protocols, cookies, bodies and events shown in the proposal are fictitious. The native import command was actually executed; the imported content was deliberately constructed, with no network traffic.
 
-### Stack e organização encontradas
+### Stack and organization found
 
-| Parte | Implementação existente | Consequência para a proposta |
+| Part | Existing implementation | Consequence for the proposal |
 |---|---|---|
-| Frontend | React 19, TypeScript, Vite 7 | Reutilizar componentes e estado React; nenhuma troca de framework |
-| Navegação | `View` e `DetailTab` em `App.tsx`; parâmetros de URL para demonstração; sem roteador dedicado | Evoluir o layout e a seleção sem introduzir roteamento novo |
-| Componentes | `HeaderBlock`, `BodyPanel`, `BodyContext`, `VerificationPanel`, `DetailView`, `CompareView` | Preservar renderização de dados e extrair apenas os painéis necessários |
-| Lista | Tabela virtualizada de linhas fixas, overscan e `ResizeObserver` | Manter virtualização em produção; o protótipo de 64 itens não a substitui |
-| Estilos | CSS próprio, tokens em `.app`, tema claro/escuro, fonte do sistema e SF Mono | Mudanças viáveis em CSS e tokens existentes |
-| Modelo | Contrato v1 → `adaptSession` → `RequestRecord` | Apresentar a evidência já disponível; não inventar certeza |
-| Desktop | Tauri 2, menus/diálogos, clipboard, core Rust integrado | Preservar integração nativa e reaproveitar comandos existentes |
-| Exportação | cURL/Python no core e CLI; sem ação correspondente na UI/ponte | Expor exige integração Tauri, não um novo exportador |
+| Frontend | React 19, TypeScript, Vite 7 | Reuse React components and state; no framework change |
+| Navigation | `View` and `DetailTab` in `App.tsx`; URL parameters for demonstration; no dedicated router | Evolve the layout and selection without introducing new routing |
+| Components | `HeaderBlock`, `BodyPanel`, `BodyContext`, `VerificationPanel`, `DetailView`, `CompareView` | Preserve data rendering and extract only the necessary panels |
+| List | Virtualized table with fixed rows, overscan and `ResizeObserver` | Keep virtualization in production; the 64-item prototype does not replace it |
+| Styles | Own CSS, tokens in `.app`, light/dark theme, system font and SF Mono | Feasible changes in CSS and existing tokens |
+| Model | Contract v1 → `adaptSession` → `RequestRecord` | Present the evidence already available; do not invent certainty |
+| Desktop | Tauri 2, menus/dialogs, clipboard, integrated Rust core | Preserve native integration and reuse existing commands |
+| Export | cURL/Python in the core and CLI; no corresponding action in the UI/bridge | Exposing it requires Tauri integration, not a new exporter |
 
-## Percurso A–H
+## Journey A–H
 
-| Tarefa | Resultado observado | Limite |
+| Task | Observed result | Limit |
 |---|---|---|
-| A. Abrir sem sessão | Uma instância nova abre diretamente a demonstração de 13 chamadas. Não encontrei estado inicial “sem sessão” | A entrada vazia da proposta é nova UX |
-| B. Iniciar ou importar | Importação nativa de `catalogo-sintetico.har`: 64 chamadas, zero avisos, pasta salva | Captura real não iniciada pela avaliação; NetLog não importado neste teste |
-| C. Encontrar API | Busca + Fetch/XHR funcionam na demo embutida. No HAR importado, todas as chamadas viram “outro”; Fetch/XHR retorna zero | A fixture contém `_resourceType`; o importador atual não o transporta |
-| D. Localizar header/cookie | Headers possuem cópia individual; Cookies separa enviados, bruto e Set-Cookie. Não há busca dentro dos headers | Copiar header no detalhe não mostrou confirmação ali |
-| E. Protocolo e sequência | Protocolo por chamada está na lista e no detalhe. Há fonte e verificação por informação | “Verificada”, ao lado de “sequência da fonte”, não especifica o objeto da verificação |
-| F. Comparar | Diff preserva multiplicidade e distingue valor/adição/remoção/reordenação por texto | O botão global abre o par padrão #9/#10, ignorando a chamada em foco; resumo conta só headers enviados |
-| G. Copiar/exportar | Acionei cópia de header. A ação existe e os valores são selecionáveis | Não há exportação de código na UI atual; exportadores encontrados no core |
-| H. Salvar/reabrir | A importação salva automaticamente. Reabri a pasta nativa: 64 chamadas | Não há “Salvar como” na UI; não foi testada reabertura de uma captura real |
+| A. Open without a session | A new instance opens the 13-call demonstration directly. I did not find a "no session" initial state | The proposal's empty entry is new UX |
+| B. Start or import | Native import of `catalogo-sintetico.har`: 64 calls, zero warnings, folder saved | Real capture not started by the evaluation; NetLog not imported in this test |
+| C. Find API | Search + Fetch/XHR work in the embedded demo. In the imported HAR, all calls become "other"; Fetch/XHR returns zero | The fixture contains `_resourceType`; the current importer does not carry it |
+| D. Locate header/cookie | Headers have individual copy; Cookies separates sent, raw and Set-Cookie. There is no search inside the headers | Copying a header in the detail showed no confirmation there |
+| E. Protocol and sequence | Protocol per call is in the list and in the detail. There is source and verification per item | "Verified", next to "source sequence", does not specify the object of the verification |
+| F. Compare | Diff preserves multiplicity and distinguishes value/addition/removal/reordering by text | The global button opens the default pair #9/#10, ignoring the call in focus; the summary counts only sent headers |
+| G. Copy/export | I triggered header copy. The action exists and the values are selectable | There is no code export in the current UI; exporters found in the core |
+| H. Save/reopen | The import saves automatically. I reopened the native folder: 64 calls | There is no "Save as" in the UI; reopening a real capture was not tested |
 
-## Diagnóstico priorizado
+## Prioritized diagnosis
 
-P0 = impede ou induz erro na tarefa principal. P1 = atrito frequente. P2 = refinamento útil. Os benefícios abaixo são **expectativas de design**, não medições com usuários.
+P0 = prevents or induces error in the main task. P1 = frequent friction. P2 = useful refinement. The benefits below are **design expectations**, not measurements with users.
 
-### P0 · 01 — A interface pode sugerir uma certeza que a fonte não fornece
+### P0 · 01 — The interface may suggest a certainty the source does not provide
 
-**Problema observado:** a demo mostra “sequência da fonte” e “verificada” para headers CDP. A explicação completa fica no painel lateral, junto de várias verificações diferentes. O HAR sintético importado recebe “SESSÃO REAL”. A ausência da label interna `synthetic-fixture` é usada como contraponto a “real”; isso não autentica uma importação. Evidências: [detalhe atual](before/02-detalhe-1440.jpg), [HAR fictício com rótulo real](before/08-desktop-har-sintetico.png).
+**Observed problem:** the demo shows "source sequence" and "verified" for CDP headers. The full explanation sits in the side panel, alongside several different verifications. The imported synthetic HAR receives "REAL SESSION". The absence of the internal label `synthetic-fixture` is used as the counterpoint to "real"; this does not authenticate an import. Evidence: [current detail](before/02-detalhe-1440.jpg), [fictitious HAR with real label](before/08-desktop-har-sintetico.png).
 
-**Tarefa prejudicada:** decidir se a ordem transmitida foi preservada e confiar corretamente numa comparação navegador × scraper.
+**Task impaired:** deciding whether the transmitted order was preserved and correctly trusting a browser × scraper comparison.
 
-**Alteração concreta:** substituir a coleção de badges por uma linha por direção: “NetLog · sequência da fonte. Transmissão não verificada (evidência parcial)”, com “Entender” e o evento completo sob demanda. Usar “HAR importado”, “Captura local” e “Demonstração” como origem, separadas de “encerrada/parcial/gravando” e do status HTTP. Não inferir “transmissão confirmada” somente de `verification === verified`. Solução: [detalhe](after/03-detalhe-1440.jpg), [explicação](after/07-evidencia-1440.jpg).
+**Concrete change:** replace the collection of badges with one line per direction: "NetLog · source sequence. Transmission not verified (partial evidence)", with "Understand" and the full event on demand. Use "Imported HAR", "Local capture" and "Demonstration" as origin, separate from "ended/partial/recording" and from the HTTP status. Do not infer "transmission confirmed" solely from `verification === verified`. Solution: [detail](after/03-detalhe-1440.jpg), [explanation](after/07-evidencia-1440.jpg).
 
-**Benefício esperado:** reduzir conclusões incorretas sobre ordem, autenticidade e fidelidade.
+**Expected benefit:** reduce incorrect conclusions about order, authenticity and fidelity.
 
-**Custo/tradeoff:** exige uma política de apresentação conservadora e auditável por protocolo, direção e evento. Algumas informações hoje verdes passarão a “não verificadas”. Se o contrato não distinguir verificação de valores e de sequência, deixar a sequência não verificada; uma classificação mais rica exigirá dados/contrato adicionais.
+**Cost/tradeoff:** requires a conservative, auditable presentation policy per protocol, direction and event. Some information that is green today will become "not verified". If the contract does not distinguish verification of values from that of sequence, leave the sequence unverified; a richer classification will require additional data/contract.
 
-### P0 · 02 — O filtro de APIs esconde APIs após a importação HAR
+### P0 · 02 — The API filter hides APIs after the HAR import
 
-**Problema observado:** no HAR de 64 chamadas, todos os tipos são “outro”; Fetch/XHR 0 produz lista vazia, apesar de existirem chamadas JSON e `_resourceType: fetch`. `core/src/parse/har.rs` não preenche `resourceType`; o adaptador cai em `other`. Evidências: [importação](before/08-desktop-har-sintetico.png), [filtro vazio](before/09-desktop-filtro-api-vazio.png).
+**Observed problem:** in the 64-call HAR, all types are "other"; Fetch/XHR 0 produces an empty list, even though there are JSON calls and `_resourceType: fetch`. `core/src/parse/har.rs` does not fill in `resourceType`; the adapter falls back to `other`. Evidence: [import](before/08-desktop-har-sintetico.png), [empty filter](before/09-desktop-filtro-api-vazio.png).
 
-**Tarefa prejudicada:** encontrar a chamada que traz dados entre muitos assets.
+**Task impaired:** finding the call that carries data among many assets.
 
-**Alteração concreta:** na UI, diferenciar “tipo não informado” de “outro” e explicar a limitação quando o filtro zera por falta de tipos. Acrescentar um filtro independente “JSON”, baseado no MIME já disponível, sem chamá-lo de Fetch. Na integração do importador, preservar `_resourceType` quando existir; para HAR sem essa extensão, continuar mostrando tipo desconhecido. A proposta demonstra Fetch/XHR usando classificação **explicitamente fornecida pela fixture**, não uma correção já entregue no importador: [filtro proposto](after/06-filtro-api-1440.jpg).
+**Concrete change:** in the UI, differentiate "type not provided" from "other" and explain the limitation when the filter returns zero for lack of types. Add an independent "JSON" filter, based on the MIME already available, without calling it Fetch. In the importer integration, preserve `_resourceType` when it exists; for a HAR without that extension, keep showing unknown type. The proposal demonstrates Fetch/XHR using a classification **explicitly provided by the fixture**, not a fix already delivered in the importer: [proposed filter](after/06-filtro-api-1440.jpg).
 
-**Benefício esperado:** não induzir “não houve API”; oferecer uma busca útil mesmo quando o tipo de iniciador estiver ausente.
+**Expected benefit:** do not induce "there was no API"; offer a useful search even when the initiator type is absent.
 
-**Custo/tradeoff:** JSON é aproximação por conteúdo, não prova de Fetch/XHR. Preservar `_resourceType` exige ajuste no importador Rust, listado separadamente no plano; não foi implementado nesta revisão.
+**Cost/tradeoff:** JSON is an approximation by content, not proof of Fetch/XHR. Preserving `_resourceType` requires an adjustment in the Rust importer, listed separately in the plan; it was not implemented in this review.
 
-### P1 · 03 — A primeira tela começa no exemplo, sem uma escolha de trabalho clara
+### P1 · 03 — The first screen starts on the example, without a clear choice of work
 
-**Problema observado:** abrir uma instalação isolada carrega a demo. Capturar, abrir e importar aparecem distribuídos em duas barras. A demo é bem identificada, mas ocupa o lugar da entrada. Evidência: [início atual](before/01-inicio-demo-1440.jpg).
+**Observed problem:** opening an isolated installation loads the demo. Capture, open and import appear spread across two bars. The demo is well identified, but it takes the place of the entry. Evidence: [current start](before/01-inicio-demo-1440.jpg).
 
-**Tarefa prejudicada:** começar uma captura ou retomar trabalho anterior.
+**Task impaired:** starting a capture or resuming earlier work.
 
-**Alteração concreta:** estado “Nenhuma sessão aberta” com iniciar captura, escolher arquivo, abrir pasta de sessão e demonstração opcional. Nomear HAR/NetLog por extenso no fluxo inicial; distinguir importar arquivo de abrir bundle v1. Solução: [entrada](after/01-entrada-1440.jpg).
+**Concrete change:** a "No session open" state with start capture, choose file, open session folder and optional demonstration. Name HAR/NetLog in full in the initial flow; distinguish importing a file from opening a v1 bundle. Solution: [entry](after/01-entrada-1440.jpg).
 
-**Benefício esperado:** tornar a próxima ação evidente e reduzir a necessidade de interpretar a sessão de exemplo.
+**Expected benefit:** make the next action evident and reduce the need to interpret the example session.
 
-**Custo/tradeoff:** acrescenta um estado de aplicação, que deve continuar acessível sem descartar a sessão aberta. A captura do protótipo é simulação explícita.
+**Cost/tradeoff:** adds an application state, which must remain accessible without discarding the open session. The prototype's capture is an explicit simulation.
 
-### P1 · 04 — Inspecionar remove o contexto da lista
+### P1 · 04 — Inspecting removes the context of the list
 
-**Problema observado:** clicar numa linha troca a tela inteira. Para investigar a vizinha, voltar e escolher outra. ⌘F no detalhe também leva de volta à sessão. Evidências: [lista](before/01-inicio-demo-1440.jpg), [detalhe sem lista](before/02-detalhe-1440.jpg).
+**Observed problem:** clicking a row swaps the entire screen. To investigate the neighbor, go back and choose another. ⌘F in the detail also takes you back to the session. Evidence: [list](before/01-inicio-demo-1440.jpg), [detail without list](before/02-detalhe-1440.jpg).
 
-**Tarefa prejudicada:** percorrer candidatas, conferir cookies em chamadas semelhantes e voltar à comparação.
+**Task impaired:** going through candidates, checking cookies in similar calls and returning to the comparison.
 
-**Alteração concreta:** seleção simples atualiza uma prévia; Enter ou “Inspecionar chamada” abre o detalhe à direita. Manter lista, filtros, seleção, posição de rolagem e abas. Na inspeção, mover a busca para a coluna da lista e estreitar suas colunas secundárias. Soluções: [sessão](after/02-sessao-1440.jpg), [detalhe](after/03-detalhe-1440.jpg).
+**Concrete change:** a simple selection updates a preview; Enter or "Inspect call" opens the detail on the right. Keep list, filters, selection, scroll position and tabs. During inspection, move the search to the list column and narrow its secondary columns. Solutions: [session](after/02-sessao-1440.jpg), [detail](after/03-detalhe-1440.jpg).
 
-**Benefício esperado:** reduzir alternâncias de tela e preservar a referência da investigação.
+**Expected benefit:** reduce screen switches and preserve the investigation's reference.
 
-**Custo/tradeoff:** o detalhe perde largura; URLs na lista ficam abreviadas. O cabeçalho do detalhe mantém URL completa selecionável, quebra de linha e cópia; tempo/protocolo continuam no detalhe. Não exigir leitura por tooltip.
+**Cost/tradeoff:** the detail loses width; URLs in the list become abbreviated. The detail header keeps the full URL selectable, with line wrapping and copy; time/protocol remain in the detail. Do not require reading through a tooltip.
 
-### P1 · 05 — Linhas clicáveis não têm uma operação equivalente por teclado
+### P1 · 05 — Clickable rows have no equivalent keyboard operation
 
-**Problema observado:** linhas são `<tr onClick>` sem `tabIndex`/tratamento de setas/Enter. As abas usam `role=tab`, mas não implementam navegação por setas. ⌘F existe e é útil; isso não permite chegar ao detalhe sem mouse.
+**Observed problem:** rows are `<tr onClick>` without `tabIndex`/arrow/Enter handling. The tabs use `role=tab`, but do not implement arrow navigation. ⌘F exists and is useful; this does not allow reaching the detail without a mouse.
 
-**Tarefa prejudicada:** percorrer muitas chamadas e manter fluxo de trabalho por teclado.
+**Task impaired:** going through many calls and keeping a keyboard workflow.
 
-**Alteração concreta:** um ponto de Tab na lista, foco visível, ↑/↓ para seleção, Enter para detalhe, Escape para prévia; abas com foco móvel e ←/→; ⌘C reservado a texto selecionado e ⌘⇧C para URL. A seleção virtualizada deve rolar até o item, sem criar milhares de pontos de Tab. A proposta testa setas, Enter e abas; não reimplementa a virtualização de produção.
+**Concrete change:** one Tab stop in the list, visible focus, ↑/↓ for selection, Enter for detail, Escape for preview; tabs with roving focus and ←/→; ⌘C reserved for selected text and ⌘⇧C for URL. The virtualized selection must scroll to the item, without creating thousands of Tab stops. The proposal tests arrows, Enter and tabs; it does not reimplement the production virtualization.
 
-**Benefício esperado:** viabilizar inspeção sequencial e uso sem alternância para o mouse.
+**Expected benefit:** enable sequential inspection and use without switching to the mouse.
 
-**Custo/tradeoff:** manter seleção e foco como estados relacionados, mas distintos; testar limites, filtro e remoção de linhas. Não tomar atalhos de edição em inputs.
+**Cost/tradeoff:** keep selection and focus as related but distinct states; test limits, filter and row removal. Do not take editing shortcuts in inputs.
 
-### P1 · 06 — A comparação demora a chegar às diferenças relevantes
+### P1 · 06 — The comparison takes a while to reach the relevant differences
 
-**Problema observado:** o botão global abre duas seleções padrão, não a chamada atual; os selects exibem URLs longas. Todas as linhas iguais ocupam altura antes de cookies e corpos. “7 diferenças” na demo contabiliza apenas headers enviados; há diferenças em resposta e cookies fora desse total. A comparação não traz o limite da evidência junto dos índices. Evidência: [comparação atual](before/04-comparacao-1440.jpg).
+**Observed problem:** the global button opens two default selections, not the current call; the selects display long URLs. All equal rows take up height before cookies and bodies. "7 differences" in the demo counts only sent headers; there are differences in the response and cookies outside this total. The comparison does not bring the limit of the evidence next to the indices. Evidence: [current comparison](before/04-comparacao-1440.jpg).
 
-**Tarefa prejudicada:** comparar navegador com scraper, especialmente duas requisições quase iguais.
+**Task impaired:** comparing browser with scraper, especially two nearly identical requests.
 
-**Alteração concreta:** “Comparar selecionada” preenche A; escolher B por busca na lista da sessão. Fixar A/B, método, endpoint, status e protocolo no cabeçalho. Abas Headers, Cookies enviados, Payload, Protocolo e Resposta/Set-Cookie com contagens próprias. “Somente diferenças” por padrão; texto e símbolos para adição, remoção, valor e posição. Índices originais, ocorrências repetidas e esclarecimento “posições nas fontes” quando necessário. Bruto como ação complementar. Solução: [comparação](after/04-comparacao-1440.jpg).
+**Concrete change:** "Compare selected" fills in A; choose B by search in the session list. Pin A/B, method, endpoint, status and protocol in the header. Tabs Headers, Sent cookies, Payload, Protocol and Response/Set-Cookie with their own counts. "Differences only" by default; text and symbols for addition, removal, value and position. Original indices, repeated occurrences and the clarification "positions in the sources" when necessary. Raw as a complementary action. Solution: [comparison](after/04-comparacao-1440.jpg).
 
-**Benefício esperado:** localizar a diferença útil sem percorrer pares iguais; evitar total incompleto e conclusão sobre ordem no fio.
+**Expected benefit:** locate the useful difference without going through equal pairs; avoid an incomplete total and a conclusion about wire order.
 
-**Custo/tradeoff:** diferenças passam a ser distribuídas em categorias, com uma visão por vez. Cabeçalho e contagens compensam isso; manter consulta aos iguais. A escolha de B do protótipo usa select para 64 registros; a implementação de produção deve usar busca para 12 mil itens. Comparação entre sessões não está pronta.
+**Cost/tradeoff:** differences become distributed across categories, with one view at a time. Header and counts compensate for this; keep access to the equal ones. The prototype's choice of B uses a select for 64 records; the production implementation must use search for 12 thousand items. Comparison between sessions is not ready.
 
-### P1 · 07 — Hierarquia técnica pequena e detalhes avançados competindo com o dado
+### P1 · 07 — Small technical hierarchy and advanced details competing with the data
 
-**Problema observado:** o detalhe reserva uma coluna permanente para fonte, correlação e oito verificações, em todas as abas. Muitos valores/metadados usam 9,5–11 px. A moldura, padding externo e barra HTML de janela se somam à janela macOS nativa. Evidências: [detalhe](before/02-detalhe-1440.jpg), [desktop](before/08-desktop-har-sintetico.png), [notebook](before/06-sessao-1280.jpg).
+**Observed problem:** the detail reserves a permanent column for source, correlation and eight verifications, in all tabs. Many values/metadata use 9,5–11 px. The frame, outer padding and HTML window bar add to the native macOS window. Evidence: [detail](before/02-detalhe-1440.jpg), [desktop](before/08-desktop-har-sintetico.png), [notebook](before/06-sessao-1280.jpg).
 
-**Tarefa prejudicada:** ler valores extensos em notebook e concentrar-se no header procurado.
+**Task impaired:** reading long values on a laptop and concentrating on the header being sought.
 
-**Alteração concreta:** preencher a área útil, usar fonte do sistema de 13 px nos controles e mono de 11–12 px nos dados conforme a coluna; elevar valores prioritários a 12 px. Remover moldura/sombra e controles de janela simulados no desktop. Evidência contextual curta junto da tabela, detalhes de evento/correlação em Evidência. Busca local por nome/valor. Pseudoheaders recolhíveis com contagem e índices explícitos; normalização continua opt-in e rotulada. Soluções: [detalhe](after/03-detalhe-1440.jpg), [1280 × 800](after/03-detalhe-1280.jpg).
+**Concrete change:** fill the usable area, use a 13 px system font in controls and 11–12 px mono for data depending on the column; raise priority values to 12 px. Remove the frame/shadow and simulated window controls on desktop. Short contextual evidence next to the table, event/correlation details in Evidence. Local search by name/value. Collapsible pseudoheaders with count and explicit indices; normalization remains opt-in and labeled. Solutions: [detail](after/03-detalhe-1440.jpg), [1280 × 800](after/03-detalhe-1280.jpg).
 
-**Benefício esperado:** mais largura para valores e menos esforço para encontrar um header.
+**Expected benefit:** more width for values and less effort to find a header.
 
-**Custo/tradeoff:** eventos completos e pseudoheaders exigem expansão. Não ocultar avisos graves/ambiguidade relevante da chamada; o painel avançado deve preservar os dados atuais. A barra de janela no protótipo web é ilustração do shell, não um segundo conjunto a implementar em Tauri.
+**Cost/tradeoff:** full events and pseudoheaders require expansion. Do not hide serious warnings/relevant ambiguity of the call; the advanced panel must preserve the current data. The window bar in the web prototype is an illustration of the shell, not a second set to implement in Tauri.
 
-### P1 · 08 — A cópia funciona sem confirmação no local da ação
+### P1 · 08 — Copy works without confirmation at the place of the action
 
-**Problema observado:** botões de cópia existem em `HeaderBlock`; a mensagem é gravada em `notice`, mas o aviso é renderizado apenas na vista de sessão. Ao copiar no detalhe, não apareceu confirmação visível. Cookies parseados não têm ação equivalente de cópia por par. Evidências: [headers](before/02-detalhe-1440.jpg), [cookies](before/03-cookies-1440.jpg).
+**Observed problem:** copy buttons exist in `HeaderBlock`; the message is written to `notice`, but the notice is rendered only in the session view. When copying in the detail, no visible confirmation appeared. Parsed cookies have no equivalent per-pair copy action. Evidence: [headers](before/02-detalhe-1440.jpg), [cookies](before/03-cookies-1440.jpg).
 
-**Tarefa prejudicada:** transferir um valor exato ao scraper sem repetir cliques ou selecionar texto longo manualmente.
+**Task impaired:** transferring an exact value to the scraper without repeating clicks or manually selecting long text.
 
-**Alteração concreta:** status de cópia global, curto e acessível via `role=status`, sem mover a tabela; botões identificados em foco/hover e cópia do valor completo. Em cookies, permitir copiar par, valor ou campo bruto; não concatenar Set-Cookie. Soluções: [cookies](after/05-cookies-1440.jpg), protótipo interativo.
+**Concrete change:** a global copy status, short and accessible via `role=status`, without moving the table; buttons identified on focus/hover and copy of the full value. In cookies, allow copying pair, value or raw field; do not concatenate Set-Cookie. Solutions: [cookies](after/05-cookies-1440.jpg), interactive prototype.
 
-**Benefício esperado:** confirmar a ação e reduzir erro de seleção parcial.
+**Expected benefit:** confirm the action and reduce partial-selection errors.
 
-**Custo/tradeoff:** mais controles por tabela; usar rótulos acessíveis por ocorrência e manter texto selecionável. A confirmação expira; falha de clipboard precisa oferecer seleção manual.
+**Cost/tradeoff:** more controls per table; use accessible labels per occurrence and keep text selectable. The confirmation expires; a clipboard failure must offer manual selection.
 
-### P1 · 09 — O fluxo termina antes da transformação em código
+### P1 · 09 — The flow ends before the transformation into code
 
-**Problema observado:** não encontrei exportar cURL/Python na interface nem command de exportação na ponte. Os exportadores existem em `core/src/export/`.
+**Observed problem:** I did not find export cURL/Python in the interface nor an export command in the bridge. The exporters exist in `core/src/export/`.
 
-**Tarefa prejudicada:** levar uma chamada investigada para uma reprodução fora do navegador.
+**Task impaired:** taking an investigated call to a reproduction outside the browser.
 
-**Alteração concreta:** botão “Código…” no detalhe e na referência A, abrindo prévia e explicação das limitações antes de copiar/salvar. Ligar aos exportadores existentes e seus avisos sobre corpos, pseudoheaders e protocolo. Não prometer preservação no fio por apresentar uma lista ordenada de headers no script. Solução: [prévia de código](after/08-codigo-1440.jpg).
+**Concrete change:** a "Code…" button in the detail and in the A reference, opening a preview and an explanation of the limitations before copying/saving. Connect to the existing exporters and their warnings about bodies, pseudoheaders and protocol. Do not promise wire preservation by presenting an ordered list of headers in the script. Solution: [code preview](after/08-codigo-1440.jpg).
 
-**Benefício esperado:** completar o percurso de inspeção para reprodução.
+**Expected benefit:** complete the path from inspection to reproduction.
 
-**Custo/tradeoff:** necessita novos commands/ponte Tauri sobre funções existentes; não é apenas CSS. O protótipo gera somente um exemplo cURL local da fixture e identifica essa limitação. Python no produto deve usar o exportador atual, sem conversão paralela no frontend.
+**Cost/tradeoff:** needs new Tauri commands/bridge over existing functions; it is not just CSS. The prototype generates only a local cURL example from the fixture and identifies this limitation. Python in the product must use the current exporter, without a parallel conversion in the frontend.
 
-### P2 · 10 — Persistência existente é pouco explicada; erros podem orientar melhor a recuperação
+### P2 · 10 — Existing persistence is poorly explained; errors could better guide recovery
 
-**Problema observado:** a importação salva automaticamente e reabre por diálogo de pasta. O caminho aparece como texto extenso no banner. Não há “Salvar como”. O HAR inválido mostra motivo e mantém a sessão, o que deve ser preservado. Evidências: [reabertura](before/10-desktop-sessao-reaberta.png), [erro](before/11-desktop-erro-importacao.png).
+**Observed problem:** the import saves automatically and reopens through a folder dialog. The path appears as long text in the banner. There is no "Save as". The invalid HAR shows the reason and keeps the session, which must be preserved. Evidence: [reopening](before/10-desktop-sessao-reaberta.png), [error](before/11-desktop-erro-importacao.png).
 
-**Tarefa prejudicada:** saber se o trabalho está salvo e repetir uma importação que falhou.
+**Task impaired:** knowing whether the work is saved and repeating an import that failed.
 
-**Alteração concreta:** “Salva localmente” e “Mostrar no Finder” próximos do contexto da sessão, usando `reveal_path` existente; separar erro de importação de falha HTTP na lista. “Tentar outro arquivo” no erro. Se houver “Salvar cópia”, explicar que copia bundle e anexos, com escopo e destino claros. No protótipo o botão baixa JSON de demonstração, expressamente diferente do v1.
+**Concrete change:** "Saved locally" and "Show in Finder" near the session context, using the existing `reveal_path`; separate import error from HTTP failure in the list. "Try another file" in the error. If there is a "Save copy", explain that it copies bundle and attachments, with clear scope and destination. In the prototype the button downloads demonstration JSON, expressly different from v1.
 
-**Benefício esperado:** reduzir dúvida sobre perda de dados e tornar a recuperação direta.
+**Expected benefit:** reduce doubt about data loss and make recovery direct.
 
-**Custo/tradeoff:** “Mostrar no Finder” é integração existente; “Salvar como” completo exige operação de cópia do bundle e diálogo de destino, ainda não implementada. Nenhuma dessas ausências deve impedir a melhoria da inspeção.
+**Cost/tradeoff:** "Show in Finder" is an existing integration; a full "Save as" requires a bundle copy operation and a destination dialog, not yet implemented. None of these absences should block the inspection improvement.
 
-## Fidelidade: regras da direção escolhida
+## Fidelity: rules of the chosen direction
 
-A apresentação tem dois eixos, não quatro badges simultâneos:
+The presentation has two axes, not four simultaneous badges:
 
-| Situação | Texto junto do dado | Detalhe sob demanda |
+| Situation | Text next to the data | Detail on demand |
 |---|---|---|
-| Array disponível, ordem registrada | “Sequência da fonte” | Fonte, evento, direção e índices |
-| Ordem de transmissão explicitamente comprovada no escopo suportado | “Transmissão confirmada” | Evidência, versão do navegador, protocolo, método e limites |
-| Campos disponíveis, comprovação ausente/parcial | “Transmissão não verificada” | O que está disponível e o que falta; parcial continua não confirmada |
-| Campo/sequência não fornecido | “Sequência indisponível” | Motivo; não confundir com header legitimamente ausente |
-| Visão derivada | “Normalizada · alfabética” | Agrupamento, multiplicidade, índices de origem; nunca “original” |
+| Array available, order recorded | "Source sequence" | Source, event, direction and indices |
+| Transmission order explicitly proven in the supported scope | "Transmission confirmed" | Evidence, browser version, protocol, method and limits |
+| Fields available, proof absent/partial | "Transmission not verified" | What is available and what is missing; partial remains unconfirmed |
+| Field/sequence not provided | "Sequence unavailable" | Reason; do not confuse with a legitimately absent header |
+| Derived view | "Normalized · alphabetical" | Grouping, multiplicity, source indices; never "original" |
 
-O significado de `verified` precisa ser auditado antes de gerar a segunda linha. O próprio material do repositório distingue limitações de CDP e de request h2/h3. A proposta não declara nenhuma transmissão confirmada: todos os exemplos são sintéticos.
+The meaning of `verified` needs to be audited before generating the second line. The repository's own material distinguishes limitations of CDP and of h2/h3 requests. The proposal does not declare any transmission confirmed: all the examples are synthetic.
 
-Preservar em produção: pares repetidos; grupo de pseudoheaders; Cookie original, pares parseados e linhas transmitidas quando houver; Set-Cookie independentes com atributos e erro de parse; cookies enviados versus recebidos versus armazenados; protocolo por chamada; anúncio de h3 em Alt-Svc separado do uso observado. A proposta mantém os dois primeiros tipos de cookies e explica que snapshot de armazenados e linhas do fio estão indisponíveis na fixture.
+Preserve in production: repeated pairs; pseudoheader group; original Cookie, parsed pairs and transmitted lines when they exist; independent Set-Cookie with attributes and parse error; sent versus received versus stored cookies; protocol per call; h3 announcement in Alt-Svc separate from observed use. The proposal keeps the first two types of cookies and explains that a snapshot of stored ones and wire lines are unavailable in the fixture.
 
-## Proposta visual e percurso executável
+## Visual proposal and executable journey
 
-Abra [o protótipo](http://127.0.0.1:4174/?view=entry) com o servidor local ativo. [Instruções completas](proposal/README.md).
+Open [the prototype](http://127.0.0.1:4174/?view=entry) with the local server active. [Full instructions](proposal/README.md).
 
-![Entrada e abertura de sessão](after/01-entrada-1440.jpg)
+![Entry and session opening](after/01-entrada-1440.jpg)
 
-![Sessão com muitos assets e APIs](after/02-sessao-1440.jpg)
+![Session with many assets and APIs](after/02-sessao-1440.jpg)
 
-![Detalhe com evidência e headers repetidos](after/03-detalhe-1440.jpg)
+![Detail with evidence and repeated headers](after/03-detalhe-1440.jpg)
 
-![Comparação navegador e scraper](after/04-comparacao-1440.jpg)
+![Browser and scraper comparison](after/04-comparacao-1440.jpg)
 
-A sessão fictícia tem 64 registros: 55 assets, um documento e oito chamadas Fetch. #18 e #64 usam o mesmo endpoint; A envia `session` e página 1; B omite `session`, usa página 2 e retorna 403. Há Accept repetido, dois Set-Cookie independentes, valores/URLs extensos, h1/h2/h3 atribuídos pela fixture e anúncio Alt-Svc sem promovê-lo a protocolo da chamada.
+The fictitious session has 64 records: 55 assets, one document and eight Fetch calls. #18 and #64 use the same endpoint; A sends `session` and page 1; B omits `session`, uses page 2 and returns 403. There is a repeated Accept, two independent Set-Cookie, long values/URLs, h1/h2/h3 assigned by the fixture and an Alt-Svc announcement without promoting it to the call's protocol.
 
-O erro 403 **não é atribuído causalmente** ao cookie, protocolo ou header diferente: a comparação descreve diferenças, sem diagnosticar um mecanismo de bloqueio.
+The 403 error **is not causally attributed** to the cookie, protocol or differing header: the comparison describes differences, without diagnosing a blocking mechanism.
 
-## Verificação e limites
+## Verification and limits
 
-- As quatro vistas finais foram capturadas e examinadas em **1440 × 900 e 1280 × 800**. Documento não excede o viewport; regiões de lista/detalhe/diff têm rolagem própria. Dados longos quebram linha no detalhe e são abreviados na lista, com URL completa disponível. Corrigi seleção fora de vista, cabeçalho sticky, unidade de tempo quebrada e altura útil após abrir as imagens.
-- Validados no protótipo: filtro de APIs, busca por URL, setas/Enter na lista, abas com setas, busca de header mantendo ocorrência/índice, cópia exata de `text/plain;q=0.8`, explicação de evidência, normalização rotulada, categorias de comparação, inversão A/B e cópia cURL.
-- O download de JSON ocorreu e o arquivo foi comparado à fixture: 64 registros idênticos. O evento de download e o seletor de upload da automação do navegador deram timeout; portanto **a reabertura desse JSON pelo protótipo não foi validada de ponta a ponta**. A reabertura de sessão v1 pelo aplicativo nativo foi validada separadamente.
-- Não houve estudo com usuários, VoiceOver completo, zoom de texto, captura real, teste de Intel ou benchmark da proposta com 12 mil registros. A virtualização existente deve ser preservada.
-- Erro de importação nativo foi observado. Estados longos de carregamento e gravação real não foram exercitados; sua avaliação deriva do código. A simulação de captura do protótipo não é evidência do capturador.
-- Nenhum arquivo de produção foi editado. O build isolado gerou arquivos ignorados em `app/dist`/`src-tauri/target`; os artefatos novos ficam nesta pasta. Sessões nativas de teste estão no identificador isolado.
+- The four final views were captured and examined at **1440 × 900 and 1280 × 800**. The document does not exceed the viewport; list/detail/diff regions have their own scrolling. Long data wraps in the detail and is abbreviated in the list, with the full URL available. I fixed out-of-view selection, sticky header, broken time unit and usable height after opening the images.
+- Validated in the prototype: API filter, URL search, arrows/Enter in the list, tabs with arrows, header search keeping occurrence/index, exact copy of `text/plain;q=0.8`, evidence explanation, labeled normalization, comparison categories, A/B inversion and cURL copy.
+- The JSON download occurred and the file was compared to the fixture: 64 identical records. The download event and the upload selector of the browser automation timed out; therefore **reopening that JSON in the prototype was not validated end to end**. Reopening a v1 session in the native application was validated separately.
+- There was no user study, full VoiceOver, text zoom, real capture, Intel test or benchmark of the proposal with 12 thousand records. The existing virtualization must be preserved.
+- A native import error was observed. Long loading and real recording states were not exercised; their evaluation derives from the code. The prototype's capture simulation is not evidence of the capturer.
+- No production file was edited. The isolated build generated ignored files in `app/dist`/`src-tauri/target`; the new artifacts stay in this folder. Native test sessions are under the isolated identifier.
 
-## Referências de apoio
+## Supporting references
 
-A recomendação de comandos e foco por teclado acompanha as [Apple HIG — Keyboards](https://developer.apple.com/design/human-interface-guidelines/keyboards/). Busca por propriedades, lista de requisições e filtros por tipo são padrões documentados no [Chrome DevTools — Network reference](https://developer.chrome.com/docs/devtools/network/reference). Essas referências apoiam familiaridade de interação; os problemas listados acima vêm da execução e do código do ScrapeLens, não de uma comparação abstrata com concorrentes.
+The recommendation of keyboard commands and focus follows the [Apple HIG — Keyboards](https://developer.apple.com/design/human-interface-guidelines/keyboards/). Search by properties, request list and filters by type are documented patterns in the [Chrome DevTools — Network reference](https://developer.chrome.com/docs/devtools/network/reference). These references support interaction familiarity; the problems listed above come from the execution and the code of ScrapeLens, not from an abstract comparison with competitors.
 
-Foi aplicado o princípio de hierarquia por tarefa da skill `revenue-centric-design` (“remover informação para orientar a ação”). Não foram aplicadas técnicas de conversão, monetização ou landing page a esta ferramenta técnica.
+The principle of hierarchy by task from the `revenue-centric-design` skill ("remove information to guide action") was applied. No conversion, monetization or landing page techniques were applied to this technical tool.
