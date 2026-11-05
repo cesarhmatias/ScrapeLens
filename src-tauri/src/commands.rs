@@ -32,6 +32,10 @@ pub struct SessionPayload {
     pub synthetic: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notice: Option<String>,
+    /// What the cookie import of the capture recorded (undecryptable or zero imported).
+    /// Absent for sessions without a browser import and for sessions from older captures.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cookie_import: Option<crate::cookie_import::CookieImportReport>,
     pub pending: bool,
 }
 
@@ -82,6 +86,7 @@ pub fn demo_session() -> Result<SessionPayload, String> {
         session_dir: None,
         synthetic: true,
         notice: None,
+        cookie_import: None,
         pending: false,
     })
 }
@@ -182,6 +187,7 @@ pub(crate) fn header_payload(
         session_dir: Some(session_dir.display().to_string()),
         synthetic,
         notice: Some(notice(requests, partial)),
+        cookie_import: crate::cookie_import::read_report(session_dir),
         pending: false,
     })
 }
@@ -647,6 +653,7 @@ pub fn start_session(
                 start_url_for_notice
             )
         }) + &cookie_notice),
+        cookie_import: None,
         pending: false,
     })
 }

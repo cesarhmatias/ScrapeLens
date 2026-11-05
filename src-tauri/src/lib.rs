@@ -10,6 +10,7 @@ pub mod capture;
 pub mod chrome;
 pub mod cli;
 pub mod commands;
+pub mod cookie_import;
 pub mod export;
 pub mod listing;
 pub mod menu;

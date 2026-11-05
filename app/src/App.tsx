@@ -30,6 +30,7 @@ import { TimelineView, ValidationView } from "./Timeline";
 import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibleBlock, useAssess, type OutcomeMap } from "./assess";
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
+import { cookieImportNotice, type CookieImportReport } from "./cookieImport";
 import { IS_MAC, activeFilterLabels, outcomeChipDisabled, PagedList, sessionIsRecording, shortcutLabel } from "./listView";
 import { adaptRequestDetail, adaptSession, protocolText, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
@@ -1629,6 +1630,8 @@ export default function App() {
   const [loaded, setLoaded] = useState<AdaptedSession>(() =>
     adaptSession(demoRaw as unknown as SessionV1, { attachments: demoAttachments as Record<string, string> }),
   );
+  const [cookieImport, setCookieImport] = useState<CookieImportReport | null>(null);
+  const cookieImportView = useMemo(() => cookieImportNotice(cookieImport), [cookieImport]);
   const [notice, setNotice] = useState<{
     kind: "info" | "error" | "success";
     text: string;
@@ -1785,6 +1788,7 @@ export default function App() {
     setProtocol("all");
     setSelectedId(payload.session.requests?.[0]?.id ?? "");
     setIsLargeDemo(false);
+    setCookieImport(payload.cookieImport ?? null);
     if (payload.notice) setNotice({ kind: "info", text: payload.notice });
   }, []);
 
@@ -1914,6 +1918,7 @@ export default function App() {
         events: 0,
         pageUrl: resolved.url,
       });
+      setCookieImport(null);
       setNotice({ kind: "info", text: payload.notice ?? "Capture started. Browse in Chrome and click Stop." });
     } catch (error) {
       const info = await bridge.detectChrome().catch(() => null);
@@ -2552,6 +2557,20 @@ export default function App() {
                 >
                   Stop and open
                 </button>
+              </div>
+            )}
+
+            {cookieImportView && (
+              <div
+                className={`notice ${cookieImportView.tone === "warning" ? "notice-warn" : "notice-info"} cookie-import`}
+                role="status"
+              >
+                <span className="notice-icon">{cookieImportView.tone === "warning" ? "!" : "i"}</span>
+                <div>
+                  <strong>{cookieImportView.title}</strong>
+                  <span className="notice-detail"> {cookieImportView.detail}</span>
+                  {cookieImportView.action && <span className="notice-detail"> {cookieImportView.action}</span>}
+                </div>
               </div>
             )}
 

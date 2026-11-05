@@ -17,12 +17,15 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import type { RawRequestDetail, RawRequestSummary, SessionV1, TargetProvenance } from "./v1/types";
 import type { AssessResult, VerdictKind } from "./assess";
 import type { ComparePage, CompareSummary, FieldDiff, PrimingChain, ValueOrigins } from "./flow";
+import type { CookieImportReport } from "./cookieImport";
 
 export interface SessionPayload {
   session: SessionV1;
   sessionDir?: string;
   synthetic: boolean;
   notice?: string;
+  /** Cookie import of a live capture; absent when there was none or the capture is older. */
+  cookieImport?: CookieImportReport;
   pending?: boolean;
 }
 
