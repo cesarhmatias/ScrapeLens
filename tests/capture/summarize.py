@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Resume uma execução de tests/capture/run-cycle.sh em run.json.
+"""Summarizes a tests/capture/run-cycle.sh run into run.json.
 
-Lê as sessões importadas pelo core, conta requisições/ambiguras/redirects e
-registra flags do Chrome, tamanhos e comandos. Nenhuma rede é usada.
+Reads the sessions imported by the core, counts requests/ambiguous/redirects and
+records Chrome flags, sizes and commands. No network is used.
 
-Uso: summarize.py RUN_DIR --chrome-version "..." --ports 9781
+Usage: summarize.py RUN_DIR --chrome-version "..." --ports 9781
 """
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def main() -> int:
         "chromeVersion": args.chrome_version.replace("Google Chrome ", "").strip(),
         "ports": int(args.ports),
         "certificateInstalled": False,
-        "networkPolicy": "Chrome com --host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+        "networkPolicy": "Chrome with --host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
         "captures": captures,
         "har": har,
         **{key: totals[key] for key in ("requests", "ambiguous", "redirects",
@@ -109,15 +109,15 @@ def main() -> int:
     }
     (run / "run.json").write_text(json.dumps(summary, indent=1, ensure_ascii=False) + "\n",
                                   encoding="utf-8")
-    print(f"capturas: {len(captures)} · requisições: {totals['requests']} · "
-          f"ambíguas: {totals['ambiguous']} · redirects: {totals['redirects']} · "
+    print(f"captures: {len(captures)} · requests: {totals['requests']} · "
+          f"ambiguous: {totals['ambiguous']} · redirects: {totals['redirects']} · "
           f"h3 streams: {totals['h3StreamSessions']}")
     for capture in captures:
         print(f"  {capture['name']:5} {capture['protocol']:2} {capture['requests']:3} req "
               f"{capture['protocols']} completeness={capture['completeness']} "
               f"ambiguous={capture['ambiguous']} verified={capture['verifiedRequestViews']}")
     if har:
-        print(f"  HAR   importado: {har['requests']} requisições ({har['completeness']})")
+        print(f"  HAR   imported: {har['requests']} requests ({har['completeness']})")
     return 0
 
 

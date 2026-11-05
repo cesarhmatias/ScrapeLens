@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Sonda de navigator.webdriver para a rodada 14 (só 127.0.0.1).
+"""navigator.webdriver probe for round 14 (127.0.0.1 only).
 
-GET /          -> página que lê navigator.webdriver e envia /wd?webdriver=<valor>
-GET /wd?...    -> registra o valor em PROBE_LOG (jsonl) e responde 204.
-Uso: probe_server.py <porta> <arquivo-de-log>
+GET /          -> page that reads navigator.webdriver and sends /wd?webdriver=<value>
+GET /wd?...    -> records the value in PROBE_LOG (jsonl) and replies 204.
+Usage: probe_server.py <port> <log-file>
 """
 import http.server, json, sys, urllib.parse
 
 PORT = int(sys.argv[1]); LOG = sys.argv[2]
-PAGE = b"<html><body>sonda<script>fetch('/wd?webdriver='+navigator.webdriver)</script></body></html>"
+PAGE = b"<html><body>probe<script>fetch('/wd?webdriver='+navigator.webdriver)</script></body></html>"
 
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Ciclo real de captura do ScrapeLens no macOS.
+# Real ScrapeLens capture cycle on macOS.
 #
-# Sobe os servidores locais de teste, captura Chrome real (CDP + NetLog) em h1,
-# h2 e h3 (QUIC forçado no origin do h2), importa as capturas com o CLI do core,
-# importa o HAR nativo e grava tests/capture/runs/<RUN_ID>/run.json.
+# Starts the local test servers, captures real Chrome (CDP + NetLog) on h1,
+# h2 and h3 (QUIC forced on the h2 origin), imports the captures with the core CLI,
+# imports the native HAR and writes tests/capture/runs/<RUN_ID>/run.json.
 #
-# Requisitos: macOS, Chrome instalado, Rust/cargo, Node 22+, curl.
-# Nada é instalado no sistema; o certificado de teste é dispensado por SPKI.
-# Rede: Chrome bloqueado por --host-resolver-rules exceto 127.0.0.1.
+# Requirements: macOS, installed Chrome, Rust/cargo, Node 22+, curl.
+# Nothing is installed on the system; the test certificate is waived by SPKI.
+# Network: Chrome blocked by --host-resolver-rules except 127.0.0.1.
 #
-# Uso: tests/capture/run-cycle.sh [RUN_ID] [BASE_PORT]
+# Usage: tests/capture/run-cycle.sh [RUN_ID] [BASE_PORT]
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -25,8 +25,8 @@ SERVER="${ROOT}/testserver/target/release/scrapelens-testserver"
 CHROME="${CHROME_BIN:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
 NODE="${NODE_BIN:-$(command -v node)}"
 
-if [[ ! -x "${CHROME}" ]]; then echo "Chrome não encontrado em ${CHROME}" >&2; exit 1; fi
-if [[ -z "${NODE}" ]]; then echo "node não encontrado" >&2; exit 1; fi
+if [[ ! -x "${CHROME}" ]]; then echo "Chrome not found at ${CHROME}" >&2; exit 1; fi
+if [[ -z "${NODE}" ]]; then echo "node not found" >&2; exit 1; fi
 
 echo "== build (offline)"
 (cd core && cargo build --release --offline --quiet)
@@ -35,7 +35,7 @@ echo "== build (offline)"
 rm -rf "${RUN}"
 mkdir -p "${RUN}/server"
 
-echo "== servidores locais: h1 ${H1} · h2 ${H2} · h3 ${H3}"
+echo "== local servers: h1 ${H1} · h2 ${H2} · h3 ${H3}"
 "${SERVER}" serve --run-id "${RUN_ID}" --evidence "${RUN}/server" \
   --h1 "${H1}" --h2 "${H2}" --h3 "${H3}" \
   >"${RUN}/server/server.log" 2>&1 &
@@ -56,7 +56,7 @@ curl -fsS -m 2 "http://${H1}/healthz" >/dev/null
 
 capture() {
   local name="$1" protocol="$2" urls="$3" force="${4:-}" har="${5:-}"
-  echo "== captura ${name} (${protocol})"
+  echo "== capture ${name} (${protocol})"
   local extra=() harflag=()
   [[ -n "${force}" ]] && extra=(--force-quic "${force}")
   [[ -n "${har}" ]] && harflag=(--har)
@@ -69,15 +69,15 @@ capture() {
     --out "${RUN}/session-${name}" >"${RUN}/${name}.import.json"
 }
 
-# h1 (documento, cookies, redirects, POSTs e simultâneas) + h2/TLS.
+# h1 (document, cookies, redirects, POSTs and concurrent requests) + h2/TLS.
 capture h1h2 h2 \
   "http://${H1}/setcookie,http://${H1}/page,http://${H1}/redirect?n=2,https://${H2}/echo-order?case=real-h2" "" har
 
-# h3/QUIC: força QUIC no origin do h2, que também escuta UDP h3.
+# h3/QUIC: forces QUIC on the h2 origin, which also listens on UDP h3.
 capture h3 h3 "https://${H2}/page,https://${H2}/echo-order?case=real-h3" "${H2}"
 
-# HAR realista a partir do CDP (o Chrome 156 não expõe Network.getHAR;
-# o script declara a origem no creator e a ordem é a do map CDP, não a do fio).
+# Realistic HAR derived from CDP (Chrome 156 does not expose Network.getHAR;
+# the script declares the origin in the creator, and the order is that of the CDP map, not of the wire).
 if [[ -f "${RUN}/h1h2.cdp-events.jsonl" && -f experiments/har_from_cdp.mjs ]]; then
   mkdir -p "${RUN}/har-derive"
   cp "${RUN}/h1h2.cdp-events.jsonl" "${RUN}/har-derive/cdp-events.jsonl"
@@ -89,11 +89,11 @@ kill "${SERVER_PID}" 2>/dev/null || true
 wait "${SERVER_PID}" 2>/dev/null || true
 trap - EXIT
 
-echo "== resumo"
+echo "== summary"
 python3 tests/capture/summarize.py "${RUN}" --chrome-version "$("${CHROME}" --version 2>/dev/null || echo unknown)" \
   --ports "${BASE_PORT}" | tee "${RUN}/summary.txt"
 
-# Evidência pequena e estável para commit (as sessões brutas ficam em runs/).
+# Small, stable evidence for commit (raw sessions stay in runs/).
 LATEST="tests/results/capture-latest"
 rm -rf "${LATEST}"
 mkdir -p "${LATEST}"
@@ -104,4 +104,4 @@ done
 echo "${RUN}" > tests/results/last-capture.txt
 echo
 echo "run: ${RUN}/run.json"
-echo "evidência: ${LATEST}/run.json"
+echo "evidence: ${LATEST}/run.json"

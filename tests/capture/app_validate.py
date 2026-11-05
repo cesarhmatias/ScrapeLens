@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Valida o ciclo real de captura feito pelo app ScrapeLens empacotado.
+"""Validates the real capture cycle performed by the packaged ScrapeLens app.
 
-Lê o bundle `.app`, a sessão de captura ao vivo e as sessões HAR/NetLog que o
-próprio app gravou em ~/Library/Application Support/app.scrapelens.desktop/sessions,
-confere estrutura, permissões, fidelidade e ausência de rótulos demo, e grava
-`run.json` para o critério 9 da bateria de aceite.
+Reads the `.app` bundle, the live capture session and the HAR/NetLog sessions that the
+app itself recorded in ~/Library/Application Support/app.scrapelens.desktop/sessions,
+checks structure, permissions, fidelity and the absence of demo labels, and writes
+`run.json` for criterion 9 of the acceptance suite.
 
-Uso:
+Usage:
   python3 tests/capture/app_validate.py \
     --run-dir tests/results/app-latest \
     --capture-id capture-1793058850184 \
@@ -14,9 +14,9 @@ Uso:
     --screenshot tests/results/app-latest/screenshot-app-live.png \
     --imports-screenshot tests/results/app-latest/screenshot-app-imports.png
 
-As importações HAR/NetLog comparam a sessão gravada com os arquivos preparados em
-`~/Projects/scrapelens-import-tmp` (`--import-sources`): o HAR pela sequência
-método/URL dos `log.entries` e o NetLog pelo SHA-256 do `netlog.json` persistido.
+The HAR/NetLog imports compare the recorded session with the files prepared in
+`~/Projects/scrapelens-import-tmp` (`--import-sources`): the HAR by the method/URL
+sequence of the `log.entries`, and the NetLog by the SHA-256 of the persisted `netlog.json`.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def run(*args: str) -> subprocess.CompletedProcess:
 def inspect(session_dir: pathlib.Path) -> dict:
     proc = run(str(CORE), "inspect", str(session_dir))
     if proc.returncode != 0:
-        raise SystemExit(f"inspect falhou em {session_dir}: {proc.stderr.strip()}")
+        raise SystemExit(f"inspect failed for {session_dir}: {proc.stderr.strip()}")
     return json.loads(proc.stdout)["session"]
 
 
@@ -166,7 +166,7 @@ def session_facts(session_dir: pathlib.Path) -> dict:
 
 
 def import_source_check(kind: str, session_dir: pathlib.Path, source_dir: pathlib.Path) -> dict:
-    """Confere se a sessão importada veio do arquivo preparado para a UI."""
+    """Checks that the imported session came from the file prepared for the UI."""
     if kind == "har":
         source = source_dir / "har-derived.json"
         if not source.exists():
@@ -199,7 +199,7 @@ def import_source_check(kind: str, session_dir: pathlib.Path, source_dir: pathli
 
 
 def duplicate_imports(sessions: pathlib.Path, kind: str, session_dir: pathlib.Path) -> list[str]:
-    """Lista outras sessões do mesmo tipo com session.json idêntico (repetição da importação)."""
+    """Lists other sessions of the same kind with an identical session.json (repeated import)."""
     target = sha256(session_dir / "session.json")
     duplicates: list[str] = []
     for candidate in sorted(sessions.glob(kind + "-*")):
@@ -242,15 +242,15 @@ def main() -> int:
     har = pick("har-", args.har_id)
     netlog = pick("netlog-", args.netlog_id)
     if capture is None or not capture.exists():
-        raise SystemExit("sessão de captura do app não encontrada")
+        raise SystemExit("app capture session not found")
 
     facts = {
         "runId": run_dir.name,
         "generatedAt": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "gui": {
-            "startedFrom": "ScrapeLens.app (release, pid capturado pela janela)",
-            "startButton": "Iniciar sessão",
-            "stopButton": "Encerrar",
+            "startedFrom": "ScrapeLens.app (release, pid captured by the window)",
+            "startButton": "Start session",
+            "stopButton": "Stop",
             "startUrl": args.start_url,
             "screenshot": str(pathlib.Path(args.screenshot).resolve()) if args.screenshot else None,
             "screenshotExists": bool(args.screenshot and pathlib.Path(args.screenshot).exists()),
@@ -288,16 +288,16 @@ def main() -> int:
 
     capture_facts = facts["capture"]
     print(f"bundle: {facts['bundle']['sizeBytes'] / (1024 * 1024):.2f} MiB · "
-          f"{'arm64' if facts['bundle']['arm64'] else 'arquitetura desconhecida'} · "
-          f"{'binário único' if facts['bundle']['singleBinary'] else 'binários: ' + str(facts['bundle']['binaries'])} · "
-          f"{facts['bundle']['signature']} · executável {facts['bundle']['executableSha256']} "
+          f"{'arm64' if facts['bundle']['arm64'] else 'unknown architecture'} · "
+          f"{'single binary' if facts['bundle']['singleBinary'] else 'binaries: ' + str(facts['bundle']['binaries'])} · "
+          f"{facts['bundle']['signature']} · executable {facts['bundle']['executableSha256']} "
           f"({facts['bundle']['executableBytes']} bytes)")
-    print(f"captura pelo app: {capture_facts['id']} · {capture_facts['requests']} requisições · "
+    print(f"app capture: {capture_facts['id']} · {capture_facts['requests']} requests · "
           f"{capture_facts['completeness']} · {capture_facts['protocols']} · "
-          f"{capture_facts['ambiguous'].__len__()} ambíguas · {capture_facts['verifiedHeaderEntries']} headers verificados")
+          f"{capture_facts['ambiguous'].__len__()} ambiguous · {capture_facts['verifiedHeaderEntries']} verified headers")
     for name, data in facts["imports"].items():
         if data:
-            print(f"importação {name}: {data['requests']} requisições · {data['completeness']} · "
+            print(f"import {name}: {data['requests']} requests · {data['completeness']} · "
                   f"labels={data['labels']} · {data['protocols']}")
     return 0
 

@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 /**
- * Ciclo real de captura do ScrapeLens no macOS.
+ * Real ScrapeLens capture cycle on macOS.
  *
- * Abre o Chrome com perfil temporário dedicado, rede bloqueada exceto loopback,
- * NetLog completo e debugging apenas em 127.0.0.1; navega nas URLs pedidas,
- * grava `cdp-events.jsonl`, `chrome-netlog.json` e o HAR nativo; encerra o
- * navegador de forma graciosa para o NetLog ser finalizado.
+ * Opens Chrome with a dedicated temporary profile, network blocked except loopback,
+ * full NetLog and debugging only on 127.0.0.1; navigates the requested URLs,
+ * writes `cdp-events.jsonl`, `chrome-netlog.json` and the native HAR; shuts down the
+ * browser gracefully so the NetLog is finalized.
  *
- * Sem certificado instalado: o certificado de teste é dispensado por SPKI
- * (`--ignore-certificate-errors-spki-list`). QUIC não é desabilitado; no modo
- * h3 o origin é forçado a QUIC.
+ * No certificate installed: the test certificate is waived by SPKI
+ * (`--ignore-certificate-errors-spki-list`). QUIC is not disabled; in h3 mode
+ * the origin is forced to QUIC.
  *
- * Uso:
+ * Usage:
  *   node capture_cycle.mjs --outdir RUN --name h1h2 \
  *     --spki-file fixtures/tls/spki-sha256-base64.txt \
  *     --urls http://127.0.0.1:9781/setcookie,https://127.0.0.1:9782/page \
  *     [--force-quic 127.0.0.1:9782] [--port 9333] [--har]
  *
- * Saída: RUN/<name>.cdp-events.jsonl, RUN/<name>.chrome-netlog.json,
+ * Output: RUN/<name>.cdp-events.jsonl, RUN/<name>.chrome-netlog.json,
  *        RUN/<name>.meta.json e, com --har, RUN/<name>.native-har.json.
  */
 import { spawn } from "node:child_process";
@@ -42,7 +42,7 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv);
 if (!args.outdir || !args.name || !args.spkiFile || !args.urls) {
-  console.error("faltam --outdir, --name, --spki-file ou --urls");
+  console.error("missing --outdir, --name, --spki-file or --urls");
   process.exit(2);
 }
 const outdir = path.resolve(args.outdir);
@@ -101,7 +101,7 @@ async function waitForDebugger(timeoutMs = 30000) {
     }
     await sleep(150);
   }
-  throw new Error(`DevTools não respondeu: ${last}`);
+  throw new Error(`DevTools did not respond: ${last}`);
 }
 
 async function waitForExit(child, timeoutMs) {
@@ -112,7 +112,7 @@ async function waitForExit(child, timeoutMs) {
 
 function stopChild(child) {
   if (!child || child.exitCode !== null) return;
-  try { process.kill(-child.pid, "SIGTERM"); } catch { /* já saiu */ }
+  try { process.kill(-child.pid, "SIGTERM"); } catch { /* already exited */ }
 }
 
 async function main() {
@@ -208,7 +208,7 @@ async function main() {
           returnByValue: true,
         });
         probe = evaluated?.result?.value ?? null;
-      } catch { /* página sem script */ }
+      } catch { /* page without script */ }
       navigations.push({ url, errorText: navigation?.errorText ?? null, probe });
     }
 
@@ -218,7 +218,7 @@ async function main() {
         fs.writeFileSync(path.join(outdir, `${args.name}.native-har.json`), JSON.stringify(har));
         harWritten = true;
       } catch (failure) {
-        harError = `Network.getHAR indisponível: ${failure.message}`;
+        harError = `Network.getHAR unavailable: ${failure.message}`;
       }
     }
 
@@ -235,7 +235,7 @@ async function main() {
   } finally {
     stopChild(child);
     await waitForExit(child, 5000).catch(() => {});
-    // Espera o NetLog estabilizar depois do encerramento.
+    // Wait for the NetLog to settle after shutdown.
     let previous = -1;
     for (let i = 0; i < 40; i += 1) {
       const size = fs.existsSync(netlog) ? fs.statSync(netlog).size : 0;

@@ -1,46 +1,46 @@
-# tests/ — aceite do MVP ScrapeLens
+# tests/ — ScrapeLens MVP acceptance
 
-Bateria que consome o **CLI do core** (`core/target/release/scrapelens-core`), as
-fixtures sintéticas de `fixtures/aceite/` e, no critério 9, uma captura real de
-Chrome no macOS orquestrada por `tests/capture/run-cycle.sh`.
+Suite that consumes the **core CLI** (`core/target/release/scrapelens-core`), the
+synthetic fixtures in `fixtures/aceite/` and, for criterion 9, a real Chrome
+capture on macOS orchestrated by `tests/capture/run-cycle.sh`.
 
-## Comandos
+## Commands
 
 ```sh
-python3 tests/aceite/fixtures.py              # regenera fixtures/aceite (determinístico)
-python3 tests/aceite/run_acceptance.py       # 10 critérios; usa a última captura registrada
-tests/capture/run-cycle.sh                   # ciclo real Chrome/CDP/NetLog h1+h2+h3
+python3 tests/aceite/fixtures.py              # regenerates fixtures/aceite (deterministic)
+python3 tests/aceite/run_acceptance.py       # 10 criteria; uses the last recorded capture
+tests/capture/run-cycle.sh                   # real Chrome/CDP/NetLog cycle, h1+h2+h3
 python3 tests/capture/app_validate.py --run-dir tests/capture/runs/app-<id> \
   --capture-id capture-<ts> --har-id har-<id> --netlog-id netlog-<id> \
   --screenshot tests/results/app-latest/screenshot-app-live.png
 python3 tests/aceite/run_acceptance.py --capture tests/capture/runs/<id>
-python3 tests/aceite/check_multi_target.py        # captura real multi-alvo (popup, blank, OOPIF, worker, SW)
+python3 tests/aceite/check_multi_target.py        # real multi-target capture (popup, blank, OOPIF, worker, SW)
 ```
 
-Resultados: `tests/results/aceite.json` e o relatório `tests/RELATORIO.md`
-(promovível a `docs/05-aceite.md`). Código de saída ≠ 0 se algum critério falhar.
+Results: `tests/results/aceite.json` and the report `tests/RELATORIO.md`
+(promotable to `docs/05-aceite.md`). Exit code ≠ 0 if any criterion fails.
 
-## Estrutura
+## Structure
 
-| Caminho | Conteúdo |
+| Path | Content |
 |---|---|
-| `aceite/fixtures.py` | gerador das fixtures sintéticas (HAR, NetLog, CDP e sessões v1) |
-| `aceite/run_acceptance.py` | os 10 critérios, asserções e geração do relatório |
-| `aceite/check_multi_target.py` | aceite da captura multi-alvo (rodada 10): captura real contra `testserver /multi/`, 16 marcadores, tipos de alvo, corpos e service worker |
-| `capture/capture_cycle.mjs` | Chrome dedicado + CDP + NetLog; sem certificado instalado, QUIC intacto |
-| `capture/run-cycle.sh` | sobe testserver, captura h1/h2/h3, importa com o core e resume |
-| `capture/summarize.py` | métricas da captura real em `run.json` |
-| `capture/app_validate.py` | valida o ciclo ao vivo pelo `ScrapeLens.app` e as sessões HAR/NetLog que ele gravou |
-| `.work/` | sessões pequenas da execução corrente (não commitado) |
-| `capture/runs/` | sessões brutas da captura real (não commitado; regerável) |
+| `aceite/fixtures.py` | generator of the synthetic fixtures (HAR, NetLog, CDP and v1 sessions) |
+| `aceite/run_acceptance.py` | the 10 criteria, assertions and report generation |
+| `aceite/check_multi_target.py` | acceptance of the multi-target capture (round 10): real capture against `testserver /multi/`, 16 markers, target types, bodies and service worker |
+| `capture/capture_cycle.mjs` | dedicated Chrome + CDP + NetLog; no certificate installed, QUIC intact |
+| `capture/run-cycle.sh` | starts testserver, captures h1/h2/h3, imports with the core and summarizes |
+| `capture/summarize.py` | metrics of the real capture in `run.json` |
+| `capture/app_validate.py` | validates the live cycle through `ScrapeLens.app` and the HAR/NetLog sessions it recorded |
+| `.work/` | small sessions of the current run (not committed) |
+| `capture/runs/` | raw sessions of the real capture (not committed; regenerable) |
 
-O critério 9 cobre duas pernas: (a) captura própria do harness em h1/h2/h3 e
-(b) o app empacotado (`src-tauri/target/release/bundle/macos/ScrapeLens.app`),
-com Iniciar/Encerrar pela UI, sessão gravada pelo app e importações HAR/NetLog
-reais. O resumo da perna (b) fica em `tests/results/app-latest/run.json`; o
-harness o lê por padrão (ou via `--app-run`).
+Criterion 9 covers two legs: (a) the harness's own capture on h1/h2/h3 and
+(b) the packaged app (`src-tauri/target/release/bundle/macos/ScrapeLens.app`),
+with Start session/Stop through the UI, the session recorded by the app and real
+HAR/NetLog imports. The summary of leg (b) is in `tests/results/app-latest/run.json`;
+the harness reads it by default (or via `--app-run`).
 
-Tudo offline: domínios `.invalid`, servidores em `127.0.0.1`, Chrome com
-`--host-resolver-rules` bloqueando o resto. Nenhuma telemetria; nada publicado.
-As fixtures são 100% sintéticas e cada diretório traz `fixture.json` com
+Everything is offline: `.invalid` domains, servers on `127.0.0.1`, Chrome with
+`--host-resolver-rules` blocking the rest. No telemetry; nothing published.
+The fixtures are 100% synthetic and each directory carries `fixture.json` with
 `label: synthetic-fixture`.

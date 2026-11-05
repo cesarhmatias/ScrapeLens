@@ -1,38 +1,38 @@
-# Validação independente da exportação UI
+# Independent validation of UI export
 
-`cargo test --manifest-path tests/exportacao/Cargo.toml --offline` compila o
-módulo `src-tauri/src/export.rs` sem editá-lo, em um crate de testes separado.
-Os nove testes internos desse módulo também são executados; sete testes novos
-cobrem equivalência com o core, estados de corpo, erros, sanitização e links
-simbólicos em ancestrais. Nenhum código exportado é executado e não há rede.
+`cargo test --manifest-path tests/exportacao/Cargo.toml --offline` compiles the
+module `src-tauri/src/export.rs` without editing it, in a separate test crate.
+The module's nine internal tests are also run; seven new tests cover equivalence
+with the core, body states, errors, sanitization and symlinks in ancestor
+directories. No exported code is executed and there is no network.
 
-No commit de validação inicial, dois testes **falham intencionalmente para
-registrar bugs reproduzidos**; não se deve removê-los ou marcá-los ignorados
-para aprovar a funcionalidade. Relatório em `tests/results/exportacao/RELATORIO.md`.
+In the initial validation commit, two tests **fail on purpose to record
+reproduced bugs**; do not remove them or mark them ignored to approve the
+feature. Report: `tests/results/exportacao/RELATORIO.md`.
 
-## Roteiro manual único (depois da correção e novo bundle)
+## Single manual script (after the fix and a new bundle)
 
-Fixture preparada sem dados pessoais: `python3 tests/exportacao/prepare_manual.py`.
-Ela já existe em `tests/.work/exportacao-manual/source/`; o script recusa
-sobrescrevê-la. As credenciais são marcadores fictícios, domínio `.invalid`.
+Synthetic fixture without personal data: `python3 tests/exportacao/prepare_manual.py`.
+It already exists in `tests/.work/exportacao-manual/source/`; the script refuses
+to overwrite it. The credentials are fictitious markers, domain `.invalid`.
 
-1. No bundle corrigido, **Abrir captura…** → selecione a pasta
+1. In the fixed bundle, **Open capture…** → select the folder
    `/Users/cesar/Projects/scrapelens/tests/.work/exportacao-manual/source`.
-   Selecione `captured` (POST `/echo`) e abra **Exportar…**.
-2. Em cURL, **Copiar** e **Salvar…** no caminho novo
+   Select `captured` (POST `/echo`) and open **Export…**.
+2. In cURL, **Copy** and **Save…** to the new path
    `/Users/cesar/Projects/scrapelens/tests/.work/exportacao-manual/native.sh`.
-   Repita em Python no mesmo diretório com nome `native.py`. Não execute nada.
-   Cancele uma tentativa de salvar e confira que não indica arquivo salvo.
-3. Feche a exportação. **Sanitizar…** → **Escolher destino e salvar…** →
+   Repeat in Python in the same directory with the name `native.py`. Do not run anything.
+   Cancel one save attempt and check that it does not report a saved file.
+3. Close the export. **Export / Sanitize…** → **Save sanitized copy** →
    `/Users/cesar/Projects/scrapelens/tests/.work/exportacao-manual/sanitized`.
-   Clique **Abrir sessão sanitizada** e confira que a sessão está rotulada
-   sintética e os valores sensíveis estão redigidos.
-4. Execute `python3 tests/exportacao/verify_manual.py` para conferir os arquivos,
-   permissões e SHA dos originais. A cópia real deve ser conferida separadamente
-   com leitura do clipboard imediatamente após cada clique em Copiar, sem
-   substituir o clipboard por ferramenta: o script não prova essa ação.
+   Click **Open sanitized session** and check that the session is labeled
+   synthetic and the sensitive values are redacted.
+4. Run `python3 tests/exportacao/verify_manual.py` to check the files,
+   permissions and SHA of the originals. The real copy must be checked separately,
+   by reading the clipboard immediately after each click on Copy, without replacing
+   the clipboard with a tool: the script does not prove that action.
 
-Os seletores nativos ficaram fora da prova automatizada, por bloqueio já
-observado do NSSavePanel. Nenhuma tentativa de foreground foi repetida nesta
-validação. Screenshots do harness do App e seu clipboard simulado não são
-prova do diálogo/clipboard reais.
+The native selectors were left out of the automated proof, due to the block
+already observed on NSSavePanel. No foreground attempt was repeated in this
+validation. Screenshots of the App harness and its simulated clipboard are not
+proof of the real dialog/clipboard.

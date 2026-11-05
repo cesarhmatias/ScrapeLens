@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cria sessão SINTÉTICA privada e arquivos esperados; não executa exportações."""
+"""Creates a PRIVATE SYNTHETIC session and the expected files; does not run exports."""
 import json
 import hashlib
 import os
@@ -12,7 +12,7 @@ SOURCE = BASE / 'source'
 
 def main():
     if SOURCE.exists():
-        raise SystemExit(f'Origem já existe; preserve-a: {SOURCE}')
+        raise SystemExit(f'Source already exists; keep it: {SOURCE}')
     SOURCE.mkdir(parents=True, mode=0o700)
     (SOURCE / 'attachments').mkdir(mode=0o700)
     body = b'{"password":"MANUAL_BODY_ONLY_SYNTHETIC","public":"ok"}'
@@ -37,8 +37,8 @@ def main():
         path.chmod(0o600)
     manifest = {str(p.relative_to(SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest() for p in SOURCE.rglob('*') if p.is_file()}
     (BASE/'source-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    print(f'Origem sintética: {SOURCE}')
-    print(f'Destinos novos para salvar manualmente: {BASE}/native.sh, {BASE}/native.py, {BASE}/sanitized')
+    print(f'Synthetic source: {SOURCE}')
+    print(f'New destinations to save manually: {BASE}/native.sh, {BASE}/native.py, {BASE}/sanitized')
 
 if __name__ == '__main__':
     main()
