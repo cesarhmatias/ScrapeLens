@@ -1,182 +1,182 @@
-# Rodada 5 — origem dos valores (priming) e comparação entre capturas
+# Round 5 — value origin (priming) and comparison between captures
 
-## Motivo
+## Motivation
 
-Caso DETRAN-PB (`docs/05-caso-referencia-detran.md`), requisitos derivados 2,
-3 e 4: não dá para começar pela consulta. É preciso saber de onde veio cada
-valor do POST (SESSIONID, STAMP, delta, cookies) e quais valores mudam entre
-duas capturas do mesmo fluxo, para não congelar valores do HAR.
+DETRAN-PB case (`docs/05-caso-referencia-detran.md`), derived requirements 2,
+3 and 4: you cannot start from the lookup. You need to know where each POST
+value came from (SESSIONID, STAMP, delta, cookies) and which values change
+between two captures of the same flow, so as not to freeze HAR values.
 
-Fora do escopo: decodificar o Natural for Ajax, burlar /TSPD/ ou CAPTCHA,
-replay, rede externa, gerar script de priming executável (fica para a rodada
-6) e publicação.
+Out of scope: decoding Natural for Ajax, bypassing /TSPD/ or CAPTCHA,
+replay, external network, generating an executable priming script (left for
+round 6) and publication.
 
-## Ondas (máx. 3 executores)
+## Waves (max. 3 executors)
 
-- 5a: Core (origem dos valores + comparação entre capturas) e Testes (2ª
-  captura sintética do fluxo DETRAN + expectativas + script de aceite).
-- 5b: App (UI da cadeia e da comparação), depois revisão independente.
+- 5a: Core (value origin + comparison between captures) and Tests (2nd
+  synthetic capture of the DETRAN flow + expectations + acceptance script).
+- 5b: App (chain and comparison UI), then independent review.
 
-## Propriedade
+## Ownership
 
-| Dono | Caminhos |
+| Owner | Paths |
 |---|---|
 | Core | `core/` |
-| Testes | `fixtures/`, `testserver/`, `tests/` |
+| Tests | `fixtures/`, `testserver/`, `tests/` |
 | App (5b) | `app/`, `src-tauri/src/commands.rs`, `src-tauri/src/lib.rs` |
-| Líder | `docs/` |
+| Leader | `docs/` |
 
-## 1. Origem dos valores (core, `provenance` ou `flow`)
+## 1. Value origin (core, `provenance` or `flow`)
 
-API: `value_origins(session, request_id, options) -> ValueOrigins`. Para a
-requisição alvo, extrair os valores consumidos: parâmetros da query, valores
-de header (exceto os de protocolo: host, content-length, accept-*,
-user-agent, sec-*), cookies enviados e campos do corpo (form e folhas JSON).
-Em campos opacos (ex.: `XML`), os valores são procurados como substring (§1.2).
+API: `value_origins(session, request_id, options) -> ValueOrigins`. For the
+target request, extract the consumed values: query parameters, header values
+(except protocol ones: host, content-length, accept-*,
+user-agent, sec-*), sent cookies and body fields (form and JSON leaves).
+In opaque fields (e.g.: `XML`), the values are searched as a substring (§1.2).
 
-1.1 Candidatos produtores. Só valores observados ANTES da requisição alvo
-(tempo de início da tentativa, com empates explícitos) em:
-- `Set-Cookie` das respostas e cookies na URL de redirect;
-- headers de resposta (Location e headers customizados);
-- corpos de resposta: campos form-urlencoded, folhas JSON e literais de
-  string entre aspas em texto/HTML/JS, com comprimento ≥ 8;
-- requisições anteriores (valor que já circulava: origem "repetido de
-  cdp-rNNNN", não "produzido").
+1.1 Producer candidates. Only values observed BEFORE the target request
+(attempt start time, with explicit ties) in:
+- `Set-Cookie` of responses and cookies in the redirect URL;
+- response headers (Location and custom headers);
+- response bodies: form-urlencoded fields, JSON leaves and quoted
+  string literals in text/HTML/JS, with length ≥ 8;
+- earlier requests (a value that was already circulating: origin "repeated
+  from cdp-rNNNN", not "produced").
 
-1.2 Evidências, sem confundir os tipos:
-- `cookie-jar`: cookie enviado cujo valor foi definido por Set-Cookie
-  anterior (nome + valor iguais). Forte.
-- `same-field`: mesmo nome de campo e mesmo valor entre um campo de resposta e
-  um campo da requisição (ex.: STAMP). Forte. Vale para valores curtos (≥ 1),
-  porque o nome amarra.
-- `value-match`: valor de resposta com ≥ 8 caracteres encontrado na
-  requisição (inteiro ou substring de campo opaco). Médio. Registrar onde
-  apareceu (campo, offset).
-- `initiator`: iniciador do CDP (script/parser) apontando para um recurso
-  anterior. Complementar, nunca prova de origem de um valor.
-- Sem candidato: `sem origem observada`. Pode ser constante, entrada do
-  usuário (placa) ou valor gerado no cliente (JS). Nunca inventar a origem.
-- Vários candidatos: listar todos, marcar `ambíguo` e indicar o mais antigo,
-  sem escolher em silêncio.
+1.2 Evidence, without mixing up the types:
+- `cookie-jar`: sent cookie whose value was set by an earlier Set-Cookie
+  (same name + value). Strong.
+- `same-field`: same field name and same value between a response field and
+  a request field (e.g.: STAMP). Strong. Applies to short values (≥ 1),
+  because the name ties them together.
+- `value-match`: response value with ≥ 8 characters found in the
+  request (whole or as a substring of an opaque field). Medium. Record where
+  it appeared (field, offset).
+- `initiator`: CDP initiator (script/parser) pointing to an earlier
+  resource. Complementary, never proof of the origin of a value.
+- No candidate: `no observed origin`. It may be a constant, user input
+  (plate) or a value generated on the client (JS). Never invent the origin.
+- Several candidates: list them all, mark `ambiguous` and indicate the oldest,
+  without choosing silently.
 
-1.3 Cadeia de priming: `priming_chain(session, request_id)` = fecho
-transitivo das origens fortes e médias (cada produtor traz as próprias
-dependências). Devolve a lista mínima ordenada de requisições necessárias,
-com o motivo de cada uma (qual valor ela fornece), e separa as requisições de
-proteção (`/TSPD/`, cookies TS*) das da aplicação por regra explícita
-(domínio/caminho/cookie), marcadas como `proteção` e não como `irrelevante`.
+1.3 Priming chain: `priming_chain(session, request_id)` = transitive
+closure of the strong and medium origins (each producer brings its own
+dependencies). It returns the minimal ordered list of required requests,
+with the reason for each one (which value it supplies), and separates the
+protection requests (`/TSPD/`, TS* cookies) from the application ones by an
+explicit rule (domain/path/cookie), marked as `protection` and not as
+`irrelevant`.
 
-1.4 CLI: `scrapelens-core origins <sessao> <requestId>` e
-`scrapelens-core chain <sessao> <requestId>`, com saída JSON. Funciona com
-LazySession (corpos sob demanda) e com sessões sanitizadas (valores
-`[REDACTED]` não casam entre si; declarar isso).
+1.4 CLI: `scrapelens-core origins <session> <requestId>` and
+`scrapelens-core chain <session> <requestId>`, with JSON output. It works with
+LazySession (bodies on demand) and with sanitized sessions (`[REDACTED]`
+values do not match each other; declare this).
 
-## 2. Comparação entre duas capturas (core)
+## 2. Comparison between two captures (core)
 
 API: `compare_sessions(a, b, options) -> SessionComparison`.
-- Alinhamento das requisições A↔B: método + host + caminho normalizado +
-  conjunto de nomes de campos do corpo + ordem relativa dentro do mesmo
-  modelo. Requisições com o mesmo modelo são pareadas em ordem. Sobras ficam
-  `só em A` ou `só em B`. Ambiguidade é explícita, sem pareamento por horário
-  absoluto.
-- Por par e por campo (query, headers, cookies, campos do corpo; os campos
-  opacos são comparados por valor inteiro e por tokens ≥ 8 caracteres
-  diferentes): `estático` (igual), `dinâmico` (difere), `só em A` ou
-  `só em B`. Campos repetidos são pareados por ocorrência, sem ordenação
-  alfabética silenciosa (regra da especificação).
-- Classificação útil: um campo dinâmico cuja origem (§1) em B é uma resposta
-  anterior de B vira `obter em runtime (origem: …)`. Dinâmico sem origem
-  observada vira `dinâmico sem origem` (gerado no cliente ou entrada).
-- CLI: `scrapelens-core compare <sessaoA> <sessaoB>`, com saída JSON.
+- A↔B request alignment: method + host + normalized path + set of body
+  field names + relative order within the same model. Requests with the
+  same model are paired in order. Leftovers stay `only in A` or `only in B`.
+  Ambiguity is explicit, with no pairing by absolute time.
+- Per pair and per field (query, headers, cookies, body fields; opaque
+  fields are compared by whole value and by differing tokens of ≥ 8
+  characters): `static` (equal), `dynamic` (differs), `only in A` or
+  `only in B`. Repeated fields are paired by occurrence, with no silent
+  alphabetical sorting (specification rule).
+- Useful classification: a dynamic field whose origin (§1) in B is an
+  earlier response of B becomes `get at runtime (origin: …)`. Dynamic with no
+  observed origin becomes `dynamic without origin` (generated on the client or input).
+- CLI: `scrapelens-core compare <sessionA> <sessionB>`, with JSON output.
 
-## 3. Exportação
+## 3. Export
 
-cURL/Python passam a anotar, em comentário junto do valor, os campos
-`obter em runtime` (com a origem) quando a sessão tiver essa análise
-disponível. Os valores continuam sendo os capturados. Nada de valor
-inventado, e o código gerado não muda de comportamento.
+cURL/Python now annotate, in a comment next to the value, the
+`get at runtime` fields (with the origin) when the session has that analysis
+available. The values are still the captured ones. No invented
+value, and the generated code does not change behavior.
 
-## 4. Aceite da rodada
+## 4. Round acceptance
 
-1. Fixture DETRAN (A): para o 1º `cmd_consultar_placa`, as origens são
-   SESSIONID → resposta HTML do easynat-app (`value-match`, literal
-   `m_currentSessionId`); STAMP → resposta do POST anterior (`same-field`);
-   delta `DLTA…` no XML → resposta anterior (`value-match` no XML); cookies
-   TS*/JSESSIONID → Set-Cookie (`cookie-jar`); placa → `sem origem observada`.
-   A cadeia lista as requisições mínimas da aplicação na ordem do fluxo, e
-   /TSPD/ aparece separado como `proteção`.
-2. Comparação A × B (2ª captura sintética com SESSIONID, STAMP, delta e
-   cookies diferentes, e páginas e constantes iguais): SESSIONID, STAMP, delta
-   e cookies `dinâmico` + `obter em runtime` com origem certa; `cmd`,
-   PAGEINITPARAM vazio e as constantes do XML `estático`; placa `dinâmico sem
-   origem`; as duas consultas com mesma URL/método pareadas pela ordem, sem
-   cruzar.
-3. Nenhuma origem inventada: caso negativo em que um valor curto coincide por
-   acaso (< 8 sem mesmo nome) não vira origem.
-4. Sessão sanitizada: a análise roda, declara que valores redigidos não podem
-   ser rastreados e não vaza valores.
-5. Bateria sem regressão (cargo test, tests/exportacao, run_acceptance,
-   check_bodies_search) e desempenho aceitável na sessão grande (medido).
+1. DETRAN fixture (A): for the 1st `cmd_consultar_placa`, the origins are
+   SESSIONID → HTML response of easynat-app (`value-match`, literal
+   `m_currentSessionId`); STAMP → response of the previous POST (`same-field`);
+   delta `DLTA…` in the XML → previous response (`value-match` in the XML);
+   TS*/JSESSIONID cookies → Set-Cookie (`cookie-jar`); plate → `no observed origin`.
+   The chain lists the minimal application requests in flow order, and
+   /TSPD/ appears separately as `protection`.
+2. Comparison A × B (2nd synthetic capture with different SESSIONID, STAMP,
+   delta and cookies, and equal pages and constants): SESSIONID, STAMP, delta
+   and cookies `dynamic` + `get at runtime` with the right origin; `cmd`,
+   empty PAGEINITPARAM and the XML constants `static`; plate `dynamic without
+   origin`; the two lookups with the same URL/method paired by order, without
+   crossing.
+3. No invented origin: negative case in which a short value coincides by
+   chance (< 8 without the same name) does not become an origin.
+4. Sanitized session: the analysis runs, declares that redacted values cannot
+   be traced and does not leak values.
+5. Test suite with no regression (cargo test, tests/exportacao, run_acceptance,
+   check_bodies_search) and acceptable performance on the large session (measured).
 
-Commits Conventional Commits por dono, sem push nem publicação, sem rede
-externa. Preservar `tests/results/app-latest/testserver/app-20261027/h1.jsonl`.
+Conventional Commits per owner, no push or publication, no external
+network. Preserve `tests/results/app-latest/testserver/app-20261027/h1.jsonl`.
 
-## Decisões durante a rodada
+## Decisions during the round
 
-- 2026-10-28, `reissued`: um valor que aparece em respostas posteriores depois
-  de já ter circulado em requisições (ex.: SESSIONID repetido no HTML de
-  SIM1000X/VES0009X) não é produtor concorrente. A origem é a 1ª resposta
-  (`produced`), e as demais são marcadas `reissued`. `ambíguo` fica para
-  candidatos realmente concorrentes antes do 1º uso. O manifest da fixture foi
-  ajustado a essa regra.
-- `initiator` do CDP não está disponível no modelo da sessão, e isso fica
-  declarado em `warnings`. Preservar o initiator é candidato a uma rodada
-  futura.
-- `unobservable`: "sem origem observada" lista as respostas anteriores sem
-  corpo observável (core af477f0).
-- O caso `unavailable` da fixture A passou da resposta de 1010.10 (produtora de
-  STAMP e delta) para a de 1013.13 (Testes 3747e02).
+- 2026-10-28, `reissued`: a value that appears in later responses after
+  already having circulated in requests (e.g.: SESSIONID repeated in the HTML of
+  SIM1000X/VES0009X) is not a competing producer. The origin is the 1st response
+  (`produced`), and the others are marked `reissued`. `ambiguous` is kept for
+  truly competing candidates before the 1st use. The fixture manifest was
+  adjusted to this rule.
+- The CDP `initiator` is not available in the session model, and this is
+  declared in `warnings`. Preserving the initiator is a candidate for a future
+  round.
+- `unobservable`: "no observed origin" lists the earlier responses
+  without an observable body (core af477f0).
+- The `unavailable` case of fixture A moved from the response of 1010.10 (producer
+  of STAMP and delta) to that of 1013.13 (Tests 3747e02).
 
-## Revisão da rodada 5 (2026-10-28) — decisões
+## Review of round 5 (2026-10-28) — decisions
 
-Veredito: reprovado até corrigir 2 falhas altas.
-- Comentários gerados (exportação anotada e qualquer outro comentário de
-  cURL/Python) usam uma única função de escape: remove CR, LF, U+2028/U+2029 e
-  os demais controles, e prefixa cada linha com `# `. Conteúdo capturado nunca
-  sai de um comentário. O teste de regressão é um nome de campo com newline
-  que tenta executar comando.
-- Causalidade temporal: um produtor só vale se a resposta dele foi recebida
-  (responseReceived/fim) até o início da tentativa alvo. Uma resposta que
-  termina depois do início do alvo não é produtora. Os empates seguem como
-  hoje.
-- `reissued` só quando o valor circulou numa requisição entre o 1º produtor e
-  o seguinte. Sem uso entre eles, os produtores são concorrentes: `ambiguous`.
-- `same-field` forte exige nome não genérico e valor ≥ 4 caracteres. Nomes
-  genéricos (id, value, data, page, type, lang, name, key, code, state, status,
-  action, op, mode, format, limit, offset, q, query, v, t, ts) ou valores
-  curtos rebaixam para média.
-- Rótulo: com só evidência média, o status é "possível origem (<tipo>)" no
-  core e na UI. "Origem observada" exige uma evidência forte. A cadeia marca a
-  confiança de cada passo (`strong` | `possible`).
-- `unresolved` não inclui os valores consumidos só por passos de proteção. Os
-  campos não aparecem duplicados como entrada e como trecho. O pareamento do
-  compare dentro do mesmo modelo é monotônico, sem cruzar a ordem.
-- App: o compare usa paginação/virtualização, e "só dinâmicos" vem ligado em
-  comparações grandes. Os caminhos são canonicalizados, e comparar a mesma
-  sessão consigo é recusado ou avisado.
+Verdict: rejected until 2 high failures are fixed.
+- Generated comments (annotated export and any other cURL/Python
+  comment) use a single escape function: it removes CR, LF, U+2028/U+2029 and
+  the other control characters, and prefixes each line with `# `. Captured content never
+  leaves a comment. The regression test is a field name with a newline
+  that tries to run a command.
+- Temporal causality: a producer only counts if its response was received
+  (responseReceived/end) by the start of the target attempt. A response that
+  ends after the target's start is not a producer. Ties stay as
+  they are today.
+- `reissued` only when the value circulated in a request between the 1st producer
+  and the next one. With no use between them, the producers are competing: `ambiguous`.
+- Strong `same-field` requires a non-generic name and a value ≥ 4 characters. Generic
+  names (id, value, data, page, type, lang, name, key, code, state, status,
+  action, op, mode, format, limit, offset, q, query, v, t, ts) or short values
+  downgrade to medium.
+- Label: with only medium evidence, the status is "possible origin (<type>)" in
+  the core and the UI. "Observed origin" requires strong evidence. The chain marks the
+  confidence of each step (`strong` | `possible`).
+- `unresolved` does not include values consumed only by protection steps. Fields
+  do not appear duplicated as an input and as a fragment. The compare pairing
+  within the same model is monotonic, without crossing the order.
+- App: compare uses pagination/virtualization, and "dynamic only" is on by default in
+  large comparisons. Paths are canonicalized, and comparing the same
+  session with itself is refused or warned about.
 
-## Fechamento (2026-10-28)
+## Closing (2026-10-28)
 
-Re-revisão independente: APROVADA (core 7ed4329, testes 9902d4a, app 0377e5b e
-a2e9069; bundle ac7213b2…). Injeção fechada: `export::comment` é a porta
-única, e as sondas de header, URL de 307, `transformed`, bidi, zero-width,
-NUL e nomes de 5000 caracteres não escapam do comentário. Causalidade por fim
-da resposta, inclusive em redirect de 2 níveis e empates. Confiança: forte só
-com cookie-jar ou same-field não genérico. Compare monotônico, com paginação
-no app coerente com o CLI. Bateria verde.
+Independent re-review: APPROVED (core 7ed4329, tests 9902d4a, app 0377e5b and
+a2e9069; bundle ac7213b2…). Injection closed: `export::comment` is the single
+gate, and the probes of header, 307 URL, `transformed`, bidi, zero-width,
+NUL and 5000-character names do not escape the comment. Causality by response
+end, including 2-level redirects and ties. Confidence: strong only
+with cookie-jar or non-generic same-field. Monotonic compare, with pagination
+in the app consistent with the CLI. Test suite green.
 
-Acabamento (baixo), delegado: L1 prefixo comum de 8 caracteres em campo
-nomeado vira trecho possível; L2 requisições únicas reordenadas sem a dica
-`outOfOrder`; L3 chip longo cortado no print 15. Validação no caso real
-(HARs locais do usuário, sem copiar dados para o repositório) delegada ao
-agente de Testes.
+Finishing touches (low), delegated: L1 common prefix of 8 characters in a named
+field becomes a possible fragment; L2 unique requests reordered without the
+`outOfOrder` hint; L3 long chip cut off in print 15. Validation on the real case
+(user's local HARs, without copying data into the repository) delegated to the
+Tests agent.

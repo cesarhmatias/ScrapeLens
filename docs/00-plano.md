@@ -1,95 +1,93 @@
-# ScrapeLens — Plano (vivo)
+# ScrapeLens — Plan (living)
 
-App open source macOS para inspeção de sessões HTTP para desenvolvedores de
-scraping. Especificação completa:
+Open-source macOS app for inspecting HTTP sessions, aimed at scraping
+developers. Full specification:
 `/Users/cesar/Documents/Codex/2026-10-26/meu-x20/outputs/ScrapeLens-especificacao.txt`
 
-## Estado
+## Status
 
-- Fase: 9 — pacote local arm64 recompilado e validado; documentação final.
-- Rodada de exportação na UI (docs/07) concluída: F1/F2 (links em ancestrais)
-  corrigidos em 16015a1, adapter tolerante em 0d4dbab, bridge 16/16. Prova
-  nativa no bundle 9c04b98b (salvar/cancelar, cópia, sanitizar e reabrir)
-  feita pelo líder com diálogos em primeiro plano e verificada por Testes
-  (adc56ab).
-- Rodada 4 (docs/08), corpos CDP e busca no payload: concluída e aprovada na
-  re-revisão independente (até 71eef98; bundle 0e2754f4…). Corpos gravados ao
-  vivo com estado explícito e `transformed`; busca em 6 escopos com visão
-  decodificada e intervalo exato; sanitização por propagação de valor
-  (fail-closed); rótulos de origem; NetLog truncado reparado; busca com
-  anexos sob demanda (pico 1,75 GB → 257 MB). Acabamento não bloqueante em
-  curso.
-- Rodada 5 (docs/09), origem dos valores, cadeia de priming e comparação entre
-  capturas: concluída e aprovada na re-revisão (bundle ac7213b2…). Próximo:
-  validação no caso real DETRAN (HARs locais, sem dados no repositório) e
-  rodada 6 (script de priming e sucesso da aplicação × HTTP).
-- Rodada 6 (docs/10), fidelidade ao caso real DETRAN-PB: APROVADA (7a11441).
-  O caso é identificável e analisável nos 3 HARs reais do usuário.
-- Rodada 7 (docs/11), script de priming e sucesso da aplicação × HTTP:
-  APROVADA (1bdd8b9); acabamento dos detectores em 6a85676.
-- Pacote final: bundle 6e301e70… (c5d1f61), aceite final verde
-  (tests/RELATORIO-FINAL.md, 4b16b0e), entrega em docs/06-entrega.md.
-  Pendente: teste manual do .app com o seletor nativo (usuário).
-- Rodada 8 (docs/12), adaptador Natural for Ajax fora do core: APROVADA
-  (c07b514, acabamento em curso). Prefixos UTF-16 recalculados no script de
-  priming (prova no detran-sim strict), visão estruturada no app e nomes
-  internos (XML.delta, XML.p.v_placa) em origens/compare. Nos 3 HARs reais: 11 passos na ordem
-  do fluxo manual, só placa e sufixo do SESSIONID como parâmetros, 0 valores
-  capturados no código; prova no detran-sim nos 4 modos.
-- Aceite automatizado: 10/10 critérios (283 checks em 229b623).
-- Captura nova e importações HAR/NetLog pela UI do bundle final validadas.
-  Seleção manual do usuário e conferência independente dos arquivos persistidos.
-- Relatório de fechamento: `docs/06-entrega.md`; nada publicado.
-- Repositório criado em `/Users/cesar/Projects/scrapelens`.
+- Phase: 9 — local arm64 package rebuilt and validated; final documentation.
+- Export round in the UI (docs/07) completed: F1/F2 (links in ancestors)
+  fixed in 16015a1, tolerant adapter in 0d4dbab, bridge 16/16. Native proof
+  on bundle 9c04b98b (save/cancel, copy, sanitize and reopen) done by the
+  leader with dialogs in the foreground and verified by Tests (adc56ab).
+- Round 4 (docs/08), CDP bodies and payload search: completed and approved in
+  the independent re-review (up to 71eef98; bundle 0e2754f4…). Bodies recorded
+  live with explicit state and `transformed`; search over 6 scopes with decoded
+  view and exact range; sanitization by value propagation (fail-closed);
+  origin labels; truncated NetLog repaired; search with attachments on demand
+  (peak 1,75 GB → 257 MB). Non-blocking polish in progress.
+- Round 5 (docs/09), origin of values, priming chain and comparison between
+  captures: completed and approved in the re-review (bundle ac7213b2…). Next:
+  validation on the real DETRAN case (local HARs, no data in the repository)
+  and round 6 (priming script and application success × HTTP).
+- Round 6 (docs/10), fidelity to the real DETRAN-PB case: APPROVED (7a11441).
+  The case is identifiable and analyzable in the user's 3 real HARs.
+- Round 7 (docs/11), priming script and application success × HTTP:
+  APPROVED (1bdd8b9); detector polish in 6a85676.
+- Final package: bundle 6e301e70… (c5d1f61), final acceptance green
+  (tests/RELATORIO-FINAL.md, 4b16b0e), delivery in docs/06-entrega.md.
+  Pending: manual test of the .app with the native picker (user).
+- Round 8 (docs/12), Natural for Ajax adapter outside the core: APPROVED
+  (c07b514, polish in progress). UTF-16 prefixes recalculated in the priming
+  script (proof on detran-sim strict), structured view in the app and internal
+  names (XML.delta, XML.p.v_placa) in origins/compare. On the 3 real HARs: 11 steps in the order
+  of the manual flow, only the plate and the SESSIONID suffix as parameters, 0 values
+  captured in the code; proof on detran-sim in the 4 modes.
+- Automated acceptance: 10/10 criteria (283 checks in 229b623).
+- New capture and HAR/NetLog imports through the UI of the final bundle validated.
+  Manual selection by the user and independent check of the persisted files.
+- Closing report: `docs/06-entrega.md`; nothing published.
+- Repository created at `/Users/cesar/Projects/scrapelens`.
 
-## Modelos em uso
+## Models in use
 
-Em 2026-10-28, por decisão do usuário, todos os agentes do canal, exceto o
-líder, usam Claude Sonnet 5.5 (`claude-sonnet-5-5`, esforço low), com reserva
-automática `opencode/deepseek-v4.1-flash-free` se a cota acabar. Histórico:
-GLM-5.3/DeepSeek V4.1 Flash (OpenCode Go) → gpt-6.1-sol (líder/revisor/docs) →
-Sonnet 5.5 low. Em 2026-10-28, por decisão do usuário, todos os agentes não decisores
-(Documentação, Captura, Core, Testes e App) passaram para
-`opencode-go/deepseek-v4.1-flash` (OpenCode Go, esforço high), com reserva
-automática `opencode/deepseek-v4.1-flash-free` quando a cota acabar. Os
-decisores (Líder e Revisor independente) não mudaram de modelo. Em 2026-10-29 o
-`opencode-go/deepseek-v4.1-flash` falhou: as tarefas eram encerradas em ~1 s,
-sem trabalho, e a chamada direta pelo CLI não respondeu em 3 min. Os
-executores voltaram temporariamente para Sonnet 5.5 low até o DeepSeek ser
-diagnosticado. Diagnóstico (log do OpenCode): "Go usage limit exceeded"
-(cota da assinatura OpenCode Go esgotada), e a reserva automática não
-entrou. Em 2026-10-29, a pedido do usuário, os não decisores (Core, Testes,
-App, Captura e Documentação) passaram para `opencode/deepseek-v4.1-flash-free`
-(esforço high), testado e respondendo. Vale a partir da próxima tarefa de cada
-um. Revisor e Líder sem mudança. Em 2026-10-29 03:14 a cota gratuita também
-acabou ("Free usage limit reached"); os executores voltaram para Sonnet 5.5 low,
-e as tarefas perdidas foram reenviadas. Em 2026-10-29 ~17h, a pedido do usuário, o Líder passou de Claude Opus 5.5
-para Grok 4.7 (high), e os 6 agentes em Sonnet (Core, Testes, App, Captura,
-Documentação e Revisor) passaram para `opencode-go/deepseek-v4.1-flash`
-(high), que voltou a responder (cota renovada; o free segue sem cota). A
-reserva automática é Claude Sonnet 5.5. Sem substituição silenciosa de modelo.
+On 2026-10-28, by user decision, all agents in the channel, except the
+leader, use Claude Sonnet 5.5 (`claude-sonnet-5-5`, low effort), with automatic
+fallback `opencode/deepseek-v4.1-flash-free` if the quota runs out. History:
+GLM-5.3/DeepSeek V4.1 Flash (OpenCode Go) → gpt-6.1-sol (leader/reviewer/docs) →
+Sonnet 5.5 low. On 2026-10-28, by user decision, all non-decision agents
+(Documentation, Capture, Core, Tests and App) moved to
+`opencode-go/deepseek-v4.1-flash` (OpenCode Go, high effort), with automatic
+fallback `opencode/deepseek-v4.1-flash-free` when the quota runs out. The
+decision makers (Leader and Independent reviewer) did not change model. On 2026-10-29 the
+`opencode-go/deepseek-v4.1-flash` failed: tasks were ended in ~1 s,
+with no work done, and the direct call through the CLI did not respond in 3 min. The
+executors went back temporarily to Sonnet 5.5 low until DeepSeek was
+diagnosed. Diagnosis (OpenCode log): "Go usage limit exceeded"
+(OpenCode Go subscription quota exhausted), and the automatic fallback did not
+kick in. On 2026-10-29, at the user's request, the non-decision agents (Core, Tests,
+App, Capture and Documentation) moved to `opencode/deepseek-v4.1-flash-free`
+(high effort), tested and responding. In force from the next task of each
+one. Reviewer and Leader unchanged. On 2026-10-29 03:14 the free quota also
+ran out ("Free usage limit reached"); the executors went back to Sonnet 5.5 low,
+and the lost tasks were resent. On 2026-10-29 ~17h, at the user's request, the Leader moved from Claude Opus 5.5
+to Grok 4.7 (high), and the 6 agents on Sonnet (Core, Tests, App, Capture,
+Documentation and Reviewer) moved to `opencode-go/deepseek-v4.1-flash`
+(high), which is responding again (quota renewed; the free tier still has no quota). The
+automatic fallback is Claude Sonnet 5.5. No silent model substitution.
 
-Equipe (seção OpenBot "ScrapeLens"):
+Team (OpenBot section "ScrapeLens"):
 
-| Agente | ID |
+| Agent | ID |
 |---|---|
-| Líder e arquitetura | `agent-88cccd6b…a41` |
-| Captura e protocolos | `agent-05db9236…4c23` |
-| Testes e integração | `agent-e9324ddd…4b1f` |
-| Core e importadores | `agent-d66aa8db…8d71` |
-| App macOS e interface | `agent-466e334c…66b9` |
-| Revisor independente | `agent-ffb4d60c…ad63` |
-| Documentação Obsidian | `agent-636cf76c…cde3` (rotina diária 09:00, America/Sao_Paulo) |
+| Leader and architecture | `agent-88cccd6b…a41` |
+| Capture and protocols | `agent-05db9236…4c23` |
+| Tests and integration | `agent-e9324ddd…4b1f` |
+| Core and importers | `agent-d66aa8db…8d71` |
+| macOS app and interface | `agent-466e334c…66b9` |
+| Independent reviewer | `agent-ffb4d60c…ad63` |
+| Obsidian documentation | `agent-636cf76c…cde3` (daily routine 09:00, America/Sao_Paulo) |
 
-## Ondas (máx. 3 executores simultâneos)
+## Waves (max. 3 simultaneous executors)
 
-- Onda 1 (concluída): Captura/protocolos + Testes/servidores — experimentos de
-  fidelidade HTTP/1.1, h2, h3; matriz `docs/02-matriz-fidelidade.md`.
-- Onda 2 (concluída): contratos consolidados → Core/importadores +
-  App/interface + Testes (fatia completa: launch Chrome → captura → UI).
-- Onda 3 (implementação/revisão concluídas; ressalvas no relatório final): comparação, exportação, sanitização; revisão independente;
-  empacotamento e documentação.
+- Wave 1 (completed): Capture/protocols + Tests/servers — fidelity
+  experiments for HTTP/1.1, h2, h3; matrix `docs/02-matriz-fidelidade.md`.
+- Wave 2 (completed): consolidated contracts → Core/importers +
+  App/interface + Tests (full slice: launch Chrome → capture → UI).
+- Wave 3 (implementation/review completed; caveats in the final report): comparison, export, sanitization; independent review;
+  packaging and documentation.
 
-## Critérios de aceite
+## Acceptance criteria
 
-Conforme especificação (10 itens). Ver `docs/05-aceite.md` quando criado.
+Per the specification (10 items). See `docs/05-aceite.md` when created.

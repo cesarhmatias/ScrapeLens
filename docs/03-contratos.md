@@ -1,43 +1,43 @@
-# ScrapeLens — Contratos oficiais (onda 2)
+# ScrapeLens — Official contracts (wave 2)
 
-Substituem `app/CONTRACT-DRAFT.md` (provisório). Proveniência e vereditos: `docs/02-matriz-fidelidade.md`; decisões: `docs/01-decisoes.md`.
+They replace `app/CONTRACT-DRAFT.md` (provisional). Provenance and verdicts: `docs/02-matriz-fidelidade.md`; decisions: `docs/01-decisoes.md`.
 
-## 1. Formato de sessão próprio (v1)
+## 1. Own session format (v1)
 
-Diretório de sessão:
+Session directory:
 ```
-<sessao>/
-  session.json        # metadados: schemaVersion=1, browser, startedAt/endedAt, completeness
-  cdp-events.jsonl    # eventos CDP brutos (um por linha)
-  netlog.json         # NetLog original gravado pelo Chrome
-  attachments/        # corpos (request/response) por requestId
+<session>/
+  session.json        # metadata: schemaVersion=1, browser, startedAt/endedAt, completeness
+  cdp-events.jsonl    # raw CDP events (one per line)
+  netlog.json         # original NetLog recorded by Chrome
+  attachments/        # bodies (request/response) by requestId
 ```
 
-Regras:
-- `session.json.completeness`: `complete | partial` (parcial = falha antes do flush).
-- Headers são **arrays ordenados de pares** `[name, value][]`; nunca dicionário. Duplicatas preservadas.
-- Pseudoheaders separados (`:method`, `:path`, etc.), nunca misturados aos headers comuns.
-- Campo `Cookie`: preservar (a) o valor original da fonte, (b) os pares internos parseados, (c) as linhas divididas observadas no fio (h2/h3). `Set-Cookie`: linhas brutas + parseadas.
-- Cada unidade de informação carrega `provenance`: `{source, event, timestamp, browserVersion, method, verification}`.
-- `verification` por informação: `verified | partial | unverified` (matriz D2 em `docs/01-decisoes.md`). "unverified" = a UI exibe "não verificada".
-- Visões normalizadas (para busca/diff) são derivadas, jamais substituem o original.
+Rules:
+- `session.json.completeness`: `complete | partial` (partial = failure before the flush).
+- Headers are **ordered arrays of pairs** `[name, value][]`; never a dictionary. Duplicates preserved.
+- Pseudo-headers separated (`:method`, `:path`, etc.), never mixed with regular headers.
+- `Cookie` field: preserve (a) the original value from the source, (b) the parsed inner pairs, (c) the split lines observed on the wire (h2/h3). `Set-Cookie`: raw lines + parsed.
+- Each unit of information carries `provenance`: `{source, event, timestamp, browserVersion, method, verification}`.
+- `verification` per piece of information: `verified | partial | unverified` (matrix D2 in `docs/01-decisoes.md`). "unverified" = the UI shows "not verified".
+- Normalized views (for search/diff) are derived, and never replace the original.
 
-## 2. Correlação
+## 2. Correlation
 
-Entidades: `LogicalRequest`, `Attempt`, `Redirect`, `Connection`, `StreamSession`. Chaves explícitas quando a fonte fornece (ex.: `loaderId`+`requestId` CDP, `source_dependency` NetLog). Heurística URL+método+horário gera `match: "ambiguous"` quando houver >1 candidato — nunca associação silenciosa.
+Entities: `LogicalRequest`, `Attempt`, `Redirect`, `Connection`, `StreamSession`. Explicit keys when the source provides them (e.g. `loaderId`+`requestId` CDP, `source_dependency` NetLog). The URL+method+time heuristic yields `match: "ambiguous"` when there is >1 candidate — never a silent association.
 
-## 3. Módulos e propriedade (onda 2)
+## 3. Modules and ownership (wave 2)
 
-| Dono | Caminhos | Entrega |
+| Owner | Paths | Delivery |
 |---|---|---|
-| Core/importadores | `core/` | modelo v1, parsers HAR/NetLog/próprio, correlação, persistência, diff, exportadores cURL/Python, sanitização |
-| App/interface | `app/`, `src-tauri/` | Tauri 2, atalhos ⌘O/F/C, diálogos nativos, integração com captura real |
-| Testes/integração | `testserver/`, `fixtures/`, `tests/` | fixtures sintéticas dos casos da spec, testes de aceitação |
-| Captura/protocolos | `experiments/`, launcher Rust em `core/capture` se delegado | launcher Chrome/CDP/NetLog como biblioteca usável pelo Tauri |
+| Core/importers | `core/` | v1 model, HAR/NetLog/own parsers, correlation, persistence, diff, cURL/Python exporters, sanitization |
+| App/interface | `app/`, `src-tauri/` | Tauri 2, shortcuts ⌘O/F/C, native dialogs, integration with real capture |
+| Tests/integration | `testserver/`, `fixtures/`, `tests/` | synthetic fixtures of the spec cases, acceptance tests |
+| Capture/protocols | `experiments/`, Rust launcher in `core/capture` if delegated | Chrome/CDP/NetLog launcher as a library usable by Tauri |
 
-## 4. Regras transversais
+## 4. Cross-cutting rules
 
-- Conventional Commits contínuos; nada concluído sem commit.
-- Fixtures sintéticas identificadas; zero telemetria/rede; nada publicado.
-- Corpos indisponíveis/truncados/descartados: estado explícito no contrato (`body: {state, bytes?, truncatedAt?}`).
-- HTML capturado é dado, nunca interface executável.
+- Continuous Conventional Commits; nothing is done without a commit.
+- Synthetic fixtures identified; zero telemetry/network; nothing published.
+- Unavailable/truncated/discarded bodies: explicit state in the contract (`body: {state, bytes?, truncatedAt?}`).
+- Captured HTML is data, never an executable interface.

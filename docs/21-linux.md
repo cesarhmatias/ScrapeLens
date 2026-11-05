@@ -1,234 +1,233 @@
-# 21. Versão Linux do ScrapeLens (captura e reconhecimento)
+# 21. ScrapeLens Linux version (capture and recon)
 
-Rodada 14, a pedido do usuário. Escopo desta etapa: portar `capture/` (e `recon/`, que
-não precisou de mudança) para Linux **sem regredir o macOS**. O porte de `capture/` não
-dependeu do App: o `src-tauri/` não foi tocado nesta etapa, mas no **aceite da rodada 14**
-ele foi empacotado (`.deb` e `AppImage`, amd64 e arm64) e passou na bateria real das VMs do
-OrbStack (§7.1). O servidor MCP (`mcp/`) compila e passa os testes no Linux sem mudança.
+Round 14, at the user's request. Scope of this stage: port `capture/` (and `recon/`, which
+needed no change) to Linux **without regressing macOS**. The port of `capture/` did not
+depend on the App: `src-tauri/` was not touched in this stage, but in the **round 14 acceptance**
+it was packaged (`.deb` and `AppImage`, amd64 and arm64) and passed the real battery on the
+OrbStack VMs (§7.1). The MCP server (`mcp/`) builds and passes its tests on Linux without changes.
 
-## 1. Alvo e o que foi testado
+## 1. Target and what was tested
 
-Alvo principal: Linux x86_64 (Ubuntu 22.04, Ubuntu 24.04, Debian 12), com navegador
-**Google Chrome estável**. Secundário: arm64, onde o Google **não publica** build Linux do
-Chrome estável: o navegador aceito é o **Chromium**, e isso fica registrado na sessão.
+Main target: Linux x86_64 (Ubuntu 22.04, Ubuntu 24.04, Debian 12), with the browser
+**stable Google Chrome**. Secondary: arm64, where Google **does not publish** a Linux build of
+stable Chrome: the accepted browser is **Chromium**, and this is recorded in the session.
 
-Ambiente de teste: Docker via OrbStack nesta máquina (engine `linux/arm64`; `linux/amd64`
-roda por emulação), imagens em `experiments/linux/`. Tudo dentro do container, em loopback,
-sem site real; nada foi instalado no macOS do usuário.
+Test environment: Docker via OrbStack on this machine (`linux/arm64` engine; `linux/amd64`
+runs under emulation), images in `experiments/linux/`. Everything inside the container, on loopback,
+with no real site; nothing was installed on the user's macOS.
 
-### Placar por plataforma
+### Scoreboard per platform
 
-Todas as linhas rodaram com o **mesmo código** (a árvore de trabalho no commit desta rodada).
-Cada coluna é um comando; `—` = não se aplica.
+All rows ran with the **same code** (the working tree at this round's commit).
+Each column is a command; `—` = not applicable.
 
-| Plataforma | Navegador | clippy `-D warnings` (capture, recon) | `cargo test --lib` (capture) | vivos em loopback (`--ignored`) | recon: `cargo test` + `live_e2e.sh` | `check_multi_target.py` | perfil sob `XDG_RUNTIME_DIR` | mcp |
+| Platform | Browser | clippy `-D warnings` (capture, recon) | `cargo test --lib` (capture) | live on loopback (`--ignored`) | recon: `cargo test` + `live_e2e.sh` | `check_multi_target.py` | profile under `XDG_RUNTIME_DIR` | mcp |
 |---|---|---|---|---|---|---|---|---|
 | Ubuntu 24.04 amd64 | Google Chrome 156.0.8078.79 (`google-chrome-stable`) | ✓ | 96 passed | 17/17 | 27 + 3 passed | OK (16/16 NetLog, ≥15/16 CDP) | ✓ | ✓ |
 | Ubuntu 22.04 amd64 | Google Chrome 156.0.8078.79 | ✓ | 96 passed | 17/17 | 27 + 3 passed | OK | ✓ | ✓ |
 | Debian 12 amd64 | Google Chrome 156.0.8078.79 | ✓ | 96 passed | 17/17 | 27 + 3 passed | OK | ✓ | ✓ |
 | Debian 12 **arm64** | **Chromium** 156.0.8078.73 (`chromium`) | ✓ | 96 passed | 17/17 | 27 + 3 passed | OK | ✓ | ✓ |
-| macOS arm64 (esta máquina) | Google Chrome 156 | ✓ | 91 passed (os 5 a menos são os testes só-Linux) | 17/17 | 27 + 3 passed | OK | — | ✓ |
+| macOS arm64 (this machine) | Google Chrome 156 | ✓ | 91 passed (the 5 fewer are the Linux-only tests) | 17/17 | 27 + 3 passed | OK | — | ✓ |
 
-- Os **17 vivos** incluem `navigator.webdriver === false` na captura completa e na controlada,
-  pipe e porta, os 8 caminhos da lacuna de porta, symlinks plantados, troca da pasta da sessão,
-  mensagem acima do teto, segundo cliente CDP e a rede aberta resolvendo um nome local.
-- Também com janela (**não headless**) sob **Xvfb** (`SL_LIVE_HEADED=1`): as duas capturas que
-  escondem `navigator.webdriver` passam no Ubuntu 24.04 amd64 (Chrome) e no Debian 12 arm64
+- The **17 live tests** include `navigator.webdriver === false` in the full and in the controlled capture,
+  pipe and port, the 8 paths of the port gap, planted symlinks, swapping the session folder,
+  message above the ceiling, a second CDP client and open network resolving a local name.
+- Also with a window (**not headless**) under **Xvfb** (`SL_LIVE_HEADED=1`): the two captures that
+  hide `navigator.webdriver` pass on Ubuntu 24.04 amd64 (Chrome) and on Debian 12 arm64
   (Chromium).
-- O navegador real de cada imagem passa em `validate_chrome` e devolve produto, versão,
-  binário e pacote dono: `GoogleChrome 156.0.8078.79 /opt/google/chrome/chrome
-  pacote=Some("google-chrome-stable")` e `Chromium 156.0.8078.73 /usr/lib/chromium/chromium
-  pacote=Some("chromium")`.
+- The real browser of each image passes `validate_chrome` and returns product, version,
+  binary and owning package: `GoogleChrome 156.0.8078.79 /opt/google/chrome/chrome
+  package=Some("google-chrome-stable")` and `Chromium 156.0.8078.73 /usr/lib/chromium/chromium
+  package=Some("chromium")`.
 
 
-## 2. O que mudou no código
+## 2. What changed in the code
 
-| Arquivo | Mudança | macOS |
+| File | Change | macOS |
 |---|---|---|
-| `capture/src/chrome.rs` | candidatos Linux; `validate_chrome_linux` (§3); `BrowserKind` (Chrome ou Chromium, marcado); `ValidatedChrome` ganhou `kind` e `package`; erro `Untrusted` | inalterado (o ramo do `codesign` ficou como era) |
-| `capture/src/lib.rs` | diretório do descritor por `readlink /proc/self/fd/N`; `close_range(CLOEXEC)` com laço de reserva; base privada do perfil/state root (§4); processos por `/proc` e `kill(2)` em vez de `ps`/`kill`; nota de Chromium na sessão | inalterado (`F_GETPATH`, `ps`) |
-| `capture/src/transport.rs` | `pipe2(O_CLOEXEC)` no Linux: fecha a janela entre `pipe()` e o `fcntl` | inalterado (`pipe` + `F_DUPFD_CLOEXEC`) |
-| `capture/src/browser.rs` (testes) | `lsof`/`ps` por caminho que existe (`/usr/sbin` no macOS, `/usr/bin` no Linux) | só testes |
-| `recon/` | nenhuma | — |
+| `capture/src/chrome.rs` | Linux candidates; `validate_chrome_linux` (§3); `BrowserKind` (Chrome or Chromium, marked); `ValidatedChrome` gained `kind` and `package`; `Untrusted` error | unchanged (the `codesign` branch stayed as it was) |
+| `capture/src/lib.rs` | descriptor directory via `readlink /proc/self/fd/N`; `close_range(CLOEXEC)` with a fallback loop; private base for the profile/state root (§4); processes via `/proc` and `kill(2)` instead of `ps`/`kill`; Chromium note in the session | unchanged (`F_GETPATH`, `ps`) |
+| `capture/src/transport.rs` | `pipe2(O_CLOEXEC)` on Linux: closes the window between `pipe()` and `fcntl` | unchanged (`pipe` + `F_DUPFD_CLOEXEC`) |
+| `capture/src/browser.rs` (tests) | `lsof`/`ps` via a path that exists (`/usr/sbin` on macOS, `/usr/bin` on Linux) | tests only |
+| `recon/` | none | — |
 
-`cfg(target_os)` só onde o sistema difere. `O_NOFOLLOW`, `O_DIRECTORY`, `openat`,
-`renameat`, `unlinkat`, `fstatat` e `fdopendir` do `fdio.rs` são POSIX e funcionaram sem
-mudança (verificado pelos testes do `fdio` e pelos vivos no Linux). O pipe do CDP continua
-nos fds 3 e 4 (`dup2` no `pre_exec`).
+`cfg(target_os)` only where the system differs. `O_NOFOLLOW`, `O_DIRECTORY`, `openat`,
+`renameat`, `unlinkat`, `fstatat` and `fdopendir` in `fdio.rs` are POSIX and worked without
+changes (verified by the `fdio` tests and by the live tests on Linux). The CDP pipe stays
+on fds 3 and 4 (`dup2` in `pre_exec`).
 
-## 3. Validação do navegador no Linux (equivalente ao `codesign`)
+## 3. Browser validation on Linux (equivalent to `codesign`)
 
-No macOS o Chrome é validado por `codesign --verify --deep -R=<requisito da Google>`. O Linux
-não tem assinatura de código no binário (o pacote `.deb` é assinado pela chave do repositório
-no momento da instalação, mas isso não fica no arquivo). O equivalente definido e
-implementado em `chrome::validate_chrome_linux`, **sem executar nada até o fim das
-checagens**:
+On macOS, Chrome is validated by `codesign --verify --deep -R=<Google requirement>`. Linux
+has no code signature on the binary (the `.deb` package is signed by the repository key
+at install time, but that is not kept in the file). The equivalent, defined and
+implemented in `chrome::validate_chrome_linux`, **runs nothing until the end of the
+checks**:
 
-1. O caminho dado e o canônico não têm caractere de controle nem são não-UTF-8.
-2. O caminho é resolvido ao **canônico** (os links `/usr/bin/google-chrome-stable` →
-   `/etc/alternatives/google-chrome` → `/opt/google/chrome/google-chrome` caem no destino).
-   Se o destino é um **script** (`#!`), só vale se o **nome** for de um wrapper conhecido do
-   pacote: `google-chrome` ou `google-chrome-stable` (o `chrome` ELF ao lado, em
-   `/opt/google/chrome/`), `chromium` ou `chromium-browser` (os caminhos do Debian/Ubuntu,
-   `/usr/lib/chromium/chromium` e `/usr/lib/chromium-browser/chromium-browser`). Um script de
-   nome arbitrário é recusado, nunca trocado por um binário de outro lugar. O que roda é
-   sempre um **ELF**.
-3. O nome do executável é de navegador (`chrome`, `chromium`, `chromium-browser`).
-4. O binário é **arquivo regular, de root (uid 0), executável, sem escrita para grupo nem
-   outros**; **cada diretório acima, até `/`, é de root e sem escrita para grupo/outros**.
-   Quando o usuário atual não é root, `access(W_OK)` precisa **falhar** para o binário e para
-   cada diretório (cobre ACL e permissões que o modo não mostra).
-   O tipo do arquivo é conferido no **descritor aberto** com
-   `O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC` + `fstat`: FIFO, socket e device são
-   recusados na hora, sem bloquear (um FIFO sem escritor travaria um `open` comum antes de
-   qualquer timeout).
-5. **Só depois** roda `<binário> --version` (ambiente limpo, `PATH=/usr/bin:/bin`, 10 s). A
-   saída tem de ser `Google Chrome <n.n.n.n>` (o estável: Beta, Dev e "for Testing" têm mais
-   palavras e são recusados) ou `Chromium <n.n.n.n> …`. O produto e a versão vêm daí.
-6. O **pacote dono** (`dpkg -S`, depois `rpm -qf`) é consultado e registrado em
-   `ValidatedChrome.package`; a validação **não depende** dele (o sistema pode não ter
-   `dpkg` nem `rpm`).
+1. The given path and the canonical one have no control character and are not non-UTF-8.
+2. The path is resolved to the **canonical** one (the links `/usr/bin/google-chrome-stable` →
+   `/etc/alternatives/google-chrome` → `/opt/google/chrome/google-chrome` end up at the target).
+   If the target is a **script** (`#!`), it is valid only if the **name** is that of a known wrapper of the
+   package: `google-chrome` or `google-chrome-stable` (the ELF `chrome` next to it, in
+   `/opt/google/chrome/`), `chromium` or `chromium-browser` (the Debian/Ubuntu paths,
+   `/usr/lib/chromium/chromium` and `/usr/lib/chromium-browser/chromium-browser`). A script with an
+   arbitrary name is refused, never swapped for a binary from somewhere else. What runs is
+   always an **ELF**.
+3. The executable name is that of a browser (`chrome`, `chromium`, `chromium-browser`).
+4. The binary is a **regular file, owned by root (uid 0), executable, not writable by group or
+   others**; **every directory above it, up to `/`, is owned by root and not writable by group/others**.
+   When the current user is not root, `access(W_OK)` must **fail** for the binary and for
+   each directory (covers ACLs and permissions that the mode does not show).
+   The file type is checked on the **open descriptor** with
+   `O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC` + `fstat`: FIFO, socket and device are
+   refused immediately, without blocking (a FIFO with no writer would hang a plain `open` before
+   any timeout).
+5. **Only then** it runs `<binary> --version` (clean environment, `PATH=/usr/bin:/bin`, 10 s). The
+   output must be `Google Chrome <n.n.n.n>` (the stable one: Beta, Dev and "for Testing" have more
+   words and are refused) or `Chromium <n.n.n.n> …`. The product and the version come from there.
+6. The **owning package** (`dpkg -S`, then `rpm -qf`) is queried and recorded in
+   `ValidatedChrome.package`; the validation **does not depend** on it (the system may have neither
+   `dpkg` nor `rpm`).
 
-Candidatos, em ordem: `/opt/google/chrome/chrome`, `/usr/bin/google-chrome-stable`,
-`/usr/bin/google-chrome`, `/opt/google/chrome/google-chrome`, depois o Chromium
+Candidates, in order: `/opt/google/chrome/chrome`, `/usr/bin/google-chrome-stable`,
+`/usr/bin/google-chrome`, `/opt/google/chrome/google-chrome`, then Chromium
 (`/usr/lib/chromium/chromium`, `/usr/lib/chromium-browser/chromium-browser`,
-`/usr/bin/chromium`, `/usr/bin/chromium-browser`). O Chrome estável vem antes; o Chromium é
-alternativa e vem **marcado** (`BrowserKind::Chromium`). Quando o navegador é Chromium, a sessão
-registra em `capture.notes`: "navegador: Chromium (alternativa ao Google Chrome estável, que
-não existe para este sistema/arquitetura)".
+`/usr/bin/chromium`, `/usr/bin/chromium-browser`). Stable Chrome comes first; Chromium is an
+alternative and comes **marked** (`BrowserKind::Chromium`). When the browser is Chromium, the session
+records in `capture.notes`: "browser: Chromium (alternative to stable Google Chrome, which does not
+exist for this system/architecture)".
 
-**Fica de fora, e é dito:** o Chromium instalado por **snap** — no aceite da rodada 14 o
-Chromium do snap (arm64, 156.0.8078.47) passou a bateria real do App, com 0 falhas
-(`tests/results/linux/README.md`). O binário ELF dentro do snap é de root e cumpre as regras
-acima; o **lançador** `/snap/bin/chromium` (o que o `apt install chromium-browser` do Ubuntu
-cria) não é candidato nem aceito, porque é um lançador do snapd, não o binário do pacote. Uma
-instalação em pasta do usuário (`~/chrome`, binário baixado à mão) é recusada de propósito: o
-diretório é do usuário.
+**Left out, and stated:** Chromium installed via **snap** — in the round 14 acceptance the
+snap Chromium (arm64, 156.0.8078.47) passed the real App battery, with 0 failures
+(`tests/results/linux/README.md`). The ELF binary inside the snap is owned by root and meets the rules
+above; the **launcher** `/snap/bin/chromium` (what Ubuntu's `apt install chromium-browser`
+creates) is neither a candidate nor accepted, because it is a snapd launcher, not the package binary. An
+install in a user folder (`~/chrome`, a hand-downloaded binary) is refused on purpose: the
+directory belongs to the user.
 
-**Janela que resta:** entre a checagem e o `exec` há uma janela (TOCTOU), como no macOS. Aqui
-o binário e todos os diretórios são de root e inacessíveis para escrita pelo usuário, então só
-root a explora, e root já pode tudo.
+**Remaining window:** between the check and the `exec` there is a window (TOCTOU), as on macOS. Here
+the binary and all directories are owned by root and not writable by the user, so only
+root can exploit it, and root can already do everything.
 
-Testes (Linux): `parses_the_version_line_of_each_product_and_refuses_the_others`,
+Tests (Linux): `parses_the_version_line_of_each_product_and_refuses_the_others`,
 `candidates_list_chrome_before_chromium_and_the_real_binary_before_the_script`,
 `a_regular_trusted_elf_passes_every_check_and_only_then_runs_version`,
 `a_binary_writable_by_group_or_others_is_refused_before_anything_runs`,
 `a_writable_directory_above_the_binary_is_refused`,
 `a_file_owned_by_someone_else_is_refused`,
-`scripts_and_non_browser_names_are_refused_without_running` (inclui um script de nome
-arbitrário ao lado de um `chrome` ELF, que **não** é trocado),
-`a_fifo_is_refused_immediately_without_blocking` (um FIFO sem escritor é recusado em menos de
-5 s, provando que o `open` não bloqueia),
+`scripts_and_non_browser_names_are_refused_without_running` (includes a script with an
+arbitrary name next to an ELF `chrome`, which is **not** swapped),
+`a_fifo_is_refused_immediately_without_blocking` (a FIFO with no writer is refused in under
+5 s, proving that the `open` does not block),
 `a_symlink_is_resolved_to_the_canonical_binary`, `control_characters_in_the_path_are_refused`
-e `the_installed_browser_passes_when_present` (o navegador real do container, com versão,
-tipo e pacote; no arm64 exige `Chromium`).
+and `the_installed_browser_passes_when_present` (the container's real browser, with version,
+kind and package; on arm64 it requires `Chromium`).
 
-## 4. Diretórios privados: perfil, NetLog e state root
+## 4. Private directories: profile, NetLog and state root
 
-Tudo continua criado 0700 e conferido depois de aberto (`create_private_dir_new`,
-`verify_private_dir`). O que muda é **onde**:
+Everything is still created 0700 and checked after being opened (`create_private_dir_new`,
+`verify_private_dir`). What changes is **where**:
 
-- **macOS:** `temp_dir()` (`$TMPDIR` é por usuário).
-- **Linux:** `$TMPDIR`, se o usuário o definiu (não vazio); senão `$XDG_RUNTIME_DIR`, se for um
-  diretório **real** (não link), absoluto, **do usuário atual e com modo 0700**; senão `/tmp`.
-- O **state root** (marcadores de órfãos, resgates) vive nessa base. Sob um `XDG_RUNTIME_DIR`
-  válido chama-se `scrapelens-capture-state`; na base compartilhada `/tmp` o nome leva o uid
-  (`scrapelens-capture-state-<uid>`), para dois usuários não disputarem a mesma pasta.
-- `ensure_private_state_root` cria/aperta a raiz e confere que é diretório **do usuário, 0700 e
-  não link**, **antes** de qualquer `chmod` (um link no lugar é recusado sem tocar o alvo).
-- `is_app_profile` (limpeza de órfãos) passa a comparar com essa base, não com o `temp_dir()`.
+- **macOS:** `temp_dir()` (`$TMPDIR` is per user).
+- **Linux:** `$TMPDIR`, if the user set it (non-empty); otherwise `$XDG_RUNTIME_DIR`, if it is a
+  **real** directory (not a link), absolute, **owned by the current user and with mode 0700**; otherwise `/tmp`.
+- The **state root** (orphan markers, rescues) lives in that base. Under a valid `XDG_RUNTIME_DIR`
+  it is called `scrapelens-capture-state`; in the shared `/tmp` base the name carries the uid
+  (`scrapelens-capture-state-<uid>`), so two users do not contend for the same folder.
+- `ensure_private_state_root` creates/tightens the root and checks that it is a directory **owned by the user, 0700 and
+  not a link**, **before** any `chmod` (a link in its place is refused without touching the target).
+- `is_app_profile` (orphan cleanup) now compares against that base, not against `temp_dir()`.
 
-Testes: `linux_base_dir_prefers_tmpdir_then_a_valid_xdg_runtime_dir_then_tmp`,
-`the_state_root_is_created_0700_and_a_symlink_in_its_place_is_refused_untouched`; e a etapa
-`xdg` do container (um `XDG_RUNTIME_DIR` 0700, sem `TMPDIR`) mostra o perfil
-`scrapelens-chrome-<pid>-<ns>` e `scrapelens-capture-state` (0700) criados **dentro dele**
-durante a captura.
+Tests: `linux_base_dir_prefers_tmpdir_then_a_valid_xdg_runtime_dir_then_tmp`,
+`the_state_root_is_created_0700_and_a_symlink_in_its_place_is_refused_untouched`; and the `xdg`
+stage of the container (a 0700 `XDG_RUNTIME_DIR`, no `TMPDIR`) shows the profile
+`scrapelens-chrome-<pid>-<ns>` and `scrapelens-capture-state` (0700) created **inside it**
+during the capture.
 
-## 5. Descritores, processos e pipes
+## 5. Descriptors, processes and pipes
 
-- **CLOEXEC no filho:** o Linux usa `close_range(first, ~0, CLOSE_RANGE_CLOEXEC)` (kernel 5.11+),
-  que marca **todos** os descritores `>= first` sem teto de varredura; se o syscall não existir
-  (kernel antigo, seccomp), cai no mesmo laço do macOS (`min(getdtablesize(), 65536)`). Com o
-  pipe, `first = 5` (o 3 e o 4 são do CDP).
-- **Pipe:** `pipe2(O_CLOEXEC)` no Linux; no macOS (`pipe` + `F_DUPFD_CLOEXEC`) a janela mínima
-  continua e está documentada no `docs/16b`.
-- **Caminho do descritor** (mensagem quando a pasta da sessão é trocada): `readlink
-  /proc/self/fd/N` no Linux (`F_GETPATH` no macOS).
-- **Órfãos:** `/proc/<pid>/cmdline` e `kill(2)` no lugar de `ps`/`kill`, que um container
-  mínimo pode não ter.
+- **CLOEXEC in the child:** Linux uses `close_range(first, ~0, CLOSE_RANGE_CLOEXEC)` (kernel 5.11+),
+  which marks **all** descriptors `>= first` with no scan ceiling; if the syscall does not exist
+  (old kernel, seccomp), it falls back to the same loop as macOS (`min(getdtablesize(), 65536)`). With the
+  pipe, `first = 5` (3 and 4 belong to the CDP).
+- **Pipe:** `pipe2(O_CLOEXEC)` on Linux; on macOS (`pipe` + `F_DUPFD_CLOEXEC`) the minimal window
+  remains and is documented in `docs/16b`.
+- **Descriptor path** (message when the session folder is swapped): `readlink
+  /proc/self/fd/N` on Linux (`F_GETPATH` on macOS).
+- **Orphans:** `/proc/<pid>/cmdline` and `kill(2)` in place of `ps`/`kill`, which a minimal
+  container may not have.
 
-## 6. Containers de teste (`experiments/linux/`)
+## 6. Test containers (`experiments/linux/`)
 
-- `Dockerfile`: parametrizado por base (`ubuntu:22.04`, `ubuntu:24.04`, `debian:12`) e navegador
-  (`chrome`: o `.deb` oficial de `dl.google.com`, amd64; `chromium`: o pacote `chromium` do
-  Debian, para arm64), mais Xvfb, Rust (rustup), `cmake`/`clang` (o `testserver`, via quiche, só
-  compila com eles) e um usuário comum (`tester`, uid 1001). O Chrome roda como esse usuário
-  **com o sandbox ligado** (`--security-opt seccomp=unconfined`, para o Chrome criar namespaces de
-  usuário); **nunca** `--no-sandbox` (D6).
-- `run.sh <rótulo> <plataforma> <base> <chrome|chromium> [comando]`: constrói a imagem, monta um
-  **snapshot somente leitura** do repositório e roda `inside.sh`.
-- `inside.sh [etapas]`: `info`, `clippy`, `unit` (`cargo test --lib`), `live` (os testes vivos em
-  loopback, `--ignored`, sob `xvfb-run`, uma thread), `recon` (`cargo test` e `live_e2e.sh`),
-  `multi` (o `check_multi_target.py`), `xdg` e `mcp`.
-- `shim/`: substituto de `src-tauri` **só no container**. O `check_multi_target.py` dirige
-  `cargo test live_bodies_cycle` dentro de `src-tauri`; sem o Tauri no Linux, o container troca
-  `src-tauri` por uma crate mínima cujo teste faz exatamente o mesmo (`scrapelens_capture::run`,
-  headless, só loopback). O script de aceite, da Testes, não foi tocado.
+- `Dockerfile`: parameterized by base (`ubuntu:22.04`, `ubuntu:24.04`, `debian:12`) and browser
+  (`chrome`: the official `.deb` from `dl.google.com`, amd64; `chromium`: Debian's `chromium`
+  package, for arm64), plus Xvfb, Rust (rustup), `cmake`/`clang` (the `testserver`, via quiche, only
+  builds with them) and a regular user (`tester`, uid 1001). Chrome runs as that user
+  **with the sandbox on** (`--security-opt seccomp=unconfined`, so Chrome can create user
+  namespaces); **never** `--no-sandbox` (D6).
+- `run.sh <label> <platform> <base> <chrome|chromium> [command]`: builds the image, mounts a
+  **read-only snapshot** of the repository and runs `inside.sh`.
+- `inside.sh [stages]`: `info`, `clippy`, `unit` (`cargo test --lib`), `live` (the live tests on
+  loopback, `--ignored`, under `xvfb-run`, one thread), `recon` (`cargo test` and `live_e2e.sh`),
+  `multi` (the `check_multi_target.py`), `xdg` and `mcp`.
+- `shim/`: a stand-in for `src-tauri` **in the container only**. `check_multi_target.py` drives
+  `cargo test live_bodies_cycle` inside `src-tauri`; without Tauri on Linux, the container swaps
+  `src-tauri` for a minimal crate whose test does exactly the same (`scrapelens_capture::run`,
+  headless, loopback only). The acceptance script, owned by Tests, was not touched.
 
-## 7. O que rodou e o que não rodou
+## 7. What ran and what did not
 
-**Rodou** (todas as plataformas da tabela, salvo onde a célula diz `—`): `cargo clippy
---all-targets -D warnings` em `capture/` e `recon/`; `cargo test --lib` de `capture/`; os testes
-vivos de `capture/` (`--ignored`, uma thread, `xvfb-run`); `cargo test` e `scripts/live_e2e.sh` de
-`recon/`; `check_multi_target.py` (16/16 NetLog, ≥15/16 CDP, tipos de alvo, corpos, sem fusão,
-service worker) com o `testserver` e o `scrapelens-core` compilados no próprio container; os testes
-do `mcp/`; a captura com perfil e state root sob `XDG_RUNTIME_DIR`; as duas capturas de
-`navigator.webdriver` com janela sob Xvfb (Ubuntu 24.04 amd64 e Debian 12 arm64).
+**Ran** (all platforms in the table, except where the cell says `—`): `cargo clippy
+--all-targets -D warnings` in `capture/` and `recon/`; `cargo test --lib` of `capture/`; the live
+tests of `capture/` (`--ignored`, one thread, `xvfb-run`); `cargo test` and `scripts/live_e2e.sh` of
+`recon/`; `check_multi_target.py` (16/16 NetLog, ≥15/16 CDP, target types, bodies, no merge,
+service worker) with the `testserver` and `scrapelens-core` built in the container itself; the tests
+of `mcp/`; the capture with profile and state root under `XDG_RUNTIME_DIR`; the two
+`navigator.webdriver` captures with a window under Xvfb (Ubuntu 24.04 amd64 and Debian 12 arm64).
 
-**Não rodou, e por quê:**
+**Did not run, and why:**
 
-- **`src-tauri/` (o App Tauri) no Linux, nesta bateria de contêiner:** não foi compilado nem
-  testado aqui; exige webkit2gtk/GTK e o empacotamento Linux, que ficaram na etapa do App. O
-  `check_multi_target.py` rodou com o `shim/` no lugar do `src-tauri/` (§6), e os 8 testes
-  `--ignored` do `src-tauri` não rodaram no contêiner. No **aceite da rodada 14** o App foi
-  empacotado e validado nas VMs do OrbStack (§7.1).
-- **Distribuições RPM** (Fedora, RHEL): não testadas. O caminho `rpm -qf` está codificado, mas
-  nunca foi executado; `dpkg -S` foi exercitado (Ubuntu e Debian).
-- **Outros navegadores do sistema:** Chrome Beta/Dev/for Testing (recusados de propósito). O
-  Chromium por snap passou no aceite do App (§7.1); o lançador `/snap/bin/chromium` segue fora
-  dos candidatos.
-- **Caminho de reserva de `close_range`** (kernel < 5.11 ou seccomp que bloqueie o syscall): o
-  laço de `fcntl` é o mesmo código do macOS e passa lá, mas não foi forçado no Linux.
-- **Montagem somente leitura / ACL** na validação do navegador (o `access(W_OK)` para usuário não
-  root): coberto pelo código, não por um teste (os testes de modo e dono cobrem o resto).
-- **Emulação x86:** os amd64 rodam por emulação (OrbStack), então os tempos dos vivos (≈ 280 s)
-  não valem como desempenho; o arm64 nativo leva ≈ 200 s.
-- **HTTP/3, outras CPUs, Wayland:** fora do que a captura testa em loopback.
+- **`src-tauri/` (the Tauri App) on Linux, in this container battery:** it was neither built nor
+  tested here; it requires webkit2gtk/GTK and the Linux packaging, which were left to the App stage. The
+  `check_multi_target.py` ran with the `shim/` in place of `src-tauri/` (§6), and the 8
+  `--ignored` tests of `src-tauri` did not run in the container. In the **round 14 acceptance** the App was
+  packaged and validated on the OrbStack VMs (§7.1).
+- **RPM distributions** (Fedora, RHEL): not tested. The `rpm -qf` path is coded, but
+  was never executed; `dpkg -S` was exercised (Ubuntu and Debian).
+- **Other system browsers:** Chrome Beta/Dev/for Testing (refused on purpose). Chromium via snap
+  passed the App acceptance (§7.1); the `/snap/bin/chromium` launcher remains outside
+  the candidates.
+- **`close_range` fallback path** (kernel < 5.11 or seccomp that blocks the syscall): the
+  `fcntl` loop is the same code as macOS and passes there, but was not forced on Linux.
+- **Read-only mount / ACL** in the browser validation (the `access(W_OK)` for a non-root
+  user): covered by the code, not by a test (the mode and owner tests cover the rest).
+- **x86 emulation:** the amd64 runs go through emulation (OrbStack), so the live-test times (≈ 280 s)
+  do not count as performance; native arm64 takes ≈ 200 s.
+- **HTTP/3, other CPUs, Wayland:** outside what the capture tests on loopback.
 
-### 7.1 Aceite do App nas VMs do OrbStack (rodada 14)
+### 7.1 App acceptance on the OrbStack VMs (round 14)
 
-Execução do App real empacotado, registrada pela Testes/App em `tests/results/linux/README.md`
-(artefatos `src-tauri/linux/out/` do commit `e6d5fc6`): duas VMs Ubuntu 24.04, amd64 sobre
-Rosetta com Google Chrome 156.0.8078.79 do repositório oficial, e arm64 nativa com **Chromium
-156.0.8078.47 do snap**. Instalado o `.deb` (`ScrapeLens_0.1.0_amd64.deb` e
-`ScrapeLens_0.1.0_arm64.deb`; também `AppImage` das duas arquiteturas), **0 falhas** em cada
-máquina: iniciar e encerrar por atalho, captura `complete` com 11 requisições, HAR `complete` 24,
-NetLog `partial` 32, `navigator.webdriver === false`, nenhum socket LISTEN do Chrome da captura.
+Run of the real packaged App, recorded by Tests/App in `tests/results/linux/README.md`
+(artifacts `src-tauri/linux/out/` of commit `e6d5fc6`): two Ubuntu 24.04 VMs, amd64 on
+Rosetta with Google Chrome 156.0.8078.79 from the official repository, and native arm64 with **Chromium
+156.0.8078.47 from the snap**. With the `.deb` installed (`ScrapeLens_0.1.0_amd64.deb` and
+`ScrapeLens_0.1.0_arm64.deb`; also the `AppImage` of both architectures), **0 failures** on each
+machine: start and quit by shortcut, `complete` capture with 11 requests, HAR `complete` 24,
+NetLog `partial` 32, `navigator.webdriver === false`, no LISTEN socket from the capture's Chrome.
 
-É a prova de que a validação de navegador deste módulo funciona com o Chrome do repositório e com
-o Chromium do snap no App real; a bateria de contêiner da tabela do §1 continua sendo a prova de
-`capture`/`recon` por plataforma.
+It is the proof that this module's browser validation works with the repository's Chrome and with
+the snap's Chromium in the real App; the container battery in the §1 table remains the proof of
+`capture`/`recon` per platform.
 
-**Regressão no macOS:** nenhuma. A lista da tabela é a mesma de antes (clippy, 91 unitários, 17 vivos,
-recon, `src-tauri` 56 passed, mcp, `check_multi_target` OK); os ramos `cfg(target_os = "macos")`
-(`codesign`, `plutil`, `F_GETPATH`, `ps`, `pipe` + `F_DUPFD_CLOEXEC`) não foram tocados.
+**macOS regression:** none. The list in the table is the same as before (clippy, 91 unit, 17 live,
+recon, `src-tauri` 56 passed, mcp, `check_multi_target` OK); the `cfg(target_os = "macos")` branches
+(`codesign`, `plutil`, `F_GETPATH`, `ps`, `pipe` + `F_DUPFD_CLOEXEC`) were not touched.
 
-**Como repetir:**
+**How to repeat:**
 
 ```
-experiments/linux/run.sh u24-amd64 linux/amd64 ubuntu:24.04 chrome       # Chrome estável
+experiments/linux/run.sh u24-amd64 linux/amd64 ubuntu:24.04 chrome       # stable Chrome
 experiments/linux/run.sh d12-arm64 linux/arm64 debian:12 chromium         # Chromium (arm64)
-# etapas: info clippy unit live recon multi xdg headed mcp (padrão: info clippy unit live recon)
+# stages: info clippy unit live recon multi xdg headed mcp (default: info clippy unit live recon)
 experiments/linux/run.sh u24-amd64 linux/amd64 ubuntu:24.04 chrome /src/experiments/linux/inside.sh multi xdg
 ```
-

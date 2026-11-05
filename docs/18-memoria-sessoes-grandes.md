@@ -1,299 +1,299 @@
-# 18. Memória ao abrir sessões grandes: onde está o pico e como reduzi-lo
+# 18. Memory when opening large sessions: where the peak is and how to reduce it
 
-Rodada 12, onda 1. **Só medição**: nenhum código de `core/`, `mcp/` ou `src-tauri/`
-foi alterado. Este documento mede onde está o pico de memória ao abrir uma sessão
-muito grande (a pendência "cerca de 2,4 GB", `docs/06-entrega.md`) e propõe
-reduções, cada uma com a estimativa e o que foi de fato medido.
+Round 12, wave 1. **Measurement only**: no code in `core/`, `mcp/` or `src-tauri/`
+was changed. This document measures where the memory peak is when opening a very
+large session (the open item "about 2.4 GB", `docs/06-entrega.md`) and proposes
+reductions, each with the estimate and what was actually measured.
 
-## 1. Como foi medido
+## 1. How it was measured
 
-- **Sessão sintética por captura real em loopback.** `capture/examples/capture_big.rs`
-  sobe um servidor HTTP/1.1 em `127.0.0.1` (std, keep-alive) que serve uma página
-  com `N` `fetch` de `/r/<i>` (JSON de ~1,5 KiB, um `Set-Cookie` a cada 50, cabeçalhos
-  variados). O Chrome estável é controlado por `BrowserCapture` (CDP + NetLog
-  `Everything`, allowlist só `localhost:<porta>`, pipe). Dados sintéticos
-  (`bigfixture-*`); nenhum site de terceiros; sem proxy; sem CloakBrowser.
-- **Harness por etapa.** `experiments/memoria-sessao/` (crate independente, só
-  leitura) roda **uma etapa por processo** e imprime o pico de RSS (`getrusage`
-  `ru_maxrss`) e o RSS atual (`ps`) a cada checkpoint, mais o tempo. Cada etapa
-  imita um consumidor real:
+- **Synthetic session from a real loopback capture.** `capture/examples/capture_big.rs`
+  starts an HTTP/1.1 server on `127.0.0.1` (std, keep-alive) that serves a page
+  with `N` `fetch` calls to `/r/<i>` (JSON of ~1,5 KiB, one `Set-Cookie` every 50, varied
+  headers). Stable Chrome is driven by `BrowserCapture` (CDP + NetLog
+  `Everything`, allowlist only `localhost:<port>`, pipe). Synthetic data
+  (`bigfixture-*`); no third-party site; no proxy; no CloakBrowser.
+- **Per-stage harness.** `experiments/memoria-sessao/` (independent crate, read-only)
+  runs **one stage per process** and prints the peak RSS (`getrusage`
+  `ru_maxrss`) and the current RSS (`ps`) at each checkpoint, plus the time. Each stage
+  imitates a real consumer:
 
-  | Etapa | Quem faz isso hoje |
+  | Stage | Who does this today |
   |---|---|
-  | `app-open`, `app-open-ipc` | App: `read_session_payload` (`src-tauri/src/commands.rs`): `read_to_string` + `serde_json::Value`, depois o payload é serializado para o front-end |
-  | `lazy`, `lazy-search` | App: busca (`cached_session` → `open_session_dir_lazy`) |
-  | `import-eager`, `import-eager-pretty`, `import-eager-sanitize` | MCP: primeira chamada mascarada (`registry.rs` `Entry::masked`: `import_session_dir` + `sanitize_bundle`); CLI `inspect` (`import_session_dir` + `json!` + `to_string_pretty`) |
-  | `netlog-only`, `cdp-only`, `capture-full`, `capture-write` | `stop_capture` / `import-capture`: parse de CDP e NetLog + correlação (+ gravação) |
-  | `validate-value` / `validate-ignored`, `eager-ignored`, `import-eager-stream` | Variantes da **proposta** (§4), medidas à parte |
+  | `app-open`, `app-open-ipc` | App: `read_session_payload` (`src-tauri/src/commands.rs`): `read_to_string` + `serde_json::Value`, then the payload is serialized to the front end |
+  | `lazy`, `lazy-search` | App: search (`cached_session` → `open_session_dir_lazy`) |
+  | `import-eager`, `import-eager-pretty`, `import-eager-sanitize` | MCP: first masked call (`registry.rs` `Entry::masked`: `import_session_dir` + `sanitize_bundle`); CLI `inspect` (`import_session_dir` + `json!` + `to_string_pretty`) |
+  | `netlog-only`, `cdp-only`, `capture-full`, `capture-write` | `stop_capture` / `import-capture`: CDP and NetLog parse + correlation (+ write) |
+  | `validate-value` / `validate-ignored`, `eager-ignored`, `import-eager-stream` | Variants of the **proposal** (§4), measured separately |
 
-- **Máquina:** macOS arm64, 64 GiB, Chrome 156, binários `--release`. Os números de
-  memória são **picos de RSS** e repetíveis (±1 %); os de tempo variam com o cache
-  de disco (±30 % nas etapas curtas).
-- **Reproduzir:**
+- **Machine:** macOS arm64, 64 GiB, Chrome 156, `--release` binaries. The memory
+  numbers are **RSS peaks** and repeatable (±1 %); the time numbers vary with the disk cache
+  (±30 % on the short stages).
+- **Reproduce:**
   ```
   cd capture && cargo build --release --example capture_big
   ./target/release/examples/capture_big /tmp/big20k 20000     # ~5 min
   cd ../experiments/memoria-sessao && cargo build --release
-  ./target/release/memoria-sessao import-eager /tmp/big20k   # uma etapa por vez
+  ./target/release/memoria-sessao import-eager /tmp/big20k   # one stage at a time
   ```
-  Obs.: as medições foram feitas num snapshot limpo do `HEAD` (`git archive`) porque
-  o working tree do core estava em edição por outro agente.
+  Note: the measurements were made on a clean snapshot of `HEAD` (`git archive`) because
+  the core working tree was being edited by another agent.
 
-## 2. Tamanhos das sessões medidas
+## 2. Sizes of the measured sessions
 
-| Requisições | `session.json` | `netlog.json` | `cdp-events.jsonl` | `cdp-bodies.jsonl` | Anexos |
+| Requests | `session.json` | `netlog.json` | `cdp-events.jsonl` | `cdp-bodies.jsonl` | Attachments |
 |---:|---:|---:|---:|---:|---:|
-| 2.002 | 113 MiB | 31 MiB | 9,0 MiB | 2,7 MiB | 2.002 arquivos |
-| 5.002 | 283 MiB | 78 MiB | 22,5 MiB | 6,7 MiB | 5.002 arquivos |
-| 20.002 | **1.133 MiB** | 313 MiB | 90 MiB | 27 MiB | 20.002 arquivos (18 MiB) |
+| 2.002 | 113 MiB | 31 MiB | 9,0 MiB | 2,7 MiB | 2.002 files |
+| 5.002 | 283 MiB | 78 MiB | 22,5 MiB | 6,7 MiB | 5.002 files |
+| 20.002 | **1.133 MiB** | 313 MiB | 90 MiB | 27 MiB | 20.002 files (18 MiB) |
 
-Uma requisição capturada pesa **~59 KiB no `session.json`** (pretty) e ~34 KiB em
-JSON compacto. A referência de `docs/06-entrega.md` (20.000 requisições de HAR,
-`inspect` a 2.415 MiB) é de uma sessão muito mais leve por requisição; o mesmo
-`inspect` sobre 20.000 requisições **capturadas** pica em 9.305 MiB (3,9×), e
-o 2,4 GB equivale a só ~**5 mil** requisições capturadas (2.611 MiB em
-`import-eager-pretty` com N = 5.002). O número de requisições sozinho não define o
-risco: o formato da sessão (captura com NetLog e `headerEvidence` contra HAR) pesa
-tanto quanto.
+A captured request weighs **~59 KiB in `session.json`** (pretty) and ~34 KiB in
+compact JSON. The reference in `docs/06-entrega.md` (20.000 HAR requests,
+`inspect` at 2.415 MiB) comes from a session that is much lighter per request; the same
+`inspect` over 20.000 **captured** requests peaks at 9.305 MiB (3,9×), and
+the 2.4 GB corresponds to only ~**5 thousand** captured requests (2.611 MiB in
+`import-eager-pretty` with N = 5.002). The number of requests alone does not define the
+risk: the session format (capture with NetLog and `headerEvidence` versus HAR) weighs
+just as much.
 
-Composição de uma requisição (amostra de 200, JSON compacto, bytes):
+Composition of one request (sample of 200, compact JSON, bytes):
 
-| Campo | Bytes | Observação |
+| Field | Bytes | Note |
 |---|---:|---|
-| `attempts` (total) | 25.711 | dentro dele: `headerEvidence` **16.282**, `requestHeaders` 4.512, `responseHeaders` 1.272 |
-| `requestHeaders` (nível da requisição) | 4.828 | **cópia** do que já está na tentativa |
-| `responseHeaders` (nível da requisição) | 1.291 | **cópia** |
-| `cookie`, `requestBody`, `responseBody`, `provenance`, `timings`, `cdp`, `target`, resto | ~2.100 | |
-| **Total** | **~33.900** | `headerEvidence` = 48 %; cópias de cabeçalhos = 18 % |
+| `attempts` (total) | 25.711 | inside it: `headerEvidence` **16.282**, `requestHeaders` 4.512, `responseHeaders` 1.272 |
+| `requestHeaders` (request level) | 4.828 | **copy** of what is already in the attempt |
+| `responseHeaders` (request level) | 1.291 | **copy** |
+| `cookie`, `requestBody`, `responseBody`, `provenance`, `timings`, `cdp`, `target`, rest | ~2.100 | |
+| **Total** | **~33.900** | `headerEvidence` = 48 %; header copies = 18 % |
 
-## 3. Resultados: pico de RSS por etapa (MiB)
+## 3. Results: RSS peak per stage (MiB)
 
-| Etapa | N = 2.002 | N = 5.002 | N = 20.002 | MiB por 1.000 req. (5k→20k) |
+| Stage | N = 2.002 | N = 5.002 | N = 20.002 | MiB per 1.000 req. (5k→20k) |
 |---|---:|---:|---:|---:|
-| `lazy` (sessão tipada + anexos preguiçosos) | 121 | 293 | **1.154** | 57 |
-| `app-open` (App: texto + `Value`) | 648 | 1.615 | **6.453** | 322 |
-| `app-open-ipc` (+ serialização para o front-end) | 714 | 1.778 | **7.101** | 355 |
-| `import-eager` (MCP máscara / CLI) | 481 | 1.186 | **4.727** | 236 |
-| `import-eager-sanitize` (+ cópia mascarada) | 569 | 1.415 | **5.654** | 283 |
+| `lazy` (typed session + lazy attachments) | 121 | 293 | **1.154** | 57 |
+| `app-open` (App: text + `Value`) | 648 | 1.615 | **6.453** | 322 |
+| `app-open-ipc` (+ serialization to the front end) | 714 | 1.778 | **7.101** | 355 |
+| `import-eager` (MCP mask / CLI) | 481 | 1.186 | **4.727** | 236 |
+| `import-eager-sanitize` (+ masked copy) | 569 | 1.415 | **5.654** | 283 |
 | `import-eager-pretty` (CLI `inspect`) | 1.057 | 2.611 | **9.305** | 606 |
-| `capture-full` (parse + correlação) | 715 | 1.784 | **6.993** | 347 |
+| `capture-full` (parse + correlation) | 715 | 1.784 | **6.993** | 347 |
 | `capture-write` (+ `write_session_dir`) | — | — | **9.189** | — |
-| *Proposta:* `eager-ignored` | 163 | 399 | **1.576** | 78 |
-| *Proposta:* `import-eager-stream` | — | 1.186 | **4.727** | — |
+| *Proposal:* `eager-ignored` | 163 | 399 | **1.576** | 78 |
+| *Proposal:* `import-eager-stream` | — | 1.186 | **4.727** | — |
 
-Tempo (ms): `import-eager` 1.154 / 2.890 / 17.795; `import-eager-sanitize` 1.960 /
+Time (ms): `import-eager` 1.154 / 2.890 / 17.795; `import-eager-sanitize` 1.960 /
 6.964 / 25.764; **`capture-full` 2.767 / 20.512 / 248.911**.
 
-O crescimento da **memória é linear** em N. O do **tempo de `capture-full` não é**:
-2.002 → 5.002 requisições (×2,5) leva ×7,4 do tempo; 5.002 → 20.002 (×4) leva ×12,1.
+The **memory** growth is linear in N. The **`capture-full` time** growth is not:
+2.002 → 5.002 requests (×2,5) takes ×7,4 of the time; 5.002 → 20.002 (×4) takes ×12,1.
 
-## 4. Onde está o pico (por consumidor)
+## 4. Where the peak is (per consumer)
 
-### 4.1 Importar uma sessão inteira (`import_session_dir`): 4,7 GiB, dos quais ~3,1 GiB são um DOM descartado
+### 4.1 Importing a whole session (`import_session_dir`): 4,7 GiB, of which ~3,1 GiB is a discarded DOM
 
-`import_session_dir` lê `session.json` tipado (1,15 GiB), lê `cdp-events.jsonl` (90 MiB)
-e `netlog.json` (313 MiB) inteiros e, **só para saber se o netlog é JSON válido**,
-faz `serde_json::from_slice::<Value>(&bytes)` (`core/src/parse/own.rs`, linha 42):
-um DOM completo que é descartado em seguida. Medido isoladamente sobre o mesmo
-`netlog.json`: **`validate-value` 3.464 MiB contra `validate-ignored` 315 MiB**
-(só os bytes), em 2,5 s contra 0,36 s. O pico de 4.727 MiB é exatamente
-1.154 (sessão) + 90 + 313 (bytes) + ~3.150 (DOM) + 18 (anexos).
+`import_session_dir` reads the typed `session.json` (1,15 GiB), reads `cdp-events.jsonl` (90 MiB)
+and `netlog.json` (313 MiB) in full and, **only to know whether the netlog is valid JSON**,
+does `serde_json::from_slice::<Value>(&bytes)` (`core/src/parse/own.rs`, line 42):
+a complete DOM that is discarded right afterwards. Measured in isolation on the same
+`netlog.json`: **`validate-value` 3.464 MiB versus `validate-ignored` 315 MiB**
+(just the bytes), in 2,5 s versus 0,36 s. The 4.727 MiB peak is exactly
+1.154 (session) + 90 + 313 (bytes) + ~3.150 (DOM) + 18 (attachments).
 
-### 4.2 `inspect` do CLI: o dobro, por `json!` + `String`
+### 4.2 CLI `inspect`: double, because of `json!` + `String`
 
-`print_json(&json!({"session": ..., "report": ...}))` converte a sessão tipada em um
-DOM (`json!` chama `to_value`) e depois a serializa numa `String` de 1,16 GiB:
-**9.305 MiB** (4.727 do import + 4.578 do DOM e da `String`). Serializar uma struct
-tipada direto com `to_writer_pretty` num fluxo **não soma nada**: o pico
-continua 4.727 MiB (`import-eager-stream`, medido).
+`print_json(&json!({"session": ..., "report": ...}))` converts the typed session into a
+DOM (`json!` calls `to_value`) and then serializes it into a 1,16 GiB `String`:
+**9.305 MiB** (4.727 from the import + 4.578 from the DOM and the `String`). Serializing a typed
+struct directly with `to_writer_pretty` into a stream **adds nothing**: the peak
+stays at 4.727 MiB (`import-eager-stream`, measured).
 
-### 4.3 Abrir no App: `Value` custa 5,6 vezes a sessão tipada
+### 4.3 Opening in the App: `Value` costs 5,6 times the typed session
 
-`read_session_payload` faz `read_to_string` (1.133 MiB) e `serde_json::from_str::<Value>`:
-**6.453 MiB**, contra **1.154 MiB** do mesmo arquivo tipado (`lazy`). O payload
-serializado para o front-end tem 649 MiB; o pico passa a **7.101 MiB** (o comando move o
-`Value`, sem clonar; um `json!` o clonaria e subiria para 10,9 GiB, o que o código
-real não faz). Com 20 mil requisições capturadas o App precisaria de ~7 GiB
-só para abrir e o webview ainda receberia 649 MiB de JSON.
+`read_session_payload` does `read_to_string` (1.133 MiB) and `serde_json::from_str::<Value>`:
+**6.453 MiB**, versus **1.154 MiB** for the same file typed (`lazy`). The payload
+serialized to the front end is 649 MiB; the peak goes to **7.101 MiB** (the command moves the
+`Value`, without cloning; a `json!` would clone it and push it to 10,9 GiB, which the real
+code does not do). With 20 thousand captured requests the App would need ~7 GiB
+just to open, and the webview would still receive 649 MiB of JSON.
 
-### 4.4 Importar uma captura (`stop_capture`, `import-capture`): 7,0 GiB e 4 minutos
+### 4.4 Importing a capture (`stop_capture`, `import-capture`): 7,0 GiB and 4 minutes
 
-Divisão medida em 20.002 requisições:
+Breakdown measured at 20.002 requests:
 
-| Parte | Pico | Tempo |
+| Part | Peak | Time |
 |---|---:|---:|
-| Parse do NetLog (`import_netlog`) | 4.662 MiB | 4,6 s |
-| Parse do CDP (`import_capture` sem NetLog) | 1.966 MiB | 2,7 s |
-| **Correlação CDP×NetLog** (o resto de `capture-full`) | — | **~241 s** |
-| `capture-full` inteiro | 6.993 MiB | 248,9 s |
+| NetLog parse (`import_netlog`) | 4.662 MiB | 4,6 s |
+| CDP parse (`import_capture` without NetLog) | 1.966 MiB | 2,7 s |
+| **CDP×NetLog correlation** (the rest of `capture-full`) | — | **~241 s** |
+| Whole `capture-full` | 6.993 MiB | 248,9 s |
 | + `write_session_dir` | 9.189 MiB | 263 s |
 
-- **Tempo:** `find_candidates` (`core/src/correlate.rs`, linha 220) percorre **todos**
-  os pares (tentativa CDP × tentativa NetLog) para cada tentativa CDP; para cada par
-  monta `format!("netlog-r{:04}-a{}")` e, em `score_candidate`, chama
-  `canonical_url` duas vezes. São 20.002 × 20.029 ≈ **4,0 × 10⁸ pares**; 248,9 s ÷
-  4,0 × 10⁸ = **0,62 µs por par** (com N = 5.002: 20,5 s ÷ 2,5 × 10⁷ = 0,8 µs): é o
-  custo quadrático. Um `sample` de 12 s com N = 5.002 confirma: `attach_netlog` →
-  `canonical_url` + `format!` + `malloc/free` dominam.
-  Isso também é o que o `stop_capture` roda **dentro do servidor MCP e do App** ao
-  encerrar uma captura grande: 4 minutos parado e ~9 GiB.
-- **Memória:** o pico de 4,66 GiB do NetLog é, como em 4.1, um DOM (`Value`) de
-  3,1 GiB do arquivo de 313 MiB, antes de virar o modelo.
+- **Time:** `find_candidates` (`core/src/correlate.rs`, line 220) walks **all**
+  the pairs (CDP attempt × NetLog attempt) for each CDP attempt; for each pair it
+  builds `format!("netlog-r{:04}-a{}")` and, in `score_candidate`, calls
+  `canonical_url` twice. That is 20.002 × 20.029 ≈ **4,0 × 10⁸ pairs**; 248,9 s ÷
+  4,0 × 10⁸ = **0,62 µs per pair** (with N = 5.002: 20,5 s ÷ 2,5 × 10⁷ = 0,8 µs): this is the
+  quadratic cost. A 12 s `sample` with N = 5.002 confirms it: `attach_netlog` →
+  `canonical_url` + `format!` + `malloc/free` dominate.
+  This is also what `stop_capture` runs **inside the MCP server and the App** when
+  ending a large capture: 4 minutes frozen and ~9 GiB.
+- **Memory:** the 4,66 GiB NetLog peak is, as in 4.1, a DOM (`Value`) of
+  3,1 GiB from the 313 MiB file, before it becomes the model.
 
-### 4.4b Primeira chamada mascarada do MCP
+### 4.4b First masked MCP call
 
-`import-eager` (4.727) + `sanitize_bundle` sobre a referência (+927 MiB de cópia
-mascarada) = **5.654 MiB** de pico, e a cópia mascarada (~1,1 GiB) fica retida em
-cache pela sessão. O custo do `sanitize_bundle` é ~14 s com 20 mil requisições.
+`import-eager` (4.727) + `sanitize_bundle` over the reference (+927 MiB of masked
+copy) = **5.654 MiB** peak, and the masked copy (~1,1 GiB) stays retained in the
+cache for the session. The cost of `sanitize_bundle` is ~14 s with 20 thousand requests.
 
-## 5. Proposta de redução, com estimativa
+## 5. Reduction proposal, with estimate
 
-Ordem por (ganho ÷ esforço). **Medido** = os números vêm do harness; **estimado** =
-extrapolação dos números medidos, a confirmar quando o item for implementado.
+Ordered by (gain ÷ effort). **Measured** = the numbers come from the harness; **estimated** =
+extrapolation from the measured numbers, to be confirmed when the item is implemented.
 
-| # | Mudança | Onde | Ganho | Esforço | Risco |
+| # | Change | Where | Gain | Effort | Risk |
 |---|---|---|---|---|---|
-| P1 | Validar o `netlog.json` em fluxo: `serde_json::from_slice::<serde::de::IgnoredAny>` em vez de `Value` | `core/src/parse/own.rs:42` | `import-eager` **4.727 → 1.576 MiB (−67 %)**, 17,8 → 9,2 s. **Medido** (`eager-ignored`: mesmo trabalho sem o DOM). Vale também para o MCP mascarado (5.654 → ~2.500 MiB, **estimado**: 1.576 + 927 da cópia) | 1 linha + teste | nenhum: mesmo veredito de validade |
-| P2 | `inspect` e outros `print_json`: struct tipada + `to_writer_pretty` em fluxo no lugar de `json!` + `String` | `core/src/bin/scrapelens-core.rs` | `inspect` **9.305 → 4.727 MiB (−49 %)**; com P1 **1.576 MiB (−83 %)**. **Medido** (`import-eager-stream`) | pequeno | nenhum |
-| P3 | Indexar o NetLog antes de correlacionar: `HashMap<(método em minúsculas, canonical_url), Vec<(requisição, tentativa)>>`, com `canonical_url` e o id calculados uma vez por tentativa. O candidato exige método e URL canônica iguais (`score_candidate` devolve `None` senão), então o conjunto de candidatos é **idêntico** | `core/src/correlate.rs` `find_candidates` | `capture-full` de **249 s para ~12 s** a 20 mil requisições (**estimado**: 7,4 s de parse medidos + correlação linear com ~1 µs por tentativa); o `stop_capture` deixa de congelar por minutos. A memória quase não muda | médio | baixo: a saída tem de ser igual (testes de correlação existentes + comparação do `session.json` antes/depois) |
-| P4 | Parse do NetLog em fluxo: um `Visitor` sobre o array `events`, guardando só os campos usados, em vez de `Value` | `core/src/parse/netlog.rs` | pico de `import_netlog` **4.662 → ~1.500 MiB** (**estimado**: remove o DOM de 3.150 MiB medido em `validate-value`); `capture-full` 6.993 → ~3.800 MiB. **Medido na rodada 16 (§8): `netlog-only` 4.759 → 1.615 MiB; `capture-full` 7.110 → 4.200 MiB** | grande | médio (o parser é grande; exige o corpus e o `check_multi_target`) |
-| P5 | App: **não** montar `Value` nem mandar a sessão inteira ao front-end. Parse tipado (`SessionV1`, 1.154 MiB, 5,6× menos) e uma lista paginada/virtualizada: o comando devolve o resumo por requisição (~100 a 200 B) e o detalhe sob demanda | `src-tauri/src/commands.rs` + front-end | abrir **7.101 → ~1.200 MiB (−83 %)**, **estimado** (tipada medida em 1.154 MiB; resumos de 20 mil linhas ≈ 4 MiB) e menos 649 MiB no IPC | médio/grande (muda o contrato do comando) | médio |
-| P6 | Escrever `session.json` compacto quando passa de um limite (ex.: 50 MiB); manter pretty abaixo | `core/src/store.rs` | arquivo **1.133 → ~650 MiB (−43 %)** (**medido**: é o `wireMiB` de 649); `app-open` e `read_to_string` caem na mesma proporção do texto (−480 MiB no pico de `app-open`) | pequeno | baixo (legibilidade em editor só para sessões enormes) |
-| P7 | `sanitize_bundle` consumindo o bundle (ou sanitizando in place) em vez de copiar | `core/src/export/sanitize.rs`, `mcp/src/registry.rs` | −927 MiB no pico mascarado e na memória retida por sessão (**medido** como o delta de `import-eager-sanitize`) | médio | baixo |
-| P8 | Esquema: não repetir `requestHeaders`/`responseHeaders` no nível da requisição quando há uma só tentativa; guardar `headerEvidence` só como diferença entre fontes | modelo `SessionV1` (v2) | ~−65 % do tamanho por requisição (59 → ~20 KiB pretty), **estimado** a partir da composição de §2 (48 % + 18 %); tipada e DOM caem junto | grande (versão de esquema) | alto (compatibilidade, todos os consumidores) |
+| P1 | Validate `netlog.json` as a stream: `serde_json::from_slice::<serde::de::IgnoredAny>` instead of `Value` | `core/src/parse/own.rs:42` | `import-eager` **4.727 → 1.576 MiB (−67 %)**, 17,8 → 9,2 s. **Measured** (`eager-ignored`: same work without the DOM). Also applies to the masked MCP (5.654 → ~2.500 MiB, **estimated**: 1.576 + 927 of the copy) | 1 line + test | none: same validity verdict |
+| P2 | `inspect` and other `print_json`: typed struct + `to_writer_pretty` as a stream instead of `json!` + `String` | `core/src/bin/scrapelens-core.rs` | `inspect` **9.305 → 4.727 MiB (−49 %)**; with P1 **1.576 MiB (−83 %)**. **Measured** (`import-eager-stream`) | small | none |
+| P3 | Index the NetLog before correlating: `HashMap<(lowercase method, canonical_url), Vec<(request, attempt)>>`, with `canonical_url` and the id computed once per attempt. The candidate requires equal method and canonical URL (`score_candidate` returns `None` otherwise), so the set of candidates is **identical** | `core/src/correlate.rs` `find_candidates` | `capture-full` from **249 s to ~12 s** at 20 thousand requests (**estimated**: 7,4 s of measured parse + linear correlation at ~1 µs per attempt); `stop_capture` stops freezing for minutes. Memory barely changes | medium | low: the output must be equal (existing correlation tests + comparison of `session.json` before/after) |
+| P4 | Streaming NetLog parse: a `Visitor` over the `events` array, keeping only the fields used, instead of `Value` | `core/src/parse/netlog.rs` | `import_netlog` peak **4.662 → ~1.500 MiB** (**estimated**: removes the 3.150 MiB DOM measured in `validate-value`); `capture-full` 6.993 → ~3.800 MiB. **Measured in round 16 (§8): `netlog-only` 4.759 → 1.615 MiB; `capture-full` 7.110 → 4.200 MiB** | large | medium (the parser is large; requires the corpus and `check_multi_target`) |
+| P5 | App: do **not** build a `Value` or send the whole session to the front end. Typed parse (`SessionV1`, 1.154 MiB, 5,6× smaller) and a paginated/virtualized list: the command returns the per-request summary (~100 to 200 B) and the detail on demand | `src-tauri/src/commands.rs` + front end | opening **7.101 → ~1.200 MiB (−83 %)**, **estimated** (typed measured at 1.154 MiB; summaries for 20 thousand rows ≈ 4 MiB) and 649 MiB less over IPC | medium/large (changes the command contract) | medium |
+| P6 | Write a compact `session.json` when it passes a limit (e.g. 50 MiB); keep pretty below | `core/src/store.rs` | file **1.133 → ~650 MiB (−43 %)** (**measured**: it is the `wireMiB` of 649); `app-open` and `read_to_string` drop in the same proportion as the text (−480 MiB at the `app-open` peak) | small | low (editor readability only for huge sessions) |
+| P7 | `sanitize_bundle` consuming the bundle (or sanitizing in place) instead of copying | `core/src/export/sanitize.rs`, `mcp/src/registry.rs` | −927 MiB at the masked peak and in the memory retained per session (**measured** as the `import-eager-sanitize` delta) | medium | low |
+| P8 | Schema: do not repeat `requestHeaders`/`responseHeaders` at the request level when there is a single attempt; store `headerEvidence` only as the difference between sources | `SessionV1` model (v2) | ~−65 % of the size per request (59 → ~20 KiB pretty), **estimated** from the composition in §2 (48 % + 18 %); typed and DOM drop together | large (schema version) | high (compatibility, all consumers) |
 
-**Projeção combinada (20 mil requisições capturadas, estimada a partir das medidas):**
+**Combined projection (20 thousand captured requests, estimated from the measurements):**
 
-| Consumidor | Hoje | P1+P2 (+P7) | + P3/P4 | + P5/P6 |
+| Consumer | Today | P1+P2 (+P7) | + P3/P4 | + P5/P6 |
 |---|---:|---:|---:|---:|
 | `inspect` (CLI) | 9,3 GiB | **1,6 GiB** | — | — |
-| 1ª chamada mascarada do MCP | 5,7 GiB | **~2,5 GiB** (P1) / ~1,6 (com P7) | — | — |
-| `stop_capture` (importa a captura) | 7,0 GiB, 249 s | 7,0 GiB, 249 s | **~3,8 GiB, ~12 s** | — |
-| Abrir no App | 7,1 GiB | 7,1 GiB | 7,1 GiB | **~1,2 GiB** |
+| MCP 1st masked call | 5,7 GiB | **~2,5 GiB** (P1) / ~1,6 (with P7) | — | — |
+| `stop_capture` (imports the capture) | 7,0 GiB, 249 s | 7,0 GiB, 249 s | **~3,8 GiB, ~12 s** | — |
+| Open in the App | 7,1 GiB | 7,1 GiB | 7,1 GiB | **~1,2 GiB** |
 
-Recomendação: **P1, P2 e P3 primeiro**. São pequenos, medidos ou com mecanismo
-claro, e resolvem o pior sintoma para quem usa o MCP: o `stop_capture` de uma
-captura grande deixa de levar minutos (P3) e a abertura mascarada cai a um terço
-da memória (P1). P5 é o que resolve o App, mas muda o contrato do comando e o
-front-end.
+Recommendation: **P1, P2 and P3 first**. They are small, measured or with a clear
+mechanism, and they solve the worst symptom for MCP users: `stop_capture` on a large
+capture stops taking minutes (P3) and the masked open drops to a third
+of the memory (P1). P5 is what fixes the App, but it changes the command contract and the
+front end.
 
-## 6. Limites do que foi medido
+## 6. Limits of what was measured
 
-- A carga é sintética e uniforme (mesmo tamanho de corpo, 1 host, HTTP/1.1, sem
-  redirecionamentos nem WebSocket); sessões reais têm cabeçalhos maiores e menos
-  repetição de URL (o que diminui o custo da correlação sem índice, mas não o
-  de memória).
-- `ru_maxrss` mede o pico do processo inteiro, incluindo o alocador; o RSS
-  retido depois do pico é menor (e o macOS devolve páginas aos poucos).
-- O tempo de etapas curtas depende do cache de disco; os de `capture-full` não.
-- Estimativas de P3 a P8 não foram implementadas **nesta rodada** (proibido então); P1 e P2 têm
-  as variantes medidas no harness, mas usando a API atual do core, não um patch. Depois disso, P1,
-  P2, P3, P4, P6 e P7 foram implementados e medidos (§7 e §8), e P5 foi feito pelo App.
-- O captura do Chrome em si (processo `capture_big`) não teve a memória medida à
-  parte; o `stop` roda o mesmo import de `capture-write` (9,2 GiB de pico).
+- The load is synthetic and uniform (same body size, 1 host, HTTP/1.1, no
+  redirects or WebSocket); real sessions have larger headers and less
+  URL repetition (which lowers the cost of correlation without an index, but not
+  the memory cost).
+- `ru_maxrss` measures the peak of the whole process, including the allocator; the RSS
+  retained after the peak is lower (and macOS returns pages gradually).
+- The time of short stages depends on the disk cache; that of `capture-full` does not.
+- Estimates for P3 to P8 were not implemented **in this round** (forbidden then); P1 and P2 have
+  the variants measured in the harness, but using the current core API, not a patch. After that, P1,
+  P2, P3, P4, P6 and P7 were implemented and measured (§7 and §8), and P5 was done by the App.
+- The Chrome capture itself (the `capture_big` process) did not have its memory measured
+  separately; `stop` runs the same import as `capture-write` (9,2 GiB peak).
 
-## 7. Resultado depois das correções (rodada 13, onda 1)
+## 7. Result after the fixes (round 13, wave 1)
 
-Implementados no `core/` e no `mcp/` (um commit por item): **P1** (`87bd164`: validação do
-`netlog.json` e das linhas do CDP em fluxo, sem DOM, com o mesmo veredito do `Value`, inclusive o
-limite de recursão de 128 níveis: `IgnoredAny` não serve porque o pula), **P2** (`752230e`:
-`inspect` e `assess` escrevem em fluxo com struct emprestada; saída byte a byte igual), **P3**
-(`4d82e36`: índice por (método em minúsculas, URL canônica) e por id de origem do NetLog; as chaves
-explícitas também indexadas), **P6** (`2550041`: `session.json` compacto quando o JSON identado passa
-de 50 MiB) e **P7** (`b438945`: `sanitize_bundle_owned` consome o bundle e sanitiza no lugar; CLI
-`sanitize` e registry do MCP usam). **P4** ficou para a rodada 16 e está medido em §8 (`ad4f5c1`);
-**P5** foi feito pelo App e também está medido (`docs/19-contrato-app.md`: 1.161 MiB ao abrir a
-sessão de 20 mil). **P8 não foi feito.**
+Implemented in `core/` and `mcp/` (one commit per item): **P1** (`87bd164`: validation of
+`netlog.json` and of the CDP lines as a stream, without a DOM, with the same verdict as `Value`, including the
+recursion limit of 128 levels: `IgnoredAny` does not work because it skips it), **P2** (`752230e`:
+`inspect` and `assess` write as a stream with a borrowed struct; output byte-for-byte equal), **P3**
+(`4d82e36`: index by (lowercase method, canonical URL) and by NetLog source id; explicit
+keys also indexed), **P6** (`2550041`: compact `session.json` when the indented JSON passes
+50 MiB) and **P7** (`b438945`: `sanitize_bundle_owned` consumes the bundle and sanitizes in place; CLI
+`sanitize` and the MCP registry use it). **P4** was left for round 16 and is measured in §8 (`ad4f5c1`);
+**P5** was done by the App and is also measured (`docs/19-contrato-app.md`: 1.161 MiB when opening the
+20 thousand session). **P8 was not done.**
 
-**Requisito de P3, saída idêntica.** `core/tests/correlation_identity.rs` importa as 29 capturas e
-fixtures versionadas (HTTP/1.1, h2, h3, contratos, multi-alvo, `src-tauri/evidence`, adapters) e
-confere o `session.json` identado e os anexos, byte a byte (FNV-1a 64 bits + tamanho), contra os
-hashes gravados ANTES da mudança (commit `aefacc9`); passa igual depois. Mais um teste unitário em
-`correlate.rs` mostra que o índice nunca descarta um par que a varredura de todos os pares aceitaria,
-e o `tests/aceite/check_multi_target.py` (captura real multi-alvo) passou.
+**P3 requirement, identical output.** `core/tests/correlation_identity.rs` imports the 29 captures and
+versioned fixtures (HTTP/1.1, h2, h3, contracts, multi-target, `src-tauri/evidence`, adapters) and
+checks the indented `session.json` and the attachments, byte for byte (64-bit FNV-1a + size), against the
+hashes recorded BEFORE the change (commit `aefacc9`); it passes equally after. One more unit test in
+`correlate.rs` shows that the index never discards a pair that the scan of all pairs would accept,
+and `tests/aceite/check_multi_target.py` (real multi-target capture) passed.
 
-**Medido depois** (mesmas sessões sintéticas de §2, mesmo harness, `--release`, picos de RSS em MiB;
-a etapa nova `import-eager-sanitize-owned` foi acrescentada ao harness; `inspect` é o binário
-`scrapelens-core inspect` medido com `/usr/bin/time -l`). N = 2.002 não foi medido de novo.
+**Measured after** (same synthetic sessions as §2, same harness, `--release`, RSS peaks in MiB;
+the new stage `import-eager-sanitize-owned` was added to the harness; `inspect` is the binary
+`scrapelens-core inspect` measured with `/usr/bin/time -l`). N = 2.002 was not measured again.
 
-| Etapa | N = 5.002 antes → depois | N = 20.002 antes → depois | Tempo a 20.002 |
+| Stage | N = 5.002 before → after | N = 20.002 before → after | Time at 20.002 |
 |---|---:|---:|---:|
-| `import-eager` (MCP máscara / CLI) — P1 | 1.186 → **400** | 4.727 → **1.580** (−67 %) | 17,8 s → 10,1 s |
+| `import-eager` (MCP mask / CLI) — P1 | 1.186 → **400** | 4.727 → **1.580** (−67 %) | 17,8 s → 10,1 s |
 | `inspect` (CLI) — P1+P2 | 2.611 → **419** | 9.305 → **1.656** (−82 %) | n/m → 11,5 s |
-| 1ª chamada mascarada do MCP — P1+P7 (`import-eager-sanitize-owned`) | 1.415 → **415** | 5.654 → **1.649** (−71 %) | 25,8 s → 22,8 s |
-| `capture-full` (parse + correlação) — P3 | 1.784 → 1.783 | 6.993 → 7.110 | **20,5 s → 2,2 s** (5k); **248,9 s → 9,3 s** (20k) |
+| MCP 1st masked call — P1+P7 (`import-eager-sanitize-owned`) | 1.415 → **415** | 5.654 → **1.649** (−71 %) | 25,8 s → 22,8 s |
+| `capture-full` (parse + correlation) — P3 | 1.784 → 1.783 | 6.993 → 7.110 | **20,5 s → 2,2 s** (5k); **248,9 s → 9,3 s** (20k) |
 | `capture-write` (+ `write_session_dir`) — P3+P6 | — → 1.903 | 9.189 → **7.580** | 263 s → **16,2 s** |
-| `netlog-only` (parse do NetLog; P4 pendente nesta rodada) | — → 1.194 | 4.662 → 4.759 | 4,6 s → 5,0 s |
-| `session.json` gravado (5.002 req.) — P6 | 283 MiB → **162 MiB** (−43 %) | 1.133 MiB → ~650 MiB (estimado, igual proporção) | — |
+| `netlog-only` (NetLog parse; P4 pending in this round) | — → 1.194 | 4.662 → 4.759 | 4,6 s → 5,0 s |
+| `session.json` written (5.002 req.) — P6 | 283 MiB → **162 MiB** (−43 %) | 1.133 MiB → ~650 MiB (estimated, same proportion) | — |
 
-As linhas de `netlog-only`, `capture-full` e `capture-write` desta tabela são o estado **antes do
-P4**; os números com P4 estão em §8.
+The `netlog-only`, `capture-full` and `capture-write` rows of this table are the state **before
+P4**; the numbers with P4 are in §8.
 
-Leitura:
+Reading:
 
-- O **tempo** de importar uma captura grande caiu de forma linear: `capture-full` a 20 mil requisições
-  de ~4 min para 9,3 s (27×); o `stop_capture` do MCP e do App deixa de congelar por minutos. A
-  memória de `capture-full` não mudava naquela rodada (o DOM do NetLog, P4, continuava: 4,7 GiB só
-  no parse); com P4, §8 mostra 4,2 GiB e 8,1 s.
-- A memória de `import-eager`, `inspect` e da 1ª chamada mascarada do MCP caiu para ~1,6 GiB (−67 a
-  −82 %): é o custo da sessão tipada (1,15 GiB) mais os bytes do CDP e do NetLog, sem o DOM nem a cópia
-  mascarada. A estimativa de §5 (≈1,6 GiB) se confirmou; a do MCP mascarado (≈1,6 GiB com P7) também.
-- `capture-write` caiu de 9,2 para 7,6 GiB e de 263 para 16 s; o que resta é o parse do NetLog
-  (P4), resolvido na rodada 16 (§8).
-- Variação: ±1 % na memória; os tempos curtos variam com o cache de disco (±30 %).
-- Reproduzir: `cd experiments/memoria-sessao && cargo build --release && ./target/release/memoria-sessao
-  <etapa> /tmp/big20k` (uma etapa por processo); `inspect`: `/usr/bin/time -l
+- The **time** to import a large capture dropped linearly: `capture-full` at 20 thousand requests
+  from ~4 min to 9,3 s (27×); `stop_capture` in the MCP and the App stops freezing for minutes. The
+  memory of `capture-full` did not change in that round (the NetLog DOM, P4, remained: 4,7 GiB for the
+  parse alone); with P4, §8 shows 4,2 GiB and 8,1 s.
+- The memory of `import-eager`, `inspect` and the MCP 1st masked call dropped to ~1,6 GiB (−67 to
+  −82 %): it is the cost of the typed session (1,15 GiB) plus the CDP and NetLog bytes, without the DOM or the
+  masked copy. The estimate in §5 (≈1,6 GiB) was confirmed; the one for the masked MCP (≈1,6 GiB with P7) too.
+- `capture-write` dropped from 9,2 to 7,6 GiB and from 263 to 16 s; what remains is the NetLog parse
+  (P4), resolved in round 16 (§8).
+- Variation: ±1 % in memory; the short times vary with the disk cache (±30 %).
+- Reproduce: `cd experiments/memoria-sessao && cargo build --release && ./target/release/memoria-sessao
+  <stage> /tmp/big20k` (one stage per process); `inspect`: `/usr/bin/time -l
   core/target/release/scrapelens-core inspect /tmp/big20k > /dev/null`.
 
-**Depois de P4 e P5 (20 mil requisições capturadas, medido):**
+**After P4 and P5 (20 thousand captured requests, measured):**
 
-| Consumidor | Antes (rodada 12) | P1–P3/P6 (rodada 13) | Com P4/P5 |
+| Consumer | Before (round 12) | P1–P3/P6 (round 13) | With P4/P5 |
 |---|---:|---:|---:|
-| `inspect` (CLI) | 9,3 GiB | **1,6 GiB** | 1,6 GiB (P4 não é do `inspect`) |
-| 1ª chamada mascarada do MCP | 5,7 GiB | **1,6 GiB** | 1,6 GiB |
-| `stop_capture` (importa a captura) | 7,0 GiB, 249 s | **7,1 GiB, 9,3 s** | **4,2 GiB, 8,1 s** (§8; com a gravação, 4,6 GiB, 17,1 s) |
-| Abrir no App (P5) | 7,1 GiB | 7,1 GiB | **1,16 GiB** (`docs/19-contrato-app.md`) |
+| `inspect` (CLI) | 9,3 GiB | **1,6 GiB** | 1,6 GiB (P4 does not apply to `inspect`) |
+| MCP 1st masked call | 5,7 GiB | **1,6 GiB** | 1,6 GiB |
+| `stop_capture` (imports the capture) | 7,0 GiB, 249 s | **7,1 GiB, 9,3 s** | **4,2 GiB, 8,1 s** (§8; with the write, 4,6 GiB, 17,1 s) |
+| Open in the App (P5) | 7,1 GiB | 7,1 GiB | **1,16 GiB** (`docs/19-contrato-app.md`) |
 
-## 8. Rodada 16: P4 medido (parser de NetLog em fluxo)
+## 8. Round 16: P4 measured (streaming NetLog parser)
 
-P4 foi implementado no `core/` no commit `ad4f5c1`: o array `events` do NetLog é lido por um
-`Visitor` que guarda só os campos usados, sem montar o `serde_json::Value` do arquivo inteiro.
-A saída é idêntica: `core/tests/correlation_identity.rs` continua com os **29/29 hashes** iguais
-aos gravados antes (referência `aefacc9`), e o corpus de NetLog e o `check_multi_target` do Core
-passaram.
+P4 was implemented in `core/` in commit `ad4f5c1`: the NetLog `events` array is read by a
+`Visitor` that keeps only the fields used, without building the `serde_json::Value` of the whole file.
+The output is identical: `core/tests/correlation_identity.rs` still has the **29/29 hashes** equal
+to those recorded before (reference `aefacc9`), and the NetLog corpus and the Core `check_multi_target`
+passed.
 
-Medição refeita nesta rodada para conferir os números do Core: mesmas sessões de §2
-(`/tmp/big5k` e `/tmp/big20k`), mesmo harness, `--release`, uma etapa por processo, pico de RSS
-em MiB. As duas execuções concordam dentro de 1 %.
+Measurement redone in this round to check the Core's numbers: same sessions as §2
+(`/tmp/big5k` and `/tmp/big20k`), same harness, `--release`, one stage per process, RSS peak
+in MiB. The two runs agree within 1 %.
 
-| Etapa | N = 5.002 antes → P4 | N = 20.002 antes → P4 | Tempo a 20.002 |
+| Stage | N = 5.002 before → P4 | N = 20.002 before → P4 | Time at 20.002 |
 |---|---:|---:|---:|
-| `netlog-only` (parse do NetLog) — **P4** | 1.194 → **407** (−66 %) | 4.759 → **1.615** (−66 %) | 5,0 s → **3,5 s** |
-| `capture-full` (parse + correlação) — P3+P4 | 1.783 → **1.055** (−41 %) | 7.110 → **4.200** (−41 %) | 9,3 s → **8,1 s** |
+| `netlog-only` (NetLog parse) — **P4** | 1.194 → **407** (−66 %) | 4.759 → **1.615** (−66 %) | 5,0 s → **3,5 s** |
+| `capture-full` (parse + correlation) — P3+P4 | 1.783 → **1.055** (−41 %) | 7.110 → **4.200** (−41 %) | 9,3 s → **8,1 s** |
 | `capture-write` (+ `write_session_dir`) — P3+P4+P6 | 1.903 → **1.229** (−35 %) | 7.580 → **4.629** (−39 %) | 16,2 s → ~16 s |
 
-Leitura:
+Reading:
 
-- **P4 removeu o DOM do NetLog.** `netlog-only` a 20 mil caiu de 4.759 para 1.615 MiB (−66 %):
-  o DOM de ~3,1 GiB medido em §4.1/§4.4 deixou de existir, e o que resta é o modelo tipado (~1,15
-  GiB) mais o texto do arquivo e as estruturas transitórias do parse. A estimativa de §5 (~1.500
-  MiB) ficou 8 % abaixo do medido.
-- **Contra a linha de base da rodada 12**, `capture-full` a 20 mil foi de 6.993 para 4.200 MiB
-  (−40 %) e `capture-write` de 9.189 para 4.629 MiB (−50 %); `capture-full` a 5 mil caiu 41 %, o
-  mesmo percentual do arquivo grande — o ganho escala com o NetLog, não com o número de requisições.
-- **Tempo:** o parse em fluxo também é mais rápido (`netlog-only` 5,0 → 3,5 s; `capture-full`
-  9,3 → 8,1 s). `capture-write` continua dominado pela gravação (14,7 s dos ~17 s), então o tempo
-  total não muda de forma perceptível (15,9 s na execução do Core, 17,1 s nesta, dentro da
-  variação de cache de disco de ±30 % já registrada em §7).
-- **P5 (App), medido:** abrir a sessão de 20 mil no App caiu de 7.108 para **1.161 MiB** (−84 %)
-  com o caminho tipado + lista paginada, e o que vai ao front-end caiu de 681 MB para ~5,4 MB
-  (`docs/19-contrato-app.md`, `src-tauri/examples/mem_open.rs`). É a linha "Abrir no App" da
-  tabela de §7.
-- **O que sobra:** o piso agora é a sessão tipada (~1,15 GiB a 20 mil) e o `session.json` de
-  ~650 MiB escrito por P6. O próximo item de memória é **P8** (esquema, ~−65 % do tamanho por
-  requisição), que exige versão nova de esquema e não foi feito.
+- **P4 removed the NetLog DOM.** `netlog-only` at 20 thousand dropped from 4.759 to 1.615 MiB (−66 %):
+  the ~3,1 GiB DOM measured in §4.1/§4.4 no longer exists, and what remains is the typed model (~1,15
+  GiB) plus the file text and the transient parse structures. The estimate in §5 (~1.500
+  MiB) was 8 % below the measured value.
+- **Against the round 12 baseline**, `capture-full` at 20 thousand went from 6.993 to 4.200 MiB
+  (−40 %) and `capture-write` from 9.189 to 4.629 MiB (−50 %); `capture-full` at 5 thousand dropped 41 %, the
+  same percentage as the large file — the gain scales with the NetLog, not with the number of requests.
+- **Time:** the streaming parse is also faster (`netlog-only` 5,0 → 3,5 s; `capture-full`
+  9,3 → 8,1 s). `capture-write` remains dominated by the write (14,7 s of the ~17 s), so the total
+  time does not change noticeably (15,9 s in the Core run, 17,1 s in this one, within the
+  ±30 % disk cache variation already recorded in §7).
+- **P5 (App), measured:** opening the 20 thousand session in the App dropped from 7.108 to **1.161 MiB** (−84 %)
+  with the typed path + paginated list, and what goes to the front end dropped from 681 MB to ~5,4 MB
+  (`docs/19-contrato-app.md`, `src-tauri/examples/mem_open.rs`). It is the "Open in the App" row of the
+  table in §7.
+- **What is left:** the floor is now the typed session (~1,15 GiB at 20 thousand) and the ~650 MiB
+  `session.json` written by P6. The next memory item is **P8** (schema, ~−65 % of the size per
+  request), which requires a new schema version and was not done.
 
-Reproduzir (uma etapa por processo):
+Reproduce (one stage per process):
 
 ```
 cd experiments/memoria-sessao && cargo build --release

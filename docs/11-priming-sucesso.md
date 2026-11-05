@@ -1,211 +1,211 @@
-# Rodada 7 — script de priming e sucesso da aplicação × HTTP
+# Round 7 — priming script and application success × HTTP
 
-## Motivo
+## Motivation
 
-Caso DETRAN-PB (`docs/05-caso-referencia-detran.md`), requisitos derivados 4
-e 5. O usuário precisa de um ponto de partida que recrie a sessão nova, sem
-congelar valores do HAR, e de saber quando um HTTP 200 não é sucesso da
-aplicação (resposta sem XML/STAMP, com ERRORMESSAGE, ou página de bloqueio).
-Pré-requisito: rodada 6 aprovada.
+DETRAN-PB case (`docs/05-caso-referencia-detran.md`), derived requirements 4
+and 5. The user needs a starting point that recreates the new session, without
+freezing values from the HAR, and needs to know when an HTTP 200 is not
+application success (response without XML/STAMP, with ERRORMESSAGE, or a
+block page).
+Prerequisite: round 6 approved.
 
-Fora do escopo: executar o script, fazer replay, rede, burlar /TSPD/ ou
-CAPTCHA, decodificar o Natural for Ajax no core e publicar.
+Out of scope: running the script, replay, network, bypassing /TSPD/ or
+CAPTCHA, decoding Natural for Ajax in the core, and publishing.
 
-## Ondas e propriedade
+## Waves and ownership
 
-- 7a: Core (`core/`): gerador do script e avaliador de sucesso. Testes
-  (`fixtures/`, `tests/`): expectativas e aceite.
-- 7b: App (`app/`, `commands.rs`, `lib.rs`): UI. Depois, revisão
-  independente e validação agregada nos HARs reais.
+- 7a: Core (`core/`): script generator and success evaluator. Tests
+  (`fixtures/`, `tests/`): expectations and acceptance.
+- 7b: App (`app/`, `commands.rs`, `lib.rs`): UI. Then an independent review
+  and aggregate validation on the real HARs.
 
-## 1. Script de priming (Python, cliente mantido)
+## 1. Priming script (Python, maintained client)
 
 `export::priming::to_python(session, body_source, target_request_id, opts)`
-usa `priming_chain` + `value_origins`:
-- Passos na ordem da cadeia (só `steps`, nunca `protection`, `pages` de
-  contexto ou estáticos). Cada passo é uma função com a requisição capturada
-  (método, URL, headers suportados, corpo) e um comentário com o motivo e a
-  confiança (`strong`/`possible`), passando por `export::comment`.
-- Valores com origem observada/possível são extraídos em runtime da resposta
-  do produtor, pelo mesmo tipo de evidência: Set-Cookie (via o cookie jar do
-  cliente), controle HTML (nome), campo form/JSON (chave/caminho), literal
-  (o contexto antes e depois capturado, gerado como regex escapada) ou
-  trecho de campo opaco (substituição do trecho capturado pelo valor
-  extraído, com os limites do contexto). Cada extração confere se achou o
-  valor e, se não achou, falha com uma mensagem clara. Nunca cai em silêncio
-  no valor capturado.
-- Valores sem origem observada (placa, entrada do usuário, constantes) viram
-  parâmetros do script, com o valor capturado como exemplo só se não for
-  sensível. Os sensíveis/redigidos viram parâmetros obrigatórios, sem padrão.
-  `partialComposition` vira comentário "montado no cliente: complete aqui".
-- Cliente: `requests.Session` (cookie jar). Cabeçalho do script: "reprodução
-  semântica; ordem de headers e fidelidade de transporte (TLS, HTTP/2,
-  fingerprint) NÃO são garantidas"; "não executado pelo ScrapeLens";
-  "passos que alteram estado exigem `--confirmar`". Requisições não
-  idempotentes (POST/PUT/PATCH/DELETE) só rodam com a flag explícita;
-  sem ela, o script imprime o plano e sai.
-- Escaping: strings Python por `repr`; dados capturados nunca entram em
-  código fora de literais ou comentários escapados. O script gerado é
-  validado por `ast.parse` nos testes.
-- CLI: `scrapelens-core export-priming <sessao> <requestId> [--out f]`.
+uses `priming_chain` + `value_origins`:
+- Steps in chain order (only `steps`, never `protection`, context `pages`
+  or static resources). Each step is a function with the captured request
+  (method, URL, supported headers, body) and a comment with the reason and the
+  confidence (`strong`/`possible`), going through `export::comment`.
+- Values with an observed/possible origin are extracted at runtime from the
+  producer's response, by the same kind of evidence: Set-Cookie (via the
+  client's cookie jar), HTML control (name), form/JSON field (key/path), literal
+  (the captured context before and after, generated as an escaped regex) or
+  opaque field excerpt (substitution of the captured excerpt by the extracted
+  value, with the context bounds). Each extraction checks that it found the
+  value and, if it did not, fails with a clear message. It never silently falls
+  back to the captured value.
+- Values without an observed origin (plate, user input, constants) become
+  script parameters, with the captured value as an example only if it is not
+  sensitive. Sensitive/redacted ones become required parameters, with no default.
+  `partialComposition` becomes the comment "assembled on the client: complete here".
+- Client: `requests.Session` (cookie jar). Script header: "semantic
+  reproduction; header order and transport fidelity (TLS, HTTP/2,
+  fingerprint) are NOT guaranteed"; "not executed by ScrapeLens";
+  "steps that change state require `--confirmar`". Non-idempotent requests
+  (POST/PUT/PATCH/DELETE) only run with the explicit flag;
+  without it, the script prints the plan and exits.
+- Escaping: Python strings via `repr`; captured data never enters
+  code outside escaped literals or comments. The generated script is
+  validated by `ast.parse` in the tests.
+- CLI: `scrapelens-core export-priming <session> <requestId> [--out f]`.
 
-## 2. Sucesso da aplicação × HTTP
+## 2. Application success × HTTP
 
-`assess::response_outcome(request, body_source, rules)` devolve, por resposta:
-`httpOk` (2xx/3xx), `appSignals[]` (ex.: controle `XML` presente e não
-vazio, `STAMP` presente, `ERRORMESSAGE` não vazio, página sem os controles
-esperados, marcador de proteção) e `verdict`: `app-ok`,
-`app-error (<sinal>)`, `blocked? (<sinal>)` ou `indeterminado`.
-- Regras padrão genéricas e conservadoras. Um ERRORMESSAGE/erro não vazio
-  num controle ou campo dá `app-error`. Uma resposta de aplicação que vem sem
-  os campos que a mesma rota trouxe noutras respostas (aprendido na própria
-  sessão) dá `indeterminado`, com a lista de campos ausentes.
-- `blocked?` só com evidência explícita (página de proteção conhecida pela
-  regra de /TSPD/, 403/429, ou resposta HTML que substitui a esperada por
-  outra sem os controles). Sempre com "?", nunca afirmado.
-- Regras configuráveis por arquivo JSON da sessão (nome de campo → sinal),
-  sem código executável.
-- Na cadeia e no compare, cada passo/par mostra o veredito.
-- CLI: `scrapelens-core assess <sessao> [requestId]`.
+`assess::response_outcome(request, body_source, rules)` returns, per response:
+`httpOk` (2xx/3xx), `appSignals[]` (e.g.: `XML` control present and not
+empty, `STAMP` present, `ERRORMESSAGE` not empty, page without the expected
+controls, protection marker) and `verdict`: `app-ok`,
+`app-error (<signal>)`, `blocked? (<signal>)` or `undetermined`.
+- Default rules are generic and conservative. A non-empty ERRORMESSAGE/error
+  in a control or field gives `app-error`. An application response that comes
+  without the fields that the same route carried in other responses (learned
+  within the session itself) gives `undetermined`, with the list of missing fields.
+- `blocked?` only with explicit evidence (protection page known by the
+  /TSPD/ rule, 403/429, or an HTML response that replaces the expected one with
+  another without the controls). Always with "?", never asserted.
+- Rules configurable by a JSON file in the session (field name → signal),
+  with no executable code.
+- In the chain and in compare, each step/pair shows the verdict.
+- CLI: `scrapelens-core assess <session> [requestId]`.
 
-## Aceite
+## Acceptance
 
-1. Fixture real-shape (1 rodada): o script de priming para o 1º
-   cmd_consultar_placa tem só os passos da aplicação na ordem e extrai STAMP
-   do controle HTML, delta do trecho da textarea, SESSIONID com o comentário
-   de composição parcial e a placa como parâmetro. `ast.parse` passa. Sem
-   `--confirmar`, só imprime o plano. Nenhum valor sensível capturado como
-   padrão.
-2. Simulação offline: um servidor local fictício (testserver) que emite os
-   mesmos controles com valores novos. O script, rodado pelo agente de Testes
-   (não pelo ScrapeLens) contra 127.0.0.1 com `--confirmar`, completa a
-   cadeia usando os valores novos, nunca os capturados. Sem rede externa.
-3. assess: na fixture de bloqueio do DETRAN (200 sem XML/STAMP, Connector sem
-   modelo, 403), os vereditos são `app-error`/`indeterminado`/`blocked?`
-   coerentes. Respostas normais dão `app-ok`.
-4. Injeção: nomes e valores hostis (newline, aspas triplas, `\`, bidi) no
-   script não escapam de literais nem de comentários. Teste com `ast` e
-   execução contra o servidor local mostrando que nada além das requisições é
-   executado.
-5. Validação agregada nos HARs reais: o script para o 1º cmd_consultar_placa
-   é gerado. Os passos e extrações batem com o fluxo manual do usuário. Os
-   vereditos de assess (contagens) são coerentes. Nenhum valor real no
-   relatório.
-6. Bateria sem regressão.
+1. Real-shape fixture (1 round): the priming script for the 1st
+   cmd_consultar_placa has only the application steps in order and extracts STAMP
+   from the HTML control, delta from the textarea excerpt, SESSIONID with the
+   partial-composition comment, and the plate as a parameter. `ast.parse` passes.
+   Without `--confirmar`, it only prints the plan. No sensitive value captured
+   as a default.
+2. Offline simulation: a fictional local server (testserver) that emits the
+   same controls with new values. The script, run by the Tests agent
+   (not by ScrapeLens) against 127.0.0.1 with `--confirmar`, completes the
+   chain using the new values, never the captured ones. No external network.
+3. assess: on the DETRAN block fixture (200 without XML/STAMP, Connector without
+   model, 403), the verdicts are consistent `app-error`/`undetermined`/`blocked?`.
+   Normal responses give `app-ok`.
+4. Injection: hostile names and values (newline, triple quotes, `\`, bidi) in the
+   script do not escape from literals or comments. Test with `ast` and
+   execution against the local server showing that nothing besides the requests is
+   executed.
+5. Aggregate validation on the real HARs: the script for the 1st cmd_consultar_placa
+   is generated. The steps and extractions match the user's manual flow. The
+   assess verdicts (counts) are consistent. No real value in the
+   report.
+6. Test battery without regression.
 
-## Andamento (2026-10-29)
+## Progress (2026-10-29)
 
-- assess (Captura, c28533b). A decisão de acrescentar `não-avaliado`
-  (`not-assessed`) para respostas sem sinal da aplicação e sem expectativa na
-  rota tira o ruído de páginas, estáticos e /TSPD/.
-- Gerador de priming (Captura, f858b17). Prova offline no detran-sim: a
-  cadeia de 13 passos (6 POSTs) completou 2× com valores novos, e o controle
-  negativo com os valores capturados recebeu ERRORMESSAGE.
-- Limite conhecido: o Natural for Ajax usa prefixos de comprimento. Quando o
-  trecho extraído muda de tamanho, o script avisa em stderr, mas não recalcula
-  o prefixo. Um servidor real pode rejeitar. Recalcular exige conhecer o
-  protocolo (fora do core; candidato a extensão/plugin).
+- assess (Capture, c28533b). The decision to add `not-assessed`
+  for responses with no application signal and no expectation on the
+  route removes the noise from pages, static resources and /TSPD/.
+- Priming generator (Capture, f858b17). Offline proof on detran-sim: the
+  13-step chain (6 POSTs) completed 2× with new values, and the negative control
+  with the captured values received ERRORMESSAGE.
+- Known limit: Natural for Ajax uses length prefixes. When the extracted
+  excerpt changes size, the script warns on stderr, but does not recompute
+  the prefix. A real server may reject it. Recomputing requires knowing the
+  protocol (outside the core; candidate for an extension/plugin).
 
-## Revisão da rodada 7 (2026-10-29) — decisões
+## Round 7 review (2026-10-29) — decisions
 
-Veredito: parcial, com 1 falha alta.
-- Redirect: o script usa `allow_redirects=False`. Um 3xx só é seguido se o
-  Location for do MESMO origin da base (esquema+host+porta), e o redirect
-  conta como passo verificado. Location para outro origin vira
-  `fail("priming: passo N: redirect para outro origin (<host>) recusado")`.
-  Nenhum corpo, parâmetro ou header sai para outro origin.
-- Origins: com `--base-url`, todo passo cujo origin capturado difere do origin
-  do alvo é recusado na geração (com lista) ou exige
-  `--allow-origin <host>` explícito. A reescrita compara origin exato, sem
-  `startswith` sem fronteira.
-- Dados de sessão/PII nunca viram literal nem padrão: parâmetros de caminho
-  (`;nome=valor`) são tratados como dados; a lista de nomes sensíveis inclui
-  nome, email, telefone/celular, endereço, nascimento, rg, token, sid,
-  session e callback (JSONP). Constante estrutural só para o caminho e o
-  valor de query de navegação que não sejam PII e não tenham cara de ID
-  dinâmico (dígitos longos, hex ou base64).
-- Extração em runtime linear: `str.find` dos contextos antes/depois, nunca
-  regex com `.+?` sobre a resposta.
-- assess: rejeição (F5) só com ausência dos controles esperados da rota (ou
-  sem expectativa e sem controles). Um 200 com XML/STAMP presentes é app-ok,
-  mesmo citando "Request Rejected". Na rota de proteção, 403/429 continuam
-  `blocked?` (evidência explícita); 200 de handshake é `não-avaliado`.
-- Saída de erro do script: o texto vindo da resposta é sanitizado (controles,
-  ESC, bidi), com `repr` ou filtro.
-- Regras JSON: `schema` obrigatório, chaves desconhecidas recusadas, e um
-  aviso quando as regras desligam todas as detecções ou marcam `/` como
-  proteção.
-- App: `blocked?` não é "falha da aplicação". A contagem e o filtro ficam
-  separados ("falhas da aplicação" × "possíveis bloqueios").
+Review verdict: partial, with 1 high failure.
+- Redirect: the script uses `allow_redirects=False`. A 3xx is only followed if the
+  Location is of the SAME origin as the base (scheme+host+port), and the redirect
+  counts as a verified step. A Location to another origin becomes
+  `fail("priming: step N: redirect to another origin (<host>) refused")`.
+  No body, parameter or header goes out to another origin.
+- Origins: with `--base-url`, every step whose captured origin differs from the
+  target's origin is refused at generation (with a list) or requires an explicit
+  `--allow-origin <host>`. The rewrite compares the exact origin, with no
+  `startswith` without a boundary.
+- Session data/PII never becomes a literal or a default: path parameters
+  (`;name=value`) are treated as data; the list of sensitive names includes
+  name, email, phone/mobile, address, birth, rg, token, sid,
+  session and callback (JSONP). A structural constant only for the path and the
+  navigation query value that are not PII and do not look like a
+  dynamic ID (long digits, hex or base64).
+- Linear runtime extraction: `str.find` of the before/after contexts, never
+  a regex with `.+?` over the response.
+- assess: rejection (F5) only with absence of the route's expected controls (or
+  with no expectation and no controls). A 200 with XML/STAMP present is app-ok,
+  even if it quotes "Request Rejected". On the protection route, 403/429 remain
+  `blocked?` (explicit evidence); a handshake 200 is `not-assessed`.
+- Script error output: text coming from the response is sanitized (controls,
+  ESC, bidi), with `repr` or a filter.
+- JSON rules: `schema` mandatory, unknown keys refused, and a
+  warning when the rules turn off all detections or mark `/` as
+  protection.
+- App: `blocked?` is not an "application failure". The count and the filter stay
+  separate ("application failures" × "possible blocks").
 
-## Re-revisão da rodada 7 (2026-10-29) — decisões
+## Round 7 re-review (2026-10-29) — decisions
 
-Redirect, origins, ReDoS, erro no terminal, F5, /TSPD/ e regras estritas foram
-aprovados. Restam 2 falhas altas.
-- Headers: o gerador reutiliza `is_sensitive_header` da sanitização, mais os
-  nomes com key, token, csrf, xsrf, session, sess, jwt, secret, auth,
-  signature, user e device. Um header desses nunca sai literal: se tem
-  origem, é extraído em runtime (CSRF/XSRF); senão, vira parâmetro
-  obrigatório sem padrão; o resto é omitido com nota. O Referer é montado
-  em runtime com a URL real do passo anterior correspondente (mesmo
-  origin+caminho); sem correspondência, é omitido. Nunca sai a query
-  capturada.
-- Corpo não-form: JSON é decomposto em campos e recebe o mesmo tratamento do
-  form (extração, parâmetros, constantes, sensíveis). Outros tipos
-  (texto/XML/binário) são recusados por padrão; `--allow-literal-body`
-  inclui o corpo, mas os valores detectados como sensíveis/de negócio viram
-  parâmetros obrigatórios, e o script avisa que o resto foi congelado.
-- IDs dinâmicos nunca são constante estrutural: JWT (`eyJ…`), ULID/KSUID,
-  datas ISO/timestamps, números de 5+ dígitos, alfanuméricos de 6+ com
-  letras e dígitos misturados, e nomes que contêm sess/token/key/sid.
-  Valores curtos de navegação (ex.: `op=S37`) continuam permitidos.
-- Regras do assess: marcador vazio recusado; `blockedStatuses` só 4xx/5xx.
-- Script: `S.trust_env = False` por padrão (sem proxy/.netrc do ambiente);
-  `--usar-proxy-do-ambiente` habilita. Aviso quando o Python é < 3.13
-  (HTMLParser com casos quadráticos conhecidos).
-- Re-revisão final (732f6b5): as 2 falhas altas anteriores foram aprovadas;
-  sobrou 1 alta nova. Decisões: (1) o corpo é classificado pelo conteúdo e
-  não só pelo Content-Type. JSON válido sob content-type de form recebe o
-  tratamento de JSON, e um campo de form sem `=` com mais de 40 caracteres
-  nunca sai literal (recusa). (2) Detecção pelo valor de esquemas
-  `Bearer`/`Basic`/`Digest`/`Negotiate` em qualquer header; os nomes hmac,
-  bearer, digest e nonce entram na lista; `x-forwarded-for` é omitido (PII
-  leve). (3) Referer para outro origin (`--allow-origin`) leva só o origin,
-  como no navegador. (4) Regras do assess: nomes/caminhos vazios são
-  recusados.
-- Re-revisão em e74ecb0: falta 1 alta, JSON como VALOR de campo (form ou
-  string JSON). Decisão de princípio, para parar de tapar caso a caso: (a)
-  valores de campo que são JSON válido, inclusive JSON dentro de string JSON,
-  são decompostos recursivamente (profundidade limitada); (b) um filtro FINAL
-  e único de literais: todo literal de string que o gerador vai emitir
-  (corpo, campos, trechos opacos, headers e query) passa pelos detectores de
-  PII/segredo (e-mail, CPF, CNPJ, cartão com Luhn, telefone BR, placa, JWT,
-  esquemas Bearer/Basic, dígitos longos e nomes de negócio/PII no contexto).
-  Um trecho detectado vira parâmetro obrigatório no lugar exato. Se não der
-  para mapear, a geração é recusada com a lista do que foi achado. Os
-  avisos das regras também cobrem "nenhuma detecção configurada". O app lê
-  `assess-rules.json` como arquivo regular, sem symlink, com limite de
-  tamanho.
+Redirect, origins, ReDoS, terminal error, F5, /TSPD/ and strict rules were
+approved. 2 high failures remain.
+- Headers: the generator reuses `is_sensitive_header` from the sanitization, plus
+  the names with key, token, csrf, xsrf, session, sess, jwt, secret, auth,
+  signature, user and device. Such a header never goes out literal: if it has an
+  origin, it is extracted at runtime (CSRF/XSRF); otherwise, it becomes a
+  required parameter with no default; the rest is omitted with a note. The Referer is built
+  at runtime with the real URL of the corresponding previous step (same
+  origin+path); without a match, it is omitted. The captured query never goes out.
+- Non-form body: JSON is decomposed into fields and gets the same treatment as
+  the form (extraction, parameters, constants, sensitive). Other types
+  (text/XML/binary) are refused by default; `--allow-literal-body`
+  includes the body, but the values detected as sensitive/business become
+  required parameters, and the script warns that the rest was frozen.
+- Dynamic IDs are never a structural constant: JWT (`eyJ…`), ULID/KSUID,
+  ISO dates/timestamps, numbers of 5+ digits, alphanumerics of 6+ with
+  mixed letters and digits, and names that contain sess/token/key/sid.
+  Short navigation values (e.g.: `op=S37`) remain allowed.
+- assess rules: empty marker refused; `blockedStatuses` only 4xx/5xx.
+- Script: `S.trust_env = False` by default (no proxy/.netrc from the environment);
+  `--usar-proxy-do-ambiente` enables it. Warning when Python is < 3.13
+  (HTMLParser with known quadratic cases).
+- Final re-review (732f6b5): the 2 previous high failures were approved;
+  1 new high remained. Decisions: (1) the body is classified by its content and
+  not only by the Content-Type. Valid JSON under a form content-type gets
+  the JSON treatment, and a form field without `=` longer than 40 characters
+  never goes out literal (refusal). (2) Detection by value of the
+  `Bearer`/`Basic`/`Digest`/`Negotiate` schemes in any header; the names hmac,
+  bearer, digest and nonce enter the list; `x-forwarded-for` is omitted (light
+  PII). (3) A Referer to another origin (`--allow-origin`) carries only the origin,
+  as in the browser. (4) assess rules: empty names/paths
+  are refused.
+- Re-review at e74ecb0: 1 high is missing, JSON as a field VALUE (form or
+  JSON string). Decision of principle, to stop patching case by case: (a)
+  field values that are valid JSON, including JSON inside a JSON string,
+  are decomposed recursively (limited depth); (b) a single FINAL
+  literal filter: every string literal the generator is going to emit
+  (body, fields, opaque excerpts, headers and query) passes through the
+  PII/secret detectors (e-mail, CPF, CNPJ, card with Luhn, Brazilian phone, plate, JWT,
+  Bearer/Basic schemes, long digits and business/PII names in the context).
+  A detected excerpt becomes a required parameter in the exact place. If it cannot
+  be mapped, generation is refused with the list of what was found. The
+  rules warnings also cover "no detection configured". The app reads
+  `assess-rules.json` as a regular file, without symlink, with a size
+  limit.
 
-## Fechamento (2026-10-29)
+## Closing (2026-10-29)
 
-Revisão final em 1bdd8b9: APROVADA com ressalvas. Script de priming:
-- sem redirect para outro origin;
-- origin exato, injeção fechada e extração linear;
-- credenciais e PII nunca literais em JSON, form nomeado ou campo opaco;
-- filtro final de literais;
-- Referer em runtime;
-- parada no passo da resposta ruim;
-- recusa de cadeia incompleta.
+Final review at 1bdd8b9: APPROVED with caveats. Priming script:
+- no redirect to another origin;
+- exact origin, injection closed and linear extraction;
+- credentials and PII never literal in JSON, named form or opaque field;
+- final literal filter;
+- Referer at runtime;
+- stop at the step of the bad response;
+- refusal of an incomplete chain.
 
-Assess: vereditos coerentes, regras estritas com avisos, sem falso bloqueio
-no handshake da proteção. Nos 3 HARs reais: 11 passos na ordem do fluxo
-manual, só placa e sufixo do SESSIONID como parâmetros, 0 literais e nenhum
-falso positivo do filtro. detran-sim aprovado nos 4 modos.
+Assess: consistent verdicts, strict rules with warnings, no false block
+on the protection handshake. On the 3 real HARs: 11 steps in the order of the manual
+flow, only the plate and the SESSIONID suffix as parameters, 0 literals and no
+false positive from the filter. detran-sim approved in the 4 modes.
 
-Acabamento delegado: detectores para placa com hífen (ABC-1234), VIN/chassi
-de 17 caracteres, telefone +55 com 12–13 dígitos, cartão da série 2 (2221–2720)
-e de 19 dígitos, e dígitos fullwidth; filtro aplicado também a segmentos de
-caminho, chaves de form e valores de header. Limite aceito: texto livre sem
-formato (nome, endereço, e-mail ofuscado) em query, header e caminho, e
-qualquer conteúdo sob `--allow-literal-body` (avisado no script).
+Delegated finishing work: detectors for a plate with a hyphen (ABC-1234), 17-character VIN/chassis,
++55 phone with 12–13 digits, series-2 card (2221–2720)
+and 19-digit card, and fullwidth digits; filter also applied to path
+segments, form keys and header values. Accepted limit: free text without a
+format (name, address, obfuscated e-mail) in query, header and path, and
+any content under `--allow-literal-body` (warned in the script).

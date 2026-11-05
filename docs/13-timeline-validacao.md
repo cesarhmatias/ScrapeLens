@@ -1,159 +1,159 @@
-# Rodada 9 — linha do tempo da aplicação e validação da execução
+# Round 9 — application timeline and execution validation
 
-## Motivo
+## Motivation
 
-Caso DETRAN-PB, requisitos 8 e 10 (`docs/05-caso-referencia-detran.md`):
-- ver o ciclo de eventos da aplicação (init, on_interceptor, cmd_filtro,
-  cmd_consultar_placa, cmd_nova…) numa linha do tempo, sem o ruído da
-  proteção;
-- validar o script exportado comparando, lado a lado, uma execução dele com
-  a captura.
+DETRAN-PB case, requirements 8 and 10 (`docs/05-caso-referencia-detran.md`):
+- see the application's event cycle (init, on_interceptor, cmd_filtro,
+  cmd_consultar_placa, cmd_nova…) on a timeline, without the protection
+  noise;
+- validate the exported script by comparing, side by side, a run of it with
+  the capture.
 
-O ScrapeLens nunca executa o script nem faz rede. Quem executa é o usuário
-(ou o agente de Testes, contra o detran-sim em 127.0.0.1).
+ScrapeLens never runs the script and never touches the network. The one who runs it is the user
+(or the Tests agent, against detran-sim on 127.0.0.1).
 
-## Ondas e propriedade
+## Waves and ownership
 
-| Dono | Caminhos |
+| Owner | Paths |
 |---|---|
-| Core | `core/` (timeline, importador do trace) |
-| Captura | `core/src/export/priming.rs`, `adapters/natural-ajax/` (opção `--trace` no script) |
-| Testes | `testserver/`, `tests/`, `fixtures/` |
+| Core | `core/` (timeline, trace importer) |
+| Capture | `core/src/export/priming.rs`, `adapters/natural-ajax/` (`--trace` option in the script) |
+| Tests | `testserver/`, `tests/`, `fixtures/` |
 | App | `app/`, `src-tauri/src/commands.rs`, `lib.rs` |
 
-## 1. Linha do tempo (core)
+## 1. Timeline (core)
 
-`timeline(session, body_source, opts) -> Timeline`, com uma entrada por
-requisição da aplicação, na ordem da sessão:
-- tempo relativo e rodada;
-- tipo: página, POST da aplicação, recurso estático ou proteção;
-- rótulo: com adaptador, o `event` e a `page` das partes do `XML`
-  (`cmd_consultar_placa @ VES0009X`); sem adaptador, método + caminho;
-- veredito do assess;
-- valores-chave consumidos/produzidos, só nomes (`STAMP`, `XML.delta`).
-Proteção e estáticos entram recolhidos em grupos com contagem, entre os
-eventos da aplicação. CLI: `timeline <sessao>` (JSON) e, no natural-core,
+`timeline(session, body_source, opts) -> Timeline`, with one entry per
+application request, in session order:
+- relative time and round;
+- kind: page, application POST, static resource or protection;
+- label: with an adapter, the `event` and the `page` of the `XML` parts
+  (`cmd_consultar_placa @ VES0009X`); without an adapter, method + path;
+- assess verdict;
+- key values consumed/produced, names only (`STAMP`, `XML.delta`).
+Protection and static resources come in collapsed into groups with a count, between the
+application events. CLI: `timeline <session>` (JSON) and, in natural-core,
 `timeline --adapter natural-ajax`.
 
-## 2. Trace de execução (script) e importação
+## 2. Execution trace (script) and import
 
-- O script de priming ganha `--trace <arquivo>`. Ele grava um JSON
-  `scrapelens.trace/1` com, por passo: método, URL, headers e corpo
-  enviados, status, headers e corpo recebidos (com limite de tamanho e
-  estado truncated), tempos e o resultado das verificações do passo. O
-  arquivo é criado com 0600 e um aviso: "contém dados da sua sessão; não
-  compartilhe sem sanitizar".
-- Core: `import-trace <trace.json> --out <sessao>` importa como sessão
-  (rótulo `script-trace`, fonte "execução do script", headers sem garantia
-  de ordem do fio), com corpos e assess. A sanitização funciona sobre ela
-  como sobre qualquer sessão.
+- The priming script gains `--trace <file>`. It writes a JSON
+  `scrapelens.trace/1` with, per step: method, URL, headers and body
+  sent, status, headers and body received (with a size limit and a
+  truncated state), timings and the result of the step's checks. The
+  file is created with 0600 and a warning: "contains data from your session; do not
+  share without sanitizing".
+- Core: `import-trace <trace.json> --out <session>` imports it as a session
+  (label `script-trace`, source "script execution", headers with no guarantee
+  of wire order), with bodies and assess. Sanitization works on it
+  as on any session.
 
-## 3. Validação lado a lado (app e CLI)
+## 3. Side-by-side validation (app and CLI)
 
-- `compare <captura> <sessao-do-trace>` já funciona. A tela "Validar
-  execução" pareia passo a passo e mostra:
-  - o que mudou (dinâmico esperado: STAMP, delta, SESSIONID);
-  - o que deveria ser igual e não é (constantes, ordem de passos);
-  - o veredito do assess em cada lado.
-  Resumo: "execução equivalente à captura" ou "diverge no passo N
-  (<motivo>)".
-- A timeline das duas sessões fica lado a lado.
+- `compare <capture> <trace-session>` already works. The "Validate
+  execution" screen pairs step by step and shows:
+  - what changed (expected dynamic: STAMP, delta, SESSIONID);
+  - what should be equal and is not (constants, step order);
+  - the assess verdict on each side.
+  Summary: "execution equivalent to capture" or "diverges at step N
+  (<reason>)".
+- The timeline of the two sessions sits side by side.
 
-## Aceite
+## Acceptance
 
-1. Timeline da fixture real-shape (1 e 2 rodadas) e dos 3 HARs reais
-   (agregado): os eventos da aplicação aparecem na ordem do fluxo manual,
-   com rótulos `event @ page` via adaptador, e a proteção fica recolhida.
-2. Script contra o detran-sim com `--trace`; import-trace; compare com a
-   captura (real-shape): passos pareados 1:1, só os dinâmicos esperados
-   diferem, assess app-ok em todos; resumo "equivalente".
-3. Modos error/nocontrols/403 do sim: o trace termina no passo ruim, e a
-   validação aponta "diverge no passo N" com o veredito certo.
-4. O trace tem 0600 e o aviso; sanitize sobre a sessão do trace remove
-   SESSIONID/cookies/placa.
-5. Bateria sem regressão.
+1. Timeline of the real-shape fixture (1 and 2 rounds) and of the 3 real HARs
+   (aggregate): the application events appear in the order of the manual flow,
+   with `event @ page` labels via the adapter, and the protection stays collapsed.
+2. Script against detran-sim with `--trace`; import-trace; compare with the
+   capture (real-shape): steps paired 1:1, only the expected dynamic ones
+   differ, assess app-ok on all; summary "equivalent".
+3. The sim's error/nocontrols/403 modes: the trace ends at the bad step, and the
+   validation points to "diverges at step N" with the right verdict.
+4. The trace has 0600 and the warning; sanitize on the trace session removes
+   SESSIONID/cookies/plate.
+5. Test battery without regression.
 
-## Revisão da rodada 9 (2026-10-29) — decisões
+## Round 9 review (2026-10-29) — decisions
 
-Veredito: reprovado para fechar; o trace é seguro, mas o `validate` dá
-falso "equivalente". Princípios do validate:
-- Proveniência equivalente: para cada campo que na captura tinha origem na
-  resposta R_k, o valor no trace tem de estar na resposta pareada de R_k
-  dentro do trace. Valor igual ao capturado com produtor diferente no trace
-  → "diverge (valor congelado)". Valor vindo de outra resposta → "diverge
-  (origem diferente)".
-- Completude: o script grava `target` (o requestId do alvo na captura) e
-  `complete` (bool). O validate exige o alvo pareado e `complete=true`; senão
-  dá "incompleta".
-- `parameters` só vale para campos SEM origem na captura e que não sejam
-  constantes. Um campo com origem ou constante declarado como parâmetro é
-  ignorado e gera aviso "parâmetro inválido". O script também grava a
-  impressão do plano (hash dos passos e nomes dos parâmetros); o validate
-  recalcula a partir da captura e avisa quando não confere.
-- "Identificador gerado no cliente" só quando a captura marca o campo como
-  sem origem com composição/cliente; uma constante (repetida na captura ou
-  estática) que muda é divergência.
-- Mapeamento automático de origem só para loopback (127.0.0.1, ::1,
-  localhost). Outro host exige `--map-origin` explícito, e o resumo cita o
-  mapeamento.
-Outros:
-- Timeline com custo O(n log n): 4 mil requisições < 2 s, e a sessão grande
-  de 20 mil termina.
-- Script: erro de transporte grava o trace com `error` no passo; `--trace ""`
-  é erro; argv inválido falha antes de rodar.
-- import-trace: limite de 20 mil passos e de headers por passo, e memória
-  reduzida. Corpo de requisição em base64 é aceito. URL/`startedAt` são
-  validados.
-- App: a sessão importada do trace vive em pasta temporária apagada ao
-  fechar a validação, a não ser que o usuário peça para guardá-la.
-- check_priming_injection exige rc e POSTs > 0 por variante (ou a falha
-  esperada no passo declarado).
-- Decisão final sobre `plan.hash` (2026-10-29): uma só implementação, no
-  core (`validate::plan_hash`, FNV-1a 64 sobre a `priming_chain` sem host, o
-  alvo e os nomes dos parâmetros em minúsculas, ordenados). O gerador do
-  script a chama NA GERAÇÃO e grava a constante, sem cálculo em runtime nem
-  `hashlib`. O validate recalcula e avisa "plano não confere". As mensagens
-  anteriores com definições diferentes ficam sem efeito.
+Review verdict: rejected for closing; the trace is safe, but `validate` gives a
+false "equivalent". Principles of validate:
+- Equivalent provenance: for each field that in the capture had an origin in
+  response R_k, the value in the trace must be in the paired response of R_k
+  within the trace. A value equal to the captured one with a different producer in the trace
+  → "diverges (frozen value)". A value coming from another response → "diverges
+  (different origin)".
+- Completeness: the script writes `target` (the target's requestId in the capture)
+  and `complete` (bool). Validate requires the target paired and `complete=true`; otherwise
+  it gives "incomplete".
+- `parameters` only counts for fields WITHOUT an origin in the capture and that are not
+  constants. A field with an origin, or a constant, declared as a parameter is
+  ignored and generates the warning "invalid parameter". The script also writes the
+  plan fingerprint (hash of the steps and parameter names); validate
+  recomputes it from the capture and warns when it does not match.
+- "Identifier generated on the client" only when the capture marks the field as
+  without origin with composition/client; a constant (repeated in the capture or
+  static) that changes is a divergence.
+- Automatic origin mapping only for loopback (127.0.0.1, ::1,
+  localhost). Another host requires an explicit `--map-origin`, and the summary cites the
+  mapping.
+Others:
+- Timeline with O(n log n) cost: 4 thousand requests < 2 s, and the large
+  20 thousand session finishes.
+- Script: a transport error writes the trace with `error` on the step; `--trace ""`
+  is an error; invalid argv fails before running.
+- import-trace: limit of 20 thousand steps and of headers per step, and reduced
+  memory. A base64 request body is accepted. URL/`startedAt` are
+  validated.
+- App: the session imported from the trace lives in a temporary folder deleted
+  when the validation is closed, unless the user asks to keep it.
+- check_priming_injection requires rc and POSTs > 0 per variant (or the
+  expected failure at the declared step).
+- Final decision on `plan.hash` (2026-10-29): a single implementation, in the
+  core (`validate::plan_hash`, FNV-1a 64 over the `priming_chain` without host, the
+  target and the parameter names in lowercase, sorted). The script generator
+  calls it AT GENERATION and writes the constant, with no runtime calculation or
+  `hashlib`. Validate recomputes it and warns "plan does not match". Earlier
+  messages with different definitions are void.
 
-## Re-revisão da rodada 9 (2026-10-29)
+## Round 9 re-review (2026-10-29)
 
-APROVADA COM RESSALVAS (2f5702b), sem falha crítica nem alta. Ajustes finais
-decididos pelo líder:
-- M1: `plan.hash` que não confere passa a dar `diverges`, motivo "plano
-  diferente do gerado a partir desta captura", e não só aviso. Para não
-  punir o usuário que sobrescreve um parâmetro opcional, o hash usa só
-  `plan.parameters`: os nomes dos parâmetros OBRIGATÓRIOS do plano, gravados
-  pelo gerador. O `parameters` de topo continua com todos os usados, para a
-  classificação "parâmetro do usuário".
-- L2: um trace sem `plan` gera o aviso "plano ausente: execução não
-  verificada contra o plano".
-- L4: o app limpa as pastas temporárias de validação antigas na
-  inicialização (confirmar pelo código e por teste).
-Residuais aceitos: M2 (constante curta numa captura de uma rodada é
-indistinguível de parâmetro) e L1 (map_origin automático para outro serviço
-em loopback, com aviso e mapeamento citado no resumo).
+APPROVED WITH CAVEATS (2f5702b), no critical or high failure. Final adjustments
+decided by the leader:
+- M1: a `plan.hash` that does not match now gives `diverges`, reason "plan
+  differs from the one generated from this capture", and not only a warning. So as not to
+  punish the user who overrides an optional parameter, the hash uses only
+  `plan.parameters`: the names of the plan's REQUIRED parameters, written
+  by the generator. The top-level `parameters` still holds all the ones used, for the
+  "user parameter" classification.
+- L2: a trace without `plan` generates the warning "plan missing: execution
+  not verified against the plan".
+- L4: the app cleans old temporary validation folders at
+  startup (confirm through the code and a test).
+Accepted residuals: M2 (a short constant in a one-round capture is
+indistinguishable from a parameter) and L1 (automatic map_origin to another service
+on loopback, with a warning and the mapping cited in the summary).
 
-## Fechamento da rodada 9 (2026-10-29)
+## Round 9 closing (2026-10-29)
 
-APROVADA (revisor, b9c0c21; veredito em /tmp/rev21/VEREDITO.md). Decisões
-desde a re-revisão:
-- `plan.version` (inteiro), atual = `validate::PLAN_VERSION` = 2. O hash só é
-  comparado com a versão atual; versão ausente ou menor avisa "plano de
-  versão anterior (vN)", maior avisa "plano de versão diferente (vN)", sem
-  divergir. Plano sem hash avisa "plano sem impressão".
-- Isenção de parâmetro: só o par (name, part) que o plano REGENERADO DA
-  CAPTURA produz (`priming::plan_parameter_uses`), nunca o que o trace
-  declara. Outro item sob um nome do plano passa por todas as checagens e
-  avisa "parâmetro não corresponde ao plano".
-- `plan.parameters` do trace só viram parâmetros do usuário com o plano
-  verificado (versão atual, hash conferido, alvo pareado). Plano antigo ou
-  sem hash não isenta nada.
-- Trace fiel do gerador atual: equivalente, sem avisos além da origem mapeada.
-Bundle de referência: d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f
-(HEAD 7410fa4). Residuais aceitos: sid/SESSIONID congelado só detectado na
-execução; plano antigo ou sem hash equivalente com aviso; M2; L1.
+APPROVED (reviewer, b9c0c21; verdict in /tmp/rev21/VEREDITO.md). Decisions
+since the re-review:
+- `plan.version` (integer), current = `validate::PLAN_VERSION` = 2. The hash is only
+  compared with the current version; a missing or lower version warns "plan of
+  an earlier version (vN)", a higher one warns "plan of a different version (vN)", without
+  diverging. A plan without a hash warns "plan without fingerprint".
+- Parameter exemption: only the (name, part) pair that the plan REGENERATED
+  FROM THE CAPTURE produces (`priming::plan_parameter_uses`), never what the trace
+  declares. Another item under a plan name goes through all the checks
+  and warns "parameter does not match the plan".
+- The trace's `plan.parameters` only become user parameters with the plan
+  verified (current version, hash matched, target paired). An old plan or one
+  without a hash exempts nothing.
+- Faithful trace from the current generator: equivalent, with no warnings besides the mapped origin.
+Reference bundle: d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f
+(HEAD 7410fa4). Accepted residuals: a frozen sid/SESSIONID only detected at
+execution; an old plan or one without a hash equivalent with a warning; M2; L1.
 
-Teste manual do usuário (2026-10-29), bundle d1136cbb…: roteiro de 7 passos
-(HAR pelo seletor nativo, busca/Payload/adaptador, script de priming, linha do
-tempo e voltar à sessão, validar ok/403/incompleta, guardar execução,
-reabrir, comparar, captura ao vivo, limpeza na partida): APROVADO ("tudo ok").
+User manual test (2026-10-29), bundle d1136cbb…: a 7-step walkthrough
+(HAR through the native picker, search/Payload/adapter, priming script, timeline
+and back to the session, validate ok/403/incomplete, keep run,
+reopen, compare, live capture, cleanup at startup): APPROVED ("all ok").

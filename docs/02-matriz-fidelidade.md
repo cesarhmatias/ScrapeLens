@@ -1,307 +1,307 @@
-# Matriz de fidelidade — ordem e repetição de headers
+# Fidelity matrix — header order and repetition
 
-Pergunta central: **quais fontes e eventos preservam qual sequência de
-headers em cada protocolo e versão do navegador?**
+Central question: **which sources and events preserve which header sequence in
+each protocol and browser version?**
 
-Preencher por experimento controlado. Cada linha exige evidência (arquivo de
-experimento + captura). Sem evidência = "não verificada".
+Fill in by controlled experiment. Each row requires evidence (experiment file +
+capture). No evidence = "not verified".
 
-## Ambiente medido
+## Measured environment
 
-| Item | Valor |
+| Item | Value |
 |---|---|
-| Navegador | Chrome `156.0.8078.48` (headless=new, perfil temporário dedicado) |
-| SO | macOS `26.5.2` (25F84), arm64 |
-| Data | 2026-10-26 |
-| Protocolos | HTTP/1.1 (`127.0.0.1:8781`), h2/TLS+ALPN (`:8782`), h3/QUIC (`:8783`) |
-| Referência (camada c) | servidor local que grava os pares decodificados em JSONL, sem dicionário |
-| Amostra | 15 experimentos, **60 requisições** analisadas (20 por protocolo) |
-| Reprodução | `cd experiments && .venv/bin/python run_experiment.py --all && .venv/bin/python compare.py` |
+| Browser | Chrome `156.0.8078.48` (headless=new, dedicated temporary profile) |
+| OS | macOS `26.5.2` (25F84), arm64 |
+| Date | 2026-10-26 |
+| Protocols | HTTP/1.1 (`127.0.0.1:8781`), h2/TLS+ALPN (`:8782`), h3/QUIC (`:8783`) |
+| Reference (layer c) | local server that writes the decoded pairs to JSONL, without a dictionary |
+| Sample | 15 experiments, **60 requests** analyzed (20 per protocol) |
+| Reproduction | `cd experiments && .venv/bin/python run_experiment.py --all && .venv/bin/python compare.py` |
 
-h3 funcionou neste ambiente contra o servidor `aioquic` do mock (QUIC habilitado,
-`--origin-to-force-quic-on=127.0.0.1:8783`, certificado autoassinado dispensado
-por SPKI hash — nada instalado). Contra o servidor de contrato (`quiche`) o h3
-está bloqueado: ver "Cross-check" abaixo.
+h3 worked in this environment against the mock's `aioquic` server (QUIC enabled,
+`--origin-to-force-quic-on=127.0.0.1:8783`, self-signed certificate waived
+by SPKI hash — nothing installed). Against the contract server (`quiche`) h3
+is blocked: see "Cross-check" below.
 
-## Veredito rápido
+## Quick verdict
 
-`✓` preserva · `~` preserva com perda parcial · `—` não preserva
+`✓` preserves · `~` preserves with partial loss · `—` does not preserve
 
-| Fonte / evento | h1 ordem | h1 duplicatas | h2 ordem | h2 duplicatas | h3 ordem | h3 duplicatas |
+| Source / event | h1 order | h1 duplicates | h2 order | h2 duplicates | h3 order | h3 duplicates |
 |---|---|---|---|---|---|---|
-| CDP `requestWillBeSent.request.headers` | — (subconjunto) | — | — (subconjunto) | — | — (subconjunto) | — |
+| CDP `requestWillBeSent.request.headers` | — (subset) | — | — (subset) | — | — (subset) | — |
 | CDP `requestWillBeSentExtraInfo.headers` | — | — | — | — | — | — |
-| CDP `responseReceivedExtraInfo.headersText` | ✓ | ✓ | n/d | n/d | n/d | n/d |
+| CDP `responseReceivedExtraInfo.headersText` | ✓ | ✓ | n/a | n/a | n/a | n/a |
 | CDP `responseReceivedExtraInfo.headers` | — | — | — | — | — | — |
-| NetLog `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` | ✓ | ✓ | n/d | n/d | n/d | n/d |
-| NetLog `HTTP2_SESSION_SEND_HEADERS` | n/d | n/d | ~ (1 troca) | ~ (`cookie` pode ser dividido) | n/d | n/d |
-| NetLog `QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS` | n/d | n/d | n/d | n/d | ✓ | — (campo `cookie` dividido no fio) |
+| NetLog `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` | ✓ | ✓ | n/a | n/a | n/a | n/a |
+| NetLog `HTTP2_SESSION_SEND_HEADERS` | n/a | n/a | ~ (1 swap) | ~ (`cookie` may be split) | n/a | n/a |
+| NetLog `QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS` | n/a | n/a | n/a | n/a | ✓ | — (`cookie` field split on the wire) |
 | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| NetLog `HTTP2_SESSION_RECV_HEADERS` | n/d | n/d | ✓ | ~ (`\x00`) | n/d | n/d |
-| NetLog `QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS` | n/d | n/d | n/d | n/d | ✓ | ~ (`\x00`) |
-| HAR (exportador do DevTools) | não verificada | não verificada | não verificada | não verificada | não verificada | não verificada |
+| NetLog `HTTP2_SESSION_RECV_HEADERS` | n/a | n/a | ✓ | ~ (`\x00`) | n/a | n/a |
+| NetLog `QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS` | n/a | n/a | n/a | n/a | ✓ | ~ (`\x00`) |
+| HAR (DevTools exporter) | not verified | not verified | not verified | not verified | not verified | not verified |
 
-`n/d` = não se aplica ao protocolo. Detalhe e evidência por linha abaixo.
+`n/a` = does not apply to the protocol. Detail and evidence per row below.
 
-Duas ressalvas que valem para a tabela acima:
-`cookie` e `priority` trocam de posição no fio h2 (o log mostra `cookie` antes);
-e a fragmentação de `Cookie` em vários campos no h2 é **condicional** — 1 campo
-com 2–3 cookies no mock, N campos com 3–4 cookies no contrato.
+Two caveats that apply to the table above:
+`cookie` and `priority` swap position on the h2 wire (the log shows `cookie` first);
+and the fragmentation of `Cookie` into several fields in h2 is **conditional** — 1 field
+with 2–3 cookies on the mock, N fields with 3–4 cookies on the contract.
 
-## Matriz principal
+## Main matrix
 
-Ordens separadas em três colunas, conforme exigido:
-**(a)** ordem apresentada pela fonte · **(b)** ordem entregue ao codificador
-(HPACK/QPACK/linha HTTP) · **(c)** ordem decodificada observada no servidor.
+Orders separated into three columns, as required:
+**(a)** order presented by the source · **(b)** order delivered to the encoder
+(HPACK/QPACK/HTTP line) · **(c)** decoded order observed on the server.
 
-| Navegador | Protocolo | Fonte/evento | (a) ordem da fonte | (b) ao codificador | (c) decodificada | Preserva | Transformações observadas | Limites | Evidência |
+| Browser | Protocol | Source/event | (a) source order | (b) to the encoder | (c) decoded | Preserves | Observed transformations | Limits | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
-| 156.0.8078.48 | h1 | CDP `Network.requestWillBeSent` → `request.headers` | objeto JSON com **5 a 9 headers** conforme o caso (5 em 16/20; 6 nos 2 POST; 9 nos 2 fetches com `Headers`): no GET simples `Upgrade-Insecure-Requests, User-Agent, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform` | não é o ponto de entrada | `Host, Connection, Pragma, Cache-Control, sec-ch-ua*, Upgrade-Insecure-Requests, User-Agent, Accept, Sec-Fetch-*, Accept-Encoding, Accept-Language[, Cookie]` | apenas o conjunto desses headers | **omite** `Host`, `Accept`, `Cookie`, `Accept-Encoding`, `Accept-Language`; e a enumeração **não segue o fio** (no fio `sec-ch-ua*` vem antes de `Upgrade-Insecure-Requests`/`User-Agent`; aqui vem depois) | não serve para sequência; só para saber quais headers o Blink injetou | `results/h1-page/layers.json`, `results/h1-plain/cdp-events.jsonl` |
-| 156.0.8078.48 | h1 | CDP `Network.requestWillBeSentExtraInfo` → `headers` | **ordem ASCII/case-sensitive** (20/20 `sorted_ascii=true`): `Accept, Accept-Encoding, Accept-Language, Cache-Control, Connection, Host, Pragma, Sec-Fetch-Dest, …, User-Agent, x-mixed-Case, x-rep, x-seq` | não é o ponto de entrada | ordem real do fio (acima) | conjunto completo de nomes | ordena por byte; **colapsa duplicatas** no `net::HttpRequestHeaders` antes de expor; valor sobrevivente = último | ordem inutilizável; duplicata já perdida na origem | `results/h1-ordered/layers.json` (ver `cdp_extra.verdict=reordenada`) |
-| 156.0.8078.48 | h1 | CDP `Network.responseReceivedExtraInfo` → `headersText` | `HTTP/1.1 200 OK\r\ncontent-type: …\r\nset-cookie: sl_a=1\r\nset-cookie: sl_b=2\r\n…` | — | `content-type, cache-control, x-resp-order×2, set-cookie×2, content-length, connection` | **ordem e duplicatas exatas**, caixa original | nenhuma (bloco bruto) | só h1; só resposta; texto, não estrutura | `results/h1-page/layers.json` → `response.cdp_headersText.verdict=idêntica` |
-| 156.0.8078.48 | h1 | CDP `Network.responseReceivedExtraInfo` → `headers` | objeto com chaves ordenadas: `cache-control, connection, content-length, content-type, set-cookie, x-resp-order` | — | 2× `set-cookie`, 2× `x-resp-order` | conjunto de nomes | ordena ASCII; funde duplicatas com `\n` (`"sl_a=1; Path=/\nsl_b=2; Path=/"`) | perde ordem **e** repetição; exige re-dividir por `\n` (perda se o valor contiver `\n`) | `results/h1-page/layers.json` → `response.cdp_object` |
-| 156.0.8078.48 | h1 | NetLog `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` | lista `["Host: …", "Connection: …", …, "x-rep: c", …]` | **idêntica à do fio** (20/20, nome e caixa) | idêntica | ordem, caixa e duplicatas | nenhuma | evento por requisição; não traz o request id do CDP (correlação só por URL/método/tempo) | `results/h1-ordered/chrome-netlog.json`, `results/h1-page/layers.json` |
-| 156.0.8078.48 | h1 | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | lista com linha de status + pares | — | idêntica (20/20), inclusive 2× `set-cookie` e 2× `x-resp-order` | ordem e duplicatas | nenhuma | sem `requestId`; casar por URL/`content-length`/tempo | `results/h1-page/chrome-netlog.json` |
-| 156.0.8078.48 | h2 | CDP `requestWillBeSent.request.headers` | 5–9 headers Blink (mesma distribuição do h1), ordem própria | não é o ponto de entrada | `:method, :authority, :scheme, :path` + 15–16 campos | apenas o conjunto | **não expõe pseudoheaders**; omite `Host`/`Cookie`/`Accept`; ordem ≠ fio | não serve para sequência | `results/h2-page/layers.json` |
-| 156.0.8078.48 | h2 | CDP `requestWillBeSentExtraInfo` → `headers` | ASCII (20/20); nomes em minúsculas | não é o ponto de entrada | ordem do fio | conjunto de nomes | ordena ASCII; colapsa duplicatas; **não** representa pseudoheaders | ordem inutilizável | `results/h2-page/layers.json` |
-| 156.0.8078.48 | h2 | NetLog `HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS` | lista com pseudoheaders `":method", ":authority", ":scheme", ":path"` + campos | igual ao evento de sessão | ordem do fio, exceto o par `cookie`/`priority` | ordem e duplicatas | pseudoheaders aparecem como texto `":path: /x"` | mesma troca de posição do evento de sessão | `results/h2-page/chrome-netlog.json` |
-| 156.0.8078.48 | h2 | NetLog `HTTP2_SESSION_SEND_HEADERS` | lista de pares na ordem de envio ao HPACK | **referência da camada (b)** | **20/20: 7 idênticas, 13 com `cookie` antes de `priority`**; o fio traz `priority` antes de `cookie` | ordem (com 1 exceção), caixa, duplicatas | pseudoheaders incluídos; `cookie`/`priority` trocam de posição na codificação | 1 posição divergente quando há `Cookie` | `results/h2-page/layers.json` (`b_netlog.verdict=reordenada`) |
-| 156.0.8078.48 | h2 | NetLog `HTTP2_SESSION_RECV_HEADERS` | lista **com duplicatas fundidas por `\x00`**: `"x-resp-order: 1\u00002"`, `"set-cookie: sl_a=1…\u0000sl_b=2…"` | — | 2× `set-cookie`, 2× `x-resp-order`, ordem correta | ordem | funde repetições num único par separado por NUL; após expandir, 20/20 idênticas | parser que só divide por `\n` perde a 2ª ocorrência | `results/h2-page/layers.json` → `response.netlog_session.nul_joined=true` |
-| 156.0.8078.48 | h2 | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | `"HTTP/1.1 200"` sintético + pares **separados** | — | idêntica (20/20) | ordem e duplicatas | inventa linha de status HTTP/1.1 para resposta h2 | status vem de `HTTP2_SESSION_RECV_HEADERS` (`:status`) | `results/h2-page/layers.json` → `response.netlog_other` |
-| 156.0.8078.48 | h3 | CDP `requestWillBeSent.request.headers` | 5–9 headers Blink (mesma distribuição do h1), ordem própria | não é o ponto de entrada | `:method, :authority, :scheme, :path` + 14–16 campos | apenas o conjunto | igual ao h2: sem pseudoheaders, ordem ≠ fio | não serve para sequência | `results/h3-page/layers.json` |
-| 156.0.8078.48 | h3 | CDP `requestWillBeSentExtraInfo` → `headers` | ASCII (20/20) | não é o ponto de entrada | ordem do fio | conjunto de nomes | ordena; **funde os campos `cookie` em 1** (13/20 divergem só por isso) | ordem e repetição perdidas | `results/h3-page/layers.json` (`cdp_extra.verdict=duplicatas fundidas` em 13/20) |
-| 156.0.8078.48 | h3 | NetLog `HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS` | lista com `":method" …` e **1** `cookie: sl_a=1; sl_b=2; sl_c=3` | mesma lista do evento de sessão | **3** campos `cookie` (1 por cookie) | ordem geral | **cookie "crumble"**: o QPACK divide o campo Cookie em N campos; o NetLog mostra a forma não dividida | contagem de `Cookie` no NetLog ≠ fio; posição relativa a `priority` preservada | `results/h3-page/layers.json` (`b_netlog.verdict=duplicatas fundidas` 13/20) |
-| 156.0.8078.48 | h3 | NetLog `QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS` | lista de pares + `quic_stream_id`, urgência | **referência da camada (b)** | como acima | ordem, caixa; **não** a divisão de cookie | 1 `cookie` no log → N no fio; `priority` ao final | requer cruzar com o servidor para saber o nº real de campos Cookie | `results/h3-page/chrome-netlog.json` |
-| 156.0.8078.48 | h3 | NetLog `QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS` | pares com `\x00` nas repetições (`:status` incluso) | — | 2× `set-cookie` na ordem escrita | ordem, duplicatas após expandir NUL | funde repetições com `\x00` | idem h2 | `results/h3-page/layers.json` |
-| 156.0.8078.48 | h3 | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | status sintético + pares separados | — | idêntica (20/20) | ordem e duplicatas | status fabricado | idem h2 | `results/h3-page/layers.json` |
-| 156.0.8078.48 | todos | **HAR (exportador do DevTools)** | **não verificada** | — | — | — | `Network.getHAR` não existe no CDP desta versão; o exportador HAR do DevTools é código de frontend e não foi instrumentado | ordem HAR não comprovada; qualquer ordem herdada seria a de `ExtraInfo` (ASCII), com duplicatas fundidas | ver "HAR" abaixo; `results/*/har-derived.json` é reconstrução rotulada |
+| 156.0.8078.48 | h1 | CDP `Network.requestWillBeSent` → `request.headers` | JSON object with **5 to 9 headers** depending on the case (5 in 16/20; 6 in the 2 POSTs; 9 in the 2 fetches with `Headers`): in the plain GET `Upgrade-Insecure-Requests, User-Agent, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform` | not the entry point | `Host, Connection, Pragma, Cache-Control, sec-ch-ua*, Upgrade-Insecure-Requests, User-Agent, Accept, Sec-Fetch-*, Accept-Encoding, Accept-Language[, Cookie]` | only the set of these headers | **omits** `Host`, `Accept`, `Cookie`, `Accept-Encoding`, `Accept-Language`; and the enumeration **does not follow the wire** (on the wire `sec-ch-ua*` comes before `Upgrade-Insecure-Requests`/`User-Agent`; here it comes after) | not usable for sequence; only to know which headers Blink injected | `results/h1-page/layers.json`, `results/h1-plain/cdp-events.jsonl` |
+| 156.0.8078.48 | h1 | CDP `Network.requestWillBeSentExtraInfo` → `headers` | **ASCII/case-sensitive order** (20/20 `sorted_ascii=true`): `Accept, Accept-Encoding, Accept-Language, Cache-Control, Connection, Host, Pragma, Sec-Fetch-Dest, …, User-Agent, x-mixed-Case, x-rep, x-seq` | not the entry point | actual wire order (above) | complete set of names | sorts by byte; **collapses duplicates** in `net::HttpRequestHeaders` before exposing; surviving value = last | unusable order; duplicate already lost at the origin | `results/h1-ordered/layers.json` (see `cdp_extra.verdict=reordenada`) |
+| 156.0.8078.48 | h1 | CDP `Network.responseReceivedExtraInfo` → `headersText` | `HTTP/1.1 200 OK\r\ncontent-type: …\r\nset-cookie: sl_a=1\r\nset-cookie: sl_b=2\r\n…` | — | `content-type, cache-control, x-resp-order×2, set-cookie×2, content-length, connection` | **exact order and duplicates**, original case | none (raw block) | h1 only; response only; text, not structure | `results/h1-page/layers.json` → `response.cdp_headersText.verdict=idêntica` |
+| 156.0.8078.48 | h1 | CDP `Network.responseReceivedExtraInfo` → `headers` | object with sorted keys: `cache-control, connection, content-length, content-type, set-cookie, x-resp-order` | — | 2× `set-cookie`, 2× `x-resp-order` | set of names | sorts ASCII; merges duplicates with `\n` (`"sl_a=1; Path=/\nsl_b=2; Path=/"`) | loses order **and** repetition; requires re-splitting on `\n` (loss if the value contains `\n`) | `results/h1-page/layers.json` → `response.cdp_object` |
+| 156.0.8078.48 | h1 | NetLog `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` | list `["Host: …", "Connection: …", …, "x-rep: c", …]` | **identical to the wire** (20/20, name and case) | identical | order, case and duplicates | none | per-request event; does not carry the CDP request id (correlation only by URL/method/time) | `results/h1-ordered/chrome-netlog.json`, `results/h1-page/layers.json` |
+| 156.0.8078.48 | h1 | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | list with status line + pairs | — | identical (20/20), including 2× `set-cookie` and 2× `x-resp-order` | order and duplicates | none | no `requestId`; match by URL/`content-length`/time | `results/h1-page/chrome-netlog.json` |
+| 156.0.8078.48 | h2 | CDP `requestWillBeSent.request.headers` | 5–9 Blink headers (same distribution as h1), own order | not the entry point | `:method, :authority, :scheme, :path` + 15–16 fields | only the set | **does not expose pseudoheaders**; omits `Host`/`Cookie`/`Accept`; order ≠ wire | not usable for sequence | `results/h2-page/layers.json` |
+| 156.0.8078.48 | h2 | CDP `requestWillBeSentExtraInfo` → `headers` | ASCII (20/20); lowercase names | not the entry point | wire order | set of names | sorts ASCII; collapses duplicates; does **not** represent pseudoheaders | unusable order | `results/h2-page/layers.json` |
+| 156.0.8078.48 | h2 | NetLog `HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS` | list with pseudoheaders `":method", ":authority", ":scheme", ":path"` + fields | same as the session event | wire order, except the `cookie`/`priority` pair | order and duplicates | pseudoheaders appear as text `":path: /x"` | same position swap as the session event | `results/h2-page/chrome-netlog.json` |
+| 156.0.8078.48 | h2 | NetLog `HTTP2_SESSION_SEND_HEADERS` | list of pairs in the order sent to HPACK | **layer (b) reference** | **20/20: 7 identical, 13 with `cookie` before `priority`**; the wire has `priority` before `cookie` | order (with 1 exception), case, duplicates | pseudoheaders included; `cookie`/`priority` swap position in the encoding | 1 divergent position when there is a `Cookie` | `results/h2-page/layers.json` (`b_netlog.verdict=reordenada`) |
+| 156.0.8078.48 | h2 | NetLog `HTTP2_SESSION_RECV_HEADERS` | list **with duplicates merged by `\x00`**: `"x-resp-order: 1\u00002"`, `"set-cookie: sl_a=1…\u0000sl_b=2…"` | — | 2× `set-cookie`, 2× `x-resp-order`, correct order | order | merges repetitions into a single NUL-separated pair; after expanding, 20/20 identical | a parser that only splits on `\n` loses the 2nd occurrence | `results/h2-page/layers.json` → `response.netlog_session.nul_joined=true` |
+| 156.0.8078.48 | h2 | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | synthetic `"HTTP/1.1 200"` + **separate** pairs | — | identical (20/20) | order and duplicates | invents an HTTP/1.1 status line for an h2 response | status comes from `HTTP2_SESSION_RECV_HEADERS` (`:status`) | `results/h2-page/layers.json` → `response.netlog_other` |
+| 156.0.8078.48 | h3 | CDP `requestWillBeSent.request.headers` | 5–9 Blink headers (same distribution as h1), own order | not the entry point | `:method, :authority, :scheme, :path` + 14–16 fields | only the set | same as h2: no pseudoheaders, order ≠ wire | not usable for sequence | `results/h3-page/layers.json` |
+| 156.0.8078.48 | h3 | CDP `requestWillBeSentExtraInfo` → `headers` | ASCII (20/20) | not the entry point | wire order | set of names | sorts; **merges the `cookie` fields into 1** (13/20 diverge only because of this) | order and repetition lost | `results/h3-page/layers.json` (`cdp_extra.verdict=duplicatas fundidas` in 13/20) |
+| 156.0.8078.48 | h3 | NetLog `HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS` | list with `":method" …` and **1** `cookie: sl_a=1; sl_b=2; sl_c=3` | same list as the session event | **3** `cookie` fields (1 per cookie) | overall order | **cookie "crumble"**: QPACK splits the Cookie field into N fields; NetLog shows the unsplit form | `Cookie` count in NetLog ≠ wire; position relative to `priority` preserved | `results/h3-page/layers.json` (`b_netlog.verdict=duplicatas fundidas` 13/20) |
+| 156.0.8078.48 | h3 | NetLog `QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS` | list of pairs + `quic_stream_id`, urgency | **layer (b) reference** | as above | order, case; **not** the cookie split | 1 `cookie` in the log → N on the wire; `priority` at the end | requires cross-checking with the server to know the actual number of Cookie fields | `results/h3-page/chrome-netlog.json` |
+| 156.0.8078.48 | h3 | NetLog `QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS` | pairs with `\x00` on repetitions (`:status` included) | — | 2× `set-cookie` in the written order | order, duplicates after expanding NUL | merges repetitions with `\x00` | same as h2 | `results/h3-page/layers.json` |
+| 156.0.8078.48 | h3 | NetLog `HTTP_TRANSACTION_READ_RESPONSE_HEADERS` | synthetic status + separate pairs | — | identical (20/20) | order and duplicates | fabricated status | same as h2 | `results/h3-page/layers.json` |
+| 156.0.8078.48 | all | **HAR (DevTools exporter)** | **not verified** | — | — | — | `Network.getHAR` does not exist in the CDP of this version; the DevTools HAR exporter is frontend code and was not instrumented | HAR order not proven; any inherited order would be that of `ExtraInfo` (ASCII), with duplicates merged | see "HAR" below; `results/*/har-derived.json` is a labeled reconstruction |
 
-### Cookie: um campo no log, N campos no fio
+### Cookie: one field in the log, N fields on the wire
 
-| Observação | h1 | h2 (mock) | h2 (contrato) | h3 |
+| Observation | h1 | h2 (mock) | h2 (contract) | h3 |
 |---|---|---|---|---|
-| 2 cookies → campos `cookie` no fio | 1 | 1 | — | 2 |
-| 3 cookies (JS) → campos no fio | 1 | 1 | — | 3 |
-| 3 cookies (Set-Cookie + `SameSite=Lax`, mesmos nomes/valores do contrato) → campos no fio | 1 | 1 | 3 | 3 |
-| 4 cookies no contrato → campos no fio | 1 | — | 4 | — |
-| NetLog / CDP mostram | 1 | 1 | 1 | 1 |
+| 2 cookies → `cookie` fields on the wire | 1 | 1 | — | 2 |
+| 3 cookies (JS) → fields on the wire | 1 | 1 | — | 3 |
+| 3 cookies (Set-Cookie + `SameSite=Lax`, same names/values as the contract) → fields on the wire | 1 | 1 | 3 | 3 |
+| 4 cookies on the contract → fields on the wire | 1 | — | 4 | — |
+| NetLog / CDP show | 1 | 1 | 1 | 1 |
 
-- h1 **nunca** fragmenta (1 campo com pares separados por `; `).
-- h3 **sempre** fragmenta (1 campo por cookie).
-- h2 é **dependente do par (servidor/configuração)**, não do conjunto de cookies:
-  os *mesmos* 3 cookies (`sc_a=alpha; sc_b=beta; sc_dup=two`, `Path=/;
-  SameSite=Lax`) saíram como **1 campo** contra o mock e como **3 campos** contra
-  o servidor de contrato, no mesmo Chrome. Experimentos `*-set3`.
-  O fator do lado do servidor (SETTINGS/HPACK do par) **não foi isolado**.
-- Prova de que a fragmentação acontece depois do ponto de log: o bloco HPACK
-  bruto do contrato (`header_block_b64`) decodificado à parte contém 3–4 campos
-  `cookie`, enquanto `requestWillBeSentExtraInfo.headers` traz **um** só.
-- Consequência para o produto: `Cookie` deve ser lido como **lista de campos**
-  (0..N) e reunido por nome ao comparar com o que o scraper enviou.
+- h1 **never** fragments (1 field with pairs separated by `; `).
+- h3 **always** fragments (1 field per cookie).
+- h2 is **dependent on the (server/configuration) pair**, not on the set of cookies:
+  the *same* 3 cookies (`sc_a=alpha; sc_b=beta; sc_dup=two`, `Path=/;
+  SameSite=Lax`) went out as **1 field** against the mock and as **3 fields** against
+  the contract server, in the same Chrome. Experiments `*-set3`.
+  The server-side factor (the pair's SETTINGS/HPACK) was **not isolated**.
+- Proof that the fragmentation happens after the log point: the raw HPACK
+  block from the contract (`header_block_b64`) decoded separately contains 3–4
+  `cookie` fields, while `requestWillBeSentExtraInfo.headers` carries only **one**.
+- Consequence for the product: `Cookie` must be read as a **list of fields**
+  (0..N) and joined by name when comparing with what the scraper sent.
 
-### Pseudoheaders: ordem estável e igual em h2 e h3
+### Pseudoheaders: stable order, the same in h2 and h3
 
-Medido em três decodificadores independentes (meu servidor `h2`/`aioquic`,
-NetLog do Chrome e o bloco HPACK bruto do contrato decodificado à parte):
-`:method, :authority, :scheme, :path` — **a mesma ordem em h2 e em h3**, em
-todas as 60 requisições. Não há inversão `:scheme`/`:authority` entre protocolos;
-o que muda é onde cada fonte os expõe (CDP não expõe pseudoheader algum; o NetLog
-mostra `":path: /x"` como texto).
+Measured in three independent decoders (my `h2`/`aioquic` server,
+Chrome's NetLog and the contract's raw HPACK block decoded separately):
+`:method, :authority, :scheme, :path` — **the same order in h2 and in h3**, in
+all 60 requests. There is no `:scheme`/`:authority` inversion between protocols;
+what changes is where each source exposes them (CDP exposes no pseudoheader at all; NetLog
+shows `":path: /x"` as text).
 
-Nota: o README/mensagem do `testserver/` descreve h2 como
-`:method, :scheme, :authority, :path`; o JSONL e o `header_block_b64` do próprio
-`testserver/` mostram `:method, :authority, :scheme, :path`. Vale a evidência
-gravada, não a descrição.
+Note: the README/message of `testserver/` describes h2 as
+`:method, :scheme, :authority, :path`; the JSONL and the `header_block_b64` of
+`testserver/` itself show `:method, :authority, :scheme, :path`. The recorded
+evidence prevails, not the description.
 
-### Camada (b) ≠ camada (c): exemplos concretos
+### Layer (b) ≠ layer (c): concrete examples
 
-h1 — `GET /echo-order?case=ordered`, header list entregue por
+h1 — `GET /echo-order?case=ordered`, header list delivered by
 `Fetch.continueRequest` (`results/h1-ordered/fetch-decisions.jsonl`):
 
-| (b) lista fornecida (6 pares) | (c) decodificada no servidor (3 pares) |
+| (b) list supplied (6 pairs) | (c) decoded on the server (3 pairs) |
 |---|---|
 | `x-rep: a`, `x-seq: 1`, `X-Rep: b`, `x-seq: 2`, `x-mixed-Case: V`, `x-rep: c` | `x-rep: c`, `x-seq: 2`, `x-mixed-Case: V` |
 
-O Chrome deduplica por nome case-insensitive (último valor vence) e mantém a
-ordem de primeira aparição. Ou seja: **header fornecido a uma API não é enviado
-sem transformação** — nem em ordem, nem em repetição.
+Chrome deduplicates by case-insensitive name (last value wins) and keeps the
+order of first appearance. In other words: **a header supplied to an API is not sent
+without transformation** — neither in order nor in repetition.
 
-h1 — `GET /echo-order?from=jsheaders`, `Headers` da Fetch API com
+h1 — `GET /echo-order?from=jsheaders`, Fetch API `Headers` with
 `append('x-dup','a')` + `append('x-dup','b')`:
-`(c)` mostra **um** header `x-dup: a, b`. Além disso a ordem de inserção
-(`x-zeta, x-alpha, x-mid`) não sobrevive: os três aparecem intercalados com
-headers do Chrome (`x-zeta, x-alpha, sec-ch-ua*, x-mid, …`).
+`(c)` shows **one** header `x-dup: a, b`. In addition the insertion order
+(`x-zeta, x-alpha, x-mid`) does not survive: the three appear interleaved with
+Chrome's headers (`x-zeta, x-alpha, sec-ch-ua*, x-mid, …`).
 
-h2 — `GET /page` com cookies: `(b)` `…, accept-language, cookie, priority`;
+h2 — `GET /page` with cookies: `(b)` `…, accept-language, cookie, priority`;
 `(c)` `…, accept-language, priority, cookie`.
 
-h3 — `GET /page` com 3 cookies: `(b)` `…, cookie: sl_a=1; sl_b=2; sl_c=3, priority`;
+h3 — `GET /page` with 3 cookies: `(b)` `…, cookie: sl_a=1; sl_b=2; sl_c=3, priority`;
 `(c)` `…, cookie: sl_a=1, cookie: sl_b=2, cookie: sl_c=3, priority`.
 
-## Contagens (60 requisições)
+## Counts (60 requests)
 
-| Protocolo | NetLog envio vs servidor | CDP `ExtraInfo` vs servidor |
+| Protocol | NetLog send vs server | CDP `ExtraInfo` vs server |
 |---|---|---|
-| h1 | 20/20 idênticas (nome e caixa), duplicatas preservadas | 20/20 reordenadas (ASCII) |
-| h2 | 7/20 idênticas; 13/20 reordenadas (`cookie`/`priority`) | 20/20 reordenadas (ASCII) |
-| h3 | 7/20 idênticas; 13/20 com campo `cookie` fundido | 20/20 reordenadas; 13/20 também com `cookie` fundido |
+| h1 | 20/20 identical (name and case), duplicates preserved | 20/20 reordered (ASCII) |
+| h2 | 7/20 identical; 13/20 reordered (`cookie`/`priority`) | 20/20 reordered (ASCII) |
+| h3 | 7/20 identical; 13/20 with merged `cookie` field | 20/20 reordered; 13/20 also with merged `cookie` |
 
-Resposta (20 por protocolo): ordem idêntica em 60/60 no evento NetLog
-transacional; repetições fundidas por `\x00` em 100% dos eventos de sessão
-h2/h3 e preservadas em 100% dos eventos transacionais.
+Response (20 per protocol): identical order in 60/60 in the transactional NetLog
+event; repetitions merged by `\x00` in 100% of the h2/h3 session events
+and preserved in 100% of the transactional events.
 
-## Cross-check contra os servidores do contrato
+## Cross-check against the contract servers
 
-O mesmo pipeline (launcher + CDP + NetLog) foi rodado contra `testserver/`
-(Rust, `httlib-hpack` para h2 e `quiche` para h3), uma implementação
-independente do meu mock Python. Evidência:
-`experiments/results/contract-{h1,h2}/layers.json`; reprodutor:
+The same pipeline (launcher + CDP + NetLog) was run against `testserver/`
+(Rust, `httlib-hpack` for h2 and `quiche` for h3), an implementation
+independent of my Python mock. Evidence:
+`experiments/results/contract-{h1,h2}/layers.json`; reproducer:
 `experiments/crosscheck_contract.py --proto all`.
 
-| Protocolo | Requisições | NetLog vs servidor | Observação |
+| Protocol | Requests | NetLog vs server | Note |
 |---|---|---|---|
-| h1 | 14 | **14/14 idênticas** (nome e caixa) | confirma a linha do mock, inclusive `Set-Cookie` duplicado e redirects |
-| h2 | 14 | 13/14 com `cookie` fundido; 1/14 idêntica | confirma que o NetLog mostra **1** campo `cookie` e o fio recebe 3–4; confirma também a troca `cookie`/`priority` |
-| h3 | 0 | **não verificada** | Chrome aborta com `ERR_QUIC_PROTOCOL_ERROR`; o NetLog mostra `TLS handshake failure … CERTIFICATE_VERIFY_FAILED` e um cliente `aioquic` independente também falha (`h3 poll error: StreamCreationError`) → defeito do servidor de contrato, não da captura |
+| h1 | 14 | **14/14 identical** (name and case) | confirms the mock row, including duplicated `Set-Cookie` and redirects |
+| h2 | 14 | 13/14 with merged `cookie`; 1/14 identical | confirms that NetLog shows **1** `cookie` field and the wire receives 3–4; also confirms the `cookie`/`priority` swap |
+| h3 | 0 | **not verified** | Chrome aborts with `ERR_QUIC_PROTOCOL_ERROR`; NetLog shows `TLS handshake failure … CERTIFICATE_VERIFY_FAILED` and an independent `aioquic` client also fails (`h3 poll error: StreamCreationError`) → defect of the contract server, not of the capture |
 
-Os 14 pedidos do contrato incluem casos que o mock não tem (redirects em cadeia,
-duas requisições idênticas simultâneas, POST de 128 KiB) e o NetLog continuou
-fiel no h1 e fiel-exceto-cookie no h2.
+The 14 contract requests include cases the mock does not have (chained redirects,
+two identical simultaneous requests, 128 KiB POST) and NetLog remained
+faithful in h1 and faithful-except-cookie in h2.
 
 ## HAR
 
-`Network.getHAR` **não existe** no CDP do Chrome 156.0.8078.48
-(`results/h1-plain/cdp-meta.json` → `harAvailable=false`). O exportador HAR do
-DevTools roda no frontend, sobre os mesmos eventos CDP; não foi instrumentado
-neste marco. Portanto: **ordem em HAR = não verificada**, e as linhas acima já
-mostram que a matéria-prima que o exportador consome (`requestWillBeSentExtraInfo`)
-vem ordenada em ASCII e com duplicatas já colapsadas.
+`Network.getHAR` **does not exist** in the CDP of Chrome 156.0.8078.48
+(`results/h1-plain/cdp-meta.json` → `harAvailable=false`). The DevTools HAR exporter
+runs in the frontend, over the same CDP events; it was not instrumented
+in this milestone. Therefore: **order in HAR = not verified**, and the rows above already
+show that the raw material the exporter consumes (`requestWillBeSentExtraInfo`)
+comes sorted in ASCII and with duplicates already collapsed.
 
-`har_from_cdp.mjs` gera um HAR 1.2 **rotulado como reconstrução** para servir de
-fixture ao importador (`results/h1-page/har-derived.json`). Não use esse arquivo
-como prova de ordem.
+`har_from_cdp.mjs` generates a HAR 1.2 **labeled as a reconstruction** to serve as a
+fixture for the importer (`results/h1-page/har-derived.json`). Do not use this file
+as proof of order.
 
-## A ordem que o DevTools mostra é a transmitida?
+## Is the order DevTools shows the one transmitted?
 
-**Não, e não dá para assumir que seja.** O painel de rede do DevTools e o
-exportador HAR são construídos sobre os mesmos eventos CDP medidos aqui
-(`requestWillBeSent` + `requestWillBeSentExtraInfo`). Nesses eventos a ordem é a
-de um mapa ordenado por byte (ASCII) e as duplicatas já chegaram colapsadas no
-`net::HttpRequestHeaders` — ou seja, a lista que aparece na tela **não é** a
-lista entregue ao codificador nem a decodificada no servidor (linhas h1/h2/h3
-acima, 60 requisições).
+**No, and it cannot be assumed to be.** The DevTools network panel and the HAR
+exporter are built on the same CDP events measured here
+(`requestWillBeSent` + `requestWillBeSentExtraInfo`). In those events the order is
+that of a byte-sorted map (ASCII) and the duplicates have already arrived collapsed in
+`net::HttpRequestHeaders` — that is, the list that appears on screen **is not** the
+list delivered to the encoder nor the one decoded on the server (h1/h2/h3 rows
+above, 60 requests).
 
-Para o caso de referência (ordem do WebInspector do Chromium 141, reproduzida
-manualmente com `curl_cffi`):
+For the reference case (WebInspector order of Chromium 141, reproduced
+manually with `curl_cffi`):
 
-- Replicar a ordem do DevTools e a chamada funcionar **não prova** que a ordem
-  foi transmitida: a maioria dos servidores ignora a ordem dos campos, e o
-  próprio caso documenta que o que quebrava era valor dinâmico (SESSIONID/
-  STAMP/delta), não ordem de header.
-- Em h1 a prova existe e é barata: `HTTP_TRANSACTION_SEND_REQUEST_HEADERS`
-  (NetLog) traz a ordem, a caixa e as duplicatas exatas; em h2/h3 o evento de
-  sessão traz a lista entregue ao HPACK/QPACK.
-- Sem esses eventos, o estado correto na interface e na exportação é
-  **"ordem transmitida: não verificada"** — nunca "ordem preservada".
-- Medido nesta matriz em Chrome **156**; o caso usou **141**. O mecanismo
-  (mapa ordenado no `HttpRequestHeaders`) é o mesmo tipo de estrutura, mas 141
-  não foi medido aqui — se for preciso afirmar algo sobre 141, rode este mesmo
-  harness com aquela build.
+- Replicating the DevTools order and the call working **does not prove** that the order
+  was transmitted: most servers ignore field order, and the
+  case itself documents that what was breaking was a dynamic value (SESSIONID/
+  STAMP/delta), not header order.
+- In h1 the proof exists and is cheap: `HTTP_TRANSACTION_SEND_REQUEST_HEADERS`
+  (NetLog) carries the exact order, case and duplicates; in h2/h3 the session
+  event carries the list delivered to HPACK/QPACK.
+- Without these events, the correct state in the interface and in the export is
+  **"transmitted order: not verified"** — never "order preserved".
+- Measured in this matrix on Chrome **156**; the case used **141**. The mechanism
+  (sorted map in `HttpRequestHeaders`) is the same kind of structure, but 141
+  was not measured here — if something must be asserted about 141, run this same
+  harness with that build.
 
-Checagem de 2 minutos para o caso real, quando houver atribuição: abrir a
-captura com NetLog, pegar a requisição da aplicação (POST Connector) e comparar
-`HTTP_TRANSACTION_SEND_REQUEST_HEADERS` com a ordem que o HAR/DevTools mostra.
-Divergência de ordem no HAR é esperada; o que importa é o que o NetLog diz.
+Two-minute check for the real case, once attribution is available: open the
+capture with NetLog, take the application's request (POST Connector) and compare
+`HTTP_TRANSACTION_SEND_REQUEST_HEADERS` with the order HAR/DevTools shows.
+Order divergence in the HAR is expected; what matters is what NetLog says.
 
-## Captura multi-alvo (CDP auto-attach × NetLog)
+## Multi-target capture (CDP auto-attach × NetLog)
 
-Contrato: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`. Página: `testserver` `/multi/` (`4b56b14`, 16 marcadores via `./scripts/multi-probe.sh`).
+Contract: `docs/14-captura-multi-alvo.md`. Harness: `experiments/multi_target/`. Page: `testserver` `/multi/` (`4b56b14`, 16 markers via `./scripts/multi-probe.sh`).
 
-| Item | Valor |
+| Item | Value |
 |---|---|
-| Navegador | Chrome `156.0.8078.74`, `headless=new`, perfil temporário, `--disable-popup-blocking`, `EXCLUDE localhost` no resolver |
-| CDP | `Target.setDiscoverTargets` + `setAutoAttach` na **conexão browser**, de novo na **sessão da página** e **recursivo** em cada filho (`iframe`/`worker`/`service_worker`/`page`) em `Target.attachedToTarget`; **pipeline** `Network.enable` → `Page`/`Runtime` → `setAutoAttach` filho → `runIfWaitingForDebugger` quando `waitingForDebugger` (retomar **depois** de `Network.enable`; sem `Page.enable` em worker/SW; pular `browser_ui`; **uma sessão CDP por `targetId`**, sessões duplicadas desanexadas) |
-| Evidência agregada (commit) | `experiments/results/multi-target-official/{analysis,summary}.json` |
-| Brutos (gitignore) | `cdp-events.jsonl`, `chrome-netlog.json`, `cdp-bodies.jsonl`, `server.jsonl` |
+| Browser | Chrome `156.0.8078.74`, `headless=new`, temporary profile, `--disable-popup-blocking`, `EXCLUDE localhost` in the resolver |
+| CDP | `Target.setDiscoverTargets` + `setAutoAttach` on the **browser connection**, again on the **page session** and **recursive** in each child (`iframe`/`worker`/`service_worker`/`page`) on `Target.attachedToTarget`; **pipeline** `Network.enable` → `Page`/`Runtime` → child `setAutoAttach` → `runIfWaitingForDebugger` when `waitingForDebugger` (resume **after** `Network.enable`; no `Page.enable` in worker/SW; skip `browser_ui`; **one CDP session per `targetId`**, duplicate sessions detached) |
+| Aggregated evidence (commit) | `experiments/results/multi-target-official/{analysis,summary}.json` |
+| Raw (gitignore) | `cdp-events.jsonl`, `chrome-netlog.json`, `cdp-bodies.jsonl`, `server.jsonl` |
 
-Prova mínima (só `/multi/`, sem popup/blank): `python3 multi_target/run_attach_probe.py` → `results/multi-target-attach-probe/compare.json` (Chrome **156.0.8078.74**, headless **e** headful). Com `setAutoAttach` na sessão da página + recursivo nos filhos: `attachedToTarget` **iframe** e **worker**; `oopif-get/post` no `sessionId` do iframe; `worker-get/post` no `sessionId` do worker (`commands.jsonl` + `cdp-events.jsonl` locais).
+Minimal proof (only `/multi/`, no popup/blank): `python3 multi_target/run_attach_probe.py` → `results/multi-target-attach-probe/compare.json` (Chrome **156.0.8078.74**, headless **and** headful). With `setAutoAttach` on the page session + recursive in the children: `attachedToTarget` **iframe** and **worker**; `oopif-get/post` on the iframe's `sessionId`; `worker-get/post` on the worker's `sessionId` (`commands.jsonl` + `cdp-events.jsonl` local).
 
-Run oficial `678f289` (11/16 CDP) usava só `setAutoAttach` na raiz browser — explica iframe/worker sem attach. Produto Tauri (`capture.rs`, pipeline `d60c1ae`+): **16/16 CDP** em `check_multi_target` (NetLog 16/16, tipos, POST, SW página+alvo). Causa do `blank-1` histórico: retomar (`runIfWaitingForDebugger`) **antes** de `Network.enable` na sessão do documento `_blank`; com pipeline invertido, `blank-1` tem `requestWillBeSent` na sessão filha.
+Official run `678f289` (11/16 CDP) used only `setAutoAttach` on the browser root — which explains iframe/worker without attach. Tauri product (`capture.rs`, pipeline `d60c1ae`+): **16/16 CDP** in `check_multi_target` (NetLog 16/16, types, POST, SW page+target). Cause of the historical `blank-1`: resuming (`runIfWaitingForDebugger`) **before** `Network.enable` on the `_blank` document session; with the pipeline inverted, `blank-1` has `requestWillBeSent` on the child session.
 
-Causas históricas (~33 s / timeout): (1) autoAttach recursivo **sem** filtrar `browser_ui`; (2) `Runtime.evaluate` no loop de espera; (3) alvo pausado sem resume; (4) `_blank` headless + `createTarget`; (5) segundo `openIframe()` após attach.
+Historical causes (~33 s / timeout): (1) recursive autoAttach **without** filtering `browser_ui`; (2) `Runtime.evaluate` in the wait loop; (3) paused target without resume; (4) headless `_blank` + `createTarget`; (5) second `openIframe()` after attach.
 
-### Tabela por tipo de alvo — variante **com** `waitForDebuggerOnStart`
+### Table by target type — variant **with** `waitForDebuggerOnStart`
 
-16/16 marcadores no `multi.jsonl` do servidor. CDP (`requestWillBeSent` + `?m=`): **16/16** (captura Tauri Rodada 10, pipeline pós-`d60c1ae`). Diagnóstico legado: `experiments/multi_target/diagnose_gaps.py` → `gap-diagnosis.json` (runs antigos 11/16). Corpos: POST via `body_text`/`body_b64` no `multi.jsonl`.
+16/16 markers in the server's `multi.jsonl`. CDP (`requestWillBeSent` + `?m=`): **16/16** (Tauri capture Round 10, post-`d60c1ae` pipeline). Legacy diagnosis: `experiments/multi_target/diagnose_gaps.py` → `gap-diagnosis.json` (old runs 11/16). Bodies: POST via `body_text`/`body_b64` in `multi.jsonl`.
 
-#### Lacunas CDP (com wait) — hipótese testada
+#### CDP gaps (with wait) — hypothesis tested
 
-| Marcador | Veredito | Evidência (run oficial, Chrome 156.0.8078.74) |
+| Marker | Verdict | Evidence (official run, Chrome 156.0.8078.74) |
 |---|---|---|
-| `blank-1` (documento) | **Fechada (produto Tauri)** | Com pipeline Network→resume na sessão filha (`d60c1ae`), `requestWillBeSent` do documento na sessão `_blank`; `blank-get/post` na mesma sessão. Runs antigos (resume antes de Network) só tinham `responseReceived` sem `requestWillBeSent`. |
-| `oopif-get-1` / `oopif-post-1` | **Fechada (harness)** | Run oficial: sem attach iframe. Prova recursiva: `attachedToTarget` type=iframe (`parentSession`=page); `Network.requestWillBeSent` get/post no **mesmo sessionId** (headless + headful). |
-| `worker-get-1` / `worker-post-1` | **Fechada (harness)** | Run oficial: 0 attach worker. Prova recursiva: attach worker; get/post na sessão worker após `Network.enable` + `runIfWaitingForDebugger` (headless + headful). |
-| Ordem headers (alvos com CDP) | **Sem achado novo** | Igual matriz geral: ExtraInfo **não** preserva ordem do fio; ordem transmitida → NetLog / `headersText` (h1). Conjunto de nomes alinhado ao servidor. |
-| Metadados de run (`cdp-sessions`, `plan`, `run-meta`) | **Fechada** | Saída de execução → `experiments/.gitignore`; removidos do índice git (commit agrega só `analysis.json`, `summary.json`, `gap-diagnosis.json`). |
+| `blank-1` (document) | **Closed (Tauri product)** | With the Network→resume pipeline on the child session (`d60c1ae`), `requestWillBeSent` of the document on the `_blank` session; `blank-get/post` on the same session. Old runs (resume before Network) only had `responseReceived` without `requestWillBeSent`. |
+| `oopif-get-1` / `oopif-post-1` | **Closed (harness)** | Official run: no iframe attach. Recursive proof: `attachedToTarget` type=iframe (`parentSession`=page); `Network.requestWillBeSent` get/post on the **same sessionId** (headless + headful). |
+| `worker-get-1` / `worker-post-1` | **Closed (harness)** | Official run: 0 worker attach. Recursive proof: worker attach; get/post on the worker session after `Network.enable` + `runIfWaitingForDebugger` (headless + headful). |
+| Header order (targets with CDP) | **No new finding** | Same as the general matrix: ExtraInfo does **not** preserve wire order; transmitted order → NetLog / `headersText` (h1). Set of names aligned with the server. |
+| Run metadata (`cdp-sessions`, `plan`, `run-meta`) | **Closed** | Execution output → `experiments/.gitignore`; removed from the git index (commit aggregates only `analysis.json`, `summary.json`, `gap-diagnosis.json`). |
 
-| Tipo | Servidor | NetLog | CDP | ExtraInfo × servidor | Corpos |
+| Type | Server | NetLog | CDP | ExtraInfo × server | Bodies |
 |---|---|---|---|---|---|
-| Principal (`main-*`) | ✓ | ✓ | ✓ | mesmo conjunto; ordem ExtraInfo ≠ fio | ✓ POST (servidor) |
-| Popup | ✓ | ✓ | ✓ sessão `page` filha | mesmo conjunto; ordem ≠ fio | ✓ POST |
-| `_blank` | ✓ | ✓ | ✓ (`blank-1` doc + GET/POST na sessão filha) | GET/POST: conjunto ok | ✓ POST |
-| OOPIF | ✓ | ✓ | ✓ get/post na sessão `iframe` | doc: n/a | ✓ POST (servidor) |
-| Worker | ✓ | ✓ | ✓ get/post na sessão `worker` | n/d | servidor |
-| SW intercept (`sw-intercept-1`) | ✓ | ✓ | ✓ **página + SW** | n/a (SW path) | servidor |
-| SW fetch próprio (`sw-own-*`) | ✓ | ✓ | ✓ sessão `service_worker` | conjunto ok | ✓ POST (servidor) |
+| Main (`main-*`) | ✓ | ✓ | ✓ | same set; ExtraInfo order ≠ wire | ✓ POST (server) |
+| Popup | ✓ | ✓ | ✓ child `page` session | same set; order ≠ wire | ✓ POST |
+| `_blank` | ✓ | ✓ | ✓ (`blank-1` doc + GET/POST on the child session) | GET/POST: set ok | ✓ POST |
+| OOPIF | ✓ | ✓ | ✓ get/post on the `iframe` session | doc: n/a | ✓ POST (server) |
+| Worker | ✓ | ✓ | ✓ get/post on the `worker` session | n/a | server |
+| SW intercept (`sw-intercept-1`) | ✓ | ✓ | ✓ **page + SW** | n/a (SW path) | server |
+| SW own fetch (`sw-own-*`) | ✓ | ✓ | ✓ `service_worker` session | set ok | ✓ POST (server) |
 
-**Service worker (detalhe):** `sw-intercept-1` aparece na **página** (`fromServiceWorker: true`, `serviceWorkerResponseSource: fallback-code`) e no target **service_worker** (fetch encaminhado). `sw-own-1` / `sw-own-post-1` só no target **service_worker** (`fromServiceWorker: false`). Dedupe por `targetId`: uma sessão grava rede; re-anexos auto-attach desanexam a sessão extra (evita 3–4 cópias por marcador).
+**Service worker (detail):** `sw-intercept-1` appears on the **page** (`fromServiceWorker: true`, `serviceWorkerResponseSource: fallback-code`) and on the **service_worker** target (forwarded fetch). `sw-own-1` / `sw-own-post-1` only on the **service_worker** target (`fromServiceWorker: false`). Dedupe by `targetId`: one session records network; auto-attach re-attaches detach the extra session (avoids 3–4 copies per marker).
 
-### Variante **sem** `waitForDebuggerOnStart`
+### Variant **without** `waitForDebuggerOnStart`
 
-Servidor: **8/16** (faltam popup/worker/SW). CDP: principal + `_blank` + OOPIF doc; popups e worker/SW não anexam a tempo. Perda da “primeira requisição” isolada por marcador: **não verificado** (comparar popup-1 entre variantes manualmente nos brutos).
+Server: **8/16** (popup/worker/SW missing). CDP: main + `_blank` + OOPIF doc; popups and worker/SW do not attach in time. Loss of the isolated "first request" per marker: **not verified** (compare popup-1 between variants manually in the raw files).
 
-### Colisão de `requestId`
+### `requestId` collision
 
-Vários pares `(requestId)` repetidos entre sessões → chave **`(sessionId, requestId)`**.
+Several `(requestId)` pairs repeated across sessions → key **`(sessionId, requestId)`**.
 
-### Custo (com wait, run oficial)
+### Cost (with wait, official run)
 
-~12 sessões CDP, ~170 s de captura (espera até 16 marcadores no `multi.jsonl`).
+~12 CDP sessions, ~170 s of capture (waiting for up to 16 markers in `multi.jsonl`).
 
-Reprodução: `cd experiments && python3 multi_target/run_multi.py --testserver --port 8781 --out results/multi-target-official`.
+Reproduction: `cd experiments && python3 multi_target/run_multi.py --testserver --port 8781 --out results/multi-target-official`.
 
-**Recomendação:** auto-attach com wait na **página** + recursivo em iframe/worker/SW; **`Network.enable` antes de `runIfWaitingForDebugger`** na sessão filha; uma sessão por `targetId`; chave `(sessionId, requestId)`; ordem de headers → NetLog, não ExtraInfo.
+**Recommendation:** auto-attach with wait on the **page** + recursive in iframe/worker/SW; **`Network.enable` before `runIfWaitingForDebugger`** on the child session; one session per `targetId`; key `(sessionId, requestId)`; header order → NetLog, not ExtraInfo.
 
-## Limites
+## Limits
 
-- Tudo em `headless=new`. Comportamento de headers do Chrome é o mesmo em headed
-  nos testes anteriores do projeto, mas **não foi medido aqui** com janela visível.
-- h3 exigiu `--origin-to-force-quic-on`; Alt-Svc não foi usado (evita migração
-  silenciosa h2→h3 no meio do experimento). Sem esse flag o Chrome usaria h2.
-- Cada sessão usa um NetLog isolado (`--host-resolver-rules` bloqueia DNS externo),
-  mas eventos de background do próprio navegador ainda aparecem no arquivo; o
-  comparador filtra por URL/`content-length`.
-- Correlação CDP↔NetLog é feita por URL+método+`content-length`(+presença de
-  `set-cookie`); os IDs não são equivalentes. Nos 60 casos a resposta foi
-  inequívoca, mas a ferramenta
-  deve tratar ambiguidade como ambígua (ver `b_netlog.candidates`).
-- `Fetch.continueRequest` foi usado apenas para *injetar* ordem/duplicatas, não é
-  mecanismo de captura do produto.
-- Não foi medido `QUIC` com 0-RTT nem retry. Requisições idênticas simultâneas
-  foram exercitadas apenas no servidor de contrato (h1/h2), onde a correlação
-  por URL+método+ordem de ocorrência se manteve inequívoca.
-- h3 contra o servidor de contrato está bloqueado (ver acima); a linha h3 desta
-  matriz vem do servidor `aioquic` do mock.
-- O gatilho da fragmentação de `Cookie` no h2 não foi isolado.
+- Everything in `headless=new`. Chrome's header behavior is the same in headed
+  in the project's earlier tests, but **was not measured here** with a visible window.
+- h3 required `--origin-to-force-quic-on`; Alt-Svc was not used (avoids silent
+  h2→h3 migration in the middle of the experiment). Without this flag Chrome would use h2.
+- Each session uses an isolated NetLog (`--host-resolver-rules` blocks external DNS),
+  but the browser's own background events still appear in the file; the
+  comparator filters by URL/`content-length`.
+- CDP↔NetLog correlation is done by URL+method+`content-length`(+presence of
+  `set-cookie`); the IDs are not equivalent. In the 60 cases the answer was
+  unambiguous, but the tool
+  must treat ambiguity as ambiguous (see `b_netlog.candidates`).
+- `Fetch.continueRequest` was used only to *inject* order/duplicates, it is not a
+  capture mechanism of the product.
+- `QUIC` with 0-RTT or retry was not measured. Identical simultaneous requests
+  were exercised only on the contract server (h1/h2), where correlation
+  by URL+method+order of occurrence remained unambiguous.
+- h3 against the contract server is blocked (see above); the h3 row of this
+  matrix comes from the mock's `aioquic` server.
+- The trigger of `Cookie` fragmentation in h2 was not isolated.
 
-## Regras
+## Rules
 
-- Não assumir: HAR preserva ordem; enumeração CDP = sequência transmitida;
-  evento NetLog = sequência final; headers de biblioteca são enviados sem
-  transformação; 403 vem da ordem de headers.
-- Referência de servidor deve observar a ordem bruta no ponto de decodificação
-  (dicionário normalizado não serve).
-- Diferenciar ordem de headers de requisição de ordem de pacotes/frames/
-  requisições concorrentes.
-- Se a sequência transmitida não puder ser comprovada: registrar "não
-  verificada" e seguir com funcionalidades independentes.
+- Do not assume: HAR preserves order; CDP enumeration = transmitted sequence;
+  NetLog event = final sequence; library headers are sent without
+  transformation; 403 comes from header order.
+- A server reference must observe the raw order at the decoding point
+  (a normalized dictionary does not work).
+- Distinguish request header order from the order of packets/frames/
+  concurrent requests.
+- If the transmitted sequence cannot be proven: record "not
+  verified" and proceed with independent features.

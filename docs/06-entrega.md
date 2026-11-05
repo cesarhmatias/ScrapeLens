@@ -1,200 +1,200 @@
-# Entrega local e recuperação do empacotamento — 2026-10-27
+# Local delivery and packaging recovery — 2026-10-27
 
-## Resultado e escopo
+## Result and scope
 
-Empacotamento local concluído. Bundle arm64 recompilado com o core atual,
-assinatura ad-hoc válida, abertura e nova captura pela UI comprovadas.
-Bateria automatizada: 10/10 critérios e 282/282 asserções, sem SKIP.
-Novas importações HAR/NetLog pela UI do mesmo bundle também confirmadas:
-seleção manual do usuário no painel nativo, seguida de verificação independente
-por Testes dos arquivos persistidos, origem, contagens, permissões e releitura.
-O bloqueio de automação do seletor ficou registrado como limitação do ambiente;
-não há verificação de importação pendente nesta entrega.
+Local packaging complete. The arm64 bundle was rebuilt with the current core,
+the ad-hoc signature is valid, and opening it and a new capture through the UI are proven.
+Automated battery: 10/10 criteria and 282/282 assertions, no SKIP.
+New HAR/NetLog imports through the UI of the same bundle are also confirmed:
+manual selection by the user in the native panel, followed by independent verification
+by Tests of the persisted files, origin, counts, permissions and re-reading.
+The picker's automation block was recorded as an environment limitation;
+there is no pending import verification in this delivery.
 
-Isso encerra a recuperação do pacote e registra o estado real. Não equivale
-à conclusão integral de todos os requisitos de produto da especificação:
-exportação/sanitização ainda são CLI, e os requisitos derivados do DETRAN
-listados abaixo não foram integrados à UI. Nenhum código de produção foi
-alterado nesta recuperação; nenhuma proposta de UX foi integrada.
+This closes the package recovery and records the real state. It does not amount
+to full completion of all the product requirements of the specification:
+export/sanitization are still CLI, and the DETRAN-derived requirements
+listed below were not integrated into the UI. No production code was
+changed in this recovery; no UX proposal was integrated.
 
-## Estado preservado e trabalhos retomados
+## State preserved and work resumed
 
-No início, HEAD `1581376`, árvore limpa. LICENSE, CONTRIBUTING, comentário de
-commands e nota do Origin CDP já estavam em `e443076`; não foram refeitos.
-O bundle antigo era anterior à calibração do relógio NetLog (`f6c6bdd`).
+At the start, HEAD `1581376`, clean tree. LICENSE, CONTRIBUTING, the commands
+comment and the Origin CDP note were already in `e443076`; they were not redone.
+The old bundle predated the NetLog clock calibration (`f6c6bdd`).
 
-App retomou somente build/validação e comandos de contribuição:
-`febdd2f`, `fbce3e4`, `453d717`. Build fonte `1581376`, core até `b5846be`,
-incluindo `98293e2` (sanitização) e `f6c6bdd` (NetLog).
+App resumed only the build/validation and contribution commands:
+`febdd2f`, `fbce3e4`, `453d717`. Source build `1581376`, core up to `b5846be`,
+including `98293e2` (sanitization) and `f6c6bdd` (NetLog).
 
-A reexecução do líder revelou três falhas no critério 3. Testes demonstrou
-que a fixture declarava wallTime incompatível com timestamp monotônico;
-corrigiu a equação sem reduzir as exigências de ambiguidade. Commits
-`87d7b61` e `364bddb`; falha original preservada em
-`tests/results/aceite-criterio3-falha-lider.json` e relatório correspondente.
-Não foi necessária correção adicional do core nem novo build do produto.
+The leader's re-run revealed three failures in criterion 3. Tests showed
+that the fixture declared a wallTime incompatible with the monotonic timestamp;
+it fixed the equation without reducing the ambiguity requirements. Commits
+`87d7b61` and `364bddb`; original failure preserved in
+`tests/results/aceite-criterio3-falha-lider.json` and the corresponding report.
+No additional core fix or new product build was needed.
 
-## Artefato e instalação
+## Artifact and installation
 
-- Pacote: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
-- Tamanho aproximado: 13,2 MiB; um executável Mach-O arm64, 13.119.296 bytes.
-- SHA-256 do executável assinado:
+- Package: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
+- Approximate size: 13,2 MiB; one Mach-O arm64 executable, 13.119.296 bytes.
+- SHA-256 of the signed executable:
   `a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0`.
-- Assinatura ad-hoc verificada com `codesign --verify --deep --strict` pelo
-  App e novamente pelo líder; sem Developer ID/notarização. Gatekeeper rejeita
-  distribuição normal deste artefato. Intel e outros macOS não testados.
-- Abra pelo Finder ou `open src-tauri/target/release/bundle/macos/ScrapeLens.app`
-  a partir da raiz. Pode copiar o bundle para `/Applications`.
-- Chrome externo necessário para captura; Node/Python/Rust não necessários
-  para executar o app. CLI de exportação é ferramenta separada.
+- Ad-hoc signature verified with `codesign --verify --deep --strict` by
+  App and again by the leader; no Developer ID/notarization. Gatekeeper rejects
+  normal distribution of this artifact. Intel and other macOS versions not tested.
+- Open it from Finder or `open src-tauri/target/release/bundle/macos/ScrapeLens.app`
+  from the root. You may copy the bundle to `/Applications`.
+- External Chrome required for capture; Node/Python/Rust not required
+  to run the app. The export CLI is a separate tool.
 
-Comandos de build/assinatura e ambiente em `src-tauri/EMPACOTAMENTO.md`.
-O hash identifica este artefato, não garante build byte a byte reproduzível.
+Build/signing commands and environment in `src-tauri/EMPACOTAMENTO.md`.
+The hash identifies this artifact; it does not guarantee a byte-for-byte reproducible build.
 
-## Validação confirmada
+## Confirmed validation
 
-| Verificação | Resultado e origem |
+| Check | Result and origin |
 |---|---|
-| Core `cargo test --offline` | App: 88 passam, 1 benchmark ignorado |
-| Shell `cargo test` | App: 6 passam, 1 teste live ignorado; captura exercitada separadamente pela UI |
-| TypeScript e Vite | App: typecheck e build passam |
-| Build Tauri | App: exit 0, core recompilado como dependência crate |
-| Assinatura/hash/arquitetura | App + líder: codesign válido, SHA-256 acima, arm64 |
-| Bateria de aceite | Testes: 282/282, 10/10, commit 77c32a7; promovida a docs/05-aceite.md |
-| Nova captura no bundle final | Testes: Iniciar/Encerrar pela UI, sessão capture-1793085113332 |
-| HAR/NetLog novos | UI do bundle final: HAR 24 e NetLog 32 requisições, fontes conferidas |
-| Inspeção visual | App: prints 22/23; líder inspecionou print 23; Testes gravou screenshot-app-live.png e screenshot-app-imports.png |
+| Core `cargo test --offline` | App: 88 pass, 1 benchmark ignored |
+| Shell `cargo test` | App: 6 pass, 1 live test ignored; capture exercised separately through the UI |
+| TypeScript and Vite | App: typecheck and build pass |
+| Tauri build | App: exit 0, core recompiled as a crate dependency |
+| Signature/hash/architecture | App + leader: valid codesign, SHA-256 above, arm64 |
+| Acceptance battery | Tests: 282/282, 10/10, commit 77c32a7; promoted to docs/05-aceite.md |
+| New capture in the final bundle | Tests: Start/Stop through the UI, session capture-1793085113332 |
+| New HAR/NetLog | Final bundle UI: HAR 24 and NetLog 32 requests, sources checked |
+| Visual inspection | App: screenshots 22/23; leader inspected screenshot 23; Tests recorded screenshot-app-live.png and screenshot-app-imports.png |
 
-Sessão nova: 11 requisições, complete, cdp+netlog, 154 entradas de headers
-verificadas via NetLog h1, 9 matched, 2 ambíguas (2 candidatos cada), zero
-unmatched, 2 redirects, 8 linhas Set-Cookie, Cookie sc_dup preservado.
-Diretório 0700, arquivos 0600. Corpos CDP unavailable com nota (build
-anterior à gravação de corpos ao vivo).
+New session: 11 requests, complete, cdp+netlog, 154 header entries
+verified via NetLog h1, 9 matched, 2 ambiguous (2 candidates each), zero
+unmatched, 2 redirects, 8 Set-Cookie lines, Cookie sc_dup preserved.
+Directory 0700, files 0600. CDP bodies unavailable with a note (build
+prior to live body recording).
 
-Nova captura do harness: 27 requisições, h1/h2/h3, evidência estável em
-`tests/results/capture-latest/run.json`. A matriz histórica mede Chrome
-156.0.8078.48, 15 experimentos e 60 requisições, com h3 observado em aioquic e
-cenário quiche bloqueado. Não se declara cobertura completa de HTTP/3.
+New harness capture: 27 requests, h1/h2/h3, stable evidence in
+`tests/results/capture-latest/run.json`. The historical matrix measures Chrome
+156.0.8078.48, 15 experiments and 60 requests, with h3 observed on aioquic and
+the quiche scenario blocked. Full HTTP/3 coverage is not claimed.
 
-Importação grande atual: 20.000 requisições, HAR 16,6 MiB em 0,96 s;
-20.000 anexos pequenos em 3,30 s. Inspect chega a 2.415 MiB RSS ao serializar
-JSON completo; responsividade/perfil de memória ainda merece atenção.
+Current large import: 20.000 requests, HAR 16,6 MiB in 0,96 s;
+20.000 small attachments in 3,30 s. Inspect reaches 2.415 MiB RSS when serializing
+the full JSON; responsiveness/memory profile still deserves attention.
 
-## Funcionalidades disponíveis
+## Available features
 
-Captura Chrome dedicado, parada/flush, gravação e reabertura de sessão v1,
-importadores HAR/NetLog, lista com filtros e busca, detalhe e comparação de
-requisições com duplicatas. Headers na sequência da fonte; proveniência e
-verificação por informação. HAR/objetos CDP não comprovam ordem transmitida;
-NetLog e headersText h1 fornecem evidências específicas. Empates ficam
-ambíguos. Exportação cURL/Python e sanitização funcionam no core/CLI e, desde
-a rodada seguinte, também pela interface (resultado em `docs/07-exportacao-ui.md`).
+Dedicated Chrome capture, stop/flush, saving and reopening a v1 session,
+HAR/NetLog importers, list with filters and search, detail and comparison of
+requests with duplicates. Headers in the source sequence; provenance and
+verification per item. HAR/CDP objects do not prove transmitted order;
+NetLog and h1 headersText provide specific evidence. Ties stay
+ambiguous. cURL/Python export and sanitization work in the core/CLI and, since
+the following round, also through the interface (result in `docs/07-exportacao-ui.md`).
 
-## Limitações e prioridades restantes
+## Limitations and remaining priorities
 
-1. Exportação/sanitização na UI: concluída na rodada seguinte (`docs/07`).
-   Busca no corpo, cadeia de priming,
-   campos dinâmicos e comparação entre sessões do caso DETRAN seguem pendentes;
-   fixtures e correlação 13/13 não comprovam essas funções da interface.
-2. Completar avisos/licenças transitivas para redistribuição. Código próprio
-   MIT e lockfiles presentes; inventário completo não auditado.
-3. Captura só um target/página (multi-alvo é a rodada 10); corpos de
-   requisição e de resposta são gravados em `cdp-bodies.jsonl` com limite de
-   5 MiB por corpo e 256 MiB por sessão, e ficam `unavailable` com nota nos
-   casos sem corpo (SSE/WebSocket, redirect, erro do CDP, captura encerrada
-   antes de `loadingFinished`); zero eventos gera erro em vez
-   de sessão vazia; Origin CDP aberto por --remote-allow-origins=* durante a
-   sessão local. Sanitização continua heurística, com omissão de anexos/eventos
-   não sanitizáveis; exportação não garante fingerprint/transporte.
-4. Assinatura Developer ID/notarização e teste Intel antes de distribuição
-   ampla. Nada publicado, nenhum push/release nesta tarefa.
+1. Export/sanitization in the UI: completed in the following round (`docs/07`).
+   Body search, priming chain,
+   dynamic fields and cross-session comparison of the DETRAN case remain pending;
+   fixtures and 13/13 correlation do not prove these interface functions.
+2. Complete the transitive notices/licenses for redistribution. Own code
+   MIT and lockfiles present; full inventory not audited.
+3. Capture covers only one target/page (multi-target is round 10); request and
+   response bodies are recorded in `cdp-bodies.jsonl` with a limit of
+   5 MiB per body and 256 MiB per session, and are marked `unavailable` with a note in
+   cases without a body (SSE/WebSocket, redirect, CDP error, capture ended
+   before `loadingFinished`); zero events produces an error instead
+   of an empty session; Origin CDP opened by --remote-allow-origins=* during the
+   local session. Sanitization remains heuristic, omitting attachments/events
+   that cannot be sanitized; export does not guarantee fingerprint/transport.
+4. Developer ID signing/notarization and Intel testing before wide
+   distribution. Nothing published, no push/release in this task.
 
-A pasta `~/Projects/scrapelens-import-tmp/` e as sessões duplicadas foram
-preservadas; nenhuma exclusão foi realizada. Instruções de uso/build no README.
+The folder `~/Projects/scrapelens-import-tmp/` and the duplicate sessions were
+preserved; no deletion was performed. Usage/build instructions in the README.
 
-## Fechamento das importações manuais
+## Closing the manual imports
 
-A permissão macOS foi concedida pelo usuário. O seletor continuou inacessível
-à automação (AX vazio e teclas sem efeito); registro histórico em
-`docs/validation/import-picker-blocker.json`. Nenhuma permissão foi contornada.
-Após uma tentativa com JSON sem a estrutura HAR, Testes confirmou que o arquivo
-preparado era válido. O usuário selecionou os dois caminhos exatos e confirmou
-a importação. Testes verificou as novas sessões antes de aprovar (77c32a7):
+The macOS permission was granted by the user. The picker remained inaccessible
+to automation (empty AX and keys with no effect); historical record in
+`docs/validation/import-picker-blocker.json`. No permission was bypassed.
+After an attempt with a JSON lacking the HAR structure, Tests confirmed that the
+prepared file was valid. The user selected the two exact paths and confirmed
+the import. Tests verified the new sessions before approving (77c32a7):
 
-- HAR `har-3dbc391c02a985c5-2`: 24 requisições h1/h2, complete, 24 sourceEvents,
-  sem DEMO e zero headers classificados como verificados. Sequência método/URL
-  idêntica às 24 entradas do HAR preparado.
-- NetLog `netlog-1704043c442dcbd1-2`: 32 requisições h1/h2/h3, 36 tentativas,
-  9 conexões, 4 redirects, 15 StreamSessions e 5.354 sourceEvents. Partial com
-  motivo explícito pela ausência de CDP; aviso de unidade temporal assumida.
-  Artefato NetLog persistido byte a byte idêntico à fonte preparada.
-- Diretórios 0700 e arquivos 0600; inspect relê 24/32 requisições sem modificar
-  session.json. Cópias duplicadas preservadas.
-- Print `tests/results/app-latest/screenshot-app-imports.png`: sessão NetLog
-  importada, 32 requisições e linhas h1/h2/h3. Metadados e verificação em
+- HAR `har-3dbc391c02a985c5-2`: 24 h1/h2 requests, complete, 24 sourceEvents,
+  no DEMO and zero headers classified as verified. Method/URL sequence
+  identical to the 24 entries of the prepared HAR.
+- NetLog `netlog-1704043c442dcbd1-2`: 32 h1/h2/h3 requests, 36 attempts,
+  9 connections, 4 redirects, 15 StreamSessions and 5.354 sourceEvents. Partial with
+  explicit reason for the absence of CDP; warning about assumed time unit.
+  Persisted NetLog artifact byte-for-byte identical to the prepared source.
+- Directories 0700 and files 0600; inspect re-reads 24/32 requests without modifying
+  session.json. Duplicate copies preserved.
+- Screenshot `tests/results/app-latest/screenshot-app-imports.png`: imported
+  NetLog session, 32 requests and h1/h2/h3 rows. Metadata and verification in
   `tests/results/app-latest/run.json`.
 
-Bateria consolidada reexecutada: 282/282 (critério 9: 118/118). Captura e build
-não foram repetidos nessa última passada. O hash do bundle permaneceu o mesmo.
+Consolidated battery re-run: 282/282 (criterion 9: 118/118). Capture and build
+were not repeated in that last pass. The bundle hash remained the same.
 
-## Entrega das rodadas 4 a 7 (2026-10-29)
+## Delivery of rounds 4 to 7 (2026-10-29)
 
-Pacote: `src-tauri/target/release/bundle/macos/ScrapeLens.app`, compilado no
-HEAD 4b16b0e (commit de build c5d1f61), assinado ad-hoc
-(`codesign --verify --deep --strict` OK), SHA-256 do executável
-`6e301e70161c314c4475923a91182edd26bcf009ec2a5f3ddd90106b6e91cce9`. Nada foi
-publicado.
+Package: `src-tauri/target/release/bundle/macos/ScrapeLens.app`, built at
+HEAD 4b16b0e (build commit c5d1f61), ad-hoc signed
+(`codesign --verify --deep --strict` OK), executable SHA-256
+`6e301e70161c314c4475923a91182edd26bcf009ec2a5f3ddd90106b6e91cce9`. Nothing was
+published.
 
-Funcionalidades novas:
-- Rodada 4 (docs/08): corpos CDP gravados ao vivo, com estado explícito e
-  `transformed`; busca em 6 escopos com visão decodificada e intervalo exato;
-  sanitização por propagação de valor.
-- Rodada 5 (docs/09): origem dos valores com tipo e força da evidência,
-  cadeia de priming e comparação entre capturas por campo.
-- Rodada 6 (docs/10): fidelidade ao caso real DETRAN-PB (controles HTML,
-  rodadas, páginas de contexto, frames auxiliares, campos de negócio).
-- Rodada 7 (docs/11): script de priming Python (extração em runtime, sem
-  valores capturados nem PII, sem redirect cross-origin, parada no passo
-  ruim) e veredito de sucesso da aplicação × HTTP.
+New features:
+- Round 4 (docs/08): CDP bodies recorded live, with explicit state and
+  `transformed`; search across 6 scopes with decoded view and exact range;
+  sanitization by value propagation.
+- Round 5 (docs/09): origin of values with type and evidence strength,
+  priming chain and per-field comparison between captures.
+- Round 6 (docs/10): fidelity to the real DETRAN-PB case (HTML controls,
+  rounds, context pages, auxiliary frames, business fields).
+- Round 7 (docs/11): Python priming script (runtime extraction, no captured
+  values or PII, no cross-origin redirect, stop at the bad step) and the
+  application success verdict × HTTP.
 
-Aceite: `tests/RELATORIO-FINAL.md` (4b16b0e). 10/10 critérios com captura ao
-vivo nova (critério 9), todas as baterias verdes, cargo test core 250 e
-src-tauri 42. Nos 3 HARs reais do usuário (agregado): STAMP e delta 100%,
-script com 11 passos na ordem do fluxo manual, só placa e sufixo do SESSIONID
-como parâmetros e 0 placas após sanitize. Cada rodada foi aprovada por revisão
-independente.
+Acceptance: `tests/RELATORIO-FINAL.md` (4b16b0e). 10/10 criteria with a new live
+capture (criterion 9), all batteries green, cargo test core 250 and
+src-tauri 42. On the user's 3 real HARs (aggregate): STAMP and delta 100%,
+script with 11 steps in the order of the manual flow, only plate and SESSIONID suffix
+as parameters and 0 plates after sanitize. Each round was approved by independent
+review.
 
-Limites conhecidos: o script não recalcula os prefixos de comprimento do
-Natural for Ajax (avisa); PII em texto livre sem formato (nome, endereço,
-e-mail ofuscado, data) não é detectada em query/header/caminho; o
-`--allow-literal-body` congela o resto do corpo (avisado); HAR do DevTools
-não traz cookies (avisado).
+Known limits: the script does not recalculate the length prefixes of
+Natural for Ajax (it warns); PII in free text with no format (name, address,
+obfuscated e-mail, date) is not detected in query/header/path; the
+`--allow-literal-body` freezes the rest of the body (warned); DevTools HAR
+does not carry cookies (warned).
 
-Pendente com o usuário: teste do `.app` real com o seletor nativo de pastas
-(não automatizável). As sessões sintéticas já importadas estão em
-`tests/.work/teste-manual-final/` (fora do git): `1-detran-uma-rodada`,
-`2-detran-duas-rodadas` e `3-detran-bloqueio`.
+Pending with the user: test of the real `.app` with the native folder picker
+(not automatable). The synthetic sessions already imported are in
+`tests/.work/teste-manual-final/` (outside git): `1-detran-uma-rodada`,
+`2-detran-duas-rodadas` and `3-detran-bloqueio`.
 
-## Entrega da rodada 8 (2026-10-29)
+## Delivery of round 8 (2026-10-29)
 
-Pacote: o mesmo caminho, compilado no HEAD dc14ac3, assinado ad-hoc, com
-SHA-256 do executável `bda06a2db30c4b4315247f78fa728c967b946d7850641f4ab161995983f1e052`.
-Nada foi publicado.
+Package: the same path, built at HEAD dc14ac3, ad-hoc signed, with
+executable SHA-256 `bda06a2db30c4b4315247f78fa728c967b946d7850641f4ab161995983f1e052`.
+Nothing was published.
 
-Novo: o adaptador Natural for Ajax (`adapters/natural-ajax`, fora do core,
-CLI `natural-core --adapter natural-ajax`). Ele traz:
-- decodificação e recodificação exatas do campo `XML`, com limites e custo
-  linear;
-- nomes internos (`XML.delta`, `XML.p.v_placa`) em origens e compare;
-- visão estruturada no app;
-- script de priming que recalcula os prefixos UTF-16 (provado no detran-sim
-  strict, com o controle sem adaptador falhando).
+New: the Natural for Ajax adapter (`adapters/natural-ajax`, outside the core,
+CLI `natural-core --adapter natural-ajax`). It brings:
+- exact decoding and re-encoding of the `XML` field, with limits and linear
+  cost;
+- internal names (`XML.delta`, `XML.p.v_placa`) in origins and compare;
+- structured view in the app;
+- priming script that recalculates the UTF-16 prefixes (proven on detran-sim
+  strict, with the control without the adapter failing).
 
-As partes do adaptador seguem o modo estrito por padrão (`--lenient-parts`
-opcional). Aceite: tests/RELATORIO-FINAL.md, seção "Rodada 8", tudo verde
-(core 259, src-tauri 45, natural-ajax 28; 3 HARs reais com e sem adaptador).
-Revisão independente aprovada, com os residuais aceitos registrados em
+The adapter's parts follow strict mode by default (`--lenient-parts`
+optional). Acceptance: tests/RELATORIO-FINAL.md, section "Rodada 8" (Round 8), all green
+(core 259, src-tauri 45, natural-ajax 28; 3 real HARs with and without adapter).
+Independent review approved, with the accepted residuals recorded in
 docs/12.
 
-Pendente com o usuário: o teste manual do `.app` com o seletor nativo. As
-sessões sintéticas estão em tests/.work/teste-manual-final/.
+Pending with the user: the manual test of the `.app` with the native picker. The
+synthetic sessions are in tests/.work/teste-manual-final/.

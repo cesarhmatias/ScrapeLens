@@ -1,54 +1,54 @@
-# Caso de referência: reconstrução de sessão DETRAN-PB
+# Reference case: DETRAN-PB session reconstruction
 
-Caso real do usuário (2026-10-26), já resolvido manualmente via HAR + Python
-(`curl_cffi`, `impersonate=chrome142`). Serve como cenário de aceite do
-ScrapeLens: **identificar e analisar este caso com a ferramenta, sem Wireshark
-e sem leitura manual de HAR.**
+User's real case (2026-10-26), already solved manually via HAR + Python
+(`curl_cffi`, `impersonate=chrome142`). It serves as an acceptance scenario for
+ScrapeLens: **identify and analyze this case with the tool, without Wireshark
+and without reading HAR by hand.**
 
-Fontes locais (NÃO copiar brutas para o repositório; conter cookies,
-SESSIONID e placas de terceiros):
+Local sources (do NOT copy raw into the repository; they contain cookies,
+SESSIONID and third-party plates):
 - `/Users/cesar/Projects/scripts/detran_scraper/detran_paraiba/inputs/sem_captcha.har`
 - `/Users/cesar/Downloads/wsdetran.pb.gov.br.har.txt.har`
 - `/Users/cesar/Downloads/wsdetran.fluxo.captcha.solve.pgEvy4.har.txt.har`
 
-## Lições do caso → requisitos do produto
+## Lessons from the case → product requirements
 
-| Passo do caso | Capacidade exigida do ScrapeLens |
+| Step of the case | Capability required of ScrapeLens |
 |---|---|
-| 1. Separar proteção (/TSPD/, cookies TS*) da aplicação (Connector) | Agrupamento/rotulação de requisições por domínio+propósito; visão de "cadeia da aplicação" vs "ruído de proteção" |
-| 2. Achar o POST que consulta a placa | Busca por corpo (cmd_consultar_placa em payload `x-www-form-urlencoded`), não só por URL |
-| 3. Não dá para começar pela consulta (dependências) | Cadeia de iniciadores/dependências: quais eventos criaram SESSIONID/STAMP/delta/estado |
-| 4. Priming (9 requisições mínimas) | Visualização da sequência lógica com eventos de aplicação; exportação do "script de priming" |
-| 5. Valores dinâmicos por resposta | Marcar campos dinâmicos vs fixos na comparação de duas sessões da mesma página |
-| 6. Protocolo textual "XML" (Natural for Ajax, comprimentos UTF-16) | MVP: payload preservado e visível como dados + acesso ao evento original. Decodificador do protocolo = extensão pós-MVP (plugin), nunca no core |
-| 7. Perfil de navegador e ordem de headers | Matriz de fidelidade (onda 1): a ordem do DevTools/HAR é a transmitida? Sem evidência → "não verificada" na exportação |
-| 8. cmd_nova entre placas | Ciclo de eventos visível na timeline |
-| 9. Delta omite v_situacao_atual | Corpos completos vs delta explícitos na inspeção |
-| 10. Validar antes do lote | Comparação requisição exportada × captura lado a lado |
+| 1. Separate protection (/TSPD/, TS* cookies) from the application (Connector) | Grouping/labeling of requests by domain+purpose; view of "application chain" vs "protection noise" |
+| 2. Find the POST that queries the plate | Search by body (cmd_consultar_placa in an `x-www-form-urlencoded` payload), not only by URL |
+| 3. Cannot start with the query (dependencies) | Chain of initiators/dependencies: which events created SESSIONID/STAMP/delta/state |
+| 4. Priming (9 minimal requests) | Visualization of the logical sequence with application events; export of the "priming script" |
+| 5. Dynamic values per response | Mark dynamic vs fixed fields when comparing two sessions of the same page |
+| 6. Textual "XML" protocol (Natural for Ajax, UTF-16 lengths) | MVP: payload preserved and visible as data + access to the original event. Protocol decoder = post-MVP extension (plugin), never in the core |
+| 7. Browser profile and header order | Fidelity matrix (wave 1): is the DevTools/HAR order the transmitted one? No evidence → "not verified" in the export |
+| 8. cmd_nova between plates | Event cycle visible in the timeline |
+| 9. Delta omits v_situacao_atual | Full bodies vs explicit deltas in the inspection |
+| 10. Validate before the batch | Comparison of exported request × capture side by side |
 
-## Requisitos derivados (entrar na aceite da onda 2/3)
+## Derived requirements (to enter the wave 2/3 acceptance)
 
-1. Busca no corpo das requisições (não só URL/headers).
-2. Cadeia de priming: dado um POST da aplicação, listar o que o produziu
-   (initiator + eventos anteriores que geraram os campos do corpo).
-3. Comparação de duas capturas da MESMA página: realçar campos dinâmicos
-   (SESSIONID, STAMP, delta) vs estáticos — base para o usuário saber o que
-   não copiar do HAR.
-4. Exportação cURL/Python que use a sessão nova (cookies/valores dinâmicos
-   marcados como "obter em runtime"), nunca valores congelados do HAR.
-5. Distinguir sucesso HTTP de sucesso da aplicação: mostrar campos de
-   resposta (XML/STAMP presentes? ERRORMESSAGE?) na inspeção.
+1. Search in the body of requests (not only URL/headers).
+2. Priming chain: given an application POST, list what produced it
+   (initiator + earlier events that generated the body fields).
+3. Comparison of two captures of the SAME page: highlight dynamic fields
+   (SESSIONID, STAMP, delta) vs static ones — basis for the user to know what
+   not to copy from the HAR.
+4. cURL/Python export that uses the new session (cookies/dynamic values
+   marked as "obtain at runtime"), never frozen values from the HAR.
+5. Distinguish HTTP success from application success: show response
+   fields (XML/STAMP present? ERRORMESSAGE?) in the inspection.
 
-## Fora do MVP (confirmado)
+## Out of the MVP (confirmed)
 
-- Resolver/burlar CAPTCHA ou proteção /TSPD/ (o caso explicitamente não faz
-  isso: reproduz o fluxo da aplicação).
-- Decodificador do protocolo Natural for Ajax no core.
+- Solving/bypassing CAPTCHA or /TSPD/ protection (the case explicitly does not do
+  this: it reproduces the application flow).
+- Natural for Ajax protocol decoder in the core.
 
 ## Fixtures
 
-O agente de Testes gera fixtures SANITIZADAS (mascarar SESSIONID, cookies,
-STAMP reais, placas de terceiros) a partir dos HARs acima, identificadas como
-"sanitizadas de caso real", OU versões sintéticas com a mesma forma
-(easynat-app → NatLogon → SIM1000X → VES0009X → Connector). HAR bruto nunca
-entra no repositório.
+The Tests agent generates SANITIZED fixtures (masking real SESSIONID, cookies,
+STAMP, third-party plates) from the HARs above, identified as
+"sanitized from a real case", OR synthetic versions with the same shape
+(easynat-app → NatLogon → SIM1000X → VES0009X → Connector). Raw HAR never
+enters the repository.

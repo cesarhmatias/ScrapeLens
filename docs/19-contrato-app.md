@@ -1,61 +1,61 @@
-# 19 — Contrato de sessão do App (P5)
+# 19 — App session contract (P5)
 
-Rodada 13, onda 1. Aplica a proposta P5 de `docs/18-memoria-sessoes-grandes.md` §5:
-o App deixa de montar `serde_json::Value` da sessão e de mandá-la inteira ao front-end.
+Round 13, wave 1. Applies proposal P5 of `docs/18-memoria-sessoes-grandes.md` §5:
+the App stops building the session's `serde_json::Value` and sending it whole to the front end.
 
-## Princípio
+## Principle
 
-- O backend lê `session.json` **tipado** (`SessionV1`) por `open_session_dir_lazy` do
-  core e o guarda no cache `cached_session` (até duas sessões; o mesmo cache de busca,
-  origens, cadeia, comparação e exportação). Corpos e brutos CDP/NetLog continuam em
-  disco.
-- O front recebe só o **cabeçalho**, pede a lista em **páginas de resumos** e o
-  **detalhe** de uma requisição quando ela é aberta.
-- Busca rápida, filtros e contagens rodam no backend (`src-tauri/src/listing.rs`).
-  A busca no payload continua no `search_session`; os ids achados entram no filtro.
+- The backend reads `session.json` **typed** (`SessionV1`) through the core's `open_session_dir_lazy` and
+  keeps it in the `cached_session` cache (up to two sessions; the same cache as search,
+  origins, chain, comparison and export). Bodies and raw CDP/NetLog stay
+  on disk.
+- The front end receives only the **header**, asks for the list in **pages of summaries** and the
+  **detail** of a request when it is opened.
+- Quick search, filters and counts run in the backend (`src-tauri/src/listing.rs`).
+  Payload search remains in `search_session`; the ids found enter the filter.
 
-## Comandos
+## Commands
 
 ### `open_session(path)` → `SessionPayload`
 
-`path` é uma pasta com `session.json` ou um arquivo de sessão com qualquer nome
-(caminho absoluto, arquivo regular, sem symlink em nenhum componente). No caso do
-arquivo, `sessionDir` é o próprio arquivo e os anexos são lidos da pasta dele.
+`path` is a folder with `session.json` or a session file with any name
+(absolute path, regular file, no symlink in any component). In the file case,
+`sessionDir` is the file itself and the attachments are read from its folder.
 
-Também devolvido por `import_har`, `import_netlog` e `stop_session`.
+Also returned by `import_har`, `import_netlog` and `stop_session`.
 
 ```jsonc
 {
   "session": {               // SessionHeader
     "schemaVersion": 1,
     "session": { /* SessionMeta v1: id, startedAt, browser, completeness, labels, capture… */ },
-    "requests": [],          // sempre vazio no contrato paginado
-    "warnings": [ /* só avisos de sessão (sem `entity`) */ ],
-    "requestCount": 20002,   // presença deste campo = sessão paginada
+    "requests": [],          // always empty in the paginated contract
+    "warnings": [ /* session warnings only (without `entity`) */ ],
+    "requestCount": 20002,   // presence of this field = paginated session
     "sources": ["cdp", "netlog"]
   },
   "sessionDir": "/…/sessions/capture-…",
   "synthetic": false,
-  "notice": "Sessão aberta: 20002 requisição(ões).",
+  "notice": "Session opened: 20002 request(s).",
   "pending": false
 }
 ```
 
-`demo_session` e o `start_session` (captura em andamento) continuam devolvendo o
-documento v1 em memória, sem `requestCount`: o front os trata como sessões em memória.
+`demo_session` and `start_session` (capture in progress) keep returning the
+in-memory v1 document, without `requestCount`: the front end treats them as in-memory sessions.
 
 ### `list_requests(sessionDir, offset, limit, filter?)` → `RequestPage`
 
-`limit` vai de 1 a 2000. `filter` (todos opcionais):
+`limit` ranges from 1 to 2000. `filter` (all optional):
 
-| Campo | Valores | Regra |
+| Field | Values | Rule |
 |---|---|---|
 | `typeFilter` | `all` `fetch` `document` `media` `error` | `fetch` = fetch+xhr; `media` = image+font; `error` = status ≥ 400 |
-| `protocol` | `all` `HTTP/1.1` `HTTP/2` `HTTP/3` `desconhecido` | rótulo de `protocol` (h1/h2/h3) |
-| `target` | `all` `page` `popup` `iframe` `worker` `service_worker` `shared_worker` `netlog_unknown` | só vale quando a sessão mostra alvos |
-| `query` | texto | URL, id, método (igual) ou status; minúsculas |
-| `payloadSearch` + `matchIds` | bool + ids | com busca no payload ativa, a URL deixa de valer e os ids achados pelo `search_session` passam |
-| `restrictIds` | ids ou `null` | filtros de veredito (falha da aplicação / possível bloqueio) |
+| `protocol` | `all` `HTTP/1.1` `HTTP/2` `HTTP/3` `unknown` (legacy `desconhecido`, still accepted) | label of `protocol` (h1/h2/h3) |
+| `target` | `all` `page` `popup` `iframe` `worker` `service_worker` `shared_worker` `netlog_unknown` | only applies when the session shows targets |
+| `query` | text | URL, id, method (equal) or status; lowercase |
+| `payloadSearch` + `matchIds` | bool + ids | with payload search active, the URL no longer applies and the ids found by `search_session` pass |
+| `restrictIds` | ids or `null` | verdict filters (application failure / possible block) |
 
 ```jsonc
 {
@@ -73,62 +73,62 @@ documento v1 em memória, sem `requestCount`: o front os trata como sessões em 
 }
 ```
 
-- Os campos do resumo são **crus** do v1. Rótulos (domínio, caminho, tipo, protocolo,
-  alvo, "alvo desconhecido (só NetLog)") são derivados no front por `summaryFromRaw`
-  (`app/src/v1/adapter.ts`), com as mesmas regras de `adaptSession`.
-- `target` é o índice em `targets`: o alvo repetido vai uma vez por página.
-- `estimated: true` aparece quando `timings.estimated`; a lista mostra "≈".
-- `counts`, `targetCounts` e `hasTargets` são da sessão inteira, sem filtro.
+- The summary fields are **raw** from v1. Labels (domain, path, type, protocol,
+  target, "unknown target (NetLog only)") are derived in the front end by `summaryFromRaw`
+  (`app/src/v1/adapter.ts`), with the same rules as `adaptSession`.
+- `target` is the index into `targets`: the repeated target goes once per page.
+- `estimated: true` appears when `timings.estimated`; the list shows "≈".
+- `counts`, `targetCounts` and `hasTargets` are for the whole session, unfiltered.
 
 ### `get_request(sessionDir, id)` → `RequestDetail`
 
 ```jsonc
-{ "request": { /* LogicalRequest v1 completo */ },
-  "warnings": [ /* avisos com entity = id */ ],
-  "streamSessions": [ /* StreamSessions das tentativas, para a verificação de protocolo */ ] }
+{ "request": { /* complete v1 LogicalRequest */ },
+  "warnings": [ /* warnings with entity = id */ ],
+  "streamSessions": [ /* StreamSessions of the attempts, for protocol verification */ ] }
 ```
 
-O front adapta com `adaptRequestDetail(cabeçalho, detalhe)`, que chama o mesmo
-`adaptSession` sobre uma sessão de uma requisição. O teste `npm run test:paged`
-confere, na fixture de demonstração, que o detalhe e o resumo são iguais ao
-resultado do adaptador da sessão inteira.
+The front end adapts with `adaptRequestDetail(header, detail)`, which calls the same
+`adaptSession` on a one-request session. The `npm run test:paged` test
+checks, on the demonstration fixture, that the detail and the summary are equal to the
+result of the whole-session adapter.
 
-## Front-end
+## Front end
 
-- A lista virtualizada já existente (linhas de 34 px, overscan 6) passa a renderizar
-  os resumos. O front carrega todos os resumos da sessão em páginas de 2000 para
-  seletores, linha do tempo e "Limites" (~5 MiB a 20 mil requisições) e pede a lista
-  filtrada ao backend a cada mudança de filtro (debounce de 120 ms).
-- Detalhe, exportação e comparação lado a lado usam o `RequestRecord` completo,
-  carregado por `get_request` (a comparação carrega A e B).
-- Sessões em memória (demonstração, modo navegador, `?demo=large`) usam os mesmos
-  resumos, derivados localmente por `summaryOfRecord`, e o filtro local equivalente.
+- The existing virtualized list (34 px rows, overscan 6) now renders
+  the summaries. The front end loads all the session's summaries in pages of 2000 for
+  selectors, timeline and "Limits" (~5 MiB at 20 thousand requests) and asks the backend for the filtered
+  list on every filter change (120 ms debounce).
+- Detail, export and side-by-side comparison use the complete `RequestRecord`,
+  loaded by `get_request` (the comparison loads A and B).
+- In-memory sessions (demonstration, browser mode, `?demo=large`) use the same
+  summaries, derived locally by `summaryOfRecord`, and the equivalent local filter.
 
-## Memória (sessão de 20.002 requisições capturadas, docs/18)
+## Memory (session of 20.002 captured requests, docs/18)
 
-Medido com `src-tauri/examples/mem_open.rs` (um modo por processo, `--release`,
-macOS arm64, pico de RSS por `getrusage`), em `/tmp/big20k` (`session.json` de 1,19 GB):
+Measured with `src-tauri/examples/mem_open.rs` (one mode per process, `--release`,
+macOS arm64, RSS peak by `getrusage`), on `/tmp/big20k` (`session.json` of 1,19 GB):
 
-| Caminho | Pico de RSS | Enviado ao front |
+| Path | RSS peak | Sent to the front end |
 |---|---:|---:|
-| antigo (`read_to_string` + `Value` + serialização) | **7.108 MiB** | 681 MB |
-| novo: abrir tipado + cabeçalho + todas as páginas + um detalhe | **1.161 MiB** | 1,4 KB + 5,4 MB (todas as páginas) + 32 KB |
+| old (`read_to_string` + `Value` + serialization) | **7.108 MiB** | 681 MB |
+| new: open typed + header + all pages + one detail | **1.161 MiB** | 1,4 KB + 5,4 MB (all pages) + 32 KB |
 
-- Meta da rodada: abrir a sessão de 20 mil com menos de 1,5 GiB de pico. Cumprida
-  no backend (1.161 MiB, −84 %).
-- Resumo: 268 B por linha em média, com a sobra da página; uma linha sozinha tem
-  ~240 B (URL e `wallTime` dominam). Fica acima da estimativa de 100 a 200 B do docs/18.
-- Tempo: a leitura tipada leva ~9,9 s, contra ~4,4 s do caminho antigo, que usa mais
-  memória. As 11 páginas de `list_requests`, com cabeçalho e detalhe, levam ~70 ms.
-  `open_session`, `import_*` e `stop_session` rodam em `spawn_blocking`, e a interface
-  não congela. Abertura e importação usam o sinal `loading`, que recusa uma segunda
-  em paralelo; a tela mostra um indicador durante a leitura e a carga da lista.
-- O que domina é a `SessionV1` tipada (~1.160 MiB, como o `lazy` do docs/18). P6/P8
-  reduziriam isso no core.
-- Não medido: a memória do WebView. Os resumos de 20 mil requisições somam ~5 MB de
-  JSON na transferência.
+- Goal of the round: open the 20-thousand session with a peak below 1,5 GiB. Met
+  in the backend (1.161 MiB, −84 %).
+- Summary: 268 B per row on average, with the page overhead; a single row is
+  ~240 B (URL and `wallTime` dominate). It is above the 100 to 200 B estimate of docs/18.
+- Time: the typed read takes ~9,9 s, against ~4,4 s for the old path, which uses more
+  memory. The 11 pages of `list_requests`, with header and detail, take ~70 ms.
+  `open_session`, `import_*` and `stop_session` run in `spawn_blocking`, and the interface
+  does not freeze. Open and import use the `loading` signal, which refuses a second
+  one in parallel; the screen shows an indicator during the read and the list load.
+- What dominates is the typed `SessionV1` (~1.160 MiB, like the `lazy` of docs/18). P6/P8
+  would reduce that in the core.
+- Not measured: the WebView memory. The summaries of 20 thousand requests add up to ~5 MB of
+  JSON in the transfer.
 
-Reproduzir:
+Reproduce:
 
 ```
 cd src-tauri && cargo build --release --example mem_open

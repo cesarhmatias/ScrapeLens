@@ -1,42 +1,43 @@
-# Rodada 4 — corpos CDP e busca no payload
+# Round 4 — CDP bodies and payload search
 
-## Motivo
+## Motivation
 
-A captura ao vivo não grava corpos. `core/src/parse/cdp.rs` marca toda
-requisição e resposta como `unavailable` ("corpo CDP não carregado"). A busca
-da UI filtra só metadados. O caso de referência DETRAN-PB
-(`docs/05-caso-referencia-detran.md`) precisa achar `cmd_consultar_placa` no
-corpo form-urlencoded e distinguir dois POSTs com a mesma URL e o mesmo método.
-Especificação: "Payload e corpos quando disponíveis", "Busca e filtros" e
-"Mostre corpos indisponíveis, truncados ou descartados explicitamente".
+Live capture does not record bodies. `core/src/parse/cdp.rs` marks every
+request and response as `unavailable` ("CDP body not loaded"). The UI search
+filters metadata only. The DETRAN-PB reference case
+(`docs/05-caso-referencia-detran.md`) needs to find `cmd_consultar_placa` in
+the form-urlencoded body and tell apart two POSTs with the same URL and the
+same method. Specification: "Payload and bodies when available", "Search and
+filters" and "Show unavailable, truncated or discarded bodies explicitly".
 
-Fora do escopo: decodificador Natural for Ajax, comparação dinâmico × estático
-entre capturas, replay, rede externa e publicação.
+Out of scope: Natural for Ajax decoder, dynamic × static comparison between
+captures, replay, external network and publication.
 
-## Ondas (máx. 3 executores)
+## Waves (max. 3 executors)
 
-- 4a, em paralelo: Captura (gravar corpos), Core (importar corpos + busca) e
-  Testes (fixtures com corpos), todos sobre o formato do §1.
-- 4b, depois de 4a verde: App (busca e corpos na UI) e revisão independente.
+- 4a, in parallel: Capture (record bodies), Core (import bodies + search) and
+  Tests (fixtures with bodies), all on the format in §1.
+- 4b, after 4a is green: App (search and bodies in the UI) and independent
+  review.
 
-## Propriedade nesta rodada
+## Ownership in this round
 
-| Dono | Caminhos |
+| Owner | Paths |
 |---|---|
-| Captura | `src-tauri/src/capture.rs`, `experiments/` (evidência dos corpos) |
+| Capture | `src-tauri/src/capture.rs`, `experiments/` (body evidence) |
 | Core | `core/` |
-| Testes | `fixtures/`, `testserver/`, `tests/` |
+| Tests | `fixtures/`, `testserver/`, `tests/` |
 | App (4b) | `app/`, `src-tauri/src/commands.rs`, `src-tauri/src/lib.rs` |
-| Líder | `docs/` |
+| Leader | `docs/` |
 
-Se alguém precisar de um arquivo de outro dono, deve reportar antes de editar.
-Preservar `tests/results/app-latest/testserver/app-20261027/h1.jsonl`
-(modificação pré-existente, fora dos commits).
+If anyone needs a file that belongs to another owner, they must report before
+editing. Preserve `tests/results/app-latest/testserver/app-20261027/h1.jsonl`
+(pre-existing modification, outside the commits).
 
-## 1. Formato `cdp-bodies.jsonl` (contrato entre Captura, Core e Testes)
+## 1. `cdp-bodies.jsonl` format (contract between Capture, Core and Tests)
 
-Arquivo irmão de `cdp-events.jsonl` no diretório da captura, com permissão
-0600 e um objeto JSON por linha:
+Sibling file of `cdp-events.jsonl` in the capture directory, with permission
+0600 and one JSON object per line:
 
 ```json
 {"v":1,"requestId":"1234.5","attemptIndex":0,"kind":"request|response",
@@ -44,146 +45,147 @@ Arquivo irmão de `cdp-events.jsonl` no diretório da captura, com permissão
  "encoding":"utf8|base64|null","data":"…|null",
  "originalSize":123,"capturedSize":123,
  "source":"requestWillBeSent.postData|requestWillBeSent.postDataEntries|Network.getRequestPostData|Network.getResponseBody",
- "reason":"texto|null","timestamp":12345.678}
+ "reason":"text|null","timestamp":12345.678}
 ```
 
-Regras:
-- `requestId` e `attemptIndex` seguem a numeração de tentativas que o core
-  já usa (`attemptIndex` 0 = primeiro `requestWillBeSent`; cada redirect
-  soma 1).
-- Corpo de requisição: por tentativa, vindo do `postData`/`postDataEntries` do
-  respectivo `requestWillBeSent`; se `hasPostData` sem dados, usar
+Rules:
+- `requestId` and `attemptIndex` follow the attempt numbering that the core
+  already uses (`attemptIndex` 0 = first `requestWillBeSent`; each redirect
+  adds 1).
+- Request body: per attempt, taken from the `postData`/`postDataEntries` of
+  the respective `requestWillBeSent`; if `hasPostData` with no data, use
   `Network.getRequestPostData`.
-- Corpo de resposta: apenas da tentativa final, via `Network.getResponseBody`
-  depois de `loadingFinished`. Respostas de redirect recebem `unavailable` com
-  motivo "resposta de redirect: CDP não fornece corpo". `loadingFailed`,
-  recurso despejado ou erro do CDP também viram `unavailable`, com a mensagem
-  real do erro.
-- Limite por corpo: padrão 5 MiB de bytes decodificados. Acima disso, gravar o
-  prefixo com `truncated` e `originalSize` quando conhecido. Orçamento total
-  da sessão: padrão 256 MiB. Excedido, os corpos seguintes ficam `discarded`
-  com o motivo "orçamento de corpos da sessão excedido".
-- `base64` se o CDP disser `base64Encoded` ou se os bytes não forem UTF-8
-  válido. Nunca decodificar, reinterpretar ou normalizar `data`: os bytes são
-  os entregues pelo CDP.
-- Streaming, WebSocket e SSE ficam `unavailable` com motivo, nunca vazios.
-- A coleta não pode atrasar a navegação nem perder eventos. Falhas de coleta
-  viram linhas `unavailable`, nunca silêncio.
+- Response body: final attempt only, via `Network.getResponseBody`
+  after `loadingFinished`. Redirect responses get `unavailable` with the
+  reason "redirect response: CDP provides no body". `loadingFailed`,
+  an evicted resource or a CDP error also become `unavailable`, with the
+  real error message.
+- Limit per body: default 5 MiB of decoded bytes. Above that, record the
+  prefix with `truncated` and `originalSize` when known. Total session
+  budget: default 256 MiB. Once exceeded, the following bodies are `discarded`
+  with the reason "session body budget exceeded".
+- `base64` if the CDP says `base64Encoded` or if the bytes are not valid
+  UTF-8. Never decode, reinterpret or normalize `data`: the bytes are
+  the ones delivered by the CDP.
+- Streaming, WebSocket and SSE are `unavailable` with a reason, never empty.
+- Collection must not delay navigation or lose events. Collection failures
+  become `unavailable` lines, never silence.
 
 ## 2. Core
 
-- `import-capture` lê `cdp-bodies.jsonl` ao lado do `.jsonl` de eventos,
-  ou recebe `--bodies <arquivo>`. Sem o arquivo, mantém o comportamento atual,
-  com um aviso por sessão (não por requisição).
-- Cada corpo `captured`/`truncated` vira anexo em `attachments/` com o estado
-  e a proveniência (`Source::Cdp`, evento = `source`, `requestId`). As linhas
-  `unavailable`/`discarded` levam o motivo. Linha órfã (requisição
-  inexistente) gera aviso, nunca associação por URL ou horário.
-- A busca vive no core: `search(session, query) -> Vec<Match>`.
-  - Escopos: `url`, `requestHeaders`, `responseHeaders`, `cookies`,
-    `requestBody`, `responseBody`. O padrão é todos.
-  - Match: `requestId`, `attemptId`, `scope`, `field` (nome do header, chave
-    do form, caminho JSON ou null), `byteOffset` no original, `snippet`
-    e `decoded: bool`.
-  - Visão decodificada opcional e marcada: percent-decoding de
-    form-urlencoded e strings JSON sem escape. Um match nela traz
-    `decoded=true` e o `field`.
-  - Corpos binários ou em base64 que não sejam texto são contados como
-    `skippedBinary`, não pesquisados. Corpos `truncated` são pesquisados e o
-    resultado diz "busca parcial".
-  - CLI: `scrapelens-core search <sessao> <texto> [--scope …] [--case-sensitive]`
-    com saída JSON.
-- A exportação (cURL/Python) passa a incluir o corpo `captured` da tentativa
-  correta, sem mudar as garantias atuais.
+- `import-capture` reads `cdp-bodies.jsonl` next to the events `.jsonl`,
+  or takes `--bodies <file>`. Without the file, it keeps the current behavior,
+  with one warning per session (not per request).
+- Each `captured`/`truncated` body becomes an attachment in `attachments/`
+  with the state and the provenance (`Source::Cdp`, event = `source`,
+  `requestId`). The `unavailable`/`discarded` lines carry the reason. An
+  orphan line (nonexistent request) generates a warning, never an association
+  by URL or time.
+- Search lives in the core: `search(session, query) -> Vec<Match>`.
+  - Scopes: `url`, `requestHeaders`, `responseHeaders`, `cookies`,
+    `requestBody`, `responseBody`. The default is all.
+  - Match: `requestId`, `attemptId`, `scope`, `field` (header name, form
+    key, JSON path or null), `byteOffset` in the original, `snippet`
+    and `decoded: bool`.
+  - Optional, marked decoded view: percent-decoding of
+    form-urlencoded and unescaped JSON strings. A match in it carries
+    `decoded=true` and the `field`.
+  - Binary or base64 bodies that are not text are counted as
+    `skippedBinary`, not searched. `truncated` bodies are searched and the
+    result says "partial search".
+  - CLI: `scrapelens-core search <session> <text> [--scope …] [--case-sensitive]`
+    with JSON output.
+- The export (cURL/Python) now includes the `captured` body of the correct
+  attempt, without changing the current guarantees.
 
-## 3. Aceite da rodada
+## 3. Round acceptance
 
-1. DETRAN-PB (fixtures com corpos sintéticos de Testes): `search
-   cmd_consultar_placa` acha exatamente os 2 POSTs pelo `requestBody`
-   (`decoded=true`, `field` correto) e nenhum pela URL. A placa sintética da
-   1ª consulta acha só a 1ª. `cmd_nova` acha o POST certo.
-2. Captura ao vivo contra `testserver` local: POST form-urlencoded, JSON e
-   binário. Os bytes gravados são idênticos aos recebidos pelo servidor. A
-   resposta é idêntica aos bytes servidos (texto e gzip decodificado pelo
+1. DETRAN-PB (fixtures with synthetic bodies from Tests): `search
+   cmd_consultar_placa` finds exactly the 2 POSTs by `requestBody`
+   (`decoded=true`, correct `field`) and none by URL. The synthetic plate of
+   the 1st lookup finds only the 1st. `cmd_nova` finds the right POST.
+2. Live capture against the local `testserver`: form-urlencoded POST, JSON and
+   binary. The recorded bytes are identical to those received by the server.
+   The response is identical to the bytes served (text and gzip decoded by
    Chrome).
-3. Corpo > limite vira `truncated` com `originalSize`; um redirect 302 tem
-   resposta `unavailable` com motivo; um 307 com corpo tem o corpo da
-   requisição em cada tentativa.
-4. Nenhum corpo ausente aparece como vazio. `empty` só com evidência (ex.:
+3. A body > limit becomes `truncated` with `originalSize`; a 302 redirect has
+   an `unavailable` response with a reason; a 307 with a body has the request
+   body in each attempt.
+4. No missing body appears as empty. `empty` only with evidence (e.g.:
    204, `Content-Length: 0`).
-5. Sanitização: corpos continuam sendo redigidos pela política atual. A busca
-   numa sessão sanitizada não acha os marcadores sensíveis.
-6. Bateria verde: `cargo test` (core, src-tauri), `tests/exportacao`, aceite
-   `tests/aceite/run_acceptance.py` sem regressão.
+5. Sanitization: bodies are still redacted by the current policy. Search
+   in a sanitized session does not find the sensitive markers.
+6. Green test suite: `cargo test` (core, src-tauri), `tests/exportacao`,
+   acceptance `tests/aceite/run_acceptance.py` with no regression.
 
-Commits Conventional Commits por dono, sem push nem publicação, sem executar
-código exportado e sem rede externa.
+Conventional Commits per owner, no push or publication, no execution of
+exported code and no external network.
 
-## Decisões durante a rodada
+## Decisions during the round
 
-- 2026-10-28: `Match.requestId` é o ID lógico da sessão (`cdp-rNNNN`). O ID
-  do CDP fica na proveniência (`source_id`). A API recebe `SessionBundle`,
-  porque os corpos vivem em anexos, e devolve `SearchResult { matches,
+- 2026-10-28: `Match.requestId` is the session's logical ID (`cdp-rNNNN`). The
+  CDP ID stays in the provenance (`source_id`). The API receives `SessionBundle`,
+  because the bodies live in attachments, and returns `SearchResult { matches,
   skipped_binary, partial, partial_attempts, limit_reached }` (core 0c924a8).
-- Risco conhecido, não bloqueante: `LogicalRequest.url` é a URL da 1ª
-  tentativa e corpo/headers são da última. Num 307, a exportação combina a URL
-  inicial com o corpo final. Isso equivale a um replay que segue o redirect,
-  mas a exportação deve sinalizá-lo; fica para revisão na 4b.
-- Sanitização por propagação de valor: um valor que a política já classifica
-  como sensível (chave, header ou cookie sensível) é redigido em todas as
-  ocorrências da sessão sanitizada, nas formas literal, percent-encoded e
-  JSON-escaped, inclusive dentro de campos opacos (ex.: `XML` do Natural for
-  Ajax). Há um comprimento mínimo e valores triviais não são propagados. Corpos
-  binários não são varridos e isso é declarado. Delta (`DLTA…`) e `STAMP` são
-  estado do protocolo, não credenciais, e ficam visíveis.
+- Known risk, non-blocking: `LogicalRequest.url` is the URL of the 1st
+  attempt and body/headers are from the last. On a 307, the export combines the
+  initial URL with the final body. This is equivalent to a replay that follows
+  the redirect, but the export must flag it; left for review in 4b.
+- Sanitization by value propagation: a value that the policy already classifies
+  as sensitive (sensitive key, header or cookie) is redacted in all
+  occurrences in the sanitized session, in literal, percent-encoded and
+  JSON-escaped forms, including inside opaque fields (e.g.: `XML` of Natural
+  for Ajax). There is a minimum length and trivial values are not propagated.
+  Binary bodies are not scanned and this is declared. Delta (`DLTA…`) and
+  `STAMP` are protocol state, not credentials, and stay visible.
 
-## Revisão da onda 4a (2026-10-28) — decisões
+## Review of wave 4a (2026-10-28) — decisions
 
-Revisor: parcial, com 1 falha alta. Correções:
-- Propagação por valor: aplicar só a campos de valor (URLs, valores de
-  header/cookie/Set-Cookie, corpos e anexos, notas), nunca a enums, IDs ou
-  nomes de anexo. Qualquer erro na propagação faz a sanitização falhar
-  fechada; nunca devolver sucesso parcial.
-- Variantes: hex percent-encoded sem diferenciar maiúsculas e minúsculas, e
-  `+` como espaço em form-urlencoded.
-- Headers customizados: classificar pelo nome (auth, token, jwt, secret,
-  session, signature, api-key, password, credential). Eles propagam.
-- Origem da propagação: só classes de alta confiança (headers de
-  autenticação, cookies, chaves session/token/password/secret/jwt/auth/cpf).
-  Chaves genéricas (`key`, `code`, `state`) são redigidas no lugar, sem
-  propagar. Valores só de dígitos vindos de chave sensível propagam a partir
-  de 10 dígitos (CPF e telefone).
-- Busca: a visão decodificada desfaz o escape JSON (`\uXXXX`, `\"`) e o
-  percent-encoding da URL. `byteOffset` aponta o trecho exato no original.
-- Corpos transformados: o formato v1 ganha o campo opcional
-  `"transformed": [..]`, por exemplo `"chrome-decoded"`,
-  `"charset:iso-8859-1->utf-8"` ou `"lossy-postData"`. O core expõe a
-  marcação como corpo não idêntico ao fio, e a UI a exibe. O critério de bytes
-  idênticos vale só para corpos sem `transformed`.
-- GET/HEAD sem linha de corpo e sem `hasPostData`: `empty` com o motivo
-  "CDP: requisição sem corpo". A mensagem enganosa atual é removida.
-- A exportação cURL/Python sinaliza no próprio código quando a URL inicial de
-  um 307/308 difere da final.
+Reviewer: partial, with 1 high failure. Fixes:
+- Value propagation: apply only to value fields (URLs, header/cookie/Set-Cookie
+  values, bodies and attachments, notes), never to enums, IDs or attachment
+  names. Any error in propagation makes the sanitization fail closed;
+  never return partial success.
+- Variants: percent-encoded hex without distinguishing upper and lower case, and
+  `+` as space in form-urlencoded.
+- Custom headers: classify by name (auth, token, jwt, secret,
+  session, signature, api-key, password, credential). They propagate.
+- Propagation source: only high-confidence classes (authentication headers,
+  cookies, keys session/token/password/secret/jwt/auth/cpf).
+  Generic keys (`key`, `code`, `state`) are redacted in place, without
+  propagating. Digit-only values coming from a sensitive key propagate from
+  10 digits on (CPF and phone).
+- Search: the decoded view undoes JSON escaping (`\uXXXX`, `\"`) and the
+  URL percent-encoding. `byteOffset` points to the exact span in the original.
+- Transformed bodies: format v1 gains the optional field
+  `"transformed": [..]`, for example `"chrome-decoded"`,
+  `"charset:iso-8859-1->utf-8"` or `"lossy-postData"`. The core exposes the
+  marking as a body not identical to the wire, and the UI displays it. The
+  identical-bytes criterion applies only to bodies without `transformed`.
+- GET/HEAD with no body line and no `hasPostData`: `empty` with the reason
+  "CDP: request without body". The current misleading message is removed.
+- The cURL/Python export flags in the code itself when the initial URL of
+  a 307/308 differs from the final one.
 
-## Fechamento (2026-10-28)
+## Closing (2026-10-28)
 
-Re-revisão independente até 71eef98: Parte A (core, captura, fixtures)
-APROVADA; Parte B (app) APROVADA, com ressalva: app ao vivo não aberto pelo
-revisor. Sem falhas críticas ou altas. Bateria: cargo test core e src-tauri
-(36 ok/3 ignorados), tests/exportacao 18/18, run_acceptance 10/10,
-check_bodies_search detran 5/5 / edge 2/2 / sanitizada OK, run_bodies 20/20
-ao vivo. Memória da busca na sessão grande: pico 1,75 GB → 257 MB. Bundle
+Independent re-review up to 71eef98: Part A (core, capture, fixtures)
+APPROVED; Part B (app) APPROVED, with a caveat: live app not opened by the
+reviewer. No critical or high failures. Test suite: cargo test core and src-tauri
+(36 ok/3 ignored), tests/exportacao 18/18, run_acceptance 10/10,
+check_bodies_search detran 5/5 / edge 2/2 / sanitized OK, run_bodies 20/20
+live. Search memory on the large session: peak 1,75 GB → 257 MB. Bundle
 0e2754f4….
 
-Acabamento (não bloqueante), delegado:
-- Core: exportação cURL/Python avisa quando o corpo tem `transformed` (média);
-  variante de percent-encoding duplo na propagação; proveniência de GET
+Finishing touches (non-blocking), delegated:
+- Core: cURL/Python export warns when the body has `transformed` (medium);
+  double percent-encoding variant in propagation; provenance of GET
   `empty`.
-- App: legenda do realce condizente com o realce visível; remover
-  `evidence/busca-corpos/debug.png`; aviso `chrome-decoded` menos ruidoso
-  (resumo discreto e destaque só para charset/lossy).
+- App: highlight legend consistent with the visible highlight; remove
+  `evidence/busca-corpos/debug.png`; less noisy `chrome-decoded` warning
+  (discreet summary and emphasis only for charset/lossy).
 
-Aceito como limitação: arquivos HAR/CDP crus importados sem `--label`
-aparecem como importação real. O arquivo não carrega rótulo, e o app não
-deve adivinhar. As fixtures do repositório sempre são importadas com
+Accepted as a limitation: raw HAR/CDP files imported without `--label`
+appear as a real import. The file carries no label, and the app must not
+guess. The repository fixtures are always imported with
 `--label synthetic-fixture`.

@@ -1,545 +1,543 @@
-# Rodada 11, onda 1 — ferramentas de navegador e reconhecimento do site (contrato)
+# Round 11, wave 1 — browser tools and site reconnaissance (contract)
 
-Data: 2026-10-31. Dona: Captura. Complementa `docs/16-mcp-contrato.md` (Core:
-ferramentas de leitura) e parte da decisão D6 (`docs/01-decisoes.md`) e da fase
-A (`docs/15-mcp-cloakbrowser.md`). **Escreve-se o contrato antes do código.**
-Este documento não define o servidor MCP (transporte, rmcp, elicitação): isso
-não está atribuído à Captura. Define o que o servidor MCP chamará.
+Date: 2026-10-31. Owner: Capture. Complements `docs/16-mcp-contrato.md` (Core:
+read tools) and part of decision D6 (`docs/01-decisoes.md`) and of phase
+A (`docs/15-mcp-cloakbrowser.md`). **The contract is written before the code.**
+This document does not define the MCP server (transport, rmcp, elicitation): that
+is not assigned to Capture. It defines what the MCP server will call.
 
-## 1. Fluxo e limites
+## 1. Flow and limits
 
-Um agente de IA usa o MCP do ScrapeLens com o **Chrome normal** para entender a
-configuração de um site. O CloakBrowser só volta à pauta se `site_profile`
-recomendar "candidato a CloakBrowser" (D6, item 6). Fora do escopo desta onda:
-baixar ou rodar o CloakBrowser, proxy MITM, `--no-sandbox`, qualquer contorno do
-Gatekeeper, resolver CAPTCHA ou desafio.
+An AI agent uses the ScrapeLens MCP with **regular Chrome** to understand the
+configuration of a site. CloakBrowser only comes back on the agenda if `site_profile`
+recommends "CloakBrowser candidate" (D6, item 6). Out of scope for this wave:
+downloading or running CloakBrowser, MITM proxy, `--no-sandbox`, any workaround of
+Gatekeeper, solving a CAPTCHA or challenge.
 
-Ferramentas desta seção: `start_capture`, `navigate`, `capture_status`,
-`stop_capture` e `site_profile`. **`act` não existe nesta onda**: seguindo a D6
-(item 3), o ScrapeLens abre o Chrome e **entrega o acesso CDP em loopback**; o
-agente age com a própria ferramenta (por exemplo `--cdp-endpoint` do Playwright
-MCP ou o Chrome DevTools MCP). Motivos: (a) não reimplementamos uma API de
-entrada; (b) o ScrapeLens fica só como observador. Consequência assumida: as
-ações do agente no navegador **não passam pela confirmação do ScrapeLens**; o
-que as limita é a allowlist de rede (§2.2), aplicada pelo próprio Chrome.
+Tools in this section: `start_capture`, `navigate`, `capture_status`,
+`stop_capture` and `site_profile`. **`act` does not exist in this wave**: following D6
+(item 3), ScrapeLens opens Chrome and **hands over CDP access on loopback**; the
+agent acts with its own tool (for example the Playwright
+MCP `--cdp-endpoint` or the Chrome DevTools MCP). Reasons: (a) we do not reimplement an input
+API; (b) ScrapeLens stays only an observer. Accepted consequence: the
+agent's actions in the browser **do not go through ScrapeLens confirmation**; what
+limits them is the network allowlist (§2.2), enforced by Chrome itself.
 
-## 2. Modelo de segurança
+## 2. Security model
 
-### 2.1 Perfil e processo
+### 2.1 Profile and process
 
-Perfil dedicado e temporário: nunca o perfil pessoal; depuração só em
-`127.0.0.1`; encerra somente o processo que o ScrapeLens iniciou
-(`ChromeProcess` + marcador de órfãos). `--no-sandbox` nunca é passado.
+Dedicated, temporary profile: never the personal profile; debugging only on
+`127.0.0.1`; terminates only the process that ScrapeLens started
+(`ChromeProcess` + orphan marker). `--no-sandbox` is never passed.
 
-**Só o Chrome estável da Google** (revisão de segurança, achado M3). O
-`binary_path` do agente nunca vira o executável sem passar por
-`chrome::validate_chrome`, que **não executa o binário**: `start` recusa com
-`browser_invalid` tudo o que não for um `.app` com
-(1) `CFBundleIdentifier = com.google.Chrome`, (2) o executável do bundle como
-`Contents/MacOS/<CFBundleExecutable>` (symlinks resolvidos, bit de execução),
-(3) `CFBundleShortVersionString` presente (a versão lida), e
+**Only Google's stable Chrome** (security review, finding M3). The agent's
+`binary_path` never becomes the executable without going through
+`chrome::validate_chrome`, which **does not execute the binary**: `start` refuses with
+`browser_invalid` everything that is not an `.app` with
+(1) `CFBundleIdentifier = com.google.Chrome`, (2) the bundle executable as
+`Contents/MacOS/<CFBundleExecutable>` (symlinks resolved, execute bit),
+(3) `CFBundleShortVersionString` present (the version read), and
 (4) `codesign --verify --deep -R='anchor apple generic and identifier
-"com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"'` com
-**código de saída 0** (`chrome::CHROME_REQUIREMENT`). Nada da saída de texto do
-`codesign` é interpretado (o parse de `-dv` foi enganado por uma quebra de linha
-no caminho, R1 da revisão). O `--deep` cobre os bundles aninhados (Helpers,
-frameworks): uma cópia assinada pela Google com um Helper trocado é recusada
-(R2) e o Helper nunca roda. O requisito exige a âncora Apple e o Team ID da
-Google no certificado folha, então um bundle ad hoc com o identificador do
-Chrome também é recusado. **Não usa `--strict`**: o Chrome instalado nesta
-máquina tem atributos de Finder ("resource fork, Finder information, or similar
-detritus not allowed") que o `--strict` rejeita; sem ele, o `--deep` com o
-requisito explícito passa no Chrome real (exit 0, cerca de 9 s). **Sem cache**:
-cada `validate_chrome` refaz a verificação. Caminho com caractere de controle
-(`\n`, `\r`, TAB, NUL, DEL, C1) ou não UTF-8 é recusado (`UnsafePath`, código
-`browser_invalid`) antes de qualquer leitura, para o caminho dado e para o
-canônico. Leitura por `plutil` e `codesign` do sistema, por caminho absoluto.
-Recusados (testes): `/bin/echo`, `/bin/sh`, script executável chamado `chrome`,
-`.app` falso com `Info.plist` mentindo, bundle ad hoc com a identidade do
-Chrome, caminho com quebra de linha (PoC da revisão), cópia do Chrome com o
-Helper trocado, bundle de outro produto, caminho inexistente.
+"com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"'` with
+**exit code 0** (`chrome::CHROME_REQUIREMENT`). Nothing in the text output of
+`codesign` is interpreted (the `-dv` parse was fooled by a line break
+in the path, R1 of the review). `--deep` covers the nested bundles (Helpers,
+frameworks): a Google-signed copy with a swapped Helper is refused
+(R2) and the Helper never runs. The requirement demands the Apple anchor and Google's Team ID
+in the leaf certificate, so an ad hoc bundle with Chrome's identifier
+is also refused. **It does not use `--strict`**: the Chrome installed on this
+machine has Finder attributes ("resource fork, Finder information, or similar
+detritus not allowed") that `--strict` rejects; without it, `--deep` with the explicit
+requirement passes on the real Chrome (exit 0, about 9 s). **No cache**:
+each `validate_chrome` redoes the check. A path with a control character
+(`\n`, `\r`, TAB, NUL, DEL, C1) or non-UTF-8 is refused (`UnsafePath`, code
+`browser_invalid`) before any read, for the given path and for the
+canonical one. Read by the system `plutil` and `codesign`, by absolute path.
+Refused (tests): `/bin/echo`, `/bin/sh`, an executable script named `chrome`,
+a fake `.app` with a lying `Info.plist`, an ad hoc bundle with Chrome's
+identity, a path with a line break (the review PoC), a Chrome copy with the
+Helper swapped, a bundle of another product, a nonexistent path.
 
-**Execução do caminho validado (R11).** `BrowserCapture::start` valida e passa
-ao launcher exatamente `ValidatedChrome.binary` (caminho canônico, symlinks
-resolvidos), nunca o caminho que o agente informou. **Lacuna que resta:** entre a
-verificação e o `exec` há uma janela em que um processo do mesmo usuário, com
-escrita no bundle, poderia trocar um arquivo (TOCTOU). Em `/Applications` o
-bundle é do grupo `admin`; uma cópia em pasta do usuário é do próprio usuário,
-que já poderia executar qualquer coisa como ele. O `--deep` torna a janela
-pequena, mas não a fecha; fechá-la exigiria executar por descritor de arquivo,
-que o macOS não oferece para `.app`.
-Fora do macOS o erro é `UnsupportedPlatform`. O `chrome::detect` do App
-(escolha do usuário na interface) não mudou. O caminho de `StartInfo.browser`
-é o já resolvido. O servidor MCP deve escolher e mostrar o navegador na
-confirmação com `chrome::resolve_stable_chrome(explícito)` (valida o caminho do
-agente e nunca o substitui), não com `normalize_binary_path`/`detect`, que
-aceitam qualquer arquivo; até lá `start` ainda recusa com `browser_invalid`,
-mas só depois da elicitação.
+**Execution of the validated path (R11).** `BrowserCapture::start` validates and passes
+to the launcher exactly `ValidatedChrome.binary` (canonical path, symlinks
+resolved), never the path the agent gave. **Remaining gap:** between the
+check and the `exec` there is a window in which a process of the same user, with
+write access to the bundle, could swap a file (TOCTOU). In `/Applications` the
+bundle belongs to the `admin` group; a copy in a user folder belongs to the user himself,
+who could already execute anything as himself. `--deep` makes the window
+small, but does not close it; closing it would require executing by file descriptor,
+which macOS does not offer for `.app`.
+Outside macOS the error is `UnsupportedPlatform`. The App's `chrome::detect`
+(user's choice in the interface) did not change. The `StartInfo.browser` path
+is the already resolved one. The MCP server must choose and show the browser in the
+confirmation with `chrome::resolve_stable_chrome(explicit)` (validates the agent's
+path and never replaces it), not with `normalize_binary_path`/`detect`, which
+accept any file; until then `start` still refuses with `browser_invalid`,
+but only after the elicitation.
 
-**Descritores herdados (R9).** O Chrome é lançado com todo descritor `>= 3`
-marcado `FD_CLOEXEC` no filho (`fcntl` entre o fork e o exec; com pipe, só o 3
-e o 4 do CDP ficam abertos). Um log ou socket que o lançador do servidor
-herdou sem CLOEXEC não chega ao Chrome nem aos helpers. A varredura vai até
-`min(getdtablesize(), 65536)`; um fd acima disso não é coberto (nenhum valor
-prático). Teste vivo `live_inherited_fds_do_not_leak_into_chrome` (pipe e porta,
-processo principal e helpers; sem a correção o fd vaza). Os descritores do pipe
-são criados com `F_DUPFD_CLOEXEC`, mas entre o `pipe()` e a duplicação há uma
-janela mínima sem CLOEXEC (o macOS não tem `pipe2`): um `plutil`/`codesign`
-lançado por outra thread nesse instante poderia herdar uma ponta do pipe. Não
-medi nem reproduzi; o filho é de vida curta e só segura a ponta até sair.
-Informativo, sem correção.
+**Inherited descriptors (R9).** Chrome is launched with every descriptor `>= 3`
+marked `FD_CLOEXEC` in the child (`fcntl` between the fork and the exec; with pipe, only 3
+and 4 of the CDP stay open). A log or socket that the server launcher
+inherited without CLOEXEC does not reach Chrome or the helpers. The sweep goes up to
+`min(getdtablesize(), 65536)`; an fd above that is not covered (no
+practical value). Live test `live_inherited_fds_do_not_leak_into_chrome` (pipe and port,
+main process and helpers; without the fix the fd leaks). The pipe descriptors
+are created with `F_DUPFD_CLOEXEC`, but between the `pipe()` and the duplication there is a
+minimal window without CLOEXEC (macOS has no `pipe2`): a `plutil`/`codesign`
+launched by another thread at that instant could inherit one end of the pipe. I did not
+measure or reproduce it; the child is short-lived and only holds the end until it exits.
+Informational, no fix.
 
-**Linux (rodada 14).** A validação acima é a do macOS (`codesign`). No Linux não existe
-assinatura de código no binário; `chrome::validate_chrome_linux` aplica o equivalente
-(binário ELF regular de root, sem escrita para grupo/outros nem para o usuário, diretórios
-acima de root e sem escrita, só então `--version`, e o pacote dono por `dpkg -S`/`rpm -qf`
-apenas como informação) e aceita o **Chromium** como alternativa marcada (único no arm64). Os
-caminhos privados (perfil, NetLog, state root) respeitam `$TMPDIR` e `$XDG_RUNTIME_DIR`. Ver
+**Linux (round 14).** The validation above is the macOS one (`codesign`). On Linux there is no
+code signature on the binary; `chrome::validate_chrome_linux` applies the equivalent
+(regular ELF binary owned by root, not writable by group/others or by the user, directories
+above it owned by root and not writable, only then `--version`, and the owning package by `dpkg -S`/`rpm -qf`
+only as information) and accepts **Chromium** as a marked alternative (the only one on arm64). The
+private paths (profile, NetLog, state root) respect `$TMPDIR` and `$XDG_RUNTIME_DIR`. See
 `docs/21-linux.md`.
 
-### 2.1b Captura comum do App: rede aberta por padrão (`NetworkMode`)
+### 2.1b Regular App capture: open network by default (`NetworkMode`)
 
-Defeito achado pelo usuário: no App, `Iniciar sessão` com `https://google.com.br`
-abria o Chrome com `DNS_PROBE_FINISHED_NXDOMAIN`. A captura comum levava
-`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost` e
-`--allow-insecure-localhost`: só loopback resolvia, nenhum site real carregava.
-Agora `CaptureConfig.network` escolhe:
-- `NetworkMode::Open` (**padrão**): sem `--host-resolver-rules` e sem
-  `--allow-insecure-localhost`; o Chrome resolve e acessa a rede normalmente;
-- `NetworkMode::LoopbackOnly`: o comportamento antigo, **só para testes**
-  (nada além de `127.0.0.1`/`localhost` resolve). As suítes ligam com
-  `SCRAPELENS_CAPTURE_NETWORK=loopback` (o App lê isso via `NetworkMode::from_env()`)
-  ou, nos testes Rust, `network: NetworkMode::LoopbackOnly`.
-A captura **controlada** do MCP (allowlist) não mudou: a allowlist
-(`resolver_rules`) vale no lugar do modo, sem relaxamento de certificado; a
-`BrowserCapture` passa `LoopbackOnly` só como falha fechada caso a allowlist faltasse.
-Testes: `network_mode_defaults_to_open`, `open_mode_passes_no_dns_rules_and_no_localhost_relaxation`,
+Defect found by the user: in the App, `Start session` with `https://google.com.br`
+opened Chrome with `DNS_PROBE_FINISHED_NXDOMAIN`. The regular capture carried
+`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost` and
+`--allow-insecure-localhost`: only loopback resolved, no real site loaded.
+Now `CaptureConfig.network` chooses:
+- `NetworkMode::Open` (**default**): without `--host-resolver-rules` and without
+  `--allow-insecure-localhost`; Chrome resolves and reaches the network normally;
+- `NetworkMode::LoopbackOnly`: the old behavior, **for tests only**
+  (nothing beyond `127.0.0.1`/`localhost` resolves). The suites enable it with
+  `SCRAPELENS_CAPTURE_NETWORK=loopback` (the App reads this via `NetworkMode::from_env()`)
+  or, in Rust tests, `network: NetworkMode::LoopbackOnly`.
+The MCP **controlled** capture (allowlist) did not change: the allowlist
+(`resolver_rules`) applies in place of the mode, without certificate relaxation; the
+`BrowserCapture` passes `LoopbackOnly` only as a fail-closed in case the allowlist were missing.
+Tests: `network_mode_defaults_to_open`, `open_mode_passes_no_dns_rules_and_no_localhost_relaxation`,
 `loopback_only_mode_keeps_the_lab_restrictions`,
 `the_controlled_capture_allowlist_overrides_the_network_mode`,
-`ignore_cert_is_the_only_certificate_relaxation_in_open_mode` e o vivo
-`live_open_mode_resolves_a_local_name_and_loopback_only_does_not` (um servidor local
-acessado por `sl-open-mode.localhost`, que o Chrome resolve sozinho: no modo aberto o
-servidor vê a requisição e a sessão tem status 200; no `LoopbackOnly` o servidor não
-vê nada). Nenhum site real foi acessado.
+`ignore_cert_is_the_only_certificate_relaxation_in_open_mode` and the live
+`live_open_mode_resolves_a_local_name_and_loopback_only_does_not` (a local server
+reached through `sl-open-mode.localhost`, which Chrome resolves on its own: in open mode the
+server sees the request and the session has status 200; in `LoopbackOnly` the server sees
+nothing). No real site was accessed.
 
-**Revisão dos demais argumentos do launcher em sites reais** (nenhum impede
-carregar um site; os que alteram o que o servidor vê):
+**Review of the remaining launcher arguments on real sites** (none prevents
+loading a site; these are the ones that change what the server sees):
 
-| Argumento | Efeito em site real |
+| Argument | Effect on a real site |
 |---|---|
-| `--ignore-certificate-errors` (só com `ignore_cert`/`SCRAPELENS_CAPTURE_IGNORE_CERT=1`) | esconde erros de TLS: o Chrome deixa de mostrar o interstício e a captura de um site com certificado ruim parece normal. **Só para laboratório**; o padrão é desligado |
-| `--allow-insecure-localhost` | só afeta `localhost`; removido do modo aberto |
-| `--no-pings` | desliga o `ping` de `<a ping>` (hyperlink auditing): a beacon que o site esperaria não é enviada. Raro; **muda o tráfego** |
-| `--disable-popup-blocking` | deixa `window.open` sem gesto abrir abas (anúncios, OAuth). Bom para capturar multi-alvo; o usuário pode ver mais popups |
-| `--disable-features=OptimizationHints,Translate,MediaRouter,InterestFeedContentSuggestions` | evita requisições do próprio Chrome (hints, tradutor); não muda os recursos da página |
-| `--disable-background-networking`, `--disable-component-update`, `--disable-sync`, `--metrics-recording-only`, `--disable-domain-reliability`, `--disable-client-side-phishing-detection`, `--disable-breakpad`, `--no-service-autorun` | silenciam tráfego do navegador (não da página) para o NetLog ficar só com o que interessa; sem efeito no que o site vê |
-| `--enable-quic` | QUIC já é o padrão; mantido para h3 (a regra do projeto é não desabilitar QUIC) |
-| `--disable-extensions`, `--disable-default-apps`, `--password-store=basic`, `--use-mock-keychain`, `--no-first-run`, `--no-default-browser-check`, `--disable-search-engine-choice-screen`, `--disable-component-extensions-with-background-pages` | UI/perfil/chaveiro; sem efeito de rede |
-| `--net-log-capture-mode=Everything`, `--log-net-log` | só registram (cookies e cabeçalhos no NetLog: ver §2.4) |
-| `--remote-debugging-pipe` (ou porta com `expose_cdp`) | **liga `navigator.webdriver = true`** na página (medido, `docs/20-captcha-google.md` §4.2); o D7 passa a flag da linha seguinte para desfazer isso |
-| `--disable-blink-features=AutomationControlled` (**D7, sempre**) | `navigator.webdriver` volta a `false`, mesmo com o CDP ligado. Não mexe na rede nem no que é capturado. Ver o parágrafo abaixo |
-| `--headless=new` (só com `headless`) | o User-Agent e a impressão digital do navegador mudam (`HeadlessChrome`); o padrão do App é janela visível. **Relevante ao `site_profile`**: um desafio anti-bot sob headless pode não ocorrer com o Chrome normal |
+| `--ignore-certificate-errors` (only with `ignore_cert`/`SCRAPELENS_CAPTURE_IGNORE_CERT=1`) | hides TLS errors: Chrome stops showing the interstitial and the capture of a site with a bad certificate looks normal. **For the lab only**; the default is off |
+| `--allow-insecure-localhost` | only affects `localhost`; removed from open mode |
+| `--no-pings` | turns off the `ping` of `<a ping>` (hyperlink auditing): the beacon the site would expect is not sent. Rare; **changes the traffic** |
+| `--disable-popup-blocking` | lets `window.open` without a gesture open tabs (ads, OAuth). Good for capturing multi-target; the user may see more popups |
+| `--disable-features=OptimizationHints,Translate,MediaRouter,InterestFeedContentSuggestions` | avoids requests from Chrome itself (hints, translator); does not change the page resources |
+| `--disable-background-networking`, `--disable-component-update`, `--disable-sync`, `--metrics-recording-only`, `--disable-domain-reliability`, `--disable-client-side-phishing-detection`, `--disable-breakpad`, `--no-service-autorun` | silence browser traffic (not the page's) so the NetLog holds only what matters; no effect on what the site sees |
+| `--enable-quic` | QUIC is already the default; kept for h3 (the project rule is not to disable QUIC) |
+| `--disable-extensions`, `--disable-default-apps`, `--password-store=basic`, `--use-mock-keychain`, `--no-first-run`, `--no-default-browser-check`, `--disable-search-engine-choice-screen`, `--disable-component-extensions-with-background-pages` | UI/profile/keychain; no network effect |
+| `--net-log-capture-mode=Everything`, `--log-net-log` | only record (cookies and headers in the NetLog: see §2.4) |
+| `--remote-debugging-pipe` (or port with `expose_cdp`) | **turns on `navigator.webdriver = true`** in the page (measured, `docs/20-captcha-google.md` §4.2); D7 passes the flag on the next line to undo this |
+| `--disable-blink-features=AutomationControlled` (**D7, always**) | `navigator.webdriver` goes back to `false`, even with the CDP on. It does not touch the network or what is captured. See the paragraph below |
+| `--headless=new` (only with `headless`) | the User-Agent and the browser fingerprint change (`HeadlessChrome`); the App default is a visible window. **Relevant to `site_profile`**: an anti-bot challenge under headless may not occur with regular Chrome |
 
-**Aviso de automação suprimido por padrão (D7, 2026-11-03).** Por decisão do usuário
-(`docs/01-decisoes.md` D7), **toda** captura leva `--disable-blink-features=AutomationControlled`:
-a comum do App e a controlada do MCP, no pipe e na porta (`expose_cdp`), em qualquer
-`NetworkMode`, com ou sem `headless`. A flag entra em `chrome_args()`; se já houver um
-`--disable-blink-features` com outros valores, os valores são **combinados numa só flag**
-(`merge_blink_features`, sem duplicar a flag nem os valores). Medido: sem ela a página lê
-`navigator.webdriver === true` com o CDP por pipe; com ela, `false` na captura completa e
-na controlada, nos dois transportes. O `session.json` registra o contexto para quem lê:
-`capture.chromeArgs` traz os argumentos do lançamento (sem os caminhos temporários e sem
-a URL inicial, com a flag) e `capture.notes` diz em texto que o aviso foi suprimido; o
-`site_profile` expõe isso em `captureContext.automationFlagSuppressed` (`true`, `false`,
-ou `null` quando a sessão não informa, como as importadas de HAR/NetLog), para um desafio
-anti-bot ser lido sabendo que o site NÃO viu o aviso de automação. **Resolver CAPTCHA
-continua fora do escopo**, e **nenhuma outra técnica de anti-detecção** (User-Agent
-falso, remendo de impressão digital, ocultar o CDP etc.) entra sem decisão nova.
-Testes: `automation_flag_is_always_present_exactly_once_in_every_mode` (rede, allowlist,
-headless, `ignore_cert`, pipe e porta), `merge_blink_features_combines_without_duplicating_the_flag_or_the_values`,
-`recorded_args_keep_the_automation_flag_and_drop_temp_paths_and_the_url`, os vivos
-`live_full_capture_hides_navigator_webdriver_on_both_transports` e
-`live_controlled_capture_hides_navigator_webdriver_on_both_transports` (página em loopback
-que grava `navigator.webdriver` no servidor) e, no `recon`,
+**Automation notice suppressed by default (D7, 2026-11-03).** By user decision
+(`docs/01-decisoes.md` D7), **every** capture carries `--disable-blink-features=AutomationControlled`:
+the App's regular one and the MCP's controlled one, on pipe and on port (`expose_cdp`), in any
+`NetworkMode`, with or without `headless`. The flag goes into `chrome_args()`; if there is already
+a `--disable-blink-features` with other values, the values are **merged into a single flag**
+(`merge_blink_features`, without duplicating the flag or the values). Measured: without it the page reads
+`navigator.webdriver === true` with the CDP over pipe; with it, `false` in the full capture and
+in the controlled one, on both transports. The `session.json` records the context for whoever reads it:
+`capture.chromeArgs` carries the launch arguments (without the temporary paths and without
+the start URL, with the flag) and `capture.notes` says in text that the notice was suppressed; the
+`site_profile` exposes this in `captureContext.automationFlagSuppressed` (`true`, `false`,
+or `null` when the session does not say, like those imported from HAR/NetLog), so that an
+anti-bot challenge is read knowing that the site did NOT see the automation notice. **Solving a CAPTCHA
+remains out of scope**, and **no other anti-detection technique** (fake User-Agent,
+fingerprint patching, hiding the CDP, etc.) is added without a new decision.
+Tests: `automation_flag_is_always_present_exactly_once_in_every_mode` (network, allowlist,
+headless, `ignore_cert`, pipe and port), `merge_blink_features_combines_without_duplicating_the_flag_or_the_values`,
+`recorded_args_keep_the_automation_flag_and_drop_temp_paths_and_the_url`, the live
+`live_full_capture_hides_navigator_webdriver_on_both_transports` and
+`live_controlled_capture_hides_navigator_webdriver_on_both_transports` (loopback page
+that records `navigator.webdriver` on the server) and, in `recon`,
 `capture_context_reports_whether_the_automation_flag_was_suppressed`.
 
-### 2.1c Cookies importados de navegador instalado (`capture::cookies`)
+### 2.1c Cookies imported from an installed browser (`capture::cookies`)
 
-A captura pode começar já logada sem tocar no perfil pessoal: `CaptureConfig.cookie_source`
-recebe o `id` de uma fonte de `list_browser_cookie_sources()` (Chrome, Brave, Arc, Edge,
-Chromium, Firefox e Safari, perfis `Default`/`Profile *`), e
-`load_cookies_for_url(id, start_url)` devolve os cookies do **mesmo site registrável** do host
-inicial (inclui subdomínios de login/SSO; `localhost`/IP só casam exato) e descarta os
-expirados. `CaptureConfig.initial_cookies` permite ao chamador entregar a lista pronta; quando
-não vazia, vence a fonte.
+The capture can start already logged in without touching the personal profile: `CaptureConfig.cookie_source`
+takes the `id` of a source from `list_browser_cookie_sources()` (Chrome, Brave, Arc, Edge,
+Chromium, Firefox and Safari, profiles `Default`/`Profile *`), and
+`load_cookies_for_url(id, start_url)` returns the cookies of the **same registrable site** as the
+start host (includes login/SSO subdomains; `localhost`/IP only match exactly) and discards the
+expired ones. `CaptureConfig.initial_cookies` lets the caller supply the ready list; when
+non-empty, it wins over the source.
 
-- **O banco do usuário nunca é aberto no lugar.** `cookies.rs` copia `Cookies`/`cookies.sqlite`
-  (com `-wal`/`-shm`) para uma pasta temporária 0700 e a apaga no `Drop`; a leitura é pelo
-  `sqlite3` do sistema (o macOS já tem; as imagens Linux de teste instalam o pacote `sqlite3`).
-- **Descriptografia:** Rust puro (`SHA-1`/`SHA-256`/`PBKDF2-HMAC-SHA1`/`AES-128-CBC`), sem
-  OpenSSL. Chromium `v10` no macOS usa a senha `"<Produto> Safe Storage"` do Keychain (uma
-  chamada por captura; o macOS pode pedir autorização) com PBKDF2 1003 iterações e salt
-  `"saltysalt"`; no Linux `v10` usa `"peanuts"` com 1 iteração e `v11` tenta o `secret-tool`
-  (libsecret), com aviso claro quando a senha não está lá. No Chrome 130+ (`meta.version >= 24`)
-  o prefixo de 32 bytes `SHA-256(host_key)` é removido. Firefox (`moz_cookies`) e Safari
-  (`Cookies.binarycookies`) são texto puro/sem Keychain.
-- **Injeção:** em `Cdp::setup_inner`, `Network.setCookies` na sessão da página **antes** de
-  `Page.navigate`; o primeiro pedido já leva `Cookie`. Um evento
-  `Capture.cookiesImported` no `cdp-events.jsonl` registra `source`, `domain`, `importedCount`
-  e `skippedCount` — **sem os valores**. O `notice` da captura ganha
-  ` · N cookie(s) importado(s) de <fonte>`.
-- **Privacidade:** os valores importados aparecem nos headers `Cookie` do CDP/NetLog como
-  qualquer cookie da sessão; vale o aviso de dados sensíveis (`browser::SENSITIVE_NOTICE`).
-  A importação é opt-in (`cookie_source`/`initial_cookies`), só do site inicial, e não grava
-  valores no resumo nem em log.
-- **Testes:** vetores oficiais de SHA-1/SHA-256/PBKDF2 (RFC 6070)/AES-128-CBC (NIST SP 800-38A);
-  prefixo do Chrome 130+; bancos SQLite sintéticos Chromium e Firefox; filtro de site
-  (`.exemplo.com.br` e `login.exemplo.com.br` entram para `app.exemplo.com.br`,
-  `outro.com.br` não); `Cookies.binarycookies` sintético; payload do `Network.setCookies`; e o
-  vivo `live_imported_cookies_are_sent_with_the_first_navigation` (loopback: o servidor vê
-  `Cookie: sid=abc123` no primeiro pedido, o evento de auditoria existe e não contém o valor).
+- **The user's database is never opened in place.** `cookies.rs` copies `Cookies`/`cookies.sqlite`
+  (with `-wal`/`-shm`) to a temporary 0700 folder and deletes it on `Drop`; the read is by the
+  system `sqlite3` (macOS already has it; the Linux test images install the `sqlite3` package).
+- **Decryption:** pure Rust (`SHA-1`/`SHA-256`/`PBKDF2-HMAC-SHA1`/`AES-128-CBC`), without
+  OpenSSL. Chromium `v10` on macOS uses the Keychain password `"<Product> Safe Storage"` (one
+  call per capture; macOS may ask for authorization) with PBKDF2 1003 iterations and salt
+  `"saltysalt"`; on Linux `v10` uses `"peanuts"` with 1 iteration and `v11` tries `secret-tool`
+  (libsecret), with a clear warning when the password is not there. On Chrome 130+ (`meta.version >= 24`)
+  the 32-byte prefix `SHA-256(host_key)` is removed. Firefox (`moz_cookies`) and Safari
+  (`Cookies.binarycookies`) are plain text/without Keychain.
+- **Injection:** in `Cdp::setup_inner`, `Network.setCookies` on the page session **before**
+  `Page.navigate`; the first request already carries `Cookie`. A
+  `Capture.cookiesImported` event in `cdp-events.jsonl` records `source`, `domain`, `importedCount`
+  and `skippedCount` — **without the values**. The capture's `notice` gains
+  ` · N cookie(s) imported from <source>`.
+- **Privacy:** the imported values appear in the CDP/NetLog `Cookie` headers like
+  any session cookie; the sensitive-data notice applies (`browser::SENSITIVE_NOTICE`).
+  The import is opt-in (`cookie_source`/`initial_cookies`), only for the start site, and does not write
+  values to the summary or to any log.
+- **Tests:** official vectors for SHA-1/SHA-256/PBKDF2 (RFC 6070)/AES-128-CBC (NIST SP 800-38A);
+  Chrome 130+ prefix; synthetic Chromium and Firefox SQLite databases; site filter
+  (`.example.com.br` and `login.example.com.br` are included for `app.example.com.br`,
+  `other.com.br` is not); synthetic `Cookies.binarycookies`; `Network.setCookies` payload; and the
+  live `live_imported_cookies_are_sent_with_the_first_navigation` (loopback: the server sees
+  `Cookie: sid=abc123` on the first request, the audit event exists and does not contain the value).
 
-### 2.2 Allowlist obrigatória, em duas camadas
+### 2.2 Mandatory allowlist, in two layers
 
-`start_capture` **sem `allowed_hosts` não vazio é erro** (`allowlist_required`).
+`start_capture` **without a non-empty `allowed_hosts` is an error** (`allowlist_required`).
 
-**Semântica oficial (decisão do líder após a revisão de segurança, achado M2):
-o navegador impõe o HOST (todas as portas); a PORTA só é imposta no
-`navigate`.** Não interceptamos a rede (`Fetch`) para impor porta, porque isso
-altera a fidelidade da captura. Quem aprova `localhost:P1` aprova, para a
-página, `localhost` em qualquer porta (Redis local, admin, outros serviços): o
-servidor MCP deve dizer isso na elicitação.
+**Official semantics (leader's decision after the security review, finding M2):
+the browser enforces the HOST (all ports); the PORT is only enforced in
+`navigate`.** We do not intercept the network (`Fetch`) to enforce the port, because that
+alters the capture fidelity. Whoever approves `localhost:P1` approves, for the
+page, `localhost` on any port (local Redis, admin, other services): the MCP
+server must say this in the elicitation.
 
-| Camada | Mecanismo | O que cobre | O que não cobre |
+| Layer | Mechanism | What it covers | What it does not cover |
 |---|---|---|---|
-| 1. Navegador | `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE h1, EXCLUDE h2…"` com `allowed_hosts` + `third_party_hosts` (IPv4 literal da lista também ganha `EXCLUDE`) | qualquer host por nome **e IP literal** (medido: `127.0.0.1`, `127.1`, `2130706433` e `[::1]` falharam com `ERR_NAME_NOT_RESOLVED` no Chrome 156), em qualquer aba, iframe, worker ou cliente CDP, inclusive redirects | **a porta**: a regra conhece só o nome |
-| 2. API | `navigate` recusa antes de enviar; mesma função de decisão (`Allowlist::permits_url`) | esquema, host, **porta**, userinfo (`http://permitido@outro/`) | navegação feita por script ou clique da página/agente |
+| 1. Browser | `--host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE h1, EXCLUDE h2…"` with `allowed_hosts` + `third_party_hosts` (a literal IPv4 in the list also gets `EXCLUDE`) | any host by name **and literal IP** (measured: `127.0.0.1`, `127.1`, `2130706433` and `[::1]` failed with `ERR_NAME_NOT_RESOLVED` on Chrome 156), in any tab, iframe, worker or CDP client, including redirects | **the port**: the rule only knows the name |
+| 2. API | `navigate` refuses before sending; same decision function (`Allowlist::permits_url`) | scheme, host, **port**, userinfo (`http://allowed@other/`) | navigation done by script or click of the page/agent |
 
-Medido com o PoC da revisão (`live_port_gap_is_reported_on_all_paths`, Chrome
-156): com `localhost:P1` aprovado, a página alcançou `localhost:P2` por **8
-caminhos**: 302 de topo, `location=`, meta refresh, `window.open`, iframe,
-fetch, WebSocket e host em maiúsculas. **Todos os 8 aparecem em
-`stop_capture.allowlist.violations`** (e como aviso `capture.allowlist_violation`
-na sessão), porque o relatório vem dos **eventos CDP** (`Network.requestWillBeSent`
-de cada salto de redirect, de cada iframe e popup, e `Network.webSocketCreated`),
-não da sessão importada, que perde o WebSocket. Também é violação a navegação de
-topo para um host aprovado só em `third_party_hosts` (aprovado para subrecursos,
-não como destino). Regra de violação: host fora das duas listas sem falha de
-resolução, ou porta diferente da escrita no padrão (`host:porta`); padrão sem
-porta aceita qualquer porta. O que é reportado não é bloqueado. As URLs de
-violações, hosts bloqueados e avisos saem **sem consulta, fragmento,
-`;parâmetros` de caminho nem userinfo**.
+Measured with the review PoC (`live_port_gap_is_reported_on_all_paths`, Chrome
+156): with `localhost:P1` approved, the page reached `localhost:P2` through **8
+paths**: top-level 302, `location=`, meta refresh, `window.open`, iframe,
+fetch, WebSocket and uppercase host. **All 8 appear in
+`stop_capture.allowlist.violations`** (and as the warning `capture.allowlist_violation`
+in the session), because the report comes from the **CDP events** (`Network.requestWillBeSent`
+of each redirect hop, of each iframe and popup, and `Network.webSocketCreated`),
+not from the imported session, which loses the WebSocket. A top-level navigation
+to a host approved only in `third_party_hosts` is also a violation (approved for subresources,
+not as a destination). Violation rule: host outside both lists without a resolution
+failure, or a port different from the one written in the pattern (`host:port`); a pattern without
+a port accepts any port. What is reported is not blocked. The URLs of
+violations, blocked hosts and warnings come out **without query, fragment,
+path `;parameters` or userinfo**.
 
-Regras de `allowed_hosts` e `third_party_hosts` (strings):
-- nome exato (`exemplo.com`), curinga de subdomínio (`*.exemplo.com`, não casa
-  `exemplo.com`), IPv4 literal escrito de forma explícita (`127.0.0.1:8080`);
-  **IPv6 literal é recusado** (`allowlist_unsupported`): o resolvedor não o
-  trata de forma confiável; porta opcional (`exemplo.com:8443`; sem porta =
-  qualquer porta do host; a porta vale só no `navigate` e no relatório);
-- sem esquema, sem caminho; maiúsculas normalizadas; entrada com ponto final,
-  `%`, espaço, barra invertida ou não ASCII é **inválida** (`allowlist_invalid`;
-  punycode só em ASCII); `*` sozinho, `*.com` e IPs com curinga são
-  `allowlist_too_broad`; lista vazia é `allowlist_required`. IPv4 só na forma
-  `a.b.c.d` canônica (`127.1`, `2130706433`, `0x7f.0.0.1` são recusados). Não há
-  lista de sufixos públicos: `*.co.uk` passa, e o operador responde por isso;
-- só `http` e `https` navegam; `file:`, `data:`, `javascript:`, `chrome:`,
-  `blob:`, `view-source:`, `about:` (exceto `about:blank`) são recusados. O
-  analisador de URL é **mais estrito que o do Chrome de propósito** (recusa
-  barra invertida, controle, não ASCII, `%` no host, host com ponto final,
-  qualquer `@` na autoridade, IPv4 fora da forma canônica) para que o que passa
-  seja lido igual pelo Chrome.
+Rules for `allowed_hosts` and `third_party_hosts` (strings):
+- exact name (`example.com`), subdomain wildcard (`*.example.com`, does not match
+  `example.com`), literal IPv4 written explicitly (`127.0.0.1:8080`);
+  **literal IPv6 is refused** (`allowlist_unsupported`): the resolver does not
+  handle it reliably; optional port (`example.com:8443`; no port =
+  any port of the host; the port only applies in `navigate` and in the report);
+- no scheme, no path; uppercase normalized; an entry with a trailing dot,
+  `%`, space, backslash or non-ASCII is **invalid** (`allowlist_invalid`;
+  punycode only in ASCII); `*` alone, `*.com` and IPs with a wildcard are
+  `allowlist_too_broad`; an empty list is `allowlist_required`. IPv4 only in the canonical
+  `a.b.c.d` form (`127.1`, `2130706433`, `0x7f.0.0.1` are refused). There is no
+  public suffix list: `*.co.uk` passes, and the operator answers for that;
+- only `http` and `https` navigate; `file:`, `data:`, `javascript:`, `chrome:`,
+  `blob:`, `view-source:`, `about:` (except `about:blank`) are refused. The
+  URL parser is **stricter than Chrome's on purpose** (refuses
+  backslash, control, non-ASCII, `%` in the host, host with a trailing dot,
+  any `@` in the authority, IPv4 outside the canonical form) so that what passes
+  is read the same way by Chrome.
 
-`allowed_hosts` = alvos onde o agente pode **navegar/agir** (consentidos pelo
-usuário na confirmação de `start_capture`). `third_party_hosts` = hosts
-adicionais que a página precisa carregar (CDN de scripts, desafios de
-proteção). Tudo o que não está em nenhuma das duas listas **não resolve**.
+`allowed_hosts` = targets where the agent may **navigate/act** (consented to by the
+user in the `start_capture` confirmation). `third_party_hosts` = additional hosts
+that the page needs to load (script CDN, protection
+challenges). Everything that is in neither list **does not resolve**.
 
-**Consequência a conhecer (decisão do líder se mudar):** com a allowlist
-estrita, scripts de proteção de terceiros (`challenges.cloudflare.com`,
-`js.datadome.co`, `js.hcaptcha.com`…) não carregam enquanto não forem
-declarados. O Chrome registra `net::ERR_NAME_NOT_RESOLVED` para eles, e isso
-**vira evidência**: `site_profile` lista `blocked_hosts` ("a página tentou
-carregar X; bloqueado pela allowlist; a proteção pode estar escondida") e
-recomenda reiniciar com esses hosts em `third_party_hosts` (nova
-confirmação). Recomendação padrão: primeira passada estrita; segunda passada
-com os terceiros que o próprio `site_profile` apontou.
+**Consequence to know (leader's decision if it changes):** with the strict
+allowlist, third-party protection scripts (`challenges.cloudflare.com`,
+`js.datadome.co`, `js.hcaptcha.com`…) do not load until they are
+declared. Chrome records `net::ERR_NAME_NOT_RESOLVED` for them, and this
+**becomes evidence**: `site_profile` lists `blocked_hosts` ("the page tried to
+load X; blocked by the allowlist; the protection may be hidden") and
+recommends restarting with those hosts in `third_party_hosts` (new
+confirmation). Default recommendation: first pass strict; second pass
+with the third parties that `site_profile` itself pointed out.
 
-### 2.3 Confirmação
+### 2.3 Confirmation
 
-A confirmação (elicitação MCP) acontece **na camada do servidor MCP**, não nesta
-API Rust, que recebe o pedido já confirmado. Nenhum parâmetro `confirmed:true`
-existe (o modelo poderia preenchê-lo). Classes de efeito, para o servidor MCP
-aplicar:
+The confirmation (MCP elicitation) happens **in the MCP server layer**, not in this
+Rust API, which receives the already confirmed request. No `confirmed:true` parameter
+exists (the model could fill it in). Effect classes, for the MCP server to
+apply:
 
-| Ferramenta | Efeito | Confirmação |
+| Tool | Effect | Confirmation |
 |---|---|---|
-| `start_capture` | inicia um processo Chrome; tráfego de saída para os hosts listados; opcionalmente abre a porta CDP ao agente | **sempre**; o texto deve mostrar `allowed_hosts`, `third_party_hosts`, `expose_cdp`, binário e o aviso de §2.4 |
-| `navigate` | GET de topo para host da allowlist | **não por chamada** (coberta pela confirmação do início); recusa fora da allowlist |
-| `stop_capture` | encerra o Chrome iniciado e grava a sessão | não |
-| `capture_status`, `site_profile` | leitura | não |
+| `start_capture` | starts a Chrome process; outbound traffic to the listed hosts; optionally opens the CDP port to the agent | **always**; the text must show `allowed_hosts`, `third_party_hosts`, `expose_cdp`, the binary and the notice from §2.4 |
+| `navigate` | top-level GET to an allowlist host | **not per call** (covered by the start confirmation); refuses outside the allowlist |
+| `stop_capture` | terminates the started Chrome and writes the session | no |
+| `capture_status`, `site_profile` | read | no |
 
-### 2.4 Dados sensíveis
+### 2.4 Sensitive data
 
-O NetLog (`--net-log-capture-mode=Everything`) e o CDP guardam **cookies,
-cabeçalhos de autorização e corpos**. Por isso: perfil temporário descartado ao
-fim (exceto o resgate de arquivos da captura descrito abaixo, que NÃO é o perfil); `start_capture` devolve `sensitive_notice` (texto fixo) que o servidor MCP
-deve mostrar; **o agente nunca digita credenciais** (não há `act`; se o agente
-usar o CDP exposto para digitar, o valor aparece no corpo POST capturado);
-as ferramentas de leitura e `site_profile` **redigem por padrão** valores de
-cookie e de cabeçalhos (nomes, URLs, status e tamanhos aparecem; valores viram
-`[redigido, N bytes]`), com opt-in explícito pela Core.
+The NetLog (`--net-log-capture-mode=Everything`) and the CDP hold **cookies,
+authorization headers and bodies**. Therefore: temporary profile discarded at the
+end (except the rescue of capture files described below, which is NOT the profile); `start_capture` returns `sensitive_notice` (fixed text) that the MCP server
+must show; **the agent never types credentials** (there is no `act`; if the agent
+uses the exposed CDP to type, the value appears in the captured POST body);
+the read tools and `site_profile` **redact by default** cookie and header
+values (names, URLs, status and sizes appear; values become
+`[redacted, N bytes]`), with explicit opt-in by the Core.
 
-Escritas na pasta da sessão **não seguem symlink** (revisão, achado F2): os
-arquivos que a captura grava (`cdp-bodies.jsonl`, `netlog.json`,
-`cdp-events.jsonl`, `netlog.original.json`, marcador de órfãos) usam
-`O_NOFOLLOW` + `create_new` (0600); um nome já existente, inclusive um symlink
-plantado, tem o **nome** removido e recriado, nunca o alvo escrito;
-`cdp-events.jsonl` e o marcador são gravados num temporário novo e trocados por
-`rename`, que substitui o próprio link; uma pasta de sessão que é symlink é
-recusada, e depois de `ensure_private_dir` ela é conferida **já aberta**
-(`O_NOFOLLOW|O_DIRECTORY`, dono = nosso usuário, modo exatamente 0700).
+Writes in the session folder **do not follow symlinks** (review, finding F2): the
+files that the capture writes (`cdp-bodies.jsonl`, `netlog.json`,
+`cdp-events.jsonl`, `netlog.original.json`, orphan marker) use
+`O_NOFOLLOW` + `create_new` (0600); a name that already exists, including a planted
+symlink, has the **name** removed and recreated, never the target written;
+`cdp-events.jsonl` and the marker are written to a new temporary and swapped in by
+`rename`, which replaces the link itself; a session folder that is a symlink is
+refused, and after `ensure_private_dir` it is checked **already open**
+(`O_NOFOLLOW|O_DIRECTORY`, owner = our user, mode exactly 0700).
 
-**NetLog (R3).** O Chrome abre o `--log-net-log` pelo caminho, seguindo
-symlink; pré-criar o arquivo na pasta da sessão deixava uma janela para um
-processo do mesmo usuário trocá-lo por um link (PoC `poc_netlog_race.py`: 236 KB
-de NetLog completo, com cookies, num arquivo de fora). Agora o NetLog é gravado
-**dentro do perfil temporário**, que criamos 0700 desde a criação
-(`DirBuilder`, sem `recursive`, falha se o nome existir) e conferimos aberto
-(dono, 0700, não-link), com nome `scrapelens-chrome-<pid>-<ns>` em `$TMPDIR`
-(por usuário no macOS). Só depois que o Chrome sai o ScrapeLens o lê com
-`O_NOFOLLOW` (só arquivo regular do nosso usuário, conferido no descritor) e o
-grava em `<sessão>/netlog.json` por `write_private` (temporário `create_new` +
-`rename`, que substitui um link plantado sem escrever no alvo). Teste vivo
-`live_netlog_swap_race_does_not_write_through_a_symlink`: um atacante planta ou
-troca `netlog.json` por um link durante a captura e o alvo fica intacto. **Lacuna
-que resta:** um processo do **mesmo usuário** que ache o perfil pelo nome ainda
-pode mexer nele (mesmo uid; fora do modelo, como a porta do `expose_cdp`). Um
-`SIGKILL` do servidor deixa o NetLog parcial só no perfil, que a limpeza de
-órfãos apaga: não sobra `netlog.json` parcial na pasta da sessão.
+**NetLog (R3).** Chrome opens `--log-net-log` by path, following
+symlinks; pre-creating the file in the session folder left a window for a
+process of the same user to swap it for a link (PoC `poc_netlog_race.py`: 236 KB
+of full NetLog, with cookies, in a file outside). Now the NetLog is written
+**inside the temporary profile**, which we create 0700 from creation
+(`DirBuilder`, without `recursive`, fails if the name exists) and check once open
+(owner, 0700, not a link), with the name `scrapelens-chrome-<pid>-<ns>` in `$TMPDIR`
+(per user on macOS). Only after Chrome exits does ScrapeLens read it with
+`O_NOFOLLOW` (only a regular file of our user, checked on the descriptor) and
+write it to `<session>/netlog.json` by `write_private` (temporary `create_new` +
+`rename`, which replaces a planted link without writing to the target). Live test
+`live_netlog_swap_race_does_not_write_through_a_symlink`: an attacker plants or
+swaps `netlog.json` for a link during the capture and the target stays intact. **Remaining
+gap:** a process of the **same user** that finds the profile by name can still
+tamper with it (same uid; outside the model, like the `expose_cdp` port). A
+`SIGKILL` of the server leaves the partial NetLog only in the profile, which the orphan cleanup
+deletes: no partial `netlog.json` is left in the session folder.
 
-**Gravação da sessão relativa ao descritor (A3-B3, A4-B3, A4-B4, A6-B5).** No
-início abrimos a pasta da sessão (`O_NOFOLLOW|O_DIRECTORY`, nossa, 0700) e
-guardamos o **descritor** e a identidade (dispositivo + inode, que não aparece em
-nenhuma saída). Depois do encerramento do Chrome, NENHUMA escrita resolve o
-caminho da pasta de novo:
-- `cdp-bodies.jsonl` é **criado** relativo ao descritor, no início da captura
-  (`fdio::create_replacing_at`: `openat(O_EXCL|O_NOFOLLOW)`; um nome já ocupado,
-  inclusive por symlink plantado, tem o NOME removido e é recriado, nunca o alvo),
-  então uma troca do nome da pasta logo depois da verificação não manda os corpos
-  para a pasta do atacante (A7-B7: antes era `open_private(caminho)`); durante a
-  captura ele é escrito pelo próprio descritor e, no fim, relido por ele (não
-  pelo caminho). Teste `fdio::tests::create_replacing_at_never_writes_through_a_planted_link_nor_into_a_swapped_dir`
-  e o vivo `live_planted_symlinks_are_not_followed`;
-- `cdp-events.jsonl`, `netlog.json` e `netlog.original.json` são gravados com
-  `openat(O_EXCL|O_NOFOLLOW)` + `renameat` relativos ao descritor
+**Session write relative to the descriptor (A3-B3, A4-B3, A4-B4, A6-B5).** At the
+start we open the session folder (`O_NOFOLLOW|O_DIRECTORY`, ours, 0700) and
+keep the **descriptor** and the identity (device + inode, which does not appear in
+any output). After Chrome exits, NO write resolves the
+folder path again:
+- `cdp-bodies.jsonl` is **created** relative to the descriptor, at the start of the capture
+  (`fdio::create_replacing_at`: `openat(O_EXCL|O_NOFOLLOW)`; a name already taken,
+  including by a planted symlink, has the NAME removed and is recreated, never the target),
+  so a swap of the folder name right after the check does not send the bodies
+  to the attacker's folder (A7-B7: before it was `open_private(path)`); during the
+  capture it is written through the descriptor itself and, at the end, read back through it (not
+  by path). Test `fdio::tests::create_replacing_at_never_writes_through_a_planted_link_nor_into_a_swapped_dir`
+  and the live `live_planted_symlinks_are_not_followed`;
+- `cdp-events.jsonl`, `netlog.json` and `netlog.original.json` are written with
+  `openat(O_EXCL|O_NOFOLLOW)` + `renameat` relative to the descriptor
   (`fdio::write_private_at`);
-- o core grava o resto (`session.json`, `attachments/`) num **diretório de
-  preparo** novo e 0700 dentro do perfil temporário (`write_session_fd`), e cada
-  item é movido para a pasta da sessão com `renameat` relativo ao descritor
-  (`attachments/`, `cdp-events.jsonl`, `netlog.json` e `session.json` por
-  último). Entre sistemas de arquivos diferentes (EXDEV) copia pelo mesmo
-  descritor. Quando a Core expuser `write_session_dir_at(dirfd, …)` este preparo
-  pode ser trocado por ela, sem mudar o contrato.
-Efeitos: (1) um symlink plantado em `cdp-events.jsonl`, `netlog.json`,
-`session.json` ou `attachments` é **substituído** pelo `renameat` (o NOME muda,
-o alvo nunca é escrito) e vira o aviso `capture.planted_symlink_removed` na
-sessão e uma linha em `warnings` do stop; (2) o laço que replanta o link (antes
-A4-B4, que vencia as 3 tentativas e derrubava o stop) não faz mais diferença,
-porque não há tentativas: o `rename` é atômico; (3) se o NOME da pasta for
-trocado durante a gravação, tudo continua indo para a pasta ORIGINAL (a que o
-descritor representa) e nada cai na pasta do atacante. Testes
-`fdio::tests::*` (nomes inválidos, escrita após mover a pasta, link substituído,
-`attachments` como link ou já povoado, pasta movida, diretório no lugar de arquivo),
-`a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop` (4 nomes, inclusive
-`attachments`) e `a4_b5_swapped_session_dir_is_detected_and_nothing_is_written_or_removed`
-(a sessão vai inteira para a pasta original, nada em OUT, links de OUT intactos).
+- the core writes the rest (`session.json`, `attachments/`) in a new 0700 **staging
+  directory** inside the temporary profile (`write_session_fd`), and each
+  item is moved to the session folder with `renameat` relative to the descriptor
+  (`attachments/`, `cdp-events.jsonl`, `netlog.json` and `session.json` last). Across different file systems (EXDEV) it copies through the same
+  descriptor. When the Core exposes `write_session_dir_at(dirfd, …)` this staging
+  can be replaced by it, without changing the contract.
+Effects: (1) a symlink planted at `cdp-events.jsonl`, `netlog.json`,
+`session.json` or `attachments` is **replaced** by the `renameat` (the NAME changes,
+the target is never written) and becomes the warning `capture.planted_symlink_removed` in the
+session and a line in `warnings` of the stop; (2) the loop that replants the link (formerly
+A4-B4, which won the 3 attempts and brought down the stop) no longer matters,
+because there are no attempts: the `rename` is atomic; (3) if the folder NAME is
+swapped during the write, everything keeps going to the ORIGINAL folder (the one the
+descriptor represents) and nothing lands in the attacker's folder. Tests
+`fdio::tests::*` (invalid names, write after moving the folder, replaced link,
+`attachments` as a link or already populated, moved folder, directory in place of a file),
+`a3_b3_planted_symlinks_after_the_copy_do_not_fail_the_stop` (4 names, including
+`attachments`) and `a4_b5_swapped_session_dir_is_detected_and_nothing_is_written_or_removed`
+(the whole session goes to the original folder, nothing in OUT, OUT links intact).
 
-**Pasta da sessão reconferida (A4-B5, A6-B5).** `recheck_session_dir` reabre a
-pasta pelo NOME (`O_NOFOLLOW|O_DIRECTORY`) e exige diretório, nosso, 0700 e a
-MESMA identidade, **antes de gravar e depois de gravar**. Trocada por um link,
-por outro diretório (mesmo 0700 e nosso) ou com o modo afrouxado, o stop **falha**:
-**antes** de gravar com "A pasta da sessão foi trocada ou deixou de ser nossa
-durante a captura (…); nada foi gravado nela e nada fora dela foi apagado."; **depois**
-de gravar (a troca aconteceu DURANTE a gravação) com uma mensagem própria, que
-não repete o "nada foi gravado": "A pasta da sessão foi trocada durante a
-gravação (…). A sessão foi gravada inteira na pasta ORIGINAL, agora em
-`<caminho.moved>`; nada foi gravado na pasta que tomou o lugar dela e nada fora da
-pasta original foi apagado." O caminho vem de `F_GETPATH` no descritor aberto
-no início (o lugar ATUAL da pasta original, mesmo movida); se o sistema não
-informar, a mensagem diz "que não conseguimos localizar". Em ambos os casos os
-arquivos da captura também vão para o resgate. Nunca devolve OK com a pasta
-trocada durante a gravação. Teste
+**Session folder rechecked (A4-B5, A6-B5).** `recheck_session_dir` reopens the
+folder by NAME (`O_NOFOLLOW|O_DIRECTORY`) and requires a directory, ours, 0700 and the
+SAME identity, **before writing and after writing**. If it was swapped for a link,
+for another directory (same 0700 and ours) or has a loosened mode, the stop **fails**:
+**before** writing with "The session directory was swapped or stopped being ours
+during the capture (…); nothing was written to it and nothing outside it was deleted."; **after**
+writing (the swap happened DURING the write) with its own message, which
+does not repeat the "nothing was written": "The session directory was swapped during the
+write (…). The session was written in full to the ORIGINAL directory, now at
+`<path.moved>`; nothing was written to the directory that took its place and nothing outside the
+original directory was deleted." The path comes from `F_GETPATH` on the descriptor opened
+at the start (the CURRENT place of the original folder, even if moved); if the system does not
+report it, the message says "which we could not locate". In both cases the
+capture files also go to the rescue. It never returns OK with the folder
+swapped during the write. Test
 `a7_message_after_a_swap_during_the_write_names_the_moved_dir_and_does_not_contradict_itself`.
 
-**Resgate quando a sessão não pôde ser gravada (A5-B2, A5-B3, A6-B6, A6-B7).**
-*Toda* falha depois do encerramento do Chrome (pasta trocada, o core recusar um
-arquivo, `rename` com ENOENT, falha de importação) resgata os arquivos da captura
-**antes** de o perfil temporário ser apagado:
-- **O que fica:** só `cdp-events.jsonl`, `cdp-bodies.jsonl` (relido pelo
-  descritor, mesmo com a pasta trocada), `netlog.json` e `motivo.txt` (a mensagem
-  de erro, que pode ter o caminho da sessão), numa pasta **0700 nova**
-  `scrapelens-capture-state/rescue-<pid>-<ns>/` dentro do `TMPDIR`, com um
-  marcador `rescue-<pid>-<ns>.json` ao lado. O erro do `stop_capture` cita a
-  pasta. Esses arquivos **contêm cookies, cabeçalhos e corpos** (a captura crua,
-  como o NetLog `Everything`): trate a pasta como sensível.
-- **O que NÃO fica:** o resto do perfil do Chrome (Cookies, Login Data, History,
-  Local State...) é apagado como sempre.
-- **Limpeza e prazo (A6-B7):** `cleanup_orphans` (no início do App e do servidor
-  MCP) apaga a pasta de resgate e o marcador quando o **próprio diretório** tem
-  mais de **7 dias** (mtime do diretório, que só muda quando entradas são
-  criadas ou removidas nele). A idade **não** vem do marcador: um marcador forjado
-  (com `createdMs` antigo ou com o `dir` de outro resgate) não faz um resgate
-  recente parecer vencido. O marcador só vale se o nome do arquivo for `<dir>.json`,
-  com `dir` filho direto do `state_root`, prefixo `rescue-`, sem `/` nem `..`, e o
-  diretório não for symlink. `OrphanCleanup.rescues_removed` conta. Um usuário
-  que reescreva o mtime do diretório (mesmo usuário) pode antecipar a limpeza:
-  fora do modelo, ele poderia apagar a pasta direto. Teste
+**Rescue when the session could not be written (A5-B2, A5-B3, A6-B6, A6-B7).**
+*Every* failure after Chrome exits (swapped folder, the core refusing a
+file, `rename` with ENOENT, import failure) rescues the capture files
+**before** the temporary profile is deleted:
+- **What is kept:** only `cdp-events.jsonl`, `cdp-bodies.jsonl` (read back through the
+  descriptor, even with the folder swapped), `netlog.json` and `motivo.txt` (the error
+  message, which may contain the session path), in a **new 0700** folder
+  `scrapelens-capture-state/rescue-<pid>-<ns>/` inside `TMPDIR`, with a
+  marker `rescue-<pid>-<ns>.json` next to it. The `stop_capture` error names the
+  folder. These files **contain cookies, headers and bodies** (the raw capture,
+  like the `Everything` NetLog): treat the folder as sensitive.
+- **What is NOT kept:** the rest of the Chrome profile (Cookies, Login Data, History,
+  Local State...) is deleted as always.
+- **Cleanup and deadline (A6-B7):** `cleanup_orphans` (at the start of the App and of the MCP
+  server) deletes the rescue folder and the marker when the **directory itself** is
+  more than **7 days** old (the directory's mtime, which only changes when entries are
+  created or removed in it). The age does **not** come from the marker: a forged marker
+  (with an old `createdMs` or with the `dir` of another rescue) does not make a recent
+  rescue look expired. The marker only counts if the file name is `<dir>.json`,
+  with `dir` a direct child of `state_root`, prefix `rescue-`, without `/` or `..`, and the
+  directory is not a symlink. `OrphanCleanup.rescues_removed` counts. A user
+  who rewrites the directory's mtime (same user) can bring the cleanup forward:
+  outside the model, he could delete the folder directly. Test
   `a6_b7_forged_marker_cannot_delete_a_recent_rescue`.
-- **Plano B (A6-B6):** se a pasta de resgate normal não puder ser criada (ENOSPC,
-  `TMPDIR` cheio), o PRÓPRIO perfil vira o resgate: tudo o que não é da captura
-  (Cookies, Login Data, History, o que também libera espaço) é apagado, os
-  eventos CDP, os corpos e o motivo são gravados nele, e ele é movido para o
-  `state_root` com marcador, entrando no mesmo prazo de 7 dias. Se nem mover ou
-  marcar for possível, o perfil fica onde está, JÁ LIMPO e COM os eventos, e o
-  erro diz "SEM prazo automático … apague quando recuperar"; só se até isso
-  falhar o erro avisa que o perfil mantido pode estar incompleto e que contém
-  dados do Chrome. Testes `a6_b6_fallback_adopts_the_profile_with_events_and_a_ttl_marker`
-  e `a6_b6_fallback_keeps_events_in_place_when_it_cannot_be_moved`.
-- **`.tmp-*`:** o temporário que uma gravação deixa (`.session.json.tmp-…`…) é
-  removido pelo descritor da pasta ORIGINAL, esteja ela no lugar ou movida.
-Testes `a5_b3_rescue_keeps_only_the_capture_files_in_a_private_dir_with_a_marker`,
+- **Plan B (A6-B6):** if the normal rescue folder cannot be created (ENOSPC,
+  `TMPDIR` full), the profile ITSELF becomes the rescue: everything that is not from the capture
+  (Cookies, Login Data, History, which also frees space) is deleted, the
+  CDP events, the bodies and the reason are written into it, and it is moved to
+  `state_root` with a marker, entering the same 7-day deadline. If it cannot even be moved or
+  marked, the profile stays where it is, ALREADY CLEANED and WITH the events, and the
+  error says "WITHOUT an automatic deadline … delete them when you recover"; only if even that
+  fails does the error warn that the kept profile may be incomplete and that it contains
+  Chrome data. Tests `a6_b6_fallback_adopts_the_profile_with_events_and_a_ttl_marker`
+  and `a6_b6_fallback_keeps_events_in_place_when_it_cannot_be_moved`.
+- **`.tmp-*`:** the temporary that a write leaves behind (`.session.json.tmp-…`…) is
+  removed through the descriptor of the ORIGINAL folder, whether it is in place or moved.
+Tests `a5_b3_rescue_keeps_only_the_capture_files_in_a_private_dir_with_a_marker`,
 `a5_b3_cleanup_removes_only_expired_rescues_that_the_marker_really_names`,
-`a5_b2_remove_stale_tmp_cleans_the_original_dir_even_after_it_was_moved` e os
-vivos `live_swapped_session_dir_fails_the_stop_without_touching_outside` (o PoC:
-a pasta vira um link para OUT; OUT fica com os mesmos 3 nomes, links intactos e
-alvo igual) e `live_any_write_failure_rescues_the_capture_files` (um diretório no
-nome de `session.json`: resgate com os 4 arquivos, sem `.tmp-*`, com marcador).
+`a5_b2_remove_stale_tmp_cleans_the_original_dir_even_after_it_was_moved` and the
+live `live_swapped_session_dir_fails_the_stop_without_touching_outside` (the PoC:
+the folder becomes a link to OUT; OUT keeps the same 3 names, links intact and
+target equal) and `live_any_write_failure_rescues_the_capture_files` (a directory in the
+name of `session.json`: rescue with the 4 files, without `.tmp-*`, with a marker).
 
-**Resultado do PoC de janela (`a5b2_toctou.py`, Revisor).** Contra o binário
-atual da mcp, 8 rodadas com a troca disparada assim que `attachments/` aparece
-(atraso 0) e 9 com atrasos de 2 a 30 ms: nada caiu em OUT em nenhuma (só o
-`attachments/` vazio que o próprio atacante criou). Com atraso 0 a troca pega a
-gravação no meio: o stop **falha** com resgate (os arquivos já movidos estão na
-pasta original, o resto dos dados no resgate); com 2 ms ou mais a gravação (agora
-alguns `renameat`) já terminou e o stop devolve OK, com a sessão inteira na pasta
-original, e a troca acontece depois. Antes (daa3414): 3 de 20 rodadas escreviam
-`session.json` e corpos em OUT e o stop dizia OK.
+**Result of the window PoC (`a5b2_toctou.py`, Reviewer).** Against the current
+mcp binary, 8 rounds with the swap fired as soon as `attachments/` appears
+(delay 0) and 9 with delays from 2 to 30 ms: nothing landed in OUT in any (only the empty
+`attachments/` that the attacker himself created). With delay 0 the swap catches the
+write in the middle: the stop **fails** with a rescue (the files already moved are in the
+original folder, the rest of the data in the rescue); with 2 ms or more the write (now
+a few `renameat`) has already finished and the stop returns OK, with the whole session in the original
+folder, and the swap happens afterwards. Before (daa3414): 3 of 20 rounds wrote
+`session.json` and bodies in OUT and the stop said OK.
 
-**Lacuna que resta.** Entre o `recheck` posterior à gravação e o retorno ao
-chamador a pasta ainda pode ser trocada por quem tem o mesmo usuário; o stop
-reportou a verdade no instante da verificação e a sessão está na pasta original.
-É o mesmo limite de qualquer arquivo de usuário (ele pode mover a pasta quando
-quiser) e fora do modelo.
+**Remaining gap.** Between the `recheck` after the write and the return to the
+caller the folder can still be swapped by whoever has the same user; the stop
+reported the truth at the instant of the check and the session is in the original folder.
+It is the same limit as any user file (he can move the folder whenever
+he wants) and outside the model.
 
-**Links plantados antes da captura (F2).** Teste vivo
-`live_planted_symlinks_are_not_followed` (o PoC da revisão: links para
-`netlog.json`, `cdp-bodies.jsonl` e `cdp-events.jsonl`; nenhum alvo recebe dado
-nem muda de modo). O temporário previsível do `write_atomic` do core, que era o
-segundo vetor desse PoC, foi corrigido pela Core (commit 3939881).
+**Links planted before the capture (F2).** Live test
+`live_planted_symlinks_are_not_followed` (the review PoC: links to
+`netlog.json`, `cdp-bodies.jsonl` and `cdp-events.jsonl`; no target receives data
+or changes mode). The predictable temporary of the core's `write_atomic`, which was the
+second vector of that PoC, was fixed by the Core (commit 3939881).
 
-### 2.5 Porta de depuração: pipe por padrão, porta só com `expose_cdp`
+### 2.5 Debugging port: pipe by default, port only with `expose_cdp`
 
-**Teto de mensagem do pipe (R12).** Uma mensagem do Chrome (JSON terminado em
-NUL) acima de `transport::MAX_PIPE_MESSAGE_BYTES` (128 MiB; o WebSocket antigo
-tinha 64 MiB e um corpo legítimo cabe, `maxResourceBufferSize` ≈ 67 MB) encerra
-o transporte sem nunca guardar mais que o teto. O Chrome sai em seguida de forma
-graciosa e o NetLog parece completo, então o fechamento anormal é registrado à
-parte (A3-B2): `stop_capture` devolve `graceful:false` e o aviso
-`cdp_transport_closed: frame_too_large: …`; a sessão ganha o aviso
-`capture.cdp_transport_closed` e o motivo `capture.cdp_transport_closed:
-cdp_transport_closed: frame_too_large: …` em `completeness.reasons`, e
-`completeness.state` deixa de ser `complete`. O `navigate` em espera de carga
-percebe o canal fechado e volta na hora com `navigate_failed` ("o CDP fechou
-durante o navigate (frame_too_large)"), em vez de girar até o prazo (eram 60 s).
-**Modo porta (A4-B2).** O WebSocket tem o mesmo teto (`max_message_size` e
-`max_frame_size` = 128 MiB; o padrão da biblioteca era 64/16 MiB). O erro de
-capacidade vira o mesmo `frame_too_large` e a mesma captura incompleta; depois de
-qualquer erro de leitura o socket **nunca mais é lido** (o tungstenite deixa o
-buffer de entrada cheio e uma nova leitura derrubava a thread em builds de
-debug, com `stop_failed` e `recording:true`). Testes
-`a4_b2_websocket_message_cap_closes_with_a_reason_and_never_panics` e o vivo
+**Pipe message cap (R12).** A Chrome message (NUL-terminated JSON) above
+`transport::MAX_PIPE_MESSAGE_BYTES` (128 MiB; the old WebSocket had 64 MiB and a legitimate body fits, `maxResourceBufferSize` ≈ 67 MB) ends
+the transport without ever keeping more than the cap. Chrome then exits gracefully
+and the NetLog looks complete, so the abnormal close is recorded
+separately (A3-B2): `stop_capture` returns `graceful:false` and the warning
+`cdp_transport_closed: frame_too_large: …`; the session gets the warning
+`capture.cdp_transport_closed` and the reason `capture.cdp_transport_closed:
+cdp_transport_closed: frame_too_large: …` in `completeness.reasons`, and
+`completeness.state` stops being `complete`. A `navigate` waiting for load
+notices the closed channel and returns right away with `navigate_failed` ("the CDP closed
+during navigate (frame_too_large)"), instead of spinning until the deadline (it was 60 s).
+**Port mode (A4-B2).** The WebSocket has the same cap (`max_message_size` and
+`max_frame_size` = 128 MiB; the library default was 64/16 MiB). The capacity error
+becomes the same `frame_too_large` and the same incomplete capture; after
+any read error the socket is **never read again** (tungstenite leaves the input
+buffer full and a new read brought the thread down in debug builds,
+with `stop_failed` and `recording:true`). Tests
+`a4_b2_websocket_message_cap_closes_with_a_reason_and_never_panics` and the live
 `live_oversized_websocket_message_marks_the_capture_incomplete`.
-Testes `r12_read_frame_enforces_the_message_cap_without_buffering_past_it`,
+Tests `r12_read_frame_enforces_the_message_cap_without_buffering_past_it`,
 `r12_oversized_pipe_message_closes_the_transport_and_smaller_ones_still_pass`,
-`a3_b2_closed_transport_marks_the_session_incomplete_with_an_explicit_reason` e o
-vivo `live_oversized_pipe_message_marks_the_capture_incomplete` (o PoC do
-`console.log` de 140 MB: `navigate` em 2,7 s, `graceful:false`, estado ≠ complete).
-A fila entre a thread de leitura e o laço continua **sem limite de contagem**
-de propósito: limitá-la bloquearia a leitura e travaria os dois lados do pipe
-(o laço escreve, o Chrome escreve), então a memória segue o ritmo do laço.
+`a3_b2_closed_transport_marks_the_session_incomplete_with_an_explicit_reason` and the
+live `live_oversized_pipe_message_marks_the_capture_incomplete` (the PoC of the
+140 MB `console.log`: `navigate` in 2,7 s, `graceful:false`, state ≠ complete).
+The queue between the reader thread and the loop remains **without a count limit**
+on purpose: limiting it would block the read and deadlock both sides of the pipe
+(the loop writes, Chrome writes), so memory follows the pace of the loop.
 
-Revisão de segurança (docs/17, achado F3): a porta DevTools aceitava conexão
-de qualquer processo local desde o lançamento, antes de `Network.enable`.
-Decisão do líder e estado atual:
+Security review (docs/17, finding F3): the DevTools port accepted connections
+from any local process since launch, before `Network.enable`.
+Leader's decision and current state:
 
-- **Sem `expose_cdp` (padrão): `--remote-debugging-pipe`.** O Chrome herda dois
-  descritores (lê comandos no fd 3, escreve no fd 4, mensagens JSON terminadas
-  em NUL) e **não abre porta alguma**: nenhum outro processo, do mesmo usuário
-  ou não, consegue falar com ele; não existe `DevToolsActivePort`. Teste
-  `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`: a linha de
-  comando tem `--remote-debugging-pipe` e não tem `--remote-debugging-port`, e
-  `lsof -iTCP -sTCP:LISTEN` no processo do navegador não lista nada. Vale também
-  para `BrowserCapture::start` e para o `run()` do App (ver abaixo).
-- **Fidelidade medida antes de trocar** (`tests/aceite/check_multi_target.py`,
-  que roda a captura real do App contra `testserver /multi/`; Chrome 156,
-  macOS arm64; a escolha vai por `SCRAPELENS_CDP_TRANSPORT=pipe|port`):
+- **Without `expose_cdp` (default): `--remote-debugging-pipe`.** Chrome inherits two
+  descriptors (reads commands on fd 3, writes on fd 4, JSON messages terminated
+  by NUL) and **opens no port at all**: no other process, of the same user
+  or not, can talk to it; there is no `DevToolsActivePort`. Test
+  `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`: the command
+  line has `--remote-debugging-pipe` and does not have `--remote-debugging-port`, and
+  `lsof -iTCP -sTCP:LISTEN` on the browser process lists nothing. It also applies
+  to `BrowserCapture::start` and to the App's `run()` (see below).
+- **Fidelity measured before switching** (`tests/aceite/check_multi_target.py`,
+  which runs the App's real capture against `testserver /multi/`; Chrome 156,
+  macOS arm64; the choice goes through `SCRAPELENS_CDP_TRANSPORT=pipe|port`):
 
-  | Transporte | Corridas | NetLog | CDP | Alvos por marcador | Service worker | Avisos de setup |
+  | Transport | Runs | NetLog | CDP | Targets per marker | Service worker | Setup warnings |
   |---|---|---|---|---|---|---|
-  | porta (antes) | 2 | 16/16 | 16/16 | page, iframe, worker, service_worker | página + SW ligados, sem duplicata | 0 |
-  | **pipe** | **6** | **16/16** | **16/16** | **idênticos** (13 sessões; mesmos tipos por marcador) | **página + SW ligados, sem duplicata** | **0** |
+  | port (before) | 2 | 16/16 | 16/16 | page, iframe, worker, service_worker | page + SW attached, no duplicate | 0 |
+  | **pipe** | **6** | **16/16** | **16/16** | **identical** (13 sessions; same types per marker) | **page + SW attached, no duplicate** | **0** |
 
-  Todas as corridas passaram o aceite completo (16/16 NetLog, ≥15/16 CDP, tipos,
-  corpos, sem fusão, SW ligado). Sem perda de fidelidade, então **o `run()` do
-  App passou a usar o pipe por padrão** (`SCRAPELENS_CDP_TRANSPORT=port` volta ao
-  WebSocket); o resto do App não mudou, e os testes do `src-tauri` seguem
-  verdes. Os testes vivos de `capture/` sem `expose_cdp` (allowlist por eventos,
-  8 caminhos de porta, symlinks, cenários do `site_profile`) também rodam em
-  pipe.
-- **Com `expose_cdp: true` a porta é inerente ao recurso.** Fica assim: porta
-  efêmera, `--remote-debugging-address=127.0.0.1` e **sem
-  `--remote-allow-origins`**. O `lsof` do mesmo teste mostra o `LISTEN` só em
-  `127.0.0.1:<porta>` (nada em `*` nem `[::]`). Um WebSocket com
-  `Origin: https://evil.example` recebe **403**; sem `Origin` (nós, Playwright,
-  Chrome DevTools MCP) recebe **101**. Páginas web, portanto, não alcançam a
-  porta.
-- **Risco que fica com `expose_cdp:true` (documentado, não mitigável aqui).** A
-  porta não tem autenticação. Qualquer processo que alcance
-  `127.0.0.1:<porta>`, **do mesmo usuário ou de outro usuário da mesma
-  máquina**, lê `GET /json/version` (que devolve a URL do WebSocket do
-  navegador) e passa a controlar o Chrome inteiro: executar JavaScript nas
-  páginas, ler cookies e corpos da sessão, navegar dentro da allowlist (a rede
-  continua limitada aos hosts aprovados, mas o processo age com a sessão
-  aberta). A janela vai do lançamento ao `stop_capture`; o número da porta fica
-  visível em `ps`, em varredura de portas e no `DevToolsActivePort` do perfil
-  temporário (0700). O portão do §4.1 protege contra o agente, não contra
-  terceiros locais. Recomendação: `expose_cdp:true` só em máquina de um único
-  usuário, por capturas curtas, e a elicitação deve mostrar este aviso. Sem
-  `expose_cdp` não há porta e o risco não existe.
+  All runs passed the full acceptance (16/16 NetLog, ≥15/16 CDP, types,
+  bodies, no merge, SW attached). With no loss of fidelity, **the App's `run()`
+  now uses the pipe by default** (`SCRAPELENS_CDP_TRANSPORT=port` goes back to the
+  WebSocket); the rest of the App did not change, and the `src-tauri` tests stay
+  green. The live tests of `capture/` without `expose_cdp` (allowlist by events,
+  8 port paths, symlinks, `site_profile` scenarios) also run
+  on pipe.
+- **With `expose_cdp: true` the port is inherent to the feature.** It stays like this:
+  ephemeral port, `--remote-debugging-address=127.0.0.1` and **without
+  `--remote-allow-origins`**. The `lsof` of the same test shows the `LISTEN` only on
+  `127.0.0.1:<port>` (nothing on `*` or `[::]`). A WebSocket with
+  `Origin: https://evil.example` gets **403**; without `Origin` (us, Playwright,
+  Chrome DevTools MCP) it gets **101**. Web pages, therefore, do not reach the
+  port.
+- **Risk that remains with `expose_cdp:true` (documented, not mitigable here).** The
+  port has no authentication. Any process that reaches
+  `127.0.0.1:<port>`, **of the same user or of another user of the same
+  machine**, reads `GET /json/version` (which returns the browser's WebSocket
+  URL) and takes control of the whole Chrome: executing JavaScript in the
+  pages, reading cookies and bodies of the session, navigating within the allowlist (the network
+  stays limited to the approved hosts, but the process acts with the open
+  session). The window goes from launch to `stop_capture`; the port number is
+  visible in `ps`, in port scans and in the `DevToolsActivePort` of the temporary
+  profile (0700). The gate in §4.1 protects against the agent, not against
+  local third parties. Recommendation: `expose_cdp:true` only on a single-user
+  machine, for short captures, and the elicitation must show this warning. Without
+  `expose_cdp` there is no port and the risk does not exist.
 
-## 3. Ferramentas
+## 3. Tools
 
-Convenções: JSON; erros `{ "error": { "code", "message", "details"? } }`;
-`capture_id` é o handle (uma captura ativa por vez nesta onda, erro
+Conventions: JSON; errors `{ "error": { "code", "message", "details"? } }`;
+`capture_id` is the handle (one active capture at a time in this wave, error
 `capture_already_running`).
 
 ### 3.1 `start_capture`
 
-Entrada (snake_case, como as ferramentas da Core):
+Input (snake_case, like the Core tools):
 
 ```json
 {
-  "allowed_hosts": ["exemplo.local:8080"],      // obrigatório, >= 1
-  "third_party_hosts": ["js.exemplo-cdn.net"],  // opcional
-  "start_url": "http://exemplo.local:8080/",    // opcional, precisa passar na allowlist
-  "binary_path": null,                           // opcional; senão detecção automática
-  "headless": false,                             // padrão false (modo real); true para testes
-  "expose_cdp": false                            // padrão false
+  "allowed_hosts": ["example.local:8080"],      // required, >= 1
+  "third_party_hosts": ["js.example-cdn.net"],  // optional
+  "start_url": "http://example.local:8080/",    // optional, must pass the allowlist
+  "binary_path": null,                           // optional; otherwise automatic detection
+  "headless": false,                             // default false (real mode); true for tests
+  "expose_cdp": false                            // default false
 }
 ```
 
-Saída (`StartInfo`, camelCase como as saídas da Core; o `capture_id` é do
-servidor MCP, que guarda o `BrowserCapture` num mapa):
+Output (`StartInfo`, camelCase like the Core outputs; the `capture_id` belongs to the
+MCP server, which keeps the `BrowserCapture` in a map):
 
 ```json
 {
@@ -553,46 +551,46 @@ servidor MCP, que guarda o `BrowserCapture` num mapa):
 }
 ```
 
-Erros (`code`): `allowlist_required`, `allowlist_too_broad`, `allowlist_invalid`,
-`allowlist_unsupported` (IPv6), `start_url_not_allowed`, `browser_invalid` (o
-`binary_path` não é o Chrome estável, §2.1), `browser_start_failed`,
-`session_dir`; `capture_already_running` é do servidor MCP.
+Errors (`code`): `allowlist_required`, `allowlist_too_broad`, `allowlist_invalid`,
+`allowlist_unsupported` (IPv6), `start_url_not_allowed`, `browser_invalid` (the
+`binary_path` is not the stable Chrome, §2.1), `browser_start_failed`,
+`session_dir`; `capture_already_running` belongs to the MCP server.
 
-`cdp` só aparece com `expose_cdp:true` e só depois do portão de §4.1. Sem
-`expose_cdp` o Chrome nem abre a porta (pipe, §2.5); com ele a porta escuta só
-em `127.0.0.1` e tem o risco descrito em §2.5. `pageTargetId` é a aba da captura (a que
-`navigate` usa): o agente anexa a ela.
+`cdp` only appears with `expose_cdp:true` and only after the gate in §4.1. Without
+`expose_cdp` Chrome does not even open the port (pipe, §2.5); with it the port listens only
+on `127.0.0.1` and has the risk described in §2.5. `pageTargetId` is the capture tab (the one
+`navigate` uses): the agent attaches to it.
 
 ### 3.2 `navigate`
 
 ```json
-{ "url": "http://exemplo.local:8080/p", "wait": "load", "timeout_ms": 15000 }
+{ "url": "http://example.local:8080/p", "wait": "load", "timeout_ms": 15000 }
 ```
 
-Navega a **aba principal** da captura (`Page.navigate`). `wait`: `"load"`
-(padrão; espera `Page.loadEventFired` ou o prazo) ou `"none"`. Saída
+Navigates the capture's **main tab** (`Page.navigate`). `wait`: `"load"`
+(default; waits for `Page.loadEventFired` or the deadline) or `"none"`. Output
 (`NavigateResult`): `{ "frameId", "loaderId", "loaded": true|false, "errorText": null|"net::ERR_…" }`.
-Erros: `url_not_allowed` (com o motivo), `capture_stopped`, `navigate_failed`,
-`navigate_timeout` (o navegador não respondeu no prazo; a captura continua).
-`loaded:false` não é erro (prazo ou navegação sem evento de carga).
+Errors: `url_not_allowed` (with the reason), `capture_stopped`, `navigate_failed`,
+`navigate_timeout` (the browser did not respond within the deadline; the capture continues).
+`loaded:false` is not an error (deadline or navigation without a load event).
 
-**Prazo (R12).** `timeout_ms` vale para o `navigate` inteiro (o comando
-`Page.navigate` e a espera da carga dividem um só prazo), com piso de 2 s e
-folga de 5 s para o chamador. Com o Chrome parado (`SIGSTOP`), o
-`navigate(timeout_ms=3000)` que levava 30,4 s agora volta em 3,3 s com
-`navigate_timeout` (o `Page.navigate` sem resposta no prazo); `navigate_timeout`
-também cobre o caso em que o próprio laço da captura não responde. Teste vivo
-`live_navigate_honours_its_timeout_when_chrome_is_frozen`. Efeito colateral: a
-espera da carga conta o tempo que o `Page.navigate` já gastou.
+**Deadline (R12).** `timeout_ms` applies to the whole `navigate` (the
+`Page.navigate` command and the load wait share a single deadline), with a floor of 2 s and
+a 5 s margin for the caller. With Chrome stopped (`SIGSTOP`), the
+`navigate(timeout_ms=3000)` that took 30,4 s now returns in 3,3 s with
+`navigate_timeout` (the `Page.navigate` without a response within the deadline); `navigate_timeout`
+also covers the case in which the capture loop itself does not respond. Live test
+`live_navigate_honours_its_timeout_when_chrome_is_frozen`. Side effect: the
+load wait counts the time that `Page.navigate` already spent.
 
 ### 3.3 `capture_status`
 
 `BrowserCapture::status() → CaptureStatus` (`recording`, `events`, `pageUrl`,
-`lastError`): reuso do tipo do App.
+`lastError`): reuse of the App's type.
 
 ### 3.4 `stop_capture`
 
-Saída (`StopReport`):
+Output (`StopReport`):
 
 ```json
 {
@@ -602,72 +600,72 @@ Saída (`StopReport`):
   "graceful": true,
   "waitedMs": 105,
   "allowlist": {
-    "blockedHosts": [ { "host": "challenges.exemplo.net", "requests": 2, "exampleUrl": "…" } ],
-    "violations": [ { "requestId": "cdp-r0007", "url": "…", "host": "…", "reason": "porta 9000 fora da allowlist" } ]
+    "blockedHosts": [ { "host": "challenges.example.net", "requests": 2, "exampleUrl": "…" } ],
+    "violations": [ { "requestId": "cdp-r0007", "url": "…", "host": "…", "reason": "port 9000 outside the allowlist" } ]
   },
   "warnings": ["…"]
 }
 ```
 
-Encerramento gracioso (`Browser.close` + espera + NetLog fechado); se não for
-gracioso, a sessão sai marcada incompleta (comportamento atual).
-`allowlist.violations[].requestId` é o id lógico da sessão importada quando a
-requisição existe nela, senão `cdp:<sessão>/<requestId>` (ex.: WebSocket, que
-a importação não guarda). A sessão importada fica em `sessionDir`, com `capture.third_party_blocked` (informativo)
-e `capture.allowlist_violation` (aviso) nos `warnings` do `session.json`, para
-as ferramentas da Core e para `site_profile`. Se o chamador descartar o
-`BrowserCapture` sem `stop`, o `Drop` encerra o Chrome do mesmo modo.
+Graceful shutdown (`Browser.close` + wait + NetLog closed); if it is not
+graceful, the session comes out marked incomplete (current behavior).
+`allowlist.violations[].requestId` is the logical id of the imported session when the
+request exists in it, otherwise `cdp:<session>/<requestId>` (e.g.: WebSocket, which
+the import does not keep). The imported session stays in `sessionDir`, with `capture.third_party_blocked` (informational)
+and `capture.allowlist_violation` (warning) in the `warnings` of `session.json`, for
+the Core tools and for `site_profile`. If the caller drops the
+`BrowserCapture` without `stop`, the `Drop` terminates Chrome in the same way.
 
-### 3.5 Segundo cliente CDP
+### 3.5 Second CDP client
 
-Com `expose_cdp:true`, o agente conectará seu próprio cliente ao mesmo Chrome.
-O nosso dedupe por `targetId` só vale para a nossa conexão. Medido em loopback
-(testes ignorados `second_cdp_client_cooperative` e
-`second_cdp_client_never_resumes`, Chrome 156, headless): o segundo cliente
-conecta no meio da sessão, anexa à aba, faz `Target.setAutoAttach
-{flatten:true, waitForDebuggerOnStart:true}` e a página cria um worker.
+With `expose_cdp:true`, the agent will connect its own client to the same Chrome.
+Our dedupe by `targetId` only applies to our connection. Measured on loopback
+(ignored tests `second_cdp_client_cooperative` and
+`second_cdp_client_never_resumes`, Chrome 156, headless): the second client
+connects in the middle of the session, attaches to the tab, does `Target.setAutoAttach
+{flatten:true, waitForDebuggerOnStart:true}` and the page creates a worker.
 
-| Cenário | Resultado |
+| Scenario | Result |
 |---|---|
-| A. segundo cliente retoma o alvo (`runIfWaitingForDebugger`) | worker recebido por **ambos** com `waitingForDebugger:true`; carga completa; worker chega ao servidor e entra na nossa sessão; encerramento gracioso |
-| B. segundo cliente pede `waitForDebuggerOnStart` e **nunca** retoma | idêntico: o **nosso** `runIfWaitingForDebugger` libera o alvo (a retomada vale para o alvo, não para a sessão); nada trava |
+| A. second client resumes the target (`runIfWaitingForDebugger`) | worker received by **both** with `waitingForDebugger:true`; full load; worker reaches the server and enters our session; graceful shutdown |
+| B. second client asks for `waitForDebuggerOnStart` and **never** resumes | identical: **our** `runIfWaitingForDebugger` releases the target (the resume applies to the target, not to the session); nothing hangs |
 
-Limites da medição: uma execução de cada (repetida 3× sem divergência), um tipo
-de alvo (worker dedicado), cliente escrito por nós. **Fechado por
-desenho (§4.1):** o agente só recebe o endereço depois que o nosso
-`Network.enable` e o auto-attach estão ativos na aba inicial; alvos criados
-depois (workers, popups) seguem o pipeline de setup medido acima. **Não
-medido:** clientes que usam `Fetch` ou depuração com pausa, e a corrida em
-alvos filhos criados *depois*, em que o agente retoma antes do nosso
-`Network.enable` chegar (ficou dentro nos testes). Consequência de produto: a
-nossa retomada também libera alvos que o agente quisesse manter pausados.
+Limits of the measurement: one run of each (repeated 3× without divergence), one type
+of target (dedicated worker), a client written by us. **Closed by
+design (§4.1):** the agent only receives the address after our
+`Network.enable` and the auto-attach are active on the initial tab; targets created
+later (workers, popups) follow the setup pipeline measured above. **Not
+measured:** clients that use `Fetch` or paused debugging, and the race on
+child targets created *afterwards*, in which the agent resumes before our
+`Network.enable` arrives (it stayed inside in the tests). Product consequence: our
+resume also releases targets that the agent wanted to keep paused.
 
-## 4. Crate `scrapelens-capture` e API pública (para o servidor MCP)
+## 4. Crate `scrapelens-capture` and public API (for the MCP server)
 
-A captura vive em **`capture/`** (crate `scrapelens-capture`, **sem Tauri**:
-`cargo tree` mostra só `scrapelens-core`, `serde`, `serde_json` e `tungstenite`;
-0 ocorrências de `tauri`). `src-tauri/src/capture.rs` e `chrome.rs` são
-adaptadores finos do App (`SessionPayload`, `CaptureSession`, `run()` com o
-mesmo comportamento e a mesma `CaptureConfig`). O servidor MCP depende de
-`capture/` sem puxar a janela.
+The capture lives in **`capture/`** (crate `scrapelens-capture`, **without Tauri**:
+`cargo tree` shows only `scrapelens-core`, `serde`, `serde_json` and `tungstenite`;
+0 occurrences of `tauri`). `src-tauri/src/capture.rs` and `chrome.rs` are
+thin adapters of the App (`SessionPayload`, `CaptureSession`, `run()` with the
+same behavior and the same `CaptureConfig`). The MCP server depends on
+`capture/` without pulling in the window.
 
-API pública (`use scrapelens_capture::…`):
+Public API (`use scrapelens_capture::…`):
 
 ```text
-// captura comum (a do App)
+// regular capture (the App's)
 CaptureConfig { chrome, session_dir, start_url, headless, ignore_cert, network: NetworkMode }
-NetworkMode { Open /* padrão */, LoopbackOnly }   // from_env(): SCRAPELENS_CAPTURE_NETWORK=loopback
+NetworkMode { Open /* default */, LoopbackOnly }   // from_env(): SCRAPELENS_CAPTURE_NETWORK=loopback
 CaptureStatus { recording, events, chrome_pid, session_id, session_dir, started_at, page_url, last_error }
 CaptureOutcome { session: Value, session_dir: PathBuf, notice: String }
 run(config, status: Arc<Mutex<CaptureStatus>>, stop: Receiver<()>, ready: Sender<Result<(),String>>)
     -> Result<CaptureOutcome, String>
-default_state_root() -> PathBuf          // marcadores de captura (órfãos)
-cleanup_orphans(&Path) -> OrphanCleanup  // chamada pelo App na partida
-chrome::{detect, normalize_binary_path, candidates, ChromeInfo}   // do App, permissivos
-chrome::{validate_chrome, resolve_stable_chrome, ValidatedChrome, ChromeError}  // estritos (§2.1)
-transport::CdpTransport { Port, Pipe }     // pipe por padrão; SCRAPELENS_CDP_TRANSPORT=port|pipe
+default_state_root() -> PathBuf          // capture markers (orphans)
+cleanup_orphans(&Path) -> OrphanCleanup  // called by the App at startup
+chrome::{detect, normalize_binary_path, candidates, ChromeInfo}   // from the App, permissive
+chrome::{validate_chrome, resolve_stable_chrome, ValidatedChrome, ChromeError}  // strict (§2.1)
+transport::CdpTransport { Port, Pipe }     // pipe by default; SCRAPELENS_CDP_TRANSPORT=port|pipe
 
-// captura controlada (MCP)
+// controlled capture (MCP)
 allowlist::Allowlist                      // new(allowed, third_party) -> Result<_, AllowlistError>
   permits_url(&str) -> Result<AllowedUrl, UrlDenied>
   host_allowed(&str) -> bool
@@ -683,33 +681,33 @@ browser::BrowserCapture
 browser::{StartInfo, CdpAccess, NavigateResult, StopReport, StartError, NavigateError, SENSITIVE_NOTICE}
 ```
 
-A thread de captura continua dona do soquete CDP; `navigate` e `stop` são
-mensagens num canal consumido pelo laço de gravação (latência ≤ ~250 ms).
+The capture thread remains the owner of the CDP socket; `navigate` and `stop` are
+messages on a channel consumed by the recording loop (latency ≤ ~250 ms).
 
-### 4.1 Portão do CDP exposto
+### 4.1 Exposed CDP gate
 
-`start` com `expose_cdp:true` só devolve `cdp` (`http`, `browserWs`,
-`pageTargetId`) **depois** que o nosso cliente está ligado na aba inicial:
-`Network.enable` e `Target.setAutoAttach` com **ACK de sucesso**, sessão
-configurada e nenhum comando de setup pendente nela. Se isso não acontecer em
-15 s, `start` falha (`browser_start_failed`) e o Chrome é encerrado; o
-endereço nunca é entregue. Assim o agente não consegue agir (nem retomar alvos
-pausados) antes de nós. Cobertura: testes unitários do portão
-(`initial_target_gate_*`), teste vivo `agent_first_action_is_captured` (a
-primeira ação do agente, anexar à aba da captura e navegar sem esperar, aparece
-em `Network.requestWillBeSent` na nossa sessão) e um controle por mutação (com o
-portão forçado a fechar, `start` falha e nada é entregue). Limite: com
-`expose_cdp:true` a porta existe desde o lançamento (também no
-`DevToolsActivePort` do perfil temporário, 0700); um processo local que a
-encontre contorna o portão. O risco é o de §2.5 e fica fora do modelo; sem
-`expose_cdp` não há porta (pipe).
+`start` with `expose_cdp:true` only returns `cdp` (`http`, `browserWs`,
+`pageTargetId`) **after** our client is attached to the initial tab:
+`Network.enable` and `Target.setAutoAttach` with a **success ACK**, session
+configured and no setup command pending on it. If that does not happen within
+15 s, `start` fails (`browser_start_failed`) and Chrome is terminated; the
+address is never handed over. This way the agent cannot act (nor resume paused
+targets) before we do. Coverage: unit tests of the gate
+(`initial_target_gate_*`), live test `agent_first_action_is_captured` (the
+agent's first action, attaching to the capture tab and navigating without waiting, shows up
+in `Network.requestWillBeSent` in our session) and a mutation control (with the
+gate forced closed, `start` fails and nothing is handed over). Limit: with
+`expose_cdp:true` the port exists since launch (also in the
+`DevToolsActivePort` of the temporary profile, 0700); a local process that
+finds it bypasses the gate. The risk is the one in §2.5 and is outside the model; without
+`expose_cdp` there is no port (pipe).
 
 ## 5. `site_profile`
 
-Crate independente `recon/` (`scrapelens-recon`, depende só de
-`scrapelens-core`), com as assinaturas em **dados** (`recon/signatures.json`) e
-testes sem rede. Entrada: uma sessão capturada (`SessionV1` + `BodySource`
-para corpos HTML/JS) e opções. Saída (camelCase, como a Core):
+Independent crate `recon/` (`scrapelens-recon`, depends only on
+`scrapelens-core`), with the signatures as **data** (`recon/signatures.json`) and
+tests without network. Input: a captured session (`SessionV1` + `BodySource`
+for HTML/JS bodies) and options. Output (camelCase, like the Core):
 
 ```json
 {
@@ -717,259 +715,259 @@ para corpos HTML/JS) e opções. Saída (camelCase, como a Core):
   "sessionId": "…",
   "captureContext": { "automationFlagSuppressed": true | false | null, "headless": false | true | null },
   "sample": { "requests": 31, "documents": 3, "appRequests": 12, "partial": false,
-              "protocols": { "https://exemplo.test": ["h2"] } },
+              "protocols": { "https://example.test": ["h2"] } },
   "findings": [
     {
       "id": "F001",
-      "category": "protecao" | "desafio" | "captcha" | "bloqueio" | "cookie" | "token" | "protocolo" | "terceiro-bloqueado",
+      "category": "protection" | "challenge" | "captcha" | "block" | "cookie" | "token" | "protocol" | "third-party-blocked",
       "vendor": "cloudflare" | null,
       "kind": "cookie" | "response-header" | "request-header" | "script-host" | "form-field" | "path" | "status" | "protocol" | "cookie-flow" | "token-origin" | "blocked-host",
       "signatureId": "cf-005" | null,
-      "summary": "texto PT-BR",
-      "confidence": "alta" | "media" | "baixa",
+      "summary": "English text",
+      "confidence": "high" | "medium" | "low",
       "occurrences": 3,
       "evidence": [ { "requestId": "cdp-r0004", "attemptId": "cdp-r0004-a1", "scope": "response-header",
                       "field": "cf-mitigated", "value": "challenge", "url": "…", "status": 403, "source": "netlog",
                       "thirdParty": false } ],
-      "source": { "kind": "fornecedor" | "secundaria" | "projeto", "url": "…" } | null,
+      "source": { "kind": "vendor" | "secondary" | "project", "url": "…" } | null,
       "resolvedLater": true | false | null,
       "limits": ["…"]
     }
   ],
   "recommendation": {
-    "value": "chrome-normal-basta" | "precisa-de-priming" | "candidato-a-cloakbrowser" | "indeterminado",
-    "confidence": "alta" | "media" | "baixa",
+    "value": "regular-chrome-suffices" | "needs-priming" | "cloakbrowser-candidate" | "undetermined",
+    "confidence": "high" | "medium" | "low",
     "reasons": ["…"], "limits": ["…"], "basedOn": ["F002"]
   },
   "warnings": []
 }
 ```
 
-- `evidence[].requestId`/`attemptId` são os ids da Core (`LogicalRequest.id`,
-  `Attempt.id`) e resolvem em `get_request`. Valores: nomes e URLs sempre;
-  **valores de cookie/cabeçalho redigidos** (`"[redigido, 32 bytes]"`), salvo
-  valores de enumeração documentados (`challenge`, `captcha`, `protected`,
-  `403`), que são o sinal.
-- `indeterminado` é acréscimo ao pedido do líder (três valores): sessão
-  parcial/vazia, sem documento principal, ou evidência insuficiente. Dizer que
-  "Chrome normal basta" sem evidência seria inventar.
+- `evidence[].requestId`/`attemptId` are the Core ids (`LogicalRequest.id`,
+  `Attempt.id`) and resolve in `get_request`. Values: names and URLs always;
+  **cookie/header values redacted** (`"[redacted, 32 bytes]"`), except
+  documented enumeration values (`challenge`, `captcha`, `protected`,
+  `403`), which are the signal.
+- `undetermined` is an addition to the leader's request (three values): partial/empty
+  session, no main document, or insufficient evidence. Saying that
+  "regular Chrome suffices" without evidence would be inventing.
 
-### 5.1 Confiança de um achado
+### 5.1 Confidence of a finding
 
-Segue o modelo de `core/src/assess.rs`: **um marcador sozinho nunca é
-bloqueio**.
+Follows the model of `core/src/assess.rs`: **a marker alone is never a
+block**.
 
-| Nível | Regra |
+| Level | Rule |
 |---|---|
-| `alta` | assinatura de **fonte do fornecedor** que, pela própria documentação, indica ação de proteção na resposta, **no site-alvo** e **com o status documentado** (ex.: `cf-mitigated: challenge`; `x-amzn-waf-action: challenge` com **202** ou `captcha` com **405**; `x-datadomeresponse` ≠ 200) |
-| `media` | assinatura de fornecedor que mostra que o produto **está presente** (cookie de `Set-Cookie`, script, cabeçalho) no site-alvo, sem prova de bloqueio; ou dois indícios independentes de fonte secundária; ou campo de formulário corroborado por script/cabeçalho/cookie do mesmo fornecedor |
-| `baixa` | um único indício de fonte secundária (ex.: `bm_sz`, `incap_ses_*`); **presença só em corpo, consulta ou cookie do pedido** (texto refletido, `?g-recaptcha-response=1`, cookie criado por `document.cookie`); **valor de bloqueio com status diferente do documentado** (ex.: AWS WAF `challenge` em 200: presença do produto, não desafio); **cookie, cabeçalho ou bloqueio visto só em recurso de outro host** |
+| `high` | signature from a **vendor source** that, by its own documentation, indicates a protection action in the response, **on the target site** and **with the documented status** (e.g.: `cf-mitigated: challenge`; `x-amzn-waf-action: challenge` with **202** or `captcha` with **405**; `x-datadomeresponse` ≠ 200) |
+| `medium` | vendor signature that shows the product **is present** (`Set-Cookie` cookie, script, header) on the target site, without proof of a block; or two independent indications from a secondary source; or a form field corroborated by a script/header/cookie of the same vendor |
+| `low` | a single indication from a secondary source (e.g.: `bm_sz`, `incap_ses_*`); **presence only in a body, query or request cookie** (reflected text, `?g-recaptcha-response=1`, cookie created by `document.cookie`); **block value with a status different from the documented one** (e.g.: AWS WAF `challenge` on 200: presence of the product, not a challenge); **cookie, header or block seen only on a resource of another host** |
 
-Regras da revisão de segurança (docs/17, R1 a R4), cada uma com teste em
-`recon/tests/profile.rs` (`r1_…` a `r4_…`):
+Rules from the security review (docs/17, R1 to R4), each with a test in
+`recon/tests/profile.rs` (`r1_…` to `r4_…`):
 
-- **Site-alvo** = hosts dos documentos de topo da sessão (iframes de terceiros
-  não contam). Um host é do alvo se for igual ou subdomínio (ou domínio-pai) de
-  um desses; não há lista de sufixos públicos. Evidência de outro host sai com
-  `thirdParty: true`, o achado fica `baixa` com o limite escrito, e **não entra
-  na recomendação**. Script (`script-host`) e campo de formulário são
-  referências embutidas pela própria página e ficam fora desta regra.
-- **Desafio resolvido** só por resposta **2xx** depois, na mesma rota (um 3xx
-  pode levar ao próprio desafio), ou por cookie de liberação (`cf_clearance`,
-  `aws-waf-token`) definido depois **pelo mesmo site**; cookie de outro host não
-  libera.
+- **Target site** = hosts of the session's top-level documents (third-party
+  iframes do not count). A host belongs to the target if it is equal to, or a subdomain (or parent domain) of,
+  one of those; there is no public suffix list. Evidence from another host comes out with
+  `thirdParty: true`, the finding stays `low` with the limit written, and it **does not enter
+  the recommendation**. Script (`script-host`) and form field are
+  references embedded by the page itself and are outside this rule.
+- **Challenge resolved** only by a later **2xx** response on the same route (a 3xx
+  may lead to the challenge itself), or by a clearance cookie (`cf_clearance`,
+  `aws-waf-token`) set later **by the same site**; a cookie from another host does not
+  clear it.
 
-### 5.2 Achados genéricos (sem nome de fornecedor)
+### 5.2 Generic findings (without a vendor name)
 
-- **Status de bloqueio**: 403, 429 e 503 em rotas da aplicação (documento ou
-  XHR/fetch); com `Retry-After` quando existir (RFC 9110). `alta` só quando a
-  rota não tem resposta bem-sucedida depois; senão `media`.
-- **Protocolo observado** (`h1`/`h2`/`h3` por origem, com o estado de
-  verificação da Core): "**observado**", não "exigido". Provar exigência
-  precisaria de uma tentativa em h1 que falhasse; uma captura só não prova.
-- **Cookies definidos pelo servidor e reenviados** (`Set-Cookie` na resposta N
-  e `Cookie` com o mesmo nome depois): "cookie de sessão/guarda **observado**"
-  (até 10, os mais reenviados). "Obrigatório" **não** é afirmável por uma
-  captura (exige remover e testar, `validate_run`): o achado diz isso em `limits`.
-- **Tokens dinâmicos e origem**: para as últimas requisições XHR/fetch bem
-  sucedidas (até 5, ou o `target_request_id` dado), usa `flow::value_origins`
-  (Core) e relata valores de cabeçalho, consulta e corpo (≥ 8 bytes) com origem
-  em resposta anterior: `strong` → confiança `media`; `possible` (mesmo valor,
-  campo com outro nome) → `baixa`. Valores de cookie ficam de fora (já são o
-  achado de cookies). Nada é re-derivado aqui e o valor nunca sai.
-- **Ordem no tempo**: `session.requests` **não é cronológica** (a Core ordena
-  por id; medido numa sessão real: `cdp-r0004` era a primeira requisição). "Antes"
-  e "depois" usam o início da tentativa (`startedAt`) quando todas têm tempo, e a
-  ordem da sessão só como reserva. Sugestão à Core: documentar isso em
-  `docs/16-mcp-contrato.md` para quem lê `list_requests`.
-- **Hosts de terceiros bloqueados pela allowlist** (`ERR_NAME_NOT_RESOLVED`):
-  achado `terceiro-bloqueado` (§2.2).
+- **Block status**: 403, 429 and 503 on application routes (document or
+  XHR/fetch); with `Retry-After` when present (RFC 9110). `high` only when the
+  route has no successful response afterwards; otherwise `medium`.
+- **Observed protocol** (`h1`/`h2`/`h3` per origin, with the Core's verification
+  state): "**observed**", not "required". Proving a requirement
+  would need an h1 attempt that failed; a single capture does not prove it.
+- **Cookies set by the server and sent back** (`Set-Cookie` in response N
+  and `Cookie` with the same name afterwards): "session/guard cookie **observed**"
+  (up to 10, the most resent). "Mandatory" is **not** assertable from one
+  capture (it requires removing and testing, `validate_run`): the finding says so in `limits`.
+- **Dynamic tokens and origin**: for the last successful XHR/fetch requests
+  (up to 5, or the given `target_request_id`), it uses `flow::value_origins`
+  (Core) and reports header, query and body values (≥ 8 bytes) with an origin
+  in an earlier response: `strong` → confidence `medium`; `possible` (same value,
+  field with another name) → `low`. Cookie values are left out (they are already the
+  cookies finding). Nothing is re-derived here and the value never leaves.
+- **Order in time**: `session.requests` is **not chronological** (the Core sorts
+  by id; measured on a real session: `cdp-r0004` was the first request). "Before"
+  and "after" use the attempt start (`startedAt`) when all have a time, and the
+  session order only as a fallback. Suggestion to the Core: document this in
+  `docs/16-mcp-contrato.md` for whoever reads `list_requests`.
+- **Third-party hosts blocked by the allowlist** (`ERR_NAME_NOT_RESOLVED`):
+  `third-party-blocked` finding (§2.2).
 
-### 5.3 Recomendação
+### 5.3 Recommendation
 
-Determinística, por regras (ordem de avaliação):
+Deterministic, by rules (evaluation order):
 
-1. `indeterminado`: sessão marcada parcial/incompleta pela Core, ou nenhum
-   documento HTML principal com resposta, ou menos de 2 requisições.
-2. `candidato-a-cloakbrowser`: o **Chrome normal foi bloqueado** na navegação
-   principal ou numa rota da aplicação **e não houve resposta bem-sucedida
-   depois da mesma rota** (nem após desafio), com pelo menos um achado de
-   bloqueio de confiança `alta` (desafio/captcha/403 de fornecedor, ou
-   403/429/503 no documento principal). Quando só há script de CAPTCHA
-   presente e a página carregou, **não** é candidato. O texto diz: "o Chrome
-   normal foi barrado; isto **não prova** que o CloakBrowser passaria".
-3. `precisa-de-priming`: nada barrou o Chrome, mas (a) um desafio foi servido e
-   **resolvido no próprio navegador** (resposta bem-sucedida depois na mesma
-   rota, ou cookie de liberação depois dele: `cf_clearance`, `aws-waf-token`) →
-   confiança `alta`; (b) um **cookie de liberação** definido por uma requisição
-   foi reenviado nas seguintes; (c) há **token dinâmico** com origem em resposta
-   anterior (`token-origin`). Confiança `media` com (b) ou token `strong`;
-   `baixa` se o único indício for "possível origem". Cookie de **presença**
-   (`__cf_bm`, `datadome`, `_px3`, `bm_sv`…) reenviado **não** dispara priming
-   (qualquer cliente com cookie jar o reenvia): vira linha em `reasons`.
-4. `chrome-normal-basta`: documento principal respondeu, nenhum bloqueio nas
-   rotas da aplicação, nenhum desafio resolvido e nenhum token. Proteção
-   presente passiva (cookie/script) não muda isso, mas aparece nos achados.
-   Confiança `media` com ≥ 5 requisições, senão `baixa`; **nunca `alta`** (uma
-   navegação não prova).
+1. `undetermined`: session marked partial/incomplete by the Core, or no
+   main HTML document with a response, or fewer than 2 requests.
+2. `cloakbrowser-candidate`: **regular Chrome was blocked** on the main
+   navigation or on an application route **and there was no later successful
+   response on the same route** (not even after a challenge), with at least one
+   block finding of `high` confidence (vendor challenge/captcha/403, or
+   403/429/503 on the main document). When there is only a CAPTCHA script
+   present and the page loaded, it is **not** a candidate. The text says: "regular
+   Chrome was turned away; this **does not prove** that CloakBrowser would get through".
+3. `needs-priming`: nothing blocked Chrome, but (a) a challenge was served and
+   **resolved in the browser itself** (a later successful response on the same
+   route, or a clearance cookie after it: `cf_clearance`, `aws-waf-token`) →
+   confidence `high`; (b) a **clearance cookie** set by a request
+   was sent back in the following ones; (c) there is a **dynamic token** with an origin in an
+   earlier response (`token-origin`). Confidence `medium` with (b) or a `strong` token;
+   `low` if the only indication is a "possible origin". A **presence** cookie
+   (`__cf_bm`, `datadome`, `_px3`, `bm_sv`…) sent back does **not** trigger priming
+   (any client with a cookie jar sends it back): it becomes a line in `reasons`.
+4. `regular-chrome-suffices`: main document responded, no block
+   on the application routes, no resolved challenge and no token. Passive protection
+   present (cookie/script) does not change this, but shows up in the findings.
+   Confidence `medium` with ≥ 5 requests, otherwise `low`; **never `high`** (one
+   navigation does not prove it).
 
-Limites sempre declarados em `recommendation.limits`: amostra (uma navegação),
-site visto só com a allowlist usada, ausência de interação humana, e que
-"bloqueado" é sobre esta captura.
+Limits always declared in `recommendation.limits`: sample (one navigation),
+site seen only with the allowlist used, absence of human interaction, and that
+"blocked" is about this capture.
 
-## 6. Assinaturas (fonte obrigatória)
+## 6. Signatures (mandatory source)
 
-Regra: **só entra na tabela entregue assinatura com fonte consultada**
-(documentação do fornecedor, ou fonte secundária citável, ou fixture do
-projeto). Sem fonte confirmada: fora, listada em §6.2. Fontes consultadas em
-2026-10-31 (leitura de documentação pública, cada página aberta diretamente; nenhum site de terceiro foi
-testado nem contatado para detectar proteção).
+Rule: **only a signature with a consulted source enters the delivered table**
+(vendor documentation, or a citable secondary source, or a project
+fixture). Without a confirmed source: out, listed in §6.2. Sources consulted on
+2026-10-31 (reading of public documentation, each page opened directly; no third-party site was
+tested or contacted to detect protection).
 
-### 6.1 Entregues
+### 6.1 Delivered
 
-`kind`: **F** = documentação do fornecedor; **S** = fonte secundária (limita a
-confiança a `baixa`/`media`); **P** = fixture do projeto.
+`kind`: **F** = vendor documentation; **S** = secondary source (limits
+confidence to `low`/`medium`); **P** = project fixture.
 
-| id | Fornecedor | Sinal | Papel | Fonte | Citação |
+| id | Vendor | Signal | Role | Source | Quote |
 |---|---|---|---|---|---|
-| cf-001 | Cloudflare | cookie `__cf_bm` | gestão de bots (presença) | F https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/ | "`__cf_bm` … Bot Management, Bot Fight Mode" |
-| cf-002 | Cloudflare | cookie `cf_clearance` | desafio resolvido | F (mesma) | "Records that a visitor completed a challenge" |
-| cf-003 | Cloudflare | cookie `__cfseq` | ordem/tempo de requisições (produtos de bot) | F (mesma) | "Tracks the order and timing of a user's requests" |
-| cf-004 | Cloudflare | cookies `cf_chl_rc_i`, `cf_chl_rc_ni`, `cf_chl_rc_m` | plataforma de desafio | F (mesma) | "Challenge Platform" |
-| cf-005 | Cloudflare | resposta `cf-mitigated: challenge` | **desafio servido** | F https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/ | "present and set to `challenge`" |
-| cf-006 | Cloudflare | resposta `cf-ray` | passa pela Cloudflare (fraco) | F https://developers.cloudflare.com/fundamentals/reference/http-headers/ | "`Cf-Ray` … Added response headers" |
-| cf-007 | Cloudflare | script `challenges.cloudflare.com/turnstile/v0/api.js` | widget Turnstile | F https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/ | "https://challenges.cloudflare.com/turnstile/v0/api.js" |
-| cf-008 | Cloudflare | campo `cf-turnstile-response` | token do Turnstile | F (mesma) | "`cf-turnstile-response`" |
-| aw-001 | AWS WAF | resposta `x-amzn-waf-action: challenge` com 202, ou `captcha` com 405 | **desafio/CAPTCHA servido** | F https://docs.aws.amazon.com/waf/latest/developerguide/waf-captcha-and-challenge-actions.html | "header `x-amzn-waf-action` with a value of `challenge` … `202`"; "`captcha` … `405 Method Not Allowed`" |
-| aw-002 | AWS WAF | cookie `aws-waf-token` | token de desafio | F https://docs.aws.amazon.com/waf/latest/developerguide/waf-tokens-details.html | "stored in a cookie named `aws-waf-token`" |
-| dd-001 | DataDome | cookie `datadome` | identificador/token | F https://docs.datadome.co/reference/validate-request | "`Set-Cookie: datadome=…`" |
-| dd-002 | DataDome | resposta `x-datadome: protected` | passa pelo DataDome | F (mesma) | "`X-DataDome: protected`" |
-| dd-003 | DataDome | resposta `x-datadomeresponse: 403` | **decisão de bloqueio/desafio** | F (mesma) | "`X-DataDomeResponse: 403` … allow (200) or challenge (any other status)" |
-| dd-004 | DataDome | requisição `x-datadome-clientid` | id de cliente enviado pelo navegador/módulo | F (mesma) | "request header checked first … ClientID" |
+| cf-001 | Cloudflare | cookie `__cf_bm` | bot management (presence) | F https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/ | "`__cf_bm` … Bot Management, Bot Fight Mode" |
+| cf-002 | Cloudflare | cookie `cf_clearance` | challenge resolved | F (same) | "Records that a visitor completed a challenge" |
+| cf-003 | Cloudflare | cookie `__cfseq` | order/timing of requests (bot products) | F (same) | "Tracks the order and timing of a user's requests" |
+| cf-004 | Cloudflare | cookies `cf_chl_rc_i`, `cf_chl_rc_ni`, `cf_chl_rc_m` | challenge platform | F (same) | "Challenge Platform" |
+| cf-005 | Cloudflare | response `cf-mitigated: challenge` | **challenge served** | F https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/ | "present and set to `challenge`" |
+| cf-006 | Cloudflare | response `cf-ray` | goes through Cloudflare (weak) | F https://developers.cloudflare.com/fundamentals/reference/http-headers/ | "`Cf-Ray` … Added response headers" |
+| cf-007 | Cloudflare | script `challenges.cloudflare.com/turnstile/v0/api.js` | Turnstile widget | F https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/ | "https://challenges.cloudflare.com/turnstile/v0/api.js" |
+| cf-008 | Cloudflare | field `cf-turnstile-response` | Turnstile token | F (same) | "`cf-turnstile-response`" |
+| aw-001 | AWS WAF | response `x-amzn-waf-action: challenge` with 202, or `captcha` with 405 | **challenge/CAPTCHA served** | F https://docs.aws.amazon.com/waf/latest/developerguide/waf-captcha-and-challenge-actions.html | "header `x-amzn-waf-action` with a value of `challenge` … `202`"; "`captcha` … `405 Method Not Allowed`" |
+| aw-002 | AWS WAF | cookie `aws-waf-token` | challenge token | F https://docs.aws.amazon.com/waf/latest/developerguide/waf-tokens-details.html | "stored in a cookie named `aws-waf-token`" |
+| dd-001 | DataDome | cookie `datadome` | identifier/token | F https://docs.datadome.co/reference/validate-request | "`Set-Cookie: datadome=…`" |
+| dd-002 | DataDome | response `x-datadome: protected` | goes through DataDome | F (same) | "`X-DataDome: protected`" |
+| dd-003 | DataDome | response `x-datadomeresponse: 403` | **block/challenge decision** | F (same) | "`X-DataDomeResponse: 403` … allow (200) or challenge (any other status)" |
+| dd-004 | DataDome | request `x-datadome-clientid` | client id sent by the browser/module | F (same) | "request header checked first … ClientID" |
 | dd-005 | DataDome | script `js.datadome.co/tags.js` | JS tag | F https://docs.datadome.co/docs/javascript-tag | "`<script src=\"https://js.datadome.co/tags.js\" async>`" |
-| dd-006 | DataDome | requisição `api-js.datadome.co/js/` | coleta de sinais | F (mesma) | "`api-js.datadome.co/js/` … fingerprint endpoint, POST" |
-| dd-007 | DataDome | host `*.captcha-delivery.com` | página/iframe de bloqueio | F (mesma) | "`ct.captcha-delivery.com` … `frame-src … *.captcha-delivery.com`" |
-| hm-001 | HUMAN (PerimeterX) | cookies `_px`, `_px2`, `_px3`, `_pxhd`, `_pxvid`, `pxcts`, `_pxde`, `_pxac`, `_pxttld`, prefixo `_pxff_` | sensor/sessão de detecção de bots | F https://docs.humansecurity.com/applications-and-accounts/docs/use-of-cookies-web-storage | tabela "Browser cookies" |
-| ak-001 | Akamai | cookie `bm_sv` | Bot Manager (presença) | F https://techdocs.akamai.com/identity-cloud/docs/hosted-login-cookies-and-local-storage-1 | "Cookie used by Akamai Bot Manager to help differentiate … humans and … bots" |
-| ak-002 | Akamai | cookie `_abck` | provável Bot Manager | S (lista de cookies da própria Akamai: https://www.akamai.com/legal/manage-cookie-preferences confirma que o cookie existe, **não** descreve a função; função em https://scrapfly.io/blog/posts/akamai-bot-manager-understanding-abck-cookies-and-sensor-data) | "_abck … First Party … Strictly necessary" |
-| ak-003 | Akamai | cookie `bm_sz` | provável Bot Manager | S https://www.mayoclinic.org/es/about-this-site/privacy-policy/cookie-list | "bm_sz … bot/human analysis" |
-| im-001 | Imperva | cookies `incap_ses_*`, `visid_incap_*` | sessão/visitante (Incapsula) | S https://www.fundacionbancosantander.com/en/cookies | "incap_ses_* … maintain current sessions"; "Visid_incap_# … tracks the HTTP request" |
-| rc-001 | Google reCAPTCHA | script `www.google.com/recaptcha/api.js` | widget v2/v3 | F https://developers.google.com/recaptcha/docs/display | "https://www.google.com/recaptcha/api.js" |
-| rc-002 | Google reCAPTCHA | script `www.google.com/recaptcha/enterprise.js` | widget Enterprise | F https://docs.cloud.google.com/recaptcha/docs/instrument-web-pages | "https://www.google.com/recaptcha/enterprise.js?render=KEY_ID" |
-| rc-003 | Google reCAPTCHA | campo `g-recaptcha-response` | token | F https://developers.google.com/recaptcha/docs/display | "g-recaptcha-response POST parameter" |
+| dd-006 | DataDome | request `api-js.datadome.co/js/` | signal collection | F (same) | "`api-js.datadome.co/js/` … fingerprint endpoint, POST" |
+| dd-007 | DataDome | host `*.captcha-delivery.com` | block page/iframe | F (same) | "`ct.captcha-delivery.com` … `frame-src … *.captcha-delivery.com`" |
+| hm-001 | HUMAN (PerimeterX) | cookies `_px`, `_px2`, `_px3`, `_pxhd`, `_pxvid`, `pxcts`, `_pxde`, `_pxac`, `_pxttld`, prefix `_pxff_` | bot detection sensor/session | F https://docs.humansecurity.com/applications-and-accounts/docs/use-of-cookies-web-storage | "Browser cookies" table |
+| ak-001 | Akamai | cookie `bm_sv` | Bot Manager (presence) | F https://techdocs.akamai.com/identity-cloud/docs/hosted-login-cookies-and-local-storage-1 | "Cookie used by Akamai Bot Manager to help differentiate … humans and … bots" |
+| ak-002 | Akamai | cookie `_abck` | probable Bot Manager | S (Akamai's own cookie list: https://www.akamai.com/legal/manage-cookie-preferences confirms the cookie exists, does **not** describe the function; function at https://scrapfly.io/blog/posts/akamai-bot-manager-understanding-abck-cookies-and-sensor-data) | "_abck … First Party … Strictly necessary" |
+| ak-003 | Akamai | cookie `bm_sz` | probable Bot Manager | S https://www.mayoclinic.org/es/about-this-site/privacy-policy/cookie-list | "bm_sz … bot/human analysis" |
+| im-001 | Imperva | cookies `incap_ses_*`, `visid_incap_*` | session/visitor (Incapsula) | S https://www.fundacionbancosantander.com/en/cookies | "incap_ses_* … maintain current sessions"; "Visid_incap_# … tracks the HTTP request" |
+| rc-001 | Google reCAPTCHA | script `www.google.com/recaptcha/api.js` | v2/v3 widget | F https://developers.google.com/recaptcha/docs/display | "https://www.google.com/recaptcha/api.js" |
+| rc-002 | Google reCAPTCHA | script `www.google.com/recaptcha/enterprise.js` | Enterprise widget | F https://docs.cloud.google.com/recaptcha/docs/instrument-web-pages | "https://www.google.com/recaptcha/enterprise.js?render=KEY_ID" |
+| rc-003 | Google reCAPTCHA | field `g-recaptcha-response` | token | F https://developers.google.com/recaptcha/docs/display | "g-recaptcha-response POST parameter" |
 | hc-001 | hCaptcha | script `js.hcaptcha.com/1/api.js` | widget | F https://docs.hcaptcha.com/ | "https://js.hcaptcha.com/1/api.js" |
-| hc-002 | hCaptcha | campo `h-captcha-response` | token | F (mesma) | "adds an `h-captcha-response` token to the form submission" |
-| f5-001 | F5 | caminho `/TSPD/` | proteção (referência sozinha não bloqueia) | P `core/src/assess.rs` (regras `marker("/TSPD/")`) e `docs/05-caso-referencia-detran.md` (captura do caso de referência) | "Separar proteção (/TSPD/, cookies TS*) da aplicação" |
+| hc-002 | hCaptcha | field `h-captcha-response` | token | F (same) | "adds an `h-captcha-response` token to the form submission" |
+| f5-001 | F5 | path `/TSPD/` | protection (a reference alone does not block) | P `core/src/assess.rs` (rules `marker("/TSPD/")`) and `docs/05-caso-referencia-detran.md` (capture of the reference case) | "Separar proteção (/TSPD/, cookies TS*) da aplicação" (Separate protection (/TSPD/, TS* cookies) from the application) |
 
-Fixtures sintéticas (loopback) que **imitam** cada sinal acima para os testes
-são rotuladas como tal (`synthetic`): elas provam o detector, não a existência
-da proteção em nenhum site real.
+Synthetic fixtures (loopback) that **imitate** each signal above for the tests
+are labeled as such (`synthetic`): they prove the detector, not the existence
+of the protection on any real site.
 
-### 6.2 Fora da tabela (fonte não confirmada)
+### 6.2 Outside the table (unconfirmed source)
 
-Não entram até haver fonte do fornecedor ou captura própria autorizada:
-Kasada (`x-kpsdk-ct`, `x-kpsdk-cd`, `x-kpsdk-v`, `ips.js`: só fontes de
-terceiros que vendem contorno); Imperva `reese84`, `X-Iinfo`, `nlbi_*`; Akamai
-`ak_bmsc` (fontes divergem sobre o dono do cookie); hosts de coletor
-PerimeterX/HUMAN (`*.px-cdn.net`, `client.perimeterx.net`: não confirmados);
-Cloudflare `/cdn-cgi/challenge-platform/` e `server: cloudflare` (não aparecem
-na documentação consultada); `challenge.js` do AWS WAF (o host é por cliente);
-HUMAN/PerimeterX com `_px3` isolado já está coberto por hm-001.
+They do not enter until there is a vendor source or an authorized capture of our own:
+Kasada (`x-kpsdk-ct`, `x-kpsdk-cd`, `x-kpsdk-v`, `ips.js`: only third-party
+sources that sell workarounds); Imperva `reese84`, `X-Iinfo`, `nlbi_*`; Akamai
+`ak_bmsc` (sources diverge on the owner of the cookie); PerimeterX/HUMAN
+collector hosts (`*.px-cdn.net`, `client.perimeterx.net`: unconfirmed);
+Cloudflare `/cdn-cgi/challenge-platform/` and `server: cloudflare` (they do not appear
+in the documentation consulted); AWS WAF `challenge.js` (the host is per customer);
+HUMAN/PerimeterX with `_px3` alone is already covered by hm-001.
 
-## 7. Interface com a Core
+## 7. Interface with the Core
 
-Combinada só a interface; a Core não precisa mudar o modelo:
+Only the interface is agreed; the Core does not need to change the model:
 
-1. `site_profile` consome `SessionV1` + `&dyn BodySource` (já existentes,
-   `core/src/model`, `core/src/search.rs`) e `core::flow::value_origins`.
-2. Os ids de evidência são os de `LogicalRequest.id`/`Attempt.id`.
-3. A redação de valores segue a política da Core (padrão redigido).
-4. Pedido à Core: expor `site_profile` como ferramenta de leitura em
+1. `site_profile` consumes `SessionV1` + `&dyn BodySource` (already existing,
+   `core/src/model`, `core/src/search.rs`) and `core::flow::value_origins`.
+2. The evidence ids are those of `LogicalRequest.id`/`Attempt.id`.
+3. Value redaction follows the Core policy (redacted by default).
+4. Request to the Core: expose `site_profile` as a read tool in
    `docs/16-mcp-contrato.md` (`site_profile(session_id, target_request_id?)`),
-   chamando `scrapelens_recon::site_profile`. A Captura entrega a função; o
-   registro da ferramenta no servidor MCP é da Core/servidor.
+   calling `scrapelens_recon::site_profile`. Capture delivers the function; the
+   registration of the tool in the MCP server belongs to the Core/server.
 
-## 8. Testes e critérios de aceite
+## 8. Tests and acceptance criteria
 
-Só loopback e fixtures sintéticas; nada de site real de terceiros.
+Only loopback and synthetic fixtures; no real third-party site.
 
-- Unitários (`capture.rs`): `Allowlist` (curingas, portas, IP literal,
-  userinfo, esquemas, listas largas), regras do resolvedor, `start` sem
-  allowlist, classes de efeito.
-- `recon/`: um teste por assinatura entregue (sessão sintética em memória),
-  regra "marcador sozinho não bloqueia", recomendação nos quatro valores,
-  redação, sessões parciais.
-- Vivos (`#[ignore]`, Chrome headless, servidor loopback do próprio teste):
-  `live_allowlist_cycle` (`navigate` permitido/recusado, subrecurso de host não
-  listado e IP literal em `blockedHosts`, outra porta em `violations`,
-  encerramento gracioso com NetLog completo), `second_cdp_client_cooperative` e
-  `second_cdp_client_never_resumes`, `agent_first_action_is_captured`, e a cadeia captura → importação →
-  `site_profile` (`recon/scripts/live_e2e.sh`: três servidores em loopback que
-  imitam sinais documentados da Cloudflare: site comum, desafio sem solução,
-  desafio resolvido no navegador).
+- Unit (`capture.rs`): `Allowlist` (wildcards, ports, literal IP,
+  userinfo, schemes, broad lists), resolver rules, `start` without an
+  allowlist, effect classes.
+- `recon/`: one test per delivered signature (in-memory synthetic session),
+  rule "a marker alone does not block", recommendation in the four values,
+  redaction, partial sessions.
+- Live (`#[ignore]`, headless Chrome, the test's own loopback server):
+  `live_allowlist_cycle` (allowed/refused `navigate`, subresource of an unlisted host
+  and literal IP in `blockedHosts`, another port in `violations`,
+  graceful shutdown with a complete NetLog), `second_cdp_client_cooperative` and
+  `second_cdp_client_never_resumes`, `agent_first_action_is_captured`, and the chain capture → import →
+  `site_profile` (`recon/scripts/live_e2e.sh`: three loopback servers
+  that imitate documented Cloudflare signals: ordinary site, unsolved challenge,
+  challenge resolved in the browser).
 
-## 9. Resultados e decisões abertas
+## 9. Results and open decisions
 
-Placar (2026-10-31, macOS arm64, Chrome 156.0.8078.74), depois da extração da
-crate `capture/`, do portão do CDP exposto e da correção dos achados da
-revisão de segurança (M2, M3, R1 a R4):
+Scoreboard (2026-10-31, macOS arm64, Chrome 156.0.8078.74), after the extraction of the
+`capture/` crate, the exposed-CDP gate and the fix of the security
+review findings (M2, M3, R1 to R4):
 
-| Suíte | Resultado |
+| Suite | Result |
 |---|---|
-| `capture/` `cargo test` | 53 passed, 8 ignored (vivos); `clippy --all-targets -D warnings` limpo; `cargo tree`: só `scrapelens-core`, `serde`, `serde_json`, `tungstenite` e `libc` (0 `tauri`) |
-| `capture/` vivos (`--ignored`, Chrome headless) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (os 8 caminhos do PoC), `live_planted_symlinks_are_not_followed` (PoC de symlink), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_swapped_session_dir_fails_the_stop_without_touching_outside` (A4-B5, A6-B5), `live_any_write_failure_rescues_the_capture_files` (A5-B2), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` e `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 passam; `live_recon_scenarios` só roda com `SL_RECON_E2E_DIR` (é o passo do `live_e2e.sh`) |
-| `recon/` `cargo test` | 26 passed (tabela = §6.1, uma fixture por assinatura, confiança, recomendação nos 4 valores, redação, ordem no tempo, R1 a R4); clippy limpo |
-| `recon/scripts/live_e2e.sh` | 3/3: site comum → `chrome-normal-basta`; desafio sem solução → `candidato-a-cloakbrowser` (alta); desafio resolvido → `precisa-de-priming` (alta) |
-| `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy limpo (adaptador fino do App) |
-| `tests/aceite/check_multi_target.py` (captura comum, via `live_bodies_cycle` do App) | OK: 16/16 NetLog, ≥15/16 CDP |
+| `capture/` `cargo test` | 53 passed, 8 ignored (live); `clippy --all-targets -D warnings` clean; `cargo tree`: only `scrapelens-core`, `serde`, `serde_json`, `tungstenite` and `libc` (0 `tauri`) |
+| `capture/` live (`--ignored`, headless Chrome) | `live_allowlist_cycle`, `live_port_gap_is_reported_on_all_paths` (the 8 PoC paths), `live_planted_symlinks_are_not_followed` (symlink PoC), `live_netlog_swap_race_does_not_write_through_a_symlink` (R3), `live_swapped_session_dir_fails_the_stop_without_touching_outside` (A4-B5, A6-B5), `live_any_write_failure_rescues_the_capture_files` (A5-B2), `live_inherited_fds_do_not_leak_into_chrome` (R9), `live_navigate_honours_its_timeout_when_chrome_is_frozen` (R12), `live_oversized_pipe_message_marks_the_capture_incomplete` and `live_oversized_websocket_message_marks_the_capture_incomplete` (A3-B2, A4-B2), `live_pipe_opens_no_port_and_exposed_port_is_loopback_only`, `second_cdp_client_*`, `agent_first_action_is_captured`: 8/8 pass; `live_recon_scenarios` only runs with `SL_RECON_E2E_DIR` (it is the `live_e2e.sh` step) |
+| `recon/` `cargo test` | 26 passed (table = §6.1, one fixture per signature, confidence, recommendation in the 4 values, redaction, order in time, R1 to R4); clippy clean |
+| `recon/scripts/live_e2e.sh` | 3/3: ordinary site → `regular-chrome-suffices`; unsolved challenge → `cloakbrowser-candidate` (high); challenge resolved → `needs-priming` (high) |
+| `src-tauri` `cargo test --lib` | 31 passed, 8 ignored; clippy clean (thin adapter of the App) |
+| `tests/aceite/check_multi_target.py` (regular capture, via the App's `live_bodies_cycle`) | OK: 16/16 NetLog, ≥15/16 CDP |
 
-Os números acima são do fechamento de 2026-10-31. Os placares atuais de `capture`, `recon` e
-`src-tauri` nas plataformas (macOS e Linux) estão em `docs/21-linux.md` §1 e §7.1.
+The numbers above are from the 2026-10-31 closing. The current scoreboards of `capture`, `recon` and
+`src-tauri` on the platforms (macOS and Linux) are in `docs/21-linux.md` §1 and §7.1.
 
-Achados que mudaram o contrato: (1) o resolvedor do Chrome 156 **também nega IP
-literal** (§2.2); (2) a lacuna real é a **porta**; (3) `session.requests` não é
-cronológica (§5.2); (4) cookie de presença reutilizado não é priming (§5.3);
-(5) a retomada do alvo por qualquer cliente libera o alvo (§3.5).
+Findings that changed the contract: (1) the Chrome 156 resolver **also denies literal
+IP** (§2.2); (2) the real gap is the **port**; (3) `session.requests` is not
+chronological (§5.2); (4) a reused presence cookie is not priming
+(§5.3); (5) the resume of the target by any client releases the target (§3.5).
 
-Limites desta entrega: as sessões do `live_e2e` vêm de servidores que **imitam**
-os sinais; elas provam o detector, não a presença de proteção em site algum.
-Nenhum site real de terceiros foi acessado: os servidores são loopback e o script de terceiro do cenário "desafio sem solução" aponta para um host fictício (`turnstile.blocked.invalid.test`), que a allowlist nega. As assinaturas de fornecedor vêm de
-documentação lida em 2026-10-31; os fornecedores mudam sinais sem aviso. O
-Os limites acima são do detector, não do transporte. O `site_profile` **é** ferramenta do
-servidor MCP (`mcp/src/server.rs`, `site_profile`), e o encadeamento
-`start_capture`→`navigate`→`capture_status`→`stop_capture` está no mesmo servidor: ele guarda o
-`capture_id`, exige a confirmação do usuário no `start_capture` e devolve o `session_id` que
+Limits of this delivery: the `live_e2e` sessions come from servers that **imitate**
+the signals; they prove the detector, not the presence of protection on any site.
+No real third-party site was accessed: the servers are loopback and the third-party script of the "unsolved challenge" scenario points to a fictitious host (`turnstile.blocked.invalid.test`), which the allowlist denies. The vendor signatures come from
+documentation read on 2026-10-31; vendors change signals without notice. The
+The limits above are about the detector, not the transport. `site_profile` **is** a tool of the
+MCP server (`mcp/src/server.rs`, `site_profile`), and the chaining
+`start_capture`→`navigate`→`capture_status`→`stop_capture` is in the same server: it keeps the
+`capture_id`, requires user confirmation on `start_capture` and returns the `session_id` that
 `list_requests`, `get_request`, `get_body`, `search_bodies`, `diff_requests`, `diff_sessions`,
-`trace_value` e o próprio `site_profile` aceitam. Esta seção descreve o detector e o que ele
-prova; a lista de ferramentas e a confirmação são do `mcp/`.
+`trace_value` and `site_profile` itself accept. This section describes the detector and what it
+proves; the tool list and the confirmation belong to `mcp/`.
 
-Perguntas ao líder, com a recomendação da Captura:
+Questions to the leader, with Capture's recommendation:
 
-1. **Allowlist estrita vs. terceiros** (§2.2): manter estrita com 2 passadas
-   (`terceiro-bloqueado` indica o que liberar).
-2. **`act`** fora desta onda (§1): manter assim; o agente age pela porta CDP.
-3. **`indeterminado`** como quarto valor da recomendação: aceitar.
-4. **Crate novo `recon/`** fora de `src-tauri` e `core`: aceitar (testes rápidos,
-   reaproveitável pelo servidor MCP sem puxar o Tauri).
-5. **Quem guarda o `capture_id` e confirma `start_capture`**: o servidor MCP
-   (Core ou outro agente a definir); a Captura entrega `BrowserCapture`.
+1. **Strict allowlist vs. third parties** (§2.2): keep it strict with 2 passes
+   (`third-party-blocked` indicates what to release).
+2. **`act`** out of this wave (§1): keep it so; the agent acts through the CDP port.
+3. **`undetermined`** as the fourth value of the recommendation: accept.
+4. **New crate `recon/`** outside `src-tauri` and `core`: accept (fast tests,
+   reusable by the MCP server without pulling in Tauri).
+5. **Who keeps the `capture_id` and confirms `start_capture`**: the MCP server
+   (Core or another agent to be defined); Capture delivers `BrowserCapture`.

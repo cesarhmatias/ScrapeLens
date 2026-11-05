@@ -1,172 +1,172 @@
-# 20. CAPTCHA do Google na captura do App: o que medimos
+# 20. Google CAPTCHA in the App capture: what we measured
 
-Rodada 13. **Só medição**: nenhum código de produção foi alterado. As flags
-testadas abaixo foram aplicadas apenas num snapshot descartável fora do repositório.
+Round 13. **Measurement only**: no production code was changed. The flags
+tested below were applied only on a disposable snapshot outside the repository.
 
-## 1. Pergunta
+## 1. Question
 
-No App, `Iniciar sessão` com `https://google.com.br` mostrava um CAPTCHA do Google.
-Numa aba anônima do Brave, na mesma máquina e na mesma rede, não aparece. A
-hipótese: a nossa instrumentação seria detectada (CDP, `Runtime.enable`, a pausa
-`waitForDebuggerOnStart`), mais o perfil vazio e os argumentos de laboratório. Qual
-peça, se alguma, causa o CAPTCHA?
+In the App, `Start session` with `https://google.com.br` showed a Google CAPTCHA.
+In an incognito Brave tab, on the same machine and the same network, it does not appear. The
+hypothesis: our instrumentation would be detected (CDP, `Runtime.enable`, the
+`waitForDebuggerOnStart` pause), plus the empty profile and the lab arguments. Which
+piece, if any, causes the CAPTCHA?
 
-## 2. Autorização e limites (cumpridos, com um desvio: §5)
+## 2. Authorization and limits (met, with one deviation: §5)
 
-O usuário autorizou carregar `https://www.google.com.br/` de verdade, só para isto:
+The user authorized actually loading `https://www.google.com.br/`, only for this:
 
-- no máximo 2 rodadas de 4 condições (até 8 carregamentos), **só a página inicial**;
-- pelo menos 60 s entre carregamentos; sem busca, sem login, sem resolver o CAPTCHA,
-  sem outros sites;
-- um perfil temporário novo por carregamento, Chrome com janela visível (sem
-  `--headless`), sem o wrapper;
-- PARAR e avisar se o Google mostrasse "tráfego incomum" ou bloqueasse o IP.
+- at most 2 rounds of 4 conditions (up to 8 loads), **home page only**;
+- at least 60 s between loads; no search, no login, no solving the CAPTCHA,
+  no other sites;
+- a new temporary profile per load, Chrome with a visible window (no
+  `--headless`), without the wrapper;
+- STOP and warn if Google showed "unusual traffic" or blocked the IP.
 
-Foram feitos **8 carregamentos** do Google (duas rodadas de A, B, C, D), mais cargas
-só em loopback para ler `navigator.webdriver`. Nenhuma busca, nenhum login. O
-Google não mostrou `/sorry/`, 429 nem reCAPTCHA em nenhuma carga; a regra de
-parada nunca disparou.
+**8 loads** of Google were made (two rounds of A, B, C, D), plus loopback-only
+loads to read `navigator.webdriver`. No search, no login. Google
+did not show `/sorry/`, 429 or reCAPTCHA on any load; the stop rule
+never fired.
 
-## 3. Método
+## 3. Method
 
-Chrome 156 estável, macOS, NetLog ligado em todas as condições. Os argumentos do
-launcher são os de `capture/src/lib.rs` `chrome_args` no modo `Open` (HEAD `3dda266`),
-sem `--headless`.
+Chrome 156 stable, macOS, NetLog on in all conditions. The launcher
+arguments are those of `capture/src/lib.rs` `chrome_args` in `Open` mode (HEAD `3dda266`),
+without `--headless`.
 
-| Cond. | O que é |
+| Cond. | What it is |
 |---|---|
-| **A** | Chrome **sem nenhum cliente CDP** (sem `--remote-debugging-*`), com **os mesmos argumentos do launcher** (incluindo os de laboratório). A URL vai na linha de comando |
-| **B** | Como A, mas **sem os argumentos de laboratório**: só `--user-data-dir`, `--log-net-log`, **mais `--no-first-run --no-default-browser-check`** (ver desvio abaixo). A URL vai na linha de comando |
-| **C** | **CDP reduzido** por pipe: `Target.setDiscoverTargets`, `Target.setAutoAttach` **sem** `waitForDebuggerOnStart`, `Target.createTarget about:blank`, `Network.enable` e `Target.setAutoAttach` (sem espera) na aba, `Page.navigate`. **Sem** `Page.enable`, **sem** `Runtime.enable`, sem `Network.setCacheDisabled`. Argumentos do launcher |
-| **D** | A **captura completa de hoje** (`scrapelens_capture::run`, rede aberta): `Network.enable` + `Page.enable` + `Runtime.enable`, `setAutoAttach` com `waitForDebuggerOnStart`, `Network.setCacheDisabled`, corpos. Argumentos do launcher |
+| **A** | Chrome **with no CDP client** (no `--remote-debugging-*`), with **the same launcher arguments** (including the lab ones). The URL goes on the command line |
+| **B** | Like A, but **without the lab arguments**: only `--user-data-dir`, `--log-net-log`, **plus `--no-first-run --no-default-browser-check`** (see deviation below). The URL goes on the command line |
+| **C** | **Reduced CDP** over a pipe: `Target.setDiscoverTargets`, `Target.setAutoAttach` **without** `waitForDebuggerOnStart`, `Target.createTarget about:blank`, `Network.enable` and `Target.setAutoAttach` (no wait) on the tab, `Page.navigate`. **No** `Page.enable`, **no** `Runtime.enable`, no `Network.setCacheDisabled`. Launcher arguments |
+| **D** | Today's **full capture** (`scrapelens_capture::run`, open network): `Network.enable` + `Page.enable` + `Runtime.enable`, `setAutoAttach` with `waitForDebuggerOnStart`, `Network.setCacheDisabled`, bodies. Launcher arguments |
 
-Desvio em B: o literal "só user-data-dir e NetLog" **não carrega a URL**. Sem
-`--no-first-run`, o Chrome mostra o fluxo de boas-vindas e ignora a URL da linha de
-comando (medido: nenhuma requisição à sonda local). As duas flags só afetam a
+Deviation in B: the literal "only user-data-dir and NetLog" **does not load the URL**. Without
+`--no-first-run`, Chrome shows the welcome flow and ignores the command-line
+URL (measured: no request to the local probe). The two flags only affect the
 interface.
 
-**Como cada resultado foi lido** (sem print e sem dados pessoais): do NetLog, só URL
-sem consulta e status. CAPTCHA = alguma requisição para `/sorry/` ou status 429 ou
-URL de `recaptcha`. Status da página principal = os status da requisição de
-`https://www.google.com.br/` (a cadeia 301 → 200).
-**`navigator.webdriver`** foi lido **sem `Runtime.evaluate`** e **sem tocar o
-Google**: uma página local em loopback faz `fetch('/wd?webdriver='+navigator.webdriver)`,
-carregada com os mesmos argumentos de cada condição (em D, pela captura completa).
+**How each result was read** (no screenshots and no personal data): from the NetLog, only the URL
+without query and the status. CAPTCHA = any request to `/sorry/` or status 429 or a
+`recaptcha` URL. Main page status = the statuses of the request for
+`https://www.google.com.br/` (the 301 → 200 chain).
+**`navigator.webdriver`** was read **without `Runtime.evaluate`** and **without touching
+Google**: a local loopback page does `fetch('/wd?webdriver='+navigator.webdriver)`,
+loaded with the same arguments as each condition (in D, through the full capture).
 
-## 4. Resultados
+## 4. Results
 
-### 4.1 O que o Google fez (8 carregamentos)
+### 4.1 What Google did (8 loads)
 
-| Rodada | Ordem | Cond. | Início | Página principal | `/sorry/` | 429 | reCAPTCHA | Requisições no NetLog |
+| Round | Order | Cond. | Start | Main page | `/sorry/` | 429 | reCAPTCHA | Requests in NetLog |
 |---:|---:|---|---|---|---|---|---|---:|
-| 1 | 1º | A | 23:02:24 | 301 → 200 | não | não | não | 50 |
-| 1 | 2º | B | 23:04:18 | 301 → 200 | não | não | não | 73 |
-| 1 | 3º | C | 23:05:54 | 301, página renderizada (¹) | não | não | não | 59 |
-| 1 | 4º | D | 23:07:32 | 301 → 200 | não | não | não | 56 |
-| 2 | 1º | D | 23:08:16 | 301 → 200 | não | não | não | 55 |
-| 2 | 2º | C | 23:10:04 | 301, página renderizada (¹) | não | não | não | 57 |
-| 2 | 3º | B | 23:11:41 | 301 → 200 | não | não | não | 71 |
-| 2 | 4º | A | 23:13:17 | 301 → 200 | não | não | não | 50 |
+| 1 | 1st | A | 23:02:24 | 301 → 200 | no | no | no | 50 |
+| 1 | 2nd | B | 23:04:18 | 301 → 200 | no | no | no | 73 |
+| 1 | 3rd | C | 23:05:54 | 301, page rendered (¹) | no | no | no | 59 |
+| 1 | 4th | D | 23:07:32 | 301 → 200 | no | no | no | 56 |
+| 2 | 1st | D | 23:08:16 | 301 → 200 | no | no | no | 55 |
+| 2 | 2nd | C | 23:10:04 | 301, page rendered (¹) | no | no | no | 57 |
+| 2 | 3rd | B | 23:11:41 | 301 → 200 | no | no | no | 71 |
+| 2 | 4th | A | 23:13:17 | 301 → 200 | no | no | no | 50 |
 
-(¹) Em C o NetLog mostra a requisição da página só com o 301 (termina em
-`ERR_ABORTED`); a página renderizou mesmo assim, com as dezenas de scripts `/xjs/` e
-recursos do Google devolvendo 200 nas duas rodadas.
+(¹) In C the NetLog shows the page request with only the 301 (it ends in
+`ERR_ABORTED`); the page rendered anyway, with dozens of `/xjs/` scripts and
+Google resources returning 200 in both rounds.
 
-**Nenhuma condição, nas duas rodadas, mostrou CAPTCHA.** Inclusive D, a captura
-completa de hoje. O CAPTCHA que o usuário viu **não reproduziu** com 8 cargas.
+**No condition, in either round, showed a CAPTCHA.** Including D, today's full
+capture. The CAPTCHA the user saw **did not reproduce** with 8 loads.
 
-### 4.2 `navigator.webdriver` (local, sem Google)
+### 4.2 `navigator.webdriver` (local, without Google)
 
 | Cond. | CDP | `navigator.webdriver` |
 |---|---|---|
-| A | nenhum | **false** |
-| B | nenhum | **false** |
-| C | pipe, reduzido | **true** |
-| D | pipe, completo | **true** |
-| C + `--disable-blink-features=AutomationControlled` | pipe, reduzido | **false** |
-| D + `--disable-blink-features=AutomationControlled` | pipe, completo | **false** |
+| A | none | **false** |
+| B | none | **false** |
+| C | pipe, reduced | **true** |
+| D | pipe, full | **true** |
+| C + `--disable-blink-features=AutomationControlled` | pipe, reduced | **false** |
+| D + `--disable-blink-features=AutomationControlled` | pipe, full | **false** |
 
-O `webdriver` fica `true` **com qualquer `--remote-debugging-pipe`**, reduzido ou
-completo: não depende de `Runtime.enable` nem de `waitForDebuggerOnStart`. A flag
-`--disable-blink-features=AutomationControlled` o desfaz mesmo com CDP completo
-(medido na captura completa num snapshot local, fora do repositório). Em C e D o
-`User-Agent` é o mesmo de A e B (`Chrome/156.0.0.0`, sem `HeadlessChrome`), com 5
-plugins e 4 idiomas.
+`webdriver` is `true` **with any `--remote-debugging-pipe`**, reduced or
+full: it does not depend on `Runtime.enable` or `waitForDebuggerOnStart`. The flag
+`--disable-blink-features=AutomationControlled` undoes it even with full CDP
+(measured on the full capture on a local snapshot, outside the repository). In C and D the
+`User-Agent` is the same as in A and B (`Chrome/156.0.0.0`, no `HeadlessChrome`), with 5
+plugins and 4 languages.
 
-### 4.3 Outras observações
+### 4.3 Other observations
 
-- **B gera mais tráfego do Google** (71 a 73 requisições contra 50): sem
-  `--disable-background-networking` e companhia, o Chrome consulta
-  `accounts.google.com/ListAccounts`, atualizações, `clientservices` etc. Os
-  argumentos de laboratório reduzem o ruído do navegador; **não mudaram o que a
-  página principal recebeu**.
-- Com NetLog, o encerramento por `SIGTERM` (A e B, sem CDP) fecha o arquivo; um
-  NetLog sem CDP é viável.
-- Em todas as condições o NetLog registra o carregamento completo da página inicial
-  (cadeia 301 → 200, scripts, fontes e `gen_204`).
+- **B generates more Google traffic** (71 to 73 requests against 50): without
+  `--disable-background-networking` and company, Chrome queries
+  `accounts.google.com/ListAccounts`, updates, `clientservices` etc. The lab
+  arguments reduce browser noise; they **did not change what the main
+  page received**.
+- With NetLog, shutdown by `SIGTERM` (A and B, without CDP) closes the file; a
+  NetLog without CDP is viable.
+- In all conditions the NetLog records the complete load of the home page
+  (301 → 200 chain, scripts, fonts and `gen_204`).
 
-## 5. Limites desta medição (leia antes de concluir)
+## 5. Limits of this measurement (read before concluding)
 
-1. **O CAPTCHA não reproduziu**, então **não se pode apontar a peça que o causa**.
-   Em 8 cargas, nem a captura completa (D) o provocou. Não há evidência de que
-   `Runtime.enable`, a pausa por depurador, o perfil vazio ou os argumentos de
-   laboratório sejam a causa; também não há evidência de que não sejam: a amostra é
-   pequena (2 por condição) e o Google decide por risco (IP, histórico, horário), não
-   por uma peça isolada.
-2. O CAPTCHA do usuário pode ter ocorrido num momento em que o IP já tinha sido
-   marcado (várias cargas automatizadas seguidas, repetidas pelos testes do
-   projeto); isso não foi testado, e testar exigiria forçar o bloqueio, o que a
-   autorização proíbe.
-3. **Desvio no intervalo mínimo.** O pedido era ≥ 60 s entre carregamentos. Entre o
-   fim da rodada 1 (D, 23:07:32) e o início da rodada 2 (D, 23:08:16) o intervalo
-   entre inícios foi de **44 s**; os demais ficaram entre 96 e 114 s. Foi falha do meu
-   encadeamento (a rodada 2 começou sem esperar). Não houve efeito visível (nenhum
-   `/sorry/`, 429 nem reCAPTCHA), mas o limite foi violado uma vez.
-4. Um sinal comprovadamente diferente existe e é detectável por qualquer script do
-   site: `navigator.webdriver === true` na captura (C e D), contra `false` num Chrome
-   sem CDP (A e B). Se o Google usa isso no CAPTCHA, não foi medido.
+1. **The CAPTCHA did not reproduce**, so **the piece that causes it cannot be pointed out**.
+   In 8 loads, not even the full capture (D) provoked it. There is no evidence that
+   `Runtime.enable`, the debugger pause, the empty profile or the lab arguments
+   are the cause; there is also no evidence that they are not: the sample is
+   small (2 per condition) and Google decides by risk (IP, history, time of day), not
+   by an isolated piece.
+2. The user's CAPTCHA may have occurred at a moment when the IP had already been
+   flagged (several automated loads in a row, repeated by the project's tests);
+   this was not tested, and testing would require forcing the block, which the
+   authorization forbids.
+3. **Deviation in the minimum interval.** The request was ≥ 60 s between loads. Between the
+   end of round 1 (D, 23:07:32) and the start of round 2 (D, 23:08:16) the interval
+   between starts was **44 s**; the others were between 96 and 114 s. It was a failure of my
+   chaining (round 2 started without waiting). There was no visible effect (no
+   `/sorry/`, 429 or reCAPTCHA), but the limit was violated once.
+4. A demonstrably different signal exists and is detectable by any script of the
+   site: `navigator.webdriver === true` in the capture (C and D), against `false` in a Chrome
+   without CDP (A and B). Whether Google uses this for the CAPTCHA was not measured.
 
-## 6. Recomendação
+## 6. Recommendation
 
-> **Atualização (2026-11-03):** o item 1 virou a decisão **D7** (`docs/01-decisoes.md`):
-> `--disable-blink-features=AutomationControlled` é PADRÃO em toda captura (App, MCP
-> controlada, pipe e porta), com registro em `capture.chromeArgs`/`notes` e
-> `captureContext` no `site_profile`. Medido de novo em loopback com a captura completa e a
-> controlada: `navigator.webdriver === false`. Os itens 2 a 4 seguem como recomendação.
+> **Update (2026-11-03):** item 1 became decision **D7** (`docs/01-decisoes.md`):
+> `--disable-blink-features=AutomationControlled` is the DEFAULT in every capture (App, controlled
+> MCP, pipe and port), recorded in `capture.chromeArgs`/`notes` and
+> `captureContext` in the `site_profile`. Measured again on loopback with the full capture and the
+> controlled one: `navigator.webdriver === false`. Items 2 to 4 remain as a recommendation.
 
-O que as medições sustentam, em ordem de custo:
+What the measurements support, in order of cost:
 
-1. **Adicionar `--disable-blink-features=AutomationControlled` ao launcher**
-   (captura comum e controlada). Medido: `navigator.webdriver` volta a `false`,
-   mesmo com a captura completa, e a flag não mexe na rede nem no que é capturado.
-   É a diferença visível mais barata entre a captura e um Chrome normal, e remove
-   um sinal que qualquer site lê. Não prova que cura o CAPTCHA (§5.1).
-2. **Modo discreto escalonado** (opção por captura), do menos ao mais intrusivo:
-   - **nível 1, só NetLog** (condição A): nenhum cliente CDP, o navegador é o Chrome
-     normal com perfil e NetLog; perde o CDP (corpos, ExtraInfo, alvos) e a
-     correlação CDP×NetLog, e a navegação é feita pelo usuário;
-   - **nível 2, CDP reduzido** (condição C + a flag do item 1): `Network.enable` e
-     `setAutoAttach` sem `waitForDebuggerOnStart`, sem `Page` nem `Runtime.enable`;
-     mantém corpos e ExtraInfo; perde a garantia de anexar a workers e iframes
-     antes de a primeira requisição sair;
-   - **nível 3, completo** (D, hoje): a fidelidade total que o projeto exige.
-   Usar o nível mais baixo que atenda o objetivo; subir só quando o `site_profile`
-   (ou o usuário) precisar do que ele não dá.
-3. **Se o CAPTCHA reaparecer no App**, repetir uma vez com a flag do item 1 e
-   comparar com o NetLog (`/sorry/`, 429); só então vale a pena testar `Runtime.enable`
-   e `waitForDebuggerOnStart` isoladamente, com cuidado para não esgotar o IP.
-4. **Não mudar** os argumentos de laboratório por causa disto: A e B (com e sem eles)
-   se comportaram igual para o Google; eles servem para reduzir ruído do NetLog.
+1. **Add `--disable-blink-features=AutomationControlled` to the launcher**
+   (regular and controlled capture). Measured: `navigator.webdriver` goes back to `false`,
+   even with the full capture, and the flag does not touch the network or what is captured.
+   It is the cheapest visible difference between the capture and a normal Chrome, and removes
+   a signal that any site reads. It does not prove that it cures the CAPTCHA (§5.1).
+2. **Tiered discreet mode** (per-capture option), from least to most intrusive:
+   - **level 1, NetLog only** (condition A): no CDP client, the browser is the normal
+     Chrome with profile and NetLog; loses CDP (bodies, ExtraInfo, targets) and the
+     CDP×NetLog correlation, and navigation is done by the user;
+   - **level 2, reduced CDP** (condition C + the flag from item 1): `Network.enable` and
+     `setAutoAttach` without `waitForDebuggerOnStart`, without `Page` or `Runtime.enable`;
+     keeps bodies and ExtraInfo; loses the guarantee of attaching to workers and iframes
+     before the first request goes out;
+   - **level 3, full** (D, today): the total fidelity the project requires.
+   Use the lowest level that meets the goal; go up only when the `site_profile`
+   (or the user) needs what it does not give.
+3. **If the CAPTCHA reappears in the App**, repeat once with the flag from item 1 and
+   compare with the NetLog (`/sorry/`, 429); only then is it worth testing `Runtime.enable`
+   and `waitForDebuggerOnStart` in isolation, taking care not to exhaust the IP.
+4. **Do not change** the lab arguments because of this: A and B (with and without them)
+   behaved the same for Google; they serve to reduce NetLog noise.
 
-Pendências para quem for implementar (fora desta rodada): onde o nível é escolhido
-(`CaptureConfig` ou parâmetro do `start_capture`), e como a captura sem CDP (nível 1)
-gera a sessão (importar o NetLog sozinho, com `import_netlog`).
+Open items for whoever implements it (outside this round): where the level is chosen
+(`CaptureConfig` or a parameter of `start_capture`), and how capture without CDP (level 1)
+generates the session (importing the NetLog alone, with `import_netlog`).
 
-## 7. Dados
+## 7. Data
 
-Os NetLogs (com `--net-log-capture-mode=Everything` nas condições A, C e D, que
-inclui cookies do Google), os perfis temporários e as sessões ficaram em `/tmp` fora
-do repositório e **foram apagados** no fim. Nenhuma sessão ou NetLog do Google foi
-commitado. Os scripts (um cliente CDP mínimo por pipe, o servidor da sonda local e o
-leitor de NetLog) ficaram fora do repositório por instrução; o método acima basta para
-repeti-los.
+The NetLogs (with `--net-log-capture-mode=Everything` in conditions A, C and D, which
+includes Google cookies), the temporary profiles and the sessions stayed in `/tmp` outside
+the repository and **were deleted** at the end. No Google session or NetLog was
+committed. The scripts (a minimal CDP client over a pipe, the local probe server and the
+NetLog reader) stayed outside the repository by instruction; the method above is enough to
+repeat them.
