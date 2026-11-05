@@ -181,6 +181,30 @@ fn product_for_slug(slug: &str) -> Option<&'static ChromiumProduct> {
     CHROMIUM_PRODUCTS.iter().find(|p| p.slug == slug)
 }
 
+/// Product slug of a source id: `chrome:Default` and `chrome+flatpak:Default` both give `chrome`.
+fn product_slug(source_id: &str) -> &str {
+    let head = source_id.split(':').next().unwrap_or("");
+    head.split('+').next().unwrap_or("")
+}
+
+/// Packaging variant of a source: a Flatpak or Snap copy of a browser keeps its own
+/// id (`chrome+flatpak:Default`) and label, so it never collides with a native install.
+fn variant_id(variant: &str) -> String {
+    if variant.is_empty() {
+        String::new()
+    } else {
+        format!("+{variant}")
+    }
+}
+
+fn variant_label(variant: &str) -> &'static str {
+    match variant {
+        "flatpak" => " (Flatpak)",
+        "snap" => " (Snap)",
+        _ => "",
+    }
+}
+
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").filter(|v| !v.is_empty()).map(PathBuf::from)
 }
@@ -188,6 +212,7 @@ fn home() -> Option<PathBuf> {
 /// Chromium profiles (`Default`, `Profile 1`, ...) inside a user-data-dir.
 fn chromium_sources(
     product: &'static ChromiumProduct,
+    variant: &str,
     user_data: &Path,
     out: &mut Vec<BrowserCookieSource>,
 ) {
@@ -218,11 +243,12 @@ fn chromium_sources(
             .get(&dir_name)
             .cloned()
             .unwrap_or_else(|| dir_name.clone());
+        let suffix = variant_label(variant);
         out.push(BrowserCookieSource {
-            id: format!("{}:{}", product.slug, dir_name),
+            id: format!("{}{}:{}", product.slug, variant_id(variant), dir_name),
             browser: product.browser.to_string(),
             profile,
-            label: format!("{} — {}", product.browser, dir_name),
+            label: format!("{}{} — {}", product.browser, suffix, dir_name),
             kind: BrowserKind::Chromium,
             db_path: db,
         });
@@ -270,13 +296,13 @@ fn macos_sources() -> Vec<BrowserCookieSource> {
         ];
         for (slug, root) in roots {
             if let Some(product) = product_for_slug(slug) {
-                chromium_sources(product, root, &mut out);
+                chromium_sources(product, "", root, &mut out);
             }
         }
         for profile in firefox_profile_dirs(&app.join("Firefox/Profiles")) {
             let db = profile.join("cookies.sqlite");
             if db.is_file() {
-                out.push(firefox_source(&db, &profile));
+                out.push(firefox_source(&db, &profile, ""));
             }
         }
         for candidate in [
@@ -301,30 +327,44 @@ fn macos_sources() -> Vec<BrowserCookieSource> {
 
 #[cfg(target_os = "linux")]
 fn linux_sources() -> Vec<BrowserCookieSource> {
+    match home() {
+        Some(home) => linux_sources_in(&home),
+        None => Vec::new(),
+    }
+}
+
+/// Linux profile discovery under `home`: native installs, Flatpak and Snap packages.
+/// Flatpak and Snap keep their data under their own roots and are checked separately.
+#[cfg(any(target_os = "linux", test))]
+fn linux_sources_in(home: &Path) -> Vec<BrowserCookieSource> {
     let mut out = Vec::new();
-    if let Some(home) = home() {
-        let config = home.join(".config");
-        let roots: &[(&str, &Path)] = &[
-            ("chrome", &config.join("google-chrome")),
-            ("chromium", &config.join("chromium")),
-            ("brave", &config.join("BraveSoftware/Brave-Browser")),
-            ("edge", &config.join("microsoft-edge")),
-        ];
-        for (slug, root) in roots {
-            if let Some(product) = product_for_slug(slug) {
-                chromium_sources(product, root, &mut out);
-            }
+    let config = home.join(".config");
+    let chromium_roots: &[(&str, &str, PathBuf)] = &[
+        ("chrome", "", config.join("google-chrome")),
+        ("chromium", "", config.join("chromium")),
+        ("brave", "", config.join("BraveSoftware/Brave-Browser")),
+        ("edge", "", config.join("microsoft-edge")),
+        ("chrome", "flatpak", home.join(".var/app/com.google.Chrome/config/google-chrome")),
+        ("chromium", "flatpak", home.join(".var/app/org.chromium.Chromium/config/chromium")),
+        ("brave", "flatpak", home.join(".var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser")),
+        ("edge", "flatpak", home.join(".var/app/com.microsoft.Edge/config/microsoft-edge")),
+        ("chromium", "snap", home.join("snap/chromium/common/chromium")),
+    ];
+    for (slug, variant, root) in chromium_roots {
+        if let Some(product) = product_for_slug(slug) {
+            chromium_sources(product, variant, root, &mut out);
         }
-        let mut firefox_roots = vec![
-            home.join(".mozilla/firefox"),
-            home.join("snap/firefox/common/.mozilla/firefox"),
-        ];
-        for root in firefox_roots.drain(..) {
-            for profile in firefox_profile_dirs(&root) {
-                let db = profile.join("cookies.sqlite");
-                if db.is_file() {
-                    out.push(firefox_source(&db, &profile));
-                }
+    }
+    let firefox_roots: &[(&str, PathBuf)] = &[
+        ("", home.join(".mozilla/firefox")),
+        ("snap", home.join("snap/firefox/common/.mozilla/firefox")),
+        ("flatpak", home.join(".var/app/org.mozilla.firefox/.mozilla/firefox")),
+    ];
+    for (variant, root) in firefox_roots {
+        for profile in firefox_profile_dirs(root) {
+            let db = profile.join("cookies.sqlite");
+            if db.is_file() {
+                out.push(firefox_source(&db, &profile, variant));
             }
         }
     }
@@ -346,16 +386,16 @@ fn firefox_profile_dirs(profiles_root: &Path) -> Vec<PathBuf> {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn firefox_source(db: &Path, profile_dir: &Path) -> BrowserCookieSource {
+fn firefox_source(db: &Path, profile_dir: &Path, variant: &str) -> BrowserCookieSource {
     let profile = profile_dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("default")
         .to_string();
     BrowserCookieSource {
-        id: format!("firefox:{profile}"),
+        id: format!("firefox{}:{profile}", variant_id(variant)),
         browser: "Firefox".to_string(),
-        label: format!("Firefox — {profile}"),
+        label: format!("Firefox{} — {profile}", variant_label(variant)),
         profile,
         kind: BrowserKind::Firefox,
         db_path: db.to_path_buf(),
@@ -476,9 +516,10 @@ fn copy_cookie_db(source: &Path) -> Result<CookieDbCopy, String> {
         let _ = std::fs::remove_dir_all(&dir);
         return Err(format!("copy the cookie database: {error}"));
     }
-    // WAL and SHM follow the copy: without them SQLite does not see the most
-    // recent cookies (Chrome keeps its writes in the WAL).
-    for suffix in ["-wal", "-shm"] {
+    // WAL, SHM and the rollback journal follow the copy: without them SQLite does not
+    // see the most recent cookies (Chrome keeps its writes in the WAL), and a copy taken
+    // in the middle of a transaction is only consistent with its hot journal.
+    for suffix in ["-wal", "-shm", "-journal"] {
         let mut name = source.as_os_str().to_os_string();
         name.push(suffix);
         let side = PathBuf::from(name);
@@ -504,7 +545,7 @@ fn unix_nanos() -> u128 {
 
 #[cfg(test)]
 fn sqlite3_available() -> bool {
-    Command::new("sqlite3")
+    helper_command("sqlite3")
         .arg("-version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -517,8 +558,234 @@ fn sqlite3_available() -> bool {
 /// Runs a query on the copied database and returns the rows separated by TAB.
 /// Text always comes out as `hex(...)`, so name/value/domain never break the
 /// line, even with TAB, quotes or a non-UTF-8 byte.
+/// Runs an external helper (`sqlite3`, `secret-tool`) with the environment it expects.
+/// Inside an AppImage the launcher puts the AppImage's own libraries in
+/// `LD_LIBRARY_PATH`; a system helper then loads those and fails (for example
+/// `undefined symbol: sqlite3_error_offset`). The helper gets the system libraries.
+#[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
+fn helper_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(target_os = "linux")]
+    command.env_remove("LD_LIBRARY_PATH");
+    command
+}
+
+/// Linux system libraries loaded at run time (`dlopen`), so the import needs no helper
+/// command: the SQLite library that WebKit already uses for the App, and the libsecret
+/// client that Chrome already links for its cookie key. An AppImage's environment and
+/// a missing `sqlite3` or `secret-tool` package cannot break it. `None` means the
+/// library is not there, and the caller falls back to the command.
+#[cfg(target_os = "linux")]
+mod native {
+    use std::ffi::{c_char, c_int, c_void, CStr, CString};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+    use std::sync::OnceLock;
+
+    const SQLITE_OK: c_int = 0;
+    const SQLITE_ROW: c_int = 100;
+    const SQLITE_DONE: c_int = 101;
+    const SQLITE_OPEN_READWRITE: c_int = 0x2;
+
+    type OpenV2 = unsafe extern "C" fn(*const c_char, *mut *mut c_void, c_int, *const c_char) -> c_int;
+    type PrepareV2 = unsafe extern "C" fn(*mut c_void, *const c_char, c_int, *mut *mut c_void, *mut *const c_char) -> c_int;
+    type Step = unsafe extern "C" fn(*mut c_void) -> c_int;
+    type ColumnCount = unsafe extern "C" fn(*mut c_void) -> c_int;
+    type ColumnText = unsafe extern "C" fn(*mut c_void, c_int) -> *const c_char;
+    type Finalize = unsafe extern "C" fn(*mut c_void) -> c_int;
+    type Close = unsafe extern "C" fn(*mut c_void) -> c_int;
+    type ErrMsg = unsafe extern "C" fn(*mut c_void) -> *const c_char;
+
+    struct Sqlite {
+        open_v2: OpenV2,
+        prepare_v2: PrepareV2,
+        step: Step,
+        column_count: ColumnCount,
+        column_text: ColumnText,
+        finalize: Finalize,
+        close: Close,
+        errmsg: ErrMsg,
+    }
+
+    /// Opens a shared library by name, or `None` when it is not installed.
+    fn open_library(name: &str) -> Option<usize> {
+        let name = CString::new(name).ok()?;
+        // SAFETY: a plain dlopen of a system library; the handle is kept for the process lifetime.
+        let handle = unsafe { libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+        (!handle.is_null()).then_some(handle as usize)
+    }
+
+    /// The address of a symbol in a library opened by `open_library`.
+    fn symbol(handle: usize, name: &str) -> Option<*mut c_void> {
+        let name = CString::new(name).ok()?;
+        // SAFETY: `handle` came from dlopen; a missing symbol yields NULL, which is checked.
+        let address = unsafe { libc::dlsym(handle as *mut c_void, name.as_ptr()) };
+        (!address.is_null()).then_some(address)
+    }
+
+    fn sqlite_api() -> Option<&'static Sqlite> {
+        static API: OnceLock<Option<Sqlite>> = OnceLock::new();
+        API.get_or_init(|| {
+            let handle = open_library("libsqlite3.so.0")?;
+            // SAFETY: each address is the documented SQLite C API function with this signature.
+            unsafe {
+                Some(Sqlite {
+                    open_v2: std::mem::transmute::<*mut c_void, OpenV2>(symbol(handle, "sqlite3_open_v2")?),
+                    prepare_v2: std::mem::transmute::<*mut c_void, PrepareV2>(symbol(handle, "sqlite3_prepare_v2")?),
+                    step: std::mem::transmute::<*mut c_void, Step>(symbol(handle, "sqlite3_step")?),
+                    column_count: std::mem::transmute::<*mut c_void, ColumnCount>(symbol(handle, "sqlite3_column_count")?),
+                    column_text: std::mem::transmute::<*mut c_void, ColumnText>(symbol(handle, "sqlite3_column_text")?),
+                    finalize: std::mem::transmute::<*mut c_void, Finalize>(symbol(handle, "sqlite3_finalize")?),
+                    close: std::mem::transmute::<*mut c_void, Close>(symbol(handle, "sqlite3_close")?),
+                    errmsg: std::mem::transmute::<*mut c_void, ErrMsg>(symbol(handle, "sqlite3_errmsg")?),
+                })
+            }
+        })
+        .as_ref()
+    }
+
+    /// Rows of one query on a database file, every column as text (NULL is empty), the
+    /// same values the `sqlite3` command prints. `None` when SQLite is not available.
+    pub(super) fn sqlite_query(db: &Path, sql: &str) -> Option<Result<Vec<Vec<String>>, String>> {
+        let api = sqlite_api()?;
+        let path = CString::new(db.as_os_str().as_bytes()).ok()?;
+        let sql = CString::new(sql).ok()?;
+        // SAFETY: every pointer is either from SQLite (checked for NULL before use) or
+        // from a CString that outlives the call; statements and the handle are released on every path.
+        unsafe {
+            let mut handle: *mut c_void = std::ptr::null_mut();
+            let opened = (api.open_v2)(path.as_ptr(), &mut handle, SQLITE_OPEN_READWRITE, std::ptr::null());
+            if opened != SQLITE_OK {
+                let why = last_error(api, handle);
+                (api.close)(handle);
+                return Some(Err(format!("cookie database could not be opened: {why}")));
+            }
+            let mut stmt: *mut c_void = std::ptr::null_mut();
+            let prepared = (api.prepare_v2)(handle, sql.as_ptr(), -1, &mut stmt, std::ptr::null_mut());
+            if prepared != SQLITE_OK || stmt.is_null() {
+                let why = last_error(api, handle);
+                (api.close)(handle);
+                return Some(Err(format!("cookie query failed: {why}")));
+            }
+            let mut rows = Vec::new();
+            let mut failure = None;
+            loop {
+                match (api.step)(stmt) {
+                    SQLITE_ROW => {
+                        let columns = (api.column_count)(stmt);
+                        let mut row = Vec::with_capacity(columns.max(0) as usize);
+                        for column in 0..columns {
+                            let text = (api.column_text)(stmt, column);
+                            row.push(if text.is_null() {
+                                String::new()
+                            } else {
+                                CStr::from_ptr(text).to_string_lossy().into_owned()
+                            });
+                        }
+                        rows.push(row);
+                    }
+                    SQLITE_DONE => break,
+                    _ => {
+                        failure = Some(last_error(api, handle));
+                        break;
+                    }
+                }
+            }
+            (api.finalize)(stmt);
+            (api.close)(handle);
+            Some(match failure {
+                Some(why) => Err(format!("cookie query failed: {why}")),
+                None => Ok(rows),
+            })
+        }
+    }
+
+    /// SAFETY: `handle` must be a SQLite connection or NULL.
+    unsafe fn last_error(api: &Sqlite, handle: *mut c_void) -> String {
+        if handle.is_null() {
+            return "unknown error".to_string();
+        }
+        let text = (api.errmsg)(handle);
+        if text.is_null() {
+            "unknown error".to_string()
+        } else {
+            CStr::from_ptr(text).to_string_lossy().into_owned()
+        }
+    }
+
+    /// Secret Service lookup of the browser's cookie key, through libsecret. The caller
+    /// decides what an empty result means. `None` when libsecret is not installed.
+    pub(super) fn secret_lookup(application: &str) -> Option<Result<Vec<u8>, String>> {
+        type HashFn = unsafe extern "C" fn(*const c_void) -> u32;
+        type EqualFn = unsafe extern "C" fn(*const c_void, *const c_void) -> c_int;
+        type NewTable = unsafe extern "C" fn(HashFn, EqualFn, Option<unsafe extern "C" fn(*mut c_void)>, Option<unsafe extern "C" fn(*mut c_void)>) -> *mut c_void;
+        type Insert = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> c_int;
+        type Unref = unsafe extern "C" fn(*mut c_void);
+        type Dup = unsafe extern "C" fn(*const c_char) -> *mut c_char;
+        type Free = unsafe extern "C" fn(*mut c_void);
+        type Lookup = unsafe extern "C" fn(*const c_void, *mut c_void, *mut c_void, *mut *mut c_void) -> *mut c_char;
+        type PasswordFree = unsafe extern "C" fn(*mut c_char);
+        type ErrorFree = unsafe extern "C" fn(*mut c_void);
+
+        static LIB: OnceLock<Option<(usize, usize)>> = OnceLock::new();
+        let (secret, glib) = LIB.get_or_init(|| Some((open_library("libsecret-1.so.0")?, open_library("libglib-2.0.so.0")?)))
+            .as_ref()
+            .copied()?;
+        // SAFETY: each symbol is the documented libsecret / GLib function with the signature
+        // declared above; every pointer handed in is valid for the call and released after it.
+        unsafe {
+            let lookup: Lookup = std::mem::transmute(symbol(secret, "secret_password_lookupv_sync")?);
+            let password_free: PasswordFree = std::mem::transmute(symbol(secret, "secret_password_free")?);
+            let new_table: NewTable = std::mem::transmute(symbol(glib, "g_hash_table_new_full")?);
+            let insert: Insert = std::mem::transmute(symbol(glib, "g_hash_table_insert")?);
+            let unref: Unref = std::mem::transmute(symbol(glib, "g_hash_table_unref")?);
+            let dup: Dup = std::mem::transmute(symbol(glib, "g_strdup")?);
+            let free: Free = std::mem::transmute(symbol(glib, "g_free")?);
+            let error_free: ErrorFree = std::mem::transmute(symbol(glib, "g_error_free")?);
+            let str_hash: HashFn = std::mem::transmute(symbol(glib, "g_str_hash")?);
+            let str_equal: EqualFn = std::mem::transmute(symbol(glib, "g_str_equal")?);
+
+            let table = new_table(str_hash, str_equal, Some(free), Some(free));
+            for (key, value) in [("xdg:schema", "chrome_libsecret_os_crypt_password_v2"), ("application", application)] {
+                let key = CString::new(key).ok()?;
+                let value = CString::new(value).ok()?;
+                insert(table, dup(key.as_ptr()) as *mut c_void, dup(value.as_ptr()) as *mut c_void);
+            }
+            let mut error: *mut c_void = std::ptr::null_mut();
+            let password = lookup(std::ptr::null(), table, std::ptr::null_mut(), &mut error);
+            unref(table);
+            if !error.is_null() {
+                // GError: domain (u32), code (i32), message (pointer) on 64-bit Linux.
+                let message_ptr = *((error as *const u8).add(8) as *const *const c_char);
+                let message = if message_ptr.is_null() {
+                    "unknown error".to_string()
+                } else {
+                    CStr::from_ptr(message_ptr).to_string_lossy().into_owned()
+                };
+                error_free(error);
+                return Some(Err(message));
+            }
+            if password.is_null() {
+                return Some(Ok(Vec::new()));
+            }
+            let bytes = CStr::from_ptr(password).to_bytes().to_vec();
+            password_free(password);
+            Some(Ok(bytes))
+        }
+    }
+}
+
 fn sqlite_rows(db: &Path, sql: &str) -> Result<Vec<Vec<String>>, String> {
-    let output = Command::new("sqlite3")
+    #[cfg(target_os = "linux")]
+    if let Some(result) = native::sqlite_query(db, sql) {
+        return result;
+    }
+    sqlite_cli_rows(db, sql)
+}
+
+/// The `sqlite3` command, for systems where SQLite cannot be loaded as a library.
+fn sqlite_cli_rows(db: &Path, sql: &str) -> Result<Vec<Vec<String>>, String> {
+    let output = helper_command("sqlite3")
         .arg("-batch")
         .arg("-noheader")
         .arg("-separator")
@@ -528,7 +795,11 @@ fn sqlite_rows(db: &Path, sql: &str) -> Result<Vec<Vec<String>>, String> {
         .stdin(Stdio::null())
         .output()
         .map_err(|error| {
-            format!("sqlite3 not found (install the sqlite3 package): {error}")
+            if error.kind() == std::io::ErrorKind::NotFound {
+                "the sqlite3 command is not installed; the cookie import needs it (Debian/Ubuntu package `sqlite3`)".to_string()
+            } else {
+                format!("the sqlite3 command could not run: {error}")
+            }
         })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -665,7 +936,27 @@ fn keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
 
 #[cfg(target_os = "linux")]
 fn linux_v11_key(product: &ChromiumProduct) -> Result<Vec<u8>, String> {
-    let output = Command::new("secret-tool")
+    match native::secret_lookup(product.linux_secret_app) {
+        Some(Ok(password)) if password.is_empty() => Err(format!(
+            "v11 cookie of {}: the keyring has no password for this browser; unlock the keyring and try again",
+            product.browser
+        )),
+        Some(Ok(password)) => Ok(pbkdf2_sha1(&password, b"saltysalt", 1, 16)),
+        Some(Err(why)) => Err(format!(
+            "v11 cookie of {}: the keyring did not return the browser password ({why}); unlock the keyring and try again",
+            product.browser
+        )),
+        // libsecret is not installed: fall back to the command.
+        None => linux_v11_key_with(Path::new("secret-tool"), product),
+    }
+}
+
+/// The Secret Service password the browser stores for its cookies (`v11`). Every
+/// failure says what to do: a missing package, or a keyring that is locked or has no
+/// entry (the password can be empty when the browser never used the keyring).
+#[cfg(target_os = "linux")]
+fn linux_v11_key_with(secret_tool: &Path, product: &ChromiumProduct) -> Result<Vec<u8>, String> {
+    let output = helper_command(secret_tool)
         .args([
             "lookup",
             "xdg:schema",
@@ -675,15 +966,28 @@ fn linux_v11_key(product: &ChromiumProduct) -> Result<Vec<u8>, String> {
         ])
         .stdin(Stdio::null())
         .output()
-        .map_err(|_| {
-            format!(
-                "v11 cookie of {}: install libsecret/secret-tool or use a profile with v10",
-                product.browser
-            )
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                format!(
+                    "v11 cookie of {}: the secret-tool command is not installed; install it (Debian/Ubuntu package `libsecret-tools`)",
+                    product.browser
+                )
+            } else {
+                format!("v11 cookie of {}: secret-tool could not run: {error}", product.browser)
+            }
         })?;
-    if !output.status.success() || output.stdout.is_empty() {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let first = stderr.lines().next().unwrap_or("").trim();
         return Err(format!(
-            "v11 cookie of {}: the password is not in libsecret",
+            "v11 cookie of {}: the keyring did not return the browser password ({}); unlock the keyring and try again",
+            product.browser,
+            if first.is_empty() { "no entry found" } else { first }
+        ));
+    }
+    if output.stdout.is_empty() {
+        return Err(format!(
+            "v11 cookie of {}: the keyring has no password for this browser; unlock the keyring and try again",
             product.browser
         ));
     }
@@ -786,7 +1090,7 @@ fn load_chromium(
     skipped: &mut usize,
     notes: &mut Vec<String>,
 ) -> Result<Vec<ImportedCookie>, String> {
-    let product = product_for_slug(source.id.split(':').next().unwrap_or(""))
+    let product = product_for_slug(product_slug(&source.id))
         .ok_or_else(|| format!("unknown Chromium product: {}", source.id))?;
     let version = sqlite_rows(db, "SELECT value FROM meta WHERE key='version'")
         .ok()
@@ -873,6 +1177,13 @@ fn load_chromium(
             same_site: same_site_from_db(row[8].trim().parse::<i64>().unwrap_or(-1)),
             expires,
         });
+    }
+    // Nothing could be read because the browser password is unavailable: say so, with
+    // the fix, instead of importing zero cookies without a reason.
+    if cookies.is_empty() {
+        if let Some(why) = key_error {
+            return Err(why);
+        }
     }
     Ok(cookies)
 }
@@ -1450,6 +1761,105 @@ pub fn aes_128_cbc_decrypt(key: &[u8], iv: &[u8; 16], ciphertext: &[u8]) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A synthetic Chromium database (plain values, no key needed), committed in the
+    /// repository so the Linux native reader is tested where the `sqlite3` command is absent.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_sqlite_reads_the_chromium_fixture_without_the_sqlite3_command() {
+        let dir = std::env::temp_dir().join(format!("scrapelens-native-test-{}-{}", std::process::id(), unix_nanos()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("Cookies");
+        std::fs::write(&source, include_bytes!("../fixtures/chromium-cookies-synthetic.sqlite")).unwrap();
+        let copy = copy_cookie_db(&source).unwrap();
+        let rows = native::sqlite_query(&copy.db, "SELECT host_key, name FROM cookies ORDER BY host_key")
+            .expect("libsqlite3 is installed wherever WebKit is")
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                vec![".other.test".to_string(), "x".to_string()],
+                vec!["127.0.0.1".to_string(), "sid".to_string()],
+            ]
+        );
+        let source_info = BrowserCookieSource {
+            id: "chromium:Default".to_string(),
+            browser: "Chromium".to_string(),
+            profile: "Default".to_string(),
+            label: "Chromium — Default".to_string(),
+            kind: BrowserKind::Chromium,
+            db_path: source.clone(),
+        };
+        let mut skipped = 0;
+        let mut notes = Vec::new();
+        let cookies = load_chromium(&source_info, &copy.db, "127.0.0.1", &mut skipped, &mut notes).unwrap();
+        assert_eq!(cookies.len(), 1);
+        assert_eq!(cookies[0].name, "sid");
+        assert_eq!(cookies[0].value, "synthetic-plain");
+        drop(copy);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_cookie_db_copies_the_rollback_journal_next_to_the_database() {
+        let dir = std::env::temp_dir().join(format!("scrapelens-copy-test-{}-{}", std::process::id(), unix_nanos()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("Cookies");
+        std::fs::write(&source, b"db").unwrap();
+        std::fs::write(dir.join("Cookies-journal"), b"hot").unwrap();
+        std::fs::write(dir.join("Cookies-wal"), b"wal").unwrap();
+        let copy = copy_cookie_db(&source).unwrap();
+        assert_eq!(std::fs::read(copy.db.with_file_name("cookies.db-journal")).unwrap(), b"hot");
+        assert_eq!(std::fs::read(copy.db.with_file_name("cookies.db-wal")).unwrap(), b"wal");
+        let copy_dir = copy.dir.clone();
+        drop(copy);
+        assert!(!copy_dir.exists(), "the private copy is removed on drop");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn linux_discovery_finds_flatpak_and_snap_profiles_with_their_own_ids() {
+        let home = std::env::temp_dir().join(format!("scrapelens-home-test-{}-{}", std::process::id(), unix_nanos()));
+        for dir in [
+            ".config/google-chrome/Default",
+            ".var/app/com.google.Chrome/config/google-chrome/Default/Network",
+            "snap/chromium/common/chromium/Default",
+            ".var/app/org.mozilla.firefox/.mozilla/firefox/abcd.default",
+        ] {
+            std::fs::create_dir_all(home.join(dir)).unwrap();
+        }
+        std::fs::write(home.join(".config/google-chrome/Default/Cookies"), b"").unwrap();
+        std::fs::write(home.join(".var/app/com.google.Chrome/config/google-chrome/Default/Network/Cookies"), b"").unwrap();
+        std::fs::write(home.join("snap/chromium/common/chromium/Default/Cookies"), b"").unwrap();
+        std::fs::write(home.join(".var/app/org.mozilla.firefox/.mozilla/firefox/abcd.default/cookies.sqlite"), b"").unwrap();
+
+        let sources = linux_sources_in(&home);
+        let ids: Vec<&str> = sources.iter().map(|s| s.id.as_str()).collect();
+        assert!(ids.contains(&"chrome:Default"), "{ids:?}");
+        assert!(ids.contains(&"chrome+flatpak:Default"), "{ids:?}");
+        assert!(ids.contains(&"chromium+snap:Default"), "{ids:?}");
+        assert!(ids.contains(&"firefox+flatpak:abcd.default"), "{ids:?}");
+        let mut unique = ids.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len(), "ids must be unique: {ids:?}");
+        let flatpak = sources.iter().find(|s| s.id == "chrome+flatpak:Default").unwrap();
+        assert_eq!(flatpak.label, "Google Chrome (Flatpak) — Default");
+        assert!(flatpak.db_path.ends_with("Network/Cookies"));
+        // The product lookup accepts the variant id.
+        assert_eq!(product_slug("chrome+flatpak:Default"), "chrome");
+        assert_eq!(product_slug("chrome:Default"), "chrome");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn missing_secret_tool_says_which_package_to_install() {
+        let product = CHROMIUM_PRODUCTS.iter().find(|p| p.slug == "chromium").unwrap();
+        let error = linux_v11_key_with(Path::new("/nonexistent/scrapelens-secret-tool"), product).unwrap_err();
+        assert!(error.contains("libsecret-tools"), "{error}");
+        assert!(error.contains("Chromium"), "{error}");
+    }
 
     fn hex(text: &str) -> Vec<u8> {
         unhex(text).unwrap()

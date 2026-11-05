@@ -755,6 +755,8 @@ fn linux_owning_package(binary: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
+    // macOS only: a `.app` bundle is a macOS concept; on Linux the same paths are not bundles.
+    #[cfg(target_os = "macos")]
     #[test]
     fn normalizes_an_app_bundle_to_its_binary() {
         let root = std::env::temp_dir().join(format!(
