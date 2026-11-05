@@ -121,9 +121,9 @@ async function main() {
     const probe = await S("Network.getHAR", {});
     harAvailable = true;
     fs.writeFileSync(path.join(outdir, "chrome-native-har.json"), JSON.stringify(probe, null, 2));
-    harNote = "Network.getHAR disponível";
+    harNote = "Network.getHAR available";
   } catch (err) {
-    harNote = `Network.getHAR indisponível: ${err.message}`;
+    harNote = `Network.getHAR unavailable: ${err.message}`;
   }
 
   const decisions = fs.createWriteStream(path.join(outdir, "fetch-decisions.jsonl"), { flags: "w" });

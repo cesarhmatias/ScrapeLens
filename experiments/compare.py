@@ -55,20 +55,20 @@ def names(seq: list[list[str]] | list[tuple[str, str]]) -> list[str]:
 def verdict(observed: list[str], reference: list[str]) -> str:
     """Classifies the relation between an observed order and the server reference."""
     if not observed:
-        return "não observada"
+        return "not observed"
     if observed == reference:
-        return "idêntica (nome e caixa)"
+        return "identical (name and case)"
     if [n.lower() for n in observed] == [n.lower() for n in reference]:
-        return "idêntica em ordem; caixa normalizada"
+        return "identical in order; case normalized"
     if Counter(n.lower() for n in observed) == Counter(n.lower() for n in reference):
-        return "reordenada (mesmo multiconjunto)"
+        return "reordered (same multiset)"
     if set(n.lower() for n in observed) == set(n.lower() for n in reference):
-        return "duplicatas fundidas (mesmo conjunto de nomes)"
+        return "duplicates merged (same name set)"
     missing = sorted(set(n.lower() for n in reference) - set(n.lower() for n in observed))
     extra = sorted(set(n.lower() for n in observed) - set(n.lower() for n in reference))
     if missing and not extra:
-        return f"subconjunto ({len(missing)} nomes ausentes)"
-    return "divergente"
+        return f"subset ({len(missing)} names missing)"
+    return "divergent"
 
 
 def cdp_requests(events: list[dict]) -> list[dict]:
@@ -230,7 +230,7 @@ def analyze_response(
                 "nul_joined": o["nul_joined"],
             }
     else:
-        out["netlog_session"] = {"event": None, "order": [], "verdict": "não observada", "nul_joined": False}
+        out["netlog_session"] = {"event": None, "order": [], "verdict": "not observed", "nul_joined": False}
 
     if cdp_rec:
         text = cdp_rec.get("resp_headers_text")
@@ -292,7 +292,7 @@ def analyze(exp_dir: pathlib.Path) -> dict:
                 "ambiguous": len({(c["event"], c["path"]) for c in cand}) > 2 or len(pool) > 1,
             }
         else:
-            b = {"event": None, "order": [], "verdict": "não observada", "candidates": 0, "ambiguous": False}
+            b = {"event": None, "order": [], "verdict": "not observed", "candidates": 0, "ambiguous": False}
         b_pre = None
         mine_pre = pre[nth] if nth < len(pre) else None
         if mine_pre and mine_pre["event"] != b["event"]:
@@ -324,8 +324,8 @@ def analyze(exp_dir: pathlib.Path) -> dict:
             }
             a["headersText"] = bool(cdp_rec.get("resp_headers_text"))
         else:
-            a["rws"] = {"order": [], "n": 0, "verdict": "não observada"}
-            a["extra"] = {"order": [], "n": 0, "verdict": "não observada", "sorted_ascii": None}
+            a["rws"] = {"order": [], "n": 0, "verdict": "not observed"}
+            a["extra"] = {"order": [], "n": 0, "verdict": "not observed", "sorted_ascii": None}
         rkey = resp_key([(n, v) for n, v in (row.get("response_headers") or [])])
         nth_resp = seen_resp.get(rkey, 0)
         seen_resp[rkey] = nth_resp + 1

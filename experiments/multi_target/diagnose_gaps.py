@@ -11,6 +11,14 @@ import urllib.parse
 MARKER_RE = re.compile(r"[?&]m=([^&#]+)")
 GAP_MARKERS = ("blank-1", "oopif-get-1", "oopif-post-1", "worker-get-1", "worker-post-1")
 
+# analysis.json written before the English vocabulary may carry these legacy values.
+LEGACY_VERDICT = {
+    "não verificado": "not verified",
+    "sem referência no servidor": "no reference on the server",
+    "conjunto idêntico (ExtraInfo ordena ASCII; servidor grava ordem do fio)": "identical set (ExtraInfo sorts ASCII; server records wire order)",
+    "conjunto difere": "set differs",
+}
+
 
 def marker_from_url(url: str) -> str | None:
     m = MARKER_RE.search(url or "")
@@ -61,7 +69,7 @@ def diagnose_blank(events: list[dict], ctx: dict) -> dict:
         s for s in sessions.values() if s.get("type") == "page" and "blank.html" in (s.get("url") or "")
     ]
     return {
-        "hypothesis": "documento _blank antes de Network.enable+resume; click vs createTarget",
+        "hypothesis": "_blank document before Network.enable+resume; click vs createTarget",
         "page_window_open_count": len(window_opens),
         "blank_page_sessions": [{"sessionId": s["sessionId"][:8], "url": s.get("url")} for s in blank_child],
         "document_responseReceived": doc_responses,
@@ -69,14 +77,14 @@ def diagnose_blank(events: list[dict], ctx: dict) -> dict:
         "session_attached_blank": attach_resume,
         "document_response_before_resume": race,
         "verdict": (
-            "limite Chrome (corr. harness)"
+            "Chrome limit (harness correction)"
             if doc_responses and not doc_will_be_sent
-            else ("fechada" if doc_will_be_sent else "não verificada")
+            else ("closed" if doc_will_be_sent else "not verified")
         ),
         "evidence": (
-            "responseReceived Document na sessão filha antes de __session_attached/resumed; "
-            "sem requestWillBeSent para blank-1 (contagem analyze_multi só usa WillBeSent). "
-            "Page.windowOpen presente (clickBlank); createTarget também usado no harness."
+            "responseReceived Document in the child session before __session_attached/resumed; "
+            "no requestWillBeSent for blank-1 (analyze_multi counts only WillBeSent). "
+            "Page.windowOpen present (clickBlank); createTarget also used in the harness."
             if race and not doc_will_be_sent
             else ""
         ),
@@ -120,7 +128,7 @@ def diagnose_oopif(events: list[dict], ctx: dict) -> dict:
     )
 
     return {
-        "hypothesis": "OOPIF: Network.enable na sessão iframe antes do resume; eventos no sessionId do iframe",
+        "hypothesis": "OOPIF: Network.enable on the iframe session before resume; events on the iframe sessionId",
         "iframe_target_created": len(iframe_targets),
         "iframe_target_ever_attached": len(iframe_attached),
         "iframe_sessions_with_network": sorted(iframe_session_ids),
@@ -131,14 +139,14 @@ def diagnose_oopif(events: list[dict], ctx: dict) -> dict:
             for e in events
         ),
         "verdict": (
-            "limite Chrome + harness"
+            "Chrome limit + harness"
             if not iframe_attached and not oopif_sub
-            else ("fechada" if oopif_sub else "não verificada")
+            else ("closed" if oopif_sub else "not verified")
         ),
         "evidence": (
-            "target type=iframe criado mas attached=false em todo o run; frameDetached reason=swap (OOPIF). "
-            "Pedidos oopif-get/post ausentes em todas as sessões CDP; documento oopif-1 na sessão da página "
-            "(127.0.0.1 vs localhost). Sem run --disable-site-isolation (só diagnóstico pendente opcional)."
+            "target type=iframe created but attached=false in the whole run; frameDetached reason=swap (OOPIF). "
+            "oopif-get/post requests missing from all CDP sessions; oopif-1 document on the page session "
+            "(127.0.0.1 vs localhost). No run with --disable-site-isolation (only an optional pending diagnosis)."
             if not iframe_attached and not oopif_sub
             else ""
         ),
@@ -184,7 +192,7 @@ def diagnose_worker(events: list[dict], ctx: dict, browser: str) -> dict:
     )
 
     return {
-        "hypothesis": "fetch do dedicated worker na sessão page vs worker",
+        "hypothesis": "dedicated worker fetch on the page session vs the worker session",
         "chrome": browser,
         "worker_targets_created": worker_created,
         "worker_attached_count": len(worker_attached),
@@ -192,14 +200,14 @@ def diagnose_worker(events: list[dict], ctx: dict, browser: str) -> dict:
         "worker_js_request_on_page_session": worker_js_on_page,
         "worker_get_post_events": {"page_session": fetches_page, "worker_session": fetches_worker},
         "verdict": (
-            "limite Chrome"
+            "Chrome limit"
             if not worker_attached and not fetches_page and not fetches_worker
-            else ("fechada" if fetches_worker or fetches_page else "não verificada")
+            else ("closed" if fetches_worker or fetches_page else "not verified")
         ),
         "evidence": (
-            f"Chrome {browser}: target worker criado, nunca Target.attachedToTarget; "
-            "worker.js via Network na sessão da página; worker-get/post ausentes em todo cdp-events.jsonl "
-            "(NetLog/servidor ok). Exige attach+Network.enable na sessão worker."
+            f"Chrome {browser}: worker target created, never Target.attachedToTarget; "
+            "worker.js via Network on the page session; worker-get/post missing from all of cdp-events.jsonl "
+            "(NetLog/server ok). Requires attach+Network.enable on the worker session."
             if not worker_attached
             else ""
         ),
@@ -215,7 +223,8 @@ def header_order_from_analysis(analysis_path: pathlib.Path) -> dict:
     for r in rows:
         if not r.get("cdp"):
             continue
-        out[r["marker"]] = r.get("header_order_vs_server")
+        value = r.get("header_order_vs_server")
+        out[r["marker"]] = LEGACY_VERDICT.get(value, value)
     return out
 
 
@@ -244,11 +253,11 @@ def main() -> None:
     header_gap = {
         "hypothesis": "ExtraInfo header order vs multi.jsonl wire order (CDP-covered markers)",
         "by_marker": headers,
-        "verdict": "fechada (ordem ≠ fio)",
+        "verdict": "closed (order ≠ wire)",
         "evidence": (
-            "analyze_multi compara ordem de interseção; todos os GET/POST com ExtraInfo têm "
-            "'conjunto difere' porque ExtraInfo lista chaves em ordem ASCII, servidor grava ordem do fio "
-            "(mesmo cardinalidade, permutação diferente). Document-only / SW-only: n/a."
+            "analyze_multi compares the order of the intersection; every GET/POST with ExtraInfo has "
+            "'set differs' because ExtraInfo lists keys in ASCII order, while the server records wire order "
+            "(same cardinality, different permutation). Document-only / SW-only: n/a."
         ),
     }
 

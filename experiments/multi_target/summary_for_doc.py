@@ -6,6 +6,9 @@ import argparse
 import json
 import pathlib
 
+# Recorded analysis.json files may carry the legacy Portuguese values; read them as English.
+LEGACY_VERDICT = {"sim": "yes", "não": "no"}
+
 KINDS = [
     ("popup", "Popup (`window.open`)"),
     ("target_blank", "New tab (`target=_blank`)"),
@@ -31,7 +34,7 @@ def agg(analysis: dict, key: str) -> dict[str, dict]:
             "server": "yes" if any(r["server"] for r in rows) else "no",
             "netlog": "yes" if any(r["netlog"] for r in rows) else "no",
             "cdp": "yes" if any(r["cdp"] for r in rows) else "no",
-            "extra_info": "yes" if any(r.get("headers_extra_info") == "sim" for r in rows) else "partial",
+            "extra_info": "yes" if any(LEGACY_VERDICT.get(r.get("headers_extra_info"), r.get("headers_extra_info")) == "yes" for r in rows) else "partial",
             "bodies": "yes" if any(r.get("bodies_cdp") is True for r in rows) else "partial",
             "sw_page": any(r.get("fromServiceWorker") for r in rows),
             "sw_source": next((r.get("serviceWorkerResponseSource") for r in rows if r.get("serviceWorkerResponseSource")), None),

@@ -26,7 +26,7 @@ window.__done = (async () => {
   const r2 = await fetch('/echo-order?from=page2', {credentials: 'include'});
   out.push(await r2.json());
   out.push(await fetch('/echo', {method: 'POST', credentials: 'include', body: 'k=v&z=1'}).then(r => r.json()));
-  // Headers da Fetch API: ordem de insercao proposital e duplicata via append().
+  // Fetch API headers: deliberate insertion order and a duplicate via append().
   const h = new Headers();
   h.set('x-zeta', '1');
   h.set('x-alpha', '2');

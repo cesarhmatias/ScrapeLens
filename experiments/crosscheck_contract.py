@@ -115,7 +115,7 @@ def convert(src: pathlib.Path, dst: pathlib.Path, proto: str) -> int:
                 "duplicate_names": sorted({n for n in names if names.count(n) > 1}),
                 "body_len": r.get("body_len", 0),
                 "response_headers": resp,
-                "note": "testserver/ (contrato)",
+                "note": "testserver/ (contract)",
             }
         )
     dst.write_text("\n".join(json.dumps(x, ensure_ascii=False) for x in rows) + "\n")

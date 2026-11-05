@@ -20,7 +20,7 @@ fn mib(bytes: u64) -> f64 {
 
 /// Peak RSS of the process so far (macOS: bytes; Linux: KiB).
 fn peak_mib() -> f64 {
-    // SAFETY: `getrusage` preenche a estrutura passada.
+    // SAFETY: `getrusage` fills the structure passed to it.
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
     unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
     let raw = usage.ru_maxrss as u64;

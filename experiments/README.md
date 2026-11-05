@@ -95,6 +95,36 @@ also reproduced with an `aioquic` client), so the h3 line comes from the mock.
    pairs (3 duplicated) arrives as 3 pairs (last value wins); the Fetch API `Headers`
    merges `append()` into `"a, b"`.
 
+## Verdict vocabulary
+
+The scripts emit English verdicts. Results recorded before this change use the
+legacy Portuguese values, listed below with their English equivalents.
+
+| Legacy value (Portuguese) | English value |
+|---|---|
+| `não observada` | `not observed` |
+| `idêntica (nome e caixa)` | `identical (name and case)` |
+| `idêntica em ordem; caixa normalizada` | `identical in order; case normalized` |
+| `reordenada (mesmo multiconjunto)` | `reordered (same multiset)` |
+| `duplicatas fundidas (mesmo conjunto de nomes)` | `duplicates merged (same name set)` |
+| `subconjunto (N nomes ausentes)` | `subset (N names missing)` |
+| `divergente` | `divergent` |
+| `não verificado` / `não verificada` | `not verified` |
+| `sem referência no servidor` | `no reference on the server` |
+| `conjunto idêntico (ExtraInfo ordena ASCII; servidor grava ordem do fio)` | `identical set (ExtraInfo sorts ASCII; server records wire order)` |
+| `conjunto difere` | `set differs` |
+| `fechada` / `fechada (ordem ≠ fio)` | `closed` / `closed (order ≠ wire)` |
+| `limite Chrome` / `limite Chrome + harness` / `limite Chrome (corr. harness)` | `Chrome limit` / `Chrome limit + harness` / `Chrome limit (harness correction)` |
+| `sim` / `não` (yes/no fields, e.g. `headers_extra_info`) | `yes` / `no` |
+
+Recorded JSON and logs (`layers.json`, `matrix.json`, `summary.json`,
+`analysis.json`, `gap-diagnosis.json`, `*.log`) keep the legacy values; they are
+not rewritten. The per-experiment Markdown reports (`results/*/report.md`) were
+updated to the English values. Readers accept both vocabularies:
+`multi_target/summary_for_doc.py` (`headers_extra_info`) and
+`multi_target/diagnose_gaps.py` (`header_order_vs_server`) map legacy values to
+the English ones through a `LEGACY_VERDICT` dict before comparing or copying them.
+
 ## Precautions applied
 
 - Profile at `results/<exp>/chrome-profile` (deleted at the end); never the personal profile.

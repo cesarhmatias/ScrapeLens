@@ -20,5 +20,5 @@ for i in range(1, n + 1):
     print(rows[-1], flush=True)
 fails = sum(1 for r in rows if not r["ok"])
 (RES / "cycles.json").write_text(json.dumps({"cycles": n, "failures": fails, "rows": rows}, indent=2, ensure_ascii=False))
-print(f"{n} ciclos, {fails} falhas")
+print(f"{n} cycles, {fails} failures")
 sys.exit(1 if fails else 0)

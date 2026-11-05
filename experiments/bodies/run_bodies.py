@@ -110,7 +110,7 @@ def write_sample(session, out):
     for l in open(session / "cdp-bodies.jsonl"):
         r = json.loads(l)
         if r["data"] and len(r["data"]) > 160:
-            r["data"] = r["data"][:96] + f"…<{len(r['data'])} chars omitidos>"
+            r["data"] = r["data"][:96] + f"…<{len(r['data'])} chars omitted>"
         lines.append(json.dumps(r, ensure_ascii=False))
     (out / "sample-lines.jsonl").write_text("\n".join(lines) + "\n")
 
@@ -181,7 +181,7 @@ def verify(out, session, base):
     bb = bytes((i * 13 + 0x91) & 0xFF for i in range(6 * 1024 * 1024)); b = row_bytes(rq[0]) if rq else b""
     add("big_binary_post", rq and rq[0]["state"] == "truncated" and b == bb[:MAX] and rq[0]["originalSize"] == len(bb) and sha(bb) == pg["sentSha"],
         {"request": summary(rq[0]) if rq else None, "prefixEqualsSent": b == bb[:MAX], "cdpPrefixLen": len(b or b""),
-         "nota": "se falhar: getRequestPostData devolve string convertida (U+FFFD) e não os bytes exatos"})
+         "nota": "if it fails: getRequestPostData returns a converted string (U+FFFD), not the exact bytes"})
     rs = pick("big_get", "response"); b = row_bytes(rs[0]) if rs else b""
     add("big_get", rs and rs[0]["state"] == "truncated" and rs[0]["originalSize"] == len(served["big_get"]) and b == served["big_get"][:MAX] and page["big_get"]["recvSha"] == sha(served["big_get"]),
         {"response": summary(rs[0]) if rs else None, "prefixEqualsServed": b == served["big_get"][:MAX]})
@@ -206,7 +206,7 @@ def verify(out, session, base):
     e = pick("empty204", "response"); z = pick("zero", "response")
     add("empty204", e and e[0]["state"] == "empty" and e[0]["data"] is None, {"response": summary(e[0]) if e else None})
     add("zero", z and z[0]["state"] in ("empty", "unavailable"), {"response": summary(z[0]) if z else None,
-        "nota": "Content-Length: 0 vem de responseReceived.response.headers; se o CDP omitir o header, vira unavailable (nunca vazio sem evidência)"})
+        "nota": "Content-Length: 0 comes from responseReceived.response.headers; if CDP omits the header, it becomes unavailable (never empty without evidence)"})
     # ISO-8859-1: wire bytes 53 e3 6f; CDP delivers text that is already decoded
     l = pick("latin1", "response")
     add("latin1", l and l[0]["state"] == "captured" and l[0]["data"].encode() == "São".encode() and l[0]["data"].encode() != LATIN1

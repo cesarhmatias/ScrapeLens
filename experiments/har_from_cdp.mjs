@@ -82,7 +82,7 @@ for (const ev of events) {
 const har = {
   log: {
     version: "1.2",
-    creator: { name: "scrapelens-experiments/har_from_cdp", version: "1", comment: "Reconstruído de CDP; não é o exportador HAR do DevTools." },
+    creator: { name: "scrapelens-experiments/har_from_cdp", version: "1", comment: "Rebuilt from CDP; not the DevTools HAR exporter." },
     entries: [...entries.values()].map(({ requestId, ...rest }) => ({ ...rest, _requestId: requestId })),
   },
 };

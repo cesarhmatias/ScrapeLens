@@ -166,16 +166,16 @@ def server_request_headers(server_log: list[dict], marker: str) -> list[str] | N
 
 def header_order_match(server_log: list[dict], cdp_extra: list[str] | None, marker: str) -> str:
     if not cdp_extra:
-        return "não verificado"
+        return "not verified"
     srv = server_request_headers(server_log, marker)
     if not srv:
-        return "sem referência no servidor"
+        return "no reference on the server"
     cdp_lower = [h.lower() for h in cdp_extra]
     srv_set = [h for h in srv if h in cdp_lower]
     cdp_filtered = [h for h in cdp_lower if h in srv]
     if srv_set == cdp_filtered:
-        return "conjunto idêntico (ExtraInfo ordena ASCII; servidor grava ordem do fio)"
-    return "conjunto difere"
+        return "identical set (ExtraInfo sorts ASCII; server records wire order)"
+    return "set differs"
 
 
 def analyze_run(run_dir: pathlib.Path) -> dict:
@@ -229,7 +229,7 @@ def analyze_run(run_dir: pathlib.Path) -> dict:
                     {"sessionId": r["sessionId"][:8], "type": r.get("sessionType"), "requestId": r["requestId"]}
                     for r in cdp_rows
                 ],
-                "headers_extra_info": "sim" if extra else ("não" if on_cdp else "n/a"),
+                "headers_extra_info": "yes" if extra else ("no" if on_cdp else "n/a"),
                 "header_order_vs_server": order_verdict,
                 "bodies_cdp": bodies_ok if body_row else ("n/a" if not on_cdp else False),
                 "fromServiceWorker": (sw_info or {}).get("fromServiceWorker"),
