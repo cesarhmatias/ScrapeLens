@@ -27,7 +27,7 @@
 
 Built with **Tauri 2 + React/TypeScript + Rust**, it runs **100% locally**, with no external sidecars, no cloud and **no telemetry**.
 
-![ScrapeLens main interface (synthetic demo session)](docs/screenshots/01-main-light.png)
+![ScrapeLens main interface with a real capture from a local test server](docs/screenshots/live-capture-main.png)
 
 ---
 
@@ -48,15 +48,15 @@ Built with **Tauri 2 + React/TypeScript + Rust**, it runs **100% locally**, with
 <summary><b>📸 See more screenshots</b></summary>
 <br>
 
-| Verified Detail (Headers & Provenance) | Side-by-Side Comparison (Diff) |
+| Verified Detail (Headers in Source Order) | Side-by-Side Comparison (Diff) |
 |---|---|
-| ![Verified detail](docs/screenshots/03-detail-headers-light.png) | ![Comparison](docs/screenshots/10-comparison-dark.png) |
+| ![Verified detail](docs/screenshots/live-request-detail-headers.png) | ![Comparison](docs/screenshots/live-compare-requests.png) |
 
-| Cookie Inspection (`Cookie` vs `Set-Cookie`) | Attempts and Ambiguous Match |
+| Application Timeline (Cookie Chain) | Export / Sanitize Dialog |
 |---|---|
-| ![Cookies](docs/screenshots/06-detail-cookies-light.png) | ![Attempts](docs/screenshots/15-detail-attempts-ambiguous.png) |
+| ![Timeline](docs/screenshots/live-timeline.png) | ![Export](docs/screenshots/live-export-sanitize-dialog.png) |
 
-The screenshots above use the synthetic demo session (`DEMO` badge in each image).
+These screenshots are real captures: headless Chrome 156 with a dedicated test profile, against the local ScrapeLens test server (`127.0.0.1:9781`, page `/page`). The `/private/tmp/...` path in them is the temporary session folder of that run.
 
 </details>
 
