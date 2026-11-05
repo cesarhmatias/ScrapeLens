@@ -190,8 +190,8 @@ def main():
         expect = {"error": ("ERRORMESSAGE", None), "nocontrols": ("HTML control", 4), "403": ("403", 4)}
         for mode, (word, stop_after) in expect.items():
             p, log, _ = scenario(mode)
-            # detran-sim still emits "modo ..." notes in Portuguese (testserver/detran-sim/detran_sim.py:204, 214)
-            first_bad = next((i for i, x in enumerate(log, 1) if x["path"].endswith("/servlet/Connector") and (x["status"] != 200 or x["note"].startswith(("modo", "app-error")))), None)
+            # detran-sim notes: "mode 403" and "nocontrols mode: ..." (testserver/detran-sim/detran_sim.py:204, 214)
+            first_bad = next((i for i, x in enumerate(log, 1) if x["path"].endswith("/servlet/Connector") and (x["status"] != 200 or x["note"].startswith(("mode", "nocontrols", "app-error")))), None)
             ran = len(log)
             res["scenarios"][mode] = {"rc": p.returncode, "requests_sent": ran, "first_bad_response_at_request": first_bad,
                                       "stopped_at_bad_step": ran == first_bad if first_bad else None,

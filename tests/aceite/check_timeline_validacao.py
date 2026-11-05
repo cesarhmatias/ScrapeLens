@@ -610,7 +610,7 @@ def main():
                     "--sessionid-cliente", client, "--trace", trace], cwd=tmp)
             log = ps.http(base, "/__sim/log")["log"]
             first_bad = next((i for i, x in enumerate(log, 1) if x["path"].endswith("/servlet/Connector") and
-                              (x["status"] != 200 or x["note"].startswith(("modo", "app-error")))), None)  # detran-sim notes are still Portuguese (detran_sim.py:204, 214)
+                              (x["status"] != 200 or x["note"].startswith(("mode", "nocontrols", "app-error")))), None)  # detran-sim notes (detran_sim.py:204, 214)
             sc = INFO["cenarios"][mode] = {"script_rc": p.returncode, "pedidos_no_sim": len(log), "primeiro_ruim": first_bad}
             if not check(trace.exists(), f"{mode}: the script did not create the trace (--trace)"):
                 continue
