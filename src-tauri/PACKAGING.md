@@ -4,6 +4,28 @@ Status of the package delivered in this round. It serves as reproducible evidenc
 the commands below produce exactly the artifact described, on the same machine and
 under the same conditions.
 
+## macOS — release 0.1.1 (2026-11-05, current)
+
+Version commit `1920458` (provisional; it will be remapped when the history is
+rewritten). The bundle is built from a clean tree at that commit, with the
+product version 0.1.1 (`tauri.conf.json`, `src-tauri/Cargo.toml`, `app/package.json`).
+
+Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app` (version 0.1.1).
+SHA-256 of `Contents/MacOS/scrapelens` (18,304,928 bytes):
+`014c8eae8af3b9a1dbdf5c42e8b0bc16c03cb20daf06955e19d18e2043e9e54c`.
+Release archive, outside the repository and not in `/tmp`:
+`~/OpenBot/Agents/agent-466e334c-b464-4294-a274-2a5e33a666b9/sl-release-0.1.1/macos/ScrapeLens-0.1.1-macos-arm64.zip`
+(6,163,003 bytes, `ditto -c -k --keepParent`), SHA-256
+`9d73c2747cc8d96b81fa44ecbf18191610cc750d728a15fd26234d2df73ef6b7`. Extracted to a
+temporary folder, the app passes `codesign --verify --deep --strict` and keeps the
+same executable hash.
+Signed with `ScrapeLens Local Signing`; designated requirement certificate root
+`d0a53befa59a447043abc9e58a3381addbbf1751`.
+Built with `./app/node_modules/.bin/tauri build --bundles app`. No window was opened
+or activated.
+Validation: `cargo test --locked` 69 passed, 0 failed, 8 ignored; `cargo clippy --locked
+--all-targets -- -D warnings` clean; `npm test`, typecheck and build passed.
+
 ## macOS — release bundle, English (2026-11-05, current)
 
 Bundle built from the clean tree at `0acc691` (provisional commit; it will be
