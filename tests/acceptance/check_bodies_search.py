@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round 4 (docs/08-bodies-search.md §3.1): checks the search over the payload.
+"""Round 4 (docs/08-body-search.md §3.1): checks the search over the payload.
 
 Given the folder of an imported session, runs `scrapelens-core search` for each
 case in fixtures/detran-pb/manifest.json (`bodies_search_cases`, and `bodies.edge.search`

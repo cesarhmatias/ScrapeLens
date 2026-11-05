@@ -1,7 +1,7 @@
 # detran-pb — reference-case fixture (real shape, synthetic values)
 
 Acceptance case: reconstruction of the DETRAN-PB session described in
-`docs/05-case-reference-detran.md`. This fixture exists for the tests of
+`docs/05-detran-reference-case.md`. This fixture exists for the tests of
 **import, body search, grouping protection × application, dynamic fields and
 CDP×NetLog correlation**.
 
@@ -92,7 +92,7 @@ real marker appears (`CASA`, `NUPP`, `082b79`, HAR names, etc.).
   coincidence of formats (plate, STAMP), not real data.
 - Static fixture: do not run the endpoints or navigate to the real domain.
 
-## CDP bodies (round 4, docs/08-bodies-search.md)
+## CDP bodies (round 4, docs/08-body-search.md)
 
 Marked as **sanitized from a real case** (real shape, synthetic values):
 

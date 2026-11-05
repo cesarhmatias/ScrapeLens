@@ -175,7 +175,7 @@ BoringSSL via cmake) · `rustls 0.23` + `rustls-pemfile` · `rcgen 0.14` ·
 The quiche build requires `cmake` (installed via Homebrew) and network access
 only for the first compilation of the embedded BoringSSL.
 
-## Routes for body capture (round 4, docs/08-bodies-search.md §3.2–3.3)
+## Routes for body capture (round 4, docs/08-body-search.md §3.2–3.3)
 
 Identical on h1/h2/h3. `serve` writes the bodies received at `/sink` to
 `<evidence>/<run>/bodies/sink-NNNN-<sha256[..12]>.bin` (in addition to the full
@@ -196,7 +196,7 @@ by byte with `cdp-bodies.jsonl`.
 
 Test: `cargo test h1_body_routes` (binary/6 MiB/gzip/302/307/204/sink).
 
-## Multi-target pages (round 10, docs/14-capture-multi-target.md)
+## Multi-target pages (round 10, docs/14-multi-target-capture.md)
 
 Reference page for the CDP multi-target capture experiment. Each action fires
 requests with a unique `?m=` marker; the server writes the marker to the normal

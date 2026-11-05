@@ -1,5 +1,5 @@
 //! Generates a LARGE, synthetic session via a real capture on loopback, to measure
-//! the memory of whoever opens large sessions (docs/18-memory-sessions-large.md).
+//! the memory of whoever opens large sessions (docs/18-large-session-memory.md).
 //!
 //! Usage: `cargo run --release --example capture_big -- <session-folder> <N-requests>`
 //!

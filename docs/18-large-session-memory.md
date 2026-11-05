@@ -202,7 +202,7 @@ recursion limit of 128 levels: `IgnoredAny` does not work because it skips it), 
 keys also indexed), **P6** (`2550041`: compact `session.json` when the indented JSON passes
 50 MiB) and **P7** (`b438945`: `sanitize_bundle_owned` consumes the bundle and sanitizes in place; CLI
 `sanitize` and the MCP registry use it). **P4** was left for round 16 and is measured in §8 (`ad4f5c1`);
-**P5** was done by the App and is also measured (`docs/19-contract-app.md`: 1.161 MiB when opening the
+**P5** was done by the App and is also measured (`docs/19-app-contract.md`: 1.161 MiB when opening the
 20 thousand session). **P8 was not done.**
 
 **P3 requirement, identical output.** `core/tests/correlation_identity.rs` imports the 29 captures and
@@ -252,7 +252,7 @@ Reading:
 | `inspect` (CLI) | 9,3 GiB | **1,6 GiB** | 1,6 GiB (P4 does not apply to `inspect`) |
 | MCP 1st masked call | 5,7 GiB | **1,6 GiB** | 1,6 GiB |
 | `stop_capture` (imports the capture) | 7,0 GiB, 249 s | **7,1 GiB, 9,3 s** | **4,2 GiB, 8,1 s** (§8; with the write, 4,6 GiB, 17,1 s) |
-| Open in the App (P5) | 7,1 GiB | 7,1 GiB | **1,16 GiB** (`docs/19-contract-app.md`) |
+| Open in the App (P5) | 7,1 GiB | 7,1 GiB | **1,16 GiB** (`docs/19-app-contract.md`) |
 
 ## 8. Round 16: P4 measured (streaming NetLog parser)
 
@@ -287,7 +287,7 @@ Reading:
   ±30 % disk cache variation already recorded in §7).
 - **P5 (App), measured:** opening the 20 thousand session in the App dropped from 7.108 to **1.161 MiB** (−84 %)
   with the typed path + paginated list, and what goes to the front end dropped from 681 MB to ~5,4 MB
-  (`docs/19-contract-app.md`, `src-tauri/examples/mem_open.rs`). It is the "Open in the App" row of the
+  (`docs/19-app-contract.md`, `src-tauri/examples/mem_open.rs`). It is the "Open in the App" row of the
   table in §7.
 - **What is left:** the floor is now the typed session (~1,15 GiB at 20 thousand) and the ~650 MiB
   `session.json` written by P6. The next memory item is **P8** (schema, ~−65 % of the size per

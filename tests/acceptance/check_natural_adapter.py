@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round 8 (docs/12-adapter-natural.md), acceptance 1–2: Natural for Ajax adapter × detran-sim in `strict` mode.
+"""Round 8 (docs/12-natural-adapter.md), acceptance 1–2: Natural for Ajax adapter × detran-sim in `strict` mode.
 
   python3 tests/acceptance/check_natural_adapter.py [--core BIN] [--wrapper natural-core] [--python PY_WITH_REQUESTS] [--port 8792]
          [--adapter-args "--adapter natural-ajax"] [--roundtrip-cmd "adapter-roundtrip"]

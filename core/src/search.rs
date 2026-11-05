@@ -1,4 +1,4 @@
-//! Search over metadata and bodies of a session (`docs/08-bodies-search.md` §2).
+//! Search over metadata and bodies of a session (`docs/08-body-search.md` §2).
 //!
 //! API for the App (wave 4b, via Tauri):
 //!

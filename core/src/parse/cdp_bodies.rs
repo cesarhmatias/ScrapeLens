@@ -1,4 +1,4 @@
-//! CDP bodies (`cdp-bodies.jsonl`, contract in `docs/08-bodies-search.md` §1).
+//! CDP bodies (`cdp-bodies.jsonl`, contract in `docs/08-body-search.md` §1).
 //!
 //! Each line is mapped **only** by `sessionId` + `requestId` + `attemptIndex`
 //! to the attempt that the CDP importer already numbered (an old file without

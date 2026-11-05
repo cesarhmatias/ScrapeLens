@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Multi-target probe (round 10, docs/14-capture-multi-target.md).
+# Multi-target probe (round 10, docs/14-multi-target-capture.md).
 #
 # Starts the h1 reference server and opens /multi/ in headless Chrome. The page
 # fires one request per CDP target kind: top-level page, popup (window.open),

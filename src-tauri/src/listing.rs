@@ -1,4 +1,4 @@
-//! Paginated session contract (round 13, P5; docs/19-contract-app.md).
+//! Paginated session contract (round 13, P5; docs/19-app-contract.md).
 //!
 //! The app does not build a `serde_json::Value` of the session nor send the whole
 //! thing to the front-end. The typed session (`SessionV1`) stays in the `LazySession`

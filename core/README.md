@@ -39,7 +39,7 @@ cargo run --offline -- diff /tmp/sl-demo cdp-r0001 cdp-r0002
 | `store` | atomic write with `0700/0600`, attachment validation |
 
 JSON contract and verification rules: [`CONTRACT-V1.md`](CONTRACT-V1.md).
-Project decisions: `../docs/01-decisions.md`; matrix: `../docs/02-matrix-fidelity.md`.
+Project decisions: `../docs/01-decisions.md`; matrix: `../docs/02-fidelity-matrix.md`.
 
 ## Tested guarantees
 

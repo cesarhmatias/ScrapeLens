@@ -877,7 +877,7 @@ confidence to `low`/`medium`); **P** = project fixture.
 | rc-003 | Google reCAPTCHA | field `g-recaptcha-response` | token | F https://developers.google.com/recaptcha/docs/display | "g-recaptcha-response POST parameter" |
 | hc-001 | hCaptcha | script `js.hcaptcha.com/1/api.js` | widget | F https://docs.hcaptcha.com/ | "https://js.hcaptcha.com/1/api.js" |
 | hc-002 | hCaptcha | field `h-captcha-response` | token | F (same) | "adds an `h-captcha-response` token to the form submission" |
-| f5-001 | F5 | path `/TSPD/` | protection (a reference alone does not block) | P `core/src/assess.rs` (rules `marker("/TSPD/")`) and `docs/05-case-reference-detran.md` (capture of the reference case) | "Separar proteção (/TSPD/, cookies TS*) da aplicação" (Separate protection (/TSPD/, TS* cookies) from the application) |
+| f5-001 | F5 | path `/TSPD/` | protection (a reference alone does not block) | P `core/src/assess.rs` (rules `marker("/TSPD/")`) and `docs/05-detran-reference-case.md` (capture of the reference case) | "Separar proteção (/TSPD/, cookies TS*) da aplicação" (Separate protection (/TSPD/, TS* cookies) from the application) |
 
 Synthetic fixtures (loopback) that **imitate** each signal above for the tests
 are labeled as such (`synthetic`): they prove the detector, not the existence

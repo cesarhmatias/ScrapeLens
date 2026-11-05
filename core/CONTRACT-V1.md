@@ -1,7 +1,7 @@
 # ScrapeLens — session format v1 (core implementation)
 
 This document describes the JSON produced/consumed by `core/`. It follows
-`docs/03-contracts.md` and the matrix `docs/02-matrix-fidelity.md`; in case of
+`docs/03-contracts.md` and the matrix `docs/02-fidelity-matrix.md`; in case of
 divergence, the official docs prevail.
 
 ## Directory

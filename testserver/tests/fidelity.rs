@@ -457,7 +457,7 @@ fn h1_body_routes_serve_expected_bytes_and_sink_writes_file() {
     assert_eq!(std::fs::read(file).unwrap(), payload);
 }
 
-/// Round 10 (docs/14-capture-multi-target.md): `/multi/` fires one request per
+/// Round 10 (docs/14-multi-target-capture.md): `/multi/` fires one request per
 /// target kind, each with a unique `?m=` marker, and the server keeps the
 /// marker in the normal evidence plus the compact `multi.jsonl` log.
 #[test]

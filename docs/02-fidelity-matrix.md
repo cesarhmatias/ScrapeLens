@@ -215,7 +215,7 @@ Order divergence in the HAR is expected; what matters is what NetLog says.
 
 ## Multi-target capture (CDP auto-attach × NetLog)
 
-Contract: `docs/14-capture-multi-target.md`. Harness: `experiments/multi_target/`. Page: `testserver` `/multi/` (`4b56b14`, 16 markers via `./scripts/multi-probe.sh`).
+Contract: `docs/14-multi-target-capture.md`. Harness: `experiments/multi_target/`. Page: `testserver` `/multi/` (`4b56b14`, 16 markers via `./scripts/multi-probe.sh`).
 
 | Item | Value |
 |---|---|

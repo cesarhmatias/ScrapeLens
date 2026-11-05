@@ -33,7 +33,7 @@ recursively in the child sessions. Measure, per target type:
   both? `fromServiceWorker`/`serviceWorkerResponseSource` in the response;
 - cost: number of sessions, events and time.
 
-Output: a table in `docs/02-matrix-fidelity.md` (new section) and evidence
+Output: a table in `docs/02-fidelity-matrix.md` (new section) and evidence
 in `experiments/`. No change in `src-tauri/` or `core/` in this wave.
 
 ## Decisions already made

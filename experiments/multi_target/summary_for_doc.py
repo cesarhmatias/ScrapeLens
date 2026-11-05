@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates a Markdown section for docs/02-matrix-fidelity.md from analysis.json."""
+"""Generates a Markdown section for docs/02-fidelity-matrix.md from analysis.json."""
 from __future__ import annotations
 
 import argparse
@@ -62,7 +62,7 @@ def main() -> None:
     lines = [
         "## Multi-target capture (CDP auto-attach × NetLog)",
         "",
-        "Contract: `docs/14-capture-multi-target.md`. Harness: `experiments/multi_target/`.",
+        "Contract: `docs/14-multi-target-capture.md`. Harness: `experiments/multi_target/`.",
         "",
         "| Item | Value |",
         "|---|---|",

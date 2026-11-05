@@ -1,6 +1,6 @@
 # ScrapeLens — Official contracts (wave 2)
 
-They replace `app/CONTRACT-DRAFT.md` (provisional). Provenance and verdicts: `docs/02-matrix-fidelity.md`; decisions: `docs/01-decisions.md`.
+They replace `app/CONTRACT-DRAFT.md` (provisional). Provenance and verdicts: `docs/02-fidelity-matrix.md`; decisions: `docs/01-decisions.md`.
 
 ## 1. Own session format (v1)
 

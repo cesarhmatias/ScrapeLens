@@ -213,7 +213,7 @@ Consequence for the design (only hypotheses to measure, in order of preference):
 3. **NetLog only** (no debugging port): preserves bytes and header order at the
    network level and the correlation by time, but loses bodies via CDP,
    per-request `ExtraInfo` and per-target attribution (see
-   `docs/02-matrix-fidelity.md`). An AI agent still needs **a control
+   `docs/02-fidelity-matrix.md`). An AI agent still needs **a control
    channel** for the browser; if it uses CDP (Playwright/MCP), CDP will already be
    connected anyway, and the question becomes only whether our second
    client adds signals.
@@ -267,7 +267,7 @@ Consequence for the design (only hypotheses to measure, in order of preference):
   on 22/02/2026; the free tier for macOS does not receive the current build. ScrapeLens
   must not depend on it: an **optional** browser, with Chrome as the default.
 
-### 7. Confirmation of the points in `docs/15a-market-mcp.md`
+### 7. Confirmation of the points in `docs/15a-mcp-market.md`
 
 Complement requested by the leader. Each point of the market research was checked
 against clone `b860957` (and, for the issues, against the public GitHub API, read-only). The
@@ -304,7 +304,7 @@ how Playwright/MCP drives it), so "no CDP" only removes **our**
 client, not the control channel; (b) without `Browser.close` the NetLog is only
 finalized if Chrome exits gracefully (`cloakserve` uses SIGINT
 for this reason, CHANGELOG.md:17); partial captures are already marked incomplete.
-Comparison, based on `docs/02-matrix-fidelity.md` and `docs/14`:
+Comparison, based on `docs/02-fidelity-matrix.md` and `docs/14`:
 
 | Item | With CDP (today) | NetLog only |
 |---|---|---|

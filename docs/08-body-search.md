@@ -5,7 +5,7 @@
 Live capture does not record bodies. `core/src/parse/cdp.rs` marks every
 request and response as `unavailable` ("CDP body not loaded"). The UI search
 filters metadata only. The DETRAN-PB reference case
-(`docs/05-case-reference-detran.md`) needs to find `cmd_consultar_placa` in
+(`docs/05-detran-reference-case.md`) needs to find `cmd_consultar_placa` in
 the form-urlencoded body and tell apart two POSTs with the same URL and the
 same method. Specification: "Payload and bodies when available", "Search and
 filters" and "Show unavailable, truncated or discarded bodies explicitly".

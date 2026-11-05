@@ -117,7 +117,7 @@ rerunning the same command completed with exit code 0. Log of the successful att
 | Repository | `/Users/cesar/Projects/scrapelens` |
 | App commit at build time | `f81ea80` (clean HEAD; round 13 wave 1 + P5 paginated + addendum 9; `f81ea80` only adds the `list_requests` log to stderr under `SCRAPELENS_TEST_MODE=1`, used as evidence) + local identity `ScrapeLens Local Signing` |
 | Export commits included | `eaf5471` (Tauri shell), `0a6e696` (UI), `0446f18`/`12457cd` (formatting), `3a3c676` (preview adjustment) |
-| Round contract | `4c97bc9` (`docs/07-export-ui.md`); multi-target `docs/14-capture-multi-target.md` + UI `9a06463` |
+| Round contract | `4c97bc9` (`docs/07-ui-export.md`); multi-target `docs/14-multi-target-capture.md` + UI `9a06463` |
 | Core | path `scrapelens-core`; `3fe7efc` (A9-B1/A9-B2) with P1/P2/P3/P6/P7 (streamed validation, index-based correlation, compact `session.json`, `sanitize_bundle_owned`) |
 | Capture | crate `capture/`; descriptor-based writing in `capture/src/fdio.rs`; CDP over pipe; `SCRAPELENS_CDP_TRANSPORT=port` returns to the old mode (`737290a`) |
 | Build date | 2026-11-02 (UTC−03) |

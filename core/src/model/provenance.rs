@@ -163,7 +163,7 @@ impl Provenance {
     }
 }
 
-/// Verification policy derived from `docs/02-matrix-fidelity.md` (D2).
+/// Verification policy derived from `docs/02-fidelity-matrix.md` (D2).
 ///
 /// The matrix is the source of the facts; this function only encodes the verdict
 /// so that importers do not invent "verified" where the evidence is partial.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round 6 (docs/10-fidelity-case-real.md, Acceptance 1–4): fixtures with the REAL DETRAN SHAPE.
+"""Round 6 (docs/10-real-case-fidelity.md, Acceptance 1–4): fixtures with the REAL DETRAN SHAPE.
 
 Imports fixtures/detran-pb-real-shape (DevTools HAR without cookies; Connector in HTML with
 <textarea name=XML>/<input name=STAMP>) with `--label synthetic-fixture` and checks the manifest:

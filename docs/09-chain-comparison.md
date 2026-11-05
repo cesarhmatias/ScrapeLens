@@ -2,7 +2,7 @@
 
 ## Motivation
 
-DETRAN-PB case (`docs/05-case-reference-detran.md`), derived requirements 2,
+DETRAN-PB case (`docs/05-detran-reference-case.md`), derived requirements 2,
 3 and 4: you cannot start from the lookup. You need to know where each POST
 value came from (SESSIONID, STAMP, delta, cookies) and which values change
 between two captures of the same flow, so as not to freeze HAR values.

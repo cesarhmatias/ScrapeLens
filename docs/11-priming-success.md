@@ -2,7 +2,7 @@
 
 ## Motivation
 
-DETRAN-PB case (`docs/05-case-reference-detran.md`), derived requirements 4
+DETRAN-PB case (`docs/05-detran-reference-case.md`), derived requirements 4
 and 5. The user needs a starting point that recreates the new session, without
 freezing values from the HAR, and needs to know when an HTTP 200 is not
 application success (response without XML/STAMP, with ERRORMESSAGE, or a

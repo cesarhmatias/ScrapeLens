@@ -223,7 +223,7 @@ def main() -> int:
         if by_type[e["type"]] == "HTTP_TRANSACTION_SEND_REQUEST_HEADERS":
             pass  # per-step cookies are checked in check_chain()
 
-    # --- bodies (docs/08-bodies-search.md §1) -------------------------------
+    # --- bodies (docs/08-body-search.md §1) -------------------------------
     import base64
     STATES = {"captured", "truncated", "empty", "unavailable", "discarded"}
     SOURCES = {"requestWillBeSent.postData", "requestWillBeSent.postDataEntries",

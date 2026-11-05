@@ -133,7 +133,7 @@ pub fn import_capture(
 }
 
 /// Like [`import_capture`], with the optional content of `cdp-bodies.jsonl`
-/// (`docs/08-bodies-search.md` §1). Without it, the bodies stay `unavailable` and the
+/// (`docs/08-body-search.md` §1). Without it, the bodies stay `unavailable` and the
 /// session gets a single `cdp.bodies_file_absent` warning.
 pub fn import_capture_with_bodies(
     cdp_events_jsonl: &[u8],

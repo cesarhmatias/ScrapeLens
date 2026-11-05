@@ -2987,7 +2987,7 @@ fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 // ---------------------------------------------------------------------------
-// Bodies (docs/08-bodies-search.md §1): collection without blocking the event loop.
+// Bodies (docs/08-body-search.md §1): collection without blocking the event loop.
 // ---------------------------------------------------------------------------
 
 /// Limit per body (decoded bytes).

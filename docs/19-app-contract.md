@@ -1,6 +1,6 @@
 # 19 — App session contract (P5)
 
-Round 13, wave 1. Applies proposal P5 of `docs/18-memory-sessions-large.md` §5:
+Round 13, wave 1. Applies proposal P5 of `docs/18-large-session-memory.md` §5:
 the App stops building the session's `serde_json::Value` and sending it whole to the front end.
 
 ## Principle

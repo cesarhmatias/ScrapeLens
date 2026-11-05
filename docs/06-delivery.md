@@ -88,7 +88,7 @@ requests with duplicates. Headers in the source sequence; provenance and
 verification per item. HAR/CDP objects do not prove transmitted order;
 NetLog and h1 headersText provide specific evidence. Ties stay
 ambiguous. cURL/Python export and sanitization work in the core/CLI and, since
-the following round, also through the interface (result in `docs/07-export-ui.md`).
+the following round, also through the interface (result in `docs/07-ui-export.md`).
 
 ## Limitations and remaining priorities
 

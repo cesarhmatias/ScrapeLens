@@ -1,6 +1,6 @@
 # Multi-target capture (Round 10, wave 1)
 
-Contract: [`docs/14-capture-multi-target.md`](../../docs/14-capture-multi-target.md).
+Contract: [`docs/14-multi-target-capture.md`](../../docs/14-multi-target-capture.md).
 
 Chrome + NetLog + CDP harness with `Target.setDiscoverTargets`, `Target.setAutoAttach`
 (flatten, configurable `waitForDebuggerOnStart`) and `Network.enable` before

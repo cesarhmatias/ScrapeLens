@@ -1,6 +1,6 @@
 # ScrapeLens — Architecture decisions
 
-Source of the facts: `docs/02-matrix-fidelity.md` (evidence in `experiments/results/`, Chrome 156.0.8078.48, macOS arm64, 60 requests).
+Source of the facts: `docs/02-fidelity-matrix.md` (evidence in `experiments/results/`, Chrome 156.0.8078.48, macOS arm64, 60 requests).
 
 ## D1 — Stack (after the fidelity proof)
 

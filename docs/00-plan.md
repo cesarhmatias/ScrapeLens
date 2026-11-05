@@ -82,7 +82,7 @@ Team (OpenBot section "ScrapeLens"):
 ## Waves (max. 3 simultaneous executors)
 
 - Wave 1 (completed): Capture/protocols + Tests/servers — fidelity
-  experiments for HTTP/1.1, h2, h3; matrix `docs/02-matrix-fidelity.md`.
+  experiments for HTTP/1.1, h2, h3; matrix `docs/02-fidelity-matrix.md`.
 - Wave 2 (completed): consolidated contracts → Core/importers +
   App/interface + Tests (full slice: launch Chrome → capture → UI).
 - Wave 3 (implementation/review completed; caveats in the final report): comparison, export, sanitization; independent review;

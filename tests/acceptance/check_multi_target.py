@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round 10, wave 2 (docs/14-capture-multi-target.md): acceptance of the multi-target capture.
+"""Round 10, wave 2 (docs/14-multi-target-capture.md): acceptance of the multi-target capture.
 
 Runs the REAL product capture (`src-tauri` `capture::run`, via the ignored test `live_bodies_cycle`) against
 `testserver /multi/`, with headless Chrome, and checks:

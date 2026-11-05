@@ -1,7 +1,7 @@
 # ScrapeLens MCP contract (round 11, wave 1)
 
 Owner: Core and importers. Code: `mcp/` (crate `scrapelens-mcp`, binary
-`scrapelens-mcp`). Basis: `docs/15a-market-mcp.md` (tools section). This
+`scrapelens-mcp`). Basis: `docs/15a-mcp-market.md` (tools section). This
 document comes before the code; contract changes go through the leader.
 
 ## 1. What it is
