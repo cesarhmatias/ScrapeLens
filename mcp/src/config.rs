@@ -85,7 +85,7 @@ pub fn slug(text: &str) -> String {
     out.truncate(64);
     let out = out.trim_matches(['-', '.']).to_string();
     if out.is_empty() {
-        "sessao".to_string()
+        "session".to_string()
     } else {
         out
     }

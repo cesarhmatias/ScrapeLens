@@ -1,8 +1,8 @@
-//! Capturas ao vivo controladas pelo servidor: o mapa `capture_id` → captura,
-//! a validação do pedido, a decisão de confirmação e a saída mascarada.
+//! Live captures controlled by the server: the `capture_id` → capture map,
+//! request validation, the confirmation decision and the masked output.
 //!
-//! O navegador fica atrás de [`CaptureBackend`]/[`LiveCapture`]: o produto usa
-//! `scrapelens-capture` ([`RealBackend`]); os testes usam um navegador falso.
+//! The browser sits behind [`CaptureBackend`]/[`LiveCapture`]: the product uses
+//! `scrapelens-capture` ([`RealBackend`]); the tests use a fake browser.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,7 +28,7 @@ pub const DEFAULT_NAVIGATE_TIMEOUT_MS: u64 = 15_000;
 pub const MAX_NAVIGATE_TIMEOUT_MS: u64 = 60_000;
 
 // ---------------------------------------------------------------------------
-// navegador atrás de um trait
+// browser behind a trait
 // ---------------------------------------------------------------------------
 
 pub trait LiveCapture: Send {
@@ -39,16 +39,16 @@ pub trait LiveCapture: Send {
         timeout: Duration,
     ) -> Result<NavigateResult, NavigateError>;
     fn status(&self) -> CaptureStatus;
-    /// Encerramento gracioso; grava a sessão em `session_dir`.
+    /// Graceful shutdown; writes the session to `session_dir`.
     fn stop(self: Box<Self>) -> Result<StopReport, String>;
 }
 
 pub trait CaptureBackend: Send + Sync {
-    /// Chamado uma vez ao iniciar o servidor (limpeza de capturas órfãs de
-    /// execuções anteriores que morreram sem encerrar o Chrome).
+    /// Called once when the server starts (cleans up orphaned captures left by
+    /// earlier runs that died without closing Chrome).
     fn startup(&self) {}
 
-    /// Chrome que seria usado (`binary_path` explícito ou detecção).
+    /// Chrome that would be used (explicit `binary_path` or detection).
     fn resolve_chrome(&self, binary_path: Option<&str>) -> Result<PathBuf, ToolError>;
     fn start(
         &self,
@@ -82,15 +82,15 @@ impl CaptureBackend for RealBackend {
         let report = scrapelens_capture::cleanup_orphans(&scrapelens_capture::default_state_root());
         if report.processes_killed + report.profiles_removed + report.markers_removed > 0 {
             eprintln!(
-                "scrapelens-mcp: órfãos de execuções anteriores limpos (processos {}, perfis {}, marcadores {})",
+                "scrapelens-mcp: orphans from earlier runs cleaned up (processes {}, profiles {}, markers {})",
                 report.processes_killed, report.profiles_removed, report.markers_removed
             );
         }
     }
 
     fn resolve_chrome(&self, binary_path: Option<&str>) -> Result<PathBuf, ToolError> {
-        // Só o Chrome estável (bundle, versão e assinatura da Google): um
-        // `binary_path` qualquer (`/bin/echo`, um script) é recusado.
+        // Only stable Chrome (bundle, version and Google signature): any
+        // `binary_path` (`/bin/echo`, a script) is refused.
         let explicit = binary_path
             .filter(|path| !path.trim().is_empty())
             .map(std::path::Path::new);
@@ -109,34 +109,34 @@ impl CaptureBackend for RealBackend {
 }
 
 // ---------------------------------------------------------------------------
-// parâmetros
+// parameters
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StartCaptureParams {
-    /// Hosts onde o agente pode navegar (obrigatório, ao menos um). Nome exato,
-    /// `*.dominio` ou IP literal explícito; porta opcional (`host:8080`).
+    /// Hosts the agent may navigate to (required, at least one). Exact name,
+    /// `*.domain` or explicit IP literal; optional port (`host:8080`).
     pub allowed_hosts: Vec<String>,
-    /// Hosts adicionais que a página precisa carregar (CDN, desafios).
+    /// Additional hosts the page must load (CDN, challenges).
     pub third_party_hosts: Option<Vec<String>>,
-    /// URL inicial (precisa passar na allowlist).
+    /// Start URL (must pass the allowlist).
     pub start_url: Option<String>,
-    /// Caminho do Chrome; padrão: detecção automática.
+    /// Chrome path; default: automatic detection.
     pub binary_path: Option<String>,
-    /// Chrome sem janela (padrão false).
+    /// Chrome without a window (default false).
     pub headless: Option<bool>,
-    /// Entrega o endereço CDP em loopback ao agente (padrão false).
+    /// Passes the loopback CDP address to the agent (default false).
     pub expose_cdp: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NavigateParams {
     pub capture_id: String,
-    /// URL http(s) de um host permitido.
+    /// http(s) URL of an allowed host.
     pub url: String,
-    /// `load` (padrão) ou `none`.
+    /// `load` (default) or `none`.
     pub wait: Option<String>,
-    /// Prazo em ms (padrão 15000, máximo 60000).
+    /// Timeout in ms (default 15000, maximum 60000).
     pub timeout_ms: Option<u64>,
 }
 
@@ -145,16 +145,16 @@ pub struct CaptureIdParams {
     pub capture_id: String,
 }
 
-/// Formulário da elicitação: o usuário marca explicitamente.
+/// Elicitation form: the user explicitly ticks the box.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ConfirmStart {
-    /// Marque para autorizar abrir o Chrome e capturar o tráfego descrito.
+    /// Tick to authorize opening Chrome and capturing the described traffic.
     pub confirmo: bool,
 }
 rmcp::elicit_safe!(ConfirmStart);
 
 // ---------------------------------------------------------------------------
-// confirmação
+// confirmation
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,12 +162,12 @@ pub enum Confirmation {
     Accepted,
     Declined(String),
     Cancelled,
-    /// O cliente não suporta (ou não conseguiu fazer) a elicitação.
+    /// The client does not support (or failed to perform) the elicitation.
     Unavailable(String),
 }
 
-/// Aplica a política: sem aceite explícito não abre nada; sem elicitação só
-/// passa com `--allow-unconfirmed-capture`. Devolve como foi confirmada.
+/// Applies the policy: without explicit acceptance nothing opens; without
+/// elicitation it passes only with `--allow-unconfirmed-capture`. Returns how it was confirmed.
 pub fn decide(
     confirmation: &Confirmation,
     allow_unconfirmed: bool,
@@ -176,11 +176,11 @@ pub fn decide(
         Confirmation::Accepted => Ok("elicited"),
         Confirmation::Declined(why) => Err(ToolError::new(
             "confirmation_denied",
-            format!("o usuário não confirmou: {why}. Nada foi aberto."),
+            format!("the user did not confirm: {why}. Nothing was opened."),
         )),
         Confirmation::Cancelled => Err(ToolError::new(
             "confirmation_denied",
-            "a confirmação foi cancelada ou expirou. Nada foi aberto.",
+            "the confirmation was cancelled or expired. Nothing was opened.",
         )),
         Confirmation::Unavailable(why) if allow_unconfirmed => {
             let _ = why;
@@ -189,7 +189,7 @@ pub fn decide(
         Confirmation::Unavailable(why) => Err(ToolError::new(
             "confirmation_unavailable",
             format!(
-                "o cliente MCP não permite pedir confirmação ({why}); start_capture é recusado por padrão. Nada foi aberto. O operador pode iniciar o servidor com --allow-unconfirmed-capture."
+                "the MCP client does not allow asking for confirmation ({why}); start_capture is refused by default. Nothing was opened. The operator can start the server with --allow-unconfirmed-capture."
             ),
         )),
     }
@@ -201,16 +201,16 @@ pub fn decide(
 
 struct Running {
     cap: Mutex<Option<Box<dyn LiveCapture>>>,
-    /// Nome do diretório da sessão (handle das ferramentas de leitura).
+    /// Session directory name (handle used by the read tools).
     session_handle: String,
 }
 
 enum Slot {
-    /// Reservada: validação feita, esperando a confirmação do usuário.
+    /// Reserved: validation done, waiting for the user's confirmation.
     Starting,
-    /// O navegador está subindo (`backend.start` em andamento). `abandoned`:
-    /// o chamador desistiu (cancelamento, prazo, desconexão); a captura que
-    /// ficar pronta é parada em vez de registrada.
+    /// The browser is starting (`backend.start` in progress). `abandoned`:
+    /// the caller gave up (cancellation, deadline, disconnect); a capture that
+    /// becomes ready is stopped instead of registered.
     Opening {
         abandoned: bool,
     },
@@ -227,11 +227,11 @@ pub struct Prepared {
 pub struct Manager {
     backend: Arc<dyn CaptureBackend>,
     slots: Mutex<HashMap<String, Slot>>,
-    /// O servidor está encerrando: nada novo abre, e o que ainda estiver
-    /// subindo é encerrado assim que o navegador responder.
+    /// The server is shutting down: nothing new opens, and whatever is still
+    /// starting is closed as soon as the browser responds.
     shutting_down: AtomicBool,
-    /// `backend.start` em andamento (o Chrome pode existir antes de a captura
-    /// ser registrada).
+    /// `backend.start` in progress (Chrome may exist before the capture
+    /// is registered).
     starts_in_flight: AtomicUsize,
     stops_in_flight: AtomicUsize,
 }
@@ -267,8 +267,8 @@ impl Manager {
         self.slots.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Valida o pedido, reserva a única vaga e monta o texto da confirmação.
-    /// Nada é aberto aqui.
+    /// Validates the request, reserves the single slot and builds the confirmation text.
+    /// Nothing is opened here.
     pub fn prepare(&self, ctx: &Ctx, params: StartCaptureParams) -> Result<Prepared, ToolError> {
         let third = params.third_party_hosts.clone().unwrap_or_default();
         let allowlist = Allowlist::new(&params.allowed_hosts, &third)
@@ -287,13 +287,13 @@ impl Manager {
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err(ToolError::new(
                 "shutting_down",
-                "o servidor está encerrando",
+                "the server is shutting down",
             ));
         }
         if !slots.is_empty() {
             return Err(ToolError::new(
                 "capture_already_running",
-                "já existe uma captura ativa (ou iniciando); encerre-a com stop_capture antes de iniciar outra",
+                "a capture is already active (or starting); stop it with stop_capture before starting another",
             ));
         }
         let capture_id = new_id();
@@ -307,47 +307,47 @@ impl Manager {
         if session_dir.exists() {
             return Err(ToolError::new(
                 "exists",
-                "diretório de sessão já existe; tente de novo",
+                "session directory already exists; try again",
             ));
         }
         slots.insert(capture_id.clone(), Slot::Starting);
 
         let list = |hosts: Vec<String>| {
             if hosts.is_empty() {
-                "(nenhum)".to_string()
+                "(none)".to_string()
             } else {
                 hosts.join(", ")
             }
         };
         let list = |hosts: Vec<String>| escape_display(&list(hosts));
         let message = format!(
-            "Um agente pediu para abrir o Chrome e capturar o tráfego de rede.\n\
-             Hosts permitidos (navegar e agir): {}\n\
-             Hosts de terceiros liberados: {}\n\
-             URL inicial: {}\n\
-             CDP entregue ao agente (controle do navegador): {}\n\
-             Modo: {}\n\
-             Binário do Chrome: {}\n\n\
-             ATENÇÃO sobre portas: o navegador impõe o HOST em todas as portas; a PORTA só é imposta quando o agente usa navigate. Aprovar um host com porta (ex.: localhost:8080) aprova, para a página, esse host em QUALQUER porta (Redis local, painéis de admin, outros serviços). Liste só hosts em que isso seja aceitável.\n\n\
+            "An agent asked to open Chrome and capture network traffic.\n\
+             Allowed hosts (navigate and act): {}\n\
+             Third-party hosts allowed: {}\n\
+             Start URL: {}\n\
+             CDP handed to the agent (browser control): {}\n\
+             Mode: {}\n\
+             Chrome binary: {}\n\n\
+             WARNING about ports: the browser enforces the HOST on all ports; the PORT is only enforced when the agent uses navigate. Approving a host with a port (e.g. localhost:8080) approves, for the page, that host on ANY port (local Redis, admin panels, other services). List only hosts for which this is acceptable.\n\n\
              {}\n\n\
-             Marque \"confirmo\" para autorizar. Sem isso nada é aberto.",
+             Tick \"confirmo\" to authorize. Without it nothing is opened.",
             list(allowlist.allowed_hosts()),
             list(allowlist.third_party_hosts()),
             escape_display(
                 &start_url
                     .as_deref()
                     .map(strip_query)
-                    .unwrap_or_else(|| "(nenhuma)".to_string())
+                    .unwrap_or_else(|| "(none)".to_string())
             ),
             if expose_cdp {
-                "SIM — ATENÇÃO: a porta CDP não tem autenticação; qualquer processo local pode controlar o Chrome inteiro (todas as abas, cookies, sessões abertas)"
+                "YES — WARNING: the CDP port has no authentication; any local process can control the whole Chrome (all tabs, cookies, open sessions)"
             } else {
-                "não"
+                "no"
             },
             if headless {
-                "sem janela (headless)"
+                "without a window (headless)"
             } else {
-                "com janela"
+                "with a window"
             },
             escape_display(&chrome.display().to_string()),
             SENSITIVE_NOTICE
@@ -368,10 +368,10 @@ impl Manager {
         })
     }
 
-    /// A chamada de `start_capture` terminou sem entregar o `capture_id` ao
-    /// cliente (cancelamento, prazo, desistência, negativa): qualquer aceite
-    /// tardio é ignorado e a vaga é sempre liberada. Se o navegador já está
-    /// subindo ou subiu, ele é parado.
+    /// The `start_capture` call ended without delivering the `capture_id` to the
+    /// client (cancellation, deadline, giving up, refusal): any late acceptance
+    /// is ignored and the slot is always released. If the browser is already
+    /// starting or has started, it is stopped.
     pub fn abandon(&self, capture_id: &str) {
         let mut slots = self.lock();
         match slots.get_mut(capture_id) {
@@ -384,10 +384,10 @@ impl Manager {
                     drop(slots);
                     let cap = running.cap.lock().unwrap_or_else(|e| e.into_inner()).take();
                     if let Some(cap) = cap {
-                        // Em outra thread: parar espera o Chrome encerrar.
+                        // In another thread: stopping waits for Chrome to exit.
                         std::thread::spawn(move || {
                             if let Err(error) = cap.stop() {
-                                eprintln!("scrapelens-mcp: ao parar captura abandonada: {error}");
+                                eprintln!("scrapelens-mcp: while stopping an abandoned capture: {error}");
                             }
                         });
                     }
@@ -397,14 +397,14 @@ impl Manager {
         }
     }
 
-    /// Libera a vaga reservada por `prepare` (confirmação negada ou falha).
+    /// Releases the slot reserved by `prepare` (confirmation denied or failure).
     pub fn release(&self, capture_id: &str) {
         self.lock().remove(capture_id);
     }
 
-    /// Abre o navegador (bloqueante) e registra a captura. Se o servidor
-    /// começar a encerrar enquanto o Chrome sobe, a captura é encerrada aqui
-    /// mesmo (o Chrome nunca fica órfão).
+    /// Opens the browser (blocking) and registers the capture. If the server
+    /// starts shutting down while Chrome is starting, the capture is closed right
+    /// here (Chrome is never left orphaned).
     pub fn start(&self, prepared: Prepared, how: &'static str) -> Result<Value, ToolError> {
         let Prepared {
             capture_id,
@@ -413,8 +413,8 @@ impl Manager {
             ..
         } = prepared;
         self.starts_in_flight.fetch_add(1, Ordering::SeqCst);
-        // Só abre o navegador se a vaga ainda é desta chamada: cancelamento ou
-        // abandono antes daqui já a liberaram e nada abre.
+        // Only opens the browser if the slot still belongs to this call: a cancellation or
+        // abandonment before this point has already released it and nothing opens.
         let reserved = {
             let mut slots = self.lock();
             match slots.get_mut(&capture_id) {
@@ -430,7 +430,7 @@ impl Manager {
         } else {
             Err(ToolError::new(
                 "capture_cancelled",
-                "a chamada foi cancelada ou abandonada antes de abrir o navegador; nada foi aberto",
+                "the call was cancelled or abandoned before the browser opened; nothing was opened",
             ))
         };
         self.starts_in_flight.fetch_sub(1, Ordering::SeqCst);
@@ -450,7 +450,7 @@ impl Manager {
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err(ToolError::new(
                 "shutting_down",
-                "o servidor está encerrando",
+                "the server is shutting down",
             ));
         }
         match self.backend.start(config) {
@@ -462,19 +462,19 @@ impl Manager {
                 );
                 if self.shutting_down.load(Ordering::SeqCst) || abandoned {
                     drop(slots);
-                    // Subiu depois do encerramento do servidor ou da desistência de
-                    // quem pediu: para agora, com a sessão gravada.
+                    // Started after the server began shutting down or after the caller gave up:
+                    // stop it now, with the session recorded.
                     match cap.stop() {
                         Ok(_) => eprintln!(
-                            "scrapelens-mcp: a captura que subia durante o encerramento foi parada"
+                            "scrapelens-mcp: the capture that was starting during shutdown was stopped"
                         ),
                         Err(error) => {
-                            eprintln!("scrapelens-mcp: ao encerrar a captura que subia: {error}")
+                            eprintln!("scrapelens-mcp: while stopping the capture that was starting: {error}")
                         }
                     }
                     return Err(ToolError::new(
                         if abandoned { "capture_cancelled" } else { "shutting_down" },
-                        "a captura foi parada porque o pedido foi cancelado ou o servidor encerrou durante o início",
+                        "the capture was stopped because the request was cancelled or the server shut down during startup",
                     ));
                 }
                 let running = Arc::new(Running {
@@ -502,11 +502,11 @@ impl Manager {
             Some(Slot::Running(running)) => Ok(running.clone()),
             Some(Slot::Starting | Slot::Opening { .. }) => Err(ToolError::new(
                 "capture_not_ready",
-                "a captura ainda está sendo iniciada",
+                "the capture is still starting",
             )),
             None => Err(ToolError::new(
                 "capture_not_found",
-                format!("captura {capture_id:?} não existe (encerrada ou id inválido)"),
+                format!("capture {capture_id:?} does not exist (stopped or invalid id)"),
             )),
         }
     }
@@ -517,21 +517,21 @@ impl Manager {
             "none" => false,
             other => {
                 return Err(ToolError::invalid(format!(
-                    "wait inválido: {other:?} (load|none)"
+                    "invalid wait: {other:?} (load|none)"
                 )))
             }
         };
         let timeout_ms = params.timeout_ms.unwrap_or(DEFAULT_NAVIGATE_TIMEOUT_MS);
         if timeout_ms == 0 || timeout_ms > MAX_NAVIGATE_TIMEOUT_MS {
             return Err(ToolError::invalid(format!(
-                "timeout_ms deve estar entre 1 e {MAX_NAVIGATE_TIMEOUT_MS}"
+                "timeout_ms must be between 1 and {MAX_NAVIGATE_TIMEOUT_MS}"
             )));
         }
         let running = self.running(&params.capture_id)?;
         let guard = running.cap.lock().unwrap_or_else(|e| e.into_inner());
         let cap = guard
             .as_ref()
-            .ok_or_else(|| ToolError::new("capture_stopped", "a captura já foi encerrada"))?;
+            .ok_or_else(|| ToolError::new("capture_stopped", "the capture has already been stopped"))?;
         let result = cap
             .navigate(&params.url, wait_load, Duration::from_millis(timeout_ms))
             .map_err(|e| ToolError::new(e.code(), e.to_string()))?;
@@ -548,7 +548,7 @@ impl Manager {
         let guard = running.cap.lock().unwrap_or_else(|e| e.into_inner());
         let cap = guard
             .as_ref()
-            .ok_or_else(|| ToolError::new("capture_stopped", "a captura já foi encerrada"))?;
+            .ok_or_else(|| ToolError::new("capture_stopped", "the capture has already been stopped"))?;
         let mut object = match serde_json::to_value(cap.status()) {
             Ok(Value::Object(map)) => map,
             _ => Map::new(),
@@ -561,11 +561,11 @@ impl Manager {
         Ok(value)
     }
 
-    /// Encerra a captura (gracioso), grava a sessão e devolve o relatório
-    /// mascarado. A captura sai do mapa em qualquer caso.
+    /// Stops the capture (graceful), writes the session and returns the masked
+    /// report. The capture leaves the map in any case.
     pub fn stop(&self, ctx: &Ctx, capture_id: &str) -> Result<Value, ToolError> {
-        // Conta o stop ANTES de a captura sair do mapa: o encerramento do
-        // servidor espera este stop terminar e gravar a sessão (R10).
+        // Counts the stop BEFORE the capture leaves the map: server shutdown
+        // waits for this stop to finish and record the session (R10).
         let _in_flight = InFlight::new(&self.stops_in_flight);
         let running = self.running(capture_id)?;
         self.lock().remove(capture_id);
@@ -574,9 +574,9 @@ impl Manager {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take()
-            .ok_or_else(|| ToolError::new("capture_stopped", "a captura já foi encerrada"))?;
+            .ok_or_else(|| ToolError::new("capture_stopped", "the capture has already been stopped"))?;
         let report = cap.stop().map_err(|e| {
-            ToolError::new("stop_failed", format!("falha ao encerrar a captura: {e}"))
+            ToolError::new("stop_failed", format!("failed to stop the capture: {e}"))
         })?;
         let mut object = match serde_json::to_value(&report) {
             Ok(Value::Object(map)) => map,
@@ -594,9 +594,9 @@ impl Manager {
         Ok(value)
     }
 
-    /// Para todas as capturas (encerramento do servidor) e espera as que ainda
-    /// estão subindo, que se encerram sozinhas ao ficar prontas. Devolve quantas
-    /// foram paradas. Bloqueante.
+    /// Stops all captures (server shutdown) and waits for those still starting,
+    /// which close on their own once ready. Returns how many were stopped.
+    /// Blocking.
     pub fn stop_all(&self, ctx: &Ctx) -> usize {
         self.shutting_down.store(true, Ordering::SeqCst);
         let ids: Vec<String> = self
@@ -609,11 +609,11 @@ impl Manager {
         for id in ids {
             match self.stop(ctx, &id) {
                 Ok(_) => stopped += 1,
-                Err(error) => eprintln!("scrapelens-mcp: ao encerrar {id}: {error}"),
+                Err(error) => eprintln!("scrapelens-mcp: while stopping {id}: {error}"),
             }
         }
-        // O Chrome que ainda sobe: `start` o encerra ao terminar. O limite é o
-        // prazo de início da própria captura (90 s) com folga.
+        // Chrome that is still starting: `start` closes it when it finishes. The limit is
+        // the capture's own startup deadline (90 s) plus some margin.
         let deadline = std::time::Instant::now() + Duration::from_secs(120);
         while (self.starts_in_flight.load(Ordering::SeqCst) > 0
             || self.stops_in_flight.load(Ordering::SeqCst) > 0)
@@ -622,15 +622,15 @@ impl Manager {
             std::thread::sleep(Duration::from_millis(50));
         }
         if self.stops_in_flight.load(Ordering::SeqCst) > 0 {
-            eprintln!("scrapelens-mcp: um stop_capture não terminou a tempo; a sessão pode não ter sido gravada");
+            eprintln!("scrapelens-mcp: a stop_capture did not finish in time; the session may not have been recorded");
         }
         if self.starts_in_flight.load(Ordering::SeqCst) > 0 {
-            eprintln!("scrapelens-mcp: um início de captura não terminou a tempo; o Chrome pode ter ficado ativo");
+            eprintln!("scrapelens-mcp: a capture start did not finish in time; Chrome may have stayed active");
         }
         stopped
     }
 
-    /// Chamado pelo servidor ao iniciar.
+    /// Called by the server on startup.
     pub fn startup(&self) {
         self.backend.startup();
     }
@@ -640,7 +640,7 @@ impl Manager {
     }
 }
 
-/// Contador de operações em andamento, decrementado ao sair do escopo.
+/// Counter of operations in progress, decremented when it goes out of scope.
 struct InFlight<'a>(&'a AtomicUsize);
 
 impl<'a> InFlight<'a> {
@@ -656,11 +656,11 @@ impl Drop for InFlight<'_> {
     }
 }
 
-/// Caractere que não pode aparecer cru em texto mostrado ao usuário: controle
-/// (Cc), marcas não espaçadas e envolventes (Mn, Me: empilham sobre o anterior),
-/// formato (Cf: bidi, largura zero, seletores de variação, tags), separadores
-/// exceto o espaço comum (Zs, Zl, Zp), uso privado (Co) e não atribuídos (Cn),
-/// mais alguns "preenchimentos" que são letras/símbolos mas renderizam em branco.
+/// Character that must not appear raw in text shown to the user: control
+/// (Cc), non-spacing and enclosing marks (Mn, Me: they stack on the previous one),
+/// format (Cf: bidi, zero width, variation selectors, tags), separators
+/// except the plain space (Zs, Zl, Zp), private use (Co) and unassigned (Cn),
+/// plus some "fillers" that are letters/symbols but render as blank.
 fn is_hidden_char(ch: char) -> bool {
     use icu_properties::props::GeneralCategory as Gc;
     if ch == ' ' {
@@ -687,9 +687,9 @@ fn is_hidden_char(ch: char) -> bool {
     )
 }
 
-/// Texto exibido na confirmação e nas mensagens de erro: caracteres invisíveis ou
-/// que reordenam/empilham (ver [`is_hidden_char`]) viram `\u{XXXX}` literal, para
-/// que um valor controlado pelo agente não injete linhas falsas nem disfarce o texto.
+/// Text shown in the confirmation and error messages: invisible characters or
+/// ones that reorder/stack (see [`is_hidden_char`]) become a literal `\u{XXXX}`, so
+/// that a value controlled by the agent cannot inject fake lines or disguise the text.
 pub fn escape_display(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -702,8 +702,8 @@ pub fn escape_display(text: &str) -> String {
     out
 }
 
-/// URL sem query nem fragmento (trocados por `?…`): nas saídas de captura não
-/// há como saber quais parâmetros são segredo, então nenhum é mostrado.
+/// URL without query or fragment (replaced by `?…`): in capture outputs there
+/// is no way to know which parameters are secrets, so none is shown.
 pub fn strip_query(url: &str) -> String {
     match url.find(['?', '#']) {
         Some(at) => format!("{}?…", &url[..at]),
@@ -711,8 +711,8 @@ pub fn strip_query(url: &str) -> String {
     }
 }
 
-/// Texto livre sem query nem fragmento: depois de redigir o que o core
-/// reconhece como credencial, todo `?…` e `#…` até um terminador vira `?…`/`#…`.
+/// Free text without query or fragment: after redacting what Core
+/// recognizes as a credential, every `?…` and `#…` up to a terminator becomes `?…`/`#…`.
 pub fn strip_text(text: &str) -> String {
     let text = scrapelens_core::export::sanitize::sanitize_text(
         text,
@@ -732,8 +732,8 @@ pub fn strip_text(text: &str) -> String {
             continue;
         }
         let (token, after) = rest.split_at(end);
-        // Token que parece URL ou caminho: corta no primeiro `?`, `#` ou `;`
-        // (query, fragmento, parâmetro de matriz); sobra só o caminho.
+        // URL-like or path-like token: cut at the first `?`, `#` or `;`
+        // (query, fragment, matrix parameter); only the path remains.
         let urlish = token.contains("://") || token.starts_with('/');
         match token.find(['?', '#', ';']).filter(|_| urlish) {
             Some(at) => {
@@ -747,8 +747,8 @@ pub fn strip_text(text: &str) -> String {
     out
 }
 
-/// Nas saídas de captura nenhuma string guarda query ou fragmento (campos de
-/// URL, avisos e mensagens de erro).
+/// In capture outputs no string keeps a query or fragment (URL fields,
+/// warnings and error messages).
 fn mask_urls(value: &mut Value) {
     match value {
         Value::Object(map) => map.values_mut().for_each(mask_urls),

@@ -82,7 +82,7 @@ fn import_formats_and_errors() {
     assert_eq!(out["format"], "netlog");
 
     // Errors.
-    let bad = env.write("bad.txt", "isso não é JSON");
+    let bad = env.write("bad.txt", "this is not JSON");
     assert_eq!(
         err_code(import_session(&env.ctx, p(json!({"path": bad})))),
         "import_failed"
@@ -90,7 +90,7 @@ fn import_formats_and_errors() {
     assert_eq!(
         err_code(import_session(
             &env.ctx,
-            p(json!({"path": "/nao/existe.har"}))
+            p(json!({"path": "/does/not/exist.har"}))
         )),
         "not_found"
     );
@@ -731,7 +731,7 @@ fn trace_cookie_finds_first_setter_and_users_without_leaking_values() {
     )
     .unwrap();
     assert!(orphan["firstSetter"].is_null());
-    assert!(text(&orphan["notes"]).contains("não é afirmada"));
+    assert!(text(&orphan["notes"]).contains("is not asserted"));
 }
 
 #[test]
@@ -958,7 +958,7 @@ fn trace_uses_chronological_order_not_session_order() {
         .unwrap()
         .iter()
         .all(|u| u["afterFirstSetter"] == true));
-    assert!(text(&trace["notes"]).contains("cronológica"));
+    assert!(text(&trace["notes"]).contains("chronological"));
 
     // The value mode requires reveal; chronological order also applies to it.
     let open_env = Env::new(true);
@@ -1137,7 +1137,7 @@ fn export_session_refuses_unsafe_destinations() {
     assert_eq!(
         err_code(export_session(
             &env.ctx,
-            p(json!({"session_id": "nao-existe"}))
+            p(json!({"session_id": "does-not-exist"}))
         )),
         "not_found"
     );

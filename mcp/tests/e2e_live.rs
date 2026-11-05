@@ -34,7 +34,7 @@ fn serve() -> (u16, Arc<Mutex<Vec<String>>>) {
                     (
                         "403 Forbidden",
                         "cf-mitigated: challenge\r\n",
-                        "<html><body>desafio</body></html>",
+                        "<html><body>challenge</body></html>",
                     )
                 } else {
                     (

@@ -93,7 +93,7 @@ fn decide_requires_explicit_acceptance() {
     assert_eq!(decide(&Accepted, false).unwrap(), "elicited");
     for flag in [false, true] {
         // Refusal or cancellation always applies, with or without the flag.
-        for c in [Declined("não".into()), Cancelled] {
+        for c in [Declined("no".into()), Cancelled] {
             assert_eq!(
                 decide(&c, flag).unwrap_err().code,
                 "confirmation_denied",
@@ -102,7 +102,7 @@ fn decide_requires_explicit_acceptance() {
         }
     }
     // Without elicitation: only with the operator's flag.
-    let unavailable = Unavailable("cliente sem suporte".into());
+    let unavailable = Unavailable("client without support".into());
     assert_eq!(
         decide(&unavailable, false).unwrap_err().code,
         "confirmation_unavailable"
@@ -202,9 +202,9 @@ fn confirmation_text_lists_what_the_user_is_authorizing() {
     for needle in [
         "a.site.test:8080",
         "cdn.test",
-        "SIM",
+        "YES",
         "/fake/chrome",
-        "com janela",
+        "with a window",
         SENSITIVE_NOTICE,
         "confirmo",
     ] {

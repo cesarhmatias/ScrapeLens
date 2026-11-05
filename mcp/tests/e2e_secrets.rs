@@ -157,7 +157,7 @@ fn poisoned_session(dir: &std::path::Path) {
         request.response_headers = request.attempts[0].response_headers.clone();
     }
     session.warnings.push(Warning::new(
-        "x.aviso",
+        "x.warning",
         format!("failed to load https://x.invalid/w{q}"),
     ));
     for (name, bytes) in bundle_attachments {

@@ -29,7 +29,7 @@ fn trace_value_value_mode_requires_reveal_so_it_is_no_oracle() {
         format!("Bearer {TOKEN}"),
         SID.to_string(),
         basic,
-        "valor-que-nao-existe-em-lugar-nenhum".to_string(),
+        "value-that-does-not-exist-anywhere".to_string(),
         "a".to_string(),
     ] {
         for reveal in [None, Some(false)] {
@@ -293,10 +293,10 @@ fn confirmation_text_warns_that_the_port_is_only_enforced_on_navigate() {
     client.tool("start_capture", start_args());
     let message = &client.elicitations[0];
     for needle in [
-        "impõe o HOST em todas as portas",
-        "PORTA só é imposta",
+        "enforces the HOST on all ports",
+        "PORT is only enforced",
         "navigate",
-        "QUALQUER porta",
+        "ANY port",
         "localhost",
     ] {
         assert!(message.contains(needle), "faltou {needle:?}: {message}");
@@ -516,7 +516,7 @@ fn binary_path_that_is_not_chrome_is_refused_before_asking_the_user() {
         Elicit::Accept,
     );
     client.handshake();
-    for bad in ["/bin/echo", "/usr/bin/true", "/nao/existe"] {
+    for bad in ["/bin/echo", "/usr/bin/true", "/does/not/exist"] {
         let (is_error, out) = client.tool(
             "start_capture",
             json!({"allowed_hosts": ["site.invalid.test"], "binary_path": bad}),

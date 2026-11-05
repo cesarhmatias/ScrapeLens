@@ -82,7 +82,7 @@ fn start_with_accepted_confirmation_runs_the_whole_cycle() {
     for needle in [
         "site.invalid.test",
         "cdn.invalid.test",
-        "SIM",
+        "YES",
         "/fake/Google Chrome",
         "headless",
         "cookies",
@@ -206,7 +206,7 @@ fn site_profile_reads_the_captured_session_with_redaction() {
     );
     assert!(is_error);
     assert_eq!(missing["error"]["code"], "not_found");
-    let (is_error, _) = client.tool("site_profile", json!({"session_id": "nao-existe"}));
+    let (is_error, _) = client.tool("site_profile", json!({"session_id": "does-not-exist"}));
     assert!(is_error);
     client.finish();
 }
@@ -283,7 +283,7 @@ fn closing_stdin_stops_active_captures_gracefully() {
     client.close_stdin();
     let (ok, stderr) = client.finish();
     assert!(ok, "{stderr}");
-    assert!(stderr.contains("1 captura(s) encerrada(s)"), "{stderr}");
+    assert!(stderr.contains("1 capture(s) stopped on exit"), "{stderr}");
     assert!(
         work.path()
             .join("sessions")

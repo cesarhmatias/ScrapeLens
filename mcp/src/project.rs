@@ -174,9 +174,9 @@ pub fn body_descriptor(body: &Body, original: &Body, masked_view: bool) -> Value
 /// `unsupported` (body cannot be sanitized, content retained) or `redacted`.
 pub fn masked_kind(body: &Body) -> Option<&'static str> {
     let note = body.note.as_deref().unwrap_or("");
-    if body.state == BodyState::Discarded && note.contains("sanitização") {
+    if body.state == BodyState::Discarded && (note.contains("sanitização") || note.contains("sanitization")) {
         Some("unsupported")
-    } else if note.starts_with("corpo sanitizado") {
+    } else if note.starts_with("corpo sanitizado") || note.starts_with("sanitized body") {
         Some("redacted")
     } else {
         None

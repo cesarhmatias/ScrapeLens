@@ -30,7 +30,7 @@ fn escape_display_neutralises_control_and_bidi_characters() {
 
 #[test]
 fn confirmation_text_never_carries_injected_lines() {
-    let fake_line = "CONFIRMADO-PELO-USUARIO";
+    let fake_line = "CONFIRMED-BY-USER";
     let work = tempfile::tempdir().unwrap();
     let mut client = fake(work.path(), Elicit::Accept, &[]);
     let (_, out) = client.tool(
@@ -65,7 +65,7 @@ fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
         json!({"allowed_hosts": ["site.invalid.test"], "headless": true, "expose_cdp": true}),
     );
     let message = client.elicitations[0].clone();
-    for needle in ["não tem autenticação", "qualquer processo local", "controlar o Chrome inteiro"] {
+    for needle in ["has no authentication", "any local process", "control the whole Chrome"] {
         assert!(message.contains(needle), "missing {needle:?}: {message}");
     }
     client.finish();
@@ -73,7 +73,7 @@ fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
     let work = tempfile::tempdir().unwrap();
     let mut client = fake(work.path(), Elicit::Decline, &[]);
     client.tool("start_capture", json!({"allowed_hosts": ["site.invalid.test"], "headless": true}));
-    assert!(!client.elicitations[0].contains("não tem autenticação"));
+    assert!(!client.elicitations[0].contains("has no authentication"));
     client.finish();
 }
 

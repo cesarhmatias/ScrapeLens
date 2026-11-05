@@ -334,7 +334,7 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
     let stem = input
         .file_stem()
         .and_then(|s| s.to_str())
-        .unwrap_or("sessao")
+        .unwrap_or("session")
         .to_string();
     let derived = {
         let id = slug(&meta_id);
