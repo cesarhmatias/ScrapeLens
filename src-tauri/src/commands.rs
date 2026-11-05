@@ -598,20 +598,13 @@ pub fn start_session(
     let (ready_tx, ready_rx) = mpsc::channel();
     let join = thread::spawn(move || capture::run(config, thread_status, stop_rx, ready_tx));
 
-    match ready_rx.recv_timeout(Duration::from_secs(35)) {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => {
-            let _ = join.join();
+    let join = match await_capture_ready(&ready_rx, &stop_tx, join, CAPTURE_READY_TIMEOUT) {
+        Ok(join) => join,
+        Err(error) => {
             let _ = std::fs::remove_dir_all(&dir);
             return Err(error);
         }
-        Err(_) => {
-            let _ = stop_tx.send(());
-            let _ = join.join();
-            let _ = std::fs::remove_dir_all(&dir);
-            return Err("The capture was not ready within 35 s. Check whether Chrome opened and try again.".to_string());
-        }
-    }
+    };
 
     *slot = Some(CaptureSession {
         id: session_id.clone(),
@@ -2359,6 +2352,89 @@ mod tests {
         let out = std::env::var("SL_DUMP").expect("SL_DUMP");
         let preview = crate::export::sanitize_preview(Path::new(&dir)).unwrap();
         fs::write(out, serde_json::to_string_pretty(&preview).unwrap()).unwrap();
+    }
+}
+
+/// How long the capture thread may take to report that Chrome is ready.
+const CAPTURE_READY_TIMEOUT: Duration = Duration::from_secs(35);
+
+/// Waits for the capture thread to report readiness. Errors that happen before Chrome
+/// starts (cookie import, profile, executable) are returned as the thread reported
+/// them. The timeout is only for a thread that is still running but silent.
+fn await_capture_ready<T: Send + 'static>(
+    ready_rx: &mpsc::Receiver<Result<(), String>>,
+    stop_tx: &mpsc::Sender<()>,
+    join: thread::JoinHandle<Result<T, String>>,
+    timeout: Duration,
+) -> Result<thread::JoinHandle<Result<T, String>>, String> {
+    match ready_rx.recv_timeout(timeout) {
+        Ok(Ok(())) => Ok(join),
+        Ok(Err(error)) => {
+            let _ = join.join();
+            Err(error)
+        }
+        // The thread ended without reporting readiness: its own error is the answer.
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(match join.join() {
+            Ok(Err(error)) => error,
+            Ok(Ok(_)) => "The capture ended before Chrome was ready.".to_string(),
+            Err(_) => "The capture thread stopped unexpectedly before Chrome was ready.".to_string(),
+        }),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            let _ = stop_tx.send(());
+            let _ = join.join();
+            Err("The capture was not ready within 35 s. Check whether Chrome opened and try again.".to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+mod capture_start_tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn startup_error_from_the_capture_thread_is_shown_not_the_timeout() {
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        let (stop_tx, _stop_rx) = mpsc::channel::<()>();
+        let message = "cookies could not be read: the profile database is locked; close Chrome and try again";
+        let join = thread::spawn(move || {
+            // Same as `capture::run` returning early with `?` before signalling readiness.
+            drop(ready_tx);
+            Err::<(), String>(message.to_string())
+        });
+        let started = Instant::now();
+        let error = await_capture_ready(&ready_rx, &stop_tx, join, CAPTURE_READY_TIMEOUT).err().unwrap();
+        assert_eq!(error, message);
+        assert!(!error.contains("not ready within"));
+        assert!(started.elapsed() < Duration::from_secs(5), "must not wait for the 35 s timeout");
+    }
+
+    #[test]
+    fn silent_thread_still_times_out_and_is_stopped() {
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        let join = thread::spawn(move || {
+            // Keeps the channel open and only ends when the caller asks it to stop.
+            let _keep = ready_tx;
+            let _ = stop_rx.recv();
+            Err::<(), String>("stopped".to_string())
+        });
+        let error = await_capture_ready(&ready_rx, &stop_tx, join, Duration::from_millis(50)).err().unwrap();
+        assert!(error.contains("not ready within"), "{error}");
+    }
+
+    #[test]
+    fn ready_signal_returns_the_running_capture() {
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        let join = thread::spawn(move || {
+            let _ = ready_tx.send(Ok(()));
+            let _ = stop_rx.recv();
+            Ok::<(), String>(())
+        });
+        let join = await_capture_ready(&ready_rx, &stop_tx, join, CAPTURE_READY_TIMEOUT).expect("ready");
+        let _ = stop_tx.send(());
+        assert!(join.join().unwrap().is_ok());
     }
 }
 
