@@ -62,7 +62,7 @@ const bottom = await page.evaluate(() => {
   };
 });
 
-await page.screenshot({ path: path.join(appRoot, "..", "docs", "screenshots", "14-list-12k-virtualizada.png") });
+await page.screenshot({ path: path.join(appRoot, "..", "docs", "screenshots", "14-list-12k-virtualized.png") });
 
 const report = {
   generatedAt: new Date().toISOString(),

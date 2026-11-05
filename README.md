@@ -27,7 +27,7 @@
 
 Built with **Tauri 2 + React/TypeScript + Rust**, it runs **100% locally**, with no external sidecars, no cloud and **no telemetry**.
 
-![ScrapeLens main interface](docs/screenshots/22-final-app.png)
+![ScrapeLens main interface (synthetic demo session)](docs/screenshots/01-main-light.png)
 
 ---
 
@@ -50,11 +50,13 @@ Built with **Tauri 2 + React/TypeScript + Rust**, it runs **100% locally**, with
 
 | Verified Detail (Headers & Provenance) | Side-by-Side Comparison (Diff) |
 |---|---|
-| ![Verified detail](docs/screenshots/23-final-detail-verified.png) | ![Comparison](docs/screenshots/10-comparison-dark.png) |
+| ![Verified detail](docs/screenshots/03-detail-headers-light.png) | ![Comparison](docs/screenshots/10-comparison-dark.png) |
 
-| Cookie Inspection (`Cookie` vs `Set-Cookie`) | Sanitized Export |
+| Cookie Inspection (`Cookie` vs `Set-Cookie`) | Attempts and Ambiguous Match |
 |---|---|
-| ![Cookies](docs/screenshots/19-real-cookies.png) | ![Sanitized export](docs/screenshots/24-export-sanitized-open.png) |
+| ![Cookies](docs/screenshots/06-detail-cookies-light.png) | ![Attempts](docs/screenshots/15-detail-attempts-ambiguous.png) |
+
+The screenshots above use the synthetic demo session (`DEMO` badge in each image).
 
 </details>
 

@@ -1,10 +1,13 @@
 # Interface screenshots — contract v1 (synthetic session, DEMO)
 
-Screenshots 01–16: UI over the synthetic fixture (`synthetic-fixture`, `DEMO` labels,
-`.invalid` domains), rendered via Playwright or from the Tauri app. Screenshots 17–21:
-**real cycle on macOS** — external Chrome 156 with a dedicated profile against the
-local testserver at `127.0.0.1:8781`, a real `capture-*` session, and real
-HAR/NetLog imports; no synthetic data is presented as a capture.
+All screenshots show the synthetic demo session: UI over the synthetic fixture
+(`synthetic-fixture`, `DEMO` labels, `.invalid` domains), rendered headless with
+Playwright (`app/scripts/shoot.mjs`, locale `en-US`, timezone UTC). No screenshot in
+this folder is a capture of a real site.
+
+Screenshots of the desktop shell and of real captures (16–24 in the previous set) were
+removed: they showed the Portuguese interface and local paths. Replacements, if any,
+must be new English captures against the local test server.
 
 | File | What it shows |
 |---|---|
@@ -21,14 +24,8 @@ HAR/NetLog imports; no synthetic data is presented as a capture.
 | `11-detail-verification-dark.png` | NetLog-only case: missing headers, “not verified” status, estimated duration `≈` |
 | `12-main-search-light.png` | Search “produtos” (a term from the synthetic URL paths) with count “2 of 13” |
 | `13-main-filter-errors-dark.png` | “Errors 4xx/5xx” filter (403, 403, 401) |
-| `14-list-12k-virtualizada.png` | Virtualized list with 12,000 synthetic requests (24 rows in the DOM) |
+| `14-list-12k-virtualized.png` | Virtualized list with 12,000 synthetic requests (24 rows in the DOM) |
 | `15-detail-attempts-ambiguous.png` | Attempts + ambiguous match with explicit candidates |
-| `16-tauri-shell-dark.png` | Real Tauri 2 shell window (local ad-hoc build) with native title, single window and demo session |
-| `17-real-capture-main.png` | Real capture: external Chrome 156 on the local testserver page (11 requests, `cdp+netlog`) |
-| `18-real-detail-headers.png` | Real `/setcookie` request: h1 headers in the NetLog sequence, `verified` verification, source timestamps |
-| `19-real-cookies.png` | Real cookies and four `Set-Cookie` lines (including the duplicated `sc_dup`) preserved |
-| `20-real-har-imported.png` | Real HAR (10 requests) imported by the core and opened in the UI (`har-import`) |
-| `21-real-netlog-importado.png` | Real NetLog (24 requests including background traffic) imported by the core; partial session declared |
 
 Official contract: `docs/03-contracts.md`. Decisions: `docs/01-decisions.md`.
 Provisional wave 1 contract (history): `app/CONTRACT-DRAFT.md`.
