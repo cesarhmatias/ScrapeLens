@@ -51,7 +51,7 @@ hundreds of MB, stay in `session/` and `server/`, ignored by git; without `--kee
 - Response body that does not come in base64 → `"transformed":["chrome-decoded"]`: the
   `getResponseBody` delivers text already decoded by Chrome. With a declared charset
   other than UTF-8 it adds `"charset:<x>->utf-8"`. Live case
-  `latin1`: wire `53 e3 6f` ("São", ISO-8859-1) → CDP `53 c3 a3 6f`, marked.
+  `latin1`: wire `53 e3 6f` ("São", ISO-8859-1 non-ASCII test input) → CDP `53 c3 a3 6f`, marked.
   The wire bytes are not reconstructed.
 - Incomplete `postDataEntries` → tries `Network.getRequestPostData`; if only the event's
   `postData` remains, it is recorded marked `"lossy-postData"` (unit test; Chrome 156

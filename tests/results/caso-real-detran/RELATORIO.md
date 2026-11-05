@@ -12,14 +12,14 @@ Abbreviations: **H1** = `sem_captcha.har` (1 page); **H2** = `wsdetran.pb.gov.br
 
 | HAR | Size | Requests | GET/POST | Warnings | Response bodies | postData (POSTs) | Time | Peak memory |
 |---|---|---|---|---|---|---|---|---|
-| H1 | 12,6 MiB | 135 | 127/8 | 0 | 126 captured, 9 empty | 8/8 captured | 1,26 s | 50 MiB |
-| H2 | 19,2 MiB | 209 | 190/19 | 0 | 182 captured, 12 empty, 15 unavailable | 19/19 captured | 1,55 s | 76 MiB |
-| H3 | 31,8 MiB | 346 | 323/23 | 0 | 313 captured, 16 empty, 17 unavailable | 23/23 captured | 0,35 s | 125 MiB |
+| H1 | 12.6 MiB | 135 | 127/8 | 0 | 126 captured, 9 empty | 8/8 captured | 1.26 s | 50 MiB |
+| H2 | 19.2 MiB | 209 | 190/19 | 0 | 182 captured, 12 empty, 15 unavailable | 19/19 captured | 1.55 s | 76 MiB |
+| H3 | 31.8 MiB | 346 | 323/23 | 0 | 313 captured, 16 empty, 17 unavailable | 23/23 captured | 0.35 s | 125 MiB |
 
 - None truncated/discarded. Completeness `complete` for all three. A single attempt per request (no redirects).
-- `unavailable` in the responses = HAR without `content.text` ("response.content sem text" (legacy)): 4 Connector POSTs in H2/H3
+- `unavailable` in the responses = HAR without `content.text` ("response.content without text" (legacy: "response.content sem text")): 4 Connector POSTs in H2/H3
   (first round of `cmd_filtro`, `cmd_consultar_placa` ×2 and `cmd_nova`) and protection GETs.
-- GET `requestBody` appears as `unavailable` ("HAR não fornece postData" (legacy)) in 127/190/323 requests, without being
+- GET `requestBody` appears as `unavailable` ("HAR does not provide postData" (legacy: "HAR não fornece postData")) in 127/190/323 requests, without being
   a body that is actually absent (see gap L7).
 - H3 contains the first 209 requests of H2 (same IDs, methods and paths; `compare H2 H3` = 209 pairs
   100% static) plus 137 requests from new rounds: H3 **is not an independent 2nd capture**.
@@ -35,13 +35,13 @@ Abbreviations: **H1** = `sem_captcha.har` (1 page); **H2** = `wsdetran.pb.gov.br
 | H3 | 5 (same IDs as H2) | `XML` | yes (19 B) | yes | 0 |
 
 Searches for `on_interceptor`, `cmd_filtro`, `cmd_nova` and `m_currentSessionId` also find the right requests.
-Each search command: ~0,10 s, 8–14 MiB. **Meets requirement 1 of the case** (find the query by its body, not by its URL).
+Each search command: ~0.10 s, 8–14 MiB. **Meets requirement 1 of the case** (find the query by its body, not by its URL).
 
 ## 3. Origins and chain of the 1st `cmd_consultar_placa`
 
 Targets: H1 `har-0127`; H2/H3 `har-0093` (response of the previous `cmd_filtro` unavailable in the HAR) and `har-0192`
-(2nd round, complete). Times: origins 0,24 s/17 MiB (H1), 0,63 s/26 MiB (H2), 1,27 s/35 MiB (H3);
-chain 0,08 s, 0,29 s, 0,21 s (≤ 37 MiB).
+(2nd round, complete). Times: origins 0.24 s/17 MiB (H1), 0.63 s/26 MiB (H2), 1.27 s/35 MiB (H3);
+chain 0.08 s, 0.29 s, 0.21 s (≤ 37 MiB).
 
 **Flow recognized?** Yes, in the sequence of events in the body: `easynat-app?op=S37` (har-0001) → `NatLogon.html` →
 `init` NatLogon → `SIM1000X.html` → `init` → `on_interceptor` → `VES0009X.html` → `init` → `cmd_filtro` →
@@ -49,9 +49,9 @@ chain 0,08 s, 0,29 s, 0,21 s (≤ 37 MiB).
 
 | Item | Result | Assessment |
 |---|---|---|
-| SESSIONID | `possível origem (value-match)` (legacy), producer `har-0001` (easynat-app, literal `m_currentSessionId`) in H1 and H2 (`har-0104` = easynat-app of the 2nd round in H2/H3); composite with a fragment in the XML also `possível` (legacy) | correct, medium strength by design |
-| STAMP | **`sem origem observada`** (legacy) (H1) / `repeated` (H2, H3) | **COVERAGE ERROR (L1)**: the STAMP of the POST == the STAMP of the previous POST's response in 100% of the POSTs with an available response (H1 5/5, H2 10/10; first row = non-`init` POSTs) |
-| delta (fragment `x…` of the XML) | no producer (no XML fragment points to the Connector's previous response); `possível` (legacy) fragments point to pages/JS (`har-0001`, `har-0098`, `har-0007`) and 1 `ambíguo` (legacy) (`har-0029`, jquery-ui) | **ERROR (L1)** + noise (L3): continuity of the delta previous→response confirmed outside the tool (same 5/5 and 10/10) |
+| SESSIONID | `possible origin (value-match)` (legacy: "possível origem (value-match)"), producer `har-0001` (easynat-app, literal `m_currentSessionId`) in H1 and H2 (`har-0104` = easynat-app of the 2nd round in H2/H3); composite with a fragment in the XML also `possible` (legacy: "possível") | correct, medium strength by design |
+| STAMP | **`no observed origin`** (legacy: "sem origem observada") (H1) / `repeated` (H2, H3) | **COVERAGE ERROR (L1)**: the STAMP of the POST == the STAMP of the previous POST's response in 100% of the POSTs with an available response (H1 5/5, H2 10/10; first row = non-`init` POSTs) |
+| delta (fragment `x…` of the XML) | no producer (no XML fragment points to the Connector's previous response); `possible` (legacy: "possível") fragments point to pages/JS (`har-0001`, `har-0098`, `har-0007`) and 1 `ambiguous` (legacy: "ambíguo") (`har-0029`, jquery-ui) | **ERROR (L1)** + noise (L3): continuity of the delta previous→response confirmed outside the tool (same 5/5 and 10/10) |
 | cookies TS*/JSESSIONID | **do not appear** (HAR without cookies) | data limit (L2) |
 | PAGEINITPARAM, ERRORMESSAGE | `none` (empty) | correct |
 | license plate (`v_placa` in the XML) | no origin (user input) | correct |
@@ -74,23 +74,23 @@ the green fixtures did **not** prove the real case.
 Compatible: H1×H2 (same flow, distinct captures). H2×H3 is not usable (H3 ⊃ H2).
 H1×H2: 108 pairs, `alignedBy=model`, 0 out of order, 20 reordered, **27 only in A, 101 only in B, 51 ambiguities**
 (H2 has 2 complete rounds; the monotonic pairing matches H1 with the **2nd round of H2** starting from the SIM1000X `init` and
-leaves the 1st round as "só em B" (legacy); field count: 70 static, 61 dynamic (17 runtime, 44 no origin), 1 only in B.
-Time 0,25 s / 36 MiB.
+leaves the 1st round as "only in B" (legacy: "só em B"); field count: 70 static, 61 dynamic (17 runtime, 44 no origin), 1 only in B.
+Time 0.25 s / 36 MiB.
 
 Per paired Connector POST (7 pairs):
 
 | Field | Result | Assessment |
 |---|---|---|
-| SESSIONID | `dinâmico` (legacy) + `dinâmico sem origem (valor já circulava)` (legacy) in 6 of 7 pairs; in the 1st pair `dinâmico sem origem` (legacy) | dynamic: correct. Origin: **incomplete** — should be `obter em runtime (origem possível: har-0001/0104)` (legacy) |
-| STAMP | `estático` (legacy) in the `init` pairs (both `INIT`), `dinâmico` (legacy) + `sem origem` (legacy) in the others | dynamic: correct. "no origin": ERROR (L1) |
-| delta / XML fragments | parts `dinâmico` (legacy) with `obter em runtime (origem possível…)` (legacy) (e.g. 2–4 per pair) and parts `dinâmico sem origem` (legacy) (1–4 per pair) | mixed: correct parts (model/page) and delta/plate without origin (plate correct; delta ERROR L1) |
-| PAGEINITPARAM / ERRORMESSAGE | `estático` (legacy) (empty), except 1 pair with PAGEINITPARAM `dinâmico` (legacy) `possível` (legacy) | correct |
-| plate | inside the XML: part `dinâmico sem origem` (legacy) | correct |
+| SESSIONID | `dynamic` (legacy: "dinâmico") + `dynamic without origin (value already circulating)` (legacy: "dinâmico sem origem (valor já circulava)") in 6 of 7 pairs; in the 1st pair `dynamic without origin` (legacy: "dinâmico sem origem") | dynamic: correct. Origin: **incomplete** — should be `get at runtime (possible origin: har-0001/0104)` (legacy: "obter em runtime (origem possível: har-0001/0104)") |
+| STAMP | `static` (legacy: "estático") in the `init` pairs (both `INIT`), `dynamic` (legacy: "dinâmico") + `without origin` (legacy: "sem origem") in the others | dynamic: correct. "no origin": ERROR (L1) |
+| delta / XML fragments | parts `dynamic` (legacy: "dinâmico") with `get at runtime (possible origin…)` (legacy: "obter em runtime (origem possível…)") (e.g. 2–4 per pair) and parts `dynamic without origin` (legacy: "dinâmico sem origem") (1–4 per pair) | mixed: correct parts (model/page) and delta/plate without origin (plate correct; delta ERROR L1) |
+| PAGEINITPARAM / ERRORMESSAGE | `static` (legacy: "estático") (empty), except 1 pair with PAGEINITPARAM `dynamic` (legacy: "dinâmico") `possible` (legacy: "possível") | correct |
+| plate | inside the XML: part `dynamic without origin` (legacy: "dinâmico sem origem") | correct |
 | cookies | absent (HAR) | data limit |
 
 ## 5. Sanitize
 
-`sanitize` of H1 (0,16 s, 26 MiB) and H2 (0,34 s, 39 MiB); verification done by me over the whole
+`sanitize` of H1 (0.16 s, 26 MiB) and H2 (0.34 s, 39 MiB); verification done by me over the whole
 sanitized directory (session.json + attachments), without quoting values:
 
 | Value | H1 before → after | H2 before → after |
@@ -106,14 +106,14 @@ The remaining plates are in the **request body attachments** (`*.request.bin`), 
 
 | Command | H1 | H2 | H3 |
 |---|---|---|---|
-| import-har | 1,26 s / 50 MiB | 1,55 s / 76 MiB | 0,35 s / 125 MiB |
-| search | 0,10 s / 8 MiB | 0,10 s / 11 MiB | 0,11 s / 14 MiB |
-| origins | 0,24 s / 17 MiB | 0,63 s / 26 MiB (0,14 s on the target `har-0192`) | 1,27 s / 35 MiB (0,22 s) |
-| chain | 0,08 s / 19 MiB | 0,29 s / 24 MiB (0,08 s) | 0,21 s / 37 MiB (0,11 s) |
-| compare | H1×H2: 0,25 s / 36 MiB | H2×H3: 0,12 s / 20 MiB | — |
-| sanitize | 0,16 s / 26 MiB | 0,34 s / 39 MiB | not run |
+| import-har | 1.26 s / 50 MiB | 1.55 s / 76 MiB | 0.35 s / 125 MiB |
+| search | 0.10 s / 8 MiB | 0.10 s / 11 MiB | 0.11 s / 14 MiB |
+| origins | 0.24 s / 17 MiB | 0.63 s / 26 MiB (0.14 s on the target `har-0192`) | 1.27 s / 35 MiB (0.22 s) |
+| chain | 0.08 s / 19 MiB | 0.29 s / 24 MiB (0.08 s) | 0.21 s / 37 MiB (0.11 s) |
+| compare | H1×H2: 0.25 s / 36 MiB | H2×H3: 0.12 s / 20 MiB | — |
+| sanitize | 0.16 s / 26 MiB | 0.34 s / 39 MiB | not run |
 
-All below 1,6 s and 130 MiB; no performance problem.
+All below 1.6 s and 130 MiB; no performance problem.
 
 ## Verdict
 
@@ -132,8 +132,8 @@ All below 1,6 s and 130 MiB; no performance problem.
 | L3 | Excess: static scripts (`jquery-ui`, `cis*`) as `possible`/ambiguous producers because of constants/templates in the XML | Filter producers that are static resources (JS/CSS/images) or downgrade/group them; separate "protocol constant" from "session value" |
 | L4 | Chain without the Connector POSTs and without NatLogon/SIM1000X | Depends on L1; add page steps (`html`) by initiator/Referer when the POST is "loaded" by it |
 | L5 | Sanitization does not cover plates (business fields in the opaque XML) | Configurable list of sensitive protocol fields (`v_placa`, etc.) with propagation by value inside the XML; redaction report |
-| L6 | Compare pairing with 2-round captures leaves the 1st round "só em B" (legacy) and yields 51 ambiguities | Align by model phase/occurrence (round) and show rounds as groups; allow choosing the range of requests to compare |
-| L7 | GET `requestBody` appears as `unavailable` ("HAR não fornece postData" (legacy)) | A GET without a body must be `none/not applicable`, reserving `unavailable` for a body that is really unavailable |
+| L6 | Compare pairing with 2-round captures leaves the 1st round "only in B" (legacy: "só em B") and yields 51 ambiguities | Align by model phase/occurrence (round) and show rounds as groups; allow choosing the range of requests to compare |
+| L7 | GET `requestBody` appears as `unavailable` ("HAR does not provide postData" (legacy: "HAR não fornece postData")) | A GET without a body must be `none/not applicable`, reserving `unavailable` for a body that is really unavailable |
 | L8 | Unavailable responses of the Connector in H2/H3 (1st round) block the origin of the 1st `cmd_consultar_placa` | In the UI, indicate which producer is unavailable and suggest the equivalent occurrence in the following round |
 
 ## Round 6 — revalidation (core fc4aa29, `check_real_detran.py`, aggregates only)
@@ -186,7 +186,7 @@ Captured values were used only in memory to count literal occurrences.
 | Metric | H1 | H2 | H3 |
 |---|---|---|---|
 | `ast.parse` | OK | OK | OK |
-| Plan mode (rc, lines = steps, "Nada foi enviado" (legacy)) | 0 / 11 / yes | 0 / 10 / yes | 0 / 10 / yes |
+| Plan mode (rc, lines = steps, "Nothing was sent" (legacy: "Nada foi enviado")) | 0 / 11 / yes | 0 / 10 / yes | 0 / 10 / yes |
 | Steps / Connector POSTs in the script (POSTs in the HAR) | 11 / 6 (8) | 10 / 5 (19) | 10 / 5 (23) |
 | Order = manual flow (easynat-app → NatLogon → init → SIM1000X → init → on_interceptor → VES0009X → init → cmd_filtro → consultar) | **yes** | **no** (without `cmd_filtro`) | **no** (without `cmd_filtro`) |
 | Previous POST response captured in the HAR | yes | **no** (4 Connector responses without body) | **no** (same) |
@@ -205,15 +205,15 @@ False positive handled: a short "delta" (≤ 8) coincides with the header consta
 ### assess
 | Verdict (all requests) | H1 | H2 | H3 |
 |---|---|---|---|
-| app-ok / blocked? / indeterminado (legacy) | 11 / 13 / 111 | 21 / 14 / 174 | 28 / 31 / 287 |
-| Connector POSTs | **8 app-ok** | 15 app-ok + 4 indeterminado (legacy) | 19 app-ok + 4 indeterminado (legacy) |
+| app-ok / blocked? / undetermined (legacy: "indeterminado") | 11 / 13 / 111 | 21 / 14 / 174 | 28 / 31 / 287 |
+| Connector POSTs | **8 app-ok** | 15 app-ok + 4 undetermined (legacy: "indeterminado") | 19 app-ok + 4 undetermined (legacy: "indeterminado") |
 | `blocked?` on a 200 from the Connector | 0 | 0 | 0 |
 | `blocked?` without explicit signal | 0 | 0 | 0 |
 
-The 4 `indeterminado` (legacy) in H2/H3 are exactly the Connector POSTs without a captured response body (consistent: without a body, app-ok is not asserted).
+The 4 `undetermined` (legacy: "indeterminado") in H2/H3 are exactly the Connector POSTs without a captured response body (consistent: without a body, app-ok is not asserted).
 Normal Connector responses come out `app-ok`. The `blocked?` are all GETs, with the `/TSPD/` marker as the explicit signal;
 however **some of them are pages of the application itself** (easynat-app: 1/2/3, SIM1000X and VES0009X: 1/2/3 per HAR) that merely
-reference the `/TSPD/` script: probable false positive ("HTML sem controles com o marcador /TSPD/" (legacy) on an entry/template page).
+reference the `/TSPD/` script: probable false positive (reason `html-without-controls` (legacy: "HTML sem controles com o marcador /TSPD/") on an entry/template page).
 
 ### Round 7 verdict
 The generator works and the flow **matches the manual one when the bodies exist** (H1: `ast` OK, exact order, STAMP via HTML control,

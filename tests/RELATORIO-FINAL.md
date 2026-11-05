@@ -83,7 +83,7 @@ Result: **all green, 0 failures.** Criterion 9 of run_acceptance uses the live c
 
 - **Criterion 6 hardened:** the page's `sw-intercept-1` must be linked to the candidate with the same method and path (`/multi/sw-fetch`) and to no `sw-own-*`;
   a link to `sw-own-*` fails (`links_para_sw_own` recorded). In the 5 rounds: `links_para_sw_own` empty and the link is only to the SW's `sw-fetch` (evidence
-  "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada" (legacy)).
+  "possible match in the service worker (clue: time window, origin, path); not confirmed" (legacy: "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada")).
 - **New criterion:** any `cdp.target_setup_timeout`, `setup_error` or `setup_aborted` warning in the live capture fails. The 5 rounds: 0 warnings (in the earlier ones there were 1–2 per round).
 - **9 self-test mutations** (expected → obtained, the same in all 5): merging two FAIL→FAIL pairs; SW links removed FAIL→FAIL; `kind` changed FAIL→FAIL; body changed FAIL→FAIL;
   SW copy in the same session FAIL→FAIL; SW copy in another session of the same `targetId` FAIL→FAIL; **`sw-intercept` linked to `sw-own-*` FAIL→FAIL (new)**;
@@ -113,7 +113,7 @@ Result: **all green, 0 failures.**
 
 ### Real cycle on the final bundle
 
-`ScrapeLens.app` (`7a46fa4c…05d2b7c`): **Start session** → `testserver` h1 at `127.0.0.1:8781/page` → **Stop** (UI labels `Iniciar sessão` / `Encerrar` (legacy)).
+`ScrapeLens.app` (`7a46fa4c…05d2b7c`): **Start session** → `testserver` h1 at `127.0.0.1:8781/page` → **Stop** (UI labels `Start session` / `Stop` (legacy: "Iniciar sessão" / "Encerrar")).
 Capture `capture-1793454692088`: 11 requests, `complete`, `cdp+netlog`, 2 ambiguous, 154 headers verified, 14 lines in the testserver h1
 (`tests/results/app-latest/testserver/app-20261031a`). HAR and NetLog re-imported through the UI (`har-3dbc391c02a985c5-7`, 24 requests, `complete`;
 `netlog-1704043c442dcbd1-7`, 32 requests, `partial`). The native "Open" panel is unstable under automation; the HAR was chosen by click and the NetLog by keyboard (arrow + Return).
@@ -150,13 +150,13 @@ nothing was sent or changed beyond the navigation/scrolling. Temporary synthetic
 
 - **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — PARTIAL:** `EXPECTED_APP_SHA256` updated to `4636a3cf…043860`; `app-latest` is still from bundle `6c0092c3` and item 9 fails until the real cycle is redone. Blocker: the Mac has no active user (`UserIsActive 0`), the desktop comes up black, and the ScrapeLens window (pid 9430 after restart) stays without resolved AX (`ax_unresolved`); `bring_to_front` did not verify focus (the front is the OpenBot window), so there is no way to act without clicking over the user's windows. Pending: Start/Stop cycle + HAR/NetLog in bundle 4636a3cf and `lsof` during the capture. Done: `cargo build --examples` and `cargo test` in mcp: 58/0; `run_acceptance` 10/11 items OK, item 11 OK (39 assertions) with the five live capture/ tests (1 test each, `--test-threads=1`), e2e_live 3/0, live_e2e.sh 4/0, stdio flow 28/0.
 
-- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — CLOSED:** item 9 redone. Real cycle by keyboard (the AX of the button was refused with `element_outside_target_window` even with the window verified in focus; Tab to "Iniciar sessão" (legacy)/"Encerrar" (legacy) and Return, then HAR and NetLog through the Open window): `capture-1793491743660` (11 req, complete, cdp+netlog); HAR `-11` 24 req complete; NetLog `-11` 32 req partial. `lsof` during the capture (Chrome pid 25252): no LISTEN or TCP socket. `run_acceptance` 11/11 (item 11 with the five live capture/ tests, 1 thread, and `e2e_live`). Evidence: `tests/results/app-latest/lsof-captura-r11b.txt`.
+- **Bundle 4636a3cf (HEAD 03ee85c, d6af514) — CLOSED:** item 9 redone. Real cycle by keyboard (the AX of the button was refused with `element_outside_target_window` even with the window verified in focus; Tab to "Start session" (legacy: "Iniciar sessão") / "Stop" (legacy: "Encerrar") and Return, then HAR and NetLog through the Open window): `capture-1793491743660` (11 req, complete, cdp+netlog); HAR `-11` 24 req complete; NetLog `-11` 32 req partial. `lsof` during the capture (Chrome pid 25252): no LISTEN or TCP socket. `run_acceptance` 11/11 (item 11 with the five live capture/ tests, 1 thread, and `e2e_live`). Evidence: `tests/results/app-latest/lsof-captura-r11b.txt`.
 
 - **Round 11 — bundle f3039e58 (HEAD fc5ca18, commit 88c69f7) — PARTIAL 10/11:** app opened with `SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page` (pid 70761). Capture `capture-1793562925684` (11 req, complete, cdp+netlog; testserver `app-20261101c`); HAR `har-3dbc391c02a985c5-12` (24 req, complete) and NetLog `netlog-1704043c442dcbd1-12` (32 req, partial), imported through the UI from `har-derived.json` and `h1h2h3.chrome-netlog.json`. `run_acceptance` 10/10 on items 1–8, 10 and 11; item 9 stays red only for lack of the cycle screenshots (`screenshot-app-live.png` and `screenshot-app-imports.png` must be from this bundle). Folder `~/Desktop/sl-import-tmp` deleted; testserver, fake_server and the capture Chrome stopped; pid 8911 absent.
 
 - **Round 11 — CLOSED with caveat (10/11):** item 9 lacks the screenshots of bundle f3039e58; the functional evidence is `capture-1793562925684` (11 req, complete), the lsof with no LISTEN, the HAR `-12` (24 req) and the NetLog `-12` (32 req), imported by the user on 02/11; the screenshots are left for round 12, with keyboard shortcuts in the app. `run_acceptance` was not loosened: item 9 stays red in `aceite.json`.
 
-- **Round 12 — bundle 2691f152 (HEAD ce68eb9, commit e7cfc38) — CLOSED (11/11):** app opened with `SCRAPELENS_TEST_MODE=1` and `SCRAPELENS_CAPTURE_URL` pointing to the testserver `app-20261102r12`. Live capture by `invoke_menu` (Capture > Start session / Stop; menu labels `Captura > Iniciar sessão / Encerrar` (legacy)), `capture-1793651039927` (11 req, complete), no LISTEN from the capture's Chrome (lsof). HAR `har-3dbc391c02a985c5-13` (24 req, complete) and NetLog `netlog-1704043c442dcbd1-13` (32 req, partial), imported by the test CLI from `tests/.work/r12-import`. Screenshot `screenshot-app-imports.png` only of the ScrapeLens window; `screenshot-app-live.png` is the same screenshot, taken after the capture (see the note in `run.json`). `run_acceptance` 11/11 with `EXPECTED_APP_SHA256` = `2691f152…`. Orphans: testserver stopped; app stopped; pid 8911 absent.
+- **Round 12 — bundle 2691f152 (HEAD ce68eb9, commit e7cfc38) — CLOSED (11/11):** app opened with `SCRAPELENS_TEST_MODE=1` and `SCRAPELENS_CAPTURE_URL` pointing to the testserver `app-20261102r12`. Live capture by `invoke_menu` (Capture > Start session / Stop (legacy: "Captura > Iniciar sessão / Encerrar")), `capture-1793651039927` (11 req, complete), no LISTEN from the capture's Chrome (lsof). HAR `har-3dbc391c02a985c5-13` (24 req, complete) and NetLog `netlog-1704043c442dcbd1-13` (32 req, partial), imported by the test CLI from `tests/.work/r12-import`. Screenshot `screenshot-app-imports.png` only of the ScrapeLens window; `screenshot-app-live.png` is the same screenshot, taken after the capture (see the note in `run.json`). `run_acceptance` 11/11 with `EXPECTED_APP_SHA256` = `2691f152…`. Orphans: testserver stopped; app stopped; pid 8911 absent.
 
 ## Round 13 — large session memory (P1–P7) and D7
 
@@ -168,15 +168,15 @@ nothing was sent or changed beyond the navigation/scrolling. Temporary synthetic
 
 | Item | Commit | Before → after |
 |---|---|---|
-| P1 — validate `netlog.json` and CDP in a stream, without DOM | `87bd164` | `import-eager` 4.727 → **1.580 MiB** (−67 %); 17,8 → 10,1 s |
-| P2 — `inspect`/`assess` in a stream with borrowed struct | `752230e` | `inspect` 9.305 → **1.656 MiB** (−82 %); 11,5 s; output byte for byte identical |
-| P3 — correlation by index (method, canonical URL, id) | `4d82e36` | `capture-full` 248,9 s → **9,3 s**; memory the same (the NetLog DOM remains); output identical against baseline `aefacc9` on 29 captures/fixtures |
-| P6 — compact `session.json` above 50 MiB | `2550041` | 5.002 req.: 283 → **162 MiB** (−43 %); `capture-write` 9.189 → 7.580 MiB, 263 → 16,2 s |
+| P1 — validate `netlog.json` and CDP in a stream, without DOM | `87bd164` | `import-eager` 4.727 → **1.580 MiB** (−67 %); 17.8 → 10.1 s |
+| P2 — `inspect`/`assess` in a stream with borrowed struct | `752230e` | `inspect` 9.305 → **1.656 MiB** (−82 %); 11.5 s; output byte for byte identical |
+| P3 — correlation by index (method, canonical URL, id) | `4d82e36` | `capture-full` 248.9 s → **9.3 s**; memory the same (the NetLog DOM remains); output identical against baseline `aefacc9` on 29 captures/fixtures |
+| P6 — compact `session.json` above 50 MiB | `2550041` | 5.002 req.: 283 → **162 MiB** (−43 %); `capture-write` 9.189 → 7.580 MiB, 263 → 16.2 s |
 | P7 — `sanitize_bundle_owned` without masked copy | `b438945` | 1st masked MCP call 5.654 → **1.649 MiB** (−71 %) |
 
 P4 (NetLog DOM), P5 and P8 were not done in the core; P5 was done in the App. What remains of memory in `stop_capture` is the NetLog DOM (P4).
 
-**App — P5, paginated contract (`6b6bdff`, `docs/19-contrato-app.md`):** the backend reads a typed `SessionV1` and the front receives the header, pages of 2.000 summaries and the detail on demand (`open_session`, `list_requests`, `get_request`). Measured with `src-tauri/examples/mem_open.rs` on `/private/tmp/big20k` (`session.json` 1,19 GB): **7.108 → 1.161 MiB (−84 %)**; to the front go 1,4 KB of header + 5,4 MB of all pages + 32 KB of one detail (before, 681 MB). Bundles: wave 1 `52cd14fd` (HEAD `f81ea80`); wave 2 `78155379` (HEAD `291fae4`; on-demand list `6f11440`, network open by default `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), with **2** `list_requests` calls until the first screen against 33 in wave 1 (`src-tauri/EMPACOTAMENTO.md`).
+**App — P5, paginated contract (`6b6bdff`, `docs/19-contrato-app.md`):** the backend reads a typed `SessionV1` and the front receives the header, pages of 2.000 summaries and the detail on demand (`open_session`, `list_requests`, `get_request`). Measured with `src-tauri/examples/mem_open.rs` on `/private/tmp/big20k` (`session.json` 1.19 GB): **7.108 → 1.161 MiB (−84 %)**; to the front go 1.4 KB of header + 5.4 MB of all pages + 32 KB of one detail (before, 681 MB). Bundles: wave 1 `52cd14fd` (HEAD `f81ea80`); wave 2 `78155379` (HEAD `291fae4`; on-demand list `6f11440`, network open by default `3dda266`, demo/UI `f00a2e4`/`312c891`, clippy `291fae4`), with **2** `list_requests` calls until the first screen against 33 in wave 1 (`src-tauri/EMPACOTAMENTO.md`).
 
 **Review A9 (core and App):** `3fe7efc` (A9-B1: in a path, `,` or `|` followed by `/` ends the value; list without space preserves the next item; path fuzz with 3 seeds without leak), `0d9d935` (A9-B2: `=` entities with any number of escape layers — `&amp;`, `&#38;`, `&#x26;` — failing closed above 256; corpus +8) and `727e657` (A9-B3..B8 in the App and A8-B7 ⌘⇧R).
 
@@ -237,11 +237,11 @@ Independent review in `/Users/cesar/OpenBot/Shared/scrapelens-revisao-r15-r16.md
 
 | Stage | Before (R13) → P4 | Time at 20 thousand |
 |---|---:|---:|
-| `netlog-only` (NetLog parse) | 4.759 → **1.615 MiB** (−66,1 %) | 5,0 → 3,5 s |
-| `capture-full` (parse + correlation) | 7.110 → **4.200 MiB** (−40,9 %) | 9,3 → 8,1 s |
-| `capture-write` (+ writing) | 7.580 → **4.629 MiB** (−38,9 %) | 16,2 → 15,9 s |
+| `netlog-only` (NetLog parse) | 4.759 → **1.615 MiB** (−66.1 %) | 5.0 → 3.5 s |
+| `capture-full` (parse + correlation) | 7.110 → **4.200 MiB** (−40.9 %) | 9.3 → 8.1 s |
+| `capture-write` (+ writing) | 7.580 → **4.629 MiB** (−38.9 %) | 16.2 → 15.9 s |
 
-The NetLog DOM (~3,1 GiB) no longer exists; the floor is now the typed session (~1,15 GiB) plus the `session.json` of ~650 MiB. Against the round 12 baseline, `capture-full` went from 6.993 to 4.200 MiB (−40 %) and `capture-write` from 9.189 to 4.629 MiB (−50 %).
+The NetLog DOM (~3.1 GiB) no longer exists; the floor is now the typed session (~1.15 GiB) plus the `session.json` of ~650 MiB. Against the round 12 baseline, `capture-full` went from 6.993 to 4.200 MiB (−40 %) and `capture-write` from 9.189 to 4.629 MiB (−50 %).
 
 **Independent review (revalidation of `22854c3`):** **approved** — differential harness old×new with **3.170/3.170** cases without divergence and **25/25** extra combinations of duplicate `"events"` identical. Caveats from the original review (`fed9b61`, clippy and the duplicate `events` case) were closed in `22854c3`. The reviewer did not rerun the 20-thousand benchmarks or live Linux tests.
 
@@ -281,7 +281,7 @@ Builds: Rust **56 passed, 0 failures, 8 ignored** on the three platforms; `clipp
 | check_real_detran (H1–H3) | OK |
 | check_real_priming without / with `--wrapper` (H1–H3) | OK / OK |
 
-**Real cycle of the app redone on the final bundle.** `Start session` → `Stop` on `ScrapeLens.app` d1136cbb (UI labels `Iniciar sessão` → `Encerrar` (legacy)):
+**Real cycle of the app redone on the final bundle.** `Start session` → `Stop` on `ScrapeLens.app` d1136cbb (UI labels `Start session` → `Stop` (legacy: "Iniciar sessão" → "Encerrar")):
 capture `capture-1793302372326`, 11 requests, `complete`, `cdp+netlog`, 2 ambiguous, 154 headers verified,
 14 lines in the testserver h1; HAR and NetLog re-imported through the UI in the same bundle (`har-3dbc391c02a985c5-5`, 24 requests
 complete, and `netlog-1704043c442dcbd1-5`, 32 requests partial). New screenshots in
@@ -290,27 +290,27 @@ complete, and `netlog-1704043c442dcbd1-5`, 32 requests partial). New screenshots
 
 **Versioned plan (`plan.version` 2) in `check_timeline_validacao`:**
 - faithful trace generated by the current script declares `plan.version: 2` → `equivalent`, ZERO parameter or plan warnings;
-- `plan.version` absent → `equivalent` + warning "plano de versão anterior (v1): gere o script de novo…" (legacy), without diverging;
+- `plan.version` absent → `equivalent` + warning "plan of an earlier version (v1): regenerate the script…" (legacy: "plano de versão anterior (v1): gere o script de novo…"), without diverging;
 - `plan.version: 2` with the `PLAN_HASH` of another target of the SAME capture (har-0030, `26fdb4657a22511f`) → `diverges`
-  at step 1, "plano diferente do gerado a partir desta captura" (legacy) (did not stay as a warning).
+  at step 1, "plan differs from the one generated from this capture" (legacy: "plano diferente do gerado a partir desta captura") (did not stay as a warning).
 
 **`parameters` leak (39410bf): the exemption applies only to the (name, part) pair that the plan produces.**
 On the authentic trace of detran-sim (capture `real-shape-1round`, target har-0026; captured delta `DLTC0005`,
 STAMP `4105`), with the pair forged under a plan name:
-- frozen delta + `{cpf → XML.delta}` → `diverges` at step 10, "valor congelado: igual ao capturado e ausente da resposta pareada" (legacy);
-- invented delta + the same item → `diverges`, "valor sem origem no trace" (legacy);
-- frozen or invented STAMP + `{cpf → STAMP}` → `diverges` in both, with "valor congelado" (legacy) and "sem origem" (legacy);
-- `{sessionid_cliente → sig}` → only warning "parâmetro não corresponde ao plano: sessionid_cliente → sig" (legacy), `equivalent`;
+- frozen delta + `{cpf → XML.delta}` → `diverges` at step 10, "frozen value: matches captured value and is absent from paired response" (legacy: "valor congelado: igual ao capturado e ausente da resposta pareada");
+- invented delta + the same item → `diverges`, "value has no origin in trace" (legacy: "valor sem origem no trace");
+- frozen or invented STAMP + `{cpf → STAMP}` → `diverges` in both, with "frozen value" (legacy: "valor congelado") and "no origin in trace" (legacy: "sem origem");
+- `{sessionid_cliente → sig}` → only warning "parameter does not match the plan: sessionid_cliente → sig" (legacy: "parâmetro não corresponde ao plano: sessionid_cliente → sig"), `equivalent`;
 - faithful trace → `equivalent`, no warning beyond the mapped-origin one.
 
 **`plan.parameters` only exempts with a verified plan (7410fa4 — L13–L15, N1/N3).**
 On the same authentic trace, `plan.parameters += "XML.delta"` with the unverified plan:
-- v1 (`plan.version: 1`) + frozen or invented delta → `diverges` at step 10 ("valor congelado" (legacy) / "valor sem origem" (legacy));
+- v1 (`plan.version: 1`) + frozen or invented delta → `diverges` at step 10 ("frozen value" (legacy: "valor congelado") / "no origin in trace" (legacy: "valor sem origem"));
 - no `plan.version` + frozen or invented delta → `diverges`, same reasons;
-- v2 without `plan.hash` + frozen or invented delta → `diverges`, same reasons (warning "plano sem impressão" (legacy));
+- v2 without `plan.hash` + frozen or invented delta → `diverges`, same reasons (warning "plan without fingerprint" (legacy: "plano sem impressão"));
 - in the three variants, the trace without the swapped value stays `equivalent` (the plan's `XML.delta` now generates
-  "parâmetro inválido: `XML.delta` tem origem na captura" (legacy), proving it was not exempted);
-- faithful v1 (without the `plan.parameters` item) → `equivalent`, only with the warning "plano de versão anterior (v1)" (legacy).
+  "invalid parameter: `XML.delta` has origin in capture" (legacy: "parâmetro inválido: `XML.delta` tem origem na captura"), proving it was not exempted);
+- faithful v1 (without the `plan.parameters` item) → `equivalent`, only with the warning "plan of an earlier version (v1)" (legacy: "plano de versão anterior (v1)").
 
 Result: **all green, 0 failures.** Criterion 9 of run_acceptance uses `tests/results/app-latest` regenerated in this
 round; the `live-final` capture of 2026-10-29 remains as evidence of the CDP/NetLog cycle of `run-cycle.sh`.
