@@ -243,7 +243,7 @@ Independent review in `/Users/cesar/OpenBot/Shared/scrapelens-revisao-r15-r16.md
 
 The NetLog DOM (~3.1 GiB) no longer exists; the floor is now the typed session (~1.15 GiB) plus the `session.json` of ~650 MiB. Against the round 12 baseline, `capture-full` went from 6,993 to 4,200 MiB (−40 %) and `capture-write` from 9,189 to 4,629 MiB (−50 %).
 
-**Independent review (revalidation of `22854c3`):** **approved** — differential harness old×new with **3.170/3.170** cases without divergence and **25/25** extra combinations of duplicate `"events"` identical. Caveats from the original review (`fed9b61`, clippy and the duplicate `events` case) were closed in `22854c3`. The reviewer did not rerun the 20-thousand benchmarks or live Linux tests.
+**Independent review (revalidation of `22854c3`):** **approved** — differential harness old×new with **3,170/3,170** cases without divergence and **25/25** extra combinations of duplicate `"events"` identical. Caveats from the original review (`fed9b61`, clippy and the duplicate `events` case) were closed in `22854c3`. The reviewer did not rerun the 20-thousand benchmarks or live Linux tests.
 
 **Final packages (`e91cadf`, source `22854c3`, clean tree):**
 

@@ -37,7 +37,7 @@ Continuous Conventional Commits, user rule recorded in the channel.
 ## D6 — Third-party browsers (CloakBrowser) and AI agent
 
 Date: 2026-10-31. Leader's decision, after feasibility phase A
-(`docs/15-mcp-cloakbrowser.md`, section "Viabilidade CloakBrowser (fase A)" (CloakBrowser feasibility (phase A))).
+(`docs/15-mcp-cloakbrowser.md`, section "CloakBrowser feasibility (phase A)").
 
 1. **MITM proxy remains vetoed.** It applies to any browser, including
    CloakBrowser. HTTPS header fidelity comes from the NetLog; no certificate

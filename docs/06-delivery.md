@@ -191,7 +191,7 @@ CLI `natural-core --adapter natural-ajax`). It brings:
   strict, with the control without the adapter failing).
 
 The adapter's parts follow strict mode by default (`--lenient-parts`
-optional). Acceptance: tests/REPORT-FINAL.md, section "Rodada 8" (Round 8), all green
+optional). Acceptance: tests/REPORT-FINAL.md, section "Round 8", all green
 (core 259, src-tauri 45, natural-ajax 28; 3 real HARs with and without adapter).
 Independent review approved, with the accepted residuals recorded in
 docs/12.
