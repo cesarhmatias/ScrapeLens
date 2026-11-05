@@ -158,6 +158,8 @@ export interface Attempt {
   url: string;
   method: string;
   protocol: Protocol;
+  /** Optional, additive: `not-sent` when the NetLog proves no bytes reached the network. */
+  networkState?: "not-sent";
   status?: number;
   connectionId?: string;
   streamSessionId?: string;
@@ -210,6 +212,8 @@ export interface LogicalRequest {
   url: string;
   method: string;
   protocol: Protocol;
+  /** Optional, additive: `not-sent` when the NetLog proves no bytes reached the network. */
+  networkState?: "not-sent";
   status?: number;
   resourceType?: string;
   cdp?: CdpRef;
@@ -307,6 +311,7 @@ export interface RawRequestSummary {
   method: string;
   status?: number;
   protocol: Protocol;
+  networkState?: "not-sent";
   resourceType?: string;
   wallTime?: string;
   totalMs?: number;

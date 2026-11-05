@@ -3,6 +3,7 @@
 
 export type SourceId = "cdp" | "netlog" | "har" | "ownFormat" | "capture" | "derived" | "manual";
 export type Protocol = "HTTP/1.1" | "HTTP/2" | "HTTP/3" | "unknown";
+export type NetworkStateValue = "not-sent";
 export type ResourceType =
   | "document"
   | "stylesheet"
@@ -94,6 +95,8 @@ export interface AttemptView {
   url: string;
   method: string;
   protocol: Protocol;
+  /** `not-sent`: cancelled before any bytes were written; the protocol is not known. */
+  networkState?: NetworkStateValue;
   status?: number;
   outcome: string;
   failure?: string;
@@ -157,6 +160,8 @@ export interface RequestRecord {
   status: number;
   statusText?: string;
   protocol: Protocol;
+  /** `not-sent`: cancelled before any bytes were written (protocol stays `unknown`). Absent otherwise. */
+  networkState?: NetworkStateValue;
   type: ResourceType;
   startedAt: string;
   durationMs: number;
@@ -198,6 +203,7 @@ export type RequestSummary = Pick<
   | "status"
   | "statusText"
   | "protocol"
+  | "networkState"
   | "type"
   | "startedAt"
   | "durationMs"

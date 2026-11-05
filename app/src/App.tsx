@@ -31,7 +31,7 @@ import { AppSuccessSection, AssessWarnings, VerdictChip, isAppFailure, isPossibl
 import type { CompareSummary } from "./flow";
 import { diffCookies, diffHeaders, kindLabel, normalizeHeaders } from "./diff";
 import { IS_MAC, activeFilterLabels, outcomeChipDisabled, PagedList, sessionIsRecording, shortcutLabel } from "./listView";
-import { adaptRequestDetail, adaptSession, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
+import { adaptRequestDetail, adaptSession, protocolText, summaryFromRaw, summaryOfRecord, type AdaptedSession } from "./v1/adapter";
 import type { SessionV1 } from "./v1/types";
 import type {
   BodyInfo,
@@ -150,7 +150,7 @@ function fmtBytes(n?: number) {
 }
 
 const fmtStatus = (status: number) => (status === 0 ? "—" : String(status));
-const fmtProtocol = (value: Protocol) => value;
+const NOT_SENT_TITLE = "Cancelled before any bytes were sent: the request never reached the network, so it has no protocol";
 
 function statusClass(status: number) {
   if (status >= 500) return "s-err";
@@ -800,7 +800,9 @@ function DetailView({
           <span className={`method ${methodClass[req.method] ?? "m-other"}`}>{req.method}</span>
           <span className="dh-path mono">{req.path}</span>
           <span className={`status ${statusClass(req.status)}`}>{req.status}</span>
-          <span className="proto">{req.protocol}</span>
+          <span className="proto" title={req.networkState ? NOT_SENT_TITLE : undefined}>
+            {protocolText(req.protocol, req.networkState)}
+          </span>
           <span className="type">{typeLabels[req.type]}</span>
         </div>
         <div className="dh-sub">
@@ -1237,7 +1239,7 @@ function DetailView({
                         <td className="mono dim">{attempt.index}</td>
                         <td className="mono">{attempt.id}</td>
                         <td><span className={`status ${statusClass(attempt.status ?? 0)}`}>{fmtStatus(attempt.status ?? 0)}</span></td>
-                        <td><span className="proto">{fmtProtocol(attempt.protocol)}</span></td>
+                        <td><span className="proto" title={attempt.networkState ? NOT_SENT_TITLE : undefined}>{protocolText(attempt.protocol, attempt.networkState)}</span></td>
                         <td>{attempt.outcome}{attempt.failure ? ` · ${attempt.failure}` : ""}</td>
                         <td className="mono">{attempt.requestHeaderCount} / {attempt.responseHeaderCount}</td>
                         <td>
@@ -1583,7 +1585,7 @@ function CompareBody({
             <div className="body-col" key={label}>
               <div className="body-col-head">
                 <span className="tag">{label}</span>
-                <span className="mono">{r.protocol}</span>
+                <span className="mono" title={r.networkState ? NOT_SENT_TITLE : undefined}>{protocolText(r.protocol, r.networkState)}</span>
                 <span className={`status ${statusClass(r.status)}`}>{r.status}</span>
               </div>
               <dl className="kv tight">
@@ -2837,7 +2839,7 @@ export default function App() {
                         <VerdictChip outcome={outcomes.get(r.id)} />
                       </td>
                       <td>
-                        <span className="proto">{fmtProtocol(r.protocol)}</span>
+                        <span className="proto" title={r.networkState ? NOT_SENT_TITLE : undefined}>{protocolText(r.protocol, r.networkState)}</span>
                       </td>
                       <td className="type">{typeLabels[r.type]}</td>
                       <td className="num mono time">

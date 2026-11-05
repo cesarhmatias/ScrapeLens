@@ -87,6 +87,22 @@ function mapLinks(raw: RequestLink[] | undefined): RequestLinkView[] {
 const protocolLabel = (p: string): Protocol =>
   p === "h1" ? "HTTP/1.1" : p === "h2" ? "HTTP/2" : p === "h3" ? "HTTP/3" : "unknown";
 
+/**
+ * `networkState: "not-sent"` (core contract): the NetLog proves the request was cancelled
+ * before any bytes were written. The protocol stays `unknown` and is never inferred.
+ * Absent in sessions saved before the field: those keep the previous behaviour.
+ */
+export function networkStateOf(request: { networkState?: string; attempts?: { networkState?: string }[] }) {
+  if (request.networkState === "not-sent") return "not-sent" as const;
+  if (request.attempts?.some((attempt) => attempt.networkState === "not-sent")) return "not-sent" as const;
+  return undefined;
+}
+
+/** Text shown for the protocol: a request that was not sent has no protocol to show. */
+export function protocolText(protocol: Protocol, networkState?: string): string {
+  return networkState === "not-sent" ? "not sent" : protocol;
+}
+
 const sourceLabel = (s: Provenance["source"]): SourceId => s;
 
 const RESOURCE_TYPES = new Set<ResourceType>([
@@ -238,11 +254,49 @@ function timingsVerification(t: Timings, request: LogicalRequest): Verification 
   };
 }
 
+/** Headers of a request that never reached the network: they came from CDP and were not sent. */
+function notSentHeaders(base: Verification): Verification {
+  const reason =
+    "headers come from CDP before the cancel and were never transmitted: the request did not reach the network";
+  return {
+    status: "unverified",
+    reason: base.status === "unverified" && base.reason ? `${base.reason} · ${reason}` : reason,
+  };
+}
+
+function notSentProtocolVerification(request: LogicalRequest, attempt: LogicalRequest["attempts"][number] | undefined): Verification {
+  // The proof is the NetLog cancel (the attempt's NetLog source), not the CDP structure.
+  const provenance = attempt?.provenance ?? request.provenance;
+  const notes = (provenance.notes ?? []).filter(Boolean).join(" · ");
+  const netlogSource = attempt?.netlog?.sourceIds?.[0];
+  return {
+    status: "verified",
+    evidence: {
+      source: "netlog",
+      event: "URL_REQUEST cancelled; no send event",
+      timestamp: provenance.wallTime ?? "",
+      sourceTime: provenance.wallTime ? undefined : provenance.timestamp,
+      method: ["no protocol: the request never reached the network", notes].filter(Boolean).join(" · "),
+      eventRef: netlogSource !== undefined ? String(netlogSource) : provenance.sourceId,
+      notes: provenance.notes,
+    },
+  };
+}
+
+/** Not sent: the time is the cancel moment, not a network duration. */
+function notSentTimings(): Verification {
+  return {
+    status: "unverified",
+    reason: "not sent: there is no network time; the recorded value is when the request was cancelled",
+  };
+}
+
 function protocolVerification(
   request: LogicalRequest,
   streams: Map<string, NonNullable<SessionV1["streamSessions"]>[number]>,
 ): Verification {
   const attempt = request.attempts[0];
+  if (networkStateOf(request) === "not-sent") return notSentProtocolVerification(request, attempt);
   const stream = attempt ? streams.get(attempt.id) : undefined;
   if (!stream) {
     return {
@@ -273,6 +327,7 @@ function attemptsOf(request: LogicalRequest): AttemptView[] {
     url: attempt.url,
     method: attempt.method,
     protocol: protocolLabel(attempt.protocol),
+    networkState: attempt.networkState === "not-sent" ? "not-sent" : undefined,
     status: attempt.status,
     outcome: attempt.outcome,
     failure: attempt.failure,
@@ -462,11 +517,15 @@ export function adaptSession(
     const ownWarnings = warnings.filter((w) => w.entity === request.id);
     const isSynthetic = synthetic;
 
+    const notSent = networkStateOf(request) === "not-sent";
     const verification: Record<VerificationKey, Verification> = {
-      requestHeaders: weakestVerification(
-        [...(request.requestHeaders.pseudoHeaders ?? []), ...request.requestHeaders.headers],
-        request.requestHeaders,
-      ),
+      requestHeaders: (() => {
+        const base = weakestVerification(
+          [...(request.requestHeaders.pseudoHeaders ?? []), ...request.requestHeaders.headers],
+          request.requestHeaders,
+        );
+        return notSent ? notSentHeaders(base) : base;
+      })(),
       responseHeaders: weakestVerification(
         [...(request.responseHeaders.pseudoHeaders ?? []), ...request.responseHeaders.headers],
         request.responseHeaders,
@@ -485,7 +544,7 @@ export function adaptSession(
       payload: verificationOf(request.requestBody?.provenance),
       responseBody: verificationOf(request.responseBody?.provenance),
       protocol: protocolVerification(request, streams),
-      timings: timingsVerification(request.timings, request),
+      timings: notSent ? notSentTimings() : timingsVerification(request.timings, request),
     };
 
     const rawStatus = statusOf(request);
@@ -506,6 +565,7 @@ export function adaptSession(
       statusText: statusText(rawStatus),
       initiator: initiatorLabel(request.attempts?.length ? request.attempts[request.attempts.length - 1].initiator ?? request.attempts[0].initiator : undefined),
       protocol: protocolLabel(request.protocol),
+      networkState: networkStateOf(request),
       type: RESOURCE_TYPES.has((request.resourceType ?? "").toLowerCase() as ResourceType)
         ? ((request.resourceType ?? "other").toLowerCase() as ResourceType)
         : "other",
@@ -611,10 +671,11 @@ export function summaryFromRaw(
     status,
     statusText: statusText(status),
     protocol: protocolLabel(raw.protocol),
+    networkState: raw.networkState === "not-sent" ? "not-sent" : undefined,
     type: typeOf(raw.resourceType),
     startedAt: raw.wallTime ?? sessionStartedAt,
     durationMs: Math.round(raw.totalMs ?? 0),
-    durationApprox: Boolean(raw.estimated) || raw.totalMs === undefined,
+    durationApprox: Boolean(raw.estimated) || raw.totalMs === undefined || raw.networkState === "not-sent",
     initiator: initiatorLabel(raw.initiator),
     target,
     links: mapLinks(raw.links),
@@ -635,6 +696,7 @@ export function summaryOfRecord(r: RequestRecord): RequestSummary {
     status: r.status,
     statusText: r.statusText,
     protocol: r.protocol,
+    networkState: r.networkState,
     type: r.type,
     startedAt: r.startedAt,
     durationMs: r.durationMs,

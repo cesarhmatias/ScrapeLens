@@ -77,6 +77,10 @@ pub struct RequestSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,
     pub protocol: &'static str,
+    /// `not-sent` when the NetLog proves the request was cancelled before any bytes
+    /// were written. Its `protocol` stays `unknown`; absent in sessions without the field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_state: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -118,6 +122,7 @@ pub fn summarize(request: &LogicalRequest, warning_count: usize, target: Option<
         method: request.method.clone(),
         status: request.status,
         protocol: request.protocol.as_str(),
+        network_state: network_state_label(request),
         resource_type: request.resource_type.clone(),
         wall_time: request.timings.wall_time.clone(),
         total_ms: request.timings.total_ms,
@@ -143,6 +148,13 @@ pub fn display_type(request: &LogicalRequest) -> &'static str {
         "font" => "font",
         _ => "other",
     }
+}
+
+/// Wire value of `networkState` (kebab-case, as in the core contract).
+pub fn network_state_label(request: &LogicalRequest) -> Option<&'static str> {
+    request.network_state.map(|state| match state {
+        scrapelens_core::model::NetworkState::NotSent => "not-sent",
+    })
 }
 
 pub fn protocol_label(request: &LogicalRequest) -> &'static str {
@@ -435,5 +447,24 @@ mod tests {
         assert!(text.contains("\"requests\":[]") && text.contains("\"requestCount\":3"), "{text}");
         assert_eq!(detail(&s, "r1").unwrap().request.method, "POST");
         assert!(detail(&s, "nope").is_none());
+    }
+
+    #[test]
+    fn not_sent_request_keeps_unknown_protocol_and_exposes_state() {
+        use scrapelens_core::model::NetworkState;
+        let mut s = session(2);
+        s.requests[1].network_state = Some(NetworkState::NotSent);
+        let page = list_page(&s, 0, 10, &ListFilter::default());
+        let plain = page.items.iter().find(|i| i.id == "r0").unwrap();
+        let not_sent = page.items.iter().find(|i| i.id == "r1").unwrap();
+        assert_eq!(plain.network_state, None);
+        assert_eq!(not_sent.network_state, Some("not-sent"));
+        assert_eq!(not_sent.protocol, "unknown");
+        let json = serde_json::to_value(not_sent).unwrap();
+        assert_eq!(json["networkState"], "not-sent");
+        assert!(serde_json::to_value(plain).unwrap().get("networkState").is_none());
+        // The protocol filter still includes not-sent requests under "unknown".
+        let unknown = list_page(&s, 0, 10, &ListFilter { protocol: Some("unknown".into()), ..Default::default() });
+        assert_eq!(unknown.matched, 2);
     }
 }
