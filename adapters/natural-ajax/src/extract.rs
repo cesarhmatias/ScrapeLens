@@ -1,6 +1,6 @@
-//! Utilitários para localizar o campo `XML` em corpos de requisição.
+//! Utilities for locating the `XML` field in request bodies.
 
-/// Decodifica `application/x-www-form-urlencoded` (`+` vira espaço).
+/// Decodes `application/x-www-form-urlencoded` (`+` becomes a space).
 pub fn form_decode(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -22,7 +22,7 @@ pub fn form_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Valores do campo `name` num corpo form-urlencoded.
+/// Values of the `name` field in a form-urlencoded body.
 pub fn form_values(body: &str, name: &str) -> Vec<String> {
     body.split('&')
         .filter_map(|pair| {

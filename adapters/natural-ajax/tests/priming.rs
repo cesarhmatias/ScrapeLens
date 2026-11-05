@@ -1,5 +1,5 @@
-//! Integração do adaptador no priming: o campo XML é montado por partes e
-//! recodificado com os comprimentos recalculados.
+//! Adapter integration in priming: the XML field is assembled from parts and
+//! re-encoded with recalculated lengths.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -40,7 +40,7 @@ fn first_placa_request(bundle: &SessionBundle) -> String {
         .iter()
         .find(|r| r.method == "POST" && r.url.contains("Connector"))
         .map(|r| r.id.clone())
-        .expect("POST do Connector")
+        .expect("POST to the Connector")
 }
 
 fn python_ast_ok(script: &str) {
@@ -80,13 +80,13 @@ fn real_shape_xml_is_built_by_parts_and_recomputes_prefixes() {
     assert!(script.contains("natural_ajax_encode(["), "{script}");
     assert!(
         script.contains("def natural_ajax_decode"),
-        "decodificador incluso"
+        "decoder included"
     );
     assert!(
         script.contains("adapter_get("),
-        "partes extraídas pelo nome"
+        "parts extracted by name"
     );
-    // Sem adaptador (controle), o mesmo alvo usa trechos.
+    // Without the adapter (control), the same target uses snippets.
     let control = to_python(
         &bundle.session,
         &bundle,
@@ -97,15 +97,15 @@ fn real_shape_xml_is_built_by_parts_and_recomputes_prefixes() {
     .text;
     assert!(!control.contains("natural_ajax_encode"));
     assert!(control.contains("ctx_extract("));
-    // Placa e cpf seguem parâmetros obrigatórios, sem valor capturado.
+    // Plate and CPF remain required parameters, without a captured value.
     assert!(script.contains("('placa', None,"), "{script}");
     assert!(!script.contains("TST0T10"));
 }
 
 #[test]
 fn script_xml_matches_the_captured_one_when_nothing_changes() {
-    // Com as mesmas entradas, o XML recodificado reproduz o capturado: a
-    // gramática do script é a do adaptador.
+    // With the same inputs, the re-encoded XML reproduces the captured one: the
+    // script grammar is the adapter's.
     let bundle = fixture("real-shape-1round.har");
     let id = first_placa_request(&bundle);
     let request = bundle.session.find_request(&id).unwrap();
@@ -132,15 +132,15 @@ fn script_xml_matches_the_captured_one_when_nothing_changes() {
             }
             String::from_utf8(out).unwrap()
         })
-        .expect("campo XML");
-    let items = grammar::parse(&xml).expect("gramática");
+        .expect("XML field");
+    let items = grammar::parse(&xml).expect("grammar");
     let ops: Vec<_> = items.into_iter().map(|i| i.op).collect();
     assert_eq!(grammar::serialize(&ops).unwrap(), xml);
 }
 
 fn hostile_bundle() -> SessionBundle {
-    // Nomes e valores hostis dentro da estrutura (aspas, quebra de linha,
-    // bidi, ESC e código Python), com prefixos corretos.
+    // Hostile names and values inside the structure (quotes, line break,
+    // bidi, ESC and Python code), with correct prefixes.
     let name = "n'\"\\\n\u{202e}x\u{1b}[31m";
     let value = "'''; __import__('os').system('true') #\u{1F600}";
     let delta = "d\\";
@@ -197,11 +197,11 @@ fn hostile_names_and_values_inside_the_structure_stay_data() {
     let script = out.text;
     python_ast_ok(&script);
     assert!(script.contains("natural_ajax_encode(["), "{script}");
-    // Nada cru: sem ESC, bidi nem quebra de linha dentro do código gerado.
+    // Nothing raw: no ESC, bidi or line break inside the generated code.
     for bad in ['\u{1b}', '\u{202e}'] {
-        assert!(!script.contains(bad), "{bad:?} cru no script");
+        assert!(!script.contains(bad), "{bad:?} raw in the script");
     }
-    // O valor hostil é dado: o AST não ganha nenhuma chamada a `__import__`/`system`.
+    // The hostile value is data: the AST gains no call to `__import__`/`system`.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("p.py");
     std::fs::write(&path, &script).unwrap();
@@ -225,8 +225,8 @@ print('__import__' in names, 'system' in names)
 
 #[test]
 fn pii_inside_the_structure_goes_through_the_final_filter() {
-    // E-mail num valor de propriedade: não existe parâmetro mapeável (sem nome
-    // de negócio) e o filtro final recusa, sem repetir o valor.
+    // E-mail in a property value: there is no mappable parameter (no business
+    // name) and the final filter refuses it, without repeating the value.
     let xml = grammar::serialize(&[
         grammar::Op::Head {
             init: false,
@@ -278,7 +278,7 @@ fn pii_inside_the_structure_goes_through_the_final_filter() {
         Ok(out) => assert!(!out.text.contains("maria.silva@example.test")),
         Err(e) => {
             let message = e.to_string();
-            assert!(message.contains("dado pessoal"), "{message}");
+            assert!(message.contains("personal data"), "{message}");
             assert!(!message.contains("maria.silva"));
         }
     }
@@ -356,14 +356,14 @@ fn sensitive_part_names_become_required_parameters() {
     let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
     let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
     for (_, value) in secrets {
-        assert!(!out.text.contains(value), "{value} vazou:\n{}", out.text);
+        assert!(!out.text.contains(value), "{value} leaked:\n{}", out.text);
     }
     for param in [
         "senha", "token", "nome", "nome_mae", "endereco", "nasc", "email",
     ] {
         assert!(
             out.text.contains(&format!("('{param}', None,")),
-            "{param} deveria ser obrigatório:\n{}",
+            "{param} should be required:\n{}",
             out.text
         );
     }
@@ -372,7 +372,7 @@ fn sensitive_part_names_become_required_parameters() {
 
 #[test]
 fn adapter_never_worsens_coverage_on_second_round_targets() {
-    // Todo alvo que o gerador sem adaptador completa também sai com adaptador.
+    // Every target the generator completes without the adapter also comes out with it.
     let bundle = fixture("real-shape-2rounds.har");
     let mut compared = 0;
     for request in bundle
@@ -394,12 +394,12 @@ fn adapter_never_worsens_coverage_on_second_round_targets() {
         assert!(with.is_ok(), "{}: {:?}", request.id, with.err());
         compared += 1;
     }
-    assert!(compared >= 4, "poucos alvos comparados: {compared}");
+    assert!(compared >= 4, "few targets compared: {compared}");
 }
 
 fn same_round_session() -> (scrapelens_core::lazy::LazySession, String) {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/same-round-producer");
-    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("sessão");
+    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("session");
     let target = lazy
         .session
         .requests
@@ -413,8 +413,8 @@ fn same_round_session() -> (scrapelens_core::lazy::LazySession, String) {
 
 #[test]
 fn part_with_observed_origin_never_becomes_a_literal() {
-    // `XML.p.v_tok` tem produtor (mesma rodada) fora da cadeia base: o
-    // produtor entra no plano e o valor é extraído em runtime.
+    // `XML.p.v_tok` has a producer (same round) outside the base chain: the
+    // producer enters the plan and the value is extracted at runtime.
     let (lazy, target) = same_round_session();
     let source = scrapelens_core::search::LazyBodies(&lazy);
     let out = to_python(&lazy.session, &source, &target, &options()).expect("gera");
@@ -422,7 +422,7 @@ fn part_with_observed_origin_never_becomes_a_literal() {
         .text
         .lines()
         .find(|l| l.contains("natural_ajax_encode(["))
-        .expect("chamada do codificador");
+        .expect("encoder call");
     let tok_part = call
         .split("('p.v_tok'")
         .nth(1)
@@ -435,7 +435,7 @@ fn part_with_observed_origin_never_becomes_a_literal() {
     assert!(!tok_part.contains("'AB12'"), "{tok_part}");
     assert!(
         out.text.contains("R['cdp-r0002']"),
-        "o produtor entra no plano"
+        "the producer enters the plan"
     );
     python_ast_ok(&out.text);
 }
@@ -463,7 +463,7 @@ fn abbreviated_sensitive_names_are_required_with_and_without_adapter() {
         "v_conta",
         "v_sexo",
     ];
-    // Com adaptador: partes do XML.
+    // With adapter: XML parts.
     let head = grammar::Op::Head {
         init: false,
         fields: [
@@ -494,10 +494,10 @@ fn abbreviated_sensitive_names_are_required_with_and_without_adapter() {
     let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
     let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
     for (i, name) in names.iter().enumerate() {
-        assert!(!out.text.contains(&format!("valorx{i}zz")), "{name} vazou");
+        assert!(!out.text.contains(&format!("valorx{i}zz")), "{name} leaked");
     }
-    assert!(out.text.contains("'3'"), "v_passo não é sensível");
-    // Sem adaptador: campos de form com os mesmos nomes.
+    assert!(out.text.contains("'3'"), "v_passo is not sensitive");
+    // Without adapter: form fields with the same names.
     let body: String = names
         .iter()
         .enumerate()
@@ -528,20 +528,20 @@ fn abbreviated_sensitive_names_are_required_with_and_without_adapter() {
     for (i, name) in names.iter().enumerate() {
         assert!(
             !out.text.contains(&format!("valorx{i}zz")),
-            "{name} vazou sem adaptador"
+            "{name} leaked without adapter"
         );
     }
 }
 
 #[test]
 fn delta_without_origin_is_a_required_parameter_when_the_server_echoes_state() {
-    // hid2: a resposta anterior traz um delta; o novo não tem origem observada
-    // nem prova de constância: parâmetro obrigatório, nunca literal.
+    // hid2: the previous response carries a delta; the new one has no observed origin
+    // nor proof of constancy: required parameter, never a literal.
     let (lazy, target) = same_round_session();
     let source = scrapelens_core::search::LazyBodies(&lazy);
     let out = to_python(&lazy.session, &source, &target, &options()).expect("gera");
     assert!(out.text.contains("('xml_delta', None,"), "{}", out.text);
-    assert!(!out.text.contains("DLTA0006new"), "delta capturado vazou");
+    assert!(!out.text.contains("DLTA0006new"), "captured delta leaked");
     assert!(
         out.text.contains("('delta', 'D', P['xml_delta'])"),
         "{}",
@@ -549,7 +549,7 @@ fn delta_without_origin_is_a_required_parameter_when_the_server_echoes_state() {
     );
     assert!(out
         .text
-        .contains("XML.delta: sem origem observada; informe o valor da resposta anterior"));
+        .contains("XML.delta: no observed origin; provide the value from the earlier response"));
     python_ast_ok(&out.text);
 }
 
@@ -615,13 +615,13 @@ fn identifier_like_parts_without_origin_are_required_and_state_stays_literal() {
             .unwrap_or_default()
             .to_string()
     };
-    // Intermediário (`lenient_parts`): identificadores viram parâmetro, o resto
-    // segue literal.
+    // Intermediate (`lenient_parts`): identifiers become parameters, the rest
+    // stays literal.
     let mut lenient = options();
     lenient.lenient_parts = true;
     let out = to_python(&bundle.session, &bundle, "har-0001", &lenient).expect("gera");
     for (k, v) in ids {
-        assert!(!out.text.contains(v), "{k} vazou:\n{}", out.text);
+        assert!(!out.text.contains(v), "{k} leaked:\n{}", out.text);
     }
     let line = call(&out.text);
     assert!(
@@ -631,12 +631,12 @@ fn identifier_like_parts_without_origin_are_required_and_state_stays_literal() {
             && line.contains("'texto livre'"),
         "{line}"
     );
-    // Padrão (estrito): identificadores seguem parâmetros; sem resposta
-    // anterior com o campo (requisição inicial), o resto são as constantes
-    // iniciais do protocolo e fica literal.
+    // Default (strict): identifiers stay parameters; without a previous response
+    // with the field (initial request), the rest are the protocol's initial
+    // constants, which stay literal.
     let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
     for (k, v) in ids {
-        assert!(!out.text.contains(v), "{k} vazou:\n{}", out.text);
+        assert!(!out.text.contains(v), "{k} leaked:\n{}", out.text);
     }
     let line = call(&out.text);
     assert!(
@@ -692,7 +692,7 @@ fn more_sensitive_abbreviations_are_required() {
     let bundle = bundle_with_xml(&grammar::serialize(&ops).unwrap());
     let out = to_python(&bundle.session, &bundle, "har-0001", &options()).expect("gera");
     for (i, name) in names.iter().enumerate() {
-        assert!(!out.text.contains(&format!("valorx{i}zz")), "{name} vazou");
+        assert!(!out.text.contains(&format!("valorx{i}zz")), "{name} leaked");
     }
 }
 
@@ -700,28 +700,28 @@ fn more_sensitive_abbreviations_are_required() {
 fn value_observed_in_another_round_is_a_required_parameter_with_a_note() {
     let dir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/previous-round-producer");
-    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("sessão");
+    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("session");
     let source = scrapelens_core::search::LazyBodies(&lazy);
     let out = to_python(&lazy.session, &source, "cdp-r0006", &options()).expect("gera");
-    assert!(!out.text.contains("AB12"), "AB12 vazou:\n{}", out.text);
+    assert!(!out.text.contains("AB12"), "AB12 leaked:\n{}", out.text);
     assert!(
         out.text
-            .contains("('xml_p_v_tok', None, 'origem em outra rodada (cdp-r0002)')"),
+            .contains("('xml_p_v_tok', None, 'origin in another round (cdp-r0002)')"),
         "{}",
         out.text
     );
     assert!(out
         .text
-        .contains("# XML.p.v_tok: origem em outra rodada (cdp-r0002); informe o valor"));
-    assert!(!out.text.contains("XML.p.v_tok: sem origem observada"));
+        .contains("# XML.p.v_tok: origin in another round (cdp-r0002); provide the value"));
+    assert!(!out.text.contains("XML.p.v_tok: no observed origin"));
     python_ast_ok(&out.text);
 }
 
 #[test]
 fn unreferenced_producer_with_a_different_value_leaves_the_plan() {
-    // hid3-c2: dois produtores da mesma parte; só o segundo tem o valor do alvo.
+    // hid3-c2: two producers of the same part; only the second has the target's value.
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pruned-producer");
-    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("sessão");
+    let (lazy, _) = scrapelens_core::open_session_dir_lazy(&dir).expect("session");
     let source = scrapelens_core::search::LazyBodies(&lazy);
     let out = to_python(&lazy.session, &source, "cdp-r0004", &options()).expect("gera");
     assert!(out.text.contains("R['cdp-r0003']"), "{}", out.text);
@@ -736,8 +736,8 @@ fn unreferenced_producer_with_a_different_value_leaves_the_plan() {
 
 #[test]
 fn header_command_and_resource_names_stay_literal_in_strict_mode() {
-    // real-shape-1round: os nomes de comando (`event`) aparecem uma vez e sem
-    // origem; seguem literais (estrutura do protocolo), sem parâmetro novo.
+    // real-shape-1round: the command names (`event`) appear once and with no
+    // origin; they stay literal (protocol structure), with no new parameter.
     let bundle = fixture("real-shape-1round.har");
     let target = bundle
         .session

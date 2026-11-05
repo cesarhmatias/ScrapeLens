@@ -241,7 +241,7 @@ fn l2_har_without_cookies_warns_and_origins_repeat_it() {
     )
     .unwrap();
     assert!(
-        o.warnings.iter().any(|w| w.contains("não contém cookies")),
+        o.warnings.iter().any(|w| w.contains("does not contain cookies")),
         "{:?}",
         o.warnings
     );
@@ -255,7 +255,7 @@ fn l2_har_without_cookies_warns_and_origins_repeat_it() {
     assert!(chain
         .warnings
         .iter()
-        .any(|w| w.contains("não contém cookies")));
+        .any(|w| w.contains("does not contain cookies")));
     // with a cookie in some entry: no warning
     let with = scrapelens_core::import_har(&har(true)).unwrap();
     assert!(with
@@ -274,7 +274,7 @@ fn l7_har_get_head_options_without_postdata_are_empty_not_applicable() {
         assert_eq!(r.request_body.state, BodyState::Empty, "{}", r.method);
         assert_eq!(
             r.request_body.note.as_deref(),
-            Some("não aplicável: método sem corpo")
+            Some("not applicable: method without body")
         );
     }
     // POST without postData: expected body that did not arrive
@@ -293,7 +293,7 @@ fn l4_context_pages_by_referer_are_not_producers_or_steps() {
         "https://x.test/app/Page.html",
         "GET",
         R {
-            resp: Some("<html><body>pagina</body></html>"),
+            resp: Some("<html><body>page</body></html>"),
             ..Default::default()
         },
     );
@@ -329,10 +329,10 @@ fn l4_context_pages_by_referer_are_not_producers_or_steps() {
     assert_eq!(chain.pages.len(), 1);
     assert_eq!(chain.pages[0].request_id, lid(&b, "1.1"));
     assert_eq!(chain.pages[0].class, StepClass::Page);
-    assert!(chain.pages[0].reason.starts_with("página de contexto"));
+    assert!(chain.pages[0].reason.starts_with("context page"));
     assert!(
         !chain.steps.iter().any(|s| s.request_id == lid(&b, "1.1")),
-        "página não é produtora"
+        "page is not a producer"
     );
 }
 
@@ -395,11 +395,11 @@ fn l5_business_fields_are_redacted_in_opaque_values_and_propagated() {
         .warnings
         .iter()
         .find(|w| w.code == "sanitize.business_field_unmatched")
-        .expect("aviso");
+        .expect("warning");
     assert!(!warn.message.contains("XY"));
     assert!(
         after.contains("v_placaXY"),
-        "valor fora do formato permanece (com aviso)"
+        "value outside the format remains (with warning)"
     );
     // configurable list
     let options = SanitizeOptions {
@@ -434,7 +434,7 @@ fn round(s: &mut S, base: f64, n: usize, stamp: &str) {
         "https://x.test/app/easynat",
         "GET",
         R {
-            resp: Some("<html>entrada</html>"),
+            resp: Some("<html>entry</html>"),
             ..Default::default()
         },
     );
@@ -492,16 +492,16 @@ fn l6_compare_by_rounds_application_only_with_unpaired_rounds_and_ranges() {
         ),
         ("B", 1, 3)
     );
-    assert_eq!(r.pairs.len(), 3, "só a aplicação: entrada + 2 POSTs");
+    assert_eq!(r.pairs.len(), 3, "application only: entry + 2 POSTs");
     assert!(
         r.only_in_a.is_empty() && r.only_in_b.is_empty(),
-        "rodada sem par não vira sobra"
+        "round without a pair does not become leftover"
     );
     assert!(r.ambiguities.is_empty(), "{:?}", r.ambiguities);
     assert_eq!(r.groups.len(), 1);
     assert_eq!(r.groups[0].kind, "protection");
     assert_eq!((r.groups[0].a.len(), r.groups[0].b.len()), (1, 2));
-    // incluir tudo traz a proteção para o alinhamento
+    // including everything brings the protection into the alignment
     let all = compare_sessions(
         &a.session,
         &a,
@@ -513,7 +513,7 @@ fn l6_compare_by_rounds_application_only_with_unpaired_rounds_and_ranges() {
         },
     );
     assert!(all.groups.is_empty() && all.pairs.len() > r.pairs.len());
-    // faixa explícita: only B's 2nd round (requests 5..8)
+    // explicit range: only B's 2nd round (requests 5..8)
     let ranged = compare_sessions(
         &a.session,
         &a,
@@ -546,7 +546,7 @@ fn l6_compare_by_rounds_application_only_with_unpaired_rounds_and_ranges() {
     assert!(bad
         .warnings
         .iter()
-        .any(|w| w.contains("faixa de B inválida")));
+        .any(|w| w.contains("invalid B range")));
 }
 
 // ---- L8 ---------------------------------------------------------------------------------
@@ -592,7 +592,7 @@ fn l8_unobservable_points_to_the_equivalent_occurrence_in_the_next_round() {
     let first = lid(&b, "1.1");
     for r in &mut b.session.requests {
         if r.id == first {
-            let body = scrapelens_core::Body::unavailable("response.content sem text");
+            let body = scrapelens_core::Body::unavailable("response.content without text");
             r.attempts[0].response_body = body.clone();
             r.response_body = body;
         }
@@ -609,7 +609,7 @@ fn l8_unobservable_points_to_the_equivalent_occurrence_in_the_next_round() {
     assert!(stamp.label.contains(&lid(&b, "1.3")), "{}", stamp.label);
 }
 
-// ---- valor composto (campo nomeado curto) e variável do Natural -------------------------------
+// ---- composite value (short named field) and Natural variable -------------------------------
 
 #[test]
 fn composite_rule_needs_full_cover_by_two_producers_and_partial_prefix_is_not_an_origin() {
@@ -637,7 +637,7 @@ fn composite_rule_needs_full_cover_by_two_producers_and_partial_prefix_is_not_an
             ..Default::default()
         },
     );
-    s2.ev.push(ev); // sobrescreve o content-type para JSON
+    s2.ev.push(ev); // overrides the content-type to JSON
     s2.req(
         "1.3",
         3.0,
@@ -670,7 +670,7 @@ fn composite_rule_needs_full_cover_by_two_producers_and_partial_prefix_is_not_an
     let partial = entry(&o, "token2");
     assert_eq!(partial.status, OriginStatus::None);
     assert!(partial.evidences.is_empty());
-    assert!(partial.label.starts_with("sem origem observada"));
+    assert!(partial.label.starts_with("no observed origin"));
 }
 
 #[test]
@@ -695,7 +695,7 @@ fn natural_variable_names_prefixed_with_v_are_business_fields() {
     assert!(!after.contains("00000000191"), "CPF leaked");
     assert!(
         after.contains("v_renavam12"),
-        "valor fora do formato permanece, com aviso"
+        "value outside the format remains, with warning"
     );
     assert!(export
         .warnings
@@ -741,8 +741,8 @@ fn partial_composition_hint_for_known_part_plus_unsourced_part() {
     assert_eq!(h.field.as_deref(), Some("m_currentSessionId"));
     assert!(v
         .label
-        .starts_with("sem origem observada; contém o valor de m_currentSessionId de "));
-    assert!(v.label.contains("provável composição no cliente"));
+        .starts_with("no observed origin; contains the value of m_currentSessionId from "));
+    assert!(v.label.contains("probable composition in the client"));
     assert!(entry(&o, "other").partial_composition.is_empty());
     // no step in the chain
     let chain = priming_chain(&b.session, &b, &lid(&b, "1.2"), &FlowOptions::default()).unwrap();
@@ -772,7 +772,7 @@ fn partial_composition_hint_for_known_part_plus_unsourced_part() {
     );
     let o = origins(&s.build(), "1.2");
     assert!(entry(&o, "tok").partial_composition.is_empty());
-    assert_eq!(entry(&o, "tok").label, "sem origem observada");
+    assert_eq!(entry(&o, "tok").label, "no observed origin");
 }
 
 #[test]
@@ -814,14 +814,14 @@ fn delta_at_the_end_survives_a_one_byte_overlap_with_a_longer_constant() {
         .values
         .iter()
         .find(|v| v.parent.as_deref() == Some("XML") && v.value.contains("DLTC07"))
-        .expect("trecho com o delta");
+        .expect("fragment with the delta");
     assert!(hit
         .evidences
         .iter()
         .any(|e| e.request_id == lid(&b, "1.1") && e.html_control));
 }
 
-// ---- L4b: páginas só dos passos da aplicação; frames auxiliares recolhidos ---------------------
+// ---- L4b: pages only from application steps; auxiliary frames collapsed ---------------------
 
 #[test]
 fn l4b_pages_come_only_from_application_steps_and_aux_frames_are_collapsed() {
@@ -833,7 +833,7 @@ fn l4b_pages_come_only_from_application_steps_and_aux_frames_are_collapsed() {
         &format!("{base}/entry"),
         "GET",
         R {
-            resp: Some("<html>entrada</html>"),
+            resp: Some("<html>entry</html>"),
             ..Default::default()
         },
     );
@@ -947,7 +947,7 @@ fn l4b_pages_come_only_from_application_steps_and_aux_frames_are_collapsed() {
         .all(|p| p.class == StepClass::Page));
 }
 
-// ---- STAMP=INIT: a página define o valor; o compare o vê como estático --------------------------
+// ---- STAMP=INIT: the page defines the value; compare sees it as static --------------------------
 
 #[test]
 fn init_stamp_is_defined_by_a_page_and_compares_as_static() {
@@ -985,7 +985,7 @@ fn init_stamp_is_defined_by_a_page_and_compares_as_static() {
     assert_eq!(
         st.evidences[0].request_id,
         lid(&a, "1.1"),
-        "quem define INIT é a página"
+        "the page defines INIT"
     );
     let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
     let f = r
@@ -997,7 +997,7 @@ fn init_stamp_is_defined_by_a_page_and_compares_as_static() {
     assert_eq!(f.class, scrapelens_core::compare::FieldClass::Static);
     assert!(
         f.origin_label.is_none(),
-        "estático não vira 'obter em runtime'"
+        "static does not become 'obter em runtime'"
     );
 }
 
@@ -1045,8 +1045,8 @@ fn partial_composition_hint_also_on_repeated_values_and_in_unresolved() {
     assert_eq!(v.partial_composition.len(), 1);
     assert_eq!(v.partial_composition[0].producer_request_id, lid(&b, "1.1"));
     assert!(
-        v.label.contains("provável composição no cliente")
-            && v.label.contains("valor já circulava em"),
+        v.label.contains("probable composition in the client")
+            && v.label.contains("value already circulated in"),
         "{}",
         v.label
     );
@@ -1056,9 +1056,9 @@ fn partial_composition_hint_also_on_repeated_values_and_in_unresolved() {
         .unresolved
         .iter()
         .find(|u| u.field == "SESSIONID")
-        .expect("pendência");
+        .expect("pending item");
     assert_eq!(u.partial_composition.len(), 1);
-    assert!(u.label.contains("provável composição no cliente"));
+    assert!(u.label.contains("probable composition in the client"));
 }
 
 #[test]
@@ -1139,7 +1139,7 @@ fn r6_business_names_are_exact_or_separated_and_formats_and_entities_are_covered
         "390.533.447-05",
         "11.222.333/0001-81",
     ] {
-        assert!(!after.contains(leaked), "vazou {leaked}");
+        assert!(!after.contains(leaked), "leaked {leaked}");
     }
     assert!(!after.contains("TST0T00"), "leaked via entity in the name");
     assert!(!after.contains("TST1T11"));
@@ -1156,7 +1156,7 @@ fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() 
     let mut sb = S::default();
     round(&mut sb, 1.0, 1, "2000");
     let (a, b) = (sa.build(), sb.build());
-    for (range, why) in [("3:2", "invertida"), ("90:99", "fora dos limites")] {
+    for (range, why) in [("3:2", "inverted"), ("90:99", "out of bounds")] {
         let r = compare_sessions(
             &a.session,
             &a,
@@ -1170,7 +1170,7 @@ fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() 
         assert!(
             r.warnings
                 .iter()
-                .any(|w| w.contains("faixa de A") && w.contains(why)),
+                .any(|w| w.contains("invalid A range") && w.contains(why)),
             "{range}: {:?}",
             r.warnings
         );
@@ -1263,7 +1263,7 @@ fn r6_invalid_ranges_warn_reload_is_not_a_round_and_initiator_url_gives_pages() 
     assert!(
         !o.warnings
             .iter()
-            .any(|w| w.contains("initiator do CDP não é preservado")),
+            .any(|w| w.contains("CDP initiator is not preserved")),
         "{:?}",
         o.warnings
     );
@@ -1285,7 +1285,7 @@ fn r7_chain_uses_the_producer_of_the_targets_round() {
             "https://x.test/app/entry",
             "GET",
             R {
-                resp: Some("<html>entrada</html>"),
+                resp: Some("<html>entry</html>"),
                 ..Default::default()
             },
         );
@@ -1319,17 +1319,17 @@ fn r7_chain_uses_the_producer_of_the_targets_round() {
     let steps: Vec<String> = chain.steps.iter().map(|s| s.request_id.clone()).collect();
     assert!(
         steps.contains(&lid(&b, "2.2")),
-        "o produtor mais recente é a cscform da rodada 2: {steps:?}"
+        "the most recent producer is the cscform of round 2: {steps:?}"
     );
     assert!(
         !steps.contains(&lid(&b, "1.2")),
-        "a cscform da rodada 1 não é passo da rodada 2: {steps:?}"
+        "the cscform of round 1 is not a step of round 2: {steps:?}"
     );
     let pages: Vec<String> = chain.pages.iter().map(|s| s.request_id.clone()).collect();
     assert_eq!(
         pages,
         vec![lid(&b, "2.1"), lid(&b, "2.2")],
-        "pages só da rodada do consumidor"
+        "pages only from the consumer's round"
     );
     // The origins keep listing all producers, with today's status.
     let o = origins(&b, "2.3");
@@ -1344,13 +1344,13 @@ fn r7_chain_uses_the_producer_of_the_targets_round() {
     assert_eq!(
         produced,
         vec![lid(&b, "1.2")],
-        "origem continua na rodada 1"
+        "origin stays in round 1"
     );
     assert!(
         st.evidences
             .iter()
             .any(|e| e.role == Role::Reissued && e.request_id == lid(&b, "2.2")),
-        "o produtor da rodada 2 é reemissão (INIT circulou): {:?}",
+        "the round 2 producer is a reissue (INIT circulated): {:?}",
         st.evidences
             .iter()
             .map(|e| (e.role, e.request_id.as_str()))
@@ -1365,7 +1365,7 @@ fn r7_real_shape_steps_have_no_static_script() {
         .join("../fixtures/detran-pb-real-shape/real-shape-1round.har");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let b = scrapelens_core::import_har(&bytes)
-        .expect("importa HAR")
+        .expect("imports HAR")
         .bundle;
     let chain = priming_chain(&b.session, &b, "har-0026", &FlowOptions::default()).unwrap();
     let scripts: Vec<&str> = chain
@@ -1410,7 +1410,7 @@ fn r7_compare_rounds_ignore_parser_frames_when_detecting_the_entry() {
                 "https://x.test/app/entry",
                 "GET",
                 R {
-                    resp: Some("<html>entrada</html>"),
+                    resp: Some("<html>entry</html>"),
                     ..Default::default()
                 },
             );
@@ -1446,7 +1446,7 @@ fn r7_compare_rounds_ignore_parser_frames_when_detecting_the_entry() {
     let entry = r.entry_request.as_deref().unwrap_or("");
     assert!(
         entry.ends_with("|/app/entry"),
-        "entrada deve ser o documento da aplicação, não o frame: {entry}"
+        "entry must be the application document, not the frame: {entry}"
     );
 }
 
@@ -1459,7 +1459,7 @@ fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
         .join("../fixtures/detran-pb-real-shape/real-shape-2rounds.har");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let b = scrapelens_core::import_har(&bytes)
-        .expect("importa HAR")
+        .expect("imports HAR")
         .bundle;
     // har-0031 is the easynat-app that opens the 2nd round; har-0056 is the target.
     let chain = priming_chain(&b.session, &b, "har-0056", &FlowOptions::default()).unwrap();
@@ -1472,7 +1472,7 @@ fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
     assert!(round_one.is_empty(), "steps of round 1: {round_one:?}");
     assert!(
         chain.steps.iter().any(|s| s.request_id == "har-0031"),
-        "a entrada da rodada 2 é passo: {:?}",
+        "the round 2 entry is a step: {:?}",
         chain
             .steps
             .iter()
@@ -1486,7 +1486,7 @@ fn r7_chain_of_the_second_round_does_not_repeat_the_first() {
         ["har-0031", "har-0035", "har-0042", "har-0049"]
             .into_iter()
             .collect(),
-        "pages só da rodada do alvo"
+        "pages only from the target's round"
     );
 }
 
@@ -1502,7 +1502,7 @@ fn r7_chain_does_not_repeat_reissued_constants() {
         "https://x.test/app/entry",
         "GET",
         R {
-            resp: Some("<html>entrada</html>"),
+            resp: Some("<html>entry</html>"),
             ..Default::default()
         },
     );
@@ -1561,12 +1561,12 @@ fn r7_chain_does_not_repeat_reissued_constants() {
     assert_eq!(
         steps,
         vec![lid(&b, "1.2"), lid(&b, "1.3")],
-        "só o primeiro produtor da constante e o produtor do token"
+        "only the first producer of the constant and the producer of the token"
     );
     let pages: Vec<String> = chain.pages.iter().map(|p| p.request_id.clone()).collect();
     assert!(
         pages.contains(&lid(&b, "1.4")),
-        "a página que só reemite fica como contexto: {pages:?}"
+        "the page that only reissues stays as context: {pages:?}"
     );
     // The origins keep listing all producers of the constant.
     let o = origins(&b, "1.5");
@@ -1613,10 +1613,10 @@ fn r7_chain_climbs_to_a_one_time_cookie_from_the_previous_round() {
     "creator": {"name": "WebInspector", "version": "537.36"},
     "entries": [
         mk("2026-10-26T20:00:00.000Z", "GET", "https://x.test/app/entry",
-            json!([]), json!([]), with_cookie, "<html>entrada</html>"),
+            json!([]), json!([]), with_cookie, "<html>entry</html>"),
         // 2nd round: same entry document, without reissuing the cookie.
         mk("2026-10-26T20:00:05.000Z", "GET", "https://x.test/app/entry",
-            json!([]), json!([]), html.clone(), "<html>entrada 2</html>"),
+            json!([]), json!([]), html.clone(), "<html>entry 2</html>"),
         mk("2026-10-26T20:00:06.000Z", "POST", "https://x.test/app/Connector",
             json!([{"name": "Cookie", "value": "ONCE=abc12345"}]),
             json!([{"name": "ONCE", "value": "abc12345"}]),
@@ -1624,7 +1624,7 @@ fn r7_chain_climbs_to_a_one_time_cookie_from_the_previous_round() {
     ]}}))
     .unwrap();
     let b = scrapelens_core::import_har(&bytes)
-        .expect("importa HAR")
+        .expect("imports HAR")
         .bundle;
     let target = b.session.requests[2].id.clone();
     let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
@@ -1632,7 +1632,7 @@ fn r7_chain_climbs_to_a_one_time_cookie_from_the_previous_round() {
     assert_eq!(
         steps,
         vec![b.session.requests[0].id.as_str()],
-        "o cookie de uma vez só vem da rodada anterior"
+        "the one-time cookie comes only from the previous round"
     );
     let o = value_origins(&b.session, &b, &target, &FlowOptions::default()).unwrap();
     let once = entry(&o, "ONCE");
@@ -1694,11 +1694,11 @@ fn r8_chain_climbs_to_a_whole_value_session_id_from_the_previous_round() {
     let steps: Vec<&str> = chain.steps.iter().map(|s| s.request_id.as_str()).collect();
     assert!(
         steps.contains(&lid(&b, "1.0").as_str()),
-        "value-match do valor inteiro sobe: {steps:?}"
+        "whole-value value-match climbs: {steps:?}"
     );
     assert!(
         steps.contains(&lid(&b, "1.1").as_str()),
-        "STAMP forte também sobe: {steps:?}"
+        "strong STAMP also climbs: {steps:?}"
     );
     let o = origins(&b, "2.1");
     assert_eq!(entry(&o, "SESSIONID").status, OriginStatus::Origin);
@@ -1715,7 +1715,7 @@ fn r8_chain_withholds_opaque_fragment_and_reports_it() {
         "http://h.test/easynat-app",
         "GET",
         R {
-            resp: Some("<html>entrada</html>"),
+            resp: Some("<html>entry</html>"),
             ..Default::default()
         },
     );
@@ -1736,7 +1736,7 @@ fn r8_chain_withholds_opaque_fragment_and_reports_it() {
         "http://h.test/easynat-app",
         "GET",
         R {
-            resp: Some("<html>entrada 2</html>"),
+            resp: Some("<html>entry 2</html>"),
             ..Default::default()
         },
     );
@@ -1757,15 +1757,15 @@ fn r8_chain_withholds_opaque_fragment_and_reports_it() {
     let steps: Vec<&str> = chain.steps.iter().map(|s| s.request_id.as_str()).collect();
     assert!(
         !steps.contains(&lid(&b, "1.1").as_str()),
-        "fragmento opaco não sobe: {steps:?}"
+        "opaque fragment does not climb: {steps:?}"
     );
     let old = lid(&b, "1.1");
     assert!(
         chain
             .unresolved
             .iter()
-            .any(|u| u.label == format!("produtor só em rodada anterior ({old})")),
-        "motivo presente: {:?}",
+            .any(|u| u.label == format!("producer only in an earlier round ({old})")),
+        "reason present: {:?}",
         chain
             .unresolved
             .iter()
@@ -1868,7 +1868,7 @@ fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
         "https://x.test/app/entry",
         "GET",
         R {
-            resp: Some("<html>entrada</html>"),
+            resp: Some("<html>entry</html>"),
             ..Default::default()
         },
     );
@@ -1880,7 +1880,7 @@ fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
         "https://x.test/app/entry",
         "GET",
         R {
-            resp: Some("<html>entrada 2</html>"),
+            resp: Some("<html>entry 2</html>"),
             ..Default::default()
         },
     );
@@ -1901,7 +1901,7 @@ fn r8_compare_warns_when_a_reload_round_is_much_smaller_than_the_median() {
     assert!(
         r.warnings
             .iter()
-            .any(|w| w.contains("possível reload: rodada com 2 passos")),
+            .any(|w| w.contains("possible reload: round with 2 steps")),
         "{:?}",
         r.warnings
     );
@@ -1918,7 +1918,7 @@ fn r8_unresolved_groups_the_same_field_with_all_consumers() {
         "https://x.test/app/entry",
         "GET",
         R {
-            resp: Some("<html>entrada</html>"),
+            resp: Some("<html>entry</html>"),
             ..Default::default()
         },
     );
@@ -1939,7 +1939,7 @@ fn r8_unresolved_groups_the_same_field_with_all_consumers() {
         "https://x.test/app/entry",
         "GET",
         R {
-            resp: Some("<html>entrada 2</html>"),
+            resp: Some("<html>entry 2</html>"),
             ..Default::default()
         },
     );
@@ -1971,7 +1971,7 @@ fn r8_unresolved_groups_the_same_field_with_all_consumers() {
     let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
     assert!(
         chain.steps.iter().any(|st| st.request_id == step),
-        "2.2 deve ser passo (produz STAMP): {:?}",
+        "2.2 must be a step (produces STAMP): {:?}",
         chain
             .steps
             .iter()
@@ -1982,7 +1982,7 @@ fn r8_unresolved_groups_the_same_field_with_all_consumers() {
     assert_eq!(pending.len(), 1, "grouped field: {:?}", chain.unresolved);
     assert!(
         pending[0].request_ids.contains(&target) && pending[0].request_ids.contains(&step),
-        "consumidores: {:?}",
+        "consumers: {:?}",
         pending[0].request_ids
     );
 }
@@ -1998,7 +1998,7 @@ fn r9_compare_warns_for_a_three_step_reload_against_five() {
         "https://x.test/app/entry",
         "GET",
         R {
-            resp: Some("<html>entrada</html>"),
+            resp: Some("<html>entry</html>"),
             ..Default::default()
         },
     );
@@ -2021,7 +2021,7 @@ fn r9_compare_warns_for_a_three_step_reload_against_five() {
         "https://x.test/app/entry",
         "GET",
         R {
-            resp: Some("<html>entrada 2</html>"),
+            resp: Some("<html>entry 2</html>"),
             ..Default::default()
         },
     );
@@ -2044,7 +2044,7 @@ fn r9_compare_warns_for_a_three_step_reload_against_five() {
     assert!(
         r.warnings
             .iter()
-            .any(|w| w.contains("possível reload: rodada com 3 passos")),
+            .any(|w| w.contains("possible reload: round with 3 steps")),
         "{:?}",
         r.warnings
     );

@@ -2,20 +2,20 @@ use serde::{Deserialize, Serialize};
 
 use super::provenance::{Provenance, Verification};
 
-/// Estado explícito do corpo. Nunca use ausência de corpo para significar
-/// "vazio": `Unavailable` e `Discarded` são estados distintos de `Empty`.
+/// Explicit body state. Never use the absence of a body to mean
+/// "empty": `Unavailable` and `Discarded` are states distinct from `Empty`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BodyState {
-    /// Corpo existe e foi capturado (pode apontar para anexo).
+    /// Body exists and was captured (may point to an attachment).
     Captured,
-    /// Corpo é conhecidamente vazio (ex.: 204).
+    /// Body is known to be empty (e.g. 204).
     Empty,
-    /// Corpo existia mas foi cortado no limite de captura.
+    /// Body existed but was cut at the capture limit.
     Truncated,
-    /// Corpo não foi obtido (ex.: fonte não o fornece).
+    /// Body was not obtained (e.g. the source does not provide it).
     Unavailable,
-    /// Corpo foi descartado de propósito (política, sanitização, tamanho).
+    /// Body was discarded on purpose (policy, sanitization, size).
     Discarded,
 }
 
@@ -31,31 +31,31 @@ impl BodyState {
     }
 }
 
-/// Corpo de requisição ou resposta, com estado e proveniência próprios.
+/// Request or response body, with its own state and provenance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Body {
     pub state: BodyState,
-    /// Nome relativo em `attachments/` (apenas quando há bytes capturados).
+    /// Relative name in `attachments/` (only when captured bytes exist).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment: Option<String>,
-    /// Tamanho conhecido/observado em bytes.
+    /// Known/observed size in bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
-    /// Offset em que a captura parou, quando truncado.
+    /// Offset at which the capture stopped, when truncated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated_at: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
-    /// `Content-Encoding` do corpo (gzip, br, ...), não o encoding de transporte
-    /// do JSON.
+    /// `Content-Encoding` of the body (gzip, br, ...), not the transport encoding
+    /// of the JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_encoding: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Transformações aplicadas antes de chegar aqui (ex.: `chrome-decoded`,
-    /// `charset:iso-8859-1->utf-8`, `lossy-postData`). Não vazio = os bytes não
-    /// são idênticos aos do fio.
+    /// Transformations applied before reaching here (e.g. `chrome-decoded`,
+    /// `charset:iso-8859-1->utf-8`, `lossy-postData`). Non-empty = the bytes are
+    /// not identical to the wire ones.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transformed: Vec<String>,
     #[serde(default)]
@@ -64,7 +64,7 @@ pub struct Body {
 
 impl Default for Body {
     fn default() -> Self {
-        Self::unavailable("corpo não fornecido pela fonte")
+        Self::unavailable("body not provided by the source")
     }
 }
 

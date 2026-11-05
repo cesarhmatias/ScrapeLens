@@ -1,13 +1,13 @@
-//! P7 (docs/18): `sanitize_bundle_owned` consome o bundle e sanitiza no lugar; o resultado
-//! tem de ser idêntico ao de `sanitize_bundle` (por referência, sobre uma cópia).
+//! P7 (docs/18): `sanitize_bundle_owned` consumes the bundle and sanitizes it in place; the
+//! result must be identical to that of `sanitize_bundle` (by reference, over a copy).
 //!
-//! Rodada 15: comparar as duas funções só prova que `.clone()` não altera o resultado
-//! (`sanitize_bundle` delega para `_owned`), sem oráculo independente. Por isso o teste
-//! também trava hashes FNV-1a de TODA a saída sanitizada (sessão, anexos, eventos brutos,
-//! contadores de redação, anexos omitidos e avisos) dos bundles de `bundles()`.
+//! Round 15: comparing the two functions only proves that `.clone()` does not change the
+//! result (`sanitize_bundle` delegates to `_owned`), with no independent oracle. So the test
+//! also pins FNV-1a hashes of the WHOLE sanitized output (session, attachments, raw events,
+//! redaction counters, omitted attachments and warnings) of the bundles from `bundles()`.
 //!
-//! Regenerar (só se a SAÍDA muda de propósito): `PRINT_SANITIZE_GOLDEN=1 cargo test
-//! --test sanitize_owned -- --nocapture` e colar a tabela.
+//! Regenerate (only if the OUTPUT changes on purpose): `PRINT_SANITIZE_GOLDEN=1 cargo test
+//! --test sanitize_owned -- --nocapture` and paste the table.
 
 use std::collections::BTreeMap;
 
@@ -52,7 +52,7 @@ fn fnv1a(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
-/// Impressão determinística e independente de toda a saída sanitizada.
+/// Deterministic fingerprint, independent of the whole sanitized output.
 fn fingerprint(export: &scrapelens_core::export::sanitize::SanitizedExport) -> (u64, usize) {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     let mut len = 0usize;
@@ -112,11 +112,11 @@ fn owned_and_borrowed_sanitization_give_identical_exports() {
             assert_eq!(
                 serde_json::to_vec(&by_ref.bundle.session).unwrap(),
                 serde_json::to_vec(&owned.bundle.session).unwrap(),
-                "{name}: sessão"
+                "{name}: session"
             );
             assert_eq!(
                 by_ref.bundle.attachments, owned.bundle.attachments,
-                "{name}: anexos"
+                "{name}: attachments"
             );
             assert_eq!(
                 by_ref.bundle.cdp_events_jsonl, owned.bundle.cdp_events_jsonl,
@@ -126,7 +126,7 @@ fn owned_and_borrowed_sanitization_give_identical_exports() {
                 by_ref.bundle.netlog_json, owned.bundle.netlog_json,
                 "{name}"
             );
-            assert_eq!(by_ref.redactions, owned.redactions, "{name}: contadores");
+            assert_eq!(by_ref.redactions, owned.redactions, "{name}: counters");
             assert_eq!(
                 by_ref.omitted_attachments, owned.omitted_attachments,
                 "{name}"
@@ -134,7 +134,7 @@ fn owned_and_borrowed_sanitization_give_identical_exports() {
             assert_eq!(
                 serde_json::to_vec(&by_ref.warnings).unwrap(),
                 serde_json::to_vec(&owned.warnings).unwrap(),
-                "{name}: avisos"
+                "{name}: warnings"
             );
         }
     }
@@ -171,20 +171,20 @@ fn sanitized_output_is_pinned_by_independent_hashes() {
             let key = (name.as_str(), keep_raw);
             let (expected_hash, expected_len) = golden
                 .get(&key)
-                .unwrap_or_else(|| panic!("sem hash para {name} keep_raw={keep_raw}"));
+                .unwrap_or_else(|| panic!("no hash for {name} keep_raw={keep_raw}"));
             let (hash, len) = fingerprint(&sanitize_bundle(&bundle, &options));
             assert_eq!(
                 (hash, len),
                 (*expected_hash, *expected_len),
-                "{name} keep_raw={keep_raw}: a saída sanitizada mudou"
+                "{name} keep_raw={keep_raw}: the sanitized output changed"
             );
             compared += 1;
         }
     }
-    assert_eq!(compared, GOLDEN.len(), "cada bundle tem de ter um hash");
+    assert_eq!(compared, GOLDEN.len(), "each bundle must have a hash");
 }
 
-/// (bundle, keep_raw, hash FNV-1a, tamanho total) da saída sanitizada.
+/// (bundle, keep_raw, FNV-1a hash, total size) of the sanitized output.
 const GOLDEN: &[(&str, bool, u64, usize)] = &[
     ("secret.har", false, 0x269832bf48cd1ac6, 13915),
     ("h1-page", false, 0xc57671997d22a007, 427769),

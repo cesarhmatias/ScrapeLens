@@ -1,9 +1,9 @@
-//! Fuzz de CAMINHO do Revisor (rodada 12, adendo 8), incorporado ao repositório.
-//! Vazamento = qualquer janela de 6 bytes do segredo (que não ocorra no resto da
-//! entrada) aparece na saída. Fidelidade = a CONSULTA (`?page=N`) depois do segredo
-//! some. Pela decisão A8 o resto do CAMINHO depois de um nome sensível é redigido junto
-//! (limitação aceita), então só a consulta é exigida.
-//! `PATH_FUZZ_N` (5000 por padrão) e `PATH_FUZZ_SEEDS` ("1,2") ajustam a rodada.
+//! Path fuzz of the Reviewer (round 12, addendum 8), incorporated into the repository.
+//! Leak = any 6-byte window of the secret (that does not occur in the rest of the
+//! input) appears in the output. Fidelity = the QUERY (`?page=N`) after the secret is
+//! lost. Per decision A8 the rest of the PATH after a sensitive name is redacted along
+//! with it (accepted limitation), so only the query is required.
+//! `PATH_FUZZ_N` (5000 by default) and `PATH_FUZZ_SEEDS` ("1,2") adjust the round.
 use scrapelens_core::export::sanitize::{sanitize_text, sanitize_url, SanitizeOptions};
 use std::collections::BTreeMap;
 
@@ -50,7 +50,7 @@ fn gen(r: &mut Rng, alpha: &[u8], len: usize) -> String {
 fn secret(r: &mut Rng) -> (&'static str, String) {
     match r.below(6) {
         0 => {
-            // base64 padrão aleatório (pode ter / e +), com padding às vezes
+            // random standard base64 (may contain / and +), sometimes with padding
             let n = 8 + r.below(40);
             let mut s = gen(r, B64, n);
             if r.below(3) == 0 {
@@ -59,7 +59,7 @@ fn secret(r: &mut Rng) -> (&'static str, String) {
             ("b64", s)
         }
         1 => {
-            // base64 com barra garantida mas sem '+' (heurística fraca)
+            // base64 with a guaranteed slash but no '+' (weak heuristic)
             let a = {
                 let l = 4 + r.below(20);
                 gen(r, ALNUM, l)
@@ -71,7 +71,7 @@ fn secret(r: &mut Rng) -> (&'static str, String) {
             ("b64slash", format!("{a}/{b}"))
         }
         2 => {
-            // segredo com cara de caminho
+            // secret that looks like a path
             let a = {
                 let l = 6 + r.below(8);
                 gen(r, ALNUM, l)
@@ -166,7 +166,7 @@ fn run(seed: u64, n: usize) -> (usize, usize) {
             if sb.len() >= 6 {
                 for w in sb.windows(6) {
                     let ws = std::str::from_utf8(w).unwrap();
-                    // janela informativa: ignora as que são só '/' e palavras comuns
+                    // informational window: ignores those that are only '/' and common words
                     if rest.contains(ws) || pct(&core).contains(ws) && ctx == 5 && false {
                         continue;
                     }
@@ -183,7 +183,7 @@ fn run(seed: u64, n: usize) -> (usize, usize) {
         if leaked {
             *leaks.entry(key.clone()).or_default() += 1;
         }
-        // fidelidade: o sufixo não secreto (só nos contextos de caminho cru)
+        // fidelity: the non-secret suffix (only in the raw path contexts)
         if ctx != 6 && ctx != 5 {
             let want = suffix
                 .rsplit_once('?')
@@ -198,15 +198,15 @@ fn run(seed: u64, n: usize) -> (usize, usize) {
     let tl: usize = leaks.values().sum();
     let tf: usize = lost.values().sum();
     println!("PATHFUZZ seed={seed} n={n} leaks={tl} fidelity_lost={tf}");
-    println!("-- leaks por contexto/tipo (total do grupo)");
+    println!("-- leaks by context/type (group total)");
     for (k, v) in &leaks {
         println!("  {k}: {v}/{}", total[k]);
     }
-    println!("-- fidelidade perdida");
+    println!("-- fidelity lost");
     for (k, v) in &lost {
         println!("  {k}: {v}/{}", total[k]);
     }
-    println!("-- amostras");
+    println!("-- samples");
     for s in samples.iter().take(12) {
         println!("  {s}");
     }
@@ -225,7 +225,7 @@ fn path_fuzz_has_no_leaks_and_keeps_the_query() {
         .filter_map(|s| s.trim().parse::<u64>().ok())
     {
         let (leaks, lost) = run(seed, n);
-        assert_eq!(leaks, 0, "semente {seed}: vazamentos");
-        assert_eq!(lost, 0, "semente {seed}: perdeu a consulta");
+        assert_eq!(leaks, 0, "seed {seed}: leaks");
+        assert_eq!(lost, 0, "seed {seed}: lost the query");
     }
 }

@@ -1,4 +1,4 @@
-//! Origem dos valores, cadeia de priming e comparação (docs/09), mini-fixtures próprias.
+//! Origin of values, priming chain and comparison (docs/09), own mini-fixtures.
 
 use scrapelens_core::compare::{compare_sessions, CompareOptions, DynamicKind, FieldClass};
 use scrapelens_core::export::curl::to_curl_with_origins;
@@ -23,7 +23,7 @@ struct Flow {
 }
 
 impl Flow {
-    /// Uma requisição completa (pedido + resposta) no instante `ts`.
+    /// One complete request (request + response) at instant `ts`.
     #[allow(clippy::too_many_arguments)]
     fn step(
         &mut self,
@@ -104,7 +104,7 @@ fn find<'a>(
         .find(|v| v.scope == scope && v.field == field && v.parent.is_none())
         .unwrap_or_else(|| {
             panic!(
-                "{field} ausente: {:?}",
+                "{field} missing: {:?}",
                 o.values.iter().map(|v| &v.field).collect::<Vec<_>>()
             )
         })
@@ -112,7 +112,7 @@ fn find<'a>(
 
 const SID: &str = "CSAN00000_000000000001";
 
-/// page → TSPD → init (STAMP/delta) → consulta (usa tudo).
+/// page → TSPD → init (STAMP/delta) → query (uses everything).
 fn detran_like(sid: &str, ck: &str, stamp: &str, delta: &str, plate: &str) -> Flow {
     let mut f = Flow::default();
     let html = format!("<script>\nvar m_currentSessionId = \"{sid}\";\n</script>");
@@ -172,19 +172,19 @@ fn origins_cookie_jar_same_field_value_match_and_none() {
     );
     assert_eq!(sid.evidences[0].request_id, logical(&b, "1.1"));
 
-    // STAMP curto vem da resposta anterior pelo mesmo nome (same-field).
+    // short STAMP comes from the earlier response under the same name (same-field).
     let stamp = find(&o, ConsumedScope::Body, "STAMP");
     assert_eq!(stamp.evidences[0].kind, EvidenceKind::SameField);
     assert_eq!(stamp.evidences[0].request_id, logical(&b, "3.1"));
     assert_eq!(stamp.evidences[0].role, Role::Produced);
 
-    // vazio nunca casa; fica "sem origem observada"
+    // empty never matches; stays "no observed origin"
     assert_eq!(
         find(&o, ConsumedScope::Body, "PAGEINITPARAM").status,
         OriginStatus::None
     );
 
-    // o XML é composto: a sessão aparece como trecho com origem, a placa não
+    // the XML is composite: the session appears as a fragment with origin, the plate does not
     let xml = find(&o, ConsumedScope::Body, "XML");
     assert_eq!(xml.status, OriginStatus::Composite);
     let parts: Vec<_> = o
@@ -201,14 +201,14 @@ fn origins_cookie_jar_same_field_value_match_and_none() {
         !parts
             .iter()
             .any(|p| !p.evidences.is_empty() && p.value.contains("TST0T00")),
-        "placa não tem origem"
+        "plate has no origin"
     );
     let gap = parts
         .iter()
         .find(|p| p.value.contains("TST0T00"))
-        .expect("trecho da placa");
+        .expect("plate fragment");
     assert_eq!(gap.status, OriginStatus::None);
-    assert_eq!(gap.label, "sem origem observada");
+    assert_eq!(gap.label, "no observed origin");
 }
 
 #[test]
@@ -300,7 +300,7 @@ fn ambiguity_lists_all_candidates_and_marks_oldest_and_ties_are_excluded() {
         v.evidences
             .iter()
             .all(|e| e.request_id != logical(&b, "3.1")),
-        "empate não é produtor"
+        "tie is not a producer"
     );
 }
 
@@ -325,7 +325,7 @@ fn chain_is_ordered_with_reasons_and_separates_protection() {
     assert!(!ids.contains(&chain.protection[0].request_id));
     assert!(
         !chain.unresolved.iter().any(|u| u.field == "PAGEINITPARAM"),
-        "vazios não são pendência"
+        "empty values are not pending"
     );
 }
 
@@ -341,12 +341,12 @@ fn compare_classifies_dynamic_runtime_static_and_pairs_same_url_by_order() {
     )
     .bundle();
     let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
-    // L6: por padrão só a aplicação é alinhada; /TSPD/ vai para o grupo `protection`
+    // L6: by default only the application is aligned; /TSPD/ goes to the `protection` group
     assert_eq!(r.pairs.len(), 3);
     assert_eq!(r.groups.len(), 1);
     assert_eq!(r.groups[0].kind, "protection");
     assert!(r.only_in_a.is_empty() && r.only_in_b.is_empty());
-    // as duas requisições POST com a mesma URL são pareadas em ordem, sem cruzar
+    // the two POST requests with the same URL are paired in order, without crossing
     assert_eq!(r.pairs[1].a.request_id, logical(&a, "3.1"));
     assert_eq!(r.pairs[1].b.request_id, logical(&b, "3.1"));
     assert_eq!(r.pairs[2].b.request_id, logical(&b, "4.1"));
@@ -375,7 +375,7 @@ fn compare_classifies_dynamic_runtime_static_and_pairs_same_url_by_order() {
         field(ConsumedScope::Body, "PAGEINITPARAM").class,
         FieldClass::Static
     );
-    // XML: o delta é runtime; a placa é dinâmica sem origem; a constante não aparece
+    // XML: the delta is runtime; the plate is dynamic without origin; the constant does not appear
     let xml = field(ConsumedScope::Body, "XML");
     assert_eq!(xml.dynamic_kind, Some(DynamicKind::Composite));
     assert!(
@@ -396,13 +396,13 @@ fn compare_classifies_dynamic_runtime_static_and_pairs_same_url_by_order() {
         xml.parts
             .iter()
             .any(|p| p.class == FieldClass::Static && p.b.contains("cmd_consultar")),
-        "constante aparece como estática"
+        "constant appears as static"
     );
     assert!(
         !xml.parts
             .iter()
             .any(|p| p.class == FieldClass::Dynamic && p.b.contains("cmd_consultar")),
-        "constante não é dinâmica"
+        "constant is not dynamic"
     );
 }
 
@@ -476,12 +476,12 @@ fn sanitized_session_declares_redacted_values_and_leaks_nothing() {
     let target = logical(&s, "4.1");
     let o = value_origins(&s.session, &s, &target, &FlowOptions::default()).unwrap();
     assert!(o.redacted_values > 0);
-    assert!(o.warnings.iter().any(|w| w.contains("redigido")));
+    assert!(o.warnings.iter().any(|w| w.contains("redacted")));
     let json = serde_json::to_string(&o).unwrap();
     assert!(!json.contains(SID) && !json.contains("JSESS0000000000000001"));
     let c = compare_sessions(&s.session, &s, &s.session, &s, &CompareOptions::default());
     assert!(c.redacted_fields > 0);
-    assert!(c.warnings.iter().any(|w| w.contains("redigido")));
+    assert!(c.warnings.iter().any(|w| w.contains("redacted")));
 }
 
 #[test]
@@ -497,15 +497,15 @@ fn export_annotates_runtime_origins_without_changing_the_command() {
     let annotated = to_curl_with_origins(request, bytes, &ExportOptions::default(), Some(&origins))
         .unwrap()
         .text;
-    assert!(annotated.contains("obter em runtime (origem:"));
+    assert!(annotated.contains("get at runtime (origin:"));
     assert!(annotated.contains("SESSIONID"));
     let strip = |t: &str| {
         t.lines()
-            .filter(|l| !l.starts_with("# obter em runtime"))
+            .filter(|l| !l.starts_with("# get at runtime"))
             .collect::<Vec<_>>()
             .join("\n")
     };
-    assert_eq!(strip(&annotated), strip(&plain), "o comando não muda");
+    assert_eq!(strip(&annotated), strip(&plain), "the command does not change");
 }
 
 #[test]
@@ -517,15 +517,15 @@ fn unobservable_previous_responses_are_reported_for_values_without_origin() {
         json!({}),
         None,
         json!({}),
-        Some("<p>nada</p>"),
+        Some("<p>nothing</p>"),
         1.0,
     );
-    // o corpo da resposta de 2.1 não foi capturado
+    // the response body of 2.1 was not captured
     f.step(
         "POST",
         "https://x.test/filtro",
         json!({}),
-        Some("cmd=filtro&STAMP=2004"),
+        Some("cmd=filter&STAMP=2004"),
         json!({}),
         None,
         2.0,
@@ -534,13 +534,13 @@ fn unobservable_previous_responses_are_reported_for_values_without_origin() {
         "POST",
         "https://x.test/consulta",
         json!({}),
-        Some("cmd=consulta&STAMP=2005"),
+        Some("cmd=query&STAMP=2005"),
         json!({}),
         None,
         3.0,
     );
     let mut b = f.bundle();
-    // simula `unavailable` na resposta de 2.1 (CDP: recurso despejado)
+    // simulates `unavailable` on the response of 2.1 (CDP: resource evicted)
     let id = logical(&b, "2.1");
     for r in &mut b.session.requests {
         if r.id == id {
@@ -564,9 +564,9 @@ fn unobservable_previous_responses_are_reported_for_values_without_origin() {
         .contains("No resource"));
     assert_eq!(
         stamp.label,
-        "sem origem observada; 1 resposta(s) anterior(es) sem corpo observável"
+        "no observed origin; 1 earlier response(s) without observable body"
     );
-    // cadeia: pendência também aponta a resposta sem corpo
+    // chain: pending item also points to the response without body
     let chain = priming_chain(&b.session, &b, &target, &FlowOptions::default()).unwrap();
     let pending = chain
         .unresolved
@@ -574,8 +574,8 @@ fn unobservable_previous_responses_are_reported_for_values_without_origin() {
         .find(|u| u.field == "STAMP")
         .unwrap();
     assert_eq!(pending.unobservable[0].request_id, id);
-    assert!(pending.label.contains("sem corpo observável"));
-    // valores com origem não ganham a marca
+    assert!(pending.label.contains("without observable body"));
+    // values with origin do not get the mark
     let ok = value_origins(&b.session, &b, &logical(&b, "2.1"), &FlowOptions::default()).unwrap();
     assert!(ok.values.iter().all(|v| v.unobservable.is_empty()));
 }
@@ -618,7 +618,7 @@ fn opaque_flow(sid: &str, pid: &str, delta: &str, plate: &str) -> SessionBundle 
 
 #[test]
 fn opaque_parts_align_between_the_same_anchors_and_snap_to_known_values() {
-    // IDs com prefixo comum longo: só o último dígito difere
+    // IDs with a long common prefix: only the last digit differs
     let a = opaque_flow(
         "CSAN00000_000000000001",
         "100000000001",
@@ -658,7 +658,7 @@ fn opaque_parts_align_between_the_same_anchors_and_snap_to_known_values() {
         "{:?}",
         xml.parts
     );
-    // SESSIONID e processId: runtime com origem na página; delta: resposta anterior; placa: sem origem
+    // SESSIONID and processId: runtime with origin in the page; delta: earlier response; plate: no origin
     assert_eq!(dynamic[0].dynamic_kind, DynamicKind::Runtime);
     assert_eq!(
         dynamic[0].origin.as_ref().unwrap().request_id,
@@ -669,22 +669,22 @@ fn opaque_parts_align_between_the_same_anchors_and_snap_to_known_values() {
         logical(&b, "1.1")
     );
     assert_eq!(dynamic[2].dynamic_kind, DynamicKind::NoOrigin);
-    assert_eq!(dynamic[2].origin_label, "dinâmico sem origem");
+    assert_eq!(dynamic[2].origin_label, "dynamic without origin");
     assert_eq!(
         dynamic[3].origin.as_ref().unwrap().request_id,
         logical(&b, "2.1")
     );
-    // âncoras estáticas nunca contêm pedaço de um valor dinâmico
+    // static anchors never contain a piece of a dynamic value
     for p in xml.parts.iter().filter(|p| p.class == FieldClass::Static) {
         for token in ["CSAN00000_00000000000", "TST0T0", "DLT"] {
             assert!(
                 !p.a.contains(token),
-                "âncora cortou valor conhecido: {}",
+                "anchor cut a known value: {}",
                 p.a
             );
         }
     }
-    // mesmo dado nos dois lados: tudo estático
+    // same data on both sides: all static
     let same = compare_sessions(&a.session, &a, &a.session, &a, &CompareOptions::default());
     assert_eq!(same.counts.dynamic, 0);
 }
@@ -709,17 +709,17 @@ fn counts_include_the_dynamic_parts_of_composite_fields() {
         .iter()
         .find(|p| p.a.request_id == logical(&a, "3.1"))
         .unwrap();
-    // 4 trechos dinâmicos no XML (3 runtime + 1 sem origem), STAMP/outros fora
+    // 4 dynamic fragments in the XML (3 runtime + 1 without origin), STAMP/others excluded
     assert_eq!(pair.parts_counts.dynamic, 4);
     assert_eq!(pair.parts_counts.runtime, 3);
     assert_eq!(pair.parts_counts.no_origin, 1);
     assert!(
         pair.counts.no_origin >= 1,
-        "a placa aparece em counts: {:?}",
+        "the plate appears in counts: {:?}",
         pair.counts
     );
     for c in [&pair.counts, &r.counts] {
-        assert_eq!(c.dynamic, c.runtime + c.no_origin, "total coerente");
+        assert_eq!(c.dynamic, c.runtime + c.no_origin, "consistent total");
     }
     assert_eq!(r.parts_counts.no_origin, 1);
 }

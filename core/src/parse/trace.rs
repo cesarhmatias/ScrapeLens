@@ -1,60 +1,60 @@
-//! Importador do trace de execução do script de priming (`scrapelens.trace/1`).
+//! Importer for the priming script's execution trace (`scrapelens.trace/1`).
 //!
-//! O script grava este JSON (arquivo 0600; contém dados da sessão, não
-//! compartilhar sem sanitizar). O core nunca executa o script nem faz rede.
+//! The script writes this JSON (file 0600; it contains session data, do not
+//! share it without sanitizing). The core never runs the script and makes no network calls.
 //!
 //! ```json
 //! {
-//!   "schema": "scrapelens.trace/1",            // obrigatório, exato
-//!   "generator": "scrapelens-priming 1.0",     // opcional
-//!   "startedAt": "2026-10-29T12:00:00Z",       // opcional, ISO-8601 UTC
-//!   "parameters": [ {"name":"placa","part":"XML.p.v_placa"} ],  // opcional: entradas do
-//!                                              // usuário do script, SEM valores; `part` =
-//!                                              // nome interno (parte de adaptador) ou campo
-//!                                              // do form/query; sem `part`, vale `name`.
-//!                                              // O validate isenta só o par (name, part)
-//!                                              // que o plano regenerado da captura produz
-//!                                              // (ex. sessionid_cliente → XML.sid); outro
-//!                                              // par passa pelas checagens normais
-//!   "target": "har-0127",                      // requestId do alvo NA CAPTURA (o validate exige
-//!                                              // que seja pareado; sem ele, "incompleta")
-//!   "complete": true,                          // o script executou todo o plano (false/ausente
-//!                                              // = "incompleta")
-//!   "plan": {"version":2,                      // opcional: versão do esquema do plano; sem ela,
-//!                                              // o validate trata como versão anterior e só avisa
-//!            "hash":"<hex>",                    // impressão do plano (ver
+//!   "schema": "scrapelens.trace/1",            // required, exact
+//!   "generator": "scrapelens-priming 1.0",     // optional
+//!   "startedAt": "2026-10-29T12:00:00Z",       // optional, ISO-8601 UTC
+//!   "parameters": [ {"name":"placa","part":"XML.p.v_placa"} ],  // optional: the script's user
+//!                                              // inputs, WITHOUT values; `part` = internal
+//!                                              // name (adapter part) or form/query field;
+//!                                              // without `part`, `name` is used.
+//!                                              // The validate exempts only the (name, part) pair
+//!                                              // that the capture's regenerated plan produces
+//!                                              // (e.g. sessionid_cliente → XML.sid); any other
+//!                                              // pair goes through the normal checks
+//!   "target": "har-0127",                      // requestId of the target IN THE CAPTURE (validate requires
+//!                                              // it to be paired; without it, "incomplete")
+//!   "complete": true,                          // the script ran the whole plan (false/absent
+//!                                              // = "incomplete")
+//!   "plan": {"version":2,                      // optional: plan schema version; without it,
+//!                                              // validate treats it as an earlier version and only warns
+//!            "hash":"<hex>",                    // plan fingerprint (see
 //!                                              // `validate::plan_hash`)
-//!            "parameters":[…]},                 // parâmetros OBRIGATÓRIOS do plano (nomes usados
-//!                                              // no hash; classificam como parâmetro do usuário,
-//!                                              // mas não passam pelas checagens de `parameters`)
-//!   "steps": [                                 // obrigatório; ordem de execução
+//!            "parameters":[…]},                 // REQUIRED plan parameters (names used in
+//!                                              // the hash; classified as user parameter,
+//!                                              // but not checked by `parameters`)
+//!   "steps": [                                 // required; execution order
 //!     {
-//!       "method": "POST",                      // obrigatório
-//!       "url": "https://host/p?q=1",           // obrigatório (http/https)
-//!       "requestHeaders": [["Name","value"]],  // pares [nome, valor] ou {"name","value"};
-//!                                              // duplicatas preservadas; sem garantia de
-//!                                              // ordem do fio
+//!       "method": "POST",                      // required
+//!       "url": "https://host/p?q=1",           // required (http/https)
+//!       "requestHeaders": [["Name","value"]],  // [name, value] pairs or {"name","value"};
+//!                                              // duplicates preserved; no guarantee of
+//!                                              // wire order
 //!       "requestBody": Body | null,
-//!       "status": 200,                         // null/ausente se não houve resposta
+//!       "status": 200,                         // null/absent if there was no response
 //!       "responseHeaders": [["Name","value"]],
 //!       "responseBody": Body | null,
-//!       "startedAt": "2026-10-29T12:00:01Z",   // opcional
-//!       "elapsedMs": 123.4,                    // opcional, >= 0
-//!       "error": "timeout",                    // opcional: falha de transporte
-//!       "checks": [ {"name":"app-ok","ok":true,"detail":"…"} ]  // verificações do passo
+//!       "startedAt": "2026-10-29T12:00:01Z",   // optional
+//!       "elapsedMs": 123.4,                    // optional, >= 0
+//!       "error": "timeout",                    // optional: transport failure
+//!       "checks": [ {"name":"app-ok","ok":true,"detail":"…"} ]  // step checks
 //!     }
 //!   ]
 //! }
-//! // Body = { "text": "…", "encoding": "utf8" (padrão) | "base64",
-//! //          "truncated": false, "size": 12345 }   // size = tamanho real, se truncado
+//! // Body = { "text": "…", "encoding": "utf8" (default) | "base64",
+//! //          "truncated": false, "size": 12345 }   // size = real size, if truncated
 //! ```
 //!
-//! A sessão importada leva o rótulo `script-trace`, fonte "execução do
-//! script" (proveniência `har`, método `script-trace`), headers com ordem
-//! `Unknown` (não é a do fio) e corpos como anexos. Corpo `truncated` vira
-//! estado `truncated`; verificação com `ok:false` e `error` viram avisos.
-//! Entrada malformada é erro claro (nunca pânico); o custo é linear no
-//! tamanho do arquivo (no máximo [`MAX_STEPS`] passos).
+//! The imported session takes the label `script-trace`, source "script execution"
+//! (provenance `har`, method `script-trace`), headers with order `Unknown` (not the
+//! wire order) and bodies as attachments. A `truncated` body becomes the `truncated`
+//! state; a check with `ok:false` and an `error` become warnings.
+//! A malformed entry is a clear error (never a panic); the cost is linear in the
+//! file size (at most [`MAX_STEPS`] steps).
 
 use serde_json::{json, Map, Value};
 
@@ -65,7 +65,7 @@ use crate::parse::{ImportReport, ImportedSession};
 pub const TRACE_SCHEMA: &str = "scrapelens.trace/1";
 pub const TRACE_LABEL: &str = "script-trace";
 type BodyParts = (Map<String, Value>, bool, Option<u64>);
-/// (req truncado, tamanho real, resp truncado, tamanho real, checks ruins, erro)
+/// (req truncated, real size, resp truncated, real size, bad checks, error)
 type StepNotes = (
     bool,
     Option<u64>,
@@ -75,24 +75,24 @@ type StepNotes = (
     Option<String>,
 );
 
-/// Prefixo das notas de sessão que carregam os parâmetros do usuário do trace.
-/// O valor da nota é um objeto JSON `{"name":…,"part":…}` (o `validate` decide
-/// a isenção comparando o par com o plano regenerado da captura).
+/// Prefix of the session notes that carry the trace's user parameters.
+/// The note's value is a JSON object `{"name":…,"part":…}` (the `validate` decides
+/// the exemption by comparing the pair with the capture's regenerated plan).
 pub const PARAM_NOTE_PREFIX: &str = "trace-param: ";
 pub const TARGET_NOTE_PREFIX: &str = "trace-target: ";
 pub const COMPLETE_NOTE_PREFIX: &str = "trace-complete: ";
 pub const PLAN_HASH_NOTE_PREFIX: &str = "trace-plan-hash: ";
-/// Nomes em `plan.parameters` (os parâmetros do plano, usados no hash).
+/// Names in `plan.parameters` (the plan parameters, used in the hash).
 pub const PLAN_PARAM_NOTE_PREFIX: &str = "trace-plan-param: ";
-/// Presente quando o trace traz o objeto `plan`.
+/// Present when the trace carries the `plan` object.
 pub const PLAN_PRESENT_NOTE: &str = "trace-plan: present";
-/// Versão do esquema do plano (`plan.version`), quando presente.
+/// Plan schema version (`plan.version`), when present.
 pub const PLAN_VERSION_NOTE_PREFIX: &str = "trace-plan-version: ";
 
 pub const MAX_STEPS: usize = 20_000;
-/// Headers por lista (enviados e recebidos), por passo.
+/// Headers per list (sent and received), per step.
 pub const MAX_HEADERS_PER_STEP: usize = 512;
-/// Tamanho máximo do arquivo de trace.
+/// Maximum size of the trace file.
 pub const MAX_TRACE_BYTES: usize = 256 * 1024 * 1024;
 
 fn bad(message: impl Into<String>) -> CoreError {
@@ -101,8 +101,8 @@ fn bad(message: impl Into<String>) -> CoreError {
     }
 }
 
-/// Nome de um item de `parameters`/`plan.parameters`: texto direto, ou o
-/// `name` e, na falta dele, o `part`.
+/// Name of an item in `parameters`/`plan.parameters`: direct text, or the
+/// `name` and, if absent, the `part`.
 fn param_name(p: &Value) -> Option<&str> {
     match p {
         Value::String(s) => Some(s.as_str()),
@@ -156,11 +156,11 @@ fn headers_of(step: &Value, key: &str, index: usize) -> Result<Vec<Value>> {
     };
     let array = value
         .as_array()
-        .ok_or_else(|| bad(format!("steps[{index}].{key} não é lista")))?;
+        .ok_or_else(|| bad(format!("steps[{index}].{key} is not a list")))?;
     if array.len() > MAX_HEADERS_PER_STEP {
         return Err(CoreError::LimitExceeded {
             message: format!(
-                "trace: steps[{index}].{key} com {} headers (máximo {MAX_HEADERS_PER_STEP})",
+                "trace: steps[{index}].{key} with {} headers (maximum {MAX_HEADERS_PER_STEP})",
                 array.len()
             ),
         });
@@ -182,32 +182,32 @@ fn headers_of(step: &Value, key: &str, index: usize) -> Result<Vec<Value>> {
                     Ok(json!({"name": name, "value": value}))
                 }
                 _ => Err(bad(format!(
-                    "steps[{index}].{key}[{n}] deve ser [nome, valor] com textos"
+                    "steps[{index}].{key}[{n}] must be [name, value] with strings"
                 ))),
             }
         })
         .collect()
 }
 
-/// `(content/postData em forma HAR, truncado, tamanho real)`
+/// `(content/postData in HAR form, truncated, real size)`
 fn body_of(step: &Value, key: &str, index: usize) -> Result<Option<BodyParts>> {
     let Some(body) = step.get(key).filter(|v| !v.is_null()) else {
         return Ok(None);
     };
     let object = body
         .as_object()
-        .ok_or_else(|| bad(format!("steps[{index}].{key} não é objeto")))?;
+        .ok_or_else(|| bad(format!("steps[{index}].{key} is not an object")))?;
     let text = object
         .get("text")
         .and_then(Value::as_str)
-        .ok_or_else(|| bad(format!("steps[{index}].{key}.text ausente ou não é texto")))?;
+        .ok_or_else(|| bad(format!("steps[{index}].{key}.text missing or not a string")))?;
     let encoding = object
         .get("encoding")
         .and_then(Value::as_str)
         .unwrap_or("utf8");
     if encoding != "utf8" && encoding != "base64" {
         return Err(bad(format!(
-            "steps[{index}].{key}.encoding {encoding:?} desconhecido (utf8|base64)"
+            "steps[{index}].{key}.encoding {encoding:?} unknown (utf8|base64)"
         )));
     }
     let truncated = object
@@ -227,7 +227,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
     if json_bytes.len() > MAX_TRACE_BYTES {
         return Err(CoreError::LimitExceeded {
             message: format!(
-                "trace com {} bytes (máximo {MAX_TRACE_BYTES})",
+                "trace with {} bytes (maximum {MAX_TRACE_BYTES})",
                 json_bytes.len()
             ),
         });
@@ -238,7 +238,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         Some(TRACE_SCHEMA) => {}
         Some(other) => {
             return Err(bad(format!(
-                "schema {other:?} não suportado (esperado {TRACE_SCHEMA})"
+                "schema {other:?} not supported (expected {TRACE_SCHEMA})"
             )))
         }
         None => {
@@ -255,7 +255,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
             })?;
     if steps.len() > MAX_STEPS {
         return Err(CoreError::LimitExceeded {
-            message: format!("trace com {} passos (máximo {MAX_STEPS})", steps.len()),
+            message: format!("trace with {} steps (maximum {MAX_STEPS})", steps.len()),
         });
     }
     let generator = root
@@ -266,31 +266,31 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
     let started = root.get("startedAt").and_then(Value::as_str);
     if started.is_some_and(|t| !valid_iso(t)) {
         return Err(bad(
-            "startedAt inválido (use ISO-8601, ex.: 2026-10-29T12:00:00Z)",
+            "startedAt invalid (use ISO-8601, e.g.: 2026-10-29T12:00:00Z)",
         ));
     }
 
     let mut entries = Vec::with_capacity(steps.len());
-    // (índice, request truncado, response truncado, tamanhos reais, verificações ruins, erro)
+    // (index, request truncated, response truncated, real sizes, bad checks, error)
     let mut notes: Vec<StepNotes> = Vec::with_capacity(steps.len());
     for (index, step) in steps.iter().enumerate() {
         if !step.is_object() {
-            return Err(bad(format!("steps[{index}] não é objeto")));
+            return Err(bad(format!("steps[{index}] is not an object")));
         }
         let text_of = |key: &str| {
             step.get(key)
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| bad(format!("steps[{index}].{key} ausente ou vazio")))
+                .ok_or_else(|| bad(format!("steps[{index}].{key} missing or empty")))
         };
         let method = text_of("method")?;
         let url = text_of("url")?;
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            return Err(bad(format!("steps[{index}].url não é http(s)")));
+            return Err(bad(format!("steps[{index}].url is not http(s)")));
         }
         if url.len() > 16 * 1024 || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
             return Err(bad(format!(
-                "steps[{index}].url com espaço, caractere de controle ou longa demais"
+                "steps[{index}].url has a space, a control character, or is too long"
             )));
         }
         let mut request = json!({
@@ -313,12 +313,12 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
                 .unwrap_or("application/octet-stream")
                 .to_string();
             if body.get("encoding").is_some() {
-                // postData HAR não tem encoding: decodifica o base64 aqui
+                // HAR postData has no encoding: decode the base64 here
                 use base64::Engine;
                 let raw = body["text"].as_str().unwrap_or("");
                 let bytes = base64::engine::general_purpose::STANDARD
                     .decode(raw)
-                    .map_err(|e| bad(format!("steps[{index}].requestBody base64 inválido: {e}")))?;
+                    .map_err(|e| bad(format!("steps[{index}].requestBody base64 invalid: {e}")))?;
                 let text = String::from_utf8_lossy(&bytes).into_owned();
                 body.insert("text".into(), json!(text));
                 body.remove("encoding");
@@ -331,7 +331,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         if let Some(s) = step.get("status").filter(|v| !v.is_null()) {
             if !s.as_u64().is_some_and(|n| (100..=599).contains(&n)) {
                 return Err(bad(format!(
-                    "steps[{index}].status deve ser 100–599 ou null"
+                    "steps[{index}].status must be 100–599 or null"
                 )));
             }
         }
@@ -354,18 +354,18 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         }
         let elapsed = step.get("elapsedMs").and_then(Value::as_f64);
         if elapsed.is_some_and(|e| e < 0.0 || !e.is_finite()) {
-            return Err(bad(format!("steps[{index}].elapsedMs inválido")));
+            return Err(bad(format!("steps[{index}].elapsedMs invalid")));
         }
         let own_start = step.get("startedAt").and_then(Value::as_str);
         if own_start.is_some_and(|t| !valid_iso(t)) {
-            return Err(bad(format!("steps[{index}].startedAt inválido (ISO-8601)")));
+            return Err(bad(format!("steps[{index}].startedAt invalid (ISO-8601)")));
         }
         let step_start = own_start.or(started).unwrap_or(epoch);
         let mut bad_checks = Vec::new();
         if let Some(checks) = step.get("checks").filter(|v| !v.is_null()) {
             let list = checks
                 .as_array()
-                .ok_or_else(|| bad(format!("steps[{index}].checks não é lista")))?;
+                .ok_or_else(|| bad(format!("steps[{index}].checks is not a list")))?;
             for c in list {
                 let name = c.get("name").and_then(Value::as_str);
                 let ok = c.get("ok").and_then(Value::as_bool);
@@ -421,13 +421,13 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         session.session.labels.push(TRACE_LABEL.to_string());
     }
     let plan = root.get("plan").filter(|v| !v.is_null());
-    // `parameters` de topo: entradas do usuário do script. A nota guarda o par
-    // (name, part); o validate isenta só o par que o plano regenerado da
-    // captura produz, nunca o que o trace declara.
+    // Top-level `parameters`: the script's user inputs. The note keeps the pair
+    // (name, part); the validate exempts only the pair that the capture's
+    // regenerated plan produces, never what the trace declares.
     if let Some(params) = root.get("parameters").filter(|v| !v.is_null()) {
         let list = params
             .as_array()
-            .ok_or_else(|| bad("parameters não é lista"))?;
+            .ok_or_else(|| bad("parameters is not a list"))?;
         for (n, p) in list.iter().enumerate() {
             let (name, part) = match p {
                 Value::String(s) => (Some(s.as_str()), None),
@@ -439,7 +439,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
             let name = name.filter(|s| !s.is_empty());
             let part = part.filter(|s| !s.is_empty()).or(name);
             let Some(part) = part else {
-                return Err(bad(format!("parameters[{n}] precisa de name ou part")));
+                return Err(bad(format!("parameters[{n}] needs name or part")));
             };
             let note = format!(
                 "{PARAM_NOTE_PREFIX}{}",
@@ -456,7 +456,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
             let version = version
                 .as_u64()
                 .filter(|n| *n <= u64::from(u32::MAX))
-                .ok_or_else(|| bad("plan.version deve ser inteiro"))?;
+                .ok_or_else(|| bad("plan.version must be an integer"))?;
             session
                 .session
                 .notes
@@ -477,7 +477,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         let target = target
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 256)
-            .ok_or_else(|| bad("target deve ser texto (requestId do alvo na captura)"))?;
+            .ok_or_else(|| bad("target must be text (requestId of the target in the capture)"))?;
         session
             .session
             .notes
@@ -486,7 +486,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
     if let Some(complete) = root.get("complete").filter(|v| !v.is_null()) {
         let complete = complete
             .as_bool()
-            .ok_or_else(|| bad("complete deve ser booleano"))?;
+            .ok_or_else(|| bad("complete must be a boolean"))?;
         session
             .session
             .notes
@@ -496,14 +496,14 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
         let hash = hash
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 128)
-            .ok_or_else(|| bad("plan.hash deve ser texto"))?;
+            .ok_or_else(|| bad("plan.hash must be text"))?;
         session
             .session
             .notes
             .push(format!("{PLAN_HASH_NOTE_PREFIX}{hash}"));
     }
     session.session.notes.push(
-        "fonte: execução do script (scrapelens.trace/1); headers sem garantia de ordem do fio"
+        "source: script execution (scrapelens.trace/1); headers without a guarantee of wire order"
             .to_string(),
     );
     let mut warnings: Vec<Warning> = Vec::new();
@@ -518,7 +518,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
             attempt
                 .provenance
                 .notes
-                .push("execução do script".to_string());
+                .push("script execution".to_string());
             for (body, truncated, size) in [
                 (&mut attempt.request_body, req_trunc, req_size),
                 (&mut attempt.response_body, resp_trunc, resp_size),
@@ -536,7 +536,7 @@ pub fn import_trace(json_bytes: &[u8]) -> Result<ImportedSession> {
             warnings.push(
                 Warning::new(
                     "trace.body_truncated",
-                    format!("{id}: corpo truncado no trace"),
+                    format!("{id}: body truncated in the trace"),
                 )
                 .with_entity(&id),
             );

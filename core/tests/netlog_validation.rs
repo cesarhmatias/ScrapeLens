@@ -19,6 +19,7 @@ fn samples() -> Vec<Vec<u8>> {
     vec![
         br#"{"constants":{},"events":[]}"#.to_vec(),
         br#"[1,2,3]"#.to_vec(),
+        // non-ASCII input inside a JSON string: the verdict must not depend on it
         "  {\"events\":[{\"a\":\"é\"}]}  ".as_bytes().to_vec(),
         br#"{"events":["#.to_vec(),
         br#"{} x"#.to_vec(),
@@ -57,7 +58,7 @@ fn stream_validator_gives_the_same_verdict_as_value_including_the_recursion_limi
         assert_eq!(
             !serde_json::from_slice::<Value>(s.as_bytes()).is_ok(),
             import_with_netlog(s.as_bytes()),
-            "profundidade {n}"
+            "depth {n}"
         );
     }
 }

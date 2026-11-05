@@ -1,4 +1,4 @@
-//! Importador `scrapelens.trace/1`: válido, truncado e malformado.
+//! `scrapelens.trace/1` importer: valid, truncated and malformed.
 
 use scrapelens_core::model::{BodyState, OrderState};
 use scrapelens_core::parse::import_trace;
@@ -82,11 +82,11 @@ fn truncated_body_error_and_failed_check_become_warnings() {
 #[test]
 fn malformed_traces_fail_with_a_clear_error_never_panic() {
     let cases: Vec<(Vec<u8>, &str)> = vec![
-        (b"not json".to_vec(), "JSON inválido"),
+        (b"not json".to_vec(), "invalid JSON"),
         (br#"{"steps":[]}"#.to_vec(), "schema"),
         (
             br#"{"schema":"scrapelens.trace/2","steps":[]}"#.to_vec(),
-            "não suportado",
+            "not supported",
         ),
         (br#"{"schema":"scrapelens.trace/1"}"#.to_vec(), "steps"),
         (trace(vec![json!({"url":"https://x.test/"})]), "method"),
@@ -112,7 +112,7 @@ fn malformed_traces_fail_with_a_clear_error_never_panic() {
             ]),
             "responseBody.text",
         ),
-        (trace(vec![json!(5)]), "não é objeto"),
+        (trace(vec![json!(5)]), "is not an object"),
         (
             trace(vec![
                 json!({"method":"GET","url":"https://x.test/","elapsedMs":-1}),
@@ -157,13 +157,13 @@ fn compare_assess_and_sanitize_work_on_the_imported_session() {
 
 #[test]
 fn limits_base64_request_body_url_and_started_at_are_validated() {
-    // mais de 20 mil passos
+    // more than 20 thousand steps
     let many: Vec<Value> = (0..20_001)
         .map(|_| json!({"method":"GET","url":"https://x.test/"}))
         .collect();
     let err = import_trace(&trace(many)).unwrap_err().to_string();
-    assert!(err.contains("máximo"), "{err}");
-    // headers demais por passo
+    assert!(err.contains("maximum"), "{err}");
+    // too many headers per step
     let headers: Vec<Value> = (0..600).map(|i| json!([format!("H{i}"), "v"])).collect();
     let err = import_trace(&trace(vec![
         json!({"method":"GET","url":"https://x.test/","requestHeaders":headers}),
@@ -171,16 +171,16 @@ fn limits_base64_request_body_url_and_started_at_are_validated() {
     .unwrap_err()
     .to_string();
     assert!(err.contains("headers"), "{err}");
-    // url com espaço / controle
+    // url with space / control character
     for url in ["https://x.test/a b", "https://x.test/a\nb"] {
         let err = import_trace(&trace(vec![json!({"method":"GET","url":url})]))
             .unwrap_err()
             .to_string();
         assert!(err.contains("url"), "{err}");
     }
-    // startedAt inválido (topo e passo)
+    // startedAt invalid (top level and step)
     for doc in [
-        json!({"schema":"scrapelens.trace/1","startedAt":"ontem","steps":[]}),
+        json!({"schema":"scrapelens.trace/1","startedAt":"yesterday","steps":[]}),
         json!({"schema":"scrapelens.trace/1","steps":[{"method":"GET","url":"https://x.test/","startedAt":"2026-13"}]}),
     ] {
         let err = import_trace(&serde_json::to_vec(&doc).unwrap())
@@ -188,21 +188,21 @@ fn limits_base64_request_body_url_and_started_at_are_validated() {
             .to_string();
         assert!(err.contains("startedAt"), "{err}");
     }
-    // base64 no corpo enviado é aceito (e inválido dá erro claro)
+    // base64 in the sent body is accepted (invalid base64 gives a clear error)
     let ok = json!({"method":"POST","url":"https://x.test/","requestHeaders":[["Content-Type","application/x-www-form-urlencoded"]],
         "requestBody":{"text":"QT0xJkI9Mg==","encoding":"base64"}});
     let imported = import_trace(&trace(vec![ok])).unwrap();
     let a = &imported.bundle.session.requests[0].attempts[0];
     let att = a.request_body.attachment.clone().unwrap();
-    let bytes = imported.bundle.attachments.get(&att).expect("anexo");
+    let bytes = imported.bundle.attachments.get(&att).expect("attachment");
     assert_eq!(String::from_utf8_lossy(bytes), "A=1&B=2");
     let bad = json!({"method":"POST","url":"https://x.test/","requestBody":{"text":"!!!","encoding":"base64"}});
     let err = import_trace(&trace(vec![bad])).unwrap_err().to_string();
     assert!(err.contains("base64"), "{err}");
-    // target/complete/plan malformados
+    // malformed target/complete/plan
     for doc in [
         json!({"schema":"scrapelens.trace/1","target":5,"steps":[]}),
-        json!({"schema":"scrapelens.trace/1","complete":"sim","steps":[]}),
+        json!({"schema":"scrapelens.trace/1","complete":"yes","steps":[]}),
     ] {
         assert!(import_trace(&serde_json::to_vec(&doc).unwrap()).is_err());
     }

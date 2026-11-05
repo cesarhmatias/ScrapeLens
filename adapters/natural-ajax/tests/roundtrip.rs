@@ -1,5 +1,5 @@
-//! Round-trip exato: `encode(decode(x)) == x` nos XML das fixtures e (agregado)
-//! dos HARs reais. Nada de valores no relatório.
+//! Exact round-trip: `encode(decode(x)) == x` on the XML of the fixtures and (aggregated)
+//! of the real HARs. No values in the report.
 
 mod common;
 
@@ -78,7 +78,7 @@ fn fixtures_round_trip_exactly() {
         }
     }
     println!("fixtures: {files} HAR, {tally:?}");
-    assert!(tally.fields > 0, "nenhum XML encontrado nas fixtures");
+    assert!(tally.fields > 0, "no XML found in the fixtures");
     assert_eq!(tally.divergences, 0, "{tally:?}");
     assert_eq!(tally.unclaimed, 0, "{tally:?}");
 }
@@ -101,14 +101,14 @@ fn real_hars_round_trip_exactly_aggregate() {
             check(xml, &mut tally);
         }
     }
-    // Só agregados, sem valores.
+    // Aggregates only, no values.
     println!("hars reais: {seen}/3, {tally:?}");
     if seen == 0 {
         return;
     }
     assert_eq!(tally.divergences, 0, "{tally:?}");
-    // Controles `XML` que não são Natural (marcação ou JS) ficam sem
-    // reivindicação; nenhum campo reivindicado diverge.
+    // `XML` controls that are not Natural (markup or JS) stay unclaimed;
+    // no claimed field diverges.
     assert!(tally.claimed > 0, "{tally:?}");
 }
 
@@ -176,14 +176,14 @@ fn rss_mb() -> f64 {
 
 #[test]
 fn operation_limit_bounds_time_and_memory() {
-    // `l`×8 MiB: recusado pelo limite de operações, sem estourar memória.
+    // `l`×8 MiB: refused by the operation limit, without exhausting memory.
     let text = "l".repeat(8 * 1024 * 1024);
     let start = std::time::Instant::now();
     assert!(grammar::parse(&text).is_err());
     assert!(NaturalAjax.decode(&text).is_err());
     assert!(start.elapsed().as_secs_f64() < 2.0, "{:?}", start.elapsed());
     assert!(rss_mb() < 500.0, "{} MB", rss_mb());
-    // Logo abaixo do limite ainda funciona.
+    // Just below the limit it still works.
     let ok = "l".repeat(grammar::MAX_OPS);
     assert_eq!(grammar::parse(&ok).unwrap().len(), grammar::MAX_OPS);
     assert!(grammar::parse(&format!("{ok}l")).is_err());
@@ -215,7 +215,7 @@ fn label_hint_marks_only_the_init_operation() {
         adapter.label_hint(&decode(vec![head(false), grammar::Op::Delta("dd".into())])),
         None
     );
-    // Resposta (sem cabeçalho): nenhuma dica.
+    // Response (no header): no hint.
     assert_eq!(
         adapter.label_hint(&decode(vec![
             grammar::Op::Clear,

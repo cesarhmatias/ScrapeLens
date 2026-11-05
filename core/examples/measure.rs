@@ -1,5 +1,5 @@
-//! Medição manual de memória/tempo: `cargo run --release --example measure -- <sessao> eager|lazy [texto]`.
-//! Pico: `/usr/bin/time -l`; RSS retido: lido via `ps` depois da abertura.
+//! Manual memory/time measurement: `cargo run --release --example measure -- <session> eager|lazy [text]`.
+//! Peak: `/usr/bin/time -l`; retained RSS: read via `ps` after opening.
 use std::path::Path;
 use std::time::Instant;
 
@@ -30,7 +30,7 @@ fn main() {
         let t = Instant::now();
         let found = search_lazy(&lazy, &query);
         eprintln!(
-            "lazy: abrir {open:?}, RSS retido {retained} MB, busca {:?}, {} achados, rss fim {} MB",
+            "lazy: open {open:?}, retained RSS {retained} MB, search {:?}, {} matches, end rss {} MB",
             t.elapsed(),
             found.matches.len(),
             rss_mb()
@@ -41,6 +41,6 @@ fn main() {
         let retained = rss_mb();
         let t = Instant::now();
         let found = search(&imported.bundle, &query);
-        eprintln!("eager: abrir {open:?}, RSS retido {retained} MB, busca {:?}, {} achados, rss fim {} MB", t.elapsed(), found.matches.len(), rss_mb());
+        eprintln!("eager: open {open:?}, retained RSS {retained} MB, search {:?}, {} matches, end rss {} MB", t.elapsed(), found.matches.len(), rss_mb());
     }
 }

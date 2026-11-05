@@ -2,37 +2,37 @@ use serde::{Deserialize, Serialize};
 
 use super::provenance::Provenance;
 
-/// Par interno de um campo `Cookie`, com o texto original do par.
+/// Internal pair of a `Cookie` field, with the original text of the pair.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CookiePairEntry {
     pub name: String,
-    /// Valor exatamente como veio na fonte (aspas preservadas).
+    /// Value exactly as it came from the source (quotes preserved).
     pub value: String,
-    /// O par inteiro como apareceu (`name=value`), sem o `; ` separador.
+    /// The whole pair as it appeared (`name=value`), without the `; ` separator.
     pub raw: String,
     #[serde(flatten)]
     pub provenance: Provenance,
 }
 
-/// Campo `Cookie` de uma requisição.
+/// `Cookie` field of a request.
 ///
-/// Preserva (a) o valor original de cada campo da fonte, (b) os pares internos
-/// parseados e (c) as linhas divididas observadas no fio (h2/h3). Nada é
-/// fundido: `wire_lines` pode ter N entradas enquanto `raw` tem 1.
+/// Preserves (a) the original value of each field in the source, (b) the parsed
+/// internal pairs and (c) the split lines observed on the wire (h2/h3). Nothing
+/// is merged: `wire_lines` may have N entries while `raw` has 1.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CookieField {
-    /// Valores originais do(s) campo(s) `Cookie` na fonte (0..N).
+    /// Original value(s) of the `Cookie` field(s) in the source (0..N).
     #[serde(default)]
     pub raw: Vec<String>,
-    /// Pares internos parseados, na ordem de aparição.
+    /// Parsed internal pairs, in order of appearance.
     #[serde(default)]
     pub pairs: Vec<CookiePairEntry>,
-    /// Linhas `Cookie:` observadas no fio, uma por campo transmitido.
+    /// `Cookie:` lines observed on the wire, one per transmitted field.
     #[serde(default)]
     pub wire_lines: Vec<String>,
-    /// Tokens que não puderam ser parseados (nunca descartados em silêncio).
+    /// Tokens that could not be parsed (never silently dropped).
     #[serde(default)]
     pub unparsed: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -46,7 +46,7 @@ impl CookieField {
         self.raw.is_empty() && self.pairs.is_empty() && self.wire_lines.is_empty()
     }
 
-    /// Constrói a partir dos valores originais de `Cookie` (um por campo).
+    /// Builds from the original `Cookie` values (one per field).
     pub fn from_header_values(values: &[String], provenance: &Provenance) -> Self {
         let mut field = Self {
             provenance: provenance.clone(),
@@ -77,7 +77,7 @@ impl CookieField {
                 }
                 _ => {
                     self.notes.push(format!(
-                        "par de cookie sem '=' preservado em unparsed: {token:?}"
+                        "cookie pair without '=' preserved in unparsed: {token:?}"
                     ));
                     self.unparsed.push(token.to_string());
                 }
@@ -85,25 +85,25 @@ impl CookieField {
         }
     }
 
-    /// Adiciona pares derivados de outra fonte (ex.: `request.cookies` do HAR)
-    /// sem tocar no campo bruto.
+    /// Adds pairs derived from another source (e.g. `request.cookies` from HAR)
+    /// without touching the raw field.
     pub fn add_pairs_from_header(&mut self, value: &str, provenance: &Provenance) {
         self.parse_value_into_pairs(value, provenance);
     }
 
-    /// Registra uma linha dividida do fio (h2/h3), preservando a ordem.
+    /// Records a split line from the wire (h2/h3), preserving the order.
     pub fn push_wire_line(&mut self, line: &str) {
         self.wire_lines.push(line.to_string());
     }
 
-    /// `true` quando o fio mostra mais campos `Cookie` que a fonte.
+    /// `true` when the wire shows more `Cookie` fields than the source.
     pub fn wire_is_fragmented(&self) -> bool {
         self.wire_lines.len() > self.raw.len() && self.raw.len() <= 1 && self.wire_lines.len() > 1
     }
 }
 
-/// Divide `a=1; b=2` em tokens, respeitando aspas (um `;` dentro de aspas não
-/// separa pares). Não remove espaços internos do valor.
+/// Splits `a=1; b=2` into tokens, respecting quotes (a `;` inside quotes does not
+/// separate pairs). Does not remove internal spaces from the value.
 pub fn split_cookie_tokens(value: &str) -> Vec<&str> {
     let mut tokens = Vec::new();
     let mut start = 0usize;
@@ -128,8 +128,8 @@ pub fn split_cookie_tokens(value: &str) -> Vec<&str> {
     tokens
 }
 
-/// Atributos parseados de `Set-Cookie`. O valor bruto é sempre preservado em
-/// [`SetCookieRecord`], mesmo quando o parse falha.
+/// Parsed attributes of `Set-Cookie`. The raw value is always preserved in
+/// [`SetCookieRecord`], even when parsing fails.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParsedSetCookie {
@@ -139,7 +139,7 @@ pub struct ParsedSetCookie {
     pub domain: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// Texto original de `Expires` (não reinterpretado).
+    /// Original text of `Expires` (not reinterpreted).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -152,14 +152,14 @@ pub struct ParsedSetCookie {
     pub same_site: Option<String>,
     #[serde(default)]
     pub partitioned: bool,
-    /// Atributos não reconhecidos ou inválidos, preservados como texto.
+    /// Unrecognized or invalid attributes, preserved as text.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extensions: Vec<(String, String)>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
 
-/// Uma linha `Set-Cookie` como recebida, com o parse ao lado.
+/// A `Set-Cookie` line as received, with its parse alongside.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetCookieRecord {
@@ -200,13 +200,13 @@ pub fn parse_set_cookie(raw: &str) -> Result<ParsedSetCookie, String> {
     let first = tokens
         .first()
         .copied()
-        .ok_or_else(|| "linha Set-Cookie vazia".to_string())?;
+        .ok_or_else(|| "empty Set-Cookie line".to_string())?;
     let eq = first
         .find('=')
-        .ok_or_else(|| format!("Set-Cookie sem '=' no par nome=valor: {first:?}"))?;
+        .ok_or_else(|| format!("Set-Cookie without '=' in the name=value pair: {first:?}"))?;
     let name = first[..eq].trim();
     if name.is_empty() {
-        return Err(format!("Set-Cookie com nome vazio: {first:?}"));
+        return Err(format!("Set-Cookie with empty name: {first:?}"));
     }
 
     let mut parsed = ParsedSetCookie {
@@ -241,7 +241,7 @@ pub fn parse_set_cookie(raw: &str) -> Result<ParsedSetCookie, String> {
                 Some(seconds) => parsed.max_age = Some(seconds),
                 None => {
                     parsed.notes.push(format!(
-                        "Max-Age inválido preservado como extensão: {token:?}"
+                        "invalid Max-Age preserved as extension: {token:?}"
                     ));
                     parsed
                         .extensions
@@ -327,8 +327,8 @@ mod tests {
 
     #[test]
     fn invalid_set_cookie_keeps_raw_and_error() {
-        let record = SetCookieRecord::from_raw("sem-igual", &prov());
-        assert_eq!(record.raw, "sem-igual");
+        let record = SetCookieRecord::from_raw("no-equals-sign", &prov());
+        assert_eq!(record.raw, "no-equals-sign");
         assert!(record.parsed.is_none());
         assert!(record.parse_error.is_some());
     }

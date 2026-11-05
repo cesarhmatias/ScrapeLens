@@ -1926,7 +1926,7 @@ pub fn parse_netlog_with_wall_clock(
             Warning::new(
                 "netlog.unknown_event_type",
                 format!(
-                    ""{} event(s) of unknown type; preserved in the raw file and counted",
+                    "{} event(s) of unknown type; preserved in the raw file and counted",
                     capture.events_unknown
                 ),
             )
@@ -2005,7 +2005,7 @@ pub fn parse_netlog_with_wall_clock(
         capture.warnings.push(Warning::new(
             "netlog.session_headers_unlinked",
             format!(
-                ""{} h2/h3 session header event(s) without an explicit chain to a URL_REQUEST; not associated",
+                "{} h2/h3 session header event(s) without an explicit chain to a URL_REQUEST; not associated",
                 capture.unlinked_session_events
             ),
         ));
@@ -2023,7 +2023,7 @@ pub fn parse_netlog_with_wall_clock(
             capture.warnings.push(Warning::new(
                 "netlog.request_without_url",
                 format!(
-                    ""URL_REQUEST {} has no URL in URL_REQUEST_START_JOB; not imported",
+                    "URL_REQUEST {} has no URL in URL_REQUEST_START_JOB; not imported",
                     request.source_id
                 ),
             ));
@@ -2035,7 +2035,7 @@ pub fn parse_netlog_with_wall_clock(
     if capture.requests.is_empty() {
         capture.warnings.push(Warning::error(
             "netlog.no_requests",
-            ""NetLog produced no usable request",
+            "NetLog produced no usable request",
         ));
     }
     Ok(capture)
@@ -2168,7 +2168,7 @@ fn parse_headers(
     }
     if nul_expanded {
         view.notes.push(
-            "repetições fundidas por \\x00 no evento de sessão foram expandidas em pares distintos"
+            "repeats merged by \\x00 in the session event were expanded into distinct pairs"
                 .to_string(),
         );
         for entry in view
@@ -2181,7 +2181,7 @@ fn parse_headers(
     }
     if !unparsed.is_empty() {
         view.notes.push(format!(
-            ""{} line(s) without ':' preserved in raw_block and reported",
+            "{} line(s) without ':' preserved in raw_block and reported",
             unparsed.len()
         ));
     }
@@ -2465,7 +2465,7 @@ fn detect_time_unit(
     let Some(reference) = wall_clock_s else {
         warnings.push(Warning::new(
             "netlog.time_unit_assumed",
-            ""no reference wall clock (CDP); `time` unit assumed to be milliseconds",
+            "no reference wall clock (CDP); `time` unit assumed to be milliseconds",
         ));
         return NetlogTimeUnit::default();
     };
@@ -2490,7 +2490,7 @@ fn detect_time_unit(
         Warning::info(
             "netlog.time_unit_detected",
             format!(
-                ""`time` unit calibrated as {} by the CDP clock (deviation {:.3}s)",
+                "`time` unit calibrated as {} by the CDP clock (deviation {:.3}s)",
                 unit.as_str(),
                 error
             ),
@@ -2556,7 +2556,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
     });
     meta.labels.push("netlog-import".to_string());
     meta.completeness = Completeness::partial(
-        ""NetLog does not declare a CDP capture; request coverage not confirmed",
+        "NetLog does not declare a CDP capture; request coverage not confirmed",
     );
     let mut session = SessionV1::new(meta);
 
@@ -2631,7 +2631,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                     if parsed.send_transaction.is_some() {
                         attempt.cookie.wire_lines = session_headers.view.cookie_field_values();
                         attempt.cookie.notes.push(
-                            "linhas do fio lidas do evento de sessão; NetLog pode mostrar Cookie fundido"
+                            "wire lines read from the session event; NetLog may show a merged Cookie"
                                 .to_string(),
                         );
                     }
@@ -2639,7 +2639,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 if attempt.cookie.wire_lines.is_empty() && !attempt.cookie.raw.is_empty() {
                     attempt.cookie.wire_lines = attempt.cookie.raw.clone();
                     attempt.cookie.notes.push(
-                        \"h1: a single Cookie field observed in the transactional source\".to_string(),
+                        "h1: a single Cookie field observed in the transactional source".to_string(),
                     );
                 }
             }

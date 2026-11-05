@@ -1,9 +1,9 @@
-//! Exportador cURL com quoting de shell correto.
+//! cURL exporter with correct shell quoting.
 //!
-//! O comando gerado é para bash/zsh (`$'...'` quando há bytes de controle).
-//! URLs, headers e payloads são dados não confiáveis: nomes de header são
-//! validados, CR/LF/NUL são recusados e aspas são escapadas. Não há promessa de
-//! replicar TLS, JA3/JA4, ordem de frames ou HPACK.
+//! The generated command is for bash/zsh (`$'...'` when there are control bytes).
+//! URLs, headers and payloads are untrusted data: header names are validated,
+//! CR/LF/NUL are refused and quotes are escaped. There is no promise to replicate
+//! TLS, JA3/JA4, frame order or HPACK.
 
 use crate::error::Result;
 use crate::model::{LogicalRequest, Verification};
@@ -21,8 +21,8 @@ pub fn to_curl(
     to_curl_with_origins(request, body, options, None)
 }
 
-/// Como [`to_curl`], anotando em comentário os campos "obter em runtime" (com a
-/// origem) quando `origins` é dado. O código gerado não muda.
+/// Like [`to_curl`], annotating in a comment the "get at runtime" fields (with
+/// their origin) when `origins` is given. The generated code does not change.
 pub fn to_curl_with_origins(
     request: &LogicalRequest,
     body: Option<&[u8]>,
@@ -34,15 +34,15 @@ pub fn to_curl_with_origins(
     let headers = exportable_headers(request, &mut output);
     let mut body = resolve_body(request, body, options, &mut output);
     if body.is_some_and(|bytes| bytes.contains(&0)) {
-        // Bash não consegue passar NUL em argv; recusar é melhor que truncar.
+        // Bash cannot pass NUL in argv; refusing is better than truncating.
         output.body_included = false;
         output.body_note = Some(
-            "corpo contém NUL e não pode ser reproduzido por um argumento de shell; omitido"
+            "body contains NUL and cannot be reproduced by a shell argument; omitted"
                 .to_string(),
         );
         output.warnings.push(crate::model::Warning::new(
             "export.body_nul",
-            "corpo binário com NUL omitido do cURL; use a exportação Python ou o anexo original",
+            "binary body with NUL omitted from cURL; use the Python export or the original attachment",
         ));
         body = None;
     }
@@ -51,25 +51,25 @@ pub fn to_curl_with_origins(
     let verification = request.request_headers.verification();
     let mut text = String::new();
     text.push_str(&super::comment(&format!(
-        "ScrapeLens — export cURL da requisição {}",
+        "ScrapeLens — cURL export of request {}",
         request.id
     )));
     text.push_str(
-        "# NÃO reproduz TLS nem fingerprint do navegador (JA3/JA4, frames, HPACK); apenas a requisição HTTP.\n",
+        "# This export does NOT reproduce TLS or the browser fingerprint (JA3/JA4, frames, HPACK); only the HTTP request.\n",
     );
     text.push_str(&super::comment(&format!(
-        "protocolo capturado: {} · verificação dos headers: {}",
+        "captured protocol: {} · header verification: {}",
         request.protocol.as_str(),
         verification.as_str()
     )));
     if verification == Verification::Unverified {
         text.push_str(
-            "# ATENÇÃO: sequência de headers NÃO verificada; trate como não confiável.\n",
+            "# WARNING: header sequence NOT verified; treat as untrusted.\n",
         );
     }
     if !output.skipped_headers.is_empty() {
         text.push_str(&super::comment(&format!(
-            "{} header(s)/campo(s) não replicado(s):",
+            "{} header(s)/field(s) not replicated:",
             output.skipped_headers.len()
         )));
         for skipped in &output.skipped_headers {
@@ -77,7 +77,7 @@ pub fn to_curl_with_origins(
         }
     }
     if let Some(note) = &output.body_note {
-        text.push_str(&super::comment(&format!("corpo: {note}")));
+        text.push_str(&super::comment(&format!("body: {note}")));
     }
     if let Some(origins) = origins {
         for line in super::runtime_origin_notes(origins) {
@@ -85,9 +85,9 @@ pub fn to_curl_with_origins(
         }
     }
     if let Some(note) = super::redirect_url_note(request) {
-        text.push_str(&super::comment(&format!("ATENÇÃO: {note}")));
+        text.push_str(&super::comment(&format!("WARNING: {note}")));
     }
-    text.push_str("# Contém credenciais/cookies se a sessão não foi sanitizada.\n");
+    text.push_str("# Contains credentials/cookies if the session was not sanitized.\n");
 
     text.push_str("curl \\\n");
     text.push_str(&format!(
@@ -104,7 +104,7 @@ pub fn to_curl_with_origins(
     if let Some(body) = body {
         text.push_str(&format!("  --data-binary {} \\\n", shell_quote_bytes(body)));
     }
-    // Remove a continuação final e adiciona quebra de linha.
+    // Removes the trailing continuation and adds a line break.
     while text.ends_with(" \\\n") {
         text.truncate(text.len() - 3);
     }
@@ -115,8 +115,8 @@ pub fn to_curl_with_origins(
     Ok(output)
 }
 
-/// Aspas simples POSIX; `'` vira `'\''`. Controla NUL? NUL não é aceito em
-/// argumento; quem chama já removeu. Para bytes de controle usa `$'...'`.
+/// POSIX single quotes; `'` becomes `'\''`. NUL is not accepted in an argument;
+/// the caller has already removed it. For control bytes it uses `$'...'`.
 pub fn shell_quote(value: &str) -> String {
     if value.chars().any(|ch| ch.is_control() && ch != '\t') || value.contains('\t') {
         return shell_quote_ansi(value.as_bytes());
@@ -124,7 +124,7 @@ pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Bytes em quoting ANSI-C do bash (`$'...'`), seguro para NUL e não-UTF8.
+/// Bytes in bash ANSI-C quoting (`$'...'`), safe for NUL and non-UTF-8.
 pub fn shell_quote_bytes(bytes: &[u8]) -> String {
     if bytes.is_empty() {
         return "''".to_string();

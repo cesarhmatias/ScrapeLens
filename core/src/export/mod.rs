@@ -1,6 +1,6 @@
-//! Exportadores. Nenhum deles promete replicar TLS ou fingerprint do
-//! navegador: o alvo é a requisição no nível HTTP, com escaping correto de
-//! dados não confiáveis.
+//! Exporters. None of them promises to replicate TLS or the browser
+//! fingerprint: the target is the request at the HTTP level, with correct
+//! escaping of untrusted data.
 
 pub mod curl;
 pub mod priming;
@@ -16,9 +16,9 @@ use crate::model::{LogicalRequest, Warning};
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportOptions {
-    /// Inclui corpo quando os bytes foram fornecidos pelo chamador.
+    /// Includes the body when the bytes were provided by the caller.
     pub include_body: bool,
-    /// Limite de bytes de corpo para uma exportação de linha de comando.
+    /// Body byte limit for a command-line export.
     pub max_body_bytes: usize,
 }
 
@@ -56,13 +56,13 @@ impl ExportOutput {
     }
 }
 
-/// Header exportável: nome válido e valor sem CR/LF/NUL.
+/// Exportable header: valid name and value without CR/LF/NUL.
 pub struct ExportableHeader<'a> {
     pub name: &'a str,
     pub value: &'a str,
 }
 
-/// Valida o nome contra o token HTTP (RFC 9110) e rejeita injeção de linha.
+/// Validates the name against the HTTP token (RFC 9110) and rejects line injection.
 pub fn is_header_token(name: &str) -> bool {
     !name.is_empty()
         && name.bytes().all(|byte| {
@@ -90,8 +90,8 @@ pub fn is_safe_header_value(value: &str) -> bool {
     !value.contains(['\r', '\n', '\0'])
 }
 
-/// Coleta headers comuns na ordem da fonte; pseudoheaders ficam de fora e são
-/// listados em `skipped_headers` (não são replicáveis por cURL/Python).
+/// Collects common headers in source order; pseudoheaders are left out and are
+/// listed in `skipped_headers` (they cannot be replicated by cURL/Python).
 pub fn exportable_headers<'a>(
     request: &'a LogicalRequest,
     output: &mut ExportOutput,
@@ -101,27 +101,27 @@ pub fn exportable_headers<'a>(
         if entry.is_pseudo() {
             output
                 .skipped_headers
-                .push(format!("{}: pseudoheader não replicável", entry.name));
+                .push(format!("{}: pseudoheader not replicable", entry.name));
             continue;
         }
         if !is_header_token(&entry.name) {
             output
                 .skipped_headers
-                .push(format!("{}: nome de header inválido", entry.name));
+                .push(format!("{}: invalid header name", entry.name));
             output.warnings.push(Warning::new(
                 "export.invalid_header_name",
-                format!("header descartado por nome inválido: {:?}", entry.name),
+                format!("header discarded due to invalid name: {:?}", entry.name),
             ));
             continue;
         }
         if !is_safe_header_value(&entry.value) {
             output
                 .skipped_headers
-                .push(format!("{}: valor contém CR/LF/NUL", entry.name));
+                .push(format!("{}: value contains CR/LF/NUL", entry.name));
             output.warnings.push(Warning::new(
                 "export.header_injection",
                 format!(
-                    "header {} descartado: valor contém CR, LF ou NUL e não pode ser reproduzido com segurança",
+                    "header {} discarded: value contains CR, LF or NUL and cannot be reproduced safely",
                     entry.name
                 ),
             ));
@@ -135,8 +135,8 @@ pub fn exportable_headers<'a>(
     headers
 }
 
-/// Remove `Content-Length` quando o corpo não será enviado; manter o header
-/// produziria uma requisição que trava esperando bytes.
+/// Removes `Content-Length` when the body will not be sent; keeping the header
+/// would produce a request that hangs waiting for bytes.
 pub fn drop_content_length_without_body<'a>(
     headers: Vec<ExportableHeader<'a>>,
     body_included: bool,
@@ -151,10 +151,10 @@ pub fn drop_content_length_without_body<'a>(
             if header.name.eq_ignore_ascii_case("content-length") {
                 output
                     .skipped_headers
-                    .push("content-length: removido porque o corpo não foi exportado".to_string());
+                    .push("content-length: removed because the body was not exported".to_string());
                 output.warnings.push(Warning::new(
                     "export.content_length_without_body",
-                    "Content-Length original removido: o corpo não acompanha a exportação",
+                    "Original Content-Length removed: the body does not accompany the export",
                 ));
                 false
             } else {
@@ -164,10 +164,10 @@ pub fn drop_content_length_without_body<'a>(
         .collect()
 }
 
-/// Bytes do corpo de requisição a exportar. `request.request_body` acompanha a
-/// última tentativa (a mesma de onde vêm os headers exportados); só
-/// `captured`/`truncated` têm bytes, o resto devolve `None` e `resolve_body`
-/// explica o estado.
+/// Request body bytes to export. `request.request_body` follows the
+/// last attempt (the same one the exported headers come from); only
+/// `captured`/`truncated` have bytes, the rest returns `None` and `resolve_body`
+/// explains the state.
 pub fn request_body_bytes<'a>(
     bundle: &'a crate::model::SessionBundle,
     request: &LogicalRequest,
@@ -182,12 +182,12 @@ pub fn request_body_bytes<'a>(
         .and_then(|name| bundle.attachment(name))
 }
 
-/// ÚNICA porta de entrada para texto em comentário do código gerado (cURL e
-/// Python). O conteúdo pode vir da captura (nomes de campo, URLs, notas), então:
-/// CR, LF, VT, FF, NEL, U+2028/U+2029 e qualquer outro controle quebram a linha
-/// ou somem, caracteres de formatação/bidi são removidos, cada linha resultante
-/// ganha o prefixo `# ` e o comprimento é limitado. Nada do conteúdo sai de um
-/// comentário.
+/// ONLY entry point for text in a comment of the generated code (cURL and
+/// Python). The content may come from the capture (field names, URLs, notes), so:
+/// CR, LF, VT, FF, NEL, U+2028/U+2029 and any other control character either break
+/// the line or disappear, formatting/bidi characters are removed, each resulting
+/// line gets the `# ` prefix and the length is limited. Nothing from the content
+/// leaves a comment.
 pub fn comment(text: &str) -> String {
     const MAX_LINE: usize = 240;
     const MAX_LINES: usize = 8;
@@ -228,9 +228,9 @@ pub fn comment(text: &str) -> String {
     out
 }
 
-/// Linhas de comentário "obter em runtime (origem: …)" para os valores da
-/// requisição que têm produtor observado em resposta anterior. Não inclui
-/// valores (só campo e origem) e não altera o código gerado.
+/// Comment lines "get at runtime (origin: …)" for the request values that
+/// have a producer observed in an earlier response. Does not include
+/// values (only field and origin) and does not change the generated code.
 pub fn runtime_origin_notes(origins: &crate::flow::ValueOrigins) -> Vec<String> {
     use crate::flow::{ConsumedScope, OriginStatus, Role, Strength};
     let mut lines = Vec::new();
@@ -247,32 +247,32 @@ pub fn runtime_origin_notes(origins: &crate::flow::ValueOrigins) -> Vec<String> 
             ConsumedScope::Query => "query",
             ConsumedScope::Header => "header",
             ConsumedScope::Cookie => "cookie",
-            ConsumedScope::Body => "corpo",
+            ConsumedScope::Body => "body",
         };
         let part = if value.parent.is_some() {
-            " (trecho)"
+            " (excerpt)"
         } else {
             ""
         };
         let ambiguous = if value.status == OriginStatus::Ambiguous {
-            ", ambíguo"
+            ", ambiguous"
         } else {
             ""
         };
         lines.push(format!(
-            "obter em runtime (origem: {} {:?}{ambiguous}): {scope} {}{part}",
+            "get at runtime (origin: {} {:?}{ambiguous}): {scope} {}{part}",
             evidence.request_id, evidence.kind, value.field
         ));
         if lines.len() >= 60 {
-            lines.push("… (demais origens omitidas)".to_string());
+            lines.push("… (other origins omitted)".to_string());
             break;
         }
     }
     lines
 }
 
-/// Aviso quando a URL exportada (1ª tentativa) difere da URL final após um
-/// redirect 307/308, que preserva método e corpo.
+/// Warning when the exported URL (1st attempt) differs from the final URL after a
+/// 307/308 redirect, which preserves method and body.
 pub fn redirect_url_note(request: &LogicalRequest) -> Option<String> {
     let first = request.attempts.first()?;
     let last = request.attempts.last()?;
@@ -284,14 +284,14 @@ pub fn redirect_url_note(request: &LogicalRequest) -> Option<String> {
         .any(|attempt| matches!(attempt.status, Some(307 | 308)));
     (preserved && first.url != last.url).then(|| {
         format!(
-            "a URL exportada é a da 1ª tentativa ({:?}); após redirect 307/308 a requisição final foi para {:?}",
+            "the exported URL is that of the 1st attempt ({:?}); after a 307/308 redirect the final request went to {:?}",
             first.url, last.url
         )
     })
 }
 
-/// Resolve o corpo a exportar. Retorna `None` quando o estado não permite ou
-/// os bytes não foram carregados, sempre com aviso.
+/// Resolves the body to export. Returns `None` when the state does not allow it or
+/// the bytes were not loaded, always with a warning.
 pub fn resolve_body<'a>(
     request: &LogicalRequest,
     bytes: Option<&'a [u8]>,
@@ -299,7 +299,7 @@ pub fn resolve_body<'a>(
     output: &mut ExportOutput,
 ) -> Option<&'a [u8]> {
     if !options.include_body {
-        output.body_note = Some("corpo omitido por opção (includeBody=false)".to_string());
+        output.body_note = Some("body omitted by option (includeBody=false)".to_string());
         return None;
     }
     match bytes {
@@ -307,32 +307,32 @@ pub fn resolve_body<'a>(
             output.warnings.push(Warning::new(
                 "export.body_too_large",
                 format!(
-                    "corpo de {} bytes excede o limite de {} bytes da exportação",
+                    "body of {} bytes exceeds the export limit of {} bytes",
                     bytes.len(),
                     options.max_body_bytes
                 ),
             ));
-            output.body_note = Some("corpo não incluído: acima do limite".to_string());
+            output.body_note = Some("body not included: above the limit".to_string());
             None
         }
         Some(bytes) => {
             output.body_included = true;
             output.body_note = Some(match request.request_body.state {
                 crate::model::BodyState::Truncated => {
-                    "corpo truncado na captura; exportado apenas o trecho disponível".to_string()
+                    "body truncated in the capture; only the available excerpt exported".to_string()
                 }
                 crate::model::BodyState::Captured => {
-                    "corpo capturado exportado como bytes".to_string()
+                    "captured body exported as bytes".to_string()
                 }
                 _ => format!(
-                    "corpo exportado a partir dos bytes fornecidos (estado {:?})",
+                    "body exported from the provided bytes (state {:?})",
                     request.request_body.state
                 ),
             });
             if !request.request_body.transformed.is_empty() {
                 let list = request.request_body.transformed.join(", ");
                 let mut note = format!(
-                    "ATENÇÃO: corpo transformado ({list}); os bytes exportados não são idênticos aos do fio"
+                    "WARNING: body transformed ({list}); the exported bytes are not identical to those on the wire"
                 );
                 if request
                     .request_body
@@ -340,7 +340,7 @@ pub fn resolve_body<'a>(
                     .iter()
                     .any(|item| item == "lossy-postData")
                 {
-                    note.push_str("; lossy-postData: os bytes podem diferir dos enviados");
+                    note.push_str("; lossy-postData: the bytes may differ from those sent");
                 }
                 output
                     .warnings
@@ -352,7 +352,7 @@ pub fn resolve_body<'a>(
         }
         None => {
             output.body_note = Some(format!(
-                "corpo não incluído: estado {:?}{}",
+                "body not included: state {:?}{}",
                 request.request_body.state,
                 request
                     .request_body
@@ -366,16 +366,16 @@ pub fn resolve_body<'a>(
     }
 }
 
-/// URL do request (original; nunca normalizada para exportar).
+/// Request URL (original; never normalized for export).
 pub fn export_url(request: &LogicalRequest) -> Result<&str> {
     if request.url.is_empty() {
         return Err(CoreError::Export {
-            message: format!("requisição {} sem URL", request.id),
+            message: format!("request {} has no URL", request.id),
         });
     }
     if request.url.contains(['\r', '\n', '\0']) || request.url.chars().any(char::is_whitespace) {
         return Err(CoreError::Export {
-            message: "URL contém espaço/CR/LF/NUL; recusando gerar comando".to_string(),
+            message: "URL contains space/CR/LF/NUL; refusing to generate command".to_string(),
         });
     }
     Ok(&request.url)

@@ -1,4 +1,4 @@
-//! Comparação entre duas capturas do mesmo fluxo (`docs/09-cadeia-comparacao.md` §2).
+//! Comparison between two captures of the same flow (`docs/09-cadeia-comparacao.md` §2).
 //!
 //! ```text
 //! pub fn compare_sessions(a: &SessionV1, a_source: &dyn BodySource,
@@ -6,38 +6,38 @@
 //!                         options: &CompareOptions) -> SessionComparison
 //! ```
 //!
-//! Esquema JSON (camelCase): `{ pairs: [ { a, b: {requestId, method, url}, alignedBy: model|path,
+//! JSON schema (camelCase): `{ pairs: [ { a, b: {requestId, method, url}, alignedBy: model|path,
 //! outOfOrder, counts, fields: [ { scope, field, occurrence, class: static|dynamic|onlyA|onlyB|redacted,
-//! label (estático|dinâmico|só em A|só em B|redigido), dynamicKind: runtime|noOrigin|repeated|composite,
-//! originLabel ("obter em runtime (origem: cdp-rNNNN)" | "dinâmico sem origem"), a, b,
+//! label (static|dynamic|only in A|only in B|redacted), dynamicKind: runtime|noOrigin|repeated|composite,
+//! originLabel ("get at runtime (origin: cdp-rNNNN)" | "dynamic without origin"), a, b,
 //! origin: {kind, requestId, scope, field, ambiguous}, parts: [ { class: static|dynamic, label, aOffset,
-//! bOffset, a, b, dynamicKind, originLabel, origin } ] } ] } ], onlyInA[], onlyInB[], reordered: [{a, b}] (sobras de mesmo modelo nos dois lados), ambiguities[],
-//! counts, partsCounts, redactedFields, warnings[] }`. `counts` soma campos escalares e os trechos
-//! dinâmicos de campos compostos (`dynamic == runtime + noOrigin`); `partsCounts` mostra só a parte dos trechos
-//! (e os estáticos).
+//! bOffset, a, b, dynamicKind, originLabel, origin } ] } ] } ], onlyInA[], onlyInB[], reordered: [{a, b}] (leftovers of the same model on both sides), ambiguities[],
+//! counts, partsCounts, redactedFields, warnings[] }`. `counts` sums scalar fields and the excerpts
+//! dynamic excerpts of composite fields (`dynamic == runtime + noOrigin`); `partsCounts` shows only the excerpt part
+//! (and the static ones).
 //!
-//! Rodada 6: por padrão só a aplicação é alinhada (proteção e recursos estáticos
-//! saem em `groups: [{kind: protection|static, a[], b[]}]`; `CompareOptions
-//! {includeAll}` os inclui). A e B são segmentadas em rodadas pela requisição de
-//! entrada (`entryRequest`: o 1º documento da aplicação que se repete); cada
-//! rodada de A pareia com a rodada mais parecida de B (`rounds: [{aRound, bRound,
-//! score, aRequests, bRequests}]`) e as rodadas sem par saem em `unpairedRounds`
-//! (não em `onlyInA/onlyInB`). `pairs[].round` indexa `rounds`. Faixas:
-//! `CompareOptions {aRange, bRange: {from, to}}` (ids ou números 1-based; CLI
-//! `--a-range de:ate --b-range de:ate`).
+//! Round 6: by default only the application is aligned (protection and static resources
+//! go to `groups: [{kind: protection|static, a[], b[]}]`; `CompareOptions
+//! {includeAll}` includes them). A and B are segmented into rounds by the request of
+//! entry (`entryRequest`: the 1st application document that repeats); each
+//! round of A pairs with the most similar round of B (`rounds: [{aRound, bRound,
+//! score, aRequests, bRequests}]`) and rounds without a pair go to `unpairedRounds`
+//! (not in `onlyInA/onlyInB`). `pairs[].round` indexes `rounds`. Ranges:
+//! `CompareOptions {aRange, bRange: {from, to}}` (ids or 1-based numbers; CLI
+//! `--a-range from:to --b-range from:to`).
 //!
-//! - Alinhamento A↔B por modelo (método + host + caminho normalizado +
-//!   nomes de query + nomes de campos do corpo); requisições do mesmo modelo
-//!   são pareadas em ordem. Sobras ficam `onlyInA`/`onlyInB`; as que só
-//!   diferem nos nomes de campos são pareadas por caminho (`alignedBy: path`)
-//!   e a ambiguidade é listada em `ambiguities`. Nunca por horário absoluto.
-//! - Por campo (query, headers, cookies, corpo): `static`, `dynamic`, `onlyA`,
-//!   `onlyB`, `redacted`. Campos repetidos são pareados por ocorrência, na
-//!   ordem da fonte (sem ordenação alfabética).
-//! - Dinâmico + origem observada em B (resposta anterior de B) =
-//!   `runtime`; dinâmico sem origem = `noOrigin`; campos opacos (>= 40
-//!   caracteres) são comparados por valor inteiro e por trechos que diferem
-//!   (`parts`), cada um com a própria origem.
+//! - A↔B alignment by model (method + host + normalized path +
+//!   query names + body field names); requests of the same model
+//!   are paired in order. Leftovers stay in `onlyInA`/`onlyInB`; those that only
+//!   differ in field names are paired by path (`alignedBy: path`)
+//!   and the ambiguity is listed in `ambiguities`. Never by absolute time.
+//! - Per field (query, headers, cookies, body): `static`, `dynamic`, `onlyA`,
+//!   `onlyB`, `redacted`. Repeated fields are paired by occurrence, in the
+//!   source order (no alphabetical sorting).
+//! - Dynamic + origin observed in B (earlier response of B) =
+//!   `runtime`; dynamic without origin = `noOrigin`; opaque fields (>= 40
+//!   characters) are compared by whole value and by differing excerpts
+//!   (`parts`), each with its own origin.
 
 use std::collections::HashMap;
 
@@ -54,20 +54,20 @@ use crate::search::BodySource;
 #[serde(rename_all = "camelCase")]
 pub struct CompareOptions {
     pub flow: FlowOptions,
-    /// Inclui proteção (/TSPD/) e recursos estáticos no alinhamento. Por padrão
-    /// só as requisições da aplicação são alinhadas; as demais saem em `groups`.
+    /// Includes protection (/TSPD/) and static resources in the alignment. By default
+    /// only the application's requests are aligned; the others go to `groups`.
     #[serde(default)]
     pub include_all: bool,
-    /// Faixa de A a comparar: pontas inclusivas, cada uma um id de requisição
-    /// ou um número (1 = primeira requisição da sessão).
+    /// Range of A to compare: inclusive ends, each one a request id
+    /// or a number (1 = first request of the session).
     #[serde(default)]
     pub a_range: Option<RequestRange>,
     #[serde(default)]
     pub b_range: Option<RequestRange>,
-    /// Trata dois hosts como o mesmo ao alinhar (`--map-origin A=B`): `from` e
-    /// `to` são origens (`https://host[:porta]`). Sem isto, se uma das sessões
-    /// tem o rótulo `script-trace` e cada lado tem uma só origem de aplicação,
-    /// o mapeamento é aplicado sozinho, com aviso.
+    /// Treats two hosts as the same when aligning (`--map-origin A=B`): `from` and
+    /// `to` are origins (`https://host[:porta]`). Without this, if one of the sessions
+    /// has the label `script-trace` and each side has a single application origin,
+    /// the mapping is applied on its own, with a warning.
     #[serde(default)]
     pub map_origin: Option<OriginMap>,
 }
@@ -91,7 +91,7 @@ impl OriginMap {
     }
 }
 
-/// `host[:porta]` em minúsculas de uma origem (ou URL).
+/// `host[:porta]` in lowercase of an origin (or URL).
 pub(crate) fn host_of_origin(origin: &str) -> Option<String> {
     let rest = origin.split_once("://")?.1;
     let host = rest.split(['/', '?', '#']).next()?;
@@ -106,7 +106,7 @@ pub struct RequestRange {
 }
 
 impl RequestRange {
-    /// `"har-0010:har-0050"`, `"10:50"` ou `"10-50"`.
+    /// `"har-0010:har-0050"`, `"10:50"` or `"10-50"`.
     pub fn parse(text: &str) -> Option<Self> {
         let (from, to) = text.split_once(':').or_else(|| text.split_once('-'))?;
         let (from, to) = (from.trim(), to.trim());
@@ -116,7 +116,7 @@ impl RequestRange {
         })
     }
 
-    /// Índices (inclusivos) ou o motivo de a faixa não valer.
+    /// Indices (inclusive) or the reason the range is not valid.
     fn resolve(&self, session: &SessionV1) -> std::result::Result<(usize, usize), String> {
         let index = |s: &str| -> std::result::Result<usize, String> {
             if let Some(i) = session.requests.iter().position(|q| q.id == s) {
@@ -125,15 +125,15 @@ impl RequestRange {
             match s.parse::<usize>() {
                 Ok(n) if (1..=session.requests.len()).contains(&n) => Ok(n - 1),
                 Ok(n) => Err(format!(
-                    "{n} fora dos limites (a sessão tem {} requisições)",
+                    "{n} out of bounds (the session has {} requests)",
                     session.requests.len()
                 )),
-                Err(_) => Err(format!("requisição {s:?} não encontrada")),
+                Err(_) => Err(format!("request {s:?} not found")),
             }
         };
         let (from, to) = (index(&self.from)?, index(&self.to)?);
         if from > to {
-            return Err("faixa invertida (início depois do fim)".to_string());
+            return Err("inverted range (start after end)".to_string());
         }
         Ok((from, to))
     }
@@ -152,13 +152,13 @@ pub enum FieldClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DynamicKind {
-    /// "obter em runtime": a origem em B é uma resposta anterior de B.
+    /// "get at runtime": the origin in B is an earlier response of B.
     Runtime,
-    /// "dinâmico sem origem": gerado no cliente, constante de entrada etc.
+    /// "dynamic without origin": generated in the client, input constant, etc.
     NoOrigin,
-    /// O valor já circulava em requisição anterior, sem produtor observado.
+    /// The value already circulated in an earlier request, without an observed producer.
     Repeated,
-    /// Campo opaco: ver `parts`.
+    /// Opaque field: see `parts`.
     Composite,
 }
 
@@ -166,14 +166,14 @@ pub enum DynamicKind {
 #[serde(rename_all = "camelCase")]
 pub struct OriginSummary {
     pub kind: EvidenceKind,
-    /// Requisição de B que produz o valor (a mais antiga).
+    /// Request of B that produces the value (the oldest).
     pub request_id: String,
     pub scope: ProducerScope,
     pub field: Option<String>,
     pub ambiguous: bool,
-    /// `strong` ou `possible` (só evidência média).
+    /// `strong` or `possible` (only medium evidence).
     pub confidence: Option<Confidence>,
-    /// O produtor é um controle de formulário HTML.
+    /// The producer is an HTML form control.
     #[serde(default)]
     pub html_control: bool,
 }
@@ -181,7 +181,7 @@ pub struct OriginSummary {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartDiff {
-    /// `static` (trecho comum >= 8 bytes) ou `dynamic`.
+    /// `static` (common excerpt >= 8 bytes) or `dynamic`.
     pub class: FieldClass,
     pub label: String,
     pub a_offset: u64,
@@ -200,10 +200,10 @@ pub struct FieldDiff {
     pub field: String,
     pub occurrence: usize,
     pub class: FieldClass,
-    /// Rótulo em português: estático, dinâmico, só em A, só em B, redigido.
+    /// Label: static, dynamic, only in A, only in B, redacted.
     pub label: String,
     pub dynamic_kind: Option<DynamicKind>,
-    /// "obter em runtime (origem: …)" ou "dinâmico sem origem".
+    /// "get at runtime (origin: …)" or "dynamic without origin".
     pub origin_label: Option<String>,
     pub a: Option<String>,
     pub b: Option<String>,
@@ -231,9 +231,9 @@ pub struct PairCounts {
     pub redacted: usize,
 }
 
-/// Trechos de campos compostos (opacos). Os dinâmicos já estão somados em
-/// `PairCounts` (`dynamic == runtime + noOrigin`); aqui eles aparecem separados
-/// e os trechos estáticos só existem aqui.
+/// Excerpts of composite (opaque) fields. The dynamic ones are already summed in
+/// `PairCounts` (`dynamic == runtime + noOrigin`); here they appear separately
+/// and the static excerpts exist only here.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartsCounts {
@@ -248,15 +248,15 @@ pub struct PartsCounts {
 pub struct PairComparison {
     pub a: RequestRef,
     pub b: RequestRef,
-    /// `model` (modelo idêntico) ou `path` (só método + host + caminho).
+    /// `model` (identical model) or `path` (only method + host + path).
     pub aligned_by: String,
-    /// Índice em `rounds` a que o par pertence.
+    /// Index in `rounds` to which the pair belongs.
     pub round: usize,
-    /// B não preserva a ordem relativa de A neste par.
+    /// B does not preserve the relative order of A in this pair.
     pub out_of_order: bool,
     pub fields: Vec<FieldDiff>,
-    /// Campos escalares + trechos dinâmicos de campos compostos (um campo
-    /// composto não conta por si; contam os trechos).
+    /// Scalar fields + dynamic excerpts of composite fields (a composite field
+    /// does not count by itself; the excerpts count).
     pub counts: PairCounts,
     pub parts_counts: PartsCounts,
 }
@@ -266,7 +266,7 @@ pub struct PairComparison {
 pub struct RoundInfo {
     pub a_round: usize,
     pub b_round: usize,
-    /// Modelos em comum (soma de min(contagem A, contagem B)).
+    /// Models in common (sum of min(count A, count B)).
     pub score: usize,
     pub a_requests: usize,
     pub b_requests: usize,
@@ -275,7 +275,7 @@ pub struct RoundInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnpairedRound {
-    /// `A` ou `B`.
+    /// `A` or `B`.
     pub side: String,
     pub round: usize,
     pub requests: usize,
@@ -286,7 +286,7 @@ pub struct UnpairedRound {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OtherGroup {
-    /// `protection` ou `static`.
+    /// `protection` or `static`.
     pub kind: String,
     pub a: Vec<RequestRef>,
     pub b: Vec<RequestRef>,
@@ -302,16 +302,16 @@ pub struct ReorderedPair {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionComparison {
-    /// Rodadas pareadas (A e B segmentadas pela requisição de entrada).
+    /// Paired rounds (A and B segmented by the entry request).
     pub rounds: Vec<RoundInfo>,
-    /// Rodadas sem par no outro lado (não entram em `onlyInA`/`onlyInB`).
+    /// Rounds without a pair on the other side (not in `onlyInA`/`onlyInB`).
     pub unpaired_rounds: Vec<UnpairedRound>,
-    /// Requisições fora do alinhamento da aplicação (proteção, estáticos).
+    /// Requests outside the application alignment (protection, static).
     pub groups: Vec<OtherGroup>,
-    /// Modelo da requisição de entrada usada na segmentação (`método|host|caminho`).
+    /// Model of the entry request used for segmentation (`method|host|path`).
     pub entry_request: Option<String>,
-    /// Sobras dos dois lados com o MESMO modelo: provavelmente as mesmas
-    /// requisições em outra ordem (o pareamento continua monotônico).
+    /// Leftovers on both sides with the SAME model: probably the same
+    /// requests in another order (the pairing stays monotonic).
     pub reordered: Vec<ReorderedPair>,
     pub pairs: Vec<PairComparison>,
     pub only_in_a: Vec<RequestRef>,
@@ -321,7 +321,7 @@ pub struct SessionComparison {
     pub parts_counts: PartsCounts,
     pub redacted_fields: usize,
     pub warnings: Vec<String>,
-    /// Mapeamento de origem aplicado (explícito ou automático).
+    /// Origin mapping applied (explicit or automatic).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mapped_origin: Option<OriginMap>,
 }
@@ -371,7 +371,7 @@ pub(crate) struct Entry {
     pub(crate) base: String,
     model: String,
     pub(crate) kind: EntryKind,
-    /// Documento (GET com resposta HTML) da aplicação.
+    /// Application document (GET with an HTML response).
     pub(crate) document: bool,
 }
 
@@ -400,7 +400,7 @@ pub(crate) fn entries(ctx: &FlowContext<'_>, map: Option<&OriginMap>) -> Vec<Ent
         let mut names: Vec<String> = ctx
             .consumed_for(pos)
             .iter()
-            // partes de adaptador não entram no modelo: o alinhamento é o mesmo com ou sem adaptador
+            // adapter parts are not part of the model: the alignment is the same with or without an adapter
             .filter(|c| {
                 matches!(c.scope, ConsumedScope::Query | ConsumedScope::Body) && c.part_of.is_none()
             })
@@ -416,7 +416,7 @@ pub(crate) fn entries(ctx: &FlowContext<'_>, map: Option<&OriginMap>) -> Vec<Ent
         } else {
             EntryKind::App
         };
-        // frame iniciado pelo parser (cscform, JLIBS…) não é a entrada da rodada
+        // frame started by the parser (cscform, JLIBS…) is not the entry of the round
         let document = kind == EntryKind::App
             && !attempt
                 .initiator
@@ -478,8 +478,8 @@ fn kind_of(value: &ValueOrigin) -> DynamicKind {
     }
 }
 
-/// Regiões que diferem (a_ini, a_fim, b_ini, b_fim) por LCS de bytes; acima do
-/// limite de células, usa só prefixo/sufixo comuns.
+/// Regions that differ (a_ini, a_fim, b_ini, b_fim) by byte LCS; above the
+/// cell limit, only the common prefix/suffix is used.
 fn diff_regions(a: &[u8], b: &[u8], cap: usize) -> Vec<(usize, usize, usize, usize)> {
     let prefix = a.iter().zip(b).take_while(|(x, y)| x == y).count();
     let suffix = a[prefix..]
@@ -531,7 +531,7 @@ fn diff_regions(a: &[u8], b: &[u8], cap: usize) -> Vec<(usize, usize, usize, usi
     if let Some((si, sj)) = open {
         regions.push((si, n, sj, m));
     }
-    // une regiões separadas por poucos bytes iguais (mesmo token)
+    // joins regions separated by a few equal bytes (same token)
     let mut merged: Vec<(usize, usize, usize, usize)> = Vec::new();
     for region in regions {
         if let Some(last) = merged.last_mut() {
@@ -561,7 +561,7 @@ pub(crate) fn is_loopback_origin(origin: &str) -> bool {
     name == "localhost" || name == "::1" || name.starts_with("127.")
 }
 
-/// Origem única de aplicação de uma sessão (`scheme://host`), se for uma só.
+/// Single application origin of a session (`scheme://host`), if there is only one.
 pub(crate) fn single_app_origin(ctx: &FlowContext<'_>) -> Option<String> {
     let mut found: Option<String> = None;
     for e in entries(ctx, None) {
@@ -582,7 +582,7 @@ pub(crate) fn single_app_origin(ctx: &FlowContext<'_>) -> Option<String> {
     found
 }
 
-/// Mapeamento automático captura → trace (ver [`CompareOptions::map_origin`]).
+/// Automatic capture → trace mapping (ver [`CompareOptions::map_origin`]).
 fn auto_map(ctx_a: &FlowContext<'_>, ctx_b: &FlowContext<'_>) -> Option<(OriginMap, String)> {
     let is_trace = |c: &FlowContext<'_>| {
         c.session
@@ -600,12 +600,12 @@ fn auto_map(ctx_a: &FlowContext<'_>, ctx_b: &FlowContext<'_>) -> Option<(OriginM
         return None;
     }
     let (from, to) = if b_trace { (oa, ob) } else { (ob, oa) };
-    // só o trace em loopback (o sim local) é mapeado sozinho; outro host exige --map-origin
+    // only the trace on loopback (the local sim) is mapped on its own; another host requires --map-origin
     if !is_loopback_origin(&to) {
         return None;
     }
     let why = format!(
-        "origens de aplicação diferentes ({from} × {to}); mapeadas automaticamente por haver uma sessão script-trace (use --map-origin para controlar)"
+        "different application origins ({from} × {to}); mapped automatically because there is a script-trace session (use --map-origin to control)"
     );
     Some((OriginMap { from, to }, why))
 }
@@ -653,13 +653,13 @@ pub fn compare_sessions(
             match range.resolve(session) {
                 Ok((from, to)) => list.retain(|e| e.index >= from && e.index <= to),
                 Err(why) => result.warnings.push(format!(
-                    "faixa de {side} inválida ({}..{}): {why}; comparando a sessão inteira",
+                    "invalid {side} range ({}..{}): {why}; comparing the whole session",
                     range.from, range.to
                 )),
             }
         }
     }
-    // Só a aplicação é alinhada por padrão; o resto vira grupos próprios.
+    // Only the application is aligned by default; the rest become their own groups.
     let (ea, eb): (Vec<Entry>, Vec<Entry>) = if options.include_all {
         (all_a.clone(), all_b.clone())
     } else {
@@ -698,15 +698,15 @@ pub fn compare_sessions(
         )
     };
 
-    // Rodadas: segmentação pela requisição de entrada (1º documento da
-    // aplicação que se repete).
+    // Rounds: segmentation by the entry request (1st application document that
+    // repeats).
     let entry = entry_base(&ea, &eb);
     result.entry_request = entry.clone();
     let rounds_a = split_rounds(&ea, entry.as_deref());
     let rounds_b = split_rounds(&eb, entry.as_deref());
-    // Rodada bem menor que a mediana: um reload da entrada no meio da aplicação
-    // (`[E,P,C1,E,C2,C3]`) abre rodada nova, que pode ficar com poucos passos.
-    // A heurística de segmentação continua; o aviso só pede conferência.
+    // Round much smaller than the median: a reload of the entry in the middle of the application
+    // (`[E,P,C1,E,C2,C3]`) opens a new round, which may end up with few steps.
+    // The segmentation heuristic stays; the warning only asks for a check.
     let mut sizes: Vec<usize> = rounds_a
         .iter()
         .chain(rounds_b.iter())
@@ -724,7 +724,7 @@ pub fn compare_sessions(
                 let n = round.len();
                 if n > 0 && n < median && median - n >= 2 {
                     result.warnings.push(format!(
-                        "possível reload: rodada com {n} passos ({side} {}); confira se a entrada foi recarregada no meio da aplicação",
+                        "possible reload: round with {n} steps ({side} {}); check whether the entry was reloaded in the middle of the application",
                         request_ref(&round[0]).request_id
                     ));
                 }
@@ -788,15 +788,15 @@ pub fn compare_sessions(
     result.redacted_fields = result.counts.redacted;
     if result.redacted_fields > 0 {
         result.warnings.push(format!(
-            "{} campo(s) redigido(s) ([REDACTED]) não podem ser comparados nem rastreados",
+            "{} redacted field(s) ([REDACTED]) cannot be compared or traced",
             result.redacted_fields
         ));
     }
     result
 }
 
-/// Modelo (`método|host|caminho`) do primeiro documento da aplicação que se
-/// repete; deve existir nos dois lados.
+/// Model (`method|host|path`) of the first application document that
+/// repeats; it must exist on both sides.
 pub(crate) fn entry_base(ea: &[Entry], eb: &[Entry]) -> Option<String> {
     let repeated = |list: &[Entry]| -> Vec<String> {
         let mut counts: HashMap<&str, usize> = HashMap::new();
@@ -828,8 +828,8 @@ pub(crate) fn split_rounds(list: &[Entry], entry: Option<&str>) -> Vec<Vec<Entry
         .filter(|(_, e)| e.document && e.base == entry)
         .map(|(i, _)| i)
         .collect();
-    // Reload da entrada (nenhum passo de aplicação desde a ocorrência anterior)
-    // não abre rodada nova.
+    // Reload of the entry (no application step since the previous occurrence)
+    // does not open a new round.
     let mut kept: Vec<usize> = Vec::new();
     for &i in &starts {
         let progressed = kept.last().map_or(true, |&prev| {
@@ -871,7 +871,7 @@ fn round_score(ra: &[Entry], rb: &[Entry]) -> usize {
     score
 }
 
-/// Alinha e compara um par de rodadas.
+/// Aligns and compares a pair of rounds.
 fn align_round(
     ctx_a: &FlowContext<'_>,
     ctx_b: &FlowContext<'_>,
@@ -889,14 +889,14 @@ fn align_round(
         used_b[*j] = true;
         if *how == "path" {
             result.ambiguities.push(format!(
-                "{} ↔ {}: mesmo método/host/caminho, mas nomes de campos diferentes; pareados por ordem",
+                "{} ↔ {}: same method/host/path, but different field names; paired by order",
                 ea[*i].id, eb[*j].id
             ));
         }
     }
     for (i, j) in dropped {
         result.ambiguities.push(format!(
-            "{} ↔ {}: mesmo modelo, mas o pareamento cruzaria a ordem; não pareados",
+            "{} ↔ {}: same model, but the pairing would cross the order; not paired",
             ea[i].id, eb[j].id
         ));
     }
@@ -915,7 +915,7 @@ fn align_round(
         if nb > 0 && nb != *na {
             let label = model.split('|').take(3).collect::<Vec<_>>().join(" ");
             result.ambiguities.push(format!(
-                "{label}: A tem {na} e B tem {nb} requisição(ões) do mesmo modelo; as sobras são posicionais"
+                "{label}: A has {na} and B has {nb} request(s) of the same model; the leftovers are positional"
             ));
         }
     }
@@ -932,7 +932,7 @@ fn align_round(
                 b: request_ref(&eb[left_b[k]]),
             });
             result.ambiguities.push(format!(
-                "{} ↔ {}: mesmo modelo nas sobras dos dois lados; provavelmente reordenadas",
+                "{} ↔ {}: same model in the leftovers on both sides; probably reordered",
                 ea[i].id, eb[left_b[k]].id
             ));
         }
@@ -953,8 +953,8 @@ fn align_round(
     }
 }
 
-/// Pareamento A↔B monotônico. Devolve os pares `(i, j, "model"|"path")` em
-/// ordem e os pares de mesmo modelo descartados por cruzarem a ordem.
+/// Monotonic A↔B pairing. Returns the pairs `(i, j, "model"|"path")` in
+/// order and the pairs of the same model discarded for crossing the order.
 type Aligned = (Vec<(usize, usize, &'static str)>, Vec<(usize, usize)>);
 
 fn align(ea: &[Entry], eb: &[Entry]) -> Aligned {
@@ -997,7 +997,7 @@ fn align(ea: &[Entry], eb: &[Entry]) -> Aligned {
         }
         return (pairs, Vec::new());
     }
-    // Sessões enormes: modelo em ordem + maior subsequência crescente.
+    // Huge sessions: model in order + longest increasing subsequence.
     let mut by_model: HashMap<&str, Vec<usize>> = HashMap::new();
     for (j, e) in eb.iter().enumerate() {
         by_model.entry(&e.model).or_default().push(j);
@@ -1011,7 +1011,7 @@ fn align(ea: &[Entry], eb: &[Entry]) -> Aligned {
             greedy.push((i, j));
         }
     }
-    // LIS por j
+    // LIS by j
     let mut tails: Vec<usize> = Vec::new();
     let mut prev: Vec<Option<usize>> = vec![None; greedy.len()];
     let mut tail_idx: Vec<usize> = Vec::new();
@@ -1077,8 +1077,8 @@ fn compare_pair(
     how: &str,
     out_of_order: bool,
 ) -> PairComparison {
-    let pos_a = ctx_a.find(&ea.id).expect("posição A");
-    let pos_b = ctx_b.find(&eb.id).expect("posição B");
+    let pos_a = ctx_a.find(&ea.id).expect("position A");
+    let pos_b = ctx_b.find(&eb.id).expect("position B");
     let ca = ctx_a.consumed_for(pos_a);
     let cb = ctx_b.consumed_for(pos_b);
     let mut index_b: HashMap<(u8, String, usize), usize> = HashMap::new();
@@ -1147,7 +1147,7 @@ fn compare_pair(
         }
     }
 
-    // Origens de B, só se houver campo dinâmico.
+    // Origins of B, only if there is a dynamic field.
     if fields.iter().any(|f| f.class == FieldClass::Dynamic) {
         let origins: Option<ValueOrigins> = origins_in(ctx_b, &eb.id).ok();
         let origins_a: Option<ValueOrigins> = origins_in(ctx_a, &ea.id).ok();
@@ -1170,7 +1170,7 @@ fn compare_pair(
                 .unwrap_or_default();
             let entry = origins.as_ref().and_then(|o| {
                 o.values.iter().find(|v| {
-                    // parte de adaptador (`XML.delta`) vale; trecho solto de campo opaco não
+                    // an adapter part (`XML.delta`) counts; a loose excerpt of an opaque field does not
                     v.parent
                         .as_ref()
                         .map_or(true, |p| v.field.starts_with(&format!("{p}.")))
@@ -1219,11 +1219,11 @@ fn compare_pair(
 
     for f in &mut fields {
         f.label = match f.class {
-            FieldClass::Static => "estático",
-            FieldClass::Dynamic => "dinâmico",
-            FieldClass::OnlyA => "só em A",
-            FieldClass::OnlyB => "só em B",
-            FieldClass::Redacted => "redigido",
+            FieldClass::Static => "static",
+            FieldClass::Dynamic => "dynamic",
+            FieldClass::OnlyA => "only in A",
+            FieldClass::OnlyB => "only in B",
+            FieldClass::Redacted => "redacted",
         }
         .to_string();
         f.origin_label = origin_label(f.dynamic_kind, f.origin.as_ref());
@@ -1320,11 +1320,11 @@ fn sub_key(v: &ValueOrigin) -> Option<(String, ProducerScope, Option<String>, Op
     ))
 }
 
-/// Trechos de um campo opaco: âncoras = valores conhecidos (com origem) que
-/// existem nos dois lados, pareados pelo mesmo produtor; os gaps entre as
-/// mesmas âncoras se correspondem e só neles se calcula a diferença. Assim uma
-/// âncora nunca corta um valor conhecido e cada trecho dinâmico cobre o valor
-/// inteiro (SESSIONID, processId, delta…).
+/// Excerpts of an opaque field: anchors = known values (with origin) that
+/// exist on both sides, paired by the same producer; the gaps between the
+/// same anchors match and the difference is computed only in them. So an
+/// anchor never cuts a known value and each dynamic excerpt covers the value
+/// whole (SESSIONID, processId, delta…).
 fn opaque_parts(
     a: &str,
     b: &str,
@@ -1332,7 +1332,7 @@ fn opaque_parts(
     subs_b: &[ValueOrigin],
     cap: usize,
 ) -> Vec<PartDiff> {
-    // pares (sub A, sub B) com a mesma chave de produtor, na ordem
+    // pairs (sub A, sub B) with the same producer key, in order
     let mut used_b = vec![false; subs_b.len()];
     let mut pairs: Vec<(usize, usize)> = Vec::new();
     for (i, va) in subs_a.iter().enumerate() {
@@ -1347,7 +1347,7 @@ fn opaque_parts(
         }
     }
     pairs.sort_by_key(|(i, _)| subs_a[*i].offset);
-    // mantém só pares monotônicos nos dois lados e sem sobreposição
+    // keeps only monotonic pairs on both sides and without overlap
     let mut anchors: Vec<(usize, usize, usize, usize, usize)> = Vec::new(); // a0,a1,b0,b1,j
     for (i, j) in pairs {
         let (Some(ao), Some(bo)) = (subs_a[i].offset, subs_b[j].offset) else {
@@ -1379,7 +1379,7 @@ fn opaque_parts(
         } else {
             parts.push(PartDiff {
                 class: FieldClass::Dynamic,
-                label: "dinâmico".to_string(),
+                label: "dynamic".to_string(),
                 a_offset: a0 as u64,
                 b_offset: b0 as u64,
                 a: ta.to_string(),
@@ -1408,7 +1408,7 @@ fn opaque_parts(
 fn static_part(a_off: usize, b_off: usize, text: &str) -> PartDiff {
     PartDiff {
         class: FieldClass::Static,
-        label: "estático".to_string(),
+        label: "static".to_string(),
         a_offset: a_off as u64,
         b_offset: b_off as u64,
         a: text.to_string(),
@@ -1419,7 +1419,7 @@ fn static_part(a_off: usize, b_off: usize, text: &str) -> PartDiff {
     }
 }
 
-/// Diferença dentro de um par de gaps correspondentes.
+/// Difference within a pair of matching gaps.
 fn gap_parts(
     a: &str,
     b: &str,
@@ -1439,7 +1439,7 @@ fn gap_parts(
         }
         return;
     }
-    // regiões que diferem, expandidas para o "token" e unidas se sobrepostas
+    // regions that differ, expanded to the "token" and merged if overlapping
     let mut regions: Vec<(usize, usize, usize, usize)> = Vec::new();
     for (a0, a1, b0, b1) in diff_regions(ga.as_bytes(), gb.as_bytes(), cap) {
         let (ea0, ea1) = expand_class(ga, a0, a1);
@@ -1469,7 +1469,7 @@ fn gap_parts(
         });
         parts.push(PartDiff {
             class: FieldClass::Dynamic,
-            label: "dinâmico".to_string(),
+            label: "dynamic".to_string(),
             a_offset: (a_start + a0) as u64,
             b_offset: (b_start + b0) as u64,
             a: ga[a0..a1].to_string(),
@@ -1489,17 +1489,17 @@ fn origin_label(kind: Option<DynamicKind>, origin: Option<&OriginSummary>) -> Op
         DynamicKind::Runtime => Some(match origin {
             Some(o) => {
                 let word = if o.confidence == Some(Confidence::Possible) {
-                    "origem possível"
+                    "possible origin"
                 } else {
-                    "origem"
+                    "origin"
                 };
-                let amb = if o.ambiguous { ", ambíguo" } else { "" };
-                format!("obter em runtime ({word}: {}{amb})", o.request_id)
+                let amb = if o.ambiguous { ", ambiguous" } else { "" };
+                format!("get at runtime ({word}: {}{amb})", o.request_id)
             }
-            None => "obter em runtime".to_string(),
+            None => "get at runtime".to_string(),
         }),
-        DynamicKind::NoOrigin => Some("dinâmico sem origem".to_string()),
-        DynamicKind::Repeated => Some("dinâmico sem origem (valor já circulava)".to_string()),
+        DynamicKind::NoOrigin => Some("dynamic without origin".to_string()),
+        DynamicKind::Repeated => Some("dynamic without origin (value already circulating)".to_string()),
         DynamicKind::Composite => None,
     }
 }

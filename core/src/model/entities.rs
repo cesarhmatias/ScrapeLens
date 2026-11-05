@@ -39,8 +39,8 @@ impl Protocol {
     }
 }
 
-/// Resultado da associação de uma entidade com a fonte oposta. `Ambiguous`
-/// nunca escolhe um candidato silenciosamente.
+/// Result of associating an entity with the opposite source. `Ambiguous`
+/// never silently picks a candidate.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MatchState {
@@ -60,7 +60,7 @@ impl MatchState {
 #[serde(rename_all = "camelCase")]
 pub struct MatchCandidate {
     pub entity_id: String,
-    /// 0..100; utilidade apenas para ordenar exibição, não para decidir.
+    /// 0..100; only useful for sorting the display, not for deciding.
     pub score: u8,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasons: Vec<String>,
@@ -76,8 +76,8 @@ impl MatchCandidate {
     }
 }
 
-/// Iniciador de uma requisição: tipo da fonte (`parser`, `script`, `other`…) e
-/// URL do iniciador, quando houver.
+/// Initiator of a request: source type (`parser`, `script`, `other`…) and
+/// URL of the initiator, when available.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Initiator {
@@ -86,7 +86,7 @@ pub struct Initiator {
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_number: Option<u32>,
-    /// Topo do stack (CDP `initiator.stack.callFrames[0]`); o stack inteiro não é guardado.
+    /// Top of the stack (CDP `initiator.stack.callFrames[0]`); the whole stack is not stored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stack_top: Option<InitiatorFrame>,
 }
@@ -103,7 +103,7 @@ pub struct InitiatorFrame {
 }
 
 impl Initiator {
-    /// Lê `{type, url, lineNumber, stack}` (CDP e HAR `_initiator` têm a mesma forma).
+    /// Reads `{type, url, lineNumber, stack}` (CDP and HAR `_initiator` have the same shape).
     pub fn from_json(init: &serde_json::Map<String, serde_json::Value>) -> Option<Self> {
         let text = |v: Option<&serde_json::Value>| v.and_then(|v| v.as_str()).map(str::to_string);
         let line = |v: Option<&serde_json::Value>| {
@@ -129,7 +129,7 @@ impl Initiator {
     }
 }
 
-/// Tipo do alvo CDP que originou uma requisição (`Target.targetInfo.type`).
+/// CDP target type that originated a request (`Target.targetInfo.type`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetKind {
@@ -166,9 +166,9 @@ impl TargetKind {
     }
 }
 
-/// Proveniência do alvo CDP de uma requisição, vinda dos eventos `Target.*`.
-/// Ausente em arquivos antigos (uma sessão implícita) e em requisições que só
-/// o NetLog viu (tipo desconhecido).
+/// Provenance of a request's CDP target, taken from the `Target.*` events.
+/// Absent in old files (an implicit session) and in requests that only
+/// NetLog saw (unknown type).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetProvenance {
@@ -182,11 +182,11 @@ pub struct TargetProvenance {
     pub opener_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
-    /// `false` = o alvo foi visto e não anexou (aviso, não erro).
+    /// `false` = the target was seen and did not attach (warning, not error).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attached: Option<bool>,
-    /// Notas informativas sobre o alvo (ex.: encerrado durante a configuração).
-    /// Não são avisos de rede.
+    /// Informational notes about the target (e.g. closed during setup).
+    /// These are not network warnings.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
@@ -203,24 +203,24 @@ impl TargetProvenance {
     }
 }
 
-/// Duas observações da mesma requisição lógica (ex.: fetch interceptado pelo
-/// service worker visto na sessão do SW e na página). Só existe com evidência
-/// explícita; sem ela, as observações ficam separadas e a ambiguidade é
-/// registrada em `resolution: "ambiguous"` e em aviso.
+/// Two observations of the same logical request (e.g. a fetch intercepted by
+/// the service worker, seen in the SW session and on the page). Only exists
+/// with explicit evidence; without it, the observations stay separate and the
+/// ambiguity is recorded in `resolution: "ambiguous"` and in a warning.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestLink {
-    /// `service_worker` por enquanto.
+    /// `service_worker` for now.
     pub kind: String,
-    /// `id` lógico da outra observação.
+    /// Logical `id` of the other observation.
     pub request: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence: Vec<String>,
-    /// `linked` (evidência suficiente) ou `ambiguous`.
+    /// `linked` (sufficient evidence) or `ambiguous`.
     pub resolution: String,
 }
 
-/// Referência a um evento CDP; IDs não são equivalentes aos do NetLog.
+/// Reference to a CDP event; IDs are not equivalent to the NetLog ones.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CdpRef {
@@ -246,12 +246,12 @@ impl CdpRef {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetlogRefs {
-    /// IDs de fontes NetLog (`source.id`), tipicamente URL_REQUEST.
+    /// NetLog source IDs (`source.id`), typically URL_REQUEST.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_ids: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stream_ids: Vec<u32>,
-    /// IDs de `source_dependency` relevantes.
+    /// Relevant `source_dependency` IDs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependency_ids: Vec<u32>,
 }
@@ -270,8 +270,8 @@ pub enum HeaderRole {
     Response,
 }
 
-/// Evidência de headers de uma fonte específica. Uma tentativa pode ter várias
-/// (ex.: transação + sessão h2), sem que uma substitua a outra.
+/// Header evidence from a specific source. An attempt may have several
+/// (e.g. transaction + h2 session), without one replacing the other.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeaderEvidence {
@@ -297,8 +297,8 @@ pub enum AttemptOutcome {
     Unknown,
 }
 
-/// Uma tentativa concreta de executar uma requisição lógica (retry, corrida
-/// Happy Eyeballs, redirect etc.). Headers e corpos pertencem à tentativa.
+/// A concrete attempt to execute a logical request (retry, Happy Eyeballs
+/// race, redirect, etc.). Headers and bodies belong to the attempt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attempt {
@@ -339,12 +339,12 @@ pub struct Attempt {
     #[serde(default)]
     pub timings: Timings,
     pub cdp: Option<CdpRef>,
-    /// Quem iniciou a requisição (CDP `initiator`, HAR `_initiator`), quando a
-    /// fonte informa.
+    /// Who initiated the request (CDP `initiator`, HAR `_initiator`), when the
+    /// source reports it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initiator: Option<Initiator>,
     pub netlog: NetlogRefs,
-    /// Estado do casamento desta tentativa com a fonte oposta.
+    /// Match state of this attempt with the opposite source.
     #[serde(rename = "match", default)]
     pub match_state: MatchState,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -468,7 +468,7 @@ impl Span {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Timings {
-    /// Instante da fonte (segundos) em que a requisição começou.
+    /// Source instant (seconds) at which the request started.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_time: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -487,14 +487,14 @@ pub struct Timings {
     pub receive: Option<Span>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_ms: Option<f64>,
-    /// `true` quando a duração foi estimada (a UI mostra "≈").
+    /// `true` when the duration was estimated (the UI shows "≈").
     #[serde(default)]
     pub estimated: bool,
 }
 
-/// Requisição lógica: uma navegação/redirect chain agrupada, com tentativas.
-/// Os campos de header no nível lógico são a **visão primária selecionada**;
-/// todo original permanece em `attempts[].header_evidence`.
+/// Logical request: a navigation/redirect chain grouped, with attempts.
+/// The header fields at the logical level are the **selected primary view**;
+/// every original stays in `attempts[].header_evidence`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogicalRequest {
@@ -508,10 +508,10 @@ pub struct LogicalRequest {
     pub resource_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cdp: Option<CdpRef>,
-    /// Alvo CDP de onde a requisição veio (page, iframe, worker, service worker…).
+    /// CDP target the request came from (page, iframe, worker, service worker…).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<TargetProvenance>,
-    /// Observações irmãs da mesma requisição lógica (service worker).
+    /// Sibling observations of the same logical request (service worker).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<RequestLink>,
     #[serde(default)]
@@ -534,7 +534,7 @@ pub struct LogicalRequest {
     pub response_body: Body,
     #[serde(default)]
     pub timings: Timings,
-    /// Estado do casamento com a fonte oposta (CDP × NetLog).
+    /// Match state with the opposite source (CDP × NetLog).
     #[serde(rename = "match", default)]
     pub match_state: MatchState,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -575,8 +575,8 @@ impl LogicalRequest {
         self.attempts.first()
     }
 
-    /// Recalcula a visão primária a partir da última tentativa (a que
-    /// completou a cadeia de redirect), preservando as evidências originais.
+    /// Recomputes the primary view from the last attempt (the one that
+    /// completed the redirect chain), preserving the original evidence.
     pub fn refresh_primary_from_attempt(&mut self) {
         if let Some(attempt) = self.attempts.last() {
             self.protocol = attempt.protocol;

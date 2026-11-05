@@ -1,6 +1,6 @@
-//! Origem dos valores e cadeia de priming (`docs/09-cadeia-comparacao.md` §1).
+//! Origin of values and the priming chain (`docs/09-cadeia-comparacao.md` §1).
 //!
-//! API para o App:
+//! API for the App:
 //!
 //! ```text
 //! pub fn value_origins(session: &SessionV1, source: &dyn BodySource,
@@ -9,68 +9,68 @@
 //!                      request_id: &str, options: &FlowOptions) -> Result<PrimingChain>
 //! ```
 //!
-//! Esquema JSON (camelCase; `origins`, `chain` e `compare` no CLI):
+//! JSON schema (camelCase; `origins`, `chain` and `compare` in the CLI):
 //!
 //! ```text
 //! origins: { requestId, attemptId, values: [ValueOrigin], redactedValues, ties, warnings }
 //! ValueOrigin: { scope: query|header|cookie|body, field, occurrence, value, length,
-//!   status: origin|ambiguous|repeated|none|composite|redacted, label (PT-BR),
-//!   confidence: strong|possible|null ("possível origem (<tipo>)" quando só há evidência média),
-//!   offset (trechos), oldest (índice em evidences), parent (campo opaco do trecho),
+//!   status: origin|ambiguous|repeated|none|composite|redacted, label (English),
+//!   confidence: strong|possible|null ("possible origin (<kind>)" when only medium evidence exists),
+//!   offset (fragments), oldest (index in evidences), parent (opaque field of the fragment),
 //!   repeatedFrom[], unobservable: [{requestId, state, reason}], note, evidences: [ { kind: cookie-jar|same-field|value-match|initiator,
 //!     strength: strong|medium|complement, role: produced|reissued, producerRequestId,
 //!     producerAttemptId, scope: setCookie|responseHeader|location|responseBody, field,
 //!     producerOffset, consumedOffset, consumedLength, timing: observed|inferred } ] }
 //! chain: { requestId, steps: [ChainStep], protection: [ChainStep], pages: [ChainStep]
-//!   (class: page, "página de contexto" por Referer; nunca produtoras), unresolved[], warnings }
+//!   (class: page, "context page" via Referer; never producers), unresolved[], warnings }
 //! ChainStep: { requestId, attemptId, method, url, startedAt, class: application|protection,
 //!   confidence: strong|possible, reason, reasons: [ { provides, field, kind, strength, consumedBy } ] }
 //! ```
 //!
-//! Rodada 6 (docs/10), campos novos:
-//! - `evidences[].htmlControl`: o produtor é um controle de formulário HTML
-//!   (`input`/`textarea`/`select` de uma resposta text/html; ver [`crate::html`]);
-//!   `producerOffset` aponta o valor no HTML original, mesmo com entidades;
-//! - `ValueOrigin.context[]` `{requestId, field, note}`: valor também presente em
-//!   recurso estático (script, css, fonte, imagem, mídia): pode ser constante do
-//!   protocolo; nunca é produtor nem passo;
-//! - `ValueOrigin.partialComposition[]` `{producerRequestId, field, start, length}`: valor
-//!   curto sem origem que contém (alinhado a `_ - . : |` ou à borda, >= 8 bytes) o
-//!   valor de um produtor e uma parte sem fonte: dica de composição no cliente, não
-//!   é origem e não cria passo;
-//! - `unobservable[].suggestion`: ocorrência equivalente (mesmo modelo) mais
-//!   adiante com corpo observável;
-//! - `chain.auxiliaryPages[]`: frames (documentos com `initiator.kind == parser`, fonte CDP
-//!   `initiator` ou HAR `_initiator`) no caminho de Referer, fora de `pages`;
-//! - `chain.pages[]` (`class: page`): documentos que carregaram a página de onde
-//!   cada passo foi emitido (Referer); "página de contexto", nunca produtoras;
-//! - avisos de HAR sem cookies (`har.cookies_absent`) repetidos em `warnings`.
+//! Round 6 (docs/10), new fields:
+//! - `evidences[].htmlControl`: the producer is an HTML form control
+//!   (`input`/`textarea`/`select` from a text/html response; see [`crate::html`]);
+//!   `producerOffset` points to the value in the original HTML, even with entities;
+//! - `ValueOrigin.context[]` `{requestId, field, note}`: value also present in
+//!   a static resource (script, css, font, image, media): may be a protocol
+//!   constant; never a producer nor a step;
+//! - `ValueOrigin.partialComposition[]` `{producerRequestId, field, start, length}`: short
+//!   value without origin that contains (aligned to `_ - . : |` or to the edge, >= 8 bytes) the
+//!   value of a producer and a part with no source: composition hint on the client, not
+//!   an origin and does not create a step;
+//! - `unobservable[].suggestion`: equivalent occurrence (same model) further on
+//!   with an observable body;
+//! - `chain.auxiliaryPages[]`: frames (documents with `initiator.kind == parser`, CDP
+//!   `initiator` source or HAR `_initiator`) on the Referer path, outside `pages`;
+//! - `chain.pages[]` (`class: page`): documents that loaded the page from which
+//!   each step was emitted (Referer); "context page", never producers;
+//! - HAR no-cookies warnings (`har.cookies_absent`) repeated in `warnings`.
 //!
-//! O esquema de `compare` está em [`crate::compare`].
+//! The `compare` schema is in [`crate::compare`].
 //!
-//! Trechos: só valores consumidos com >= 40 bytes (campos opacos, como o XML do
-//! Natural) são procurados por trechos; nos demais vale o valor inteiro.
+//! Fragments: only consumed values with >= 40 bytes (opaque fields, such as the
+//! Natural XML) are searched by fragments; for the others the whole value counts.
 //!
-//! Regras:
-//! - só entram produtores cuja RESPOSTA terminou (`ended_at`) até o início da
-//!   tentativa alvo; resposta que termina depois não é produtora. Sem tempos, a
-//!   ordem da sessão vale e a evidência leva `timing: inferred`. Empate de
-//!   início nunca vira produtor: fica em `ties`;
-//! - evidências separadas: `cookieJar` (forte) e `sameField` (forte só com nome
-//!   não genérico — id, value, data, page, type, lang, name, key, code, state,
-//!   status, action, op, mode, format, limit, offset, q, query, v, t, ts — e
-//!   valor com ≥ 4 caracteres; senão média), `valueMatch`
-//!   (média; valor de resposta com >= 8 caracteres encontrado na requisição,
-//!   inteiro ou como substring de campo opaco) e `initiator` (complemento; o
-//!   modelo atual não preserva o initiator do CDP, o que é declarado);
-//! - nenhum candidato = `none` ("sem origem observada"); vários produtores
-//!   independentes = `ambiguous` com todos os candidatos e o mais antigo
-//!   indicado; `reissued` só quando o valor circulou numa requisição entre um
-//!   produtor e o seguinte (senão são concorrentes: `ambiguous`);
-//! - "origem observada" exige evidência forte; só média = `confidence:
-//!   possible` ("possível origem (<tipo>)"); a cadeia marca cada passo
-//!   `strong` ou `possible`;
-//! - valores redigidos (`[REDACTED]`) não casam e são declarados.
+//! Rules:
+//! - only producers whose RESPONSE ended (`ended_at`) before the start of the
+//!   target attempt enter; a response that ends later is not a producer. Without
+//!   times, the session order applies and the evidence gets `timing: inferred`. A
+//!   tie in start never becomes a producer: it stays in `ties`;
+//! - separate evidence: `cookieJar` (strong) and `sameField` (strong only with a name
+//!   that is not generic — id, value, data, page, type, lang, name, key, code, state,
+//!   status, action, op, mode, format, limit, offset, q, query, v, t, ts — and
+//!   value with ≥ 4 characters; otherwise medium), `valueMatch`
+//!   (medium; response value with >= 8 characters found in the request,
+//!   whole or as a substring of an opaque field) and `initiator` (complement; the
+//!   current model does not preserve the CDP initiator, which is declared);
+//! - no candidate = `none` ("no observed origin"); several producers
+//!   independent = `ambiguous` with all the candidates and the oldest
+//!   indicated; `reissued` only when the value circulated in a request between one
+//!   producer and the next (otherwise they are competing: `ambiguous`);
+//! - "observed origin" requires strong evidence; medium only = `confidence:
+//!   possible` ("possible origin (<kind>)"); the chain marks each step
+//!   `strong` or `possible`;
+//! - redacted values (`[REDACTED]`) do not match and are declared.
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
@@ -86,13 +86,13 @@ use crate::search::BodySource;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlowOptions {
-    /// Comprimento mínimo para `valueMatch`.
+    /// Minimum length for `valueMatch`.
     pub min_match_len: usize,
-    /// Máximo de evidências devolvidas por valor.
+    /// Maximum number of evidence entries returned per value.
     pub max_evidence: usize,
-    /// Máximo de células de DP para comparar dois campos opacos.
+    /// Maximum number of DP cells used to compare two opaque fields.
     pub max_opaque_cells: usize,
-    /// Adaptadores de protocolo (opcional; vazio = comportamento sem adaptador).
+    /// Protocol adapters (optional; empty = behavior without an adapter).
     #[serde(skip)]
     pub adapters: crate::adapter::AdapterRegistry,
 }
@@ -125,8 +125,8 @@ pub enum Strength {
     Complement,
 }
 
-/// Confiança da origem: `strong` exige evidência forte; só evidência média é
-/// `possible` ("possível origem").
+/// Origin confidence: `strong` requires strong evidence; only medium evidence is
+/// `possible` ("possible origin").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Confidence {
@@ -134,13 +134,13 @@ pub enum Confidence {
     Possible,
 }
 
-/// Como a ordem produtor → consumidor foi estabelecida.
+/// How the producer → consumer order was established.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Timing {
-    /// A resposta do produtor terminou (tempo da fonte) antes do início do alvo.
+    /// The producer's response ended (source time) before the target started.
     Observed,
-    /// Faltou tempo de início/fim: valeu a ordem da sessão.
+    /// Start/end time was missing: the session order was used.
     Inferred,
 }
 
@@ -172,17 +172,17 @@ pub enum ConsumedScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OriginStatus {
-    /// Um produtor observado.
+    /// One observed producer.
     Origin,
-    /// Mais de um produtor independente: ver `oldest`.
+    /// More than one independent producer: see `oldest`.
     Ambiguous,
-    /// Sem produtor, mas o valor já circulava em requisição anterior.
+    /// No producer, but the value already circulated in an earlier request.
     Repeated,
-    /// "Sem origem observada": constante, entrada do usuário ou gerado no cliente.
+    /// "No observed origin": constant, user input or generated on the client.
     None,
-    /// Campo opaco cujas partes têm origem própria (entradas `parent`).
+    /// Opaque field whose parts have their own origin (`parent` entries).
     Composite,
-    /// Valor redigido: não rastreável.
+    /// Redacted value: not traceable.
     Redacted,
 }
 
@@ -192,26 +192,26 @@ pub struct Evidence {
     pub kind: EvidenceKind,
     pub strength: Strength,
     pub role: Role,
-    /// Requisição lógica que produz o valor.
+    /// Logical request that produces the value.
     #[serde(rename = "producerRequestId")]
     pub request_id: String,
     #[serde(rename = "producerAttemptId")]
     pub attempt_id: String,
     pub scope: ProducerScope,
-    /// Nome do campo/header/cookie/variável no produtor, quando houver.
+    /// Name of the field/header/cookie/variable in the producer, when present.
     pub field: Option<String>,
-    /// Offset do valor dentro do corpo/valor do produtor.
+    /// Offset of the value within the producer's body/value.
     pub producer_offset: Option<u64>,
-    /// Onde o trecho aparece no valor consumido (campos opacos).
+    /// Where the fragment appears in the consumed value (opaque fields).
     pub consumed_offset: Option<u64>,
     pub consumed_length: Option<u64>,
     pub timing: Timing,
-    /// O produtor é um controle de formulário HTML (`input`/`textarea`/`select`).
+    /// The producer is an HTML form control (`input`/`textarea`/`select`).
     pub html_control: bool,
 }
 
-/// Dica informativa (não é origem): o valor contém, alinhado a um separador ou
-/// à borda, o valor de um produtor, e o resto não tem fonte observada.
+/// Informational hint (not an origin): the value contains, aligned to a separator
+/// or to the edge, a producer's value, and the rest has no observed source.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartialComposition {
@@ -233,11 +233,11 @@ pub struct ContextNote {
 #[serde(rename_all = "camelCase")]
 pub struct Unobservable {
     pub request_id: String,
-    /// `unavailable`, `discarded` ou `truncated`.
+    /// `unavailable`, `discarded` or `truncated`.
     pub state: String,
     pub reason: Option<String>,
-    /// Ocorrência equivalente (mesmo modelo) mais adiante, com corpo observável:
-    /// onde procurar a mesma informação.
+    /// Equivalent occurrence (same model) further on, with an observable body:
+    /// where to look for the same information.
     pub suggestion: Option<String>,
 }
 
@@ -246,32 +246,32 @@ pub struct Unobservable {
 pub struct ValueOrigin {
     pub scope: ConsumedScope,
     pub field: String,
-    /// Ocorrência do campo repetido (0 = primeira).
+    /// Occurrence of the repeated field (0 = first).
     pub occurrence: usize,
-    /// Valor (prévia de até 160 caracteres).
+    /// Value (preview of up to 160 characters).
     pub value: String,
     pub length: usize,
     pub status: OriginStatus,
-    /// Rótulo legível ("sem origem observada", "ambíguo…"…).
+    /// Human-readable label ("no observed origin", "ambiguous…"…).
     pub label: String,
-    /// `strong` (há evidência forte) ou `possible` (só evidência média).
+    /// `strong` (strong evidence exists) or `possible` (only medium evidence).
     pub confidence: Option<Confidence>,
-    /// Offset do trecho no valor consumido (entradas `parent`).
+    /// Offset of the fragment in the consumed value (`parent` entries).
     pub offset: Option<u64>,
-    /// Índice em `evidences` do produtor mais antigo.
+    /// Index in `evidences` of the oldest producer.
     pub oldest: Option<usize>,
     pub evidences: Vec<Evidence>,
-    /// Requisições anteriores que já carregavam o valor (`repeated`).
+    /// Earlier requests that already carried the value (`repeated`).
     pub repeated_from: Vec<String>,
-    /// Respostas anteriores sem corpo observável (unavailable/discarded/
-    /// truncated): a origem pode estar nelas (até 20; o total vai no rótulo).
+    /// Earlier responses without an observable body (unavailable/discarded/
+    /// truncated): the origin may be in them (up to 20; the total goes in the label).
     pub unobservable: Vec<Unobservable>,
-    /// Valor também presente em recursos estáticos (pode ser constante do
-    /// protocolo): nunca é produtor nem passo da cadeia.
+    /// Value also present in static resources (may be a protocol constant):
+    /// never a producer nor a step of the chain.
     pub context: Vec<ContextNote>,
-    /// Composição parcial provável (cliente): ver [`PartialComposition`].
+    /// Probable partial composition (client): see [`PartialComposition`].
     pub partial_composition: Vec<PartialComposition>,
-    /// Campo opaco de que este trecho faz parte (`composite`).
+    /// Opaque field this fragment is part of (`composite`).
     pub parent: Option<String>,
     pub note: Option<String>,
 }
@@ -282,15 +282,15 @@ pub struct ValueOrigins {
     pub request_id: String,
     pub attempt_id: String,
     pub values: Vec<ValueOrigin>,
-    /// Quantidade de valores redigidos (não rastreáveis).
+    /// Number of redacted values (not traceable).
     pub redacted_values: usize,
-    /// Tentativas com o mesmo tempo de início, excluídas como produtores.
+    /// Attempts with the same start time, excluded as producers.
     pub ties: Vec<String>,
     pub warnings: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
-// Dados de produtor / consumidor por tentativa
+// Producer / consumer data per attempt
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -299,11 +299,11 @@ struct Item {
     field: Option<String>,
     value: String,
     offset: Option<u64>,
-    /// Pode servir de `sameField` (tem nome de campo/header/cookie).
+    /// May serve as `sameField` (has a field/header/cookie name).
     named: bool,
-    /// Controle de formulário HTML (`input`/`textarea`/`select`).
+    /// HTML form control (`input`/`textarea`/`select`).
     html: bool,
-    /// Controle pré-preenchido que não é `hidden`: no máximo evidência média.
+    /// Pre-filled control that is not `hidden`: at most medium evidence.
     soft: bool,
 }
 
@@ -311,7 +311,7 @@ struct Item {
 struct OpaqueField {
     name: String,
     value: String,
-    /// Mapa de offsets decodificado → original (controles HTML).
+    /// Decoded → original offset map (HTML controls).
     map: Option<Vec<usize>>,
     html: bool,
 }
@@ -319,7 +319,7 @@ struct OpaqueField {
 #[derive(Debug, Default)]
 struct ProducerData {
     items: Vec<Item>,
-    /// Campos opacos de resposta para comparação por substring.
+    /// Opaque response fields for comparison by substring.
     opaque: Vec<OpaqueField>,
 }
 
@@ -329,18 +329,18 @@ pub(crate) struct Consumed {
     pub(crate) field: String,
     pub(crate) occurrence: usize,
     pub(crate) value: String,
-    /// Reivindicado por um adaptador: sem trechos por substring comum.
+    /// Claimed by an adapter: no fragments by common substring.
     pub(crate) adapted: bool,
-    /// Parte decodificada por adaptador: campo-pai e offset no original.
+    /// Part decoded by an adapter: parent field and offset in the original.
     pub(crate) part_of: Option<(String, u64)>,
 }
 
 const REDACTED_MARK: &str = "REDACTED";
-/// Produtor: campo de resposta guardado para comparação por trechos.
+/// Producer: response field kept for comparison by fragments.
 const OPAQUE_MIN: usize = 16;
-/// Consumidor: só valores longos (>= 40 bytes, com estrutura interna como o XML
-/// do Natural) são procurados por trechos. Em campos comuns (form/JSON/query/
-/// header) vale o valor inteiro: prefixo comum não é origem.
+/// Consumer: only long values (>= 40 bytes, with internal structure such as the
+/// XML of Natural) are searched by fragments. In common fields (form/JSON/query/
+/// header) the whole value counts: a common prefix is not an origin.
 pub(crate) const OPAQUE_CONSUMER_MIN: usize = 40;
 
 fn is_redacted(value: &str) -> bool {
@@ -387,7 +387,7 @@ fn query_pairs(url: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Headers de protocolo ou constantes: nunca são "valores consumidos".
+/// Protocol or constant headers: never "consumed values".
 fn is_protocol_header(lower: &str) -> bool {
     lower.starts_with(':')
         || lower.starts_with("sec-")
@@ -479,7 +479,7 @@ fn json_leaves(value: &serde_json::Value, path: &str, out: &mut Vec<(String, Str
     }
 }
 
-/// Literais entre aspas (com a variável que os recebe, quando aparece).
+/// Quoted literals (with the variable that receives them, when it appears).
 fn string_literals(text: &str, min: usize) -> Vec<(String, u64, Option<String>)> {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
@@ -509,14 +509,14 @@ fn string_literals(text: &str, min: usize) -> Vec<(String, u64, Option<String>)>
     out
 }
 
-/// Nome da variável/chave imediatamente antes de `= "` ou `: "`.
+/// Name of the variable/key immediately before `= "` or `: "`.
 fn assigned_name(text: &str, quote_at: usize) -> Option<String> {
     let before = text.get(..quote_at)?.trim_end();
     let before = before
         .strip_suffix('=')
         .or_else(|| before.strip_suffix(':'))?;
     let before = before.trim_end();
-    // chave de objeto entre aspas: `{"token": "…"}` / `{'token': '…'}`
+    // quoted object key: `{"token": "…"}` / `{'token': '…'}`
     let before = before
         .strip_suffix(['"', '\''])
         .filter(|rest| rest.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$'))
@@ -552,7 +552,7 @@ fn media_of(headers: &crate::model::HeaderView, body: &crate::model::Body) -> St
         .to_ascii_lowercase()
 }
 
-/// Campos nomeados de um corpo (form / JSON); `None` se for texto livre.
+/// Named fields of a body (form / JSON); `None` if it is free text.
 fn named_fields(text: &str, media: &str) -> Option<Vec<(String, String, Option<u64>)>> {
     let json_like =
         media.contains("json") || matches!(text.trim_start().as_bytes().first(), Some(b'{' | b'['));
@@ -563,9 +563,9 @@ fn named_fields(text: &str, media: &str) -> Option<Vec<(String, String, Option<u
             return Some(leaves.into_iter().map(|(n, v)| (n, v, None)).collect());
         }
     }
-    // Script não é formulário: `window.cfg={"tok":"V"}` tem `=` e um nome com
-    // ponto, mas o corpo é JS. Sem esta guarda o objeto vira um único campo
-    // `window.cfg` e os literais internos deixam de ser candidatos.
+    // Script is not a form: `window.cfg={"tok":"V"}` has `=` and a name with a
+    // dot, but the body is JS. Without this guard the object becomes a single field
+    // `window.cfg` and the inner literals stop being candidates.
     let script = media.contains("javascript") || media.contains("ecmascript");
     if media.contains("x-www-form-urlencoded") || (!script && looks_form(text)) {
         return Some(
@@ -651,8 +651,8 @@ fn producer_data(
                 media: Some(&media),
             };
             for c in crate::html::html_controls(&text) {
-                // Controle HTML (valor já sem entidades): partes do adaptador com
-                // offset mapeado até o HTML original.
+                // HTML control (value already without entities): adapter parts with
+                // offset mapped back to the original HTML.
                 if let Some(parts) = adapter_parts(adapters, &c.name, &c.value, &actx) {
                     for (part_name, part_value, part_offset) in parts {
                         let original = c.map.get(part_offset).copied().unwrap_or(c.start);
@@ -745,9 +745,9 @@ fn producer_data(
     data
 }
 
-/// Partes (nome relativo, valor, offset) de um campo reivindicado por adaptador;
-/// `None` sem registro, sem reivindicação ou com erro de decodificação (volta
-/// ao comportamento sem adaptador).
+/// Parts (relative name, value, offset) of a field claimed by an adapter;
+/// `None` without a registry, without a claim or with a decoding error (falls
+/// back to the behavior without an adapter).
 fn adapter_parts(
     adapters: &AdapterRegistry,
     field: &str,
@@ -857,7 +857,7 @@ fn consumed_values(
 }
 
 // ---------------------------------------------------------------------------
-// Contexto (cache)
+// Context (cache)
 // ---------------------------------------------------------------------------
 
 pub(crate) type Pos = (usize, usize);
@@ -875,11 +875,11 @@ pub(crate) struct FlowContext<'a> {
     pub(crate) options: FlowOptions,
     producers: RefCell<HashMap<Pos, Rc<ProducerData>>>,
     consumed: RefCell<HashMap<Pos, Rc<Vec<Consumed>>>>,
-    /// Índice por prefixo de 8 bytes: valores de produtor com >= 8 bytes.
+    /// Index by 8-byte prefix: producer values with >= 8 bytes.
     index: RefCell<Option<Rc<PrefixIndex>>>,
     seq: HashMap<Pos, usize>,
     by_attempt: HashMap<String, Pos>,
-    /// id da requisição → posição da última tentativa.
+    /// request id → position of the last attempt.
     by_request: HashMap<String, Pos>,
     ordered: Vec<Pos>,
 }
@@ -936,8 +936,8 @@ impl<'a> FlowContext<'a> {
             .flat_map(|(ri, r)| (0..r.attempts.len()).map(move |ai| (ri, ai)))
     }
 
-    /// `Before` só se a resposta do candidato terminou até o início do alvo
-    /// (`ended_at`); sem tempos, vale a ordem da sessão (ver [`Self::inferred`]).
+    /// `Before` only if the candidate's response ended by the start of the target
+    /// (`ended_at`); without times, the session order applies (see [`Self::inferred`]).
     fn rel(&self, candidate: Pos, target: Pos) -> Rel {
         if candidate == target {
             return Rel::After;
@@ -967,15 +967,15 @@ impl<'a> FlowContext<'a> {
         }
     }
 
-    /// A ordem candidato → alvo veio da sequência da sessão, não dos tempos.
+    /// The candidate → target order came from the session sequence, not from times.
     fn inferred(&self, candidate: Pos, target: Pos) -> bool {
         let (a, b) = (self.attempt(candidate), self.attempt(target));
         a.started_at.is_none() || b.started_at.is_none() || a.ended_at.is_none()
     }
 
-    /// O valor circulou numa requisição depois da resposta de `from` e até a
-    /// resposta de `to` (inclusive o pedido do próprio `to`, que o enviou antes
-    /// de a resposta chegar): então `to` só reemite o valor.
+    /// The value circulated in a request after the response of `from` and up to
+    /// the response of `to` (including the request of `to` itself, which sent it
+    /// before the response arrived): then `to` only reissues the value.
     fn circulated(&self, text: &str, from: Pos, to: Pos) -> bool {
         let (lo, hi) = (self.seq[&from], self.seq[&to]);
         let after = self.attempt(from).ended_at;
@@ -1003,14 +1003,14 @@ impl<'a> FlowContext<'a> {
         false
     }
 
-    /// Recurso estático (script, stylesheet, fonte, imagem, mídia) por tipo,
-    /// MIME ou extensão: não é produtor de valores de sessão.
+    /// Static resource (script, stylesheet, font, image, media) by type,
+    /// MIME or extension: not a producer of session values.
     pub(crate) fn is_static(&self, pos: Pos) -> bool {
         self.static_candidate(pos) && !self.maybe_dynamic(pos)
     }
 
-    /// Script com query string, `Cache-Control: no-store|no-cache` ou corpo
-    /// JSON/JSONP pode ser produtor dinâmico, mesmo com cara de estático.
+    /// A script with a query string, `Cache-Control: no-store|no-cache` or a
+    /// JSON/JSONP body may be a dynamic producer, even if it looks static.
     fn maybe_dynamic(&self, pos: Pos) -> bool {
         let attempt = self.attempt(pos);
         let url = attempt.url.split('#').next().unwrap_or("");
@@ -1025,8 +1025,8 @@ impl<'a> FlowContext<'a> {
         if is_script && url.contains('?') {
             return true;
         }
-        // `no-store`/`no-cache` só conta fora de scripts: bibliotecas JS reais
-        // costumam vir assim (caso DETRAN) e não são produtoras por isso.
+        // `no-store`/`no-cache` only counts outside scripts: real JS libraries
+        // often come like this (DETRAN case) and are not producers because of it.
         if !is_script {
             let cache = attempt
                 .response_headers
@@ -1171,16 +1171,16 @@ impl<'a> FlowContext<'a> {
     }
 }
 
-/// Nomes (sem valores) dos campos consumidos que reaparecem como valor de uma
-/// resposta anterior e dos campos de resposta que foram reaproveitados depois.
-/// Linear no tamanho da sessão (índices por valor); serve à timeline, que não
-/// precisa da classificação completa das origens.
+/// Names (without values) of the consumed fields that reappear as the value of an
+/// earlier response, and of the response fields that were reused later.
+/// Linear in the session size (indexes by value); serves the timeline, which does
+/// not need the full origin classification.
 pub(crate) fn linked_field_names(
     ctx: &FlowContext<'_>,
     only: &dyn Fn(&str) -> bool,
 ) -> (HashMap<String, Vec<String>>, HashMap<String, Vec<String>>) {
     let min = ctx.options.min_match_len.max(8);
-    // valor longo → produtores; (campo, valor) → produtores (qualquer tamanho >= 4)
+    // long value → producers; (field, value) → producers (any size >= 4)
     let mut long: HashMap<String, Vec<(String, String)>> = HashMap::new();
     let mut named: HashMap<(String, String), Vec<(String, String)>> = HashMap::new();
     let mut consumed_names: HashMap<String, Vec<String>> = HashMap::new();
@@ -1235,7 +1235,7 @@ pub(crate) fn linked_field_names(
     (consumed_names, produced_names)
 }
 
-/// Nomes de campo genéricos: `same-field` com eles é só evidência média.
+/// Generic field names: `same-field` with them is only medium evidence.
 const GENERIC_NAMES: &[&str] = &[
     "id", "value", "data", "page", "type", "lang", "name", "key", "code", "state", "status",
     "action", "op", "mode", "format", "limit", "offset", "q", "query", "v", "t", "ts", "flag",
@@ -1247,7 +1247,7 @@ fn is_generic_name(name: &str) -> bool {
         .any(|generic| generic.eq_ignore_ascii_case(name))
 }
 
-/// Nome genérico; em partes de adaptador (`XML.p.id`) vale o último componente.
+/// Generic name; in adapter parts (`XML.p.id`) the last component counts.
 fn is_generic_value(value: &Consumed) -> bool {
     if value.part_of.is_some() {
         let last = value.field.rsplit('.').next().unwrap_or(&value.field);
@@ -1268,8 +1268,8 @@ fn preview(value: &str) -> String {
 // value_origins
 // ---------------------------------------------------------------------------
 
-/// Origem dos valores consumidos pela requisição `request_id` (última
-/// tentativa). Veja o módulo para as regras.
+/// Origin of the values consumed by the request `request_id` (last
+/// attempt). See the module for the rules.
 pub fn value_origins(
     session: &SessionV1,
     source: &dyn BodySource,
@@ -1284,7 +1284,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
     let target = ctx
         .find(request_id)
         .ok_or_else(|| CoreError::MissingField {
-            field: format!("requisição {request_id} (ou sem tentativas)"),
+            field: format!("request {request_id} (or without attempts)"),
         })?;
     let attempt = ctx.attempt(target);
     let consumed = ctx.consumed_of(target);
@@ -1298,7 +1298,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
     };
     if attempt.initiator.is_none() {
         result.warnings.push(
-            "initiator do CDP não é preservado no modelo: evidência `initiator` indisponível"
+            "CDP initiator is not preserved in the model: `initiator` evidence unavailable"
                 .to_string(),
         );
     }
@@ -1340,7 +1340,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 value: preview(&value.value),
                 length: value.value.len(),
                 status: OriginStatus::Redacted,
-                label: "redigido: não rastreável".to_string(),
+                label: "redacted: not traceable".to_string(),
                 confidence: None,
                 offset: None,
                 oldest: None,
@@ -1350,13 +1350,13 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 context: Vec::new(),
                 partial_composition: Vec::new(),
                 parent: None,
-                note: Some("valor redigido: não rastreável".to_string()),
+                note: Some("redacted value: not traceable".to_string()),
             });
             continue;
         }
         let mut evidences: Vec<(usize, Evidence)> = Vec::new();
 
-        // cookieJar / sameField: igualdade de nome + valor.
+        // cookieJar / sameField: equality of name + value.
         for pos in &earlier {
             let data = ctx.producer(*pos);
             for item in data.items.iter() {
@@ -1389,13 +1389,13 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
             }
         }
 
-        // valueMatch inteiro: valor de produtor igual ao valor consumido.
+        // whole valueMatch: producer value equal to the consumed value.
         let min = ctx.options.min_match_len.max(8);
         let bytes = value.value.as_bytes();
         let mut found: FoundMap = HashMap::new();
         if bytes.len() >= min {
             let partial_ok = bytes.len() >= OPAQUE_CONSUMER_MIN;
-            // campo nomeado curto: peças só servem para a decomposição por inteiro
+            // short named field: pieces only serve the whole decomposition
             let decomp_ok = !partial_ok && bytes.len() >= 16 && value.scope == ConsumedScope::Body;
             let strong_from: BTreeSet<Pos> = evidences.iter().map(|(r, _)| earlier[*r]).collect();
             for start in 0..=bytes.len() - 8 {
@@ -1415,7 +1415,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                     }
                     if item.value.len() == bytes.len() {
                         if strong_from.contains(pos) {
-                            continue; // já coberto por evidência forte
+                            continue; // already covered by strong evidence
                         }
                         evidences.push((
                             rank[pos],
@@ -1445,8 +1445,8 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
             }
         }
         let mut entry = finish_entry(ctx, value, evidences, &earlier);
-        // Valor composto: campo nomeado curto coberto POR INTEIRO por >= 2 valores
-        // de produtores + separadores. Cobertura parcial (só um prefixo) não vale.
+        // Composite value: short named field covered ENTIRELY by >= 2 producer
+        // values + separators. Partial coverage (only a prefix) does not count.
         let mut composite_cover = false;
         let mut partial_hints: Vec<PartialComposition> = Vec::new();
         if entry.status == OriginStatus::None
@@ -1464,7 +1464,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
                 }
             }
         }
-        // campo com origem própria não vira também "composto" (sem duplicar)
+        // a field with its own origin does not also become "composite" (no duplicate)
         let sub = if value.adapted
             || matches!(entry.status, OriginStatus::Origin | OriginStatus::Ambiguous)
         {
@@ -1485,7 +1485,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
             }
         }
         if matches!(entry.status, OriginStatus::None | OriginStatus::Repeated) {
-            // Repetido: só valem os produtores anteriores à 1ª ocorrência do valor.
+            // Repeated: only producers before the 1st occurrence of the value count.
             if let Some(first) = entry.repeated_from.first().and_then(|id| ctx.find(id)) {
                 if let Some(limit) = rank.get(&first).copied() {
                     partial_hints.retain(|h| {
@@ -1538,14 +1538,14 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
         }) {
             entry.unobservable = hidden.iter().take(20).cloned().collect();
             entry.label = format!(
-                "{}; {} resposta(s) anterior(es) sem corpo observável",
+                "{}; {} earlier response(s) without observable body",
                 entry.label,
                 hidden.len()
             );
             if let Some(hint) = hidden.iter().find_map(|h| {
                 h.suggestion
                     .as_ref()
-                    .map(|s| format!(" (ocorrência equivalente com corpo: {s})"))
+                    .map(|s| format!(" (equivalent occurrence with body: {s})"))
             }) {
                 entry.label.push_str(&hint);
             }
@@ -1553,7 +1553,7 @@ pub(crate) fn origins_in(ctx: &FlowContext<'_>, request_id: &str) -> Result<Valu
     }
     if result.redacted_values > 0 {
         result.warnings.push(format!(
-            "{} valor(es) redigido(s) ([REDACTED]) não podem ser rastreados",
+            "{} redacted value(s) ([REDACTED]) cannot be traced",
             result.redacted_values
         ));
     }
@@ -1585,7 +1585,7 @@ fn evidence(
     }
 }
 
-/// Ordena por tempo, marca reemissões e decide o estado.
+/// Sorts by time, marks reissues and decides the state.
 fn finish_entry(
     _ctx: &FlowContext<'_>,
     value: &Consumed,
@@ -1593,8 +1593,8 @@ fn finish_entry(
     _earlier: &[Pos],
 ) -> ValueOrigin {
     raw.sort_by_key(|(rank, _)| *rank);
-    // Mesmos bytes lidos por dois caminhos (controle HTML + literal `value="…"`)
-    // são um produtor só: dedupe por (tentativa, intervalo sobreposto).
+    // The same bytes read by two paths (HTML control + literal `value="…"`)
+    // are a single producer: dedupe by (attempt, overlapping interval).
     let width = value.value.len() as u64;
     let rank_of = |e: &Evidence| {
         let s = match e.strength {
@@ -1623,7 +1623,7 @@ fn finish_entry(
         }
     }
     let mut raw = deduped;
-    // Recurso estático só dá contexto: value-match estático nunca é produtor.
+    // A static resource only gives context: a static value-match is never a producer.
     let mut context: Vec<ContextNote> = Vec::new();
     let is_static_ev = |e: &Evidence| {
         e.kind == EvidenceKind::ValueMatch
@@ -1642,7 +1642,7 @@ fn finish_entry(
                     context.push(ContextNote {
                         request_id: e.request_id.clone(),
                         field: e.field.clone(),
-                        note: "valor também presente em recurso estático (pode ser constante do protocolo)".to_string(),
+                        note: "value also present in a static resource (may be a protocol constant)".to_string(),
                     });
                 }
             }
@@ -1674,7 +1674,7 @@ fn finish_entry(
     let mut note = None;
     if evidences.len() > _ctx.options.max_evidence {
         note = Some(format!(
-            "{} evidência(s) adicionais omitidas (reemissões)",
+            "{} additional evidence(s) omitted (reissues)",
             evidences.len() - _ctx.options.max_evidence
         ));
         evidences.truncate(_ctx.options.max_evidence);
@@ -1715,8 +1715,8 @@ fn finish_entry(
     }
 }
 
-/// Próxima ocorrência do mesmo modelo (método + host + caminho + nomes de
-/// campos) depois de `pos`, com corpo de resposta observável.
+/// Next occurrence of the same model (method + host + path + field names)
+/// after `pos`, with an observable response body.
 fn equivalent_later(ctx: &FlowContext<'_>, pos: Pos) -> Option<String> {
     let attempt = ctx.attempt(pos);
     let (host, path) = crate::compare::split_url(&attempt.url);
@@ -1759,10 +1759,10 @@ fn equivalent_later(ctx: &FlowContext<'_>, pos: Pos) -> Option<String> {
 fn composition_label(entry: &ValueOrigin) -> String {
     let h = &entry.partial_composition[0];
     format!(
-        "sem origem observada; contém o valor de {} de {} ({}) e parte sem fonte observada — provável composição no cliente",
+        "no observed origin; contains the value of {} from {} ({}) and a part with no observed source — probable composition in the client",
         h.field.as_deref().unwrap_or("?"),
         h.producer_request_id,
-        if h.start == 0 { "prefixo" } else { "trecho" }
+        if h.start == 0 { "prefix" } else { "fragment" }
     )
 }
 
@@ -1778,31 +1778,31 @@ fn relabel(entry: &mut ValueOrigin) {
             });
             let id = oldest.map_or("?", |e| e.request_id.as_str());
             match (entry.status, entry.confidence) {
-                (OriginStatus::Origin, Some(Confidence::Strong)) => "origem observada".to_string(),
-                (OriginStatus::Origin, _) => format!("possível origem ({kind})"),
-                (_, Some(Confidence::Strong)) => format!("ambíguo (mais antigo: {id})"),
-                _ => format!("possível origem ({kind}), ambíguo (mais antigo: {id})"),
+                (OriginStatus::Origin, Some(Confidence::Strong)) => "observed origin".to_string(),
+                (OriginStatus::Origin, _) => format!("possible origin ({kind})"),
+                (_, Some(Confidence::Strong)) => format!("ambiguous (oldest: {id})"),
+                _ => format!("possible origin ({kind}), ambiguous (oldest: {id})"),
             }
         }
         OriginStatus::Repeated if !entry.partial_composition.is_empty() => format!(
-            "{} (valor já circulava em {})",
+            "{} (value already circulated in {})",
             composition_label(entry),
             entry.repeated_from.join(", ")
         ),
         OriginStatus::Repeated => format!(
-            "sem origem observada (valor já circulava em {})",
+            "no observed origin (value already circulated in {})",
             entry.repeated_from.join(", ")
         ),
         OriginStatus::None if !entry.partial_composition.is_empty() => composition_label(entry),
         OriginStatus::None if !entry.context.is_empty() => {
-            "sem origem observada; valor também presente em recurso estático (pode ser constante do protocolo)".to_string()
+            "no observed origin; value also present in a static resource (may be a protocol constant)".to_string()
         }
-        OriginStatus::None => "sem origem observada".to_string(),
+        OriginStatus::None => "no observed origin".to_string(),
         OriginStatus::Composite if entry.confidence == Some(Confidence::Possible) => {
-            "possível origem composta: ver trechos (parent)".to_string()
+            "possible composite origin: see fragments (parent)".to_string()
         }
-        OriginStatus::Composite => "composto: ver trechos (parent)".to_string(),
-        OriginStatus::Redacted => "redigido: não rastreável".to_string(),
+        OriginStatus::Composite => "composite: see fragments (parent)".to_string(),
+        OriginStatus::Redacted => "redacted: not traceable".to_string(),
     };
 }
 
@@ -1827,9 +1827,9 @@ fn repeated_from(ctx: &FlowContext<'_>, value: &Consumed, earlier: &[Pos]) -> Ve
 type Producer = (Pos, ProducerScope, Option<String>, Option<u64>, bool);
 type FoundMap = HashMap<(usize, usize), Vec<Producer>>;
 
-/// Trechos de um campo opaco que coincidem (>= 8) com o mesmo campo em
-/// respostas anteriores (substrings comuns maximais). Um trecho que difere de
-/// um contador numérico (`...0005` × `...0001`) não é uma coincidência.
+/// Fragments of an opaque field that match (>= 8) the same field in earlier
+/// responses (maximal common substrings). A fragment that differs in a numeric
+/// counter (`...0005` × `...0001`) is not a match.
 fn opaque_candidates(
     ctx: &FlowContext<'_>,
     value: &Consumed,
@@ -1851,7 +1851,7 @@ fn opaque_candidates(
             }
             for (start, len, other_start) in maximal_common(a, b, min) {
                 if start == 0 && len == a.len() {
-                    continue; // valor inteiro: evidência do próprio campo
+                    continue; // whole value: evidence of the field itself
                 }
                 if cut_in_number(a, b, start, len, other_start) {
                     continue;
@@ -1873,12 +1873,12 @@ fn opaque_candidates(
     }
 }
 
-/// O trecho comum termina (ou começa) no meio de uma sequência de dígitos que
-/// difere dos dois lados: é um contador, não um valor compartilhado.
-/// Peças que cobrem o valor inteiro (exceto separadores `_ - . : |`), com pelo
-/// menos 2 produtores distintos; `None` se houver lacuna (prefixo parcial não vale).
-/// Partes conhecidas (>= 8) de um valor curto alinhadas a um separador
-/// `_ - . : |` ou à borda: dica de composição parcial (não é origem).
+/// The common fragment ends (or starts) in the middle of a sequence of digits that
+/// differs on both sides: it is a counter, not a shared value.
+/// Pieces that cover the whole value (except separators `_ - . : |`), with at
+/// least 2 distinct producers; `None` if there is a gap (a partial prefix does not count).
+/// Known parts (>= 8) of a short value aligned to a separator `_ - . : |` or to
+/// the edge: partial composition hint (not an origin).
 fn aligned_hints(
     ctx: &FlowContext<'_>,
     bytes: &[u8],
@@ -1949,8 +1949,8 @@ fn cut_in_number(a: &[u8], b: &[u8], start: usize, len: usize, other_start: usiz
     right || left
 }
 
-/// Entradas `parent` para os trechos escolhidos (mais longos primeiro, sem
-/// sobreposição).
+/// `parent` entries for the chosen fragments (longest first, without
+/// overlap).
 fn partial_entries(
     ctx: &FlowContext<'_>,
     value: &Consumed,
@@ -1964,9 +1964,9 @@ fn partial_entries(
     let mut out = Vec::new();
     let min_len = ctx.options.min_match_len.max(8);
     for ((orig_start, orig_len), producers) in chosen {
-        // Um trecho que sobrepõe um já escolhido é aparado ao que sobra livre
-        // (>= mínimo), em vez de descartado: a ponta de um valor (ex.: o delta no
-        // fim do XML) não pode se perder por 1 byte de sobreposição.
+        // A fragment that overlaps an already chosen one is trimmed to what stays free
+        // (>= minimum), instead of being discarded: the tip of a value (e.g. the delta
+        // at the end of the XML) must not be lost to a 1-byte overlap.
         let (mut s0, mut e0) = (orig_start, orig_start + orig_len);
         for _ in 0..2 {
             for (ts, tl) in &taken {
@@ -1977,7 +1977,7 @@ fn partial_entries(
                     } else if te >= e0 {
                         e0 = (*ts).max(s0);
                     } else {
-                        e0 = s0; // trecho já escolhido no meio: descarta
+                        e0 = s0; // already chosen fragment in the middle: discard
                     }
                 }
             }
@@ -2030,14 +2030,14 @@ fn partial_entries(
         entry.parent = Some(value.field.clone());
         entry.offset = Some(start as u64);
         if a.len() < OPAQUE_CONSUMER_MIN {
-            // componentes de um campo nomeado curto: `token[0]`, `token[1]`…
+            // components of a short named field: `token[0]`, `token[1]`…
             entry.field = format!("{}[{}]", value.field, out.len());
         }
         relabel(&mut entry);
         out.push((start, entry));
     }
-    // Trechos sem nenhum produtor: "sem origem observada" (constantes,
-    // entrada do usuário ou gerado no cliente).
+    // Fragments without any producer: "no observed origin" (constants,
+    // user input or generated on the client).
     if !taken.is_empty() {
         taken.sort();
         let mut cursor = 0usize;
@@ -2080,24 +2080,24 @@ fn partial_entries(
     out.into_iter().map(|(_, entry)| entry).collect()
 }
 
-/// Substrings comuns maximais (à direita) de `a` e `b` com >= `min` bytes:
-/// (início em `a`, comprimento, início em `b`).
+/// Maximal common substrings (rightward) of `a` and `b` with >= `min` bytes:
+/// (start in `a`, length, start in `b`).
 pub(crate) fn maximal_common(a: &[u8], b: &[u8], min: usize) -> Vec<(usize, usize, usize)> {
     let mut out = Vec::new();
     if a.len() < min || b.len() < min {
         return out;
     }
-    // prev[j] = comprimento do sufixo comum terminando em (i-1, j-1).
+    // prev[j] = length of the common suffix ending at (i-1, j-1).
     let mut prev = vec![0u32; b.len() + 1];
     let mut cur = vec![0u32; b.len() + 1];
-    // Para detectar maximalidade à direita precisamos da linha seguinte; então
-    // guardamos candidatos e confirmamos quando a diagonal seguinte não cresce.
-    let mut pending: Vec<(usize, usize, u32)> = Vec::new(); // (i, j, len) da linha anterior
+    // To detect rightward maximality we need the next row; so we keep candidates
+    // and confirm them when the next diagonal does not grow.
+    let mut pending: Vec<(usize, usize, u32)> = Vec::new(); // (i, j, len) of the previous row
     for i in 0..a.len() {
         for j in 0..b.len() {
             cur[j + 1] = if a[i] == b[j] { prev[j] + 1 } else { 0 };
         }
-        // confirma candidatos da linha anterior
+        // confirm candidates from the previous row
         for (pi, pj, plen) in pending.drain(..) {
             let grew = pi + 1 < a.len() && pj + 1 < b.len() && cur[pj + 2] == plen + 1;
             if !grew {
@@ -2130,20 +2130,20 @@ pub(crate) fn maximal_common(a: &[u8], b: &[u8], min: usize) -> Vec<(usize, usiz
 pub enum StepClass {
     Application,
     Protection,
-    /// Página de contexto (documento que carregou a página de onde um passo
-    /// foi emitido): nunca produtora de valor.
+    /// Context page (document that loaded the page from which a step was
+    /// emitted): never a value producer.
     Page,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StepReason {
-    /// Valor que a requisição fornece (campo e prévia).
+    /// Value that the request provides (field and preview).
     pub provides: String,
     pub field: String,
     pub kind: EvidenceKind,
     pub strength: Strength,
-    /// Requisição da cadeia que consome o valor.
+    /// Chain request that consumes the value.
     pub consumed_by: String,
 }
 
@@ -2156,9 +2156,9 @@ pub struct ChainStep {
     pub url: String,
     pub started_at: Option<f64>,
     pub class: StepClass,
-    /// `strong` se algum motivo tem evidência forte; senão `possible`.
+    /// `strong` if any reason has strong evidence; otherwise `possible`.
     pub confidence: Confidence,
-    /// Motivo legível (campos que a requisição fornece e quem os consome).
+    /// Human-readable reason (fields the request provides and who consumes them).
     pub reason: String,
     pub reasons: Vec<StepReason>,
 }
@@ -2167,17 +2167,17 @@ pub struct ChainStep {
 #[serde(rename_all = "camelCase")]
 pub struct PrimingChain {
     pub request_id: String,
-    /// Requisições da aplicação necessárias, na ordem do fluxo.
+    /// Application requests needed, in flow order.
     pub steps: Vec<ChainStep>,
-    /// Requisições de proteção (/TSPD/, cookies TS*), separadas.
+    /// Protection requests (/TSPD/, TS* cookies), kept apart.
     pub protection: Vec<ChainStep>,
-    /// Páginas de contexto (Referer): documentos que carregaram a página de onde
-    /// cada passo foi emitido. Não produzem valores.
+    /// Context pages (Referer): documents that loaded the page from which each
+    /// step was emitted. They do not produce values.
     pub pages: Vec<ChainStep>,
-    /// Frames auxiliares no caminho de Referer (`*_JLIBS.html`, `cscform.html`…):
-    /// recolhidos fora de `pages`.
+    /// Auxiliary frames on the Referer path (`*_JLIBS.html`, `cscform.html`…):
+    /// collected outside `pages`.
     pub auxiliary_pages: Vec<ChainStep>,
-    /// Valores sem origem observada, ambíguos ou redigidos (não resolvidos).
+    /// Values with no observed origin, ambiguous or redacted (unresolved).
     pub unresolved: Vec<UnresolvedValue>,
     pub redacted_values: usize,
     pub warnings: Vec<String>,
@@ -2189,7 +2189,7 @@ pub struct UnresolvedValue {
     pub label: String,
     pub partial_composition: Vec<PartialComposition>,
     pub unobservable: Vec<Unobservable>,
-    /// Requisições que consomem o valor (o alvo e os passos da cadeia).
+    /// Requests that consume the value (the target and the chain steps).
     pub request_ids: Vec<String>,
     pub scope: ConsumedScope,
     pub field: String,
@@ -2205,8 +2205,8 @@ fn is_ts_cookie(name: &str) -> bool {
     name.len() > 2 && name.starts_with("TS") && name[2..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// Documento que carregou `pos` (Referer ou `initiator.url`): GET HTML, anterior,
-/// fora de proteção e de estáticos. É a aresta da cadeia de páginas.
+/// Document that loaded `pos` (Referer or `initiator.url`): GET HTML, earlier,
+/// outside protection and static. It is the edge of the page chain.
 fn referer_page_of(ctx: &FlowContext<'_>, pos: Pos) -> Option<Pos> {
     let attempt = ctx.attempt_ref(pos);
     let referer = attempt.request_headers.first_value("referer").or_else(|| {
@@ -2230,7 +2230,7 @@ fn referer_page_of(ctx: &FlowContext<'_>, pos: Pos) -> Option<Pos> {
         .max_by_key(|cand| ctx.seq[cand])
 }
 
-/// Raiz da cadeia de Referer acima de `pos`: a entrada da rodada a que ele pertence.
+/// Root of the Referer chain above `pos`: the entry of the round it belongs to.
 fn referer_root(ctx: &FlowContext<'_>, pos: Pos) -> Option<Pos> {
     let mut cur = pos;
     let mut root = None;
@@ -2244,8 +2244,8 @@ fn referer_root(ctx: &FlowContext<'_>, pos: Pos) -> Option<Pos> {
     root
 }
 
-/// Documento de entrada: GET HTML da aplicação, fora de proteção e de estáticos e
-/// não iniciado pelo parser (frame).
+/// Entry document: application GET HTML, outside protection and static, and
+/// not started by the parser (frame).
 fn is_entry_document(ctx: &FlowContext<'_>, pos: Pos) -> bool {
     let a = ctx.attempt_ref(pos);
     if !a.method.eq_ignore_ascii_case("GET")
@@ -2262,10 +2262,10 @@ fn is_entry_document(ctx: &FlowContext<'_>, pos: Pos) -> bool {
         .is_some_and(|ct| ct.to_ascii_lowercase().contains("html"))
 }
 
-/// Começo da rodada do alvo: a ocorrência mais recente, até ele, do documento de
-/// entrada (o primeiro documento da aplicação da sessão). Um POST do Connector tem
-/// Referer do próprio Connector, então a raiz de Referer sozinha não acha a rodada.
-/// Sem documento de entrada, cai na raiz da cadeia de Referer.
+/// Start of the target's round: the most recent occurrence, up to it, of the entry
+/// document (the first application document of the session). A Connector POST has
+/// the Connector's own Referer, so the Referer root alone does not find the round.
+/// Without an entry document, it falls back to the root of the Referer chain.
 fn round_start_of(ctx: &FlowContext<'_>, target: Pos) -> Option<Pos> {
     let first = ctx
         .positions()
@@ -2288,7 +2288,7 @@ fn round_start_of(ctx: &FlowContext<'_>, target: Pos) -> Option<Pos> {
     referer_root(ctx, target)
 }
 
-/// Fecho transitivo das origens fortes e médias da requisição alvo.
+/// Transitive closure of the strong and medium origins of the target request.
 pub fn priming_chain(
     session: &SessionV1,
     source: &dyn BodySource,
@@ -2309,9 +2309,9 @@ pub fn priming_chain(
     let mut included: HashMap<String, ChainStep> = HashMap::new();
     let mut visited: BTreeSet<String> = BTreeSet::new();
     let mut queue = vec![request_id.to_string()];
-    // A cadeia fica na rodada do alvo: produtores anteriores à entrada da rodada
-    // (raiz da cadeia de Referer do alvo) não viram passo. Sem Referer, não há
-    // fronteira e vale a sessão inteira.
+    // The chain stays in the target's round: producers before the round's entry
+    // (root of the target's Referer chain) do not become steps. Without a Referer
+    // there is no boundary and the whole session applies.
     let round_start = ctx
         .find(request_id)
         .and_then(|target| round_start_of(&ctx, target))
@@ -2365,18 +2365,18 @@ pub fn priming_chain(
                     status: value.status,
                 });
             }
-            // Para a CADEIA, o passo é o produtor da própria rodada do alvo
-            // (`produced` ou `reissued`): um valor constante do protocolo (ex.:
-            // STAMP=INIT) é reemitido por cada página, e repetir as reemissões
-            // só engorda a cadeia sem acrescentar valor. Escolhe-se o primeiro
-            // produtor da rodada.
+            // For the CHAIN, the step is the producer of the target's own round
+            // (`produced` or `reissued`): a protocol constant value (e.g.
+            // STAMP=INIT) is reissued by every page, and repeating the reissues
+            // only bloats the chain without adding value. The first producer of
+            // the round is chosen.
             //
-            // Sem produtor na rodada, sobe-se para o mais recente anterior só
-            // quando a evidência é forte (ex.: cookie definido uma única vez) ou
-            // um value-match do valor INTEIRO de um campo (ex.: SESSIONID que só
-            // aparece no easynat-app da rodada 1). Fragmentos de campo opaco não
-            // sobem: viram `unresolved` com o motivo, para a cadeia nunca sair
-            // vazia em silêncio. As origens continuam listando tudo.
+            // Without a producer in the round, it climbs to the most recent earlier
+            // one only when the evidence is strong (e.g. a cookie set only once) or
+            // a value-match of the WHOLE value of a field (e.g. SESSIONID that only
+            // appears in easynat-app of round 1). Opaque field fragments do not
+            // climb: they become `unresolved` with the reason, so the chain never
+            // comes out silently empty. The origins keep listing everything.
             let (nearest, withheld) = ctx
                 .find(&current)
                 .map(|consumer| {
@@ -2455,8 +2455,8 @@ pub fn priming_chain(
                 });
                 queue.push(producer_id);
             } else if let Some((pos, _)) = withheld {
-                // Trecho de campo opaco: não sobe, mas fica visível com o motivo.
-                let label = format!("produtor só em rodada anterior ({})", ctx.request_id(pos));
+                // Opaque field fragment: does not climb, but stays visible with the reason.
+                let label = format!("producer only in an earlier round ({})", ctx.request_id(pos));
                 let duplicate = chain.unresolved.iter().any(|u| {
                     u.request_ids.contains(&current) && u.field == value.field && u.label == label
                 });
@@ -2492,8 +2492,8 @@ pub fn priming_chain(
             step.class = StepClass::Protection;
         }
     }
-    // Requisições /TSPD/ anteriores ao alvo entram como proteção, mesmo sem
-    // fornecer um valor consumido (regra explícita por caminho).
+    // /TSPD/ requests before the target enter as protection, even without
+    // providing a consumed value (explicit rule by path).
     if let Some(target) = target_pos {
         for pos in ctx.positions() {
             let attempt = ctx.attempt_ref(pos);
@@ -2510,9 +2510,9 @@ pub fn priming_chain(
                     started_at: attempt.started_at,
                     class: StepClass::Protection,
                     confidence: Confidence::Possible,
-                    reason: "proteção: caminho /TSPD/ antes da requisição alvo".to_string(),
+                    reason: "protection: /TSPD/ path before the target request".to_string(),
                     reasons: vec![StepReason {
-                        provides: "proteção (caminho /TSPD/)".to_string(),
+                        provides: "protection (/TSPD/ path)".to_string(),
                         field: String::new(),
                         kind: EvidenceKind::Initiator,
                         strength: Strength::Complement,
@@ -2526,13 +2526,13 @@ pub fn priming_chain(
         if step.reason.is_empty() {
             let mut parts: Vec<String> = Vec::new();
             for r in &step.reasons {
-                let text = format!("fornece {} a {} ({:?})", r.field, r.consumed_by, r.kind);
+                let text = format!("provides {} to {} ({:?})", r.field, r.consumed_by, r.kind);
                 if !parts.contains(&text) {
                     parts.push(text);
                 }
             }
             let prefix = if step.class == StepClass::Protection {
-                "proteção: "
+                "protection: "
             } else {
                 ""
             };
@@ -2546,10 +2546,10 @@ pub fn priming_chain(
         };
         key(a).cmp(&key(b))
     });
-    // Páginas de contexto, só a partir do alvo e dos passos da aplicação (nunca de
-    // proteção ou estáticos). Sobe a cadeia de Referer entre documentos: a raiz
-    // (entrada) e o documento logo abaixo dela são as páginas; os frames
-    // intermediários (ex.: `*_JLIBS.html`, `cscform.html`) são `auxiliaryPages`.
+    // Context pages, only from the target and the application steps (never from
+    // protection or static). Climbs the Referer chain between documents: the root
+    // (entry) and the document right below it are the pages; the intermediate
+    // frames (e.g. `*_JLIBS.html`, `cscform.html`) are `auxiliaryPages`.
     {
         let emitters: Vec<(String, Pos)> = std::iter::once(request_id.to_string())
             .chain(
@@ -2571,17 +2571,17 @@ pub fn priming_chain(
                 class: StepClass::Page,
                 confidence: Confidence::Possible,
                 reason: if aux {
-                    format!("página auxiliar (frame) no caminho de {emitter}")
+                    format!("auxiliary page (frame) on the path of {emitter}")
                 } else {
                     format!(
-                        "página de contexto: carregou a página de onde {emitter} foi emitido (Referer)"
+                        "context page: loaded the page from which {emitter} was emitted (Referer)"
                     )
                 },
                 reasons: vec![StepReason {
                     provides: if aux {
-                        "página auxiliar".to_string()
+                        "auxiliary page".to_string()
                     } else {
-                        "página de contexto".to_string()
+                        "context page".to_string()
                     },
                     field: String::new(),
                     kind: EvidenceKind::Initiator,
@@ -2592,8 +2592,8 @@ pub fn priming_chain(
         };
         let mut pages: Vec<ChainStep> = Vec::new();
         let mut auxiliary: Vec<ChainStep> = Vec::new();
-        // Passos de rodadas anteriores (antes da raiz de Referer do alvo) não
-        // trazem as páginas da rodada deles.
+        // Steps from earlier rounds (before the target's Referer root) do not
+        // bring the pages of their round.
         for (emitter, pos) in emitters {
             if round_start.is_some_and(|start| ctx.seq[&pos] < start) {
                 continue;
@@ -2607,14 +2607,14 @@ pub fn priming_chain(
                 ancestors.push(parent);
                 cur = parent;
             }
-            // Frame auxiliar = documento iniciado pelo parser (iframe/frame); sem
-            // iniciador na fonte, todo documento do caminho é página.
+            // Auxiliary frame = document started by the parser (iframe/frame); without
+            // an initiator in the source, every document on the path is a page.
             for cand in ancestors {
                 let id = ctx.request_id(cand);
                 if id == request_id {
                     continue;
                 }
-                // Páginas de rodadas anteriores não entram na rodada do alvo.
+                // Pages from earlier rounds do not enter the target's round.
                 if round_start.is_some_and(|start| ctx.seq[&cand] < start) {
                     continue;
                 }
@@ -2656,9 +2656,9 @@ pub fn priming_chain(
         u.request_ids.retain(|id| !protection_ids.contains(id));
         !u.request_ids.is_empty()
     });
-    // A mesma pendência (campo, valor/razão e pistas) pode ser consumida pelo
-    // alvo e por um passo da cadeia (ex.: `n` em duas requisições): agrupa em
-    // uma entrada com a lista de consumidores em vez de repetir o campo.
+    // The same pending item (field, value/reason and hints) can be consumed by the
+    // target and by a chain step (e.g. `n` in two requests): groups it into one
+    // entry with the list of consumers instead of repeating the field.
     let mut grouped: Vec<UnresolvedValue> = Vec::new();
     for mut value in std::mem::take(&mut chain.unresolved) {
         if let Some(existing) = grouped.iter_mut().find(|u| {

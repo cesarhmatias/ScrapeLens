@@ -1,5 +1,5 @@
-//! CLI do wrapper: `origins`, `chain`, `compare` e `adapter-roundtrip` com o
-//! adaptador registrado só com `--adapter natural-ajax`.
+//! Wrapper CLI: `origins`, `chain`, `compare` and `adapter-roundtrip` with the
+//! adapter registered only with `--adapter natural-ajax`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -32,7 +32,7 @@ fn flow_commands_show_internal_names_only_with_the_adapter() {
         .unwrap()
         .status
         .success());
-    // Último POST do Connector.
+    // Last POST to the Connector.
     let inspect = wrapper(&core)
         .arg("inspect")
         .arg(&session)
@@ -75,7 +75,7 @@ fn flow_commands_show_internal_names_only_with_the_adapter() {
     assert!(with.iter().any(|n| n == "XML.delta"), "{with:?}");
     assert!(with.iter().any(|n| n == "XML.p.v_placa"), "{with:?}");
     assert!(!names(&["--sem-adaptador"]).iter().any(|n| n == "XML.delta"));
-    // chain e compare aceitam a flag e rejeitam ids desconhecidos.
+    // chain and compare accept the flag and reject unknown ids.
     for args in [
         vec![
             "chain".to_string(),
@@ -105,7 +105,7 @@ fn flow_commands_show_internal_names_only_with_the_adapter() {
             .unwrap();
         assert!(!bad.status.success());
     }
-    // round-trip: JSON com fields/divergences, sem valores.
+    // round-trip: JSON with fields/divergences, no values.
     let rt = wrapper(&core)
         .arg("adapter-roundtrip")
         .arg(&session)
@@ -126,7 +126,7 @@ fn wrapper_never_recurses_when_core_bin_points_to_itself() {
         .arg("--help")
         .output()
         .unwrap();
-    // Cai no core vizinho (ou em erro limpo), nunca em recursão de processos.
+    // Falls through to the neighbouring core (or a clean error), never process recursion.
     let _ = core;
     assert!(out.status.code().is_some());
 }
@@ -140,7 +140,7 @@ fn wrapper_refuses_a_second_re_execution_level() {
         .output()
         .unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("recursão"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("recursion"));
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn timeline_subcommand_accepts_the_adapter_flag() {
         String::from_utf8_lossy(&with.stderr)
     );
     let text = String::from_utf8_lossy(&with.stdout);
-    assert!(text.contains(" @ "), "rótulos `event @ page` ausentes");
+    assert!(text.contains(" @ "), "`event @ page` labels missing");
     let bad = wrapper(&core)
         .arg("timeline")
         .arg(&session)

@@ -1,11 +1,11 @@
-//! Corpos CDP (`cdp-bodies.jsonl`, contrato em `docs/08-corpos-busca.md` §1).
+//! CDP bodies (`cdp-bodies.jsonl`, contract in `docs/08-corpos-busca.md` §1).
 //!
-//! Cada linha é mapeada **só** por `sessionId` + `requestId` + `attemptIndex`
-//! para a tentativa que o importador CDP já numerou (arquivo antigo sem
-//! `sessionId` casa por `requestId` apenas quando ele é único; colisão vira
-//! aviso, nunca adivinhação). Linha sem requisição/tentativa correspondente
-//! vira aviso; nunca há associação por URL ou horário. Os bytes de `data` não
-//! são reinterpretados: `utf8` vira os bytes da string, `base64` é decodificado.
+//! Each line is mapped **only** by `sessionId` + `requestId` + `attemptIndex`
+//! to the attempt that the CDP importer already numbered (an old file without
+//! `sessionId` matches by `requestId` only when it is unique; a collision becomes
+//! a warning, never a guess). A line without a matching request/attempt
+//! becomes a warning; there is never a match by URL or time. The bytes of `data` are not
+//! reinterpreted: `utf8` becomes the string's bytes, `base64` is decoded.
 
 use std::collections::BTreeMap;
 
@@ -17,7 +17,7 @@ use crate::model::{
 };
 use crate::store;
 
-/// Nome do arquivo de corpos ao lado de `cdp-events.jsonl`.
+/// Name of the bodies file next to `cdp-events.jsonl`.
 pub const BODIES_FILE_NAME: &str = "cdp-bodies.jsonl";
 
 #[derive(Debug, Deserialize)]
@@ -25,7 +25,7 @@ pub const BODIES_FILE_NAME: &str = "cdp-bodies.jsonl";
 struct BodyLine {
     #[serde(default)]
     v: u32,
-    /// Sessão CDP (chave `(sessionId, requestId)`); ausente em arquivo antigo.
+    /// CDP session (key `(sessionId, requestId)`); absent in an old file.
     #[serde(default)]
     session_id: Option<String>,
     request_id: String,
@@ -50,7 +50,7 @@ struct BodyLine {
     transformed: Vec<String>,
 }
 
-/// Resultado de aplicar o arquivo de corpos.
+/// Result of applying the bodies file.
 #[derive(Debug, Default)]
 pub struct BodiesOutcome {
     pub lines: usize,
@@ -65,7 +65,7 @@ fn warn(code: &str, message: String) -> Warning {
     warning
 }
 
-/// Candidatos de caminho para o arquivo de corpos irmão do `.jsonl` de eventos.
+/// Path candidates for the bodies file sibling to the events `.jsonl`.
 pub fn sibling_candidates(cdp_events: &std::path::Path) -> Vec<std::path::PathBuf> {
     let dir = cdp_events
         .parent()
@@ -82,7 +82,7 @@ pub fn sibling_candidates(cdp_events: &std::path::Path) -> Vec<std::path::PathBu
     candidates
 }
 
-/// Aplica as linhas de corpo à sessão, gravando bytes em `attachments`.
+/// Applies the body lines to the session, writing bytes to `attachments`.
 pub fn apply_cdp_bodies(
     session: &mut SessionV1,
     attachments: &mut BTreeMap<String, Vec<u8>>,
@@ -91,9 +91,9 @@ pub fn apply_cdp_bodies(
     apply_cdp_bodies_with_capture(session, attachments, jsonl, None)
 }
 
-/// Como [`apply_cdp_bodies`]. Com a captura CDP original, uma requisição
-/// GET/HEAD sem linha de corpo e sem `hasPostData` vira `empty` ("CDP:
-/// requisição sem corpo") em vez de ficar `unavailable`.
+/// Like [`apply_cdp_bodies`]. With the original CDP capture, a request
+/// GET/HEAD without a body line and without `hasPostData` becomes `empty` ("CDP:
+/// request without body") instead of staying `unavailable`.
 pub fn apply_cdp_bodies_with_capture(
     session: &mut SessionV1,
     attachments: &mut BTreeMap<String, Vec<u8>>,
@@ -101,10 +101,10 @@ pub fn apply_cdp_bodies_with_capture(
     capture: Option<&super::cdp::CdpCapture>,
 ) -> BodiesOutcome {
     let mut outcome = BodiesOutcome::default();
-    // (índice lógico, índice da tentativa, kind) -> linha escolhida.
+    // (logical index, attempt index, kind) -> chosen line.
     let mut chosen: BTreeMap<(usize, usize, bool), BodyLine> = BTreeMap::new();
-    // Chave exata: (sessionId, requestId). Sem sessão na linha (arquivo
-    // antigo), só casa quando o requestId é único — colisão vira aviso.
+    // Exact key: (sessionId, requestId). Without a session on the line (old file)
+    // it only matches when the requestId is unique: a collision becomes a warning.
     let mut by_key: BTreeMap<(&str, &str), usize> = BTreeMap::new();
     let mut by_request: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (index, request) in session.requests.iter().enumerate() {
@@ -133,7 +133,7 @@ pub fn apply_cdp_bodies_with_capture(
             Err(error) => {
                 outcome.warnings.push(warn(
                     "cdp.body_line_invalid",
-                    format!("cdp-bodies.jsonl linha {}: {error}", number + 1),
+                    format!("cdp-bodies.jsonl line {}: {error}", number + 1),
                 ));
                 continue;
             }
@@ -142,7 +142,7 @@ pub fn apply_cdp_bodies_with_capture(
             outcome.warnings.push(warn(
                 "cdp.body_version_unknown",
                 format!(
-                    "cdp-bodies.jsonl linha {}: versão {} desconhecida; ignorada",
+                    "cdp-bodies.jsonl line {}: version {} unknown; ignored",
                     number + 1,
                     line.v
                 ),
@@ -156,7 +156,7 @@ pub fn apply_cdp_bodies_with_capture(
                 outcome.warnings.push(warn(
                     "cdp.body_line_invalid",
                     format!(
-                        "cdp-bodies.jsonl linha {}: kind {other:?} desconhecido",
+                        "cdp-bodies.jsonl line {}: kind {other:?} unknown",
                         number + 1
                     ),
                 ));
@@ -172,7 +172,7 @@ pub fn apply_cdp_bodies_with_capture(
                     outcome.warnings.push(warn(
                         "cdp.body_ambiguous",
                         format!(
-                            "corpo antigo sem sessionId e requestId {} aparece em {} sessões; não associado",
+                            "old body without sessionId and requestId {} appears in {} sessions; not associated",
                             line.request_id,
                             candidates.len()
                         ),
@@ -194,7 +194,7 @@ pub fn apply_cdp_bodies_with_capture(
             outcome.warnings.push(warn(
                 "cdp.body_orphan",
                 format!(
-                    "corpo órfão (requestId {}, attemptIndex {}, {}): sem requisição/tentativa correspondente; não associado",
+                    "orphan body (requestId {}, attemptIndex {}, {}): no matching request/attempt; not associated",
                     line.request_id, line.attempt_index, line.kind
                 ),
             ));
@@ -211,7 +211,7 @@ pub fn apply_cdp_bodies_with_capture(
                 outcome.warnings.push(warn(
                     "cdp.body_duplicate",
                     format!(
-                        "mais de uma linha de corpo para requestId {} attemptIndex {} ({}); mantida a que traz bytes",
+                        "more than one body line for requestId {} attemptIndex {} ({}); keeping the one that carries bytes",
                         line.request_id, line.attempt_index, line.kind
                     ),
                 ));
@@ -241,7 +241,7 @@ pub fn apply_cdp_bodies_with_capture(
             body.provenance.verification =
                 body.provenance.verification.weakest(Verification::Partial);
             body.provenance.notes.push(format!(
-                "não idêntico ao fio: {}",
+                "not identical to the wire: {}",
                 line.transformed.join(", ")
             ));
         }
@@ -260,8 +260,8 @@ pub fn apply_cdp_bodies_with_capture(
     if let Some(capture) = capture {
         mark_bodyless_requests(session, capture);
     }
-    // O corpo "principal" do pedido lógico acompanha a última tentativa, como
-    // os demais campos derivados em `refresh_primary_from_attempt`.
+    // The "primary" body of the logical request follows the last attempt, like
+    // the other fields derived in `refresh_primary_from_attempt`.
     for request in &mut session.requests {
         if let Some(last) = request.attempts.last() {
             request.request_body = last.request_body.clone();
@@ -290,23 +290,23 @@ fn build_body(
     let reason = line
         .reason
         .clone()
-        .unwrap_or_else(|| "sem motivo informado".to_string());
+        .unwrap_or_else(|| "no reason given".to_string());
     let invalid = |why: String, warnings: &mut Vec<Warning>| {
         warnings.push(warn(
             "cdp.body_line_invalid",
             format!(
-                "corpo de {} (attemptIndex {}) inválido: {why}",
+                "body of {} (attemptIndex {}) invalid: {why}",
                 line.request_id, line.attempt_index
             ),
         ));
-        let mut body = Body::unavailable(format!("linha de corpo inválida: {why}"));
+        let mut body = Body::unavailable(format!("body line invalid: {why}"));
         body.provenance = provenance(Verification::Unverified);
         body
     };
     match line.state.as_str() {
         "captured" | "truncated" => {
             let Some(data) = &line.data else {
-                return invalid(format!("estado {} sem data", line.state), warnings);
+                return invalid(format!("state {} without data", line.state), warnings);
             };
             let bytes = match line.encoding.as_deref() {
                 Some("base64") => {
@@ -319,7 +319,7 @@ fn build_body(
                 Some(other) => return invalid(format!("encoding {other:?}"), warnings),
             };
             if store::validate_attachment_name(attachment).is_err() {
-                return invalid("nome de anexo inválido".to_string(), warnings);
+                return invalid("invalid attachment name".to_string(), warnings);
             }
             let len = bytes.len() as u64;
             if let Some(declared) = line.captured_size {
@@ -327,7 +327,7 @@ fn build_body(
                     warnings.push(warn(
                         "cdp.body_size_mismatch",
                         format!(
-                            "corpo de {}: capturedSize={declared}, bytes decodificados={len}",
+                            "body of {}: capturedSize={declared}, decoded bytes={len}",
                             line.request_id
                         ),
                     ));
@@ -342,8 +342,8 @@ fn build_body(
                     &provenance(Verification::Partial),
                 );
                 body.note = Some(match line.original_size {
-                    Some(original) => format!("truncado: {len} de {original} bytes"),
-                    None => format!("truncado em {len} bytes (tamanho original desconhecido)"),
+                    Some(original) => format!("truncated: {len} of {original} bytes"),
+                    None => format!("truncated at {len} bytes (original size unknown)"),
                 });
                 body
             } else {
@@ -373,7 +373,7 @@ fn build_body(
     }
 }
 
-/// GET/HEAD sem `hasPostData` e sem linha de corpo: `empty` com evidência.
+/// GET/HEAD without `hasPostData` and without a body line: `empty` with evidence.
 fn mark_bodyless_requests(session: &mut SessionV1, capture: &super::cdp::CdpCapture) {
     for request in &mut session.requests {
         let Some(cdp_id) = request.cdp.as_ref().and_then(|cdp| cdp.request_id.clone()) else {
@@ -404,11 +404,11 @@ fn mark_bodyless_requests(session: &mut SessionV1, capture: &super::cdp::CdpCapt
             {
                 let provenance =
                     Provenance::new(Source::Cdp, "requestWillBeSent", Verification::Unverified)
-                        .with_note("inferido: método sem corpo e hasPostData ausente no evento")
+                        .with_note("inferred: method without body and hasPostData absent from the event")
                         .with_event("Network.requestWillBeSent")
                         .with_source_id(cdp_id.clone());
                 let mut body = Body::empty(&provenance);
-                body.note = Some("CDP: requisição sem corpo".to_string());
+                body.note = Some("CDP: request without body".to_string());
                 attempt.request_body = body;
             }
         }

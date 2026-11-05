@@ -1,5 +1,5 @@
-//! Nomes sensíveis (`sessionKey`, `nonce`) e propagação de `<input type="hidden">`
-//! de nome sensível para onde o valor reaparecer.
+//! Sensitive names (`sessionKey`, `nonce`) and propagation of `<input type="hidden">`
+//! values with a sensitive name to wherever the value reappears.
 
 use scrapelens_core::export::sanitize::{sanitize_bundle, sanitize_text, SanitizeOptions};
 use serde_json::{json, Value};
@@ -105,10 +105,10 @@ fn hidden_input_values_with_sensitive_names_are_redacted_where_they_reappear() {
         .map(|bytes| String::from_utf8_lossy(bytes).to_string())
         .collect();
     for secret in [CSRF, AUTH, RVT, NONCE] {
-        assert!(!whole.contains(secret), "{secret} no JSON da sessão");
-        assert!(!attachments.contains(secret), "{secret} nos anexos");
+        assert!(!whole.contains(secret), "{secret} in the session JSON");
+        assert!(!attachments.contains(secret), "{secret} in the attachments");
     }
-    // Não redige demais: hidden de nome neutro e input de texto ficam como estavam.
+    // Does not over-redact: a hidden input with a neutral name and a text input stay as they were.
     assert!(whole.contains("PAGESIZEVISIBLE50"));
 }
 
@@ -131,7 +131,7 @@ fn session_key_and_nonce_are_sensitive_names_without_over_redacting() {
             "{text} -> {out}"
         );
     }
-    // `nonce` só exato ou com sufixo `_nonce`/`-nonce`; outros nomes ficam.
+    // `nonce` only when exact or with suffix `_nonce`/`-nonce`; other names stay.
     for same in [
         "noncense=1",
         "announce=yes",
@@ -140,11 +140,11 @@ fn session_key_and_nonce_are_sensitive_names_without_over_redacting() {
     ] {
         let out = sanitize_text(same, &o);
         if same.starts_with("session_keys") {
-            continue; // contém `sessionkey` no nome composto; redigir é aceitável
+            continue; // contains `sessionkey` in the compound name; redacting it is acceptable
         }
         assert_eq!(out, same);
     }
-    // JSON: chaves `nonce` e `sessionKey`.
+    // JSON: keys `nonce` and `sessionKey`.
     let imported = scrapelens_core::import_har(&json_har()).unwrap();
     let sanitized = sanitize_bundle(&imported.bundle, &SanitizeOptions::default());
     let body: String = sanitized

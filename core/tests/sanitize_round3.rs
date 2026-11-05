@@ -1,6 +1,6 @@
-//! Regressão da terceira revisão (A3-M2, A3-B1, A3-B4): valores de parâmetros
-//! não sensíveis são analisados recursivamente (URL, query aninhada, `nome=valor`),
-//! com ou sem `%`; codificação dupla; Bearer/Basic em texto livre.
+//! Regression from the third review (A3-M2, A3-B1, A3-B4): values of non-sensitive
+//! parameters are analyzed recursively (URL, nested query, `name=value`), with or
+//! without `%`; double encoding; Bearer/Basic in free text.
 
 use scrapelens_core::export::sanitize::{sanitize_text, sanitize_url, SanitizeOptions};
 
@@ -11,7 +11,7 @@ fn opts() -> SanitizeOptions {
 fn assert_masked(text: &str, secrets: &[&str]) {
     let out = sanitize_text(text, &opts());
     for secret in secrets {
-        assert!(!out.contains(secret), "{secret} sobrou em {text:?} -> {out:?}");
+        assert!(!out.contains(secret), "{secret} survived in {text:?} -> {out:?}");
     }
 }
 
@@ -30,11 +30,11 @@ fn nested_values_of_non_sensitive_params_are_scanned_plain_or_encoded() {
     ] {
         assert_masked(text, &[secret]);
     }
-    // Refresh com url=… volta a ser redigido (regressão do 5cdac78).
+    // Refresh with url=… is redacted again (regression of 5cdac78).
     let out = sanitize_text("0;url=/d?pin=1234&page=2", &opts());
     assert!(!out.contains("1234"), "{out}");
     assert!(out.contains("page=2"), "{out}");
-    // O que não é segredo continua legível.
+    // What is not a secret stays readable.
     assert_eq!(sanitize_text("0;url=/d?page=2&q=abc", &opts()), "0;url=/d?page=2&q=abc");
     assert_eq!(sanitize_text("value=/a?b=c", &opts()), "value=/a?b=c");
 }
@@ -51,7 +51,7 @@ fn nested_values_in_urls_are_scanned_plain_or_encoded() {
         ("https://h/r?next=/a?n=/b?token=URL7x", "URL7x"),
     ] {
         let out = sanitize_url(url, &opts());
-        assert!(!out.contains(secret), "{secret} sobrou em {url} -> {out}");
+        assert!(!out.contains(secret), "{secret} survived in {url} -> {out}");
     }
     assert_eq!(
         sanitize_url("https://h/r?next=/cb?page=2&q=1", &opts()),
@@ -71,7 +71,7 @@ fn double_and_triple_encoding_and_plus_before_encoded_equals() {
         ("f=%2Fx%3Ftoken+%3DSECR16x", "SECR16x"),
         ("c=%2Fcb%253Ftoken%253DSECR17x", "SECR17x"),
         ("X-Dbl: x%253D1%2526token%253DSECR18x", "SECR18x"),
-        // 3 rodadas de codificação
+        // 3 encoding rounds
         ("n=%25252Fcb%25253Ftoken%25253DSECR19x", "SECR19x"),
     ] {
         assert_masked(text, &[secret]);
@@ -89,11 +89,11 @@ fn bearer_and_basic_in_free_text_any_case_any_whitespace() {
     ] {
         assert_masked(text, &[secret]);
     }
-    // Prosa e texto já redigido não mudam.
+    // Prose and already-redacted text do not change.
     assert_eq!(sanitize_text("Basic authentication required", &opts()), "Basic authentication required");
     assert_eq!(sanitize_text("Bearer [REDACTED]", &opts()), "Bearer [REDACTED]");
     assert_eq!(sanitize_text("sem esquema aqui", &opts()), "sem esquema aqui");
-    // UTF-8 não derruba a varredura.
+    // UTF-8 does not break the scan.
     let _ = sanitize_text("bearer é日本語 e Basic\u{a0}日本語日本語", &opts());
 }
 
@@ -112,10 +112,10 @@ fn pathological_inputs_stay_linear_and_do_not_panic() {
         let _ = sanitize_text(input, &opts());
         let _ = sanitize_url(&format!("https://h/r?{input}"), &opts());
     }
-    assert!(start.elapsed().as_secs() < 30, "lento: {:?}", start.elapsed());
+    assert!(start.elapsed().as_secs() < 30, "slow: {:?}", start.elapsed());
 }
 
-// ---- A4-M1: codificação mista e cadeias `a=b=token=X` --------------------------------------
+// ---- A4-M1: mixed encoding and chains `a=b=token=X` --------------------------------------
 
 #[test]
 fn mixed_encoding_and_chained_equals_do_not_leak() {
@@ -146,11 +146,11 @@ fn mixed_encoding_and_chained_equals_do_not_leak() {
         ("https://h/r;next=%2Fcb%3Ftoken=URL10x", "URL10x"),
     ] {
         let out = sanitize_url(url, &opts());
-        assert!(!out.contains(secret), "{secret} sobrou em {url} -> {out}");
+        assert!(!out.contains(secret), "{secret} survived in {url} -> {out}");
         let pq = scrapelens_core::export::sanitize::sanitize_path_and_query(url, &opts());
-        assert!(!pq.contains(secret), "{secret} sobrou (pq) em {url} -> {pq}");
+        assert!(!pq.contains(secret), "{secret} survived (pq) in {url} -> {pq}");
     }
-    // Nada que já estava legível é apagado.
+    // Nothing that was already readable is erased.
     assert_eq!(sanitize_text("a=1&b=2&page=3", &opts()), "a=1&b=2&page=3");
     assert_eq!(sanitize_text("next=%2Fcb%3Fpage%3D2", &opts()), "next=%2Fcb%3Fpage%3D2");
     assert_eq!(sanitize_text("q=%2Fshoes%3Fsort=asc", &opts()), "q=%2Fshoes%3Fsort=asc");

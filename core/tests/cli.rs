@@ -110,7 +110,7 @@ fn cli_import_inspect_export_diff_sanitize() {
 
 #[test]
 fn cli_reports_errors_without_panicking() {
-    let output = cli().args(["inspect", "/nao/existe"]).output().unwrap();
+    let output = cli().args(["inspect", "/does/not/exist"]).output().unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("error:"));
 }

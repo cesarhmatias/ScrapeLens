@@ -1,6 +1,6 @@
-//! Busca em metadados e corpos de uma sessão (`docs/08-corpos-busca.md` §2).
+//! Search over metadata and bodies of a session (`docs/08-corpos-busca.md` §2).
 //!
-//! API para o App (onda 4b, via Tauri):
+//! API for the App (wave 4b, via Tauri):
 //!
 //! ```text
 //! pub fn search(source: &dyn BodySource, query: &SearchQuery) -> SearchResult
@@ -11,25 +11,25 @@
 //!         snippet, decoded }
 //! ```
 //!
-//! Sessões grandes: `search_lazy(&LazySession, &SearchQuery)` (veja
-//! [`crate::lazy`]) lê um corpo por vez do disco; `search_with` aceita qualquer
+//! Large sessions: `search_lazy(&LazySession, &SearchQuery)` (see
+//! [`crate::lazy`]) reads one body at a time from disk; `search_with` accepts any
 //! [`BodySource`].
 //!
-//! Recebe o [`SessionBundle`] (e não só a sessão) porque os corpos vivem em
-//! anexos. `request_id` é o id lógico da sessão (`LogicalRequest::id`).
+//! Takes the [`SessionBundle`] (not just the session) because the bodies live in
+//! attachments. `request_id` is the logical id of the session (`LogicalRequest::id`).
 //!
-//! Semântica:
-//! - `byte_offset` é sempre relativo ao original (URL, valor do header ou bytes
-//!   do corpo). Em form-urlencoded é o início do valor/chave no corpo bruto; em
-//!   JSON, o início do texto da string no corpo bruto.
-//! - `decoded=true` quer dizer "achado pela visão estruturada": chaves e valores
-//!   de form-urlencoded com percent-decoding (`+` = espaço) e strings JSON sem
-//!   escape, com `field` = chave ou caminho (`a.b[0]`). Trechos fora dessas
-//!   unidades (ou corpos que não são form/JSON) são buscados nos bytes brutos
-//!   com `decoded=false`.
-//! - Corpos binários (UTF-8 inválido) são contados em `skipped_binary`.
-//! - Corpos `truncated` são pesquisados e marcam `partial`.
-//! - Sem ignorar maiúsculas Unicode: só ASCII é dobrado.
+//! Semantics:
+//! - `byte_offset` is always relative to the original (URL, header value or bytes
+//!   of the body). In form-urlencoded it is the start of the value/key in the raw body; in
+//!   JSON, the start of the string text in the raw body.
+//! - `decoded=true` means "found by the structured view": keys and values
+//!   of form-urlencoded with percent-decoding (`+` = space) and JSON strings without
+//!   escape, with `field` = key or path (`a.b[0]`). Excerpts outside these
+//!   units (or bodies that are not form/JSON) are searched in the raw bytes
+//!   with `decoded=false`.
+//! - Binary bodies (invalid UTF-8) are counted in `skipped_binary`.
+//! - `truncated` bodies are searched and mark `partial`.
+//! - Unicode case is not ignored: only ASCII is folded.
 
 use serde::{Deserialize, Serialize};
 
@@ -75,12 +75,12 @@ impl Scope {
 #[serde(rename_all = "camelCase")]
 pub struct SearchQuery {
     pub text: String,
-    /// Vazio = todos os escopos.
+    /// Empty = all scopes.
     #[serde(default)]
     pub scopes: Vec<Scope>,
     #[serde(default)]
     pub case_sensitive: bool,
-    /// Limite de matches devolvidos; ao atingir, `limit_reached` fica true.
+    /// Limit of matches returned; when reached, `limit_reached` becomes true.
     #[serde(default = "default_max_matches")]
     pub max_matches: usize,
 }
@@ -112,14 +112,14 @@ pub struct Match {
     pub scope: Scope,
     pub field: Option<String>,
     pub byte_offset: Option<u64>,
-    /// Comprimento em bytes do trecho no original (`None` se sem offset).
+    /// Length in bytes of the excerpt in the original (`None` if there is no offset).
     pub byte_length: Option<u64>,
-    /// `false` quando o mapeamento através do decoding não pôde ser exato: o
-    /// intervalo (`byte_offset`, `byte_length`) cobre então o valor inteiro.
+    /// `false` when the mapping through the decoding could not be exact: the
+    /// range (`byte_offset`, `byte_length`) then covers the whole value.
     pub exact: bool,
     pub snippet: String,
     pub decoded: bool,
-    /// O campo é um controle de formulário HTML (`input`/`textarea`/`select`).
+    /// The field is an HTML form control (`input`/`textarea`/`select`).
     #[serde(default)]
     pub html_control: bool,
 }
@@ -128,9 +128,9 @@ pub struct Match {
 #[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub matches: Vec<Match>,
-    /// Corpos com bytes não-texto, não pesquisados.
+    /// Bodies with non-text bytes, not searched.
     pub skipped_binary: usize,
-    /// Algum corpo `truncated` foi pesquisado: a busca é parcial.
+    /// Some `truncated` body was searched: the search is partial.
     pub partial: bool,
     pub partial_attempts: Vec<String>,
     pub limit_reached: bool,
@@ -142,7 +142,7 @@ struct Matcher {
 }
 
 impl Matcher {
-    /// Offsets (em bytes) de todas as ocorrências, sem sobreposição.
+    /// Offsets (in bytes) of all occurrences, without overlap.
     fn find_all(&self, haystack: &[u8]) -> Vec<usize> {
         let mut found = Vec::new();
         if self.needle.is_empty() || haystack.len() < self.needle.len() {
@@ -174,7 +174,7 @@ struct Ctx<'a> {
     result: SearchResult,
     request_id: String,
     attempt_id: String,
-    /// O próximo `push` vem de um controle de formulário HTML.
+    /// The next `push` comes from an HTML form control.
     html: bool,
 }
 
@@ -207,8 +207,8 @@ impl Ctx<'_> {
         });
     }
 
-    /// URL: busca no texto original e, se houver `%XX`, também na visão
-    /// percent-decoded (`decoded=true`), sem duplicar trechos já achados.
+    /// URL: searches the original text and, if there is `%XX`, also in the view
+    /// percent-decoded (`decoded=true`), without duplicating excerpts already found.
     fn scan_url(&mut self, url: &str) {
         let raw: Vec<usize> = self.matcher.find_all(url.as_bytes());
         let needle_len = self.matcher.needle.len();
@@ -228,7 +228,7 @@ impl Ctx<'_> {
         }
     }
 
-    /// Busca em texto simples (URL, header, nome/valor de cookie).
+    /// Search in plain text (URL, header, cookie name/value).
     fn scan_text(&mut self, scope: Scope, field: Option<&str>, text: &str) {
         for at in self.matcher.find_all(text.as_bytes()) {
             let length = self.matcher.needle.len();
@@ -260,15 +260,15 @@ fn snippet(text: &str, at: usize, len: usize) -> String {
         .collect()
 }
 
-/// Bytes de um anexo entregues à busca. `cut` = havia mais bytes que o limite
-/// de leitura (a busca vira parcial).
+/// Bytes of an attachment delivered to the search. `cut` = there were more bytes than the limit
+/// of reading (the search becomes partial).
 pub struct Loaded<'a> {
     pub bytes: Cow<'a, [u8]>,
     pub cut: bool,
 }
 
-/// Origem dos corpos pesquisados. A busca pede um corpo por vez e o solta ao
-/// terminar de varrê-lo.
+/// Origin of the searched bodies. The search requests one body at a time and releases it
+/// when done scanning it.
 pub trait BodySource {
     fn load(&self, name: &str) -> Option<Loaded<'_>>;
 }
@@ -282,7 +282,7 @@ impl BodySource for SessionBundle {
     }
 }
 
-/// Corpos lidos sob demanda de uma [`crate::lazy::LazySession`].
+/// Bodies read on demand from a [`crate::lazy::LazySession`].
 pub struct LazyBodies<'a>(pub &'a crate::lazy::LazySession);
 
 impl BodySource for LazyBodies<'_> {
@@ -298,19 +298,19 @@ impl BodySource for LazyBodies<'_> {
     }
 }
 
-/// Busca `query` na sessão. Veja o módulo para a semântica.
+/// Searches `query` in the session. See the module for the semantics.
 pub fn search(bundle: &SessionBundle, query: &SearchQuery) -> SearchResult {
     search_with(&bundle.session, bundle, query)
 }
 
-/// Busca em sessão aberta com [`crate::lazy::LazySession`]: lê um corpo por
-/// vez do disco (sem symlinks, até 5 MiB por corpo; corpo maior é pesquisado só
-/// no prefixo e marca a busca como parcial) e não retém os bytes.
+/// Search in an open session with [`crate::lazy::LazySession`]: reads one body at a
+/// time from disk (no symlinks, up to 5 MiB per body; a larger body is searched only
+/// in the prefix and marks the search as partial) and does not retain the bytes.
 pub fn search_lazy(lazy: &crate::lazy::LazySession, query: &SearchQuery) -> SearchResult {
     search_with(&lazy.session, &LazyBodies(lazy), query)
 }
 
-/// Busca com origem de corpos arbitrária.
+/// Search with an arbitrary body source.
 pub fn search_with(
     session: &SessionV1,
     source: &dyn BodySource,
@@ -431,8 +431,8 @@ fn search_cookies(
     }
 }
 
-/// Texto UTF-8 de um corpo; `None` se não for texto. Um corte no meio de um
-/// caractere no fim de corpo truncado é tolerado.
+/// UTF-8 text of a body; `None` if it is not text. A cut in the middle of a
+/// character at the end of a truncated body is tolerated.
 fn text_of(bytes: &[u8], truncated: bool) -> Option<&str> {
     match std::str::from_utf8(bytes) {
         Ok(text) => Some(text),
@@ -533,26 +533,26 @@ fn search_body(
     }
 }
 
-/// Unidade estruturada: texto decodificado de uma chave/valor e o mapa de cada
-/// byte decodificado para o byte correspondente do original.
+/// Structured unit: decoded text of a key/value and the map of each
+/// decoded byte to the corresponding byte of the original.
 struct Unit {
     field: String,
     text: String,
-    /// Intervalo do trecho original que gerou `text`.
+    /// Range of the original excerpt that produced `text`.
     start: usize,
     end: usize,
-    /// `map[i]` = offset original do byte decodificado `i`; `map[text.len()]` =
+    /// `map[i]` = original offset of decoded byte `i`; `map[text.len()]` =
     /// `end`.
     map: Vec<usize>,
-    /// A decodificação trocou algo por U+FFFD: o mapa não é exato.
+    /// The decoding replaced something with U+FFFD: the map is not exact.
     lossy: bool,
-    /// O campo é um controle de formulário HTML.
+    /// The field is an HTML form control.
     html: bool,
 }
 
 impl Unit {
-    /// (offset, comprimento, exato) de uma ocorrência no original. Se a
-    /// decodificação foi com perda, cobre o valor inteiro (`exact=false`).
+    /// (offset, length, exact) of an occurrence in the original. If the
+    /// decoding was lossy, it covers the whole value (`exact=false`).
     fn original_span(&self, at: usize, len: usize) -> (usize, usize, bool) {
         if self.lossy {
             return (self.start, self.end - self.start, false);
@@ -563,8 +563,8 @@ impl Unit {
     }
 }
 
-/// Percent-decoding (`+` = espaço) com mapa de offsets. Se o resultado não for
-/// UTF-8 válido, devolve o texto cru com mapa identidade.
+/// Percent-decoding (`+` = space) with an offset map. If the result is not
+/// valid UTF-8, returns the raw text with an identity map.
 fn percent_decode_map(raw: &str, base: usize) -> (String, Vec<usize>) {
     let bytes = raw.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -638,8 +638,8 @@ fn form_units(text: &str) -> Vec<Unit> {
     units
 }
 
-/// Desfaz escapes JSON de uma string (conteúdo sem as aspas) com mapa de
-/// offsets. Escape inválido é mantido literalmente.
+/// Undoes JSON escapes of a string (content without the quotes) with a map of
+/// offsets. An invalid escape is kept literally.
 fn json_unescape_map(raw: &str, base: usize) -> (String, Vec<usize>, bool) {
     let mut lossy = false;
     let bytes = raw.as_bytes();
@@ -729,9 +729,9 @@ fn looks_like_json(text: &str) -> bool {
 
 const MAX_JSON_DEPTH: usize = 64;
 
-/// Strings JSON sem escape, com caminho. `None` se o texto não for JSON válido
-/// (então é tratado como texto simples). Em corpo truncado o JSON fica
-/// incompleto: devolve as strings lidas até o corte.
+/// JSON strings without escapes, with a path. `None` if the text is not valid JSON
+/// (so it is treated as plain text). In a truncated body the JSON becomes
+/// incomplete: returns the strings read up to the cut.
 fn json_units(text: &str, truncated: bool) -> Option<Vec<Unit>> {
     let mut parser = JsonScan {
         bytes: text.as_bytes(),
@@ -760,7 +760,7 @@ impl JsonScan<'_> {
         }
     }
 
-    /// Lê uma string; devolve (início do conteúdo, fim, tinha escape).
+    /// Reads a string; returns (content start, end, had escape).
     fn string(&mut self) -> Option<(usize, usize, bool)> {
         if self.bytes.get(self.pos) != Some(&b'"') {
             return None;
@@ -867,7 +867,7 @@ impl JsonScan<'_> {
                 }
             }
             _ => {
-                // número, true, false, null
+                // number, true, false, null
                 let start = self.pos;
                 while self.bytes.get(self.pos).is_some_and(|b| {
                     !matches!(b, b',' | b'}' | b']' | b' ' | b'\t' | b'\n' | b'\r')

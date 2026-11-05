@@ -1,15 +1,15 @@
-//! Corpus permanente dos achados das revisões de segurança (rodadas 25 a 30):
-//! todos os casos de texto/URL dos PoCs do Revisor (`cases.jsonl`, extraídos dos
-//! literais com o marcador de segredo) + casos benignos e de fidelidade
-//! (`benign.jsonl`). Regras:
-//! - nenhum marcador (`forbid`) sobra na saída, em texto, URL, caminho+query e
-//!   em cada portador (header de requisição/resposta, Location, string JSON,
-//!   campo de formulário, valor de query);
-//! - `same`: a saída é igual à entrada; `keep`: os trechos ficam em todas as
-//!   saídas aplicáveis (texto e URL); `idem`: só idempotência;
-//! - idempotência: sanitizar duas vezes dá o mesmo que uma.
+//! Permanent corpus of the findings from the security reviews (rounds 25 to 30):
+//! all text/URL cases from the Reviewer's PoCs (`cases.jsonl`, extracted from the
+//! literals with the secret marker) + benign and fidelity cases
+//! (`benign.jsonl`). Rules:
+//! - no marker (`forbid`) is left in the output, in text, URL, path+query and
+//!   in each carrier (request/response header, Location, JSON string,
+//!   form field, query value);
+//! - `same`: the output equals the input; `keep`: the fragments stay in all the
+//!   applicable outputs (text and URL); `idem`: idempotence only;
+//! - idempotence: sanitizing twice gives the same result as once.
 //!
-//! Um commit que faça qualquer caso regredir não entra.
+//! A commit that makes any case regress is not accepted.
 
 use scrapelens_core::export::sanitize::{
     sanitize_bundle, sanitize_path_and_query, sanitize_text, sanitize_url, sanitize_url_reference,
@@ -38,7 +38,7 @@ fn cases() -> Vec<Case> {
         include_str!("corpus/added.jsonl"),
     ] {
         for line in raw.lines().filter(|l| !l.trim().is_empty()) {
-            all.push(serde_json::from_str::<Case>(line).expect("linha do corpus inválida"));
+            all.push(serde_json::from_str::<Case>(line).expect("invalid corpus line"));
         }
     }
     all
@@ -50,8 +50,8 @@ fn is_url(case: &Case) -> bool {
             && !case.input.contains([' ', '\n']))
 }
 
-/// Casos que o sanitizador de TEXTO trata (os demais têm mecanismo próprio:
-/// JSON, HTML com propagação, Cookie, Set-Cookie).
+/// Cases handled by the TEXT sanitizer (the others have their own mechanism:
+/// JSON, HTML with propagation, Cookie, Set-Cookie).
 fn text_level(case: &Case) -> bool {
     matches!(case.kind.as_str(), "text" | "url" | "same" | "keep" | "idem")
 }
@@ -72,37 +72,37 @@ fn corpus_text_and_url_never_leak_keep_fidelity_and_are_idempotent() {
                 outputs.push(("pq", pq.clone(), sanitize_path_and_query(&pq, &o)));
             }
             let reference = sanitize_url_reference(&case.input, &o);
-            // A6-M2: o texto sobre uma URL já redigida não pode truncá-la nem mudá-la.
+            // A6-M2: text about an already redacted URL must neither truncate nor change it.
             outputs.push(("url→text", reference.clone(), sanitize_text(&reference, &o)));
         }
         for (label, once, twice) in &outputs {
             for marker in &case.forbid {
                 if once.contains(marker.as_str()) {
                     failures.push(format!(
-                        "[{label}] {marker} sobrou: {:?} -> {once:?}",
+                        "[{label}] {marker} left over: {:?} -> {once:?}",
                         case.input
                     ));
                 }
             }
             if case.kind != "same" && once != twice {
                 failures.push(format!(
-                    "[{label}] não idempotente: {:?} -> {once:?} -> {twice:?}",
+                    "[{label}] not idempotent: {:?} -> {once:?} -> {twice:?}",
                     case.input
                 ));
             }
             if case.kind == "same" && *label == "text" && once != &case.input {
                 failures.push(format!(
-                    "[{label}] mudou o benigno {:?} -> {once:?}",
+                    "[{label}] changed the benign {:?} -> {once:?}",
                     case.input
                 ));
             }
-            // `keep`: os trechos ficam em TODA saída aplicável (texto e, se tem forma de
-            // URL, também a de URL): o caminho cru não pode perder segmentos.
+            // `keep`: the fragments stay in EVERY applicable output (text and, if it has the form of
+            // a URL, also the URL output): the raw path must not lose segments.
             if case.kind == "keep" && matches!(*label, "text" | "url") {
                 for piece in &case.keep {
                     if !once.contains(piece.as_str()) {
                         failures.push(format!(
-                            "[{label}] perdeu {piece:?}: {:?} -> {once:?}",
+                            "[{label}] lost {piece:?}: {:?} -> {once:?}",
                             case.input
                         ));
                     }
@@ -112,7 +112,7 @@ fn corpus_text_and_url_never_leak_keep_fidelity_and_are_idempotent() {
     }
     assert!(
         failures.is_empty(),
-        "{} falhas:\n{}",
+        "{} failures:\n{}",
         failures.len(),
         failures.join("\n")
     );
@@ -138,7 +138,7 @@ fn percent_encode(text: &str) -> String {
         .collect()
 }
 
-/// Cada caso do corpus em cada portador de uma sessão importada e sanitizada.
+/// Each corpus case in each carrier of an imported and sanitized session.
 #[test]
 fn corpus_cases_in_every_carrier_never_leak() {
     let cases: Vec<Case> = cases()
@@ -180,7 +180,7 @@ fn corpus_cases_in_every_carrier_never_leak() {
     let har = json!({"log": {"version": "1.2", "creator": {"name": "corpus", "version": "1"},
         "pages": [], "entries": entries}})
     .to_string();
-    let imported = scrapelens_core::import_har(har.as_bytes()).expect("HAR do corpus");
+    let imported = scrapelens_core::import_har(har.as_bytes()).expect("corpus HAR");
     let options = SanitizeOptions {
         omit_unstructured_bodies: false,
         ..SanitizeOptions::default()
@@ -196,18 +196,18 @@ fn corpus_cases_in_every_carrier_never_leak() {
     let mut failures = Vec::new();
     for case in &cases {
         for marker in &case.forbid {
-            // O marcador só é checado se não é parte do próprio nome do portador.
+            // The marker is only checked if it is not part of the carrier's own name.
             if session.contains(marker.as_str()) {
-                failures.push(format!("sessão: {marker} (de {:?})", case.input));
+                failures.push(format!("session: {marker} (from {:?})", case.input));
             }
             if attachments.contains(marker.as_str()) {
-                failures.push(format!("anexos: {marker} (de {:?})", case.input));
+                failures.push(format!("attachments: {marker} (from {:?})", case.input));
             }
         }
     }
     assert!(
         failures.is_empty(),
-        "{} falhas:\n{}",
+        "{} failures:\n{}",
         failures.len(),
         failures.join("\n")
     );
@@ -217,7 +217,7 @@ fn build_session(entries: Vec<Value>) -> (String, String) {
     let har = json!({"log": {"version": "1.2", "creator": {"name": "corpus", "version": "1"},
         "pages": [], "entries": entries}})
     .to_string();
-    let imported = scrapelens_core::import_har(har.as_bytes()).expect("HAR do corpus");
+    let imported = scrapelens_core::import_har(har.as_bytes()).expect("corpus HAR");
     let options = SanitizeOptions {
         omit_unstructured_bodies: false,
         ..SanitizeOptions::default()
@@ -253,13 +253,13 @@ fn plain_entry(
     })
 }
 
-/// Documentos JSON (corpo de resposta), HTML com `<input type=hidden>` cujo valor
-/// reaparece num header seguinte, `Cookie` e `Set-Cookie`: cada um pelo seu mecanismo.
+/// JSON documents (response body), HTML with `<input type=hidden>` whose value
+/// reappears in a following header, `Cookie` and `Set-Cookie`: each by its own mechanism.
 #[test]
 fn corpus_documents_cookies_and_propagation_never_leak() {
     let all = cases();
     let mut entries = Vec::new();
-    let mut checks: Vec<(String, String)> = Vec::new(); // (marcador, origem)
+    let mut checks: Vec<(String, String)> = Vec::new(); // (marker, origin)
     for (i, case) in all.iter().enumerate() {
         match case.kind.as_str() {
             "json" => {
@@ -323,11 +323,11 @@ fn corpus_documents_cookies_and_propagation_never_leak() {
         .filter(|(marker, _)| {
             session.contains(marker.as_str()) || attachments.contains(marker.as_str())
         })
-        .map(|(marker, origin)| format!("{marker} sobrou (de {origin:?})"))
+        .map(|(marker, origin)| format!("{marker} left over (from {origin:?})"))
         .collect();
     assert!(
         failures.is_empty(),
-        "{} falhas:\n{}",
+        "{} failures:\n{}",
         failures.len(),
         failures.join("\n")
     );

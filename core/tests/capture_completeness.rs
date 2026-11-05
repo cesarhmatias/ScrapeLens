@@ -108,7 +108,7 @@ fn netlog_events_without_any_cdp_request_are_listed_as_a_reason() {
     assert!(
         reasons
             .iter()
-            .any(|r| r.contains("NetLog") && r.contains("no CDP match")),
+            .any(|r| r.contains("NetLog") && r.contains("without a CDP match")),
         "{reasons:?}"
     );
 }

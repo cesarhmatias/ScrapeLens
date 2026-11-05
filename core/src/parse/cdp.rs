@@ -1,22 +1,22 @@
-//! Parser de eventos CDP (`cdp-events.jsonl`).
+//! CDP event parser (`cdp-events.jsonl`).
 //!
-//! O CDP é usado para a navegação e para os objetos de header "fácil". Pela
-//! matriz D2, nenhum objeto `headers` do CDP comprova sequência/duplicatas;
-//! `responseReceivedExtraInfo.headersText` (h1) é a exceção verificada.
-//! Cada bloco preserva a origem; a visão primária pode vir do NetLog na
-//! correlação, sem apagar o original CDP.
+//! CDP is used for navigation and for the "easy" header objects. By the
+//! D2 matrix, no CDP `headers` object proves sequence/duplicates;
+//! `responseReceivedExtraInfo.headersText` (h1) is the verified exception.
+//! Each block preserves its origin; the primary view may come from NetLog in
+//! correlation, without erasing the original CDP.
 //!
-//! Captura multi-alvo (docs/14): toda linha de `cdp-events.jsonl` pode trazer
-//! `sessionId` (a sessão da página inicial também tem a sua; arquivo antigo sem
-//! o campo é uma sessão implícita). A chave de requisição é
-//! `(sessionId, requestId)` — `requestId` colide entre sessões e nunca é usado
-//! sozinho. Os eventos `Target.attachedToTarget`, `Target.detachedFromTarget`,
-//! `Target.targetInfoChanged` e `Target.attachFailed` são lidos para dar a cada
-//! requisição a proveniência do alvo (`targetId`, tipo, URL, `openerId`, sessão
-//! pai e se anexou). Observações da mesma requisição em sessões diferentes
-//! (service worker) só são ligadas com `fromServiceWorker`; sem essa evidência
-//! ficam separadas e a ambiguidade é registrada em `links[].resolution` e em
-//! aviso.
+//! Multi-target capture (docs/14): every line of `cdp-events.jsonl` may carry
+//! `sessionId` (the initial page session also has its own; an old file without
+//! the field uses an implicit session). The request key is
+//! `(sessionId, requestId)` — `requestId` collides across sessions and is never
+//! used alone. The `Target.attachedToTarget`, `Target.detachedFromTarget`,
+//! `Target.targetInfoChanged` and `Target.attachFailed` events are read to give
+//! each request its target provenance (`targetId`, type, URL, `openerId`, parent
+//! session, and whether it attached). Observations of the same request in
+//! different sessions (service worker) are only linked with `fromServiceWorker`;
+//! without that evidence they stay separate and the ambiguity is recorded in
+//! `links[].resolution` and in a warning.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,13 +40,13 @@ pub struct CdpCapture {
     pub unhandled_events: usize,
     pub unhandled_samples: Vec<String>,
     pub sessions: Vec<String>,
-    /// Sessão CDP → alvo, a partir dos eventos `Target.*`.
+    /// CDP session → target, from the `Target.*` events.
     pub targets: BTreeMap<String, TargetProvenance>,
-    /// Algum evento `Target.*` apareceu no arquivo. Sem nenhum, o arquivo é de
-    /// antes da captura multi-alvo: sem proveniência de alvo nem `target_unknown`.
+    /// Some `Target.*` event appeared in the file. With none, the file predates
+    /// the multi-target capture: no target provenance and no `target_unknown`.
     pub target_events_seen: bool,
-    /// Notas informativas por sessão (`Capture.targetSetupAborted`); aplicadas
-    /// aos alvos no fim do parse.
+    /// Informational notes per session (`Capture.targetSetupAborted`); applied
+    /// to the targets at the end of parsing.
     pub target_notes: BTreeMap<String, Vec<String>>,
     pub requests: Vec<CdpRequest>,
     pub warnings: Vec<Warning>,
@@ -55,7 +55,7 @@ pub struct CdpCapture {
 #[derive(Debug, Clone, Default)]
 pub struct CdpRequest {
     pub request_id: String,
-    /// Sessão CDP do evento; vazio em arquivos antigos (sessão implícita).
+    /// CDP session of the event; empty in old files (implicit session).
     pub session_id: String,
     pub loader_id: Option<String>,
     pub frame_id: Option<String>,
@@ -63,15 +63,15 @@ pub struct CdpRequest {
     pub attempts: Vec<CdpAttempt>,
     pub redirects: Vec<CdpRedirect>,
     pub failure: Option<String>,
-    /// Só `responseReceived` (sem `requestWillBeSent`): documento `_blank` ou
-    /// resposta sem pedido observado; headers de requisição ausentes.
+    /// Only `responseReceived` (without `requestWillBeSent`): `_blank` document or
+    /// response without an observed request; request headers missing.
     pub response_only: bool,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct CdpAttempt {
     pub initiator: Option<crate::model::Initiator>,
-    /// `request.hasPostData` verdadeiro ou `postData` presente no evento.
+    /// `request.hasPostData` true or `postData` present in the event.
     pub has_post_data: bool,
     pub url: String,
     pub method: String,
@@ -86,7 +86,7 @@ pub struct CdpAttempt {
     pub header_evidence: Vec<HeaderEvidence>,
     pub timestamp: Option<f64>,
     pub wall_time: Option<String>,
-    /// `wallTime` numérico em segundos Unix (referência de relógio, não identidade).
+    /// Numeric `wallTime` in Unix seconds (clock reference, not identity).
     pub wall_time_s: Option<f64>,
     pub ended_at: Option<f64>,
     pub connection_id: Option<String>,
@@ -95,9 +95,9 @@ pub struct CdpAttempt {
     pub redirect_url: Option<String>,
     pub redirect_status: Option<u16>,
     pub failure: Option<String>,
-    /// `response.fromServiceWorker` do CDP (evidência de interceptação).
+    /// CDP `response.fromServiceWorker` (interception evidence).
     pub from_service_worker: bool,
-    /// `response.serviceWorkerResponseSource`, quando presente.
+    /// `response.serviceWorkerResponseSource`, when present.
     pub service_worker_response_source: Option<String>,
     pub outcome: AttemptOutcome,
     pub cdp: CdpRef,
@@ -111,16 +111,16 @@ pub struct CdpRedirect {
     pub to_url: String,
 }
 
-/// Razão de uma sessão importada só do CDP (sem NetLog). Na captura conjunta ela é
-/// substituída pelo resultado da correlação e não é herdada.
-pub const REASON_CDP_WITHOUT_NETLOG: &str = "captura CDP sem NetLog correlacionado";
+/// Reason for a session imported only from CDP (without NetLog). In a joint capture it is
+/// replaced by the correlation result and is not inherited.
+pub const REASON_CDP_WITHOUT_NETLOG: &str = "CDP capture without correlated NetLog";
 
 pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
     let text = std::str::from_utf8(json).map_err(|error| CoreError::UnsupportedFormat {
-        message: format!("cdp-events.jsonl não é UTF-8: {error}"),
+        message: format!("cdp-events.jsonl is not UTF-8: {error}"),
     })?;
     let mut capture = CdpCapture::default();
-    // Chave CDP: (sessionId, requestId). Arquivo antigo sem `sessionId` usa "".
+    // CDP key: (sessionId, requestId). Old file without `sessionId` uses "".
     let mut requests: BTreeMap<RequestKey, CdpRequest> = BTreeMap::new();
     let mut request_extra: BTreeMap<RequestKey, Vec<(HeaderView, usize)>> = BTreeMap::new();
     let mut response_extra: BTreeMap<RequestKey, Vec<(HeaderView, Option<u16>)>> = BTreeMap::new();
@@ -137,7 +137,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 capture.warnings.push(Warning::new(
                     "cdp.line_invalid",
                     format!(
-                        "linha {} de cdp-events.jsonl inválida: {error}",
+                        "line {} of cdp-events.jsonl is invalid: {error}",
                         line_index + 1
                     ),
                 ));
@@ -166,7 +166,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 let cdp = cdp_ref(params, request_id, &session);
 
                 if let Some(restart) = requests.get_mut(&key) {
-                    // Redirect: fecha a tentativa anterior com redirectResponse.
+                    // Redirect: closes the previous attempt with redirectResponse.
                     if let Some(redirect) =
                         params.get("redirectResponse").and_then(Value::as_object)
                     {
@@ -252,7 +252,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 )
                 .with_source_id(request_id.to_string())
                 .with_optional_timestamp(timestamp)
-                .with_note("subconjunto; ordem diferente do fio; duplicatas não representáveis");
+                .with_note("subset; order differs from the wire; duplicates not representable");
                 if let Some(headers) = request.and_then(|request| request.get("headers")) {
                     attempt.request_headers = header_object_to_view(
                         headers,
@@ -311,7 +311,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 )
                 .with_source_id(request_id.to_string())
                 .with_optional_timestamp(timestamp)
-                .with_note("ordem ASCII; duplicatas colapsadas antes de expor");
+                .with_note("ASCII order; duplicates collapsed before exposing");
                 let view = params
                     .get("headers")
                     .map(|headers| {
@@ -597,15 +597,15 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .or_else(|| params.get("method"))
                     .and_then(Value::as_str)
                     .filter(|value| !value.is_empty())
-                    .unwrap_or("<comando desconhecido>");
+                    .unwrap_or("<unknown command>");
                 let target_type = non_empty_str(params, "type");
                 let pending_ms = params.get("pendingMs").and_then(Value::as_u64);
                 let mut extras: Vec<String> = Vec::new();
                 if let Some(kind) = target_type {
-                    extras.push(format!("tipo: {kind}"));
+                    extras.push(format!("type: {kind}"));
                 }
                 if let Some(ms) = pending_ms {
-                    extras.push(format!("pendente há {ms} ms"));
+                    extras.push(format!("pending for {ms} ms"));
                 }
                 let suffix = if extras.is_empty() {
                     String::new()
@@ -615,7 +615,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 let mut warning = Warning::new(
                     "cdp.target_setup_timeout",
                     format!(
-                        "configuração incompleta: {command} sem resposta; a rede pode estar incompleta neste alvo{suffix}"
+                        "incomplete setup: {command} gave no response; the network may be incomplete for this target{suffix}"
                     ),
                 )
                 .with_detail(setup_detail(params, &session, command));
@@ -629,16 +629,16 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .get("command")
                     .and_then(Value::as_str)
                     .filter(|value| !value.is_empty())
-                    .unwrap_or("<comando desconhecido>");
+                    .unwrap_or("<unknown command>");
                 let error = params
                     .get("error")
                     .and_then(Value::as_str)
                     .filter(|value| !value.is_empty())
-                    .unwrap_or("erro desconhecido");
+                    .unwrap_or("unknown error");
                 let mut warning = Warning::new(
                     "cdp.target_setup_error",
                     format!(
-                        "configuração falhou: {command} respondeu erro ({error}); a rede deste alvo pode estar ausente ou incompleta"
+                        "setup failed: {command} responded with error ({error}); the network of this target may be missing or incomplete"
                     ),
                 )
                 .with_detail(setup_detail(params, &session, command));
@@ -647,12 +647,12 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                 capture.events_used += 1;
             }
             "Capture.sessionSetup" => {
-                // Marcador sintético da captura (início da configuração de um alvo):
-                // evento conhecido, sem efeito na rede e sem aviso.
+                // Synthetic capture marker (start of a target's setup):
+                // known event, with no network effect and no warning.
                 capture.events_used += 1;
             }
             "Capture.targetSetupAborted" => {
-                // Nota informativa no alvo; não é perda de rede.
+                // Informational note on the target; not a network loss.
                 let Some(params) = params else { continue };
                 let target_session = non_empty_str(params, "sessionId")
                     .map(str::to_string)
@@ -661,7 +661,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .target_notes
                     .entry(target_session)
                     .or_default()
-                    .push("alvo encerrado durante a configuração".to_string());
+                    .push("target closed during setup".to_string());
                 capture.events_used += 1;
             }
             "Target.attachFailed" => {
@@ -672,7 +672,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
                     .unwrap_or("?");
                 let mut warning = Warning::new(
                     "cdp.target_attach_failed",
-                    format!("alvo {target_id} não anexou (attachFailed); a rede deste alvo pode estar incompleta"),
+                    format!("target {target_id} did not attach (attachFailed); the network of this target may be incomplete"),
                 );
                 warning.severity = crate::model::WarningSeverity::Warning;
                 capture.warnings.push(warning);
@@ -680,7 +680,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
             }
             other => {
                 let key = if other.is_empty() {
-                    "<sem method>"
+                    "<no method>"
                 } else {
                     other
                 };
@@ -689,8 +689,8 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
         }
     }
 
-    // ExtraInfo que chegou antes/depois do request: distribui por tentativa na
-    // ordem da cadeia (o status discrimina respostas de redirect).
+    // ExtraInfo that arrived before/after the request: distributes by attempt in
+    // chain order (the status tells redirect responses apart).
     for ((session_id, request_id), extras) in request_extra {
         let Some(request) = requests.get_mut(&(session_id.clone(), request_id.clone())) else {
             capture.warnings.push(Warning::new(
@@ -751,7 +751,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
             Warning::new(
                 "cdp.unhandled_events",
                 format!(
-                    "{} evento(s) CDP de métodos não tratados (contados, não descartados)",
+                    "{} CDP event(s) for unhandled methods (counted, not discarded)",
                     capture.unhandled_events
                 ),
             )
@@ -759,7 +759,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
         );
     }
 
-    // Ordena tentativas por timestamp (eventos podem chegar intercalados).
+    // Sorts attempts by timestamp (events may arrive interleaved).
     for request in requests.values_mut() {
         request.attempts.sort_by(|a, b| {
             a.timestamp
@@ -771,7 +771,7 @@ pub fn parse_cdp_jsonl(json: &[u8]) -> Result<CdpCapture> {
             capture.warnings.push(Warning::new(
                 "cdp.request_without_attempt",
                 format!(
-                    "requestId {} sem requestWillBeSent utilizável",
+                    "requestId {} has no usable requestWillBeSent",
                     request.request_id
                 ),
             ));
@@ -848,7 +848,7 @@ fn apply_request_extra(
         attempt
             .cookie
             .notes
-            .push("cookie associado bloqueado (associatedCookies)".to_string());
+            .push("associated cookie blocked (associatedCookies)".to_string());
     }
 }
 
@@ -887,10 +887,10 @@ fn apply_response_extra(
     });
 }
 
-/// Liga observações da mesma requisição lógica entre sessões (service worker).
-/// Só `fromServiceWorker` conta como evidência explícita; mesma URL/método e
-/// janela de tempo são pistas. Sem evidência, a ligação fica `ambiguous` e um
-/// aviso é emitido — nunca há fusão silenciosa.
+/// Links observations of the same logical request across sessions (service worker).
+/// Only `fromServiceWorker` counts as explicit evidence; same URL/method and
+/// time window are clues. Without evidence, the link stays `ambiguous` and a
+/// warning is emitted — there is never a silent merge.
 fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLink>>, Vec<Warning>) {
     const WINDOW_S: f64 = 0.050;
     let requests = &capture.requests;
@@ -927,17 +927,17 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
             Warning::new(
                 "cdp.service_worker_ambiguous",
                 format!(
-                    "possível correspondência entre observações ({from} × {to}) ligadas como ambíguas; não confirmada, sem evidência explícita do CDP"
+                    "possible match between observations ({from} × {to}) linked as ambiguous; not confirmed, without explicit CDP evidence"
                 ),
             )
             .with_entity(to),
         );
     };
 
-    // (1) Página com `fromServiceWorker`: candidatos nas sessões de service
-    // worker da mesma origem, começando entre o requestWillBeSent e o
-    // responseReceived da página. A regra antiga de mesma URL/método continua
-    // valendo como candidato.
+    // (1) Page with `fromServiceWorker`: candidates in the service worker sessions
+    // of the same origin, starting between the page's requestWillBeSent and
+    // responseReceived. The old same URL/method rule still
+    // counts as a candidate.
     for i in 0..requests.len() {
         if kind(i) == Some(TargetKind::ServiceWorker) {
             continue;
@@ -980,13 +980,13 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
                         .iter()
                         .any(|attempt| attempt.from_service_worker))
                 && (start_j - start).abs() <= WINDOW_S;
-            // Método diferente nunca é a mesma requisição.
+            // A different method is never the same request.
             let same_method = first.method == page.method;
             if (in_sw_window || old_rule) && same_method {
                 candidates.push(j);
             }
         }
-        // Com algum candidato de mesmo caminho (sem query), só esses ficam.
+        // If any candidate has the same path (without query), only those remain.
         let page_path = url_path(&page.url);
         let same_path: Vec<usize> = candidates
             .iter()
@@ -1001,7 +1001,7 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
             warnings.push(
                 Warning::new(
                     "cdp.service_worker_unidentified",
-                    "interceptada pelo service worker; a requisição correspondente no SW não foi identificada",
+                    "intercepted by the service worker; the matching request in the SW was not identified",
                 )
                 .with_entity(id(i)),
             );
@@ -1009,24 +1009,24 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
         }
         for j in candidates {
             let mut evidence = vec![
-                "fromServiceWorker na resposta".to_string(),
+                "fromServiceWorker in the response".to_string(),
                 if by_path {
-                    "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada"
+                    "possible match in the service worker (clue: time window, origin, path); not confirmed"
                 } else {
-                    "possível correspondência no service worker (pista: janela de tempo, origem); não confirmada"
+                    "possible match in the service worker (clue: time window, origin); not confirmed"
                 }
                 .to_string(),
             ];
             if requests[j].attempts[0].url == page.url {
-                evidence.push("mesma URL/método".to_string());
+                evidence.push("same URL/method".to_string());
             }
             paired.insert((i.min(j), i.max(j)));
             add(i, j, evidence, &mut links, &mut warnings);
         }
     }
 
-    // (2) Cópias da mesma requisição entre sessões (service worker anexado mais
-    // de uma vez): mesma URL/método e janela curta, sempre como ambíguo.
+    // (2) Copies of the same request across sessions (service worker attached more
+    // than once): same URL/method and short window, always as ambiguous.
     for i in 0..requests.len() {
         let Some(start) = requests[i]
             .attempts
@@ -1070,20 +1070,20 @@ fn service_worker_links(capture: &CdpCapture) -> (BTreeMap<usize, Vec<RequestLin
                 continue;
             }
             paired.insert((i, j));
-            let mut evidence = vec!["mesma URL/método".to_string()];
+            let mut evidence = vec!["same URL/method".to_string()];
             if kind(i) == Some(TargetKind::ServiceWorker)
                 || kind(j) == Some(TargetKind::ServiceWorker)
             {
-                evidence.push("sessão do service worker".to_string());
+                evidence.push("service worker session".to_string());
             }
-            evidence.push(format!("Δt={:.0} ms (pista)", delta * 1000.0));
+            evidence.push(format!("Δt={:.0} ms (clue)", delta * 1000.0));
             add(i, j, evidence, &mut links, &mut warnings);
         }
     }
     (links, warnings)
 }
 
-/// Caminho da URL, sem esquema, autoridade, query nem fragmento.
+/// URL path, without scheme, authority, query or fragment.
 fn url_path(url: &str) -> String {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
     let path = rest.find('/').map_or("", |index| &rest[index..]);
@@ -1102,15 +1102,15 @@ fn url_origin(url: &str) -> Option<String> {
 
 fn extra_info_message(event: &str, session_id: &str, request_id: &str) -> String {
     if session_id.is_empty() {
-        format!("{event} sem par (requestId {request_id})")
+        format!("{event} has no pair (requestId {request_id})")
     } else {
-        format!("{event} sem par (sessão {session_id}, requestId {request_id})")
+        format!("{event} has no pair (session {session_id}, requestId {request_id})")
     }
 }
 
 fn session_of(event: &Value) -> String {
-    // Só `sessionId` é a chave multi-alvo. O antigo `session` dos arquivos
-    // anteriores à rodada 10 é uma sessão implícita: não gera alvo nem aviso.
+    // Only `sessionId` is the multi-target key. The old `session` of files
+    // predating round 10 is an implicit session: it creates no target and no warning.
     event
         .get("sessionId")
         .and_then(Value::as_str)
@@ -1125,7 +1125,7 @@ fn non_empty_str<'a>(params: &'a Map<String, Value>, key: &str) -> Option<&'a st
         .filter(|value| !value.is_empty())
 }
 
-/// Liga o aviso de setup ao alvo: `targetId`/`sessionId` (do evento ou da linha).
+/// Links the setup warning to the target: `targetId`/`sessionId` (from the event or the line).
 fn setup_detail(params: &Map<String, Value>, session: &str, command: &str) -> Value {
     let mut detail = Map::new();
     detail.insert("command".to_string(), Value::from(command));
@@ -1167,7 +1167,7 @@ fn target_from_info(
     }
 }
 
-/// Chave CDP: (sessão, requestId). Arquivo antigo sem `sessionId` usa "".
+/// CDP key: (session, requestId). Old file without `sessionId` uses "".
 type RequestKey = (String, String);
 
 fn cdp_ref(params: &Map<String, Value>, request_id: &str, session: &str) -> CdpRef {
@@ -1210,7 +1210,7 @@ fn header_object_to_view(headers: &Value, provenance: &Provenance, event: &str) 
         }
     }
     view.notes.push(format!(
-        "{event}: objeto não preserva sequência transmitida"
+        "{event}: object does not preserve the transmitted sequence"
     ));
     view
 }
@@ -1296,7 +1296,7 @@ fn response_view(
     )
     .with_source_id(request_id.to_string())
     .with_optional_timestamp(timestamp)
-    .with_note("objeto CDP: ordem ASCII e duplicatas fundidas");
+    .with_note("CDP object: ASCII order and duplicates merged");
     let view = response
         .and_then(|response| response.get("headers"))
         .map(|headers| header_object_to_view(headers, &provenance, event))
@@ -1337,10 +1337,10 @@ fn response_view_from_extra(
     )
     .with_source_id(request_id.to_string())
     .with_optional_timestamp(timestamp)
-    .with_note("objeto CDP ordenado em ASCII; duplicatas fundidas com \\n")
+    .with_note("CDP object sorted in ASCII; duplicates merged with \\n")
     .with_note(match status {
         Some(status) => format!("statusCode={status}"),
-        None => "statusCode ausente".to_string(),
+        None => "statusCode missing".to_string(),
     });
     let view = params
         .get("headers")
@@ -1358,8 +1358,8 @@ fn response_view_from_extra(
     )
 }
 
-/// O objeto CDP funde `Set-Cookie` repetidos com `\n`. Reconstrói as linhas
-/// para o parse de cookies, mantendo o valor original no HeaderView.
+/// The CDP object merges repeated `Set-Cookie` with `\n`. Rebuilds the lines
+/// for cookie parsing, keeping the original value in the HeaderView.
 pub fn split_joined_header(value: &str) -> Vec<String> {
     if value.contains('\n') {
         value
@@ -1395,7 +1395,7 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
     );
     meta.capture = Some(crate::model::CaptureMeta {
         mode: Some("cdp".to_string()),
-        notes: Some("CDP: headers de objeto não comprovam sequência; use NetLog".to_string()),
+        notes: Some("CDP: object headers do not prove sequence; use NetLog".to_string()),
         ..Default::default()
     });
     meta.completeness = Completeness::partial(REASON_CDP_WITHOUT_NETLOG);
@@ -1410,9 +1410,9 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         session.add_warning(warning.clone());
         report.warn(warning);
     }
-    // Sessões com tráfego CDP mas sem Target.attachedToTarget: alvo desconhecido
-    // (nunca inventado). Arquivo antigo (sem sessionId ou sem nenhum evento
-    // `Target.*`) não gera aviso.
+    // Sessions with CDP traffic but without Target.attachedToTarget: unknown target
+    // (never invented). An old file (without sessionId or without any
+    // `Target.*` event) does not produce a warning.
     for session_id in &capture.sessions {
         if capture.target_events_seen
             && !session_id.is_empty()
@@ -1425,7 +1425,7 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
             let warning = Warning::new(
                 "cdp.target_unknown",
                 format!(
-                    "sessão {session_id}: sem Target.attachedToTarget; tipo do alvo desconhecido"
+                    "session {session_id}: no Target.attachedToTarget; target type unknown"
                 ),
             );
             session.add_warning(warning.clone());
@@ -1457,10 +1457,10 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         }
         logical.provenance = Provenance::new(Source::Cdp, "Network.*", Verification::Unverified)
             .with_source_id(request.request_id.clone())
-            .with_note("estrutura vinda do CDP; verificação por informação");
+            .with_note("structure from CDP; checked by information only");
         if request.response_only {
             logical.provenance.notes.push(
-                "só responseReceived (sem requestWillBeSent): headers de requisição ausentes; parcial"
+                "only responseReceived (without requestWillBeSent): request headers missing; partial"
                     .to_string(),
             );
         }
@@ -1499,9 +1499,9 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
             attempt.set_cookies = parsed.set_cookies.clone();
             attempt.header_evidence = parsed.header_evidence.clone();
             attempt.request_body =
-                Body::unavailable("corpo CDP não carregado; captura deve fornecer anexo separado");
+                Body::unavailable("CDP body not loaded; capture must provide a separate attachment");
             attempt.response_body =
-                Body::unavailable("corpo CDP não carregado; captura deve fornecer anexo separado");
+                Body::unavailable("CDP body not loaded; capture must provide a separate attachment");
             attempt.provenance =
                 Provenance::new(Source::Cdp, "Network.attempt", Verification::Unverified)
                     .with_source_id(request.request_id.clone())
@@ -1591,7 +1591,7 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
             session.add_warning(Warning::new(
                 "cdp.request_failed",
                 format!(
-                    "requestId {} falhou: {}",
+                    "requestId {} failed: {}",
                     request.request_id,
                     request.failure.clone().unwrap_or_default()
                 ),
@@ -1610,7 +1610,7 @@ pub fn build_cdp_session(capture: &CdpCapture) -> (SessionV1, ImportReport) {
         session
             .session
             .completeness
-            .add_reason("nenhuma requisição CDP utilizável");
+            .add_reason("no usable CDP request");
     }
     session.session.completeness.counts.source_events = report.source_events;
     session.session.completeness.counts.source_events_used = report.source_events_used;

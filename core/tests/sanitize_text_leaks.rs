@@ -1,6 +1,6 @@
-//! Regressão: um segredo marcado na query não pode sobrar em NENHUM campo da
-//! sessão sanitizada (startLine, :path, Referer/Location/Origin, redirects,
-//! avisos, notas, falhas, alvo, iniciador...). Varre o JSON inteiro.
+//! Regression: a marked secret in the query must not survive in ANY field of the
+//! sanitized session (startLine, :path, Referer/Location/Origin, redirects,
+//! warnings, notes, failures, target, initiator...). Scans the whole JSON.
 
 use scrapelens_core::export::sanitize::{sanitize_bundle, sanitize_text, SanitizeOptions};
 use scrapelens_core::model::entities::{Initiator, InitiatorFrame};
@@ -34,12 +34,12 @@ fn sanitize_text_masks_only_sensitive_query_params() {
         t("\"https://a.test/p?token=ABC\" falhou"),
         "\"https://a.test/p?token=%5BREDACTED%5D\" falhou"
     );
-    // Sem '?': `nome=valor` sensível também é redigido; nome não sensível, não.
+    // Without '?': a sensitive `name=value` is also redacted; a non-sensitive name is not.
     assert_eq!(t("token=ABC sem query"), "token=%5BREDACTED%5D sem query");
     assert_eq!(t("max-age=60; code_x=1"), "max-age=60; code_x=1");
     assert_eq!(t("/p?page=2&q=abc"), "/p?page=2&q=abc");
     assert_eq!(t("HTTP/1.1 200 OK"), "HTTP/1.1 200 OK");
-    // Acentos e texto depois do terminador.
+    // Accents and text after the terminator.
     assert_eq!(
         t("não vi ?token=ABC depois"),
         "não vi ?token=%5BREDACTED%5D depois"
@@ -135,9 +135,9 @@ fn marked_secret_in_query_survives_nowhere_in_the_sanitized_session() {
     let json = serde_json::to_string(&export.bundle.session).unwrap();
     assert!(
         !json.contains(MARK),
-        "o segredo sobrou na sessão sanitizada: {json}"
+        "the secret survived in the sanitized session: {json}"
     );
-    // O que não é segredo continua legível.
+    // What is not a secret stays readable.
     assert!(json.contains("/page?token=%5BREDACTED%5D"));
 }
 
@@ -147,25 +147,25 @@ fn every_url_form_is_redacted_in_text_and_in_references() {
     let o = SanitizeOptions::default();
     let t = |s: &str| sanitize_text(s, &o);
     let r = |s: &str| sanitize_url_reference(s, &o);
-    // fragmento
+    // fragment
     assert!(!r("/cb#access_token=ZZ1").contains("ZZ1"));
     assert!(!r("https://a.test/cb#access_token=ZZ2").contains("ZZ2"));
     assert!(!t("0; url=/x#access_token=ZZ3").contains("ZZ3"));
-    // parâmetro de matriz
+    // matrix parameter
     assert!(!r("/home;jsessionid=ZZ4?x=1").contains("ZZ4"));
     assert!(!sanitize_url("https://a.test/a;jsessionid=ZZ5/b?x=1", &o).contains("ZZ5"));
     assert!(
         r("/home;jsessionid=ZZ4?x=1").ends_with("?x=1"),
-        "o resto da URL fica"
+        "the rest of the URL stays"
     );
-    // userinfo em texto livre
+    // userinfo in free text
     let u = t("X-Original-Url: https://admin:ZZ6@host.test/p");
     assert!(!u.contains("ZZ6") && u.contains("@host.test/p"), "{u}");
-    // `nome=` sem `?`, `%3D` e separadores variados
+    // `name=` without `?`, `%3D` and varied separators
     assert!(!t("Refresh: 0; token=ZZ7").contains("ZZ7"));
     assert!(!t("/cb?x=1&token%3DZZ8").contains("ZZ8"));
     assert!(!t("u=a,access_token=ZZ9,b=2").contains("ZZ9"));
-    // nomes de credencial
+    // credential names
     for name in [
         "jwt",
         "senha",
@@ -223,7 +223,7 @@ fn set_cookie_parse_error_does_not_carry_the_raw_value() {
             .as_deref()
             .unwrap_or("")
             .contains("NAMELESSZZ10"),
-        "pré-condição"
+        "precondition"
     );
     imported.bundle.session.requests[0].attempts[0]
         .set_cookies

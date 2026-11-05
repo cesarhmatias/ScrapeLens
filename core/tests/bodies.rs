@@ -1,4 +1,4 @@
-//! Corpos CDP (`cdp-bodies.jsonl`) e busca: mini-fixtures sintéticas.
+//! CDP bodies (`cdp-bodies.jsonl`) and search: synthetic mini-fixtures.
 
 use scrapelens_core::correlate::CorrelationOptions;
 use scrapelens_core::export::{curl, python, request_body_bytes, ExportOptions};
@@ -157,7 +157,7 @@ fn same_url_and_method_are_distinguished_by_body_only() {
     assert_eq!(m.field.as_deref(), Some("cmd"));
     assert_eq!(m.byte_offset, Some(4));
     assert_eq!(m.request_id, by_cdp(&built.bundle, "1.1").id);
-    // a placa sintética da 1ª consulta acha só a 1ª; nada pela URL
+    // the synthetic plate of the 1st query finds only the 1st; nothing by URL
     let plate = search(&built.bundle, &SearchQuery::new("ABC1D23"));
     assert_eq!(plate.matches.len(), 1);
     assert_eq!(plate.matches[0].field.as_deref(), Some("placa"));
@@ -178,7 +178,7 @@ fn percent_decoded_view_and_scopes() {
     assert_eq!(r.matches.len(), 1);
     assert!(r.matches[0].decoded);
     assert_eq!(r.matches[0].field.as_deref(), Some("x"));
-    // 6 escopos: url, headers (req/resp), cookies, corpo req/resp
+    // 6 scopes: url, headers (req/resp), cookies, body req/resp
     let mut q = SearchQuery::new("example.test");
     q.scopes = vec![Scope::Url];
     assert_eq!(search(&built.bundle, &q).matches.len(), 2);
@@ -280,7 +280,7 @@ fn redirect_307_has_request_body_on_each_attempt_and_302_response_is_unavailable
                 "unavailable",
                 None,
                 None,
-                Some("resposta de redirect: CDP não fornece corpo"),
+                Some("redirect response: CDP does not provide a body"),
             ),
             line(
                 "3.1",
@@ -315,9 +315,9 @@ fn redirect_307_has_request_body_on_each_attempt_and_302_response_is_unavailable
     let redirect_body = &req.attempts[0].response_body;
     assert_eq!(redirect_body.state, BodyState::Unavailable);
     assert!(redirect_body.note.as_deref().unwrap().contains("redirect"));
-    // O corpo "principal" é o da última tentativa.
+    // The "main" body is the one from the last attempt.
     assert_eq!(req.response_body.state, BodyState::Captured);
-    // Busca devolve a tentativa certa.
+    // Search returns the right attempt.
     let r = search(&built.bundle, &SearchQuery::new("fim"));
     assert_eq!(r.matches[0].attempt_id, req.attempts[1].id);
     let r = search(&built.bundle, &SearchQuery::new("a=1"));
@@ -328,6 +328,7 @@ fn redirect_307_has_request_body_on_each_attempt_and_302_response_is_unavailable
 
 #[test]
 fn truncated_is_searched_and_marked_partial() {
+    // Non-ASCII test input ("início") checks UTF-8 handling in truncated bodies.
     let mut l = line(
         "4.1",
         0,
@@ -426,6 +427,7 @@ fn base64_text_is_decoded_and_binary_is_skipped() {
 
 #[test]
 fn orphans_invalid_lines_and_unavailable_reason() {
+    // Non-ASCII test inputs ("órfão") check UTF-8 handling.
     let built = build(
         &[will_be_sent(
             "6.1",
@@ -452,7 +454,7 @@ fn orphans_invalid_lines_and_unavailable_reason() {
                 "request",
                 "captured",
                 Some("utf8"),
-                Some("tentativa-inexistente"),
+                Some("nonexistent-attempt"),
                 None,
             ),
             line(
@@ -462,7 +464,7 @@ fn orphans_invalid_lines_and_unavailable_reason() {
                 "discarded",
                 None,
                 None,
-                Some("orçamento de corpos da sessão excedido"),
+                Some("session body budget exceeded"),
             ),
             line(
                 "6.1",
@@ -470,7 +472,7 @@ fn orphans_invalid_lines_and_unavailable_reason() {
                 "request",
                 "captured",
                 Some("base64"),
-                Some("!!não-base64"),
+                Some("!!não-base64"), // invalid base64 (non-ASCII input)
                 None,
             ),
         ],
@@ -491,10 +493,10 @@ fn orphans_invalid_lines_and_unavailable_reason() {
         .note
         .as_deref()
         .unwrap()
-        .contains("orçamento"));
+        .contains("budget"));
     assert_eq!(req.request_body.state, BodyState::Unavailable);
     assert!(built.bundle.attachments.is_empty());
-    // órfão nunca vira associação por URL/horário
+    // an orphan never becomes an association by URL/time
     assert!(search(&built.bundle, &SearchQuery::new("órfão"))
         .matches
         .is_empty());
@@ -596,7 +598,7 @@ fn export_includes_captured_body_of_final_attempt() {
         )],
     );
     let request = by_cdp(&built.bundle, "8.1");
-    let bytes = request_body_bytes(&built.bundle, request).expect("corpo captured");
+    let bytes = request_body_bytes(&built.bundle, request).expect("captured body");
     assert_eq!(bytes, b"a=1&b='2'");
     let options = ExportOptions::default();
     let c = curl::to_curl(request, Some(bytes), &options).unwrap();
@@ -604,7 +606,7 @@ fn export_includes_captured_body_of_final_attempt() {
     assert!(c.text.contains("--data-binary"));
     let p = python::to_python(request, Some(bytes), &options).unwrap();
     assert!(p.body_included);
-    // sem corpo disponível: nada é inventado
+    // no body available: nothing is invented
     assert!(
         request_body_bytes(&detran_like().bundle, by_cdp(&detran_like().bundle, "1.1")).is_some()
     );

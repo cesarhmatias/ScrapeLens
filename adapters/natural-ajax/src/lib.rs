@@ -1,8 +1,8 @@
-//! Adaptador Natural for Ajax do ScrapeLens.
+//! Natural for Ajax adapter of ScrapeLens.
 //!
-//! [`grammar`] não depende do core; [`NaturalAjax`] implementa o
-//! `ProtocolAdapter`; [`PYTHON_ENCODER`] é o codificador Python equivalente ao
-//! `encode`, que o script de priming inclui.
+//! [`grammar`] does not depend on the core; [`NaturalAjax`] implements the
+//! `ProtocolAdapter`; [`PYTHON_ENCODER`] is the Python encoder equivalent to the
+//! `encode`, which the priming script includes.
 
 pub mod adapter;
 pub mod extract;

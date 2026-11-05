@@ -20,12 +20,12 @@ const TOP_LEVEL_KEYS: &[&str] = &[
     "warnings",
 ];
 
-/// Lê `session.json`, valida a versão e carrega os artefatos ao lado.
+/// Reads `session.json`, validates the version and loads the artifacts next to it.
 pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
     let mut report = ImportReport::new(InputFormat::OwnV1);
     let mut session = read_session_document(dir, &mut report)?;
 
-    // Artefatos brutos: ausência é explícita, nunca silenciosa.
+    // Raw artifacts: absence is explicit, never silent.
     let cdp_path = dir.join(store::CDP_EVENTS_FILE);
     let netlog_path = dir.join(store::NETLOG_FILE);
     let cdp_bytes = if cdp_path.exists() {
@@ -39,17 +39,17 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
     let netlog_bytes = if netlog_path.exists() {
         let bytes = store::read_file(&netlog_path)?;
         report.bytes_read += bytes.len();
-        // Só valida (mesmo veredito de antes): percorre o JSON sem montar o DOM, que
-        // custava ~10x o tamanho do arquivo (docs/18 §4.1).
+        // Only validates (same verdict as before): walks the JSON without building the DOM, which
+        // cost ~10x the size of the file (docs/18 §4.1).
         if !json_is_valid(&bytes) {
             report.warn(Warning::error(
                 "session.netlog_invalid",
-                "netlog.json existe, mas não é JSON válido; mantido como artefato bruto",
+                "netlog.json exists, but is not valid JSON; kept as a raw artifact",
             ));
             session
                 .session
                 .completeness
-                .add_reason("netlog.json inválido");
+                .add_reason("netlog.json invalid");
         }
         Some(bytes)
     } else {
@@ -73,7 +73,7 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
 
     let mut missing_artifacts = Vec::new();
     if cdp_bytes.is_none() {
-        let message = "cdp-events.jsonl ausente; eventos CDP não estarão disponíveis";
+        let message = "cdp-events.jsonl missing; CDP events will not be available";
         if expects_cdp {
             missing_artifacts.push(message);
             report.warn(Warning::error("session.cdp_missing", message));
@@ -82,7 +82,7 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
         }
     }
     if netlog_bytes.is_none() {
-        let message = "netlog.json ausente; correlação CDP×NetLog não poderá ser auditada";
+        let message = "netlog.json missing; CDP×NetLog correlation cannot be audited";
         if expects_netlog {
             missing_artifacts.push(message);
             report.warn(Warning::error("session.netlog_missing", message));
@@ -104,14 +104,14 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
             report.attachments_missing += 1;
             let warning = Warning::new(
                 "attachment.missing",
-                format!("anexo referenciado não existe: {name}"),
+                format!("referenced attachment does not exist: {name}"),
             )
             .with_detail(Value::String(name.clone()));
             session.add_warning(warning.clone());
             session
                 .session
                 .completeness
-                .add_reason(format!("anexo ausente: {name}"));
+                .add_reason(format!("attachment missing: {name}"));
             report.warn(warning);
             continue;
         }
@@ -120,7 +120,7 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
             report.warn(Warning::new(
                 "attachment.too_large",
                 format!(
-                    "anexo {name} tem {} bytes (limite {}); não carregado",
+                    "attachment {name} has {} bytes (limit {}); not loaded",
                     metadata.len(),
                     MAX_ATTACHMENT_BYTES
                 ),
@@ -128,18 +128,18 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
             session
                 .session
                 .completeness
-                .add_reason(format!("anexo acima do limite: {name}"));
+                .add_reason(format!("attachment above the limit: {name}"));
             continue;
         }
         if total_loaded + metadata.len() > MAX_TOTAL_ATTACHMENT_BYTES {
             report.warn(Warning::new(
                 "attachment.total_limit",
-                "limite total de anexos atingido; anexos restantes não carregados",
+                "total attachment limit reached; remaining attachments not loaded",
             ));
             session
                 .session
                 .completeness
-                .add_reason("limite total de anexos atingido");
+                .add_reason("total attachment limit reached");
             break;
         }
         let bytes = store::read_file(&path)?;
@@ -160,9 +160,9 @@ pub fn import_session_dir(dir: &Path) -> Result<ImportedSession> {
     Ok(ImportedSession::new(bundle, report))
 }
 
-/// Valida JSON sem montar o DOM, com o MESMO veredito de `serde_json::from_slice::<Value>`
-/// (inclusive o limite de recursão de 128 níveis): `IgnoredAny` não serve porque
-/// pula o limite. Memória O(profundidade).
+/// Validates JSON without building the DOM, with the SAME verdict as `serde_json::from_slice::<Value>`
+/// (including the 128-level recursion limit): `IgnoredAny` does not work because
+/// skips the limit. Memory O(depth).
 pub(crate) struct JsonShape;
 
 impl<'de> serde::Deserialize<'de> for JsonShape {
@@ -190,7 +190,7 @@ impl<'de> serde::de::Visitor<'de> for JsonShapeVisitor {
     type Value = ();
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("qualquer valor JSON")
+        formatter.write_str("any JSON value")
     }
 
     fn visit_bool<E>(self, _: bool) -> std::result::Result<(), E> {
@@ -236,17 +236,17 @@ fn json_is_valid(bytes: &[u8]) -> bool {
     serde_json::from_slice::<JsonShape>(bytes).is_ok()
 }
 
-/// Lê e valida `session.json` sem árvore `Value` intermediária: uma passada
-/// só de cabeçalho (versão + chaves de topo, sem alocar os valores) e outra
-/// direto para os tipos, ambas em streaming (o arquivo inteiro nunca vive em
-/// memória como bytes).
+/// Reads and validates `session.json` without an intermediate `Value` tree: one pass
+/// for the header only (version + top-level keys, without allocating the values), and another
+/// straight into the types, both streaming (the whole file never lives in
+/// memory as bytes).
 fn read_session_document(dir: &Path, report: &mut ImportReport) -> Result<SessionV1> {
     use std::io::BufReader;
     let session_path = dir.join(store::SESSION_FILE);
     let open = || {
         std::fs::File::open(&session_path).map_err(|error| match error {
             e if e.kind() == std::io::ErrorKind::NotFound => CoreError::MissingField {
-                field: format!("{} em {}", store::SESSION_FILE, dir.display()),
+                field: format!("{} in {}", store::SESSION_FILE, dir.display()),
             },
             e => CoreError::io(&session_path, e),
         })
@@ -279,7 +279,7 @@ fn read_session_document(dir: &Path, report: &mut ImportReport) -> Result<Sessio
             Warning::new(
                 "session.unknown_top_level_field",
                 format!(
-                    "campo de topo desconhecido preservado no arquivo, ignorado no modelo: {key}"
+                    "unknown top-level field kept in the file, ignored in the model: {key}"
                 ),
             )
             .with_detail(Value::String(key)),
@@ -308,7 +308,7 @@ impl<'de> serde::de::Visitor<'de> for HeadVisitor {
     type Value = Head;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("um objeto JSON de sessão")
+        formatter.write_str("a JSON session object")
     }
 
     fn visit_map<A: serde::de::MapAccess<'de>>(
@@ -333,17 +333,17 @@ impl<'de> serde::de::Visitor<'de> for HeadVisitor {
     }
 }
 
-/// Passos finais comuns à importação eager e à lazy: permissões, anexos não
-/// referenciados, avisos na sessão e completude.
+/// Final steps common to eager and lazy import: permissions, unreferenced attachments,
+/// warnings on the session and completeness.
 fn finalize_session(dir: &Path, session: &mut SessionV1, report: &mut ImportReport) {
     if let Ok(false) = store::is_private(dir) {
         report.warn(Warning::new(
             "store.permissions_loose",
-            "diretório da sessão é legível por grupo/outros; exporte/regrave com permissões 0700",
+            "session directory is readable by group/others; export/re-save with 0700 permissions",
         ));
     }
 
-    // Anexos não referenciados não fazem parte do modelo, mas são mencionados.
+    // Unreferenced attachments are not part of the model, but they are mentioned.
     let attachments_dir = dir.join(store::ATTACHMENTS_DIR);
     if let Ok(entries) = std::fs::read_dir(&attachments_dir) {
         let referenced = collect_attachment_refs(session);
@@ -352,7 +352,7 @@ fn finalize_session(dir: &Path, session: &mut SessionV1, report: &mut ImportRepo
             if !referenced.contains(&name) {
                 report.warn(Warning::info(
                     "attachment.unreferenced",
-                    format!("arquivo em attachments/ não referenciado pelo modelo: {name}"),
+                    format!("file in attachments/ not referenced by the model: {name}"),
                 ));
             }
         }
@@ -374,10 +374,10 @@ fn finalize_session(dir: &Path, session: &mut SessionV1, report: &mut ImportRepo
     session.session.completeness.counts.warnings = session.warnings.len();
 }
 
-/// Abre uma sessão sem carregar os bytes dos anexos (ver [`crate::lazy`]).
-/// Não lê `cdp-events.jsonl`/`netlog.json` (só registra se existem) e não valida
-/// o NetLog; cada anexo referenciado é só inspecionado (existência, link
-/// simbólico, tamanho) e lido depois, por nome.
+/// Opens a session without loading the attachment bytes (see [`crate::lazy`]).
+/// Does not read `cdp-events.jsonl`/`netlog.json` (it only records whether they exist) and does not validate
+/// the NetLog; each referenced attachment is only inspected (existence, link
+/// symlink, size) and read later, by name.
 pub fn open_session_dir_lazy(dir: &Path) -> Result<(crate::lazy::LazySession, ImportReport)> {
     let mut report = ImportReport::new(InputFormat::OwnV1);
     let mut session = read_session_document(dir, &mut report)?;
@@ -386,12 +386,12 @@ pub fn open_session_dir_lazy(dir: &Path) -> Result<(crate::lazy::LazySession, Im
         (
             store::CDP_EVENTS_FILE,
             "session.cdp_missing",
-            "cdp-events.jsonl ausente; eventos CDP não estarão disponíveis",
+            "cdp-events.jsonl missing; CDP events will not be available",
         ),
         (
             store::NETLOG_FILE,
             "session.netlog_missing",
-            "netlog.json ausente; correlação CDP×NetLog não poderá ser auditada",
+            "netlog.json missing; CDP×NetLog correlation cannot be audited",
         ),
     ] {
         if !dir.join(file).exists() {
@@ -408,14 +408,14 @@ pub fn open_session_dir_lazy(dir: &Path) -> Result<(crate::lazy::LazySession, Im
                 report.attachments_missing += 1;
                 let warning = Warning::new(
                     "attachment.missing",
-                    format!("anexo referenciado não existe: {name}"),
+                    format!("referenced attachment does not exist: {name}"),
                 )
                 .with_detail(Value::String(name.clone()));
                 session.add_warning(warning.clone());
                 session
                     .session
                     .completeness
-                    .add_reason(format!("anexo ausente: {name}"));
+                    .add_reason(format!("attachment missing: {name}"));
                 report.warn(warning);
                 continue;
             }
@@ -423,17 +423,17 @@ pub fn open_session_dir_lazy(dir: &Path) -> Result<(crate::lazy::LazySession, Im
         if metadata.file_type().is_symlink() || !metadata.is_file() {
             report.warn(Warning::new(
                 "attachment.unsafe",
-                format!("anexo {name} não é arquivo regular (ou é link simbólico); não será lido"),
+                format!("attachment {name} is not a regular file (or is a symlink); it will not be read"),
             ));
             session
                 .session
                 .completeness
-                .add_reason(format!("anexo recusado: {name}"));
+                .add_reason(format!("attachment refused: {name}"));
         } else if metadata.len() > MAX_ATTACHMENT_BYTES {
             report.warn(Warning::new(
                 "attachment.too_large",
                 format!(
-                    "anexo {name} tem {} bytes (limite {}); não será lido",
+                    "attachment {name} has {} bytes (limit {}); it will not be read",
                     metadata.len(),
                     MAX_ATTACHMENT_BYTES
                 ),
@@ -441,7 +441,7 @@ pub fn open_session_dir_lazy(dir: &Path) -> Result<(crate::lazy::LazySession, Im
             session
                 .session
                 .completeness
-                .add_reason(format!("anexo acima do limite: {name}"));
+                .add_reason(format!("attachment above the limit: {name}"));
         }
     }
     finalize_session(dir, &mut session, &mut report);
@@ -486,7 +486,7 @@ fn validate_jsonl(bytes: &[u8], report: &mut ImportReport) {
             report.warn(Warning::new(
                 "cdp.jsonl_line_invalid",
                 format!(
-                    "linha {} de cdp-events.jsonl não é JSON válido: {error}",
+                    "line {} of cdp-events.jsonl is not valid JSON: {error}",
                     index + 1
                 ),
             ));

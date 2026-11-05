@@ -1,16 +1,16 @@
 //! ScrapeLens core.
 //!
-//! Implementa o formato de sessão v1 (`docs/03-contratos.md`), importadores
-//! HAR/NetLog/formato próprio, correlação CDP×NetLog com ambiguidade explícita,
-//! visões normalizadas derivadas, diff e exportadores.
+//! Implements the session format v1 (`docs/03-contratos.md`), importers for
+//! HAR/NetLog/own format, CDP×NetLog correlation with explicit ambiguity,
+//! derived normalized views, diff and exporters.
 //!
-//! Princípios:
-//! - o original nunca é reescrito: headers são arrays ordenados de pares, com
-//!   duplicatas e pseudoheaders separados;
-//! - cada unidade de informação carrega proveniência e estado de verificação;
-//! - nada falha em silêncio: todo dado descartado ou não entendido vira
-//!   [`model::Warning`];
-//! - nenhuma função deste crate abre conexões de rede.
+//! Principles:
+//! - the original is never rewritten: headers are ordered arrays of pairs, with
+//!   duplicates and pseudoheaders kept separate;
+//! - every unit of information carries provenance and verification state;
+//! - nothing fails silently: every discarded or misunderstood piece of data
+//!   becomes a [`model::Warning`];
+//! - no function in this crate opens network connections.
 
 #![forbid(unsafe_code)]
 

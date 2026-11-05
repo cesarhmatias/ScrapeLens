@@ -1,80 +1,80 @@
-//! Redação estrutural de segredos em texto livre (valores de header, linha de
-//! requisição, notas, mensagens, strings de JSON, valores de parâmetro).
+//! Structural redaction of secrets in free text (header values, request line,
+//! notes, messages, JSON strings, parameter values).
 //!
-//! O texto é tratado em **níveis**. Em cada nível:
+//! The text is processed in **levels**. At each level:
 //!
-//! 1. Separa-se por delimitadores CRUS daquele nível (espaço em branco, aspas,
-//!    parênteses, colchetes, `, | \ & # ;`), formando *grupos*. `? / =` e `:` ficam
-//!    dentro do grupo: delimitam nomes, não valores.
-//! 2. Dentro do grupo, cada `=` cru fecha um nome (`parte`). Se o **nome efetivo**
-//!    da parte é sensível, o valor (até o fim do grupo, ou até o fechamento de
-//!    aspas/parênteses, ou o próximo grupo se há espaço depois do `=`) é redigido.
-//!    O nome efetivo é o último segmento da parte depois de `? / & # ; , | =`,
-//!    com percent-decode de UMA rodada.
-//! 3. O grupo inteiro é decodificado UMA vez (`%XX`; `+` fica `+`) e vira o nível
-//!    seguinte. Um separador que só aparece depois da decodificação pertence ao
-//!    nível de baixo e nunca encerra um valor do nível atual: `%2B`, `%2520`,
-//!    `%2526` e `%2523` não cortam uma credencial base64.
+//! 1. Split on the RAW delimiters of that level (whitespace, quotes,
+//!    parentheses, brackets, `, | \ & # ;`), forming *groups*. `? / =` and `:` stay
+//!    inside the group: they delimit names, not values.
+//! 2. Inside the group, each raw `=` closes a name (`parte`). If the **effective name**
+//!    of the part is sensitive, the value (up to the end of the group, or up to the closing
+//!    quote/parenthesis, or the next group if there is a space after the `=`) is redacted.
+//!    The effective name is the last segment of the part after `? / & # ; , | =`,
+//!    percent-decoded for ONE round.
+//! 3. The whole group is decoded ONCE (`%XX`; `+` stays `+`) and becomes the next level
+//!    down. A separator that only appears after decoding belongs to the
+//!    lower level and never ends a value of the current level: `%2B`, `%2520`,
+//!    `%2526` and `%2523` do not cut a base64 credential.
 //!
-//! Cada nível só produz *edições* (intervalos no texto ORIGINAL, via um mapa de
-//! posições dos bytes decodificados); o texto sai de uma única aplicação das
-//! edições, então nada que não foi redigido é reescrito (nem recodificado).
-//! Custo: uma passada de varredura por nível + uma de aplicação; a decodificação
-//! só acontece em grupos que contêm `%XX` válido, e a profundidade é limitada.
+//! Each level only produces *edits* (ranges in the ORIGINAL text, via a map of
+//! positions of the decoded bytes); the text comes out of a single application of the
+//! edits, so nothing that was not redacted is rewritten (or re-encoded).
+//! Cost: one scan pass per level + one apply pass; decoding
+//! only happens in groups that contain a valid `%XX`, and the depth is limited.
 //!
-//! # Extensão do valor
+//! # Extent of the value
 //!
-//! - Nível 0: o valor vai até espaço ou `& #`; `;` só o fecha no fim ou antes de
-//!   `nome=`. Níveis decodificados (1+): o espaço veio de `%XX` do mesmo valor e não
-//!   o fecha. `, ( ) [ ] { } | " ' \ < >` fazem parte do valor, exceto o fechamento
-//!   de uma abertura ANTERIOR ao nome (`{token=X}`); aberturas dentro do valor com
-//!   fechamento por perto são puladas inteiras.
-//! - Em CAMINHO (`/seg=valor/`, `;param=valor` depois de um token com `/`) o valor de um
-//!   nome SENSÍVEL vai até o próximo `?` (ou `#`, ou o fim) e é redigido inteiro, `/`
-//!   incluída: um credencial pode conter `/` (base64) e não dá para saber onde acaba.
-//!   LIMITAÇÃO ACEITA (A7-B5/A8-M1): `/a;v=2/session=keep/b` sai
-//!   `/a;v=2/session=[REDACTED]` (o `/b` se perde); a segurança prevalece sobre a
-//!   fidelidade. Nomes NÃO sensíveis não mudam nada e o resto do caminho segue
-//!   examinado. O custo é linear: nenhuma heurística olha para trás a cada `/`.
-//!   Exceção (A9-B1): `,` ou `|` seguido de `/` encerra o valor em contexto de caminho (lista
-//!   sem espaço `/a/token=x/b,/c/keep` preserva o item seguinte). Limitação aceita: um
-//!   credencial que contém `,/` ou `|/` vaza o que vem depois.
-//! - Aspas/colchetes após `=`: o interior é o valor; texto ou outra abertura COLADA
-//!   depois do fechamento (`"a"X`, `[a][X]`, `'a'"X`) também é valor.
-//! - Entidades HTML de `=` (`&#61;`, `&equals;`...) valem em qualquer número de camadas de
-//!   escape (`&amp;`, `&#38;`); acima de 256 camadas falha fechado (trata como `=`).
-//! - Valor que começa pelo placeholder já foi redigido (idempotência).
+//! - Level 0: the value runs up to a space or `& #`; `;` only closes it at the end or before
+//!   `name=`. Decoded levels (1+): the space came from `%XX` of the same value and does not
+//!   close it. `, ( ) [ ] { } | " ' \ < >` are part of the value, except the closing
+//!   of an opening BEFORE the name (`{token=X}`); openings inside the value with a
+//!   nearby closing are skipped whole.
+//! - In PATHS (`/seg=value/`, `;param=value` after a token with `/`) the value of a
+//!   SENSITIVE name runs up to the next `?` (or `#`, or the end) and is redacted whole, `/`
+//!   included: a credential may contain `/` (base64) and there is no way to know where it ends.
+//!   ACCEPTED LIMITATION (A7-B5/A8-M1): `/a;v=2/session=keep/b` comes out as
+//!   `/a;v=2/session=[REDACTED]` (the `/b` is lost); security takes precedence over
+//!   fidelity. NON-sensitive names change nothing and the rest of the path keeps being
+//!   examined. The cost is linear: no heuristic looks back at each `/`.
+//!   Exception (A9-B1): `,` or `|` followed by `/` ends the value in path context (list
+//!   without spaces `/a/token=x/b,/c/keep` preserves the next item). Accepted limitation: a
+//!   credential that contains `,/` or `|/` leaks what comes after it.
+//! - Quotes/brackets after `=`: the interior is the value; text or another opening GLUED
+//!   after the closing (`"a"X`, `[a][X]`, `'a'"X`) is also value.
+//! - HTML entities for `=` (`&#61;`, `&equals;`...) count at any number of escape layers
+//!   (`&amp;`, `&#38;`); above 256 layers it fails closed (treated as `=`).
+//! - A value that starts with the placeholder has already been redacted (idempotence).
 //!
-//! # Falhar fechado
+//! # Failing closed
 //!
-//! Sempre que não dá para decidir, redige-se o VALOR inteiro que sobra em vez de
-//! deixar a cauda crua: (1) no teto de 8 níveis o texto é decodificado até estabilizar
-//! e varrido em modo fechado (o valor vai até o fim do nível; se ainda sobra `%XX`, o
-//! grupo inteiro é redigido); (2) byte inválido/overlong logo depois de um nome
-//! sensível redige o resto do grupo; (3) GRUPO ACIMA DE 1 MiB com `%XX`: não se montam
-//! mapas de posição; decodifica-se "a seco" (só os bytes) para DECIDIR, e o grupo é
-//! redigido por inteiro SÓ se algum nível tem um nome sensível ou se não dá para decidir
-//! (sobra `%XX` no teto); sem nome sensível o grupo passa intacto.
+//! Whenever it cannot be decided, the WHOLE remaining VALUE is redacted instead of
+//! leaving the tail raw: (1) at the 8-level ceiling the text is decoded until stable
+//! and scanned in closed mode (the value runs to the end of the level; if `%XX` still remains, the
+//! whole group is redacted); (2) an invalid/overlong byte right after a sensitive name
+//! redacts the rest of the group; (3) GROUP ABOVE 1 MiB with `%XX`: position maps are not built;
+//! it is decoded "dry" (bytes only) to DECIDE, and the group is
+//! redacted in full ONLY if some level has a sensitive name or if it cannot be decided
+//! (`%XX` remains at the ceiling); without a sensitive name the group passes through intact.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 
 use super::sanitize::{is_business_key, is_sensitive_key, url_placeholder, SanitizeOptions};
 
-/// Níveis de decodificação examinados (0 = o texto como veio).
+/// Decoding levels examined (0 = the text as received).
 const MAX_LEVELS: usize = 8;
-/// Nomes mais longos que isto nunca são credenciais conhecidas.
+/// Names longer than this are never known credentials.
 const MAX_NAME_LEN: usize = 128;
-/// Entradas do cache de nomes; ao estourar, o cache é esvaziado.
+/// Entries of the name cache; when it overflows, the cache is emptied.
 const NAME_CACHE_CAP: usize = 4096;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Repl {
-    /// Valor de parâmetro: placeholder percent-encoded (`%5BREDACTED%5D`).
+    /// Parameter value: percent-encoded placeholder (`%5BREDACTED%5D`).
     Param,
-    /// Credencial depois de um esquema (`Bearer`): ` [REDACTED]` no nível 0.
+    /// Credential after a scheme (`Bearer`): ` [REDACTED]` at level 0.
     Auth,
-    /// O mesmo, dentro de um nível decodificado: `%20%5BREDACTED%5D`.
+    /// The same, inside a decoded level: `%20%5BREDACTED%5D`.
     AuthEnc,
 }
 
@@ -84,13 +84,13 @@ struct Edit {
     repl: Repl,
 }
 
-/// Um nível: bytes do texto (decodificados, a partir do nível 1) e, para cada
-/// byte, o intervalo correspondente no texto original.
+/// One level: the text bytes (decoded, from level 1 on) and, for each
+/// byte, the corresponding range in the original text.
 struct Level<'a> {
     bytes: Cow<'a, [u8]>,
     map: Option<Vec<(u32, u32)>>,
-    /// Nível "a seco" (grupo acima do teto de trabalho): sem mapa de posições, só para
-    /// DECIDIR se há nome sensível; as edições que ele produz são descartadas.
+    /// "Dry" level (group above the work ceiling): no position map, only to
+    /// DECIDE whether there is a sensitive name; the edits it produces are discarded.
     dry: bool,
 }
 
@@ -102,7 +102,7 @@ impl Level<'_> {
         }
     }
 
-    /// `[start, end)` deste nível → intervalo no texto original.
+    /// `[start, end)` of this level → range in the original text.
     fn range(&self, start: usize, end: usize) -> (usize, usize) {
         (self.orig(start).0, self.orig(end - 1).1)
     }
@@ -113,13 +113,13 @@ pub(super) struct Scrubber<'a> {
     edits: Vec<Edit>,
     names: HashMap<Vec<u8>, bool>,
     param: std::cell::OnceCell<String>,
-    /// Modo "falhar fechado": ao bater no teto de níveis, o valor de um nome
-    /// sensível vai até o fim do nível inteiro (não sabemos mais quais
-    /// separadores pertencem ao valor).
+    /// "Fail closed" mode: when the level ceiling is hit, the value of a
+    /// sensitive name runs to the end of the whole level (we no longer know which
+    /// separators belong to the value).
     closed: bool,
 }
 
-/// Aplica as regras ao texto. `None` quando nada mudou.
+/// Applies the rules to the text. `None` when nothing changed.
 pub(super) fn scrub(text: &str, options: &SanitizeOptions) -> Option<String> {
     Scrubber::new(options).run(text)
 }
@@ -135,8 +135,8 @@ impl<'a> Scrubber<'a> {
         }
     }
 
-    /// Varre `text`; o cache de nomes sensíveis é reaproveitado entre chamadas
-    /// (consulta com milhões de pares). `None` quando nada mudou.
+    /// Scans `text`; the sensitive-name cache is reused between calls
+    /// (lookup with millions of pairs). `None` when nothing changed.
     pub(super) fn run(&mut self, text: &str) -> Option<String> {
         if !text.contains(['=', '%', '@', '&', '\u{FF1D}']) && !has_scheme_word(text.as_bytes()) {
             return None;
@@ -166,7 +166,7 @@ fn is_space(byte: u8) -> bool {
     matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
 }
 
-/// Delimitadores crus que encerram um grupo.
+/// Raw delimiters that end a group.
 #[inline]
 fn is_hard(byte: u8) -> bool {
     is_space(byte)
@@ -190,15 +190,15 @@ fn is_hard(byte: u8) -> bool {
         )
 }
 
-/// Rodadas extras de decodificação ao chegar no teto de níveis.
+/// Extra decoding rounds when the level ceiling is reached.
 const FIXPOINT_ROUNDS: usize = 24;
-/// Teto de trabalho por grupo: acima disto o grupo (se tiver `%XX`) não é
-/// decodificado e é redigido inteiro (falha fechada), o que também limita a
-/// memória dos mapas de posição (8 bytes por byte decodificado).
+/// Work ceiling per group: above this the group (if it has `%XX`) is not
+/// decoded and is redacted whole (fail closed), which also bounds the memory of
+/// the position maps (8 bytes per decoded byte).
 const MAX_DECODE_BYTES: usize = 1 << 20;
 
-/// Decodifica `[start, end)` de `level` (`%XX`; `+` fica `+`), com o mapa de
-/// volta às posições do texto original.
+/// Decodes `[start, end)` of `level` (`%XX`; `+` stays `+`), with the map back
+/// to the positions of the original text.
 fn decode_level(level: &Level<'_>, start: usize, end: usize, dry: bool) -> Level<'static> {
     let src = &level.bytes[start..end];
     let mut bytes = Vec::with_capacity(src.len());
@@ -240,7 +240,7 @@ fn hex(byte: u8) -> Option<u8> {
     }
 }
 
-/// Existe `%XX` válido?
+/// Is there a valid `%XX`?
 fn has_escape(bytes: &[u8]) -> bool {
     bytes
         .windows(3)
@@ -252,8 +252,8 @@ impl Scrubber<'_> {
         self.param.get_or_init(|| url_placeholder(self.options))
     }
 
-    /// O trecho já é o placeholder (ou o miolo dele entre colchetes)? Mantém a
-    /// redação idempotente: sanitizar duas vezes não empilha placeholders.
+    /// Is the slice already the placeholder (or its core between brackets)? Keeps
+    /// the redaction idempotent: sanitizing twice does not stack placeholders.
     fn is_placeholder(&self, level: &Level<'_>, start: usize, end: usize) -> bool {
         let slice = &level.bytes[start..end];
         let placeholder = self.options.placeholder.as_bytes();
@@ -279,8 +279,8 @@ impl Scrubber<'_> {
         self.find_userinfo(level);
         self.find_auth(level, depth);
         let bytes: &[u8] = &level.bytes;
-        // Aberturas (aspas, parênteses, colchetes) ainda não fechadas: o valor de um
-        // nome sensível termina no fechamento de qualquer uma delas.
+        // Openings (quotes, parentheses, brackets) not yet closed: the value of a
+        // sensitive name ends at the closing of any of them.
         let mut stack: Vec<u8> = Vec::new();
         let mut pos = 0;
         while pos < bytes.len() {
@@ -294,15 +294,15 @@ impl Scrubber<'_> {
                 .map_or(bytes.len(), |n| pos + n);
             let next = self.scan_group(level, pos, end, depth, &stack).max(end);
             if next > end {
-                // o trecho pulado era valor redigido; as aberturas dele não contam
+                // the skipped stretch was a redacted value; its openings do not count
                 stack.clear();
             }
             pos = next;
         }
     }
 
-    /// Um grupo `[start, end)`; devolve onde a varredura continua (além de `end`
-    /// quando o valor redigido tomou aspas/colchetes ou o grupo seguinte).
+    /// A group `[start, end)`; returns where the scan continues (beyond `end`
+    /// when the redacted value took quotes/brackets or the next group).
     fn scan_group(
         &mut self,
         level: &Level<'_>,
@@ -312,8 +312,8 @@ impl Scrubber<'_> {
         stack: &[u8],
     ) -> usize {
         let bytes: &[u8] = &level.bytes;
-        // `seg_start`: início do trecho ainda não decodificado/examinado;
-        // `part_start`: início do nome corrente.
+        // `seg_start`: start of the stretch not yet decoded/examined;
+        // `part_start`: start of the current name.
         let mut seg_start = start;
         let mut part_start = start;
         let mut cursor = start;
@@ -322,7 +322,7 @@ impl Scrubber<'_> {
                 break;
             };
             if self.is_sensitive_part(&bytes[part_start..eq]) {
-                // o que veio ANTES do nome ainda pode carregar segredo codificado
+                // what came BEFORE the name may still carry an encoded secret
                 self.decode_child(level, seg_start, eq, depth);
                 let query_ends = path_context(bytes, start, part_start, eq);
                 let next = self.redact_value(level, eq + eq_len, end, depth, stack, query_ends);
@@ -337,9 +337,9 @@ impl Scrubber<'_> {
             part_start = eq + eq_len;
             cursor = part_start;
         }
-        // Em níveis decodificados, um byte que não é UTF-8 válido logo depois de um nome
-        // sensível (`token%C0%BDvalor`: `=` em codificação "overlong") é um separador que
-        // não sabemos classificar: falha fechada, o resto do grupo é valor.
+        // In decoded levels, a byte that is not valid UTF-8 right after a sensitive name
+        // (`token%C0%BDvalor`: `=` in "overlong" encoding) is a separator we cannot
+        // classify: fail closed, the rest of the group is value.
         if level.map.is_some() && part_start < end {
             if let Err(error) = std::str::from_utf8(&bytes[part_start..end]) {
                 let bad = part_start + error.valid_up_to();
@@ -351,7 +351,7 @@ impl Scrubber<'_> {
             }
         }
         // `token =valor`, `token = valor`, `token&#61;valor`, `token &#61; valor`:
-        // espaço e/ou entidade HTML entre o nome e o valor.
+        // space and/or HTML entity between the name and the value.
         let mut look = end;
         while look < bytes.len() && matches!(bytes[look], b' ' | b'\t') {
             look += 1;
@@ -367,8 +367,8 @@ impl Scrubber<'_> {
         end
     }
 
-    /// Redige o valor que começa em `vstart` (depois do `=`) e devolve onde a
-    /// varredura continua. `group_end` é o fim do grupo do nome.
+    /// Redacts the value starting at `vstart` (after the `=`) and returns where the
+    /// scan continues. `group_end` is the end of the name's group.
     fn redact_value(
         &mut self,
         level: &Level<'_>,
@@ -380,16 +380,16 @@ impl Scrubber<'_> {
     ) -> usize {
         let bytes: &[u8] = &level.bytes;
         if self.closed {
-            // Falha fechada: tudo que resta no nível é valor.
+            // Fail closed: everything left in the level is value.
             self.push(level, vstart, bytes.len(), Repl::Param);
             return bytes.len();
         }
         let (value_start, value_end, next) =
             self.value_extent(bytes, vstart, group_end, depth, stack, query_ends);
         self.push(level, value_start, value_end, Repl::Param);
-        // Depois de um valor entre aspas/colchetes, o que vier COLADO ainda é valor:
-        // texto (`token="abc"TAIL`, `[abc]TAIL`) ou outra abertura (`'a'"X`, `[a][X]`,
-        // `"a"(X)`). Cada volta consome pelo menos um byte.
+        // After a value in quotes/brackets, whatever is GLUED on still counts as value:
+        // text (`token="abc"TAIL`, `[abc]TAIL`) or another opening (`'a'"X`, `[a][X]`,
+        // `"a"(X)`). Each round consumes at least one byte.
         let mut next = next;
         if next > value_end {
             while next < bytes.len() {
@@ -399,7 +399,7 @@ impl Scrubber<'_> {
                         .iter()
                         .position(|c| !is_tail_byte(*c))
                         .map_or(bytes.len(), |n| next + n);
-                    // `TAIL=...` não é cauda: é o nome do próximo parâmetro.
+                    // `TAIL=...` is not a tail: it is the name of the next parameter.
                     if starts_with_equals(bytes, tail_end) {
                         break;
                     }
@@ -430,8 +430,8 @@ impl Scrubber<'_> {
         next
     }
 
-    /// Onde termina o valor de um nome sensível cujo `=` está antes de `vstart`.
-    /// Devolve (início, fim, onde a varredura continua).
+    /// Where the value of a sensitive name whose `=` is before `vstart` ends.
+    /// Returns (start, end, where the scan continues).
     fn value_extent(
         &self,
         bytes: &[u8],
@@ -444,7 +444,7 @@ impl Scrubber<'_> {
         if vstart < group_end {
             return self.attached_extent(bytes, vstart, depth, stack, query_ends);
         }
-        // `=` é o último byte do grupo; o que vem depois é um delimitador ou fim
+        // `=` is the last byte of the group; what comes after is a delimiter or the end
         let mut p = vstart;
         while p < bytes.len() && matches!(bytes[p], b' ' | b'\t') {
             p += 1;
@@ -452,7 +452,7 @@ impl Scrubber<'_> {
         if p >= bytes.len() {
             return (p, p, p);
         }
-        // `token=&#61;X`: outro "igual" (entidade) colado ao primeiro; o valor vem depois.
+        // `token=&#61;X`: another "equals" (entity) glued to the first; the value comes after.
         let mut after_equals = p;
         while let Some(n) = equals_len_at(bytes, after_equals) {
             after_equals += n;
@@ -460,12 +460,12 @@ impl Scrubber<'_> {
         if after_equals > p {
             return self.value_extent(bytes, after_equals, after_equals, depth, stack, false);
         }
-        // `token=\X`: a barra invertida que não escapa aspas é só mais um byte do valor.
+        // `token=\X`: a backslash that does not escape quotes is just one more byte of the value.
         if bytes[p] == b'\\' && !matches!(bytes.get(p + 1), Some(b'"' | b'\'')) {
             return self.attached_extent(bytes, p, depth, stack, false);
         }
         if bytes[p] == b'\\' && matches!(bytes.get(p + 1), Some(b'"' | b'\'')) {
-            // `\"valor\"` (aspas escapadas, comuns em texto dentro de JSON)
+            // `\"value\"` (escaped quotes, common in text inside JSON)
             let quote = bytes[p + 1];
             let mut q = p + 2;
             while q + 1 < bytes.len()
@@ -498,7 +498,7 @@ impl Scrubber<'_> {
                 let mut close = q.min(bytes.len());
                 let closed = close < bytes.len() && bytes[close] == quote;
                 if !closed && depth == 0 {
-                    // abertura sem fechamento: o valor vai até o próximo espaço
+                    // unclosed opening: the value runs up to the next space
                     close = bytes[p + 1..]
                         .iter()
                         .position(|b| is_space(*b))
@@ -541,14 +541,14 @@ impl Scrubber<'_> {
         }
     }
 
-    /// Valor sem aspas. No nível 0 vai até espaço ou `& #`; em níveis
-    /// decodificados (1+) o espaço veio de `%XX` do mesmo valor e não o encerra:
-    /// só `& #`. (`;` não encerra: `token=AB;resto` é valor; `token=X; Path=/`
-    /// continua preservando ` Path=/`.) Em ambos, `, ( ) < > [ ] { } | " ' \\` fazem parte do
-    /// valor, exceto o fechamento de uma abertura ANTERIOR ao nome (`{token=X}`,
-    /// `"token=X"`, `(token=X)`). Um valor que COMEÇA pelo placeholder já foi
-    /// redigido: para depois dele se o que vem é `/ ?` ou delimitador
-    /// (idempotência: `jsessionid=%5BREDACTED%5D/b/c?x=1`).
+    /// Unquoted value. At level 0 it runs up to a space or `& #`; at decoded levels
+    /// (1+) the space came from `%XX` of the same value and does not end it:
+    /// only `& #`. (`;` does not end it: `token=AB;resto` is value; `token=X; Path=/`
+    /// keeps preserving ` Path=/`.) In both, `, ( ) < > [ ] { } | " ' \\` are part of the
+    /// value, except the closing of an opening BEFORE the name (`{token=X}`,
+    /// `"token=X"`, `(token=X)`). A value that STARTS with the placeholder has already been
+    /// redacted: it stops after it if what follows is `/ ?` or a delimiter
+    /// (idempotence: `jsessionid=%5BREDACTED%5D/b/c?x=1`).
     fn attached_extent(
         &self,
         bytes: &[u8],
@@ -564,38 +564,38 @@ impl Scrubber<'_> {
                 if after >= bytes.len() || !is_tail_byte(bytes[after]) {
                     return (vstart, vstart, after);
                 }
-                break; // placeholder com cauda colada: a cauda também é valor
+                break; // placeholder with a glued tail: the tail is also value
             }
         }
-        // Aberturas DENTRO do valor (`AB(c)X`, `AB[c d]X`, `AB'x y'Z`) com fechamento por
-        // perto (até 64 bytes, na mesma linha) são puladas inteiras: o fechamento delas
-        // é parte do valor e não confunde com o de uma abertura anterior ao nome. Sem
-        // fechamento por perto, a abertura é só mais um byte do valor.
+        // Openings INSIDE the value (`AB(c)X`, `AB[c d]X`, `AB'x y'Z`) with a nearby closing
+        // (up to 64 bytes, on the same line) are skipped whole: their closing is part of
+        // the value and is not confused with that of an opening before the name. Without a
+        // nearby closing, the opening is just one more byte of the value.
         let mut q = vstart;
         while q < bytes.len() {
             let b = bytes[q];
             if matches!(b, b'&' | b'#') {
                 break;
             }
-            // Em caminho (`/a;jsessionid=X/b`, `/s/session=X/b`) o valor acaba em `/` ou `?`:
-            // o resto é o caminho/consulta, que segue sendo examinado.
+            // In a path (`/a;jsessionid=X/b`, `/s/session=X/b`) the value ends at `/` or `?`:
+            // the rest is the path/query, which keeps being examined.
             if query_ends && b == b'?' {
                 break;
             }
-            // Lista de caminhos sem espaço (`/a/token=x/b,/c/keep`): `,` ou `|` seguido de `/`
-            // abre o próximo item e encerra o valor em contexto de caminho (A9-B1).
+            // Path list without spaces (`/a/token=x/b,/c/keep`): `,` or `|` followed by `/`
+            // opens the next item and ends the value in path context (A9-B1).
             if query_ends && matches!(b, b',' | b'|') && bytes.get(q + 1) == Some(&b'/') {
                 break;
             }
             if depth == 0 && is_space(b) {
                 break;
             }
-            // `;` fecha o valor se é o fim (`k=X;`, `k=X; Path=/`) ou se o que vem é outro
-            // `nome=` (`;v=2`); `token=AB;RAWc3x` (palavra solta depois de `;`) é valor.
+            // `;` closes the value if it is the end (`k=X;`, `k=X; Path=/`) or if what follows is
+            // another `name=` (`;v=2`); `token=AB;RAWc3x` (a loose word after `;`) is value.
             if b == b';' && semicolon_ends_value(bytes, q + 1) {
                 break;
             }
-            // aspas escapadas (`\"`) que fecham uma abertura escapada anterior ao nome
+            // escaped quotes (`\"`) that close an escaped opening before the name
             if b == b'\\' && matches!(bytes.get(q + 1), Some(b'"' | b'\'')) {
                 let code = 0x80 | bytes[q + 1];
                 if stack.contains(&code) {
@@ -613,7 +613,7 @@ impl Scrubber<'_> {
                 }
                 b'"' | b'\'' => {
                     if stack.contains(&b) {
-                        break; // fecha a abertura anterior ao nome
+                        break; // closes the opening before the name
                     }
                     if let Some(close) = closer_nearby(bytes, q) {
                         q = close + 1;
@@ -638,7 +638,7 @@ impl Scrubber<'_> {
         (vstart, q, q)
     }
 
-    /// Decodifica `[start, end)` UMA vez e varre o resultado como o nível seguinte.
+    /// Decodes `[start, end)` ONCE and scans the result as the next level.
     fn decode_child(&mut self, level: &Level<'_>, start: usize, end: usize, depth: usize) {
         if depth >= MAX_LEVELS || end <= start {
             return;
@@ -648,10 +648,10 @@ impl Scrubber<'_> {
             return;
         }
         if src.len() > MAX_DECODE_BYTES && !level.dry {
-            // Grupo acima do teto de trabalho: não montamos mapas de posição (8 bytes por
-            // byte). Decodificamos "a seco" só para DECIDIR: se algum nível tem um nome
-            // sensível (ou se não dá para decidir: sobra `%XX` no teto), o grupo inteiro é
-            // redigido (falha fechada); senão fica como está.
+            // Group above the work ceiling: we do not build position maps (8 bytes per
+            // byte). We decode "dry" only to DECIDE: if some level has a sensitive name
+            // (or if it cannot be decided: `%XX` remains at the ceiling), the whole group is
+            // redacted (fail closed); otherwise it stays as it is.
             let before = self.edits.len();
             self.decode_child_inner(level, start, end, depth, true);
             let produced = self.edits.len() > before;
@@ -674,8 +674,8 @@ impl Scrubber<'_> {
     ) {
         let mut child = decode_level(level, start, end, dry);
         if depth + 1 >= MAX_LEVELS {
-            // Teto de níveis: decodifica até estabilizar (com limite) e varre uma
-            // última vez em modo fechado (o valor vai até o fim do nível).
+            // Level ceiling: decode until stable (with a limit) and scan one
+            // last time in closed mode (the value runs to the end of the level).
             for _ in 0..FIXPOINT_ROUNDS {
                 if !has_escape(&child.bytes) {
                     break;
@@ -695,7 +695,7 @@ impl Scrubber<'_> {
         self.scan_level(&child, depth + 1);
     }
 
-    /// O nome efetivo de `part` é sensível?
+    /// Is the effective name of `part` sensitive?
     fn is_sensitive_part(&mut self, part: &[u8]) -> bool {
         let tail = last_segment(part);
         if tail.is_empty() {
@@ -713,8 +713,8 @@ impl Scrubber<'_> {
                 String::from_utf8_lossy(tail)
             };
             let name = name.trim();
-            // Nomes longos também são examinados (falha fechada): `aaaa…token=X` é
-            // `token`; só o cache fica restrito a nomes curtos.
+            // Long names are also examined (fail closed): `aaaa…token=X` is
+            // `token`; only the cache is restricted to short names.
             !name.is_empty()
                 && (is_sensitive_key(name) || is_business_key(name, &self.options.business_fields))
         };
@@ -727,9 +727,9 @@ impl Scrubber<'_> {
         result
     }
 
-    /// `esquema://usuario:senha@host`, `esquema:/\\usuario@host` e `//usuario:senha@host`
-    /// (autoridade depois de `:` + barras, ou de `//` no começo/depois de um
-    /// delimitador): o userinfo é redigido.
+    /// `scheme://user:password@host`, `scheme:/\\user@host` and `//user:password@host`
+    /// (authority after `:` + slashes, or after `//` at the start or after a
+    /// delimiter): the userinfo is redacted.
     fn find_userinfo(&mut self, level: &Level<'_>) {
         let bytes: &[u8] = &level.bytes;
         let is_slash = |b: u8| b == b'/' || b == b'\\';
@@ -786,8 +786,8 @@ impl Scrubber<'_> {
         }
     }
 
-    /// `Bearer <cred>` / `Basic <cred>` em qualquer caixa e com qualquer espaço
-    /// em branco; só quando o que segue parece credencial.
+    /// `Bearer <cred>` / `Basic <cred>` in any case and with any whitespace;
+    /// only when what follows looks like a credential.
     fn find_auth(&mut self, level: &Level<'_>, depth: usize) {
         let bytes: &[u8] = &level.bytes;
         let mut pos = 0;
@@ -832,7 +832,7 @@ impl Scrubber<'_> {
                 && !cred.starts_with(b"//")
                 && !cred.starts_with(b":")
             {
-                // substitui da primeira posição depois do esquema até o fim da credencial
+                // replaces from the first position after the scheme up to the end of the credential
                 let (start, end) = level.range(after, cred_end);
                 self.edits.push(Edit {
                     start,
@@ -856,13 +856,13 @@ impl Scrubber<'_> {
         let mut copied = 0;
         for edit in &self.edits {
             if edit.start < copied {
-                // sobreposta a uma edição anterior: só estende o intervalo coberto
+                // overlaps a previous edit: only extends the covered range
                 if edit.end > copied && text.is_char_boundary(edit.end) {
                     copied = edit.end;
                 }
                 continue;
             }
-            // não corta no meio de um caractere UTF-8
+            // do not cut in the middle of a UTF-8 character
             if !text.is_char_boundary(edit.start) || !text.is_char_boundary(edit.end) {
                 continue;
             }
@@ -885,8 +885,8 @@ impl Scrubber<'_> {
     }
 }
 
-/// Atualiza a pilha de aberturas com o delimitador em `bytes[pos]`; devolve
-/// quantos bytes consumiu (2 para aspas escapadas `\\\"`).
+/// Updates the stack of openings with the delimiter at `bytes[pos]`; returns
+/// how many bytes it consumed (2 for escaped quotes `\\\"`).
 fn track_enclosing(bytes: &[u8], pos: usize, stack: &mut Vec<u8>) -> usize {
     let toggle = |stack: &mut Vec<u8>, code: u8| {
         if stack.last() == Some(&code) {
@@ -918,8 +918,8 @@ fn track_enclosing(bytes: &[u8], pos: usize, stack: &mut Vec<u8>) -> usize {
     1
 }
 
-/// `;` em `bytes[at - 1]` encerra o valor? Sim no fim, antes de delimitador ou
-/// antes de `nome=`; não antes de uma palavra solta.
+/// Does `;` at `bytes[at - 1]` end the value? Yes at the end, before a delimiter or
+/// before `name=`; not before a loose word.
 fn semicolon_ends_value(bytes: &[u8], at: usize) -> bool {
     let Some(&first) = bytes.get(at) else {
         return true;
@@ -934,13 +934,13 @@ fn semicolon_ends_value(bytes: &[u8], at: usize) -> bool {
     bytes.get(at + word) == Some(&b'=')
 }
 
-/// O nome em `bytes[part_start..eq]` está num CAMINHO (segmento `/nome=valor/` ou
-/// parâmetro de matriz `;nome=valor` depois de um token com `/`)? Então o valor de um
-/// nome SENSÍVEL vai até o próximo `?` (`#` e `&` já encerram) ou o fim, `/` incluída:
-/// um credencial pode conter `/` e não dá para saber onde ele acaba (A8-M1). Isso
-/// custa o resto do caminho (`/a;v=2/session=keep/b` → `/a;v=2/session=[REDACTED]`),
-/// limitação aceita (A7-B5): a segurança prevalece sobre a fidelidade. Num valor de
-/// consulta (`?token=ab/cd`) ou solto o valor vai até o espaço.
+/// Is the name in `bytes[part_start..eq]` in a PATH (segment `/name=value/` or
+/// matrix parameter `;name=value` after a token with `/`)? Then the value of a
+/// SENSITIVE name runs up to the next `?` (`#` and `&` already end it) or the end, `/` included:
+/// a credential may contain `/` and there is no way to know where it ends (A8-M1). This
+/// costs the rest of the path (`/a;v=2/session=keep/b` → `/a;v=2/session=[REDACTED]`),
+/// an accepted limitation (A7-B5): security takes precedence over fidelity. In a query
+/// value (`?token=ab/cd`) or a bare value the value runs up to the space.
 fn path_context(bytes: &[u8], group_start: usize, part_start: usize, eq: usize) -> bool {
     let part = &bytes[part_start..eq];
     if let Some(last_slash) = part.iter().rposition(|b| *b == b'/') {
@@ -950,8 +950,8 @@ fn path_context(bytes: &[u8], group_start: usize, part_start: usize, eq: usize) 
     if part_start != group_start {
         return false;
     }
-    // matriz: o grupo começa logo depois de `;` e um dos grupos `;`-encadeados
-    // anteriores (até um delimitador que não seja `;`) contém `/`
+    // matrix: the group starts right after `;` and one of the `;`-chained groups
+    // before it (up to a delimiter other than `;`) contains `/`
     let mut pos = group_start;
     while pos > 0 && bytes[pos - 1] == b';' {
         let mut j = pos - 1;
@@ -966,9 +966,9 @@ fn path_context(bytes: &[u8], group_start: usize, part_start: usize, eq: usize) 
     false
 }
 
-/// Fechamento da abertura em `bytes[at]` (`( [ { <`, aspas) dentro de 64 bytes e
-/// sem passar de uma quebra de linha; `None` se não houver. Aninhamento do mesmo
-/// tipo é respeitado; aspas honram `\\` como escape.
+/// Closing of the opening at `bytes[at]` (`( [ { <`, quotes) within 64 bytes and
+/// without crossing a line break; `None` if there is none. Nesting of the same
+/// kind is respected; quotes honor `\\` como escape.
 fn closer_nearby(bytes: &[u8], at: usize) -> Option<usize> {
     const WINDOW: usize = 64;
     let open = bytes[at];
@@ -1010,19 +1010,19 @@ fn closer_nearby(bytes: &[u8], at: usize) -> Option<usize> {
     None
 }
 
-/// Byte que continua um valor depois de um fechamento/placeholder: tudo que não
-/// é delimitador nem `/` ou `?` (que começam o resto de um caminho/URL).
+/// Byte that continues a value after a closing/placeholder: anything that is not
+/// a delimiter nor `/` or `?` (which start the rest of a path/URL).
 #[inline]
 fn is_tail_byte(byte: u8) -> bool {
     !is_hard(byte) && !matches!(byte, b'/' | b'?' | b'=')
 }
 
-/// `bytes[at..]` começa com `=` (ou `＝`)?
+/// Does `bytes[at..]` start with `=` (or `＝`)?
 fn starts_with_equals(bytes: &[u8], at: usize) -> bool {
     matches!(find_equals(bytes, at, (at + 3).min(bytes.len())), Some((pos, _)) if pos == at)
 }
 
-/// Próximo `=` (ou `＝` fullwidth U+FF1D) em `bytes[from..to]`: (posição, tamanho).
+/// Next `=` (or `＝` fullwidth U+FF1D) in `bytes[from..to]`: (position, length).
 fn find_equals(bytes: &[u8], from: usize, to: usize) -> Option<(usize, usize)> {
     let mut i = from;
     while i < to {
@@ -1037,7 +1037,7 @@ fn find_equals(bytes: &[u8], from: usize, to: usize) -> Option<(usize, usize)> {
     None
 }
 
-/// Camadas de escape HTML de `&` examinadas antes de falhar fechado.
+/// HTML escape layers of `&` examined before failing closed.
 const MAX_AMP_LAYERS: usize = 256;
 
 #[derive(PartialEq, Eq)]
@@ -1046,9 +1046,9 @@ enum Entity {
     Ampersand,
 }
 
-/// Uma entidade HTML no começo de `rest`: `&equals;`, `&#61;`/`&#x3D;` (qualquer zeros à
-/// esquerda, `;` opcional) → igual; `&amp;`, `&#38;`/`&#x26;` → `&` (outra camada de escape).
-/// Depois de uma camada, o `&` inicial é opcional (`&amp;amp;#61;`, `&#38;#61;`).
+/// An HTML entity at the start of `rest`: `&equals;`, `&#61;`/`&#x3D;` (any leading zeros,
+/// `;` optional) → equals; `&amp;`, `&#38;`/`&#x26;` → `&` (another escape layer).
+/// After a layer, the initial `&` is optional (`&amp;amp;#61;`, `&#38;#61;`).
 fn parse_entity(rest: &[u8], amp_optional: bool) -> Option<(Entity, usize)> {
     let lead = usize::from(rest.first() == Some(&b'&'));
     if lead == 0 && !amp_optional {
@@ -1090,10 +1090,10 @@ fn parse_entity(rest: &[u8], amp_optional: bool) -> Option<(Entity, usize)> {
     None
 }
 
-/// Tamanho de um "igual" em `bytes[at..]`: `=`, `＝`, `&equals;`, `&#61;`, `&#0061;`,
-/// `&#x3D;`, `&#X003d;` (`;` opcional) e qualquer um deles escapado de novo, em quantas
-/// camadas houver (`&amp;#61;`, `&amp;amp;equals;`, `&#38;#61;`, `&amp;&#38;&#x3D;`...).
-/// Acima de [`MAX_AMP_LAYERS`] camadas falha fechado: trata como "igual".
+/// Length of an "equals" in `bytes[at..]`: `=`, `＝`, `&equals;`, `&#61;`, `&#0061;`,
+/// `&#x3D;`, `&#X003d;` (`;` optional) and any of them escaped again, in as many
+/// layers as there are (`&amp;#61;`, `&amp;amp;equals;`, `&#38;#61;`, `&amp;&#38;&#x3D;`...).
+/// Above [`MAX_AMP_LAYERS`] layers it fails closed: treated as "equals".
 fn equals_len_at(bytes: &[u8], at: usize) -> Option<usize> {
     let rest = bytes.get(at..)?;
     match rest.first()? {
@@ -1113,7 +1113,7 @@ fn equals_len_at(bytes: &[u8], at: usize) -> Option<usize> {
     }
 }
 
-/// Último segmento depois de um separador de nome (`? / & # ; , | =`).
+/// Last segment after a name separator (`? / & # ; , | =`).
 fn last_segment(part: &[u8]) -> &[u8] {
     let start = part
         .iter()
@@ -1122,7 +1122,7 @@ fn last_segment(part: &[u8]) -> &[u8] {
     &part[start..]
 }
 
-/// Percent-decode de uma rodada (`+` fica `+`).
+/// Percent-decode of one round (`+` stays `+`).
 fn decode_once(src: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(src.len());
     let mut i = 0;
@@ -1140,7 +1140,7 @@ fn decode_once(src: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Comprimento do espaço em branco (ASCII ou Unicode) em `bytes[at..]`, ou 0.
+/// Length of the whitespace (ASCII or Unicode) at `bytes[at..]`, or 0.
 fn space_len_at(bytes: &[u8], at: usize) -> usize {
     match bytes.get(at) {
         Some(b) if is_space(*b) => 1,
@@ -1168,8 +1168,8 @@ fn is_cred_char(byte: u8) -> bool {
         )
 }
 
-/// Dígito, símbolo, maiúscula depois da primeira letra ou 16+ caracteres: não
-/// apaga prosa como "Basic authentication".
+/// Digit, symbol, uppercase after the first letter, or 16+ characters: does not
+/// erase prose such as "Basic authentication".
 fn looks_like_credential(cred: &[u8]) -> bool {
     cred.len() >= 16
         || cred.iter().any(|c| {

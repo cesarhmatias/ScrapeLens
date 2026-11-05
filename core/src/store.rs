@@ -10,12 +10,12 @@ pub const CDP_EVENTS_FILE: &str = "cdp-events.jsonl";
 pub const NETLOG_FILE: &str = "netlog.json";
 pub const ATTACHMENTS_DIR: &str = "attachments";
 
-/// Sessões pequenas mantêm fsync por anexo (durabilidade); capturas grandes
-/// usam um único fsync de diretório, porque o custo por arquivo domina.
+/// Small sessions keep an fsync per attachment (durability); large captures
+/// use a single directory fsync, because the per-file cost dominates.
 const ATTACHMENT_SYNC_LIMIT: usize = 256;
 
-/// Nome de anexo aceito: relativo, sem `..`, sem separador de diretório e sem
-/// byte nulo. Bloqueia traversal antes de qualquer leitura/escrita.
+/// Accepted attachment name: relative, without `..`, without a directory
+/// separator and without a null byte. Blocks traversal before any read/write.
 pub fn validate_attachment_name(name: &str) -> Result<()> {
     let path = Path::new(name);
     let invalid = name.is_empty()
@@ -48,7 +48,7 @@ fn set_mode(_path: &Path, _mode: u32) -> Result<()> {
     Ok(())
 }
 
-/// Cria (se necessário) o diretório da sessão com permissão 0700.
+/// Creates (if needed) the session directory with permission 0700.
 pub fn ensure_private_dir(path: &Path) -> Result<()> {
     if !path.exists() {
         fs::create_dir_all(path).map_err(|error| CoreError::io(path, error))?;
@@ -56,15 +56,15 @@ pub fn ensure_private_dir(path: &Path) -> Result<()> {
     set_mode(path, 0o700)
 }
 
-/// Recusa symlink (e qualquer coisa que não seja arquivo regular) no destino.
+/// Refuses a symlink (and anything that is not a regular file) at the destination.
 fn refuse_non_regular_destination(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => Err(CoreError::LimitExceeded {
-            message: format!("{} é um link simbólico; recusado", path.display()),
+            message: format!("{} is a symbolic link; refused", path.display()),
         }),
         Ok(meta) if !meta.is_file() => Err(CoreError::LimitExceeded {
             message: format!(
-                "{} existe e não é um arquivo regular; recusado",
+                "{} exists and is not a regular file; refused",
                 path.display()
             ),
         }),
@@ -82,10 +82,10 @@ fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
         .ok_or_else(|| CoreError::InvalidAttachmentPath {
             name: path.to_string_lossy().to_string(),
         })?;
-    // O destino nunca pode ser um symlink (a escrita sairia do diretório).
+    // The destination must never be a symlink (the write would leave the directory).
     refuse_non_regular_destination(path)?;
-    // Temporário com nome imprevisível e criado com O_EXCL (`create_new`): se o
-    // nome existir, mesmo como symlink, a abertura falha em vez de seguir o link.
+    // Temporary with an unpredictable name, created with O_EXCL (`create_new`): if the
+    // name exists, even as a symlink, the open fails instead of following the link.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -123,7 +123,7 @@ fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
     }
 
     set_mode(&tmp, 0o600)?;
-    // Confere de novo logo antes do rename: o destino pode ter virado symlink.
+    // Check again right before the rename: the destination may have become a symlink.
     if let Err(error) = refuse_non_regular_destination(path) {
         let _ = fs::remove_file(&tmp);
         return Err(error);
@@ -146,11 +146,11 @@ fn sync_dir(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Acima deste tamanho (JSON identado) o `session.json` é gravado compacto (docs/18 P6):
-/// ~−43 % no arquivo e na memória de quem o lê inteiro; abaixo, continua legível.
+/// Above this size (indented JSON) `session.json` is written compact (docs/18 P6):
+/// ~−43 % in the file and in memory for whoever reads it whole; below it, it stays readable.
 pub const COMPACT_SESSION_BYTES: usize = 50 * 1024 * 1024;
 
-/// Contador de bytes que não guarda nada: mede o tamanho identado sem alocá-lo.
+/// Byte counter that stores nothing: measures the indented size without allocating it.
 struct CountingWriter(usize);
 
 impl Write for CountingWriter {
@@ -163,8 +163,8 @@ impl Write for CountingWriter {
     }
 }
 
-/// Bytes do `session.json`: identado se couber em `threshold`, compacto se não. A medida
-/// é feita sem montar o texto identado (que, para sessões enormes, custa ~1,7x o compacto).
+/// Bytes of `session.json`: indented if they fit in `threshold`, compact if not. The
+/// measure is taken without building the indented text (which, for huge sessions, costs ~1.7x the compact one).
 fn session_json_bytes(session: &crate::model::SessionV1, threshold: usize) -> Result<Vec<u8>> {
     let mut counter = CountingWriter(0);
     serde_json::to_writer_pretty(&mut counter, session)
@@ -176,30 +176,30 @@ fn session_json_bytes(session: &crate::model::SessionV1, threshold: usize) -> Re
     }
 }
 
-/// Grava uma sessão completa no layout v1 com permissões restritas:
-/// diretório 0700, `session.json`/anexos 0600, escrita atômica por arquivo.
+/// Writes a complete session in the v1 layout with restricted permissions:
+/// directory 0700, `session.json`/attachments 0600, atomic write per file.
 ///
-/// Anexos não recebem `fsync` individual: cada arquivo é fechado e renomeado
-/// atomicamente, e o diretório é sincronizado uma vez ao final do lote. Em
-/// capturas com dezenas de milhares de corpos pequenos, um `fsync` por anexo
-/// dominava o tempo de importação (128 s para 20 mil anexos no aceite); o
-/// `session.json` continua sendo sincronizado. O lote preserva a ordem
-/// "artefatos/anexos antes do documento" para não deixar referência quebrada.
+/// Attachments do not get an individual `fsync`: each file is closed and renamed
+/// atomically, and the directory is synchronized once at the end of the batch. In
+/// captures with tens of thousands of small bodies, one `fsync` per attachment
+/// dominated the import time (128 s for 20 thousand attachments in the acceptance
+/// run); `session.json` is still synchronized. The batch preserves the order
+/// "artifacts/attachments before the document" so as not to leave a broken reference.
 pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     ensure_private_dir(dir)?;
-    // Daqui em diante tudo é gravado sob o diretório canonicalizado: nenhum
-    // componente do caminho pode ser trocado por symlink no meio da escrita.
+    // From here on everything is written under the canonicalized directory: no
+    // component of the path may be swapped for a symlink in the middle of the write.
     let dir = &dir
         .canonicalize()
         .map_err(|error| CoreError::io(dir, error))?;
     let attachments_dir = dir.join(ATTACHMENTS_DIR);
-    // `attachments/` é criado por nós dentro da sessão: um symlink ali é recusado
-    // antes de qualquer mkdir/chmod.
+    // `attachments/` is created by us inside the session: a symlink there is refused
+    // before any mkdir/chmod.
     if let Ok(meta) = fs::symlink_metadata(&attachments_dir) {
         if meta.file_type().is_symlink() {
             return Err(CoreError::LimitExceeded {
                 message: format!(
-                    "{} é um link simbólico; recusado",
+                    "{} is a symbolic link; refused",
                     attachments_dir.display()
                 ),
             });
@@ -212,14 +212,14 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     if canonical_attachments.parent() != Some(dir.as_path()) {
         return Err(CoreError::LimitExceeded {
             message: format!(
-                "{} resolve para fora da sessão; recusado",
+                "{} resolves outside the session; refused",
                 attachments_dir.display()
             ),
         });
     }
 
-    // Artefatos/anexos primeiro; session.json por último, para nunca deixar um
-    // documento apontando para arquivos que ainda não existem.
+    // Artifacts/attachments first; session.json last, so that a document never
+    // points to files that do not exist yet.
     if let Some(bytes) = &bundle.cdp_events_jsonl {
         write_atomic(&dir.join(CDP_EVENTS_FILE), bytes, true)?;
     }
@@ -227,8 +227,8 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
         write_atomic(&dir.join(NETLOG_FILE), bytes, true)?;
     }
 
-    // Lote: em sessões pequenas cada anexo é durável; em capturas grandes o
-    // fsync é único por diretório no fim, não um por arquivo.
+    // Batch: in small sessions each attachment is durable; in large captures the
+    // fsync is a single one per directory at the end, not one per file.
     let sync_each = bundle.attachments.len() <= ATTACHMENT_SYNC_LIMIT;
     for (name, bytes) in &bundle.attachments {
         validate_attachment_name(name)?;
@@ -244,9 +244,9 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Abre um anexo para leitura recusando symlink (na pasta e no arquivo) e
-/// qualquer coisa que não seja arquivo regular; confere que o arquivo aberto é
-/// o mesmo que foi inspecionado (TOCTOU). Devolve o arquivo e o tamanho.
+/// Opens an attachment for reading, refusing symlinks (in the folder and in the
+/// file) and anything that is not a regular file; checks that the opened file is
+/// the same one that was inspected (TOCTOU). Returns the file and its size.
 pub fn open_regular_attachment(dir: &Path, name: &str) -> Result<(File, u64)> {
     validate_attachment_name(name)?;
     let refused = |message: String| CoreError::LimitExceeded { message };
@@ -254,14 +254,14 @@ pub fn open_regular_attachment(dir: &Path, name: &str) -> Result<(File, u64)> {
     let root_meta = fs::symlink_metadata(&root).map_err(|error| CoreError::io(&root, error))?;
     if root_meta.file_type().is_symlink() {
         return Err(refused(
-            "a pasta de anexos é um link simbólico; recusado".into(),
+            "the attachments folder is a symbolic link; refused".into(),
         ));
     }
     let target = root.join(name);
     let before = fs::symlink_metadata(&target).map_err(|error| CoreError::io(&target, error))?;
     if before.file_type().is_symlink() {
         return Err(refused(format!(
-            "o anexo {name} é um link simbólico; recusado"
+            "attachment {name} is a symbolic link; refused"
         )));
     }
     let file = File::open(&target).map_err(|error| CoreError::io(&target, error))?;
@@ -273,18 +273,18 @@ pub fn open_regular_attachment(dir: &Path, name: &str) -> Result<(File, u64)> {
         use std::os::unix::fs::MetadataExt;
         if opened.ino() != before.ino() || opened.dev() != before.dev() {
             return Err(refused(format!(
-                "o anexo {name} mudou durante a abertura; recusado"
+                "attachment {name} changed while being opened; refused"
             )));
         }
     }
     if !opened.is_file() {
-        return Err(refused(format!("o anexo {name} não é um arquivo regular")));
+        return Err(refused(format!("attachment {name} is not a regular file")));
     }
     Ok((file, opened.len()))
 }
 
-/// Lê no máximo `limit` bytes de um anexo (ver [`open_regular_attachment`]).
-/// O segundo valor é `true` quando o arquivo é maior que o limite.
+/// Reads at most `limit` bytes of an attachment (see [`open_regular_attachment`]).
+/// The second value is `true` when the file is larger than the limit.
 pub fn read_attachment_limited(dir: &Path, name: &str, limit: u64) -> Result<(Vec<u8>, bool)> {
     use std::io::Read;
     let (file, size) = open_regular_attachment(dir, name)?;
@@ -305,8 +305,8 @@ pub fn read_json(path: &Path) -> Result<serde_json::Value> {
         .map_err(|error| CoreError::json(path.display().to_string(), error))
 }
 
-/// Verificação de permissões para avisar (não corrigir) sessões importadas
-/// que estejam legíveis por grupo/outros.
+/// Permission check to warn (not fix) about imported sessions that are
+/// readable by group/others.
 #[cfg(unix)]
 pub fn is_private(path: &Path) -> std::io::Result<bool> {
     use std::os::unix::fs::PermissionsExt;
@@ -319,13 +319,13 @@ pub fn is_private(_path: &Path) -> std::io::Result<bool> {
     Ok(true)
 }
 
-/// Caminho absoluto de um anexo dentro de uma sessão, validado contra traversal.
+/// Path of an attachment inside a session, validated against traversal.
 pub fn attachment_path(dir: &Path, name: &str) -> Result<PathBuf> {
     validate_attachment_name(name)?;
     Ok(dir.join(ATTACHMENTS_DIR).join(name))
 }
 
-/// Fecha o arquivo depois do flush e garante que o rename não deixe temporário.
+/// Closes the file after the flush and ensures the rename leaves no temporary behind.
 pub fn cleanup_temp_files(dir: &Path) -> Result<()> {
     for entry in fs::read_dir(dir).map_err(|error| CoreError::io(dir, error))? {
         let entry = entry.map_err(|error| CoreError::io(dir, error))?;
@@ -338,8 +338,8 @@ pub fn cleanup_temp_files(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Lê bytes de um `File` recém-aberto sem depender do tamanho declarado. Usado
-/// pelos testes de permissão.
+/// Reads bytes from a freshly opened `File` without depending on the declared
+/// size. Used by the permission tests.
 pub fn read_existing(path: &Path) -> Result<(File, u64)> {
     let file = File::open(path).map_err(|error| CoreError::io(path, error))?;
     let len = file
@@ -366,7 +366,7 @@ mod tests {
         let a: serde_json::Value = serde_json::from_slice(&pretty).unwrap();
         let b: serde_json::Value = serde_json::from_slice(&compact).unwrap();
         assert_eq!(a, b);
-        // O limite é sobre o tamanho identado: exatamente no limite ainda é identado.
+        // The limit applies to the indented size: exactly at the limit it is still indented.
         let exact = session_json_bytes(&session, pretty.len()).unwrap();
         assert_eq!(exact, pretty);
         let below = session_json_bytes(&session, pretty.len() - 1).unwrap();
@@ -450,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "benchmark manual: cargo test --release -- --ignored writes_20k_small_attachments"]
+    #[ignore = "manual benchmark: cargo test --release -- --ignored writes_20k_small_attachments"]
     fn writes_20k_small_attachments_quickly() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("session");
@@ -466,7 +466,7 @@ mod tests {
         let started = std::time::Instant::now();
         write_session_dir(&bundle, &dir).unwrap();
         let elapsed = started.elapsed();
-        println!("20k anexos: {elapsed:?}");
+        println!("20k attachments: {elapsed:?}");
         assert_eq!(
             std::fs::read_dir(dir.join(ATTACHMENTS_DIR))
                 .unwrap()

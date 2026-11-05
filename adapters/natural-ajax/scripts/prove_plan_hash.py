@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Rodada 9: o `plan.hash` gravado no trace (calculado na geração por `validate::plan_hash`) confere no
-`natural-core validate`; um plano alterado avisa "plano não confere". Só 127.0.0.1 (detran-sim).
+"""Round 9: the `plan.hash` written in the trace (computed at generation by `validate::plan_hash`) matches in
+`natural-core validate`; an altered plan warns "plan does not match" (the current core message). Only 127.0.0.1 (detran-sim).
 
   python3 adapters/natural-ajax/scripts/prove_plan_hash.py [--python PY_COM_REQUESTS] [--port 8801]
 """
@@ -19,7 +19,7 @@ def main():
     py = a.python or next((c for c in ("/tmp/sl-venv-req/bin/python", "/tmp/rev10/venv/bin/python", sys.executable)
                            if subprocess.run([c, "-c", "import requests"], capture_output=True).returncode == 0), None)
     if not py:
-        sys.exit("nenhum python com requests; passe --python")
+        sys.exit("no python with requests; pass --python")
     tmp = Path(tempfile.mkdtemp(prefix="sl-planhash-")); os.chmod(tmp, 0o700)
     base = f"http://127.0.0.1:{a.port}"
     sim = subprocess.Popen([sys.executable, str(R / "testserver/detran-sim/detran_sim.py"), "--port", str(a.port)],
@@ -38,8 +38,8 @@ def main():
         insp = json.loads(subprocess.run([C, "inspect", str(tmp / "cap")], capture_output=True, text=True).stdout)
         target_url = next(r["url"] for r in insp["session"]["requests"] if r["id"] == target)
         cap_origin = urllib.parse.urlsplit(target_url).scheme + "://" + urllib.parse.urlsplit(target_url).netloc
-        # Mapeamento explícito da origem capturada para o sim: sem o aviso de origem automática,
-        # o trace fiel fica com ZERO avisos (a meta do líder).
+        # Explicit mapping of the captured origin to the sim: without the automatic origin warning,
+        # the faithful trace has ZERO warnings (the leader's target).
         map_flag = ["--map-origin", f"{cap_origin}={base}"]
         for label, adapter, mode in (("com_adaptador", True, "strict"), ("sem_adaptador", False, "ok")):
             flag = ["--adapter", "natural-ajax"] if adapter else []
@@ -59,17 +59,17 @@ def main():
                 subprocess.run([C, "import-trace", str(trace_path), "--out", str(tmp / name)], capture_output=True, check=True)
                 v = subprocess.run([N, "validate", str(tmp / "cap"), str(tmp / name), *flag, *map_flag], capture_output=True, text=True)
                 warnings = [w[:70] for w in json.loads(v.stdout)["warnings"]]
-                return v, [w for w in warnings if "plano" in w.lower()], warnings
+                return v, [w for w in warnings if "plan" in w.lower()], warnings
 
             p, tr = run_script(f"{label}.json", [])
             v, plan_warn, genuine_warn = validate(tr, f"s_{label}")
             genuine = json.load(open(tr))
-            # Parâmetro opcional sobrescrito (`--op`): `plan` igual e nenhum aviso de plano.
+            # Optional parameter overridden (`--op`): `plan` equal and no plan warning.
             p2, tr2 = run_script(f"{label}_op.json", ["--op", "S38"])
             v2, ov_warn, _ = validate(tr2, f"o_{label}")
             over = json.load(open(tr2))
             op_in_top = any(x["name"] == "op" for x in over["parameters"])
-            # Plano alterado e hash copiado de outro plano.
+            # Altered plan and hash copied from another plan.
             altered_doc = json.loads(json.dumps(genuine)); altered_doc["plan"]["hash"] = "0" * 16
             json.dump(altered_doc, open(tmp / f"{label}_alt.json", "w"))
             _, altered, _ = validate(tmp / f"{label}_alt.json", f"z_{label}")
@@ -82,18 +82,18 @@ def main():
                                                     "resumo": v2.stderr.strip()[:60]}}
             if p.returncode != 0: fails.append(f"{label}: script rc={p.returncode}")
             if genuine["plan"].get("version") != 2:
-                fails.append(f"{label}: plan.version = {genuine['plan'].get('version')!r}, esperado 2")
-            if plan_warn: fails.append(f"{label}: trace genuíno avisa plano: {plan_warn}")
-            # Meta do líder: trace fiel do gerador atual (com adaptador) -> equivalent e ZERO avisos.
+                fails.append(f"{label}: plan.version = {genuine['plan'].get('version')!r}, expected 2")
+            if plan_warn: fails.append(f"{label}: genuine trace warns about plan: {plan_warn}")
+            # Leader's target: faithful trace from the current generator (with adapter) -> equivalent and ZERO warnings.
             if adapter and genuine_warn:
-                fails.append(f"{label}: trace genuíno com avisos: {genuine_warn}")
-            if adapter and "equivalente à captura" not in v.stderr:
-                fails.append(f"{label}: trace genuíno não é equivalente: {v.stderr.strip()[:80]}")
-            if not altered: fails.append(f"{label}: plano alterado não avisou")
-            if over["plan"] != genuine["plan"]: fails.append(f"{label}: plan mudou ao sobrescrever opcional")
-            if ov_warn: fails.append(f"{label}: opcional sobrescrito avisa plano: {ov_warn}")
-            if not op_in_top: fails.append(f"{label}: `op` sobrescrito não aparece em parameters")
-            # Hash copiado do plano de OUTRO alvo da mesma captura: também avisa.
+                fails.append(f"{label}: genuine trace has warnings: {genuine_warn}")
+            if adapter and "execution equivalent to capture" not in v.stderr:
+                fails.append(f"{label}: genuine trace is not equivalent: {v.stderr.strip()[:80]}")
+            if not altered: fails.append(f"{label}: altered plan gave no warning")
+            if over["plan"] != genuine["plan"]: fails.append(f"{label}: plan changed when overriding optional parameter")
+            if ov_warn: fails.append(f"{label}: overridden optional parameter warns about plan: {ov_warn}")
+            if not op_in_top: fails.append(f"{label}: `op` overridden does not appear in parameters")
+            # Hash copied from the plan of ANOTHER target of the same capture: also warns.
             insp = json.loads(subprocess.run([C, "inspect", str(tmp / "cap")], capture_output=True, text=True).stdout)
             others = [r["id"] for r in insp["session"]["requests"]
                       if r["method"] == "POST" and "Connector" in r["url"] and r["id"] != target]
@@ -111,9 +111,9 @@ def main():
                 json.dump(fdoc, open(tmp / f"{label}_foreign.json", "w"))
                 _, foreign_warn, _ = validate(tmp / f"{label}_foreign.json", f"f_{label}")
                 res[label]["hash_de_outro_plano_avisa"] = bool(foreign_warn)
-                if not foreign_warn: fails.append(f"{label}: hash de outro plano não avisou")
+                if not foreign_warn: fails.append(f"{label}: hash from another plan gave no warning")
             else:
-                res[label]["hash_de_outro_plano_avisa"] = "sem outro alvo com hash diferente"
+                res[label]["hash_de_outro_plano_avisa"] = "no other target with a different hash"
     finally:
         sim.terminate()
     res["fails"] = fails

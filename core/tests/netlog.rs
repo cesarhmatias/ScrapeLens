@@ -1,5 +1,5 @@
-//! Testes do importador NetLog com fixture sintética e com a captura h1 real
-//! dos experimentos (evidência de fidelidade já commitada).
+//! NetLog importer tests with a synthetic fixture and with the real h1 capture
+//! of the experiments (fidelity evidence already committed).
 
 use scrapelens_core::model::{BodyState, HeaderRole, Protocol, Verification};
 use scrapelens_core::parse::netlog::{build_netlog_session, parse_netlog};
@@ -48,7 +48,7 @@ fn parses_h2_session_with_explicit_stream_job_link() {
             .collect::<Vec<_>>(),
         vec!["a", "b"]
     );
-    // Ordem h2 preservada, inclusive as duas ocorrências.
+    // h2 order preserved, including both occurrences.
     let names: Vec<&str> = attempt
         .request_headers
         .headers
@@ -56,12 +56,12 @@ fn parses_h2_session_with_explicit_stream_job_link() {
         .map(|header| header.name.as_str())
         .collect();
     assert_eq!(names, vec!["x-rep", "x-rep", "cookie", "priority"]);
-    // h2: ordem parcial (Cookie pode ser dividido no fio).
+    // h2: partial order (Cookie may be split on the wire).
     assert_eq!(
         attempt.request_headers.verification(),
         Verification::Partial
     );
-    // Resposta transacional é verificada e mantém as duplicatas.
+    // The transactional response is verified and keeps the duplicates.
     assert_eq!(
         attempt.response_headers.verification(),
         Verification::Verified
@@ -76,21 +76,21 @@ fn parses_h2_session_with_explicit_stream_job_link() {
     assert_eq!(
         session.stream_sessions[0].stream_id,
         Some(1),
-        "stream id da sessão h2"
+        "h2 session stream id"
     );
     assert_eq!(
         attempt.stream_session_id.as_deref(),
         Some(session.stream_sessions[0].id.as_str())
     );
 
-    // Expansão de NUL no evento de sessão (2 set-cookie, 2 x-resp-order).
+    // NUL expansion in the session event (2 set-cookie, 2 x-resp-order).
     let session_recv = attempt
         .header_evidence
         .iter()
         .find(|evidence| {
             evidence.role == HeaderRole::Response && evidence.event == "HTTP2_SESSION_RECV_HEADERS"
         })
-        .expect("evidência de sessão recv");
+        .expect("session recv evidence");
     assert_eq!(session_recv.protocol, Protocol::H2);
     assert_eq!(session_recv.view.get_all("set-cookie").len(), 2);
     assert_eq!(session_recv.view.get_all("x-resp-order").len(), 2);
@@ -105,7 +105,7 @@ fn parses_h2_session_with_explicit_stream_job_link() {
 fn missing_url_request_is_reported_not_silent() {
     let capture = parse_netlog(&fixture()).unwrap();
     let (session, _) = build_netlog_session(&capture);
-    // O evento de sessão não cria requisição própria: não há URL.
+    // The session event does not create its own request: there is no URL.
     assert!(session
         .warnings
         .iter()
@@ -154,7 +154,7 @@ fn redirect_creates_two_attempts_and_a_redirect_entity() {
     );
     assert_eq!(request.url, "http://demo.invalid/a");
     assert_eq!(request.status, Some(200));
-    // h1 é verificado no NetLog transacional.
+    // h1 is verified in the transactional NetLog.
     assert_eq!(
         request.attempts[0].request_headers.verification(),
         Verification::Verified
@@ -165,13 +165,13 @@ fn redirect_creates_two_attempts_and_a_redirect_entity() {
 fn real_h1_capture_preserves_wire_order_and_duplicates() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../experiments/results/h1-page/chrome-netlog.json");
-    let bytes = std::fs::read(&path).expect("captura h1 dos experimentos");
+    let bytes = std::fs::read(&path).expect("h1 capture of the experiments");
     let capture = parse_netlog(&bytes).unwrap();
     let request = capture
         .requests
         .iter()
         .find(|request| request.url.contains("/echo-order?from=jsheaders"))
-        .expect("requisição from=jsheaders na captura h1");
+        .expect("from=jsheaders request in the h1 capture");
     assert_eq!(request.attempts.len(), 1);
     let attempt = &request.attempts[0];
     assert_eq!(request.method, "GET");
@@ -179,7 +179,7 @@ fn real_h1_capture_preserves_wire_order_and_duplicates() {
     assert_eq!(
         attempt.outcome,
         scrapelens_core::model::AttemptOutcome::Completed,
-        "net_error 0 (net::OK) não pode virar falha"
+        "net_error 0 (net::OK) must not become a failure"
     );
     let send = attempt.send_transaction.as_ref().expect("send h1");
     assert_eq!(send.view.verification(), Verification::Verified);
@@ -189,9 +189,9 @@ fn real_h1_capture_preserves_wire_order_and_duplicates() {
             .headers
             .iter()
             .position(|header| header.name.eq_ignore_ascii_case(name))
-            .unwrap_or_else(|| panic!("header {name} ausente"))
+            .unwrap_or_else(|| panic!("header {name} missing"))
     };
-    // Ordem injetada pelo experimento: x-zeta, x-alpha, ... x-mid.
+    // Order injected by the experiment: x-zeta, x-alpha, ... x-mid.
     assert!(index("x-zeta") < index("x-alpha"));
     assert!(index("x-alpha") < index("x-mid"));
 }
@@ -200,26 +200,26 @@ fn real_h1_capture_preserves_wire_order_and_duplicates() {
 fn real_h2_capture_marks_request_order_partial_and_expands_nul_response() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../experiments/results/h2-page/chrome-netlog.json");
-    let bytes = std::fs::read(&path).expect("captura h2 dos experimentos");
+    let bytes = std::fs::read(&path).expect("h2 capture of the experiments");
     let capture = parse_netlog(&bytes).unwrap();
     let page = capture
         .requests
         .iter()
         .find(|request| request.url.ends_with("/page"))
-        .expect("requisição /page na captura h2");
+        .expect("/page request in the h2 capture");
     let page_attempt = &page.attempts[0];
     assert_eq!(page_attempt.protocol, Protocol::H2);
     let page_send = page_attempt.send_transaction.as_ref().expect("send h2");
     assert_eq!(page_send.view.verification(), Verification::Partial);
     assert!(page_send.view.first_value("cookie").is_some());
-    // Na captura real o NetLog mostra 1 campo Cookie; o parser não inventa N.
+    // In the real capture the NetLog shows 1 Cookie field; the parser does not invent N.
     assert_eq!(page_send.view.get_all("cookie").len(), 1);
 
     let setcookie = capture
         .requests
         .iter()
         .find(|request| request.url.ends_with("/setcookie"))
-        .expect("requisição /setcookie na captura h2");
+        .expect("/setcookie request in the h2 capture");
     let attempt = &setcookie.attempts[0];
     let session_send = attempt.send_session.as_ref().expect("session send h2");
     assert!(session_send.stream_id.is_some());
@@ -233,8 +233,8 @@ fn time_unit_is_calibrated_by_wall_clock_reference() {
     use scrapelens_core::parse::netlog::NetlogTimeUnit;
     use scrapelens_core::parse::netlog::{parse_netlog_with_wall_clock, ticks_to_epoch_seconds};
 
-    // Fixture real (Chrome): `time` em milissegundos. Com referência de parede
-    // do CDP, a unidade é confirmada e nada muda no started_at.
+    // Real fixture (Chrome): `time` in milliseconds. With a wall-clock reference
+    // from CDP, the unit is confirmed and nothing changes in started_at.
     let reference = 1_793_047_805.949_f64;
     let capture = parse_netlog_with_wall_clock(&fixture(), Some(reference)).unwrap();
     assert_eq!(capture.time_unit, NetlogTimeUnit::Milliseconds);
@@ -247,7 +247,7 @@ fn time_unit_is_calibrated_by_wall_clock_reference() {
         .iter()
         .any(|warning| warning.code == "netlog.time_unit_detected"));
 
-    // Captura sintética em microssegundos: mesma forma, unidade diferente.
+    // Synthetic capture in microseconds: same shape, different unit.
     let json = br#"{
       "constants":{"timeTickOffset":1793040360000,"logEventTypes":{
         "URL_REQUEST_START_JOB":1000,"HTTP_TRANSACTION_SEND_REQUEST_HEADERS":1001}},
@@ -268,7 +268,7 @@ fn time_unit_is_calibrated_by_wall_clock_reference() {
         Some(1_793_046_000.110)
     );
 
-    // Uma única fórmula: ms = offset + ticks/fator; s = ms/1000.
+    // A single formula: ms = offset + ticks/factor; s = ms/1000.
     assert!(
         (ticks_to_epoch_seconds(
             5640110000.0,
@@ -289,8 +289,8 @@ fn time_unit_is_calibrated_by_wall_clock_reference() {
     );
 }
 
-/// P4 (docs/18 §5): o leitor em fluxo tem de manter o veredito do `Value` para
-/// JSON inválido/truncado, inclusive no limite de recursão de 128 níveis.
+/// P4 (docs/18 §5): the streaming reader must keep the `Value` verdict for
+/// invalid/truncated JSON, including at the 128-level recursion limit.
 #[test]
 fn streaming_reader_keeps_the_value_verdict_for_deep_or_truncated_json() {
     for n in [100usize, 126, 127, 128, 129, 200] {
@@ -313,8 +313,8 @@ fn streaming_reader_keeps_the_value_verdict_for_deep_or_truncated_json() {
     }
 }
 
-/// `events` antes de `constants` (ordem que o Chrome não usa) continua sendo
-/// processado na ordem do arquivo, sem depender da posição do envelope.
+/// `events` before `constants` (an order Chrome does not use) is still
+/// processed in file order, without depending on the envelope position.
 #[test]
 fn events_before_constants_are_still_processed_in_file_order() {
     let json = br#"{
@@ -334,8 +334,8 @@ fn events_before_constants_are_still_processed_in_file_order() {
     assert_eq!(capture.events_unknown, 0);
 }
 
-/// Chave `"events"` duplicada na raiz: como o `serde_json::Value` antigo, a
-/// última vence e o array anterior é descartado por inteiro.
+/// Duplicate `"events"` key at the root: like the old `serde_json::Value`, the
+/// last one wins and the previous array is discarded entirely.
 #[test]
 fn duplicate_root_events_keeps_only_the_last_array_like_value() {
     let json = br#"{
@@ -362,7 +362,7 @@ fn duplicate_root_events_keeps_only_the_last_array_like_value() {
     assert_eq!(capture.requests.len(), 1);
     assert_eq!(capture.requests[0].url, "https://last.invalid/");
 
-    // Última chave com array vazio também vence: nada do primeiro array sobra.
+    // A last key with an empty array also wins: nothing from the first array remains.
     let empty_last = br#"{
       "constants":{"logEventTypes":{"URL_REQUEST_START_JOB":1000}},
       "events":[

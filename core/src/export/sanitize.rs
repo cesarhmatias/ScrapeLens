@@ -1,19 +1,19 @@
-//! Exportação sanitizada de uma sessão.
+//! Sanitized export of a session.
 //!
-//! Redige Authorization, Cookie/Set-Cookie, tokens em URL, cabeçalhos e corpos
-//! sensíveis, e remove eventos brutos. Anexos que não podem ser sanitizados com
-//! segurança (binários, texto não estruturado, JSON inválido, grande demais) são
-//! **omitidos com aviso**, nunca copiados silenciosamente.
+//! Redacts Authorization, Cookie/Set-Cookie, tokens in URLs, headers and sensitive
+//! bodies, and removes raw events. Attachments that cannot be sanitized safely
+//! (binaries, unstructured text, invalid JSON, too large) are **omitted with a
+//! warning**, never silently copied.
 //!
-//! Campos de negócio (placa, v_placa, plate, renavam, cpf, cnpj, chassi, vin;
-//! `SanitizeOptions::business_fields`): em campos nomeados o valor é redigido e
-//! propagado; em campos opacos, nome + valor no formato do tipo é redigido (e
-//! propagado pela sessão). `redactions["business:<tipo>"]` conta por tipo, sem
-//! valores; nome sem valor no formato gera `sanitize.business_field_unmatched`.
+//! Business fields (placa, v_placa, plate, renavam, cpf, cnpj, chassi, vin;
+//! `SanitizeOptions::business_fields`): in named fields the value is redacted and
+//! propagated; in opaque fields, name + value in the type's format is redacted (and
+//! propagated through the session). `redactions["business:<tipo>"]` counts per type, without
+//! values; a name without a value in the expected format raises `sanitize.business_field_unmatched`.
 //!
-//! Limite conhecido: tokens embutidos em segmentos de path, HTML/JS livre e
-//! campos de texto sem estrutura não são detectados de forma confiável; esses
-//! corpos são omitidos por padrão.
+//! Known limit: tokens embedded in path segments, free-form HTML/JS and
+//! unstructured text fields are not reliably detected; those bodies are omitted
+//! by default.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -30,14 +30,14 @@ use crate::store;
 pub struct SanitizeOptions {
     pub placeholder: String,
     pub redact_fragments: bool,
-    /// Omite corpos textuais não estruturados (HTML, JS, text/plain livre).
+    /// Omits unstructured text bodies (HTML, JS, free text/plain).
     pub omit_unstructured_bodies: bool,
-    /// Mantém `cdp-events.jsonl`/`netlog.json`. Padrão: não.
+    /// Keeps `cdp-events.jsonl`/`netlog.json`. Default: no.
     pub keep_raw_events: bool,
     pub max_body_bytes: usize,
-    /// Campos de negócio sensíveis (case-insensitive, também como sufixo do
-    /// nome): em campos nomeados o valor é redigido e propagado; em campos
-    /// opacos, a ocorrência do nome seguida de valor no formato do tipo.
+    /// Sensitive business fields (case-insensitive, also as a suffix of the
+    /// name): in named fields the value is redacted and propagated; in opaque
+    /// fields, an occurrence of the name followed by a value in the type's format.
     pub business_fields: Vec<String>,
 }
 
@@ -66,15 +66,15 @@ pub struct SanitizedExport {
 }
 
 impl SanitizedExport {
-    /// Grava com permissões restritas (0700/0600) e sem os eventos brutos.
+    /// Writes with restricted permissions (0700/0600) and without the raw events.
     ///
-    /// Recusa sobrescrever uma sessão existente: reutilizar o diretório poderia
-    /// deixar anexos/eventos brutos antigos ao lado da versão sanitizada.
+    /// Refuses to overwrite an existing session: reusing the directory could
+    /// leave old attachments/raw events next to the sanitized version.
     pub fn write_to(&self, dir: &std::path::Path) -> Result<()> {
         if dir.join(store::SESSION_FILE).exists() {
             return Err(crate::error::CoreError::Export {
                 message: format!(
-                    "destino já contém uma sessão ({}); use um diretório novo para a versão sanitizada",
+                    "destination already contains a session ({}); use a new directory for the sanitized version",
                     dir.display()
                 ),
             });
@@ -88,7 +88,7 @@ impl SanitizedExport {
             if has_entries {
                 return Err(crate::error::CoreError::Export {
                     message: format!(
-                        "destino já contém anexos ({}); use um diretório novo",
+                        "destination already contains attachments ({}); use a new directory",
                         attachments_dir.display()
                     ),
                 });
@@ -105,16 +105,16 @@ impl SanitizedExport {
     }
 }
 
-/// Sanitiza uma CÓPIA do bundle (o original fica intacto). Para sessões grandes use
-/// [`sanitize_bundle_owned`], que não duplica a sessão (docs/18 P7).
+/// Sanitizes a COPY of the bundle (the original stays intact). For large sessions
+/// use [`sanitize_bundle_owned`], which does not duplicate the session (docs/18 P7).
 pub fn sanitize_bundle(bundle: &SessionBundle, options: &SanitizeOptions) -> SanitizedExport {
     sanitize_bundle_owned(bundle.clone(), options)
 }
 
-/// Como [`sanitize_bundle`], mas CONSOME o bundle e sanitiza a sessão no lugar: sem a cópia
-/// mascarada (−927 MiB com 20 mil requisições capturadas, docs/18) e liberando os anexos
-/// originais ao terminar. Os valores sensíveis a propagar são coletados ANTES de qualquer
-/// edição, então o resultado é idêntico ao da versão por referência.
+/// Like [`sanitize_bundle`], but CONSUMES the bundle and sanitizes the session in place:
+/// without the masked copy (−927 MiB with 20 thousand captured requests, docs/18) and
+/// releasing the original attachments when done. The sensitive values to propagate are
+/// collected BEFORE any edit, so the result is identical to the by-reference version.
 pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -> SanitizedExport {
     BUSINESS.with(|b| *b.borrow_mut() = (options.business_fields.clone(), BTreeMap::new()));
     let sensitive = collect_sensitive_values(&bundle);
@@ -244,7 +244,7 @@ pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -
         }
     }
 
-    // Metadados de captura podem conter caminhos/args do usuário.
+    // Capture metadata may contain the user's paths and arguments.
     if let Some(capture) = &mut session.session.capture {
         capture.browser_binary = None;
         capture.chrome_args = None;
@@ -253,15 +253,15 @@ pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -
     let raw_removed = cdp_events_jsonl.is_some() || netlog_json.is_some();
     session.session.labels.push("sanitized".to_string());
     session.session.notes.push(
-        "sessão sanitizada: headers/cookies/URLs/corpos sensíveis redigidos; eventos brutos removidos. Detecção heurística por nomes de parâmetros/headers, prefixos de autenticação e estrutura do corpo; revise o resultado antes de compartilhar."
+        "sanitized session: headers/cookies/URLs/sensitive bodies redacted; raw events removed. Detection is heuristic, based on parameter/header names, authentication prefixes and body structure; review the result before sharing."
             .to_string(),
     );
 
-    // Mensagens de aviso podem trazer URLs com query.
+    // Warning messages may carry URLs with a query.
     for warning in &mut session.warnings {
         warning.message = sanitize_text(&warning.message, options);
     }
-    // Detalhes de avisos podem repetir linhas cruas de header.
+    // Warning details may repeat raw header lines.
     for warning in &mut session.warnings {
         if warning.detail.take().is_some() {
             counter("warningDetail", &mut redactions);
@@ -271,13 +271,13 @@ pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -
         if options.keep_raw_events {
             warnings.push(Warning::new(
                 "sanitize.raw_events_kept",
-                "eventos brutos mantidos por opção; eles podem conter dados sensíveis",
+                "raw events kept by option; they may contain sensitive data",
             ));
         } else {
             counter("rawEvents", &mut redactions);
             warnings.push(Warning::new(
                 "sanitize.raw_events_removed",
-                "cdp-events.jsonl e netlog.json não fazem parte da exportação sanitizada",
+                "cdp-events.jsonl and netlog.json are not part of the sanitized export",
             ));
         }
     }
@@ -291,13 +291,13 @@ pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -
         &mut warnings,
     );
 
-    // contadores por tipo (sem valores) e aviso para nomes sem valor no formato
+    // counters per type (without values) and a warning for names without a value in the expected format
     let business = BUSINESS.with(|b| std::mem::take(&mut b.borrow_mut().1));
     for (kind, count) in business {
         if kind == "unmatched" {
             warnings.push(Warning::new(
                 "sanitize.business_field_unmatched",
-                format!("{count} ocorrência(s) de nome de campo de negócio (placa, cpf…) sem valor no formato esperado; não redigidas: revise o resultado"),
+                format!("{count} occurrence(s) of a business field name (placa, cpf…) without a value in the expected format; not redacted: review the result"),
             ));
         } else {
             *redactions.entry(format!("business:{kind}")).or_default() += count;
@@ -349,16 +349,16 @@ fn sanitize_header_view(
             entry
                 .provenance
                 .notes
-                .push("valor redigido na exportação sanitizada".to_string());
+                .push("value redacted in the sanitized export".to_string());
             *redactions.entry(format!("header:{lower}")).or_default() += 1;
             continue;
         }
-        // Heurística por valor: nomes fora da lista também podem carregar
-        // `Bearer ...`, `Basic ...` etc. Redige o esquema + credencial.
+        // Value-based heuristic: names outside the list may also carry
+        // `Bearer ...`, `Basic ...` etc. Redacts the scheme + credential.
         if let Some(redacted) = redact_auth_scheme(&entry.value, options) {
             entry.value = redacted;
             entry.provenance.notes.push(
-                "valor com esquema de autenticação redigido (heurística por prefixo)".to_string(),
+                "value with authentication scheme redacted (prefix heuristic)".to_string(),
             );
             *redactions
                 .entry("header:auth-scheme".to_string())
@@ -372,8 +372,8 @@ fn sanitize_header_view(
                 *redactions.entry("header:url".to_string()).or_default() += 1;
             }
         }
-        // Qualquer outro valor que carregue uma query (Refresh, X-Original-Url,
-        // report-uri...): redige só os parâmetros sensíveis.
+        // Any other value that carries a query (Refresh, X-Original-Url,
+        // report-uri...): redacts only the sensitive parameters.
         if !is_url_header(&lower) && entry.name != ":path" {
             let sanitized = sanitize_text(&entry.value, options);
             if sanitized != entry.value {
@@ -408,7 +408,7 @@ fn sanitize_header_view(
     if view.raw_block.is_some() {
         view.raw_block = None;
         view.notes
-            .push("rawBlock removido na sanitização (continha headers originais)".to_string());
+            .push("rawBlock removed during sanitization (it contained the original headers)".to_string());
     }
 }
 
@@ -427,7 +427,7 @@ fn sanitize_cookie_field(
     for pair in &mut cookie.pairs {
         pair.value = options.placeholder.clone();
         pair.raw = format!("{}={}", pair.name, options.placeholder);
-        pair.provenance.notes.push("cookie redigido".to_string());
+        pair.provenance.notes.push("cookie redacted".to_string());
     }
     for line in &mut cookie.wire_lines {
         *line = options.placeholder.clone();
@@ -436,7 +436,7 @@ fn sanitize_cookie_field(
     *redactions.entry("cookie".to_string()).or_default() += raw_count;
     cookie
         .notes
-        .push("valores de Cookie redigidos; nomes e contagem preservados".to_string());
+        .push("Cookie values redacted; names and count preserved".to_string());
 }
 
 fn sanitize_set_cookie(
@@ -445,9 +445,9 @@ fn sanitize_set_cookie(
     redactions: &mut BTreeMap<String, usize>,
 ) {
     record.raw = options.placeholder.clone();
-    // A mensagem de erro de parse repete o valor cru.
+    // The parse error message repeats the raw value.
     if record.parse_error.is_some() {
-        record.parse_error = Some("Set-Cookie inválido (detalhe redigido)".to_string());
+        record.parse_error = Some("invalid Set-Cookie (detail redacted)".to_string());
     }
     if let Some(parsed) = &mut record.parsed {
         parsed.value = options.placeholder.clone();
@@ -460,12 +460,12 @@ fn sanitize_set_cookie(
     record
         .provenance
         .notes
-        .push("Set-Cookie redigido".to_string());
+        .push("Set-Cookie redacted".to_string());
     *redactions.entry("setCookie".to_string()).or_default() += 1;
 }
 
-// Assinatura interna de um único chamador; agrupar os acumuladores num struct só
-// adicionaria um tipo sem ganho de clareza.
+// Internal signature of a single caller; grouping the accumulators into one struct
+// would only add a type without gaining clarity.
 #[allow(clippy::too_many_arguments)]
 fn sanitize_body(
     body: &Body,
@@ -481,16 +481,16 @@ fn sanitize_body(
         return body.clone();
     }
     let Some(original) = body.attachment.clone() else {
-        return Body::discarded("sanitização: corpo capturado sem anexo associado");
+        return Body::discarded("sanitization: captured body without an associated attachment");
     };
     if let Err(_error) = store::validate_attachment_name(&original) {
         cache.insert(original.clone(), None);
         omitted.push(original.clone());
         warnings.push(Warning::new(
             "sanitize.attachment_invalid",
-            format!("anexo com nome inválido omitido: {original:?}"),
+            format!("attachment with invalid name omitted: {original:?}"),
         ));
-        return Body::discarded("sanitização: nome de anexo inválido");
+        return Body::discarded("sanitization: invalid attachment name");
     }
 
     if let Some(cached) = cache.get(&original) {
@@ -504,12 +504,12 @@ fn sanitize_body(
                     truncated_at: body.truncated_at,
                     content_type: body.content_type.clone(),
                     content_encoding: body.content_encoding.clone(),
-                    note: Some("corpo sanitizado".to_string()),
+                    note: Some("sanitized body".to_string()),
                     transformed: body.transformed.clone(),
                     provenance: sanitized_provenance(),
                 }
             }
-            None => Body::discarded("sanitização: anexo omitido por não ser sanitizável"),
+            None => Body::discarded("sanitization: attachment omitted because it cannot be sanitized"),
         };
     }
 
@@ -518,9 +518,9 @@ fn sanitize_body(
         omitted.push(original.clone());
         warnings.push(Warning::new(
             "sanitize.attachment_missing",
-            format!("anexo {original} não estava carregado; omitido da exportação"),
+            format!("attachment {original} was not loaded; omitted from the export"),
         ));
-        return Body::discarded("sanitização: anexo indisponível");
+        return Body::discarded("sanitization: attachment unavailable");
     };
     if bytes.len() > options.max_body_bytes {
         cache.insert(original.clone(), None);
@@ -528,12 +528,12 @@ fn sanitize_body(
         warnings.push(Warning::new(
             "sanitize.attachment_too_large",
             format!(
-                "anexo {original} tem {} bytes (limite {}); omitido",
+                "attachment {original} has {} bytes (limit {}); omitted",
                 bytes.len(),
                 options.max_body_bytes
             ),
         ));
-        return Body::discarded("sanitização: anexo acima do limite");
+        return Body::discarded("sanitization: attachment above the limit");
     }
 
     let content_type = body.content_type.as_deref();
@@ -550,7 +550,7 @@ fn sanitize_body(
                 truncated_at: body.truncated_at,
                 content_type: body.content_type.clone(),
                 content_encoding: body.content_encoding.clone(),
-                note: Some(format!("corpo sanitizado ({kind})")),
+                note: Some(format!("sanitized body ({kind})")),
                 transformed: body.transformed.clone(),
                 provenance: sanitized_provenance(),
             }
@@ -560,9 +560,9 @@ fn sanitize_body(
             omitted.push(original.clone());
             warnings.push(Warning::new(
                 "sanitize.attachment_omitted",
-                format!("anexo {original} omitido: {reason}"),
+                format!("attachment {original} omitted: {reason}"),
             ));
-            Body::discarded(format!("sanitização: {reason}"))
+            Body::discarded(format!("sanitization: {reason}"))
         }
     }
 }
@@ -589,10 +589,10 @@ fn sanitize_bytes(
         .is_some_and(|byte| *byte == b'{' || *byte == b'[');
     if media.contains("json") || looks_json {
         let mut value: Value =
-            serde_json::from_slice(bytes).map_err(|_| "JSON inválido ou não estruturado")?;
+            serde_json::from_slice(bytes).map_err(|_| "invalid or unstructured JSON")?;
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         sanitize_json(&mut value, options, &mut counts);
-        let serialized = serde_json::to_vec(&value).map_err(|_| "JSON não serializável")?;
+        let serialized = serde_json::to_vec(&value).map_err(|_| "JSON cannot be serialized")?;
         return Ok((serialized, "json"));
     }
 
@@ -604,20 +604,20 @@ fn sanitize_bytes(
                 .all(|byte| *byte >= 0x20 || *byte == b'\n' || *byte == b'\r' || *byte == b'\t')
             && bytes.contains(&b'='))
     {
-        let text = std::str::from_utf8(bytes).map_err(|_| "form não é UTF-8")?;
+        let text = std::str::from_utf8(bytes).map_err(|_| "form is not UTF-8")?;
         let sanitized = sanitize_form(text, options);
         return Ok((sanitized.into_bytes(), "form"));
     }
 
     if options.omit_unstructured_bodies {
-        Err("tipo de corpo não estruturado (HTML/JS/texto livre/binário) não é sanitizável com segurança")
+        Err("unstructured body type (HTML/JS/free text/binary) cannot be sanitized safely")
     } else {
-        Err("corpo textual não estruturado; opção de manter não implementada sem redação confiável")
+        Err("unstructured text body; the keep option is not implemented without reliable redaction")
     }
 }
 
-/// Número "óbvio" que pode ficar visível sob uma chave sensível: 0 e 1, ou
-/// qualquer número cuja chave descreve um tempo/contagem/tipo (`jwtExpiresIn`,
+/// An "obvious" number that may stay visible under a sensitive key: 0 and 1, or
+/// any number whose key describes a time/count/type (`jwtExpiresIn`,
 /// `tokenType`...).
 fn number_may_stay_visible(key: &str, number: &serde_json::Number) -> bool {
     let compact: String = key
@@ -644,8 +644,8 @@ fn number_may_stay_visible(key: &str, number: &serde_json::Number) -> bool {
     matches!(number.as_i64(), Some(0 | 1)) || BENIGN.iter().any(|suffix| compact.ends_with(suffix))
 }
 
-/// Sob uma chave de credencial: textos viram placeholder, booleanos e números
-/// "óbvios" ficam, objetos e listas são percorridos.
+/// Under a credential key: texts become the placeholder, booleans and "obvious"
+/// numbers stay, objects and lists are traversed.
 fn redact_credential_value(value: &mut Value, key: &str, options: &SanitizeOptions) {
     match value {
         Value::String(_) => *value = Value::String(options.placeholder.clone()),
@@ -677,8 +677,8 @@ fn sanitize_json(
         Value::Object(object) => {
             for (key, value) in object.iter_mut() {
                 if is_sensitive_key(key) {
-                    // Só texto e números não óbvios são credencial: `pin: true` e
-                    // `jwtExpiresIn: 3600` ficam legíveis; strings aninhadas são redigidas.
+                    // Only text and non-obvious numbers are credentials: `pin: true` and
+                    // `jwtExpiresIn: 3600` stay readable; nested strings are redacted.
                     redact_credential_value(value, key, options);
                     *counts.entry("json-key".to_string()).or_default() += 1;
                 } else if is_business_key(key, &business_fields()) {
@@ -714,7 +714,7 @@ fn sanitize_json(
                 *text = redacted;
                 *counts.entry("json-auth-scheme".to_string()).or_default() += 1;
             }
-            // `nome=valor` sensível, fragmento, matriz, userinfo e URL aninhada dentro do texto.
+            // Sensitive `name=value`, fragment, matrix, userinfo and nested URL inside the text.
             let scrubbed = sanitize_text(text, options);
             if scrubbed != *text {
                 *text = scrubbed;
@@ -739,7 +739,7 @@ fn sanitize_form(text: &str, options: &SanitizeOptions) -> String {
                 } else if let Some(nested) = sanitize_nested_value(value, options, 0) {
                     format!("{name}={nested}")
                 } else if value.len() >= 12 {
-                    // campo opaco: nome de negócio + valor no formato dentro do valor
+                    // opaque field: business name + value in the format inside the value
                     format!(
                         "{name}={}",
                         redact_business_text(value, &options.placeholder)
@@ -768,8 +768,8 @@ const AUTH_SCHEMES: [&str; 11] = [
     "Hawk",
 ];
 
-/// Separa `<esquema><espaço em branco><credencial>` (esquema sem diferenciar
-/// caixa; qualquer espaço em branco, inclusive TAB). Fatiamento seguro em UTF-8.
+/// Splits `<scheme><whitespace><credential>` (scheme case-insensitive; any
+/// whitespace, including TAB). Safe slicing in UTF-8.
 pub fn split_auth_scheme(value: &str) -> Option<(&str, &str)> {
     for scheme in AUTH_SCHEMES {
         let Some(prefix) = value.get(..scheme.len()) else {
@@ -793,12 +793,12 @@ fn redact_auth_scheme(value: &str, options: &SanitizeOptions) -> Option<String> 
     split_auth_scheme(value).map(|(scheme, _)| format!("{scheme} {}", options.placeholder))
 }
 
-/// Valor de header de URL (`Location`, `Referer`, `Origin`, `Content-Location`,
-/// `Link`). Só o que PARECE referência de URL passa pelo sanitizador de URL; o
-/// resto (texto livre, lixo, aspas) segue as regras de texto. Em ambos os casos o
-/// resultado passa pelo sanitizador de texto (idempotente sobre URL já redigida).
-/// `Link: <url>; rel=next, <url2>`: cada `<url>` é sanitizado e os parâmetros
-/// seguem as regras de texto.
+/// URL header value (`Location`, `Referer`, `Origin`, `Content-Location`, `Link`).
+/// Only what LOOKS like a URL reference goes through the URL sanitizer; the rest
+/// (free text, junk, quotes) follows the text rules. In both cases the result goes
+/// through the text sanitizer (idempotent over an already redacted URL).
+/// `Link: <url>; rel=next, <url2>`: each `<url>` is sanitized and the parameters
+/// follow the text rules.
 fn sanitize_url_header_value(lower_name: &str, value: &str, options: &SanitizeOptions) -> String {
     let one = |text: &str| {
         let url_like = text.starts_with(['/', '?', '#', '.'])
@@ -846,7 +846,7 @@ fn sanitize_url_header_value(lower_name: &str, value: &str, options: &SanitizeOp
     one(value)
 }
 
-/// Sanitiza URL absoluta ou referência relativa (Location/Referer/:path).
+/// Sanitizes an absolute URL or a relative reference (Location/Referer/:path).
 pub fn sanitize_url_reference(value: &str, options: &SanitizeOptions) -> String {
     if split_authority_prefix(value).is_some() {
         sanitize_url(value, options)
@@ -888,8 +888,8 @@ pub fn sanitize_url(url: &str, options: &SanitizeOptions) -> String {
     }
 }
 
-/// `esquema://`, `esquema:/\\` (um ou mais `/` ou `\\` depois de `esquema:`) ou `//`
-/// (relativo ao esquema): devolve (prefixo até o fim das barras, resto).
+/// `scheme://`, `scheme:/\\` (one or more `/` or `\\` after `scheme:`) or `//`
+/// (relative to the scheme): returns (prefix up to the end of the slashes, rest).
 fn split_authority_prefix(text: &str) -> Option<(&str, &str)> {
     let bytes = text.as_bytes();
     let is_slash = |b: u8| b == b'/' || b == b'\\';
@@ -942,12 +942,13 @@ pub fn sanitize_path_and_query(value: &str, options: &SanitizeOptions) -> String
     out
 }
 
-/// Caminho de URL (`/a;jsessionid=X/b`, `/s/token=X/y`, `;next=/cb%3Ftoken=X`): passa pelo
-/// mesmo tokenizador do texto. O valor de um nome SENSÍVEL num caminho vai até o fim do
-/// caminho (a consulta e o fragmento já foram separados antes) e é redigido inteiro, `/`
-/// incluída: um credencial pode conter `/`. Custa o resto do caminho depois dele
-/// (`/a;v=2/session=keep/b` → `/a;v=2/session=[REDACTED]`), limitação aceita (A7-B5).
-/// Nomes não sensíveis não mudam nada e o resto do caminho segue examinado.
+/// URL path (`/a;jsessionid=X/b`, `/s/token=X/y`, `;next=/cb%3Ftoken=X`): goes through
+/// the same tokenizer as the text. The value of a SENSITIVE name in a path runs to the
+/// end of the path (the query and fragment were already split off) and is redacted
+/// whole, `/` included: a credential may contain `/`. It costs the rest of the path
+/// after it (`/a;v=2/session=keep/b` → `/a;v=2/session=[REDACTED]`), an accepted
+/// limitation (A7-B5). Non-sensitive names change nothing and the rest of the path
+/// keeps being examined.
 fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
     if !path.contains([';', '%', '=', '\u{FF1D}', '&']) {
         return path.to_string();
@@ -955,22 +956,22 @@ fn sanitize_matrix(path: &str, options: &SanitizeOptions) -> String {
     super::scrub::scrub(path, options).unwrap_or_else(|| path.to_string())
 }
 
-/// Redige, em texto livre (linha de requisição, notas, mensagens, valores de
-/// header que não são URL conhecida, avisos, strings de JSON), em qualquer posição:
-/// - o valor de `nome=valor` quando o nome é sensível, com ou sem `?` antes
-///   (query, fragmento `#access_token=`, parâmetro de matriz `;jsessionid=`,
-///   `Refresh: token=...`), inclusive entre aspas/parênteses ou depois de espaço;
-/// - formas codificadas e aninhadas (`next=%2Fcb%3Ftoken=...`, `redirect=https%3A…`);
-/// - o userinfo de URLs absolutas e `Bearer`/`Basic` em qualquer caixa.
+/// Redacts, in free text (request line, notes, messages, header values that are not
+/// a known URL, warnings, JSON strings), at any position:
+/// - the value of `name=value` when the name is sensitive, with or without a `?` before
+///   (query, fragment `#access_token=`, matrix parameter `;jsessionid=`,
+///   `Refresh: token=...`), including inside quotes/parentheses or after a space;
+/// - encoded and nested forms (`next=%2Fcb%3Ftoken=...`, `redirect=https%3A…`);
+/// - the userinfo of absolute URLs and `Bearer`/`Basic` in any case.
 ///
-/// Ver `scrub.rs`: um tokenizador por nível, que só produz edições no texto
-/// original (o que não é segredo não é reescrito).
+/// See `scrub.rs`: one tokenizer per level, which only produces edits to the
+/// original text (what is not a secret is not rewritten).
 pub fn sanitize_text(text: &str, options: &SanitizeOptions) -> String {
     super::scrub::scrub(text, options).unwrap_or_else(|| text.to_string())
 }
 
-/// Valor de parâmetro (query, formulário) com URL/consulta aninhada, codificada
-/// ou não. `None` = nada a mudar.
+/// Parameter value (query, form) with a nested URL/query, encoded or not.
+/// `None` = nothing to change.
 fn sanitize_nested_value(value: &str, options: &SanitizeOptions, _depth: usize) -> Option<String> {
     super::scrub::scrub(value, options)
 }
@@ -988,14 +989,14 @@ fn sanitize_query(query: &str, options: &SanitizeOptions) -> String {
                     return format!("{name}={placeholder}");
                 }
             }
-            // `a=b=token=X`, `next=%2Fcb%3Ftoken=X`, `x%3Dtoken%3DX`: mesmas regras do texto
+            // `a=b=token=X`, `next=%2Fcb%3Ftoken=X`, `x%3Dtoken%3DX`: same rules as the text
             scrubber.run(pair).unwrap_or_else(|| pair.to_string())
         })
         .collect::<Vec<_>>()
         .join("&")
 }
 
-/// Placeholder percent-encoded para uso dentro de URL.
+/// Percent-encoded placeholder for use inside a URL.
 pub(super) fn url_placeholder(options: &SanitizeOptions) -> String {
     options
         .placeholder
@@ -1064,7 +1065,7 @@ fn unique_attachment_name(original: &str, generated: &BTreeMap<String, Vec<u8>>)
 
 fn sanitized_provenance() -> Provenance {
     Provenance::new(Source::Derived, "sanitize", Verification::Partial)
-        .with_note("conteúdo derivado; original não incluído".to_string())
+        .with_note("derived content; original not included".to_string())
 }
 
 fn is_listed_sensitive_header(name: &str) -> bool {
@@ -1109,8 +1110,8 @@ fn is_listed_sensitive_header(name: &str) -> bool {
         || name == "x-session-id"
 }
 
-/// Header sensível: lista conhecida ou nome de credencial (`X-Auth`,
-/// `X-Jwt-Thing`, `X-Session-Foo`...). `:authority`/`Author` não contam.
+/// Sensitive header: a known list entry or a credential name (`X-Auth`,
+/// `X-Jwt-Thing`, `X-Session-Foo`...). `:authority`/`Author` do not count.
 pub fn is_sensitive_header(name: &str) -> bool {
     if is_listed_sensitive_header(name) {
         return true;
@@ -1233,17 +1234,17 @@ fn is_url_key(name: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Campos de negócio sensíveis (placa, CPF…) — L5 da rodada 6
+// Sensitive business fields (placa, CPF…) — L5 of round 6
 // ---------------------------------------------------------------------------
 
-/// Lista padrão (configurável em [`SanitizeOptions::business_fields`]).
+/// Default list (configurable in [`SanitizeOptions::business_fields`]).
 pub const DEFAULT_BUSINESS_FIELDS: &[&str] = &[
     "placa", "v_placa", "plate", "renavam", "cpf", "cnpj", "chassi", "vin",
 ];
 
 thread_local! {
-    /// Contexto da sanitização em curso: campos de negócio e contadores de
-    /// redação por tipo (sem valores). Zerado/drenado em `sanitize_bundle`.
+    /// Context of the sanitization in progress: business fields and redaction
+    /// counters per type (without values). Reset/drained in `sanitize_bundle`.
     static BUSINESS: std::cell::RefCell<(Vec<String>, BTreeMap<String, usize>)> =
         const { std::cell::RefCell::new((Vec::new(), BTreeMap::new())) };
 }
@@ -1263,7 +1264,7 @@ enum BusinessKind {
     Cnpj,
     Renavam,
     Chassi,
-    /// Campo configurado sem formato conhecido: só vale em campos nomeados.
+    /// Configured field without a known format: only applies to named fields.
     Other,
 }
 
@@ -1296,7 +1297,7 @@ impl BusinessKind {
         }
     }
 
-    /// Comprimento do valor no formato do tipo no início de `rest`, se casar.
+    /// Length of the value in the type's format at the start of `rest`, if it matches.
     fn match_len(self, rest: &str) -> Option<usize> {
         let b = rest.as_bytes();
         let digits = b.iter().take_while(|c| c.is_ascii_digit()).count();
@@ -1308,7 +1309,7 @@ impl BusinessKind {
                     && b[4].is_ascii_alphanumeric()
                     && b[5].is_ascii_digit()
                     && b[6].is_ascii_digit();
-                // formato antigo com hífen: ABC-1234
+                // legacy format with a hyphen: ABC-1234
                 let dashed = b.len() >= 8
                     && b[..3].iter().all(u8::is_ascii_alphabetic)
                     && b[3] == b'-'
@@ -1347,7 +1348,7 @@ impl BusinessKind {
     }
 }
 
-/// `b` começa com o molde (`d` = dígito, outros = literal).
+/// `b` starts with the pattern (`d` = digit, others = literal).
 fn shaped(b: &[u8], pattern: &[u8]) -> bool {
     b.len() >= pattern.len()
         && pattern.iter().zip(b).all(|(p, c)| {
@@ -1359,7 +1360,7 @@ fn shaped(b: &[u8], pattern: &[u8]) -> bool {
         })
 }
 
-/// O nome do campo é (ou termina em) um campo de negócio configurado.
+/// The field name is (or ends with) a configured business field.
 pub(super) fn is_business_key(name: &str, fields: &[String]) -> bool {
     let name = name.trim();
     !name.is_empty()
@@ -1367,7 +1368,7 @@ pub(super) fn is_business_key(name: &str, fields: &[String]) -> bool {
             if field.is_empty() {
                 return false;
             }
-            // nome exato, ou sufixo depois de separador (`v_placa`, `x-cpf`)
+            // exact name, or a suffix after a separator (`v_placa`, `x-cpf`)
             name.eq_ignore_ascii_case(field)
                 || (name.len() > field.len()
                     && name.is_char_boundary(name.len() - field.len())
@@ -1376,13 +1377,13 @@ pub(super) fn is_business_key(name: &str, fields: &[String]) -> bool {
         })
 }
 
-/// Ocorrências `nome` + valor no formato do tipo dentro de um texto opaco:
-/// (início do valor, tamanho, tipo). Nomes colados a uma palavra (letra ou `_`
-/// antes) não são campo. Nome sem valor no formato conta como não casado.
+/// Occurrences of `name` + a value in the type's format inside an opaque text:
+/// (start of the value, length, type). Names glued to a word (a letter or `_`
+/// before) are not fields. A name without a value in the format counts as unmatched.
 fn scan_business(text: &str, fields: &[String]) -> (Vec<(usize, usize, BusinessKind)>, usize) {
     if text.contains('&') {
-        // Entidades no nome (`&#80;laca`): casa no texto decodificado e mapeia
-        // os intervalos de volta ao original.
+        // Entities in the name (`&#80;laca`): matches in the decoded text and maps
+        // the ranges back to the original.
         let (decoded, map) = crate::html::decode_entities(text, 0);
         if decoded != text {
             let (hits, unmatched) = scan_business_plain(&decoded, fields);
@@ -1408,10 +1409,10 @@ fn scan_business_plain(
     names.sort_by_key(|n| std::cmp::Reverse(n.len()));
     names.dedup();
     let mut hits: Vec<(usize, usize, BusinessKind)> = Vec::new();
-    // Intervalos já cobertos, por início. Nomes mais longos são processados
-    // antes e os intervalos não se sobrepõem; guardar por início e consultar
-    // só as bordas evita varrer todos a cada ocorrência (O(n²) em texto
-    // hostil, ex.: `placa1` × 200 mil).
+    // Ranges already covered, by start. Longer names are processed first and the
+    // ranges do not overlap; storing by start and checking only the edges avoids
+    // scanning all of them at each occurrence (O(n²) on hostile text, e.g.
+    // `placa1` × 200 thousand).
     let mut covered: BTreeMap<usize, usize> = BTreeMap::new();
     let mut unmatched = 0usize;
     for name in &names {
@@ -1428,15 +1429,15 @@ fn scan_business_plain(
                 continue;
             }
             let prev = lower.as_bytes().get(at.wrapping_sub(1)).filter(|_| at > 0);
-            // Colado a uma palavra (`consultar_placa`) não é campo; exceção: a
-            // variável do Natural (`v_cpf`, `v_renavam`), precedida de `v_`.
+            // Glued to a word (`consultar_placa`) it is not a field; exception: the
+            // Natural variable (`v_cpf`, `v_renavam`), preceded by `v_`.
             let natural_var = at >= 2
                 && &lower.as_bytes()[at - 2..at] == b"v_"
                 && (at == 2 || !lower.as_bytes()[at - 3].is_ascii_alphabetic());
             if prev.is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_') && !natural_var {
-                // Exceto quando o nome está no meio de um token alfanumérico e
-                // vem seguido do valor no formato (`…aplacaQWE1234`): é
-                // vazamento, então redige e conta em vez de ignorar.
+                // Except when the name is in the middle of an alphanumeric token and is
+                // followed by the value in the format (`…aplacaQWE1234`): it is a leak,
+                // so it is redacted and counted instead of ignored.
                 if let Some(len) = text.get(end..).and_then(|rest| kind.match_len(rest)) {
                     covered.insert(at, end + len);
                     hits.push((end, len, kind));
@@ -1459,9 +1460,9 @@ fn scan_business_plain(
     (hits, unmatched)
 }
 
-/// `[at, end)` já está num intervalo coberto? Os intervalos não se sobrepõem;
-/// só o anterior ao início (ou um que comece dentro do trecho, possível com
-/// nomes de campo configurados que se sobrepõem) pode cruzar.
+/// Is `[at, end)` already inside a covered range? The ranges do not overlap; only
+/// the one before the start (or one that starts within the stretch, possible with
+/// configured field names that overlap) can cross.
 fn is_covered(covered: &BTreeMap<usize, usize>, at: usize, end: usize) -> bool {
     covered
         .range(..=at)
@@ -1470,7 +1471,7 @@ fn is_covered(covered: &BTreeMap<usize, usize>, at: usize, end: usize) -> bool {
         || covered.range(at..end).next().is_some()
 }
 
-/// Redige os valores de negócio achados em um texto opaco, contando por tipo.
+/// Redacts the business values found in an opaque text, counting per type.
 fn redact_business_text(text: &str, placeholder: &str) -> String {
     let fields = business_fields();
     if fields.is_empty() {
@@ -1498,7 +1499,7 @@ fn redact_business_text(text: &str, placeholder: &str) -> String {
     out
 }
 
-/// Valores de negócio de um texto opaco (para a propagação por valor).
+/// Business values of an opaque text (for value propagation).
 fn find_business_values(text: &str) -> Vec<String> {
     let fields = business_fields();
     if fields.is_empty() {
@@ -1512,12 +1513,12 @@ fn find_business_values(text: &str) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Propagação por valor
+// Value propagation
 // ---------------------------------------------------------------------------
 
-/// Tamanho mínimo (bytes) de um valor sensível para ser propagado.
+/// Minimum size (bytes) of a sensitive value to be propagated.
 const PROPAGATION_MIN_LEN: usize = 8;
-/// Valores só de dígitos (CPF, telefone) propagam a partir deste tamanho.
+/// Digits-only values (CPF, phone) propagate from this size on.
 const PROPAGATION_MIN_DIGITS: usize = 10;
 
 struct SensitiveValue {
@@ -1525,12 +1526,12 @@ struct SensitiveValue {
     value: String,
 }
 
-/// Uma forma de escrita do valor. `pct` casa os dígitos hex de `%XX` sem
-/// diferenciar maiúsculas e minúsculas e usa o placeholder percent-encoded.
+/// One written form of the value. `pct` matches the hex digits of `%XX` without
+/// distinguishing case and uses the percent-encoded placeholder.
 struct Variant {
     text: String,
     pct: bool,
-    /// Compara tudo sem diferenciar maiúsculas (formas duplamente codificadas).
+    /// Compares everything without distinguishing case (doubly encoded forms).
     fold: bool,
 }
 
@@ -1539,9 +1540,9 @@ struct Needle {
     variants: Vec<Variant>,
 }
 
-/// Chaves de alta confiança: só elas (e headers de autenticação e cookies)
-/// geram propagação. Chaves genéricas (`key`, `code`, `state`...) são
-/// redigidas no lugar, sem propagar.
+/// High-confidence keys: only they (and authentication headers and cookies)
+/// generate propagation. Generic keys (`key`, `code`, `state`...) are redacted in
+/// place, without propagating.
 fn is_propagating_key(name: &str) -> bool {
     if !is_sensitive_key(name) {
         return false;
@@ -1561,7 +1562,7 @@ fn is_propagating_key(name: &str) -> bool {
         || compact.ends_with("nonce")
 }
 
-/// Palavras de credencial em um nome compactado (sem separadores).
+/// Credential words in a compacted name (without separators).
 fn has_secret_word(compact: &str) -> bool {
     let without_author = compact.replace("authority", "").replace("author", "");
     [
@@ -1584,7 +1585,7 @@ fn is_trivial_value(value: &str, options: &SanitizeOptions, business: bool) -> b
         && !options.placeholder.contains(value)
         && !value.contains(&options.placeholder)
     {
-        return false; // valor de negócio no formato do tipo
+        return false; // business value in the type's format
     }
     if value.len() < PROPAGATION_MIN_LEN {
         return true;
@@ -1603,7 +1604,7 @@ fn is_trivial_value(value: &str, options: &SanitizeOptions, business: bool) -> b
     options.placeholder.contains(value) || value.contains(&options.placeholder)
 }
 
-/// Percent-encoding em maiúsculas; `plus` escreve espaço como `+`.
+/// Uppercase percent-encoding; `plus` writes a space as `+`.
 fn percent_encode_with(value: &str, keep: &str, plus: bool) -> String {
     let mut out = String::new();
     for byte in value.bytes() {
@@ -1633,7 +1634,7 @@ fn variants_of(value: &str) -> Vec<Variant> {
             candidates.push((percent_encode_with(value, keep, true), true));
         }
     }
-    // Percent-encoding duplo (`%252F`): codifica de novo cada forma percent.
+    // Double percent-encoding (`%252F`): encodes each percent form again.
     let doubled: Vec<(String, bool)> = candidates
         .iter()
         .filter(|(_, pct)| *pct)
@@ -1678,12 +1679,12 @@ fn collect_url(url: &str, out: &mut Vec<SensitiveValue>) {
     if let Some((_, query)) = before_fragment.split_once('?') {
         collect_query(query, out);
     }
-    // Fragmento com parâmetros (`#access_token=...`).
+    // Fragment with parameters (`#access_token=...`).
     if let Some(fragment) = fragment {
         collect_query(fragment, out);
     }
     let path_part = before_fragment.split('?').next().unwrap_or("");
-    // Parâmetros de matriz (`;jsessionid=...`) e senha do userinfo.
+    // Matrix parameters (`;jsessionid=...`) and the userinfo password.
     let (authority, path) = match path_part.split_once("://") {
         Some((_, rest)) => match rest.split_once('/') {
             Some((authority, path)) => (Some(authority), path),
@@ -1746,10 +1747,9 @@ fn collect_json(value: &Value, out: &mut Vec<SensitiveValue>) {
     }
 }
 
-/// `<input type="hidden" name="csrf_token" value="...">`: o valor de um input
-/// hidden de nome sensível entra no conjunto de propagação por valor, para ser
-/// redigido onde reaparecer (headers, query, formulário e JSON de requisições
-/// seguintes).
+/// `<input type="hidden" name="csrf_token" value="...">`: the value of a hidden input
+/// with a sensitive name joins the value propagation set, to be redacted wherever it
+/// reappears (headers, query, form and JSON of the following requests).
 fn collect_hidden_inputs(html: &str, out: &mut Vec<SensitiveValue>) {
     let lower = html.to_ascii_lowercase();
     let mut from = 0;
@@ -1782,7 +1782,7 @@ fn collect_hidden_inputs(html: &str, out: &mut Vec<SensitiveValue>) {
     }
 }
 
-/// Atributos de uma tag (`nome="valor"`, `nome='valor'`, `nome=valor`, `nome`).
+/// Attributes of a tag (`name="value"`, `name='value'`, `name=value`, `name`).
 fn html_attributes(tag: &str) -> Vec<(String, String)> {
     let bytes = tag.as_bytes();
     let mut attrs = Vec::new();
@@ -1832,7 +1832,7 @@ fn html_attributes(tag: &str) -> Vec<(String, String)> {
     attrs
 }
 
-/// Entidades HTML comuns em valores de atributo.
+/// Common HTML entities in attribute values.
 fn html_unescape(value: &str) -> String {
     if !value.contains('&') {
         return value.to_string();
@@ -1843,7 +1843,7 @@ fn html_unescape(value: &str) -> String {
         .replace("&#x27;", "'")
         .replace("&lt;", "<")
         .replace("&gt;", ">");
-    // `&#NN;` / `&#xHH;` (um caractere)
+    // `&#NN;` / `&#xHH;` (one character)
     let mut result = String::with_capacity(out.len());
     let mut rest = out.as_str();
     while let Some(at) = rest.find("&#") {
@@ -1923,7 +1923,7 @@ fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
         for entry in view.pseudo_headers.iter().chain(view.headers.iter()) {
             let lower = entry.name.to_ascii_lowercase();
             if matches!(lower.as_str(), "cookie" | "set-cookie") {
-                continue; // cobertos pelos pares/registros de cookie
+                continue; // covered by the cookie pairs/records
             }
             if is_sensitive_header(&lower) {
                 let value =
@@ -2015,7 +2015,7 @@ fn matches_at(hay: &[u8], needle: &[u8], pct: bool, fold: bool) -> bool {
     true
 }
 
-/// Substitui todas as ocorrências de `variant`; devolve (texto, quantidade).
+/// Replaces all occurrences of `variant`; returns (text, count).
 fn replace_variant(hay: &str, variant: &Variant, mark: &str) -> (String, usize) {
     let (hay_bytes, needle) = (hay.as_bytes(), variant.text.as_bytes());
     let mut out = String::with_capacity(hay.len());
@@ -2050,7 +2050,7 @@ struct Propagator<'a> {
 }
 
 impl Propagator<'_> {
-    /// Redige in-place; só chamado em campos de valor.
+    /// Redacts in place; only called on value fields.
     fn apply(&mut self, text: &mut String) {
         let mut current: Option<String> = None;
         for needle in &self.needles {
@@ -2125,13 +2125,13 @@ impl Propagator<'_> {
     }
 }
 
-/// Redige, nos campos de valor da sessão sanitizada (URLs, valores de header,
-/// cookies, notas e anexos de texto), cada valor que a política já tratou como
-/// sensível com alta confiança, nas formas literal, percent-encoded (hex sem
-/// diferenciar caixa, `+` como espaço) e JSON-escaped. Enums, IDs e nomes de
-/// anexo nunca são tocados: a passagem percorre o modelo tipado, sem
-/// serializar a sessão. Nenhum passo é falível; anexos que não são texto UTF-8
-/// não são varridos e isso é declarado.
+/// Redacts, in the value fields of the sanitized session (URLs, header values, cookies,
+/// notes and text attachments), each value that the policy has already treated as
+/// sensitive with high confidence, in literal, percent-encoded (hex without case
+/// distinction, `+` as space) and JSON-escaped forms. Enums, IDs and attachment names
+/// are never touched: the pass walks the typed model, without serializing the session.
+/// No step is fallible; attachments that are not UTF-8 text are not scanned and this
+/// is declared.
 fn propagate_sensitive_values(
     sensitive: Vec<SensitiveValue>,
     session: &mut crate::model::SessionV1,
@@ -2261,7 +2261,7 @@ fn propagate_sensitive_values(
         warnings.push(Warning::new(
             "sanitize.value_propagation",
             format!(
-                "{total} ocorrência(s) de {} valor(es) sensível(is) já identificado(s) foram redigidas em outros campos (URLs, headers, corpos), em formas literal, percent-encoded e JSON-escaped; valores com menos de {PROPAGATION_MIN_LEN} bytes (ou {PROPAGATION_MIN_DIGITS} dígitos) ou triviais não são propagados e podem permanecer",
+                "{total} occurrence(s) of {} sensitive value(s) already identified were redacted in other fields (URLs, headers, bodies), in literal, percent-encoded and JSON-escaped forms; values shorter than {PROPAGATION_MIN_LEN} bytes (or {PROPAGATION_MIN_DIGITS} digits) or trivial values are not propagated and may remain",
                 values.len()
             ),
         ));
@@ -2273,7 +2273,7 @@ fn propagate_sensitive_values(
         warnings.push(Warning::new(
             "sanitize.value_propagation_not_scanned",
             format!(
-                "{not_scanned} anexo(s) binário(s)/não UTF-8 não foram varridos pela propagação por valor"
+                "{not_scanned} binary/non-UTF-8 attachment(s) were not scanned by value propagation"
             ),
         ));
     }
@@ -2399,7 +2399,7 @@ mod tests {
         assert_eq!(value["user"]["email"], "[REDACTED]");
         assert_eq!(value["user"]["name"], "Ana");
         assert_eq!(request.request_body.state, BodyState::Captured);
-        // Original não é copiado.
+        // The original is not copied.
         assert!(!export.bundle.attachments.contains_key("r1.request.bin"));
     }
 
@@ -2497,10 +2497,10 @@ mod tests {
                 .to_string();
         let export = sanitize_bundle(&bundle, &SanitizeOptions::default());
         let raw = serde_json::to_string(&export.bundle.session).unwrap();
-        assert!(!raw.contains("ZZURLTOKEN-42"), "sid não pode vazar");
-        assert!(!raw.contains("ZZJSESSION-1"), "jsessionid não pode vazar");
-        assert!(!raw.contains("ZZPHPSESS-2"), "phpsessid não pode vazar");
-        assert!(raw.contains("page=2"), "parâmetro não sensível preservado");
+        assert!(!raw.contains("ZZURLTOKEN-42"), "sid must not leak");
+        assert!(!raw.contains("ZZJSESSION-1"), "jsessionid must not leak");
+        assert!(!raw.contains("ZZPHPSESS-2"), "phpsessid must not leak");
+        assert!(raw.contains("page=2"), "non-sensitive parameter preserved");
         assert!(raw.contains("sid=%5BREDACTED%5D"));
         assert!(raw.contains("jsessionid=%5BREDACTED%5D"));
         assert!(raw.contains("phpsessid=%5BREDACTED%5D"));
@@ -2524,14 +2524,14 @@ mod tests {
             Some("Bearer [REDACTED]")
         );
         let raw = serde_json::to_string(&export.bundle.session).unwrap();
-        assert!(!raw.contains("ZZAUTH-987654321"), "Bearer não pode vazar");
+        assert!(!raw.contains("ZZAUTH-987654321"), "Bearer must not leak");
         assert!(export
             .bundle
             .session
             .session
             .notes
             .iter()
-            .any(|note| note.contains("heurística")));
+            .any(|note| note.contains("heuristic")));
         assert!(export.redactions.contains_key("header:auth-scheme"));
     }
 
@@ -2553,7 +2553,7 @@ mod tests {
             let elapsed = t.elapsed();
             assert!(
                 elapsed.as_secs_f64() < limit,
-                "texto de {} bytes levou {elapsed:?}",
+                "text of {} bytes took {elapsed:?}",
                 text.len()
             );
         }
@@ -2579,7 +2579,7 @@ mod tests {
     #[test]
     fn round2_nested_url_tab_after_scheme_and_obvious_values() {
         let o = SanitizeOptions::default();
-        // R6: URL aninhada com percent-encoding (também em dois níveis).
+        // R6: nested URL with percent-encoding (also at two levels).
         let out = sanitize_text(
             "GET /cb?redirect_uri=https%3A%2F%2Fa.test%2Fx%3Ftoken%3DSEGMARC1 HTTP/1.1",
             &o,
@@ -2590,7 +2590,7 @@ mod tests {
             &o,
         );
         assert!(!out.contains("SEGMARC2"), "{out}");
-        // R8: TAB (e qualquer espaço) depois do esquema; UTF-8 sem panic.
+        // R8: TAB (and any whitespace) after the scheme; UTF-8 without panic.
         assert_eq!(
             split_auth_scheme("Bearer\tSEGMARC3").map(|(_, r)| r),
             Some("SEGMARC3")
@@ -2600,7 +2600,7 @@ mod tests {
         );
         assert!(split_auth_scheme("Béarer xyz").is_none());
         assert!(split_auth_scheme("日本語日本語日本語").is_none());
-        // R13: booleano/número óbvio visível; string redigida; objeto-rótulo percorrido.
+        // R13: obvious boolean/number stays visible; string redacted; label object traversed.
         let mut v: Value = serde_json::from_str(
             r#"{"pin":true,"ticket":{"id":"SEGMARC4x","open":false},"jwtExpiresIn":3600,"otp":"123456","password":"SEGMARC5","pinCount":3}"#,
         ).unwrap();
@@ -2610,7 +2610,7 @@ mod tests {
         assert_eq!(v["jwtExpiresIn"], 3600);
         assert_eq!(v["ticket"]["open"], Value::Bool(false));
         for secret in ["SEGMARC4x", "123456", "SEGMARC5"] {
-            assert!(!text.contains(secret), "{secret} em {text}");
+            assert!(!text.contains(secret), "{secret} in {text}");
         }
     }
 }

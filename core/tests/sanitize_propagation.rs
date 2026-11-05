@@ -99,7 +99,7 @@ fn session_value_in_opaque_field_url_and_json_is_redacted_everywhere() {
     let all = everything(&bundle);
     assert!(!all.contains(SID), "session value leaked");
     assert!(!all.contains(SLASHY));
-    assert!(!all.contains("ab%2Fcd"), "forma percent-encoded vazou");
+    assert!(!all.contains("ab%2Fcd"), "percent-encoded form leaked");
     assert!(!all.contains("ab\\/cd"));
     assert!(codes.iter().any(|c| c == "sanitize.value_propagation"));
     assert!(redactions.keys().any(|k| k.starts_with("propagated:")));

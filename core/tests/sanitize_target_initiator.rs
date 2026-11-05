@@ -33,7 +33,7 @@ fn target_and_initiator_urls_are_sanitized() {
 
     let export = sanitize_bundle(&imported.bundle, &SanitizeOptions::default());
     let json = serde_json::to_string(&export.bundle.session).unwrap();
-    assert!(!json.contains("SECRET-"), "vazou: {json}");
+    assert!(!json.contains("SECRET-"), "leaked: {json}");
     let sanitized = &export.bundle.session.requests[0];
     let target_url = sanitized.target.as_ref().unwrap().url.as_ref().unwrap();
     assert!(

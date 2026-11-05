@@ -24,8 +24,8 @@ pub enum WarningSeverity {
     Error,
 }
 
-/// Aviso de importação/captura. Nada é descartado em silêncio: dados
-/// desconhecidos, campos ausentes e limites de captura geram um `Warning`.
+/// Import/capture warning. Nothing is discarded silently: unknown data,
+/// missing fields and capture limits produce a `Warning`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Warning {
@@ -112,7 +112,7 @@ impl Default for Completeness {
     fn default() -> Self {
         Self {
             state: CompletenessState::Partial,
-            reasons: vec!["completeness não informada pela fonte".to_string()],
+            reasons: vec!["completeness not reported by the source".to_string()],
             counts: CompletenessCounts::default(),
         }
     }
@@ -167,11 +167,11 @@ impl Default for BrowserInfo {
     }
 }
 
-/// Fatos da captura; nada aqui é necessário para ler o modelo.
+/// Capture facts; nothing here is required to read the model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureMeta {
-    /// Ex.: `cdp+netlog`, `har-import`, `netlog-import`.
+    /// E.g. `cdp+netlog`, `har-import`, `netlog-import`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -190,7 +190,7 @@ pub struct SessionMeta {
     pub id: String,
     #[serde(default)]
     pub browser: BrowserInfo,
-    /// ISO 8601 com offset/UTC.
+    /// ISO 8601 with offset/UTC.
     pub started_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<String>,
@@ -198,7 +198,7 @@ pub struct SessionMeta {
     pub completeness: Completeness,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capture: Option<CaptureMeta>,
-    /// Rótulos livres; fixtures usam `synthetic-fixture`.
+    /// Free-form labels; fixtures use `synthetic-fixture`.
     #[serde(default)]
     pub labels: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -212,7 +212,7 @@ impl SessionMeta {
             browser,
             started_at: started_at.into(),
             ended_at: None,
-            completeness: Completeness::partial("sessão em construção"),
+            completeness: Completeness::partial("session under construction"),
             capture: None,
             labels: Vec::new(),
             notes: Vec::new(),
@@ -220,9 +220,9 @@ impl SessionMeta {
     }
 }
 
-/// Documento persistido em `session.json`. Contém metadados, entidades e
-/// avisos; os artefatos brutos (`cdp-events.jsonl`, `netlog.json`,
-/// `attachments/`) ficam ao lado e não são reescritos.
+/// Document persisted in `session.json`. Contains metadata, entities and
+/// warnings; the raw artifacts (`cdp-events.jsonl`, `netlog.json`,
+/// `attachments/`) sit alongside it and are not rewritten.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionV1 {
@@ -273,9 +273,9 @@ impl SessionV1 {
         })
     }
 
-    /// Recalcula contagens e o estado de completude a partir do conteúdo.
-    /// O estado só melhora para `Complete` se nenhuma fonte declarou parcial e
-    /// não há avisos de erro.
+    /// Recomputes counts and the completeness state from the content.
+    /// The state only improves to `Complete` if no source declared partial and
+    /// there are no error warnings.
     pub fn recompute_completeness(&mut self) {
         let previous = self.session.completeness.counts.clone();
         let mut counts = CompletenessCounts {
@@ -305,13 +305,13 @@ impl SessionV1 {
         {
             self.session
                 .completeness
-                .add_reason("há avisos de erro na sessão");
+                .add_reason("there are error warnings in the session");
         }
     }
 
-    /// Verificação agregada da sessão: a mais fraca entre as requisições.
-    /// A UI nunca deve exibir um selo "verificado" por sessão quando uma
-    /// informação é parcial; use proveniência por informação.
+    /// Aggregated session verification: the weakest among the requests.
+    /// The UI must never show a "verified" badge per session when a piece of
+    /// information is partial; use per-information provenance.
     pub fn weakest_verification(&self) -> super::provenance::Verification {
         if self.requests.is_empty() {
             return super::provenance::Verification::Unverified;
@@ -325,8 +325,8 @@ impl SessionV1 {
     }
 }
 
-/// Sessão + artefatos brutos carregados em memória. `source_dir` nunca é
-/// necessário para interpretar o documento; é usado para gravar exportações.
+/// Session + raw artifacts loaded in memory. `source_dir` is never needed to
+/// interpret the document; it is used to write exports.
 #[derive(Debug, Clone)]
 pub struct SessionBundle {
     pub session: SessionV1,
@@ -354,16 +354,16 @@ impl SessionBundle {
     }
 }
 
-/// Fixtures e exports sintéticos são marcados aqui para que a UI nunca os
-/// confunda com captura real.
+/// Synthetic fixtures and exports are marked here so that the UI never
+/// confuses them with a real capture.
 pub const LABEL_SYNTHETIC: &str = "synthetic-fixture";
-/// Sessão importada de arquivos CDP+NetLog (origem padrão de `import_capture`).
+/// Session imported from CDP+NetLog files (default origin of `import_capture`).
 pub const LABEL_CAPTURE_IMPORT: &str = "capture-import";
-/// Captura ao vivo feita pelo produto; só quem captura deve declarar.
+/// Live capture made by the product; only the capturer should declare it.
 pub const LABEL_LIVE_CAPTURE: &str = "live-capture";
 
-/// Preenche `browserVersion` em toda proveniência que ainda não o tem. Usado
-/// quando a captura combinada descobre a versão no NetLog (o CDP não a traz).
+/// Fills `browserVersion` in every provenance that does not have it yet. Used
+/// when the combined capture finds the version in the NetLog (CDP does not carry it).
 pub fn backfill_browser_version(session: &mut SessionV1, version: &str) {
     fn fill(provenance: &mut super::provenance::Provenance, version: &str) {
         if provenance.browser_version.is_none() {
@@ -455,7 +455,7 @@ mod tests {
     fn error_warning_marks_session_partial() {
         let mut s = session();
         s.session.completeness = Completeness::complete();
-        s.add_warning(Warning::error("netlog.invalid", "arquivo corrompido"));
+        s.add_warning(Warning::error("netlog.invalid", "corrupted file"));
         assert_eq!(s.session.completeness.state, CompletenessState::Partial);
         assert!(!s.session.completeness.reasons.is_empty());
     }

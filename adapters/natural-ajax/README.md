@@ -1,34 +1,34 @@
 # scrapelens-natural-ajax
 
-Adaptador do protocolo **Natural for Ajax** (campo `XML` do Connector) para o
-ScrapeLens. Vive fora do core: depende de `scrapelens-core` só pelo trait
-`ProtocolAdapter`.
+Adapter for the **Natural for Ajax** protocol (`XML` field of the Connector) for
+ScrapeLens. It lives outside the core: it depends on `scrapelens-core` only through
+the `ProtocolAdapter` trait.
 
-- `grammar`: gramática independente do trait (comprimentos em unidades UTF-16,
-  análise linear, erro em vez de panic). Requisição: `i`/`v` + larguras
-  `2,2,2,2,2,3,5,1`, `p` (2/5) e `x` (2). Resposta: `l s p q z w b c k x`.
-- `NaturalAjax`: implementa o trait. Partes: `op` (estrutura crua), cabeçalho
-  `sid pid model page event` (valor) e `empty dummy flag` (estrutura),
-  `p.<nome>` (valor), `s.<chave>` (nome), `delta`. Os prefixos de comprimento
-  nunca são partes: o `encode` os recalcula.
-- `PYTHON_ENCODER` / `PYTHON_DECODER`: o codificador (e o decodificador usado
-  para extrair partes das respostas) que o script de priming inclui,
-  equivalentes ao Rust (testados lado a lado).
-- `natural-core`: wrapper do CLI do core com o adaptador registrado
-  (`export-priming`; os outros subcomandos vão ao `scrapelens-core`).
-  O adaptador só vale com `--adapter natural-ajax`; sem a flag, o script sai
-  pelo caminho por trechos (controle). Padrão **estrito** nas partes do adaptador: literal só para papel Structure,
-  constante comprovada (≥ 2 requisições da sessão ou contexto estático),
-  navegação ou *constante de UI* (booleanos e números de até 4 caracteres com
-  sinal/decimal: `true`, `-180`, `2.0`) ou nome de comando/recurso do
-  cabeçalho (`event`, `page`, `model`, como `cmd_filtro`) sem cara de
-  identificador nem PII; qualquer outra parte sem origem vira
-  parâmetro obrigatório, e valor com origem em outra rodada nunca é literal.
-  `--lenient-parts` (intermediário): só valor com cara de identificador,
-  segredo ou carimbo de tempo (UUID, hex, ULID, base64, timestamp,
-  alfanumérico misto) vira parâmetro. `adapter-roundtrip <sessao>` imprime
-  `{"fields", "divergences", "divergenceKinds", ...}` (só agregados).
+- `grammar`: grammar independent of the trait (lengths in UTF-16 units,
+  linear parsing, error instead of panic). Request: `i`/`v` + widths
+  `2,2,2,2,2,3,5,1`, `p` (2/5) and `x` (2). Response: `l s p q z w b c k x`.
+- `NaturalAjax`: implements the trait. Parts: `op` (raw structure), header
+  `sid pid model page event` (value) and `empty dummy flag` (structure),
+  `p.<name>` (value), `s.<key>` (name), `delta`. Length prefixes are never
+  parts: `encode` recalculates them.
+- `PYTHON_ENCODER` / `PYTHON_DECODER`: the encoder (and the decoder used to
+  extract parts from responses) that the priming script includes, equivalent
+  to the Rust code (tested side by side).
+- `natural-core`: wrapper around the core CLI with the adapter registered
+  (`export-priming`; the other subcommands go to `scrapelens-core`).
+  The adapter only applies with `--adapter natural-ajax`; without the flag, the
+  script takes the snippet path (control). **Strict** default for the adapter's parts: literal only for the Structure role,
+  proven constant (≥ 2 requests in the session or static context),
+  navigation or *UI constant* (booleans and numbers of up to 4 characters with
+  sign/decimal: `true`, `-180`, `2.0`), or a command/resource name from the
+  header (`event`, `page`, `model`, such as `cmd_filtro`) that does not look like
+  an identifier nor PII; any other part without an origin becomes a
+  required parameter, and a value whose origin is in another round is never a literal.
+  `--lenient-parts` (intermediate): only a value that looks like an identifier,
+  secret or timestamp (UUID, hex, ULID, base64, timestamp,
+  mixed alphanumeric) becomes a parameter. `adapter-roundtrip <session>` prints
+  `{"fields", "divergences", "divergenceKinds", ...}` (aggregates only).
 
-Testes: `cargo test` (round-trip nas fixtures e, se existirem, nos 3 HARs
-reais, só agregados), `python3 scripts/prove_strict.py` (detran-sim em modo
-`strict`, só 127.0.0.1).
+Tests: `cargo test` (round-trip on the fixtures and, if they exist, on the 3 real
+HARs, aggregates only), `python3 scripts/prove_strict.py` (detran-sim in `strict`
+mode, 127.0.0.1 only).

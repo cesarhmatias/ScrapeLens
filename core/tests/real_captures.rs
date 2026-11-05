@@ -1,5 +1,5 @@
-//! Validação contra as capturas reais h2/h3 dos experimentos de fidelidade.
-//! Somente leitura; nenhuma rede.
+//! Validation against the real h2/h3 captures from the fidelity experiments.
+//! Read-only; no network.
 
 use scrapelens_core::correlate::CorrelationOptions;
 use scrapelens_core::model::{Protocol, Verification};
@@ -23,7 +23,7 @@ fn assert_capture(protocol: &str, expected: Protocol) {
             .requests
             .iter()
             .all(|request| request.match_state == scrapelens_core::model::MatchState::Matched),
-        "todas as 12 requisições devem casar sem ambiguidade"
+        "all 12 requests must match without ambiguity"
     );
     assert_eq!(
         session.session.completeness.state,
@@ -33,28 +33,28 @@ fn assert_capture(protocol: &str, expected: Protocol) {
     assert_eq!(
         session.stream_sessions.len(),
         12,
-        "cada requisição {protocol} deve ter uma StreamSession"
+        "each {protocol} request must have a StreamSession"
     );
 
     let page = session
         .requests
         .iter()
         .find(|request| request.url.ends_with("/page"))
-        .expect("requisição /page");
+        .expect("request /page");
     assert_eq!(page.protocol, expected);
     assert_eq!(
         page.request_headers.verification(),
         Verification::Partial,
-        "ordem do request h2/h3 é parcial (Cookie pode estar fundido no log)"
+        "h2/h3 request order is partial (Cookie may be merged in the log)"
     );
     assert_eq!(
         page.response_headers.verification(),
         Verification::Verified,
-        "response transacional h2/h3 é verificado"
+        "h2/h3 transactional response is verified"
     );
     assert_eq!(page.cookie.pairs.len(), 3);
     assert_eq!(page.cookie.raw.len(), 1);
-    // O NetLog mostra 1 campo Cookie; o parser não inventa a divisão do fio.
+    // The NetLog shows 1 Cookie field; the parser does not invent the wire split.
     assert_eq!(page.cookie.wire_lines.len(), 1);
     assert!(page.attempts[0].stream_session_id.is_some());
 
@@ -70,7 +70,7 @@ fn assert_capture(protocol: &str, expected: Protocol) {
     };
     assert!(
         evidence.contains(&session_event),
-        "evidência de sessão ausente: {evidence:?}"
+        "session evidence missing: {evidence:?}"
     );
 }
 
@@ -98,7 +98,7 @@ fn h3_response_session_evidence_expands_nul_duplicates() {
         .header_evidence
         .iter()
         .find(|evidence| evidence.event == "QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS")
-        .expect("evidência QUIC recv");
+        .expect("QUIC recv evidence");
     assert_eq!(evidence.protocol, Protocol::H3);
     assert_eq!(evidence.view.get_all("set-cookie").len(), 2);
     assert_eq!(evidence.view.get_all("x-resp-order").len(), 2);
@@ -129,7 +129,7 @@ fn contract_h1_redirect_chain_has_three_attempts_and_two_redirects() {
         .requests
         .iter()
         .find(|request| request.url.contains("/redirect?n=2"))
-        .expect("chain de redirect");
+        .expect("redirect chain");
     assert_eq!(request.attempts.len(), 3);
     assert_eq!(
         request
@@ -144,7 +144,7 @@ fn contract_h1_redirect_chain_has_three_attempts_and_two_redirects() {
         .attempts
         .iter()
         .all(|attempt| attempt.match_state == scrapelens_core::model::MatchState::Matched));
-    // A resposta final não pode herdar os headers 302 do redirect anterior.
+    // The final response must not inherit the 302 headers of the previous redirect.
     assert_eq!(
         request.attempts[2]
             .response_headers
@@ -174,7 +174,7 @@ fn identical_simultaneous_requests_remain_explicitly_ambiguous() {
             assert_eq!(
                 attempt.match_candidates.len(),
                 2,
-                "os dois candidatos idênticos devem ser expostos"
+                "the two identical candidates must be exposed"
             );
             assert!(attempt.netlog.source_ids.is_empty());
         }

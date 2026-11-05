@@ -1,33 +1,33 @@
-//! Tokenizador HTML tolerante para controles de formulário (L1, docs/10).
+//! Tolerant HTML tokenizer for form controls (L1, docs/10).
 //!
-//! Não executa nada e não monta DOM: percorre o texto procurando `<input>`,
-//! `<textarea>` e `<select>`, ignorando comentários, `<script>` e `<style>`.
-//! Aceita atributos com aspas duplas, simples ou sem aspas, nomes em
-//! maiúsculas, atributos sem valor e tags mal fechadas. As entidades
-//! (`&amp;`, `&lt;`, `&#38;`, `&#x26;`…) são decodificadas no valor, com um
-//! mapa de offsets de cada byte decodificado para o original.
+//! Does not execute anything and does not build a DOM: it walks the text looking
+//! for `<input>`, `<textarea>` and `<select>`, ignoring comments, `<script>` and
+//! `<style>`. Accepts attributes with double or single quotes or unquoted, names
+//! in uppercase, valueless attributes and badly closed tags. The entities
+//! (`&amp;`, `&lt;`, `&#38;`, `&#x26;`…) are decoded in the value, with an offset
+//! map from each decoded byte to the original.
 
-/// Um controle de formulário com valor.
+/// A form control with a value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HtmlControl {
     pub name: String,
-    /// Valor com entidades decodificadas.
+    /// Value with entities decoded.
     pub value: String,
-    /// `map[i]` = offset original do byte decodificado `i`; `map[len]` = fim.
+    /// `map[i]` = original offset of decoded byte `i`; `map[len]` = end.
     pub map: Vec<usize>,
-    /// Intervalo do valor no texto original.
+    /// Range of the value in the original text.
     pub start: usize,
     pub end: usize,
-    /// `hidden` (input) — única forma de controle que a página define como
-    /// valor de protocolo; os demais são pré-preenchimentos.
+    /// `hidden` (input) — the only kind of control the page defines as a protocol
+    /// value; the others are pre-fills.
     pub hidden: bool,
 }
 
 const MAX_CONTROLS: usize = 20_000;
 const MAX_RUNAWAY_TAGS: usize = 64;
 
-// Bytes varridos pelo tokenizador, só nos testes: prova de custo linear sem
-// depender do relógio da máquina.
+// Bytes scanned by the tokenizer, tests only: proof of linear cost without
+// depending on the machine's clock.
 #[cfg(test)]
 thread_local! {
     static SCANNED_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -40,8 +40,8 @@ fn note_scan(bytes: usize) {
     let _ = bytes;
 }
 
-/// Decodifica entidades HTML com mapa de offsets (base = deslocamento do
-/// trecho no texto original). Entidade desconhecida fica literal.
+/// Decodes HTML entities with an offset map (base = offset of the fragment in
+/// the original text). An unknown entity stays literal.
 pub fn decode_entities(raw: &str, base: usize) -> (String, Vec<usize>) {
     let bytes = raw.as_bytes();
     let mut out = String::with_capacity(raw.len());
@@ -71,9 +71,9 @@ pub fn decode_entities(raw: &str, base: usize) -> (String, Vec<usize>) {
 
 fn entity_at(raw: &str, at: usize) -> Option<(char, usize)> {
     let rest = &raw[at + 1..];
-    // Entidade tem no máximo 10 bytes de corpo (`#x10FFFF` = 8). Procurar o
-    // `;` no resto do texto a cada `&` tornaria a decodificação quadrática
-    // (um `&` nu varria o documento inteiro); a janela limita a 11 bytes.
+    // An entity has at most 10 body bytes (`#x10FFFF` = 8). Searching for the `;`
+    // in the rest of the text at every `&` would make decoding quadratic (a bare
+    // `&` would scan the whole document); the window limits it to 11 bytes.
     let window = rest.as_bytes().get(..rest.len().min(11))?;
     let end = window.iter().position(|b| *b == b';')?;
     let body = &rest[..end];
@@ -106,9 +106,9 @@ fn entity_at(raw: &str, at: usize) -> Option<(char, usize)> {
 
 struct Tag<'a> {
     name: String,
-    /// (nome minúsculo, valor bruto, início do valor no texto, presente)
+    /// (lowercase name, raw value, start of the value in the text, present)
     attrs: Vec<(String, &'a str, usize)>,
-    /// Posição logo depois do `>`.
+    /// Position right after the `>`.
     end: usize,
     closing: bool,
 }
@@ -117,10 +117,10 @@ fn is_space(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0c)
 }
 
-/// Lê a tag que começa em `at` (`<`). `None` se não parecer uma tag.
+/// Reads the tag that starts at `at` (`<`). `None` if it does not look like a tag.
 fn parse_tag<'a>(text: &'a str, at: usize, no_close: &mut [usize; 3]) -> Option<Tag<'a>> {
-    // Tag que corre até o fim do texto custa uma varredura inteira; depois de
-    // algumas, o resto do documento deixa de ser lido como tag (linear).
+    // A tag that runs to the end of the text costs a full scan; after a few,
+    // the rest of the document stops being read as tags (linear).
     if no_close[2] >= MAX_RUNAWAY_TAGS {
         return None;
     }
@@ -145,7 +145,7 @@ fn parse_tag<'a>(text: &'a str, at: usize, no_close: &mut [usize; 3]) -> Option<
         }
         if i >= bytes.len() {
             no_close[2] += 1;
-            return None; // tag sem `>`
+            return None; // tag without `>`
         }
         if bytes[i] == b'>' {
             return Some(Tag {
@@ -160,7 +160,7 @@ fn parse_tag<'a>(text: &'a str, at: usize, no_close: &mut [usize; 3]) -> Option<
             i += 1;
         }
         if i == a_start {
-            i += 1; // caractere estranho: segue adiante
+            i += 1; // stray character: move on
             continue;
         }
         let attr = text[a_start..i].to_ascii_lowercase();
@@ -179,8 +179,8 @@ fn parse_tag<'a>(text: &'a str, at: usize, no_close: &mut [usize; 3]) -> Option<
         match bytes.get(j) {
             Some(&q) if q == b'"' || q == b'\'' => {
                 let v_start = j + 1;
-                // Memoriza onde já não há aspas de fechamento: mantém o
-                // tokenizador linear com aspas sem par (`<a b="` repetido).
+                // Remembers where there are no closing quotes anymore: keeps the
+                // tokenizer linear with unpaired quotes (`<a b="` repeated).
                 let slot = usize::from(q == b'\'');
                 if v_start >= no_close[slot] {
                     no_close[2] += 1;
@@ -250,7 +250,7 @@ fn control(name: &str, raw: &str, start: usize) -> Option<HtmlControl> {
     })
 }
 
-/// Extrai os controles com nome de um documento HTML.
+/// Extracts the named controls from an HTML document.
 pub fn html_controls(text: &str) -> Vec<HtmlControl> {
     #[cfg(test)]
     SCANNED_BYTES.with(|count| count.set(0));
@@ -266,7 +266,7 @@ pub fn html_controls(text: &str) -> Vec<HtmlControl> {
         note_scan(rel + 1);
         let at = i + rel;
         if text[at..].starts_with("<!--") {
-            // HTML5: `<!-->` e `<!--->` fecham na hora.
+            // HTML5: `<!-->` and `<!--->` close immediately.
             let rest = &text[at + 4..];
             i = if rest.starts_with('>') {
                 at + 5
@@ -277,7 +277,7 @@ pub fn html_controls(text: &str) -> Vec<HtmlControl> {
             };
             continue;
         }
-        // CDATA, `<!x…>` e `<?…>` são comentários bogus até o primeiro `>`.
+        // CDATA, `<!x…>` and `<?…>` are bogus comments up to the first `>`.
         if text[at..].starts_with("<!") || text[at..].starts_with("<?") {
             i = text[at..].find('>').map_or(bytes.len(), |e| at + e + 1);
             continue;
@@ -304,7 +304,7 @@ pub fn html_controls(text: &str) -> Vec<HtmlControl> {
                 if matches!(kind.as_str(), "checkbox" | "radio") && !has_attr(&tag, "checked") {
                     continue;
                 }
-                // Botões nunca são produtores de valor.
+                // Buttons never produce a value.
                 if matches!(kind.as_str(), "submit" | "button" | "image" | "reset") {
                     continue;
                 }
@@ -387,7 +387,7 @@ mod tests {
         assert_eq!(get("on"), Some("y"));
         assert_eq!(get("XML"), Some("x08DLTA<1> & fim"));
         assert_eq!(get("S"), Some("2"));
-        assert_eq!(get("nope"), None, "script ignorado");
+        assert_eq!(get("nope"), None, "script ignored");
     }
 
     #[test]
@@ -402,14 +402,14 @@ mod tests {
     #[test]
     fn tolerates_broken_markup() {
         assert!(html_controls("<input name=\"x\" value=\"abc").is_empty());
-        assert!(html_controls("<textarea name=\"x\">sem fim").len() == 1);
+        assert!(html_controls("<textarea name=\"x\">no end").len() == 1);
         assert!(html_controls("<<>><input").is_empty());
     }
 
     #[test]
     fn html5_comments_bogus_comments_and_strict_entities() {
         let c = |h: &str| html_controls(h).len();
-        assert_eq!(c("<!--><input name=a value=1>"), 1, "<!--> fecha na hora");
+        assert_eq!(c("<!--><input name=a value=1>"), 1, "<!--> closes immediately");
         assert_eq!(c("<!---><input name=a value=1>"), 1);
         assert_eq!(c("<!-- x --><input name=a value=1>"), 1);
         assert_eq!(
@@ -435,7 +435,7 @@ mod tests {
             let raw = unit.repeat(500_000);
             let t = std::time::Instant::now();
             let (decoded, map) = decode_entities(&raw, 0);
-            assert_eq!(decoded, raw, "sem `;` a entidade fica literal");
+            assert_eq!(decoded, raw, "without `;` the entity stays literal");
             assert_eq!(map.len(), raw.len() + 1);
             assert!(
                 t.elapsed().as_secs_f64() < limit,
@@ -457,17 +457,17 @@ mod tests {
 
     #[test]
     fn unclosed_quotes_stay_linear() {
-        // Custo linear sem medir relógio: conta os bytes varridos. O
-        // tokenizador quadrático antigo reescaneava o resto do texto a cada tag
-        // sem aspas; aqui o total fica limitado a um fator do tamanho e 4× o
-        // texto não pode varrer ~16×.
+        // Linear cost without measuring the clock: counts the scanned bytes. The
+        // old quadratic tokenizer rescanned the rest of the text on every tag
+        // without quotes; here the total is bounded by a factor of the size, and
+        // 4× the text must not scan ~16×.
         let scanned = |html: &str| {
             assert!(html_controls(html).is_empty());
             SCANNED_BYTES.with(|count| count.get())
         };
-        // `<a b=` (sem aspas) é o caso que era quadrático no tokenizador antigo:
-        // cada tag sem `>` relia até o fim do texto. As aspas sem par entram como
-        // regressão do mesmo caminho.
+        // `<a b=` (no quotes) is the case that was quadratic in the old tokenizer:
+        // each tag without `>` reread up to the end of the text. The unpaired
+        // quotes come in as a regression of the same path.
         for unit in ["<a b=\"", "<a b='", "<input name=\"x\" value='", "<a b="] {
             let small = unit.repeat(2_500);
             let large = unit.repeat(10_000);
@@ -475,10 +475,10 @@ mod tests {
             let s4 = scanned(&large);
             assert!(
                 s4 <= large.len() as u64 * 80,
-                "{unit}: varreu {s4} bytes para {} de texto",
+                "{unit}: scanned {s4} bytes for {} of text",
                 large.len()
             );
-            assert!(s4 <= s1 * 6, "{unit}: 1× varreu {s1} bytes; 4× varreu {s4}");
+            assert!(s4 <= s1 * 6, "{unit}: 1× scanned {s1} bytes; 4× scanned {s4}");
         }
     }
 }

@@ -1,8 +1,9 @@
-//! Exportador Python 3 usando apenas a biblioteca padrão.
+//! Python 3 exporter using only the standard library.
 //!
-//! Usa `http.client` para preservar ordem e duplicatas de headers (um
-//! `putheader` por ocorrência). Não usa `requests` (que colapsaria headers) e
-//! não desabilita verificação TLS: a reprodução é HTTP, não fingerprint.
+//! Uses `http.client` to preserve order and duplicates of headers (one
+//! `putheader` per occurrence). Does not use `requests` (which would collapse
+//! headers) and does not disable TLS verification: the reproduction is HTTP, not
+//! a fingerprint.
 
 use crate::error::{CoreError, Result};
 use crate::model::{LogicalRequest, Verification};
@@ -20,8 +21,8 @@ pub fn to_python(
     to_python_with_origins(request, body, options, None)
 }
 
-/// Como [`to_python`], anotando em comentário os campos "obter em runtime" (com a
-/// origem) quando `origins` é dado. O código gerado não muda.
+/// Like [`to_python`], annotating in a comment the "get at runtime" fields (with
+/// their origin) when `origins` is given. The generated code does not change.
 pub fn to_python_with_origins(
     request: &LogicalRequest,
     body: Option<&[u8]>,
@@ -35,7 +36,7 @@ pub fn to_python_with_origins(
     let headers = drop_content_length_without_body(headers, body.is_some(), &mut output);
 
     let parsed = ParsedUrl::parse(&url).ok_or_else(|| CoreError::Export {
-        message: format!("URL inválida para exportação Python: {url:?}"),
+        message: format!("invalid URL for Python export: {url:?}"),
     })?;
 
     let host_header = request
@@ -52,7 +53,7 @@ pub fn to_python_with_origins(
     if host_header.is_some() {
         skip_host = true;
     } else if let Some(authority) = authority {
-        // h2/h3 não têm Host; para HTTP/1.1 é necessário sintetizar.
+        // h2/h3 have no Host; for HTTP/1.1 it must be synthesized.
         extra_host = Some(authority.to_string());
         skip_host = true;
     } else {
@@ -70,30 +71,30 @@ pub fn to_python_with_origins(
     let mut text = String::new();
     text.push_str("# -*- coding: utf-8 -*-\n");
     text.push_str(&super::comment(&format!(
-        "ScrapeLens — export Python (http.client) da requisição {}",
+        "ScrapeLens — Python export (http.client) of request {}",
         request.id
     )));
     text.push_str(
-        "# NÃO reproduz TLS nem fingerprint do navegador (JA3/JA4, frames, HPACK); apenas a requisição HTTP.\n",
+        "# This export does NOT reproduce TLS or the browser fingerprint (JA3/JA4, frames, HPACK); only the HTTP request.\n",
     );
     text.push_str(
-        "# Preserva ordem e duplicatas de headers; pseudoheaders HTTP/2 não existem em HTTP/1.1.\n",
+        "# Preserves header order and duplicates; HTTP/2 pseudoheaders do not exist in HTTP/1.1.\n",
     );
     text.push_str(&super::comment(&format!(
-        "protocolo capturado: {} · verificação dos headers: {}",
+        "captured protocol: {} · header verification: {}",
         request.protocol.as_str(),
         verification.as_str()
     )));
     if verification == Verification::Unverified {
-        text.push_str("# ATENÇÃO: sequência de headers NÃO verificada.\n");
+        text.push_str("# WARNING: header sequence NOT verified.\n");
     }
     if !output.skipped_headers.is_empty() {
         for skipped in &output.skipped_headers {
-            text.push_str(&super::comment(&format!("não replicado: {skipped}")));
+            text.push_str(&super::comment(&format!("not replicated: {skipped}")));
         }
     }
     if let Some(note) = &output.body_note {
-        text.push_str(&super::comment(&format!("corpo: {note}")));
+        text.push_str(&super::comment(&format!("body: {note}")));
     }
     if let Some(origins) = origins {
         for line in super::runtime_origin_notes(origins) {
@@ -101,9 +102,9 @@ pub fn to_python_with_origins(
         }
     }
     if let Some(note) = super::redirect_url_note(request) {
-        text.push_str(&super::comment(&format!("ATENÇÃO: {note}")));
+        text.push_str(&super::comment(&format!("WARNING: {note}")));
     }
-    text.push_str("# Contém credenciais/cookies se a sessão não foi sanitizada.\n\n");
+    text.push_str("# Contains credentials/cookies if the session was not sanitized.\n\n");
     text.push_str("import http.client\n");
     if parsed.scheme == "https" {
         text.push_str("import ssl\n");
@@ -131,7 +132,7 @@ pub fn to_python_with_origins(
 
     if let Some(host) = extra_host {
         text.push_str(&format!(
-            "conn.putheader({}, {})  # :authority convertido para Host (HTTP/1.1)\n",
+            "conn.putheader({}, {})  # :authority converted to Host (HTTP/1.1)\n",
             python_str("Host"),
             python_str(&host)
         ));
@@ -221,7 +222,7 @@ impl ParsedUrl {
     }
 }
 
-/// Literal Python de string com escapes válidos; o arquivo é UTF-8.
+/// Python string literal with valid escapes; the file is UTF-8.
 pub fn python_str(value: &str) -> String {
     let mut out = String::from("\"");
     for ch in value.chars() {
@@ -245,7 +246,7 @@ pub fn python_str(value: &str) -> String {
     out
 }
 
-/// Literal Python `bytes` seguro para qualquer sequência.
+/// Python `bytes` literal that is safe for any sequence.
 pub fn python_bytes(bytes: &[u8]) -> String {
     let mut out = String::from("b\"");
     for byte in bytes {

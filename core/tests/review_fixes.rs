@@ -269,17 +269,17 @@ fn item4_generic_keys_redacted_in_place_without_propagating() {
     let json_body = body("4.1");
     assert!(
         !json_body.contains("cmd_consultar_placa"),
-        "chave genérica redigida no lugar: {json_body}"
+        "generic key redacted in place: {json_body}"
     );
     assert!(
         s.session.requests[1].url.contains("cmd_consultar_placa"),
-        "não propagou"
+        "did not propagate"
     );
     let form = body("4.3");
     assert!(!form.contains("12345678901"), "{form}");
     assert!(
         form.contains("n=1234567"),
-        "dígitos curtos permanecem: {form}"
+        "short digits remain: {form}"
     );
 }
 
@@ -331,7 +331,7 @@ fn item5_search_decodes_json_escapes_url_percent_and_maps_offsets() {
     let r = search(&b, &q);
     assert_eq!(r.matches.len(), 1);
     assert!(r.matches[0].decoded);
-    // raw continua achando o original
+    // raw still finds the original
     let mut q = SearchQuery::new("Cmd%5F");
     q.scopes = vec![Scope::Url];
     assert!(!search(&b, &q).matches[0].decoded);
@@ -607,10 +607,10 @@ fn item10_match_has_exact_length_and_flags_inexact_mapping() {
         .unwrap();
     assert!(!json_match.exact);
     assert_eq!(json_match.byte_offset, Some(6));
-    assert_eq!(json_match.byte_length, Some(12), "cobre o valor inteiro");
+    assert_eq!(json_match.byte_length, Some(12), "covers the whole value");
 }
 
-// ---- acabamento da rodada 4 -----------------------------------------------
+// ---- finishing touches of round 4 -----------------------------------------------
 
 #[test]
 fn a1_export_warns_when_body_is_transformed() {
@@ -634,11 +634,11 @@ fn a1_export_warns_when_body_is_transformed() {
     for out in [&c, &p] {
         assert!(
             out.text
-                .contains("WARNING: transformed body (lossy-postData, chrome-decoded)"),
+                .contains("WARNING: body transformed (lossy-postData, chrome-decoded)"),
             "{}",
             out.text
         );
-        assert!(out.text.contains("may differ from the sent bytes"));
+        assert!(out.text.contains("the bytes may differ from those sent"));
         assert!(out
             .warnings
             .iter()

@@ -1,4 +1,4 @@
-//! Extração de campos `XML` (requisição e resposta) de arquivos HAR.
+//! Extraction of `XML` fields (request and response) from HAR files.
 
 use std::path::Path;
 
@@ -63,7 +63,7 @@ pub fn form_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Conteúdo dos controles `name="XML"` (textarea ou input) de uma página.
+/// Contents of the `name="XML"` controls (textarea or input) of a page.
 pub fn xml_controls(html: &str) -> Vec<String> {
     let lower = html.to_ascii_lowercase();
     let mut out = Vec::new();
@@ -86,7 +86,7 @@ pub fn xml_controls(html: &str) -> Vec<String> {
     out
 }
 
-/// Todos os XML (requisição, resposta) de um HAR: `(requests, responses)`.
+/// All XML (request, response) of a HAR: `(requests, responses)`.
 pub fn har_xml(path: &Path) -> Option<(Vec<String>, Vec<String>)> {
     let bytes = std::fs::read(path).ok()?;
     let har: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
@@ -112,7 +112,7 @@ pub fn har_xml(path: &Path) -> Option<(Vec<String>, Vec<String>)> {
         let content = &entry["response"]["content"];
         if let Some(text) = content["text"].as_str() {
             let html = if content["encoding"] == "base64" {
-                // Sem base64 no dev-dependency: os HARs deste projeto usam texto.
+                // No base64 in the dev-dependency: this project's HARs use text.
                 continue;
             } else {
                 text.to_string()

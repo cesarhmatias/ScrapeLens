@@ -1,41 +1,41 @@
-//! Validação da execução do script (docs/13 §3): compara a captura com a
-//! sessão importada do trace e resume em três vereditos:
-//! - `equivalent`: "execução equivalente à captura";
-//! - `diverges`: "diverge no passo N (<motivo>)" — status ou veredito do
-//!   assess diferente, passo extra no trace, passo ausente, campo que
-//!   deveria ser constante e mudou;
-//! - `incomplete`: "incompleta: parou no passo N" — o passo N do trace
-//!   falhou no transporte (sem resposta / `trace.step_error`).
+//! Validation of the script execution (docs/13 §3): compares the capture with the
+//! session imported from the trace and summarizes it in three verdicts:
+//! - `equivalent`: "execution equivalent to capture";
+//! - `diverges`: "diverges at step N (<reason>)" — status or assess verdict
+//!   differs, extra step in the trace, missing step, field that should be
+//!   constant and changed;
+//! - `incomplete`: "incomplete: stopped at step N" — step N of the trace
+//!   failed in transport (no response / `trace.step_error`).
 //!
-//! Passo = posição (1 = primeira) da requisição na sessão do trace. Passos
-//! da captura que o trace não executou depois do último passo pareado não
-//! contam (o script cobre uma cadeia até o alvo, não a captura inteira).
-//! Diferenças esperadas (dinâmicos com origem equivalente, ambiente:
-//! cabeçalhos e cookies, parâmetros do usuário válidos) saem separadas das
-//! inesperadas.
+//! Step = position (1 = first) of the request in the trace session. Capture steps
+//! that the trace did not execute after the last paired step do not count
+//! (the script covers a chain up to the target, not the whole capture).
+//! Expected differences (dynamics with equivalent origin, environment:
+//! headers and cookies, valid user parameters) are kept apart from the
+//! unexpected ones.
 //!
-//! Proveniência equivalente: um campo com origem na resposta R_k da captura
-//! precisa, no trace, ter origem na resposta pareada de R_k. Valor capturado
-//! ausente da resposta pareada = "valor congelado"; vindo de outra resposta =
-//! "origem diferente".
+//! Equivalent provenance: a field with origin in the capture's response R_k
+//! must, in the trace, have origin in the response paired with R_k. A captured value
+//! absent from the paired response = "frozen value"; coming from another response =
+//! "different origin".
 //!
-//! Completude: o trace declara `target` (requestId do alvo na captura, que
-//! tem de estar pareado) e `complete=true`; senão é "incompleta".
+//! Completeness: the trace declares `target` (requestId of the target in the capture, which
+//! must be paired) and `complete=true`; otherwise it is "incomplete".
 //!
-//! `parameters` só vale para campo sem origem na captura e que não seja
-//! constante (identificador longo e opaco); os demais são ignorados com o
-//! aviso "parâmetro inválido". `plan.parameters` de um plano verificado (versão
-//! atual, hash e alvo conferidos) classificam como parâmetro do usuário, sem
-//! essas checagens; num plano não verificado recebem o mesmo tratamento do
-//! `parameters` de topo e não isentam nada.
-//! A isenção de `parameters` vale só para o par (name, part) que o plano
-//! regenerado da captura realmente produz (ex. sessionid_cliente → XML.sid);
-//! outro par sob um nome do plano passa por todas as checagens e ganha o aviso
-//! "parâmetro não corresponde ao plano: <name> → <part>".
+//! `parameters` only applies to a field with no origin in the capture and that is not
+//! constant (long opaque identifier); the others are ignored with the
+//! warning "invalid parameter". `plan.parameters` of a verified plan (current version,
+//! hash and target checked) classify as user parameter, without
+//! these checks; in an unverified plan they receive the same treatment as the
+//! top-level `parameters` and exempt nothing.
+//! The exemption from `parameters` only applies to the (name, part) pair that the plan
+//! regenerated from the capture actually produces (e.g. sessionid_cliente → XML.sid);
+//! any other pair under a plan name goes through all checks and gets the warning
+//! "parameter does not match the plan: <name> → <part>".
 //!
-//! Plano versionado: `plan.version` igual a [`PLAN_VERSION`] compara o hash do
-//! plano (divergência se não confere); versão ausente ou diferente é plano de
-//! build anterior e só avisa; plano sem hash avisa "plano sem impressão".
+//! Versioned plan: `plan.version` equal to [`PLAN_VERSION`] compares the plan hash
+//! (divergence if it does not match); a missing or different version is a plan from an
+//! earlier build and only warns; a plan without hash warns "plan without fingerprint".
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -84,10 +84,10 @@ pub struct FieldNote {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StepValidation {
-    /// Posição do passo no trace (1 = primeiro).
+    /// Step position in the trace (1 = first).
     pub step: usize,
     pub trace_request_id: String,
-    /// Requisição da captura pareada (`None` = passo extra no trace).
+    /// Paired capture request (`None` = extra step in the trace).
     pub capture_request_id: Option<String>,
     pub method: String,
     pub url: String,
@@ -95,10 +95,10 @@ pub struct StepValidation {
     pub status_trace: Option<u16>,
     pub verdict_capture: Option<VerdictKind>,
     pub verdict_trace: VerdictKind,
-    /// Dinâmicos com origem e diferenças de ambiente.
+    /// Dynamics with origin and environment differences.
     pub expected: Vec<FieldNote>,
     pub unexpected: Vec<FieldNote>,
-    /// Motivo de divergência neste passo, se houver.
+    /// Divergence reason at this step, if any.
     pub problem: Option<String>,
 }
 
@@ -109,10 +109,10 @@ pub struct Validation {
     pub verdict: ValidationVerdict,
     pub step: Option<usize>,
     pub reason: Option<String>,
-    /// Linha de resumo: "execução equivalente à captura" etc.
+    /// Summary line: "execution equivalent to capture" etc.
     pub summary: String,
     pub steps: Vec<StepValidation>,
-    /// Passos da captura (POST/não-GET) sem par entre passos pareados do trace.
+    /// Capture steps (POST/non-GET) without a pair among the paired trace steps.
     pub missing_in_trace: Vec<String>,
     pub mapped_origin: Option<OriginMap>,
     pub warnings: Vec<String>,
@@ -146,27 +146,28 @@ fn key_of(scope: ConsumedScope, field: &str, occurrence: usize) -> Key {
     (format!("{scope:?}"), field.to_string(), occurrence)
 }
 
-/// Valor longo (>= 16) e sem espaços: identificador/segredo, não entrada de usuário.
+/// Long value (>= 16) without spaces: identifier/secret, not user input.
 fn long_opaque(v: &str) -> bool {
     v.len() >= 16 && !v.contains(char::is_whitespace)
 }
 
-/// A captura marca o valor como composto/gerado no cliente.
+/// The capture marks the value as composed/generated in the client.
 fn client_composed(v: &ValueOrigin) -> bool {
     !v.partial_composition.is_empty()
+        || v.label.contains("composition in the client")
         || v.label.contains("composição no cliente")
         || v.label.contains("gerado no cliente")
 }
 
-/// Versão atual do plano (`plan.version` no trace). O hash só é comparado
-/// quando o trace declara exatamente esta versão; versão ausente ou diferente
-/// é plano de build anterior e gera só um aviso. Mudou a definição do hash?
-/// Suba a versão.
+/// Current plan version (`plan.version` in the trace). The hash is only compared
+/// when the trace declares exactly this version; a missing or different version
+/// is a plan from an earlier build and only produces a warning. Changed the hash definition?
+/// Bump the version.
 pub const PLAN_VERSION: u32 = 2;
 
-/// Impressão do plano de um alvo: passos da cadeia (método + caminho
-/// normalizado, sem host) e nomes dos parâmetros. FNV-1a 64 em hexadecimal.
-/// O gerador do script grava este valor em `plan.hash` do trace.
+/// Plan fingerprint of a target: chain steps (method + path
+/// normalized, without host) and parameter names. FNV-1a 64 in hexadecimal.
+/// The script generator writes this value to `plan.hash` in the trace.
 pub fn plan_hash(
     capture: &SessionV1,
     source: &dyn BodySource,
@@ -213,11 +214,11 @@ fn note_value<'a>(trace: &'a SessionV1, prefix: &str) -> Option<&'a str> {
         .find_map(|n| n.strip_prefix(prefix))
 }
 
-/// Pares `(parâmetro, parte/campo)` que o plano REGENERADO DA CAPTURA instala.
-/// Nunca usa o que o trace declara: o gerador é chamado com a captura, o alvo
-/// e o mesmo fluxo do hash. Codificadores só entram na forma do texto gerado;
-/// aqui basta um marcador por adaptador para que as partes sejam decodificadas
-/// e os nomes registrados (o texto é descartado).
+/// Pairs `(parameter, part/field)` that the plan REGENERATED FROM THE CAPTURE installs.
+/// Never uses what the trace declares: the generator is called with the capture, the target
+/// and the same flow as the hash. Encoders only matter for the shape of the generated text;
+/// here a marker per adapter is enough so that the parts are decoded
+/// and the names registered (the text is discarded).
 fn produced_parameter_uses(
     capture: &SessionV1,
     source: &dyn BodySource,
@@ -284,7 +285,7 @@ pub fn validate(
         .map(|p| (p.a.request_id.as_str(), p.b.request_id.as_str()))
         .collect();
 
-    // origens da captura por requisição pareada (uma vez)
+    // capture origins per paired request (once)
     let origins_a: HashMap<&str, ValueOrigins> = cmp
         .pairs
         .iter()
@@ -306,8 +307,8 @@ pub fn validate(
         })
         .collect();
 
-    // alvo declarado e pares que o plano REGENERADO DA CAPTURA produz; só esses
-    // pares podem ser isentos. Sem alvo (ou se a geração falhar), não isenta.
+    // declared target and the pairs that the plan REGENERATED FROM THE CAPTURE produces; only these
+    // pairs can be exempt. Without a target (or if generation fails), nothing is exempt.
     let target_note = note_value(trace, TARGET_NOTE_PREFIX).map(str::to_string);
     let produced: Vec<(String, String)> = target_note
         .as_deref()
@@ -320,30 +321,30 @@ pub fn validate(
         .filter_map(|n| n.strip_prefix(PLAN_PARAM_NOTE_PREFIX))
         .collect();
 
-    // impressão do plano × recalculada a partir da captura e do alvo, só com os
-    // parâmetros do plano (`plan.parameters`); o `parameters` de topo (inclusive
-    // opcionais sobrescritos pelo usuário) não entra no hash. A versão do plano
-    // protege traces de builds anteriores: sem `plan.version` atual, não compara.
-    // `plan.parameters` só classifica como parâmetro quando o plano está
-    // verificado (versão atual, hash e alvo conferidos); nos demais casos ele
-    // não isenta nada.
+    // plan fingerprint × recalculated from the capture and the target, only with the
+    // plan parameters (`plan.parameters`); the top-level `parameters` (including
+    // optional ones overridden by the user) is not part of the hash. The plan version
+    // protects traces from earlier builds: without a current `plan.version`, it does not compare.
+    // `plan.parameters` only classifies as a parameter when the plan is
+    // verified (current version, hash and target checked); in other cases it
+    // exempts nothing.
     let target = target_note;
     let mut plan_mismatch = false;
     let mut plan_verified = false;
     if !trace.session.notes.iter().any(|n| n == PLAN_PRESENT_NOTE) {
-        warnings.push("plano ausente: execução não verificada contra o plano".to_string());
+        warnings.push("plan missing: execution not verified against the plan".to_string());
     } else {
         let version =
             note_value(trace, PLAN_VERSION_NOTE_PREFIX).and_then(|v| v.parse::<u32>().ok());
         if version != Some(PLAN_VERSION) {
             let message = match version {
                 Some(v) if v > PLAN_VERSION => format!(
-                    "plano de versão diferente (v{v}): gere o script de novo para verificar contra o plano"
+                    "plan of a different version (v{v}): regenerate the script to verify against the plan"
                 ),
                 _ => {
                     let label = version.map_or_else(|| "v1".to_string(), |v| format!("v{v}"));
                     format!(
-                        "plano de versão anterior ({label}): gere o script de novo para verificar contra o plano"
+                        "plan of an earlier version ({label}): regenerate the script to verify against the plan"
                     )
                 }
             };
@@ -362,21 +363,21 @@ pub fn validate(
                     Ok(h) => {
                         plan_mismatch = true;
                         warnings.push(format!(
-                            "plano não confere: o trace declara o hash {declared_hash} e a captura com o alvo {target} dá {h}"
+                            "plan does not match: the trace declares hash {declared_hash} and the capture with target {target} gives {h}"
                         ));
                     }
-                    Err(e) => warnings.push(format!("plano não verificado: {e}")),
+                    Err(e) => warnings.push(format!("plan not verified: {e}")),
                 }
             } else {
-                warnings.push("plano sem alvo: execução não verificada contra o plano".to_string());
+                warnings.push("plan without target: execution not verified against the plan".to_string());
             }
         } else {
-            warnings.push("plano sem impressão".to_string());
+            warnings.push("plan without fingerprint".to_string());
         }
     }
 
-    // parâmetros declarados no trace: `(name, part)`. Só a parte que o plano
-    // produz é isenta; as demais passam pelas checagens normais.
+    // parameters declared in the trace: `(name, part)`. Only the part that the plan
+    // produces is exempt; the others go through the normal checks.
     let declared: Vec<(String, String)> = trace
         .session
         .notes
@@ -393,7 +394,7 @@ pub fn validate(
                         .and_then(serde_json::Value::as_str)
                         .map(str::to_string),
                 ),
-                // formato antigo: só a parte
+                // old format: only the part
                 None => (Some(v.to_string()), Some(v.to_string())),
             };
             let part = part.filter(|s| !s.is_empty())?;
@@ -423,43 +424,43 @@ pub fn validate(
                     .iter()
                     .any(|e| e.kind != crate::flow::EvidenceKind::Initiator)
                 {
-                    why = Some("tem origem na captura");
+                    why = Some("has origin in capture");
                 } else if long_opaque(&v.value) && why.is_none() {
-                    why = Some("é uma constante/identificador longo");
+                    why = Some("is a constant/long identifier");
                 }
             }
         }
         match (seen, why) {
             (false, _) => warnings.push(format!(
-                "parâmetro inválido: `{part}` não existe nos passos pareados da captura"
+                "invalid parameter: `{part}` does not exist in the paired steps of the capture"
             )),
-            (true, Some(why)) => warnings.push(format!("parâmetro inválido: `{part}` {why}")),
+            (true, Some(why)) => warnings.push(format!("invalid parameter: `{part}` {why}")),
             (true, None) => {}
         }
         let in_plan = plan_names.iter().any(|n| n.eq_ignore_ascii_case(name))
             || produced.iter().any(|(n, _)| n.eq_ignore_ascii_case(name));
         if in_plan {
             warnings.push(format!(
-                "parâmetro não corresponde ao plano: {name} → {part}"
+                "parameter does not match the plan: {name} → {part}"
             ));
-            // não classifica: a parte segue a proveniência e o diff normais
+            // does not classify: the part follows the normal provenance and diff
         } else if seen && why.is_none() && !params.iter().any(|p| p.eq_ignore_ascii_case(part)) {
             params.push(part.as_str());
         }
     }
     if plan_verified {
-        // `plan.parameters` de um plano VERIFICADO (versão atual, hash e alvo
-        // conferidos): classificam como parâmetro do usuário, sem checagens.
+        // `plan.parameters` of a VERIFIED plan (current version, hash and target
+        // checked): they classify as user parameters, without checks.
         for name in &plan_names {
             if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
                 params.push(name);
             }
         }
     } else {
-        // Plano não verificado (versão antiga/diferente, sem hash, hash que não
-        // confere ou sem alvo): os nomes de `plan.parameters` recebem o mesmo
-        // tratamento do `parameters` de topo. Nome que não é parte não gera
-        // aviso de "não existe"; o campo concreto segue a proveniência/diff.
+        // Unverified plan (old/different version, no hash, hash that does not
+        // match, or no target): the names in `plan.parameters` receive the same
+        // treatment as top-level `parameters`. A name that is not a part does not generate
+        // a "does not exist" warning; the concrete field follows the provenance/diff.
         for name in &plan_names {
             let mut seen = false;
             let mut why: Option<&str> = None;
@@ -473,15 +474,15 @@ pub fn validate(
                         .iter()
                         .any(|e| e.kind != crate::flow::EvidenceKind::Initiator)
                     {
-                        why = Some("tem origem na captura");
+                        why = Some("has origin in capture");
                     } else if long_opaque(&v.value) && why.is_none() {
-                        why = Some("é uma constante/identificador longo");
+                        why = Some("is a constant/long identifier");
                     }
                 }
             }
             match (seen, why) {
                 (false, _) => {}
-                (true, Some(why)) => warnings.push(format!("parâmetro inválido: `{name}` {why}")),
+                (true, Some(why)) => warnings.push(format!("invalid parameter: `{name}` {why}")),
                 (true, None) => {
                     if !params.iter().any(|p| p.eq_ignore_ascii_case(name)) {
                         params.push(name);
@@ -509,7 +510,7 @@ pub fn validate(
             reason: why.to_string(),
         };
 
-        // 1) proveniência equivalente dos campos com origem na captura
+        // 1) equivalent provenance of fields with origin in the capture
         if let (Some(va), Some(vb)) = (
             origins_a.get(pair.a.request_id.as_str()),
             origins_b.get(pair.b.request_id.as_str()),
@@ -538,7 +539,7 @@ pub fn validate(
                             .as_ref()
                             .map_or(true, |p| v.field.starts_with(&format!("{p}.")))
                 }) else {
-                    continue; // campo ausente no trace: tratado pelo diff
+                    continue; // field missing in the trace: handled by the diff
                 };
                 handled.insert(key);
                 if is_param(&a.field) {
@@ -556,14 +557,14 @@ pub fn validate(
                     .collect();
                 if producers_b.iter().any(|p| paired.contains(p)) {
                     if a.value != b.value {
-                        expected.push(note(a.scope, &a.field, "dinâmico com origem equivalente"));
+                        expected.push(note(a.scope, &a.field, "dynamic with equivalent origin"));
                     }
                 } else if !producers_b.is_empty() {
                     unexpected.push(note(
                         a.scope,
                         &a.field,
                         &format!(
-                            "origem diferente: no trace vem de {}, na captura vinha de {}",
+                            "different origin: in trace comes from {}, in capture came from {}",
                             producers_b.join(", "),
                             producers_a.join(", ")
                         ),
@@ -572,21 +573,21 @@ pub fn validate(
                     unexpected.push(note(
                         a.scope,
                         &a.field,
-                        "valor congelado: igual ao capturado e ausente da resposta pareada",
+                        "frozen value: matches captured value and is absent from paired response",
                     ));
                 } else {
                     unexpected.push(note(
                         a.scope,
                         &a.field,
-                        "valor sem origem no trace (não veio de resposta anterior)",
+                        "value has no origin in trace (did not come from a previous response)",
                     ));
                 }
             }
         }
 
-        // 2) demais diferenças (constantes, entradas, ambiente, trechos)
+        // 2) other differences (constants, inputs, environment, fragments)
         let a_origin = origins_a.get(pair.a.request_id.as_str());
-        // campo opaco decodificado por adaptador: as partes nomeadas já foram avaliadas
+        // opaque field decoded by adapter: the named parts have already been assessed
         let adapted: std::collections::BTreeSet<&str> = a_origin
             .into_iter()
             .flat_map(|o| o.values.iter())
@@ -616,25 +617,25 @@ pub fn validate(
             match f.class {
                 FieldClass::Static | FieldClass::Redacted => {}
                 _ if is_param(&f.field) => {
-                    expected.push(note(f.scope, &f.field, "esperado (parâmetro do usuário)"));
+                    expected.push(note(f.scope, &f.field, "expected (user parameter)"));
                 }
                 FieldClass::Dynamic => {
                     if env {
                         expected.push(note(
                             f.scope,
                             &f.field,
-                            "ambiente (cookie/cabeçalho da execução)",
+                            "environment (cookie/header of the execution)",
                         ));
                     } else if f.origin.is_some()
                         || f.origin_label
                             .as_deref()
                             .is_some_and(|l| l.contains("runtime"))
                     {
-                        // origem existe no trace e a captura não a declarava: aceita
+                        // origin exists in trace and the capture did not declare it: accepted
                         expected.push(note(
                             f.scope,
                             &f.field,
-                            "dinâmico com origem observada no trace",
+                            "dynamic with origin observed in trace",
                         ));
                     } else if !f.parts.is_empty() {
                         for p in f.parts.iter().filter(|p| p.class == FieldClass::Dynamic) {
@@ -642,19 +643,19 @@ pub fn validate(
                                 expected.push(note(
                                     f.scope,
                                     &f.field,
-                                    "trecho dinâmico com origem observada",
+                                    "dynamic fragment with observed origin",
                                 ));
                             } else if long_opaque(&p.a) && long_opaque(&p.b) {
                                 expected.push(note(
                                     f.scope,
                                     &f.field,
-                                    "trecho longo gerado no cliente",
+                                    "long fragment generated in the client",
                                 ));
                             } else {
                                 unexpected.push(note(
                                     f.scope,
                                     &f.field,
-                                    "trecho dinâmico sem origem (deveria ser constante)",
+                                    "dynamic fragment without origin (should be constant)",
                                 ));
                             }
                         }
@@ -665,24 +666,24 @@ pub fn validate(
                         expected.push(note(
                             f.scope,
                             &f.field,
-                            "identificador gerado no cliente (composição marcada na captura)",
+                            "identifier generated in the client (composition marked in capture)",
                         ));
                     } else {
                         unexpected.push(note(
                             f.scope,
                             &f.field,
-                            "campo que deveria ser constante mudou (sem origem)",
+                            "field that should be constant changed (no origin)",
                         ));
                     }
                 }
                 FieldClass::OnlyA | FieldClass::OnlyB => {
                     let side = if f.class == FieldClass::OnlyA {
-                        "só na captura"
+                        "only in capture"
                     } else {
-                        "só no trace"
+                        "only in trace"
                     };
                     if env {
-                        expected.push(note(f.scope, &f.field, &format!("ambiente ({side})")));
+                        expected.push(note(f.scope, &f.field, &format!("environment ({side})")));
                     } else {
                         unexpected.push(note(f.scope, &f.field, side));
                     }
@@ -696,16 +697,16 @@ pub fn validate(
         let status_b = b_req.and_then(|r| r.attempts.last()).and_then(|a| a.status);
         let mut problem = None;
         if status_b.is_none() || status_b == Some(0) {
-            // sem resposta: falha de transporte, tratada abaixo
+            // no response: transport failure, handled below
         } else if status_a != status_b {
             problem = Some(format!(
-                "status {} na captura × {} no trace",
+                "status {} in capture × {} in trace",
                 status_a.map_or("?".into(), |s| s.to_string()),
                 status_b.map_or("?".into(), |s| s.to_string())
             ));
         } else if oa.is_some_and(|oa| {
-            // a captura é a referência: app-ok nela exige app-ok no trace;
-            // fora disso, vereditos diferentes só contam se ambos foram avaliados
+            // the capture is the reference: app-ok there requires app-ok in the trace;
+            // otherwise, different verdicts only count if both were assessed
             if oa.verdict_kind == VerdictKind::AppOk {
                 ob.verdict_kind != VerdictKind::AppOk
             } else {
@@ -715,7 +716,7 @@ pub fn validate(
             }
         }) {
             problem = Some(format!(
-                "veredito {} no trace × {} na captura",
+                "verdict {} in trace × {} in capture",
                 ob.verdict,
                 oa.map_or("?", |o| o.verdict.as_str())
             ));
@@ -737,7 +738,7 @@ pub fn validate(
             problem,
         });
     }
-    // passos do trace sem par: extras
+    // trace steps without a pair: extras
     for (i, r) in trace.requests.iter().enumerate() {
         if seen_b.contains(&r.id) {
             continue;
@@ -756,12 +757,12 @@ pub fn validate(
             verdict_trace: ob.verdict_kind,
             expected: Vec::new(),
             unexpected: Vec::new(),
-            problem: Some("passo extra no trace (sem correspondente na captura)".to_string()),
+            problem: Some("extra step in trace (no counterpart in capture)".to_string()),
         });
     }
     steps.sort_by_key(|s| s.step);
 
-    // passos da captura entre passos pareados que o trace não executou
+    // capture steps between paired steps that the trace did not execute
     let idx_a = |id: &str| capture.requests.iter().position(|q| q.id == id);
     let paired_a: Vec<usize> = cmp
         .pairs
@@ -780,22 +781,22 @@ pub fn validate(
         .map(|r| r.request_id.clone())
         .collect();
 
-    // veredito: primeiro problema, em ordem de passo
+    // verdict: first problem, in step order
     let mut verdict = ValidationVerdict::Equivalent;
     let (mut step, mut reason) = (None, None);
     if plan_mismatch {
         verdict = ValidationVerdict::Diverges;
         step = Some(1);
-        reason = Some("plano diferente do gerado a partir desta captura".to_string());
+        reason = Some("plan differs from the one generated from this capture".to_string());
     } else if !trace.requests.is_empty() && cmp.pairs.is_empty() {
         let oa = single_app_origin(&ctx_a);
         let ob = single_app_origin(&ctx_b);
         verdict = ValidationVerdict::Diverges;
         step = Some(1);
         reason = Some(format!(
-            "nenhum passo do trace foi pareado com a captura{}; use --map-origin <origem-captura>=<origem-trace>",
+            "no trace step was paired with the capture{}; use --map-origin <capture-origin>=<trace-origin>",
             match (oa, ob) {
-                (Some(a), Some(b)) if a != b => format!(" (origens diferentes: {a} × {b})"),
+                (Some(a), Some(b)) if a != b => format!(" (different origins: {a} × {b})"),
                 _ => String::new(),
             }
         ));
@@ -807,7 +808,7 @@ pub fn validate(
             if transport {
                 verdict = ValidationVerdict::Incomplete;
                 step = Some(s.step);
-                reason = Some("sem resposta (falha de transporte registrada no trace)".to_string());
+                reason = Some("no response (transport failure recorded in trace)".to_string());
                 break;
             }
             if let Some(p) = &s.problem {
@@ -829,9 +830,9 @@ pub fn validate(
             .min();
         verdict = ValidationVerdict::Diverges;
         step = next;
-        reason = Some(format!("passo ausente no trace ({first})"));
+        reason = Some(format!("step missing in trace ({first})"));
     }
-    // completude: alvo declarado e pareado, e complete=true
+    // completeness: declared and paired target, and complete=true
     if verdict == ValidationVerdict::Equivalent {
         let complete = note_value(trace, COMPLETE_NOTE_PREFIX) == Some("true");
         let target_paired = target
@@ -839,14 +840,14 @@ pub fn validate(
             .is_some_and(|t| cmp.pairs.iter().any(|p| p.a.request_id == t));
         let last = trace.requests.len().max(1);
         let why = if target.is_none() {
-            Some("o trace não declara `target`".to_string())
+            Some("the trace does not declare `target`".to_string())
         } else if !target_paired {
             Some(format!(
-                "o alvo {} não está entre os passos pareados",
+                "target {} is not among the paired steps",
                 target.as_deref().unwrap_or("?")
             ))
         } else if !complete {
-            Some("o trace não declara `complete=true`".to_string())
+            Some("the trace does not declare `complete=true`".to_string())
         } else {
             None
         };
@@ -859,34 +860,34 @@ pub fn validate(
     let mapped = cmp
         .mapped_origin
         .as_ref()
-        .map(|m| format!(" [origem mapeada: {} → {}]", m.from, m.to))
+        .map(|m| format!(" [mapped origin: {} → {}]", m.from, m.to))
         .unwrap_or_default();
     let summary = match (verdict, step) {
-        (ValidationVerdict::Equivalent, _) => format!("execução equivalente à captura{mapped}"),
+        (ValidationVerdict::Equivalent, _) => format!("execution equivalent to capture{mapped}"),
         (ValidationVerdict::Diverges, Some(n)) => {
             format!(
-                "diverge no passo {n} ({}){mapped}",
+                "diverges at step {n} ({}){mapped}",
                 reason.as_deref().unwrap_or("?")
             )
         }
         (ValidationVerdict::Diverges, None) => {
-            format!("diverge ({}){mapped}", reason.as_deref().unwrap_or("?"))
+            format!("diverges ({}){mapped}", reason.as_deref().unwrap_or("?"))
         }
         (ValidationVerdict::Incomplete, Some(n)) => {
             format!(
-                "incompleta: parou no passo {n} ({}){mapped}",
+                "incomplete: stopped at step {n} ({}){mapped}",
                 reason.as_deref().unwrap_or("?")
             )
         }
-        (ValidationVerdict::Incomplete, None) => format!("incompleta{mapped}"),
+        (ValidationVerdict::Incomplete, None) => format!("incomplete{mapped}"),
     };
     if trace.requests.is_empty() {
         return Validation {
             schema: "scrapelens.validate/1".to_string(),
             verdict: ValidationVerdict::Incomplete,
             step: Some(1),
-            reason: Some("trace sem passos".to_string()),
-            summary: "incompleta: parou no passo 1 (trace sem passos)".to_string(),
+            reason: Some("trace has no steps".to_string()),
+            summary: "incomplete: stopped at step 1 (trace has no steps)".to_string(),
             steps,
             missing_in_trace: missing,
             mapped_origin: cmp.mapped_origin,

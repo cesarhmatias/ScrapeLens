@@ -1,4 +1,4 @@
-//! CDP: objetos de header não são sequência; `headersText` h1 é a exceção.
+//! CDP: header objects are not a sequence; `headersText` h1 is the exception.
 
 use scrapelens_core::correlate::{attach_netlog, CorrelationOptions};
 use scrapelens_core::model::{MatchState, Protocol, Verification};
@@ -24,7 +24,7 @@ fn request_object_is_subset_and_response_headers_text_is_verified() {
         .requests
         .iter()
         .find(|request| request.url.contains("/echo-order?from=jsheaders"))
-        .expect("requestWillBeSent de /echo-order?from=jsheaders");
+        .expect("requestWillBeSent from /echo-order?from=jsheaders");
 
     assert_eq!(request.protocol, Protocol::H1);
     assert_eq!(request.status, Some(200));
@@ -32,20 +32,20 @@ fn request_object_is_subset_and_response_headers_text_is_verified() {
         request.request_headers.verification(),
         Verification::Unverified
     );
-    // ExtraInfo colapsa duplicatas: só o último x-rep sobrevive.
-    // `x-dup` veio da Fetch API e o ExtraInfo o mantém como um único valor.
+    // ExtraInfo collapses duplicates: only the last x-rep survives.
+    // `x-dup` came from the Fetch API and ExtraInfo keeps it as a single value.
     assert_eq!(request.request_headers.first_value("x-dup"), Some("a, b"));
-    // O bloco original do Blink continua como evidência.
+    // The original Blink block remains as evidence.
     assert!(request.attempts[0].header_evidence.iter().any(|evidence| {
         evidence.event == "Network.requestWillBeSent.request.headers"
             && evidence.view.contains("user-agent")
     }));
-    // No h1 o headersText da resposta é verificado e mantém 2 set-cookie.
+    // In h1 the response headersText is verified and keeps 2 set-cookie.
     let setcookie = session
         .requests
         .iter()
         .find(|request| request.url.ends_with("/setcookie"))
-        .expect("requisição /setcookie");
+        .expect("request /setcookie");
     assert_eq!(
         setcookie.response_headers.verification(),
         Verification::Verified
@@ -65,13 +65,13 @@ fn real_h1_correlation_matches_and_prefers_netlog_sequence() {
     assert!(outcome.matched_attempts > 0, "{outcome:?}");
     assert_eq!(
         outcome.ambiguous_attempts, 0,
-        "a matriz reporta correlação inequívoca nos 60 casos"
+        "the matrix reports unambiguous correlation in all 60 cases"
     );
     let request = session
         .requests
         .iter()
         .find(|request| request.url.contains("/echo-order?from=jsheaders"))
-        .expect("requisição correlacionada");
+        .expect("correlated request");
     assert_eq!(request.match_state, MatchState::Matched);
     let attempt = &request.attempts[0];
     assert_eq!(attempt.match_state, MatchState::Matched);
@@ -86,11 +86,11 @@ fn real_h1_correlation_matches_and_prefers_netlog_sequence() {
             .headers
             .iter()
             .position(|header| header.name.eq_ignore_ascii_case(name))
-            .unwrap_or_else(|| panic!("header {name} ausente na visão primária"))
+            .unwrap_or_else(|| panic!("header {name} missing from the primary view"))
     };
     assert!(index("x-zeta") < index("x-alpha"));
     assert!(index("x-alpha") < index("x-mid"));
-    // O bloco CDP continua guardado, mesmo tendo cedido a visão primária.
+    // The CDP block is still kept, even though it gave up the primary view.
     assert!(attempt
         .header_evidence
         .iter()
@@ -124,23 +124,23 @@ fn initiator_keeps_type_url_line_and_stack_top() {
             .iter()
             .find(|r| r.url.ends_with(suffix))
             .and_then(|r| r.attempts[0].initiator.clone())
-            .unwrap_or_else(|| panic!("initiator de {suffix}"))
+            .unwrap_or_else(|| panic!("initiator of {suffix}"))
     };
     assert_eq!(init("/p").kind, "parser");
     assert_eq!(init("/p").url.as_deref(), Some("https://x.test/"));
     let s = init("/r");
     assert_eq!((s.kind.as_str(), s.line_number), ("script", Some(7)));
-    let top = s.stack_top.expect("topo do stack");
+    let top = s.stack_top.expect("top of stack");
     assert_eq!(top.function.as_deref(), Some("go"));
     assert_eq!(top.line_number, Some(12));
     assert_eq!(init("/o").kind, "other");
-    // sessão antiga sem os campos novos continua válida
+    // old session without the new fields remains valid
     let old: scrapelens_core::model::Initiator =
         serde_json::from_str(r#"{"kind":"parser","url":"u"}"#).unwrap();
     assert!(old.stack_top.is_none() && old.line_number.is_none());
 }
 
-// ---- multi-alvo (docs/14, onda 2) ----
+// ---- multi-target (docs/14, wave 2) ----
 
 fn event(session: &str, method: &str, params: serde_json::Value) -> String {
     serde_json::json!({"sessionId": session, "method": method, "params": params}).to_string()
@@ -251,7 +251,7 @@ fn bodies_are_mapped_by_session_and_request_id() {
             .response_body
             .attachment
             .clone()
-            .expect("anexo");
+            .expect("attachment");
         String::from_utf8(attachments[&attachment].clone()).unwrap()
     };
     assert_eq!(body("/x"), "page-body");
@@ -283,7 +283,7 @@ fn sw_session(from_sw: bool, sw: &[(&str, f64)]) -> scrapelens_core::model::Sess
 
 #[test]
 fn page_response_from_sw_links_one_candidate_as_ambiguous() {
-    // URL difere (passthrough), mas o início do fetch do SW está na janela.
+    // URL differs (passthrough), but the start of the SW fetch is in the window.
     let session = sw_session(
         true,
         &[("https://a.test/sw-fetch?m=1&passthrough=1", 20.05)],
@@ -299,7 +299,7 @@ fn page_response_from_sw_links_one_candidate_as_ambiguous() {
     assert_eq!(link.kind, "service_worker");
     assert!(
         link.evidence.iter().any(|e| e
-            == "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada"),
+            == "possible match in the service worker (clue: time window, origin, path); not confirmed"),
         "{:?}",
         link.evidence
     );
@@ -390,19 +390,19 @@ fn sw_candidates_with_same_path_win_over_others_in_the_window() {
         .unwrap();
     assert!(linked.url.contains("passthrough=1"), "{}", linked.url);
     assert!(link.evidence.iter().any(|e| e
-        == "possível correspondência no service worker (pista: janela de tempo, origem, caminho); não confirmada"));
+        == "possible match in the service worker (clue: time window, origin, path); not confirmed"));
     for warning in session
         .warnings
         .iter()
         .filter(|w| w.code == "cdp.service_worker_ambiguous")
     {
         assert!(
-            !warning.message.contains("mesma requisição"),
+            !warning.message.contains("same request"),
             "{}",
             warning.message
         );
         assert!(
-            warning.message.contains("não confirmada"),
+            warning.message.contains("not confirmed"),
             "{}",
             warning.message
         );
@@ -423,7 +423,7 @@ fn sw_candidates_without_same_path_stay_all_ambiguous_without_path_hint() {
     assert_eq!(page.links.len(), 2, "{:#?}", page.links);
     assert!(page.links.iter().all(|link| link.resolution == "ambiguous"
         && link.evidence.iter().any(|e| e
-            == "possível correspondência no service worker (pista: janela de tempo, origem); não confirmada")));
+            == "possible match in the service worker (clue: time window, origin); not confirmed")));
 }
 
 #[test]
@@ -449,7 +449,7 @@ fn sw_candidate_with_different_method_is_left_out() {
         .unwrap();
     assert!(linked.url.contains("sw-own"), "{}", linked.url);
 
-    // Só candidatos com método diferente: nenhum link, aviso por requisição.
+    // Only candidates with a different method: no link, a warning per request.
     let only_post = sw_session_with(&[(
         "POST",
         "https://a.test/multi/sw-fetch?m=1&passthrough=1",
@@ -483,7 +483,7 @@ fn service_worker_candidate_outside_the_window_warns() {
         .unwrap_or_else(|| panic!("{:?}", session.warnings));
     assert_eq!(
         warning.message,
-        "interceptada pelo service worker; a requisição correspondente no SW não foi identificada"
+        "intercepted by the service worker; the matching request in the SW was not identified"
     );
     assert_eq!(warning.entity.as_deref(), Some(page.id.as_str()));
 }
@@ -531,15 +531,15 @@ fn old_cdp_file_without_session_id_is_one_implicit_session() {
 
 #[test]
 fn old_live_session_without_session_id_has_no_target_provenance() {
-    // Bruto real anterior à rodada 10 (campo `session`, não `sessionId`):
-    // sessão implícita, sem alvo e sem cdp.target_unknown.
+    // Real raw file predating round 10 (field `session`, not `sessionId`):
+    // implicit session, no target and no cdp.target_unknown.
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../experiments/results/h1-plain/cdp-events.jsonl");
     let jsonl = std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     let capture = parse_cdp_jsonl(&jsonl).unwrap();
     assert!(!capture.requests.is_empty());
     let (session, _) = build_cdp_session(&capture);
-    assert_eq!(session.requests.len(), 2, "h1-plain tem 2 requisições");
+    assert_eq!(session.requests.len(), 2, "h1-plain has 2 requests");
     assert!(
         session
             .requests
@@ -579,7 +579,7 @@ fn capture_setup_timeout_is_a_warning_naming_the_command() {
     assert!(
         warning
             .message
-            .contains("configuração incompleta: Target.setAutoAttach sem resposta"),
+            .contains("incomplete setup: Target.setAutoAttach gave no response"),
         "{}",
         warning.message
     );
@@ -591,7 +591,7 @@ fn capture_setup_timeout_is_a_warning_naming_the_command() {
 
 #[test]
 fn session_id_without_any_target_event_has_no_target_provenance() {
-    // Bruto ao vivo anterior à rodada 10: `sessionId` presente, nenhum `Target.*`.
+    // Live raw file predating round 10: `sessionId` present, no `Target.*`.
     let jsonl = [
         r#"{"sessionId":"S0","method":"Network.requestWillBeSent","params":{"requestId":"1","timestamp":1.0,"wallTime":1.0,"request":{"url":"https://x.test/a","method":"GET","headers":{}}}}"#,
         r#"{"sessionId":"S0","method":"Network.responseReceived","params":{"requestId":"1","timestamp":1.1,"response":{"url":"https://x.test/a","status":200,"headers":{},"protocol":"http/1.1"}}}"#,
@@ -625,7 +625,7 @@ fn real_old_live_capture_with_session_id_has_no_target_unknown() {
 
 #[test]
 fn target_events_still_flag_unknown_sessions() {
-    // Com algum Target.*, uma sessão sem attachedToTarget continua avisando.
+    // With some Target.*, a session without attachedToTarget still warns.
     let jsonl = [
         attached("S1", "T1", "page", "https://x.test/", None),
         request_event("S1", "r1", "https://x.test/a", 1.0),
@@ -663,7 +663,7 @@ fn setup_timeout_uses_type_and_pending_ms_when_present() {
         .unwrap();
     assert_eq!(
         warning.message,
-        "configuração incompleta: Network.enable sem resposta; a rede pode estar incompleta neste alvo (tipo: service_worker; pendente há 1500 ms)"
+        "incomplete setup: Network.enable gave no response; the network may be incomplete for this target (type: service_worker; pending for 1500 ms)"
     );
     let detail = warning.detail.as_ref().unwrap();
     assert_eq!(detail["targetId"], "T1");
@@ -695,7 +695,7 @@ fn setup_error_is_a_network_loss_warning_linked_to_the_target() {
         .unwrap_or_else(|| panic!("{:?}", session.warnings));
     assert_eq!(
         warning.message,
-        "configuração falhou: Network.enable respondeu erro (Permission denied); a rede deste alvo pode estar ausente ou incompleta"
+        "setup failed: Network.enable responded with error (Permission denied); the network of this target may be missing or incomplete"
     );
     let detail = warning.detail.as_ref().unwrap();
     assert_eq!(detail["targetId"], "T1");
@@ -713,7 +713,7 @@ fn setup_aborted_is_an_info_note_on_the_target_not_a_warning() {
             "Capture.targetSetupAborted",
             serde_json::json!({
                 "targetId": "T1", "sessionId": "S1", "type": "page",
-                "reason": "alvo encerrado durante a configuração",
+                "reason": "target closed during setup",
             }),
         ),
     ]
@@ -727,5 +727,5 @@ fn setup_aborted_is_an_info_note_on_the_target_not_a_warning() {
         session.warnings
     );
     let target = session.requests[0].target.as_ref().unwrap();
-    assert_eq!(target.notes, vec!["alvo encerrado durante a configuração"]);
+    assert_eq!(target.notes, vec!["target closed during setup"]);
 }

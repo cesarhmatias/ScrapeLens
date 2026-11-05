@@ -1,5 +1,5 @@
-//! Ponto de extensão `ProtocolAdapter` com um protocolo inventado (sem Natural):
-//! `LP!` + registros `<nn:nome><nome><mm:valor><valor>` com comprimentos de 2 dígitos.
+//! `ProtocolAdapter` extension point with an invented protocol (without Natural):
+//! `LP!` + records `<nn:name><name><mm:value><value>` with 2-digit lengths.
 
 use std::sync::Arc;
 
@@ -34,10 +34,10 @@ impl ProtocolAdapter for LenPrefix {
             let n: usize = value
                 .get(*i..*i + 2)
                 .and_then(|s| s.parse().ok())
-                .ok_or_else(|| bad("comprimento"))?;
+                .ok_or_else(|| bad("length"))?;
             let start = *i + 2;
             if start + n > b.len() {
-                return Err(bad("truncado"));
+                return Err(bad("truncated"));
             }
             *i = start + n;
             Ok((start, n))
@@ -95,7 +95,7 @@ fn body_line(id: &str, kind: &str, data: &str) -> Value {
         "data":data,"originalSize":data.len(),"capturedSize":data.len(),"source":"x","reason":null,"timestamp":1.0})
 }
 
-/// resposta com o delta (req 1) → consulta que o devolve com uma placa (req 2).
+/// response with the delta (req 1) → query that returns it with a plate (req 2).
 fn flow(delta: &str, plate: &str) -> SessionBundle {
     let (mut events, mut bodies) = (Vec::new(), Vec::new());
     let mut step = |n: u32, post: Option<String>, resp: String, ts: f64| {
@@ -163,7 +163,7 @@ fn detect_and_round_trip() {
     };
     let reg = registry().adapters;
     let text = lp("D3LTA-0001", "ABC1D23");
-    let adapter = reg.claim("XML", &text, &ctx).expect("reivindica");
+    let adapter = reg.claim("XML", &text, &ctx).expect("claimed");
     assert_eq!(adapter.id(), "len-prefix");
     assert!(reg.claim("OUTRO", &text, &ctx).is_none());
     assert!(reg.claim("XML", "plain", &ctx).is_none());
@@ -175,7 +175,7 @@ fn detect_and_round_trip() {
         ("p.v_placa", "ABC1D23")
     );
     assert_eq!(&text[p.offset..p.offset + p.len], "ABC1D23");
-    // gramática violada → erro, não pânico
+    // grammar violated → error, not panic
     assert!(adapter.decode("LP!99x").is_err());
 }
 
@@ -207,9 +207,9 @@ fn origins_use_internal_names_and_offsets_with_adapter() {
         .values
         .iter()
         .find(|v| v.field == "XML.p.v_placa")
-        .expect("placa");
+        .expect("plate");
     assert_eq!(plate.value, "ABC1D23");
-    // sem substrings comuns no lugar dos nomes
+    // no common substrings in place of the names
     let stray: Vec<_> = o
         .values
         .iter()
@@ -225,7 +225,7 @@ fn without_registry_nothing_changes() {
     let target = logical(&b, "2.1");
     let o = value_origins(&b.session, &b, &target, &FlowOptions::default()).unwrap();
     assert!(!o.values.iter().any(|v| v.field.starts_with("XML.")));
-    // continua o comportamento por substrings comuns
+    // the common-substring behavior still applies
     assert!(o.values.iter().any(|v| v.parent.as_deref() == Some("XML")));
 }
 
@@ -245,9 +245,9 @@ fn compare_shows_internal_names() {
     assert!(!serde_json::to_string(&plain).unwrap().contains("XML.delta"));
 }
 
-/// Produtor em `<textarea name="XML">` com entidades; o consumidor o devolve.
+/// Producer in `<textarea name="XML">` with entities; the consumer returns it.
 fn html_flow(delta: &str) -> (SessionBundle, usize) {
-    // `&amp;` antes do delta desloca os offsets decodificados × originais
+    // `&amp;` before the delta shifts the decoded × original offsets
     let payload = lp(delta, "ZZZ0Z00");
     let escaped = payload.replace('!', "&#33;");
     let page = format!(
@@ -315,7 +315,7 @@ fn html_textarea_with_entities_maps_offsets_to_the_original_html() {
         ev.producer_offset,
         Some(page.find("D3LTA-0001").unwrap() as u64)
     );
-    // sem registro não há nomes internos
+    // without a registry there are no internal names
     let plain =
         value_origins(&b.session, &b, &logical(&b, "2.1"), &FlowOptions::default()).unwrap();
     assert!(!plain.values.iter().any(|v| v.field.starts_with("XML.")));
@@ -323,7 +323,7 @@ fn html_textarea_with_entities_maps_offsets_to_the_original_html() {
 
 #[test]
 fn adapter_does_not_change_request_alignment() {
-    // B não tem a placa: com adaptador, os nomes `XML.*` não podem mudar o modelo/pareamento.
+    // B has no plate: with an adapter, the `XML.*` names must not change the model/pairing.
     let a = flow("D3LTA-0001", "ABC1D23");
     let b = flow("D3LTA-0002", "Q");
     let plain = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
@@ -364,6 +364,6 @@ fn compare_resolves_the_origin_of_adapter_parts() {
         .find(|f| {
             f.field == "XML.delta" && f.class == scrapelens_core::compare::FieldClass::Dynamic
         })
-        .expect("XML.delta dinâmico");
+        .expect("dynamic XML.delta");
     assert!(delta.origin.is_some(), "{delta:?}");
 }

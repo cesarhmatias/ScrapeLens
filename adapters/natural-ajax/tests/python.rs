@@ -1,4 +1,4 @@
-//! O codificador Python gerado é equivalente ao `encode` em Rust.
+//! The generated Python encoder is equivalent to the Rust `encode`.
 
 mod common;
 
@@ -68,13 +68,13 @@ fn python_encoder_matches_rust_encode() {
         let decoded = adapter.decode(xml).unwrap();
         for text in ["", "ZZ", "é😀 \u{202e} ' \" \\ \n"] {
             let m = mutate(&decoded, text);
-            // Alguns exemplos ultrapassam a largura: erro nos dois lados.
+            // Some examples exceed the width: error on both sides.
             let rust = adapter.encode(&m).ok();
             cases.push(json_parts(&m.parts));
             expected.push(rust);
         }
     }
-    assert!(cases.len() > 20, "poucos casos: {}", cases.len());
+    assert!(cases.len() > 20, "few cases: {}", cases.len());
     let dir = tempfile::tempdir().unwrap();
     let driver = format!(
         r#"
@@ -112,11 +112,11 @@ json.dump(out, open(sys.argv[2], 'w', encoding='utf-8'))
     assert_eq!(got.len(), expected.len());
     let mut compared = 0;
     for (python, rust) in got.iter().zip(&expected) {
-        assert_eq!(python, rust, "Python e Rust divergem");
+        assert_eq!(python, rust, "Python and Rust diverge");
         compared += 1;
     }
     assert!(compared > 20);
-    // Sem mutação, o Python reproduz o original byte a byte.
+    // Without mutation, Python reproduces the original byte for byte.
     for xml in corpus().iter().take(30) {
         let decoded = adapter.decode(xml).unwrap();
         assert_eq!(adapter.encode(&decoded).unwrap(), *xml);
@@ -125,8 +125,8 @@ json.dump(out, open(sys.argv[2], 'w', encoding='utf-8'))
 
 #[test]
 fn python_encoder_survives_hostile_names_and_values() {
-    // Nomes/valores com aspas, quebras, bidi e substitutos: o resultado é
-    // dado, nunca código; nada é executado além da função.
+    // Names/values with quotes, breaks, bidi and surrogates: the result is
+    // data, never code; nothing runs beyond the function.
     let adapter = NaturalAjax;
     let decoded = Decoded {
         parts: vec![
@@ -211,7 +211,7 @@ json.dump(out, open(sys.argv[2], 'w', encoding='utf-8'))
         dir.path().join("out.json"),
     );
     std::fs::write(&script, driver).unwrap();
-    // Casos extras: emoji, escopos e dicionário.
+    // Extra cases: emoji, scopes and dictionary.
     let mut texts = corpus.clone();
     texts.push("lb02ab".to_string() + "s1" + "02" + "kk" + "xx" + "q0100005kvalue" + "c" + "x02ok");
     texts.push("p0200003a\u{1F600}b".to_string() + "x01z");
@@ -239,7 +239,7 @@ json.dump(out, open(sys.argv[2], 'w', encoding='utf-8'))
                 })
                 .collect::<Vec<_>>()
         });
-        assert_eq!(python, rust, "decoders divergem");
+        assert_eq!(python, rust, "decoders diverge");
     }
 }
 
@@ -280,7 +280,7 @@ json.dump(out, open(sys.argv[2], 'w', encoding='utf-8'))
     serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap()
 }
 
-/// LCG determinístico (sem dependência).
+/// Deterministic LCG (no dependency).
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -305,7 +305,7 @@ fn python_decoder_is_as_strict_as_rust_on_random_inputs() {
         |rng: &mut Rng| -> String { (0..(rng.next() % 5)).map(|_| rng.pick(&atoms)).collect() };
     let mut texts: Vec<String> = Vec::new();
     for _ in 0..3000 {
-        // Mensagens válidas montadas por operações, depois corrompidas.
+        // Valid messages built from operations, then corrupted.
         let mut ops = Vec::new();
         for _ in 0..(rng.next() % 8) {
             ops.push(match rng.next() % 7 {
@@ -332,7 +332,7 @@ fn python_decoder_is_as_strict_as_rust_on_random_inputs() {
         ops.push(Op::Delta(word(&mut rng)));
         let mut text = grammar::serialize(&ops).unwrap_or_default();
         texts.push(text.clone());
-        // Corrompe: troca um dígito, corta, ou insere emoji (par substituto).
+        // Corrupts: swaps a digit, cuts, or inserts an emoji (surrogate pair).
         let chars: Vec<char> = text.chars().collect();
         if !chars.is_empty() {
             let at = (rng.next() as usize) % chars.len();
@@ -353,7 +353,7 @@ fn python_decoder_is_as_strict_as_rust_on_random_inputs() {
         }
     }
     for _ in 0..2000 {
-        // Ruído puro sobre o alfabeto do protocolo.
+        // Pure noise over the protocol alphabet.
         let alphabet = [
             "p", "q", "z", "w", "b", "c", "s", "l", "k", "x", "v", "i", "0", "1", "2", "5", "9",
             "a", "😀", "é",
@@ -382,7 +382,7 @@ fn python_decoder_is_as_strict_as_rust_on_random_inputs() {
         assert_eq!(
             py,
             rust,
-            "decoders divergem em {:?}",
+            "decoders diverge on {:?}",
             text.chars().take(40).collect::<String>()
         );
         if rust.is_some() {
@@ -392,7 +392,7 @@ fn python_decoder_is_as_strict_as_rust_on_random_inputs() {
         }
     }
     println!(
-        "aleatório: {} entradas, {ok} válidas, {err} recusadas",
+        "random: {} inputs, {ok} valid, {err} refused",
         texts.len()
     );
     assert!(ok > 200 && err > 200);
@@ -412,12 +412,12 @@ fn deep_scopes_and_big_dictionaries_are_refused_fast_in_rust_and_python() {
     assert!(grammar::parse(&dict).is_err());
     assert!(NaturalAjax.decode(&deep).is_err());
     assert!(start.elapsed().as_secs_f64() < 1.0, "{:?}", start.elapsed());
-    // Profundidade e dicionário dentro do limite continuam funcionando.
+    // Depth and dictionary within the limit keep working.
     let ok_depth = "b01a".repeat(32) + "p0100001ab" + &"c".repeat(32) + "x02ok";
     assert!(grammar::parse(&ok_depth).is_ok());
     assert!(grammar::parse(&("b01a".repeat(33))).is_err());
 
-    // Python: mesmo veredito, rápido e com memória baixa.
+    // Python: same verdict, fast and with low memory.
     let python = {
         use scrapelens_natural_ajax::PYTHON_DECODER;
         let dir = tempfile::tempdir().unwrap();

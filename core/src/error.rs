@@ -6,32 +6,32 @@ pub type Result<T> = std::result::Result<T, CoreError>;
 
 #[derive(Debug, Error)]
 pub enum CoreError {
-    #[error("falha de I/O em {path}: {source}")]
+    #[error("I/O failure at {path}: {source}")]
     Io {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
 
-    #[error("JSON inválido em {context}: {message}")]
+    #[error("invalid JSON in {context}: {message}")]
     Json { context: String, message: String },
 
-    #[error("formato não suportado: {message}")]
+    #[error("unsupported format: {message}")]
     UnsupportedFormat { message: String },
 
-    #[error("schemaVersion {found} não suportado (esperado {expected})")]
+    #[error("unsupported schemaVersion {found} (expected {expected})")]
     UnsupportedSchema { found: u32, expected: u32 },
 
-    #[error("dado obrigatório ausente: {field}")]
+    #[error("required data missing: {field}")]
     MissingField { field: String },
 
-    #[error("caminho de anexo inválido: {name}")]
+    #[error("invalid attachment path: {name}")]
     InvalidAttachmentPath { name: String },
 
-    #[error("limite excedido: {message}")]
+    #[error("limit exceeded: {message}")]
     LimitExceeded { message: String },
 
-    #[error("exportação impossível: {message}")]
+    #[error("export impossible: {message}")]
     Export { message: String },
 }
 

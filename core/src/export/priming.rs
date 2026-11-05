@@ -1,36 +1,40 @@
-//! Script de priming em Python (docs/11-priming-sucesso.md §1).
+//! Priming script in Python (docs/11-priming-sucesso.md §1).
 //!
-//! Gera um script `requests.Session` que recria a sessão: cada passo da
-//! cadeia (`flow::priming_chain`, só `steps`) é refeito na ordem, e os valores
-//! que têm origem observada são EXTRAÍDOS em runtime da resposta do produtor,
-//! pelo mesmo tipo de evidência. Se a extração não achar o valor, o script
-//! falha com mensagem clara; nunca cai no valor capturado.
+//! Generates a `requests.Session` script that recreates the session: each step
+//! of the chain (`flow::priming_chain`, only `steps`) is replayed in order, and
+//! the values that have an observed origin are EXTRACTED at runtime from the
+//! producer's response, using the same kind of evidence. If the extraction does
+//! not find the value, the script fails with a clear message; it never falls
+//! back to the captured value.
 //!
-//! Segurança do código gerado: todo dado capturado entra só em literais
-//! Python escapados (ASCII, `\x`/`\u`/`\U`) ou em comentários feitos por
-//! [`super::comment`]. Nomes de parâmetros são saneados. O script não é
-//! executado pelo ScrapeLens.
+//! Security of the generated code: all captured data enters only as escaped
+//! Python literals (ASCII, `\x`/`\u`/`\U`) or as comments produced by
+//! [`super::comment`]. Parameter names are sanitized. The script is not executed
+//! by ScrapeLens.
 //!
-//! Heurísticas declaradas: valores que parecem entrada do usuário dentro de
-//! campos opacos sem origem (placa, CPF/CNPJ/RENAVAM após `v_cpf`, `v_cnpj`,
-//! `v_renavam`) viram parâmetros obrigatórios, sem padrão.
+//! Declared heuristics: values that look like user input inside opaque fields
+//! without an origin (license plate, CPF/CNPJ/RENAVAM after `v_cpf`, `v_cnpj`,
+//! `v_renavam`) become required parameters, with no default.
 //!
-//! Padrão de parâmetro: um valor sem origem observada só vira padrão do
-//! parâmetro se for constante comprovada (aparece igual, no mesmo campo, em
-//! ≥ 2 requisições da sessão, ou está num recurso estático/contexto). Os
-//! demais — inclusive o sufixo de `partialComposition` e o `STAMP` sem
-//! produtor — são obrigatórios e o valor capturado não entra no código.
+//! Parameter default: a value with no observed origin only becomes the
+//! parameter's default if it is a proven constant (it appears identical, in the
+//! same field, in ≥ 2 requests of the session, or is in a static
+//! resource/context). All others — including the suffix of `partialComposition`
+//! and the `STAMP` without a producer — are required, and the captured value
+//! does not enter the code.
 //!
-//! Cadeia incompleta: se um valor consumido pela cadeia não tem origem e
-//! havia resposta anterior sem corpo observável, `to_python` RECUSA por
-//! padrão (listando os produtores e a ocorrência equivalente com corpo).
-//! `allow_incomplete` gera o script com `fail()` explícito nesses passos.
+//! Incomplete chain: if a value consumed by the chain has no origin and there
+//! was an earlier response without an observable body, `to_python` REFUSES by
+//! default (listing the producers and the equivalent occurrence with a body).
+//! `allow_incomplete` generates the script with an explicit `fail()` in those
+//! steps.
 //!
-//! Cada passo valida a PRÓPRIA resposta antes de devolver: status fora de
-//! 2xx/3xx, controle/campo/cookie/header que ele entrega aos passos seguintes
-//! (pela cadeia) e `ERRORMESSAGE` preenchido falham `priming: passo N: …` e
-//! nenhum pedido é enviado depois. Header fora de latin-1 também falha com
-//! mensagem `priming:` clara, em vez de `UnicodeEncodeError` cru.
+//! Each step validates its OWN response before returning: a status outside
+//! 2xx/3xx, a control/field/cookie/header that it hands to the following steps
+//! (through the chain), and a filled `ERRORMESSAGE` fail with
+//! `priming: step N: …` and no request is sent afterwards. A header outside
+//! latin-1 also fails with a clear `priming:` message, instead of a raw
+//! `UnicodeEncodeError`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -49,43 +53,43 @@ use super::{comment, is_header_token, is_safe_header_value, ExportOutput};
 #[derive(Debug, Clone, Default)]
 pub struct PrimingOptions {
     pub flow: FlowOptions,
-    /// Gera o script mesmo quando a cadeia depende de resposta sem corpo
-    /// observável, com `fail()` explícito nesses passos.
+    /// Generates the script even when the chain depends on a response without
+    /// an observable body, with an explicit `fail()` in those steps.
     pub allow_incomplete: bool,
-    /// Origins (`esquema://host[:porta]`) além do alvo que a cadeia pode
-    /// contatar; sem eles, um passo com outro origin é recusado na geração.
+    /// Origins (`scheme://host[:port]`) besides the target that the chain may
+    /// contact; without them, a step with another origin is refused at
+    /// generation time.
     pub allow_origins: Vec<String>,
-    /// Aceita corpo que não é form nem JSON, reenviado como capturado; os
-    /// valores sensíveis/de negócio detectados viram parâmetros obrigatórios.
+    /// Accepts a body that is neither a form nor JSON, resent as captured; the
+    /// detected sensitive/business values become required parameters.
     pub allow_literal_body: bool,
-    /// Codificadores Python dos adaptadores de protocolo registrados em
-    /// `flow.adapters`: sem eles, o campo reivindicado volta ao tratamento
-    /// por trechos.
+    /// Python encoders of the protocol adapters registered in `flow.adapters`:
+    /// without them, the claimed field falls back to segment-based handling.
     pub adapter_encoders: Vec<AdapterEncoder>,
-    /// Princípio das partes do adaptador. Padrão (estrito): literal só para
-    /// papel Structure, constante comprovada (≥ 2 requisições da sessão ou
-    /// contexto estático), valor de navegação ou "constante de UI"
-    /// (`is_ui_constant`: booleanos e números de até 4 caracteres com
-    /// sinal/decimal: `true`, `-180`, `2.0`) ou nome de comando/recurso do
-    /// cabeçalho (`event`, `page`, `model`, como `cmd_filtro`) sem cara de
-    /// identificador nem PII; toda outra parte sem origem vira
-    /// parâmetro obrigatório. Com `lenient_parts`, só valores com cara de
-    /// identificador/segredo/carimbo de tempo (UUID, hex, ULID, base64,
-    /// timestamp, misto alfanumérico longo) viram parâmetro e o resto fica
-    /// literal. Valor com origem em outra rodada nunca é literal.
+    /// Adapter parts principle. Default (strict): literal only for the
+    /// Structure role, a proven constant (≥ 2 requests in the session or static
+    /// context), a navigation value or a "UI constant" (`is_ui_constant`:
+    /// booleans and numbers of up to 4 characters with sign/decimal: `true`,
+    /// `-180`, `2.0`) or a command/resource name from the header (`event`,
+    /// `page`, `model`, like `cmd_filtro`) that does not look like an identifier
+    /// nor PII; every other part without an origin becomes a required parameter.
+    /// With `lenient_parts`, only values that look like an
+    /// identifier/secret/timestamp (UUID, hex, ULID, base64, timestamp, long
+    /// mixed alphanumeric) become parameters and the rest stays literal. A value
+    /// whose origin is in another round is never literal.
     pub lenient_parts: bool,
 }
 
-/// Codificador Python equivalente ao `encode` de um adaptador. O `source`
-/// define `function(parts)`, que recebe `(nome, papel, valor)` em ordem, com
-/// papel `S` (estrutura), `N` (nome), `V` (valor), `D` (delta) ou `O`.
+/// Python encoder equivalent to an adapter's `encode`. The `source` defines
+/// `function(parts)`, which receives `(name, role, value)` in order, with role
+/// `S` (structure), `N` (name), `V` (value), `D` (delta) or `O`.
 #[derive(Debug, Clone, Default)]
 pub struct AdapterEncoder {
     pub adapter_id: String,
     pub function: String,
-    /// Função Python `decode(texto)` que devolve as mesmas partes
-    /// `(nome, papel, valor)` do `decode` do adaptador (vazio = sem extração
-    /// por parte de respostas).
+    /// Python function `decode(texto)` that returns the same parts
+    /// `(name, role, value)` as the adapter's `decode` (empty = no per-part
+    /// extraction from responses).
     pub decoder: String,
     pub source: String,
 }
@@ -146,11 +150,11 @@ const SENSITIVE_WORDS: &[&str] = &[
     "digest",
     "nonce",
 ];
-/// Palavras curtas demais para casar por substring (`rg` em `target`): só
-/// valem como palavra inteira do nome (`rg`, `user_rg`, `sid`, `jsid`).
+/// Words too short to match as a substring (`rg` in `target`): they only count
+/// as a whole word of the name (`rg`, `user_rg`, `sid`, `jsid`).
 const SENSITIVE_SHORT_WORDS: &[&str] = &["rg", "sid", "sessid", "jsid", "tel", "fone"];
-/// Abreviações e termos de PII/credencial, só como palavra inteira do nome
-/// (`v_pass` sim, `v_passo` não). Valem com e sem adaptador.
+/// Abbreviations and PII/credential terms, only as a whole word of the name
+/// (`v_pass` yes, `v_passo` no). They apply with and without an adapter.
 const SENSITIVE_ABBREVIATIONS: &[&str] = &[
     "pwd",
     "pass",
@@ -205,7 +209,7 @@ const SENSITIVE_ABBREVIATIONS: &[&str] = &[
     "chv",
     "doc",
 ];
-/// Termos longos o bastante para casar como substring (`codSeguranca`).
+/// Terms long enough to match as a substring (`codSeguranca`).
 const SENSITIVE_LONG_TERMS: &[&str] = &[
     "seguranca",
     "aniversario",
@@ -217,7 +221,7 @@ const SENSITIVE_LONG_TERMS: &[&str] = &[
     "passaporte",
 ];
 
-/// Palavras de um nome: separadores não alfanuméricos e fronteiras camelCase.
+/// Words of a name: non-alphanumeric separators and camelCase boundaries.
 fn name_words(name: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
@@ -250,7 +254,7 @@ fn has_sensitive_abbreviation(name: &str) -> bool {
             .any(|w| SENSITIVE_ABBREVIATIONS.contains(&w.as_str()))
 }
 
-/// Literal Python ASCII com aspas simples; nada além de `[ -~]` sai cru.
+/// ASCII Python literal with single quotes; nothing beyond `[ -~]` is emitted raw.
 fn lit(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('\'');
@@ -320,7 +324,7 @@ fn is_plate_at(b: &[u8], i: usize) -> bool {
     ok && before_ok && after_ok
 }
 
-/// Placa com hífen: `ABC-1234` e Mercosul `ABC-1D23`.
+/// Plate with a hyphen: `ABC-1234` and Mercosul `ABC-1D23`.
 fn is_plate_dash_at(b: &[u8], i: usize) -> bool {
     if i + 8 > b.len() {
         return false;
@@ -338,7 +342,7 @@ fn is_plate_dash_at(b: &[u8], i: usize) -> bool {
     ok && before_ok && after_ok
 }
 
-/// VIN/chassi: 17 caracteres `[A-HJ-NPR-Z0-9]` em maiúsculas, com letra e dígito.
+/// VIN/chassis: 17 characters `[A-HJ-NPR-Z0-9]` in uppercase, with a letter and a digit.
 fn is_vin_at(b: &[u8], i: usize) -> bool {
     if i + 17 > b.len() || (i > 0 && b[i - 1].is_ascii_alphanumeric()) {
         return false;
@@ -353,7 +357,7 @@ fn is_vin_at(b: &[u8], i: usize) -> bool {
         && (i + 17 == b.len() || !b[i + 17].is_ascii_alphanumeric())
 }
 
-/// Largura total (NFKC básico): `１２３` vira `123`, `＠` vira `@`.
+/// Full width (basic NFKC): `１２３` becomes `123`, `＠` becomes `@`.
 fn fold_width(text: &str) -> String {
     text.chars()
         .map(|c| match c as u32 {
@@ -373,9 +377,9 @@ fn looks_sensitive_value(value: &str) -> bool {
         })
 }
 
-/// Identificador opaco (CPF/processo/timestamp): longo e só de dígitos, ou hex
-/// longo. Nunca é constante estrutural, mesmo que apareça numa URL de
-/// navegação.
+/// Opaque identifier (CPF/case number/timestamp): long and digits only, or a
+/// long hex. Never a structural constant, even if it appears in a navigation
+/// URL.
 fn looks_opaque_id(value: &str) -> bool {
     let digits = value.bytes().all(|b| b.is_ascii_digit());
     if digits && value.len() >= 5 {
@@ -387,8 +391,8 @@ fn looks_opaque_id(value: &str) -> bool {
     if value.len() >= 16 && value.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
         return true;
     }
-    // Versões e contadores (`1.2.3`, `123_456`, `jQuery123_456`): cara de valor
-    // dinâmico, nunca constante estrutural.
+    // Versions and counters (`1.2.3`, `123_456`, `jQuery123_456`): they look like
+    // a dynamic value, never a structural constant.
     if value.bytes().any(|b| b.is_ascii_digit())
         && value.bytes().any(|b| matches!(b, b'.' | b'_' | b'-'))
         && value
@@ -401,7 +405,7 @@ fn looks_opaque_id(value: &str) -> bool {
     if digits >= 3 && value.contains('_') && value.bytes().any(|b| b.is_ascii_alphabetic()) {
         return true;
     }
-    // Base64/base64url longo e misto.
+    // Long, mixed Base64/base64url.
     value.len() >= 20
         && value
             .bytes()
@@ -411,7 +415,7 @@ fn looks_opaque_id(value: &str) -> bool {
         && value.bytes().any(|b| b.is_ascii_lowercase())
 }
 
-/// Valor de campo que é um objeto/array JSON válido.
+/// Field value that is a valid JSON object/array.
 fn json_container(text: &str) -> Option<serde_json::Value> {
     let trimmed = text.trim();
     if !trimmed.starts_with(['{', '[']) {
@@ -420,10 +424,10 @@ fn json_container(text: &str) -> Option<serde_json::Value> {
     serde_json::from_str(trimmed).ok()
 }
 
-/// Valor de uma parte de requisição sem origem rastreada pelo fluxo: procura,
-/// nas respostas dos passos anteriores, um campo do mesmo adaptador cuja parte
-/// decodificada tenha o mesmo valor, e o extrai em runtime pelo nome da parte
-/// (imune a mudanças de comprimento).
+/// Value of a request part with no origin tracked by the flow: searches the
+/// responses of the earlier steps for a field of the same adapter whose decoded
+/// part has the same value, and extracts it at runtime by the part's name
+/// (immune to length changes).
 #[allow(clippy::too_many_arguments)]
 fn adapter_chain_expr(
     gen: &mut Gen,
@@ -441,11 +445,11 @@ fn adapter_chain_expr(
     {
         return None;
     }
-    // Mesmo nome de parte: o valor igual já basta, por menor que seja. Sem
-    // o mesmo nome, só valores com cara de dinâmicos.
+    // Same part name: an identical value is enough, however short. Without the
+    // same name, only values that look dynamic qualify.
     let dynamic =
         value.len() >= 4 && (value.bytes().any(|b| b.is_ascii_digit()) || value.len() >= 8);
-    // `XML.p.v_ctr` → `p.v_ctr`: o nome da parte relativo ao campo.
+    // `XML.p.v_ctr` → `p.v_ctr`: the part name relative to the field.
     let part_name_in_field = part_name
         .strip_prefix(field)
         .and_then(|rest| rest.strip_prefix('.'))
@@ -489,7 +493,7 @@ fn adapter_chain_expr(
                 .position(|p| std::ptr::eq(*p, *hit))?;
             gen.expect(rid, Expectation::Control(field.to_string(), this_index));
             gen.notes.push(format!(
-                "{part_name}: igual a {} da resposta {rid}; extraído em runtime pelo nome",
+                "{part_name}: equal to {} from response {rid}; extracted at runtime by name",
                 hit.name
             ));
             return Some(format!(
@@ -504,8 +508,8 @@ fn adapter_chain_expr(
     None
 }
 
-/// Quantas requisições da sessão (qualquer rodada) carregam a parte `nome`
-/// com o `valor`, no campo `field` decodificado pelo adaptador.
+/// How many requests of the session (any round) carry the part `name` with the
+/// `value`, in the `field` field decoded by the adapter.
 fn part_occurrences(
     gen: &mut Gen,
     adapter: &dyn crate::adapter::ProtocolAdapter,
@@ -551,8 +555,8 @@ fn part_occurrences(
         .unwrap_or(0)
 }
 
-/// O mesmo delta aparece em outro passo do plano? Então é constante do
-/// protocolo (ex.: delta de `init`), não eco do servidor.
+/// Does the same delta appear in another step of the plan? Then it is a
+/// protocol constant (e.g. the delta of `init`), not a server echo.
 fn delta_repeated_in_plan(
     gen: &Gen,
     request: &LogicalRequest,
@@ -583,8 +587,8 @@ fn delta_repeated_in_plan(
     })
 }
 
-/// Algum passo anterior do plano devolveu um campo do adaptador com delta?
-/// Então o delta enviado agora é eco do estado do servidor (não constante).
+/// Did an earlier step of the plan return an adapter field with a delta? Then
+/// the delta sent now is an echo of the server state (not a constant).
 fn earlier_response_has_delta(
     gen: &Gen,
     request: &LogicalRequest,
@@ -594,9 +598,9 @@ fn earlier_response_has_delta(
     earlier_response_has_field(gen, request, adapter, field, true)
 }
 
-/// Algum passo anterior do plano devolveu um campo do adaptador (com delta,
-/// se `with_delta`)? Sem isso, os valores da requisição são as constantes
-/// iniciais do protocolo (handshake), não eco de estado do servidor.
+/// Did an earlier step of the plan return an adapter field (with a delta, if
+/// `with_delta`)? Without that, the request's values are the protocol's initial
+/// constants (handshake), not an echo of server state.
 fn earlier_response_has_field(
     gen: &Gen,
     request: &LogicalRequest,
@@ -624,9 +628,9 @@ fn earlier_response_has_field(
     })
 }
 
-/// Campo reivindicado por um adaptador de protocolo: o script monta as partes
-/// (constantes + extraídas + parâmetros) e chama o codificador Python do
-/// adaptador, que recalcula todos os prefixos. `None` = não reivindicado.
+/// Field claimed by a protocol adapter: the script builds the parts (constants +
+/// extracted + parameters) and calls the adapter's Python encoder, which
+/// recomputes all the prefixes. `None` = not claimed.
 #[allow(clippy::too_many_arguments)]
 fn adapter_field_expr(
     gen: &mut Gen,
@@ -654,7 +658,7 @@ fn adapter_field_expr(
         .iter()
         .position(|e| e.adapter_id == adapter.id())?;
     let decoded = adapter.decode(value).ok()?;
-    // Só quando o codificador reproduz o capturado byte a byte.
+    // Only when the encoder reproduces the captured value byte for byte.
     if adapter.encode(&decoded).ok().as_deref() != Some(value) {
         return None;
     }
@@ -675,7 +679,7 @@ fn adapter_field_expr(
         } else {
             let full = format!("{name}.{}", part.name);
             let occ = seen.entry(full.clone()).or_default();
-            // As partes do campo reivindicado chegam com `parent = campo`.
+            // The parts of the claimed field arrive with `parent = field`.
             let origin = origins.values.iter().find(|v| {
                 v.scope == ConsumedScope::Body
                     && v.parent.as_deref() == Some(name)
@@ -683,8 +687,8 @@ fn adapter_field_expr(
                     && v.occurrence == *occ
             });
             *occ += 1;
-            // Outro campo do mesmo form com o mesmo valor (ex.: SESSIONID): é a
-            // mesma informação, com o mesmo nome de parâmetro.
+            // Another field of the same form with the same value (e.g. SESSIONID):
+            // it is the same information, with the same parameter name.
             let label = siblings
                 .iter()
                 .find(|(k, v)| k != name && v == &part.value)
@@ -718,8 +722,8 @@ fn adapter_field_expr(
                         "v_renavam" => Some("renavam"),
                         _ => None,
                     };
-                    // Último componente do nome (`items[0].v_senha` → `v_senha`),
-                    // com as mesmas listas do caminho sem adaptador.
+                    // Last component of the name (`items[0].v_senha` → `v_senha`),
+                    // using the same lists as the path without an adapter.
                     let last = prop
                         .rsplit('.')
                         .next()
@@ -731,19 +735,19 @@ fn adapter_field_expr(
                     match business {
                         Some(label) => {
                             gen.notes
-                                .push(format!("{full}: dado do usuário; parâmetro obrigatório"));
+                                .push(format!("{full}: user data; required parameter"));
                             gen.params
-                                .get(label, &part.value, true, "dado do usuário", false)
+                                .get(label, &part.value, true, "user data", false)
                         }
                         None if sensitive_part && !part.value.is_empty() => {
                             gen.notes.push(format!(
-                                "{full}: nome sensível; parâmetro obrigatório, sem padrão"
+                                "{full}: sensitive name; required parameter, no default"
                             ));
                             gen.params.get(
                                 last.trim_start_matches("v_"),
                                 &part.value,
                                 true,
-                                "dado sensível",
+                                "sensitive data",
                                 false,
                             )
                         }
@@ -758,9 +762,9 @@ fn adapter_field_expr(
                             &part.value,
                         ) {
                             Some(expr) => expr,
-                            // Delta (ou valor com cara de identificador) sem
-                            // origem e sem prova de constância: regra F1,
-                            // parâmetro obrigatório.
+                            // Delta (or a value that looks like an identifier) with
+                            // no origin and no proof of constancy: rule F1, required
+                            // parameter.
                             None if matches!(part.role, PartRole::Delta)
                                 && earlier_response_has_delta(
                                     gen,
@@ -777,14 +781,14 @@ fn adapter_field_expr(
                                 ) =>
                             {
                                 gen.notes.push(format!(
-                                    "{full}: sem origem observada; informe o valor da resposta anterior"
+                                    "{full}: no observed origin; provide the value from the earlier response"
                                 ));
                                 gen.fallback_param(&full, &part.value, false, false, false)
                             }
                             None => {
-                                // Literal só para: constante comprovada (≥ 2
-                                // requisições da sessão ou contexto estático) ou
-                                // valor de navegação. O resto é parâmetro.
+                                // Literal only for: a proven constant (≥ 2 requests
+                                // of the session or static context) or a navigation
+                                // value. The rest is a parameter.
                                 let proven = part_occurrences(
                                     gen,
                                     adapter.as_ref(),
@@ -799,8 +803,8 @@ fn adapter_field_expr(
                                 let has_param =
                                     scrubbed.iter().any(|p| matches!(p, Piece::Expr(_)));
                                 let identifier = looks_identifier_value(&part.value);
-                                // Valor com produtor observado fora do plano
-                                // (outra rodada): nunca literal.
+                                // Value with a producer observed outside the plan
+                                // (another round): never literal.
                                 let observed_elsewhere = origin
                                     .filter(|o| {
                                         matches!(
@@ -819,15 +823,15 @@ fn adapter_field_expr(
                                     || navigation
                                     || has_param
                                     || is_ui_constant(&part.value)
-                                    // Nome de comando/recurso do cabeçalho
-                                    // (`event`, `page`, `model`): estrutura do
-                                    // protocolo, salvo se parecer identificador.
+                                    // Command/resource name from the header
+                                    // (`event`, `page`, `model`): protocol structure,
+                                    // unless it looks like an identifier.
                                     || (matches!(part.name.as_str(), "event" | "page" | "model")
                                         && !identifier
                                         && observed_elsewhere.is_none()
                                         && !contains_pii(&part.value))
-                                    // Nenhuma resposta anterior do plano traz o
-                                    // campo: constantes iniciais do protocolo.
+                                    // No earlier response of the plan carries the
+                                    // field: initial protocol constants.
                                     || (!identifier
                                         && observed_elsewhere.is_none()
                                         && !earlier_response_has_field(
@@ -844,18 +848,18 @@ fn adapter_field_expr(
                                     pieces_expr(scrubbed)
                                 } else if let Some(rid) = &observed_elsewhere {
                                     gen.notes.push(format!(
-                                        "{full}: origem em outra rodada ({rid}); informe o valor"
+                                        "{full}: origin in another round ({rid}); provide the value"
                                     ));
                                     gen.params.get(
                                         &full,
                                         &part.value,
                                         false,
-                                        &format!("origem em outra rodada ({rid})"),
+                                        &format!("origin in another round ({rid})"),
                                         false,
                                     )
                                 } else {
                                     gen.notes.push(format!(
-                                        "{full}: sem origem observada nem prova de constância; informe o valor"
+                                        "{full}: no observed origin and no proof of constancy; provide the value"
                                     ));
                                     gen.fallback_param(&full, &part.value, false, false, false)
                                 }
@@ -871,7 +875,7 @@ fn adapter_field_expr(
     gen.encoders_used.insert(encoder_index);
     gen.claimed_fields.insert(name.to_string());
     gen.notes.push(format!(
-        "{name}: campo do protocolo {}; montado por partes e recodificado com os comprimentos recalculados",
+        "{name}: protocol field {}; assembled from parts and re-encoded with recalculated lengths",
         adapter.id()
     ));
     Some(format!(
@@ -881,8 +885,8 @@ fn adapter_field_expr(
     ))
 }
 
-/// Valor de campo de form/query: JSON embutido é decomposto recursivamente;
-/// senão, o tratamento normal.
+/// Form/query field value: embedded JSON is decomposed recursively;
+/// otherwise, the normal treatment.
 #[allow(clippy::too_many_arguments)]
 fn field_expr<'a>(
     gen: &mut Gen,
@@ -895,7 +899,7 @@ fn field_expr<'a>(
 ) -> String {
     let extracted = origin.is_some_and(|o| matches!(o.status, OriginStatus::Origin));
     if !extracted {
-        // JSON possivelmente codificado em porcentagem mais de uma vez.
+        // JSON possibly percent-encoded more than once.
         let mut current = value.to_string();
         let mut layers = 0;
         let found = loop {
@@ -931,7 +935,7 @@ fn field_expr<'a>(
     gen.value_expr(request, origin, origins, name, value, scope)
 }
 
-/// Corpo que começa com `{`/`[` e é JSON válido, qualquer que seja o Content-Type.
+/// Body that starts with `{`/`[` and is valid JSON, whatever the Content-Type.
 fn body_is_json(bytes: &[u8]) -> bool {
     let Ok(text) = std::str::from_utf8(bytes) else {
         return false;
@@ -940,14 +944,14 @@ fn body_is_json(bytes: &[u8]) -> bool {
     text.starts_with(['{', '[']) && serde_json::from_str::<serde_json::Value>(text).is_ok()
 }
 
-/// JWT, ULID/KSUID, data ISO/timestamp e alfanumérico misto: cara de valor
-/// dinâmico mesmo curto.
+/// JWT, ULID/KSUID, ISO date/timestamp and mixed alphanumeric: they look like a
+/// dynamic value even when short.
 fn looks_dynamic_token(value: &str) -> bool {
     let b = value.as_bytes();
     if value.starts_with("eyJ") {
         return true;
     }
-    // ULID (26, Crockford) e KSUID (27, base62).
+    // ULID (26, Crockford) and KSUID (27, base62).
     let alnum = b.iter().all(u8::is_ascii_alphanumeric);
     if alnum && b.len() == 26 && b.iter().all(|c| !c.is_ascii_lowercase()) {
         return true;
@@ -955,7 +959,7 @@ fn looks_dynamic_token(value: &str) -> bool {
     if alnum && b.len() == 27 {
         return true;
     }
-    // AAAA-MM-DD, com ou sem hora.
+    // YYYY-MM-DD, with or without time.
     if b.len() >= 10
         && b[..4].iter().all(u8::is_ascii_digit)
         && b[4] == b'-'
@@ -965,7 +969,7 @@ fn looks_dynamic_token(value: &str) -> bool {
     {
         return true;
     }
-    // Letras maiúsculas e minúsculas misturadas com dígitos, 6+.
+    // Upper- and lowercase letters mixed with digits, 6+.
     b.len() >= 6
         && alnum
         && b.iter().any(u8::is_ascii_digit)
@@ -973,11 +977,11 @@ fn looks_dynamic_token(value: &str) -> bool {
         && b.iter().any(u8::is_ascii_lowercase)
 }
 
-/// "Constante de UI": estado de interface que o servidor repete sem ser dado
-/// de sessão. Só estes valores sem origem ficam literais por si mesmos
-/// (além de valor repetido na sessão, contexto estático e navegação):
-/// booleanos (`true`/`false`) e números de até 4 caracteres, com sinal e/ou
-/// parte decimal (`-180`, `2.0`, `1568`).
+/// "UI constant": interface state that the server repeats without it being
+/// session data. Only these values without an origin stay literal on their own
+/// (besides a value repeated in the session, static context and navigation):
+/// booleans (`true`/`false`) and numbers of up to 4 characters, with sign and/or
+/// decimal part (`-180`, `2.0`, `1568`).
 pub(crate) fn is_ui_constant(value: &str) -> bool {
     if value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false") {
         return true;
@@ -998,9 +1002,9 @@ pub(crate) fn is_ui_constant(value: &str) -> bool {
     digits >= 1 && dots <= 1 && !body.starts_with('.') && !body.ends_with('.')
 }
 
-/// Identificador, segredo ou carimbo de tempo: UUID, hex, ULID/KSUID, base64,
-/// timestamp e alfanumérico misto longo. Mais largo que `looks_opaque_id`,
-/// mas sem pegar valores curtos de estado (`-180`, `2.0`, `true`).
+/// Identifier, secret or timestamp: UUID, hex, ULID/KSUID, base64, timestamp and
+/// long mixed alphanumeric. Broader than `looks_opaque_id`, but without catching
+/// short state values (`-180`, `2.0`, `true`).
 fn looks_identifier_value(value: &str) -> bool {
     let b = value.as_bytes();
     if b.len() < 8 || b.iter().any(u8::is_ascii_whitespace) {
@@ -1023,7 +1027,7 @@ fn looks_identifier_value(value: &str) -> bool {
             && b.iter().any(u8::is_ascii_uppercase))
 }
 
-/// Valor de header com cara de credencial/identificador, qualquer que seja o nome.
+/// Header value that looks like a credential/identifier, whatever the name.
 fn looks_secret_value(value: &str) -> bool {
     if value.starts_with("eyJ") {
         return true;
@@ -1047,7 +1051,7 @@ fn looks_secret_value(value: &str) -> bool {
         && b.iter().any(u8::is_ascii_alphabetic)
 }
 
-/// Header de credencial/sessão/identidade: nunca sai literal.
+/// Credential/session/identity header: never emitted as a literal.
 fn is_credential_header(lname: &str) -> bool {
     if lname == "user-agent" || lname.starts_with("sec-fetch-") || lname.starts_with("sec-ch-") {
         return false;
@@ -1059,16 +1063,16 @@ fn is_credential_header(lname: &str) -> bool {
             .any(|word| SENSITIVE_SHORT_WORDS.contains(&word))
 }
 
-/// Origin (`esquema://host`) e caminho de uma URL, sem query, fragmento nem
-/// parâmetros de caminho.
+/// Origin (`scheme://host`) and path of a URL, without query, fragment or path
+/// parameters.
 fn origin_and_path(url: &str) -> String {
     let url = url.split(['?', '#']).next().unwrap_or(url);
     url.split(';').next().unwrap_or(url).to_string()
 }
 
-/// Tokens de navegação de uma URL: segmentos do caminho, nome do recurso sem
-/// extensão/`_JLIBS` e valores de query. São candidatos a constante estrutural
-/// (`op=S37`, `page=NatLogon`, `SIM1000X.html`).
+/// Navigation tokens of a URL: path segments, the resource name without
+/// extension/`_JLIBS` and query values. They are candidates for a structural
+/// constant (`op=S37`, `page=NatLogon`, `SIM1000X.html`).
 fn navigation_tokens(url: &str) -> Vec<String> {
     let mut out = Vec::new();
     let url = url.split('#').next().unwrap_or(url);
@@ -1082,7 +1086,7 @@ fn navigation_tokens(url: &str) -> Vec<String> {
         None => "",
     };
     for segment in path.split('/') {
-        // `;nome=valor` no caminho é dado, nunca navegação.
+        // `;name=value` in the path is data, never navigation.
         let segment = segment.split(';').next().unwrap_or(segment).trim();
         if segment.is_empty() {
             continue;
@@ -1109,7 +1113,7 @@ fn navigation_tokens(url: &str) -> Vec<String> {
     out
 }
 
-/// Nome Python seguro para um parâmetro (`[a-z0-9_]`, não começa com dígito).
+/// Safe Python name for a parameter (`[a-z0-9_]`, does not start with a digit).
 fn sanitize_name(raw: &str) -> String {
     let mut name: String = raw
         .chars()
@@ -1140,15 +1144,15 @@ struct Param {
     note: String,
 }
 
-/// O que um passo precisa entregar na própria resposta para os passos
-/// seguintes da cadeia (checado no passo, antes de qualquer outro pedido).
+/// What a step must deliver in its own response for the following steps of the
+/// chain (checked in the step, before any other request).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Expectation {
     Cookie(String),
     Header(String),
     Control(String, usize),
     Field(String),
-    /// Corpo genérico (extração por contexto): exige resposta não vazia.
+    /// Generic body (extraction by context): requires a non-empty response.
     Body,
 }
 
@@ -1159,12 +1163,12 @@ impl Expectation {
             Expectation::Header(name) => format!("('header', {}, 0)", lit(name)),
             Expectation::Control(name, index) => format!("('control', {}, {index})", lit(name)),
             Expectation::Field(name) => format!("('field', {}, 0)", lit(name)),
-            Expectation::Body => "('body', 'corpo', 0)".to_string(),
+            Expectation::Body => "('body', 'body', 0)".to_string(),
         }
     }
 }
 
-/// Onde o valor foi localizado na resposta do produtor.
+/// Where the value was found in the producer's response.
 enum Located {
     Control(String, usize),
     Field(String),
@@ -1174,17 +1178,17 @@ enum Located {
 #[derive(Default)]
 struct Params {
     list: Vec<Param>,
-    /// Trechos montados no cliente (valor capturado → expressão), para que o
-    /// mesmo trecho em campos opacos use o mesmo parâmetro.
+    /// Fragments built on the client (captured value → expression), so that the
+    /// same fragment in opaque fields uses the same parameter.
     client_parts: Vec<(String, String)>,
 }
 
 impl Params {
-    /// Registra (ou reaproveita) um parâmetro; devolve a expressão `P[...]`.
-    /// Mesmo nome com valor capturado diferente vira outro parâmetro (`_2`…).
-    /// `constant` só pode ser `true` quando houver prova de que o valor é
-    /// constante do protocolo; sem ela o parâmetro é obrigatório e o valor
-    /// capturado não vira padrão.
+    /// Registers (or reuses) a parameter; returns the expression `P[...]`.
+    /// The same name with a different captured value becomes another parameter
+    /// (`_2`…). `constant` can only be `true` when there is proof that the value
+    /// is a protocol constant; without it the parameter is required and the
+    /// captured value does not become the default.
     fn get(
         &mut self,
         raw: &str,
@@ -1221,7 +1225,7 @@ impl Params {
     }
 }
 
-/// Peça de um valor montado: literal ou expressão Python.
+/// Piece of an assembled value: literal or Python expression.
 enum Piece {
     Lit(String),
     Expr(String),
@@ -1243,7 +1247,7 @@ fn pieces_expr(pieces: Vec<Piece>) -> String {
     }
 }
 
-/// Separa de um trecho literal os valores que parecem entrada do usuário.
+/// Splits out of a literal fragment the values that look like user input.
 fn scrub_literal(text: &str, params: &mut Params) -> Vec<Piece> {
     let bytes = text.as_bytes();
     let mut hits: Vec<(usize, usize, &str)> = Vec::new();
@@ -1297,7 +1301,7 @@ fn scrub_literal(text: &str, params: &mut Params) -> Vec<Piece> {
                 name,
                 &text[start..end],
                 true,
-                "entrada do usuário dentro de campo opaco",
+                "user input inside opaque field",
                 false,
             ))),
             (_, Some(expr)) => out.push(Piece::Expr(expr)),
@@ -1310,7 +1314,7 @@ fn scrub_literal(text: &str, params: &mut Params) -> Vec<Piece> {
 }
 
 // ---------------------------------------------------------------------------
-// Decodificação de corpos capturados
+// Decoding of captured bodies
 // ---------------------------------------------------------------------------
 
 fn percent_decode(raw: &str) -> String {
@@ -1382,38 +1386,38 @@ struct Gen<'a> {
     session: &'a SessionV1,
     source: &'a dyn BodySource,
     step_ids: HashSet<String>,
-    /// Ids dos passos na ordem do plano: um valor cujo produtor ficou fora da
-    /// cadeia pode ser extraído do passo equivalente que está dentro dela.
+    /// Step ids in plan order: a value whose producer ended up outside the chain
+    /// can be extracted from the equivalent step that is inside it.
     steps: Vec<String>,
     params: Params,
     warnings: Vec<Warning>,
-    /// Notas (viram comentários) do passo em construção.
+    /// Notes (they become comments) of the step being built.
     notes: Vec<String>,
-    /// Prova de constância: (campo, valor) → nº de requisições distintas com
-    /// esse par. Calculado uma vez, sob demanda.
+    /// Constancy proof: (field, value) → number of distinct requests with that
+    /// pair. Computed once, on demand.
     occurrences: Option<HashMap<(String, String), usize>>,
-    /// Cache de "valor aparece em alguma resposta".
+    /// Cache of "value appears in some response".
     response_hits: HashMap<String, bool>,
-    /// Valores que a própria cadeia usa como rota de navegação: segmento de
-    /// caminho, nome de página/recurso ou valor de query de `steps`/`pages`.
-    /// São constantes estruturais, não dados de sessão.
+    /// Values that the chain itself uses as a navigation route: path segment,
+    /// page/resource name or query value of `steps`/`pages`. They are structural
+    /// constants, not session data.
     structural: BTreeSet<String>,
-    /// Passo produtor → o que a resposta dele precisa conter para os
-    /// consumidores seguintes (preenchido ao gerar cada consumidor).
+    /// Producer step → what its response must contain for the following
+    /// consumers (filled in when each consumer is generated).
     expectations: BTreeMap<String, BTreeSet<Expectation>>,
-    /// Índices (em `opts.adapter_encoders`) dos codificadores usados.
+    /// Indexes (into `opts.adapter_encoders`) of the encoders used.
     encoders_used: BTreeSet<usize>,
-    /// Campo reivindicado → (nome da parte, valor) → nº de requisições da
-    /// sessão que o carregam (prova de constância das partes).
+    /// Claimed field → (part name, value) → number of session requests that
+    /// carry it (constancy proof of the parts).
     part_counts: HashMap<String, HashMap<(String, String), usize>>,
-    /// Campos reivindicados por adaptador (para podar produtores não usados).
+    /// Fields claimed by an adapter (to prune unused producers).
     claimed_fields: BTreeSet<String>,
-    /// (parâmetro, parte/campo onde entra): só nomes, para o trace.
+    /// (parameter, part/field where it enters): names only, for the trace.
     param_uses: BTreeSet<(String, String)>,
 }
 
 impl Gen<'_> {
-    /// Registra que a expressão `expr` usa parâmetros `P['nome']` em `part`.
+    /// Records that the expression `expr` uses parameters `P['name']` in `part`.
     fn note_params(&mut self, part: &str, expr: &str) {
         let mut rest = expr;
         while let Some(at) = rest.find("P['") {
@@ -1440,9 +1444,9 @@ impl Gen<'_> {
         format!("{} ({})", label, step.id)
     }
 
-    /// Pares (campo, valor) que aparecem no mesmo campo em ≥ 1 requisição,
-    /// contando requisições distintas. Prova barata de constância: campos de
-    /// query e corpos form-urlencoded pequenos (até 1 MiB).
+    /// (field, value) pairs that appear in the same field in ≥ 1 request,
+    /// counting distinct requests. Cheap constancy proof: query fields and small
+    /// form-urlencoded bodies (up to 1 MiB).
     fn occurrences(&mut self) -> &HashMap<(String, String), usize> {
         if self.occurrences.is_none() {
             let mut counts: HashMap<(String, String), usize> = HashMap::new();
@@ -1486,12 +1490,12 @@ impl Gen<'_> {
             }
             self.occurrences = Some(counts);
         }
-        self.occurrences.as_ref().expect("calculado acima")
+        self.occurrences.as_ref().expect("computed above")
     }
 
-    /// Prova de constância: o mesmo (campo, valor) em ≥ 2 requisições
-    /// distintas da sessão E o valor nunca aparece numa resposta (se a
-    /// aplicação o produziu, é valor de sessão, não constante do protocolo).
+    /// Constancy proof: the same (field, value) in ≥ 2 distinct requests of the
+    /// session AND the value never appears in a response (if the application
+    /// produced it, it is a session value, not a protocol constant).
     fn is_proven_constant(&mut self, field: &str, value: &str) -> bool {
         if value.is_empty() || value.len() > 200 {
             return false;
@@ -1501,7 +1505,7 @@ impl Gen<'_> {
         seen >= 2 && !self.value_in_any_response(value)
     }
 
-    /// `true` se o valor aparece em algum corpo de resposta capturado.
+    /// `true` if the value appears in some captured response body.
     fn value_in_any_response(&mut self, value: &str) -> bool {
         if let Some(hit) = self.response_hits.get(value) {
             return *hit;
@@ -1533,13 +1537,13 @@ impl Gen<'_> {
         hit
     }
 
-    /// Texto bruto da resposta do produtor, para localizar contexto.
+    /// Raw text of the producer's response, to locate context.
     fn producer_request(&self, evidence: &Evidence) -> Option<&LogicalRequest> {
         self.session.find_request(&evidence.request_id)
     }
 
-    /// Expressão que extrai, em runtime, o valor de `origin` (ou do trecho
-    /// `value`) da resposta do produtor. `None` se não houver como.
+    /// Expression that extracts, at runtime, the value of `origin` (or of the
+    /// fragment `value`) from the producer's response. `None` if there is no way.
     fn source_expr(
         &mut self,
         origin: &ValueOrigin,
@@ -1599,10 +1603,11 @@ impl Gen<'_> {
         }
     }
 
-    /// Valor que a cadeia gera, mas cujo produtor registrado ficou fora dela
-    /// (rodada anterior, página equivalente): procura nos passos anteriores do
-    /// plano um controle/campo/literal da página com o mesmo nome e valor e
-    /// extrai em runtime. Assim `STAMP=INIT` da cscform não vira `--stamp`.
+    /// Value that the chain generates, but whose recorded producer ended up
+    /// outside it (earlier round, equivalent page): searches the earlier steps of
+    /// the plan for a control/field/literal of the page with the same name and
+    /// value and extracts it at runtime. This way `STAMP=INIT` from the cscform
+    /// does not become `--stamp`.
     fn chain_definition_expr(
         &mut self,
         name: &str,
@@ -1620,7 +1625,7 @@ impl Gen<'_> {
             let Some(text) = response_text(&producer, self.source) else {
                 continue;
             };
-            // 1. Controle da página com o mesmo nome e o mesmo valor.
+            // 1. Page control with the same name and the same value.
             let mut index = 0usize;
             for control in &html_controls(&text) {
                 if control.name != name {
@@ -1629,7 +1634,7 @@ impl Gen<'_> {
                 if control.value == value {
                     self.expect(&rid, Expectation::Control(name.to_string(), index));
                     self.notes.push(format!(
-                        "{name}: definido pelo controle da página ({rid}); extraído em runtime"
+                        "{name}: defined by the page control ({rid}); extracted at runtime"
                     ));
                     return Some(format!(
                         "html_control(R[{}], {}, {}, {who})",
@@ -1640,14 +1645,14 @@ impl Gen<'_> {
                 }
                 index += 1;
             }
-            // 2. Campo form/JSON da página com o mesmo nome e valor.
+            // 2. Page form/JSON field with the same name and value.
             if form_pairs(&text)
                 .iter()
                 .any(|(k, v)| k == name && v == value)
             {
                 self.expect(&rid, Expectation::Field(name.to_string()));
                 self.notes.push(format!(
-                    "{name}: definido por campo da página ({rid}); extraído em runtime"
+                    "{name}: defined by a page field ({rid}); extracted at runtime"
                 ));
                 return Some(format!(
                     "body_field(R[{}], {}, {who})",
@@ -1655,7 +1660,7 @@ impl Gen<'_> {
                     lit(name)
                 ));
             }
-            // 3. Literal citado junto do nome no script da página.
+            // 3. Literal quoted next to the name in the page script.
             if let Some(expr) = self.page_literal_expr(&text, &rid, name, value, &who) {
                 return Some(expr);
             }
@@ -1663,7 +1668,7 @@ impl Gen<'_> {
         None
     }
 
-    /// Literal entre aspas, citado perto do nome do campo, no script da página.
+    /// Quoted literal, cited near the field name, in the page script.
     fn page_literal_expr(
         &mut self,
         text: &str,
@@ -1686,7 +1691,7 @@ impl Gen<'_> {
                     let (before, after) = context_for(text, value_at, value.len());
                     self.expect(rid, Expectation::Body);
                     self.notes.push(format!(
-                        "{name}: literal da página ({rid}); extraído em runtime"
+                        "{name}: literal from the page ({rid}); extracted at runtime"
                     ));
                     return Some(format!(
                         "ctx_extract(R[{}].text, {}, {}, {who})",
@@ -1701,9 +1706,9 @@ impl Gen<'_> {
         None
     }
 
-    /// Onde procurar: controle HTML, campo form/JSON ou o corpo inteiro.
-    /// Devolve (expressão do contêiner, texto do contêiner, valor inteiro?,
-    /// localização para a checagem no passo produtor).
+    /// Where to look: HTML control, form/JSON field or the whole body. Returns
+    /// (container expression, container text, whole value?, location for the
+    /// check in the producer step).
     fn body_container(
         &self,
         producer: &LogicalRequest,
@@ -1740,7 +1745,7 @@ impl Gen<'_> {
                     Located::Control(field.to_string(), index),
                 ));
             }
-            // Campo form/JSON; ou variável de script (nesse caso o corpo cru).
+            // Form/JSON field; or script variable (in that case the raw body).
             let fields = form_pairs(text);
             if let Some((_, v)) = fields.iter().find(|(k, _)| k == field) {
                 let expr = format!("body_field(R[{rid}], {}, {who})", lit(field));
@@ -1764,7 +1769,7 @@ impl Gen<'_> {
         ))
     }
 
-    /// Expressão de um valor escalar de `step` (campo de corpo, query ou header).
+    /// Expression for a scalar value of `step` (body field, query or header).
     fn value_expr(
         &mut self,
         step: &LogicalRequest,
@@ -1777,7 +1782,7 @@ impl Gen<'_> {
         let label = name.to_string();
         let sensitive =
             is_sensitive_name(name) || looks_sensitive_value(value) || contains_pii(value);
-        // Valor também visto em recurso estático/contexto: constante do protocolo.
+        // Value also seen in a static resource/context: protocol constant.
         let in_context = origin.is_some_and(|o| !o.context.is_empty());
         let Some(origin) = origin else {
             return self.fallback_param(name, value, sensitive, in_context, true);
@@ -1785,24 +1790,24 @@ impl Gen<'_> {
         match origin.status {
             OriginStatus::Redacted => {
                 self.notes.push(format!(
-                    "{name}: valor redigido na captura; informe pelo parâmetro"
+                    "{name}: value redacted in the capture; provide it through the parameter"
                 ));
                 self.params
-                    .get(name, "", true, "redigido na captura", false)
+                    .get(name, "", true, "redacted in capture", false)
             }
             OriginStatus::Origin | OriginStatus::Ambiguous => {
                 if let Some(expr) = self.source_expr(origin, value, step, &label) {
                     let how = match origin.confidence {
-                        Some(crate::flow::Confidence::Strong) => "forte",
-                        _ => "possível",
+                        Some(crate::flow::Confidence::Strong) => "strong",
+                        _ => "possible",
                     };
                     let amb = if origin.status == OriginStatus::Ambiguous {
-                        "; ambíguo: usa o produtor mais antigo"
+                        "; ambiguous: uses the oldest producer"
                     } else {
                         ""
                     };
                     self.notes
-                        .push(format!("{name}: extraído em runtime (origem {how}{amb})"));
+                        .push(format!("{name}: extracted at runtime (origin {how}{amb})"));
                     expr
                 } else if let Some(expr) = self.chain_definition_expr(name, value, step) {
                     expr
@@ -1830,9 +1835,10 @@ impl Gen<'_> {
         }
     }
 
-    /// Parâmetro para um valor sem origem observada: o valor capturado só
-    /// vira padrão com prova de constância ou quando é constante estrutural da
-    /// própria cadeia (rota/navegação); fora disso é obrigatório.
+    /// Parameter for a value with no observed origin: the captured value only
+    /// becomes the default with a proof of constancy or when it is a structural
+    /// constant of the chain itself (route/navigation); otherwise it is
+    /// required.
     fn fallback_param(
         &mut self,
         name: &str,
@@ -1856,16 +1862,16 @@ impl Gen<'_> {
         if constant {
             self.notes.push(if structural {
                 format!(
-                    "{name}: constante estrutural (rota/navegação); parâmetro com o valor capturado como padrão"
+                    "{name}: structural constant (route/navigation); parameter with the captured value as default"
                 )
             } else {
                 format!(
-                    "{name}: constante comprovada; parâmetro com o valor capturado como padrão"
+                    "{name}: proven constant; parameter with the captured value as default"
                 )
             });
         } else {
             self.notes.push(format!(
-                "{name}: sem origem observada; parâmetro obrigatório, sem padrão"
+                "{name}: no observed origin; required parameter, no default"
             ));
         }
         self.params.get(
@@ -1874,18 +1880,18 @@ impl Gen<'_> {
             sensitive,
             if constant {
                 if structural {
-                    "constante estrutural"
+                    "structural constant"
                 } else {
-                    "constante do protocolo"
+                    "protocol constant"
                 }
             } else {
-                "sem origem observada"
+                "no observed origin"
             },
             constant,
         )
     }
 
-    /// `partialComposition`: parte extraída do produtor + parte montada no cliente.
+    /// `partialComposition`: part extracted from the producer + part assembled on the client.
     fn partial_expr(
         &mut self,
         step: &LogicalRequest,
@@ -1914,12 +1920,12 @@ impl Gen<'_> {
         let before = &value[..pc.start];
         let after = &value[end..];
         if !before.is_empty() {
-            // Parte montada no cliente: sem prova de valor, sempre obrigatória.
+            // Part assembled on the client: no value proof, always required.
             pieces.push(Piece::Expr(self.params.get(
                 &format!("{name}_cliente_inicio"),
                 before,
                 false,
-                "montado no cliente",
+                "assembled on client",
                 false,
             )));
         }
@@ -1929,7 +1935,7 @@ impl Gen<'_> {
                 &format!("{name}_cliente"),
                 after,
                 false,
-                "montado no cliente",
+                "assembled on client",
                 false,
             );
             self.params
@@ -1938,14 +1944,14 @@ impl Gen<'_> {
             pieces.push(Piece::Expr(expr));
         }
         self.notes.push(format!(
-            "{name}: montado no cliente: complete aqui (parte inicial extraída do produtor {}; o resto é o parâmetro {}_cliente, obrigatório)",
+            "{name}: assembled on the client: complete here (initial part extracted from the producer {}; the rest is the parameter {}_cliente, required)",
             pc.producer_request_id,
             sanitize_name(name)
         ));
         Some(pieces_expr(pieces))
     }
 
-    /// Campo opaco (`composite`): concatena trechos extraídos e literais.
+    /// Opaque field (`composite`): concatenates extracted fragments and literals.
     fn opaque_expr(
         &mut self,
         step: &LogicalRequest,
@@ -1977,16 +1983,16 @@ impl Gen<'_> {
                 pieces.extend(scrub_literal(&value[at..start], &mut self.params));
             }
             let text = &value[start..end];
-            // Trecho só de letras/símbolos (sem dígitos) com origem apenas
-            // possível: coincidência com texto do produtor, provável
-            // constante do protocolo. Fica literal, com nota.
+            // Fragment with only letters/symbols (no digits) and only a possible
+            // origin: a coincidence with the producer's text, probably a protocol
+            // constant. It stays literal, with a note.
             let constant_like = part.confidence != Some(crate::flow::Confidence::Strong)
                 && !text.bytes().any(|b| b.is_ascii_digit());
             if constant_like
                 && matches!(part.status, OriginStatus::Origin | OriginStatus::Ambiguous)
             {
                 self.notes.push(format!(
-                    "{name}: trecho {start}..{end} sem dígitos e origem só possível: tratado como constante do protocolo"
+                    "{name}: fragment {start}..{end} without digits and only a possible origin: treated as a protocol constant"
                 ));
             }
             let expr = (matches!(part.status, OriginStatus::Origin | OriginStatus::Ambiguous)
@@ -1997,12 +2003,12 @@ impl Gen<'_> {
                 Some(e) => {
                     dynamic += 1;
                     let amb = if part.status == OriginStatus::Ambiguous {
-                        ", ambíguo"
+                        ", ambiguous"
                     } else {
                         ""
                     };
                     self.notes.push(format!(
-                        "{name}: trecho {start}..{end} extraído em runtime (origem possível{amb})"
+                        "{name}: fragment {start}..{end} extracted at runtime (possible origin{amb})"
                     ));
                     pieces.push(Piece::Expr(format!(
                         "checked({e}, {}, {})",
@@ -2019,17 +2025,17 @@ impl Gen<'_> {
         }
         if dynamic == 0 {
             self.notes.push(format!(
-                "{name}: campo opaco sem trechos dinâmicos; mantido como capturado"
+                "{name}: opaque field without dynamic fragments; kept as captured"
             ));
         }
         pieces_expr(pieces)
     }
 }
 
-/// Contexto mínimo (antes, depois) que identifica `container[pos..pos+len]`
-/// de forma única; começa curto para não amarrar o script a texto vizinho
-/// que muda (nomes de página, deltas). Antes vazio = início do texto; depois
-/// vazio = fim do texto.
+/// Minimal context (before, after) that uniquely identifies
+/// `container[pos..pos+len]`; it starts short so that the script is not tied
+/// to neighboring text that changes (page names, deltas). Empty before = start
+/// of the text; empty after = end of the text.
 fn context_for(container: &str, pos: usize, len: usize) -> (String, String) {
     let end = pos + len;
     let b0 = char_ceil(container, pos.saturating_sub(CONTEXT_BEFORE));
@@ -2041,7 +2047,7 @@ fn context_for(container: &str, pos: usize, len: usize) -> (String, String) {
         .char_indices()
         .map(|(i, c)| i + c.len_utf8())
         .collect();
-    // Candidatos: do mais curto ao mais longo (mín. 4 antes, 1 depois).
+    // Candidates: from shortest to longest (min. 4 before, 1 after).
     let befores: Vec<&str> = if before_full.is_empty() {
         vec![""]
     } else {
@@ -2069,8 +2075,8 @@ fn context_for(container: &str, pos: usize, len: usize) -> (String, String) {
     (before_full.to_string(), after_full.to_string())
 }
 
-/// Reproduz `re.search(esc(b) + '(.+?)' + esc(a) or \\Z)`: onde o script
-/// extrairia (início, fim) neste texto. Antes vazio ancora no início.
+/// Reproduces `re.search(esc(b) + '(.+?)' + esc(a) or \\Z)`: where the script
+/// would extract (start, end) in this text. Empty before anchors at the start.
 fn simulate(container: &str, before: &str, after: &str) -> Option<(usize, usize)> {
     let starts: Vec<usize> = if before.is_empty() {
         vec![0]
@@ -2095,7 +2101,7 @@ fn simulate(container: &str, before: &str, after: &str) -> Option<(usize, usize)
     None
 }
 
-/// Posição de `value` no contêiner do produtor (por offset quando confere, senão por busca).
+/// Position of `value` in the producer's container (by offset when it matches, otherwise by search).
 fn locate(
     container: &str,
     value: &str,
@@ -2144,8 +2150,8 @@ fn split_origin(url: &str) -> (&str, &str) {
     url.split_at(scheme_end + 3 + cut)
 }
 
-/// Expressão Python (dict/list/valor) para um corpo JSON; cada folha recebe o
-/// mesmo tratamento de um campo de form (extração, parâmetro, constante).
+/// Python expression (dict/list/value) for a JSON body; each leaf gets the same
+/// treatment as a form field (extraction, parameter, constant).
 #[allow(clippy::too_many_arguments)]
 fn json_expr<'a>(
     gen: &mut Gen,
@@ -2223,7 +2229,7 @@ fn json_expr<'a>(
             format!("[{}]", items.join(", "))
         }
         Value::String(text) => match json_container(text).filter(|_| depth < 8) {
-            // JSON dentro de string JSON: decomposto e remontado no mesmo lugar.
+            // JSON inside a JSON string: decomposed and reassembled in the same place.
             Some(inner) => format!(
                 "json.dumps({})",
                 json_expr(gen, request, origins, &inner, path, find, scope, depth + 1)
@@ -2236,15 +2242,15 @@ fn json_expr<'a>(
     }
 }
 
-/// Detectores de dado pessoal/credencial em texto livre: valor após nome
-/// sensível (`"cpf":`, `nome=`), e-mail, JWT, Bearer/Basic, placa e
-/// sequências longas de dígitos (CPF, CNPJ, cartão com Luhn, telefone).
-/// Devolve `(início, fim, tipo)`, sem repetir o valor.
+/// Detectors of personal data/credentials in free text: value after a sensitive
+/// name (`"cpf":`, `nome=`), e-mail, JWT, Bearer/Basic, plate and long digit
+/// sequences (CPF, CNPJ, card with Luhn, phone). Returns `(start, end, kind)`,
+/// without repeating the value.
 fn pii_spans(text: &str, wide: bool) -> Vec<(usize, usize, String)> {
     let bytes = text.as_bytes();
     let mut spans: Vec<(usize, usize, String)> = Vec::new();
     let is_name_byte = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.');
-    // 1. Valor logo após um nome sensível (`nome=`, `"cpf":"`, `<email>`).
+    // 1. Value right after a sensitive name (`nome=`, `"cpf":"`, `<email>`).
     let mut i = 0;
     while i < bytes.len() {
         if is_name_byte(bytes[i]) && (i == 0 || !is_name_byte(bytes[i - 1])) {
@@ -2276,7 +2282,7 @@ fn pii_spans(text: &str, wide: bool) -> Vec<(usize, usize, String)> {
                         spans.push((k, e, name.to_string()));
                     }
                 } else if k > j && is_secret_word(name) {
-                    // `senha hunter2hunter2`: segredo logo após a palavra.
+                    // `senha hunter2hunter2`: secret right after the word.
                     let mut e = k;
                     while e < bytes.len() && !bytes[e].is_ascii_whitespace() {
                         e += 1;
@@ -2291,7 +2297,7 @@ fn pii_spans(text: &str, wide: bool) -> Vec<(usize, usize, String)> {
             i += 1;
         }
     }
-    // 2. E-mail, JWT, placa, chassi e sequências longas de dígitos (CPF/CNPJ/cartão/telefone).
+    // 2. E-mail, JWT, plate, chassis and long digit sequences (CPF/CNPJ/card/phone).
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
@@ -2417,23 +2423,23 @@ fn digit_kind(run: &str) -> String {
             == 0
     };
     let formatted = run.bytes().any(|b| !b.is_ascii_digit());
-    // Epoch em segundos (10 dígitos começando em 15-19) não é telefone.
+    // Epoch in seconds (10 digits starting with 15-19) is not a phone number.
     let epoch = digits.len() == 10 && matches!(digits[0], 1) && (5..=9).contains(&digits[1]);
     match digits.len() {
         14 => "cnpj".to_string(),
         15 | 16 if (3..=6).contains(&digits[0]) && luhn() => "cartao".to_string(),
-        // Série 2 (2221–2720).
+        // Series 2 (2221–2720).
         16 if digits[0] == 2
             && (2221..=2720).contains(&digits[..4].iter().fold(0, |a, d| a * 10 + d))
             && luhn() =>
         {
             "cartao".to_string()
         }
-        // 19 dígitos (Maestro/UnionPay/Discover): só prefixos conhecidos.
+        // 19 digits (Maestro/UnionPay/Discover): known prefixes only.
         19 if matches!(digits[0] * 10 + digits[1], 50 | 56..=58 | 60 | 62 | 67) && luhn() => {
             "cartao".to_string()
         }
-        // Telefone com DDI 55: 12 ou 13 dígitos.
+        // Phone with country code 55: 12 or 13 digits.
         12 | 13 if digits[0] == 5 && digits[1] == 5 => "telefone".to_string(),
         11 => "cpf_ou_telefone".to_string(),
         10 if (formatted || !epoch)
@@ -2443,12 +2449,12 @@ fn digit_kind(run: &str) -> String {
             "telefone".to_string()
         }
         8..=12 if !epoch && digits[0] != 0 => "digitos_longos".to_string(),
-        // Demais comprimentos longos: contadores e constantes de protocolo.
+        // Other long lengths: counters and protocol constants.
         _ => String::new(),
     }
 }
 
-/// Nomes cujo valor é dado pessoal/credencial por si só (não só sessão/chave).
+/// Names whose value is personal data/a credential on its own (not only session/key).
 fn is_pii_name(name: &str) -> bool {
     const WORDS: &[&str] = &[
         "cpf",
@@ -2482,8 +2488,8 @@ fn contains_pii(text: &str) -> bool {
     !pii_spans(&fold_width(text), false).is_empty()
 }
 
-/// Literais de string Python (`'...'`, `b'...'`) de um trecho gerado, já
-/// decodificados. Linhas de comentário são ignoradas.
+/// Python string literals (`'...'`, `b'...'`) of a generated fragment, already
+/// decoded. Comment lines are ignored.
 fn python_literals(code: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in code.lines() {
@@ -2534,13 +2540,13 @@ fn python_literals(code: &str) -> Vec<String> {
     out
 }
 
-/// Barreira final e única: nenhum literal emitido pode conter dado
-/// pessoal/credencial detectável. Devolve os tipos achados (sem valores).
+/// Final and single barrier: no emitted literal may contain detectable personal
+/// data/credentials. Returns the kinds found (without values).
 fn literal_pii_kinds(code: &str) -> Vec<String> {
     let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
     for literal in python_literals(code) {
-        // Também a forma decodificada (porcentagem, até 3 camadas): o
-        // detector não pode ser driblado por codificação.
+        // The decoded form (percent-encoding, up to 3 layers) too: the detector
+        // cannot be bypassed by encoding.
         let literal = fold_width(&literal);
         let mut views = vec![literal.clone()];
         let mut current = literal;
@@ -2572,9 +2578,9 @@ fn literal_pii_kinds(code: &str) -> Vec<String> {
         .collect()
 }
 
-/// Corpo textual reenviado como capturado: valores sensíveis/de negócio
-/// detectados viram parâmetros obrigatórios. Devolve a expressão (bytes) e
-/// quantos valores foram trocados.
+/// Text body resent as captured: detected sensitive/business values become
+/// required parameters. Returns the expression (bytes) and how many values were
+/// replaced.
 fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
     let bytes = text.as_bytes();
     let mut spans = pii_spans(text, true);
@@ -2609,9 +2615,9 @@ fn literal_body_expr(gen: &mut Gen, text: &str) -> (String, usize) {
     (parts.join(" + "), found)
 }
 
-/// URL com parâmetros de caminho (`;jsessionid=...`): cada valor vira
-/// parâmetro obrigatório (dado de sessão, nunca literal). Devolve a URL para o
-/// plano (valores trocados por `<nome>`) e a expressão Python.
+/// URL with path parameters (`;jsessionid=...`): each value becomes a required
+/// parameter (session data, never a literal). Returns the URL for the plan
+/// (values replaced by `<name>`) and the Python expression.
 fn path_param_expr(gen: &mut Gen, url_base: &str) -> (String, String) {
     let (origin, path) = split_origin(url_base);
     let pii_segment = |seg: &str| {
@@ -2675,7 +2681,7 @@ fn path_param_expr(gen: &mut Gen, url_base: &str) -> (String, String) {
     (plan, out.join(" + "))
 }
 
-/// Recurso estático (script, css, imagem, fonte, mídia): nunca é passo.
+/// Static resource (script, css, image, font, media): never a step.
 fn is_static(request: &LogicalRequest) -> bool {
     let media = request
         .response_headers
@@ -2711,12 +2717,12 @@ fn is_idempotent(method: &str) -> bool {
     )
 }
 
-/// Cabeçalhos condicionais de cache: não são valor da aplicação e não provam
-/// dependência de corpo ausente.
+/// Conditional cache headers: they are not application values and do not prove
+/// a dependency on a missing body.
 const CONDITIONAL_HEADERS: &[&str] = &["if-modified-since", "if-none-match", "if-range"];
 
-/// Valor consumido pela cadeia que só poderia ter vindo de uma resposta sem
-/// corpo observável.
+/// Value consumed by the chain that could only have come from a response without
+/// an observable body.
 #[derive(Debug, Clone)]
 struct MissingBody {
     request_id: String,
@@ -2724,10 +2730,10 @@ struct MissingBody {
     producers: Vec<Unobservable>,
 }
 
-/// Dependências da cadeia em respostas sem corpo observável: valor sem origem
-/// observada (não repetido, sem composição parcial, não header condicional)
-/// cujas únicas pistas são respostas anteriores `unavailable`/`discarded`/
-/// `truncated`.
+/// Dependencies of the chain on responses without an observable body: a value
+/// with no observed origin (not repeated, without partial composition, not a
+/// conditional header) whose only clues are earlier responses that are
+/// `unavailable`/`discarded`/`truncated`.
 fn missing_body_dependencies(chain: &PrimingChain) -> Vec<MissingBody> {
     let mut out: Vec<MissingBody> = Vec::new();
     for value in &chain.unresolved {
@@ -2771,7 +2777,7 @@ fn incomplete_chain_error(missing: &[MissingBody]) -> CoreError {
     }
     let shown: Vec<String> = producers.iter().take(6).cloned().collect();
     let more = if producers.len() > shown.len() {
-        format!(" e mais {}", producers.len() - shown.len())
+        format!(" and {} more", producers.len() - shown.len())
     } else {
         String::new()
     };
@@ -2784,18 +2790,18 @@ fn incomplete_chain_error(missing: &[MissingBody]) -> CoreError {
         }
     }
     let suggestion = if suggestions.is_empty() {
-        "nenhuma ocorrência equivalente com corpo observável nesta sessão".to_string()
+        "no equivalent occurrence with an observable body in this session".to_string()
     } else {
         format!(
-            "gere o script para a ocorrência equivalente com corpo completo: {}",
+            "generate the script for the equivalent occurrence with a full body: {}",
             suggestions.join(", ")
         )
     };
     CoreError::Export {
         message: format!(
-            "cadeia incompleta: {} valor(es) dependem de resposta(s) sem corpo observável ({}). \
-             Respostas sem corpo: {}{}. Nenhum valor capturado é usado no lugar. {}; ou use \
-             --allow-incomplete para gerar o script com fail() explícito nesses passos.",
+            "incomplete chain: {} value(s) depend on response(s) without an observable body ({}). \
+             Responses without a body: {}{}. No captured value is used in their place. {}; or use \
+             --allow-incomplete to generate the script with an explicit fail() in those steps.",
             missing.len(),
             consumers.join("; "),
             shown.join(", "),
@@ -2805,7 +2811,7 @@ fn incomplete_chain_error(missing: &[MissingBody]) -> CoreError {
     }
 }
 
-/// Gera o script de priming para a requisição `target_request_id`.
+/// Generates the priming script for the request `target_request_id`.
 pub fn to_python(
     session: &SessionV1,
     source: &dyn BodySource,
@@ -2815,11 +2821,11 @@ pub fn to_python(
     to_python_and_uses(session, source, target_request_id, opts).map(|(output, _)| output)
 }
 
-/// Pares `(parâmetro, parte/campo)` que o plano gerado a partir da captura
-/// instala no script, na mesma passada que produz o script. O `validate` usa
-/// isso para isentar só as partes que o plano realmente produz (nunca as que
-/// o trace declara). Nomes de parte/campo são os do gerador (`SESSIONID`,
-/// `XML.sid`…), sem valores.
+/// `(parameter, part/field)` pairs that the plan generated from the capture
+/// installs in the script, in the same pass that produces the script. `validate`
+/// uses this to exempt only the parts that the plan really produces (never those
+/// the trace declares). Part/field names are the generator's (`SESSIONID`,
+/// `XML.sid`…), without values.
 pub fn plan_parameter_uses(
     session: &SessionV1,
     source: &dyn BodySource,
@@ -2837,7 +2843,7 @@ fn to_python_and_uses(
 ) -> Result<(ExportOutput, BTreeSet<(String, String)>)> {
     let (output, extras, uses) =
         to_python_with(session, source, target_request_id, opts, &HashSet::new())?;
-    // Passos produtores que nenhum passo referencia saem do plano.
+    // Producer steps that no step references are dropped from the plan.
     let unreferenced: HashSet<String> = extras.into_iter().collect();
     if unreferenced.is_empty() {
         return Ok((output, uses));
@@ -2847,7 +2853,7 @@ fn to_python_and_uses(
     Ok((output, uses))
 }
 
-/// Script gerado, passos extras a podar e pares `(parâmetro, parte)` usados.
+/// Generated script, extra steps to prune and `(parameter, part)` pairs used.
 type GeneratedPlan = (ExportOutput, Vec<String>, BTreeSet<(String, String)>);
 
 fn to_python_with(
@@ -2857,21 +2863,21 @@ fn to_python_with(
     opts: &PrimingOptions,
     excluded_extras: &HashSet<String>,
 ) -> Result<GeneratedPlan> {
-    // Os passos vêm da cadeia sem adaptador: partes de um campo reivindicado
-    // têm origens de granularidade fina (inclusive em rodadas anteriores) que
-    // não devem puxar passos extras nem recusar uma cadeia que o gerador sem
-    // adaptador completa. As origens das partes (com adaptador) só decidem
-    // COMO cada valor é obtido.
+    // The steps come from the chain without an adapter: parts of a claimed field
+    // have fine-grained origins (including in earlier rounds) that must not pull
+    // in extra steps nor refuse a chain that the generator without an adapter
+    // completes. The origins of the parts (with an adapter) only decide HOW each
+    // value is obtained.
     let chain_flow = FlowOptions {
         adapters: Default::default(),
         ..opts.flow.clone()
     };
     let mut chain = priming_chain(session, source, target_request_id, &chain_flow)?;
-    // Produtores das PARTES do adaptador que ficaram fora da cadeia base e
-    // são da mesma rodada (a partir do primeiro passo base) entram no plano,
-    // na ordem da sessão: nenhum valor com origem observada vira literal só
-    // porque o produtor não estava no plano. Produtores de rodadas anteriores
-    // ficam de fora (regra da rodada 7).
+    // Producers of the adapter's PARTS that were left outside the base chain and
+    // belong to the same round (from the first base step on) join the plan, in
+    // session order: no value with an observed origin becomes a literal just
+    // because its producer was not in the plan. Producers of earlier rounds stay
+    // out (round 7 rule).
     let mut extra_ids: Vec<String> = Vec::new();
     if !opts.flow.adapters.is_empty() {
         if let Ok(with_parts) = priming_chain(session, source, target_request_id, &opts.flow) {
@@ -2889,9 +2895,9 @@ fn to_python_with(
                         && s.request_id != target_request_id
                         && !excluded_extras.contains(&s.request_id)
                         && (s.started_at.is_some_and(|t| t >= base_start)
-                            // Rodada anterior: só com valor produzido pela
-                            // resposta (ValueMatch forte), não por um campo
-                            // que apenas se repete (SameField).
+                            // Earlier round: only with a value produced by the
+                            // response (strong ValueMatch), not by a field that
+                            // merely repeats (SameField).
                             || s.reasons.iter().any(|r| {
                                 r.strength == crate::flow::Strength::Strong
                                     && r.kind == EvidenceKind::ValueMatch
@@ -2916,9 +2922,9 @@ fn to_python_with(
     let target = session
         .find_request(target_request_id)
         .ok_or_else(|| CoreError::Export {
-            message: format!("requisição {target_request_id} não encontrada"),
+            message: format!("request {target_request_id} not found"),
         })?;
-    // O alvo é o último passo; se a cadeia não o traz (sem dependências), inclui.
+    // The target is the last step; if the chain does not include it (no dependencies), add it.
     let mut step_reqs: Vec<(&LogicalRequest, Vec<String>, String)> = Vec::new();
     for step in &chain.steps {
         if let Some(r) = session.find_request(&step.request_id) {
@@ -2927,7 +2933,7 @@ fn to_python_with(
             }
             let reasons: Vec<String> = std::iter::once(step.reason.clone())
                 .chain(std::iter::once(format!(
-                    "confiança {}",
+                    "confidence {}",
                     match step.confidence {
                         crate::flow::Confidence::Strong => "strong",
                         crate::flow::Confidence::Possible => "possible",
@@ -2938,7 +2944,7 @@ fn to_python_with(
         }
     }
     if !step_reqs.iter().any(|(r, _, _)| r.id == target.id) {
-        step_reqs.push((target, vec!["requisição alvo".to_string()], String::new()));
+        step_reqs.push((target, vec!["target request".to_string()], String::new()));
     }
 
     let mut structural: BTreeSet<String> = BTreeSet::new();
@@ -2984,14 +2990,14 @@ fn to_python_with(
     if !foreign.is_empty() {
         return Err(CoreError::Export {
             message: format!(
-                "a cadeia contata origin(s) diferente(s) do alvo ({}); recusado. Passe --allow-origin <esquema://host[:porta]> para cada um que você aceita contatar",
+                "the chain contacts different origin(s) from the target ({}); refused. Pass --allow-origin <scheme://host[:port]> for each one you accept contacting",
                 foreign.into_iter().collect::<Vec<_>>().join(", ")
             ),
         });
     }
 
-    // Com `allow_incomplete`, cada consumidor afetado falha explicitamente em
-    // vez de seguir com a cadeia incompleta.
+    // With `allow_incomplete`, each affected consumer fails explicitly instead of
+    // going on with the incomplete chain.
     let mut incomplete_steps: BTreeMap<String, String> = BTreeMap::new();
     if opts.allow_incomplete {
         for entry in &missing {
@@ -3004,11 +3010,11 @@ fn to_python_with(
             let more = entry.producers.len().saturating_sub(producers.len());
             incomplete_steps.entry(entry.request_id.clone()).or_insert_with(|| {
                 format!(
-                    "cadeia incompleta: {} sem produtor com corpo observável ({}{}); gere o script para o alvo equivalente de outra rodada",
+                    "incomplete chain: {} has no producer with an observable body ({}{}); generate the script for the equivalent target from another round",
                     entry.field,
                     producers.join(", "),
                     if more > 0 {
-                        format!(" e mais {more}")
+                        format!(" and {more} more")
                     } else {
                         String::new()
                     }
@@ -3030,14 +3036,14 @@ fn to_python_with(
             unresolved_comments,
             "{}",
             comment(&format!(
-                "não resolvido: {} {} ({}){}",
+                "unresolved: {} {} ({}){}",
                 u.request_ids.join(", "),
                 u.field,
                 u.label,
                 if u.partial_composition.is_empty() {
                     ""
                 } else {
-                    " — montado no cliente: complete aqui"
+                    " — assembled on the client: complete here"
                 }
             ))
         );
@@ -3056,7 +3062,7 @@ fn to_python_with(
             })
         };
 
-        // URL e query
+        // URL and query
         let (url_base, query) = match request.url.split_once('?') {
             Some((b, q)) => (
                 b.split('#').next().unwrap_or(b),
@@ -3100,7 +3106,7 @@ fn to_python_with(
             if SKIP_HEADERS.contains(&lname.as_str()) {
                 if lname == "authorization" || lname == "proxy-authorization" {
                     gen.notes
-                        .push(format!("header {lname} omitido (credencial)"));
+                        .push(format!("header {lname} omitted (credential)"));
                 }
                 continue;
             }
@@ -3109,21 +3115,21 @@ fn to_python_with(
                 "x-forwarded-for" | "forwarded" | "x-real-ip"
             ) {
                 gen.notes
-                    .push(format!("header {lname} omitido (endereço do cliente)"));
+                    .push(format!("header {lname} omitted (client address)"));
                 continue;
             }
             if !is_header_token(&entry.name) || !is_safe_header_value(&entry.value) {
                 gen.warn(
                     "priming.header_skipped",
-                    format!("passo {n}: header com nome/valor inválido omitido"),
+                    format!("step {n}: header with invalid name/value omitted"),
                 );
                 continue;
             }
             let origin = find_origin(ConsumedScope::Header, &lname, 0);
             let value = if lname == "referer" {
-                // Montado em runtime com a URL real do passo anterior que tem o
-                // mesmo origin+caminho; sem correspondência, é omitido. A query
-                // capturada nunca sai.
+                // Assembled at runtime with the real URL of the earlier step that has
+                // the same origin+path; without a match, it is omitted. The captured
+                // query never leaves.
                 let wanted = origin_and_path(&entry.value);
                 let producer = step_reqs[..n - 1]
                     .iter()
@@ -3133,7 +3139,7 @@ fn to_python_with(
                     Some((r, _, _)) => format!("referer_for(R[{}].url, url)", lit(&r.id)),
                     None => {
                         gen.notes.push(
-                            "header referer omitido (sem passo anterior correspondente)"
+                            "header referer omitted (no matching earlier step)"
                                 .to_string(),
                         );
                         continue;
@@ -3172,7 +3178,7 @@ fn to_python_with(
             header_items.push(format!("{}: {}", lit(&entry.name), value));
         }
 
-        // Corpo
+        // Body
         let content_type = request
             .request_headers
             .first_value("content-type")
@@ -3198,7 +3204,7 @@ fn to_python_with(
                         if k.chars().count() > 40 && v.is_empty() {
                             return Err(CoreError::Export {
                                 message: format!(
-                                    "passo {n} ({}): campo de form sem '=' com mais de 40 caracteres (corpo que não é form); recusado",
+                                    "step {n} ({}): form field without '=' longer than 40 characters (body that is not a form); refused",
                                     request.id
                                 ),
                             });
@@ -3241,13 +3247,13 @@ fn to_python_with(
                 Some(bytes) if content_type.contains("json") || body_is_json(&bytes) => {
                     let text = String::from_utf8(bytes).map_err(|_| CoreError::Export {
                         message: format!(
-                            "passo {n}: corpo JSON que não é UTF-8 não pode ser gerado"
+                            "step {n}: JSON body that is not UTF-8 cannot be generated"
                         ),
                     })?;
                     let value: serde_json::Value =
                         serde_json::from_str(&text).map_err(|e| CoreError::Export {
                             message: format!(
-                                "passo {n}: corpo declarado JSON, mas inválido ({e}); use --allow-literal-body"
+                                "step {n}: body declared as JSON, but invalid ({e}); use --allow-literal-body"
                             ),
                         })?;
                     let expr = json_expr(
@@ -3266,7 +3272,7 @@ fn to_python_with(
                     if !opts.allow_literal_body {
                         return Err(CoreError::Export {
                             message: format!(
-                                "passo {n} ({}): corpo '{}' que não é form nem JSON; recusado. Use --allow-literal-body para reenviá-lo, com valores sensíveis como parâmetros",
+                                "step {n} ({}): body '{}' that is neither form nor JSON; refused. Use --allow-literal-body to resend it, with sensitive values as parameters",
                                 request.id,
                                 content_type.split(';').next().unwrap_or("").trim()
                             ),
@@ -3274,14 +3280,14 @@ fn to_python_with(
                     }
                     let text = String::from_utf8(bytes).map_err(|_| CoreError::Export {
                         message: format!(
-                            "passo {n} ({}): corpo binário não pode ser inspecionado em busca de dados sensíveis; recusado",
+                            "step {n} ({}): binary body cannot be inspected for sensitive data; refused",
                             request.id
                         ),
                     })?;
                     if fold_width(&text) != text && contains_pii(&text) {
                         return Err(CoreError::Export {
                             message: format!(
-                                "passo {n} ({}): corpo com caracteres de largura total escondendo dado pessoal; recusado",
+                                "step {n} ({}): body with full-width characters hiding personal data; refused",
                                 request.id
                             ),
                         });
@@ -3292,7 +3298,7 @@ fn to_python_with(
                     {
                         return Err(CoreError::Export {
                             message: format!(
-                                "passo {n} ({}): corpo binário (caracteres de controle) não pode ser inspecionado em busca de dados sensíveis; recusado",
+                                "step {n} ({}): binary body (control characters) cannot be inspected for sensitive data; refused",
                                 request.id
                             ),
                         });
@@ -3301,11 +3307,11 @@ fn to_python_with(
                     gen.warn(
                         "priming.body_literal",
                         format!(
-                            "passo {n}: corpo reenviado como capturado; {found} valor(es) sensível(is)/de negócio viraram parâmetros obrigatórios e o restante foi congelado"
+                            "step {n}: body resent as captured; {found} sensitive/business value(s) became required parameters and the rest was frozen"
                         ),
                     );
                     gen.notes.push(
-                        "corpo congelado (--allow-literal-body): o que não foi detectado como sensível segue literal"
+                        "body frozen (--allow-literal-body): what was not detected as sensitive stays literal"
                             .to_string(),
                     );
                     body_line = format!("data = {expr}\n");
@@ -3313,18 +3319,18 @@ fn to_python_with(
                 None => {
                     gen.warn(
                         "priming.body_missing",
-                        format!("passo {n}: corpo da requisição indisponível; enviado vazio"),
+                        format!("step {n}: request body unavailable; sent empty"),
                     );
                 }
             }
         }
 
-        // Corpo do passo: comentários, fail-safe e montagem. A requisição e as
-        // checagens da própria resposta são emitidas depois (quando já se sabe
-        // o que os passos seguintes vão consumir desta resposta).
+        // Step body: comments, fail-safe and assembly. The request and the checks
+        // on its own response are emitted afterwards (once it is known what the
+        // following steps will consume from this response).
         let mut body = String::new();
         for r in reasons {
-            for line in comment(&format!("passo {n}: {r}")).lines() {
+            for line in comment(&format!("step {n}: {r}")).lines() {
                 let _ = writeln!(body, "    {line}");
             }
         }
@@ -3334,7 +3340,7 @@ fn to_python_with(
             }
         }
         if let Some(message) = incomplete_steps.get(&request.id) {
-            // Fail-safe explícito: o passo não prossegue com valor sem origem.
+            // Explicit fail-safe: the step does not proceed with a value without an origin.
             let _ = writeln!(body, "    fail({})", lit(message));
         }
         let _ = writeln!(body, "    url = {url_expr}");
@@ -3370,8 +3376,8 @@ fn to_python_with(
         );
     }
 
-    // Emissão dos passos: cada um checa a PRÓPRIA resposta antes de devolver,
-    // para que a cadeia nunca envie outro pedido depois de uma resposta ruim.
+    // Emission of the steps: each one checks its OWN response before returning,
+    // so that the chain never sends another request after a bad response.
     let mut step_code = String::new();
     for (index, step) in steps_out.iter().enumerate() {
         let n = index + 1;
@@ -3387,12 +3393,12 @@ fn to_python_with(
         let _ = writeln!(step_code, "    except UnicodeEncodeError as exc:");
         let _ = writeln!(
             step_code,
-            "        fail('passo {n}: header com caractere fora de latin-1: %s' % exc)"
+            "        fail('step {n}: header with character outside latin-1: %s' % exc)"
         );
         let _ = writeln!(step_code, "    if not (200 <= resp.status_code < 400):");
         let _ = writeln!(
             step_code,
-            "        fail('passo {n}: HTTP %d' % resp.status_code)"
+            "        fail('step {n}: HTTP %d' % resp.status_code)"
         );
         let expected = step_reqs
             .get(index)
@@ -3409,7 +3415,7 @@ fn to_python_with(
         let _ = writeln!(step_code, "    return resp");
     }
 
-    // Parâmetros
+    // Parameters
     let mut params_code = String::new();
     for p in &gen.params.list {
         let _ = writeln!(
@@ -3424,12 +3430,12 @@ fn to_python_with(
     let mut text = String::new();
     text.push_str("#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n");
     for line in [
-        format!("Script de priming gerado pelo ScrapeLens para a requisição {target_request_id}."),
-        "Reprodução semântica: a ordem de headers e a fidelidade de transporte (TLS, HTTP/2, fingerprint) NÃO são garantidas.".to_string(),
-        "Não executado pelo ScrapeLens: quem roda é você, sob sua responsabilidade.".to_string(),
-        "Passos que alteram estado (POST/PUT/PATCH/DELETE) exigem --confirmar; sem ela o script imprime o plano e sai.".to_string(),
-        "Valores com origem observada são extraídos das respostas em runtime; nunca se usa o valor capturado no lugar de um extraído.".to_string(),
-        "Valores sensíveis ou redigidos são parâmetros obrigatórios, sem padrão.".to_string(),
+        format!("Priming script generated by ScrapeLens for request {target_request_id}."),
+        "Semantic reproduction: header order and transport fidelity (TLS, HTTP/2, fingerprint) are NOT guaranteed.".to_string(),
+        "Not executed by ScrapeLens: you run it, under your own responsibility.".to_string(),
+        "Steps that change state (POST/PUT/PATCH/DELETE) require --confirmar; without it the script prints the plan and exits.".to_string(),
+        "Values with an observed origin are extracted from the responses at runtime; the captured value is never used in place of an extracted one.".to_string(),
+        "Sensitive or redacted values are required parameters, with no default.".to_string(),
     ] {
         text.push_str(&comment(&line));
     }
@@ -3438,7 +3444,7 @@ fn to_python_with(
     if !kinds.is_empty() {
         return Err(CoreError::Export {
             message: format!(
-                "geração recusada: o script teria literais com dado pessoal/credencial ({}); o trecho não pôde ser mapeado a um parâmetro. Valores omitidos",
+                "generation refused: the script would contain literals with personal data/credentials ({}); the fragment could not be mapped to a parameter. Values omitted",
                 kinds.join(", ")
             ),
         });
@@ -3462,11 +3468,13 @@ fn to_python_with(
         text.push_str(&opts.adapter_encoders[*index].source);
         text.push('\n');
     }
-    // Impressão do plano: uma só implementação, a do core (`validate::plan_hash`),
-    // calculada na geração com os mesmos adaptadores do gerador e os nomes dos
-    // parâmetros obrigatórios do script. O validate deve usar o mesmo `--adapter`.
-    // `plan.parameters`: só os nomes dos parâmetros OBRIGATÓRIOS do plano, e o hash
-    // é calculado com exatamente esses nomes (sobrescrever um opcional não o muda).
+    // Plan printing: a single implementation, the core's (`validate::plan_hash`),
+    // computed at generation with the same adapters as the generator and the
+    // names of the script's required parameters. The validate must use the same
+    // `--adapter`.
+    // `plan.parameters`: only the names of the plan's REQUIRED parameters, and the
+    // hash is computed with exactly these names (overriding an optional one does
+    // not change it).
     let mut required: Vec<String> = gen
         .params
         .list
@@ -3478,7 +3486,7 @@ fn to_python_with(
     required.dedup();
     let plan_hash =
         crate::validate::plan_hash(session, source, target_request_id, &opts.flow, &required)?;
-    // `plan.version`: o validate só compara o hash quando a versão é a atual.
+    // `plan.version`: validate only compares the hash when the version is the current one.
     let _ = writeln!(text, "PLAN_VERSION = {}", crate::validate::PLAN_VERSION);
     let _ = writeln!(text, "PLAN_HASH = {}", lit(&plan_hash));
     let _ = writeln!(
@@ -3529,14 +3537,14 @@ fn to_python_with(
         output.warnings.push(Warning::new(
             "priming.incomplete_chain",
             format!(
-                "{} passo(s) falham explicitamente: a cadeia depende de resposta sem corpo observável (ver --allow-incomplete)",
+                "{} step(s) fail explicitly: the chain depends on a response without an observable body (see --allow-incomplete)",
                 incomplete_steps.len()
             ),
         ));
     }
-    // Poda: passo extra não referenciado, ou passo da base não referenciado
-    // cujo papel era só fornecer partes do campo reivindicado que outro passo
-    // referenciado já fornece (mesmos nomes de parte, valores diferentes).
+    // Pruning: an unreferenced extra step, or an unreferenced base step whose role
+    // was only to supply parts of the claimed field that another referenced step
+    // already supplies (same part names, different values).
     let referenced = |rid: &str| output.text.contains(&format!("R[{}]", lit(rid)));
     let mut prune: Vec<String> = extra_ids
         .into_iter()
@@ -3615,7 +3623,7 @@ import urllib.parse
 
 
 def safe_text(value):
-    """Texto vindo de resposta: sem ESC, controles nem bidi/invisíveis."""
+    """Text coming from a response: no ESC, controls or bidi/invisible characters."""
     return ''.join(c if (c.isprintable() and c not in '\u200e\u200f\u061c\u2028\u2029'
                          and not '\u202a' <= c <= '\u202e' and not '\u2066' <= c <= '\u2069'
                          and c != '\ufeff') else '?' for c in str(value))
@@ -3663,7 +3671,7 @@ def find_control(resp, name, index):
 def html_control(resp, name, index, who):
     value = find_control(resp, name, index)
     if value is None:
-        fail('controle HTML %r não encontrado na resposta de %s' % (name, who))
+        fail('HTML control %r not found in the response of %s' % (name, who))
     return value
 
 
@@ -3690,12 +3698,12 @@ def find_body_field(resp, name):
 def body_field(resp, name, who):
     value = find_body_field(resp, name)
     if value is None:
-        fail('campo %r não encontrado na resposta de %s' % (name, who))
+        fail('field %r not found in the response of %s' % (name, who))
     return value
 
 
 def step_expected(resp, session, index, expected):
-    """Controles/campos que ESTE passo precisa entregar aos passos seguintes."""
+    """Controls/fields that THIS step must deliver to the following steps."""
     missing = []
     for kind, name, extra in expected:
         if kind == 'cookie':
@@ -3711,29 +3719,29 @@ def step_expected(resp, session, index, expected):
         if not ok:
             missing.append(name)
     if missing:
-        fail('passo %d: resposta sem %s (provável bloqueio ou sessão inválida)'
+        fail('step %d: response without %s (probably blocked or invalid session)'
              % (index, ', '.join(missing)))
 
 
 def step_error(resp, index):
-    """ERRORMESSAGE preenchido é erro da aplicação; ausência não é erro."""
+    """A filled ERRORMESSAGE is an application error; its absence is not an error."""
     value = find_control(resp, 'ERRORMESSAGE', 0)
     if value is not None and value.strip():
-        fail('a aplicação respondeu com ERRORMESSAGE no passo %d: %s'
+        fail('the application responded with ERRORMESSAGE in step %d: %s'
              % (index, safe_text(value.strip()[:200])))
 
 
 def get_cookie(session, name, who):
     value = session.cookies.get(name)
     if value is None:
-        fail('cookie %r não está no cookie jar (%s)' % (name, who))
+        fail('cookie %r is not in the cookie jar (%s)' % (name, who))
     return value
 
 
 def get_header(resp, name, who):
     value = resp.headers.get(name)
     if value is None:
-        fail('header %r ausente na resposta usada por %s' % (name, who))
+        fail('header %r missing from the response used by %s' % (name, who))
     return value
 
 
@@ -3742,22 +3750,22 @@ def ctx_extract(text, before, after, who):
     if before:
         at = text.find(before)
         if at < 0:
-            fail('não achei o valor pelo contexto (%r ... %r) para %s' % (before, after, who))
+            fail('could not find the value by context (%r ... %r) for %s' % (before, after, who))
         start = at + len(before)
     if after:
         end = text.find(after, start + 1)
         if end < 0:
-            fail('não achei o valor pelo contexto (%r ... %r) para %s' % (before, after, who))
+            fail('could not find the value by context (%r ... %r) for %s' % (before, after, who))
     else:
         end = len(text)
         if end <= start:
-            fail('não achei o valor pelo contexto (%r ... %r) para %s' % (before, after, who))
+            fail('could not find the value by context (%r ... %r) for %s' % (before, after, who))
     return text[start:end]
 
 
 def checked(value, size, who):
     if len(value) != size:
-        sys.stderr.write('priming: aviso: %s mudou de tamanho (%d -> %d); prefixos de comprimento do protocolo podem precisar de ajuste\n' % (who, size, len(value)))
+        sys.stderr.write('priming: warning: %s changed size (%d -> %d); the protocol length prefixes may need adjustment\n' % (who, size, len(value)))
     return value
 
 
@@ -3773,7 +3781,7 @@ def json_bool(text):
 
 
 def referer_for(previous_url, url):
-    """Como o navegador: entre origins diferentes, o Referer leva só o origin."""
+    """Like the browser: across different origins, the Referer carries only the origin."""
     if url_origin(previous_url) != url_origin(url):
         return url_origin(previous_url) + '/'
     return previous_url
@@ -3796,7 +3804,7 @@ TRACE_BODY_LIMIT = 2 * 1024 * 1024
 
 
 def trace_body(data):
-    """Corpo para o trace: texto UTF-8 ou base64, no máximo 2 MiB (estado truncated)."""
+    """Body for the trace: UTF-8 text or base64, at most 2 MiB (truncated state)."""
     if data is None:
         return None
     if isinstance(data, str):
@@ -3818,18 +3826,18 @@ def trace_time(moment):
 
 
 def trace_open(path):
-    """Cria o arquivo do trace com 0600, sem sobrescrever nem seguir link simbólico."""
+    """Creates the trace file with 0600, without overwriting or following a symbolic link."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
     try:
         fd = os.open(path, flags, 0o600)
     except FileExistsError:
-        fail('--trace: %s já existe (ou é um link simbólico); não sobrescrevo' % safe_text(path))
+        fail('--trace: %s already exists (or is a symbolic link); not overwriting' % safe_text(path))
     except OSError as exc:
-        fail('--trace: não consegui criar %s: %s' % (safe_text(path), safe_text(exc.strerror or exc)))
+        fail('--trace: could not create %s: %s' % (safe_text(path), safe_text(exc.strerror or exc)))
     os.fchmod(fd, 0o600)
     TRACE['fd'] = fd
     TRACE['started'] = time.time()
-    sys.stderr.write('priming: o trace contém dados da sua sessão; não compartilhe sem sanitizar\n')
+    sys.stderr.write('priming: the trace contains data from your session; do not share it without sanitizing\n')
 
 
 def trace_exchange(index, method, url, resp, started):
@@ -3852,7 +3860,7 @@ def trace_exchange(index, method, url, resp, started):
 
 def trace_check(index, ok, reason):
     if TRACE['fd'] is not None:
-        TRACE['checks'][index] = {'name': 'passo', 'ok': ok}
+        TRACE['checks'][index] = {'name': 'step', 'ok': ok}
         if reason:
             TRACE['checks'][index]['detail'] = reason
 
@@ -3872,10 +3880,10 @@ def trace_close(base=None):
         if not mine and check is None and index not in TRACE['errors']:
             continue
         if not mine:
-            # Falha antes de qualquer pedido (ex.: origin recusado): registra o planejado.
+            # Failure before any request (e.g. refused origin): records the planned request.
             mine = [{'step': index, 'method': method, 'url': rebase(url, base), 'requestHeaders': [],
                      'requestBody': None, 'status': None, 'responseHeaders': [], 'responseBody': None,
-                     'error': TRACE['errors'].get(index) or (check or {}).get('detail') or 'passo não enviado'}]
+                     'error': TRACE['errors'].get(index) or (check or {}).get('detail') or 'step not sent'}]
         mine = [{k: v for k, v in entry.items() if k != 'step'} for entry in mine]
         if index in TRACE['errors'] and 'error' not in mine[-1]:
             mine[-1]['error'] = TRACE['errors'][index]
@@ -3889,7 +3897,7 @@ def trace_close(base=None):
         'target': TARGET,
         'complete': TRACE['complete'],
         'plan': {'version': PLAN_VERSION, 'hash': PLAN_HASH, 'parameters': PLAN_PARAMETERS},
-        # Só nomes dos parâmetros do usuário e das partes onde entram, nunca valores.
+        # Only the names of the user parameters and of the parts where they enter, never values.
         'parameters': [{'name': n, 'part': part} for n, part in PARAM_USES if n in TRACE['params']],
         'steps': entries,
     }
@@ -3903,11 +3911,11 @@ def trace_close(base=None):
 
 
 def send(S, method, url, index, base, **kw):
-    """Envia um passo sem seguir redirects sozinho: só o MESMO origin é seguido."""
+    """Sends a step without following redirects on its own: only the SAME origin is followed."""
     home = url_origin(base) if base else CAPTURED_ORIGIN.lower()
     allowed = {home} | {o.lower() for o in EXTRA_ORIGINS}
     if url_origin(url) not in allowed:
-        fail('passo %d: origin %s fora dos permitidos; nada foi enviado' % (index, url_origin(url)))
+        fail('step %d: origin %s not allowed; nothing was sent' % (index, url_origin(url)))
     started = time.time()
     resp = S.request(method, url, allow_redirects=False, **kw)
     trace_exchange(index, method, url, resp, started)
@@ -3915,13 +3923,13 @@ def send(S, method, url, index, base, **kw):
     while resp.status_code in (301, 302, 303, 307, 308):
         location = resp.headers.get('Location')
         if not location:
-            fail('passo %d: redirect HTTP %d sem Location' % (index, resp.status_code))
+            fail('step %d: HTTP redirect %d without Location' % (index, resp.status_code))
         nxt = urllib.parse.urljoin(url, location)
         if url_origin(nxt) != url_origin(url):
-            fail('passo %d: redirect para outro origin (%s) recusado' % (index, safe_text(url_origin(nxt))))
+            fail('step %d: redirect to another origin (%s) refused' % (index, safe_text(url_origin(nxt))))
         hops += 1
         if hops > 5:
-            fail('passo %d: redirects demais' % index)
+            fail('step %d: too many redirects' % index)
         if resp.status_code == 303 or (resp.status_code in (301, 302) and method == 'POST'):
             method = 'GET'
             kw = {k: v for k, v in kw.items() if k not in ('data', 'json', 'files')}
@@ -3939,7 +3947,7 @@ const ADAPTER_HELPERS: &str = r#"
 def adapter_get(decode, text, name, nth, who):
     found = [v for n, role, v in decode(text) if n == name and role in ('V', 'D')]
     if nth >= len(found):
-        fail('parte %r não encontrada na resposta usada por %s' % (name, who))
+        fail('part %r not found in the response used by %s' % (name, who))
     return found[nth]
 
 "#;
@@ -3947,65 +3955,65 @@ def adapter_get(decode, text, name, nth, who):
 const MAIN: &str = r#"
 
 def check_arguments(args):
-    """Valida o argv antes de qualquer pedido: bytes inválidos, NUL, --trace vazio, --timeout."""
+    """Validates argv before any request: invalid bytes, NUL, empty --trace, --timeout."""
     if args.trace is not None and not args.trace.strip():
-        fail('--trace exige um caminho de arquivo (recebeu texto vazio)')
+        fail('--trace requires a file path (received empty text)')
     if not (0 < args.timeout < 3600):
-        fail('--timeout deve estar entre 0 e 3600 segundos')
+        fail('--timeout must be between 0 and 3600 seconds')
     for key, value in sorted(vars(args).items()):
         if isinstance(value, str):
             try:
                 value.encode('utf-8')
             except UnicodeEncodeError:
-                fail('argumento --%s tem bytes inválidos (não é UTF-8)' % key.replace('p_', '', 1).replace('_', '-'))
+                fail('argument --%s has invalid bytes (not UTF-8)' % key.replace('p_', '', 1).replace('_', '-'))
             if '\x00' in value:
-                fail('argumento --%s contém NUL' % key.replace('p_', '', 1).replace('_', '-'))
+                fail('argument --%s contains NUL' % key.replace('p_', '', 1).replace('_', '-'))
     if args.base_url is not None:
         parts = urllib.parse.urlsplit(args.base_url)
         if parts.scheme not in ('http', 'https') or not parts.netloc:
-            fail('--base-url precisa ser http(s)://host[:porta]')
+            fail('--base-url must be http(s)://host[:port]')
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Script de priming (ScrapeLens)')
-    parser.add_argument('--confirmar', action='store_true', help='executa os passos que alteram estado')
-    parser.add_argument('--usar-proxy-do-ambiente', action='store_true', help='usa proxy/.netrc do ambiente (padrão: ignora)')
-    parser.add_argument('--timeout', type=float, default=30.0, help='tempo limite de cada pedido, em segundos (padrão: 30)')
-    parser.add_argument('--trace', default=None, metavar='ARQUIVO', help='grava um trace JSON (scrapelens.trace/1) da execução; contém dados da sua sessão')
-    parser.add_argument('--base-url', default=None, help='troca esquema/host/porta do alvo capturado (ex.: http://127.0.0.1:8791)')
+    parser = argparse.ArgumentParser(description='Priming script (ScrapeLens)')
+    parser.add_argument('--confirmar', action='store_true', help='runs the steps that change state')
+    parser.add_argument('--usar-proxy-do-ambiente', action='store_true', help='uses the environment proxy/.netrc (default: ignores)')
+    parser.add_argument('--timeout', type=float, default=30.0, help='timeout of each request, in seconds (default: 30)')
+    parser.add_argument('--trace', default=None, metavar='FILE', help='writes a JSON trace (scrapelens.trace/1) of the run; contains data from your session')
+    parser.add_argument('--base-url', default=None, help='replaces the scheme/host/port of the captured target (e.g.: http://127.0.0.1:8791)')
     for name, default, note in PARAMS:
         parser.add_argument('--' + name.replace('_', '-'), dest='p_' + name, default=default,
-                            required=False, help=(note + (' (obrigatório)' if default is None else ' (padrão: valor capturado)')).replace('%', '%%'))
+                            required=False, help=(note + (' (required)' if default is None else ' (default: captured value)')).replace('%', '%%'))
     args = parser.parse_args()
     check_arguments(args)
     P = {name: getattr(args, 'p_' + name) for name, _, _ in PARAMS}
     base = args.base_url
 
-    print('Plano de priming para %s (%d passos):' % (TARGET, len(PLAN)))
+    print('Priming plan for %s (%d steps):' % (TARGET, len(PLAN)))
     for index, (rid, method, url, reason, idem) in enumerate(PLAN, 1):
-        print('  %d. %s %s [%s]%s' % (index, method, rebase(url, base), rid, '' if idem else ' (altera estado)'))
+        print('  %d. %s %s [%s]%s' % (index, method, rebase(url, base), rid, '' if idem else ' (changes state)'))
         print('       %s' % reason)
     if HAS_STATE_CHANGE and not args.confirmar:
-        print('Nada foi enviado: o plano tem passos que alteram estado. Use --confirmar para executar.')
+        print('Nothing was sent: the plan has steps that change state. Use --confirmar to run.')
         return 0
     missing = [name for name, default, _ in PARAMS if P[name] is None]
     if missing:
-        fail('parâmetros obrigatórios ausentes: ' + ', '.join('--' + m.replace('_', '-') for m in missing))
+        fail('required parameters missing: ' + ', '.join('--' + m.replace('_', '-') for m in missing))
 
     try:
         import requests
     except ImportError:
-        fail('o pacote "requests" não está instalado (pip install requests)')
+        fail('the "requests" package is not installed (pip install requests)')
     S = requests.Session()
     S.trust_env = bool(args.usar_proxy_do_ambiente)
     if sys.version_info < (3, 13):
-        sys.stderr.write('priming: aviso: Python < 3.13; o HTMLParser tem casos quadráticos conhecidos com respostas hostis\n')
+        sys.stderr.write('priming: warning: Python < 3.13; HTMLParser has known quadratic cases with hostile responses\n')
     R = {}
     global TIMEOUT
     TIMEOUT = args.timeout
     if args.trace is not None:
         trace_open(args.trace)
-        # Parâmetros fornecidos pelo usuário: obrigatórios ou com valor diferente do padrão.
+        # User-provided parameters: required or with a value different from the default.
         TRACE['params'] = [name for name, default, _ in PARAMS if default is None or P[name] != default]
     current = 0
     try:
@@ -4021,16 +4029,16 @@ def main():
         trace_close(base)
         raise
     except BaseException as exc:
-        # Erro de transporte (ConnectionError, Timeout, qualquer exceção): o trace nunca fica vazio.
+        # Transport error (ConnectionError, Timeout, any exception): the trace is never left empty.
         text = safe_text('%s: %s' % (type(exc).__name__, exc))[:300]
         trace_error(current, text)
-        trace_check(current, False, 'erro de transporte: ' + text)
+        trace_check(current, False, 'transport error: ' + text)
         trace_close(base)
         if isinstance(exc, KeyboardInterrupt):
             raise
-        fail('passo %d: erro de transporte (%s)' % (current, text))
+        fail('step %d: transport error (%s)' % (current, text))
     trace_close(base)
-    print('Cadeia concluída; último HTTP %d.' % R[PLAN[-1][0]].status_code)
+    print('Chain completed; last HTTP %d.' % R[PLAN[-1][0]].status_code)
     return 0
 
 

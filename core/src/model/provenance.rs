@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// Origem de um dado. `Derived` marca visões calculadas (normalização, diff,
-/// export); `Manual` marca correção feita pelo usuário.
+/// Origin of a piece of data. `Derived` marks computed views (normalization, diff,
+/// export); `Manual` marks a correction made by the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Source {
@@ -29,12 +29,12 @@ impl Source {
     }
 }
 
-/// Estado de verificação **por informação**, nunca por sessão.
+/// Verification state **per piece of information**, never per session.
 ///
-/// - `Verified`: a sequência/valor foi conferida contra a camada decodificada;
-/// - `Partial`: preserva parte da informação (ex.: ordem h2/h3, `Cookie` fundido);
-/// - `Unverified`: a fonte não comprova o que foi pedido (ex.: HAR, CDP
-///   `requestWillBeSent.headers` para sequência) ou não há evidência.
+/// - `Verified`: the sequence/value was checked against the decoded layer;
+/// - `Partial`: preserves part of the information (e.g. h2/h3 order, merged `Cookie`);
+/// - `Unverified`: the source does not prove what was requested (e.g. HAR, CDP
+///   `requestWillBeSent.headers` for sequence) or there is no evidence.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -47,7 +47,7 @@ pub enum Verification {
 }
 
 impl Verification {
-    /// O estado mais fraco entre dois. Usado ao agregar proveniências.
+    /// The weaker of two states. Used when aggregating provenances.
     pub fn weakest(self, other: Verification) -> Verification {
         self.min(other)
     }
@@ -61,26 +61,26 @@ impl Verification {
     }
 }
 
-/// Proveniência de uma unidade de informação (par de header, cookie, corpo,
-/// entidade). Campos ausentes significam "a fonte não forneceu".
+/// Provenance of a unit of information (header pair, cookie, body,
+/// entity). Absent fields mean "the source did not provide it".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Provenance {
     pub source: Source,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event: Option<String>,
-    /// Identificador na fonte (requestId CDP, source id NetLog, índice HAR).
+    /// Identifier in the source (CDP requestId, NetLog source id, HAR index).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
-    /// Timestamp da fonte em segundos (monotônico CDP ou `time` do NetLog).
+    /// Source timestamp in seconds (CDP monotonic or NetLog `time`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<f64>,
-    /// Instante absoluto, quando a fonte fornece.
+    /// Absolute instant, when the source provides it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_time: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_version: Option<String>,
-    /// Como o dado foi obtido (ex.: `headersText`, `netlog.headers`,
+    /// How the data was obtained (e.g. `headersText`, `netlog.headers`,
     /// `heuristic:url+method+time`).
     pub method: String,
     pub verification: Verification,
@@ -129,7 +129,7 @@ impl Provenance {
         self
     }
 
-    /// Só grava timestamp quando a fonte o fornece (nunca inventa 0.0).
+    /// Only records the timestamp when the source provides it (never invents 0.0).
     pub fn with_optional_timestamp(mut self, timestamp: Option<f64>) -> Self {
         if let Some(timestamp) = timestamp {
             self.timestamp = Some(timestamp);
@@ -157,16 +157,16 @@ impl Provenance {
         self
     }
 
-    /// Proveniência de uma associação heurística (nunca silenciosa).
+    /// Provenance of a heuristic association (never silent).
     pub fn heuristic(method: impl Into<String>, verification: Verification) -> Self {
         Self::new(Source::Derived, method, verification)
     }
 }
 
-/// Política de verificação derivada de `docs/02-matriz-fidelidade.md` (D2).
+/// Verification policy derived from `docs/02-matriz-fidelidade.md` (D2).
 ///
-/// A matriz é a fonte dos fatos; esta função só codifica o veredito para que
-/// os importadores não inventem "verified" onde a evidência é parcial.
+/// The matrix is the source of the facts; this function only encodes the verdict
+/// so that importers do not invent "verified" where the evidence is partial.
 pub mod policy {
     use super::{Provenance, Source, Verification};
 
@@ -184,7 +184,7 @@ pub mod policy {
         Unknown,
     }
 
-    /// Estado para **sequência e duplicatas** de um bloco de headers.
+    /// State for **sequence and duplicates** of a header block.
     pub fn verification_for(
         source: Source,
         event: Option<&str>,
@@ -196,8 +196,8 @@ pub mod policy {
         use WireProtocol::*;
 
         match (source, event) {
-            // CDP não expõe a sequência transmitida em nenhum dos objetos
-            // `headers` (ordem ASCII, duplicatas colapsadas, subconjunto).
+            // CDP does not expose the sequence transmitted in any of the `headers`
+            // objects (ASCII order, duplicates collapsed, subset).
             (Cdp, Some("Network.responseReceivedExtraInfo.headersText")) => {
                 if protocol == H1 || protocol == Unknown {
                     Verification::Verified
@@ -210,8 +210,8 @@ pub mod policy {
             }
             (Cdp, _) => Verification::Unverified,
 
-            // NetLog transacional: fiel em h1; em h2/h3 preserva ordem, mas o
-            // campo Cookie pode vir fundido (não a divisão do fio).
+            // NetLog transactional: faithful in h1; in h2/h3 it preserves order, but
+            // the Cookie field may come merged (not the wire split).
             (NetLog, Some(e))
                 if e == "HTTP_TRANSACTION_SEND_REQUEST_HEADERS"
                     || e == "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"
@@ -226,9 +226,9 @@ pub mod policy {
                 }
             }
 
-            // Eventos de sessão h2/h3: ordem preservada, repetições fundidas
-            // com NUL (expandidas pelo importador), Cookie pode estar dividido
-            // apenas no fio — nunca no log.
+            // h2/h3 session events: order preserved, repetitions merged with NUL
+            // (expanded by the importer), Cookie may be split only on the wire,
+            // never in the log.
             (NetLog, Some(e))
                 if e == "HTTP2_SESSION_SEND_HEADERS"
                     || e == "HTTP2_SESSION_RECV_HEADERS"
@@ -243,10 +243,10 @@ pub mod policy {
 
             (NetLog, _) => Verification::Partial,
 
-            // HAR do DevTools não foi instrumentado; ordem não comprovada.
+            // DevTools HAR was not instrumented; order not proven.
             (Har, _) => Verification::Unverified,
 
-            // Formato próprio carrega o estado gravado na captura.
+            // Own format carries the state recorded in the capture.
             (OwnFormat, _) | (Capture, _) | (Derived, _) | (Manual, _) => Verification::Unverified,
         }
     }

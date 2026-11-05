@@ -1,5 +1,5 @@
 {
-  "_comment": "SYNTHETIC FIXTURE — NetLog h2 simplificado, dados .invalid, sem tráfego real",
+  "_comment": "SYNTHETIC FIXTURE — simplified NetLog h2, .invalid data, no real traffic",
   "constants": {
     "logEventTypes": {
       "URL_REQUEST_START_JOB": 136,

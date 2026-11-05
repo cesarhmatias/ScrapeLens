@@ -1,47 +1,47 @@
-//! Ponto de extensão para decodificadores de protocolo (fora do core).
+//! Extension point for protocol decoders (outside the core).
 //!
-//! O core não conhece nenhum protocolo: um [`ProtocolAdapter`] reivindica um
-//! campo (`detect`), o decodifica em partes ordenadas com offsets no texto
-//! original (`decode`) e o recodifica (`encode`). Sem registro, o
-//! comportamento é o de sempre (substrings comuns). O registro é passado por
-//! `FlowOptions.adapters` (e daí por `CompareOptions.flow` e pelas opções de
-//! priming); não é serializado.
+//! The core knows no protocol: a [`ProtocolAdapter`] claims a field (`detect`),
+//! decodes it into ordered parts with offsets in the original text (`decode`)
+//! and re-encodes it (`encode`). Without registration, the behavior is the usual
+//! one (common substrings). The registry is passed through `FlowOptions.adapters`
+//! (and from there through `CompareOptions.flow` and the priming options); it is
+//! not serialized.
 
 use std::fmt;
 use std::sync::Arc;
 
 use crate::error::Result;
 
-/// Onde o campo foi lido; o adaptador decide só com isso e com o valor.
+/// Where the field was read; the adapter decides only from this and the value.
 #[derive(Debug, Clone, Copy)]
 pub struct AdapterContext<'a> {
     pub url: &'a str,
     pub method: &'a str,
-    /// `true` para campo de requisição, `false` para resposta.
+    /// `true` for a request field, `false` for a response.
     pub request: bool,
-    /// Tipo de mídia do corpo que contém o campo, quando conhecido.
+    /// Media type of the body that contains the field, when known.
     pub media: Option<&'a str>,
 }
 
-/// Papel de uma parte decodificada (a interpretação é do adaptador).
+/// Role of a decoded part (the interpretation belongs to the adapter).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PartRole {
-    /// Cabeçalho, prefixo de comprimento, separador: estrutura sem valor de negócio.
+    /// Header, length prefix, separator: structure with no business value.
     Structure,
-    /// Nome de campo/propriedade.
+    /// Field/property name.
     Name,
-    /// Valor associado a um nome.
+    /// Value associated with a name.
     Value,
-    /// Delta/estado incremental.
+    /// Incremental delta/state.
     Delta,
     Other(String),
 }
 
-/// Trecho nomeado do campo. `offset`/`len` são em bytes do texto original
-/// (o `value` pode ser o texto decodificado, ex. unescape).
+/// Named fragment of the field. `offset`/`len` are in bytes of the original text
+/// (the `value` may be the decoded text, e.g. unescaped).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdapterPart {
-    /// Nome interno relativo ao campo (`delta`, `p.v_placa`); o core prefixa o campo (`XML.delta`).
+    /// Internal name relative to the field (`delta`, `p.v_placa`); the core prefixes the field (`XML.delta`).
     pub name: String,
     pub value: String,
     pub offset: usize,
@@ -49,30 +49,30 @@ pub struct AdapterPart {
     pub role: PartRole,
 }
 
-/// Estrutura genérica: partes em ordem do original, sem reordenar.
+/// Generic structure: parts in the order of the original, without reordering.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Decoded {
     pub parts: Vec<AdapterPart>,
 }
 
 pub trait ProtocolAdapter: Send + Sync {
-    /// Identificador estável (`natural-ajax`).
+    /// Stable identifier (`natural-ajax`).
     fn id(&self) -> &str;
-    /// Este adaptador reivindica o campo `field` com este valor?
+    /// Does this adapter claim the field `field` with this value?
     fn detect(&self, field: &str, value: &str, ctx: &AdapterContext<'_>) -> bool;
-    /// Decodifica o valor; erro quando não obedece à gramática (o core volta
-    /// ao comportamento sem adaptador e avisa).
+    /// Decodes the value; an error when it does not follow the grammar (the core
+    /// falls back to the behavior without an adapter and warns).
     fn decode(&self, value: &str) -> Result<Decoded>;
-    /// Recodifica, recalculando o que o protocolo exigir (ex. comprimentos).
+    /// Re-encodes, recalculating whatever the protocol requires (e.g. lengths).
     fn encode(&self, decoded: &Decoded) -> Result<String>;
-    /// Nome curto da operação para rótulos (timeline), quando as partes comuns
-    /// não bastam (ex. a operação do cabeçalho). Padrão: nenhum.
+    /// Short name of the operation for labels (timeline), when the common parts
+    /// are not enough (e.g. the operation in the header). Default: none.
     fn label_hint(&self, _decoded: &Decoded) -> Option<String> {
         None
     }
 }
 
-/// Lista ordenada de adaptadores; o primeiro que reivindica o campo vence.
+/// Ordered list of adapters; the first one that claims the field wins.
 #[derive(Clone, Default)]
 pub struct AdapterRegistry {
     adapters: Vec<Arc<dyn ProtocolAdapter>>,
@@ -104,7 +104,7 @@ impl AdapterRegistry {
         self.adapters.is_empty()
     }
 
-    /// Adaptadores registrados, na ordem de precedência.
+    /// Registered adapters, in precedence order.
     pub fn iter(&self) -> impl Iterator<Item = &Arc<dyn ProtocolAdapter>> {
         self.adapters.iter()
     }
@@ -113,7 +113,7 @@ impl AdapterRegistry {
         self.adapters.iter().find(|a| a.id() == id)
     }
 
-    /// Primeiro adaptador que reivindica o campo.
+    /// First adapter that claims the field.
     pub fn claim(
         &self,
         field: &str,

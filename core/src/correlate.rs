@@ -1,13 +1,13 @@
-//! Correlação CDP×NetLog.
+//! CDP×NetLog correlation.
 //!
-//! IDs das duas fontes **não são equivalentes**. A associação usa:
-//! 1. par explícito fornecido pela captura (`ExplicitPair`), quando existe;
-//! 2. URL + método + janela de tempo como pista.
+//! The IDs of the two sources **are not equivalent**. The association uses:
+//! 1. explicit pair provided by the capture (`ExplicitPair`), when present;
+//! 2. URL + method + time window as a hint.
 //!
-//! Quando há mais de um candidato dentro do limite, a tentativa recebe
-//! `match: "ambiguous"` com a lista de candidatos. Nenhum é escolhido em
-//! silêncio. Quando o NetLog comprova a sequência e o CDP não, a visão primária
-//! passa a ser do NetLog, mantendo o bloco CDP original em `headerEvidence`.
+//! When more than one candidate is within the limit, the attempt receives
+//! `match: "ambiguous"` with the list of candidates. None is chosen in
+//! silence. When the NetLog proves the sequence and the CDP does not, the primary view
+//! becomes the NetLog's, keeping the original CDP block in `headerEvidence`.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -23,7 +23,7 @@ use crate::parse::netlog::{NetlogAttempt, NetlogCapture, NetlogHeaderEvent, Netl
 #[serde(rename_all = "camelCase")]
 pub struct ExplicitPair {
     pub cdp_request_id: String,
-    /// Sessão CDP; ausente = par antigo, casa só pelo requestId.
+    /// CDP session; absent = legacy pair, matched by requestId only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cdp_session_id: Option<String>,
     pub netlog_source_id: u32,
@@ -35,8 +35,8 @@ pub struct ExplicitPair {
 pub struct CorrelationOptions {
     pub time_window_s: f64,
     pub min_score: u8,
-    /// Quando o NetLog tem bloco verificado e o CDP não, use o NetLog como
-    /// visão primária (o original CDP permanece em `headerEvidence`).
+    /// When the NetLog has a verified block and the CDP does not, use the NetLog as
+    /// primary view (the original CDP stays in `headerEvidence`).
     pub prefer_netlog_headers: bool,
     pub explicit_pairs: Vec<ExplicitPair>,
 }
@@ -81,12 +81,12 @@ impl Candidate<'_> {
     }
 }
 
-/// Índices do NetLog e das chaves explícitas, montados UMA vez por correlação (docs/18 P3):
-/// o candidato de uma tentativa CDP exige método e URL canônica iguais (senão
-/// `score_candidate` devolve `None`), então basta olhar o balde `(método em minúsculas,
-/// URL canônica)`; mais os pares explícitos, que valem sem checar método/URL. A ordem de
-/// varredura (requisição, tentativa) é preservada, então o resultado é idêntico ao da
-/// varredura de todos os pares.
+/// NetLog and explicit-key indexes, built ONCE per correlation (docs/18 P3):
+/// the candidate of a CDP attempt requires the same method and canonical URL (otherwise
+/// `score_candidate` returns `None`), so it is enough to look at the bucket `(lowercase method,
+/// canonical URL)`; plus the explicit pairs, which count without checking method/URL. The order of
+/// scan (request, attempt) is preserved, so the result is identical to that of the
+/// scan of all pairs.
 struct CorrelationIndex<'a> {
     by_key: HashMap<(String, String), Vec<(usize, usize)>>,
     by_source_id: HashMap<u32, Vec<usize>>,
@@ -193,7 +193,7 @@ pub fn attach_netlog(
                     let warning = Warning::new(
                         "correlate.ambiguous",
                         format!(
-                            "tentativa {} tem {} candidatos no NetLog; nenhum associado",
+                            "attempt {} has {} candidates in the NetLog; none associated",
                             attempt.id,
                             candidates.len()
                         ),
@@ -228,7 +228,7 @@ pub fn attach_netlog(
                 .flat_map(|attempt| attempt.match_candidates.clone())
                 .collect();
         }
-        // Reflete o resultado na visão primária (sem tocar nos originais).
+        // Reflects the result in the primary view (without touching the originals).
         if request.match_state == MatchState::Matched {
             request.refresh_primary_from_attempt();
         }
@@ -241,7 +241,7 @@ pub fn attach_netlog(
         let warning = Warning::info(
             "correlate.netlog_unmatched",
             format!(
-                "{} tentativa(s) do NetLog (tráfego de background ou sem par CDP) não foram associadas",
+                "{} NetLog attempt(s) (background traffic or no CDP pair) were not associated",
                 outcome.unmatched_netlog_attempts
             ),
         );
@@ -252,22 +252,22 @@ pub fn attach_netlog(
         let warning = Warning::new(
             "correlate.unmatched",
             format!(
-                "{} tentativa(s) CDP sem correspondência no NetLog dentro da janela de {:.1}s",
+                "{} CDP attempt(s) with no match in the NetLog within the {:.1}s window",
                 outcome.unmatched_cdp_attempts, options.time_window_s
             ),
         );
         session.warnings.push(warning.clone());
         outcome.warnings.push(warning);
     }
-    // Ambiguidade é um estado explícito de `match`, não uma falha de captura:
-    // não rebaixa `completeness` (que mede o flush/artefatos da sessão).
+    // Ambiguity is an explicit state of `match`, not a capture failure:
+    // does not downgrade `completeness` (which measures the session's flush/artifacts).
     session.recompute_completeness();
     outcome
 }
 
-/// Posições (requisição, tentativa) do NetLog que podem gerar candidato para `attempt`,
-/// em ordem de varredura: o balde `(método, URL canônica)` mais as tentativas da
-/// requisição NetLog do par explícito (que valem sem checar método/URL).
+/// Positions (request, attempt) of the NetLog that can produce a candidate for `attempt`,
+/// in scan order: the bucket `(method, canonical URL)` plus the attempts of the
+/// NetLog request of the explicit pair (which count without checking method/URL).
 fn candidate_positions(
     attempt: &Attempt,
     explicit_source: Option<u32>,
@@ -339,7 +339,7 @@ fn find_candidates<'a>(
             ) {
                 if is_explicit {
                     score = 100;
-                    reasons.push("chave explícita CDP→NetLog fornecida pela captura".to_string());
+                    reasons.push("explicit CDP→NetLog key provided by the capture".to_string());
                 }
                 if score < options.min_score && !is_explicit {
                     continue;
@@ -358,14 +358,14 @@ fn find_candidates<'a>(
                     ),
                 });
             } else if is_explicit {
-                // Par explícito vence a heurística, mas ainda exige método e URL
-                // compatíveis; se não houver, reporta em vez de inventar.
+                // An explicit pair beats the heuristic, but still requires a compatible
+                // method and URL; if there is none, it reports instead of guessing.
                 candidates.push(Candidate {
                     request,
                     attempt: netlog_attempt,
                     id,
                     score: 100,
-                    reasons: vec!["chave explícita CDP→NetLog".to_string()],
+                    reasons: vec!["explicit CDP→NetLog key".to_string()],
                     explicit: true,
                     time_delta: time_delta_between(
                         attempt,
@@ -376,15 +376,15 @@ fn find_candidates<'a>(
             }
         }
     }
-    // Chave explícita vence a heurística: descarta candidatos não explícitos
-    // quando existe pelo menos um par fornecido pela captura.
+    // An explicit key beats the heuristic: non-explicit candidates are discarded
+    // when there is at least one pair provided by the capture.
     if candidates.iter().any(|candidate| candidate.explicit) {
         candidates.retain(|candidate| candidate.explicit);
     }
-    // Precisão do relógio entre CDP e NetLog no mesmo processo é sub-milissegundo
-    // (medido nas capturas reais). Um candidato dentro dessa margem cujo
-    // concorrente mais próximo está a ≥ 100 ms é o único compatível: 100 ms
-    // separa requisições sequenciais, ao contrário de simultâneas.
+    // Clock precision between CDP and NetLog in the same process is sub-millisecond
+    // (measured on real captures). A candidate within that margin whose
+    // closest competitor is ≥ 100 ms away is the only match: 100 ms
+    // separates sequential requests, unlike simultaneous ones.
     const CLOCK_TOLERANCE_S: f64 = 0.010;
     const CLOCK_SEPARATION_S: f64 = 0.100;
     candidates.sort_by(|left, right| {
@@ -406,7 +406,7 @@ fn find_candidates<'a>(
             candidates.truncate(1);
             return candidates;
         }
-        // Sem separação clara: mantém a janela antiga e a ambiguidade explícita.
+        // No clear separation: keeps the old window and the explicit ambiguity.
         candidates.retain(|candidate| {
             candidate.explicit
                 || candidate
@@ -419,14 +419,14 @@ fn find_candidates<'a>(
     candidates
 }
 
-/// Diferença de tempo entre CDP e NetLog no relógio em que as duas fontes
-/// concordam.
+/// Time difference between CDP and NetLog on the clock on which the two sources
+/// agree.
 ///
-/// O CDP guarda `timestamp` monotônico (segundos de ticks), enquanto o NetLog é
-/// normalizado para epoch. Como `timeTickOffset` é constante na captura, a
-/// leitura monotônica do NetLog é `started_at - offset`. Comparar os dois
-/// desvios é calibração de relógio, não escolha de requisição: o motivo do
-/// candidato registra qual referencial foi usado.
+/// The CDP keeps a monotonic `timestamp` (seconds of ticks), while the NetLog is
+/// normalized to epoch. Since `timeTickOffset` is constant in the capture, the
+/// monotonic reading of the NetLog is `started_at - offset`. Comparing the two
+/// deviations is clock calibration, not request choice: the reason of the
+/// candidate records which reference was used.
 fn time_delta_with_clock(
     cdp: &Attempt,
     netlog_attempt: &NetlogAttempt,
@@ -439,7 +439,7 @@ fn time_delta_with_clock(
         let monotonic = netlog_time - offset_ms / 1000.0;
         let delta = (cdp_time - monotonic).abs();
         if delta < best.0 {
-            best = (delta, "relógio monotônico");
+            best = (delta, "monotonic clock");
         }
     }
     Some(best)
@@ -470,43 +470,43 @@ fn score_candidate(
     let mut reasons = Vec::new();
     if exact_url {
         score += 40;
-        reasons.push("URL exata".to_string());
+        reasons.push("exact URL".to_string());
     } else if cdp_url == netlog_url {
         score += 30;
-        reasons.push("URL normalizada igual".to_string());
+        reasons.push("normalized URL matches".to_string());
     } else {
         return None;
     }
     score += 15;
-    reasons.push("método igual".to_string());
+    reasons.push("method matches".to_string());
 
     match (cdp.started_at, netlog_attempt.started_at) {
         (Some(_), Some(_)) => {
             let (delta, clock) = time_delta_with_clock(cdp, netlog_attempt, tick_offset_ms)?;
             if delta <= 0.5 {
                 score += 25;
-                reasons.push(format!("tempo Δ={delta:.3}s ({clock})"));
+                reasons.push(format!("time Δ={delta:.3}s ({clock})"));
             } else if delta <= 2.0 {
                 score += 15;
-                reasons.push(format!("tempo Δ={delta:.3}s ({clock})"));
+                reasons.push(format!("time Δ={delta:.3}s ({clock})"));
             } else if delta <= options.time_window_s {
                 score += 8;
-                reasons.push(format!("tempo Δ={delta:.3}s ({clock}, janela)"));
+                reasons.push(format!("time Δ={delta:.3}s ({clock}, window)"));
             } else {
                 return None;
             }
         }
         _ => {
             score += 3;
-            reasons.push("sem timestamp em uma das fontes".to_string());
+            reasons.push("no timestamp in one of the sources".to_string());
         }
     }
 
-    // Status e Content-Length distinguem requisições idênticas simultâneas.
+    // Status and Content-Length distinguish simultaneous identical requests.
     match (cdp.status, netlog_attempt.status) {
         (Some(cdp_status), Some(netlog_status)) if cdp_status == netlog_status => {
             score += 10;
-            reasons.push("status igual".to_string());
+            reasons.push("status matches".to_string());
         }
         (Some(_), Some(_)) => return None,
         _ => {}
@@ -517,7 +517,7 @@ fn score_candidate(
     match (cdp_length, netlog_length) {
         (Some(left), Some(right)) if left.trim() == right.trim() => {
             score += 8;
-            reasons.push("content-length igual".to_string());
+            reasons.push("content-length matches".to_string());
         }
         (Some(_), Some(_)) => return None,
         _ => {}
@@ -530,26 +530,26 @@ fn score_candidate(
     if cdp_set_cookie == netlog_set_cookie {
         score += 4;
         if cdp_set_cookie {
-            reasons.push("presença de set-cookie igual".to_string());
+            reasons.push("set-cookie presence matches".to_string());
         }
     }
 
-    // Conjunto de headers do ExtraInfo (completo, sem ordem) contra o bloco do
-    // NetLog. Só compara quando o CDP tem Host, para não penalizar o
-    // subconjunto do Blink.
+    // Set of ExtraInfo headers (complete, unordered) compared against the block of
+    // the NetLog. Only compares when the CDP has a Host, so as not to penalize the
+    // subset from Blink.
     if cdp.request_headers.contains("host") {
         if let Some(netlog_request_view) = primary_request_view(netlog_attempt) {
             match header_set_overlap(&cdp.request_headers, netlog_request_view) {
                 Some(ratio) if ratio >= 0.9 => {
                     score += 10;
-                    reasons.push(format!("headers coincidem ({ratio:.0}%)"));
+                    reasons.push(format!("headers match ({ratio:.0}%)"));
                 }
                 Some(ratio) if ratio < 0.5 => {
                     score = score.saturating_sub(10);
-                    reasons.push(format!("headers divergem ({ratio:.0}%)"));
+                    reasons.push(format!("headers diverge ({ratio:.0}%)"));
                 }
                 Some(ratio) => {
-                    reasons.push(format!("headers parcialmente coincidentes ({ratio:.0}%)"));
+                    reasons.push(format!("headers partially match ({ratio:.0}%)"));
                 }
                 None => {}
             }
@@ -560,11 +560,11 @@ fn score_candidate(
     match (cdp.cookie.raw.first(), netlog_cookie.first()) {
         (Some(cdp_cookie), Some(netlog_cookie)) if cdp_cookie == netlog_cookie => {
             score += 4;
-            reasons.push("Cookie igual".to_string());
+            reasons.push("Cookie matches".to_string());
         }
         (Some(_), Some(_)) => {
             score = score.saturating_sub(6);
-            reasons.push("Cookie divergente".to_string());
+            reasons.push("Cookie diverges".to_string());
         }
         _ => {}
     }
@@ -581,7 +581,7 @@ fn netlog_attempt_cookie(attempt: &NetlogAttempt) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Proporção de pares (nome, valor) do CDP presentes no bloco do NetLog.
+/// Proportion of (name, value) pairs of the CDP present in the NetLog block.
 fn header_set_overlap(
     cdp: &crate::model::HeaderView,
     netlog: &crate::model::HeaderView,
@@ -707,7 +707,7 @@ fn attach_candidate(
         attempt.timings.estimated = true;
     }
 
-    // StreamSession para eventos h2/h3 associados explicitamente.
+    // StreamSession for h2/h3 events explicitly associated.
     if let Some(event) = netlog_attempt
         .send_session
         .as_ref()
@@ -766,7 +766,7 @@ fn cookie_from_netlog(
         if !wire.is_empty() {
             cookie.wire_lines = wire;
             cookie.notes.push(
-                "linhas do fio do evento de sessão; NetLog pode mostrar Cookie fundido".to_string(),
+                "wire lines of the session event; NetLog may show a merged Cookie".to_string(),
             );
         }
     }
@@ -774,7 +774,7 @@ fn cookie_from_netlog(
         cookie.wire_lines = cookie.raw.clone();
         cookie
             .notes
-            .push("h1: um único campo Cookie observado na fonte transacional".to_string());
+            .push("h1: a single Cookie field observed in the transactional source".to_string());
     }
     cookie
 }
@@ -785,13 +785,13 @@ fn push_unique<T: PartialEq>(values: &mut Vec<T>, value: T) {
     }
 }
 
-/// Normalização usada apenas para casar URL; não altera o original.
+/// Normalization used only to match URLs; does not change the original.
 pub fn canonical_url(url: &str) -> String {
     crate::normalize::canonical_url(url)
 }
 
-/// Garante que a evidência NetLog inclui o bloco de sessão mesmo quando o
-/// chamador só quer inspecionar (usado nos testes).
+/// Ensures the NetLog evidence includes the session block even when the
+/// caller only wants to inspect (used in tests).
 pub fn netlog_header_event(
     attempt: &NetlogAttempt,
     role: HeaderRole,
@@ -805,7 +805,7 @@ pub fn netlog_header_event(
     }
 }
 
-/// Usado por importadores para decidir se o bloco do NetLog é mais forte.
+/// Used by importers to decide whether the NetLog block is stronger.
 pub fn should_prefer_netlog(current: Verification, candidate: Verification) -> bool {
     candidate > current
 }
@@ -851,9 +851,9 @@ mod tests {
         assert!(score_candidate(&cdp, &request, &netlog, &options, None).is_none());
     }
 
-    /// O índice só pode descartar pares que a varredura de todos os pares também descartaria:
-    /// para cada tentativa CDP das capturas reais, todo par (requisição, tentativa) do NetLog
-    /// que `score_candidate` aceita (ou que é explícito) está em `candidate_positions`.
+    /// The index may only discard pairs that the scan of all pairs would also discard:
+    /// for each CDP attempt of the real captures, every (request, attempt) pair of the NetLog
+    /// that `score_candidate` accepts (or that is explicit) is in `candidate_positions`.
     #[test]
     fn index_never_drops_a_pair_the_full_scan_would_keep() {
         use crate::parse::{cdp, netlog};
@@ -895,7 +895,7 @@ mod tests {
                             if accepted {
                                 assert!(
                                     positions.contains(&(ri, ai)),
-                                    "{dir}: par ({ri},{ai}) aceito pela varredura e fora do índice"
+                                    "{dir}: pair ({ri},{ai}) accepted by the scan and outside the index"
                                 );
                             }
                         }
@@ -903,6 +903,6 @@ mod tests {
                 }
             }
         }
-        assert!(checked_pairs > 1000, "fixtures ausentes? {checked_pairs}");
+        assert!(checked_pairs > 1000, "fixtures missing? {checked_pairs}");
     }
 }

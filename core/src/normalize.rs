@@ -1,10 +1,10 @@
-//! Visões normalizadas **derivadas** para busca/comparação.
+//! Derived **normalized views** for search/comparison.
 //!
-//! Nada aqui substitui o original: o header bruto permanece em
-//! `HeaderView.headers`/`pseudoHeaders`. A visão normalizada agrupa por nome
-//! (case-insensitive), preserva todos os valores na ordem de ocorrência e
-//! mantém a ordem de primeira aparição — nunca ordena alfabeticamente em
-//! silêncio. `order` é explicitamente `notWireOrder`.
+//! Nothing here replaces the original: the raw header stays in
+//! `HeaderView.headers`/`pseudoHeaders`. The normalized view groups by name
+//! (case-insensitive), preserves all values in order of occurrence and keeps the
+//! order of first appearance — it never sorts alphabetically in silence. `order`
+//! is explicitly `notWireOrder`.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,15 +13,15 @@ use crate::model::{CookieField, HeaderView, LogicalRequest, SetCookieRecord, Ver
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedHeader {
-    /// Nome em minúsculas, usado para busca.
+    /// Name in lowercase, used for search.
     pub name: String,
-    /// Primeira grafia observada, para exibição.
+    /// First spelling observed, for display.
     pub display_name: String,
-    /// Todos os valores, na ordem de ocorrência; duplicatas preservadas.
+    /// All values, in order of occurrence; duplicates preserved.
     pub values: Vec<String>,
     #[serde(default)]
     pub occurrences: usize,
-    /// Estado mais fraco entre as ocorrências.
+    /// Weakest state among the occurrences.
     pub verification: Verification,
 }
 
@@ -29,7 +29,7 @@ pub struct NormalizedHeader {
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedHeaders {
     pub entries: Vec<NormalizedHeader>,
-    /// Sempre `notWireOrder`: a visão não representa o fio.
+    /// Always `notWireOrder`: the view does not represent the wire.
     pub order: String,
     #[serde(default)]
     pub pseudo_headers: Vec<NormalizedHeader>,
@@ -80,7 +80,7 @@ pub struct NormalizedUrl {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
     pub path: String,
-    /// Pares na ordem original; duplicatas de nome preservadas.
+    /// Pairs in original order; duplicate names preserved.
     #[serde(default)]
     pub query: Vec<NormalizedQueryPair>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -126,8 +126,8 @@ pub struct NormalizedSetCookie {
     pub same_site: Option<String>,
 }
 
-/// Visão derivada de uma requisição lógica. Não é persistida por cima do
-/// documento v1; é calculada quando a UI precisa buscar/filtrar.
+/// Derived view of a logical request. It is not persisted on top of the v1
+/// document; it is computed when the UI needs to search/filter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedRequest {
@@ -139,7 +139,7 @@ pub struct NormalizedRequest {
     pub cookies: NormalizedCookies,
     #[serde(default)]
     pub set_cookies: Vec<NormalizedSetCookie>,
-    /// Marca inequívoca de que a ordem não é a do fio.
+    /// Unambiguous mark that the order is not the wire order.
     pub derived: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
@@ -160,7 +160,7 @@ pub fn normalize_request(request: &LogicalRequest) -> NormalizedRequest {
             .collect(),
         derived: true,
         notes: vec![
-            "visão derivada: agrupa por nome e não representa a ordem transmitida".to_string(),
+            "derived view: groups by name and does not represent the transmitted order".to_string(),
         ],
     }
 }
@@ -200,7 +200,7 @@ pub fn normalize_headers(view: &HeaderView) -> NormalizedHeaders {
     if view.order_state == crate::model::OrderState::SourceOrder {
         headers
             .notes
-            .push("original preserva a ordem da fonte; esta visão agrupa por nome".to_string());
+            .push("original preserves the source order; this view groups by name".to_string());
     }
     headers
 }
@@ -287,7 +287,7 @@ fn normalize_set_cookie(record: &SetCookieRecord) -> NormalizedSetCookie {
     }
 }
 
-/// Normalização de URL usada por busca e correlação. Não altera o original.
+/// URL normalization used by search and correlation. Does not change the original.
 pub fn canonical_url(url: &str) -> String {
     let mut value = url.split('#').next().unwrap_or(url).to_string();
     if let Some((scheme, rest)) = value.clone().split_once("://") {
@@ -381,7 +381,7 @@ mod tests {
         );
         let normalized = normalize_headers(&view);
         assert_eq!(normalized.order, "notWireOrder");
-        // Ordem de primeira aparição, não alfabética.
+        // Order of first appearance, not alphabetical.
         let names: Vec<&str> = normalized
             .entries
             .iter()
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(x_rep.occurrences, 2);
         assert_eq!(x_rep.display_name, "X-Rep");
         assert_eq!(normalized.total_occurrences(), 4);
-        // O original não foi tocado.
+        // The original was not touched.
         assert_eq!(view.len(), 4);
         assert_eq!(view.headers[0].name, "X-Rep");
     }

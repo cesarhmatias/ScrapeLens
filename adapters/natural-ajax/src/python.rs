@@ -1,16 +1,16 @@
-//! Codificador Python equivalente a `NaturalAjax::encode` (comprimentos em
-//! unidades UTF-16, todos os prefixos recalculados).
+//! Python encoder equivalent to `NaturalAjax::encode` (lengths in
+//! UTF-16 units, all prefixes recalculated).
 
-/// Nome da função definida em [`PYTHON_ENCODER`].
+/// Name of the function defined in [`PYTHON_ENCODER`].
 pub const PYTHON_FUNCTION: &str = "natural_ajax_encode";
 
-/// Nome da função de decodificação definida em [`PYTHON_ENCODER`]:
-/// `natural_ajax_decode(texto)` devolve as mesmas partes `(nome, papel, valor)`
-/// que o `decode` em Rust, sem offsets.
+/// Name of the decoding function defined in [`PYTHON_ENCODER`]:
+/// `natural_ajax_decode(text)` returns the same parts `(name, role, value)`
+/// as the `decode` in Rust, without offsets.
 pub const PYTHON_DECODER: &str = "natural_ajax_decode";
 
-/// Recebe a lista de partes `(nome, papel, valor)` em ordem, com papel
-/// `'S'` (estrutura), `'N'` (nome), `'V'` (valor) ou `'D'` (delta).
+/// Takes the list of parts `(name, role, value)` in order, with role
+/// `'S'` (structure), `'N'` (name), `'V'` (value) or `'D'` (delta).
 pub const PYTHON_ENCODER: &str = r#"
 def natural_jslen(value):
     return len(value.encode('utf-16-le', 'surrogatepass')) // 2
@@ -19,7 +19,7 @@ def natural_jslen(value):
 def natural_fit(number, width, what):
     text = str(number)
     if len(text) > width:
-        fail('protocolo Natural: %s excede %d unidades UTF-16' % (what, 10 ** width - 1))
+        fail('Natural protocol: %s exceeds %d UTF-16 units' % (what, 10 ** width - 1))
     return text.zfill(width)
 
 
@@ -33,40 +33,40 @@ def natural_ajax_encode(parts):
             i += 1
             continue
         if name != 'op' or role != 'S' or not value:
-            fail('protocolo Natural: estrutura inválida (esperava uma operação)')
+            fail('Natural protocol: invalid structure (expected an operation)')
         op, rest = value[0], value[1:]
         if op in 'iv':
             head = parts[i + 1:i + 9]
             if len(head) != 8:
-                fail('protocolo Natural: cabeçalho curto')
+                fail('Natural protocol: header too short')
             fields = [p[2] for p in head]
             widths = (2, 2, 2, 2, 2, 3, 5, 1)
-            out.append(op + ''.join(natural_fit(natural_jslen(f), w, 'campo do cabeçalho') for f, w in zip(fields, widths)) + ''.join(fields))
+            out.append(op + ''.join(natural_fit(natural_jslen(f), w, 'header field') for f, w in zip(fields, widths)) + ''.join(fields))
             i += 9
         elif op in 'pzqw':
             if i + 1 >= len(parts):
-                fail('protocolo Natural: valor ausente')
+                fail('Natural protocol: missing value')
             data = parts[i + 1][2]
             width = 10 if op in 'zw' else 5
-            out.append(op + natural_fit(natural_jslen(rest), 2, 'nome') + natural_fit(natural_jslen(data), width, 'valor') + rest + data)
+            out.append(op + natural_fit(natural_jslen(rest), 2, 'name') + natural_fit(natural_jslen(data), width, 'value') + rest + data)
             i += 2
         elif op == 's':
             if i + 1 >= len(parts):
-                fail('protocolo Natural: nome ausente')
+                fail('Natural protocol: missing name')
             data = parts[i + 1][2]
-            out.append('s' + natural_fit(natural_jslen(rest), 1, 'chave do dicionário') + natural_fit(natural_jslen(data), 2, 'nome do dicionário') + rest + data)
+            out.append('s' + natural_fit(natural_jslen(rest), 1, 'dictionary key') + natural_fit(natural_jslen(data), 2, 'dictionary name') + rest + data)
             i += 2
         elif op == 'b':
-            out.append('b' + natural_fit(natural_jslen(rest), 2, 'escopo') + rest)
+            out.append('b' + natural_fit(natural_jslen(rest), 2, 'scope') + rest)
             i += 1
         elif op == 'k':
-            out.append('k' + natural_fit(natural_jslen(rest), 2, 'nome removido') + rest)
+            out.append('k' + natural_fit(natural_jslen(rest), 2, 'removed name') + rest)
             i += 1
         elif op in 'cl':
             out.append(op)
             i += 1
         else:
-            fail('protocolo Natural: operação %r' % op)
+            fail('Natural protocol: operation %r' % op)
     return ''.join(out)
 
 
@@ -75,7 +75,7 @@ _NATURAL_HEAD = (('sid', 'V'), ('pid', 'V'), ('empty', 'S'), ('model', 'V'), ('d
 
 def natural_ajax_decode(text):
     if len(text.encode('utf-8', 'surrogatepass')) > 8 * 1024 * 1024:
-        fail('protocolo Natural: limite excedido: mensagem grande demais')
+        fail('Natural protocol: limit exceeded: message too large')
     if text.isascii():
         s = text
     else:
@@ -91,19 +91,19 @@ def natural_ajax_decode(text):
 
     def take(n):
         if n < 0 or state['pos'] + n > len(s):
-            fail('protocolo Natural: mensagem truncada')
+            fail('Natural protocol: message truncated')
         value = s[state['pos']:state['pos'] + n]
-        # Corte no meio de um par substituto: erro, como no Rust.
+        # Cut in the middle of a surrogate pair: error, as in Rust.
         for cut in (state['pos'], state['pos'] + n):
             if 0 < cut < len(s) and '\ud800' <= s[cut - 1] <= '\udbff' and '\udc00' <= s[cut] <= '\udfff':
-                fail('protocolo Natural: comprimento corta um par substituto UTF-16')
+                fail('Natural protocol: length cuts a UTF-16 surrogate pair')
         state['pos'] += n
         return value
 
     def number(n):
         v = take(n)
         if not (v.isascii() and v.isdigit()):
-            fail('protocolo Natural: comprimento inválido')
+            fail('Natural protocol: invalid length')
         return int(v)
 
     if s[:1] in ('i', 'v'):
@@ -116,7 +116,7 @@ def natural_ajax_decode(text):
     while state['pos'] < len(s):
         ops += 1
         if ops > 200000:
-            fail('protocolo Natural: limite excedido: operações demais')
+            fail('Natural protocol: limit exceeded: too many operations')
         op = take(1)
         if op == 'l':
             parts.append(('op', 'S', 'l'))
@@ -125,7 +125,7 @@ def natural_ajax_decode(text):
             key = uni(take(n))
             name = uni(take(m))
             if len(names) >= 10000 and key not in names:
-                fail('protocolo Natural: limite excedido: chaves de dicionário demais')
+                fail('Natural protocol: limit exceeded: too many dictionary keys')
             names[key] = name
             parts.append(('op', 'S', 's' + key))
             parts.append(('s.' + key, 'N', name))
@@ -136,22 +136,22 @@ def natural_ajax_decode(text):
             resolved = key
             if op in 'qw':
                 if key not in names:
-                    fail('protocolo Natural: referência de campo desconhecida')
+                    fail('Natural protocol: unknown field reference')
                 resolved = names[key]
             parts.append(('op', 'S', op + key))
             parts.append(('p.' + prefix + resolved, 'V', value))
         elif op == 'b':
             scope = uni(take(number(2)))
             if len(marks) >= 32:
-                fail('protocolo Natural: limite excedido: escopos aninhados demais')
+                fail('Natural protocol: limit exceeded: scopes nested too deeply')
             marks.append(len(prefix))
             prefix += scope + '.'
             if len(prefix) > 512:
-                fail('protocolo Natural: limite excedido: caminho de escopos longo demais')
+                fail('Natural protocol: limit exceeded: scope path too long')
             parts.append(('op', 'S', 'b' + scope))
         elif op == 'c':
             if not marks:
-                fail('protocolo Natural: escopo inválido')
+                fail('Natural protocol: invalid scope')
             prefix = prefix[:marks.pop()]
             parts.append(('op', 'S', 'c'))
         elif op == 'x':
@@ -159,8 +159,8 @@ def natural_ajax_decode(text):
         elif op == 'k':
             parts.append(('op', 'S', 'k' + uni(take(number(2)))))
         else:
-            fail('protocolo Natural: opcode não suportado: %r' % op)
+            fail('Natural protocol: unsupported opcode: %r' % op)
     if marks:
-        fail('protocolo Natural: escopo inválido')
+        fail('Natural protocol: invalid scope')
     return parts
 "#;

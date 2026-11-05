@@ -12,12 +12,12 @@ fn fixture(dir: &str, name: &str) -> SessionBundle {
         .join(dir)
         .join(name);
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    import_har(&bytes).expect("importa HAR").bundle
+    import_har(&bytes).expect("imports HAR").bundle
 }
 
 fn generate(bundle: &SessionBundle, id: &str) -> String {
     to_python(&bundle.session, bundle, id, &PrimingOptions::default())
-        .expect("gera o script")
+        .expect("generates the script")
         .text
 }
 
@@ -27,7 +27,7 @@ fn python(args: &[&str], file: &std::path::Path) -> std::process::Output {
         .args(args)
         .arg(file)
         .output()
-        .expect("python3 disponível")
+        .expect("python3 available")
 }
 
 /// `ast.parse` + list of the names called anywhere in the module.
@@ -48,7 +48,7 @@ fn ast_calls(script: &str, dir: &tempfile::TempDir) -> Vec<String> {
     let out = python(&["-c", AST_CHECK], &path);
     assert!(
         out.status.success(),
-        "ast.parse falhou: {}",
+        "ast.parse failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8_lossy(&out.stdout)
@@ -108,12 +108,12 @@ fn each_step_checks_its_own_response_before_the_next_request() {
     assert_eq!(script.matches("except SystemExit").count(), 1, "{script}");
     assert!(
         script.contains("trace_close(base)\n        raise"),
-        "o except do main precisa re-lançar:\n{script}"
+        "the except in main must re-raise:\n{script}"
     );
     assert!(!script.contains("erro = ''"), "{script}");
     assert!(script.contains("if value is not None and value.strip():"));
     // Every step that produces a control for another has the check in its own
-    // função, antes do `return resp`; nunca no laço do main.
+    // function, before `return resp`; never in the main loop.
     for chunk in script.split("\ndef step_").skip(1) {
         let name: String = chunk.chars().take_while(|c| c.is_ascii_digit()).collect();
         if name.is_empty() {
@@ -130,7 +130,7 @@ fn each_step_checks_its_own_response_before_the_next_request() {
         if let Some(expected_at) = body.find("step_expected(") {
             assert!(
                 status_at < expected_at && expected_at < error_at,
-                "checagem de campos fora de ordem no passo {name}:\n{body}"
+                "field check out of order in step {name}:\n{body}"
             );
         }
     }
@@ -141,7 +141,7 @@ fn each_step_checks_its_own_response_before_the_next_request() {
         .expect("no step checks the XML it produces");
     assert!(
         producer.contains("step_expected(resp, S,"),
-        "passo produtor sem checagem do XML:\n{producer}"
+        "producer step without a check of the XML:\n{producer}"
     );
 }
 
@@ -197,7 +197,7 @@ class S:
             return Resp(200, '<html><body>ok</body></html>')
         if mode == 'fillederror':
             return Resp(200, '<html><body><textarea name="STAMP">7</textarea>'
-                             '<textarea name="ERRORMESSAGE">Placa invalida</textarea></body></html>')
+                             '<textarea name="ERRORMESSAGE">Invalid plate</textarea></body></html>')
         return Resp(200, '<html><body><textarea name="STAMP">7</textarea></body></html>')
 P = {n: d for n, d, _ in mod['PARAMS']}
 try:
@@ -227,24 +227,24 @@ fn each_step_stops_on_bad_response_before_the_next_request() {
 
     // Status outside 2xx/3xx: fails in the step itself, without requesting the next one.
     let stderr = run("http403", "1");
-    assert!(stderr.contains("priming: passo 1: HTTP 403"), "{stderr}");
-    assert!(stderr.contains("CALLS=1"), "pediu depois do erro: {stderr}");
+    assert!(stderr.contains("priming: step 1: HTTP 403"), "{stderr}");
+    assert!(stderr.contains("CALLS=1"), "requested after the error: {stderr}");
 
     // Response without the control that the step hands to the following ones.
     let stderr = run("nocontrols", "2");
     assert!(
-        stderr.contains("priming: passo 2: resposta sem STAMP"),
+        stderr.contains("priming: step 2: response without STAMP"),
         "{stderr}"
     );
-    assert!(stderr.contains("CALLS=1"), "pediu depois do erro: {stderr}");
+    assert!(stderr.contains("CALLS=1"), "requested after the error: {stderr}");
 
     // ERRORMESSAGE filled in with HTTP 200: application error, at the step.
     let stderr = run("fillederror", "2");
     assert!(
-        stderr.contains("priming: a aplicação respondeu com ERRORMESSAGE no passo 2"),
+        stderr.contains("priming: the application responded with ERRORMESSAGE in step 2"),
         "{stderr}"
     );
-    assert!(stderr.contains("CALLS=1"), "pediu depois do erro: {stderr}");
+    assert!(stderr.contains("CALLS=1"), "requested after the error: {stderr}");
 }
 
 #[test]
@@ -265,12 +265,12 @@ class Resp:
         self.content = text.encode()
         self.headers = {}
 try:
-    mod['step_error'](Resp('<html><body>sem erro</body></html>'), 9)
+    mod['step_error'](Resp('<html><body>no error</body></html>'), 9)
     sys.stdout.write('ABSENT-OK\n')
 except SystemExit as exc:
     sys.stdout.write('ABSENT-FAIL %s\n' % exc)
 try:
-    mod['step_error'](Resp('<html><body><textarea name="ERRORMESSAGE">falhou</textarea></body></html>'), 9)
+    mod['step_error'](Resp('<html><body><textarea name="ERRORMESSAGE">failed</textarea></body></html>'), 9)
     sys.stdout.write('FILLED-OK\n')
 except SystemExit as exc:
     sys.stdout.write('FILLED-FAIL %s\n' % exc)
@@ -279,11 +279,11 @@ except SystemExit as exc:
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("ABSENT-OK"),
-        "ausência de ERRORMESSAGE virou erro: {stdout}"
+        "absence of ERRORMESSAGE became an error: {stdout}"
     );
     assert!(
         stdout.contains("FILLED-FAIL") && stdout.contains("ERRORMESSAGE"),
-        "ERRORMESSAGE preenchido não falhou: {stdout}"
+        "filled ERRORMESSAGE did not fail: {stdout}"
     );
 }
 
@@ -311,15 +311,15 @@ except SystemExit as exc:
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("priming:"),
-        "mensagem sem prefixo:\n{stderr}"
+        "message without prefix:\n{stderr}"
     );
     assert!(
-        stderr.contains("fora de latin-1"),
-        "mensagem deveria apontar o header fora de latin-1:\n{stderr}"
+        stderr.contains("outside latin-1"),
+        "message should point to the header outside latin-1:\n{stderr}"
     );
     assert!(
         !stderr.contains("UnicodeEncodeError"),
-        "o erro cru não pode vazar:\n{stderr}"
+        "the raw error must not leak:\n{stderr}"
     );
 }
 
@@ -336,35 +336,35 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
     assert!(!script.contains("jquery-ui"));
     assert!(!script.contains("CIS_V1_SYNTH.js"));
     // Header.
-    assert!(script.contains("Reprodução semântica"));
-    assert!(script.contains("NÃO são garantidas"));
-    assert!(script.contains("Não executado pelo ScrapeLens"));
+    assert!(script.contains("Semantic reproduction"));
+    assert!(script.contains("are NOT guaranteed"));
+    assert!(script.contains("Not executed by ScrapeLens"));
     assert!(script.contains("--confirmar"));
     // STAMP from the HTML control; delta from the textarea fragment (context).
     assert!(script.contains("('STAMP', html_control(R["));
     assert!(script.contains("html_control(R['har-0024'], 'XML', 0") || script.contains("'XML', 0"));
     assert!(
         script.contains("checked(ctx_extract(html_control("),
-        "delta pelo trecho da textarea"
+        "delta by the textarea fragment"
     );
     // SESSIONID: extracted prefix + partial-composition comment.
-    assert!(script.contains("montado no cliente: complete aqui"));
+    assert!(script.contains("assembled on the client: complete here"));
     assert!(script.contains("P['sessionid_cliente']"));
     // F1: the part built on the client is required, with no captured value.
     assert!(
-        script.contains("('sessionid_cliente', None, 'montado no cliente')"),
-        "sufixo de composição parcial não pode ter padrão capturado"
+        script.contains("('sessionid_cliente', None, 'assembled on client')"),
+        "partial-composition suffix must not have a captured default"
     );
     // Plate and CPF: required parameters, without the captured value.
     assert!(script.contains("P['placa']"));
     assert!(script.contains("('placa', None,"));
     assert!(
         !script.contains("TST0T10"),
-        "placa capturada não pode ficar no script"
+        "captured plate must not stay in the script"
     );
     assert!(
         !script.contains("00000000191"),
-        "CPF capturado não pode ficar no script"
+        "captured CPF must not stay in the script"
     );
     // Captured dynamic values do not appear as literals.
     assert!(!script.contains("'4105'"), "captured STAMP");
@@ -372,20 +372,20 @@ fn real_shape_script_has_app_steps_extractions_and_parameters() {
     assert!(!script.contains("CSAN00011"), "captured session prefix");
     assert!(
         !script.contains("SYNTHPID000000000000000000000011"),
-        "processId capturado"
+        "captured processId"
     );
     // F1 refined: navigation of the chain itself is a structural constant, not session data
     // — `op=S37` (step query) and `page=NatLogon` (query of a
     // chain page) may have the captured value as default.
     assert!(
-        script.contains("('op', 'S37', 'constante estrutural')"),
-        "op é navegação do fluxo e deveria ser constante estrutural:\n{script}"
+        script.contains("('op', 'S37', 'structural constant')"),
+        "op is flow navigation and should be a structural constant:\n{script}"
     );
     assert!(
-        script.contains("('page', 'NatLogon', 'constante estrutural')"),
-        "page é navegação do fluxo e deveria ser constante estrutural:\n{script}"
+        script.contains("('page', 'NatLogon', 'structural constant')"),
+        "page is flow navigation and should be a structural constant:\n{script}"
     );
-    assert!(script.contains("constante estrutural (rota/navegação)"));
+    assert!(script.contains("structural constant (route/navigation)"));
 }
 
 /// Minimal HAR with `entries` (method, url, request body, response text).
@@ -447,19 +447,19 @@ fn second_round_target_extracts_stamp_from_the_chain_page() {
     let script = generate(&bundle, "har-0056");
     assert!(
         !script.contains("('stamp',"),
-        "STAMP de página virou parâmetro obrigatório:\n{script}"
+        "page STAMP became a required parameter:\n{script}"
     );
     assert!(
         !script.contains("('pageinitparam', None"),
-        "PAGEINITPARAM de página virou parâmetro obrigatório:\n{script}"
+        "page PAGEINITPARAM became a required parameter:\n{script}"
     );
     assert!(
         script.contains("html_control(R['har-0038'], 'STAMP', 0"),
-        "STAMP deveria ser extraído do controle da cscform da cadeia:\n{script}"
+        "STAMP should be extracted from the cscform control of the chain:\n{script}"
     );
-    assert!(script.contains("definido pelo controle da página"));
+    assert!(script.contains("defined by the page control"));
     // Only what belongs to the session/client remains required.
-    assert!(script.contains("('sessionid_cliente', None, 'montado no cliente')"));
+    assert!(script.contains("('sessionid_cliente', None, 'assembled on client')"));
     assert!(script.contains("('placa', None,"));
 }
 
@@ -489,11 +489,11 @@ fn page_control_and_literal_are_extracted_not_asked() {
     assert!(!script.contains("('pageinitparam',"), "{script}");
     assert!(
         script.contains("html_control(R['har-0001'], 'STAMP'"),
-        "STAMP deveria vir do controle da página:\n{script}"
+        "STAMP should come from the page control:\n{script}"
     );
     assert!(
         script.contains("ctx_extract(R['har-0001'].text"),
-        "PAGEINITPARAM deveria vir do literal da página:\n{script}"
+        "PAGEINITPARAM should come from the page literal:\n{script}"
     );
 }
 
@@ -517,8 +517,8 @@ fn value_without_origin_is_a_default_only_with_constancy_proof() {
     ]);
     let script = generate(&bundle, "har-0002");
     assert!(
-        script.contains("('mode', 'CONST_MODE', 'constante do protocolo')"),
-        "constância comprovada deveria permitir o padrão:\n{script}"
+        script.contains("('mode', 'CONST_MODE', 'protocol constant')"),
+        "proven constancy should allow the default:\n{script}"
     );
 
     // Single occurrence: required parameter, without the captured value.
@@ -538,12 +538,12 @@ fn value_without_origin_is_a_default_only_with_constancy_proof() {
     ]);
     let script = generate(&bundle, "har-0002");
     assert!(
-        script.contains("('mode', None, 'sem origem observada')"),
-        "valor sem prova de constância deve ser obrigatório:\n{script}"
+        script.contains("('mode', None, 'no observed origin')"),
+        "value without a proof of constancy must be required:\n{script}"
     );
     assert!(
         !script.contains("ONLY_ONCE_XYZ"),
-        "valor capturado não pode aparecer no script"
+        "captured value must not appear in the script"
     );
 }
 
@@ -573,19 +573,19 @@ fn navigation_values_are_structural_constants() {
     ]);
     let script = generate(&bundle, "har-0003");
     for expected in [
-        "('op', 'S37', 'constante estrutural')",
-        "('page', 'NatLogon', 'constante estrutural')",
-        "('page_2', 'SIM1000X', 'constante estrutural')",
+        "('op', 'S37', 'structural constant')",
+        "('page', 'NatLogon', 'structural constant')",
+        "('page_2', 'SIM1000X', 'structural constant')",
     ] {
         assert!(
             script.contains(expected),
-            "{expected} deveria ser constante estrutural:\n{script}"
+            "{expected} should be a structural constant:\n{script}"
         );
     }
     // Outside navigation, without proof of constancy, it stays required.
     assert!(
-        script.contains("('code', None, 'sem origem observada')"),
-        "query que não é de navegação não pode ganhar padrão:\n{script}"
+        script.contains("('code', None, 'no observed origin')"),
+        "non-navigation query must not get a default:\n{script}"
     );
 }
 
@@ -602,11 +602,11 @@ fn structural_constant_never_covers_sensitive_or_business_values() {
     let script = generate(&bundle, "har-0001");
     assert!(
         script.contains("('placa', None,"),
-        "placa não pode virar padrão:\n{script}"
+        "plate must not become a default:\n{script}"
     );
     assert!(
         !script.contains("TST0T10"),
-        "placa capturada não pode aparecer no script"
+        "captured plate must not appear in the script"
     );
 }
 
@@ -617,7 +617,7 @@ fn stamp_without_producer_is_required_and_never_a_captured_literal() {
             "GET",
             "https://mini.example.test/page",
             None,
-            Some("<html>sem STAMP nesta página</html>"),
+            Some("<html>no STAMP on this page</html>"),
         ),
         (
             "POST",
@@ -628,12 +628,12 @@ fn stamp_without_producer_is_required_and_never_a_captured_literal() {
     ]);
     let script = generate(&bundle, "har-0002");
     assert!(
-        script.contains("('stamp', None, 'sem origem observada')"),
-        "STAMP sem produtor tem de ser obrigatório:\n{script}"
+        script.contains("('stamp', None, 'no observed origin')"),
+        "STAMP without producer must be required:\n{script}"
     );
     assert!(
         !script.contains("STAMP_UNIQUE_42"),
-        "STAMP capturado não pode ficar em código nem em comentário:\n{script}"
+        "captured STAMP must not stay in code or in a comment:\n{script}"
     );
     for line in script.lines() {
         assert!(!line.contains("STAMP_UNIQUE_42"), "{line}");
@@ -654,16 +654,16 @@ fn partial_composition_suffix_is_required_without_a_captured_default() {
     ]);
     let script = generate(&bundle, "har-0002");
     assert!(
-        script.contains("montado no cliente"),
-        "composição parcial deveria ser reconhecida:\n{script}"
+        script.contains("assembled on the client"),
+        "partial composition should be recognized:\n{script}"
     );
     assert!(
-        script.contains("('sessionid_cliente', None, 'montado no cliente')"),
-        "sufixo montado no cliente deve ser obrigatório:\n{script}"
+        script.contains("('sessionid_cliente', None, 'assembled on client')"),
+        "suffix assembled on the client must be required:\n{script}"
     );
     assert!(
         !script.contains("999999999999"),
-        "sufixo capturado não pode ficar em código nem em comentário:\n{script}"
+        "captured suffix must not stay in code or in a comment:\n{script}"
     );
 }
 
@@ -697,14 +697,14 @@ fn incomplete_chain_is_refused_and_allow_incomplete_emits_explicit_fail() {
         "har-0002",
         &PrimingOptions::default(),
     )
-    .expect_err("cadeia incompleta deve ser recusada");
+    .expect_err("incomplete chain must be refused");
     let message = err.to_string();
-    assert!(message.contains("cadeia incompleta"), "{message}");
+    assert!(message.contains("incomplete chain"), "{message}");
     assert!(message.contains("har-0002 [field]"), "{message}");
     assert!(message.contains("har-0001 (unavailable)"), "{message}");
-    assert!(message.contains("har-0003"), "sugestão ausente: {message}");
+    assert!(message.contains("har-0003"), "suggestion missing: {message}");
     assert!(
-        message.contains("Nenhum valor capturado é usado no lugar"),
+        message.contains("No captured value is used in their place"),
         "{message}"
     );
     assert!(message.contains("--allow-incomplete"), "{message}");
@@ -714,26 +714,26 @@ fn incomplete_chain_is_refused_and_allow_incomplete_emits_explicit_fail() {
         ..PrimingOptions::default()
     };
     let output = to_python(&bundle.session, &bundle, "har-0002", &opts)
-        .expect("--allow-incomplete gera o script");
+        .expect("--allow-incomplete generates the script");
     let script = output.text;
     assert!(
-        script.contains("fail('cadeia incompleta: field sem produtor com corpo observ"),
-        "passo incompleto precisa falhar explicitamente:\n{script}"
+        script.contains("fail('incomplete chain: field has no producer with an observable body"),
+        "incomplete step must fail explicitly:\n{script}"
     );
     assert!(
         !script.contains("UNIQUE_B_222"),
-        "valor capturado não substitui a origem ausente:\n{script}"
+        "captured value does not replace the missing origin:\n{script}"
     );
     assert!(
-        script.contains("('field', None, 'sem origem observada')"),
-        "parâmetro continua obrigatório, sem padrão:\n{script}"
+        script.contains("('field', None, 'no observed origin')"),
+        "parameter stays required, with no default:\n{script}"
     );
     assert!(
         output
             .warnings
             .iter()
             .any(|w| w.code == "priming.incomplete_chain"),
-        "aviso da cadeia incompleta ausente"
+        "incomplete chain warning missing"
     );
     let dir = tempfile::tempdir().unwrap();
     ast_calls(&script, &dir);
@@ -754,10 +754,10 @@ fn without_confirm_only_prints_plan_and_exits() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(stdout.contains("Plano de priming"), "{stdout}");
-    assert!(stdout.contains("(altera estado)"));
-    assert!(stdout.contains("Nada foi enviado"));
-    assert!(!stdout.contains("HTTP 200"), "nenhuma requisição enviada");
+    assert!(stdout.contains("Priming plan"), "{stdout}");
+    assert!(stdout.contains("(changes state)"));
+    assert!(stdout.contains("Nothing was sent"));
+    assert!(!stdout.contains("HTTP 200"), "no request sent");
     // With --confirmar and without required parameters: refuses before sending.
     let out = Command::new("python3")
         .args(["-I"])
@@ -766,7 +766,7 @@ fn without_confirm_only_prints_plan_and_exits() {
         .output()
         .unwrap();
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("parâmetros obrigatórios ausentes"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("required parameters missing"));
 }
 
 #[test]
@@ -963,7 +963,7 @@ fn hostile_names_and_values_stay_inside_literals() {
     for call in &calls {
         assert!(
             allowed.contains(&call.as_str()),
-            "chamada inesperada no script gerado: {call}\n{script}"
+            "unexpected call in the generated script: {call}\n{script}"
         );
     }
     // The payload may only exist in comments (inert, made by `comment`)
@@ -973,8 +973,8 @@ fn hostile_names_and_values_stay_inside_literals() {
         .filter(|l| !l.trim_start().starts_with('#'))
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(!code.contains("__import__('os')"), "payload cru no código");
-    assert!(!script.contains('\u{202e}'), "bidi cru no código");
+    assert!(!code.contains("__import__('os')"), "raw payload in the code");
+    assert!(!script.contains('\u{202e}'), "raw bidi in the code");
     assert!(!script.contains('\u{0}'));
     // A hostile sentinel does not become an instruction: ast only sees constants.
     let probe = r#"
@@ -993,7 +993,7 @@ print(len(bad))
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(String::from_utf8_lossy(&out.stdout).contains("Nada foi enviado"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Nothing was sent"));
 }
 
 #[test]
@@ -1026,7 +1026,7 @@ class S:
     def __init__(self):
         self.sent = []
     def request(self, method, url, **kw):
-        assert kw.get('allow_redirects') is False, 'allow_redirects precisa ser False'
+        assert kw.get('allow_redirects') is False, 'allow_redirects must be False'
         self.sent.append((method, url))
         if len(self.sent) == 1:
             return Resp(status, location)
@@ -1057,17 +1057,17 @@ fn redirects_never_leave_the_base_origin() {
             .unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
-            stdout.contains("FAIL") && stdout.contains("redirect para outro origin"),
-            "{status}: redirect para outro origin deveria falhar: {stdout}{}",
+            stdout.contains("FAIL") && stdout.contains("redirect to another origin"),
+            "{status}: redirect to another origin should fail: {stdout}{}",
             String::from_utf8_lossy(&out.stderr)
         );
         assert!(
             !stdout.contains("evil.invalid') ]") && stdout.matches("http://").count() <= 2,
-            "{status}: nada pode ser enviado ao outro origin: {stdout}"
+            "{status}: nothing may be sent to the other origin: {stdout}"
         );
         assert!(
             !stdout.contains("('GET', 'http://evil") && !stdout.contains("('POST', 'http://evil"),
-            "{status}: enviou ao outro origin: {stdout}"
+            "{status}: sent to the other origin: {stdout}"
         );
         let out = Command::new("python3")
             .arg("-I")
@@ -1079,7 +1079,7 @@ fn redirects_never_leave_the_base_origin() {
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
             stdout.contains("OK") && stdout.contains("http://127.0.0.1:9/destino"),
-            "{status}: mesmo origin deveria seguir: {stdout}{}",
+            "{status}: same origin should be followed: {stdout}{}",
             String::from_utf8_lossy(&out.stderr)
         );
     }
@@ -1122,7 +1122,7 @@ mod = runpy.run_path(sys.argv[1])
 for text, before, after in [('Page' * 40000, 'Page', 'ZZ'), ('sId = "' * 40000, 'sId = "', '"X')]:
     t = time.time()
     try:
-        mod['ctx_extract'](text, before, after, 'teste')
+        mod['ctx_extract'](text, before, after, 'test')
     except SystemExit:
         pass
     print('%.3f' % (time.time() - t))
@@ -1184,18 +1184,18 @@ fn path_params_and_pii_names_are_data_not_literals() {
         "1.2.3",
         "99887",
     ] {
-        assert!(!script.contains(leaked), "{leaked} vazou:\n{script}");
+        assert!(!script.contains(leaked), "{leaked} leaked:\n{script}");
     }
     assert!(script.contains("jsessionid"), "{script}");
     assert!(script.contains("('path_jsessionid', None,"), "{script}");
     for name in ["nome", "email", "callback", "v", "rg"] {
         assert!(
             script.contains(&format!("('{name}', None,")),
-            "{name} deveria ser obrigatório:\n{script}"
+            "{name} should be required:\n{script}"
         );
     }
     // Structural stays default; `target` is not sensitive for containing `rg`.
-    assert!(script.contains("('op', 'S37', 'constante estrutural')"));
+    assert!(script.contains("('op', 'S37', 'structural constant')"));
     let dir = tempfile::tempdir().unwrap();
     ast_calls(&script, &dir);
 }
@@ -1272,16 +1272,16 @@ fn credential_headers_are_never_literal_and_referer_is_runtime_only() {
     let bundle = custom_bundle(&[("GET", "https://h.example.test/alvo", &headers, None)]);
     let script = generate(&bundle, "har-0001");
     for (name, value) in secrets {
-        assert!(!script.contains(value), "{name} vazou:\n{script}");
+        assert!(!script.contains(value), "{name} leaked:\n{script}");
     }
-    assert!(!script.contains("00000000191"), "query do Referer vazou");
+    assert!(!script.contains("00000000191"), "Referer query leaked");
     assert!(
         !script.contains("'Referer'"),
-        "sem passo anterior, Referer é omitido"
+        "without an earlier step, Referer is omitted"
     );
     assert!(
         script.contains("Mozilla/5.0 teste"),
-        "User-Agent segue literal"
+        "User-Agent stays literal"
     );
     assert!(script.contains("('x_api_key', None,"), "{script}");
     assert!(script.contains("('x_jwt', None,"), "{script}");
@@ -1325,7 +1325,7 @@ fn json_body_is_decomposed_and_sensitive_fields_are_required() {
         "4111111111111111",
         "Rua Sintetica",
     ] {
-        assert!(!script.contains(leaked), "{leaked} vazou:\n{script}");
+        assert!(!script.contains(leaked), "{leaked} leaked:\n{script}");
     }
     assert!(script.contains("json.dumps("), "{script}");
     for name in ["nome", "cpf", "cartao", "end_rua"] {
@@ -1353,15 +1353,15 @@ fn non_form_non_json_body_is_refused_unless_allowed() {
         "har-0001",
         &PrimingOptions::default(),
     )
-    .expect_err("recusa por padrão");
+    .expect_err("refused by default");
     assert!(err.to_string().contains("--allow-literal-body"), "{err}");
     let opts = PrimingOptions {
         allow_literal_body: true,
         ..PrimingOptions::default()
     };
-    let out = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("com a opção");
+    let out = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("with the option");
     for leaked in ["Fulano Teste", "00000000191", "a@b.test"] {
-        assert!(!out.text.contains(leaked), "{leaked} vazou:\n{}", out.text);
+        assert!(!out.text.contains(leaked), "{leaked} leaked:\n{}", out.text);
     }
     assert!(out.text.contains("livre"), "the rest stays frozen");
     assert!(out
@@ -1384,9 +1384,9 @@ fn dynamic_ids_are_never_structural_constants() {
         "12345",
         "aB3dE9xK",
     ] {
-        assert!(!script.contains(leaked), "{leaked} virou padrão:\n{script}");
+        assert!(!script.contains(leaked), "{leaked} became a default:\n{script}");
     }
-    assert!(script.contains("('op', 'S37', 'constante estrutural')"));
+    assert!(script.contains("('op', 'S37', 'structural constant')"));
     assert!(script.contains("('sess_ref', None,"), "{script}");
 }
 
@@ -1411,7 +1411,7 @@ fn json_under_a_form_content_type_is_never_literal() {
     )]);
     let script = generate(&bundle, "har-0001");
     for leaked in ["Fulano Teste", "00000000191", "4111111111111111"] {
-        assert!(!script.contains(leaked), "{leaked} vazou:\n{script}");
+        assert!(!script.contains(leaked), "{leaked} leaked:\n{script}");
     }
     assert!(script.contains("json.dumps("), "{script}");
     assert!(script.contains("('cpf', None,"));
@@ -1430,8 +1430,8 @@ fn json_under_a_form_content_type_is_never_literal() {
         "har-0001",
         &PrimingOptions::default(),
     )
-    .expect_err("recusa");
-    assert!(err.to_string().contains("sem '='"), "{err}");
+    .expect_err("refused");
+    assert!(err.to_string().contains("without '='"), "{err}");
 }
 
 #[test]
@@ -1455,7 +1455,7 @@ fn auth_schemes_by_value_and_extra_names_are_never_literal() {
             assert!(script.contains(value));
         } else {
             let secret = value.rsplit(' ').next().unwrap();
-            assert!(!script.contains(secret), "{name} vazou:\n{script}");
+            assert!(!script.contains(secret), "{name} leaked:\n{script}");
         }
     }
     assert!(!script.contains("203.0.113.9") && !script.contains("'x-forwarded-for'"));
@@ -1507,7 +1507,7 @@ const PII_VALUES: [&str; 6] = [
 
 fn assert_no_pii(script: &str, label: &str) {
     for value in PII_VALUES {
-        assert!(!script.contains(value), "{label}: {value} vazou:\n{script}");
+        assert!(!script.contains(value), "{label}: {value} leaked:\n{script}");
     }
 }
 
@@ -1526,14 +1526,14 @@ fn json_inside_field_values_is_decomposed_recursively() {
     let double = url_encode(&encoded);
     let nested = serde_json::json!({"payload": PII_JSON, "x": 1}).to_string();
     for (label, body) in [
-        ("data=<json> codificado", format!("data={encoded}")),
-        ("data=<json> cru", format!("data={PII_JSON}")),
+        ("data=<json> encoded", format!("data={encoded}")),
+        ("data=<json> raw", format!("data={PII_JSON}")),
         (
-            "payload + outros",
+            "payload + others",
             format!("payload={encoded}&x=1&STAMP=INIT"),
         ),
         ("a=1&b=<json>", format!("a=1&b={encoded}")),
-        ("codificado duas vezes", format!("data={double}")),
+        ("encoded twice", format!("data={double}")),
     ] {
         let script = generate(&form_bundle(&body), "har-0001");
         assert_no_pii(&script, label);
@@ -1555,7 +1555,7 @@ fn json_inside_field_values_is_decomposed_recursively() {
 fn partial_json_and_free_text_with_pii_are_refused_or_parameterised() {
     let partial = format!("data={}", url_encode(&PII_JSON[..90]));
     let free = "Maria Silva CPF 12345678909 tel 83999";
-    for (label, body) in [("JSON parcial", partial.as_str()), ("campo sem =", free)] {
+    for (label, body) in [("partial JSON", partial.as_str()), ("field without =", free)] {
         match to_python(
             &form_bundle(body).session,
             &form_bundle(body),
@@ -1565,7 +1565,7 @@ fn partial_json_and_free_text_with_pii_are_refused_or_parameterised() {
             Ok(out) => assert_no_pii(&out.text, label),
             Err(e) => assert!(
                 !e.to_string().contains("12345678909") && !e.to_string().contains("Maria"),
-                "{label}: a mensagem não pode trazer o valor: {e}"
+                "{label}: the message must not carry the value: {e}"
             ),
         }
     }
@@ -1577,9 +1577,9 @@ fn partial_json_and_free_text_with_pii_are_refused_or_parameterised() {
         "har-0001",
         &PrimingOptions::default(),
     )
-    .expect_err("recusa");
+    .expect_err("refused");
     let message = err.to_string();
-    assert!(message.contains("dado pessoal"), "{message}");
+    assert!(message.contains("personal data"), "{message}");
     assert!(!message.contains("12345678909"));
 }
 
@@ -1612,7 +1612,7 @@ fn header_and_query_literals_with_pii_become_required_parameters() {
     let bundle = custom_bundle(&[(
         "GET",
         "https://h.example.test/api?contato=a%40b.test&cartao_x=4111111111111111&q=1",
-        &[("X-Note", "fale com a@b.test")],
+        &[("X-Note", "contact a@b.test")],
         None,
     )]);
     let script = generate(&bundle, "har-0001");
@@ -1636,14 +1636,14 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
     // (label, value): plate with hyphen, Mercosul with hyphen, chassis, +55,
     // card series 2 and 19-digit (Luhn), full width.
     let values = [
-        ("placa hífen", "ABC-1234"),
-        ("placa Mercosul hífen", "ABC-1D23"),
-        ("chassi", "9BWZZZ377VT004251"),
-        ("+55 pontuado", "+55 83 99999-8888"),
-        ("55 cru", "5583999998888"),
-        ("cartão série 2", "2223000048400011"),
-        ("cartão 19", "6221260000000000001"),
-        ("largura total", "１２３４５６７８９０９"),
+        ("plate hyphen", "ABC-1234"),
+        ("Mercosul plate hyphen", "ABC-1D23"),
+        ("chassis", "9BWZZZ377VT004251"),
+        ("+55 punctuated", "+55 83 99999-8888"),
+        ("55 raw", "5583999998888"),
+        ("card series 2", "2223000048400011"),
+        ("card 19", "6221260000000000001"),
+        ("full width", "１２３４５６７８９０９"),
     ];
     for (label, value) in values {
         let encoded = url_encode(value);
@@ -1657,11 +1657,11 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
         let script = generate(&bundle, "har-0001");
         assert!(
             !script.contains(value) && !script.contains(&encoded),
-            "{label} em query:\n{script}"
+            "{label} in query:\n{script}"
         );
         assert!(
             script.contains("('ref', None,"),
-            "{label}: query deve ser obrigatória"
+            "{label}: query must be required"
         );
         // Header with any name.
         let bundle = custom_bundle(&[(
@@ -1682,7 +1682,7 @@ fn business_pii_formats_never_reach_literals_or_the_plan() {
         let script = generate(&bundle, "har-0001");
         assert!(
             !script.contains(value) && !script.contains(&encoded),
-            "{label} no caminho:\n{script}"
+            "{label} in path:\n{script}"
         );
         assert!(script.contains("path_segmento_2"), "{label}:\n{script}");
         assert!(script.contains("/fim"));
@@ -1777,7 +1777,7 @@ fn claimed_field_is_built_by_parts_with_the_adapter_encoder() {
     let mut opts = PrimingOptions::default();
     opts.flow.adapters = AdapterRegistry::new().with(std::sync::Arc::new(KvAdapter));
     // Without a Python encoder, falls back to fragment handling.
-    let plain = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("gera");
+    let plain = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("generates");
     assert!(!plain.text.contains("kv_encode"));
     opts.adapter_encoders.push(AdapterEncoder {
         adapter_id: "kv".into(),
@@ -1785,7 +1785,7 @@ fn claimed_field_is_built_by_parts_with_the_adapter_encoder() {
         decoder: String::new(),
         source: "def kv_encode(parts):\n    return 'kv:' + ';'.join(\n        n[2:] + '=' + v for n, r, v in parts if n != 'op')\n".into(),
     });
-    let out = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("gera");
+    let out = to_python(&bundle.session, &bundle, "har-0001", &opts).expect("generates");
     assert!(
         out.text
             .contains("kv_encode([('op', 'S', 'kv:'), ('p.v_placa', 'V', P['placa'])"),
@@ -1795,7 +1795,7 @@ fn claimed_field_is_built_by_parts_with_the_adapter_encoder() {
     assert!(out.text.contains("def kv_encode"));
     assert!(
         !out.text.contains("TST0T10"),
-        "placa capturada não pode ficar"
+        "captured plate must not stay"
     );
     let dir = tempfile::tempdir().unwrap();
     ast_calls(&out.text, &dir);
@@ -1831,9 +1831,9 @@ class Session:
     def request(self, method, url, **kw):
         kind = __import__('os').environ.get('TRACE_RAISE')
         if kind == 'ConnectionError':
-            raise ConnectionError('conexão fechada pelo servidor')
+            raise ConnectionError('connection closed by the server')
         if kind == 'Timeout':
-            raise TimeoutError('tempo esgotado')
+            raise TimeoutError('timed out')
         data = kw.get('data')
         return Resp(Req(method, url, data), int(status))
 fake = types.ModuleType('requests')
@@ -1885,7 +1885,7 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stdout.contains("RC 0"), "{stdout}{stderr}");
     assert!(
-        stderr.contains("o trace contém dados da sua sessão; não compartilhe sem sanitizar"),
+        stderr.contains("the trace contains data from your session; do not share it without sanitizing"),
         "{stderr}"
     );
     let mode = std::fs::metadata(&trace).unwrap().permissions().mode() & 0o777;
@@ -1905,23 +1905,23 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace:"));
     assert_eq!(std::fs::read(&trace).unwrap(), before);
     // Symbolic link (existing and dangling): refuses and does not write to the target.
-    let target = dir.path().join("alvo.txt");
-    std::fs::write(&target, "intacto").unwrap();
+    let target = dir.path().join("target.txt");
+    std::fs::write(&target, "intact").unwrap();
     let link = dir.path().join("link.json");
     symlink(&target, &link).unwrap();
     let out = trace_run(&script_path, 200, &["--trace", link.to_str().unwrap()]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace:"));
-    assert_eq!(std::fs::read_to_string(&target).unwrap(), "intacto");
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "intact");
     let dangling = dir.path().join("pendente.json");
-    symlink(dir.path().join("nao-existe.json"), &dangling).unwrap();
+    symlink(dir.path().join("does-not-exist.json"), &dangling).unwrap();
     let out = trace_run(&script_path, 200, &["--trace", dangling.to_str().unwrap()]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace:"));
-    assert!(!dir.path().join("nao-existe.json").exists());
+    assert!(!dir.path().join("does-not-exist.json").exists());
 
     // Step failure: the trace is written up to the bad step, with the failure recorded.
-    let failing = dir.path().join("falha.json");
+    let failing = dir.path().join("failure.json");
     let out = trace_run(&script_path, 403, &["--trace", failing.to_str().unwrap()]);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: passo 1: HTTP 403"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: step 1: HTTP 403"));
     let doc: serde_json::Value = serde_json::from_slice(&std::fs::read(&failing).unwrap()).unwrap();
     assert_eq!(doc["steps"][0]["checks"][0]["ok"], false);
     assert!(doc["steps"][0]["checks"][0]["detail"]
@@ -1958,13 +1958,13 @@ fn trace_file_has_the_schema_mode_0600_and_refuses_existing_files_and_symlinks()
     )]);
     let post_script = dir.path().join("post.py");
     std::fs::write(&post_script, generate(&post, "har-0001")).unwrap();
-    let plan_trace = dir.path().join("plano.json");
+    let plan_trace = dir.path().join("plan.json");
     let out = trace_run(
         &post_script,
         200,
         &["--trace", plan_trace.to_str().unwrap()],
     );
-    assert!(String::from_utf8_lossy(&out.stdout).contains("Nada foi enviado"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Nothing was sent"));
     assert!(!plan_trace.exists());
 }
 
@@ -2084,7 +2084,7 @@ fn transport_errors_leave_a_valid_incomplete_trace_and_never_zero_bytes() {
             .unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
-            stdout.contains("RC priming: passo 1: erro de transporte"),
+            stdout.contains("RC priming: step 1: transport error"),
             "{kind}: {stdout}"
         );
         let raw = std::fs::read(&trace).unwrap();
@@ -2133,7 +2133,7 @@ fn invalid_arguments_fail_before_any_request_and_complete_is_true_on_success() {
     std::fs::write(&script, generate(&bundle, "har-0001")).unwrap();
     // --trace empty is an error; nothing is requested.
     let out = trace_run(&script, 200, &["--trace", ""]);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace exige"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --trace requires"));
     // invalid --base-url and --timeout out of range.
     let out = trace_run(&script, 200, &["--base-url", "ftp://x"]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("RC priming: --base-url"));
@@ -2148,7 +2148,7 @@ fn invalid_arguments_fail_before_any_request_and_complete_is_true_on_success() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("RC priming: argumento --trace tem bytes inválidos"),
+        stdout.contains("RC priming: argument --trace has invalid bytes"),
         "{stdout}{}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -2178,7 +2178,7 @@ fn real_sockets_that_close_or_stay_silent_leave_a_valid_incomplete_trace() {
     use std::io::Read;
     use std::net::TcpListener;
     let Some(python) = python_with_requests() else {
-        return; // sem `requests` instalado, o teste com fakes acima cobre a lógica
+        return; // without `requests` installed, the fake-based test above covers the logic
     };
     for mode in ["close", "silent"] {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -2207,7 +2207,7 @@ fn real_sockets_that_close_or_stay_silent_leave_a_valid_incomplete_trace() {
             .unwrap();
         assert!(!out.status.success(), "{mode}");
         assert!(
-            String::from_utf8_lossy(&out.stderr).contains("priming: passo 1: erro de transporte"),
+            String::from_utf8_lossy(&out.stderr).contains("priming: step 1: transport error"),
             "{mode}: {}",
             String::from_utf8_lossy(&out.stderr)
         );
@@ -2243,7 +2243,7 @@ fn plan_hash_is_computed_at_generation_by_the_core_and_the_script_has_no_hashlib
     let script = generate(&bundle, "har-0001");
     assert!(
         !script.contains("hashlib"),
-        "o script não precisa de hashlib"
+        "the script does not need hashlib"
     );
     let literal = script
         .lines()
@@ -2313,7 +2313,7 @@ fn overriding_an_optional_parameter_changes_neither_plan_hash_nor_plan_parameter
         serde_json::from_slice::<serde_json::Value>(&std::fs::read(&trace).unwrap()).unwrap()
     };
     let base = run(&[], "a.json");
-    let overridden = run(&["--op", "OUTRO"], "b.json");
+    let overridden = run(&["--op", "OTHER"], "b.json");
     assert_eq!(base["plan"], overridden["plan"]);
     assert_eq!(base["plan"]["parameters"], serde_json::json!(["placa"]));
     // Top-level `parameters` still has all the used ones (here, `op` is an extra).

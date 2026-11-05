@@ -1,13 +1,13 @@
-//! Diff de duas requisições lógicas.
+//! Diff of two logical requests.
 //!
-//! Regras:
-//! - cada ocorrência de header é tratada separadamente (duplicatas nunca são
-//!   fundidas);
-//! - a ordem original é usada; nada é ordenado alfabeticamente;
-//! - pares iguais que mudaram de posição viram `reordered`, não
-//!   adicionado+removido;
-//! - a visão normalizada é um recurso separado ([`crate::normalize`]) e nunca
-//!   substitui a original.
+//! Rules:
+//! - each header occurrence is treated separately (duplicates are never
+//!   merged);
+//! - the original order is used; nothing is sorted alphabetically;
+//! - equal pairs that changed position become `reordered`, not
+//!   added+removed;
+//! - the normalized view is a separate feature ([`crate::normalize`]) and never
+//!   replaces the original.
 
 use serde::{Deserialize, Serialize};
 
@@ -16,9 +16,9 @@ use crate::model::{Body, BodyState, CookieField, HeaderView, LogicalRequest, Pro
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffOptions {
-    /// Compara nomes sem diferenciar maiúsculas/minúsculas (padrão HTTP).
+    /// Compares names case-insensitively (HTTP default).
     pub case_sensitive_names: bool,
-    /// Colapsa espaços internos do valor antes de comparar.
+    /// Collapses internal spaces of the value before comparing.
     pub collapse_whitespace: bool,
     pub include_pseudo_headers: bool,
 }
@@ -36,7 +36,7 @@ impl Default for DiffOptions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeaderOccurrence {
-    /// Posição global na sequência original (0-based), pseudoheaders inclusos.
+    /// Global position in the original sequence (0-based), pseudoheaders included.
     pub index: usize,
     pub name: String,
     pub value: String,
@@ -161,13 +161,13 @@ pub fn diff_requests(a: &LogicalRequest, b: &LogicalRequest, options: &DiffOptio
     let mut notes = Vec::new();
     if a.request_headers.order_state != b.request_headers.order_state {
         notes.push(format!(
-            "ordem da fonte difere: {:?} × {:?}",
+            "source order differs: {:?} × {:?}",
             a.request_headers.order_state, b.request_headers.order_state
         ));
     }
     if a.protocol != b.protocol {
         notes.push(
-            "protocolos diferentes: o diff de headers não compara semântica de fio".to_string(),
+            "different protocols: the header diff does not compare wire semantics".to_string(),
         );
     }
 
@@ -229,7 +229,7 @@ pub fn diff_header_views(a: &HeaderView, b: &HeaderView, options: &DiffOptions) 
     let mut changed = Vec::new();
     let mut reordered = Vec::new();
 
-    // Pares idênticos fora da LCS moveram de posição.
+    // Identical pairs outside the LCS changed position.
     for (i, occurrence) in sequence_a.iter().enumerate() {
         if matched_a[i] {
             continue;
@@ -250,7 +250,7 @@ pub fn diff_header_views(a: &HeaderView, b: &HeaderView, options: &DiffOptions) 
         }
     }
 
-    // Restantes: pareia por nome para detectar valor alterado.
+    // Remaining: pair by name to detect a changed value.
     let mut used_b: Vec<bool> = vec![false; sequence_b.len()];
     for (i, occurrence) in sequence_a.iter().enumerate() {
         if matched_a[i] || reordered.iter().any(|mv| mv.a.index == occurrence.index) {
@@ -408,11 +408,11 @@ fn diff_cookies(a: &CookieField, b: &CookieField) -> CookieDiff {
 
     let mut notes = Vec::new();
     if a.raw != b.raw {
-        notes.push("campos Cookie brutos diferem (ordem/valor)".to_string());
+        notes.push("raw Cookie fields differ (order/value)".to_string());
     }
     if a.wire_lines.len() != b.wire_lines.len() {
         notes.push(format!(
-            "fragmentação no fio difere: {} × {} campos",
+            "wire fragmentation differs: {} × {} fields",
             a.wire_lines.len(),
             b.wire_lines.len()
         ));
@@ -451,7 +451,7 @@ fn diff_bodies(a: &Body, b: &Body) -> BodyDiff {
         .as_deref()
         .is_some_and(|name| b.attachment.as_deref().is_some_and(|other| other != name))
     {
-        notes.push("anexos diferentes; o conteúdo dos bytes não é comparado aqui".to_string());
+        notes.push("different attachments; the byte contents are not compared here".to_string());
     }
     BodyDiff {
         a: a.state,
@@ -507,7 +507,7 @@ mod tests {
         assert_eq!(diff.reordered.len(), 1);
         assert_eq!(diff.reordered[0].name, "x-zeta");
         assert!(diff.added.is_empty() && diff.removed.is_empty() && diff.changed.is_empty());
-        // O original continua na ordem de injeção.
+        // The original keeps the injection order.
         assert_eq!(a.headers[0].name, "x-zeta");
         assert_eq!(b.headers[0].name, "x-alpha");
     }

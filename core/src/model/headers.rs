@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::provenance::{Provenance, Verification};
 
-/// Um par de header como apareceu na fonte. A ordem do vetor é significativa.
+/// A header pair as it appeared in the source. The order of the vector is significant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeaderEntry {
@@ -30,25 +30,25 @@ impl HeaderEntry {
     }
 }
 
-/// Como a ordem do bloco foi obtida.
+/// How the block's order was obtained.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OrderState {
-    /// Ordem da fonte, sem reordenação.
+    /// Source order, without reordering.
     SourceOrder,
-    /// Reconstruída (ex.: linha de status sintética do NetLog em h2/h3).
+    /// Reconstructed (e.g. synthetic status line from NetLog in h2/h3).
     Reconstructed,
-    /// Visão normalizada: ordem não é a do fio.
+    /// Normalized view: the order is not the wire order.
     Normalized,
     #[default]
     Unknown,
 }
 
-/// Bloco de headers de uma requisição ou resposta.
+/// Header block of a request or response.
 ///
-/// Pseudoheaders ficam em `pseudo_headers`; nunca são misturados a `headers`.
-/// Duplicatas são preservadas em ambos. `raw_block`, quando existe, é o texto
-/// original (h1 `headersText` ou linhas do NetLog) e não deve ser regerado.
+/// Pseudoheaders are kept in `pseudo_headers`; they are never mixed into `headers`.
+/// Duplicates are preserved in both. `raw_block`, when present, is the original
+/// text (h1 `headersText` or NetLog lines) and must not be regenerated.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeaderView {
@@ -56,7 +56,7 @@ pub struct HeaderView {
     pub pseudo_headers: Vec<HeaderEntry>,
     #[serde(default)]
     pub headers: Vec<HeaderEntry>,
-    /// Linha de request/status quando a fonte a fornece (`GET /x HTTP/1.1`).
+    /// Request/status line when the source provides it (`GET /x HTTP/1.1`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_line: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -118,8 +118,8 @@ impl HeaderView {
         self.push(HeaderEntry::new(name, value, provenance));
     }
 
-    /// Todos os pares na ordem de origem: pseudoheaders primeiro, como no fio
-    /// (h2/h3) ou no texto (h1).
+    /// All pairs in source order: pseudoheaders first, as on the wire
+    /// (h2/h3) or in the text (h1).
     pub fn iter_all(&self) -> impl Iterator<Item = &HeaderEntry> {
         self.pseudo_headers.iter().chain(self.headers.iter())
     }
@@ -132,7 +132,7 @@ impl HeaderView {
         self.len() == 0
     }
 
-    /// Todos os valores de um nome, na ordem de ocorrência (case-insensitive).
+    /// All values of a name, in order of occurrence (case-insensitive).
     pub fn get_all(&self, name: &str) -> Vec<&HeaderEntry> {
         let lower = name.to_ascii_lowercase();
         self.iter_all()
@@ -152,7 +152,7 @@ impl HeaderView {
         self.first(name).is_some()
     }
 
-    /// Valores distintos do campo `Cookie`, na ordem em que aparecem.
+    /// Distinct values of the `Cookie` field, in the order they appear.
     pub fn cookie_field_values(&self) -> Vec<String> {
         self.get_all("cookie")
             .into_iter()
@@ -160,8 +160,8 @@ impl HeaderView {
             .collect()
     }
 
-    /// Estado de verificação mais fraco do bloco. Um bloco inteiro só é
-    /// `verified` se todas as informações que o compõem forem `verified`.
+    /// Weakest verification state of the block. A whole block is only
+    /// `verified` if all the information that composes it is `verified`.
     pub fn verification(&self) -> Verification {
         if self.is_empty() {
             return Verification::Unverified;
@@ -171,10 +171,10 @@ impl HeaderView {
             .fold(Verification::Verified, Verification::weakest)
     }
 
-    /// Converte linhas no formato `Name: value` (ou `:path: /x`) em pares.
+    /// Converts lines in the `Name: value` format (or `:path: /x`) into pairs.
     ///
-    /// Preserva ordem, caixa e duplicatas. Linhas sem `:` (fora a linha de
-    /// status) retornam em `issues` e nunca são descartadas em silêncio.
+    /// Preserves order, case and duplicates. Lines without `:` (other than the
+    /// status line) are returned in `issues` and are never silently dropped.
     pub fn from_header_lines(
         lines: &[String],
         provenance: &Provenance,
@@ -197,7 +197,7 @@ impl HeaderView {
                 Some((name, value)) => view.add(name, value, provenance),
                 None => {
                     issues.push(format!(
-                        "linha sem separador ':' na posição {index}: {line:?}"
+                        "line without ':' separator at position {index}: {line:?}"
                     ));
                     unparsed.push(line.to_string());
                 }
@@ -206,14 +206,14 @@ impl HeaderView {
 
         if !unparsed.is_empty() {
             view.notes.push(format!(
-                "{} linha(s) não parseada(s) preservada(s) em issues",
+                "{} unparsed line(s) preserved in issues",
                 unparsed.len()
             ));
         }
         (view, issues, unparsed)
     }
 
-    /// Parse de um bloco HTTP/1 bruto (`HTTP/1.1 200 OK\r\nName: value...`).
+    /// Parses a raw HTTP/1 block (`HTTP/1.1 200 OK\r\nName: value...`).
     pub fn from_http_block(block: &str, provenance: &Provenance) -> (Self, Vec<String>) {
         let lines: Vec<String> = block.lines().map(|line| line.to_string()).collect();
         let (view, issues, _) =
@@ -224,12 +224,12 @@ impl HeaderView {
     }
 }
 
-/// Separa `Name: value` preservando o valor exatamente após um único espaço/
-/// tab opcional. Suporta pseudoheaders (`:path: /x`).
+/// Splits `Name: value`, preserving the value exactly after a single space/
+/// optional tab. Supports pseudoheaders (`:path: /x`).
 pub fn split_header_line(line: &str) -> Option<(String, String)> {
     let idx = line.find(':')?;
     if idx == 0 {
-        // Pseudoheader: procura o segundo ':'.
+        // Pseudoheader: look for the second ':'.
         let rest = &line[1..];
         let second = rest.find(':')?;
         let name = &line[..second + 1];

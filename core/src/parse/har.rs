@@ -24,8 +24,8 @@ const ENTRY_KEYS: &[&str] = &[
     "comment",
 ];
 
-/// HAR 1.2: importa com proveniência `har` e verificação **unverified** para
-/// sequência/duplicatas (a matriz não comprovou a ordem do exportador HAR).
+/// HAR 1.2: imports with provenance `har` and **unverified** verification for
+/// sequence/duplicates (the matrix did not prove the HAR exporter's order).
 pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     let root: Value =
         serde_json::from_slice(json).map_err(|error| CoreError::json("HAR", error))?;
@@ -43,7 +43,7 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     if version != "1.2" {
         report.warn(Warning::new(
             "har.version",
-            format!("HAR declara versão {version}; importado como 1.2 de forma tolerante"),
+            format!("HAR declares version {version}; imported as 1.2 tolerantly"),
         ));
     }
 
@@ -70,7 +70,7 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     meta.labels.push("har-import".to_string());
     meta.capture = Some(crate::model::CaptureMeta {
         mode: Some("har-import".to_string()),
-        notes: Some("ordem e duplicatas de headers em HAR são não verificadas".to_string()),
+        notes: Some("header order and duplicates in HAR are unverified".to_string()),
         ..Default::default()
     });
 
@@ -93,14 +93,14 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
                 report.source_events_unknown += 1;
                 report.warn(Warning::error(
                     "har.entry_skipped",
-                    format!("entrada {index} não é objeto HAR válido; ignorada"),
+                    format!("entry {index} is not a valid HAR object; ignored"),
                 ));
             }
         }
     }
 
-    // Agrupa cadeias de redirect (response.redirectURL == URL da próxima
-    // entrada) em uma LogicalRequest com tentativas separadas.
+    // Groups redirect chains (response.redirectURL == URL of the next
+    // entry) into one LogicalRequest with separate attempts.
     let mut cursor = 0usize;
     let mut logical_number = 0usize;
     while cursor < parsed_entries.len() {
@@ -122,7 +122,7 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
         logical.protocol = first.protocol;
         logical.status = chain.last().and_then(|entry| entry.status);
         logical.provenance = Provenance::new(Source::Har, "log.entries", Verification::Unverified)
-            .with_note("HAR: sequência transmitida não comprovada")
+            .with_note("HAR: transmitted sequence not proven")
             .with_browser_version(browser.version.clone().unwrap_or_default());
 
         for (attempt_index, parsed) in chain.iter().enumerate() {
@@ -175,7 +175,7 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
             logical.attempts.push(attempt);
         }
 
-        let last = chain.last().expect("chain não vazia");
+        let last = chain.last().expect("chain not empty");
         logical.timings = last.timings.clone();
         logical.refresh_primary_from_attempt();
         logical.netlog = Default::default();
@@ -186,12 +186,12 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
         session
             .session
             .completeness
-            .add_reason("HAR sem entradas utilizáveis");
+            .add_reason("HAR has no usable entries");
     } else if report.has_errors() {
         session
             .session
             .completeness
-            .add_reason("HAR com entradas incompletas ou inválidas");
+            .add_reason("HAR has incomplete or invalid entries");
     } else {
         session.session.completeness = crate::model::Completeness::complete();
     }
@@ -206,7 +206,7 @@ pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     if !session.requests.is_empty() && !har_has_cookies(entries) {
         report.warn(Warning::new(
             "har.cookies_absent",
-            "o HAR não contém cookies (exportação do DevTools os remove); origem de cookies não avaliável — use captura ao vivo (CDP/NetLog)",
+            "HAR does not contain cookies (DevTools export removes them); cookie origin cannot be evaluated — use live capture (CDP/NetLog)",
         ));
     }
     for warning in &report.warnings {
@@ -256,7 +256,7 @@ fn parse_entry(
         if !ENTRY_KEYS.contains(&key.as_str()) && !key.starts_with('_') && key != "comment" {
             report.warn(Warning::new(
                 "har.unknown_entry_field",
-                format!("campo desconhecido na entrada {index}: {key}"),
+                format!("unknown field in entry {index}: {key}"),
             ));
         }
     }
@@ -266,13 +266,13 @@ fn parse_entry(
     if request.is_none() {
         report.warn(Warning::error(
             "har.missing_request",
-            format!("entrada {index} sem objeto request"),
+            format!("entry {index} has no request object"),
         ));
     }
     if response.is_none() {
         report.warn(Warning::error(
             "har.missing_response",
-            format!("entrada {index} sem objeto response; status indisponível"),
+            format!("entry {index} has no response object; status unavailable"),
         ));
     }
 
@@ -289,7 +289,7 @@ fn parse_entry(
     if url.is_empty() {
         report.warn(Warning::error(
             "har.missing_url",
-            format!("entrada {index} sem request.url"),
+            format!("entry {index} has no request.url"),
         ));
     }
 
@@ -308,7 +308,7 @@ fn parse_entry(
             .with_event(format!("log.entries[{index}].request.headers"))
             .with_source_id(index.to_string())
             .with_browser_version(browser.version.clone().unwrap_or_default())
-            .with_note("HAR: ordem e duplicatas não verificadas");
+            .with_note("HAR: order and duplicates not verified");
     let request_provenance = match &wall_time {
         Some(wall_time) => request_provenance.with_wall_time(wall_time),
         None => request_provenance,
@@ -319,7 +319,7 @@ fn parse_entry(
             .with_event(format!("log.entries[{index}].response.headers"))
             .with_source_id(index.to_string())
             .with_browser_version(browser.version.clone().unwrap_or_default())
-            .with_note("HAR: ordem e duplicatas não verificadas");
+            .with_note("HAR: order and duplicates not verified");
     let response_provenance = match &wall_time {
         Some(wall_time) => response_provenance.with_wall_time(wall_time),
         None => response_provenance,
@@ -357,7 +357,7 @@ fn parse_entry(
                     let fallback =
                         Provenance::new(Source::Har, "request.cookies", Verification::Unverified)
                             .with_note(
-                                "Cookie reconstruído de request.cookies (sem campo bruto no HAR)",
+                                "Cookie rebuilt from request.cookies (no raw field in HAR)",
                             );
                     for cookie_value in cookies {
                         if let (Some(name), Some(value)) = (
@@ -368,7 +368,7 @@ fn parse_entry(
                         }
                     }
                     cookie.notes.push(
-                        "pares vieram de request.cookies; nenhum campo Cookie bruto".to_string(),
+                        "pairs came from request.cookies; no raw Cookie field".to_string(),
                     );
                 }
             }
@@ -391,7 +391,7 @@ fn parse_entry(
                 report.warn(Warning::new(
                     "har.set_cookie_without_header",
                     format!(
-                        "entrada {index} tem response.cookies sem linha Set-Cookie bruta; cookies não sintetizados"
+                        "entry {index} has response.cookies without a raw Set-Cookie line; cookies not synthesized"
                     ),
                 ));
             }
@@ -455,7 +455,7 @@ fn parse_entry(
         });
 
     let outcome_note = if response.is_none() {
-        Some("HAR sem response".to_string())
+        Some("HAR without response".to_string())
     } else {
         None
     };
@@ -484,7 +484,7 @@ fn parse_entry(
                 .with_event(format!("log.entries[{index}]"))
                 .with_source_id(index.to_string())
                 .with_browser_version(browser.version.clone().unwrap_or_default())
-                .with_note(outcome_note.unwrap_or_else(|| "HAR importado".to_string()));
+                .with_note(outcome_note.unwrap_or_else(|| "HAR imported".to_string()));
             match object.get("startedDateTime").and_then(Value::as_str) {
                 Some(wall_time) => provenance.with_wall_time(wall_time),
                 None => provenance,
@@ -503,7 +503,7 @@ fn parse_har_headers(
     let Some(headers) = value.as_array() else {
         report.warn(Warning::new(
             "har.headers_not_array",
-            format!("{side}.headers não é array; headers ausentes"),
+            format!("{side}.headers is not an array; headers missing"),
         ));
         return;
     };
@@ -516,13 +516,13 @@ fn parse_har_headers(
             }
             _ => report.warn(Warning::new(
                 "har.invalid_header",
-                format!("{side}.headers[{index}] sem name/value válidos; ignorado"),
+                format!("{side}.headers[{index}] has no valid name/value; ignored"),
             )),
         }
     }
 }
 
-/// Algum Cookie/Set-Cookie/`cookies[]` em qualquer entrada?
+/// Any Cookie/Set-Cookie/`cookies[]` in any entry?
 fn har_has_cookies(entries: &[Value]) -> bool {
     entries.iter().any(|entry| {
         ["request", "response"].iter().any(|side| {
@@ -561,16 +561,16 @@ fn parse_request_body(
     report: &mut ImportReport,
 ) -> Body {
     let Some(post_data) = request.and_then(|request| request.get("postData")) else {
-        // Método sem corpo e sem postData: não é um corpo ausente.
+        // Method without body and without postData: not a missing body.
         if matches!(
             method.to_ascii_uppercase().as_str(),
             "GET" | "HEAD" | "OPTIONS"
         ) {
             let mut body = Body::empty(provenance);
-            body.note = Some("não aplicável: método sem corpo".to_string());
+            body.note = Some("not applicable: method without body".to_string());
             return body;
         }
-        return Body::unavailable("HAR não fornece postData");
+        return Body::unavailable("HAR does not provide postData");
     };
     let mime = post_data
         .get("mimeType")
@@ -585,7 +585,7 @@ fn parse_request_body(
             report.warn(Warning::new(
                 "har.body_truncated",
                 format!(
-                    "entrada {id}: corpo de requisição excede {} bytes; capturado truncado",
+                    "entry {id}: request body exceeds {} bytes; captured truncated",
                     MAX_HAR_BODY_BYTES
                 ),
             ));
@@ -607,10 +607,10 @@ fn parse_request_body(
         if has_params {
             report.warn(Warning::new(
                 "har.post_data_params_only",
-                format!("entrada {id} tem postData.params sem texto; corpo não reconstruído"),
+                format!("entry {id} has postData.params without text; body not rebuilt"),
             ));
         }
-        Body::unavailable("postData sem text")
+        Body::unavailable("postData without text")
     }
 }
 
@@ -622,7 +622,7 @@ fn parse_response_body(
     report: &mut ImportReport,
 ) -> Body {
     let Some(content) = response.and_then(|response| response.get("content")) else {
-        return Body::unavailable("HAR sem response.content");
+        return Body::unavailable("HAR without response.content");
     };
     let mime = content
         .get("mimeType")
@@ -638,16 +638,16 @@ fn parse_response_body(
             body.content_type = mime;
             body
         } else {
-            Body::unavailable("response.content sem text")
+            Body::unavailable("response.content without text")
         };
     };
 
     if encoding == Some("base64") && text.len() > MAX_HAR_BODY_BYTES * 2 {
         report.warn(Warning::new(
             "har.body_too_large",
-            format!("entrada {id}: conteúdo base64 excede o limite; não decodificado"),
+            format!("entry {id}: base64 content exceeds the limit; not decoded"),
         ));
-        return Body::discarded("conteúdo maior que o limite de importação");
+        return Body::discarded("content larger than the import limit");
     }
     let mut truncated = false;
     let mut bytes = match encoding {
@@ -656,16 +656,16 @@ fn parse_response_body(
             Err(error) => {
                 report.warn(Warning::new(
                     "har.base64_invalid",
-                    format!("entrada {id}: response.content.text base64 inválido: {error}"),
+                    format!("entry {id}: response.content.text is invalid base64: {error}"),
                 ));
-                return Body::unavailable("conteúdo base64 inválido");
+                return Body::unavailable("invalid base64 content");
             }
         },
         Some(other) => {
             report.warn(Warning::new(
                 "har.unknown_encoding",
                 format!(
-                    "entrada {id}: encoding de conteúdo desconhecido {other:?}; tratado como texto"
+                    "entry {id}: unknown content encoding {other:?}; treated as text"
                 ),
             ));
             text.as_bytes().to_vec()
@@ -679,7 +679,7 @@ fn parse_response_body(
         report.warn(Warning::new(
             "har.body_truncated",
             format!(
-                "entrada {id}: corpo de resposta excede {} bytes; capturado truncado",
+                "entry {id}: response body exceeds {} bytes; captured truncated",
                 MAX_HAR_BODY_BYTES
             ),
         ));
@@ -740,7 +740,7 @@ fn parse_timings(entry: &Map<String, Value>) -> Timings {
     let wait = span("wait", &mut cursor);
     let receive = span("receive", &mut cursor);
 
-    let _ = blocked; // `blocked` não tem campo próprio no contrato v1.
+    let _ = blocked; // `blocked` has no field of its own in the v1 contract.
     Timings {
         request_time: None,
         wall_time: started,
@@ -783,8 +783,8 @@ fn har_browser(log: &Map<String, Value>) -> BrowserInfo {
     }
 }
 
-/// Resolve `Location` relativo contra a URL da requisição (HAR pode trazer
-/// apenas `/path`). Mantém a forma absoluta quando já é absoluta.
+/// Resolves a relative `Location` against the request URL (HAR may carry
+/// only `/path`). Keeps the absolute form when it is already absolute.
 fn resolve_reference(base: &str, location: &str) -> String {
     if location.starts_with("http://") || location.starts_with("https://") {
         return location.to_string();
@@ -827,7 +827,7 @@ fn host_of(url: &str) -> Option<String> {
 }
 
 pub(crate) fn short_fingerprint(bytes: &[u8]) -> String {
-    // FNV-1a 64: identificador estável e barato, sem dependência extra.
+    // FNV-1a 64: stable and cheap identifier, with no extra dependency.
     let mut hash = 0xcbf29ce484222325u64;
     for byte in bytes {
         hash ^= u64::from(*byte);
@@ -836,7 +836,7 @@ pub(crate) fn short_fingerprint(bytes: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
-/// Identificador estável e curto para fixtures/ids internos (FNV-1a 64).
+/// Stable, short identifier for fixtures/internal ids (FNV-1a 64).
 pub(crate) fn stable_id(bytes: &[u8]) -> String {
     short_fingerprint(bytes)
 }

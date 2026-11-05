@@ -1,5 +1,5 @@
-//! Regressões da revisão independente da Rodada 5 (docs/09 → "Revisão da rodada 5"),
-//! com os cenários do revisor (T1–T9, t4, injeção).
+//! Regressions from the independent review of Round 5 (docs/09 → "Review of round 5"),
+//! with the reviewer's scenarios (T1–T9, t4, injection).
 
 use scrapelens_core::compare::{compare_sessions, CompareOptions};
 use scrapelens_core::export::curl::to_curl_with_origins;
@@ -100,7 +100,7 @@ fn entry<'a>(o: &'a ValueOrigins, field: &str) -> &'a ValueOrigin {
         .unwrap_or_else(|| panic!("{field} ausente"))
 }
 
-// ---- 1: injeção em comentários ---------------------------------------------------------
+// ---- 1: injection in comments ---------------------------------------------------------
 
 fn injection_bundle(tmp: &str) -> SessionBundle {
     let name = format!("x\ntouch {tmp}/PWNED_CURL #\r\u{2028}import os;os.system(1)#'\"\u{2029}");
@@ -168,7 +168,7 @@ fn injected_field_names_stay_inside_comments_in_curl_and_python() {
     let o = value_origins(&b.session, &b, &id, &FlowOptions::default()).unwrap();
     assert!(
         o.values.iter().any(|v| v.field.contains("touch")),
-        "o nome malicioso chega às anotações"
+        "the malicious name reaches the annotations"
     );
     let bytes = request_body_bytes(&b, request);
     let opts = ExportOptions::default();
@@ -179,7 +179,7 @@ fn injected_field_names_stay_inside_comments_in_curl_and_python() {
         .unwrap()
         .text;
 
-    // cURL: tudo antes de `curl \` é comentário; nada executável fora do comando
+    // cURL: everything before `curl \` is a comment; nothing executable outside the command
     let head: Vec<&str> = curl.lines().take_while(|l| *l != "curl \\").collect();
     assert!(head.iter().all(|l| l.starts_with('#')), "{head:?}");
     assert!(
@@ -188,7 +188,7 @@ fn injected_field_names_stay_inside_comments_in_curl_and_python() {
             .all(|l| l == "curl \\" || l.starts_with("  --")),
         "{curl}"
     );
-    // Python: tudo antes de `import http.client` é comentário/vazio
+    // Python: everything before `import http.client` is a comment/empty
     let head: Vec<&str> = py
         .lines()
         .take_while(|l| *l != "import http.client")
@@ -199,7 +199,7 @@ fn injected_field_names_stay_inside_comments_in_curl_and_python() {
     );
     assert!(!py.contains('\u{2028}') && !curl.contains('\u{2028}'));
 
-    // prova: com curl trocado por `true`, o script não cria nada
+    // proof: with curl replaced by `true`, the script creates nothing
     let script = dir.path().join("export.sh");
     std::fs::write(&script, &curl).unwrap();
     let before: Vec<_> = std::fs::read_dir(dir.path())
@@ -220,7 +220,7 @@ fn injected_field_names_stay_inside_comments_in_curl_and_python() {
     assert_eq!(before, after, "o script gerado criou arquivos");
     assert!(!dir.path().join("PWNED_CURL").exists());
 
-    // Python: o AST só tem as chamadas esperadas (http.client), nada de os/system
+    // Python: the AST only has the expected calls (http.client), nothing from os/system
     let ast = std::process::Command::new("python3")
         .arg("-I")
         .arg("-c")
@@ -248,7 +248,7 @@ fn injected_field_names_stay_inside_comments_in_curl_and_python() {
 
 #[test]
 fn response_finishing_after_the_target_starts_is_not_a_producer() {
-    // T4: /slow inicia 1,0 e responde só em 11,0; /use inicia 2,0
+    // T4: /slow starts at 1,0 and responds only at 11,0; /use starts at 2,0
     let mut s = S::default();
     s.req(
         "1.1",
@@ -276,7 +276,7 @@ fn response_finishing_after_the_target_starts_is_not_a_producer() {
     let b = s.build();
     let o = origins(&b, "1.2");
     assert_eq!(entry(&o, "sessId").status, OriginStatus::None);
-    // T5: cookie de resposta lenta
+    // T5: cookie of a slow response
     let mut s = S::default();
     s.req(
         "1.1",
@@ -306,7 +306,7 @@ fn response_finishing_after_the_target_starts_is_not_a_producer() {
         entry(&origins(&b, "1.2"), "sess").status,
         OriginStatus::None
     );
-    // resposta que termina antes do início do alvo continua valendo, com tempo observado
+    // a response that ends before the target starts still counts, with observed time
     let mut s = S::default();
     s.req(
         "1.1",
@@ -378,7 +378,7 @@ fn reissued_only_when_the_value_circulated_between_producers() {
     let page = "<script>var cfg={\"sessId\":\"ABCDEFGH12345678\"}</script>";
     let f = Some(FORM);
     let _ = f;
-    // T1: dois produtores concorrentes, sem uso entre eles → ambiguous
+    // T1: two concurrent producers, without use between them → ambiguous
     let mut s = S::default();
     s.req(
         "1.1",
@@ -415,7 +415,7 @@ fn reissued_only_when_the_value_circulated_between_producers() {
     );
     let o = origins(&s.build(), "1.3");
     assert_eq!(entry(&o, "sessId").status, OriginStatus::Ambiguous);
-    // T3: dois produtores em tempos diferentes, sem uso entre eles → ambiguous
+    // T3: two producers at different times, without use between them → ambiguous
     let tok = "{\"token\":\"ZZZZZZZZ99999999\"}";
     let mut s = S::default();
     s.req(
@@ -453,7 +453,7 @@ fn reissued_only_when_the_value_circulated_between_producers() {
     );
     let o = origins(&s.build(), "1.3");
     assert_eq!(entry(&o, "token").status, OriginStatus::Ambiguous);
-    // T2: com uso entre eles, o segundo só reemite
+    // T2: with use between them, the second only re-emits
     let mut s = S::default();
     s.req(
         "1.1",
@@ -503,7 +503,7 @@ fn reissued_only_when_the_value_circulated_between_producers() {
     assert!(v.evidences.iter().any(|e| e.role == Role::Reissued));
 }
 
-// ---- 4 e 5: força da evidência e rótulo ------------------------------------------------
+// ---- 4 and 5: evidence strength and label ------------------------------------------------
 
 #[test]
 fn generic_names_and_short_values_are_only_possible_origins() {
@@ -531,14 +531,14 @@ fn generic_names_and_short_values_are_only_possible_origins() {
             "{field}"
         );
         assert!(
-            v.label.starts_with("possível origem (same-field)"),
+            v.label.starts_with("possible origin (same-field)"),
             "{field}: {}",
             v.label
         );
         assert_ne!(v.label, "origem observada");
     }
     assert_eq!(entry(&o, "placa").status, OriginStatus::None);
-    // nome não genérico e valor >= 4: forte
+    // non-generic name and value >= 4: strong
     let mut s = S::default();
     s.req(
         "1.1",
@@ -568,14 +568,14 @@ fn generic_names_and_short_values_are_only_possible_origins() {
         (v.status, v.confidence),
         (OriginStatus::Origin, Some(Confidence::Strong))
     );
-    assert_eq!(v.label, "origem observada");
+    assert_eq!(v.label, "observed origin");
     assert_eq!(v.evidences[0].kind, EvidenceKind::SameField);
 }
 
 #[test]
 fn value_match_only_is_a_possible_origin_and_the_chain_marks_the_step_possible() {
-    // T7: coincidências (UA, build, timestamp) casadas só por conteúdo. O produtor é
-    // uma página (um .js estático viraria `context`, L3 da rodada 6).
+    // T7: coincidences (UA, build, timestamp) matched only by content. The producer is
+    // a page (a static .js would become `context`, L3 of round 6).
     let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
     let mut s = S::default();
     s.req(
@@ -606,11 +606,11 @@ fn value_match_only_is_a_possible_origin_and_the_chain_marks_the_step_possible()
     let o = origins(&b, "1.2");
     let v = entry(&o, "build");
     assert_eq!(v.confidence, Some(Confidence::Possible));
-    assert_eq!(v.label, "possível origem (value-match)");
+    assert_eq!(v.label, "possible origin (value-match)");
     let chain = priming_chain(&b.session, &b, &lid(&b, "1.2"), &FlowOptions::default()).unwrap();
     assert_eq!(chain.steps.len(), 1);
     assert_eq!(chain.steps[0].confidence, Confidence::Possible);
-    // com evidência forte o passo é strong
+    // with strong evidence the step is strong
     let mut s = S::default();
     s.req(
         "1.1",
@@ -643,7 +643,7 @@ fn value_match_only_is_a_possible_origin_and_the_chain_marks_the_step_possible()
 
 #[test]
 fn a_field_is_not_duplicated_as_entry_and_as_part() {
-    // T3/T4: valor inteiro com origem não gera também trechos
+    // T3/T4: a whole value with an origin does not also generate excerpts
     let mut s = S::default();
     s.req(
         "1.1",
@@ -729,18 +729,18 @@ fn unresolved_ignores_values_consumed_only_by_protection_steps() {
         .any(|p| p.url.contains("/TSPD/") && p.class == StepClass::Protection));
     assert!(
         !chain.unresolved.iter().any(|u| u.field == "x-prot-nonce"),
-        "valor consumido só pela proteção não é pendência: {:?}",
+        "value consumed only by protection is not pending: {:?}",
         chain.unresolved
     );
     assert!(
         chain.unresolved.iter().any(|u| u.field == "placa"),
-        "valores da aplicação continuam pendentes"
+        "application values remain pending"
     );
 }
 
 #[test]
 fn compare_pairing_is_monotonic_and_keeps_ambiguities() {
-    // t4: B tem outra ordem, um extra e um /q com campos diferentes
+    // t4: B has another order, one extra and a /q with different fields
     let a_reqs = |s: &mut S| {
         s.req(
             "1.1",
@@ -840,7 +840,7 @@ fn compare_pairing_is_monotonic_and_keeps_ambiguities() {
     let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
     assert!(
         r.pairs.iter().all(|p| !p.out_of_order),
-        "sem cruzar a ordem"
+        "without crossing the order"
     );
     let idx = |bundle: &SessionBundle, id: &str| {
         bundle
@@ -856,7 +856,7 @@ fn compare_pairing_is_monotonic_and_keeps_ambiguities() {
         assert!(last.map_or(true, |l| j > l));
         last = Some(j);
     }
-    // o /q de mesmo modelo (2.4) casa com o segundo de A; o de campos diferentes (2.3) com o primeiro
+    // the /q with the same model (2.4) matches the second of A; the one with different fields (2.3) matches the first
     let pair_of = |a_id: &str| {
         r.pairs
             .iter()
@@ -871,7 +871,7 @@ fn compare_pairing_is_monotonic_and_keeps_ambiguities() {
     assert_eq!(r.only_in_b.len(), 1);
 }
 
-// ---- acabamento da rodada 5 -----------------------------------------------------------
+// ---- round 5 finishing -----------------------------------------------------------
 
 #[test]
 fn l1_common_prefix_of_a_named_field_is_not_an_origin() {
@@ -903,14 +903,14 @@ fn l1_common_prefix_of_a_named_field_is_not_an_origin() {
     assert_eq!(
         o.values.iter().filter(|v| v.field == "tok").count(),
         1,
-        "sem trechos"
+        "no excerpts"
     );
     let v = entry(&o, "tok");
     assert_eq!(v.status, OriginStatus::None);
     assert!(v.evidences.is_empty());
     let chain = priming_chain(&b.session, &b, &lid(&b, "1.2"), &FlowOptions::default()).unwrap();
     assert!(chain.steps.is_empty(), "{:?}", chain.steps);
-    // valor idêntico continua sendo origem (valor inteiro)
+    // an identical value is still an origin (whole value)
     let mut s = S::default();
     s.req(
         "1.1",
@@ -988,7 +988,7 @@ fn l2_swapped_unique_requests_are_flagged_as_reordered() {
     let r = compare_sessions(&a.session, &a, &b.session, &b, &CompareOptions::default());
     assert!(
         r.pairs.iter().all(|p| !p.out_of_order),
-        "pareamento segue monotônico"
+        "pairing stays monotonic"
     );
     assert_eq!(r.pairs.len(), 1);
     assert_eq!(r.only_in_a.len(), 1);
@@ -1000,8 +1000,8 @@ fn l2_swapped_unique_requests_are_flagged_as_reordered() {
         .a
         .url
         .ends_with(&r.reordered[0].b.url[r.reordered[0].b.url.len() - 2..]));
-    assert!(r.ambiguities.iter().any(|m| m.contains("reordenadas")));
-    // sobras de modelos diferentes não são "reordenadas"
+    assert!(r.ambiguities.iter().any(|m| m.contains("reordered")));
+    // leftovers of different models are not "reordered"
     let mut sc = S::default();
     sc.req(
         "3.1",
@@ -1048,10 +1048,10 @@ fn l3_static_resources_are_context_never_steps() {
     assert_eq!(v.status, OriginStatus::None);
     assert!(v.evidences.is_empty());
     assert_eq!(v.context.len(), 1);
-    assert!(v.label.contains("recurso estático"));
+    assert!(v.label.contains("static resource"));
     let chain = priming_chain(&b.session, &b, &lid(&b, "1.2"), &FlowOptions::default()).unwrap();
     assert!(chain.steps.is_empty());
-    // presente no estático E em resposta dinâmica: só o dinâmico produz
+    // present in the static AND in a dynamic response: only the dynamic one produces
     let mut s = S::default();
     s.req(
         "1.1",
@@ -1155,7 +1155,7 @@ fn r6_script_with_query_nocache_or_jsonp_can_be_producer() {
         let v = entry(&origins(&b, "1.9"), "build").clone();
         assert_eq!(v.evidences.len(), 1, "{why}: {v:?}");
     }
-    // literal estático puro continua contexto, com o rótulo novo
+    // a pure static literal stays context, with the new label
     let mut s = S::default();
     s.req(
         "1.1",
@@ -1173,7 +1173,7 @@ fn r6_script_with_query_nocache_or_jsonp_can_be_producer() {
     let v = entry(&origins(&b, "1.9"), "build").clone();
     assert!(v.evidences.is_empty());
     assert!(
-        v.label.contains("pode ser constante do protocolo"),
+        v.label.contains("may be a protocol constant"),
         "{}",
         v.label
     );

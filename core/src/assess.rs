@@ -8,10 +8,10 @@
 //!
 //! Principles: rules are data (JSON, no executable code), `blocked?` only
 //! comes out with explicit evidence and always with "?", and what cannot be
-//! asserted on a route that already has an expectation is `indeterminado`,
+//! asserted on a route that already has an expectation is `undetermined`,
 //! with the list of what is missing. A response with no application signal
-//! and no learned expectation for the route is `não-avaliado`
-//! (`not-assessed`): pages, frames, static or protection resources do not
+//! and no learned expectation for the route is `not-assessed`:
+//! pages, frames, static or protection resources do not
 //! fill the suspects list. Nothing here opens the network.
 //!
 //! A protection marker ALONE does not block: application pages cite
@@ -19,8 +19,8 @@
 //! content without the expected page, a route that carried controls and now
 //! comes without them, or the default F5 ASM rejection page — always on an
 //! APPLICATION route. Requests to protection routes (`/TSPD/`) are the normal
-//! handshake: they come out `não-avaliado` with the informational signal
-//! `proteção`.
+//! handshake: they come out `not-assessed` with the informational signal
+//! `protection`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,25 +32,25 @@ use crate::search::BodySource;
 
 pub const RULES_SCHEMA: &str = "scrapelens.assess-rules/1";
 
-/// Como um campo conta para a avaliação.
+/// How a field counts toward the assessment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FieldKind {
-    /// Basta o campo existir.
+    /// It is enough for the field to exist.
     Present,
-    /// O campo precisa existir e não estar vazio.
+    /// The field must exist and not be empty.
     PresentNonempty,
-    /// Campo de erro: não vazio vira `app-error`.
+    /// Error field: non-empty becomes `app-error`.
     Error,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldRule {
-    /// Nome do campo (controle HTML, chave de form ou caminho/chave JSON),
-    /// sem distinguir maiúsculas.
+    /// Field name (HTML control, form key or JSON path/key),
+    /// case-insensitive.
     pub name: String,
-    /// Nome do sinal mostrado no veredito; padrão = `name`.
+    /// Signal name shown in the verdict; default = `name`.
     #[serde(default)]
     pub signal: Option<String>,
     pub kind: FieldKind,
@@ -65,48 +65,48 @@ impl FieldRule {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MarkerRule {
-    /// Trecho (sem distinguir maiúsculas) procurado em respostas HTML.
+    /// Text (case-insensitive) searched for in HTML responses.
     pub contains: String,
     #[serde(default)]
     pub signal: Option<String>,
-    /// Como o marcador aparece: citação (URL/script), conteúdo do desafio ou
-    /// página de rejeição conhecida.
+    /// How the marker appears: citation (URL/script), challenge content or
+    /// known rejection page.
     #[serde(default)]
     pub kind: MarkerKind,
 }
 
-/// Como o marcador de proteção aparece na resposta.
+/// How the protection marker appears in the response.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MarkerKind {
-    /// Citação numa página da aplicação (`<script src="/TSPD/...">`): sozinha
-    /// não é evidência de bloqueio.
+    /// Citation in an application page (`<script src="/TSPD/...">`): alone
+    /// it is not evidence of blocking.
     #[default]
     Reference,
-    /// Conteúdo do próprio desafio (variável/código da proteção): sem os
-    /// controles esperados, é bloqueio.
+    /// Content of the challenge itself (variable/code of the protection): without the
+    /// expected controls, it is a block.
     Challenge,
-    /// Página de rejeição conhecida (F5 ASM): bloqueia sempre, com ou sem
-    /// controles e sem depender de expectativa aprendida na rota.
+    /// Known rejection page (F5 ASM): always blocks, with or without
+    /// controls and without depending on an expectation learned for the route.
     Rejection,
 }
 
-/// Regras de avaliação. Só dados; `Default` é conservador.
+/// Assessment rules. Data only; `Default` is conservative.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct AssessRules {
     pub schema: String,
     pub fields: Vec<FieldRule>,
-    /// Campos que toda resposta de aplicação deve trazer (além dos aprendidos).
+    /// Fields every application response must carry (in addition to learned ones).
     pub required_fields: Vec<String>,
-    /// Marcadores de proteção: só bloqueiam como desafio, como rota de
-    /// proteção ou quando substituem a página esperada.
+    /// Protection markers: they only block as a challenge, as a protection route
+    /// or when they replace the expected page.
     pub protection_markers: Vec<MarkerRule>,
-    /// Prefixos de caminho que são, eles próprios, resposta de proteção.
+    /// Path prefixes that are themselves protection responses.
     pub protection_paths: Vec<String>,
-    /// Status HTTP que são evidência explícita de bloqueio.
+    /// HTTP statuses that are explicit evidence of blocking.
     pub blocked_statuses: Vec<u16>,
-    /// Aprende, na sessão, os campos que cada rota (método + caminho) traz.
+    /// Learns, from the session, the fields each route (method + path) carries.
     pub learn_routes: bool,
 }
 
@@ -133,8 +133,8 @@ impl Default for AssessRules {
             protection_markers: vec![
                 marker("/TSPD/", "TSPD", MarkerKind::Reference),
                 marker("_tsChallenge", "TSPD", MarkerKind::Challenge),
-                // Página padrão de bloqueio do F5 ASM; a fixture sintética usa
-                // a forma curta "request rejected" e o título "Request Rejected".
+                // Default F5 ASM block page; the synthetic fixture uses
+                // the short form "request rejected" and the title "Request Rejected".
                 marker(
                     "The requested URL was rejected",
                     "f5-rejected",
@@ -151,25 +151,25 @@ impl Default for AssessRules {
 }
 
 impl AssessRules {
-    /// Lê regras de JSON. Campos ausentes assumem o padrão; schema diferente
-    /// de [`RULES_SCHEMA`] é recusado.
+    /// Reads rules from JSON. Missing fields take the default; a schema different
+    /// from [`RULES_SCHEMA`] is rejected.
     pub fn from_json(text: &str) -> Result<Self, String> {
         let raw: serde_json::Value =
-            serde_json::from_str(text).map_err(|e| format!("regras de assess inválidas: {e}"))?;
+            serde_json::from_str(text).map_err(|e| format!("invalid assess rules: {e}"))?;
         if raw.get("schema").and_then(|v| v.as_str()).is_none() {
             return Err(format!(
-                "regras de assess sem \"schema\" (esperado {RULES_SCHEMA})"
+                "assess rules without \"schema\" (expected {RULES_SCHEMA})"
             ));
         }
         let rules: Self =
-            serde_json::from_value(raw).map_err(|e| format!("regras de assess inválidas: {e}"))?;
+            serde_json::from_value(raw).map_err(|e| format!("invalid assess rules: {e}"))?;
         let blank = |s: &String| s.trim().is_empty();
         if rules.fields.iter().any(|f| blank(&f.name))
             || rules.required_fields.iter().any(blank)
             || rules.protection_paths.iter().any(blank)
         {
             return Err(
-                "regras de assess: fields[].name, requiredFields[] e protectionPaths[] não podem ser vazios"
+                "assess rules: fields[].name, requiredFields[] and protectionPaths[] cannot be empty"
                     .into(),
             );
         }
@@ -178,7 +178,7 @@ impl AssessRules {
             .iter()
             .any(|m| m.contains.trim().is_empty())
         {
-            return Err("regras de assess: marcador de proteção com \"contains\" vazio".into());
+            return Err("assess rules: protection marker with empty \"contains\"".into());
         }
         if let Some(bad) = rules
             .blocked_statuses
@@ -186,19 +186,19 @@ impl AssessRules {
             .find(|s| !(400..=599).contains(*s))
         {
             return Err(format!(
-                "regras de assess: blockedStatuses aceita só 4xx/5xx (recebeu {bad})"
+                "assess rules: blockedStatuses accepts only 4xx/5xx (got {bad})"
             ));
         }
         if rules.schema != RULES_SCHEMA {
             return Err(format!(
-                "schema de regras desconhecido: {} (esperado {RULES_SCHEMA})",
+                "unknown rules schema: {} (expected {RULES_SCHEMA})",
                 rules.schema
             ));
         }
         Ok(rules)
     }
 
-    /// Avisos para regras legítimas, mas que esvaziam ou distorcem a avaliação.
+    /// Warnings for legitimate rules that empty out or distort the assessment.
     pub fn warnings(&self) -> Vec<String> {
         let mut out = Vec::new();
         if self.fields.is_empty()
@@ -207,14 +207,14 @@ impl AssessRules {
             && self.protection_paths.is_empty()
             && self.blocked_statuses.is_empty()
         {
-            out.push("as regras desligam todas as detecções: nada será marcado".to_string());
+            out.push("the rules turn off all detections: nothing will be marked".to_string());
         }
         if self.fields.is_empty()
             && self.protection_markers.is_empty()
             && self.blocked_statuses.is_empty()
         {
             out.push(
-                "nenhuma detecção configurada (fields, protectionMarkers e blockedStatuses vazios)"
+                "no detection configured (fields, protectionMarkers and blockedStatuses empty)"
                     .to_string(),
             );
         }
@@ -224,7 +224,7 @@ impl AssessRules {
             .any(|p| matches!(p.as_str(), "/" | "*"))
         {
             out.push(
-                "protectionPaths contém \"/\": toda requisição seria rota de proteção e ficaria não-avaliada"
+                "protectionPaths contains \"/\": every request would be a protection route and would be left not-assessed"
                     .to_string(),
             );
         }
@@ -233,7 +233,7 @@ impl AssessRules {
             .iter()
             .any(|m| m.contains.trim().is_empty())
         {
-            out.push("há marcador de proteção vazio, que casaria com qualquer HTML".to_string());
+            out.push("there is an empty protection marker, which would match any HTML".to_string());
         }
         out
     }
@@ -242,15 +242,15 @@ impl AssessRules {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SignalKind {
-    /// Sinal de que a aplicação respondeu.
+    /// Signal that the application responded.
     Ok,
-    /// Erro declarado pela aplicação (campo de erro não vazio, HTTP 4xx/5xx).
+    /// Error declared by the application (non-empty error field, HTTP 4xx/5xx).
     Error,
-    /// Evidência explícita de proteção/bloqueio.
+    /// Explicit evidence of protection/blocking.
     Protection,
-    /// Campo esperado e ausente (ou vazio).
+    /// Expected field missing (or empty).
     Missing,
-    /// Observação que não muda o veredito.
+    /// Observation that does not change the verdict.
     Info,
 }
 
@@ -268,20 +268,20 @@ pub enum VerdictKind {
     AppOk,
     AppError,
     Blocked,
-    Indeterminado,
-    /// Sem sinal da aplicação e sem expectativa aprendida na rota.
+    Undetermined,
+    /// No application signal and no expectation learned for the route.
     NotAssessed,
 }
 
 impl VerdictKind {
-    /// Chave de `counts` no JSON (`scrapelens.assess/1`), igual a `verdictKind`.
+    /// `counts` key in the JSON (`scrapelens.assess/1`), same as `verdictKind`.
     #[must_use]
     pub const fn count_key(self) -> &'static str {
         match self {
             Self::AppOk => "app-ok",
             Self::AppError => "app-error",
             Self::Blocked => "blocked",
-            Self::Indeterminado => "indeterminado",
+            Self::Undetermined => "undetermined",
             Self::NotAssessed => "not-assessed",
         }
     }
@@ -297,19 +297,19 @@ pub struct ResponseOutcome {
     /// 2xx/3xx.
     pub http_ok: bool,
     pub app_signals: Vec<AppSignal>,
-    /// `app-ok`, `app-error (<sinal>)`, `blocked? (<sinal>)`, `indeterminado`
-    /// ou `não-avaliado`.
+    /// `app-ok`, `app-error (<signal>)`, `blocked? (<signal>)`, `undetermined`
+    /// or `not-assessed`.
     pub verdict: String,
     pub verdict_kind: VerdictKind,
-    /// Campos esperados (aprendidos na rota ou exigidos pelas regras) que
-    /// faltaram ou vieram vazios.
+    /// Expected fields (learned on the route or required by the rules) that
+    /// were missing or came back empty.
     pub missing_fields: Vec<String>,
-    /// Por que o veredito é `indeterminado` ou `não-avaliado` (vazio nos demais).
+    /// Why the verdict is `undetermined` or `not-assessed` (empty otherwise).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub reason: String,
 }
 
-/// Campos aprendidos por rota (`"POST /servlet/Connector"` → nomes).
+/// Fields learned per route (`"POST /servlet/Connector"` → names).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RouteExpectations {
     routes: BTreeMap<String, BTreeSet<String>>,
@@ -326,7 +326,7 @@ fn route_key(request: &LogicalRequest) -> String {
     format!("{} {}", request.method.to_ascii_uppercase(), url)
 }
 
-/// Um campo lido do corpo da resposta.
+/// A field read from the response body.
 struct Found {
     name: String,
     value: String,
@@ -379,7 +379,7 @@ fn parse_body(request: &LogicalRequest, source: &dyn BodySource) -> ParsedBody {
                 value: control.value,
             });
         }
-        // Corpo de form puro sob Content-Type html (caso do Connector).
+        // Plain form body under Content-Type html (the Connector case).
         if out.fields.is_empty() && looks_form(&text) {
             out.fields = form_fields(&text);
         }
@@ -488,8 +488,8 @@ fn find<'a>(fields: &'a [Found], rule: &str) -> Option<&'a Found> {
     fields.iter().find(|f| name_matches(&f.name, rule))
 }
 
-/// Há erro de aplicação ou bloqueio explícito nesta resposta? Quem aprende a
-/// rota ignora essas respostas.
+/// Is there an application error or explicit block in this response? Whoever learns
+/// the route ignores these responses.
 fn is_clean_sample(request: &LogicalRequest, parsed: &ParsedBody, rules: &AssessRules) -> bool {
     let status_ok = request.status.is_some_and(|s| s < 400);
     status_ok
@@ -500,8 +500,8 @@ fn is_clean_sample(request: &LogicalRequest, parsed: &ParsedBody, rules: &Assess
             .any(|r| find(&parsed.fields, &r.name).is_some_and(|f| !f.value.trim().is_empty()))
 }
 
-/// Aprende, para cada rota, os campos positivos que as respostas limpas
-/// trouxeram.
+/// Learns, for each route, the positive fields that clean responses
+/// carried.
 pub fn learn_routes(
     session: &SessionV1,
     source: &dyn BodySource,
@@ -533,7 +533,7 @@ pub fn learn_routes(
     learned
 }
 
-/// Caminho da URL (sem esquema/host e sem query/fragmento).
+/// URL path (without scheme/host and without query/fragment).
 fn path_of(url: &str) -> &str {
     let no_frag = url.split('#').next().unwrap_or(url);
     let no_query = no_frag.split('?').next().unwrap_or(no_frag);
@@ -547,7 +547,7 @@ fn path_of(url: &str) -> &str {
     }
 }
 
-/// Avalia uma resposta só com as regras (sem aprendizado de rota).
+/// Assesses a response with the rules only (without route learning).
 pub fn response_outcome(
     request: &LogicalRequest,
     source: &dyn BodySource,
@@ -556,7 +556,7 @@ pub fn response_outcome(
     response_outcome_with(request, source, rules, &RouteExpectations::default())
 }
 
-/// Avalia uma resposta usando também os campos aprendidos na sessão.
+/// Assesses a response, also using the fields learned in the session.
 pub fn response_outcome_with(
     request: &LogicalRequest,
     source: &dyn BodySource,
@@ -572,7 +572,7 @@ pub fn response_outcome_with(
         detail,
     };
 
-    // 1. Erro declarado pela aplicação.
+    // 1. Error declared by the application.
     let mut error_signal: Option<String> = None;
     for rule in rules.fields.iter().filter(|r| r.kind == FieldKind::Error) {
         if let Some(found) = find(&parsed.fields, &rule.name) {
@@ -582,7 +582,7 @@ pub fn response_outcome_with(
                     rule.signal(),
                     SignalKind::Error,
                     format!(
-                        "campo {} preenchido ({} caracteres)",
+                        "field {} filled in ({} characters)",
                         found.name,
                         found.value.chars().count()
                     ),
@@ -591,7 +591,7 @@ pub fn response_outcome_with(
         }
     }
 
-    // 2. Evidência explícita de bloqueio.
+    // 2. Explicit evidence of blocking.
     let path = path_of(&request.url);
     let protection_path = rules
         .protection_paths
@@ -599,14 +599,14 @@ pub fn response_outcome_with(
         .any(|p| !p.is_empty() && path.contains(p.as_str()));
     let mut block_signal: Option<String> = None;
     if protection_path {
-        // Rota da proteção: o handshake (desafio/cookie/script) é normal.
-        // `blocked?` só se a APLICAÇÃO responder desafio/rejeição ou 403/429.
+        // Protection route: the handshake (challenge/cookie/script) is normal.
+        // `blocked?` only if the APPLICATION responds with challenge/rejection or 403/429.
         signals.push(sig(
-            "proteção",
+            "protection",
             SignalKind::Info,
-            format!("rota de proteção {path}; handshake normal, não avaliada"),
+            format!("protection route {path}; normal handshake, not assessed"),
         ));
-        // 403/429 na própria rota de proteção é evidência explícita.
+        // 403/429 on the protection route itself is explicit evidence.
         if let Some(status) = request.status {
             if rules.blocked_statuses.contains(&status) {
                 let name = format!("http-{status}");
@@ -624,7 +624,7 @@ pub fn response_outcome_with(
         }
         let marker_hit = parsed.html.then_some(()).and_then(|()| {
             let text = parsed.text.as_deref()?.to_ascii_lowercase();
-            // Rejeição conhecida > conteúdo de desafio > citação.
+            // Known rejection > challenge content > citation.
             let rank = |kind| match kind {
                 MarkerKind::Rejection => 2,
                 MarkerKind::Challenge => 1,
@@ -648,9 +648,9 @@ pub fn response_outcome_with(
             let no_controls = parsed.fields.is_empty();
             let replaces_expected = no_controls && learned.expected(request).is_some();
             let challenge = marker.kind == MarkerKind::Challenge && no_controls;
-            // Rejeição só vale sem os controles esperados: uma página da
-            // aplicação com os controles que a rota traz e que apenas cita o
-            // texto da rejeição é aplicação respondendo.
+            // Rejection only counts without the expected controls: an application
+            // page with the controls the route carries that merely cites the
+            // rejection text is the application responding.
             let expected_here = {
                 let mut e: BTreeSet<String> = rules.required_fields.iter().cloned().collect();
                 if let Some(known) = learned.expected(request) {
@@ -670,17 +670,17 @@ pub fn response_outcome_with(
                 block_signal.get_or_insert_with(|| name.clone());
                 let detail = if rejection {
                     format!(
-                        "página de rejeição conhecida (marcador {})",
+                        "known rejection page (marker {})",
                         marker.contains
                     )
                 } else if challenge {
                     format!(
-                        "conteúdo de desafio sem a página esperada (marcador {})",
+                        "challenge content without the expected page (marker {})",
                         marker.contains
                     )
                 } else {
                     format!(
-                        "conteúdo de desafio sem os controles esperados (marcador {})",
+                        "challenge content without the expected controls (marker {})",
                         marker.contains
                     )
                 };
@@ -690,7 +690,7 @@ pub fn response_outcome_with(
                     &name,
                     SignalKind::Info,
                     format!(
-                        "marcador {} citado por uma página da aplicação; sozinho não é bloqueio",
+                        "marker {} cited by an application page; alone it is not blocking",
                         marker.contains
                     ),
                 ));
@@ -706,14 +706,14 @@ pub fn response_outcome_with(
                 signals.push(sig(
                     rule.signal(),
                     SignalKind::Missing,
-                    format!("{} presente, mas vazio", found.name),
+                    format!("{} present, but empty", found.name),
                 ));
             } else {
                 positives += 1;
                 signals.push(sig(
                     rule.signal(),
                     SignalKind::Ok,
-                    format!("{} presente", found.name),
+                    format!("{} present", found.name),
                 ));
             }
         }
@@ -735,14 +735,14 @@ pub fn response_outcome_with(
         }
     }
 
-    // 4. Veredito.
+    // 4. Verdict.
     let status_text = request
         .status
-        .map_or("sem status".to_string(), |s| s.to_string());
+        .map_or("no status".to_string(), |s| s.to_string());
     let mut reason = String::new();
     let (kind, verdict) = if protection_path && block_signal.is_none() {
-        reason = format!("rota de proteção {path}; handshake normal, não avaliada");
-        (VerdictKind::NotAssessed, "não-avaliado".to_string())
+        reason = format!("protection route {path}; normal handshake, not assessed");
+        (VerdictKind::NotAssessed, "not-assessed".to_string())
     } else if let Some(signal) = error_signal {
         (VerdictKind::AppError, format!("app-error ({signal})"))
     } else if let Some(signal) = block_signal {
@@ -753,41 +753,41 @@ pub fn response_outcome_with(
         (VerdictKind::AppError, format!("app-error ({name})"))
     } else if parsed.html && parsed.fields.is_empty() && learned.expected(request).is_some() {
         signals.push(sig(
-            "html-sem-controles",
+            "html-without-controls",
             SignalKind::Protection,
             format!(
-                "HTML sem controles numa rota que os trazia ({})",
+                "HTML without controls on a route that carried them ({})",
                 missing.join(", ")
             ),
         ));
         (
             VerdictKind::Blocked,
-            "blocked? (html-sem-controles)".to_string(),
+            "blocked? (html-without-controls)".to_string(),
         )
     } else if !missing.is_empty() {
         let fields = missing.join(", ");
         reason = if parsed.text.is_none() {
-            format!("corpo da resposta indisponível; faltam campos esperados: {fields}")
+            format!("response body unavailable; expected fields missing: {fields}")
         } else if parsed.truncated {
-            format!("corpo truncado; faltam campos esperados: {fields}")
+            format!("body truncated; expected fields missing: {fields}")
         } else {
-            format!("faltam campos esperados: {fields}")
+            format!("expected fields missing: {fields}")
         };
-        (VerdictKind::Indeterminado, "indeterminado".to_string())
+        (VerdictKind::Undetermined, "undetermined".to_string())
     } else if positives > 0 {
         (VerdictKind::AppOk, "app-ok".to_string())
     } else {
         reason = if parsed.text.is_none() {
-            "corpo da resposta indisponível; rota sem expectativa aprendida".to_string()
+            "response body unavailable; route without learned expectation".to_string()
         } else if parsed.truncated {
-            "corpo truncado; rota sem expectativa aprendida".to_string()
+            "body truncated; route without learned expectation".to_string()
         } else {
-            "sem sinais de aplicação nem campos esperados nesta rota".to_string()
+            "no application signals or expected fields on this route".to_string()
         };
-        (VerdictKind::NotAssessed, "não-avaliado".to_string())
+        (VerdictKind::NotAssessed, "not-assessed".to_string())
     };
-    if kind == VerdictKind::Indeterminado && parsed.truncated && !reason.contains("truncado") {
-        reason.push_str("; corpo truncado");
+    if kind == VerdictKind::Undetermined && parsed.truncated && !reason.contains("truncated") {
+        reason.push_str("; body truncated");
     }
 
     ResponseOutcome {
@@ -804,8 +804,8 @@ pub fn response_outcome_with(
     }
 }
 
-/// Avalia todas as requisições da sessão, na ordem, aprendendo antes quais
-/// campos cada rota costuma trazer.
+/// Assesses all requests in the session, in order, learning first which
+/// fields each route usually carries.
 pub fn assess_session(
     session: &SessionV1,
     source: &dyn BodySource,

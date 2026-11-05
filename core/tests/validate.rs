@@ -1,4 +1,4 @@
-//! `validate` (captura × trace) e `map_origin`, com sessões sintéticas e hosts diferentes.
+//! `validate` (capture × trace) and `map_origin`, with synthetic sessions and different hosts.
 
 use std::sync::Arc;
 
@@ -13,8 +13,8 @@ use scrapelens_core::parse::import_trace;
 use scrapelens_core::validate::{validate, ValidateOptions, ValidationVerdict};
 use serde_json::{json, Value};
 
-/// Adaptador mínimo para os testes de parte de protocolo: `LP!` + registros
-/// `<nn:nome><nome><mm:valor><valor>`, com a parte `delta`.
+/// Minimal adapter for the protocol-part tests: `LP!` + records
+/// `<nn:name><name><mm:value><value>`, with the `delta` part.
 struct Lp;
 
 impl ProtocolAdapter for Lp {
@@ -34,10 +34,10 @@ impl ProtocolAdapter for Lp {
             let n: usize = value
                 .get(*i..*i + 2)
                 .and_then(|s| s.parse().ok())
-                .ok_or_else(|| bad("comprimento"))?;
+                .ok_or_else(|| bad("length"))?;
             let start = *i + 2;
             if start + n > value.len() {
-                return Err(bad("truncado"));
+                return Err(bad("truncated"));
             }
             *i = start + n;
             Ok((start, n))
@@ -174,8 +174,8 @@ fn run_flow(
     validate(&a.session, a, &b.session, b, &options)
 }
 
-/// Captura com campo `XML` de protocolo (adaptador `Lp`): o delta do alvo vem
-/// da resposta do POST anterior. `d_prev` é o delta dessa resposta.
+/// Capture with protocol field `XML` (adapter `Lp`): the target's delta comes
+/// from the previous POST's response. `d_prev` is that response's delta.
 fn lp_capture(d_prev: &str) -> SessionBundle {
     let o = "http://app.test";
     let prev = format!(
@@ -192,8 +192,8 @@ fn lp_capture(d_prev: &str) -> SessionBundle {
     )
 }
 
-/// Trace do plano do `lp_capture`: a resposta do POST anterior traz `d_prev` e o
-/// alvo manda `d_target`. `plan` presente com hash do plano e nomes `["placa"]`.
+/// Trace of the plan for `lp_capture`: the previous POST's response carries `d_prev` and the
+/// target sends `d_target`. `plan` present with the plan hash and names `["placa"]`.
 fn lp_trace(d_prev: &str, d_target: &str, names: &[&str], extra: Value) -> SessionBundle {
     let o = "http://127.0.0.1:18791";
     let cap = lp_capture("D2");
@@ -229,24 +229,24 @@ const TR: &str = "http://127.0.0.1:8791";
 fn equivalent_trace_with_another_host_and_other_dynamic_values() {
     let cap = bundle(CAP, "AAAA1111", Some(200), true, false);
     let tr = bundle(TR, "BBBB2222", Some(200), true, true);
-    let v = run(&cap, &tr, None); // mapeamento automático
+    let v = run(&cap, &tr, None); // automatic mapping
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
     assert!(
-        v.summary.starts_with("execução equivalente à captura"),
+        v.summary.starts_with("execution equivalent to capture"),
         "{}",
         v.summary
     );
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("mapeadas automaticamente")),
+            .any(|w| w.contains("mapped automatically")),
         "{:?}",
         v.warnings
     );
     assert_eq!(v.mapped_origin.as_ref().unwrap().to, TR);
     assert_eq!(v.steps.len(), 3);
     assert!(v.steps.iter().all(|s| s.capture_request_id.is_some()));
-    // o STAMP mudou, com origem: esperado
+    // STAMP changed, with origin: expected
     assert!(
         v.steps[2].expected.iter().any(|n| n.field == "STAMP"),
         "{:?}",
@@ -262,7 +262,7 @@ fn equivalent_trace_with_another_host_and_other_dynamic_values() {
 #[test]
 fn without_mapping_and_both_non_trace_hosts_do_not_pair() {
     let cap = bundle(CAP, "AAAA1111", Some(200), true, false);
-    let tr = bundle(TR, "BBBB2222", Some(200), true, false); // sem rótulo script-trace
+    let tr = bundle(TR, "BBBB2222", Some(200), true, false); // without script-trace label
     let r = compare_sessions(
         &cap.session,
         &cap,
@@ -277,7 +277,7 @@ fn without_mapping_and_both_non_trace_hosts_do_not_pair() {
     };
     let r = compare_sessions(&cap.session, &cap, &tr.session, &tr, &options);
     assert_eq!(r.pairs.len(), 3);
-    assert!(OriginMap::parse("sem-igual").is_none());
+    assert!(OriginMap::parse("no-equal").is_none());
 }
 
 #[test]
@@ -288,7 +288,7 @@ fn diverging_trace_points_at_the_bad_step() {
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert_eq!(v.step, Some(3));
     assert!(
-        v.summary.starts_with("diverge no passo 3 ("),
+        v.summary.starts_with("diverges at step 3 ("),
         "{}",
         v.summary
     );
@@ -298,7 +298,7 @@ fn diverging_trace_points_at_the_bad_step() {
 #[test]
 fn trace_that_stops_with_a_transport_error_is_incomplete() {
     let cap = bundle(CAP, "AAAA1111", Some(200), true, false);
-    // erro de transporte registrado no passo 3
+    // transport error recorded at step 3
     let steps = vec![
         step(
             TR,
@@ -338,7 +338,7 @@ fn trace_that_stops_with_a_transport_error_is_incomplete() {
     assert_eq!(v.verdict, ValidationVerdict::Incomplete, "{v:#?}");
     assert_eq!(v.step, Some(3));
     assert!(
-        v.summary.starts_with("incompleta: parou no passo 3"),
+        v.summary.starts_with("incomplete: stopped at step 3"),
         "{}",
         v.summary
     );
@@ -421,13 +421,13 @@ fn declared_user_parameters_are_expected_differences() {
     assert!(v.steps[2]
         .expected
         .iter()
-        .any(|n| n.reason.contains("parâmetro do usuário")));
-    // esquema: parameters malformado é erro claro
+        .any(|n| n.reason.contains("user parameter")));
+    // schema: malformed parameters is a clear error
     let bad = json!({"schema":"scrapelens.trace/1","parameters":[{}],"steps":[]});
     assert!(import_trace(&serde_json::to_vec(&bad).unwrap()).is_err());
 }
 
-// ---- proveniência, completude e parâmetros (docs/13, revisão da rodada 9) ----
+// ---- provenance, completeness and parameters (docs/13, round 9 review) ----
 
 const F: &str = "application/x-www-form-urlencoded";
 
@@ -468,7 +468,7 @@ fn pcap() -> SessionBundle {
     )
 }
 
-/// `go`: o POST /go; `go2`: o POST /go2; todos em loopback.
+/// `go`: the POST /go; `go2`: the POST /go2; all on loopback.
 fn ptrace(go: &str, go2: &str, extra: Value) -> SessionBundle {
     let o = "http://127.0.0.1:18791";
     let mut doc = json!({"schema":"scrapelens.trace/1","target":"har-0004","complete":true,"steps":[
@@ -500,12 +500,12 @@ fn faithful_trace_with_a_valid_parameter_is_equivalent() {
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
     let v = pv(&ptrace(GOOD_GO, GOOD_GO2, json!({})));
-    assert_eq!(v.verdict, ValidationVerdict::Diverges, "placa sem declarar");
+    assert_eq!(v.verdict, ValidationVerdict::Diverges, "plate not declared");
 }
 
 #[test]
 fn frozen_captured_value_diverges_even_though_it_equals_the_capture() {
-    // V3: STAMP igual ao capturado, ausente da resposta pareada
+    // V3: STAMP equal to the captured one, absent from the paired response
     let go = "STAMP=STAMPCAP1234567&q=cadastro&sig=0123456789abcdef0123456789abcdef&placa=XYZ9K88";
     let v = pv(&ptrace(
         go,
@@ -514,12 +514,12 @@ fn frozen_captured_value_diverges_even_though_it_equals_the_capture() {
     ));
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert_eq!(v.step, Some(3));
-    assert!(v.summary.contains("congelado"), "{}", v.summary);
+    assert!(v.summary.contains("frozen"), "{}", v.summary);
 }
 
 #[test]
 fn value_from_another_response_diverges_as_different_origin() {
-    // V18: o STAMP do /go2 vem da resposta de /a, não da de /go
+    // V18: the STAMP of /go2 comes from the response of /a, not from /go
     let v = pv(&ptrace(
         GOOD_GO,
         "STAMP=STAMPNEW0000001&q=consulta",
@@ -527,12 +527,12 @@ fn value_from_another_response_diverges_as_different_origin() {
     ));
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert_eq!(v.step, Some(4));
-    assert!(v.summary.contains("origem diferente"), "{}", v.summary);
+    assert!(v.summary.contains("different origin"), "{}", v.summary);
 }
 
 #[test]
 fn changed_constant_diverges_and_forged_parameters_are_ignored_with_a_warning() {
-    // V5/V7: sig (constante longa) trocada; declarar sig/STAMP/q como parâmetro não mascara
+    // V5/V7: sig (long constant) swapped; declaring sig/STAMP/q as parameters does not mask
     let go = "STAMP=STAMPNEW0000001&q=cadastro&sig=ffffffffffffffffffffffffffffffff&placa=XYZ9K88";
     let v = pv(&ptrace(
         go,
@@ -549,12 +549,12 @@ fn changed_constant_diverges_and_forged_parameters_are_ignored_with_a_warning() 
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("parâmetro inválido") && w.contains("STAMP")),
+            .any(|w| w.contains("invalid parameter") && w.contains("STAMP")),
         "{:?}",
         v.warnings
     );
-    // `sig` é parâmetro obrigatório do plano regenerado (pair (sig, sig)):
-    // declará-lo é consistente com o plano, então a troca deixa de divergir.
+    // `sig` is a required parameter of the regenerated plan (pair (sig, sig)):
+    // declaring it is consistent with the plan, so the swap no longer diverges.
     let v = pv(&ptrace(
         go,
         GOOD_GO2,
@@ -565,11 +565,11 @@ fn changed_constant_diverges_and_forged_parameters_are_ignored_with_a_warning() 
         v.steps[2]
             .expected
             .iter()
-            .any(|n| n.field == "sig" && n.reason.contains("parâmetro do usuário")),
+            .any(|n| n.field == "sig" && n.reason.contains("user parameter")),
         "{:?}",
         v.steps[2]
     );
-    // item sob um name do plano com parte que o plano não produz não é isento
+    // item under a plan name with a part that the plan does not produce is not exempt
     let v = pv(&ptrace(
         go,
         GOOD_GO2,
@@ -579,7 +579,7 @@ fn changed_constant_diverges_and_forged_parameters_are_ignored_with_a_warning() 
     assert!(
         v.warnings
             .iter()
-            .any(|w| w == "parâmetro não corresponde ao plano: sig → q"),
+            .any(|w| w == "parameter does not match the plan: sig → q"),
         "{:?}",
         v.warnings
     );
@@ -587,7 +587,7 @@ fn changed_constant_diverges_and_forged_parameters_are_ignored_with_a_warning() 
 
 #[test]
 fn incomplete_traces_are_never_equivalent() {
-    // V2/V2b/V16: prefixo da cadeia, sem alvo/complete, ou só GETs
+    // V2/V2b/V16: chain prefix, without target/complete, or only GETs
     let full = ptrace(GOOD_GO, GOOD_GO2, json!({"parameters":[{"name":"placa"}]}));
     assert_eq!(pv(&full).verdict, ValidationVerdict::Equivalent);
     let no_target = ptrace(
@@ -616,7 +616,7 @@ fn incomplete_traces_are_never_equivalent() {
 
 #[test]
 fn only_loopback_hosts_are_mapped_automatically() {
-    // V12: o trace em outro host não é mapeado sozinho
+    // V12: a trace on another host is not mapped by itself
     let o = "http://evil.example";
     let doc = json!({"schema":"scrapelens.trace/1","target":"har-0004","complete":true,"steps":[
         pstep(o, "GET", "/entry", None, "<html>entry</html>"),
@@ -629,11 +629,11 @@ fn only_loopback_hosts_are_mapped_automatically() {
     assert_ne!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
     assert!(v.summary.contains("--map-origin"), "{}", v.summary);
     assert!(v.mapped_origin.is_none());
-    // com --map-origin explícito, equivalente, e o resumo cita o mapeamento
+    // with an explicit --map-origin, equivalent, and the summary cites the mapping
     let map = OriginMap::parse("http://app.test=http://evil.example");
     let v = run(&pcap(), &tr, map);
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
-    assert!(v.summary.contains("origem mapeada"), "{}", v.summary);
+    assert!(v.summary.contains("mapped origin"), "{}", v.summary);
 }
 
 fn hash_for(names: &[&str]) -> String {
@@ -651,8 +651,8 @@ fn hash_for(names: &[&str]) -> String {
 
 #[test]
 fn copied_plan_hash_diverges_and_missing_plan_warns() {
-    // hash de outro plano (copiado) → diverge
-    let other = hash_for(&["outro"]);
+    // hash of another plan (copied) → diverges
+    let other = hash_for(&["other"]);
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
@@ -661,12 +661,12 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert!(
         v.summary
-            .contains("plano diferente do gerado a partir desta captura"),
+            .contains("plan differs from the one generated from this capture"),
         "{}",
         v.summary
     );
-    assert!(v.warnings.iter().any(|w| w.contains("plano não confere")));
-    // hash certo (parâmetros do plano = placa) → equivalente
+    assert!(v.warnings.iter().any(|w| w.contains("plan does not match")));
+    // correct hash (plan parameters = placa) → equivalent
     let h = hash_for(&["placa"]);
     let v = pv(&ptrace(
         GOOD_GO,
@@ -675,18 +675,18 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
     assert!(
-        !v.warnings.iter().any(|w| w.contains("plano")),
+        !v.warnings.iter().any(|w| w.contains("plan")),
         "{:?}",
         v.warnings
     );
-    // o usuário sobrescreveu um opcional: nome extra só no `parameters` de topo
+    // the user overrode an optional item: extra name only in the top-level `parameters`
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
         json!({"parameters":[{"name":"placa"},{"name":"q"}], "plan": {"version":2,"hash": h, "parameters": ["placa"]}}),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
-    // sem `plan`: aviso, sem divergência
+    // without `plan`: warning, no divergence
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
@@ -696,7 +696,7 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("plano ausente: execução não verificada contra o plano")),
+            .any(|w| w.contains("plan missing: execution not verified against the plan")),
         "{:?}",
         v.warnings
     );
@@ -704,8 +704,8 @@ fn copied_plan_hash_diverges_and_missing_plan_warns() {
 
 #[test]
 fn faithful_plan_has_no_spurious_warnings() {
-    // trace fiel do gerador atual: `plan.parameters` não passa pelas checagens e
-    // o par (name, part) que o plano regenerado da captura produz é isento.
+    // faithful trace from the current generator: `plan.parameters` does not go through the checks and
+    // the (name, part) pair that the plan regenerated from the capture produces is exempt.
     let names = ["placa", "cpf", "sessionid_cliente", "SESSIONID", "sig"];
     let h = hash_for(&names);
     let v = pv(&ptrace(
@@ -717,15 +717,15 @@ fn faithful_plan_has_no_spurious_warnings() {
         }),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
-    // único aviso permitido: o mapeamento automático de origem (hosts diferentes).
+    // the only permitted warning: the automatic origin mapping (different hosts).
     let spurious: Vec<&String> = v
         .warnings
         .iter()
-        .filter(|w| !w.contains("mapeadas automaticamente"))
+        .filter(|w| !w.contains("mapped automatically"))
         .collect();
     assert!(spurious.is_empty(), "{spurious:?}");
-    // name do plano com parte que o plano NÃO produz: não é isento, avisa e
-    // passa pelas checagens normais (constante longa).
+    // plan name with a part that the plan does NOT produce: not exempt, warns and
+    // goes through the normal checks (long constant).
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
@@ -738,18 +738,18 @@ fn faithful_plan_has_no_spurious_warnings() {
     assert!(
         v.warnings
             .iter()
-            .any(|w| w == "parâmetro não corresponde ao plano: sessionid_cliente → sig"),
+            .any(|w| w == "parameter does not match the plan: sessionid_cliente → sig"),
         "{:?}",
         v.warnings
     );
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("parâmetro inválido: `sig`")),
+            .any(|w| w.contains("invalid parameter: `sig`")),
         "{:?}",
         v.warnings
     );
-    // item forjado inexistente (sem parte) também avisa
+    // forged nonexistent item (without a part) also warns
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
@@ -762,7 +762,7 @@ fn faithful_plan_has_no_spurious_warnings() {
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("parâmetro inválido: `forjado`")),
+            .any(|w| w.contains("invalid parameter: `forjado`")),
         "{:?}",
         v.warnings
     );
@@ -770,7 +770,7 @@ fn faithful_plan_has_no_spurious_warnings() {
 
 #[test]
 fn only_the_pair_the_plan_produces_is_exempt() {
-    // D1/E2/D5 da matriz do revisor com uma parte de protocolo real (`XML.delta`).
+    // D1/E2/D5 from the reviewer's matrix with a real protocol part (`XML.delta`).
     let cap = lp_capture("D2");
     let v = run_flow(
         &cap,
@@ -781,10 +781,10 @@ fn only_the_pair_the_plan_produces_is_exempt() {
     let spurious: Vec<&String> = v
         .warnings
         .iter()
-        .filter(|w| !w.contains("mapeadas automaticamente"))
+        .filter(|w| !w.contains("mapped automatically"))
         .collect();
     assert!(spurious.is_empty(), "{spurious:?}");
-    // D1: delta congelado + param(sessionid_cliente, XML.delta) → não é isento
+    // D1: frozen delta + param(sessionid_cliente, XML.delta) → not exempt
     let v = run_flow(
         &cap,
         &lp_trace(
@@ -797,15 +797,15 @@ fn only_the_pair_the_plan_produces_is_exempt() {
     );
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
     assert_eq!(v.step, Some(3));
-    assert!(v.summary.contains("congelado"), "{}", v.summary);
+    assert!(v.summary.contains("frozen"), "{}", v.summary);
     assert!(
         v.warnings
             .iter()
-            .any(|w| w == "parâmetro não corresponde ao plano: sessionid_cliente → XML.delta"),
+            .any(|w| w == "parameter does not match the plan: sessionid_cliente → XML.delta"),
         "{:?}",
         v.warnings
     );
-    // E2: delta inventado + param(cpf, XML.delta) → não é isento
+    // E2: invented delta + param(cpf, XML.delta) → not exempt
     let v = run_flow(
         &cap,
         &lp_trace(
@@ -822,11 +822,11 @@ fn only_the_pair_the_plan_produces_is_exempt() {
         v.steps[2]
             .unexpected
             .iter()
-            .any(|n| n.field == "XML.delta" && n.reason.contains("sem origem")),
+            .any(|n| n.field == "XML.delta" && (n.reason.contains("no origin") || n.reason.contains("without origin"))),
         "{:?}",
         v.steps[2]
     );
-    // D5: fiel + param(cpf, XML.delta) → equivalente, mas avisa e não isenta
+    // D5: faithful + param(cpf, XML.delta) → equivalent, but warns and is not exempt
     let v = run_flow(
         &cap,
         &lp_trace(
@@ -841,11 +841,11 @@ fn only_the_pair_the_plan_produces_is_exempt() {
     assert!(
         v.warnings
             .iter()
-            .any(|w| w == "parâmetro não corresponde ao plano: cpf → XML.delta"),
+            .any(|w| w == "parameter does not match the plan: cpf → XML.delta"),
         "{:?}",
         v.warnings
     );
-    // sem `plan`: a isenção continua vindo do plano regenerado da captura
+    // without `plan`: the exemption still comes from the plan regenerated from the capture
     let mut no_plan = lp_trace(
         "D2",
         "D2",
@@ -863,8 +863,8 @@ fn only_the_pair_the_plan_produces_is_exempt() {
         .warnings
         .iter()
         .filter(|w| {
-            !w.contains("mapeadas automaticamente")
-                && !w.starts_with("plano ausente: execução não verificada")
+            !w.contains("mapped automatically")
+                && !w.starts_with("plan missing: execution not verified")
         })
         .collect();
     assert!(spurious.is_empty(), "{spurious:?}");
@@ -872,7 +872,7 @@ fn only_the_pair_the_plan_produces_is_exempt() {
 
 #[test]
 fn forged_parameters_under_plan_names_do_not_mask_stamp() {
-    // E4/E5: STAMP congelado/inventado com part STAMP sob o nome cpf.
+    // E4/E5: frozen/invented STAMP with part STAMP under the name cpf.
     let cap = pcap();
     let h = hash_for(&["placa", "cpf"]);
     let plan = json!({"version":2, "hash": h, "parameters":["placa","cpf"]});
@@ -887,7 +887,7 @@ fn forged_parameters_under_plan_names_do_not_mask_stamp() {
     assert!(
         v.warnings
             .iter()
-            .any(|w| w == "parâmetro não corresponde ao plano: cpf → STAMP"),
+            .any(|w| w == "parameter does not match the plan: cpf → STAMP"),
         "{:?}",
         v.warnings
     );
@@ -903,8 +903,8 @@ fn forged_parameters_under_plan_names_do_not_mask_stamp() {
 
 #[test]
 fn unverified_plan_parameters_do_not_mask_values() {
-    // L13–L15, N1 e N3: `plan.parameters` sem plano verificado não classifica
-    // nenhum campo; valor congelado/inventado continua divergindo.
+    // L13–L15, N1 and N3: `plan.parameters` without a verified plan does not classify
+    // any field; frozen/invented value keeps diverging.
     let cap = lp_capture("D2");
     let make = |prev: &str, target: &str| lp_trace(prev, target, &["placa"], json!({}));
     let add_delta = |t: &mut SessionBundle| {
@@ -913,7 +913,7 @@ fn unverified_plan_parameters_do_not_mask_values() {
             .notes
             .push("trace-plan-param: XML.delta".to_string());
     };
-    // N2: controle v2 sem hash, sem item → diverges
+    // N2: v2 control without hash, without item → diverges
     let mut t = make("D3", "D2");
     t.session
         .session
@@ -921,7 +921,7 @@ fn unverified_plan_parameters_do_not_mask_values() {
         .retain(|n| !n.starts_with("trace-plan-hash"));
     let v = run_flow(&cap, &t, lp_flow());
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
-    // N1: v2 sem hash + plan.parameters += XML.delta + delta congelado
+    // N1: v2 without hash + plan.parameters += XML.delta + frozen delta
     let mut t = make("D3", "D2");
     t.session
         .session
@@ -930,8 +930,8 @@ fn unverified_plan_parameters_do_not_mask_values() {
     add_delta(&mut t);
     let v = run_flow(&cap, &t, lp_flow());
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
-    assert!(v.summary.contains("congelado"), "{}", v.summary);
-    // L13: v1 + plan.parameters += XML.delta + delta congelado
+    assert!(v.summary.contains("frozen"), "{}", v.summary);
+    // L13: v1 + plan.parameters += XML.delta + frozen delta
     let mut t = make("D3", "D2");
     t.session.session.notes = t
         .session
@@ -949,7 +949,7 @@ fn unverified_plan_parameters_do_not_mask_values() {
     add_delta(&mut t);
     let v = run_flow(&cap, &t, lp_flow());
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
-    // L15: versão ausente + plan.parameters += XML.delta + delta congelado
+    // L15: missing version + plan.parameters += XML.delta + frozen delta
     let mut t = make("D3", "D2");
     t.session
         .session
@@ -958,7 +958,7 @@ fn unverified_plan_parameters_do_not_mask_values() {
     add_delta(&mut t);
     let v = run_flow(&cap, &t, lp_flow());
     assert_eq!(v.verdict, ValidationVerdict::Diverges, "{v:#?}");
-    // L14/N3: v1 + plan.parameters += XML.delta + delta inventado
+    // L14/N3: v1 + plan.parameters += XML.delta + invented delta
     let mut t = make("D3", "DZ");
     t.session.session.notes = t
         .session
@@ -980,11 +980,11 @@ fn unverified_plan_parameters_do_not_mask_values() {
         v.steps[2]
             .unexpected
             .iter()
-            .any(|n| n.field == "XML.delta" && n.reason.contains("sem origem")),
+            .any(|n| n.field == "XML.delta" && (n.reason.contains("no origin") || n.reason.contains("without origin"))),
         "{:?}",
         v.steps[2]
     );
-    // v1 fiel, sem item forjado → equivalent, só com o aviso de versão
+    // faithful v1, without forged item → equivalent, only with the version warning
     let mut t = make("D2", "D2");
     t.session.session.notes = t
         .session
@@ -1001,15 +1001,15 @@ fn unverified_plan_parameters_do_not_mask_values() {
         .collect();
     let v = run_flow(&cap, &t, lp_flow());
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
-    let plan_warnings: Vec<&String> = v.warnings.iter().filter(|w| w.contains("plano")).collect();
+    let plan_warnings: Vec<&String> = v.warnings.iter().filter(|w| w.contains("plan")).collect();
     assert_eq!(plan_warnings.len(), 1, "{:?}", v.warnings);
     assert!(
-        plan_warnings[0].contains("plano de versão anterior (v1)"),
+        plan_warnings[0].contains("plan of an earlier version (v1)"),
         "{:?}",
         plan_warnings
     );
     assert!(
-        !v.warnings.iter().any(|w| w.contains("parâmetro inválido")),
+        !v.warnings.iter().any(|w| w.contains("invalid parameter")),
         "{:?}",
         v.warnings
     );
@@ -1018,7 +1018,7 @@ fn unverified_plan_parameters_do_not_mask_values() {
 #[test]
 fn old_plan_version_warns_instead_of_diverging() {
     let h = hash_for(&["placa"]);
-    // versão ausente: build anterior → aviso, sem comparar o hash
+    // missing version: earlier build → warning, without comparing the hash
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
@@ -1028,25 +1028,25 @@ fn old_plan_version_warns_instead_of_diverging() {
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("plano de versão anterior (v1)")),
+            .any(|w| w.contains("plan of an earlier version (v1)")),
         "{:?}",
         v.warnings
     );
-    // versão antiga com hash que não confere: ainda só aviso
+    // old version with a hash that does not match: still just a warning
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
-        json!({"plan": {"version":1, "hash": hash_for(&["outro"]), "parameters": ["placa"]}}),
+        json!({"plan": {"version":1, "hash": hash_for(&["other"]), "parameters": ["placa"]}}),
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
     assert!(
         v.warnings
             .iter()
-            .any(|w| w.contains("plano de versão anterior (v1)")),
+            .any(|w| w.contains("plan of an earlier version (v1)")),
         "{:?}",
         v.warnings
     );
-    // plano sem hash: mensagem precisa, sem divergir
+    // plan without hash: precise message, without diverging
     let v = pv(&ptrace(
         GOOD_GO,
         GOOD_GO2,
@@ -1054,7 +1054,7 @@ fn old_plan_version_warns_instead_of_diverging() {
     ));
     assert_eq!(v.verdict, ValidationVerdict::Equivalent, "{v:#?}");
     assert!(
-        v.warnings.iter().any(|w| w == "plano sem impressão"),
+        v.warnings.iter().any(|w| w == "plan without fingerprint"),
         "{:?}",
         v.warnings
     );

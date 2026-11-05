@@ -1,9 +1,9 @@
-//! Caso de referência DETRAN-PB (`fixtures/detran-pb/`).
+//! DETRAN-PB reference case (`fixtures/detran-pb/`).
 //!
-//! Fixtures sintéticas com a forma do caso real: 13 requisições, 8 POSTs no
-//! Connector, duas consultas com mesma URL/método diferenciadas só pelo corpo.
-//! O `time` do NetLog nelas está em milissegundos, como no Chrome real; a
-//! unidade é calibrada pelo relógio do CDP.
+//! Synthetic fixtures with the shape of the real case: 13 requests, 8 POSTs to
+//! the Connector, two queries with the same URL/method differentiated only by the
+//! body. The NetLog `time` in them is in milliseconds, as in real Chrome; the unit
+//! is calibrated by the CDP clock.
 
 use std::path::PathBuf;
 
@@ -25,7 +25,7 @@ fn detran_fixtures_correlate_all_13_without_false_ambiguity() {
         &fixture("detran-pb.netlog.json"),
         CorrelationOptions::default(),
     )
-    .expect("importação da captura DETRAN-PB");
+    .expect("import of the DETRAN-PB capture");
 
     let session = &imported.bundle.session;
     assert_eq!(session.requests.len(), 13);
@@ -36,7 +36,7 @@ fn detran_fixtures_correlate_all_13_without_false_ambiguity() {
             .filter(|request| request.match_state == MatchState::Matched)
             .count(),
         13,
-        "todas as 13 requisições devem casar com o NetLog"
+        "all 13 requests must match the NetLog"
     );
     assert_eq!(
         session
@@ -45,7 +45,7 @@ fn detran_fixtures_correlate_all_13_without_false_ambiguity() {
             .filter(|request| request.match_state == MatchState::Ambiguous)
             .count(),
         0,
-        "timestamps distintos não podem virar ambiguidade falsa"
+        "distinct timestamps must not become a false ambiguity"
     );
     assert!(session
         .requests
@@ -56,7 +56,7 @@ fn detran_fixtures_correlate_all_13_without_false_ambiguity() {
         .iter()
         .all(|request| request.match_candidates.is_empty()));
 
-    // O relógio foi calibrado pelas fixtures em milissegundos (como o Chrome).
+    // The clock was calibrated by the fixtures in milliseconds (as Chrome does).
     assert!(session.warnings.iter().any(|warning| {
         warning.code == "netlog.time_unit_detected"
             && warning
@@ -67,14 +67,14 @@ fn detran_fixtures_correlate_all_13_without_false_ambiguity() {
                 == Some("milliseconds")
     }));
 
-    // As duas consultas `cmd_consultar_placa` têm URL/método iguais; cada uma
-    // casa com um source id distinto, sem escolher o "primeiro parecido".
+    // The two `cmd_consultar_placa` queries have the same URL/method; each one
+    // matches a distinct source id, without choosing the "first look-alike".
     let connector_queries: Vec<_> = session
         .requests
         .iter()
         .filter(|request| request.method == "POST" && request.url.ends_with("/servlet/Connector"))
         .collect();
-    assert_eq!(connector_queries.len(), 8, "8 POSTs no Connector");
+    assert_eq!(connector_queries.len(), 8, "8 POSTs to the Connector");
     let mut sources: Vec<u32> = connector_queries
         .iter()
         .filter_map(|request| request.netlog.source_ids.first().copied())
@@ -84,19 +84,19 @@ fn detran_fixtures_correlate_all_13_without_false_ambiguity() {
     assert_eq!(
         sources.len(),
         connector_queries.len(),
-        "cada POST do Connector deve apontar para um URL_REQUEST distinto"
+        "each POST to the Connector must point to a distinct URL_REQUEST"
     );
 }
 
 #[test]
 fn detran_netlog_without_cdp_warns_about_assumed_unit() {
     let imported = scrapelens_core::parse::import_netlog(&fixture("detran-pb.netlog.json"))
-        .expect("importação isolada do NetLog");
+        .expect("isolated import of the NetLog");
     let warning = imported
         .report
         .warnings
         .iter()
         .find(|warning| warning.code == "netlog.time_unit_assumed")
-        .expect("sem CDP, a unidade é assumida e isso é reportado");
-    assert!(warning.message.contains("milissegundos"));
+        .expect("without CDP, the unit is assumed and this is reported");
+    assert!(warning.message.contains("milliseconds"));
 }

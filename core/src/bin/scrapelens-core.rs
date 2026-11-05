@@ -1,23 +1,23 @@
-//! CLI mínimo do core. Sem rede, sem telemetria; só lê/grava arquivos locais.
+//! Minimal core CLI. No network, no telemetry; it only reads and writes local files.
 //!
-//! Uso:
-//!   scrapelens-core inspect <sessao>
-//!   scrapelens-core import-har <har> --out <sessao> [--label <rótulo>]...
-//!   scrapelens-core import-trace <trace.json> --out <sessao> [--label <rótulo>]...
-//!   scrapelens-core import-netlog <netlog> --out <sessao> [--label <rótulo>]...
-//!   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>] [--label <rótulo>]...
-//!   scrapelens-core search <sessao> <texto> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
-//!   scrapelens-core origins <sessao> <requestId>
-//!   scrapelens-core chain <sessao> <requestId>
-//!   scrapelens-core timeline <sessao>
-//!   scrapelens-core validate <captura> <sessao-trace> [--map-origin <origem-captura>=<origem-trace>]
-//!   scrapelens-core assess <sessao> [requestId] [--rules regras.json]
-//!   scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
-//!   scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all] [--map-origin <origem-A>=<origem-B>]
-//!   scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
-//!   scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
-//!   scrapelens-core sanitize <sessao> <saida>
-//!   scrapelens-core diff <sessao> <requestIdA> <requestIdB>
+//! Usage:
+//!   scrapelens-core inspect <session>
+//!   scrapelens-core import-har <har> --out <session> [--label <label>]...
+//!   scrapelens-core import-trace <trace.json> --out <session> [--label <label>]...
+//!   scrapelens-core import-netlog <netlog> --out <session> [--label <label>]...
+//!   scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <session> [--bodies <cdp-bodies.jsonl>] [--label <label>]...
+//!   scrapelens-core search <session> <text> [--scope url|requestHeaders|responseHeaders|cookies|requestBody|responseBody]... [--case-sensitive]
+//!   scrapelens-core origins <session> <requestId>
+//!   scrapelens-core chain <session> <requestId>
+//!   scrapelens-core timeline <session>
+//!   scrapelens-core validate <capture> <trace-session> [--map-origin <capture-origin>=<trace-origin>]
+//!   scrapelens-core assess <session> [requestId] [--rules rules.json]
+//!   scrapelens-core export-priming <session> <requestId> [--out file] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
+//!   scrapelens-core compare <sessionA> <sessionB> [--a-range from:to] [--b-range from:to] [--all] [--map-origin <origin-A>=<origin-B>]
+//!   scrapelens-core export-curl <session> <requestId> [--out file] [--with-origins]
+//!   scrapelens-core export-python <session> <requestId> [--out file] [--with-origins]
+//!   scrapelens-core sanitize <session> <output>
+//!   scrapelens-core diff <session> <requestIdA> <requestIdB>
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -32,7 +32,7 @@ fn main() -> ExitCode {
     match run(std::env::args().skip(1).collect()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("erro: {message}");
+            eprintln!("error: {message}");
             ExitCode::FAILURE
         }
     }
@@ -47,8 +47,8 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "inspect" => {
             let path = one_path(&args)?;
             let imported = scrapelens_core::import_session_dir(&path).map_err(|e| e.to_string())?;
-            // Struct emprestada + escrita em fluxo: sem `json!` (que copia a sessão num DOM) e
-            // sem a `String` gigante (docs/18 §4.2). A ordem e o formato são os de antes.
+            // Borrowed struct + streaming write: no `json!` (which copies the session into a DOM)
+            // and no giant `String` (docs/18 §4.2). The order and format are the same as before.
             print_json(&Inspect {
                 session: &imported.bundle.session,
                 report: &imported.report,
@@ -86,7 +86,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 args.iter()
                     .position(|arg| arg == "--out")
                     .and_then(|index| args.get(index + 1))
-                    .ok_or_else(|| "--out <sessao> é obrigatório".to_string())?,
+                    .ok_or_else(|| "--out <session> is required".to_string())?,
             );
             let cdp =
                 std::fs::read(&cdp_path).map_err(|e| format!("{}: {e}", cdp_path.display()))?;
@@ -95,7 +95,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let bodies_path = match args.iter().position(|arg| arg == "--bodies") {
                 Some(index) => Some(PathBuf::from(
                     args.get(index + 1)
-                        .ok_or_else(|| "--bodies exige um caminho".to_string())?,
+                        .ok_or_else(|| "--bodies requires a path".to_string())?,
                 )),
                 None => scrapelens_core::parse::cdp_bodies::sibling_candidates(&cdp_path)
                     .into_iter()
@@ -147,7 +147,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let output = PathBuf::from(&args[1]);
             let imported =
                 scrapelens_core::import_session_dir(&input).map_err(|e| e.to_string())?;
-            // Consome o bundle (sem a cópia da sessão; docs/18 P7).
+            // Consumes the bundle (without copying the session; docs/18 P7).
             let export = sanitize::sanitize_bundle_owned(
                 imported.bundle,
                 &sanitize::SanitizeOptions::default(),
@@ -170,12 +170,12 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 .bundle
                 .session
                 .find_request(&args[1])
-                .ok_or_else(|| format!("requisição {} não encontrada", args[1]))?;
+                .ok_or_else(|| format!("request {} not found", args[1]))?;
             let b = imported
                 .bundle
                 .session
                 .find_request(&args[2])
-                .ok_or_else(|| format!("requisição {} não encontrada", args[2]))?;
+                .ok_or_else(|| format!("request {} not found", args[2]))?;
             let diff = diff_requests(a, b, &DiffOptions::default());
             print_json(&diff)
         }
@@ -183,7 +183,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             println!("{}", usage());
             Ok(())
         }
-        other => Err(format!("comando desconhecido: {other}\n\n{}", usage())),
+        other => Err(format!("unknown command: {other}\n\n{}", usage())),
     }
 }
 
@@ -197,10 +197,10 @@ fn compare_command(args: &[String]) -> Result<(), String> {
     while let Some(arg) = rest.next() {
         let mut range = |name: &str| -> Result<scrapelens_core::compare::RequestRange, String> {
             let value = rest.next().ok_or_else(|| {
-                format!("{name} exige um valor (ex.: 10:50 ou har-0010:har-0050)")
+                format!("{name} requires a value (e.g. 10:50 or har-0010:har-0050)")
             })?;
             scrapelens_core::compare::RequestRange::parse(value)
-                .ok_or_else(|| format!("{name}: faixa inválida {value:?}"))
+                .ok_or_else(|| format!("{name}: invalid range {value:?}"))
         };
         match arg.as_str() {
             "--all" => options.include_all = true,
@@ -208,14 +208,14 @@ fn compare_command(args: &[String]) -> Result<(), String> {
             "--b-range" => options.b_range = Some(range("--b-range")?),
             "--map-origin" => {
                 let value = rest.next().ok_or_else(|| {
-                    "--map-origin exige <origem-captura>=<origem-trace>".to_string()
+                    "--map-origin requires <capture-origin>=<trace-origin>".to_string()
                 })?;
                 options.map_origin = Some(
                     scrapelens_core::compare::OriginMap::parse(value)
-                        .ok_or_else(|| format!("--map-origin inválido: {value:?}"))?,
+                        .ok_or_else(|| format!("invalid --map-origin: {value:?}"))?,
                 );
             }
-            other => return Err(format!("argumento desconhecido: {other}\n\n{}", usage())),
+            other => return Err(format!("unknown argument: {other}\n\n{}", usage())),
         }
     }
     let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
@@ -243,14 +243,14 @@ fn validate_command(args: &[String]) -> Result<(), String> {
         match arg.as_str() {
             "--map-origin" => {
                 let value = rest.next().ok_or_else(|| {
-                    "--map-origin exige <origem-captura>=<origem-trace>".to_string()
+                    "--map-origin requires <capture-origin>=<trace-origin>".to_string()
                 })?;
                 options.compare.map_origin = Some(
                     scrapelens_core::compare::OriginMap::parse(value)
-                        .ok_or_else(|| format!("--map-origin inválido: {value:?}"))?,
+                        .ok_or_else(|| format!("invalid --map-origin: {value:?}"))?,
                 );
             }
-            other => return Err(format!("argumento desconhecido: {other}\n\n{}", usage())),
+            other => return Err(format!("unknown argument: {other}\n\n{}", usage())),
         }
     }
     let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
@@ -289,8 +289,8 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
     }
 }
 
-/// `export-priming <sessao> <requestId> [--out f] [--allow-incomplete] [--allow-origin o]...`: gera
-/// o script, sem executá-lo.
+/// `export-priming <session> <requestId> [--out f] [--allow-incomplete] [--allow-origin o]...`:
+/// generates the script, without running it.
 fn export_priming_command(args: &[String]) -> Result<(), String> {
     if args.len() < 2 {
         return Err(usage());
@@ -312,13 +312,13 @@ fn export_priming_command(args: &[String]) -> Result<(), String> {
         scrapelens_core::export::priming::to_python(&lazy.session, &source, &args[1], &options)
             .map_err(|e| e.to_string())?;
     for warning in &output.warnings {
-        eprintln!("aviso [{}]: {}", warning.code, warning.message);
+        eprintln!("warning [{}]: {}", warning.code, warning.message);
     }
     match args.iter().position(|arg| arg == "--out") {
         Some(index) => {
             let out = args
                 .get(index + 1)
-                .ok_or_else(|| "--out exige um caminho".to_string())?;
+                .ok_or_else(|| "--out requires a path".to_string())?;
             std::fs::write(out, output.text).map_err(|e| format!("{out}: {e}"))?;
             println!("{out}");
         }
@@ -327,8 +327,8 @@ fn export_priming_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `assess <sessao> [requestId] [--rules f.json]`. Sem `--rules`, usa
-/// `<sessao>/assess-rules.json` se existir; senão as regras padrão.
+/// `assess <session> [requestId] [--rules f.json]`. Without `--rules`, uses
+/// `<session>/assess-rules.json` if it exists; otherwise the default rules.
 fn assess_command(args: &[String]) -> Result<(), String> {
     use scrapelens_core::assess::{assess_session, AssessRules};
     let mut positional: Vec<&String> = Vec::new();
@@ -338,10 +338,10 @@ fn assess_command(args: &[String]) -> Result<(), String> {
         if arg == "--rules" {
             let value = rest
                 .next()
-                .ok_or_else(|| "--rules exige um caminho".to_string())?;
+                .ok_or_else(|| "--rules requires a path".to_string())?;
             rules_path = Some(PathBuf::from(value));
         } else if arg.starts_with("--") {
-            return Err(format!("argumento desconhecido: {arg}\n\n{}", usage()));
+            return Err(format!("unknown argument: {arg}\n\n{}", usage()));
         } else {
             positional.push(arg);
         }
@@ -364,7 +364,7 @@ fn assess_command(args: &[String]) -> Result<(), String> {
     };
     let warnings = rules.warnings();
     for warning in &warnings {
-        eprintln!("aviso: {warning}");
+        eprintln!("warning: {warning}");
     }
     let (lazy, _report) =
         scrapelens_core::open_session_dir_lazy(&dir).map_err(|e| e.to_string())?;
@@ -373,7 +373,7 @@ fn assess_command(args: &[String]) -> Result<(), String> {
     if let Some(id) = positional.get(1) {
         outcomes.retain(|outcome| &outcome.request_id == *id);
         if outcomes.is_empty() {
-            return Err(format!("requisição {id} não encontrada"));
+            return Err(format!("request {id} not found"));
         }
     }
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
@@ -408,12 +408,12 @@ fn search_command(args: &[String]) -> Result<(), String> {
             "--scope" => {
                 let value = rest
                     .next()
-                    .ok_or_else(|| "--scope exige um valor".to_string())?;
+                    .ok_or_else(|| "--scope requires a value".to_string())?;
                 query.scopes.push(
-                    Scope::parse(value).ok_or_else(|| format!("escopo desconhecido: {value}"))?,
+                    Scope::parse(value).ok_or_else(|| format!("unknown scope: {value}"))?,
                 );
             }
-            other => return Err(format!("argumento desconhecido: {other}\n\n{}", usage())),
+            other => return Err(format!("unknown argument: {other}\n\n{}", usage())),
         }
     }
     print_json(&scrapelens_core::search::search_lazy(&lazy, &query))
@@ -430,7 +430,7 @@ fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {
         .bundle
         .session
         .find_request(request_id)
-        .ok_or_else(|| format!("requisição {request_id} não encontrada"))?;
+        .ok_or_else(|| format!("request {request_id} not found"))?;
     let body = scrapelens_core::export::request_body_bytes(&imported.bundle, request);
     let options = scrapelens_core::export::ExportOptions::default();
     let origins = if args.iter().any(|arg| arg == "--with-origins") {
@@ -454,13 +454,13 @@ fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {
             .map_err(|e| e.to_string())?
     };
     for warning in &output.warnings {
-        eprintln!("aviso [{}]: {}", warning.code, warning.message);
+        eprintln!("warning [{}]: {}", warning.code, warning.message);
     }
     match args.iter().position(|arg| arg == "--out") {
         Some(index) => {
             let out = args
                 .get(index + 1)
-                .ok_or_else(|| "--out exige um caminho".to_string())?;
+                .ok_or_else(|| "--out requires a path".to_string())?;
             std::fs::write(out, output.text).map_err(|e| format!("{out}: {e}"))?;
             println!("{out}");
             Ok(())
@@ -472,7 +472,7 @@ fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {
     }
 }
 
-/// Rótulos de `--label <rótulo>` (repetível).
+/// Labels from `--label <label>` (repeatable).
 fn cli_labels(args: &[String]) -> Result<Vec<String>, String> {
     let mut labels = Vec::new();
     let mut index = 0;
@@ -480,7 +480,7 @@ fn cli_labels(args: &[String]) -> Result<Vec<String>, String> {
         if args[index] == "--label" {
             let value = args
                 .get(index + 1)
-                .ok_or_else(|| "--label exige um valor".to_string())?;
+                .ok_or_else(|| "--label requires a value".to_string())?;
             labels.push(value.clone());
             index += 1;
         }
@@ -518,21 +518,21 @@ fn input_and_out(args: &[String]) -> Result<(PathBuf, PathBuf), String> {
     let index = args
         .iter()
         .position(|arg| arg == "--out")
-        .ok_or_else(|| "--out <sessao> é obrigatório".to_string())?;
+        .ok_or_else(|| "--out <session> is required".to_string())?;
     let out = args
         .get(index + 1)
-        .ok_or_else(|| "--out exige um caminho".to_string())?;
+        .ok_or_else(|| "--out requires a path".to_string())?;
     Ok((PathBuf::from(path), PathBuf::from(out)))
 }
 
-/// Saída de `inspect` (mesma ordem de campos do antigo `json!`).
+/// Output of `inspect` (same field order as the old `json!`).
 #[derive(serde::Serialize)]
 struct Inspect<'a> {
     session: &'a scrapelens_core::SessionV1,
     report: &'a scrapelens_core::ImportReport,
 }
 
-/// Saída de `assess` (mesma ordem de campos do antigo `json!`).
+/// Output of `assess` (same field order as the old `json!`).
 #[derive(serde::Serialize)]
 struct AssessOutput<'a, W: serde::Serialize, O: serde::Serialize> {
     schema: &'static str,
@@ -542,7 +542,7 @@ struct AssessOutput<'a, W: serde::Serialize, O: serde::Serialize> {
     outcomes: &'a O,
 }
 
-/// JSON identado direto no stdout, sem montar a `String` inteira.
+/// Pretty-printed JSON written straight to stdout, without building the whole `String`.
 fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
     use std::io::Write;
     let stdout = std::io::stdout();
@@ -553,23 +553,23 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "uso:
-  scrapelens-core inspect <sessao>
-  scrapelens-core import-har <har> --out <sessao> [--label <rótulo>]...
-  scrapelens-core import-trace <trace.json> --out <sessao> [--label <rótulo>]...
-  scrapelens-core import-netlog <netlog> --out <sessao> [--label <rótulo>]...
-  scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <sessao> [--bodies <cdp-bodies.jsonl>] [--label <rótulo>]...
-  scrapelens-core search <sessao> <texto> [--scope <escopo>]... [--case-sensitive]
-  scrapelens-core origins <sessao> <requestId>
-  scrapelens-core chain <sessao> <requestId>
-  scrapelens-core timeline <sessao>
-  scrapelens-core validate <captura> <sessao-trace> [--map-origin <origem-captura>=<origem-trace>]
-  scrapelens-core assess <sessao> [requestId] [--rules regras.json]
-  scrapelens-core export-priming <sessao> <requestId> [--out arquivo] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
-  scrapelens-core compare <sessaoA> <sessaoB> [--a-range de:ate] [--b-range de:ate] [--all] [--map-origin <origem-A>=<origem-B>]
-  scrapelens-core export-curl <sessao> <requestId> [--out arquivo] [--with-origins]
-  scrapelens-core export-python <sessao> <requestId> [--out arquivo] [--with-origins]
-  scrapelens-core sanitize <sessao> <saida>
-  scrapelens-core diff <sessao> <requestIdA> <requestIdB>"
+    "usage:
+  scrapelens-core inspect <session>
+  scrapelens-core import-har <har> --out <session> [--label <label>]...
+  scrapelens-core import-trace <trace.json> --out <session> [--label <label>]...
+  scrapelens-core import-netlog <netlog> --out <session> [--label <label>]...
+  scrapelens-core import-capture <cdp.jsonl> <netlog.json> --out <session> [--bodies <cdp-bodies.jsonl>] [--label <label>]...
+  scrapelens-core search <session> <text> [--scope <scope>]... [--case-sensitive]
+  scrapelens-core origins <session> <requestId>
+  scrapelens-core chain <session> <requestId>
+  scrapelens-core timeline <session>
+  scrapelens-core validate <capture> <trace-session> [--map-origin <capture-origin>=<trace-origin>]
+  scrapelens-core assess <session> [requestId] [--rules rules.json]
+  scrapelens-core export-priming <session> <requestId> [--out file] [--allow-incomplete] [--allow-origin <origin>] [--allow-literal-body]
+  scrapelens-core compare <sessionA> <sessionB> [--a-range from:to] [--b-range from:to] [--all] [--map-origin <origin-A>=<origin-B>]
+  scrapelens-core export-curl <session> <requestId> [--out file] [--with-origins]
+  scrapelens-core export-python <session> <requestId> [--out file] [--with-origins]
+  scrapelens-core sanitize <session> <output>
+  scrapelens-core diff <session> <requestIdA> <requestIdB>"
         .to_string()
 }

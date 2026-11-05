@@ -1,7 +1,7 @@
-//! Importadores de sessão.
+//! Session importers.
 //!
-//! Todo importador devolve também um [`ImportReport`]: dados ausentes,
-//! desconhecidos ou descartados aparecem como [`Warning`], nunca em silêncio.
+//! Every importer also returns an [`ImportReport`]: missing data,
+//! unknown or discarded items appear as [`Warning`], never silently.
 
 pub mod cdp;
 pub mod cdp_bodies;
@@ -24,7 +24,7 @@ pub enum InputFormat {
     Har,
     NetLog,
     Cdp,
-    /// CDP + NetLog combinados (captura do produto).
+    /// CDP + NetLog combined (product capture).
     Capture,
 }
 
@@ -83,8 +83,8 @@ impl ImportReport {
     }
 }
 
-/// Sessão importada + relatório. O chamador pode persistir `bundle` e exibir
-/// `report`; os avisos também ficam em `bundle.session.warnings`.
+/// Imported session + report. The caller may persist `bundle` and display
+/// `report`; the warnings are also kept in `bundle.session.warnings`.
 #[derive(Debug, Clone)]
 pub struct ImportedSession {
     pub bundle: SessionBundle,
@@ -97,33 +97,33 @@ impl ImportedSession {
     }
 }
 
-/// Lê uma sessão no formato próprio v1 (diretório com `session.json`).
+/// Reads a session in the native v1 format (directory with `session.json`).
 pub fn import_session_dir(path: &Path) -> Result<ImportedSession> {
     own::import_session_dir(path)
 }
 
-/// Abre uma sessão v1 com anexos preguiçosos (ver [`crate::lazy`]).
+/// Opens a v1 session with lazy attachments (see [`crate::lazy`]).
 pub fn open_session_dir_lazy(path: &Path) -> Result<(crate::lazy::LazySession, ImportReport)> {
     own::open_session_dir_lazy(path)
 }
 
-/// Importa HAR 1.2. Ordem/duplicatas em HAR são **não verificadas**: a matriz
-/// não instrumentou o exportador do DevTools.
+/// Imports HAR 1.2. Order/duplicates in HAR are **unverified**: the matrix
+/// did not instrument the DevTools exporter.
 pub fn import_har(json: &[u8]) -> Result<ImportedSession> {
     har::import_har(json)
 }
 
-/// Importa o trace de execução do script (`scrapelens.trace/1`).
+/// Imports the script execution trace (`scrapelens.trace/1`).
 pub fn import_trace(json: &[u8]) -> Result<ImportedSession> {
     trace::import_trace(json)
 }
 
-/// Importa um NetLog do Chrome isoladamente (sem CDP).
+/// Imports a Chrome NetLog on its own (without CDP).
 pub fn import_netlog(json: &[u8]) -> Result<ImportedSession> {
     netlog::import_netlog(json)
 }
 
-/// Importa CDP + NetLog e correlaciona com ambiguidade explícita.
+/// Imports CDP + NetLog and correlates them with explicit ambiguity.
 pub fn import_capture(
     cdp_events_jsonl: &[u8],
     netlog_json: &[u8],
@@ -132,9 +132,9 @@ pub fn import_capture(
     import_capture_with_bodies(cdp_events_jsonl, netlog_json, None, options)
 }
 
-/// Como [`import_capture`], com o conteúdo opcional de `cdp-bodies.jsonl`
-/// (`docs/08-corpos-busca.md` §1). Sem ele, os corpos seguem `unavailable` e a
-/// sessão recebe um único aviso `cdp.bodies_file_absent`.
+/// Like [`import_capture`], with the optional content of `cdp-bodies.jsonl`
+/// (`docs/08-corpos-busca.md` §1). Without it, the bodies stay `unavailable` and the
+/// session gets a single `cdp.bodies_file_absent` warning.
 pub fn import_capture_with_bodies(
     cdp_events_jsonl: &[u8],
     netlog_json: &[u8],
@@ -150,11 +150,11 @@ pub fn import_capture_with_bodies(
     )
 }
 
-/// Como [`import_capture_with_bodies`], com rótulos de origem declarados por
-/// quem chama. Sem `live-capture` em `labels`, a sessão recebe o rótulo
-/// `capture-import` (importação de arquivos); com ele, quem captura declara o
-/// ciclo ao vivo e `capture-import` não é gravado. Demais rótulos (ex.:
-/// `synthetic-fixture`) são acrescentados sem duplicar.
+/// Like [`import_capture_with_bodies`], with origin labels declared by
+/// the caller. Without `live-capture` in `labels`, the session gets the label
+/// `capture-import` (file import); with it, the capturer declares the
+/// live cycle and `capture-import` is not recorded. Other labels (e.g.:
+/// `synthetic-fixture`) are appended without duplication.
 pub fn import_capture_labeled(
     cdp_events_jsonl: &[u8],
     netlog_json: &[u8],
@@ -163,8 +163,8 @@ pub fn import_capture_labeled(
     options: crate::correlate::CorrelationOptions,
 ) -> Result<ImportedSession> {
     let cdp = cdp::parse_cdp_jsonl(cdp_events_jsonl)?;
-    // Calibra o relógio do NetLog pela mediana dos `wallTime` do CDP da mesma
-    // captura. Isso não associa requisições: só escolhe a unidade de `time`.
+    // Calibrates the NetLog clock by the median of the CDP `wallTime`s of the same
+    // capture. This does not match requests: it only picks the unit of `time`.
     let wall_clock = median_wall_clock(&cdp);
     let netlog = netlog::parse_netlog_with_wall_clock(netlog_json, wall_clock)?;
     let mut report = ImportReport::new(InputFormat::Capture);
@@ -172,8 +172,8 @@ pub fn import_capture_labeled(
     let (netlog_session, netlog_report) = netlog::build_netlog_session(&netlog);
     let netlog_requests = netlog_session.requests.len();
     let mut session = session;
-    // Avisos do arquivo NetLog (tipos desconhecidos, cadeia não resolvida) são
-    // relevantes; avisos por requisição de background não são importados.
+    // NetLog file warnings (unknown types, unresolved chain) are
+    // relevant; per-request background warnings are not imported.
     for warning in &netlog.warnings {
         if !session
             .warnings
@@ -225,13 +225,13 @@ pub fn import_capture_labeled(
         None => {
             let warning = Warning::new(
                 "cdp.bodies_file_absent",
-                "cdp-bodies.jsonl ausente: corpos CDP não importados (unavailable)",
+                "cdp-bodies.jsonl missing: CDP bodies not imported (unavailable)",
             );
             session.add_warning(warning.clone());
             cdp_report.warn(warning);
         }
     }
-    // `attach_netlog` já registra os avisos na sessão; o relatório recebe cópia.
+    // `attach_netlog` already records the warnings on the session; the report gets a copy.
     for warning in outcome.warnings {
         cdp_report.warn(warning);
     }
@@ -239,11 +239,11 @@ pub fn import_capture_labeled(
     let total_events = cdp.events_total + netlog.events_total;
     let unknown_events = netlog.events_unknown + cdp.events_invalid;
     let used_events = total_events.saturating_sub(unknown_events);
-    // As razões de completude de `build_cdp_session` (ex.: "nenhuma requisição CDP
-    // utilizável") e de `attach_netlog` sobrevivem: a captura conjunta só é
-    // `complete` se nenhuma fonte reportou lacuna. Só a razão "CDP sem NetLog"
-    // (válida para a importação isolada do CDP) é descartada: aqui a correlação
-    // com o NetLog acabou de ser feita.
+    // The completeness reasons of `build_cdp_session` (e.g.: "no usable CDP
+    // request") and of `attach_netlog` survive: the joint capture is only
+    // `complete` if no source reported a gap. Only the reason "CDP capture without correlated NetLog"
+    // (valid for importing CDP alone) is dropped: here the correlation
+    // with NetLog has just been done.
     let inherited_reasons = std::mem::take(&mut session.session.completeness.reasons);
     session.session.completeness = crate::model::Completeness::complete();
     for reason in inherited_reasons
@@ -254,7 +254,7 @@ pub fn import_capture_labeled(
     }
     if session.requests.is_empty() && (netlog_requests > 0 || netlog.events_total > 0) {
         session.session.completeness.add_reason(format!(
-            "NetLog com {} evento(s) e {netlog_requests} requisição(ões) sem correspondência CDP: a captura não tem nenhuma requisição correlacionável",
+            "NetLog with {} event(s) and {netlog_requests} request(s) without a CDP match: the capture has no correlatable request",
             netlog.events_total
         ));
     }
@@ -265,7 +265,7 @@ pub fn import_capture_labeled(
         session
             .session
             .completeness
-            .add_reason("captura com avisos de erro");
+            .add_reason("capture with error warnings");
     }
     session.recompute_completeness();
     report.merge(cdp_report);
@@ -282,7 +282,7 @@ pub fn import_capture_labeled(
     Ok(ImportedSession::new(bundle, report))
 }
 
-/// Mediana dos `wallTime` (epoch em segundos) dos eventos CDP da captura.
+/// Median of the `wallTime`s (epoch in seconds) of the capture's CDP events.
 fn median_wall_clock(cdp: &cdp::CdpCapture) -> Option<f64> {
     let mut values: Vec<f64> = cdp
         .requests

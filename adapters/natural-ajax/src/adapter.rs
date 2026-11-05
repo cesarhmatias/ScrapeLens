@@ -1,16 +1,16 @@
-//! Implementação do `ProtocolAdapter` do core para o campo `XML` do Connector.
+//! Implementation of the core's `ProtocolAdapter` for the Connector's `XML` field.
 //!
-//! Modelo de partes (ordem do original, sem reordenar):
-//! - `op` (Structure): a operação crua (`v`, `i`, `p`+nome, `q`+chave,
-//!   `s`+chave, `b`+escopo, `c`, `l`, `k`+nome);
-//! - cabeçalho: `sid`, `pid`, `model`, `page`, `event` (Value) e `empty`,
-//!   `dummy`, `flag` (Structure), logo depois do `op` `v`/`i`;
-//! - `p.<nome>` (Value): valor de uma propriedade, com o nome resolvido pelos
-//!   escopos e pelo dicionário; vem logo depois do seu `op`;
-//! - `s.<chave>` (Name): o nome definido por uma operação `s`;
+//! Parts model (original order, not reordered):
+//! - `op` (Structure): the raw operation (`v`, `i`, `p`+name, `q`+key,
+//!   `s`+key, `b`+scope, `c`, `l`, `k`+name);
+//! - header: `sid`, `pid`, `model`, `page`, `event` (Value) and `empty`,
+//!   `dummy`, `flag` (Structure), right after the `op` `v`/`i`;
+//! - `p.<name>` (Value): value of a property, with the name resolved through the
+//!   scopes and the dictionary; it comes right after its `op`;
+//! - `s.<key>` (Name): the name defined by an `s` operation;
 //! - `delta` (Delta).
 //!
-//! Os prefixos de comprimento nunca são partes: o `encode` os recalcula.
+//! Length prefixes are never parts: `encode` recalculates them.
 
 use scrapelens_core::adapter::{AdapterContext, AdapterPart, Decoded, PartRole, ProtocolAdapter};
 use scrapelens_core::error::{CoreError, Result};
@@ -19,7 +19,7 @@ use crate::grammar::{self, Op};
 
 pub const ADAPTER_ID: &str = "natural-ajax";
 
-/// Nomes das 8 partes do cabeçalho, na ordem do protocolo.
+/// Names of the 8 header parts, in protocol order.
 pub const HEAD_NAMES: [(&str, bool); 8] = [
     ("sid", true),
     ("pid", true),
@@ -36,7 +36,7 @@ pub struct NaturalAjax;
 
 fn export_error(error: grammar::Error) -> CoreError {
     CoreError::Export {
-        message: format!("protocolo Natural for Ajax: {error}"),
+        message: format!("Natural for Ajax protocol: {error}"),
     }
 }
 
@@ -56,8 +56,8 @@ impl ProtocolAdapter for NaturalAjax {
     }
 
     fn detect(&self, field: &str, value: &str, _ctx: &AdapterContext<'_>) -> bool {
-        // Barato: só o cabeçalho; `decode` valida o resto (e o core volta ao
-        // comportamento sem adaptador se ele falhar).
+        // Cheap: header only; `decode` validates the rest (and the core falls back
+        // to the no-adapter behaviour if it fails).
         field == "XML" && grammar::quick_check(value)
     }
 
@@ -75,7 +75,7 @@ impl ProtocolAdapter for NaturalAjax {
                         1,
                         PartRole::Structure,
                     ));
-                    // Offsets dos campos: reconstruídos a partir do fim.
+                    // Field offsets: rebuilt from the end.
                     let widths_total: usize = grammar::HEAD_WIDTHS.iter().sum();
                     let mut at = 1 + widths_total;
                     for ((name, is_value), field) in HEAD_NAMES.iter().zip(fields) {
@@ -155,8 +155,8 @@ impl ProtocolAdapter for NaturalAjax {
         Ok(Decoded { parts })
     }
 
-    /// Operação `i` (inicialização) → "init"; nos demais casos nenhum rótulo
-    /// (a timeline usa o `event`).
+    /// Operation `i` (initialization) → "init"; in all other cases no label
+    /// (the timeline uses the `event`).
     fn label_hint(&self, decoded: &Decoded) -> Option<String> {
         let op = decoded.parts.iter().find(|p| p.name == "op")?;
         (op.value == "i").then(|| "init".to_string())
@@ -167,7 +167,7 @@ impl ProtocolAdapter for NaturalAjax {
         let mut ops: Vec<Op> = Vec::new();
         let mut i = 0;
         let bad = |what: &str| CoreError::Export {
-            message: format!("protocolo Natural for Ajax: estrutura inválida ({what})"),
+            message: format!("Natural for Ajax protocol: invalid structure ({what})"),
         };
         while i < parts.len() {
             let current = &parts[i];
@@ -177,16 +177,16 @@ impl ProtocolAdapter for NaturalAjax {
                 continue;
             }
             if current.name != "op" || current.role != PartRole::Structure {
-                return Err(bad("esperava uma operação"));
+                return Err(bad("expected an operation"));
             }
             let mut chars = current.value.chars();
-            let op = chars.next().ok_or_else(|| bad("operação vazia"))?;
+            let op = chars.next().ok_or_else(|| bad("empty operation"))?;
             let rest: String = chars.collect();
             match op {
                 'i' | 'v' => {
                     let head = parts
                         .get(i + 1..i + 9)
-                        .ok_or_else(|| bad("cabeçalho curto"))?;
+                        .ok_or_else(|| bad("header too short"))?;
                     let mut fields: [String; 8] = Default::default();
                     for (field, p) in fields.iter_mut().zip(head) {
                         *field = p.value.clone();
@@ -198,7 +198,7 @@ impl ProtocolAdapter for NaturalAjax {
                     i += 9;
                 }
                 'p' | 'z' | 'q' | 'w' => {
-                    let value = parts.get(i + 1).ok_or_else(|| bad("valor ausente"))?;
+                    let value = parts.get(i + 1).ok_or_else(|| bad("missing value"))?;
                     ops.push(if matches!(op, 'q' | 'w') {
                         Op::Ref {
                             op,
@@ -215,7 +215,7 @@ impl ProtocolAdapter for NaturalAjax {
                     i += 2;
                 }
                 's' => {
-                    let name = parts.get(i + 1).ok_or_else(|| bad("nome ausente"))?;
+                    let name = parts.get(i + 1).ok_or_else(|| bad("missing name"))?;
                     ops.push(Op::Dict {
                         key: rest,
                         name: name.value.clone(),
@@ -238,7 +238,7 @@ impl ProtocolAdapter for NaturalAjax {
                     ops.push(Op::Delete(rest));
                     i += 1;
                 }
-                other => return Err(bad(&format!("operação {other:?}"))),
+                other => return Err(bad(&format!("operation {other:?}"))),
             }
         }
         grammar::serialize(&ops).map_err(export_error)

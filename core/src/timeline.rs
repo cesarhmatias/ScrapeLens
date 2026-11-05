@@ -1,18 +1,18 @@
-//! Linha do tempo da aplicação (docs/13).
+//! Application timeline (docs/13).
 //!
-//! `timeline(session, source, opts)` devolve uma entrada por requisição da
-//! aplicação, na ordem da sessão, com tempo relativo, rodada, tipo
-//! (`page`|`post`|`request`), rótulo, veredito do assess e os NOMES (sem
-//! valores) dos valores-chave consumidos e produzidos. Proteção e estáticos
-//! entram recolhidos em grupos com contagem entre os eventos.
+//! `timeline(session, source, opts)` returns one entry per application request,
+//! in session order, with relative time, round, type (`page`|`post`|`request`),
+//! label, assess verdict and the NAMES (without values) of the key values consumed
+//! and produced. Protection and static requests are collapsed into groups with a
+//! count between the events.
 //!
-//! Esquema JSON (camelCase): `{ entryRequest, rounds, items: [ { type:"event",
+//! JSON schema (camelCase): `{ entryRequest, rounds, items: [ { type:"event",
 //! requestId, round, kind, label, method, url, status, tMs, verdict, verdictKind,
 //! consumed[], produced[] } | { type:"group", kind:"protection"|"static", count,
 //! requestIds[] } ], counts: {events, protection, static}, warnings[] }`.
 //!
-//! Rótulo: com adaptador (`FlowOptions.adapters`) que decodifique o corpo, as
-//! partes `event` e `page` dão `event @ page`; sem elas, método + caminho.
+//! Label: with an adapter (`FlowOptions.adapters`) that decodes the body, the
+//! `event` and `page` parts give `event @ page`; without them, method + path.
 
 use std::collections::BTreeMap;
 
@@ -42,28 +42,28 @@ pub enum TimelineItem {
 #[serde(rename_all = "camelCase")]
 pub struct TimelineEvent {
     pub request_id: String,
-    /// Rodada (1 = primeira).
+    /// Round (1 = first).
     pub round: usize,
-    /// `page` (GET de documento), `post` (método não-GET) ou `request`.
+    /// `page` (document GET), `post` (non-GET method) or `request`.
     pub kind: String,
     pub label: String,
     pub method: String,
     pub url: String,
     pub status: Option<u16>,
-    /// Milissegundos desde a primeira requisição da sessão, quando há tempos.
+    /// Milliseconds since the first request of the session, when timings exist.
     pub t_ms: Option<f64>,
     pub verdict: String,
     pub verdict_kind: VerdictKind,
-    /// Nomes de valores consumidos com origem observada (sem valores).
+    /// Names of consumed values with an observed origin (no values).
     pub consumed: Vec<String>,
-    /// Nomes de valores que esta resposta produziu para requisições seguintes.
+    /// Names of values that this response produced for later requests.
     pub produced: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineGroup {
-    /// `protection` ou `static`.
+    /// `protection` or `static`.
     pub kind: String,
     pub count: usize,
     pub request_ids: Vec<String>,
@@ -113,7 +113,7 @@ pub fn timeline(
         .map(|o| (o.request_id.clone(), o))
         .collect();
 
-    // nomes consumidos (por consumidor) e produzidos (por produtor): índice linear
+    // names consumed (per consumer) and produced (per producer): linear index
     let app_ids: std::collections::HashSet<&str> = app.iter().map(|e| e.id.as_str()).collect();
     let (consumed, produced) = linked_field_names(&ctx, &|id| app_ids.contains(id));
     let mut labels: BTreeMap<String, String> = BTreeMap::new();
@@ -135,7 +135,7 @@ pub fn timeline(
                     _ => {}
                 }
             } else if c.adapted && hint.is_none() {
-                // o adaptador pode dar o nome da operação (ex. `init`) quando o event vem vazio
+                // the adapter can give the operation name (e.g. `init`) when the event is empty
                 hint = options
                     .flow
                     .adapters

@@ -1,10 +1,10 @@
-//! Wrapper do CLI do core com o adaptador Natural registrado.
+//! Wrapper around the core CLI with the Natural adapter registered.
 //!
-//! `export-priming` roda aqui, com o adaptador e o codificador Python; qualquer
-//! outro subcomando é repassado ao `scrapelens-core` (caminho em
-//! `SCRAPELENS_CORE_BIN`, senão `../../core/target/release/scrapelens-core`
-//! relativo a este crate, senão o do PATH). O adaptador só vale com `--adapter natural-ajax`;
-//! sem a flag, o script sai pelo caminho por trechos (controle).
+//! `export-priming` runs here, with the adapter and the Python encoder; any
+//! other subcommand is passed through to `scrapelens-core` (path in
+//! `SCRAPELENS_CORE_BIN`, otherwise `../../core/target/release/scrapelens-core`
+//! relative to this crate, otherwise the one on PATH). The adapter only applies with `--adapter natural-ajax`;
+//! without the flag, the script takes the snippet path (control).
 
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
@@ -16,7 +16,7 @@ use scrapelens_natural_ajax::{
     NaturalAjax, ADAPTER_ID, PYTHON_DECODER, PYTHON_ENCODER, PYTHON_FUNCTION,
 };
 
-/// Procura `name` no PATH (quando não é caminho).
+/// Looks up `name` in PATH (when it is not a path).
 fn resolve_in_path(path: PathBuf) -> Option<PathBuf> {
     if path.components().count() > 1 {
         return path.is_file().then_some(path);
@@ -28,9 +28,9 @@ fn resolve_in_path(path: PathBuf) -> Option<PathBuf> {
     })
 }
 
-/// O `scrapelens-core` que recebe os subcomandos repassados. Nunca devolve o
-/// próprio wrapper (variável de ambiente, vizinho ou PATH que resolvam para
-/// ele), o que geraria recursão infinita de processos.
+/// The `scrapelens-core` that receives the passed-through subcommands. Never
+/// returns the wrapper itself (an env var, a neighbour or PATH resolving to it),
+/// which would cause infinite process recursion.
 fn core_binary() -> Result<PathBuf, String> {
     let me = std::env::current_exe().and_then(|p| p.canonicalize()).ok();
     let is_me = |path: &PathBuf| path.canonicalize().ok().is_some_and(|p| Some(p) == me);
@@ -48,37 +48,37 @@ fn core_binary() -> Result<PathBuf, String> {
     match resolve_in_path(PathBuf::from("scrapelens-core")) {
         Some(found) if !is_me(&found) => Ok(found),
         Some(_) => Err(
-            "o scrapelens-core encontrado é este próprio wrapper; defina SCRAPELENS_CORE_BIN"
+            "the scrapelens-core found is this wrapper itself; set SCRAPELENS_CORE_BIN"
                 .into(),
         ),
-        None => Err("scrapelens-core não encontrado; defina SCRAPELENS_CORE_BIN".into()),
+        None => Err("scrapelens-core not found; set SCRAPELENS_CORE_BIN".into()),
     }
 }
 
-/// `--adapter <id>`: só `natural-ajax` existe aqui.
+/// `--adapter <id>`: only `natural-ajax` exists here.
 fn check_adapter_flag(args: &[String]) -> Result<(), String> {
     if let Some(index) = args.iter().position(|a| a == "--adapter") {
         match args.get(index + 1).map(String::as_str) {
             Some(ADAPTER_ID) => {}
             Some(other) => {
                 return Err(format!(
-                    "adaptador desconhecido: {other} (disponível: {ADAPTER_ID})"
+                    "unknown adapter: {other} (available: {ADAPTER_ID})"
                 ))
             }
-            None => return Err("--adapter exige um id".into()),
+            None => return Err("--adapter requires an id".into()),
         }
     }
     Ok(())
 }
 
-/// `adapter-roundtrip <sessao> [--adapter natural-ajax]`: `encode(decode(x)) == x`
-/// em todos os campos `XML` de requisição da sessão. Só agregados, sem valores.
+/// `adapter-roundtrip <session> [--adapter natural-ajax]`: `encode(decode(x)) == x`
+/// on all request `XML` fields of the session. Aggregates only, no values.
 fn adapter_roundtrip(args: &[String]) -> Result<(), String> {
     use scrapelens_core::adapter::{AdapterContext, ProtocolAdapter};
     use scrapelens_natural_ajax::grammar::{self, Op};
     check_adapter_flag(args)?;
     let dir = args.first().ok_or(
-        "uso: natural-core adapter-roundtrip <sessao> [--adapter natural-ajax] [--lenient-parts]",
+        "usage: natural-core adapter-roundtrip <session> [--adapter natural-ajax] [--lenient-parts]",
     )?;
     let (lazy, _report) =
         scrapelens_core::open_session_dir_lazy(&PathBuf::from(dir)).map_err(|e| e.to_string())?;
@@ -156,7 +156,7 @@ fn registry(args: &[String]) -> Result<AdapterRegistry, String> {
     }
 }
 
-/// Argumentos sem `--adapter <id>` e `--sem-adaptador`.
+/// Arguments without `--adapter <id>` and `--sem-adaptador`.
 fn strip_adapter_flags(args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut it = args.iter();
@@ -180,7 +180,7 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
     Ok(())
 }
 
-/// `origins`/`chain <sessao> <requestId>` com o adaptador registrado.
+/// `origins`/`chain <session> <requestId>` with the adapter registered.
 fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
     use scrapelens_core::flow::{priming_chain, value_origins, FlowOptions};
     let options = FlowOptions {
@@ -190,7 +190,7 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
     let args = strip_adapter_flags(args);
     if args.len() != 2 {
         return Err(format!(
-            "uso: natural-core {command} <sessao> <requestId> [--adapter natural-ajax]"
+            "usage: natural-core {command} <session> <requestId> [--adapter natural-ajax]"
         ));
     }
     let (lazy, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
@@ -209,28 +209,28 @@ fn flow_command(command: &str, args: &[String]) -> Result<(), String> {
     }
 }
 
-/// `validate <captura> <trace> [--map-origin a=b] [--adapter natural-ajax]`.
+/// `validate <capture> <trace> [--map-origin a=b] [--adapter natural-ajax]`.
 fn validate_command(args: &[String]) -> Result<(), String> {
     use scrapelens_core::validate::{validate, ValidateOptions};
     let mut options = ValidateOptions::default();
     options.compare.flow.adapters = registry(args)?;
     let args = strip_adapter_flags(args);
     if args.len() < 2 {
-        return Err("uso: natural-core validate <captura> <sessao-trace> [--map-origin a=b] [--adapter natural-ajax]".into());
+        return Err("usage: natural-core validate <capture> <session-trace> [--map-origin a=b] [--adapter natural-ajax]".into());
     }
     let mut rest = args[2..].iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--map-origin" => {
                 let value = rest.next().ok_or_else(|| {
-                    "--map-origin exige <origem-captura>=<origem-trace>".to_string()
+                    "--map-origin requires <capture-origin>=<trace-origin>".to_string()
                 })?;
                 options.compare.map_origin = Some(
                     scrapelens_core::compare::OriginMap::parse(value)
-                        .ok_or_else(|| format!("--map-origin inválido: {value:?}"))?,
+                        .ok_or_else(|| format!("invalid --map-origin: {value:?}"))?,
                 );
             }
-            other => return Err(format!("argumento desconhecido: {other}")),
+            other => return Err(format!("unknown argument: {other}")),
         }
     }
     let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
@@ -249,8 +249,8 @@ fn validate_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `timeline <sessao> [--adapter natural-ajax]`: linha do tempo com rótulos
-/// `event @ page` quando o adaptador está registrado.
+/// `timeline <session> [--adapter natural-ajax]`: timeline with `event @ page`
+/// labels when the adapter is registered.
 fn timeline_command(args: &[String]) -> Result<(), String> {
     use scrapelens_core::timeline::{timeline, TimelineOptions};
     let options = TimelineOptions {
@@ -262,7 +262,7 @@ fn timeline_command(args: &[String]) -> Result<(), String> {
     };
     let args = strip_adapter_flags(args);
     if args.len() != 1 {
-        return Err("uso: natural-core timeline <sessao> [--adapter natural-ajax]".into());
+        return Err("usage: natural-core timeline <session> [--adapter natural-ajax]".into());
     }
     let (lazy, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
         .map_err(|e| e.to_string())?;
@@ -270,7 +270,7 @@ fn timeline_command(args: &[String]) -> Result<(), String> {
     print_json(&timeline(&lazy.session, &source, &options))
 }
 
-/// `compare <A> <B> [--all] [--a-range r] [--b-range r]` com o adaptador.
+/// `compare <A> <B> [--all] [--a-range r] [--b-range r]` with the adapter.
 fn compare_command(args: &[String]) -> Result<(), String> {
     use scrapelens_core::compare::{compare_sessions, CompareOptions, RequestRange};
     let mut options = CompareOptions {
@@ -282,21 +282,21 @@ fn compare_command(args: &[String]) -> Result<(), String> {
     };
     let args = strip_adapter_flags(args);
     if args.len() < 2 {
-        return Err("uso: natural-core compare <sessaoA> <sessaoB> [--all] [--a-range r] [--b-range r] [--adapter natural-ajax]".into());
+        return Err("usage: natural-core compare <sessionA> <sessionB> [--all] [--a-range r] [--b-range r] [--adapter natural-ajax]".into());
     }
     let mut rest = args[2..].iter();
     while let Some(arg) = rest.next() {
         let mut range = |name: &str| -> Result<RequestRange, String> {
             let value = rest
                 .next()
-                .ok_or_else(|| format!("{name} exige um valor"))?;
-            RequestRange::parse(value).ok_or_else(|| format!("{name}: faixa inválida {value:?}"))
+                .ok_or_else(|| format!("{name} requires a value"))?;
+            RequestRange::parse(value).ok_or_else(|| format!("{name}: invalid range {value:?}"))
         };
         match arg.as_str() {
             "--all" => options.include_all = true,
             "--a-range" => options.a_range = Some(range("--a-range")?),
             "--b-range" => options.b_range = Some(range("--b-range")?),
-            other => return Err(format!("argumento desconhecido: {other}")),
+            other => return Err(format!("unknown argument: {other}")),
         }
     }
     let (a, _) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
@@ -315,7 +315,7 @@ fn compare_command(args: &[String]) -> Result<(), String> {
 fn export_priming(args: &[String]) -> Result<(), String> {
     check_adapter_flag(args)?;
     if args.len() < 2 {
-        return Err("uso: natural-core export-priming <sessao> <requestId> [--out f] [--allow-incomplete] [--allow-origin o] [--allow-literal-body] [--adapter natural-ajax] [--lenient-parts]".into());
+        return Err("usage: natural-core export-priming <session> <requestId> [--out f] [--allow-incomplete] [--allow-origin o] [--allow-literal-body] [--adapter natural-ajax] [--lenient-parts]".into());
     }
     let (lazy, _report) = scrapelens_core::open_session_dir_lazy(&PathBuf::from(&args[0]))
         .map_err(|e| e.to_string())?;
@@ -343,13 +343,13 @@ fn export_priming(args: &[String]) -> Result<(), String> {
     let output =
         to_python(&lazy.session, &source, &args[1], &options).map_err(|e| e.to_string())?;
     for warning in &output.warnings {
-        eprintln!("aviso [{}]: {}", warning.code, warning.message);
+        eprintln!("warning [{}]: {}", warning.code, warning.message);
     }
     match args.iter().position(|a| a == "--out") {
         Some(index) => {
             let out = args
                 .get(index + 1)
-                .ok_or_else(|| "--out exige um caminho".to_string())?;
+                .ok_or_else(|| "--out requires a path".to_string())?;
             std::fs::write(out, output.text).map_err(|e| format!("{out}: {e}"))?;
             println!("{out}");
         }
@@ -375,7 +375,7 @@ fn main() -> ExitCode {
         return match result {
             Ok(()) => ExitCode::SUCCESS,
             Err(message) => {
-                eprintln!("erro: {message}");
+                eprintln!("error: {message}");
                 ExitCode::from(1)
             }
         };
@@ -384,7 +384,7 @@ fn main() -> ExitCode {
         return match adapter_roundtrip(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(message) => {
-                eprintln!("erro: {message}");
+                eprintln!("error: {message}");
                 ExitCode::from(1)
             }
         };
@@ -393,24 +393,24 @@ fn main() -> ExitCode {
         return match export_priming(&args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(message) => {
-                eprintln!("erro: {message}");
+                eprintln!("error: {message}");
                 ExitCode::from(1)
             }
         };
     }
-    // Profundidade de re-execução: o repasse ao core acontece no máximo uma vez.
+    // Re-execution depth: the pass-through to the core happens at most once.
     let depth: u32 = std::env::var("NATURAL_CORE_DEPTH")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     if depth >= 1 {
-        eprintln!("erro: recursão de re-execução recusada (NATURAL_CORE_DEPTH={depth})");
+        eprintln!("error: re-execution recursion refused (NATURAL_CORE_DEPTH={depth})");
         return ExitCode::from(1);
     }
     let core = match core_binary() {
         Ok(core) => core,
         Err(message) => {
-            eprintln!("erro: {message}");
+            eprintln!("error: {message}");
             return ExitCode::from(1);
         }
     };
@@ -421,7 +421,7 @@ fn main() -> ExitCode {
     {
         Ok(status) => ExitCode::from(status.code().unwrap_or(1) as u8),
         Err(e) => {
-            eprintln!("erro: não consegui executar o scrapelens-core: {e}");
+            eprintln!("error: could not run scrapelens-core: {e}");
             ExitCode::from(1)
         }
     }

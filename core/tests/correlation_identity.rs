@@ -1,21 +1,21 @@
-//! P3 (docs/18): a correlação CDP×NetLog passou a usar um índice por (método, URL canônica)
-//! em vez de varrer todos os pares. A saída tem de ser IDÊNTICA. Este teste importa todas as
-//! capturas reais e fixtures versionadas (`import_capture_with_bodies`) e confere, byte a
-//! byte, o `session.json` serializado (JSON identado) e os anexos contra o hash gravado
-//! ANTES da mudança (FNV-1a 64 bits + tamanho).
+//! P3 (docs/18): the CDP×NetLog correlation uses an index by (method, canonical URL)
+//! instead of scanning every pair. The output must be IDENTICAL. This test imports all the
+//! real captures and versioned fixtures (`import_capture_with_bodies`) and checks, byte by
+//! byte, the serialized `session.json` (indented JSON) and the attachments against the hash
+//! recorded BEFORE the change (FNV-1a 64 bits + size).
 //!
-//! Rodada 15: as 6 entradas `multi-target-*` (brutos no `experiments/.gitignore`) são
-//! opcionais e só conferidas quando presentes; as 23 versionadas são obrigatórias.
+//! Round 15: the 6 `multi-target-*` entries (raw data in `experiments/.gitignore`) are
+//! optional and checked only when present; the 23 versioned ones are required.
 //!
-//! Regenerar (só se a SAÍDA muda de propósito): `PRINT_GOLDEN=1 cargo test --test
-//! correlation_identity -- --nocapture` e colar a tabela.
+//! Regenerate (only if the OUTPUT changes on purpose): `PRINT_GOLDEN=1 cargo test --test
+//! correlation_identity -- --nocapture` and paste the table.
 
 use std::path::Path;
 
 use scrapelens_core::correlate::CorrelationOptions;
 use scrapelens_core::parse::import_capture_with_bodies;
 
-/// (diretório a partir da raiz do repositório, nome do NetLog)
+/// (directory relative to the repository root, NetLog file name)
 const INPUTS: &[(&str, &str)] = &[
     ("experiments/results/contract-h1", "chrome-netlog.json"),
     ("experiments/results/contract-h2", "chrome-netlog.json"),
@@ -98,7 +98,7 @@ fn fingerprint(dir: &str, netlog: &str) -> Option<(u64, usize)> {
         CorrelationOptions::default(),
     ) {
         Ok(imported) => imported,
-        // Entrada recusada (ex.: NetLog vazio): a mensagem de erro também é estável.
+        // Rejected input (e.g. empty NetLog): the error message is also stable.
         Err(error) => {
             let text = format!("ERRO: {error}");
             let mut hash = 0xcbf2_9ce4_8422_2325u64;
@@ -130,10 +130,10 @@ fn correlated_sessions_are_byte_identical_to_the_brute_force_baseline() {
         return;
     }
 
-    // Rodada 15: as 6 entradas `multi-target-*` ficam no `experiments/.gitignore`
-    // (só `analysis`/`summary` são versionados). Num `git clone` limpo os brutos não
-    // existem, então elas são conferidas apenas quando presentes. As 23 versionadas
-    // têm de existir SEMPRE: ausência é falha, não skip.
+    // Round 15: the 6 `multi-target-*` entries are in `experiments/.gitignore`
+    // (only `analysis`/`summary` are versioned). In a clean `git clone` the raw data does not
+    // exist, so they are checked only when present. The 23 versioned ones
+    // must ALWAYS exist: absence is a failure, not a skip.
     let mut checked = 0;
     for (dir, expected_hash, expected_len) in VERSIONED {
         let netlog = netlog_for(dir);
@@ -142,7 +142,7 @@ fn correlated_sessions_are_byte_identical_to_the_brute_force_baseline() {
         assert_eq!(
             (hash, len),
             (*expected_hash, *expected_len),
-            "{dir}: a saída da correlação mudou"
+            "{dir}: the correlation output changed"
         );
         checked += 1;
     }
@@ -165,7 +165,7 @@ fn correlated_sessions_are_byte_identical_to_the_brute_force_baseline() {
         assert_eq!(
             (hash, len),
             (*expected_hash, *expected_len),
-            "{dir}: a saída da correlação mudou"
+            "{dir}: the correlation output changed"
         );
         local_checked += 1;
     }
@@ -180,8 +180,8 @@ fn netlog_for(dir: &str) -> &'static str {
         .1
 }
 
-/// 23 entradas versionadas (`contract-*`, `h1-*`, `h2-*`, `h3-*`, fixtures e
-/// evidências do App/adapters). Hashes gerados ANTES do índice.
+/// 23 versioned entries (`contract-*`, `h1-*`, `h2-*`, `h3-*`, fixtures and
+/// App/adapters evidence). Hashes generated BEFORE the index.
 const VERSIONED: &[(&str, u64, usize)] = &[
     (
         "experiments/results/contract-h1",
@@ -252,8 +252,8 @@ const VERSIONED: &[(&str, u64, usize)] = &[
     ),
 ];
 
-/// 6 entradas locais opcionais (`multi-target-*`), ignoradas no git. São
-/// conferidas contra o hash esperado quando os brutos estão na árvore.
+/// 6 optional local entries (`multi-target-*`), ignored by git. They are
+/// checked against the expected hash when the raw data is in the tree.
 const LOCAL_OPTIONAL: &[(&str, u64, usize)] = &[
     (
         "experiments/results/multi-target-attach-probe/headful",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Aceite 2 da rodada 8: o script gerado COM o adaptador completa a cadeia contra o detran-sim em modo
-`strict` (prefixos UTF-16 validados) com valores de tamanhos diferentes dos capturados; o script SEM o
-adaptador (controle, rodada 7) falha. Só 127.0.0.1. Quem executa é este teste, nunca o ScrapeLens.
+"""Acceptance 2 of round 8: the script generated WITH the adapter completes the chain against detran-sim in
+`strict` (validated UTF-16 prefixes) with values of different sizes from the captured ones; the script WITHOUT the
+adapter (control, round 7) fails. Only 127.0.0.1. This test is the one that runs it, never ScrapeLens.
 
   python3 adapters/natural-ajax/scripts/prove_strict.py [--python PY_COM_REQUESTS] [--port 8791]
 """
@@ -14,7 +14,7 @@ CORE = ROOT / "core/target/release/scrapelens-core"
 SIM = ROOT / "testserver/detran-sim/detran_sim.py"
 HAR = ROOT / "fixtures/detran-pb-real-shape/real-shape-1round.har"
 OUT = ROOT / "adapters/natural-ajax/evidence/strict.json"
-PLACA = "TST1A23"  # Mercosul sintética
+PLACA = "TST1A23"  # synthetic Mercosul plate
 CPF = "00000000191"
 
 
@@ -26,7 +26,7 @@ def pick_python(arg):
     for c in ([arg] if arg else []) + ["/tmp/sl-venv-req/bin/python", "/tmp/rev10/venv/bin/python", sys.executable]:
         if c and subprocess.run([c, "-c", "import requests"], capture_output=True).returncode == 0:
             return c
-    sys.exit("nenhum python com requests; passe --python")
+    sys.exit("no python with requests; pass --python")
 
 
 def run(py, script, base, client):
@@ -43,7 +43,7 @@ def main():
     tmp = Path(tempfile.mkdtemp(prefix="sl-nat-strict-")); os.chmod(tmp, 0o700)
     env = dict(os.environ, SCRAPELENS_CORE_BIN=str(CORE))
     sim = subprocess.Popen([sys.executable, str(SIM), "--port", str(a.port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    res = {"base": base, "mode": "strict", "placa": "Mercosul sintética", "runs": {}}
+    res = {"base": base, "mode": "strict", "placa": "synthetic Mercosul plate", "runs": {}}
     fails = []
     try:
         for _ in range(60):
@@ -60,7 +60,7 @@ def main():
             g = subprocess.run([str(NATURAL), "export-priming", str(sess), target, "--out", str(script), *extra],
                                capture_output=True, text=True, env=env)
             if g.returncode != 0:
-                fails.append(f"{label}: export-priming falhou: {g.stderr[:120]}")
+                fails.append(f"{label}: export-priming failed: {g.stderr[:120]}")
                 continue
             text = script.read_text()
             runs = []
@@ -75,12 +75,12 @@ def main():
         with_ = res["runs"].get("com_adaptador", {})
         ctrl = res["runs"].get("controle_sem_adaptador", {})
         if not with_.get("usa_codificador_natural"):
-            fails.append("o script com adaptador não usa o codificador Natural")
+            fails.append("the script with the adapter does not use the Natural encoder")
         for r in with_.get("execucoes", []):
             if r["rc"] != 0:
-                fails.append(f"com adaptador: rc={r['rc']} {r['stderr_tail']}")
+                fails.append(f"with adapter: rc={r['rc']} {r['stderr_tail']}")
         if ctrl.get("execucoes") and all(r["rc"] == 0 for r in ctrl["execucoes"]):
-            fails.append("o controle (sem adaptador) deveria falhar no modo strict")
+            fails.append("the control (without adapter) should fail in strict mode")
         res["controle_falha_como_esperado"] = bool(ctrl.get("execucoes")) and all(r["rc"] != 0 for r in ctrl["execucoes"])
     finally:
         sim.terminate()

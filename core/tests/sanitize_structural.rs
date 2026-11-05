@@ -1,8 +1,8 @@
-//! Desenho estrutural do sanitizador de texto (um tokenizador por nível):
-//! fidelidade do caminho (A5-M1), `+`/`%2B`/`%2520`/`%2526`/`%2523` dentro de
-//! credenciais aninhadas (A5-M2), valores entre aspas/parênteses e depois de
-//! espaço (A5-B1) e um teste de propriedade com segredo marcado em posições
-//! aleatórias e 0 a 3 níveis de codificação.
+//! Structural design of the text sanitizer (one tokenizer per level):
+//! path fidelity (A5-M1), `+`/`%2B`/`%2520`/`%2526`/`%2523` inside nested
+//! credentials (A5-M2), values in quotes/parentheses and after a space
+//! (A5-B1), and a property test with a marked secret at random positions and
+//! 0 to 3 encoding levels.
 
 use scrapelens_core::export::sanitize::{
     sanitize_path_and_query, sanitize_text, sanitize_url, SanitizeOptions,
@@ -14,13 +14,13 @@ fn o() -> SanitizeOptions {
     SanitizeOptions::default()
 }
 
-// ---- A5-M1 / A7-B5 / A8-M1: o valor de um nome sensível num caminho vai até `?` ou o fim -----
+// ---- A5-M1 / A7-B5 / A8-M1: the value of a sensitive name in a path runs up to `?` or the end -----
 
 #[test]
 fn sensitive_value_in_a_path_runs_to_the_query_and_non_sensitive_names_are_untouched() {
     let o = o();
-    // Decisão A8: um credencial pode conter `/`; a segurança prevalece sobre a fidelidade.
-    // O resto do CAMINHO depois do nome sensível vai junto; a consulta fica.
+    // Decision A8: a credential may contain `/`; security takes precedence over fidelity.
+    // The rest of the PATH after the sensitive name goes along; the query stays.
     assert_eq!(
         sanitize_path_and_query("/a;jsessionid=SECRETX/b/c?x=1", &o),
         format!("/a;jsessionid={P}?x=1")
@@ -41,7 +41,7 @@ fn sensitive_value_in_a_path_runs_to_the_query_and_non_sensitive_names_are_untou
         sanitize_path_and_query("/a;v=2/session=keep/b", &o),
         format!("/a;v=2/session={P}")
     );
-    // Mesmo resultado no caminho de TEXTO (linha de requisição, header, JSON).
+    // Same result on the TEXT path (request line, header, JSON).
     assert_eq!(
         sanitize_text("GET /a;jsessionid=SECRETX/b/c?x=1 HTTP/1.1", &o),
         format!("GET /a;jsessionid={P}?x=1 HTTP/1.1")
@@ -50,7 +50,7 @@ fn sensitive_value_in_a_path_runs_to_the_query_and_non_sensitive_names_are_untou
         sanitize_text("/a;v=2/session=keep/b", &o),
         format!("/a;v=2/session={P}")
     );
-    // Credencial com barras (base64) é redigido inteiro.
+    // A credential with slashes (base64) is redacted whole.
     for secret in [
         "GET /s;token=Zm9vYmFy/YmF6cXV4 HTTP/1.1",
         "/api/token=/secret1/value2",
@@ -59,10 +59,10 @@ fn sensitive_value_in_a_path_runs_to_the_query_and_non_sensitive_names_are_untou
     ] {
         let out = sanitize_text(secret, &o);
         for tail in ["YmF6cXV4", "secret1", "value2", "IjKlMnOp", "/def"] {
-            assert!(!out.contains(tail), "{tail} em {out} (de {secret})");
+            assert!(!out.contains(tail), "{tail} in {out} (from {secret})");
         }
     }
-    // Nomes NÃO sensíveis não mudam nada e o resto do caminho segue examinado.
+    // NON-sensitive names change nothing and the rest of the path is still examined.
     for same in ["/a;lang=en/x=1/y=2", "/a;v=1/b?page=2", "/a;v=2/b/c"] {
         assert_eq!(sanitize_path_and_query(same, &o), same);
     }
@@ -75,7 +75,7 @@ fn sensitive_value_in_a_path_runs_to_the_query_and_non_sensitive_names_are_untou
     );
 }
 
-// ---- A8-M2: custo linear para valores com muitas barras -----------------------------------
+// ---- A8-M2: linear cost for values with many slashes -----------------------------------
 
 #[test]
 fn many_slashes_cost_linear_time() {
@@ -101,19 +101,19 @@ fn many_slashes_cost_linear_time() {
                 _ => sanitize_path_and_query(&input, &o),
             };
             let ms = started.elapsed().as_millis();
-            assert!(ms < budget, "{label} {kind}: {ms} ms (limite {budget})");
+            assert!(ms < budget, "{label} {kind}: {ms} ms (limit {budget})");
         }
     }
 }
 
-// ---- A5-M2: separadores que só aparecem depois da decodificação pertencem ao nível de baixo
+// ---- A5-M2: separators that only appear after decoding belong to the lower level
 
 #[test]
 fn encoded_separators_inside_a_credential_do_not_cut_it() {
     let o = o();
     for secret_tail in [
         "ab%2BQPLUSx",   // %2B
-        "ab%2520QSPx",   // %2520 → %20 → espaço no nível 2
+        "ab%2520QSPx",   // %2520 → %20 → space at level 2
         "ab%2526QAMPx",  // %2526 → %26 → &
         "ab%2523QHASHx", // %2523 → %23 → #
         "ab%253BQSEMIx", // ;
@@ -156,12 +156,12 @@ fn encoded_separators_inside_a_credential_do_not_cut_it() {
         );
         assert!(
             url.ends_with("&x=1") || url.contains("&x=1"),
-            "o resto da query fica: {url}"
+            "the rest of the query stays: {url}"
         );
     }
 }
 
-// ---- A5-B1: valores entre aspas, parênteses ou depois de espaço ----------------------------
+// ---- A5-B1: values in quotes, parentheses or after a space ----------------------------
 
 #[test]
 fn quoted_parenthesised_and_spaced_values_are_redacted_whole() {
@@ -185,13 +185,13 @@ fn quoted_parenthesised_and_spaced_values_are_redacted_whole() {
             assert!(!out.contains("spaces"), "{out}");
         }
     }
-    // `a = b` e prosa continuam iguais.
+    // `a = b` and prose stay the same.
     for same in ["a = b and x=1, y=2", "x=1", "abc==", "if (a==b) { c = d; }"] {
         assert_eq!(sanitize_text(same, &o), same);
     }
 }
 
-// ---- propriedade: segredo marcado em posições aleatórias, 0 a 3 níveis de codificação -------
+// ---- property: marked secret at random positions, 0 to 3 encoding levels -------
 
 struct Lcg(u64);
 impl Lcg {
@@ -207,7 +207,7 @@ impl Lcg {
     }
 }
 
-/// Codifica um nível: tudo que não é alfanumérico vira `%XX`.
+/// Encodes one level: everything that is not alphanumeric becomes `%XX`.
 fn encode_level(text: &str) -> String {
     text.bytes()
         .map(|b| {
@@ -252,7 +252,7 @@ fn marked_secret_never_survives_and_the_rest_stays_equal() {
         "a=b=",
         "/p;",
     ];
-    // segredo com caracteres base64 que cada nível transforma em escapes
+    // secret with base64 characters that each level turns into escapes
     let secrets = [
         "ZQ9kd2Xm",
         "AAA+ZQ9tail/ZQ9rest==",
@@ -265,7 +265,7 @@ fn marked_secret_never_survives_and_the_rest_stays_equal() {
     for round in 0..4000 {
         let name = *rng.pick(&names);
         let secret = *rng.pick(&secrets);
-        // `x y …` só vale entre aspas; o restante é um valor corrido
+        // `x y …` only counts inside quotes; the rest is a bare value
         let quoted = secret.contains(' ');
         let levels = (rng.next() % 4) as usize; // 0..=3
         let value = if quoted {
@@ -274,13 +274,13 @@ fn marked_secret_never_survives_and_the_rest_stays_equal() {
             secret.to_string()
         };
         let mut inner = format!("{name}={value}");
-        // o nome/valor vai embrulhado em 0..=3 níveis de codificação
+        // the name/value is wrapped in 0..=3 encoding levels
         let mut wrapped_head = String::new();
         for level in 0..levels {
             inner = encode_level(&inner);
             let _ = level;
         }
-        // sempre um prefixo benigno e um sufixo benigno, que não podem mudar
+        // always a benign prefix and a benign suffix, which must not change
         let head = *rng.pick(&heads);
         let tail = if levels > 0 && quoted {
             ""
@@ -288,30 +288,30 @@ fn marked_secret_never_survives_and_the_rest_stays_equal() {
             *rng.pick(&tails)
         };
         if levels > 0 {
-            // nível 1+ precisa de um parâmetro externo não sensível para carregar o valor
+            // level 1+ needs an external non-sensitive parameter to carry the value
             wrapped_head = "carrier=".to_string();
         }
         let benign_prefix = "BENIGNPRE";
         let text = format!("{benign_prefix} {head}{wrapped_head}{inner}{tail} BENIGNPOST");
         let out = sanitize_text(&text, &opts);
-        // O segredo (cada pedaço alfanumérico longo) nunca aparece, cru ou codificado.
+        // The secret (each long alphanumeric piece) never appears, raw or encoded.
         for needle in ["ZQ9kd2Xm", "ZQ9tail", "ZQ9rest", "ZQ9gh", "ZQ9sp"] {
             assert!(
                 !out.contains(needle),
-                "round {round}: {needle} em {out:?} (de {text:?})"
+                "round {round}: {needle} in {out:?} (from {text:?})"
             );
         }
-        // O resto do texto continua igual.
+        // The rest of the text stays the same.
         assert!(out.starts_with("BENIGNPRE "), "round {round}: {out:?}");
         assert!(out.ends_with(" BENIGNPOST"), "round {round}: {out:?}");
         if head == "GET /cb?" {
             assert!(out.contains("GET /cb?"), "{out:?}");
         }
-        // Idempotência: sanitizar o resultado de novo não muda nada.
+        // Idempotence: sanitizing the result again changes nothing.
         assert_eq!(
             sanitize_text(&out, &opts),
             out,
-            "round {round}: não idempotente: {text:?}"
+            "round {round}: not idempotent: {text:?}"
         );
         checked += 1;
     }
@@ -346,12 +346,12 @@ fn marked_secret_in_urls_at_random_positions_and_levels() {
         for needle in ["ZQ9kd2Xm", "ZQ9tail", "ZQ9rest"] {
             assert!(
                 !out.contains(needle),
-                "round {round}: {needle} em {out:?} (de {url:?})"
+                "round {round}: {needle} in {out:?} (from {url:?})"
             );
         }
         assert!(
             out.contains("keep=yes"),
-            "round {round}: perdeu o resto: {out:?} (de {url:?})"
+            "round {round}: lost the rest: {out:?} (from {url:?})"
         );
         assert!(
             out.contains("benign=1") || shape == 2 || shape == 1,
@@ -360,7 +360,7 @@ fn marked_secret_in_urls_at_random_positions_and_levels() {
         if shape == 1 {
             assert!(
                 out.contains("/tail"),
-                "round {round}: perdeu o caminho: {out:?}"
+                "round {round}: lost the path: {out:?}"
             );
         }
     }
@@ -401,16 +401,16 @@ fn redaction_is_idempotent() {
     }
 }
 
-// ---- A7-B6: grupo acima de 1 MiB com %XX -------------------------------------------------
+// ---- A7-B6: group above 1 MiB with %XX -------------------------------------------------
 
 #[test]
 fn oversize_group_is_redacted_only_when_a_sensitive_name_is_in_it_or_it_cannot_be_decided() {
     let o = o();
-    // 3 MiB de `a=%3Fb%3Dc` (nada sensível): passa intacto, inclusive os nomes.
+    // 3 MiB of `a=%3Fb%3Dc` (nothing sensitive): passes through intact, names included.
     let benign = format!("x={}", "a%3Fb%3Dc".repeat((3 << 20) / 9));
     assert!(benign.len() > (1 << 20));
     assert_eq!(sanitize_text(&benign, &o), benign);
-    // O mesmo tamanho com um nome sensível codificado no meio: o grupo é redigido.
+    // Same size with an encoded sensitive name in the middle: the group is redacted.
     let sensitive = format!(
         "x={}token%3DSEC1x{}",
         "a%3Fb%3Dc".repeat((2 << 20) / 9),
@@ -418,15 +418,15 @@ fn oversize_group_is_redacted_only_when_a_sensitive_name_is_in_it_or_it_cannot_b
     );
     let out = sanitize_text(&sensitive, &o);
     assert!(!out.contains("SEC1x") && out.len() < 100, "{}", out.len());
-    // Sensível só num nível fundo (3 níveis de codificação) também é visto.
+    // Sensitive only at a deep level (3 encoding levels) is also seen.
     let deep = format!(
         "x={}%2525253Ftoken%2525253DSEC2x",
         "a%3Fb%3Dc".repeat((2 << 20) / 9)
     );
     let out = sanitize_text(&deep, &o);
     assert!(!out.contains("SEC2x") && out.len() < 100, "{}", out.len());
-    // Não dá para decidir (um escape com 40 camadas de `%25`, mais que o teto de rodadas):
-    // falha fechada, mesmo sem nome sensível visível.
+    // Cannot decide (an escape with 40 layers of `%25`, more than the round ceiling):
+    // fails closed, even without a visible sensitive name.
     let undecidable = format!(
         "x={}%{}41",
         "a%3Fb%3Dc".repeat((2 << 20) / 9),
@@ -434,7 +434,7 @@ fn oversize_group_is_redacted_only_when_a_sensitive_name_is_in_it_or_it_cannot_b
     );
     let out = sanitize_text(&undecidable, &o);
     assert!(out.len() < 100, "{}", out.len());
-    // Cadeia de %25 curta o bastante para decidir e sem nome sensível: intacta.
+    // %25 chain short enough to decide and with no sensitive name: intact.
     let decidable = format!("x={}", "%2541".repeat((2 << 20) / 5));
     assert_eq!(sanitize_text(&decidable, &o), decidable);
 }
