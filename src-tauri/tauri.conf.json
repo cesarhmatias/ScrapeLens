@@ -31,8 +31,8 @@
       "app"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "Inspecione sessões HTTP para scraping",
-    "longDescription": "ScrapeLens inspeciona a sequência real de headers em sessões HTTP capturadas via CDP e NetLog, preservando duplicatas, ordem e proveniência.",
+    "shortDescription": "Inspect HTTP sessions for scraping",
+    "longDescription": "ScrapeLens inspects the real sequence of headers in HTTP sessions captured via CDP and NetLog, preserving duplicates, order and provenance.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

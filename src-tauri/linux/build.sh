@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dentro do container: testes, bundle (.deb e AppImage) e smoke test com Xvfb.
+# Inside the container: tests, bundle (.deb and AppImage) and a smoke test with Xvfb.
 set -uo pipefail
 ARCH=$(dpkg --print-architecture)
 OUT=/out/$ARCH; mkdir -p "$OUT"; LOG=$OUT/build.log; : > "$LOG"
@@ -34,7 +34,7 @@ pkill -TERM -f "$OUT/scrapelens" ; sleep 2; kill $pid 2>/dev/null; wait $pid 2>/
 if [ $ok = 1 ]; then
   n=$(python3 -c "import json,sys;print(len(json.load(open(sys.argv[1]))['requests']))" "$f" 2>/dev/null || grep -o '"requests"' "$f" | wc -l)
   echo "smoke ok: $f requests=$n" | tee -a "$LOG"
-else echo "smoke FAIL (sem session.json em 60 s)" | tee -a "$LOG"; fail=1; fi
+else echo "smoke FAIL (no session.json within 60 s)" | tee -a "$LOG"; fail=1; fi
 step "sha256"; (cd "$OUT" && sha256sum *.deb *.AppImage scrapelens | tee SHA256SUMS | tee -a "$LOG")
 echo "fail=$fail" | tee -a "$LOG"
 exit $fail

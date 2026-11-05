@@ -1,14 +1,14 @@
-//! Utilitário de evidência da exportação/sanitização (não faz parte do produto).
+//! Evidence utility for export/sanitization (not part of the product).
 //!
-//! Chama a mesma ponte que os commands Tauri usam e imprime uma linha JSON por
-//! resultado, para que a evidência da rodada possa ser gravada sem abrir a UI:
+//! Calls the same bridge the Tauri commands use and prints one JSON line per
+//! result, so the round's evidence can be recorded without opening the UI:
 //!
 //! ```sh
-//! cargo run --quiet --example export_dump -- <pasta-da-sessão> <request-id> [destino-sanitizado]
+//! cargo run --quiet --example export_dump -- <session-folder> <request-id> [sanitized-destination]
 //! ```
 //!
-//! Nada é executado e nenhuma rede é aberta; o destino sanitizado precisa ser
-//! uma pasta nova (a origem nunca é alterada).
+//! Nothing is executed and no network is opened; the sanitized destination must be
+//! a new folder (the source is never modified).
 
 use std::path::{Path, PathBuf};
 
@@ -16,8 +16,8 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let dir = args
         .next()
-        .expect("uso: export_dump <pasta-da-sessão> <request-id> [destino]");
-    let request = args.next().expect("request id ausente");
+        .expect("usage: export_dump <session-folder> <request-id> [destination]");
+    let request = args.next().expect("missing request id");
     let src = Path::new(&dir);
 
     for format in ["curl", "python"] {
@@ -25,21 +25,21 @@ fn main() {
         println!(
             "PREVIEW {} {}",
             format,
-            serde_json::to_string(&preview).expect("serializar prévia")
+            serde_json::to_string(&preview).expect("serialize preview")
         );
     }
 
-    let sanitize = scrapelens_lib::export::sanitize_preview(src).expect("prévia da sanitização");
+    let sanitize = scrapelens_lib::export::sanitize_preview(src).expect("sanitization preview");
     println!(
         "SANITIZE_PREVIEW {}",
-        serde_json::to_string(&sanitize).expect("serializar sanitização")
+        serde_json::to_string(&sanitize).expect("serialize sanitization")
     );
 
     if let Some(destination) = args.next().map(PathBuf::from) {
-        let saved = scrapelens_lib::export::sanitize_to(src, &destination).expect("sanitizar");
+        let saved = scrapelens_lib::export::sanitize_to(src, &destination).expect("sanitize");
         println!(
             "SANITIZE_SAVED {}",
-            serde_json::to_string(&saved).expect("serializar resultado")
+            serde_json::to_string(&saved).expect("serialize result")
         );
     }
 }

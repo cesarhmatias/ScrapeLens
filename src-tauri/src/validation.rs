@@ -188,7 +188,7 @@ mod tests {
         // an existing destination, a destination inside the root, and a source outside the root are refused; the temporary one stays
         let e = make_exec(&root, "e");
         assert!(keep(&root, &e, &dest).unwrap_err().contains("already exists"));
-        assert!(keep(&root, &e, &root.join("x")).unwrap_err().contains("inside the temporary folder"));
+        assert!(keep(&root, &e, &root.join("x")).unwrap_err().contains("inside the app's temporary folder"));
         assert!(keep(&root, &outside, &base.join("y")).is_err());
         assert!(e.exists() && !base.join("y").exists());
         let _ = fs::remove_dir_all(&base);

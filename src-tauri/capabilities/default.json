@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Janela principal do ScrapeLens: diálogos nativos e clipboard.",
+  "description": "ScrapeLens main window: native dialogs and clipboard.",
   "windows": ["main"],
   "permissions": ["core:default", "dialog:default", "clipboard-manager:default"]
 }

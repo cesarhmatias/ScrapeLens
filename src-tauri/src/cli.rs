@@ -1,9 +1,9 @@
-//! Argumentos de linha de comando só para testes e validação da URL inicial.
-//! Caminhos: absolutos, arquivo/diretório regular, sem symlink.
+//! Command-line arguments for testing only, and for validating the initial URL.
+//! Paths: absolute, regular file or directory, no symlinks.
 
 use std::path::{Path, PathBuf};
 
-/// Ação pedida na linha de comando (uma por processo).
+/// Action requested on the command line (one per process).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliAction {
     ImportHar(PathBuf),
@@ -11,16 +11,16 @@ pub enum CliAction {
     OpenCapture(PathBuf),
 }
 
-/// Pontas aparadas da URL: espaço Unicode (inclui U+0085) e BOM U+FEFF.
-/// Mesmo conjunto de `trimUrl` em `app/src/captureUrl.ts`.
+/// Trimmed URL edges: Unicode whitespace (including U+0085) and the BOM U+FEFF.
+/// Same set as `trimUrl` in `app/src/captureUrl.ts`.
 pub fn trim_url(raw: &str) -> &str {
     raw.trim_matches(|c: char| c.is_whitespace() || c == '\u{FEFF}')
 }
 
-/// Tamanho máximo da URL inicial (caracteres).
+/// Maximum length of the initial URL (characters).
 pub const MAX_URL_LEN: usize = 2048;
 
-/// Valida URL de captura: vazia → `about:blank`; senão só `http`/`https`.
+/// Validates the capture URL: empty → `about:blank`; otherwise only `http`/`https`.
 pub fn resolve_capture_start_url(input: Option<&str>) -> Result<String, String> {
     let trimmed = trim_url(input.unwrap_or(""));
     if trimmed.is_empty() {
@@ -30,8 +30,8 @@ pub fn resolve_capture_start_url(input: Option<&str>) -> Result<String, String> 
     Ok(trimmed.to_string())
 }
 
-/// Caracteres de formatação invisíveis (Unicode Cf) recusados na URL.
-/// A mesma lista existe em `app/src/captureUrl.ts`; o Rust é a autoridade.
+/// Invisible formatting characters (Unicode Cf) rejected in the URL.
+/// The same list exists in `app/src/captureUrl.ts`; Rust is the authority.
 pub fn is_invisible_format(c: char) -> bool {
     matches!(c as u32,
         0x00AD | 0x0600..=0x0605 | 0x061C | 0x06DD | 0x070F | 0x0890..=0x0891 | 0x08E2
@@ -40,7 +40,7 @@ pub fn is_invisible_format(c: char) -> bool {
         | 0x1BCA0..=0x1BCA3 | 0x1D173..=0x1D17A | 0xE0001 | 0xE0020..=0xE007F)
 }
 
-/// Partes de uma URL http(s) já validada.
+/// Parts of an already validated http(s) URL.
 struct UrlParts<'a> {
     scheme: &'a str,
     authority: &'a str,
@@ -54,7 +54,7 @@ fn split_http_url(trimmed: &str) -> Result<UrlParts<'_>, String> {
     } else if lower.starts_with("https://") {
         "https://".len()
     } else {
-        return Err("a URL inicial aceita só http:// ou https://".to_string());
+        return Err("the initial URL only accepts http:// or https://".to_string());
     };
     let rest = &trimmed[scheme_len..];
     let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
@@ -68,36 +68,36 @@ fn split_http_url(trimmed: &str) -> Result<UrlParts<'_>, String> {
     })
 }
 
-/// Aceita só `http://` e `https://` com host; recusa userinfo, espaços,
-/// controles, NUL, caracteres invisíveis (Cf) e mais de 2048 caracteres.
+/// Accepts only `http://` and `https://` with a host; rejects userinfo, spaces,
+/// control characters, NUL, invisible characters (Cf) and more than 2048 characters.
 pub fn validate_http_url(raw: &str) -> Result<(), String> {
     let trimmed = trim_url(raw);
     if trimmed.is_empty() {
-        return Err("URL vazia".to_string());
+        return Err("empty URL".to_string());
     }
     if trimmed.chars().count() > MAX_URL_LEN {
-        return Err(format!("URL maior que {MAX_URL_LEN} caracteres"));
+        return Err(format!("URL longer than {MAX_URL_LEN} characters"));
     }
     if trimmed.chars().any(|c| c == '\0' || c.is_control()) {
-        return Err("URL não pode conter caracteres de controle".to_string());
+        return Err("URL cannot contain control characters".to_string());
     }
     if trimmed.chars().any(char::is_whitespace) {
-        return Err("URL não pode conter espaços".to_string());
+        return Err("URL cannot contain spaces".to_string());
     }
     if trimmed.chars().any(is_invisible_format) {
-        return Err("URL não pode conter caracteres invisíveis".to_string());
+        return Err("URL cannot contain invisible characters".to_string());
     }
     let parts = split_http_url(trimmed)?;
     if parts.authority.contains('@') {
-        return Err("URL com usuário/senha (user@host) não é aceita".to_string());
+        return Err("URL with user/password (user@host) is not accepted".to_string());
     }
     let host = if let Some(rest) = parts.authority.strip_prefix('[') {
         let Some(close) = rest.find(']') else {
-            return Err("host IPv6 malformado".to_string());
+            return Err("malformed IPv6 host".to_string());
         };
         let tail = &rest[close + 1..];
         if !(tail.is_empty() || tail.starts_with(':')) {
-            return Err("host IPv6 malformado".to_string());
+            return Err("malformed IPv6 host".to_string());
         }
         validate_port(tail.strip_prefix(':'))?;
         &rest[..close]
@@ -110,7 +110,7 @@ pub fn validate_http_url(raw: &str) -> Result<(), String> {
         host
     };
     if host.is_empty() {
-        return Err("URL sem host".to_string());
+        return Err("URL has no host".to_string());
     }
     Ok(())
 }
@@ -119,29 +119,29 @@ fn validate_port(port: Option<&str>) -> Result<(), String> {
     match port {
         None => Ok(()),
         Some(p) if !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit()) && p.parse::<u32>().map(|n| n <= 65535).unwrap_or(false) => Ok(()),
-        Some(_) => Err("porta inválida na URL".to_string()),
+        Some(_) => Err("invalid port in URL".to_string()),
     }
 }
 
-/// Forma persistida da URL inicial: só esquema, host, porta e caminho
-/// (sem query nem fragmento). A URL completa vale só na memória da sessão.
+/// Persisted form of the initial URL: only scheme, host, port and path
+/// (no query or fragment). The full URL is kept only in the session's memory.
 pub fn persistable_url(raw: &str) -> Result<String, String> {
     let trimmed = trim_url(raw);
     validate_http_url(trimmed)?;
     let parts = split_http_url(trimmed)?;
     let cleaned = sanitize_persisted_path(parts.path);
-    // Caminho com algo redigido: grava só a origem. Nunca se grava (nem se
-    // preenche no campo) uma URL com `[REDACTED]`, que o Chrome abriria.
+    // Path with something redacted: store only the origin. Never store (or fill
+    // into the field) a URL containing `[REDACTED]`, which Chrome would open.
     if cleaned != parts.path {
         return Ok(format!("{}{}", parts.scheme, parts.authority));
     }
     Ok(format!("{}{}{}", parts.scheme, parts.authority, parts.path))
 }
 
-/// Caminho gravado em disco (A9-B4): sanitizador do core (`;jsessionid=`,
-/// `token=`, formas codificadas) e, por segmento, troca por `[REDACTED]` o que
-/// parece credencial opaca: userinfo codificado (`%40`/`%3A`) ou um token com
-/// 16+ caracteres que mistura letras e dígitos (`/reset/TOKEN`).
+/// Path written to disk (A9-B4): the core sanitizer (`;jsessionid=`, `token=`,
+/// encoded forms) and, per segment, replaces with `[REDACTED]` whatever looks
+/// like an opaque credential: encoded userinfo (`%40`/`%3A`) or a token of 16+
+/// characters mixing letters and digits (`/reset/TOKEN`).
 pub fn sanitize_persisted_path(path: &str) -> String {
     let options = scrapelens_core::export::sanitize::SanitizeOptions::default();
     let cleaned = scrapelens_core::export::sanitize::sanitize_path_and_query(path, &options);
@@ -163,23 +163,23 @@ pub fn sanitize_persisted_path(path: &str) -> String {
         .join("/")
 }
 
-/// Resultado da leitura da linha de comando.
+/// Result of reading the command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliOutcome {
     None,
     Action(CliAction),
-    /// Argumentos ignorados (sem `SCRAPELENS_TEST_MODE=1`): aviso para a janela.
+    /// Arguments ignored (without `SCRAPELENS_TEST_MODE=1`): warning for the window.
     Ignored(String),
     Error(String),
 }
 
-/// Liga a CLI de teste só com `SCRAPELENS_TEST_MODE=1`.
+/// Enables the test CLI only with `SCRAPELENS_TEST_MODE=1`.
 pub fn cli_outcome(args: &[String], test_mode: Option<&str>) -> CliOutcome {
     let has_flags = args.iter().skip(1).any(|a| a.starts_with("--"));
     if test_mode != Some("1") {
         return if has_flags {
             CliOutcome::Ignored(
-                "argumentos de linha de comando ignorados: a CLI de teste só funciona com SCRAPELENS_TEST_MODE=1"
+                "command-line arguments ignored: the test CLI only works with SCRAPELENS_TEST_MODE=1"
                     .to_string(),
             )
         } else {
@@ -193,8 +193,8 @@ pub fn cli_outcome(args: &[String], test_mode: Option<&str>) -> CliOutcome {
     }
 }
 
-/// Interpreta `args` (como `std::env::args`, incluindo argv[0]). No máximo uma ação.
-/// Qualquer outro argumento `--…` ou posicional é erro (exceto `-psn_…` do macOS).
+/// Parses `args` (as from `std::env::args`, including argv[0]). At most one action.
+/// Any other `--…` argument or positional argument is an error (except the macOS `-psn_…`).
 pub fn parse_cli_args(args: &[String]) -> Result<Option<CliAction>, String> {
     let mut i = 1usize;
     let mut found: Option<CliAction> = None;
@@ -222,12 +222,12 @@ pub fn parse_cli_args(args: &[String]) -> Result<Option<CliAction>, String> {
             }
             other => {
                 return Err(format!(
-                    "argumento desconhecido: {other} (use --import-har, --import-netlog ou --open-capture)"
+                    "unknown argument: {other} (use --import-har, --import-netlog or --open-capture)"
                 ));
             }
         };
         if found.is_some() {
-            return Err("use só um de --import-har, --import-netlog ou --open-capture".to_string());
+            return Err("use only one of --import-har, --import-netlog or --open-capture".to_string());
         }
         found = Some(action);
     }
@@ -238,14 +238,14 @@ fn require_value<'a>(args: &'a [String], flag_index: usize, flag: &str) -> Resul
     args.get(flag_index + 1)
         .map(String::as_str)
         .filter(|value| !value.is_empty() && !value.starts_with('-'))
-        .ok_or_else(|| format!("{flag} exige um caminho absoluto"))
+        .ok_or_else(|| format!("{flag} requires an absolute path"))
 }
 
-/// Absoluto, sem `..`/`.`, não a raiz, e nenhum componente (inclusive ancestrais) é symlink.
+/// Absolute, without `..`/`.`, not the root, and no component (ancestors included) is a symlink.
 fn check_path_components(path: &Path) -> Result<std::fs::Metadata, String> {
     use std::path::Component;
     if !path.is_absolute() {
-        return Err(format!("caminho deve ser absoluto: {}", path.display()));
+        return Err(format!("path must be absolute: {}", path.display()));
     }
     let mut current = PathBuf::from("/");
     let mut depth = 0usize;
@@ -256,25 +256,25 @@ fn check_path_components(path: &Path) -> Result<std::fs::Metadata, String> {
                 current.push(name);
                 depth += 1;
                 let meta = std::fs::symlink_metadata(&current)
-                    .map_err(|error| format!("caminho inacessível ({}): {error}", current.display()))?;
+                    .map_err(|error| format!("path inaccessible ({}): {error}", current.display()))?;
                 if meta.file_type().is_symlink() {
-                    return Err(format!("symlink recusado: {}", current.display()));
+                    return Err(format!("symlink refused: {}", current.display()));
                 }
             }
-            _ => return Err(format!("caminho com . ou .. recusado: {}", path.display())),
+            _ => return Err(format!("path with . or .. refused: {}", path.display())),
         }
     }
     if depth == 0 {
-        return Err("a raiz / não é aceita".to_string());
+        return Err("the root / is not accepted".to_string());
     }
     std::fs::symlink_metadata(path)
-        .map_err(|error| format!("caminho inacessível ({}): {error}", path.display()))
+        .map_err(|error| format!("path inaccessible ({}): {error}", path.display()))
 }
 
 pub fn validate_absolute_regular_file(path: &Path) -> Result<PathBuf, String> {
     let meta = check_path_components(path)?;
     if !meta.is_file() {
-        return Err(format!("não é um arquivo regular: {}", path.display()));
+        return Err(format!("not a regular file: {}", path.display()));
     }
     Ok(path.to_path_buf())
 }
@@ -282,7 +282,7 @@ pub fn validate_absolute_regular_file(path: &Path) -> Result<PathBuf, String> {
 pub fn validate_absolute_directory(path: &Path) -> Result<PathBuf, String> {
     let meta = check_path_components(path)?;
     if !meta.is_dir() {
-        return Err(format!("não é um diretório: {}", path.display()));
+        return Err(format!("not a directory: {}", path.display()));
     }
     Ok(path.to_path_buf())
 }
@@ -356,7 +356,7 @@ mod tests {
         );
 
         let rel = vec!["scrapelens".into(), "--import-har".into(), "relative.har".into()];
-        assert!(parse_cli_args(&rel).unwrap_err().contains("absoluto"));
+        assert!(parse_cli_args(&rel).unwrap_err().contains("absolute"));
 
         let linked = vec![
             "scrapelens".into(),
@@ -389,7 +389,7 @@ mod tests {
             "--open-capture".into(),
             file.display().to_string(),
         ];
-        assert!(parse_cli_args(&as_file).unwrap_err().contains("diretório"));
+        assert!(parse_cli_args(&as_file).unwrap_err().contains("directory"));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -407,7 +407,7 @@ mod tests {
             "--open-capture".into(),
             root.display().to_string(),
         ];
-        assert!(parse_cli_args(&args).unwrap_err().contains("só um"));
+        assert!(parse_cli_args(&args).unwrap_err().contains("only one"));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -426,7 +426,7 @@ mod tests {
             "http://example.com:99999/",
             "http://[::1/",
         ] {
-            assert!(validate_http_url(bad).is_err(), "deveria recusar {bad:?}");
+            assert!(validate_http_url(bad).is_err(), "should reject {bad:?}");
         }
         let long = format!("http://e.com/{}", "a".repeat(MAX_URL_LEN));
         assert!(validate_http_url(&long).unwrap_err().contains("2048"));
@@ -453,13 +453,14 @@ mod tests {
         ] {
             let out = persistable_url(input).unwrap();
             assert!(!out.contains(secret), "{input} -> {out}");
-            assert_eq!(out, "https://h", "só a origem quando algo foi redigido");
+            assert_eq!(out, "https://h", "only the origin when something was redacted");
         }
         assert_eq!(persistable_url("https://h/docs/page-2").unwrap(), "https://h/docs/page-2");
     }
 
     #[test]
     fn url_edges_trim_nel_and_bom_like_ts() {
+        // Non-ASCII input under test: U+0085 (NEL) and U+FEFF (BOM) must be trimmed at the edges.
         for raw in ["\u{0085}http://h/a", "http://h/a\u{0085}", "\u{FEFF}http://h/a", "http://h/a\u{FEFF}"] {
             assert_eq!(resolve_capture_start_url(Some(raw)).unwrap(), "http://h/a", "{raw:?}");
         }
@@ -478,9 +479,9 @@ mod tests {
     #[test]
     fn cli_rejects_unknown_flag_root_and_symlinked_ancestor() {
         let unknown: Vec<String> = vec!["scrapelens".into(), "--bogus".into()];
-        assert!(parse_cli_args(&unknown).unwrap_err().contains("desconhecido"));
+        assert!(parse_cli_args(&unknown).unwrap_err().contains("unknown"));
         let root: Vec<String> = vec!["scrapelens".into(), "--open-capture".into(), "/".into()];
-        assert!(parse_cli_args(&root).unwrap_err().contains("raiz"));
+        assert!(parse_cli_args(&root).unwrap_err().contains("root"));
 
         let base = base_tmp().join(format!("scrapelens-anc-{}", tmp_tag()));
         let _ = fs::remove_dir_all(&base);

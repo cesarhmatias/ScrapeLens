@@ -745,10 +745,10 @@ pub fn set_chrome_path(
     state: State<'_, AppState>,
 ) -> Result<ChromeInfo, String> {
     let resolved = chrome::normalize_binary_path(Path::new(&path))
-        .ok_or_else(|| format!("não encontrei o binário do Chrome em {path}"))?;
+        .ok_or_else(|| format!("could not find the Chrome binary at {path}"))?;
     if !resolved.is_file() {
         return Err(format!(
-            "o caminho escolhido não é um executável: {}",
+            "the chosen path is not an executable: {}",
             resolved.display()
         ));
     }
@@ -1113,7 +1113,7 @@ fn validate_execution_blocking(
         None => None,
         Some(text) => Some(
             scrapelens_core::compare::OriginMap::parse(text)
-                .ok_or_else(|| format!("invalid origin mapping ({text}); use <capture-origin>=<trace-origin>, for example https://sistema.gov.br=http://127.0.0.1:8080"))?,
+                .ok_or_else(|| format!("invalid origin mapping ({text}); use <capture-origin>=<trace-origin>, for example https://app.example.com=http://127.0.0.1:8080"))?,
         ),
     };
     let bytes = read_import_file_max(trace_path, "execution trace", crate::validation::TRACE_MAX_BYTES)?;
@@ -1150,7 +1150,7 @@ fn validate_execution_blocking(
 pub async fn assess_session(session_dir: String) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || assess_blocking(Path::new(&session_dir)))
         .await
-        .map_err(|error| format!("a avaliação foi interrompida: {error}"))?
+        .map_err(|error| format!("the assessment was interrupted: {error}"))?
 }
 
 /// Optional rules `<session>/assess-rules.json` (regular file, up to 256 KiB); default when the file is absent.
@@ -1314,7 +1314,7 @@ pub async fn compare_open(
         open_comparison_with(&dir_a, &dir_b, options)
     })
         .await
-        .map_err(|error| format!("a comparação foi interrompida: {error}"))?
+        .map_err(|error| format!("the comparison was interrupted: {error}"))?
 }
 
 /// Page of pairs (summaries, without fields).
@@ -1322,7 +1322,7 @@ pub async fn compare_open(
 pub async fn compare_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool) -> Result<ComparePage, String> {
     tauri::async_runtime::spawn_blocking(move || comparison_page(handle, offset, limit, only_dynamic))
         .await
-        .map_err(|error| format!("a leitura foi interrompida: {error}"))?
+        .map_err(|error| format!("the read was interrupted: {error}"))?
 }
 
 /// Fields of a pair (in source order), loaded on expansion.
@@ -1337,7 +1337,7 @@ pub async fn compare_fields(handle: u64, index: usize) -> Result<Vec<scrapelens_
             .ok_or_else(|| format!("pair {index} does not exist"))
     })
     .await
-    .map_err(|error| format!("a leitura foi interrompida: {error}"))?
+    .map_err(|error| format!("the read was interrupted: {error}"))?
 }
 
 fn stored_comparison(handle: u64) -> Result<Arc<scrapelens_core::compare::SessionComparison>, String> {
@@ -1735,7 +1735,7 @@ mod tests {
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         std::fs::create_dir_all(&root).unwrap();
-        let file = root.join("minha-captura.json");
+        let file = root.join("my-capture.json");
         std::fs::write(&file, MINIMAL_SESSION).unwrap();
         let payload = read_session_payload(file.to_str().unwrap()).unwrap();
         assert_eq!(payload.session["requestCount"], 0);
@@ -1744,7 +1744,7 @@ mod tests {
         let page = crate::listing::list_page(&cached_session(&file).unwrap().session, 0, 10, &Default::default());
         assert_eq!(page.total, 0);
 
-        let link = root.join("atalho.json");
+        let link = root.join("shortcut.json");
         std::os::unix::fs::symlink(&file, &link).unwrap();
         assert!(read_session_payload(link.to_str().unwrap()).unwrap_err().contains("symlink"));
         let _ = std::fs::remove_dir_all(&root);
@@ -1829,7 +1829,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_session_file() {
-        let error = read_session_payload("/caminho/que/nao/existe/scrapelens").unwrap_err();
+        let error = read_session_payload("/path/that/does/not/exist/scrapelens").unwrap_err();
         assert!(error.contains("not found"), "{error}");
     }
 
@@ -1887,6 +1887,7 @@ mod tests {
     fn read_body_text_binary_and_cut() {
         let dir = temp_session_dir("body");
         let att = dir.join("attachments");
+        // Non-ASCII UTF-8 text (multi-byte characters), so the cut must respect character boundaries.
         fs::write(att.join("t.bin"), "áéíóú".repeat(100)).unwrap();
         fs::write(att.join("b.bin"), [0u8, 159, 146, 150, 255]).unwrap();
         let d = dir.to_str().unwrap();
@@ -1930,19 +1931,19 @@ mod tests {
     fn attachments_refuse_symlinks() {
         let dir = temp_session_dir("symlink");
         let outside = temp_session_dir("symlink-outside");
-        fs::write(outside.join("secret.txt"), "segredo").unwrap();
+        fs::write(outside.join("secret.txt"), "secret").unwrap();
         let att = dir.join("attachments");
         std::os::unix::fs::symlink(outside.join("secret.txt"), att.join("link.bin")).unwrap();
         fs::write(att.join("ok.bin"), "ok").unwrap();
         let d = dir.to_str().unwrap();
-        assert!(read_body_blocking(d, "link.bin", 100).unwrap_err().contains("link simbólico"));
-        assert!(read_attachment(d.to_string(), "link.bin".to_string()).unwrap_err().contains("link simbólico"));
+        assert!(read_body_blocking(d, "link.bin", 100).unwrap_err().contains("symbolic link"));
+        assert!(read_attachment(d.to_string(), "link.bin".to_string()).unwrap_err().contains("symbolic link"));
         assert_eq!(read_body_blocking(d, "ok.bin", 100).unwrap().kind, "text");
         // attachments/ folder as a link
         let dir2 = temp_session_dir("symlink2");
         fs::remove_dir_all(dir2.join("attachments")).unwrap();
         std::os::unix::fs::symlink(&att, dir2.join("attachments")).unwrap();
-        assert!(read_body_blocking(dir2.to_str().unwrap(), "ok.bin", 100).unwrap_err().contains("link simbólico"));
+        assert!(read_body_blocking(dir2.to_str().unwrap(), "ok.bin", 100).unwrap_err().contains("symbolic link"));
         // directory in place of a file
         fs::create_dir(att.join("sub")).unwrap();
         assert!(read_body_blocking(d, "sub", 100).is_err());
@@ -2012,19 +2013,20 @@ mod tests {
         assert!(!counts.is_empty());
         for (key, value) in counts {
             assert_eq!(value.as_u64().unwrap() as usize, outcomes.iter().filter(|o| o["verdictKind"] == key.as_str()).count(), "key {key} outside the schema");
-            assert!(["app-ok", "app-error", "blocked", "indeterminado", "not-assessed"].contains(&key.as_str()), "unexpected key: {key}");
+            // `undetermined` is the canonical verdict; `indeterminado` is the legacy value, still accepted.
+            assert!(["app-ok", "app-error", "blocked", "undetermined", "indeterminado", "not-assessed"].contains(&key.as_str()), "unexpected key: {key}");
         }
         // invalid rules become an actionable error
         fs::write(dir.join("assess-rules.json"), "{\"schema\":\"x\"}").unwrap();
         assert!(assess_blocking(&dir).unwrap_err().contains("fix or remove"));
         // the parse error does not echo the file's content
-        fs::write(dir.join("assess-rules.json"), "SEGREDO-NO-ARQUIVO").unwrap();
-        assert!(!assess_blocking(&dir).unwrap_err().contains("SEGREDO"));
+        fs::write(dir.join("assess-rules.json"), "SECRET-IN-FILE").unwrap();
+        assert!(!assess_blocking(&dir).unwrap_err().contains("SECRET"));
         // a large file is refused
         fs::write(dir.join("assess-rules.json"), vec![b' '; 256 * 1024 + 1]).unwrap();
         assert!(assess_blocking(&dir).unwrap_err().contains("256 KiB"));
         // a symlink is refused, without reading the target
-        let outside = dir.join("fora.json");
+        let outside = dir.join("outside.json");
         fs::write(&outside, "{\"schema\":\"scrapelens.assess-rules/1\"}").unwrap();
         fs::remove_file(dir.join("assess-rules.json")).unwrap();
         std::os::unix::fs::symlink(&outside, dir.join("assess-rules.json")).unwrap();
@@ -2059,7 +2061,7 @@ mod tests {
     }
 
     /// Generates the real previews (with and without origins) for the UI harness:
-    /// `SL_SESSION=<pasta> SL_REQUEST=<id> SL_DUMP=<arquivo.json> cargo test -- --ignored dump_export_previews`.
+    /// `SL_SESSION=<folder> SL_REQUEST=<id> SL_DUMP=<file.json> cargo test -- --ignored dump_export_previews`.
     #[test]
     #[ignore]
     fn dump_export_previews() {
@@ -2143,7 +2145,7 @@ mod tests {
     fn compare_options_parse_ranges_and_reject_garbage() {
         let ok = compare_options(true, Some("2:9"), Some(" ")).unwrap();
         assert!(ok.include_all && ok.a_range.is_some() && ok.b_range.is_none());
-        assert!(compare_options(false, Some("semfaixa"), None).is_err());
+        assert!(compare_options(false, Some("norange"), None).is_err());
     }
 
     #[test]
@@ -2205,7 +2207,7 @@ mod tests {
         assert!(!view.fields.is_empty() && view.fields[0].error.is_none());
         assert!(view.fields[0].parts.iter().any(|p| p.name == "delta" || p.name.starts_with("p.")));
         assert!(!view.fields[0].raw.is_empty());
-        assert!(crate::adapters::view(&lazy, request, "lado").is_err());
+        assert!(crate::adapters::view(&lazy, request, "invalid-side").is_err());
         // the priming script uses the adapter's encoder and the preview says so
         let preview = export_preview(&dir, "har-0026", "priming", false, false).unwrap();
         assert_eq!(preview.format, "priming");
@@ -2233,9 +2235,10 @@ mod tests {
         let view = crate::adapters::view(&lazy, request, "request").unwrap();
         assert_eq!(view.fields.len(), 1);
         let field = &view.fields[0];
-        assert!(field.error.as_deref().unwrap().contains("campo grande demais para a visão do adaptador"));
+        // needle must match `TOO_BIG_MESSAGE` in src-tauri/src/adapters.rs (not owned by this file)
+        assert!(field.error.as_deref().unwrap().contains("field too large for the adapter view"));
         assert!(field.parts.is_empty());
-        assert!(field.raw.starts_with("v000") && field.raw.len() < 70 * 1024, "bruto cortado, não inteiro");
+        assert!(field.raw.starts_with("v000") && field.raw.len() < 70 * 1024, "raw cut, not whole");
         fs::remove_dir_all(dir).ok();
     }
 
@@ -2258,39 +2261,41 @@ mod tests {
         fs::remove_dir_all(&root).ok();
         fs::create_dir_all(&root).unwrap();
         let ok = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), None).unwrap();
-        assert!(ok.validation.summary.starts_with("execução equivalente à captura"), "{}", ok.validation.summary);
-        assert!(ok.validation.summary.contains("[origem mapeada:"));
+        assert!(ok.validation.summary.starts_with("execution equivalent to capture"), "{}", ok.validation.summary);
+        assert!(ok.validation.summary.contains("[mapped origin:"));
         // faithful trace (plan.version 2): no parameter or plan warning; only the mapped-origin one
         assert!(
-            ok.validation.warnings.iter().all(|w| w.starts_with("origens de aplicação diferentes")),
+            ok.validation.warnings.iter().all(|w| w.starts_with("different application origins")),
             "a faithful trace must not generate warnings beyond the mapped-origin one: {:?}",
             ok.validation.warnings
         );
         assert!(
-            !ok.validation.warnings.iter().any(|w| w.contains("parâmetro") || w.contains("plano")),
+            // English and legacy Portuguese reason text (legacy matcher kept for old sessions).
+            !ok.validation.warnings.iter().any(|w| w.contains("parameter") || w.contains("plan") || w.contains("parâmetro") || w.contains("plano")),
             "spurious parameter/plan warnings: {:?}",
             ok.validation.warnings
         );
         assert!(
-            ok.validation.steps.iter().flat_map(|st| &st.expected).any(|n| n.reason.contains("parâmetro do usuário")),
+            // legacy Portuguese reason kept for old sessions
+            ok.validation.steps.iter().flat_map(|st| &st.expected).any(|n| n.reason.contains("user parameter") || n.reason.contains("parâmetro do usuário")),
             "plate/CPF provided become expected (user parameter)"
         );
         let bad = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-403.json"), None).unwrap();
-        assert!(bad.validation.summary.starts_with("diverge no passo 3"), "{}", bad.validation.summary);
+        assert!(bad.validation.summary.starts_with("diverges at step 3"), "{}", bad.validation.summary);
         let down = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-incompleta.json"), None).unwrap();
         assert_eq!(serde_json::to_value(down.validation.verdict).unwrap(), "incomplete");
-        assert!(down.validation.summary.starts_with("incompleta: parou no passo 1"), "{}", down.validation.summary);
+        assert!(down.validation.summary.starts_with("incomplete: stopped at step 1"), "{}", down.validation.summary);
         assert_ne!(ok.trace_dir, bad.trace_dir);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(fs::metadata(&bad.trace_dir).unwrap().permissions().mode() & 0o777, 0o700);
         // actionable errors
-        let invalid = root.join("nao-e-trace.json");
+        let invalid = root.join("not-a-trace.json");
         fs::write(&invalid, "{\"schema\":\"x\"}").unwrap();
         assert!(validate_execution_blocking(&root, &capture, invalid.to_str().unwrap(), None).unwrap_err().contains("invalid trace"));
-        assert!(validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), Some("sem-igual")).unwrap_err().contains("invalid origin mapping"));
-        assert!(validate_execution_blocking(&root, &capture, "/nao/existe.json", None).is_err());
+        assert!(validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), Some("no-equals-sign")).unwrap_err().contains("invalid origin mapping"));
+        assert!(validate_execution_blocking(&root, &capture, "/does/not/exist.json", None).is_err());
         // trace above 64 MiB: actionable error, without reading or creating a session
-        let huge = root.join("enorme.json");
+        let huge = root.join("huge.json");
         fs::File::create(&huge).unwrap().set_len(crate::validation::TRACE_MAX_BYTES + 1).unwrap();
         let before = fs::read_dir(&root).unwrap().count();
         let err = validate_execution_blocking(&root, &capture, huge.to_str().unwrap(), None).unwrap_err();
@@ -2301,7 +2306,7 @@ mod tests {
     }
 
     /// Real Round 9 data for the UI harness:
-    /// `SL_SESSION=<pasta> SL_TRACES=<a.json,b.json> SL_DUMP=<dir> cargo test -- --ignored dump_round9_evidence`.
+    /// `SL_SESSION=<folder> SL_TRACES=<a.json,b.json> SL_DUMP=<dir> cargo test -- --ignored dump_round9_evidence`.
     #[test]
     #[ignore]
     fn dump_round9_evidence() {
@@ -2319,7 +2324,7 @@ mod tests {
     }
 
     /// Real data (Natural adapter registered) for the UI harness:
-    /// `SL_SESSION=<pasta> SL_DUMP=<dir> cargo test -- --ignored dump_adapter_evidence`.
+    /// `SL_SESSION=<folder> SL_DUMP=<dir> cargo test -- --ignored dump_adapter_evidence`.
     #[test]
     #[ignore]
     fn dump_adapter_evidence() {
@@ -2346,7 +2351,7 @@ mod tests {
     }
 
     /// Real sanitization preview for the UI harness:
-    /// `SL_SESSION=<pasta> SL_DUMP=<arquivo.json> cargo test -- --ignored dump_sanitize_preview`.
+    /// `SL_SESSION=<folder> SL_DUMP=<file.json> cargo test -- --ignored dump_sanitize_preview`.
     #[test]
     #[ignore]
     fn dump_sanitize_preview() {

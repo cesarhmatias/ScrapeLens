@@ -1,6 +1,6 @@
-//! Adaptadores de protocolo registrados no app (hoje só `natural-ajax`) e a visão
-//! estruturada derivada de campos que um adaptador reivindica. O bruto continua
-//! primário na UI; esta visão é só uma leitura do decode.
+//! Protocol adapters registered in the app (today only `natural-ajax`) and the
+//! structured view derived from fields that an adapter claims. The raw text stays
+//! primary in the UI; this view is only a reading of the decode.
 
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ pub fn registry() -> AdapterRegistry {
     AdapterRegistry::new().with(Arc::new(NaturalAjax))
 }
 
-/// `FlowOptions` com os adaptadores do app (origins, chain, compare, priming).
+/// `FlowOptions` with the app's adapters (origins, chain, compare, priming).
 pub fn flow_options() -> FlowOptions {
     FlowOptions {
         adapters: registry(),
@@ -33,7 +33,7 @@ pub fn priming_encoders() -> Vec<AdapterEncoder> {
     }]
 }
 
-/// O script gerado usou o codificador do adaptador?
+/// Did the generated script use the adapter's encoder?
 pub fn script_uses_adapter(text: &str) -> Option<&'static str> {
     text.contains(PYTHON_FUNCTION).then_some(ADAPTER_ID)
 }
@@ -53,44 +53,44 @@ pub struct ViewPart {
 pub struct AdapterField {
     pub field: String,
     pub adapter_id: String,
-    /// Texto bruto do campo (primário na UI).
+    /// Raw text of the field (primary in the UI).
     pub raw: String,
-    /// Mensagem quando o decode falha; `parts` fica vazio.
+    /// Message when decoding fails; `parts` is left empty.
     pub error: Option<String>,
     pub parts: Vec<ViewPart>,
-    /// Partes não enviadas por causa dos limites (por campo e por corpo); o bruto tem tudo.
+    /// Parts not sent because of limits (per field and per body); the raw text has everything.
     pub omitted_parts: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterView {
-    /// `request` ou `response`.
+    /// `request` or `response`.
     pub side: String,
     pub fields: Vec<AdapterField>,
-    /// Corpo indisponível/truncado ou sem campos reivindicados.
+    /// Body unavailable or truncated, or with no claimed fields.
     pub note: Option<String>,
 }
 
 const MAX_FIELDS: usize = 20;
-/// Partes enviadas por campo e por corpo (IPC e tabela da UI).
+/// Parts sent per field and per body (IPC and the UI table).
 pub const MAX_PARTS_PER_FIELD: usize = 2_000;
 pub const MAX_PARTS_PER_BODY: usize = 10_000;
 
-/// Corta `parts` em `min(por campo, orçamento restante)`; devolve as mantidas e quantas foram omitidas.
+/// Truncates `parts` to `min(per field, remaining budget)`; returns the kept parts and how many were omitted.
 pub fn cap_parts<T>(mut parts: Vec<T>, body_budget: usize) -> (Vec<T>, usize) {
     let keep = MAX_PARTS_PER_FIELD.min(body_budget);
     let omitted = parts.len().saturating_sub(keep);
     parts.truncate(keep);
     (parts, omitted)
 }
-/// Campo maior que isto não é decodificado na visão (a decodificação roda na thread de trabalho).
+/// Fields larger than this are not decoded in the view (decoding runs on the worker thread).
 pub const MAX_FIELD_BYTES: usize = 512 * 1024;
-/// Tempo máximo de decodificação por campo.
+/// Maximum decoding time per field.
 const DECODE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
-/// Quanto do bruto acompanha um campo que não foi decodificado.
+/// How much of the raw text accompanies a field that was not decoded.
 const RAW_SHOWN_BYTES: usize = 64 * 1024;
-pub const TOO_BIG_MESSAGE: &str = "campo grande demais para a visão do adaptador";
+pub const TOO_BIG_MESSAGE: &str = "field too large for the adapter view";
 
 fn clip(raw: &str) -> String {
     if raw.len() <= RAW_SHOWN_BYTES {
@@ -100,14 +100,14 @@ fn clip(raw: &str) -> String {
     while !raw.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{}… (+{} bytes não exibidos)", &raw[..end], raw.len() - end)
+    format!("{}… (+{} bytes not shown)", &raw[..end], raw.len() - end)
 }
 
 fn role_name(role: &PartRole) -> String {
     match role {
-        PartRole::Structure => "estrutura".into(),
-        PartRole::Name => "nome".into(),
-        PartRole::Value => "valor".into(),
+        PartRole::Structure => "structure".into(),
+        PartRole::Name => "name".into(),
+        PartRole::Value => "value".into(),
         PartRole::Delta => "delta".into(),
         PartRole::Other(other) => other.clone(),
     }
@@ -147,26 +147,26 @@ pub fn view(
     let request_side = match side {
         "request" => true,
         "response" => false,
-        other => return Err(format!("lado desconhecido: {other:?} (use \"request\" ou \"response\")")),
+        other => return Err(format!("unknown side: {other:?} (use \"request\" or \"response\")")),
     };
     let body = if request_side { &request.request_body } else { &request.response_body };
     let headers = if request_side { &request.request_headers } else { &request.response_headers };
     let mut view = AdapterView { side: side.to_string(), fields: Vec::new(), note: None };
     if !matches!(body.state, BodyState::Captured | BodyState::Truncated) {
-        view.note = Some("corpo indisponível; não há campo para decodificar".into());
+        view.note = Some("body unavailable; there is no field to decode".into());
         return Ok(view);
     }
     let Some(name) = body.attachment.as_deref() else {
-        view.note = Some("corpo sem anexo; não há campo para decodificar".into());
+        view.note = Some("body has no attachment; there is no field to decode".into());
         return Ok(view);
     };
     let source = LazyBodies(lazy);
     let Some(loaded) = source.load(name) else {
-        view.note = Some("não foi possível ler o corpo".into());
+        view.note = Some("could not read the body".into());
         return Ok(view);
     };
     let Ok(text) = String::from_utf8(loaded.bytes.into_owned()) else {
-        view.note = Some("corpo binário; não há campo para decodificar".into());
+        view.note = Some("binary body; there is no field to decode".into());
         return Ok(view);
     };
     let media = headers
@@ -177,14 +177,14 @@ pub fn view(
     let adapters = registry();
     let ctx = AdapterContext { url: &request.url, method: &request.method, request: request_side, media: Some(&media) };
     for (field, value) in candidates(&text, &media) {
-        // O tamanho é checado antes de `claim` (que já percorre a gramática).
+        // Size is checked before `claim` (which already walks the grammar).
         if value.len() > MAX_FIELD_BYTES {
             if view.fields.len() < MAX_FIELDS {
                 view.fields.push(AdapterField {
                     field,
                     adapter_id: ADAPTER_ID.to_string(),
                     raw: clip(&value),
-                    error: Some(format!("{TOO_BIG_MESSAGE} (limite {} KiB)", MAX_FIELD_BYTES / 1024)),
+                    error: Some(format!("{TOO_BIG_MESSAGE} (limit {} KiB)", MAX_FIELD_BYTES / 1024)),
                     parts: Vec::new(),
                     omitted_parts: 0,
                 });
@@ -193,7 +193,7 @@ pub fn view(
         }
         let Some(adapter) = adapters.claim(&field, &value, &ctx) else { continue };
         if view.fields.len() >= MAX_FIELDS {
-            view.note = Some(format!("mostrando os primeiros {MAX_FIELDS} campos reivindicados"));
+            view.note = Some(format!("showing the first {MAX_FIELDS} claimed fields"));
             break;
         }
         let (tx, rx) = std::sync::mpsc::channel();
@@ -206,7 +206,7 @@ pub fn view(
         let decoded = rx
             .recv_timeout(DECODE_TIMEOUT)
             .unwrap_or_else(|_| Err(scrapelens_core::error::CoreError::LimitExceeded {
-                message: format!("a decodificação passou de {} s; campo não decodificado", DECODE_TIMEOUT.as_secs()),
+                message: format!("decoding took longer than {} s; field not decoded", DECODE_TIMEOUT.as_secs()),
             }));
         let (parts, error) = match decoded {
             Ok(decoded) => (
@@ -225,10 +225,10 @@ pub fn view(
         view.fields.push(AdapterField { field, adapter_id: adapter.id().to_string(), raw, error, parts, omitted_parts });
     }
     if view.fields.is_empty() && view.note.is_none() {
-        view.note = Some("nenhum campo deste corpo é reivindicado por um adaptador de protocolo".into());
+        view.note = Some("no field in this body is claimed by a protocol adapter".into());
     }
     if body.state == BodyState::Truncated {
-        let extra = "corpo truncado: a visão cobre só o que foi capturado";
+        let extra = "truncated body: the view only covers what was captured";
         view.note = Some(view.note.map_or(extra.to_string(), |n| format!("{n}; {extra}")));
     }
     Ok(view)
@@ -242,7 +242,7 @@ mod tests {
     fn parts_are_capped_per_field_and_per_body() {
         let (kept, omitted) = cap_parts((0..524_288).collect::<Vec<_>>(), MAX_PARTS_PER_BODY);
         assert_eq!((kept.len(), omitted), (MAX_PARTS_PER_FIELD, 524_288 - MAX_PARTS_PER_FIELD));
-        // orçamento do corpo quase esgotado
+        // body budget nearly exhausted
         let (kept, omitted) = cap_parts((0..500).collect::<Vec<_>>(), 120);
         assert_eq!((kept.len(), omitted), (120, 380));
         let (kept, omitted) = cap_parts((0..10).collect::<Vec<_>>(), 0);

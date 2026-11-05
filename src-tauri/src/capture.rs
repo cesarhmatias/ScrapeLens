@@ -1,10 +1,10 @@
-//! Adaptador fino entre o App (Tauri) e a crate `scrapelens-capture`.
+//! Thin adapter between the App (Tauri) and the `scrapelens-capture` crate.
 //!
-//! Toda a captura (Chrome com perfil dedicado, CDP + NetLog, allowlist, captura
-//! controlada, limpeza de órfãos) vive em `capture/` (crate sem Tauri). Aqui
-//! ficam só o que é do App: `SessionPayload` (resposta dos commands) e
-//! `CaptureSession` (handle que o App guarda). `run()` e `CaptureConfig` têm o
-//! mesmo comportamento de antes.
+//! All capture (Chrome with a dedicated profile, CDP + NetLog, allowlist, controlled
+//! capture, orphan cleanup) lives in `capture/` (crate without Tauri). Only what
+//! belongs to the App stays here: `SessionPayload` (command responses) and
+//! `CaptureSession` (the handle the App keeps). `run()` and `CaptureConfig` behave
+//! as they did before.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
@@ -26,7 +26,7 @@ pub struct CaptureSession {
     pub status: Arc<Mutex<CaptureStatus>>,
 }
 
-/// Roda a captura e entrega a sessão no formato que os commands devolvem.
+/// Runs the capture and delivers the session in the format the commands return.
 pub fn run(
     config: CaptureConfig,
     status: Arc<Mutex<CaptureStatus>>,
@@ -34,7 +34,7 @@ pub fn run(
     ready: Sender<Result<(), String>>,
 ) -> Result<SessionPayload, String> {
     let outcome = scrapelens_capture::run(config, status, stop, ready)?;
-    // P5: descarta o `Value` da captura e devolve só o cabeçalho (lista paginada).
+    // P5: drop the capture's `Value` and return only the header (paginated list).
     let notice = outcome.notice;
     let dir = outcome.session_dir;
     drop(outcome.session);
@@ -48,15 +48,15 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
-    /// Teste manual do ciclo real: exige Chrome instalado e o testserver h1 em
-    /// 127.0.0.1:8781. Rode com:
+    /// Manual test of the real cycle: requires Chrome installed and the h1 testserver on
+    /// 127.0.0.1:8781. Run with:
     ///   cargo test live_capture_cycle -- --ignored --nocapture
     #[test]
     #[ignore]
     fn live_capture_cycle() {
         let chrome = crate::chrome::detect(None)
             .path
-            .expect("Chrome instalado para o teste de captura");
+            .expect("Chrome installed for the capture test");
         let dir = std::env::temp_dir().join(format!("scrapelens-live-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)));
         std::fs::create_dir_all(&dir).unwrap();
         let status = Arc::new(Mutex::new(CaptureStatus {
@@ -73,7 +73,7 @@ mod tests {
             start_url: "http://127.0.0.1:8781/page".to_string(),
             headless: true,
             ignore_cert: false,
-            // Testes ao vivo: só loopback, nada sai da máquina.
+            // Live tests: loopback only, nothing leaves the machine.
             network: scrapelens_capture::NetworkMode::LoopbackOnly,
             cookie_source: None,
             initial_cookies: Vec::new(),
@@ -82,31 +82,31 @@ mod tests {
         let join = thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));
         ready_rx
             .recv_timeout(Duration::from_secs(30))
-            .expect("captura pronta")
-            .expect("captura iniciou");
+            .expect("capture ready")
+            .expect("capture started");
         thread::sleep(Duration::from_secs(6));
         let _ = stop_tx.send(());
         let payload = join
             .join()
-            .expect("thread da captura")
-            .expect("captura importada");
+            .expect("capture thread")
+            .expect("capture imported");
         let requests = payload.session["requests"]
             .as_array()
             .map(Vec::len)
             .unwrap_or(0);
         println!(
-            "live capture: {} requisições, session_dir={:?}, notice={:?}",
+            "live capture: {} requests, session_dir={:?}, notice={:?}",
             requests, payload.session_dir, payload.notice
         );
-        assert!(requests > 0, "a captura precisa conter requisições reais");
+        assert!(requests > 0, "the capture must contain real requests");
         assert!(!payload.synthetic);
         println!("session.json: {}", dir.join("session.json").display());
     }
 
-    /// Ciclo real dirigido por `experiments/bodies/run_bodies.py` (exige Chrome
-    /// e o testserver h1 local). Variáveis: `SL_LIVE_START_URL`,
-    /// `SL_LIVE_SESSION_DIR`, `SL_LIVE_STOP_FILE` (a captura para quando o
-    /// arquivo existir).
+    /// Real cycle driven by `experiments/bodies/run_bodies.py` (requires Chrome and
+    /// the local h1 testserver). Variables: `SL_LIVE_START_URL`,
+    /// `SL_LIVE_SESSION_DIR`, `SL_LIVE_STOP_FILE` (the capture stops once the file
+    /// exists).
     #[test]
     #[ignore]
     fn live_bodies_cycle() {
@@ -114,7 +114,7 @@ mod tests {
         let dir = PathBuf::from(std::env::var("SL_LIVE_SESSION_DIR").expect("SL_LIVE_SESSION_DIR"));
         let stop_file =
             PathBuf::from(std::env::var("SL_LIVE_STOP_FILE").expect("SL_LIVE_STOP_FILE"));
-        let chrome = crate::chrome::detect(None).path.expect("Chrome instalado");
+        let chrome = crate::chrome::detect(None).path.expect("Chrome installed");
         let status = Arc::new(Mutex::new(CaptureStatus {
             recording: true,
             session_id: "live-bodies".to_string(),
@@ -129,7 +129,7 @@ mod tests {
             start_url,
             headless: true,
             ignore_cert: false,
-            // Testes ao vivo: só loopback, nada sai da máquina.
+            // Live tests: loopback only, nothing leaves the machine.
             network: scrapelens_capture::NetworkMode::LoopbackOnly,
             cookie_source: None,
             initial_cookies: Vec::new(),
@@ -138,8 +138,8 @@ mod tests {
         let join = thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));
         ready_rx
             .recv_timeout(Duration::from_secs(30))
-            .expect("captura pronta")
-            .expect("captura iniciou");
+            .expect("capture ready")
+            .expect("capture started");
         let deadline = Instant::now() + Duration::from_secs(180);
         while !stop_file.exists() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(200));
@@ -147,8 +147,8 @@ mod tests {
         let _ = stop_tx.send(());
         let payload = join
             .join()
-            .expect("thread da captura")
-            .expect("captura importada");
+            .expect("capture thread")
+            .expect("capture imported");
         println!("live bodies: notice={:?}", payload.notice);
     }
 }

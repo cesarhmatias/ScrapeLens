@@ -1,27 +1,27 @@
-//! Menu nativo do macOS com os atalhos usuais da spec.
-//! O evento chega à UI como `menu://action` com um destes payloads:
+//! Native macOS menu with the usual shortcuts from the spec.
+//! The event reaches the UI as `menu://action` with one of these payloads:
 //! open | import-har | import-netlog | start-session | stop-session |
 //! find | copy | theme | demo | choose-chrome.
 //!
-//! Atalhos nativos (funcionam via invoke_menu / menu bar, sem foco na WebView):
-//! Abrir captura… ⌘O · Importar HAR… ⌘⇧H · Importar NetLog… ⌘⇧N ·
-//! Iniciar sessão ⌘⇧R · Encerrar ⌘.
+//! Native shortcuts (work via invoke_menu / menu bar, without WebView focus):
+//! Open capture… ⌘O · Import HAR… ⌘⇧H · Import NetLog… ⌘⇧N ·
+//! Start session ⌘⇧R · Stop ⌘.
 
 use tauri::menu::{
     MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
 };
 use tauri::{AppHandle, Emitter, Runtime};
 
-/// Itens desabilitados durante uma gravação (A8-B7): importações e Iniciar (⌘⇧R).
+/// Items disabled during a recording (A8-B7): imports and Start (⌘⇧R).
 pub const RECORDING_DISABLED_IDS: [&str; 3] = ["import-har", "import-netlog", "start-session"];
 
-/// O menu não toca no `capture.lock()` (A9-B8): `start_session` pode segurá-lo
-/// por até 35 s; o estado vem do `AtomicBool` `recording`.
+/// The menu does not touch `capture.lock()` (A9-B8): `start_session` can hold it
+/// for up to 35 s; the state comes from the `recording` `AtomicBool`.
 pub fn blocked_while_recording(action: &str, recording: &std::sync::atomic::AtomicBool) -> bool {
     RECORDING_DISABLED_IDS.contains(&action) && recording.load(std::sync::atomic::Ordering::SeqCst)
 }
 
-/// Liga/desliga Importar HAR/NetLog e Iniciar sessão (com ⌘⇧H, ⌘⇧N e ⌘⇧R).
+/// Enables/disables Import HAR/NetLog and Start session (with ⌘⇧H, ⌘⇧N and ⌘⇧R).
 pub fn set_recording_menu<R: Runtime>(app: &AppHandle<R>, recording: bool) {
     let Some(menu) = app.menu() else { return };
     let Ok(items) = menu.items() else { return };
@@ -46,27 +46,27 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
 
-    let file_menu = SubmenuBuilder::new(app, "Arquivo")
+    let file_menu = SubmenuBuilder::new(app, "File")
         .item(
-            &MenuItemBuilder::with_id("open", "Abrir captura…")
+            &MenuItemBuilder::with_id("open", "Open capture…")
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("import-har", "Importar HAR…")
+            &MenuItemBuilder::with_id("import-har", "Import HAR…")
                 .accelerator("CmdOrCtrl+Shift+H")
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("import-netlog", "Importar NetLog…")
+            &MenuItemBuilder::with_id("import-netlog", "Import NetLog…")
                 .accelerator("CmdOrCtrl+Shift+N")
                 .build(app)?,
         )
         .separator()
-        .item(&MenuItemBuilder::with_id("choose-chrome", "Selecionar Chrome…").build(app)?)
+        .item(&MenuItemBuilder::with_id("choose-chrome", "Select Chrome…").build(app)?)
         .separator()
         .item(
-            &MenuItemBuilder::with_id("demo", "Carregar demonstração")
+            &MenuItemBuilder::with_id("demo", "Load demo")
                 .accelerator("CmdOrCtrl+Shift+D")
                 .build(app)?,
         )
@@ -74,20 +74,20 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
 
-    let capture_menu = SubmenuBuilder::new(app, "Captura")
+    let capture_menu = SubmenuBuilder::new(app, "Capture")
         .item(
-            &MenuItemBuilder::with_id("start-session", "Iniciar sessão")
+            &MenuItemBuilder::with_id("start-session", "Start session")
                 .accelerator("CmdOrCtrl+Shift+R")
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("stop-session", "Encerrar")
+            &MenuItemBuilder::with_id("stop-session", "Stop")
                 .accelerator("CmdOrCtrl+.")
                 .build(app)?,
         )
         .build()?;
 
-    let edit_menu = SubmenuBuilder::new(app, "Editar")
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
         .item(&PredefinedMenuItem::undo(app, None)?)
         .item(&PredefinedMenuItem::redo(app, None)?)
         .separator()
@@ -97,24 +97,24 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .separator()
         .item(
-            &MenuItemBuilder::with_id("copy", "Copiar URL da requisição")
+            &MenuItemBuilder::with_id("copy", "Copy request URL")
                 .accelerator("CmdOrCtrl+Shift+C")
                 .build(app)?,
         )
         .separator()
         .item(
-            &MenuItemBuilder::with_id("find", "Buscar requisições")
+            &MenuItemBuilder::with_id("find", "Find requests")
                 .accelerator("CmdOrCtrl+F")
                 .build(app)?,
         )
         .build()?;
 
-    let view_menu = SubmenuBuilder::new(app, "Visualizar")
-        .item(&MenuItemBuilder::with_id("theme", "Alternar tema claro/escuro").build(app)?)
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&MenuItemBuilder::with_id("theme", "Toggle light/dark theme").build(app)?)
         .item(&PredefinedMenuItem::fullscreen(app, None)?)
         .build()?;
 
-    let window_menu = SubmenuBuilder::new(app, "Janela")
+    let window_menu = SubmenuBuilder::new(app, "Window")
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .item(&PredefinedMenuItem::maximize(app, None)?)
         .build()?;

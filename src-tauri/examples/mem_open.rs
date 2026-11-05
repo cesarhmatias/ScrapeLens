@@ -1,14 +1,14 @@
-//! Pico de RSS de abrir uma sessão grande pelo contrato do app (P5, docs/19).
+//! RSS peak of opening a large session through the app contract (P5, docs/19).
 //!
-//! Uso (um modo por processo, para o pico ser só dele):
-//!   cargo run --release --example mem_open -- paged <pasta-da-sessao>
-//!   cargo run --release --example mem_open -- legacy <pasta-da-sessao>
+//! Usage (one mode per process, so the peak is its own):
+//!   cargo run --release --example mem_open -- paged <session-folder>
+//!   cargo run --release --example mem_open -- legacy <session-folder>
 //!
-//! `paged`: o caminho novo — sessão tipada (`open_session_dir_lazy`, o mesmo
-//! do `cached_session`), cabeçalho serializado, todas as páginas de
-//! `list_requests` serializadas (o que o front recebe) e um `get_request`.
-//! `legacy`: o caminho antigo — `read_to_string` + `serde_json::Value` +
-//! serialização para o front-end (equivale ao `app-open-ipc` do docs/18).
+//! `paged`: the new path — typed session (`open_session_dir_lazy`, the same as
+//! `cached_session`), serialized header, every `list_requests` page serialized
+//! (what the front-end receives) and one `get_request`.
+//! `legacy`: the old path — `read_to_string` + `serde_json::Value` + serialization
+//! for the front-end (equivalent to `app-open-ipc` in docs/18).
 
 use std::path::Path;
 use std::time::Instant;
@@ -24,7 +24,7 @@ fn main() {
     let (mode, dir) = match (args.get(1), args.get(2)) {
         (Some(mode), Some(dir)) => (mode.as_str(), Path::new(dir)),
         _ => {
-            eprintln!("uso: mem_open <paged|legacy> <pasta-da-sessao>");
+            eprintln!("usage: mem_open <paged|legacy> <session-folder>");
             std::process::exit(2);
         }
     };
@@ -32,10 +32,10 @@ fn main() {
     let base = peak_mib();
     match mode {
         "paged" => {
-            let (lazy, _) = scrapelens_core::open_session_dir_lazy(dir).expect("abrir sessão");
+            let (lazy, _) = scrapelens_core::open_session_dir_lazy(dir).expect("open session");
             let after_open = peak_mib();
             let open_ms = started.elapsed().as_millis() as u64;
-            let header = scrapelens_lib::listing::header_of(&lazy.session).expect("cabeçalho");
+            let header = scrapelens_lib::listing::header_of(&lazy.session).expect("header");
             let header_bytes = serde_json::to_vec(&header).unwrap().len();
             let filter = scrapelens_lib::listing::ListFilter::default();
             let mut wire = 0usize;
@@ -57,7 +57,7 @@ fn main() {
                 eprintln!("{}", serde_json::to_string(&page.items).unwrap());
             }
             let id = lazy.session.requests.last().map(|r| r.id.clone()).unwrap_or_default();
-            let detail = scrapelens_lib::listing::detail(&lazy.session, &id).expect("detalhe");
+            let detail = scrapelens_lib::listing::detail(&lazy.session, &id).expect("detail");
             let detail_bytes = serde_json::to_vec(&detail).unwrap().len();
             println!(
                 "{}",
@@ -78,7 +78,7 @@ fn main() {
             );
         }
         "legacy" => {
-            let raw = std::fs::read_to_string(dir.join("session.json")).expect("ler session.json");
+            let raw = std::fs::read_to_string(dir.join("session.json")).expect("read session.json");
             let value: serde_json::Value = serde_json::from_str(&raw).expect("JSON");
             let wire = serde_json::to_string(&value).unwrap().len();
             println!(
@@ -93,7 +93,7 @@ fn main() {
             );
         }
         other => {
-            eprintln!("modo desconhecido: {other}");
+            eprintln!("unknown mode: {other}");
             std::process::exit(2);
         }
     }

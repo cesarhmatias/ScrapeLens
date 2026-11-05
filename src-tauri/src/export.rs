@@ -674,7 +674,7 @@ mod tests {
         assert!(!preview.body_included);
         let note = preview.body_note.unwrap_or_default();
         assert!(
-            note.to_lowercase().contains("não incluído") && note.contains("Unavailable"),
+            note.to_lowercase().contains("not included") && note.contains("Unavailable"),
             "{note}"
         );
         assert!(!preview.text.contains("--data-binary"), "{}", preview.text);
@@ -812,7 +812,7 @@ mod tests {
     #[test]
     fn saving_into_missing_parent_is_refused() {
         let dir = temp_dir("parent");
-        let error = write_text_file(&dir.join("ausente/arq.sh"), "x").unwrap_err();
+        let error = write_text_file(&dir.join("missing/file.sh"), "x").unwrap_err();
         assert!(error.contains("does not exist"), "{error}");
         fs::remove_dir_all(&dir).ok();
     }

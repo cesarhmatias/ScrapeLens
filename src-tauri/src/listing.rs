@@ -150,7 +150,7 @@ pub fn protocol_label(request: &LogicalRequest) -> &'static str {
         "h1" => "HTTP/1.1",
         "h2" => "HTTP/2",
         "h3" => "HTTP/3",
-        _ => "desconhecido",
+        _ => "unknown",
     }
 }
 
@@ -183,7 +183,7 @@ pub const TARGET_FILTERS: [&str; 8] =
 pub struct ListFilter {
     /// `all` | `fetch` | `document` | `media` | `error`.
     pub type_filter: Option<String>,
-    /// `all` | `HTTP/1.1` | `HTTP/2` | `HTTP/3` | `desconhecido`.
+    /// `all` | `HTTP/1.1` | `HTTP/2` | `HTTP/3` | `unknown` (legacy `desconhecido`).
     pub protocol: Option<String>,
     /// See `TARGET_FILTERS`; only applies when the session shows targets.
     pub target: Option<String>,
@@ -244,7 +244,11 @@ fn passes(request: &LogicalRequest, filter: &ListFilter, show_targets: bool, mat
             return false;
         }
     }
-    let protocol = filter.protocol.as_deref().unwrap_or("all");
+    // `desconhecido` is the legacy name of `unknown`; older front-ends still send it.
+    let protocol = match filter.protocol.as_deref() {
+        Some("desconhecido") => "unknown",
+        other => other.unwrap_or("all"),
+    };
     if protocol != "all" && protocol_label(request) != protocol {
         return false;
     }

@@ -1,6 +1,6 @@
-# Build reprodutível do ScrapeLens para Linux (rodada 14).
-# Base fixada por digest (índice multi-arquitetura do ubuntu:22.04), Rust e Node fixos,
-# dependências pelos lockfiles (src-tauri/Cargo.lock, app/package-lock.json).
+# Reproducible ScrapeLens build for Linux (round 14).
+# Base pinned by digest (multi-architecture index of ubuntu:22.04), fixed Rust and Node,
+# dependencies pinned by the lockfiles (src-tauri/Cargo.lock, app/package-lock.json).
 #   docker build --platform linux/amd64 -f src-tauri/linux/Dockerfile -t scrapelens-linux:amd64 .
 #   docker run --rm --platform linux/amd64 -v "$PWD/src-tauri/linux/out:/out" scrapelens-linux:amd64
 FROM ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION} -c clippy \
     && rustc --version
 
-# Node oficial, conferido pelo SHASUMS256 do próprio release.
+# Official Node, verified against the release's own SHASUMS256.
 RUN set -eux; case "$(uname -m)" in x86_64) a=x64;; aarch64) a=arm64;; esac; \
     f=node-v${NODE_VERSION}-linux-$a.tar.xz; cd /tmp; \
     curl -sSfO https://nodejs.org/dist/v${NODE_VERSION}/$f; \
