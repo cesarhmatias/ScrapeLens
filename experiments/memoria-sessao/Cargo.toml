@@ -11,5 +11,5 @@ serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 libc = "0.2"
 
-# Crate independente (não faz parte de nenhum workspace).
+# Standalone crate (not part of any workspace).
 [workspace]
