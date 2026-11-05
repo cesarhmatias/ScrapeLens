@@ -26,7 +26,7 @@ export interface SessionPayload {
   pending?: boolean;
 }
 
-/** Filtro de `list_requests` (src-tauri/src/listing.rs `ListFilter`). */
+/** Filter for `list_requests` (src-tauri/src/listing.rs `ListFilter`). */
 export interface ListFilter {
   typeFilter?: "all" | "fetch" | "document" | "media" | "error";
   protocol?: string;
@@ -483,7 +483,7 @@ export const bridge = {
     if (!isTauri()) return null;
     const picked = await saveDialog({
       title: "Choose a new folder to keep the run",
-      defaultPath: "execucao-do-script",
+      defaultPath: "script-run",
       canCreateDirectories: true,
     });
     if (!picked) return null;

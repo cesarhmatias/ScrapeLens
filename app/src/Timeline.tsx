@@ -118,6 +118,12 @@ export function TimelineView({
 
 /** Difference class, from the prefix of the reason returned by the core. */
 const NOTE_CLASSES: [string, string, "ok" | "bad" | "info"][] = [
+  ["user parameter", "user parameter", "info"],
+  ["expected (user parameter)", "user parameter", "info"],
+  ["frozen value", "frozen value", "bad"],
+  ["different origin", "different origin", "bad"],
+  ["no origin in trace", "no origin in trace", "bad"],
+  // Legacy Portuguese reasons, from sessions and cores before the English rename.
   ["parâmetro do usuário", "user parameter", "info"],
   ["esperado (parâmetro do usuário)", "user parameter", "info"],
   ["valor congelado", "frozen value", "bad"],
@@ -205,7 +211,7 @@ export function ValidationView({
         <p className="dim">Mapped origin: <span className="mono">{v.mappedOrigin.from}</span> → <span className="mono">{v.mappedOrigin.to}</span> (the host swap in the run does not count as a difference).</p>
       )}
       {v.warnings.map((w, i) => {
-        const invalid = w.startsWith("parâmetro inválido");
+        const invalid = w.startsWith("invalid parameter") || w.startsWith("parâmetro inválido");
         return (
           <div className={`notice ${invalid ? "notice-error" : "notice-info"}`} key={i}>
             <span className="notice-icon">{invalid ? "!" : "i"}</span>
@@ -262,7 +268,7 @@ export function ValidationView({
                   </details>
                 )}
                 {s.expected.length > 0 && (
-                  <details open={s.expected.some((n) => n.reason.includes("parâmetro do usuário"))}>
+                  <details open={s.expected.some((n) => n.reason.includes("user parameter") || n.reason.includes("parâmetro do usuário"))}>
                     <summary>expected ({s.expected.length})</summary>
                     <ul className="chain-list">
                       {s.expected.map((n, i) => <NoteItem key={i} n={n} />)}

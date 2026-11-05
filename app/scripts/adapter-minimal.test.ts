@@ -112,7 +112,7 @@ assert.equal(dyn.length, 1);
 assert.equal(dyn[0].fields[0].field, "a");
 assert.deepEqual(pairs[0].fields.map((f: any) => f.field), ["z", "a"]); // source order, not sorted
 assert.equal(fieldClassLabel(pairs[0].fields[1]), "get at runtime (origin: cdp-r0001)");
-assert.equal(fieldClassLabel(fd({ class: "dynamic", dynamicKind: "noOrigin" })), "dynamic without origin");
+assert.equal(fieldClassLabel(fd({ class: "dynamic", dynamicKind: "noOrigin" })), "dynamic, no origin");
 assert.equal(fieldClassLabel(fd({})), "static");
 import { DYNAMIC_ONLY_THRESHOLD, dynamicSummary, originConfidence, stepConfidence, visibleFields } from "../src/flow";
 const strongEv = { ...ev("p"), kind: "cookie-jar", strength: "strong" };
@@ -138,8 +138,8 @@ assert.equal(stepConfidence(step({ reasons: [reason("medium")] })), "possible");
 assert.equal(stepConfidence(step({ reasons: [reason("medium"), reason("strong")] })), "strong");
 assert.equal(stepConfidence(step({ confidence: "strong" })), "strong");
 const pc = { static: 5, dynamic: 12, runtime: 12, noOrigin: 0 };
-assert.equal(dynamicSummary({ ...counts, dynamic: 44 }, pc), "44 dynamic(s), 12 of them in parts of composite fields");
-assert.equal(dynamicSummary({ ...counts, dynamic: 44 }), "44 dynamic(s)");
+assert.equal(dynamicSummary({ ...counts, dynamic: 44 }, pc), "44 dynamic, 12 in excerpts of composite fields");
+assert.equal(dynamicSummary({ ...counts, dynamic: 44 }), "44 dynamic");
 assert.equal(visibleFields([fd({ field: "s" }), fd({ field: "d", class: "dynamic" })], true).length, 1);
 assert.equal(visibleFields([fd({ field: "s" }), fd({ field: "d", class: "dynamic" })], false).length, 2);
 assert.equal(DYNAMIC_ONLY_THRESHOLD, 500);
@@ -148,15 +148,16 @@ assert.equal(originStatusLabel(vo({ status: "origin", confidence: "strong", labe
 import { CONTEXT_LABEL, highlightedWarnings, isCookiesAbsent, partialCompositionText, producerKindLabel, roundHeader } from "../src/flow";
 assert.equal(producerKindLabel({ ...ev("p"), htmlControl: true, field: "STAMP" } as any), "HTML form control (STAMP)");
 assert.equal(producerKindLabel(ev("p") as any), null);
-assert.equal(CONTEXT_LABEL, "also present in a static resource: likely protocol constant");
+assert.equal(CONTEXT_LABEL, "also present in a static resource: likely a protocol constant");
 assert.equal(partialCompositionText(vo({})), null);
 assert.equal(partialCompositionText(vo({ partialComposition: [] })), null);
 assert.equal(
-  partialCompositionText(vo({ label: "sem origem observada; contém o valor de SESSIONID de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente", partialComposition: [{ producerRequestId: "har-0001", field: "SESSIONID", start: 0, length: 9 }] })),
-  "sem origem observada; contém o valor de SESSIONID de har-0001 (prefixo) e parte sem fonte observada — provável composição no cliente",
+  partialCompositionText(vo({ label: "no observed origin; contains the value of SESSIONID from har-0001 (prefix) and a part with no observed source — likely client-side composition", partialComposition: [{ producerRequestId: "har-0001", field: "SESSIONID", start: 0, length: 9 }] })),
+  "no observed origin; contains the value of SESSIONID from har-0001 (prefix) and a part with no observed source — likely client-side composition",
 );
-assert.match(partialCompositionText(vo({ label: "x", partialComposition: [{ producerRequestId: "har-0001", field: "SESSIONID", start: 0, length: 9 }] }))!, /^sem origem observada; contém SESSIONID de har-0001 \+ parte sem fonte — provável composição no cliente$/);
-assert.equal(partialCompositionText(vo({ partialComposition: "texto do core" })), "texto do core");
+assert.match(partialCompositionText(vo({ label: "x", partialComposition: [{ producerRequestId: "har-0001", field: "SESSIONID", start: 0, length: 9 }] }))!, /^no observed origin; contains SESSIONID from har-0001 \+ part with no observed source — probable composition in the client$/);
+assert.equal(partialCompositionText(vo({ partialComposition: "core text" })), "core text");
+// "não contém cookies" is the legacy reason text (kept on purpose to test the backward-compatible matcher).
 const warns = highlightedWarnings(["a", "o HAR não contém cookies (exportação...)"], ["a", "b"]);
 assert.deepEqual(warns, ["o HAR não contém cookies (exportação...)", "a", "b"]);
 assert.equal(isCookiesAbsent("har.cookies_absent"), true);
@@ -164,7 +165,7 @@ const rounds = [{ aRound: 0, bRound: 1, score: 9, aRequests: 12, bRequests: 11 }
 assert.equal(roundHeader(0, undefined, rounds), "Round 1: A#1 ↔ B#2 · 12 × 11 requests · 9 model(s) in common");
 assert.equal(roundHeader(0, 0, rounds), null);
 assert.equal(roundHeader(undefined, undefined, rounds), null);
-// origem com unobservable.suggestion: o campo é preservado pelo adapter de tipos
+// origin with unobservable.suggestion: the field is preserved by the type adapter
 const sug = vo({ unobservable: [{ requestId: "har-0003", state: "unavailable", suggestion: "har-0030" }] }) as any;
 assert.equal(sug.unobservable[0].suggestion, "har-0030");
 import { initiatorLabel } from "../src/v1/adapter";
@@ -189,13 +190,13 @@ assert.equal(isAppFailure(oc("app-ok")), false);
 assert.equal(isAppFailure(undefined), false);
 assert.equal(isAppFailure(oc("not-assessed")), false);
 // counts do Rust usam count_key() (kebab-case), nunca o Debug do enum
-const byVerdict = verdictCounts({ "app-ok": 11, indeterminado: 19, "not-assessed": 3, NotAssessed: 7 } as Record<string, number>);
+const byVerdict = verdictCounts({ "app-ok": 11, undetermined: 19, "not-assessed": 3, NotAssessed: 7 } as Record<string, number>);
 assert.deepEqual(Object.keys(byVerdict), [...VERDICT_KINDS]);
 assert.equal(byVerdict["app-ok"], 11);
-assert.equal(byVerdict.indeterminado, 19);
+assert.equal(byVerdict.undetermined, 19);
 assert.equal(byVerdict["not-assessed"], 3);
 assert.equal((byVerdict as Record<string, number>).NotAssessed, undefined);
-assert.deepEqual(verdictCounts(undefined), { "app-ok": 0, "app-error": 0, blocked: 0, indeterminado: 0, "not-assessed": 0 });
+assert.deepEqual(verdictCounts(undefined), { "app-ok": 0, "app-error": 0, blocked: 0, undetermined: 0, "not-assessed": 0 });
 // Multi-target (docs/14): target/links; an old session without target does not invent a column.
 import { sessionShowsTargets, targetBadge, timelineTargetBadge } from "../src/target";
 const withTarget = structuredClone(minimal) as any;
@@ -206,7 +207,7 @@ withTarget.requests[0].target = {
   attached: true,
 };
 withTarget.requests[0].links = [
-  { kind: "service_worker", request: "cdp-r0002", evidence: ["mesma URL/método"], resolution: "ambiguous" },
+  { kind: "service_worker", request: "cdp-r0002", evidence: ["same URL/method"], resolution: "ambiguous" },
 ];
 const trTarget = adaptSession(withTarget).session.requests[0];
 assert.equal(trTarget.target?.kind, "page");

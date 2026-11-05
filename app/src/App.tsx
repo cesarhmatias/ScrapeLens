@@ -150,7 +150,7 @@ function fmtBytes(n?: number) {
 }
 
 const fmtStatus = (status: number) => (status === 0 ? "—" : String(status));
-const fmtProtocol = (value: Protocol) => (value === "desconhecido" ? "—" : value);
+const fmtProtocol = (value: Protocol) => value;
 
 function statusClass(status: number) {
   if (status >= 500) return "s-err";
@@ -616,7 +616,7 @@ function VerificationPanel({
   return (
     <aside className="side-panel">
       <div className="side-card">
-        <h3>Fonte</h3>
+        <h3>Source</h3>
         <div className="source-row">
           <span className={`src-chip ${req.primarySource === "cdp" ? "src-cdp" : "src-netlog"}`}>
             {sourceLabels[req.primarySource]} · primary
@@ -671,7 +671,7 @@ function VerificationPanel({
 
       {req.warnings.length > 0 && (
         <div className="side-card">
-          <h3>Avisos desta requisição</h3>
+          <h3>Warnings for this request</h3>
           <ul className="warning-list">
             {req.warnings.map((warning) => (
               <li key={warning.code} className={`warning warning-${warning.severity}`}>
@@ -1805,7 +1805,7 @@ export default function App() {
       setNotice({
         kind: "info",
         text: "Open capture uses the native macOS dialog and is only available in the desktop app.",
-        detail: "Rode `npm run tauri dev` para abrir o shell Tauri.",
+        detail: "Run `npm run tauri dev` to open the Tauri shell.",
       });
       return;
     }
@@ -2354,7 +2354,7 @@ export default function App() {
                 </>
               )}
             </p>
-            <span className="demo-right mono">sem telemetria</span>
+            <span className="demo-right mono">no telemetry</span>
           </div>
         ) : (
           <div className="real-banner">
@@ -2709,7 +2709,7 @@ export default function App() {
                   <option value="HTTP/1.1">HTTP/1.1</option>
                   <option value="HTTP/2">HTTP/2</option>
                   <option value="HTTP/3">HTTP/3</option>
-                  <option value="desconhecido">unknown</option>
+                  <option value="unknown">unknown</option>
                 </select>
               </label>
               <div className="toolbar-actions">

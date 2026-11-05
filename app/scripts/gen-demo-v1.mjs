@@ -4,10 +4,10 @@
 //
 //   node scripts/gen-demo-v1.mjs
 //
-// Saída:
-//   src/demo/session.v1.json     (consumida pela UI e pelo modo navegador)
-//   src/demo/attachments.json    (prévias textuais dos corpos demo)
-//   ../src-tauri/demo/session.json (embutida no binário para open/demo commands)
+// Output:
+//   src/demo/session.v1.json     (read by the UI and the browser mode)
+//   src/demo/attachments.json    (text previews of the demo bodies)
+//   ../src-tauri/demo/session.json (embedded in the binary for the open/demo commands)
 
 import { build } from "esbuild";
 import fs from "node:fs";
@@ -91,9 +91,9 @@ function mapBody(body, verification, attachment, provenanceOverride) {
   else if (body.availability === "discarded" || body.availability === "omitted") state = "discarded";
   else if (body.availability === "unavailable") {
     const empty =
-      reason.includes("requisição sem corpo") ||
+      reason.includes("request without body") ||
       reason.includes("content-length: 0") ||
-      reason.includes("declarou content-length: 0");
+      reason.includes("declared content-length: 0");
     state = empty ? "empty" : "unavailable";
   }
   const hasBytes = body.preview !== undefined || state === "captured" || state === "truncated";

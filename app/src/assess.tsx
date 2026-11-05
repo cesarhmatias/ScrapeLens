@@ -4,7 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { bridge } from "./bridge";
 
 /** Core verdict (`VerdictKind`, kebab-case). `not-assessed` since core 306e8f5. */
-export type VerdictKind = "app-ok" | "app-error" | "blocked" | "indeterminado" | "not-assessed";
+export type VerdictKind = "app-ok" | "app-error" | "blocked" | "undetermined" | "not-assessed";
+
+/**
+ * Canonical verdict key for a value read from core output. Legacy `indeterminado`
+ * (sessions and cores before the rename) maps to `undetermined`.
+ */
+export function normalizeVerdictKind(kind: string): VerdictKind {
+  return (kind === "indeterminado" ? "undetermined" : kind) as VerdictKind;
+}
 
 export interface AppSignal {
   signal: string;
@@ -40,29 +48,42 @@ export const VERDICT_KINDS: readonly VerdictKind[] = [
   "app-ok",
   "app-error",
   "blocked",
-  "indeterminado",
+  "undetermined",
   "not-assessed",
 ];
 
-/** Counts per verdict; keys outside the schema are ignored. */
+/** Counts per verdict; keys outside the schema are ignored. Legacy keys are folded into their canonical verdict. */
 export function verdictCounts(counts: Record<string, number> | undefined): Record<VerdictKind, number> {
-  return Object.fromEntries(VERDICT_KINDS.map((kind) => [kind, counts?.[kind] ?? 0])) as Record<VerdictKind, number>;
+  const out = Object.fromEntries(VERDICT_KINDS.map((kind) => [kind, 0])) as Record<VerdictKind, number>;
+  for (const [key, n] of Object.entries(counts ?? {})) {
+    const kind = normalizeVerdictKind(key);
+    if (VERDICT_KINDS.includes(kind)) out[kind] += n;
+  }
+  return out;
 }
 
 export type OutcomeMap = Map<string, ResponseOutcome>;
+
+/** Applies `normalizeVerdictKind` to the outcomes of a core assessment (counts are folded by `verdictCounts`). */
+function normalizeAssessResult(result: AssessResult): AssessResult {
+  return {
+    ...result,
+    outcomes: result.outcomes?.map((o) => ({ ...o, verdictKind: normalizeVerdictKind(o.verdictKind) })),
+  };
+}
 
 const SHORT: Record<VerdictKind, string> = {
   "app-ok": "app-ok",
   "app-error": "app-error",
   blocked: "blocked?",
-  indeterminado: "indeterminado",
+  undetermined: "undetermined",
   "not-assessed": "not assessed",
 };
 const CLASS: Record<VerdictKind, string> = {
   "app-ok": "v-ok",
   "app-error": "v-none",
   blocked: "v-none dashed",
-  indeterminado: "v-partial",
+  undetermined: "v-partial",
   "not-assessed": "tag dim",
 };
 
@@ -90,7 +111,8 @@ export function VerdictChip({ outcome }: { outcome: ResponseOutcome | undefined 
 }
 
 /** Chip for a loose `verdictKind` (timeline and validation). */
-export function VerdictKindChip({ kind, title }: { kind: VerdictKind; title?: string }) {
+export function VerdictKindChip({ kind: rawKind, title }: { kind: VerdictKind; title?: string }) {
+  const kind = normalizeVerdictKind(rawKind);
   if (kind === "not-assessed") return <span className="dim" title={title}>{SHORT[kind]}</span>;
   return <span className={`chip ${CLASS[kind] ?? "tag"}`} title={title}>{SHORT[kind] ?? kind}</span>;
 }
@@ -106,7 +128,7 @@ export function useAssess(dir: string | undefined, enabled = true) {
     let alive = true;
     bridge
       .assessSession(dir)
-      .then((result) => alive && setState({ dir, result }))
+      .then((result) => alive && setState({ dir, result: normalizeAssessResult(result) }))
       .catch((error) => alive && setState({ dir, error: String(error) }));
     return () => {
       alive = false;

@@ -64,7 +64,7 @@ const jsonPayload = (text: string): BodyInfo => ({
   captureRef: "cdp:Network.getRequestPostData",
 });
 
-const none: BodyInfo = { availability: "unavailable", reason: "requisição sem corpo" };
+const none: BodyInfo = { availability: "unavailable", reason: "request without body" };
 
 const req1: RequestRecord = {
   id: "req-0001",
@@ -130,7 +130,7 @@ const req1: RequestRecord = {
     reason: "HTML preview limited to 4 KiB; the full body stays in the session file",
     preview:
       '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' +
-      "<title>Demo Loja — synthetic showcase</title>" +
+      "<title>Demo Store — synthetic showcase</title>" +
       '<meta name="description" content="Fictional demo data from ScrapeLens.">' +
       '<link rel="preload" as="style" href="/assets/app.9f3c1a.css">…</head><body>…',
     captureRef: "cdp:Network.getResponseBody",
@@ -284,7 +284,7 @@ const req4: RequestRecord = {
   type: "fetch",
   startedAt: "2026-10-26T18:02:12.104Z",
   durationMs: 214,
-  initiator: "app.4b81de.js:214 — carregarProdutos()",
+  initiator: "app.4b81de.js:214 — loadProducts()",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "api.demo-loja.invalid"],
@@ -364,7 +364,7 @@ const req5: RequestRecord = {
   type: "fetch",
   startedAt: "2026-10-26T18:02:12.402Z",
   durationMs: 142,
-  initiator: "app.4b81de.js:381 — abrirDetalhe()",
+  initiator: "app.4b81de.js:381 — openDetail()",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "api.demo-loja.invalid"],
@@ -405,7 +405,7 @@ const req5: RequestRecord = {
   "nome": "Synthetic product 8812",
   "preco": 249.9,
   "descricao": "Description generated only for interface demo.",
-  "atributos": { "cor": "azul", "tamanho": "M" }
+  "atributos": { "cor": "blue", "tamanho": "M" }
 }`,
     captureRef: "cdp:Network.getResponseBody",
   },
@@ -539,7 +539,7 @@ const req8: RequestRecord = {
   type: "fetch",
   startedAt: "2026-10-26T18:02:14.220Z",
   durationMs: 178,
-  initiator: "app.4b81de.js:512 — adicionarAoCarrinho()",
+  initiator: "app.4b81de.js:512 — addToCart()",
   requestHeaders: headers([
     [":method", "POST"],
     [":authority", "api.demo-loja.invalid"],
@@ -631,7 +631,7 @@ const req9: RequestRecord = {
   type: "fetch",
   startedAt: "2026-10-26T18:02:15.110Z",
   durationMs: 87,
-  initiator: "app.4b81de.js:640 — blocoRecomendacoes()",
+  initiator: "app.4b81de.js:640 — recommendationsBlock()",
   requestHeaders: headers(recoRequest()),
   responseHeaders: headers([
     [":status", "403"],
@@ -724,7 +724,7 @@ const req10: RequestRecord = {
     availability: "unavailable",
     contentType: "application/json",
     encodedSize: 0,
-    reason: "resposta declarou content-length: 0 — não há corpo para recuperar",
+    reason: "response declared content-length: 0 — no body to recover",
     captureRef: "cdp:Network.getResponseBody — empty",
   },
   redirects: [],
@@ -854,7 +854,7 @@ const req12: RequestRecord = {
     reason: "preview limited to 2 KiB in this slice",
     preview:
       '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' +
-      "<title>Catalog — Demo Loja</title></head><body>" +
+      "<title>Catalog — Demo Store</title></head><body>" +
       '<main data-page="catalogo">…</main></body></html>',
     captureRef: "cdp:Network.getResponseBody",
   },
@@ -884,7 +884,7 @@ const req13: RequestRecord = {
   type: "fetch",
   startedAt: "2026-10-26T18:02:18.402Z",
   durationMs: 55,
-  initiator: "app.4b81de.js:712 — carregarPerfil()",
+  initiator: "app.4b81de.js:712 — loadProfile()",
   requestHeaders: headers([
     [":method", "GET"],
     [":authority", "api.demo-loja.invalid"],
@@ -904,7 +904,7 @@ const req13: RequestRecord = {
     ["content-type", "application/json; charset=utf-8"],
     ["content-length", "58"],
     ["cache-control", "no-store"],
-    ["www-authenticate", 'Bearer realm="conta", error="invalid_token"'],
+    ["www-authenticate", 'Bearer realm="account", error="invalid_token"'],
     ["x-request-id", "e8b3c107-6a25-4d19-8f04-5c2b9e7a1d66"],
   ]),
   cookiesSent: [{ index: 0, name: "session", value: "9c1f…e2" }],

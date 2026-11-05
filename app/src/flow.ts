@@ -391,10 +391,11 @@ export function partialCompositionText(value: ValueOrigin): string | null {
   const pc = value.partialComposition;
   if (!pc || (Array.isArray(pc) && pc.length === 0)) return null;
   if (typeof pc === "string") return pc;
-  // The core already writes the label ("sem origem observada; contém o valor de <campo> de <produtor> …").
-  if (value.label.includes("composição")) return value.label;
+  // The core already writes the label ("no observed origin; contains the value of <field> from <producer> …").
+  // The legacy Portuguese label ("sem origem observada … composição …") is still accepted.
+  if (value.label.includes("composition") || value.label.includes("composição")) return value.label;
   const first = pc[0];
-  return `sem origem observada; contém ${first.field ?? "um campo"} de ${first.producerRequestId} + parte sem fonte — provável composição no cliente`;
+  return `no observed origin; contains ${first.field ?? "a field"} from ${first.producerRequestId} + part with no observed source — probable composition in the client`;
 }
 
 /** Warnings worth highlighting (missing cookies in the HAR, etc.), without repeats. */
@@ -405,7 +406,7 @@ export function highlightedWarnings(...lists: (string[] | undefined)[]): string[
 }
 
 export function isCookiesAbsent(text: string): boolean {
-  return text.includes("har.cookies_absent") || text.includes("não contém cookies");
+  return text.includes("har.cookies_absent") || text.includes("does not contain cookies") || text.includes("não contém cookies");
 }
 
 /** Groups a page's pairs by round: header when the round changes. */

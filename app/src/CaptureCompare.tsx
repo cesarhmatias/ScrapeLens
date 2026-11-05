@@ -26,7 +26,7 @@ function FieldRow({ field }: { field: FieldDiff }) {
         <div className="mono">{field.a ?? <span className="dim">—</span>}</div>
         <div className="mono">{field.b ?? <span className="dim">—</span>}</div>
         <div>
-          <span title={fieldClassLabel(field)} className={`chip ${field.originLabel?.includes("possível") ? "possible" : dynamic ? "v-partial" : "tag"}`}>{fieldClassLabel(field)}</span>
+          <span title={fieldClassLabel(field)} className={`chip ${field.originLabel?.includes("possible") || field.originLabel?.includes("possível") ? "possible" : dynamic ? "v-partial" : "tag"}`}>{fieldClassLabel(field)}</span>
           {field.origin && (
             <div className="dim">
               {field.origin.kind}

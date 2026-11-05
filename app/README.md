@@ -1,125 +1,122 @@
-# ScrapeLens — app macOS (Tauri 2) + interface React
+# ScrapeLens — macOS app (Tauri 2) + React interface
 
-Implementação do shell desktop e da interface sobre o **contrato v1**
-(`docs/03-contratos.md`). A UI não tem contrato próprio: consome `session.json`
-v1 via `core/` e via commands Tauri.
+Implementation of the desktop shell and the interface over the **v1 contract**
+(`docs/03-contratos.md`). The UI has no contract of its own: it consumes
+`session.json` v1 via `core/` and via Tauri commands.
 
-## Estado atual (onda 2)
+## Current status (wave 2)
 
-- **Tauri 2** com janela única, menu nativo do macOS e diálogos nativos.
-- **Atalhos**: ⌘O (abrir captura), ⌘F (buscar), ⌘C (copiar URL da requisição
-  selecionada quando não há texto selecionado). O menu Editar mantém copiar/
-  colar nativos.
-- **Tema claro/escuro** com escolha persistida em `localStorage` e padrão do
-  sistema.
-- **Chrome**: detecção automática em `/Applications` e seleção manual por
-  diálogo nativo (`Selecionar Chrome…` no menu Arquivo ou no aviso da tela).
-- **Integração real com o core/** (`scrapelens-core` como dependência crate,
-  binário único, sem sidecar):
-  - `start_session` abre o Chrome externo com perfil temporário dedicado,
-    depuração só em `127.0.0.1` (porta efêmera), grava CDP + NetLog e navega
-    para a URL inicial (padrão `about:blank`);
-  - `stop_session` encerra o Chrome, aguarda o flush do NetLog, correlaciona
-    CDP×NetLog no core, grava a sessão v1 e devolve a sessão pronta;
-  - `import_har` e `import_netlog` leem o arquivo real, importam pelo core e
-    gravam a sessão v1 (labels `har-import`/`netlog-import`);
-  - `open_session` lê pasta/arquivo v1, valida `schemaVersion` e preserva a
-    pasta para anexos; `read_attachment` carrega prévia textual.
-- **Captura validada de ponta a ponta** no macOS: Chrome 156 externo, página do
-  testserver local, 11 requisições reais, headers h1 `verified` vindos do NetLog,
-  cookies/`Set-Cookie` preservados, correlação `matched` e `ambiguous` exposta.
-  Evidência detalhada em `src-tauri/REAL-CYCLE.md`; prints 17–21 em
+- **Tauri 2** with a single window, native macOS menu and native dialogs.
+- **Shortcuts**: ⌘O (open capture), ⌘F (find), ⌘C (copy the URL of the selected
+  request when no text is selected). The Edit menu keeps native copy/paste.
+- **Light/dark theme** with the choice persisted in `localStorage` and the
+  system default.
+- **Chrome**: automatic detection in `/Applications` and manual selection through
+  a native dialog (`Select Chrome…` in the File menu or in the screen's warning).
+- **Real integration with core/** (`scrapelens-core` as a crate dependency,
+  single binary, no sidecar):
+  - `start_session` opens external Chrome with a dedicated temporary profile,
+    debugging only on `127.0.0.1` (ephemeral port), records CDP + NetLog and
+    navigates to the start URL (default `about:blank`);
+  - `stop_session` closes Chrome, waits for the NetLog flush, correlates
+    CDP×NetLog in the core, writes the v1 session and returns the ready session;
+  - `import_har` and `import_netlog` read the real file, import it through the
+    core and write the v1 session (labels `har-import`/`netlog-import`);
+  - `open_session` reads a v1 folder/file, validates `schemaVersion` and keeps
+    the folder for attachments; `read_attachment` loads a text preview.
+- **Capture validated end to end** on macOS: external Chrome 156, a page from
+  the local testserver, 11 real requests, h1 headers `verified` from NetLog,
+  cookies/`Set-Cookie` preserved, `matched` and `ambiguous` correlation exposed.
+  Detailed evidence in `src-tauri/REAL-CYCLE.md`; screenshots 17–21 in
   `docs/screenshots/`.
-- **Pendências explícitas**: assinatura/notarização e build Intel; captura de
-  corpos CDP ainda não é baixada para anexos (estado `unavailable`), então a
-  prévia de corpo real aparece como indisponível.
-- **Lista virtualizada** (linha de 34 px, overscan): 12.000 requisições
-  renderizam 24 linhas e 437 nós de DOM; ver `docs/perf/virtualization.json`.
+- **Explicit open items**: signing/notarization and the Intel build; CDP body
+  capture is not yet downloaded for attachments (`unavailable` state), so the
+  real body preview appears as unavailable.
+- **Virtualized list** (34 px row, overscan): 12,000 requests render 24 rows and
+  437 DOM nodes; see `docs/perf/virtualization.json`.
 
-## Contrato v1 na UI
+## v1 contract in the UI
 
-`src/v1/types.ts` projeta `core/src/model/*.rs`; `src/v1/adapter.ts` converte
-para o modelo de tela:
+`src/v1/types.ts` projects `core/src/model/*.rs`; `src/v1/adapter.ts` converts
+it into the screen model:
 
-- headers como arrays ordenados (`pseudoHeaders` + `headers`), duplicatas
-  preservadas e ordem nunca refeita;
-- visão normalizada é derivada e marcada como parcial;
-- `verification` por informação (verified/partial/unverified) com fonte, evento,
-  horário, método e nota; “não verificada” aparece literalmente;
-- `Cookie` mostra campo bruto, pares e linhas do fio separadamente;
-- `Set-Cookie` bruto + atributos parseados, com erro de parse visível;
-- corpos usam `Body.state` (`captured`, `empty`, `truncated`, `unavailable`,
-  `discarded`) com motivo explícito e anexo indicado;
-- `attempts`, `redirects` e `match` (matched/ambiguous/unmatched) com candidatos
-  à mostra quando ambíguo;
-- HTML capturado é sempre texto, nunca interface.
+- headers as ordered arrays (`pseudoHeaders` + `headers`), duplicates preserved
+  and order never redone;
+- the normalized view is derived and marked as partial;
+- `verification` per piece of information (verified/partial/unverified) with
+  source, event, time, method and note; "not verified" appears literally;
+- `Cookie` shows the raw field, the pairs and the wire lines separately;
+- raw `Set-Cookie` + parsed attributes, with visible parse errors;
+- bodies use `Body.state` (`captured`, `empty`, `truncated`, `unavailable`,
+  `discarded`) with an explicit reason and the attachment indicated;
+- `attempts`, `redirects` and `match` (matched/ambiguous/unmatched) with
+  candidates shown when ambiguous;
+- captured HTML is always text, never interface.
 
-O rascunho `CONTRACT-DRAFT.md` fica como histórico da onda 1 e está marcado
-como substituído.
+`CONTRACT-DRAFT.md` stays as the history of wave 1 and is marked as superseded.
 
-## Rodar
+## Run
 
-Pré-requisitos de desenvolvimento: Node + Rust + Xcode Command Line Tools.
-O app empacotado não exige Node, Python ou Rust.
+Development prerequisites: Node + Rust + Xcode Command Line Tools.
+The packaged app does not require Node, Python or Rust.
 
 ```sh
-# na raiz do repositório
+# at the repository root
 ./app/node_modules/.bin/tauri dev
 ./app/node_modules/.bin/tauri build --bundles app
-# saída: src-tauri/target/release/bundle/macos/ScrapeLens.app
+# output: src-tauri/target/release/bundle/macos/ScrapeLens.app
 ```
 
-Ou pelos scripts do `app/`:
+Or through the scripts in `app/`:
 
 ```sh
 cd app
 npm install
-npm run dev            # UI no navegador (modo demo, sem commands)
+npm run dev            # UI in the browser (demo mode, no commands)
 npm run build
-npm run shots          # prints em ../docs/screenshots
-npm run perf           # mede a virtualização (docs/perf)
-npm run desktop:dev    # Tauri dev (a partir de app/)
-npm run desktop:build  # .app local, sem certificado Apple
+npm run shots          # screenshots in ../docs/screenshots
+npm run perf           # measures virtualization (docs/perf)
+npm run desktop:dev    # Tauri dev (from app/)
+npm run desktop:build  # local .app, without an Apple certificate
 ```
 
-> O build local é **não assinado** (sem certificado Apple). Para distribuir,
-> assinatura e notarização são necessárias — não foram feitas e nada foi
-> publicado.
+> The local build is **unsigned** (no Apple certificate). Distribution requires
+> signing and notarization — neither was done and nothing was published.
 
-## Commands e payload
+## Commands and payload
 
-Todos os commands de sessão devolvem o mesmo envelope:
+All session commands return the same envelope:
 
 ```json
 {
   "session": { "schemaVersion": 1, "session": {...}, "requests": [...] },
-  "sessionDir": "/caminho/da/sessao",
+  "sessionDir": "/path/to/the/session",
   "synthetic": false,
-  "notice": "Sessão aberta: 13 requisição(ões).",
+  "notice": "Session opened: 13 request(s).",
   "pending": false
 }
 ```
 
-`pending: true` significa “o core ainda não executou esta etapa”; a UI mostra o
-aviso e mantém a sessão demo rotulada. Ao plugar o core, só o corpo de
-`start_session`/`import_har`/`import_netlog` muda.
+`pending: true` means "the core has not run this step yet"; the UI shows the
+warning and keeps the labeled demo session. When the core is plugged in, only
+the body of `start_session`/`import_har`/`import_netlog` changes.
 
-## Limites desta entrega
+## Limits of this delivery
 
-- Diálogo nativo existe para abrir sessão e escolher Chrome; não há ainda
-  “Salvar como”/exportação na UI.
-- O launcher de Chrome e o cliente CDP vivem em `src-tauri/src/capture.rs`
-  (o core não trouxe launcher; os parsers/correlação são dele).
-- `SCRAPELENS_CAPTURE_URL`, `SCRAPELENS_CAPTURE_HEADLESS=1` e
-  `SCRAPELENS_CAPTURE_IGNORE_CERT=1` são ganchos de desenvolvimento/teste;
-  não aparecem na interface.
-- Tema acompanha o sistema na primeira execução; não há sincronização com o
-  tema do WebView do macOS além da classe do app.
-- Assinatura/notarização e builds Intel não foram feitos nem testados; a máquina
-  é Apple Silicon (arm64). Arquiteturas compiladas ≠ testadas.
-- A prévia de corpo de sessões reais é carregada por `read_attachment` (limite
-  de 1 MiB); binários não são convertidos em texto.
-- `--remote-allow-origins=*` no CDP: o endpoint local aceita qualquer Origin
-  durante a captura (loopback + porta efêmera + janela da sessão); não navegue em
-  páginas não confiáveis no Chrome inspecionado enquanto grava.
-- Nenhuma telemetria, nenhuma rede em runtime.
+- The native dialog exists to open a session and choose Chrome; there is no
+  "Save as"/export in the UI yet.
+- The Chrome launcher and the CDP client live in `src-tauri/src/capture.rs`
+  (the core did not bring a launcher; the parsers/correlation are its).
+- `SCRAPELENS_CAPTURE_URL`, `SCRAPELENS_CAPTURE_HEADLESS=1` and
+  `SCRAPELENS_CAPTURE_IGNORE_CERT=1` are development/test hooks; they do not
+  appear in the interface.
+- The theme follows the system on first run; there is no sync with the macOS
+  WebView theme beyond the app class.
+- Signing/notarization and Intel builds were neither done nor tested; the
+  machine is Apple Silicon (arm64). Compiled architectures ≠ tested.
+- The body preview of real sessions is loaded by `read_attachment` (1 MiB
+  limit); binaries are not converted to text.
+- `--remote-allow-origins=*` on CDP: the local endpoint accepts any Origin
+  during capture (loopback + ephemeral port + session window); do not browse
+  untrusted pages in the inspected Chrome while recording.
+- No telemetry, no network at runtime.

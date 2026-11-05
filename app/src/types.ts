@@ -2,7 +2,7 @@
 // adapter in src/v1/adapter.ts. No screen imports raw JSON.
 
 export type SourceId = "cdp" | "netlog" | "har" | "ownFormat" | "capture" | "derived" | "manual";
-export type Protocol = "HTTP/1.1" | "HTTP/2" | "HTTP/3" | "desconhecido";
+export type Protocol = "HTTP/1.1" | "HTTP/2" | "HTTP/3" | "unknown";
 export type ResourceType =
   | "document"
   | "stylesheet"

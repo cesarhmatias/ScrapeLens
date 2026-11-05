@@ -1,46 +1,46 @@
-# Contrato de sessão — RASCUNHO (provisório, não oficial)
+# Session contract — DRAFT (provisional, not official)
 
-> **SUBSTITUÍDO na onda 2.** O contrato oficial é `docs/03-contratos.md`
-> (formato de sessão v1), com decisões em `docs/01-decisoes.md`. A UI consome
-> `src/v1/types.ts` + `src/v1/adapter.ts` desde o commit da onda 2. Este arquivo
-> fica apenas como histórico da onda 1.
+> **REPLACED in wave 2.** The official contract is `docs/03-contratos.md`
+> (session format v1), with decisions in `docs/01-decisoes.md`. The UI has
+> consumed `src/v1/types.ts` + `src/v1/adapter.ts` since the wave 2 commit. This
+> file is kept only as the history of wave 1.
 
-Status: **provisório**, escrito pelo dono de `app/` para destravar a fatia de UI.
-Substitui nada: o contrato oficial será `docs/03-contratos.md` (dono: líder).
-Quando o oficial existir, este arquivo é descartado e o adaptador em
-`src/demo/adapter.ts` é o único ponto a reescrever.
+Status: **provisional**, written by the owner of `app/` to unblock the UI slice.
+It replaces nothing: the official contract will be `docs/03-contratos.md` (owner:
+leader). Once the official one exists, this file is discarded and the adapter in
+`src/demo/adapter.ts` is the only place to rewrite.
 
-Regra que este rascunho protege: **a UI nunca ordena, deduplica nem junta
-headers por conta própria.** Ela recebe pares na sequência da fonte, com
-duplicatas, e só o painel "normalizado" deriva outra visão — rotulada.
+Rule this draft protects: **the UI never sorts, deduplicates or merges headers on
+its own.** It receives pairs in the order of the source, with duplicates, and only
+the "normalized" panel derives another view, which is labeled as such.
 
-## 1. Unidades
+## 1. Units
 
 ```ts
-type SourceId = "cdp" | "netlog" | "har" | "session";      // session = formato próprio
+type SourceId = "cdp" | "netlog" | "har" | "session";      // session = own format
 type Protocol = "HTTP/1.1" | "HTTP/2" | "HTTP/3";
 type ResourceType = "document" | "stylesheet" | "script" | "xhr" | "fetch" | "image" | "font" | "other";
 
-/** Par de header na ordem em que a fonte o entregou. `index` é a posição 0-based. */
+/** Header pair in the order the source delivered it. `index` is the 0-based position. */
 interface HeaderPair {
-  index: number;                 // posição na sequência da fonte (nunca reordenada na UI)
-  name: string;                  // preserva caixa original quando a fonte preserva
+  index: number;                 // position in the source sequence (never reordered in the UI)
+  name: string;                  // keeps the original casing when the source keeps it
   value: string;
-  kind: "pseudo" | "regular";    // ":method", ":path" etc. são pseudo
-  note?: string;                 // ex.: "duplicata", "valor concatenado pela fonte"
+  kind: "pseudo" | "regular";    // ":method", ":path" etc. are pseudo
+  note?: string;                 // e.g. "duplicate", "value concatenated by the source"
 }
 ```
 
-Headers são **arrays**, não mapas: `x-cache` pode aparecer duas vezes, `accept`
-também, e `set-cookie` quase sempre. Pseudoheaders HTTP/2/3 entram no mesmo
-array, com `kind: "pseudo"` e antes dos regulares — a UI mostra, não conserta.
+Headers are **arrays**, not maps: `x-cache` can appear twice, `accept` too, and
+`set-cookie` almost always. HTTP/2/3 pseudoheaders go into the same array, with
+`kind: "pseudo"` and before the regular ones — the UI shows them, it does not fix them.
 
 ```ts
 interface CookiePair { name: string; value: string; index: number; }
 
 interface ReceivedCookie extends CookiePair {
   attributes: { name: string; value?: string }[];  // Path, Domain, HttpOnly, SameSite...
-  raw: string;                                     // linha Set-Cookie completa
+  raw: string;                                     // full Set-Cookie line
 }
 
 interface BodyInfo {
@@ -48,10 +48,10 @@ interface BodyInfo {
   contentType?: string;
   encodedSize?: number;
   decodedSize?: number;
-  preview?: string;              // só texto/JSON; HTML nunca é renderizado como UI
+  preview?: string;              // text/JSON only; HTML is never rendered as UI
   truncatedAt?: number;
-  reason?: string;               // por que indisponível/truncado/descartado
-  captureRef?: string;           // evento/arquivo de onde veio
+  reason?: string;               // why it is unavailable/truncated/discarded
+  captureRef?: string;           // event/file it came from
 }
 
 interface RedirectHop {
@@ -64,17 +64,17 @@ interface RedirectHop {
 
 interface EvidenceRef {
   source: SourceId;
-  event: string;                 // ex.: "Network.responseReceivedExtraInfo"
-  timestamp: string;             // ISO 8601 com ms
-  method: string;                // como o dado foi obtido (ex.: "evento CDP bruto")
-  eventRef?: string;             // id/handle para abrir o evento original
+  event: string;                 // e.g. "Network.responseReceivedExtraInfo"
+  timestamp: string;             // ISO 8601 with ms
+  method: string;                // how the data was obtained (e.g. "raw CDP event")
+  eventRef?: string;             // id/handle to open the original event
 }
 
-/** Estado de verificação POR INFORMAÇÃO, não por requisição. */
+/** Verification state PER PIECE OF INFORMATION, not per request. */
 type Verification =
   | { status: "verified"; evidence: EvidenceRef }
   | { status: "partial"; evidence: EvidenceRef; missing: string }
-  | { status: "unverified"; reason: string };   // sem evidência → UI escreve "não verificada"
+  | { status: "unverified"; reason: string };   // no evidence → UI shows "not verified"
 ```
 
 ```ts
@@ -102,7 +102,7 @@ interface RequestRecord {
   verification: {
     requestHeaders: Verification;
     responseHeaders: Verification;
-    normalizedHeaders: Verification;   // derivada: nunca "verified" sozinha
+    normalizedHeaders: Verification;   // derived: never "verified" on its own
     cookies: Verification;
     payload: Verification;
     responseBody: Verification;
@@ -114,7 +114,7 @@ interface RequestRecord {
 interface SessionRecord {
   id: string;
   label: string;
-  synthetic: boolean;            // true → a UI precisa mostrar "DEMO"
+  synthetic: boolean;            // true → the UI must show "DEMO"
   createdAt: string;
   chromeVersion?: string;
   capture: { cdpEvents: number; netlogBytes?: number; status: "closed" | "partial" | "open" };
@@ -124,25 +124,26 @@ interface SessionRecord {
 }
 ```
 
-## 2. Regras de exibição que a UI assume
+## 2. Display rules the UI assumes
 
-1. `requestHeaders`/`responseHeaders` renderizados na ordem de `index`, incluindo
-   duplicatas; nenhum `sort()`.
-2. A visão normalizada é derivada e marcada: agrupa por nome, ordena por nome,
-   mantém todos os valores, cita o número de duplicatas.
-3. Toda informação carrega selo: **verificada**, **parcial** ou **não verificada**.
-   Sem `EvidenceRef`, a UI não pode escrever "verificado".
-4. Corpo com `availability != "available"` aparece com o motivo, nunca vazio mudo.
-5. HTML capturado é exibido como texto (fonte), jamais injetado como interface.
-6. Comparação casa pares repetidos por valor dentro do mesmo nome (multiconjunto),
-   não por índice; "reordenado" só quando o par existe nos dois lados com o mesmo
-   valor e posição diferente na sequência.
-7. `synthetic: true` fixa o selo "DEMO — sessão sintética" no topo e no rodapé.
+1. `requestHeaders`/`responseHeaders` are rendered in `index` order, duplicates
+   included; no `sort()`.
+2. The normalized view is derived and labeled: it groups by name, sorts by name,
+   keeps all values, and states the number of duplicates.
+3. Every piece of information carries a badge: **verified**, **partial** or **not
+   verified**. Without an `EvidenceRef`, the UI cannot write "verified".
+4. A body with `availability != "available"` is shown with the reason, never as a
+   silent empty value.
+5. Captured HTML is shown as text (source), never injected as UI.
+6. Comparison matches repeated pairs by value within the same name (multiset), not
+   by index; "reordered" only when the pair exists on both sides with the same value
+   and a different position in the sequence.
+7. `synthetic: true` pins the badge "DEMO — synthetic session" at the top and the bottom.
 
-## 3. O que este rascunho não decide (fica para o contrato oficial)
+## 3. What this draft does not decide (left for the official contract)
 
-- Forma canônica dos timestamps (ISO com ms aqui) e origem do relógio.
-- Como o parser marca header concatenado pela fonte vs. duplicata real.
-- Identidade estável de requisição entre CDP e NetLog.
-- Persistência (`.scrapelens`), versionamento e migração.
-- Streaming/importação incremental (esta fatia usa sessão em memória).
+- Canonical form of timestamps (ISO with ms here) and the origin of the clock.
+- How the parser marks a header concatenated by the source vs. a real duplicate.
+- Stable request identity between CDP and NetLog.
+- Persistence (`.scrapelens`), versioning and migration.
+- Incremental streaming/import (this slice uses an in-memory session).
