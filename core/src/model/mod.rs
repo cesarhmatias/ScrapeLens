@@ -10,7 +10,7 @@ pub use cookies::{
     parse_set_cookie, CookieField, CookiePairEntry, ParsedSetCookie, SetCookieRecord,
 };
 pub use entities::{
-    Attempt, AttemptOutcome, CdpRef, Connection, HeaderEvidence, HeaderRole, Initiator,
+    Attempt, AttemptOutcome, NetworkState, CdpRef, Connection, HeaderEvidence, HeaderRole, Initiator,
     LogicalRequest, MatchCandidate, MatchState, NetlogRefs, Protocol, Redirect, RequestLink, Span,
     StreamSession, TargetKind, TargetProvenance, Timings,
 };

@@ -297,6 +297,17 @@ pub enum AttemptOutcome {
     Unknown,
 }
 
+/// Whether a request reached the network. Set only when the NetLog proves that it
+/// did not: the request was cancelled or failed and no request bytes were written
+/// (no `HTTP_TRANSACTION_SEND_REQUEST`). Such an attempt has no protocol: the
+/// protocol is never inferred from neighbouring requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NetworkState {
+    /// Cancelled or failed before any request bytes were written.
+    NotSent,
+}
+
 /// A concrete attempt to execute a logical request (retry, Happy Eyeballs
 /// race, redirect, etc.). Headers and bodies belong to the attempt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -349,6 +360,10 @@ pub struct Attempt {
     pub match_state: MatchState,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub match_candidates: Vec<MatchCandidate>,
+    /// Set when the NetLog proves that the attempt never reached the network
+    /// (see [`NetworkState`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_state: Option<NetworkState>,
     #[serde(default)]
     pub provenance: Provenance,
 }
@@ -388,6 +403,7 @@ impl Attempt {
             netlog: NetlogRefs::default(),
             match_state: MatchState::Unmatched,
             match_candidates: Vec::new(),
+            network_state: None,
             provenance: Provenance::default(),
         }
     }
@@ -539,6 +555,10 @@ pub struct LogicalRequest {
     pub match_state: MatchState,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub match_candidates: Vec<MatchCandidate>,
+    /// Set when the NetLog proves that the attempt never reached the network
+    /// (see [`NetworkState`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_state: Option<NetworkState>,
     #[serde(default)]
     pub provenance: Provenance,
 }
@@ -567,6 +587,7 @@ impl LogicalRequest {
             timings: Timings::default(),
             match_state: MatchState::Unmatched,
             match_candidates: Vec::new(),
+            network_state: None,
             provenance: Provenance::default(),
         }
     }

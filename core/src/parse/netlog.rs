@@ -20,7 +20,8 @@ use serde::Deserialize;
 use crate::error::{CoreError, Result};
 use crate::model::{
     policy, Attempt, AttemptOutcome, Body, BrowserInfo, Completeness, Connection, CookieField,
-    HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, OrderState, Protocol, Provenance,
+    HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, NetworkState, OrderState, Protocol,
+    Provenance,
     Redirect, SessionBundle, SessionMeta, SessionV1, Source, StreamSession, Timings, Verification,
     Warning,
 };
@@ -107,6 +108,35 @@ pub struct NetlogAttempt {
     pub recv_session: Option<NetlogHeaderEvent>,
     pub redirect_to: Option<String>,
     pub net_error: Option<i32>,
+    /// Set on a synthetic attempt built from a cancelled or failed URL_REQUEST that wrote
+    /// no request bytes (see [`NotSentEvidence`]). Its protocol stays unknown.
+    pub not_sent: Option<NotSentEvidence>,
+}
+
+/// Proof that a URL_REQUEST never reached the network: it was cancelled (or failed)
+/// and no `HTTP_TRANSACTION_SEND_REQUEST` (nor stream binding) was recorded for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NotSentEvidence {
+    pub source_id: u32,
+    pub cancelled_at: Option<f64>,
+    pub net_error: Option<i32>,
+}
+
+/// Provenance line for a not-sent attempt (shared by the correlator and the
+/// NetLog-only import so both report the same evidence).
+pub fn not_sent_note(evidence: &NotSentEvidence) -> String {
+    let when = evidence
+        .cancelled_at
+        .map(|time| format!("at {time:.6}s"))
+        .unwrap_or_else(|| "without a timestamp".to_string());
+    let how = match evidence.net_error {
+        Some(error) => format!("failed (net_error {error})"),
+        None => "cancelled".to_string(),
+    };
+    format!(
+        "NetLog URL_REQUEST {} {how} {when} with no HTTP_TRANSACTION_SEND_REQUEST and no bound stream: the request was not sent; protocol not inferred",
+        evidence.source_id
+    )
 }
 
 #[derive(Debug, Clone, Default)]
@@ -156,6 +186,12 @@ struct Builder {
     atoms: Vec<Atom>,
     net_error: Option<i32>,
     ended_at: Option<f64>,
+    /// Started by URL_REQUEST_START_JOB (not another source).
+    is_url_request: bool,
+    /// A send or stream-binding event exists for this source.
+    saw_send: bool,
+    /// CANCELLED time, when the URL_REQUEST was cancelled.
+    cancelled_at: Option<f64>,
 }
 
 impl Builder {
@@ -169,6 +205,9 @@ impl Builder {
             atoms: Vec::new(),
             net_error: None,
             ended_at: None,
+            is_url_request: false,
+            saw_send: false,
+            cancelled_at: None,
         }
     }
 }
@@ -1449,6 +1488,10 @@ fn scan_netlog(json: &[u8]) -> Result<ScanOutcome> {
 
 struct BuildCtx {
     names: BTreeMap<u32, String>,
+    /// Sources with a send or stream-binding event (conservative: never not-sent).
+    send_seen: std::collections::BTreeSet<u32>,
+    /// First CANCELLED time per source; applied only to URL_REQUEST builders.
+    cancelled_seen: BTreeMap<u32, Option<f64>>,
     tick_offset_ms: Option<f64>,
     time_unit: NetlogTimeUnit,
     browser_version: Option<String>,
@@ -1462,6 +1505,8 @@ struct BuildCtx {
 
 struct BuiltEvents {
     builders: BTreeMap<u32, Builder>,
+    send_seen: std::collections::BTreeSet<u32>,
+    cancelled_seen: BTreeMap<u32, Option<f64>>,
     pending_session: Vec<(NetlogHeaderEvent, Option<u32>)>,
     events_used: usize,
 }
@@ -1470,6 +1515,8 @@ impl BuildCtx {
     /// Same `Value` semantics: the last `events` key of the root object wins.
     fn reset_events(&mut self) {
         self.builders.clear();
+        self.send_seen.clear();
+        self.cancelled_seen.clear();
         self.pending_session.clear();
         self.events_used = 0;
         self.index = 0;
@@ -1486,6 +1533,11 @@ impl BuildCtx {
             None => "unknown:0".to_string(),
         };
         let source_id = event.source_id;
+        if name.contains("SEND") || name.contains("BOUND_TO") {
+            if let Some(source_id) = source_id {
+                self.send_seen.insert(source_id);
+            }
+        }
         // A single conversion for the whole capture (see `ticks_to_epoch_seconds`).
         let time = event
             .time
@@ -1502,6 +1554,7 @@ impl BuildCtx {
                         .builders
                         .entry(source_id)
                         .or_insert_with(|| Builder::new(source_id));
+                    builder.is_url_request = true;
                     if let Some(params) = event.params.as_ref() {
                         if let Some(url) = params.url.as_deref() {
                             if builder.url.is_empty() {
@@ -1540,6 +1593,11 @@ impl BuildCtx {
                         index,
                     });
                     self.events_used += 1;
+                }
+            }
+            "CANCELLED" => {
+                if let Some(source_id) = source_id {
+                    self.cancelled_seen.entry(source_id).or_insert(time);
                 }
             }
             "URL_REQUEST_REDIRECTED" => {
@@ -1806,6 +1864,8 @@ fn build_events(
     warnings: &mut Vec<Warning>,
 ) -> Result<BuiltEvents> {
     let mut ctx = BuildCtx {
+        send_seen: std::collections::BTreeSet::new(),
+        cancelled_seen: BTreeMap::new(),
         names: names.clone(),
         tick_offset_ms,
         time_unit,
@@ -1827,6 +1887,8 @@ fn build_events(
     warnings.append(&mut ctx.warnings);
     Ok(BuiltEvents {
         builders: ctx.builders,
+        send_seen: ctx.send_seen,
+        cancelled_seen: ctx.cancelled_seen,
         pending_session: ctx.pending_session,
         events_used: ctx.events_used,
     })
@@ -1947,6 +2009,8 @@ pub fn parse_netlog_with_wall_clock(
     capture.events_used += built.events_used;
     let mut builders = built.builders;
     let mut pending_session = built.pending_session;
+    let send_seen = built.send_seen;
+    let cancelled_seen = built.cancelled_seen;
 
     // Links session events to URL_REQUEST through the explicit chain
     // HTTP_STREAM_JOB_BOUND_TO_REQUEST.
@@ -2012,6 +2076,11 @@ pub fn parse_netlog_with_wall_clock(
     }
 
     for (_, mut builder) in builders {
+        builder.saw_send = send_seen.contains(&builder.source_id);
+        builder.cancelled_at = match (builder.is_url_request, cancelled_seen.get(&builder.source_id)) {
+            (true, Some(time)) => *time,
+            _ => None,
+        };
         builder.atoms.sort_by(|left, right| {
             atom_time(left)
                 .partial_cmp(&atom_time(right))
@@ -2216,6 +2285,10 @@ pub fn expand_nul_duplicates(lines: &[String]) -> (Vec<String>, bool) {
 
 fn build_request(builder: Builder) -> NetlogUrlRequest {
     let mut attempts: Vec<NetlogAttempt> = Vec::new();
+    let had_wire_data = builder
+        .atoms
+        .iter()
+        .any(|atom| matches!(atom, Atom::Send(_) | Atom::Recv(_) | Atom::Redirect { .. }));
     let mut current = NetlogAttempt {
         url: builder.url.clone(),
         method: builder.method.clone(),
@@ -2313,6 +2386,34 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
     }
     if current_has_data || attempts.is_empty() {
         flush_attempt(&mut current, &mut attempts);
+    }
+
+    // A URL_REQUEST that was cancelled or failed before writing any bytes has no
+    // attempt above; it gets one, marked not-sent, so the correlator can pair it.
+    if attempts.is_empty()
+        && !had_wire_data
+        && builder.is_url_request
+        && !builder.saw_send
+        && (builder.cancelled_at.is_some() || builder.net_error.is_some())
+    {
+        attempts.push(NetlogAttempt {
+            url: builder.url.clone(),
+            method: builder.method.clone(),
+            started_at: builder.started_at,
+            ended_at: builder.cancelled_at.or(builder.ended_at),
+            outcome: if builder.net_error.is_some() {
+                AttemptOutcome::Failed
+            } else {
+                AttemptOutcome::Aborted
+            },
+            net_error: builder.net_error,
+            not_sent: Some(NotSentEvidence {
+                source_id: builder.source_id,
+                cancelled_at: builder.cancelled_at,
+                net_error: builder.net_error,
+            }),
+            ..Default::default()
+        });
     }
 
     // Links redirects to the following attempts.
@@ -2608,6 +2709,9 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             attempt.protocol = parsed.protocol;
             attempt.status = parsed.status;
             attempt.outcome = parsed.outcome;
+            if parsed.not_sent.is_some() {
+                attempt.network_state = Some(NetworkState::NotSent);
+            }
             attempt.started_at = parsed.started_at;
             attempt.ended_at = parsed.ended_at;
             attempt.net_error_to_failure(parsed.net_error);
@@ -2709,6 +2813,9 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             if let Some(version) = &capture.browser.version {
                 attempt.provenance = attempt.provenance.clone().with_browser_version(version);
             }
+            if let Some(evidence) = parsed.not_sent.as_ref() {
+                attempt.provenance.notes.push(not_sent_note(evidence));
+            }
 
             let total = match (parsed.started_at, parsed.ended_at) {
                 (Some(start), Some(end)) => Some(((end - start).max(0.0)) * 1000.0),
@@ -2723,7 +2830,8 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
 
             // Connection: derived from the URL; NetLog does not provide a stable id here.
             let connection_key = connection_key(&parsed.url, parsed.protocol);
-            if let Some((host, port)) = host_port(&parsed.url) {
+            // Not-sent attempts never opened a connection: nothing is derived for them.
+            if let Some((host, port)) = host_port(&parsed.url).filter(|_| parsed.not_sent.is_none()) {
                 let connection_id = connections
                     .entry(connection_key.clone())
                     .or_insert_with(|| {
@@ -2789,6 +2897,11 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             }
 
             logical.attempts.push(attempt);
+        }
+        if !logical.attempts.is_empty()
+            && logical.attempts.iter().all(|attempt| attempt.network_state == Some(NetworkState::NotSent))
+        {
+            logical.network_state = Some(NetworkState::NotSent);
         }
 
         // Redirects linking consecutive attempts.

@@ -152,6 +152,19 @@ original casing are preserved. Pseudoheaders are kept in a separate list.
 chosen silently. `requestHeaders`/`responseHeaders` at the logical level are the
 **selected primary view**; every original stays in `attempts[].headerEvidence`.
 
+`networkState` (optional, additive; `schemaVersion` stays 1): `not-sent`. Set on a
+request and on its attempt only when the NetLog proves that the request never
+reached the network: the URL_REQUEST was cancelled (or failed) and no
+`HTTP_TRANSACTION_SEND_REQUEST` and no stream binding was recorded for its source.
+Absent otherwise, and absent in sessions saved before this field. A not-sent
+attempt has no protocol: `protocol` stays `unknown` and is never copied from a
+neighbouring request or from the same host. Its `provenance.notes` line names the
+NetLog source id, the cancel time and the absence of a send event. A CDP attempt
+pairs with a not-sent NetLog attempt only under the usual rules (method, URL,
+time window, uniqueness) and only when it has no status and ended `aborted` or
+`failed`; a request with a status never takes it. Such pairs are counted in the
+`correlate.not_sent` info warning, not in `correlate.unmatched`.
+
 ### Attempt
 
 Fields of `LogicalRequest` that vary per attempt (`url`, `method`,

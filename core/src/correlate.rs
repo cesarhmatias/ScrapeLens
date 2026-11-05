@@ -13,11 +13,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{
-    Attempt, AttemptOutcome, HeaderEvidence, HeaderRole, MatchCandidate, MatchState, Protocol,
-    SessionV1, StreamSession, Verification, Warning,
+use crate::model::{Attempt, AttemptOutcome, HeaderEvidence, HeaderRole, MatchCandidate, MatchState, NetworkState, Protocol, SessionV1, StreamSession, Verification, Warning};
+use crate::parse::netlog::{
+    not_sent_note, NetlogAttempt, NetlogCapture, NetlogHeaderEvent, NetlogUrlRequest,
 };
-use crate::parse::netlog::{NetlogAttempt, NetlogCapture, NetlogHeaderEvent, NetlogUrlRequest};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +59,9 @@ pub struct CorrelationOutcome {
     pub unmatched_cdp_attempts: usize,
     pub unmatched_netlog_attempts: usize,
     pub explicit_matches: usize,
+    /// CDP attempts paired with a not-sent NetLog URL_REQUEST (cancelled before any bytes).
+    #[serde(default)]
+    pub not_sent_attempts: usize,
     #[serde(default)]
     pub warnings: Vec<Warning>,
 }
@@ -136,11 +138,15 @@ pub fn attach_netlog(
     let mut new_streams: Vec<StreamSession> = Vec::new();
     let mut deferred_warnings: Vec<Warning> = Vec::new();
     let mut used: BTreeSet<String> = BTreeSet::new();
+    // Not-sent attempts are synthetic (no bytes were written): they are counted in
+    // `not_sent_attempts`, not as NetLog attempts left unassociated.
     let total_netlog_attempts: usize = netlog
         .requests
         .iter()
-        .map(|request| request.attempts.len())
-        .sum();
+        .flat_map(|request| request.attempts.iter())
+        .filter(|attempt| attempt.not_sent.is_none())
+        .count();
+    let mut realistic_used: usize = 0;
     let index = CorrelationIndex::new(netlog, options);
 
     for request in &mut session.requests {
@@ -180,6 +186,11 @@ pub fn attach_netlog(
                         push_unique(&mut request.netlog.dependency_ids, *dependency_id);
                     }
                     used.insert(candidate.id.clone());
+                    if candidate.attempt.not_sent.is_some() {
+                        outcome.not_sent_attempts += 1;
+                    } else {
+                        realistic_used += 1;
+                    }
                     outcome.matched_attempts += 1;
                 }
                 _ => {
@@ -228,6 +239,15 @@ pub fn attach_netlog(
                 .flat_map(|attempt| attempt.match_candidates.clone())
                 .collect();
         }
+        if request.match_state == MatchState::Matched
+            && !request.attempts.is_empty()
+            && request
+                .attempts
+                .iter()
+                .all(|attempt| attempt.network_state == Some(NetworkState::NotSent))
+        {
+            request.network_state = Some(NetworkState::NotSent);
+        }
         // Reflects the result in the primary view (without touching the originals).
         if request.match_state == MatchState::Matched {
             request.refresh_primary_from_attempt();
@@ -236,13 +256,24 @@ pub fn attach_netlog(
 
     session.stream_sessions.extend(new_streams);
     session.warnings.extend(deferred_warnings);
-    outcome.unmatched_netlog_attempts = total_netlog_attempts.saturating_sub(used.len());
+    outcome.unmatched_netlog_attempts = total_netlog_attempts.saturating_sub(realistic_used);
     if outcome.unmatched_netlog_attempts > 0 {
         let warning = Warning::info(
             "correlate.netlog_unmatched",
             format!(
                 "{} NetLog attempt(s) (background traffic or no CDP pair) were not associated",
                 outcome.unmatched_netlog_attempts
+            ),
+        );
+        session.warnings.push(warning.clone());
+        outcome.warnings.push(warning);
+    }
+    if outcome.not_sent_attempts > 0 {
+        let warning = Warning::info(
+            "correlate.not_sent",
+            format!(
+                "{} CDP attempt(s) cancelled before the request was sent (networkState not-sent); protocol unknown",
+                outcome.not_sent_attempts
             ),
         );
         session.warnings.push(warning.clone());
@@ -322,6 +353,14 @@ fn find_candidates<'a>(
     for (request_index, attempt_index) in positions {
         let request = &netlog.requests[request_index];
         let netlog_attempt = &request.attempts[attempt_index];
+        // A not-sent attempt only pairs with a CDP attempt that has no response and
+        // ended cancelled or failed; it never competes with a request that got a status.
+        if netlog_attempt.not_sent.is_some()
+            && !(attempt.status.is_none()
+                && matches!(attempt.outcome, AttemptOutcome::Aborted | AttemptOutcome::Failed))
+        {
+            continue;
+        }
         {
             let id = format!("netlog-r{:04}-a{}", request_index + 1, attempt_index + 1);
             if used.contains(&id) {
@@ -613,6 +652,10 @@ fn attach_candidate(
 
     let netlog_request = candidate.request;
     let netlog_attempt = candidate.attempt;
+    if let Some(evidence) = netlog_attempt.not_sent.as_ref() {
+        attempt.network_state = Some(NetworkState::NotSent);
+        attempt.provenance.notes.push(not_sent_note(evidence));
+    }
 
     for (role, event) in [
         (

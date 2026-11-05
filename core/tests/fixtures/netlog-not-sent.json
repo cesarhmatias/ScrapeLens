@@ -1,0 +1,81 @@
+{
+  "_comment": "SYNTHETIC FIXTURE — .invalid host, no real traffic: one cancelled URL_REQUEST without send (77) and one cancelled after HTTP_TRANSACTION_SEND_REQUEST (78)",
+  "constants": {
+    "logEventTypes": {
+      "URL_REQUEST_START_JOB": 136,
+      "CANCELLED": 0,
+      "HTTP_TRANSACTION_SEND_REQUEST": 239,
+      "REQUEST_ALIVE": 2
+    },
+    "logSourceType": {
+      "NONE": 0,
+      "URL_REQUEST": 1
+    },
+    "timeTickOffset": 1787407332877
+  },
+  "events": [
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640473072",
+      "source": {
+        "id": 77,
+        "start_time": "5640473072",
+        "type": 1
+      },
+      "params": {
+        "url": "https://demo.invalid/cancelled?x=1",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 0,
+      "phase": 0,
+      "time": "5640473073",
+      "source": {
+        "id": 77,
+        "start_time": "5640473072",
+        "type": 1
+      },
+      "params": {}
+    },
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640473074",
+      "source": {
+        "id": 78,
+        "start_time": "5640473074",
+        "type": 1
+      },
+      "params": {
+        "url": "https://demo.invalid/sent-then-cancelled",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 239,
+      "phase": 0,
+      "time": "5640473075",
+      "source": {
+        "id": 78,
+        "start_time": "5640473074",
+        "type": 1
+      },
+      "params": {}
+    },
+    {
+      "type": 0,
+      "phase": 0,
+      "time": "5640473076",
+      "source": {
+        "id": 78,
+        "start_time": "5640473074",
+        "type": 1
+      },
+      "params": {}
+    }
+  ]
+}
