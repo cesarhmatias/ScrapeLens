@@ -833,7 +833,7 @@ mod tests {
 
     #[test]
     fn validate_refuses_missing_paths_and_fake_scripts() {
-        let err = validate_chrome(Path::new("/nao/existe/Google Chrome")).unwrap_err();
+        let err = validate_chrome(Path::new("/does/not/exist/Google Chrome")).unwrap_err();
         if cfg!(target_os = "macos") {
             assert!(matches!(err, ChromeError::NotFound(_)), "{err:?}");
         }
@@ -1074,11 +1074,11 @@ mod tests {
         std::fs::write(
             app.join("Contents/Info.plist"),
             r#"<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>org.exemplo.Outro</string></dict></plist>"#,
+<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>org.example.Other</string></dict></plist>"#,
         )
         .unwrap();
         let err = validate_chrome(&app).unwrap_err();
-        assert!(matches!(err, ChromeError::UnexpectedBundle(ref id) if id == "org.exemplo.Outro"), "{err:?}");
+        assert!(matches!(err, ChromeError::UnexpectedBundle(ref id) if id == "org.example.Other"), "{err:?}");
         let _ = std::fs::remove_dir_all(dir);
     }
 

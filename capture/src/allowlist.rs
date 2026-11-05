@@ -799,7 +799,7 @@ mod tests {
         );
         // Third parties alone are not enough: at least one navigation host is needed.
         assert_eq!(
-            Allowlist::new(&[], &list(&["cdn.exemplo.net"])).unwrap_err(),
+            Allowlist::new(&[], &list(&["cdn.example.net"])).unwrap_err(),
             AllowlistError::Empty
         );
     }
@@ -816,14 +816,14 @@ mod tests {
             assert!(err.to_string().contains("IPv6"), "{err}");
         }
         for bad in [
-            "http://exemplo.com",
-            "exemplo.com/caminho",
-            "user@exemplo.com",
-            "exemplo.com.",
+            "http://example.com",
+            "example.com/caminho",
+            "user@example.com",
+            "example.com.",
             "exe mplo.com",
-            "exemplo.com:0",
-            "exemplo.com:99999",
-            "exemplo.com:abc",
+            "example.com:0",
+            "example.com:99999",
+            "example.com:abc",
             "ex*mplo.com",
             "127.1",
             "2130706433",
@@ -841,18 +841,18 @@ mod tests {
 
     #[test]
     fn exact_wildcard_and_port_matching() {
-        let a = al(&["exemplo.com", "*.api.exemplo.com", "loja.test:8443", "127.0.0.1:9000"], &[]);
-        assert!(a.permits_url("https://exemplo.com/").is_ok());
-        assert!(a.permits_url("HTTPS://EXEMPLO.COM/x?y=1#z").is_ok());
-        assert!(a.permits_url("http://exemplo.com:8080/").is_ok(), "no port in the rule = any port");
-        assert!(a.permits_url("https://v1.api.exemplo.com/").is_ok());
-        assert!(a.permits_url("https://a.b.api.exemplo.com/").is_ok());
+        let a = al(&["example.com", "*.api.example.com", "loja.test:8443", "127.0.0.1:9000"], &[]);
+        assert!(a.permits_url("https://example.com/").is_ok());
+        assert!(a.permits_url("HTTPS://EXAMPLE.COM/x?y=1#z").is_ok());
+        assert!(a.permits_url("http://example.com:8080/").is_ok(), "no port in the rule = any port");
+        assert!(a.permits_url("https://v1.api.example.com/").is_ok());
+        assert!(a.permits_url("https://a.b.api.example.com/").is_ok());
         // The wildcard matches neither the base domain nor similar suffixes.
-        assert!(a.permits_url("https://api.exemplo.com/").is_err());
-        assert!(a.permits_url("https://evilapi.exemplo.com/").is_err());
-        assert!(a.permits_url("https://xapi.exemplo.com.evil.net/").is_err());
-        assert!(a.permits_url("https://exemplo.com.evil.net/").is_err());
-        assert!(a.permits_url("https://evil-exemplo.com/").is_err());
+        assert!(a.permits_url("https://api.example.com/").is_err());
+        assert!(a.permits_url("https://evilapi.example.com/").is_err());
+        assert!(a.permits_url("https://xapi.example.com.evil.net/").is_err());
+        assert!(a.permits_url("https://example.com.evil.net/").is_err());
+        assert!(a.permits_url("https://evil-example.com/").is_err());
         // Explicit port in the rule.
         assert!(a.permits_url("https://loja.test:8443/").is_ok());
         assert_eq!(
@@ -867,39 +867,39 @@ mod tests {
 
     #[test]
     fn dangerous_url_shapes_are_denied() {
-        let a = al(&["exemplo.com", "127.0.0.1"], &[]);
+        let a = al(&["example.com", "127.0.0.1"], &[]);
         let cases = [
-            ("http://exemplo.com@evil.net/", "userinfo"),
-            ("http://evil.net@exemplo.com/", "userinfo"),
-            ("http://exemplo.com:80@evil.net/", "userinfo"),
-            ("http://exemplo.com\\@evil.net/", "backslash"),
-            ("http://exemplo.com\\.evil.net/", "backslash"),
-            ("http://exemplo.com%2eevil.net/", "% in host"),
-            ("http://exemplo.com./", "trailing dot"),
-            ("http://exemplo.com /", "space"),
-            ("http://exemplo.com\t.evil.net/", "control"),
-            ("http://exemplo.com\n/", "control"),
+            ("http://example.com@evil.net/", "userinfo"),
+            ("http://evil.net@example.com/", "userinfo"),
+            ("http://example.com:80@evil.net/", "userinfo"),
+            ("http://example.com\\@evil.net/", "backslash"),
+            ("http://example.com\\.evil.net/", "backslash"),
+            ("http://example.com%2eevil.net/", "% in host"),
+            ("http://example.com./", "trailing dot"),
+            ("http://example.com /", "space"),
+            ("http://example.com\t.evil.net/", "control"),
+            ("http://example.com\n/", "control"),
             ("http://exémplo.com/", "non-ASCII"),
             ("http://127.1/", "short IPv4"),
             ("http://2130706433/", "decimal IPv4"),
             ("http://0x7f.0.0.1/", "hex"),
             ("http://0177.0.0.1/", "octal"),
             ("http://127.0.0.1.evil.net/", "suffix"),
-            ("http:/exemplo.com/", "one slash"),
-            ("http:exemplo.com/", "no //"),
-            ("//exemplo.com/", "no scheme"),
-            ("exemplo.com/", "no scheme"),
+            ("http:/example.com/", "one slash"),
+            ("http:example.com/", "no //"),
+            ("//example.com/", "no scheme"),
+            ("example.com/", "no scheme"),
             ("http:///", "empty host"),
             ("http://:80/", "empty host with port"),
-            ("http://exemplo.com:/", "empty port"),
-            ("http://exemplo.com:99999/", "port too large"),
+            ("http://example.com:/", "empty port"),
+            ("http://example.com:99999/", "port too large"),
             ("javascript:alert(1)", "javascript"),
             ("data:text/html,<h1>x</h1>", "data"),
             ("file:///etc/passwd", "file"),
             ("chrome://settings", "chrome"),
-            ("blob:http://exemplo.com/abc", "blob"),
-            ("ftp://exemplo.com/", "ftp"),
-            ("view-source:http://exemplo.com/", "view-source"),
+            ("blob:http://example.com/abc", "blob"),
+            ("ftp://example.com/", "ftp"),
+            ("view-source:http://example.com/", "view-source"),
             ("about:srcdoc", "about not blank"),
             ("", "empty"),
         ];
@@ -907,37 +907,37 @@ mod tests {
             assert!(a.permits_url(url).is_err(), "{url} ({why}) should be refused");
         }
         assert!(a.permits_url("about:blank").is_ok());
-        assert_eq!(a.permits_url("http://exemplo.com@evil.net/").unwrap_err(), UrlDenied::Userinfo);
+        assert_eq!(a.permits_url("http://example.com@evil.net/").unwrap_err(), UrlDenied::Userinfo);
         assert!(matches!(a.permits_url("data:text/html,x").unwrap_err(), UrlDenied::Scheme(_)));
     }
 
     #[test]
     fn third_party_loads_subresources_but_is_not_a_navigation_target() {
-        let a = al(&["site.test"], &["cdn.exemplo.net", "*.captcha.exemplo.net"]);
-        assert!(a.host_allowed("cdn.exemplo.net"));
-        assert!(a.host_allowed("x.captcha.exemplo.net"));
-        assert!(!a.host_allowed("outro.net"));
+        let a = al(&["site.test"], &["cdn.example.net", "*.captcha.example.net"]);
+        assert!(a.host_allowed("cdn.example.net"));
+        assert!(a.host_allowed("x.captcha.example.net"));
+        assert!(!a.host_allowed("other.net"));
         assert!(a.permits_url("https://site.test/").is_ok());
         assert_eq!(
-            a.permits_url("https://cdn.exemplo.net/app.js").unwrap_err(),
-            UrlDenied::HostNotAllowed("cdn.exemplo.net".into())
+            a.permits_url("https://cdn.example.net/app.js").unwrap_err(),
+            UrlDenied::HostNotAllowed("cdn.example.net".into())
         );
         let rules = a.resolver_rules();
         assert_eq!(
             rules,
-            "MAP * ~NOTFOUND, EXCLUDE site.test, EXCLUDE cdn.exemplo.net, EXCLUDE *.captcha.exemplo.net"
+            "MAP * ~NOTFOUND, EXCLUDE site.test, EXCLUDE cdn.example.net, EXCLUDE *.captcha.example.net"
         );
     }
 
     #[test]
     fn resolver_rules_include_ipv4_literals_and_dedupe() {
-        let a = al(&["127.0.0.1:8080", "exemplo.com", "exemplo.com:8443"], &["exemplo.com"]);
+        let a = al(&["127.0.0.1:8080", "example.com", "example.com:8443"], &["example.com"]);
         // A literal IPv4 needs EXCLUDE: without it `MAP * ~NOTFOUND` denies it (measured).
         assert_eq!(
             a.resolver_rules(),
-            "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE exemplo.com"
+            "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE example.com"
         );
-        assert_eq!(a.allowed_hosts(), vec!["127.0.0.1:8080", "exemplo.com", "exemplo.com:8443"]);
+        assert_eq!(a.allowed_hosts(), vec!["127.0.0.1:8080", "example.com", "example.com:8443"]);
     }
 
     #[test]
@@ -956,8 +956,8 @@ mod tests {
             session.requests.push(r);
         };
         add("r1", "http://site.test/", None);
-        add("r2", "https://challenges.exemplo.net/api.js", Some("net::ERR_NAME_NOT_RESOLVED"));
-        add("r3", "https://challenges.exemplo.net/b.js", Some("net::ERR_NAME_NOT_RESOLVED"));
+        add("r2", "https://challenges.example.net/api.js", Some("net::ERR_NAME_NOT_RESOLVED"));
+        add("r3", "https://challenges.example.net/b.js", Some("net::ERR_NAME_NOT_RESOLVED"));
         add("r4", "http://10.1.2.3/x", Some("net::ERR_CONNECTION_REFUSED"));
         add("r5", "http://site.test:9999/", None);
         add("r6", "data:text/plain,hi", None);
@@ -966,7 +966,7 @@ mod tests {
         let a = al(&["site.test:80"], &[]);
         let report = a.report(&session);
         assert_eq!(report.blocked_hosts.len(), 1);
-        assert_eq!(report.blocked_hosts[0].host, "challenges.exemplo.net");
+        assert_eq!(report.blocked_hosts[0].host, "challenges.example.net");
         assert_eq!(report.blocked_hosts[0].requests, 2);
         let ids: Vec<&str> = report.violations.iter().map(|v| v.request_id.as_str()).collect();
         assert_eq!(ids, vec!["r4", "r5", "r8"]);

@@ -401,7 +401,7 @@ const COMPOUND_SUFFIXES: &[&str] = &[
     "org.au", "co.nz", "com.mx", "com.ar", "com.co", "com.pt", "com.es", "co.za",
 ];
 
-/// `app.exemplo.com.br` → `exemplo.com.br`; `exemplo.com` → `exemplo.com`;
+/// `app.example.com.br` → `example.com.br`; `example.com` → `example.com`;
 /// `localhost`/IP → `None` (the match is then exact).
 pub fn registrable_domain(host: &str) -> Option<String> {
     let host = host.trim_end_matches('.').to_ascii_lowercase();
@@ -1510,7 +1510,7 @@ mod tests {
     fn chromium_v10_value_decrypts_and_strips_the_sha256_prefix() {
         // Encrypt via the reverse path? No: we use a vector built here with a minimal
         // forward AES to prove the removal of the Chrome 130+ prefix.
-        let host = ".exemplo.com.br";
+        let host = ".example.com.br";
         let key = pbkdf2_sha1(b"peanuts", b"saltysalt", 1, 16);
         let hash = sha256(host.as_bytes());
         let mut plain = hash.to_vec();
@@ -1527,10 +1527,10 @@ mod tests {
 
     #[test]
     fn registrable_domain_handles_compound_suffixes() {
-        assert_eq!(registrable_domain("app.exemplo.com.br").as_deref(), Some("exemplo.com.br"));
-        assert_eq!(registrable_domain("exemplo.com.br").as_deref(), Some("exemplo.com.br"));
-        assert_eq!(registrable_domain("a.b.exemplo.co.uk").as_deref(), Some("exemplo.co.uk"));
-        assert_eq!(registrable_domain("sub.exemplo.com").as_deref(), Some("exemplo.com"));
+        assert_eq!(registrable_domain("app.example.com.br").as_deref(), Some("example.com.br"));
+        assert_eq!(registrable_domain("example.com.br").as_deref(), Some("example.com.br"));
+        assert_eq!(registrable_domain("a.b.example.co.uk").as_deref(), Some("example.co.uk"));
+        assert_eq!(registrable_domain("sub.example.com").as_deref(), Some("example.com"));
         assert_eq!(registrable_domain("localhost"), None);
         assert_eq!(registrable_domain("127.0.0.1"), None);
         assert_eq!(registrable_domain("::1"), None);
@@ -1538,43 +1538,43 @@ mod tests {
 
     #[test]
     fn cookie_matching_includes_subdomains_of_the_same_site() {
-        assert!(cookie_matches_host(".exemplo.com.br", "app.exemplo.com.br"));
-        assert!(cookie_matches_host("exemplo.com.br", "app.exemplo.com.br"));
-        assert!(cookie_matches_host("login.exemplo.com.br", "app.exemplo.com.br"));
-        assert!(cookie_matches_host(".exemplo.com.br", "exemplo.com.br"));
-        assert!(!cookie_matches_host(".outro.com.br", "app.exemplo.com.br"));
-        assert!(!cookie_matches_host("outro.com", "app.exemplo.com.br"));
+        assert!(cookie_matches_host(".example.com.br", "app.example.com.br"));
+        assert!(cookie_matches_host("example.com.br", "app.example.com.br"));
+        assert!(cookie_matches_host("login.example.com.br", "app.example.com.br"));
+        assert!(cookie_matches_host(".example.com.br", "example.com.br"));
+        assert!(!cookie_matches_host(".other.com.br", "app.example.com.br"));
+        assert!(!cookie_matches_host("other.com", "app.example.com.br"));
         assert!(cookie_matches_host("localhost", "localhost"));
         assert!(!cookie_matches_host("127.0.0.1", "127.0.0.2"));
     }
 
     #[test]
     fn url_host_strips_user_port_and_brackets() {
-        assert_eq!(url_host("https://app.exemplo.com.br/painel?x=1").as_deref(), Some("app.exemplo.com.br"));
-        assert_eq!(url_host("https://user:pass@Exemplo.COM:8443/").as_deref(), Some("exemplo.com"));
+        assert_eq!(url_host("https://app.example.com.br/painel?x=1").as_deref(), Some("app.example.com.br"));
+        assert_eq!(url_host("https://user:pass@Example.COM:8443/").as_deref(), Some("example.com"));
         assert_eq!(url_host("http://[::1]:8781/x").as_deref(), Some("::1"));
         assert_eq!(url_host("about:blank"), None);
     }
 
     #[test]
     fn host_candidates_cover_the_site_and_its_dot_form() {
-        let mut got = host_candidates("app.exemplo.com.br");
+        let mut got = host_candidates("app.example.com.br");
         got.sort();
         assert_eq!(
             got,
             vec![
-                ".app.exemplo.com.br",
-                ".exemplo.com.br",
-                "app.exemplo.com.br",
-                "exemplo.com.br",
+                ".app.example.com.br",
+                ".example.com.br",
+                "app.example.com.br",
+                "example.com.br",
             ]
         );
     }
 
     #[test]
     fn safari_binarycookies_parses_a_synthetic_file() {
-        // One page, one cookie: "sid=abc" for ".exemplo.com.br", secure.
-        let domain = b".exemplo.com.br\0";
+        // One page, one cookie: "sid=abc" for ".example.com.br", secure.
+        let domain = b".example.com.br\0";
         let name = b"sid\0";
         let path = b"/\0";
         let value = b"abc\0";
@@ -1610,7 +1610,7 @@ mod tests {
         let cookie = &cookies[0];
         assert_eq!(cookie.name, "sid");
         assert_eq!(cookie.value, "abc");
-        assert_eq!(cookie.domain, ".exemplo.com.br");
+        assert_eq!(cookie.domain, ".example.com.br");
         assert!(cookie.secure);
         assert_eq!(cookie.expires, 1_700_000_000);
     }
@@ -1621,7 +1621,7 @@ mod tests {
             ImportedCookie {
                 name: "a".into(),
                 value: "1".into(),
-                domain: ".exemplo.com.br".into(),
+                domain: ".example.com.br".into(),
                 path: "/".into(),
                 secure: true,
                 http_only: true,
@@ -1631,7 +1631,7 @@ mod tests {
             ImportedCookie {
                 name: "b".into(),
                 value: "2".into(),
-                domain: "exemplo.com.br".into(),
+                domain: "example.com.br".into(),
                 path: "/x".into(),
                 secure: false,
                 http_only: false,
@@ -1674,15 +1674,15 @@ mod tests {
              CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);\
              INSERT INTO meta VALUES('version','24');\
              CREATE TABLE cookies(host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, samesite INTEGER, is_persistent INTEGER);\
-             INSERT INTO cookies VALUES('.exemplo.com.br','sid','segredo','', '/',0,1,1,1,1);\
-             INSERT INTO cookies VALUES('.outro.com.br','fora','x','', '/',0,0,0,-1,1);\
-             INSERT INTO cookies VALUES('.exemplo.com.br','velho','x','', '/',1,0,0,-1,1);";
+             INSERT INTO cookies VALUES('.example.com.br','sid','segredo','', '/',0,1,1,1,1);\
+             INSERT INTO cookies VALUES('.other.com.br','outside','x','', '/',0,0,0,-1,1);\
+             INSERT INTO cookies VALUES('.example.com.br','velho','x','', '/',1,0,0,-1,1);";
         let status = Command::new("sqlite3").arg(&chromium_db).arg(sql).output().unwrap();
         assert!(status.status.success(), "{}", String::from_utf8_lossy(&status.stderr));
         let firefox_db = dir.join("cookies.sqlite");
         let sql = "CREATE TABLE moz_cookies(host TEXT, name TEXT, value TEXT, path TEXT, expiry INTEGER, isSecure INTEGER, isHttpOnly INTEGER, sameSite INTEGER);\
-                   INSERT INTO moz_cookies VALUES('.exemplo.com.br','ff','valor','/',4102444800,1,0,2);\
-                   INSERT INTO moz_cookies VALUES('.outro.com.br','ff-fora','x','/',4102444800,0,0,0);";
+                   INSERT INTO moz_cookies VALUES('.example.com.br','ff','valor','/',4102444800,1,0,2);\
+                   INSERT INTO moz_cookies VALUES('.other.com.br','ff-outside','x','/',4102444800,0,0,0);";
         let status = Command::new("sqlite3").arg(&firefox_db).arg(sql).output().unwrap();
         assert!(status.status.success(), "{}", String::from_utf8_lossy(&status.stderr));
 
@@ -1697,7 +1697,7 @@ mod tests {
         let mut skipped = 0;
         let mut notes = Vec::new();
         let copy = copy_cookie_db(&source.db_path).unwrap();
-        let mut cookies = load_chromium(&source, &copy.db, "app.exemplo.com.br", &mut skipped, &mut notes).unwrap();
+        let mut cookies = load_chromium(&source, &copy.db, "app.example.com.br", &mut skipped, &mut notes).unwrap();
         assert_eq!(cookies.len(), 2, "sid and the expired one; the one from another site does not get in");
         assert_eq!(cookies[0].name, "sid");
         assert_eq!(cookies[0].value, "segredo");
@@ -1721,7 +1721,7 @@ mod tests {
             db_path: firefox_db,
         };
         let copy = copy_cookie_db(&fsource.db_path).unwrap();
-        let cookies = load_firefox(&copy.db, "app.exemplo.com.br", &mut skipped, &mut notes).unwrap();
+        let cookies = load_firefox(&copy.db, "app.example.com.br", &mut skipped, &mut notes).unwrap();
         assert_eq!(cookies.len(), 1);
         assert_eq!(cookies[0].name, "ff");
         assert_eq!(cookies[0].value, "valor");

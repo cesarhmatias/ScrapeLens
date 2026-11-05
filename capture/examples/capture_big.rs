@@ -70,7 +70,7 @@ fn serve(stream: TcpStream, hits: Arc<AtomicUsize>, n: usize) {
             let extra = format!("{cookie}X-Request-Index: {i}\r\nCache-Control: no-store\r\n");
             ("200 OK", "application/json", extra, body_for(i))
         } else {
-            ("404 Not Found", "text/plain", String::new(), "nao".to_string())
+            ("404 Not Found", "text/plain", String::new(), "no".to_string())
         };
         let head = format!(
             "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\n{extra}Connection: keep-alive\r\n\r\n",

@@ -384,9 +384,9 @@ mod tests {
         let victim = base.join("VICTIM.txt");
         std::fs::write(&victim, "ORIGINAL\n").unwrap();
         symlink(&victim, base.join("netlog.json")).unwrap();
-        write_private_at(&open(&base), "netlog.json", b"novo").unwrap();
+        write_private_at(&open(&base), "netlog.json", b"new").unwrap();
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n");
-        assert_eq!(std::fs::read(base.join("netlog.json")).unwrap(), b"novo");
+        assert_eq!(std::fs::read(base.join("netlog.json")).unwrap(), b"new");
         assert!(names(&base).iter().all(|n| !n.contains(".tmp-")));
         let _ = std::fs::remove_dir_all(base);
     }
@@ -399,16 +399,16 @@ mod tests {
         std::fs::create_dir(&dst).unwrap();
         let victim = base.join("VICTIM.txt");
         std::fs::write(&victim, "ORIGINAL\n").unwrap();
-        std::fs::write(src.join("session.json"), "novo").unwrap();
-        std::fs::write(src.join("netlog.json"), "novo-netlog").unwrap();
+        std::fs::write(src.join("session.json"), "new").unwrap();
+        std::fs::write(src.join("netlog.json"), "new-netlog").unwrap();
         symlink(&victim, dst.join("session.json")).unwrap();
         std::fs::write(dst.join("netlog.json"), "velho").unwrap();
         let (s, d) = (open(&src), open(&dst));
         assert_eq!(move_entry(&s, &d, "session.json").unwrap(), ["session.json"]);
         assert!(move_entry(&s, &d, "netlog.json").unwrap().is_empty());
         assert!(move_entry(&s, &d, "inexistente").unwrap().is_empty());
-        assert_eq!(std::fs::read(dst.join("session.json")).unwrap(), b"novo");
-        assert_eq!(std::fs::read(dst.join("netlog.json")).unwrap(), b"novo-netlog");
+        assert_eq!(std::fs::read(dst.join("session.json")).unwrap(), b"new");
+        assert_eq!(std::fs::read(dst.join("netlog.json")).unwrap(), b"new-netlog");
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n");
         assert!(!std::fs::symlink_metadata(dst.join("session.json")).unwrap().file_type().is_symlink());
         assert_eq!(names(&src), Vec::<String>::new());
@@ -449,7 +449,7 @@ mod tests {
         let (src, dst) = (base.join("stage"), base.join("session"));
         std::fs::create_dir(&src).unwrap();
         std::fs::create_dir(&dst).unwrap();
-        std::fs::write(src.join("session.json"), "novo").unwrap();
+        std::fs::write(src.join("session.json"), "new").unwrap();
         let d = open(&dst);
         let out = base.join("OUT");
         std::fs::create_dir(&out).unwrap();
@@ -457,7 +457,7 @@ mod tests {
         symlink(&out, &dst).unwrap();
         move_entry(&open(&src), &d, "session.json").unwrap();
         assert_eq!(names(&out), Vec::<String>::new());
-        assert_eq!(std::fs::read(base.join("session.moved/session.json")).unwrap(), b"novo");
+        assert_eq!(std::fs::read(base.join("session.moved/session.json")).unwrap(), b"new");
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -467,7 +467,7 @@ mod tests {
         let (src, dst) = (base.join("stage"), base.join("session"));
         std::fs::create_dir(&src).unwrap();
         std::fs::create_dir_all(dst.join("session.json")).unwrap();
-        std::fs::write(src.join("session.json"), "novo").unwrap();
+        std::fs::write(src.join("session.json"), "new").unwrap();
         assert!(move_entry(&open(&src), &open(&dst), "session.json").is_err());
         assert!(dst.join("session.json").is_dir(), "the destination folder is not deleted");
         let _ = std::fs::remove_dir_all(base);

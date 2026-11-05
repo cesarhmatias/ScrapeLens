@@ -1,15 +1,15 @@
-//! Captura ao vivo: Chrome externo com perfil dedicado + CDP + NetLog.
+//! Live capture: external Chrome with a dedicated profile + CDP + NetLog.
 //!
 //! Regras:
-//! - perfil temporário próprio (nunca o perfil pessoal), removido no fim;
-//! - o nosso cliente fala com o Chrome por **pipe** (`--remote-debugging-pipe`,
-//!   nenhuma porta aberta) por padrão; só com `expose_cdp` (agente externo) o
-//!   Chrome abre a porta de depuração, **apenas em 127.0.0.1**, porta efêmera
-//!   (ver `docs/16b-mcp-navegador.md` §2.5 para o risco);
-//! - encerra somente o processo que este módulo iniciou;
-//! - o NetLog é gravado no diretório da sessão e importado pelo core;
-//! - nenhuma rede além da depuração local; nenhum certificado é instalado;
-//! - nada é gravado seguindo symlink (`O_NOFOLLOW` + `create_new`).
+//! - its own temporary profile (never the personal profile), removed at the end;
+//! - our client talks to Chrome over a **pipe** (`--remote-debugging-pipe`,
+//!   no open port) by default; only with `expose_cdp` (external agent) does
+//!   Chrome open the debugging port, **only on 127.0.0.1**, on an ephemeral port
+//!   (see `docs/16b-mcp-navegador.md` §2.5 for the risk);
+//! - it only terminates the process this module started;
+//! - the NetLog is written to the session directory and imported by the core;
+//! - no network beyond local debugging; no certificate is installed;
+//! - nothing is written by following a symlink (`O_NOFOLLOW` + `create_new`).
 
 use std::collections::HashMap;
 use std::io::{ErrorKind, Write};
@@ -53,8 +53,8 @@ pub struct CaptureStatus {
     pub last_error: Option<String>,
 }
 
-/// Resultado de uma captura encerrada: a sessão importada (JSON do
-/// `session.json`), onde ela ficou em disco e o aviso para a UI.
+/// Result of a finished capture: the imported session (JSON of the
+/// `session.json`), where it was left on disk, and the notice for the UI.
 #[derive(Debug, Clone)]
 pub struct CaptureOutcome {
     pub session: Value,
@@ -62,27 +62,27 @@ pub struct CaptureOutcome {
     pub notice: String,
 }
 
-/// Como o Chrome da captura COMUM (a do App) enxerga a rede.
+/// How the Chrome of the COMMON capture (the App's) sees the network.
 ///
-/// A captura controlada do MCP (`browser::BrowserCapture`) não usa isto: ela tem a
-/// própria allowlist (`--host-resolver-rules` só com os hosts aprovados).
+/// The MCP's controlled capture (`browser::BrowserCapture`) does not use this: it has
+/// its own allowlist (`--host-resolver-rules` only with the approved hosts).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NetworkMode {
-    /// Rede normal (padrão): o Chrome resolve e acessa qualquer site. Nenhum
-    /// `--host-resolver-rules` e nenhum `--allow-insecure-localhost`.
+    /// Normal network (default): Chrome resolves and reaches any site. It has no
+    /// `--host-resolver-rules` and no `--allow-insecure-localhost`.
     #[default]
     Open,
-    /// SÓ loopback (`127.0.0.1` e `localhost`): qualquer outro nome dá
-    /// `ERR_NAME_NOT_RESOLVED`. Para testes e experimentos de laboratório, onde
-    /// nada pode sair da máquina; também aceita certificado de `localhost`
-    /// inválido (`--allow-insecure-localhost`).
+    /// LOOPBACK ONLY (`127.0.0.1` and `localhost`): any other name gives
+    /// `ERR_NAME_NOT_RESOLVED`. For tests and lab experiments, where
+    /// nothing may leave the machine; it also accepts a `localhost` certificate
+    /// that is invalid (`--allow-insecure-localhost`).
     LoopbackOnly,
 }
 
 impl NetworkMode {
-    /// `SCRAPELENS_CAPTURE_NETWORK=loopback` liga o modo só-loopback (suítes de
-    /// teste que não podem tocar a rede); qualquer outro valor, ou a variável
-    /// ausente, é a rede aberta.
+    /// `SCRAPELENS_CAPTURE_NETWORK=loopback` turns on loopback-only mode (test suites
+    /// that must not touch the network); any other value, or the variable
+    /// unset, means open network.
     pub fn from_env() -> NetworkMode {
         Self::parse(std::env::var("SCRAPELENS_CAPTURE_NETWORK").ok().as_deref())
     }
@@ -102,13 +102,13 @@ pub struct CaptureConfig {
     pub start_url: String,
     pub headless: bool,
     pub ignore_cert: bool,
-    /// Rede aberta (padrão) ou só loopback (testes).
+    /// Open network (default) or loopback only (tests).
     pub network: NetworkMode,
-    /// Fonte de cookies de um navegador instalado (`BrowserCookieSource.id`).
-    /// `None` = a captura começa sem cookies importados.
+    /// Source of cookies from an installed browser (`BrowserCookieSource.id`).
+    /// `None` = the capture starts without imported cookies.
     pub cookie_source: Option<String>,
-    /// Cookies já resolvidos pelo chamador. Quando não vazio, vence
-    /// `cookie_source` (útil para testes e para o MCP).
+    /// Cookies already resolved by the caller. When not empty, it takes precedence over
+    /// `cookie_source` (useful for tests and for the MCP).
     pub initial_cookies: Vec<ImportedCookie>,
 }
 
@@ -119,35 +119,35 @@ pub fn run(
     ready: Sender<Result<(), String>>,
 ) -> Result<CaptureOutcome, String> {
     let opts = RunOptions {
-        // Pipe por padrão (nenhuma porta aberta); `SCRAPELENS_CDP_TRANSPORT=port`
-        // volta ao WebSocket. Medido igual em docs/16b §2.5.
+        // Pipe by default (no open port); `SCRAPELENS_CDP_TRANSPORT=port`
+        // goes back to WebSocket. Measured the same way in docs/16b §2.5.
         transport: CdpTransport::from_env(CdpTransport::Pipe),
         ..RunOptions::default()
     };
     run_with_options(config, status, stop, ready, &opts).map(|(outcome, _)| outcome)
 }
 
-/// Opções da captura controlada (`browser::BrowserCapture`). O padrão é a
-/// captura comum do App, sem alteração de comportamento.
+/// Options for the controlled capture (`browser::BrowserCapture`). The default is
+/// the App's common capture, with no change in behavior.
 #[derive(Default)]
 pub(crate) struct RunOptions {
-    /// Allowlist obrigatória no modo controlado: troca a regra fixa de
-    /// loopback do resolvedor pelas regras da lista.
+    /// Mandatory allowlist in controlled mode: it replaces the fixed
+    /// loopback rule of the resolver with the rules from the list.
     pub allowlist: Option<allowlist::Allowlist>,
-    /// Comandos (navegar) consumidos pelo laço de gravação.
+    /// Commands (navigate) consumed by the recording loop.
     pub control: Option<Receiver<browser::Control>>,
-    /// Preenchido antes de `ready`: endereço de depuração e versão.
+    /// Filled in before `ready`: debugging address and version.
     pub endpoint: Option<Arc<Mutex<Option<browser::Endpoint>>>>,
-    /// Só avisa `ready` (e só publica o endereço CDP) depois que o nosso
-    /// cliente está ligado no alvo inicial: `Network.enable` e
-    /// `Target.setAutoAttach` com ACK de sucesso e nada pendente nele. Assim um
-    /// cliente externo que receba o endereço não consegue agir antes de nós.
+    /// Only signals `ready` (and only publishes the CDP address) after our
+    /// client is attached to the initial target: `Network.enable` and
+    /// `Target.setAutoAttach` with a successful ACK and nothing pending on it. This way an
+    /// external client that receives the address cannot act before we do.
     pub require_initial_target_ready: bool,
-    /// Como o nosso cliente fala com o Chrome (porta ou pipe).
+    /// How our client talks to Chrome (port or pipe).
     pub transport: CdpTransport,
 }
 
-/// Dados do encerramento que o App não usa, mas o modo controlado devolve.
+/// Shutdown data that the App does not use, but the controlled mode returns.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RunReport {
     pub allowlist: Option<allowlist::AllowlistReport>,
@@ -185,9 +185,9 @@ fn run_inner(
     opts: &RunOptions,
 ) -> Result<(CaptureOutcome, RunReport), String> {
     eprintln!("capture transport: {:?}", opts.transport);
-    // Cookies de um navegador instalado entram ANTES de o Chrome subir: uma
-    // falha de leitura (Keychain negado, banco ausente) aborta a captura sem
-    // lançar navegador, e nada do perfil pessoal é tocado.
+    // Cookies from an installed browser are read BEFORE Chrome starts: a
+    // read failure (Keychain denied, database missing) aborts the capture without
+    // launching the browser, and nothing from the personal profile is touched.
     let mut imported_cookies = config.initial_cookies.clone();
     let mut cookie_source_label: Option<String> = None;
     let mut cookie_domain = String::new();
@@ -207,8 +207,8 @@ fn run_inner(
         cookie_domain = domain;
     }
     let cookie_suffix = match (&cookie_source_label, imported_cookies.len()) {
-        (Some(label), count) => format!(" · {count} cookie(s) importado(s) de {label}"),
-        (None, count) if count > 0 => format!(" · {count} cookie(s) importado(s)"),
+        (Some(label), count) => format!(" · {count} cookie(s) imported from {label}"),
+        (None, count) if count > 0 => format!(" · {count} cookie(s) imported"),
         _ => String::new(),
     };
     let profile = private_base_dir().join(format!(
@@ -216,43 +216,43 @@ fn run_inner(
         std::process::id(),
         unix_nanos()
     ));
-    // O perfil é criado por nós, 0700 desde a criação, e conferido depois de
-    // aberto. Fica fora da pasta da sessão de propósito: o Chrome grava o NetLog
-    // aqui dentro (R3), nunca num caminho que outro processo possa trocar.
-    create_private_dir_new(&profile).map_err(|error| format!("perfil temporário: {error}"))?;
-    // A pasta da sessão não pode ser um symlink: tudo que gravamos nela iria
-    // para o alvo do link.
+    // The profile is created by us, 0700 from creation, and checked after
+    // opening. It is kept outside the session directory on purpose: Chrome writes the NetLog
+    // in here (R3), never through a path another process could swap.
+    create_private_dir_new(&profile).map_err(|error| format!("temporary profile: {error}"))?;
+    // The session directory must not be a symlink: everything we write there would
+    // go to the link's target.
     if std::fs::symlink_metadata(&config.session_dir)
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(false)
     {
         let _ = std::fs::remove_dir_all(&profile);
         return Err(format!(
-            "diretório da sessão é um symlink e foi recusado: {}",
+            "session directory is a symlink and was refused: {}",
             config.session_dir.display()
         ));
     }
     store::ensure_private_dir(&config.session_dir)
-        .map_err(|error| format!("diretório da sessão: {error}"))?;
-    // Conferido depois de aberto (sem seguir link): é um diretório nosso, 0700.
-    // A identidade (dev+inode) é reconferida no `stop` (A4-B5).
+        .map_err(|error| format!("session directory: {error}"))?;
+    // Checked after opening (without following links): it is our own directory, 0700.
+    // The identity (dev+inode) is rechecked in `stop` (A4-B5).
     let (session_handle, session_identity) = match verify_private_dir_handle(&config.session_dir) {
         Ok(found) => found,
         Err(error) => {
             let _ = std::fs::remove_dir_all(&profile);
-            return Err(format!("diretório da sessão: {error}"));
+            return Err(format!("session directory: {error}"));
         }
     };
-    // NetLog: o Chrome o cria e escreve DENTRO do perfil privado (0700, nosso,
-    // fresco). Só depois do encerramento ele é lido sem seguir link e copiado
-    // para a pasta da sessão por `write_private` (rename atômico).
+    // NetLog: Chrome creates it and writes it INSIDE the private profile (0700, ours,
+    // fresh). Only after shutdown is it read without following links and copied
+    // into the session directory by `write_private` (atomic rename).
     let netlog_path = profile.join("netlog.json");
-    // Os corpos nascem relativos ao descritor da pasta (A7-B7): sem caminho, nada
-    // vai para a pasta do atacante se o nome for trocado depois da verificação.
+    // The bodies are created relative to the directory's descriptor (A7-B7): with no path, nothing
+    // goes to the attacker's directory if the name is swapped after the check.
     let bodies_file = fdio::create_replacing_at(&session_handle, "cdp-bodies.jsonl")
         .map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
-    // Só para o resgate (A5-B3): relê os corpos pelo descritor, mesmo que a
-    // pasta da sessão tenha sido trocada.
+    // Only for rescue (A5-B3): re-reads the bodies through the descriptor, even if
+    // the session directory has been swapped.
     let mut bodies_reader = bodies_file
         .try_clone()
         .map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
@@ -260,7 +260,7 @@ fn run_inner(
     let resolver_rules = opts.allowlist.as_ref().map(allowlist::Allowlist::resolver_rules);
     let mut pipe_ends = match opts.transport {
         CdpTransport::Pipe => Some(
-            transport::make_pipe_ends().map_err(|error| format!("pipe do CDP: {error}"))?,
+            transport::make_pipe_ends().map_err(|error| format!("CDP pipe: {error}"))?,
         ),
         CdpTransport::Port => None,
     };
@@ -272,8 +272,8 @@ fn run_inner(
         pipe_ends.is_some(),
     );
     let mut chrome = ChromeProcess::new(spawn_chrome(config, &launch_args, pipe_ends.as_ref())?);
-    // Marcador para limpar órfãos se este processo morrer por SIGKILL; o Drop
-    // o remove em qualquer saída normal (sucesso, erro ou panic).
+    // Marker to clean up orphans if this process dies by SIGKILL; the Drop
+    // removes it on any normal exit (success, error or panic).
     let marker = OrphanMarker::create(
         &default_state_root(),
         chrome.child_mut().id(),
@@ -293,9 +293,9 @@ fn run_inner(
         let _ = ready.send(Err(error.clone()));
         error
     };
-    // Porta: lê DevToolsActivePort e abre o WebSocket em 127.0.0.1. Pipe: o
-    // Chrome herdou os fds 3 e 4; fechamos aqui as pontas dele e falamos só por
-    // elas (nenhuma porta existe).
+    // Port: reads DevToolsActivePort and opens the WebSocket on 127.0.0.1. Pipe: Chrome
+    // inherited fds 3 and 4; we close its ends here and speak only through
+    // them (no port exists).
     let (mut socket, ws_url): (Transport, Option<String>) = match pipe_ends.take() {
         None => {
             let ws_url = match wait_for_devtools(chrome.child_mut(), &profile, Duration::from_secs(25)) {
@@ -345,7 +345,7 @@ fn run_inner(
     }
     if opts.require_initial_target_ready {
         if let Err(reason) = cdp.wait_initial_target_ready(&mut socket, Duration::from_secs(15)) {
-            let error = format!("o cliente de captura não ficou ligado na aba inicial: {reason}");
+            let error = format!("the capture client did not attach to the initial tab: {reason}");
             let _ = chrome.child_mut().kill();
             let _ = chrome.child_mut().wait();
             chrome.disarm();
@@ -355,7 +355,7 @@ fn run_inner(
         }
     }
     if let Some(endpoint) = &opts.endpoint {
-        // Versão do navegador e endereço de depuração, antes de avisar `ready`.
+        // Browser version and debugging address, before signaling `ready`.
         let version = cdp
             .send(
                 &mut socket,
@@ -392,7 +392,7 @@ fn run_inner(
     }
     let _ = ready.send(Ok(()));
 
-    // Loop de gravação: todo evento Network.* é preservado na ordem do Chrome.
+    // Recording loop: every Network.* event is preserved in Chrome's order.
     let started = Instant::now();
     loop {
         if matches!(stop.try_recv(), Ok(()) | Err(TryRecvError::Disconnected)) {
@@ -423,16 +423,16 @@ fn run_inner(
         }
     }
 
-    // Dá uma janela curta para os getResponseBody/getRequestPostData em voo
-    // voltarem antes de fechar; o que não voltar vira linha `unavailable`.
-    // Antes de fechar: dá uma janela curta para ACKs atrasados do setup e só
-    // então transforma o que continua sem resposta em aviso.
+    // Gives a short window for the getResponseBody/getRequestPostData requests in flight
+    // to return before closing; whatever does not return becomes an `unavailable` row.
+    // Before closing: gives a short window for late setup ACKs, and only then
+    // turns what is still unanswered into a warning.
     cdp.pump_until_setup_settled(&mut socket, Duration::from_millis(1500));
     cdp.finalize_pending_setups();
     cdp.drain_bodies(&mut socket, Duration::from_secs(3));
     cdp.finish_bodies();
 
-    // Encerra o Chrome de forma graciosa para o NetLog ser finalizado.
+    // Shut Chrome down gracefully so that the NetLog is finalized.
     let transport_closed = socket.abnormal_close_reason().map(str::to_string);
     let close_started = Instant::now();
     let close_result = cdp.send(
@@ -452,11 +452,11 @@ fn run_inner(
         transport_closed,
     };
     eprintln!("capture shutdown: {shutdown:?}");
-    // O Chrome já saiu: lê o NetLog do perfil privado (sem seguir link, só
-    // arquivo regular nosso) antes de apagar o perfil.
+    // Chrome has already exited: reads the NetLog from the private profile (without following links, only
+    // a regular file of ours) before deleting the profile.
     let netlog_raw = read_private_regular(&netlog_path).filter(|bytes| !bytes.is_empty());
-    // O perfil só é apagado quando a sessão foi gravada: se a pasta de destino
-    // não for mais confiável (A4-B5), os dados ficam aqui.
+    // The profile is only deleted once the session has been written: if the destination
+    // directory is no longer trustworthy (A4-B5), the data stays here.
     let mut profile_guard = ProfileCleanup {
         path: profile.clone(),
         keep: false,
@@ -467,38 +467,38 @@ fn run_inner(
         if recheck_session_dir(&config.session_dir, session_identity).is_ok() {
             let _ = fdio::write_private_at(&session_handle, "cdp-events.jsonl", &cdp_bytes);
         }
-        let error = "Nenhum evento CDP foi gravado. A sessão não foi criada; verifique se o Chrome permaneceu aberto durante a captura.".to_string();
+        let error = "No CDP event was recorded. The session was not created; check whether Chrome stayed open during the capture.".to_string();
         let _ = ready.send(Err(error.clone()));
         return Err(error);
     }
-    // Daqui em diante QUALQUER falha de gravação resgata os arquivos da captura
-    // (A5-B2) antes de o perfil ser apagado; o perfil só some quando a sessão foi
-    // gravada ou o resgate funcionou.
+    // From here on, ANY write failure rescues the capture files
+    // (A5-B2) before the profile is deleted; the profile only goes away once the session was
+    // written or the rescue worked.
     let finish = (|| -> Result<(CaptureOutcome, RunReport), String> {
     recheck_session_dir(&config.session_dir, session_identity).map_err(session_dir_changed)?;
-    // O CDP e os corpos já são evidência: ficam em disco antes de qualquer
-    // passo que possa falhar (um NetLog ruim nunca descarta a captura).
-    // Tudo relativo ao descritor da pasta aberto no início (A6-B5): se o nome
-    // for trocado, nada cai na pasta do atacante.
+    // The CDP and the bodies are already evidence: they are on disk before any
+    // step that could fail (a bad NetLog never discards the capture).
+    // Everything relative to the descriptor of the directory opened at the start (A6-B5): if the name
+    // is swapped, nothing lands in the attacker's directory.
     fdio::write_private_at(&session_handle, "cdp-events.jsonl", &cdp_bytes)
         .map_err(|error| format!("cdp-events.jsonl: {error}"))?;
 
     if let Some(raw) = &netlog_raw {
-        // Cópia fiel do que o Chrome gravou (o parseado/reparado vem depois).
+        // Faithful copy of what Chrome wrote (the parsed/repaired version comes later).
         if let Err(error) = fdio::write_private_at(&session_handle, "netlog.json", raw) {
             eprintln!("netlog.json: {error}");
         }
     }
     let (netlog, netlog_status) = prepare_netlog(netlog_raw.as_deref());
     if let NetlogStatus::Repaired { .. } | NetlogStatus::Unusable { .. } = &netlog_status {
-        // Preserva o arquivo original do Chrome ao lado da sessão.
+        // Keep Chrome's original file next to the session.
         if let Some(raw) = &netlog_raw {
             let _ = fdio::write_private_at(&session_handle, "netlog.original.json", raw);
         }
     }
 
-    // Sem o arquivo de corpos (falha de gravação), o core avisa uma vez por sessão.
-    // Relido pelo descritor (não pelo caminho): vale mesmo se a pasta foi trocada.
+    // Without the bodies file (write failure), the core warns once per session.
+    // Re-read through the descriptor (not the path): this holds even if the directory was swapped.
     let bodies_bytes = read_all_from(&mut bodies_reader);
     let mut imported = import_capture_labeled(
         &cdp_bytes,
@@ -507,22 +507,22 @@ fn run_inner(
         &["live-capture".to_string()],
         CorrelationOptions::default(),
     )
-    .map_err(|error| format!("O core não conseguiu importar a captura: {error}"))?;
+    .map_err(|error| format!("The core could not import the capture: {error}"))?;
     mark_incomplete(&mut imported.bundle.session, &netlog_status, &shutdown);
-    // Metadados da captura são do pipeline, não do parser: o core monta o
-    // documento a partir do CDP e não sabe que este fluxo também gravou NetLog.
-    // D7: `chromeArgs` registra os argumentos do lançamento (sem caminhos
-    // temporários), entre eles `--disable-blink-features=AutomationControlled`, e
-    // `notes` diz isso em texto, para quem lê a sessão saber o contexto.
+    // Capture metadata belongs to the pipeline, not the parser: the core builds the
+    // document from the CDP and does not know this flow also wrote a NetLog.
+    // D7: `chromeArgs` records the launch arguments (without temporary paths),
+    // including `--disable-blink-features=AutomationControlled`, and
+    // `notes` says so in text, so whoever reads the session knows the context.
     let recorded_args = recorded_chrome_args(&launch_args);
     let mut automation_note = format!(
-        "captura com o aviso de automação suprimido (--disable-blink-features={AUTOMATION_FEATURE}): navigator.webdriver === false"
+        "capture with the automation notice suppressed (--disable-blink-features={AUTOMATION_FEATURE}): navigator.webdriver === false"
     );
-    // Linux/arm64: o Google Chrome estável não tem build; o Chromium é aceito e fica
-    // registrado na sessão (docs/21-linux.md §3).
+    // Linux/arm64: stable Google Chrome has no build; Chromium is accepted and is
+    // recorded in the session (docs/21-linux.md §3).
     if chrome::BrowserKind::from_path(&config.chrome) == chrome::BrowserKind::Chromium {
         automation_note.push_str(
-            "; navegador: Chromium (alternativa ao Google Chrome estável, que não existe para este sistema/arquitetura)",
+            "; browser: Chromium (alternative to stable Google Chrome, which does not exist for this system/architecture)",
         );
     }
     match imported.bundle.session.session.capture.as_mut() {
@@ -546,8 +546,8 @@ fn run_inner(
             });
         }
     }
-    // Allowlist: o que o resolvedor negou e o que escapou dela vira aviso da
-    // sessão (visível para quem só lê a sessão) e relatório do `stop_capture`.
+    // Allowlist: what the resolver denied, and what escaped it, becomes a warning in the
+    // session (visible to whoever only reads the session) and in the `stop_capture` report.
     let allowlist_report = opts
         .allowlist
         .as_ref()
@@ -555,13 +555,13 @@ fn run_inner(
     let mut report_warnings: Vec<String> = Vec::new();
     if let Some(reason) = &shutdown.transport_closed {
         report_warnings.push(format!(
-            "cdp_transport_closed: {reason}: o canal do CDP fechou antes do pedido de parada; a captura está incompleta."
+            "cdp_transport_closed: {reason}: the CDP channel closed before the stop request; the capture is incomplete."
         ));
     }
     if let Some(report) = &allowlist_report {
         for blocked in &report.blocked_hosts {
             let message = format!(
-                "a página tentou carregar {} ({} requisição(ões)); bloqueado pela allowlist; a proteção ou o recurso pode estar escondido",
+                "the page tried to load {} ({} request(s)); blocked by the allowlist; the protection or the resource may be hidden",
                 blocked.host, blocked.requests
             );
             imported.bundle.session.add_warning(
@@ -571,9 +571,9 @@ fn run_inner(
             report_warnings.push(message);
         }
         for violation in &report.violations {
-            // `violation.url` já vem sem consulta, fragmento, `;params` e userinfo.
+            // `violation.url` already comes without query, fragment, `;params` or userinfo.
             let message = format!(
-                "requisição fora da allowlist: {} ({})",
+                "request outside the allowlist: {} ({})",
                 violation.url, violation.reason
             );
             imported.bundle.session.add_warning(
@@ -583,24 +583,24 @@ fn run_inner(
             report_warnings.push(message);
         }
     }
-    // A3-B3/A6-B5: a sessão é gravada num diretório de preparo NOSSO (dentro do
-    // perfil 0700) e movida para a pasta da sessão com `renameat` relativo ao
-    // descritor aberto no início: um symlink plantado no nome é substituído sem
-    // escrever no alvo, e a troca do nome da pasta não manda nada para fora.
+    // A3-B3/A6-B5: the session is written into a staging directory of OURS (inside the
+    // 0700 profile) and moved into the session directory with `renameat` relative to the
+    // descriptor opened at the start: a symlink planted under the name is replaced without
+    // writing to the target, and swapping the directory's name sends nothing outside.
     for name in write_session_fd(&mut imported.bundle, &session_handle, &profile)? {
         report_warnings.push(format!(
-            "{name}: havia um link simbólico no lugar do arquivo da sessão; o link foi substituído (o alvo não foi tocado) e o arquivo foi gravado normalmente."
+            "{name}: there was a symbolic link where the session file goes; the link was replaced (the target was not touched) and the file was written normally."
         ));
     }
-    // Depois de gravar, a pasta precisa continuar sendo a do início: se o nome
-    // foi trocado durante a gravação, a sessão ficou na pasta ORIGINAL (movida),
-    // não onde o chamador vai procurar. Não diga OK (A6-B5).
+    // After writing, the directory must still be the one from the start: if the name
+    // was swapped during the write, the session stayed in the ORIGINAL directory (moved),
+    // not where the caller will look. Do not say OK (A6-B5).
     if let Err(why) = recheck_session_dir(&config.session_dir, session_identity) {
         return Err(session_dir_changed_after_write(why, &session_handle));
     }
 
     let session_value = serde_json::to_value(&imported.bundle.session)
-        .map_err(|error| format!("Sessão inválida após importação: {error}"))?;
+        .map_err(|error| format!("Session invalid after import: {error}"))?;
     let requests = imported.report.source_events_used;
     let warnings = imported.report.warnings.len();
 
@@ -621,7 +621,7 @@ fn run_inner(
             session: session_value,
             session_dir: config.session_dir.clone(),
             notice: format!(
-                "Sessão capturada e importada: {} evento(s) CDP+NetLog usados, {} aviso(s).{}",
+                "Session captured and imported: {} CDP+NetLog event(s) used, {} warning(s).{}",
                 requests, warnings, cookie_suffix
             ),
         },
@@ -631,8 +631,8 @@ fn run_inner(
     match finish {
         Ok(done) => Ok(done),
         Err(message) => {
-            // Tira o `.tmp-*` que a gravação deixou, na pasta ORIGINAL (pelo
-            // descritor aberto no início), esteja ela ainda no lugar ou não.
+            // Remove the `.tmp-*` left by the write, in the ORIGINAL directory (through the
+            // descriptor opened at the start), whether or not it is still in place.
             remove_stale_tmp(&session_handle);
             Err(rescue_or_adopt(
                 &message,
@@ -647,12 +647,12 @@ fn run_inner(
     }
 }
 
-/// Feature do Blink desligada em toda captura (D7, `docs/01-decisoes.md`).
+/// Blink feature disabled in every capture (D7, `docs/01-decisoes.md`).
 pub const AUTOMATION_FEATURE: &str = "AutomationControlled";
 
-/// Garante UM só `--disable-blink-features=` com `features` combinadas às que já
-/// existiam (sem duplicar a flag nem os valores; a ordem original é mantida).
-/// Sem a flag, ela entra antes do último argumento (a URL).
+/// Ensures ONE single `--disable-blink-features=` with `features` combined with the ones
+/// that already existed (without duplicating the flag or the values; the original order is kept).
+/// Without the flag, it is added before the last argument (the URL).
 fn merge_blink_features(args: &mut Vec<String>, features: &[&str]) {
     const PREFIX: &str = "--disable-blink-features=";
     let mut merged: Vec<String> = Vec::new();
@@ -687,10 +687,10 @@ fn merge_blink_features(args: &mut Vec<String>, features: &[&str]) {
     }
 }
 
-/// Argumentos que ficam registrados no `session.json` (`capture.chromeArgs`): os
-/// mesmos do lançamento, sem os caminhos temporários (perfil e NetLog) e sem a
-/// URL inicial. Quem lê a sessão (o `site_profile`) sabe com que contexto ela foi
-/// capturada, inclusive que o aviso de automação foi suprimido.
+/// Arguments recorded in `session.json` (`capture.chromeArgs`): the same as the
+/// launch ones, without the temporary paths (profile and NetLog) and without the
+/// initial URL. Whoever reads the session (the `site_profile`) knows the context in which it was
+/// captured, including that the automation notice was suppressed.
 fn recorded_chrome_args(args: &[String]) -> Vec<String> {
     args.iter()
         .filter(|a| *a != "about:blank")
@@ -706,10 +706,10 @@ fn recorded_chrome_args(args: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Argumentos de linha de comando do Chrome da captura, sem executar nada
-/// (testável). `resolver_rules` é a allowlist da captura CONTROLADA; quando
-/// existe, vale no lugar do modo de rede e nenhum relaxamento de certificado é
-/// adicionado.
+/// Command-line arguments for the capture's Chrome, without running anything
+/// (testable). `resolver_rules` is the allowlist of the CONTROLLED capture; when
+/// it exists, it applies in place of the network mode, and no certificate relaxation is
+/// added.
 fn chrome_args(
     config: &CaptureConfig,
     profile: &Path,
@@ -744,26 +744,26 @@ fn chrome_args(
         "--disable-popup-blocking".to_string(),
         "about:blank".to_string(),
     ];
-    // D7: o aviso de automação é SEMPRE suprimido (`navigator.webdriver` volta a
-    // `false` mesmo com CDP), em qualquer modo e transporte.
+    // D7: the automation notice is ALWAYS suppressed (`navigator.webdriver` goes back to
+    // `false` even with CDP), in every mode and transport.
     merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
     if use_pipe {
-        // Sem porta nenhuma: o Chrome lê comandos no fd 3 e escreve no fd 4.
+        // No port at all: Chrome reads commands on fd 3 and writes them on fd 4.
         args.insert(args.len() - 1, "--remote-debugging-pipe".to_string());
     } else {
-        // Porta efêmera SÓ em 127.0.0.1. Sem `--remote-allow-origins`: clientes
-        // CDP (nós, Playwright, DevTools MCP) não mandam Origin; uma página web
-        // que tente o WebSocket (Origin presente) é recusada pelo Chrome.
+        // Ephemeral port ONLY on 127.0.0.1. Without `--remote-allow-origins`, CDP clients
+        // (us, Playwright, DevTools MCP) do not send an Origin; a web page
+        // that tries the WebSocket (Origin present) is refused by Chrome.
         args.insert(args.len() - 1, "--remote-debugging-port=0".to_string());
         args.insert(args.len() - 1, "--remote-debugging-address=127.0.0.1".to_string());
     }
     match (resolver_rules, config.network) {
-        // Captura controlada: só os hosts da allowlist resolvem; nenhum
-        // relaxamento de certificado.
+        // Controlled capture: only the allowlist hosts resolve; no
+        // certificate relaxation.
         (Some(rules), _) => args.insert(args.len() - 1, format!("--host-resolver-rules={rules}")),
-        // Captura comum do App: rede normal. Nada de regras de DNS.
+        // Common App capture: normal network. No DNS rules.
         (None, NetworkMode::Open) => {}
-        // Só para testes: nada além de loopback resolve.
+        // Tests only: nothing beyond loopback resolves.
         (None, NetworkMode::LoopbackOnly) => {
             args.insert(args.len() - 1, "--allow-insecure-localhost".to_string());
             args.insert(
@@ -796,15 +796,15 @@ fn spawn_chrome(
     {
         use std::os::fd::AsRawFd;
         use std::os::unix::process::CommandExt;
-        // Com pipe: o fd 3 (lê) e o 4 (escreve) são do CDP; sem pipe, nenhum.
+        // With pipe: fd 3 (read) and fd 4 (write) belong to the CDP; without pipe, none.
         let ends = pipe.map(|e| (e.child_read.as_raw_fd(), e.child_write.as_raw_fd()));
-        // SAFETY: entre o fork e o exec só chama `dup2`, `fcntl` e `getdtablesize`,
-        // todas async-signal-safe, sem alocar. Os fds de origem do pipe são >= 10,
-        // então não colidem com o 3 e o 4; `dup2` limpa o FD_CLOEXEC nos destinos.
-        // Todo outro fd >= 3 (R9) recebe FD_CLOEXEC e fecha no exec: nada que o
-        // lançador tenha herdado (log, socket, segredo) chega ao Chrome. Marcar
-        // em vez de fechar preserva o pipe interno que a std usa para relatar
-        // falha do exec.
+        // SAFETY: between fork and exec it only calls `dup2`, `fcntl` and `getdtablesize`,
+        // all async-signal-safe and without allocating. The pipe's source fds are >= 10,
+        // so they do not collide with 3 and 4; `dup2` clears FD_CLOEXEC on the targets.
+        // Every other fd >= 3 (R9) gets FD_CLOEXEC and is closed on exec: nothing that the
+        // launcher inherited (log, socket, secret) reaches Chrome. Marking instead of closing
+        // preserves the internal pipe that std uses to report
+        // an exec failure.
         unsafe {
             command.pre_exec(move || {
                 let first_other = match ends {
@@ -825,26 +825,26 @@ fn spawn_chrome(
         .spawn()
         .map_err(|error| {
             format!(
-                "Não foi possível abrir o Chrome em {}: {error}. Selecione o Chrome manualmente.",
+                "Could not open Chrome at {}: {error}. Select Chrome manually.",
                 config.chrome.display()
             )
         })
 }
 
-/// Teto da varredura de descritores no filho: cobre qualquer limite prático
-/// (`ulimit -n` padrão do macOS é 256) sem varrer milhões de números.
+/// Ceiling on the descriptor sweep in the child: covers any practical limit
+/// (the macOS default `ulimit -n` is 256) without sweeping millions of numbers.
 const MAX_FD_SWEEP: libc::c_int = 65_536;
 
-/// Marca FD_CLOEXEC em todo descritor aberto `>= first` (async-signal-safe;
-/// roda no filho entre o fork e o exec). Descritores acima de `MAX_FD_SWEEP`
-/// não são varridos: lacuna documentada em docs/16b §2.1.
+/// Marks FD_CLOEXEC on every open descriptor `>= first` (async-signal-safe;
+/// runs in the child between fork and exec). Descriptors above `MAX_FD_SWEEP`
+/// are not swept: a gap documented in docs/16b §2.1.
 fn mark_fds_cloexec(first: libc::c_int) {
-    // Linux 5.11+: `close_range(first, ~0, CLOSE_RANGE_CLOEXEC)` marca TODOS de uma vez
-    // (sem teto de varredura). Sem o syscall (kernel antigo, seccomp), cai no laço.
+    // Linux 5.11+: `close_range(first, ~0, CLOSE_RANGE_CLOEXEC)` marks ALL of them at once
+    // (no sweep ceiling). Without the syscall (old kernel, seccomp) it falls back to the loop.
     #[cfg(target_os = "linux")]
     {
         const CLOSE_RANGE_CLOEXEC: libc::c_uint = 4;
-        // SAFETY: syscall direto, async-signal-safe; só altera flags de descritores.
+        // SAFETY: direct syscall, async-signal-safe; it only changes descriptor flags.
         let rc = unsafe {
             libc::syscall(libc::SYS_close_range, first as libc::c_uint, libc::c_uint::MAX, CLOSE_RANGE_CLOEXEC)
         };
@@ -852,7 +852,7 @@ fn mark_fds_cloexec(first: libc::c_int) {
             return;
         }
     }
-    // SAFETY: `getdtablesize` e `fcntl` só leem/alteram flags de descritores.
+    // SAFETY: `getdtablesize` and `fcntl` only read or change descriptor flags.
     unsafe {
         let limit = libc::getdtablesize().clamp(first, MAX_FD_SWEEP);
         for fd in first..limit {
@@ -875,7 +875,7 @@ fn wait_for_devtools(
         if let Ok(status) = child.try_wait() {
             if status.is_some() {
                 return Err(
-                    "O Chrome encerrou antes de abrir a depuração. Verifique se há outra instância usando o perfil ou selecione outro Chrome.".to_string(),
+                    "Chrome exited before opening debugging. Check whether another instance is using the profile, or select another Chrome.".to_string(),
                 );
             }
         }
@@ -893,16 +893,16 @@ fn wait_for_devtools(
         thread::sleep(Duration::from_millis(120));
     }
     Err(
-        "O Chrome não expôs a depuração em 25 s (DevToolsActivePort ausente). Nada foi capturado."
+        "Chrome did not expose debugging within 25 s (DevToolsActivePort missing). Nothing was captured."
             .to_string(),
     )
 }
 
 #[derive(Debug, Clone)]
 enum ChromeExit {
-    /// O processo saiu sozinho depois de `Browser.close`.
+    /// The process exited on its own after `Browser.close`.
     Graceful(#[allow(dead_code)] Option<i32>),
-    /// Estourou o prazo e foi morto por este módulo (NetLog pode ficar truncado).
+    /// Exceeded the deadline and was killed by this module (the NetLog may be truncated).
     Killed,
     Unknown,
 }
@@ -912,12 +912,12 @@ struct ShutdownReport {
     browser_close: Result<(), String>,
     exit: ChromeExit,
     waited_ms: u64,
-    /// O transporte do CDP fechou por um motivo anormal (ex.: `frame_too_large`):
-    /// a captura acabou antes do pedido de parada e a sessão sai incompleta.
+    /// The CDP transport closed for an abnormal reason (e.g. `frame_too_large`):
+    /// the capture ended before the stop request, and the session is incomplete.
     transport_closed: Option<String>,
 }
 
-/// Rede de segurança: só mata o Chrome se `run_inner` sair sem `disarm` (erro/panic).
+/// Safety net: only kills Chrome if `run_inner` exits without `disarm` (error/panic).
 struct ChromeProcess(Option<Child>);
 
 impl ChromeProcess {
@@ -928,7 +928,7 @@ impl ChromeProcess {
     fn child_mut(&mut self) -> &mut Child {
         self.0
             .as_mut()
-            .expect("ChromeProcess já liberado após encerramento gracioso")
+            .expect("ChromeProcess already released after graceful shutdown")
     }
 
     fn disarm(&mut self) {
@@ -946,18 +946,18 @@ impl Drop for ChromeProcess {
 }
 
 // ---------------------------------------------------------------------------
-// Órfãos: Chrome e perfil temporário deixados por um SIGKILL do app.
+// Orphans: Chrome and the temporary profile left behind by an app SIGKILL.
 // ---------------------------------------------------------------------------
 
 const MARKER_PREFIX: &str = "capture-";
 const PROFILE_PREFIX: &str = "scrapelens-chrome-";
 
-/// Base PRIVADA ao usuário para o perfil temporário, o NetLog e o state root.
-/// - macOS: o `temp_dir()` (`$TMPDIR` é um diretório por usuário, 0700).
-/// - Linux: `$TMPDIR`, se o usuário o definiu; senão `$XDG_RUNTIME_DIR` (por usuário,
-///   tmpfs, 0700), se existir de verdade e for do usuário com modo 0700; senão
-///   `/tmp` (compartilhado: lá os nomes levam o uid e tudo é conferido depois de
-///   criado, ver [`default_state_root`] e `create_private_dir_new`).
+/// PRIVATE, per-user base for the temporary profile, the NetLog and the state root.
+/// - macOS: `temp_dir()` (`$TMPDIR` is a per-user directory, 0700).
+/// - Linux: `$TMPDIR` if the user set it; otherwise `$XDG_RUNTIME_DIR` (per user,
+///   tmpfs, 0700), if it really exists and belongs to the user with mode 0700; otherwise
+///   `/tmp` (shared: names there carry the uid and everything is checked after
+///   creation, see [`default_state_root`] and `create_private_dir_new`).
 pub fn private_base_dir() -> PathBuf {
     #[cfg(target_os = "linux")]
     {
@@ -971,8 +971,8 @@ pub fn private_base_dir() -> PathBuf {
     std::env::temp_dir()
 }
 
-/// Escolha pura (testável sem mexer no ambiente): `TMPDIR` definido e não vazio vence;
-/// senão o `XDG_RUNTIME_DIR` válido; senão o `fallback` (`temp_dir()`).
+/// Pure choice (testable without touching the environment): a `TMPDIR` that is set and non-empty wins;
+/// otherwise the valid `XDG_RUNTIME_DIR`; otherwise the `fallback` (`temp_dir()`).
 #[cfg(target_os = "linux")]
 fn pick_base_dir(
     tmpdir: Option<std::ffi::OsString>,
@@ -985,8 +985,8 @@ fn pick_base_dir(
     xdg.and_then(|v| valid_runtime_dir(PathBuf::from(v))).unwrap_or(fallback)
 }
 
-/// `dir` se for um diretório real (não symlink), absoluto, do usuário atual e sem
-/// acesso para grupo/outros (o `XDG_RUNTIME_DIR` correto é 0700).
+/// `dir` if it is a real directory (not a symlink), absolute, owned by the current user, and with no
+/// group/other access (the correct `XDG_RUNTIME_DIR` is 0700).
 #[cfg(target_os = "linux")]
 fn valid_runtime_dir(dir: PathBuf) -> Option<PathBuf> {
     use std::os::unix::fs::MetadataExt;
@@ -994,23 +994,23 @@ fn valid_runtime_dir(dir: PathBuf) -> Option<PathBuf> {
         return None;
     }
     let meta = std::fs::symlink_metadata(&dir).ok()?;
-    // SAFETY: `geteuid` não tem pré-condições.
+    // SAFETY: `geteuid` has no preconditions.
     let euid = unsafe { libc::geteuid() };
     (meta.is_dir() && meta.uid() == euid && meta.mode() & 0o077 == 0).then_some(dir)
 }
 
-/// Raiz de estado dos marcadores de captura (por usuário). O App chama
-/// `cleanup_orphans(&default_state_root())`. No Linux, quando a base é o `/tmp`
-/// compartilhado, o nome leva o uid (`scrapelens-capture-state-<uid>`) para dois
-/// usuários não disputarem a mesma pasta; sob `$XDG_RUNTIME_DIR` ou no macOS o nome
-/// é `scrapelens-capture-state`.
+/// Root of the capture markers' state (per user). The App calls
+/// `cleanup_orphans(&default_state_root())`. On Linux, when the base is the shared `/tmp`,
+/// the name carries the uid (`scrapelens-capture-state-<uid>`) so that two
+/// users do not contend for the same directory; under `$XDG_RUNTIME_DIR` or on macOS the name
+/// is `scrapelens-capture-state`.
 pub fn default_state_root() -> PathBuf {
     state_root_in(&private_base_dir())
 }
 
-/// Nome da raiz de estado dentro de `base`. Linux: sob um `XDG_RUNTIME_DIR` válido
-/// (por usuário) é `scrapelens-capture-state`; em qualquer outra base (por exemplo
-/// o `/tmp` compartilhado) leva o uid. macOS: sempre `scrapelens-capture-state`.
+/// Name of the state root inside `base`. Linux: under a valid `XDG_RUNTIME_DIR`
+/// (per user) it is `scrapelens-capture-state`; in any other base (for example
+/// the shared `/tmp`) it carries the uid. macOS: always `scrapelens-capture-state`.
 fn state_root_in(base: &Path) -> PathBuf {
     #[cfg(target_os = "linux")]
     {
@@ -1018,7 +1018,7 @@ fn state_root_in(base: &Path) -> PathBuf {
             .and_then(|v| valid_runtime_dir(PathBuf::from(v)))
             .is_some_and(|x| x == base);
         if !per_user {
-            // SAFETY: `geteuid` não tem pré-condições.
+            // SAFETY: `geteuid` has no preconditions.
             let uid = unsafe { libc::geteuid() };
             return base.join(format!("scrapelens-capture-state-{uid}"));
         }
@@ -1026,16 +1026,16 @@ fn state_root_in(base: &Path) -> PathBuf {
     base.join("scrapelens-capture-state")
 }
 
-/// Cria (se faltar) a raiz de estado e confere, já aberta, que é um diretório do
-/// usuário, 0700 e não um link (importa em `/tmp`, onde outro usuário pode ter
-/// criado o nome antes).
+/// Creates (if missing) the state root and checks, already open, that it is a directory of the
+/// user, 0700 and not a link (this matters on `/tmp`, where another user may have
+/// created the name first).
 fn ensure_private_state_root(root: &Path) -> std::io::Result<()> {
-    // Um symlink no lugar da raiz é recusado ANTES de qualquer chmod (o `set_mode` do
-    // core seguiria o link e mudaria o modo do alvo).
+    // A symlink in place of the root is refused BEFORE any chmod (the `set_mode` of the
+    // core would follow the link and change the target's mode).
     if std::fs::symlink_metadata(root).is_ok_and(|m| m.file_type().is_symlink()) {
         return Err(std::io::Error::new(
             ErrorKind::PermissionDenied,
-            format!("{} é um link simbólico; recusado", root.display()),
+            format!("{} is a symbolic link; refused", root.display()),
         ));
     }
     store::ensure_private_dir(root).map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -1048,7 +1048,7 @@ fn port_from_ws_url(url: &str) -> Option<u16> {
     host_port.rsplit(':').next()?.parse().ok()
 }
 
-/// Marcador 0600 com o que é preciso para limpar uma captura abandonada.
+/// 0600 marker with what is needed to clean up an abandoned capture.
 struct OrphanMarker {
     path: Option<PathBuf>,
     chrome_pid: u32,
@@ -1098,7 +1098,7 @@ impl Drop for OrphanMarker {
     }
 }
 
-/// Linha de comando do processo, ou `None` se ele não existe.
+/// Command line of the process, or `None` if it does not exist.
 #[cfg(not(target_os = "linux"))]
 fn process_command(pid: u32) -> Option<String> {
     let output = Command::new("ps")
@@ -1109,7 +1109,7 @@ fn process_command(pid: u32) -> Option<String> {
     (output.status.success() && !text.is_empty()).then_some(text)
 }
 
-/// Linux: `/proc/<pid>/cmdline` (argumentos separados por NUL), sem depender do `ps`.
+/// Linux: `/proc/<pid>/cmdline` (NUL-separated arguments), without depending on `ps`.
 #[cfg(target_os = "linux")]
 fn process_command(pid: u32) -> Option<String> {
     let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
@@ -1126,10 +1126,10 @@ fn process_exists(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
-/// Linux: `kill(pid, 0)`; `EPERM` também significa que o processo existe.
+/// Linux: `kill(pid, 0)`; `EPERM` also means the process exists.
 #[cfg(target_os = "linux")]
 fn process_exists(pid: u32) -> bool {
-    // SAFETY: sinal 0 só testa a existência.
+    // SAFETY: signal 0 only tests existence.
     let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
     rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
@@ -1139,12 +1139,12 @@ fn signal(pid: u32, name: &str) {
         "-KILL" => libc::SIGKILL,
         _ => libc::SIGTERM,
     };
-    // SAFETY: envia um sinal ao pid do marcador (já conferido como nosso pelo chamador).
+    // SAFETY: sends a signal to the marker's pid (already checked as ours by the caller).
     unsafe { libc::kill(pid as libc::pid_t, sig) };
 }
 
-/// Pids cuja linha de comando contém exatamente `--user-data-dir=<profile>`
-/// (o Chrome dedicado e seus auxiliares).
+/// Pids whose command line contains exactly `--user-data-dir=<profile>`
+/// (the dedicated Chrome and its helpers).
 #[cfg(not(target_os = "linux"))]
 fn pids_using_profile(profile_flag: &str) -> Vec<u32> {
     let Ok(output) = Command::new("ps").args(["-ww", "-axo", "pid=,command="]).output() else {
@@ -1161,7 +1161,7 @@ fn pids_using_profile(profile_flag: &str) -> Vec<u32> {
         .collect()
 }
 
-/// Linux: varre `/proc/<pid>/cmdline`.
+/// Linux: scans `/proc/<pid>/cmdline`.
 #[cfg(target_os = "linux")]
 fn pids_using_profile(profile_flag: &str) -> Vec<u32> {
     let Ok(entries) = std::fs::read_dir("/proc") else {
@@ -1177,8 +1177,8 @@ fn pids_using_profile(profile_flag: &str) -> Vec<u32> {
         .collect()
 }
 
-/// Só apaga perfis que este módulo cria: dentro da base privada e com o prefixo
-/// do app. Um marcador adulterado não consegue apontar para outro diretório.
+/// Only deletes profiles that this module creates: inside the private base and with the
+/// app's prefix. A tampered marker cannot point to another directory.
 fn is_app_profile(profile: &Path) -> bool {
     profile.parent() == Some(private_base_dir().as_path())
         && profile
@@ -1189,23 +1189,23 @@ fn is_app_profile(profile: &Path) -> bool {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct OrphanCleanup {
-    /// Marcadores de capturas abandonadas que foram removidos.
+    /// Markers of abandoned captures that were removed.
     pub markers_removed: usize,
-    /// Processos Chrome encerrados (só os que ainda usavam o perfil do marcador).
+    /// Chrome processes shut down (only those still using the marker's profile).
     pub processes_killed: usize,
-    /// Perfis temporários apagados.
+    /// Temporary profiles deleted.
     pub profiles_removed: usize,
-    /// Pastas de resgate (sessões que não puderam ser gravadas) vencidas e
-    /// apagadas, com o marcador.
+    /// Rescue folders (sessions that could not be written) that expired and were
+    /// deleted, along with their marker.
     pub rescues_removed: usize,
 }
 
-/// Limpa capturas abandonadas por um app que morreu sem encerrar o Chrome.
-/// Para cada marcador em `state_root` cujo processo dono não existe mais:
-/// encerra o Chrome do marcador somente se a linha de comando do PID ainda
-/// contém o perfil dedicado (nunca um PID reaproveitado ou o Chrome do
-/// usuário), apaga o perfil temporário do app e o marcador. Marcador de dono
-/// vivo (inclusive este processo) não é tocado.
+/// Cleans up abandoned captures left behind by an app that died without shutting Chrome down.
+/// For each marker in `state_root` whose owner process no longer exists:
+/// shuts down the marker's Chrome only if the PID's command line still
+/// contains the dedicated profile (never a reused PID or the user's own Chrome),
+/// deletes the app's temporary profile and the marker. A marker whose owner is
+/// still alive (including this process) is not touched.
 pub fn cleanup_orphans(state_root: &Path) -> OrphanCleanup {
     let mut report = OrphanCleanup::default();
     let Ok(entries) = std::fs::read_dir(state_root) else {
@@ -1248,7 +1248,7 @@ pub fn cleanup_orphans(state_root: &Path) -> OrphanCleanup {
             continue;
         }
         if !is_app_profile(&profile) {
-            // Marcador que não é nosso: some só o marcador, nada mais é tocado.
+            // Marker that is not ours: only the marker is removed, nothing else is touched.
             let _ = std::fs::remove_file(&path);
             report.markers_removed += 1;
             continue;
@@ -1259,7 +1259,7 @@ pub fn cleanup_orphans(state_root: &Path) -> OrphanCleanup {
         if ours(chrome_pid) {
             targets.push(chrome_pid);
         }
-        // Auxiliares do mesmo Chrome (renderers etc.) só entram se o principal era nosso.
+        // Helpers of the same Chrome (renderers etc.) only join if the main one was ours.
         if !targets.is_empty() {
             for pid in pids_using_profile(&profile_flag) {
                 if !targets.contains(&pid) {
@@ -1291,13 +1291,13 @@ pub fn cleanup_orphans(state_root: &Path) -> OrphanCleanup {
     report
 }
 
-/// Apaga uma pasta de resgate vencida (`RESCUE_TTL_DAYS`) e o marcador. A idade
-/// vem do PRÓPRIO diretório de resgate (mtime, que muda só quando entradas são
-/// criadas/removidas nele), nunca do conteúdo do marcador (A6-B7): um marcador
-/// forjado não faz um resgate recente parecer vencido. O marcador só vale se o
-/// nome do arquivo for `<dir>.json` e `dir` for filho direto de `state_root`, com
-/// prefixo de resgate e sem ser symlink; um marcador adulterado não aponta para
-/// outro lugar.
+/// Deletes an expired rescue folder (`RESCUE_TTL_DAYS`) and its marker. The age
+/// comes from the rescue directory ITSELF (mtime, which changes only when entries are
+/// created or removed in it), never from the marker's content (A6-B7): a
+/// forged marker does not make a recent rescue look expired. The marker only counts if the
+/// file name is `<dir>.json` and `dir` is a direct child of `state_root`, with the
+/// rescue prefix and is not a symlink; a tampered marker does not point to
+/// anywhere else.
 fn cleanup_rescue_marker(state_root: &Path, marker: &Path) -> bool {
     let Some(value) = std::fs::read(marker)
         .ok()
@@ -1318,7 +1318,7 @@ fn cleanup_rescue_marker(state_root: &Path, marker: &Path) -> bool {
     }
     let dir = state_root.join(name);
     let Ok(meta) = std::fs::symlink_metadata(&dir) else {
-        // Resgate já apagado: o marcador sobrou, remove só ele.
+        // Rescue already deleted: only the marker is left over, so remove only it.
         let _ = std::fs::remove_file(marker);
         return false;
     };
@@ -1367,7 +1367,7 @@ const CDP_TARGET_METHODS: &[&str] = &[
     "Target.targetDestroyed",
 ];
 
-/// Código de aviso importado pelo core (`cdp.target_setup_timeout`).
+/// Warning code imported by the core (`cdp.target_setup_timeout`).
 const CDP_TARGET_SETUP_TIMEOUT_WARNING: &str = "cdp.target_setup_timeout";
 
 fn cdp_records_method(method: &str) -> bool {
@@ -1391,24 +1391,24 @@ struct Cdp {
     in_flight: HashMap<u64, (String, BodyTag)>,
     outbox: Vec<(String, String)>,
     setup_done: HashMap<String, AttachedTarget>,
-    /// Sessões que já passaram por `setup_attached_target` (comandos enviados).
+    /// Sessions that already went through `setup_attached_target` (commands sent).
     configured_sessions: std::collections::HashSet<String>,
     configured_target_primary: HashMap<String, String>,
     detached_sessions: std::collections::HashSet<String>,
     wait_for_debugger: bool,
-    /// Alvos vistos via auto-attach (qualquer momento), por sessão.
+    /// Targets seen via auto-attach (at any time), per session.
     setup_seen: HashMap<String, AttachedTarget>,
-    /// Comandos de setup enviados e ainda sem resposta, por id CDP. O setup
-    /// nunca bloqueia: a resposta é tratada por `record` na ordem de chegada,
-    /// por quem estiver lendo o socket.
+    /// Setup commands sent and still without a response, by CDP id. Setup
+    /// never blocks: the response is handled by `record` in arrival order,
+    /// by whoever is reading the socket.
     setup_pending: HashMap<u64, PendingSetupCommand>,
-    /// `Page.loadEventFired` vistos na sessão da página principal.
+    /// `Page.loadEventFired` seen in the main page's session.
     page_load_events: u64,
-    /// ACKs de sucesso de comandos de setup, por (sessão, método).
+    /// Successful ACKs of setup commands, by (session, method).
     setup_acked: std::collections::HashSet<(String, String)>,
 }
 
-/// Comando de configuração de alvo aguardando ACK.
+/// Target setup command awaiting its ACK.
 #[derive(Debug, Clone)]
 struct PendingSetupCommand {
     target: AttachedTarget,
@@ -1499,9 +1499,9 @@ impl Cdp {
             .or_default()
     }
 
-    /// Envia um comando de setup sem esperar a resposta e registra-o como
-    /// pendente. Resposta atrasada não gera aviso: só o que continuar sem ACK
-    /// no encerramento vira `Capture.targetSetupTimeout`.
+    /// Sends a setup command without waiting for the response, and records it as
+    /// pending. A late response produces no warning: only what is still without an ACK
+    /// at shutdown becomes `Capture.targetSetupTimeout`.
     fn wire_setup_command(
         &mut self,
         socket: &mut Transport,
@@ -1533,9 +1533,9 @@ impl Cdp {
         );
     }
 
-    /// Trata o ACK de um comando de setup. Devolve `true` se o id era de setup.
-    /// ACK atrasado só remove o pendente; erro de comando essencial vira
-    /// `Capture.targetSetupError` (diferente de "sem resposta").
+    /// Handles the ACK of a setup command. Returns `true` if the id was a setup one.
+    /// A late ACK only removes the pending entry; an error on an essential command becomes
+    /// `Capture.targetSetupError` (as opposed to "no response").
     fn on_setup_response(&mut self, id: u64, value: &Value) -> bool {
         let Some(pending) = self.setup_pending.remove(&id) else {
             return false;
@@ -1574,29 +1574,29 @@ impl Cdp {
         true
     }
 
-    /// O nosso cliente está ligado no alvo inicial? (`Network.enable` e
-    /// `Target.setAutoAttach` com ACK de sucesso, nenhum comando de setup
-    /// pendente e a sessão configurada.) Erro = o que ainda falta.
+    /// Is our client attached to the initial target? (`Network.enable` and
+    /// `Target.setAutoAttach` with a successful ACK, no setup command
+    /// pending, and the session configured.) Error = what is still missing.
     pub(crate) fn initial_target_gate(&self) -> Result<(), String> {
         let page = &self.page_session_id;
         if page.is_empty() {
-            return Err("a aba inicial ainda não anexou".to_string());
+            return Err("the initial tab has not attached yet".to_string());
         }
         if !self.configured_sessions.contains(page) {
-            return Err("a aba inicial ainda não foi configurada".to_string());
+            return Err("the initial tab has not been configured yet".to_string());
         }
         if let Some(pending) = self.setup_pending.values().find(|p| &p.target.session_id == page) {
-            return Err(format!("{} ainda sem resposta na aba inicial", pending.method));
+            return Err(format!("{} still awaiting a response on the initial tab", pending.method));
         }
         for method in ["Network.enable", "Target.setAutoAttach"] {
             if !self.setup_acked.contains(&(page.clone(), method.to_string())) {
-                return Err(format!("{method} sem confirmação na aba inicial"));
+                return Err(format!("{method} not confirmed on the initial tab"));
             }
         }
         Ok(())
     }
 
-    /// Lê o soquete até o portão abrir ou o prazo acabar.
+    /// Reads the socket until the gate opens or the deadline passes.
     fn wait_initial_target_ready(
         &mut self,
         socket: &mut Transport,
@@ -1612,7 +1612,7 @@ impl Cdp {
         }
     }
 
-    /// Alvo desanexado ou destruído: comandos pendentes dele não viram timeout.
+    /// Target detached or destroyed: its pending commands do not turn into a timeout.
     fn on_target_gone(&mut self, session_id: Option<&str>, target_id: Option<&str>) {
         let gone: Vec<u64> = self
             .setup_pending
@@ -1648,14 +1648,14 @@ impl Cdp {
                 "targetId": attached.target_id,
                 "sessionId": attached.session_id,
                 "type": attached.target_type,
-                "reason": "alvo encerrado durante a configuração",
+                "reason": "target closed during setup",
             }),
             parent_session_id,
         );
     }
 
-    /// Encerramento (antes do `Browser.close`): todo comando de setup ainda sem
-    /// ACK, em qualquer sessão (inclusive a primária), vira aviso real.
+    /// Shutdown (before `Browser.close`): every setup command still without an
+    /// ACK, in any session (including the primary one), becomes a real warning.
     fn finalize_pending_setups(&mut self) {
         let mut pending: Vec<(u64, PendingSetupCommand)> = self.setup_pending.drain().collect();
         pending.sort_by_key(|(id, _)| *id);
@@ -1676,7 +1676,7 @@ impl Cdp {
         }
     }
 
-    /// Lê o socket até não restar setup pendente ou esgotar `window`.
+    /// Reads the socket until no setup is pending or `window` runs out.
     fn pump_until_setup_settled(
         &mut self,
         socket: &mut Transport,
@@ -1727,8 +1727,8 @@ impl Cdp {
         waiting_for_debugger: bool,
         parent_session_id: Option<&str>,
     ) -> Result<(), String> {
-        // Sessão extra do mesmo alvo: retoma (se pausada) e desanexa, sem rede.
-        // Os ACKs não importam: nada aqui é setup de captura.
+        // Extra session of the same target: resumes it (if paused) and detaches, without network.
+        // The ACKs do not matter: nothing here is capture setup.
         if self.wait_for_debugger && waiting_for_debugger {
             self.wire_command(
                 socket,
@@ -1761,11 +1761,11 @@ impl Cdp {
         Ok(())
     }
 
-    /// Configura um alvo anexado sem bloquear: envia os comandos em pipeline,
-    /// na mesma sessão, e deixa os ACKs para quem ler o socket (`record`).
-    /// Alvo pausado: Network.enable → Page/Runtime.enable → setAutoAttach →
-    /// runIfWaitingForDebugger (a rede já está ligada quando ele retoma, e o
-    /// resume não espera resposta). Alvo não pausado: ordem do harness
+    /// Configures an attached target without blocking: sends the commands in a pipeline,
+    /// in the same session, and leaves the ACKs for whoever reads the socket (`record`).
+    /// Paused target: Network.enable → Page/Runtime.enable → setAutoAttach →
+    /// runIfWaitingForDebugger (the network is already on when it resumes, and the
+    /// resume does not wait for a response). Unpaused target: the harness order
     /// (setAutoAttach → Network.enable → Page/Runtime.enable).
     fn setup_attached_target(
         &mut self,
@@ -1794,7 +1794,7 @@ impl Cdp {
         if self.configured_sessions.contains(&attached.session_id) {
             return Ok(());
         }
-        // Marca antes de enviar: evita reentrada se o envio falhar.
+        // Mark before sending: avoids re-entry if the send fails.
         self.configured_sessions
             .insert(attached.session_id.clone());
         self.setup_seen
@@ -1973,8 +1973,8 @@ impl Cdp {
                 let parent_wire = value.get("sessionId").and_then(Value::as_str);
                 self.setup_seen
                     .insert(session_id.clone(), attached.clone());
-                // Não bloqueia: só envia os comandos. Falha de envio (socket)
-                // aparece como erro de leitura no laço de captura.
+                // Does not block: it only sends the commands. A send failure (socket)
+                // shows up as a read error in the capture loop.
                 let _ = self.setup_attached_target(socket, attached, waiting, parent_wire);
             }
         }
@@ -2021,8 +2021,8 @@ impl Cdp {
         setup_result
     }
 
-    /// Receita `cdp_multi_capture.mjs` (da972ef): auto-attach na raiz, fila de
-    /// setup por sessão, `setAutoAttach` recursivo na página antes de navegar.
+    /// Recipe `cdp_multi_capture.mjs` (da972ef): root auto-attach, a setup queue
+    /// per session, recursive `setAutoAttach` on the page before navigating.
     fn setup_inner(
         &mut self,
         socket: &mut Transport,
@@ -2035,9 +2035,9 @@ impl Cdp {
             "Target.setDiscoverTargets",
             json!({ "discover": true }),
             None,
-            // Alinhado a `wait_for_devtools` e `Target.setAutoAttach`: um Chrome
-            // headful frio no macOS pode levar >10 s para inicializar a GPU e a
-            // janela antes de drenar o fd 3 do pipe (timeout visto pelo usuário).
+            // Aligned with `wait_for_devtools` and `Target.setAutoAttach`: a cold headful Chrome
+            // on macOS can take >10 s to initialize the GPU and the
+            // window before draining fd 3 of the pipe (timeout seen by the user).
             Duration::from_secs(25),
         )?;
         self.send(
@@ -2062,7 +2062,7 @@ impl Cdp {
         let main_target = created
             .get("targetId")
             .and_then(Value::as_str)
-            .ok_or_else(|| "CDP não devolveu targetId".to_string())?
+            .ok_or_else(|| "CDP returned no targetId".to_string())?
             .to_string();
         let deadline = Instant::now() + Duration::from_secs(20);
         while Instant::now() < deadline {
@@ -2074,8 +2074,8 @@ impl Cdp {
             {
                 self.page_session_id = page_session.clone();
                 if !self.configured_sessions.contains(&page_session) {
-                    // O handler normalmente já configurou a página no attach;
-                    // este ramo cobre só um attach que o handler não viu.
+                    // The handler normally already configured the page on attach;
+                    // this branch only covers an attach that the handler did not see.
                     self.setup_attached_target(
                         socket,
                         AttachedTarget {
@@ -2102,8 +2102,8 @@ impl Cdp {
                     Duration::from_secs(5),
                 )?;
                 if url != "about:blank" {
-                    // Cookies importados entram ANTES da primeira navegação: o
-                    // pedido inicial já leva a sessão do site.
+                    // Imported cookies are added BEFORE the first navigation: the
+                    // initial request already carries the site's session.
                     if !cookies.is_empty() {
                         self.send(
                             socket,
@@ -2140,7 +2140,7 @@ impl Cdp {
         }
         if self.page_session_id.is_empty() {
             return Err(
-                "A página inicial não anexou após createTarget (Target.attachedToTarget)"
+                "The initial page did not attach after createTarget (Target.attachedToTarget)"
                     .to_string(),
             );
         }
@@ -2176,7 +2176,7 @@ impl Cdp {
             match socket.read() {
                 Ok(Incoming::Text(text)) => {
                     let value: Value = serde_json::from_str(text.as_str())
-                        .map_err(|error| format!("CDP JSON inválido: {error}"))?;
+                        .map_err(|error| format!("invalid CDP JSON: {error}"))?;
                     if value.get("id").and_then(Value::as_u64) == Some(id) {
                         if let Some(error) = value.get("error") {
                             return Err(format!("CDP {method}: {error}"));
@@ -2223,8 +2223,8 @@ impl Cdp {
         self.handle_incoming_event(socket, value);
     }
 
-    /// Envia sem esperar resposta os comandos de corpo enfileirados por
-    /// `record`. Falha de envio vira `unavailable` na hora.
+    /// Sends, without waiting for a response, the body commands queued by
+    /// `record`. A send failure becomes `unavailable` immediately.
     fn flush_outbox(&mut self, socket: &mut Transport) {
         for (session_id, message) in std::mem::take(&mut self.outbox) {
             let id = serde_json::from_str::<Value>(&message)
@@ -2240,7 +2240,7 @@ impl Cdp {
                     if let Some((sid, tag)) = self.in_flight.remove(&id) {
                         self.bodies_for(&sid).on_result(
                             tag,
-                            Err(format!("falha ao enviar comando ao CDP: {error}")),
+                            Err(format!("failed to send command to CDP: {error}")),
                         );
                     }
                 }
@@ -2249,7 +2249,7 @@ impl Cdp {
         self.write_body_lines();
     }
 
-    /// Aguarda (até `window`) as respostas de corpo em voo.
+    /// Waits (up to `window`) for the body responses still in flight.
     fn drain_bodies(
         &mut self,
         socket: &mut Transport,
@@ -2275,14 +2275,14 @@ impl Cdp {
         }
     }
 
-    /// Fecha a coleta: nada fica sem linha.
+    /// Closes collection: nothing is left without a row.
     fn finish_bodies(&mut self) {
         let leftover: Vec<(String, BodyTag)> =
             self.in_flight.drain().map(|(_, pair)| pair).collect();
         for (session_id, tag) in leftover {
             self.bodies_for(&session_id).on_result(
                 tag,
-                Err("captura encerrada antes de o CDP responder ao comando de corpo".to_string()),
+                Err("capture ended before CDP answered the body command".to_string()),
             );
         }
         for collector in self.bodies_by_session.values_mut() {
@@ -2324,16 +2324,16 @@ impl Cdp {
 
 const EMPTY_NETLOG: &[u8] = br#"{"constants":{},"events":[]}"#;
 
-/// Estado do NetLog lido do disco depois do encerramento do Chrome.
+/// NetLog state read from disk after Chrome shut down.
 #[derive(Debug, Clone, PartialEq)]
 enum NetlogStatus {
     Complete,
-    /// Truncado; reparado cortando no último evento completo.
+    /// Truncated; repaired by cutting at the last complete event.
     Repaired {
         original_bytes: usize,
         kept_bytes: usize,
     },
-    /// Ausente, vazio ou irrecuperável: a sessão segue só com o CDP.
+    /// Missing, empty or unrecoverable: the session continues with CDP only.
     Unusable {
         reason: String,
     },
@@ -2343,9 +2343,9 @@ fn is_valid_json(bytes: &[u8]) -> bool {
     serde_json::from_slice::<serde::de::IgnoredAny>(bytes).is_ok()
 }
 
-/// O Chrome grava um evento por linha em `"events":[`. Um arquivo cortado
-/// termina em evento completo seguido de vírgula ou em linha parcial: corta no
-/// último fim de linha, tira a vírgula e fecha `]}` (o `polledData` se perde).
+/// Chrome writes one event per line in `"events":[`. A truncated file
+/// ends with a complete event followed by a comma, or with a partial line: it cuts at the
+/// last line break, removes the comma and closes `]}` (the `polledData` is lost).
 fn repair_netlog(raw: &[u8]) -> Option<Vec<u8>> {
     let marker = raw
         .windows(10)
@@ -2363,7 +2363,7 @@ fn repair_netlog(raw: &[u8]) -> Option<Vec<u8>> {
         if is_valid_json(&candidate) {
             return Some(candidate);
         }
-        // Recua uma linha; para antes de entrar nas constantes.
+        // Steps back one line; stops before entering the constants.
         end = raw[..end].iter().rposition(|byte| *byte == b'\n')?;
         if end <= marker {
             return None;
@@ -2377,7 +2377,7 @@ fn prepare_netlog(raw: Option<&[u8]>) -> (Vec<u8>, NetlogStatus) {
         return (
             EMPTY_NETLOG.to_vec(),
             NetlogStatus::Unusable {
-                reason: "NetLog ausente ou vazio".to_string(),
+                reason: "NetLog missing or empty".to_string(),
             },
         );
     };
@@ -2398,13 +2398,13 @@ fn prepare_netlog(raw: Option<&[u8]>) -> (Vec<u8>, NetlogStatus) {
         None => (
             EMPTY_NETLOG.to_vec(),
             NetlogStatus::Unusable {
-                reason: "NetLog truncado e irreparável".to_string(),
+                reason: "NetLog truncated and unrepairable".to_string(),
             },
         ),
     }
 }
 
-/// Registra na sessão tudo o que tornou a captura incompleta. Nunca em silêncio.
+/// Records in the session everything that made the capture incomplete. Never silently.
 fn mark_incomplete(
     document: &mut scrapelens_core::model::SessionV1,
     netlog: &NetlogStatus,
@@ -2419,14 +2419,14 @@ fn mark_incomplete(
     });
     let killed = matches!(shutdown.exit, ChromeExit::Killed);
     let mut entries: Vec<(&str, String)> = Vec::new();
-    // A3-B2: o CDP fechou sozinho (mensagem acima do teto). O Chrome sai em
-    // seguida de forma graciosa e o NetLog parece completo, mas a captura parou
-    // antes do pedido de parada: o motivo explícito vem primeiro.
+    // A3-B2: the CDP closed on its own (message above the ceiling). Chrome exits
+    // afterwards gracefully and the NetLog looks complete, but the capture stopped
+    // before the stop request: the explicit reason comes first.
     if let Some(reason) = &shutdown.transport_closed {
         entries.push((
             "capture.cdp_transport_closed",
             format!(
-                "cdp_transport_closed: {reason}: o canal do CDP fechou antes do pedido de parada; os eventos depois desse ponto não foram capturados."
+                "cdp_transport_closed: {reason}: the CDP channel closed before the stop request; events after that point were not captured."
             ),
         ));
     }
@@ -2434,15 +2434,15 @@ fn mark_incomplete(
         NetlogStatus::Complete if !killed => {}
         NetlogStatus::Complete => entries.push((
             "capture.chrome_killed",
-            "O Chrome não encerrou no prazo e foi finalizado à força; o NetLog pode não refletir o fim da captura.".to_string(),
+            "Chrome did not exit within the deadline and was force-killed; the NetLog may not reflect the end of the capture.".to_string(),
         )),
         NetlogStatus::Repaired { original_bytes, kept_bytes } => entries.push((
             "capture.netlog_incomplete",
-            format!("O NetLog do Chrome estava truncado ({original_bytes} bytes); a sessão usa só os eventos completos ({kept_bytes} bytes). O original está em netlog.original.json."),
+            format!("The Chrome NetLog was truncated ({original_bytes} bytes); the session uses only the complete events ({kept_bytes} bytes). The original is in netlog.original.json."),
         )),
         NetlogStatus::Unusable { reason } => entries.push((
             "capture.netlog_unusable",
-            format!("{reason}: a sessão foi importada só com CDP e corpos, sem evidência de NetLog. O original (se existir) está em netlog.original.json."),
+            format!("{reason}: the session was imported with CDP and bodies only, without NetLog evidence. The original (if it exists) is in netlog.original.json."),
         )),
     }
     for (code, message) in entries {
@@ -2456,46 +2456,46 @@ fn mark_incomplete(
     }
 }
 
-/// Nomes que a sessão grava (arquivos) ou cria (`attachments`) na pasta da
-/// sessão e que um symlink plantado poderia ocupar.
+/// Names that the session writes (files) or creates (`attachments`) in the session
+/// directory, which a planted symlink could occupy.
 const SESSION_DIR_LINK_NAMES: [&str; 4] =
     ["cdp-events.jsonl", "netlog.json", "session.json", "attachments"];
 
-/// Grava a sessão (A3-B3, A4-B3, A6-B5) SEM resolver o caminho da pasta da sessão
-/// em nenhum momento:
-/// 1. avisa (no documento) quais nomes eram symlink, pelo descritor;
-/// 2. o core grava o bundle num diretório de preparo novo e 0700 dentro de
-///    `stage_parent` (o perfil temporário, nosso e fora do alcance do ataque);
-/// 3. cada item é movido para a pasta da sessão com `renameat` relativo ao
-///    descritor (`session.json` por último), substituindo o nome, inclusive um
-///    symlink, sem escrever no alvo dele. Entre filesystems diferentes, copia.
+/// Writes the session (A3-B3, A4-B3, A6-B5) WITHOUT resolving the session directory's path
+/// at any point:
+/// 1. warns (in the document) which names were symlinks, through the descriptor;
+/// 2. the core writes the bundle into a new 0700 staging directory inside
+///    `stage_parent` (the temporary profile, ours and out of the attacker's reach);
+/// 3. each item is moved into the session directory with `renameat` relative to the
+///    descriptor (`session.json` last), replacing the name, including a
+///    symlink, without writing to its target. Between different filesystems, it copies.
 ///
-/// O replantio de links em laço (A4-B4) deixa de importar: o `renameat` é atômico.
-/// Devolve os nomes que eram symlink e foram substituídos.
+/// Re-planting links in a loop (A4-B4) no longer matters: `renameat` is atomic.
+/// Returns the names that were symlinks and were replaced.
 fn write_session_fd(
     bundle: &mut scrapelens_core::SessionBundle,
     session: &std::fs::File,
     stage_parent: &Path,
 ) -> Result<Vec<String>, String> {
     let fail = |what: &str, error: &dyn std::fmt::Display| {
-        format!("Não foi possível gravar a sessão: {what}: {error}")
+        format!("Could not write the session: {what}: {error}")
     };
     for name in SESSION_DIR_LINK_NAMES {
         if fdio::kind_of(session, name).ok().flatten() == Some(fdio::EntryKind::Symlink) {
             bundle.session.add_warning(scrapelens_core::model::Warning::new(
                 "capture.planted_symlink_removed",
-                format!("{name} era um link simbólico no diretório da sessão; o link foi substituído e o alvo não foi tocado."),
+                format!("{name} was a symbolic link in the session directory; the link was replaced and the target was not touched."),
             ));
         }
     }
     let stage = stage_parent.join(format!("stage-{}", unix_nanos()));
-    create_private_dir_new(&stage).map_err(|e| fail("diretório de preparo", &e))?;
+    create_private_dir_new(&stage).map_err(|e| fail("staging directory", &e))?;
     let result = (|| -> Result<Vec<String>, String> {
         store::write_session_dir(bundle, &stage).map_err(|e| fail("preparo", &e))?;
         let (stage_handle, _) =
-            verify_private_dir_handle(&stage).map_err(|e| fail("diretório de preparo", &e))?;
+            verify_private_dir_handle(&stage).map_err(|e| fail("staging directory", &e))?;
         let mut replaced: Vec<String> = Vec::new();
-        // `session.json` por último: nunca aponta para arquivos que ainda não existem.
+        // `session.json` last: it never points to files that do not exist yet.
         let mut order: Vec<String> = fdio::list(&stage_handle)
             .map_err(|e| fail("preparo", &e))?
             .into_iter()
@@ -2515,8 +2515,8 @@ fn write_session_fd(
     result
 }
 
-/// Lê tudo do descritor (da posição 0). Para os corpos: relê pelo descritor, não
-/// pelo caminho.
+/// Reads everything from the descriptor (from position 0). For the bodies: re-reads through the descriptor, not
+/// through the path.
 fn read_all_from(file: &mut std::fs::File) -> Option<Vec<u8>> {
     use std::io::{Read, Seek, SeekFrom};
     let mut bytes = Vec::new();
@@ -2525,34 +2525,34 @@ fn read_all_from(file: &mut std::fs::File) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-/// Mensagem de erro quando a pasta da sessão deixou de ser confiável (A4-B5).
+/// Error message when the session directory stopped being trustworthy (A4-B5).
 fn session_dir_changed(why: String) -> String {
     format!(
-        "A pasta da sessão foi trocada ou deixou de ser nossa durante a captura ({why}); nada foi gravado nela e nada fora dela foi apagado."
+        "The session directory was swapped or stopped being ours during the capture ({why}); nothing was written to it and nothing outside it was deleted."
     )
 }
 
-/// Mensagem quando a pasta foi trocada DURANTE a gravação (A7): a sessão foi
-/// gravada inteira na pasta ORIGINAL (o descritor aberto no início), que o
-/// sistema agora localiza noutro caminho (`F_GETPATH`); nada foi gravado na pasta
-/// que tomou o lugar. Não repete "nada foi gravado nela", que seria falso.
+/// Message when the directory was swapped DURING the write (A7): the session was
+/// written in full to the ORIGINAL directory (the descriptor opened at the start), which the
+/// system now finds at another path (`F_GETPATH`); nothing was written to the directory
+/// that took its place. It does not repeat "nothing was written to it", which would be false.
 fn session_dir_changed_after_write(why: String, original: &std::fs::File) -> String {
     let moved = descriptor_path(original)
-        .map(|p| format!("agora em {}", p.display()))
-        .unwrap_or_else(|| "que não conseguimos localizar".to_string());
+        .map(|p| format!("now at {}", p.display()))
+        .unwrap_or_else(|| "that we could not locate".to_string());
     format!(
-        "A pasta da sessão foi trocada durante a gravação ({why}). A sessão foi gravada inteira na pasta ORIGINAL, {moved}; nada foi gravado na pasta que tomou o lugar dela e nada fora da pasta original foi apagado."
+        "The session directory was swapped during the write ({why}). The session was written in full to the ORIGINAL directory, {moved}; nothing was written to the directory that took its place, and nothing outside the original directory was deleted."
     )
 }
 
-/// Caminho ATUAL do diretório que o descritor representa, mesmo que o nome tenha
-/// sido movido (macOS: `F_GETPATH`; Linux: `/proc/self/fd/N`).
+/// CURRENT path of the directory that the descriptor represents, even if the name has
+/// been moved (macOS: `F_GETPATH`; Linux: `/proc/self/fd/N`).
 #[cfg(target_os = "macos")]
 fn descriptor_path(file: &std::fs::File) -> Option<PathBuf> {
     use std::os::fd::AsRawFd;
     use std::os::unix::ffi::OsStrExt;
     let mut buffer = [0u8; libc::PATH_MAX as usize];
-    // SAFETY: `F_GETPATH` escreve no máximo PATH_MAX bytes no buffer.
+    // SAFETY: `F_GETPATH` writes at most PATH_MAX bytes into the buffer.
     let result = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buffer.as_mut_ptr()) };
     if result < 0 {
         return None;
@@ -2561,8 +2561,8 @@ fn descriptor_path(file: &std::fs::File) -> Option<PathBuf> {
     Some(PathBuf::from(std::ffi::OsStr::from_bytes(&buffer[..len])))
 }
 
-/// Linux: `readlink /proc/self/fd/N` (o caminho atual do diretório; o núcleo acrescenta
-/// ` (deleted)` se ele foi apagado).
+/// Linux: `readlink /proc/self/fd/N` (the directory's current path; the kernel appends
+/// ` (deleted)` if it was deleted).
 #[cfg(target_os = "linux")]
 fn descriptor_path(file: &std::fs::File) -> Option<PathBuf> {
     use std::os::fd::AsRawFd;
@@ -2575,14 +2575,14 @@ fn descriptor_path(_file: &std::fs::File) -> Option<PathBuf> {
 }
 
 const RESCUE_PREFIX: &str = "rescue-";
-/// Idade a partir da qual `cleanup_orphans` apaga uma pasta de resgate.
+/// Age from which `cleanup_orphans` deletes a rescue folder.
 const RESCUE_TTL_DAYS: u64 = 7;
 
-/// Resgate (A5-B2, A5-B3): quando a sessão não pôde ser gravada, guarda SÓ os
-/// arquivos da captura (eventos CDP, corpos e NetLog) numa pasta 0700 nova dentro
-/// de `state_root`, com um marcador para o `cleanup_orphans` apagá-la depois de
-/// `RESCUE_TTL_DAYS`. O resto do perfil do Chrome (Cookies, Login Data, History)
-/// nunca é guardado. Devolve a pasta.
+/// Rescue (A5-B2, A5-B3): when the session could not be written, it keeps ONLY the
+/// capture files (CDP events, bodies and NetLog) in a new 0700 folder inside
+/// `state_root`, with a marker so that `cleanup_orphans` deletes it later, after
+/// `RESCUE_TTL_DAYS`. The rest of the Chrome profile (Cookies, Login Data, History)
+/// is never kept. Returns the folder.
 fn rescue_capture_files(
     state_root: &Path,
     cdp: &[u8],
@@ -2592,18 +2592,18 @@ fn rescue_capture_files(
 ) -> Result<PathBuf, String> {
     #[cfg(test)]
     if FORCE_PRIMARY_RESCUE_FAILURE.with(std::cell::Cell::get) {
-        return Err("falha forçada (teste)".to_string());
+        return Err("forced failure (test)".to_string());
     }
-    ensure_private_state_root(state_root).map_err(|e| format!("pasta de estado: {e}"))?;
+    ensure_private_state_root(state_root).map_err(|e| format!("state folder: {e}"))?;
     let name = format!("{RESCUE_PREFIX}{}-{}", std::process::id(), unix_nanos());
     let dir = state_root.join(&name);
-    create_private_dir_new(&dir).map_err(|e| format!("pasta de resgate: {e}"))?;
+    create_private_dir_new(&dir).map_err(|e| format!("rescue folder: {e}"))?;
     let result = fill_rescue_dir(&dir, cdp, netlog, bodies, reason)
         .and_then(|()| write_rescue_marker(state_root, &name));
     match result {
         Ok(()) => Ok(dir),
         Err(error) => {
-            // Resgate pela metade não serve: o chamador tenta o plano B.
+            // A half-done rescue is no good: the caller tries plan B.
             let _ = std::fs::remove_dir_all(&dir);
             let _ = std::fs::remove_file(state_root.join(format!("{name}.json")));
             Err(error.to_string())
@@ -2613,11 +2613,11 @@ fn rescue_capture_files(
 
 #[cfg(test)]
 thread_local! {
-    /// Teste: faz o resgate normal falhar NESTA thread (o plano B entra em ação).
+    /// Test: makes the normal rescue fail on THIS thread (plan B kicks in).
     static FORCE_PRIMARY_RESCUE_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Grava os arquivos da captura (e o motivo) numa pasta de resgate.
+/// Writes the capture files (and the reason) into a rescue folder.
 fn fill_rescue_dir(
     dir: &Path,
     cdp: &[u8],
@@ -2642,7 +2642,7 @@ fn fill_rescue_dir(
     write_private(&dir.join("motivo.txt"), reason.as_bytes())
 }
 
-/// Marcador `<nome>.json` ao lado da pasta de resgate. A idade NÃO vem dele.
+/// Marker `<name>.json` next to the rescue folder. Its age does NOT come from it.
 fn write_rescue_marker(state_root: &Path, name: &str) -> std::io::Result<()> {
     let marker = json!({
         "kind": "rescue",
@@ -2655,13 +2655,13 @@ fn write_rescue_marker(state_root: &Path, name: &str) -> std::io::Result<()> {
     )
 }
 
-/// Plano B do resgate (A6-B6), quando a pasta de resgate normal não pôde ser
-/// criada (ex.: ENOSPC): o PRÓPRIO perfil temporário vira o resgate. Apaga tudo o
-/// que não é da captura (Cookies, Login Data, History..., o que também libera
-/// espaço), grava nele os eventos CDP, os corpos e o motivo, e o move para
-/// `state_root` com um marcador, entrando no mesmo prazo de 7 dias. Se não puder
-/// movê-lo ou marcá-lo, ele fica onde está, já limpo e com os eventos, e o
-/// retorno diz que não há prazo automático.
+/// Plan B of the rescue (A6-B6), used when the normal rescue folder could not be
+/// created (e.g. ENOSPC): the temporary profile ITSELF becomes the rescue. It deletes everything
+/// that is not part of the capture (Cookies, Login Data, History..., which also frees
+/// space), writes the CDP events, the bodies and the reason into it, and moves it to
+/// `state_root` with a marker, under the same 7-day deadline. If it cannot
+/// move or mark it, it stays where it is, already cleaned and holding the events, and the
+/// return says there is no automatic deadline.
 struct AdoptedProfile {
     dir: PathBuf,
     has_ttl: bool,
@@ -2675,9 +2675,9 @@ fn adopt_profile_as_rescue(
     bodies: &mut std::fs::File,
     reason: &str,
 ) -> Result<AdoptedProfile, String> {
-    // 1. Só os arquivos da captura sobrevivem no perfil.
+    // 1. Only the capture files survive in the profile.
     let keep_netlog = netlog.is_none() && profile.join("netlog.json").is_file();
-    for entry in std::fs::read_dir(profile).map_err(|e| format!("perfil: {e}"))?.flatten() {
+    for entry in std::fs::read_dir(profile).map_err(|e| format!("profile: {e}"))?.flatten() {
         let path = entry.path();
         if keep_netlog && entry.file_name() == "netlog.json" {
             continue;
@@ -2689,9 +2689,9 @@ fn adopt_profile_as_rescue(
             std::fs::remove_file(&path)
         };
     }
-    // 2. Os eventos, os corpos e o motivo.
-    fill_rescue_dir(profile, cdp, netlog, bodies, reason).map_err(|e| format!("perfil: {e}"))?;
-    // 3. Move para o state root e marca (mesmo prazo).
+    // 2. The events, the bodies and the reason.
+    fill_rescue_dir(profile, cdp, netlog, bodies, reason).map_err(|e| format!("profile: {e}"))?;
+    // 3. Move to the state root and mark it (same deadline).
     let name = format!("{RESCUE_PREFIX}{}-{}", std::process::id(), unix_nanos());
     let target = state_root.join(&name);
     let moved = ensure_private_state_root(state_root)
@@ -2706,9 +2706,9 @@ fn adopt_profile_as_rescue(
     })
 }
 
-/// Resgata os arquivos da captura depois de uma falha de gravação e devolve o
-/// erro final para o `stop_capture`: pasta de resgate normal; se falhar, o plano B
-/// (o perfil vira o resgate); se tudo falhar, o perfil fica.
+/// Rescues the capture files after a write failure and returns the
+/// final error for `stop_capture`: normal rescue folder; if that fails, plan B
+/// (the profile becomes the rescue); if everything fails, the profile is kept.
 fn rescue_or_adopt(
     message: &str,
     state_root: &Path,
@@ -2720,26 +2720,26 @@ fn rescue_or_adopt(
 ) -> String {
     match rescue_capture_files(state_root, cdp_bytes, netlog_raw, bodies, message) {
         Ok(dir) => format!(
-            "{message} Os arquivos da captura (eventos CDP, corpos e NetLog) ficaram na pasta de resgate {} (0700; apagada sozinha depois de {} dias).",
+            "{message} The capture files (CDP events, bodies and NetLog) were kept in the rescue folder {} (0700; automatically deleted after {} days).",
             dir.display(),
             RESCUE_TTL_DAYS
         ),
         Err(why) => {
-            // Plano B: o perfil vira o resgate (limpo, com os eventos e, se
-            // possível, com marcador e prazo). Nunca perder os dados.
+            // Plan B: the profile becomes the rescue (cleaned, with the events and, if
+            // possible, with a marker and deadline). Never lose the data.
             profile_guard.keep();
             match adopt_profile_as_rescue(state_root, profile, cdp_bytes, netlog_raw, bodies, message) {
                 Ok(adopted) if adopted.has_ttl => format!(
-                    "{message} O resgate normal falhou ({why}); os arquivos da captura (eventos CDP, corpos e NetLog) ficaram em {} (0700; apagada sozinha depois de {} dias).",
+                    "{message} The normal rescue failed ({why}); the capture files (CDP events, bodies and NetLog) were kept in {} (0700; automatically deleted after {} days).",
                     adopted.dir.display(),
                     RESCUE_TTL_DAYS
                 ),
                 Ok(adopted) => format!(
-                    "{message} O resgate normal falhou ({why}); os arquivos da captura (eventos CDP, corpos e NetLog) ficaram em {}, SEM prazo automático (não foi possível marcá-la): apague quando recuperar.",
+                    "{message} The normal rescue failed ({why}); the capture files (CDP events, bodies and NetLog) were kept in {}, WITHOUT an automatic deadline (it could not be marked): delete them when you recover.",
                     adopted.dir.display()
                 ),
                 Err(second) => format!(
-                    "{message} O resgate falhou ({why}) e o plano B também ({second}); o perfil temporário {} foi mantido e pode estar incompleto (contém dados do Chrome; apague quando recuperar).",
+                    "{message} The rescue failed ({why}) and so did plan B ({second}); the temporary profile {} was kept and may be incomplete (it contains Chrome data; delete it when you recover).",
                     profile.display()
                 ),
             }
@@ -2747,11 +2747,11 @@ fn rescue_or_adopt(
     }
 }
 
-/// Remove os `.tmp-*` que `write_atomic` (core) e `write_private` deixam na pasta
-/// da sessão quando o `rename` falha. Trabalha pelo DESCRITOR do diretório (aberto
-/// no início): vale para a pasta original mesmo que o nome tenha sido trocado ou
-/// movido, e nunca segue um caminho. Só arquivos com o nome exato dos que
-/// gravamos (`.<arquivo>.tmp-…`).
+/// Removes the `.tmp-*` files that `write_atomic` (core) and `write_private` leave in the
+/// session directory when the `rename` fails. It works through the directory's DESCRIPTOR (opened
+/// at the start): it applies to the original directory even if the name was swapped or
+/// moved, and never follows a path. Only files with the exact name of those
+/// we write (`.<file>.tmp-…`).
 fn remove_stale_tmp(dir: &std::fs::File) {
     use std::ffi::{CStr, CString};
     use std::os::fd::AsRawFd;
@@ -2762,9 +2762,9 @@ fn remove_stale_tmp(dir: &std::fs::File) {
         "session.json",
         "cdp-bodies.jsonl",
     ];
-    // SAFETY: `dup` do descritor aberto; `fdopendir` assume a cópia e `closedir`
-    // a fecha; `readdir` devolve entradas válidas até NULL; `unlinkat` só remove
-    // o nome (nunca segue symlink: AT_REMOVEDIR ausente remove o link em si).
+    // SAFETY: `dup` of the open descriptor; `fdopendir` takes over the copy and `closedir`
+    // closes it; `readdir` returns valid entries until NULL; `unlinkat` only removes
+    // the name (it never follows a symlink: without AT_REMOVEDIR it removes the link itself).
     unsafe {
         let copy = libc::dup(dir.as_raw_fd());
         if copy < 0 {
@@ -2796,14 +2796,14 @@ fn remove_stale_tmp(dir: &std::fs::File) {
     }
 }
 
-/// Escrita atômica e segura contra symlink: grava num arquivo novo de nome
-/// único (`create_new` + `O_NOFOLLOW`, 0600) na mesma pasta e troca o destino com
-/// `rename`, que substitui o próprio symlink (nunca escreve no alvo dele).
+/// Atomic, symlink-safe write: writes into a new file with a unique name
+/// (`create_new` + `O_NOFOLLOW`, 0600) in the same directory, and swaps the destination with
+/// `rename`, which replaces the symlink itself (it never writes to its target).
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("arquivo");
+        .unwrap_or("file");
     let tmp = path.with_file_name(format!(".{name}.tmp-{}-{}", std::process::id(), unix_nanos()));
     let result = (|| {
         let mut file = open_new_private(&tmp)?;
@@ -2817,27 +2817,27 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     result
 }
 
-/// Identidade de um diretório (dispositivo + inode) lida no descritor aberto.
-/// Serve para o `stop` reconhecer que a pasta da sessão é a MESMA do início.
+/// Identity of a directory (device + inode) read from the open descriptor.
+/// Used by `stop` to recognize that the session directory is the SAME one as at the start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DirIdentity {
     dev: u64,
     ino: u64,
 }
 
-/// Reconfere a pasta da sessão no `stop` (A4-B5): aberta sem seguir link, nossa,
-/// 0700 e com a identidade (dev+inode) do início. Trocar a pasta por um symlink,
-/// ou por outro diretório, faz o stop falhar sem gravar nada nela.
+/// Rechecks the session directory on `stop` (A4-B5): opened without following links, ours,
+/// 0700 and with the identity (dev+inode) from the start. Swapping the directory for a symlink,
+/// or for another directory, makes stop fail without writing anything to it.
 fn recheck_session_dir(dir: &Path, expected: DirIdentity) -> Result<(), String> {
     match verify_private_dir(dir) {
         Ok(found) if found == expected => Ok(()),
-        Ok(_) => Err("é outro diretório que não o do início da captura".to_string()),
+        Ok(_) => Err("it is a different directory from the one at the start of the capture".to_string()),
         Err(error) => {
             let is_link = std::fs::symlink_metadata(dir)
                 .map(|m| m.file_type().is_symlink())
                 .unwrap_or(false);
             Err(if is_link {
-                "agora é um link simbólico".to_string()
+                "now a symbolic link".to_string()
             } else {
                 error.to_string()
             })
@@ -2845,8 +2845,8 @@ fn recheck_session_dir(dir: &Path, expected: DirIdentity) -> Result<(), String> 
     }
 }
 
-/// Apaga o perfil temporário ao sair, a menos que `keep()` tenha sido chamado
-/// (a sessão ficou lá porque a pasta de destino não era confiável).
+/// Deletes the temporary profile on exit, unless `keep()` was called
+/// (the session was left there because the destination directory was not trustworthy).
 struct ProfileCleanup {
     path: PathBuf,
     keep: bool,
@@ -2866,8 +2866,8 @@ impl Drop for ProfileCleanup {
     }
 }
 
-/// Cria um diretório NOVO 0700 (falha se o nome existir, inclusive como
-/// symlink) e confere, já aberto, que é um diretório nosso, não um link, 0700.
+/// Creates a NEW 0700 directory (fails if the name exists, including as a
+/// symlink) and checks, while open, that it is ours, not a link, 0700.
 fn create_private_dir_new(path: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
@@ -2881,16 +2881,16 @@ fn create_private_dir_new(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Abre o diretório sem seguir link final e confere pelo descritor aberto:
-/// é um diretório, é do nosso usuário e o modo é exatamente 0700.
+/// Opens the directory without following the final link, and checks through the open descriptor:
+/// it is a directory, it belongs to our user, and the mode is exactly 0700.
 #[cfg(unix)]
 fn verify_private_dir(path: &Path) -> std::io::Result<DirIdentity> {
     verify_private_dir_handle(path).map(|(_, identity)| identity)
 }
 
-/// Como `verify_private_dir`, mas devolve também o descritor aberto do diretório:
-/// ele continua apontando para a MESMA pasta mesmo que o nome seja trocado, e
-/// serve para limpar o `.tmp-*` que a gravação deixou nela.
+/// Like `verify_private_dir`, but also returns the open descriptor of the directory:
+/// it keeps pointing to the SAME directory even if the name is swapped, and
+/// is used to clean up the `.tmp-*` that the write left in it.
 #[cfg(unix)]
 fn verify_private_dir_handle(path: &Path) -> std::io::Result<(std::fs::File, DirIdentity)> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -2899,13 +2899,13 @@ fn verify_private_dir_handle(path: &Path) -> std::io::Result<(std::fs::File, Dir
         .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
         .open(path)?;
     let meta = dir.metadata()?;
-    // SAFETY: `geteuid` não tem pré-condições.
+    // SAFETY: `geteuid` has no preconditions.
     let euid = unsafe { libc::geteuid() };
     if !meta.is_dir() || meta.uid() != euid || meta.mode() & 0o777 != 0o700 {
         return Err(std::io::Error::new(
             ErrorKind::PermissionDenied,
             format!(
-                "{} não é um diretório 0700 nosso (modo {:o}, dono {})",
+                "{} is not a 0700 directory of ours (mode {:o}, owner {})",
                 path.display(),
                 meta.mode() & 0o7777,
                 meta.uid()
@@ -2921,8 +2921,8 @@ fn verify_private_dir_handle(path: &Path) -> std::io::Result<(std::fs::File, Dir
     ))
 }
 
-/// Lê um arquivo sem seguir symlink: só aceita arquivo regular do nosso
-/// usuário (conferido no descritor aberto). `None` se ausente ou recusado.
+/// Reads a file without following symlinks: it only accepts a regular file of our
+/// user (checked through the open descriptor). `None` if it is missing or refused.
 fn read_private_regular(path: &Path) -> Option<Vec<u8>> {
     use std::io::Read;
     let mut options = std::fs::OpenOptions::new();
@@ -2937,7 +2937,7 @@ fn read_private_regular(path: &Path) -> Option<Vec<u8>> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        // SAFETY: `geteuid` não tem pré-condições.
+        // SAFETY: `geteuid` has no preconditions.
         if meta.uid() != unsafe { libc::geteuid() } {
             return None;
         }
@@ -2957,11 +2957,11 @@ fn unix_nanos() -> u128 {
         .unwrap_or(0)
 }
 
-/// Cria um arquivo NOVO 0600 sem seguir symlink: `create_new` (O_EXCL) e
-/// `O_NOFOLLOW`. Falha se o nome já existir (inclusive como symlink).
+/// Creates a NEW 0600 file without following symlinks: `create_new` (O_EXCL) and
+/// `O_NOFOLLOW`. Fails if the name already exists (including as a symlink).
 fn open_new_private(path: &Path) -> std::io::Result<std::fs::File> {
     let mut options = std::fs::OpenOptions::new();
-    // `read` também: o resgate relê os corpos pelo próprio descritor.
+    // `read` too: the rescue re-reads the bodies through its own descriptor.
     options.read(true).write(true).create_new(true);
     #[cfg(unix)]
     {
@@ -2972,10 +2972,10 @@ fn open_new_private(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 #[cfg(test)]
-/// Abre o arquivo para escrita como NOVO, sem seguir symlink. Se o nome já
-/// existir (arquivo antigo ou symlink plantado), REMOVE o nome (o link, nunca o
-/// alvo) e cria de novo; uma corrida em que alguém replante o nome faz o
-/// `create_new` falhar em vez de escrever fora.
+/// Opens the file for writing as NEW, without following symlinks. If the name already
+/// exists (old file or planted symlink), it REMOVES the name (the link, never the
+/// target) and creates it again; a race in which someone re-plants the name makes the
+/// `create_new` fail instead of writing outside.
 fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
     match open_new_private(path) {
         Err(error) if error.kind() == ErrorKind::AlreadyExists => {
@@ -2987,12 +2987,12 @@ fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 // ---------------------------------------------------------------------------
-// Corpos (docs/08-corpos-busca.md §1): coleta sem bloquear o loop de eventos.
+// Bodies (docs/08-corpos-busca.md §1): collection without blocking the event loop.
 // ---------------------------------------------------------------------------
 
-/// Limite por corpo (bytes decodificados).
+/// Limit per body (decoded bytes).
 const MAX_BODY_BYTES: usize = 5 * 1024 * 1024;
-/// Orçamento total de corpos gravados por sessão.
+/// Total budget of bodies written per session.
 const SESSION_BODY_BUDGET: usize = 256 * 1024 * 1024;
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -3050,8 +3050,8 @@ pub(crate) enum BodyTag {
         request_id: String,
         attempt: u32,
         timestamp: f64,
-        /// `postData` lossy do evento, guardado quando `postDataEntries` veio
-        /// incompleto: só é gravado (marcado) se `getRequestPostData` falhar.
+        /// `postData` (lossy) of the event, kept when `postDataEntries` came
+        /// incomplete: it is only written (marked) if `getRequestPostData` fails.
         fallback_post_data: Option<String>,
         entries_incomplete: bool,
     },
@@ -3072,14 +3072,14 @@ pub(crate) struct BodyCommand {
 
 #[derive(Default)]
 struct RequestState {
-    /// Quantidade de `requestWillBeSent` vistos (próximo attemptIndex).
+    /// Number of `requestWillBeSent` events seen (next attemptIndex).
     attempts: u32,
-    /// A resposta da tentativa atual já tem linha (ou comando em voo).
+    /// The current attempt's response already has a row (or a command in flight).
     response_resolved: bool,
     status: Option<u64>,
     content_length_zero: bool,
     method: String,
-    /// charset declarado pela resposta (Content-Type ou `response.charset`).
+    /// charset declared by the response (Content-Type or `response.charset`).
     charset: Option<String>,
 }
 
@@ -3096,7 +3096,7 @@ struct Row<'a> {
     kind: &'a str,
     source: &'a str,
     timestamp: f64,
-    /// Transformações entre o fio e `data` (campo opcional `transformed`).
+    /// Transformations between the wire and `data` (optional `transformed` field).
     transformed: Vec<String>,
 }
 
@@ -3152,8 +3152,8 @@ impl BodyCollector {
         );
     }
 
-    /// Converte o corpo entregue pelo CDP em uma linha, aplicando limite por
-    /// corpo, orçamento da sessão e a regra de `empty` só com evidência.
+    /// Converts the body delivered by the CDP into a row, applying a per-body limit,
+    /// the session budget, and the `empty` rule only with evidence.
     fn emit_body(
         &mut self,
         row: Row,
@@ -3169,7 +3169,7 @@ impl BodyCollector {
                     (Some(&decoded[..]), decoded.len())
                 }
                 None => {
-                    return self.unavailable(row, "CDP devolveu base64 inválido");
+                    return self.unavailable(row, "invalid base64 from CDP");
                 }
             }
         } else {
@@ -3180,7 +3180,7 @@ impl BodyCollector {
                 Some(evidence) => self.push(row, "empty", None, None, (Some(0), 0), Some(evidence.to_string())),
                 None => self.unavailable(
                     row,
-                    "CDP devolveu 0 bytes sem evidência de corpo vazio (sem 204/205/304 nem Content-Length: 0)",
+                    "CDP returned 0 bytes without evidence of an empty body (no 204/205/304 nor Content-Length: 0)",
                 ),
             };
         }
@@ -3192,11 +3192,11 @@ impl BodyCollector {
                 None,
                 None,
                 (Some(size), 0),
-                Some("orçamento de corpos da sessão excedido".to_string()),
+                Some("session body budget exceeded".to_string()),
             );
         }
         let truncated = size > keep;
-        // `data` é a string do CDP, byte a byte; só cortamos no limite.
+        // `data` is the CDP string, byte by byte; we only cut it at the limit.
         let (encoding, data) = match (base64_encoded, bytes) {
             (true, Some(bytes)) if truncated => ("base64", b64_encode(&bytes[..keep])),
             (true, _) => ("base64", text.to_string()),
@@ -3218,7 +3218,7 @@ impl BodyCollector {
         };
         self.used += captured;
         let reason = truncated.then(|| {
-            format!("corpo acima do limite de {MAX_BODY_BYTES} bytes; gravado só o prefixo")
+            format!("body above the limit of {MAX_BODY_BYTES} bytes; only the prefix was written")
         });
         self.push(
             row,
@@ -3257,7 +3257,7 @@ impl BodyCollector {
         }
     }
 
-    /// Resolve a resposta da tentativa atual como indisponível (uma vez só).
+    /// Resolves the current attempt's response as unavailable (only once).
     fn resolve_response_unavailable(&mut self, request_id: &str, timestamp: f64, reason: String) {
         let Some(state) = self.requests.get_mut(request_id) else {
             return;
@@ -3289,9 +3289,9 @@ impl BodyCollector {
                     if attempts > 0 && !resolved {
                         let reason = if params.get("redirectResponse").is_some_and(|v| !v.is_null())
                         {
-                            "resposta de redirect: CDP não fornece corpo"
+                            "redirect response: CDP does not provide a body"
                         } else {
-                            "tentativa substituída por novo requestWillBeSent sem redirectResponse; resposta não observada"
+                            "attempt replaced by a new requestWillBeSent without redirectResponse; response not observed"
                         };
                         self.resolve_response_unavailable(
                             request_id,
@@ -3341,7 +3341,7 @@ impl BodyCollector {
                     self.resolve_response_unavailable(
                         request_id,
                         timestamp,
-                        "SSE/streaming: CDP não fornece o corpo de um fluxo; mensagens chegam como eventos separados e não são gravadas".to_string(),
+                        "SSE/streaming: CDP does not provide the body of a stream; messages arrive as separate events and are not written".to_string(),
                     );
                 }
             }
@@ -3353,7 +3353,7 @@ impl BodyCollector {
                 self.resolve_response_unavailable(
                     request_id,
                     timestamp,
-                    "WebSocket: não há corpo HTTP; frames (Network.webSocketFrame*) não são gravados".to_string(),
+                    "WebSocket: there is no HTTP body; frames (Network.webSocketFrame*) are not written".to_string(),
                 );
             }
             "Network.loadingFinished" => {
@@ -3368,10 +3368,10 @@ impl BodyCollector {
                 let charset = state.charset.clone();
                 let evidence = match state.status {
                     Some(status @ (204 | 205 | 304)) => {
-                        Some(format!("status {status} não tem corpo"))
+                        Some(format!("status {status} has no body"))
                     }
                     _ if state.method.eq_ignore_ascii_case("HEAD") => {
-                        Some("resposta a HEAD não tem corpo".to_string())
+                        Some("HEAD response has no body".to_string())
                     }
                     _ if state.content_length_zero => Some("Content-Length: 0".to_string()),
                     _ => None,
@@ -3422,8 +3422,8 @@ impl BodyCollector {
             .get("hasPostData")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        // `postDataEntries` primeiro: são os bytes exatos. `postData` é uma
-        // string já convertida pelo Chrome (bytes inválidos viram U+FFFD).
+        // `postDataEntries` first: these are the exact bytes. `postData` is a
+        // string already converted by Chrome (invalid bytes become U+FFFD).
         let cl_zero = content_length_zero.then_some("Content-Length: 0");
         let mut entries_incomplete = false;
         if let Some(entries) = request.get("postDataEntries").and_then(Value::as_array) {
@@ -3455,8 +3455,8 @@ impl BodyCollector {
         }
         let post_data = request.get("postData").and_then(Value::as_str);
         if has_post_data {
-            // Entradas incompletas: o postData do evento é lossy; tenta os
-            // bytes via CDP antes de aceitá-lo (marcado).
+            // Incomplete entries: the event's postData is lossy; tries the
+            // bytes via CDP before accepting it (marked).
             if post_data.is_none() || entries_incomplete {
                 commands.push(BodyCommand {
                     method: "Network.getRequestPostData",
@@ -3498,7 +3498,7 @@ impl BodyCollector {
         } else {
             self.unavailable(
                 row,
-                "CDP não informou corpo (sem postData, postDataEntries nem hasPostData)",
+                "CDP gave no body (no postData, postDataEntries or hasPostData)",
             );
         }
     }
@@ -3529,8 +3529,8 @@ impl BodyCollector {
                     Err(_) => None,
                 };
                 if let Some((text, b64)) = fetched {
-                    // Entradas incompletas + string não-base64: não há prova
-                    // de que a string preserve os bytes.
+                    // Incomplete entries + non-base64 string: there is no evidence
+                    // that the string preserves the bytes.
                     let row = if entries_incomplete && !b64 {
                         row.marked(vec!["lossy-postData".to_string()])
                     } else {
@@ -3549,7 +3549,7 @@ impl BodyCollector {
                 } else {
                     match outcome {
                         Ok(_) => self
-                            .unavailable(row, "Network.getRequestPostData não devolveu postData"),
+                            .unavailable(row, "Network.getRequestPostData did not return postData"),
                         Err(message) => {
                             self.unavailable(row, format!("Network.getRequestPostData: {message}"))
                         }
@@ -3571,8 +3571,8 @@ impl BodyCollector {
                                 .get("base64Encoded")
                                 .and_then(Value::as_bool)
                                 .unwrap_or(false);
-                            // getResponseBody entrega texto já decodificado pelo
-                            // Chrome; os bytes do fio não são recuperáveis.
+                            // getResponseBody delivers text already decoded by
+                            // Chrome; the wire bytes are not recoverable.
                             let row = if b64 {
                                 row
                             } else {
@@ -3580,7 +3580,7 @@ impl BodyCollector {
                             };
                             self.emit_body(row, text, b64, empty_evidence.as_deref());
                         }
-                        None => self.unavailable(row, "Network.getResponseBody não devolveu body"),
+                        None => self.unavailable(row, "Network.getResponseBody did not return a body"),
                     },
                     Err(message) => {
                         self.unavailable(row, format!("Network.getResponseBody: {message}"))
@@ -3590,7 +3590,7 @@ impl BodyCollector {
         }
     }
 
-    /// Fim da captura: respostas sem `loadingFinished`/`loadingFailed`.
+    /// End of capture: responses without `loadingFinished`/`loadingFailed`.
     pub(crate) fn finish(&mut self) {
         let pending: Vec<String> = self
             .requests
@@ -3602,14 +3602,14 @@ impl BodyCollector {
             self.resolve_response_unavailable(
                 &id,
                 0.0,
-                "captura encerrada antes de loadingFinished/loadingFailed; resposta não coletada"
+                "capture ended before loadingFinished/loadingFailed; response not collected"
                     .to_string(),
             );
         }
     }
 }
 
-/// charset declarado pela resposta (Content-Type; senão `response.charset`).
+/// charset declared by the response (Content-Type; otherwise `response.charset`).
 fn declared_charset(response: &Value) -> Option<String> {
     let from_header = response
         .get("headers")
@@ -3679,22 +3679,22 @@ mod tests {
         std::fs::create_dir_all(&xdg).unwrap();
         std::fs::set_permissions(&xdg, std::fs::Permissions::from_mode(0o700)).unwrap();
         let os = |p: &Path| Some(OsString::from(p));
-        // 1. Sem TMPDIR, um XDG_RUNTIME_DIR válido (0700, nosso, absoluto) é a base.
+        // 1. Without TMPDIR, a valid XDG_RUNTIME_DIR (0700, ours, absolute) is the base.
         assert_eq!(pick_base_dir(None, os(&xdg), fallback.clone()), xdg);
-        // 2. TMPDIR definido pelo usuário vence o XDG; vazio não conta.
-        assert_eq!(pick_base_dir(Some("/meu/tmp".into()), os(&xdg), fallback.clone()), fallback);
+        // 2. A TMPDIR set by the user wins over XDG; an empty one does not count.
+        assert_eq!(pick_base_dir(Some("/my/tmp".into()), os(&xdg), fallback.clone()), fallback);
         assert_eq!(pick_base_dir(Some("".into()), os(&xdg), fallback.clone()), xdg);
-        // 3. XDG inválido cai no /tmp: modo aberto, link, relativo, inexistente, vazio.
+        // 3. An invalid XDG falls back to /tmp: open mode, link, relative, missing, empty.
         let open = base.join("aberto");
         std::fs::create_dir_all(&open).unwrap();
         std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
         let link = base.join("link");
         symlink(&xdg, &link).unwrap();
-        for bad in [os(&open), os(&link), Some("relativo/run".into()), os(&base.join("nao-existe")), None] {
+        for bad in [os(&open), os(&link), Some("relative/run".into()), os(&base.join("missing")), None] {
             assert_eq!(pick_base_dir(None, bad.clone(), fallback.clone()), fallback, "{bad:?}");
         }
-        // 4. O nome da raiz de estado leva o uid fora de um XDG válido (em /tmp compartilhado).
-        // SAFETY: `geteuid` não tem pré-condições.
+        // 4. The state root's name carries the uid outside a valid XDG (in a shared /tmp).
+        // SAFETY: `geteuid` has no preconditions.
         let uid = unsafe { libc::geteuid() };
         assert_eq!(
             state_root_in(Path::new("/tmp")),
@@ -3708,21 +3708,21 @@ mod tests {
     fn the_state_root_is_created_0700_and_a_symlink_in_its_place_is_refused_untouched() {
         use std::os::unix::fs::{symlink, PermissionsExt};
         let base = scratch_dir("stateroot");
-        let root = base.join("estado");
+        let root = base.join("state");
         ensure_private_state_root(&root).unwrap();
         assert_eq!(std::fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
-        // Já existe com modo frouxo: o core aperta para 0700 e a conferência passa.
+        // Already exists with a loose mode: the core tightens it to 0700 and the check passes.
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
         ensure_private_state_root(&root).unwrap();
         assert_eq!(std::fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
-        // Um link no lugar é recusado SEM mudar o modo do alvo.
-        let target = base.join("alvo");
+        // A link in its place is refused WITHOUT changing the target's mode.
+        let target = base.join("target");
         std::fs::create_dir_all(&target).unwrap();
         std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let link = base.join("estado-link");
+        let link = base.join("state-link");
         symlink(&target, &link).unwrap();
         assert!(ensure_private_state_root(&link).is_err());
-        assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o755, "o alvo do link foi alterado");
+        assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o755, "the link target was changed");
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -3730,9 +3730,9 @@ mod tests {
         args.iter().filter(|a| a.starts_with("--disable-blink-features")).collect()
     }
 
-    /// D7: o aviso de automação é suprimido SEMPRE, uma única vez, em todos os
-    /// modos: rede (Open/LoopbackOnly), allowlist, headless, ignore_cert e transporte
-    /// (pipe e porta).
+    /// D7: the automation notice is ALWAYS suppressed, once, in every
+    /// mode: network (Open/LoopbackOnly), allowlist, headless, ignore_cert and transport
+    /// (pipe and port).
     #[test]
     fn automation_flag_is_always_present_exactly_once_in_every_mode() {
         let flag = format!("--disable-blink-features={AUTOMATION_FEATURE}");
@@ -3745,7 +3745,7 @@ mod tests {
                             let found = blink_flags(&args);
                             assert_eq!(found, vec![&flag], "{network:?} {rules:?} h={headless} c={ignore_cert} p={pipe}: {args:?}");
                             assert_eq!(args.iter().filter(|a| *a == "about:blank").count(), 1);
-                            // As outras flags de --disable-features continuam separadas.
+                            // The other --disable-features flags stay separate.
                             assert_eq!(args.iter().filter(|a| a.starts_with("--disable-features=")).count(), 1);
                         }
                     }
@@ -3762,15 +3762,15 @@ mod tests {
             v.push("about:blank".to_string());
             v
         };
-        // Sem a flag: entra uma vez, antes da URL.
+        // No flag: it is added once, before the URL.
         let mut args = base(&[]);
         merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
         assert_eq!(args, ["--a", "--disable-blink-features=AutomationControlled", "about:blank"]);
-        // Já existe com outras features: combina, na mesma posição, sem duplicar a flag.
+        // Already has other features: combines them in the same position, without duplicating the flag.
         let mut args = base(&["--disable-blink-features=Foo,Bar", "--b"]);
         merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
         assert_eq!(args, ["--a", "--disable-blink-features=Foo,Bar,AutomationControlled", "--b", "about:blank"]);
-        // Já tem a feature (e repetida em duas flags): fica uma flag, um valor cada.
+        // Already has the feature (and repeated in two flags): keeps one flag, one value each.
         let mut args = base(&["--disable-blink-features=AutomationControlled,Foo", "--disable-blink-features=Foo,Baz"]);
         merge_blink_features(&mut args, &[AUTOMATION_FEATURE]);
         assert_eq!(blink_flags(&args).len(), 1, "{args:?}");
@@ -3786,7 +3786,7 @@ mod tests {
         let args = args_for(NetworkMode::Open, None, false, false, true);
         let recorded = recorded_chrome_args(&args);
         assert!(recorded.contains(&"--disable-blink-features=AutomationControlled".to_string()), "{recorded:?}");
-        assert!(recorded.iter().all(|a| !a.contains("/x/perfil") && a != "about:blank"), "{recorded:?}");
+        assert!(recorded.iter().all(|a| !a.contains("/x/profile") && a != "about:blank"), "{recorded:?}");
         assert!(recorded.contains(&"--user-data-dir=<perfil-temporário>".to_string()));
         assert!(recorded.contains(&"--log-net-log=<netlog>".to_string()));
     }
@@ -3794,7 +3794,7 @@ mod tests {
     fn args_for(network: NetworkMode, rules: Option<&str>, headless: bool, ignore_cert: bool, pipe: bool) -> Vec<String> {
         let config = CaptureConfig {
             chrome: PathBuf::from("/x/chrome"),
-            session_dir: PathBuf::from("/x/sessao"),
+            session_dir: PathBuf::from("/x/session"),
             start_url: String::new(),
             headless,
             ignore_cert,
@@ -3802,15 +3802,15 @@ mod tests {
             cookie_source: None,
             initial_cookies: Vec::new(),
         };
-        chrome_args(&config, Path::new("/x/perfil"), Path::new("/x/perfil/netlog.json"), rules, pipe)
+        chrome_args(&config, Path::new("/x/profile"), Path::new("/x/profile/netlog.json"), rules, pipe)
     }
 
     fn has(args: &[String], flag: &str) -> bool {
         args.iter().any(|a| a == flag || a.starts_with(&format!("{flag}=")))
     }
 
-    /// O padrão é a rede aberta: a captura do App acessa sites reais (antes o App
-    /// só capturava loopback e `https://google.com.br` dava DNS_PROBE_FINISHED_NXDOMAIN).
+    /// The default is open network: the App's capture reaches real sites (before, the App
+    /// only captured loopback and `https://google.com.br` gave DNS_PROBE_FINISHED_NXDOMAIN).
     #[test]
     fn network_mode_defaults_to_open() {
         assert_eq!(NetworkMode::default(), NetworkMode::Open);
@@ -3829,7 +3829,7 @@ mod tests {
         assert!(!has(&args, "--allow-insecure-localhost"), "{args:?}");
         assert!(!has(&args, "--ignore-certificate-errors"), "{args:?}");
         assert!(!has(&args, "--headless"), "{args:?}");
-        // O que a captura precisa continua: NetLog Everything, QUIC, perfil, pipe.
+        // What the capture needs stays: NetLog Everything, QUIC, profile, pipe.
         assert!(has(&args, "--log-net-log") && has(&args, "--net-log-capture-mode"));
         assert!(args.contains(&"--net-log-capture-mode=Everything".to_string()));
         assert!(has(&args, "--enable-quic") && has(&args, "--user-data-dir"));
@@ -3854,7 +3854,7 @@ mod tests {
             let rules: Vec<&String> = args.iter().filter(|a| a.starts_with("--host-resolver-rules=")).collect();
             assert_eq!(rules.len(), 1, "{mode:?}: {args:?}");
             assert_eq!(rules[0], "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE a.test");
-            // Nenhum relaxamento de certificado na captura controlada.
+            // No certificate relaxation in the controlled capture.
             assert!(!has(&args, "--allow-insecure-localhost"), "{mode:?}");
             assert!(!has(&args, "--ignore-certificate-errors"), "{mode:?}");
         }
@@ -3940,27 +3940,27 @@ mod tests {
     fn open_private_does_not_follow_a_planted_symlink() {
         use std::os::unix::fs::{symlink, PermissionsExt};
         let dir = scratch_dir("open");
-        let outside = dir.join("FORA.txt");
+        let outside = dir.join("OUTSIDE.txt");
         std::fs::write(&outside, "ORIGINAL\n").unwrap();
         std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o644)).unwrap();
         let link = dir.join("cdp-bodies.jsonl");
         symlink(&outside, &link).unwrap();
         let mut file = open_private(&link).unwrap();
-        file.write_all(b"DADOS\n").unwrap();
+        file.write_all(b"DATA\n").unwrap();
         drop(file);
-        // O alvo do link não foi tocado nem teve o modo alterado.
+        // The link's target was not touched and its mode was not changed.
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "ORIGINAL\n");
         assert_eq!(std::fs::metadata(&outside).unwrap().permissions().mode() & 0o777, 0o644);
-        // O nome virou um arquivo regular 0600 com os dados.
+        // The name became a regular 0600 file with the data.
         let meta = std::fs::symlink_metadata(&link).unwrap();
         assert!(meta.file_type().is_file() && !meta.file_type().is_symlink());
         assert_eq!(meta.permissions().mode() & 0o777, 0o600);
-        assert_eq!(std::fs::read_to_string(&link).unwrap(), "DADOS\n");
-        // `create_new` puro recusa o nome existente (inclusive symlink).
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "DATA\n");
+        // Bare `create_new` refuses an existing name (including a symlink).
         assert!(open_new_private(&link).is_err());
         let dangling = dir.join("pendurado");
-        symlink(dir.join("nao-existe"), &dangling).unwrap();
-        assert!(open_new_private(&dangling).is_err(), "O_NOFOLLOW/O_EXCL recusa symlink");
+        symlink(dir.join("missing"), &dangling).unwrap();
+        assert!(open_new_private(&dangling).is_err(), "O_NOFOLLOW/O_EXCL refuses a symlink");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -3969,28 +3969,28 @@ mod tests {
     fn private_dir_is_created_new_0700_and_verified_after_open() {
         use std::os::unix::fs::{symlink, PermissionsExt};
         let base = scratch_dir("privdir");
-        // Novo: 0700 desde a criação.
-        let fresh = base.join("novo");
+        // New: 0700 since creation.
+        let fresh = base.join("new");
         create_private_dir_new(&fresh).unwrap();
         assert_eq!(std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777, 0o700);
-        // Nome já existente (diretório): recusa, não reaproveita.
+        // Name already exists (directory): refused, not reused.
         assert!(create_private_dir_new(&fresh).is_err());
-        // Symlink plantado no nome (mesmo para um diretório de verdade): recusa.
+        // Symlink planted under the name (even for a real directory): refused.
         let real = base.join("real");
         std::fs::create_dir(&real).unwrap();
         let link = base.join("link");
         symlink(&real, &link).unwrap();
         assert!(create_private_dir_new(&link).is_err());
-        assert!(verify_private_dir(&link).is_err(), "link no último componente");
-        // Modo diferente de 0700 não passa na conferência.
+        assert!(verify_private_dir(&link).is_err(), "link in the last component");
+        // A mode other than 0700 does not pass the check.
         let loose = base.join("solto");
         std::fs::create_dir(&loose).unwrap();
         std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(verify_private_dir(&loose).is_err());
         std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o700)).unwrap();
         verify_private_dir(&loose).unwrap();
-        // Arquivo comum não é diretório.
-        let file = base.join("arquivo");
+        // A regular file is not a directory.
+        let file = base.join("file");
         std::fs::write(&file, "x").unwrap();
         assert!(verify_private_dir(&file).is_err());
         let _ = std::fs::remove_dir_all(base);
@@ -4001,13 +4001,13 @@ mod tests {
     fn read_private_regular_refuses_symlinks_and_non_files() {
         use std::os::unix::fs::symlink;
         let base = scratch_dir("readreg");
-        let target = base.join("alvo");
+        let target = base.join("target");
         std::fs::write(&target, "segredo").unwrap();
         let link = base.join("netlog.json");
         symlink(&target, &link).unwrap();
         assert_eq!(read_private_regular(&target).as_deref(), Some(&b"segredo"[..]));
-        assert_eq!(read_private_regular(&link), None, "não segue symlink");
-        assert_eq!(read_private_regular(&base), None, "diretório não é arquivo");
+        assert_eq!(read_private_regular(&link), None, "does not follow symlinks");
+        assert_eq!(read_private_regular(&base), None, "a directory is not a file");
         assert_eq!(read_private_regular(&base.join("ausente")), None);
         let _ = std::fs::remove_dir_all(base);
     }
@@ -4017,7 +4017,7 @@ mod tests {
     fn write_private_replaces_a_symlink_without_touching_its_target() {
         use std::os::unix::fs::{symlink, PermissionsExt};
         let dir = scratch_dir("atomic");
-        let outside = dir.join("FORA.txt");
+        let outside = dir.join("OUTSIDE.txt");
         std::fs::write(&outside, "ORIGINAL\n").unwrap();
         let dest = dir.join("cdp-events.jsonl");
         symlink(&outside, &dest).unwrap();
@@ -4027,7 +4027,7 @@ mod tests {
         assert!(meta.file_type().is_file());
         assert_eq!(meta.permissions().mode() & 0o777, 0o600);
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "{\"method\":\"x\"}\n");
-        // Nenhum temporário sobra.
+        // No temporary file is left over.
         let leftovers: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .flatten()
@@ -4043,12 +4043,12 @@ mod tests {
         let dir = scratch_dir("sessiondir");
         let real = dir.join("real");
         std::fs::create_dir_all(&real).unwrap();
-        let link = dir.join("sessao");
+        let link = dir.join("session");
         std::os::unix::fs::symlink(&real, &link).unwrap();
         let (_stop_tx, stop_rx) = std::sync::mpsc::channel();
         let (ready_tx, _ready_rx) = std::sync::mpsc::channel();
         let config = CaptureConfig {
-            chrome: PathBuf::from("/nao/roda/nada"),
+            chrome: PathBuf::from("/nothing/runs/here"),
             session_dir: link,
             start_url: String::new(),
             headless: true,
@@ -4060,7 +4060,7 @@ mod tests {
         let status = Arc::new(Mutex::new(CaptureStatus::default()));
         let error = run(config, status, stop_rx, ready_tx).unwrap_err();
         assert!(error.contains("symlink"), "{error}");
-        assert!(std::fs::read_dir(&real).unwrap().next().is_none(), "nada pode ter sido gravado");
+        assert!(std::fs::read_dir(&real).unwrap().next().is_none(), "nothing may have been written");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -4072,21 +4072,21 @@ mod tests {
             target_type: "page".into(),
         };
         let mut cdp = test_cdp();
-        assert!(cdp.initial_target_gate().unwrap_err().contains("não anexou"));
+        assert!(cdp.initial_target_gate().unwrap_err().contains("not attached"));
         cdp.page_session_id = "P".into();
-        assert!(cdp.initial_target_gate().unwrap_err().contains("não foi configurada"));
+        assert!(cdp.initial_target_gate().unwrap_err().contains("not been configured"));
         cdp.configured_sessions.insert("P".into());
         assert!(cdp
             .initial_target_gate()
             .unwrap_err()
-            .contains("Network.enable sem confirmação"));
-        // Comandos enviados, ACK ainda não chegou: portão fechado.
+            .contains("Network.enable not confirmed"));
+        // Commands sent, ACK not yet arrived: gate closed.
         cdp.register_setup_command(1, &target("P"), "Network.enable", None);
         cdp.register_setup_command(2, &target("P"), "Target.setAutoAttach", None);
-        assert!(cdp.initial_target_gate().unwrap_err().contains("ainda sem resposta"));
+        assert!(cdp.initial_target_gate().unwrap_err().contains("awaiting a response"));
         cdp.on_setup_response(1, &json!({ "id": 1, "result": {} }));
         assert!(cdp.initial_target_gate().is_err(), "falta o setAutoAttach");
-        // Pendência de OUTRA sessão não segura o portão.
+        // A pending command from ANOTHER session does not hold the gate.
         cdp.register_setup_command(3, &target("W"), "Network.enable", None);
         cdp.on_setup_response(2, &json!({ "id": 2, "result": {} }));
         assert_eq!(cdp.initial_target_gate(), Ok(()));
@@ -4107,18 +4107,18 @@ mod tests {
         cdp.on_setup_response(1, &json!({ "id": 1, "error": { "message": "boom" } }));
         cdp.on_setup_response(2, &json!({ "id": 2, "result": {} }));
         let reason = cdp.initial_target_gate().unwrap_err();
-        assert!(reason.contains("Network.enable sem confirmação"), "{reason}");
+        assert!(reason.contains("Network.enable not confirmed"), "{reason}");
     }
 
     #[test]
     fn late_setup_ack_produces_no_warning() {
         let mut cdp = test_cdp();
         cdp.register_setup_command(7, &sw_target(), "Network.enable", None);
-        // ACK chega depois (atrasado), antes do encerramento.
+        // ACK arrives later (late), before shutdown.
         assert!(cdp.on_setup_response(7, &json!({ "id": 7, "result": {} })));
         cdp.finalize_pending_setups();
         assert!(event_methods(&cdp).is_empty(), "{:?}", event_methods(&cdp));
-        // Id desconhecido não é de setup.
+        // Unknown id is not a setup one.
         assert!(!cdp.on_setup_response(99, &json!({ "id": 99, "result": {} })));
     }
 
@@ -4158,7 +4158,7 @@ mod tests {
         let line: Value = serde_json::from_str(&cdp.events[0]).unwrap();
         assert_eq!(
             line["params"]["reason"],
-            "alvo encerrado durante a configuração"
+            "target closed during setup"
         );
 
         let mut cdp = test_cdp();
@@ -4172,13 +4172,13 @@ mod tests {
     fn setup_command_error_is_not_reported_as_no_response() {
         let mut cdp = test_cdp();
         let target = sw_target();
-        // Page.enable não suportado: ignorado. Network.enable com erro real: evento próprio.
+        // Page.enable unsupported: ignored. Network.enable with a real error: its own event.
         cdp.register_setup_command(1, &target, "Page.enable", None);
         cdp.register_setup_command(2, &target, "Network.enable", None);
         cdp.register_setup_command(3, &target, "Runtime.enable", None);
         assert!(cdp.on_setup_response(1, &json!({ "id": 1, "error": { "message": "'Page.enable' wasn't found" } })));
         assert!(cdp.on_setup_response(2, &json!({ "id": 2, "error": { "message": "boom" } })));
-        // Sessão sumiu: aborto, não timeout.
+        // Session vanished: abort, not timeout.
         assert!(cdp.on_setup_response(3, &json!({ "id": 3, "error": { "message": "Session with given id not found." } })));
         cdp.finalize_pending_setups();
         assert_eq!(
@@ -4187,7 +4187,7 @@ mod tests {
         );
     }
 
-    // --- limpeza de órfãos -------------------------------------------------
+    // --- orphan cleanup ---------------------------------------------------
 
     fn orphan_root(tag: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
@@ -4246,17 +4246,17 @@ mod tests {
     fn live_pid_with_foreign_command_line_is_not_touched() {
         let root = orphan_root("foreign");
         let profile = app_profile("foreign");
-        // Processo vivo cuja linha de comando NÃO contém o perfil (PID "reaproveitado").
+        // Live process whose command line does NOT contain the profile (a "reused" PID).
         let mut other = Command::new("sleep").arg("30").spawn().unwrap();
         let marker = write_marker(&root, "b", dead_pid(), other.id(), &profile);
         let report = cleanup_orphans(&root);
         assert_eq!(report.processes_killed, 0);
         assert!(
             other.try_wait().unwrap().is_none(),
-            "processo alheio foi encerrado"
+            "foreign process was terminated"
         );
         assert!(process_exists(other.id()));
-        // O perfil e o marcador do app são limpos mesmo assim.
+        // The app's profile and marker are cleaned up anyway.
         assert!(!profile.exists());
         assert!(!marker.exists());
         let _ = other.kill();
@@ -4268,7 +4268,7 @@ mod tests {
     fn live_pid_using_the_dedicated_profile_is_terminated() {
         let root = orphan_root("ours");
         let profile = app_profile("ours");
-        // Stand-in do Chrome: a linha de comando carrega o perfil dedicado.
+        // Chrome stand-in: its command line carries the dedicated profile.
         let mut fake = Command::new("sh")
             .args(["-c", "sleep 30; true", "fake-chrome"])
             .arg(format!("--user-data-dir={}", profile.display()))
@@ -4284,7 +4284,7 @@ mod tests {
             thread::sleep(Duration::from_millis(100));
             false
         });
-        assert!(exited, "o Chrome do perfil dedicado devia ter sido encerrado");
+        assert!(exited, "the dedicated-profile Chrome should have been terminated");
         assert!(!profile.exists());
         assert!(!marker.exists());
         let _ = fake.kill();
@@ -4367,7 +4367,7 @@ mod tests {
                 false,
             ),
         );
-        assert!(cmds.is_empty(), "postData presente não precisa de comando");
+        assert!(cmds.is_empty(), "postData present, no command needed");
         let rows = lines(&mut c);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["state"], "captured");
@@ -4395,7 +4395,7 @@ mod tests {
         assert_eq!(b64_decode(rows[0]["data"].as_str().unwrap()).unwrap(), raw);
         assert_eq!(rows[0]["source"], "requestWillBeSent.postDataEntries");
 
-        // Com entries completas, o postData (lossy) é ignorado.
+        // With complete entries, the (lossy) postData is ignored.
         let params = will_be_sent(
             "2.2",
             "POST",
@@ -4468,7 +4468,7 @@ mod tests {
         assert_eq!(rows[1]["state"], "unavailable");
         assert_eq!(
             rows[1]["reason"],
-            "resposta de redirect: CDP não fornece corpo"
+            "redirect response: CDP does not provide a body"
         );
         assert_eq!(
             (rows[2]["kind"].as_str(), rows[2]["attemptIndex"].as_u64()),
@@ -4478,9 +4478,9 @@ mod tests {
         let cmds = c.on_event("Network.loadingFinished", &finish_event("4.1"));
         match &cmds[0].tag {
             BodyTag::Response { attempt, .. } => assert_eq!(*attempt, 1),
-            other => panic!("tag inesperada: {other:?}"),
+            other => panic!("unexpected tag: {other:?}"),
         }
-        // loadingFinished repetido não gera segundo comando.
+        // A repeated loadingFinished does not generate a second command.
         assert!(c
             .on_event("Network.loadingFinished", &finish_event("4.1"))
             .is_empty());
@@ -4496,7 +4496,7 @@ mod tests {
             );
             c.on_event("Network.loadingFinished", &finish_event("5.1"))
         };
-        let body = "é".repeat(MAX_BODY_BYTES / 2 + 10); // 2 bytes por char, corta no meio de nada
+        let body = "é".repeat(MAX_BODY_BYTES / 2 + 10); // 2 bytes per char; the cut falls between characters
         c.on_result(
             cmds[0].tag.clone(),
             Ok(json!({ "body": body, "base64Encoded": false })),
@@ -4508,7 +4508,7 @@ mod tests {
         assert_eq!(rows[0]["data"].as_str().unwrap().len(), MAX_BODY_BYTES);
         assert!(body.starts_with(rows[0]["data"].as_str().unwrap()));
 
-        // Corte que cairia no meio de um caractere recua para a fronteira.
+        // A cut that would land in the middle of a character backs up to the boundary.
         let odd = format!("a{}", "é".repeat(MAX_BODY_BYTES / 2));
         c.on_event(
             "Network.requestWillBeSent",
@@ -4522,7 +4522,7 @@ mod tests {
         let rows = lines(&mut c);
         assert_eq!(rows[0]["capturedSize"], MAX_BODY_BYTES - 1);
 
-        // base64 truncado preserva os 5 MiB de bytes decodificados.
+        // Truncated base64 preserves the 5 MiB of decoded bytes.
         let big = vec![7u8; MAX_BODY_BYTES + 3];
         c.on_event(
             "Network.requestWillBeSent",
@@ -4559,7 +4559,7 @@ mod tests {
         let rows = lines(&mut c);
         assert_eq!(rows[0]["state"], "captured");
         assert_eq!(rows[1]["state"], "discarded");
-        assert_eq!(rows[1]["reason"], "orçamento de corpos da sessão excedido");
+        assert_eq!(rows[1]["reason"], "session body budget exceeded");
         assert_eq!(rows[1]["originalSize"], 1);
         assert!(rows[1]["data"].is_null());
     }
@@ -4581,7 +4581,7 @@ mod tests {
             "Network.webSocketCreated",
             &json!({ "requestId": "7.3", "url": "ws://127.0.0.1/" }),
         );
-        // loadingFinished depois de resolvido não gera comando.
+        // A loadingFinished after resolution does not generate a command.
         assert!(c
             .on_event("Network.loadingFinished", &finish_event("7.2"))
             .is_empty());
@@ -4651,14 +4651,14 @@ mod tests {
         );
         c.finish();
         let rows = lines(&mut c);
-        // 9.2 ganha também a linha de requisição sem corpo informado.
+        // 9.2 also gains the request row with no body reported.
         assert_eq!(
             rows.iter().filter(|row| row["kind"] == "response").count(),
             2
         );
         assert!(rows.iter().all(|row| row["state"] == "unavailable"));
         c.finish();
-        assert!(lines(&mut c).is_empty(), "finish é idempotente");
+        assert!(lines(&mut c).is_empty(), "finish is idempotent");
     }
 
     #[test]
@@ -4743,7 +4743,7 @@ mod tests {
         assert_eq!(rows[0]["encoding"], "base64");
         assert!(rows[0].get("transformed").is_none());
 
-        // Sem hasPostData, o postData lossy é gravado marcado, sem comando.
+        // Without hasPostData, the lossy postData is written marked, with no command.
         let no_flag = json!({"postData": "x", "postDataEntries": [{"type": "blob"}]});
         assert!(c
             .on_event(
@@ -4758,7 +4758,7 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../experiments/results/h1-page")
             .join(name);
-        std::fs::read(path).expect("fixture de experiments/results/h1-page")
+        std::fs::read(path).expect("fixture from experiments/results/h1-page")
     }
 
     fn quiet_shutdown(exit: ChromeExit) -> ShutdownReport {
@@ -4786,7 +4786,7 @@ mod tests {
         shutdown.transport_closed = Some("frame_too_large".to_string());
         mark_incomplete(&mut imported.bundle.session, &status, &shutdown);
         let session = &imported.bundle.session;
-        // Mesmo com NetLog completo e Chrome gracioso, o motivo vem explícito.
+        // Even with a complete NetLog and a graceful Chrome, the reason comes out explicitly.
         assert!(session
             .session
             .completeness
@@ -4794,7 +4794,7 @@ mod tests {
             .iter()
             .any(|r| r.contains("cdp_transport_closed: frame_too_large")), "{:?}", session.session.completeness);
         assert!(session.warnings.iter().any(|w| w.code == "capture.cdp_transport_closed"));
-        // Combina com os outros motivos, sem trocá-los.
+        // Combines with the other reasons, without replacing them.
         let mut both = quiet_shutdown(ChromeExit::Killed);
         both.transport_closed = Some("frame_too_large".to_string());
         mark_incomplete(&mut imported.bundle.session, &status, &both);
@@ -4811,9 +4811,9 @@ mod tests {
         std::fs::create_dir_all(&session_dir).unwrap();
         std::fs::set_permissions(&session_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
         let identity = verify_private_dir(&session_dir).unwrap();
-        recheck_session_dir(&session_dir, identity).expect("intacto passa");
+        recheck_session_dir(&session_dir, identity).expect("intact passes");
 
-        // 1. Trocada por um symlink para OUT, cheio de links (o PoC do Revisor).
+        // 1. Swapped for a symlink to OUT, full of links (the Reviewer's PoC).
         let out = base.join("OUT");
         std::fs::create_dir_all(&out).unwrap();
         std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -4827,7 +4827,7 @@ mod tests {
         std::fs::rename(&session_dir, &moved).unwrap();
         symlink(&out, &session_dir).unwrap();
         let err = recheck_session_dir(&session_dir, identity).unwrap_err();
-        assert!(err.contains("link simbólico"), "{err}");
+        assert!(err.contains("symbolic link"), "{err}");
         let cdp = fixture("cdp-events.jsonl");
         let (netlog, _s) = prepare_netlog(Some(&fixture("chrome-netlog.json")));
         let mut imported = import_capture_labeled(
@@ -4838,28 +4838,28 @@ mod tests {
             CorrelationOptions::default(),
         )
         .unwrap();
-        // A6-B5: a gravação é relativa ao descritor: vai TODA para a pasta original
-        // (movida) e nada cai em OUT, mesmo com o nome já trocado.
-        write_session_fd(&mut imported.bundle, &handle, &base).expect("grava pelo descritor");
-        assert!(moved.join("session.json").is_file(), "a sessão ficou na pasta original");
+        // A6-B5: the write is relative to the descriptor: ALL of it goes to the original directory
+        // (moved), and nothing lands in OUT, even though the name was already swapped.
+        write_session_fd(&mut imported.bundle, &handle, &base).expect("writes through the descriptor");
+        assert!(moved.join("session.json").is_file(), "the session stayed in the original directory");
         assert!(moved.join("cdp-events.jsonl").is_file());
-        // Nada foi gravado em OUT e os links de OUT NÃO foram removidos.
+        // Nothing was written to OUT, and OUT's links were NOT removed.
         for name in SESSION_DIR_FILES {
             let meta = std::fs::symlink_metadata(out.join(name)).unwrap();
-            assert!(meta.file_type().is_symlink(), "{name} em OUT foi mexido");
+            assert!(meta.file_type().is_symlink(), "{name} in OUT was touched");
         }
         assert_eq!(std::fs::read_dir(&out).unwrap().count(), 3);
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n");
 
-        // 2. Trocada por OUTRO diretório de verdade (0700, nosso): a identidade difere.
+        // 2. Swapped for ANOTHER real directory (0700, ours): the identity differs.
         std::fs::remove_file(&session_dir).unwrap();
         std::fs::create_dir(&session_dir).unwrap();
         std::fs::set_permissions(&session_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-        assert!(recheck_session_dir(&session_dir, identity).unwrap_err().contains("outro diretório"));
+        assert!(recheck_session_dir(&session_dir, identity).unwrap_err().contains("different directory"));
         // 3. Modo afrouxado.
         std::fs::remove_dir(&session_dir).unwrap();
         std::fs::rename(&moved, &session_dir).unwrap();
-        recheck_session_dir(&session_dir, identity).expect("o original de volta passa");
+        recheck_session_dir(&session_dir, identity).expect("the original, swapped back, passes");
         std::fs::set_permissions(&session_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(recheck_session_dir(&session_dir, identity).is_err());
         let _ = std::fs::remove_dir_all(base);
@@ -4876,14 +4876,14 @@ mod tests {
         let moved = base.join("capture-X.moved");
         std::fs::rename(&dir, &moved).unwrap();
         symlink(base.join("OUT"), &dir).unwrap();
-        let message = session_dir_changed_after_write("agora é um link simbólico".to_string(), &handle);
+        let message = session_dir_changed_after_write("now a symbolic link".to_string(), &handle);
         let canonical = std::fs::canonicalize(&moved).unwrap();
-        assert!(message.contains(&canonical.display().to_string()), "sem o caminho movido: {message}");
-        assert!(message.contains("gravada inteira na pasta ORIGINAL"), "{message}");
-        // Não afirma o contrário ("nada foi gravado nela").
-        assert!(!message.contains("nada foi gravado nela"), "{message}");
-        // A mensagem de ANTES de gravar continua dizendo que nada foi gravado.
-        assert!(session_dir_changed("x".to_string()).contains("nada foi gravado nela"));
+        assert!(message.contains(&canonical.display().to_string()), "without the moved path: {message}");
+        assert!(message.contains("written in full to the ORIGINAL directory"), "{message}");
+        // Does not assert the opposite ("nothing was written to it").
+        assert!(!message.contains("nothing was written to it"), "{message}");
+        // The message from BEFORE the write still says that nothing was written to it.
+        assert!(session_dir_changed("x".to_string()).contains("nothing was written to it"));
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -4891,10 +4891,10 @@ mod tests {
     fn a5_b3_rescue_keeps_only_the_capture_files_in_a_private_dir_with_a_marker() {
         use std::os::unix::fs::PermissionsExt;
         let base = scratch_dir("rescue");
-        let root = base.join("estado");
+        let root = base.join("state");
         let mut bodies = open_private(&base.join("cdp-bodies.jsonl")).unwrap();
-        bodies.write_all(b"{\"corpo\":1}\n").unwrap();
-        let dir = rescue_capture_files(&root, b"{\"a\":1}\n", Some(b"{\"constants\":{}}"), &mut bodies, "motivo de teste")
+        bodies.write_all(b"{\"body\":1}\n").unwrap();
+        let dir = rescue_capture_files(&root, b"{\"a\":1}\n", Some(b"{\"constants\":{}}"), &mut bodies, "test reason")
             .unwrap();
         assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
         let mut names: Vec<String> = std::fs::read_dir(&dir)
@@ -4902,17 +4902,17 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
             .collect();
         names.sort();
-        // Só os arquivos da captura (+ o motivo): nada do perfil do Chrome.
+        // Only the capture files (+ the reason): nothing from the Chrome profile.
         assert_eq!(names, ["cdp-bodies.jsonl", "cdp-events.jsonl", "motivo.txt", "netlog.json"]);
-        assert_eq!(std::fs::read(dir.join("cdp-bodies.jsonl")).unwrap(), b"{\"corpo\":1}\n");
-        // Marcador no state root.
+        assert_eq!(std::fs::read(dir.join("cdp-bodies.jsonl")).unwrap(), b"{\"body\":1}\n");
+        // Marker in the state root.
         let marker = root.join(format!("{}.json", dir.file_name().unwrap().to_string_lossy()));
         let value: Value = serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
         assert_eq!(value["kind"], "rescue");
         let _ = std::fs::remove_dir_all(base);
     }
 
-    /// Põe a data de modificação do diretório `days` dias no passado.
+    /// Sets the directory's modification date `days` days into the past.
     fn age_dir(dir: &Path, days: u64) {
         let old = SystemTime::now() - Duration::from_secs(days * 24 * 3600 + 60);
         std::fs::File::open(dir).unwrap().set_modified(old).unwrap();
@@ -4921,50 +4921,50 @@ mod tests {
     #[test]
     fn a5_b3_cleanup_removes_only_expired_rescues_that_the_marker_really_names() {
         let base = scratch_dir("rescue-ttl");
-        let root = base.join("estado");
+        let root = base.join("state");
         std::fs::create_dir_all(&root).unwrap();
         let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
-        let recent = rescue_capture_files(&root, b"x\n", None, &mut bodies, "recente").unwrap();
-        // Um vencido pela IDADE DO DIRETÓRIO (8 dias), um marcador adulterado
-        // apontando para fora e uma pasta que não é de resgate.
-        let old = rescue_capture_files(&root, b"y\n", None, &mut bodies, "vencido").unwrap();
+        let recent = rescue_capture_files(&root, b"x\n", None, &mut bodies, "recent").unwrap();
+        // One expired by the DIRECTORY'S AGE (8 days), a tampered marker
+        // pointing outside, and a folder that is not a rescue one.
+        let old = rescue_capture_files(&root, b"y\n", None, &mut bodies, "expired").unwrap();
         age_dir(&old, 8);
-        let outside = base.join("FORA");
+        let outside = base.join("OUTSIDE");
         std::fs::create_dir_all(&outside).unwrap();
         std::fs::write(outside.join("x"), "x").unwrap();
         age_dir(&outside, 30);
         std::fs::write(
             root.join(format!("{RESCUE_PREFIX}evil.json")),
-            json!({"kind":"rescue","ownerPid":1,"dir":"../FORA"}).to_string(),
+            json!({"kind":"rescue","ownerPid":1,"dir":"../OUTSIDE"}).to_string(),
         )
         .unwrap();
         let report = cleanup_orphans(&root);
         assert_eq!(report.rescues_removed, 1, "{report:?}");
-        assert!(!old.exists(), "o vencido devia sumir");
-        assert!(recent.exists(), "o recente fica");
-        assert!(outside.join("x").exists(), "marcador adulterado não apaga fora");
+        assert!(!old.exists(), "the expired one should be gone");
+        assert!(recent.exists(), "the recent one stays");
+        assert!(outside.join("x").exists(), "tampered marker does not delete outside");
         let _ = std::fs::remove_dir_all(base);
     }
 
-    /// A6-B7: a idade vem do diretório, não do marcador. Um marcador forjado
-    /// com `createdMs` antigo (ou com o nome de OUTRA pasta) não apaga um resgate
-    /// recente.
+    /// A6-B7: the age comes from the directory, not from the marker. A forged marker
+    /// with an old `createdMs` (or with the name of ANOTHER folder) does not delete a rescue
+    /// recent.
     #[test]
     fn a6_b7_forged_marker_cannot_delete_a_recent_rescue() {
         let base = scratch_dir("rescue-forged");
-        let root = base.join("estado");
+        let root = base.join("state");
         std::fs::create_dir_all(&root).unwrap();
         let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
-        let recent = rescue_capture_files(&root, b"x\n", None, &mut bodies, "recente").unwrap();
+        let recent = rescue_capture_files(&root, b"x\n", None, &mut bodies, "recent").unwrap();
         let recent_name = recent.file_name().unwrap().to_string_lossy().to_string();
-        // 1. O PoC do Revisor: arquivo com outro nome, `dir` do resgate recente e
+        // 1. The Reviewer's PoC: a file with another name, the recent rescue's `dir` and
         //    `createdMs: 0`.
         std::fs::write(
             root.join(format!("{RESCUE_PREFIX}evil.json")),
             json!({"kind":"rescue","ownerPid":1,"dir":recent_name,"createdMs":0}).to_string(),
         )
         .unwrap();
-        // 2. Sobrescreve o marcador verdadeiro com `createdMs: 0`.
+        // 2. Overwrites the true marker with `createdMs: 0`.
         std::fs::write(
             root.join(format!("{recent_name}.json")),
             json!({"kind":"rescue","ownerPid":1,"dir":recent_name,"createdMs":0}).to_string(),
@@ -4972,34 +4972,34 @@ mod tests {
         .unwrap();
         let report = cleanup_orphans(&root);
         assert_eq!(report.rescues_removed, 0, "{report:?}");
-        assert!(recent.join("cdp-events.jsonl").is_file(), "o resgate recente foi apagado");
-        // Quando o diretório envelhece de verdade, o marcador verdadeiro apaga.
+        assert!(recent.join("cdp-events.jsonl").is_file(), "the recent rescue was deleted");
+        // When the directory really ages, the true marker deletes it.
         age_dir(&recent, 8);
         assert_eq!(cleanup_orphans(&root).rescues_removed, 1);
         assert!(!recent.exists());
         let _ = std::fs::remove_dir_all(base);
     }
 
-    /// A6-B6: se o resgate normal falha, o perfil vira o resgate: sem Cookies,
-    /// com os eventos CDP, marcador e o mesmo prazo.
+    /// A6-B6: if the normal rescue fails, the profile becomes the rescue: without Cookies,
+    /// with the CDP events, the marker and the same deadline.
     #[test]
     fn a6_b6_fallback_adopts_the_profile_with_events_and_a_ttl_marker() {
         let base = scratch_dir("rescue-fallback");
-        let root = base.join("estado");
+        let root = base.join("state");
         let profile = base.join("scrapelens-chrome-1-2");
         std::fs::create_dir_all(profile.join("Default")).unwrap();
         for f in ["Default/Cookies", "Default/History", "Local State", "netlog.json"] {
-            std::fs::write(profile.join(f), "dados do chrome").unwrap();
+            std::fs::write(profile.join(f), "chrome data").unwrap();
         }
         let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
-        bodies.write_all(b"{\"corpo\":1}\n").unwrap();
+        bodies.write_all(b"{\"body\":1}\n").unwrap();
         let mut guard = ProfileCleanup { path: profile.clone(), keep: false };
         FORCE_PRIMARY_RESCUE_FAILURE.with(|f| f.set(true));
-        let message = rescue_or_adopt("falhou", &root, &profile, &mut guard, b"{\"ev\":1}\n", Some(b"{\"constants\":{}}"), &mut bodies);
+        let message = rescue_or_adopt("failed", &root, &profile, &mut guard, b"{\"ev\":1}\n", Some(b"{\"constants\":{}}"), &mut bodies);
         FORCE_PRIMARY_RESCUE_FAILURE.with(|f| f.set(false));
-        assert!(message.contains("resgate normal falhou") && message.contains("7 dias"), "{message}");
-        drop(guard); // keep() foi chamado: não apaga
-        assert!(!profile.exists(), "o perfil foi movido para o state root");
+        assert!(message.contains("normal rescue failed") && message.contains("7 days"), "{message}");
+        drop(guard); // keep() was called: does not delete
+        assert!(!profile.exists(), "the profile was moved to the state root");
         let dirs: Vec<PathBuf> = std::fs::read_dir(&root)
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -5012,10 +5012,10 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
             .collect();
         names.sort();
-        // Só os arquivos da captura: nada de Cookies/History/Local State/Default.
+        // Only the capture files: no Cookies/History/Local State/Default.
         assert_eq!(names, ["cdp-bodies.jsonl", "cdp-events.jsonl", "motivo.txt", "netlog.json"]);
         assert_eq!(std::fs::read(rescue.join("cdp-events.jsonl")).unwrap(), b"{\"ev\":1}\n");
-        // Com marcador: expira pelo mesmo prazo.
+        // With a marker: expires on the same deadline.
         let name = rescue.file_name().unwrap().to_string_lossy().to_string();
         assert!(root.join(format!("{name}.json")).is_file());
         age_dir(rescue, 8);
@@ -5024,24 +5024,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(base);
     }
 
-    /// A6-B6, último degrau: sem como mover/marcar (state root inutilizável) o
-    /// perfil fica no lugar, já limpo e com os eventos, e a mensagem diz que não há
-    /// prazo automático.
+    /// A6-B6, last rung: without a way to move/mark it (unusable state root) the
+    /// profile stays in place, already cleaned and with the events, and the message says there is no
+    /// automatic deadline.
     #[test]
     fn a6_b6_fallback_keeps_events_in_place_when_it_cannot_be_moved() {
         let base = scratch_dir("rescue-fallback2");
-        let root = base.join("estado-arquivo");
-        std::fs::write(&root, "sou um arquivo, não uma pasta").unwrap();
+        let root = base.join("state-file");
+        std::fs::write(&root, "I am a file, not a directory").unwrap();
         let profile = base.join("scrapelens-chrome-3-4");
         std::fs::create_dir_all(profile.join("Default")).unwrap();
         std::fs::write(profile.join("Default/Cookies"), "x").unwrap();
         let mut bodies = open_private(&base.join("b.jsonl")).unwrap();
         let mut guard = ProfileCleanup { path: profile.clone(), keep: false };
-        let message = rescue_or_adopt("falhou", &root, &profile, &mut guard, b"{\"ev\":1}\n", None, &mut bodies);
-        assert!(message.contains("SEM prazo automático"), "{message}");
+        let message = rescue_or_adopt("failed", &root, &profile, &mut guard, b"{\"ev\":1}\n", None, &mut bodies);
+        assert!(message.contains("WITHOUT an automatic deadline"), "{message}");
         drop(guard);
-        assert!(profile.join("cdp-events.jsonl").is_file(), "os eventos ficam no perfil mantido");
-        assert!(!profile.join("Default").exists(), "dados do Chrome removidos");
+        assert!(profile.join("cdp-events.jsonl").is_file(), "the events stay in the kept profile");
+        assert!(!profile.join("Default").exists(), "Chrome data removed");
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -5050,19 +5050,19 @@ mod tests {
     fn a5_b2_remove_stale_tmp_cleans_the_original_dir_even_after_it_was_moved() {
         use std::os::unix::fs::PermissionsExt;
         let base = scratch_dir("staletmp");
-        let dir = base.join("sessao");
+        let dir = base.join("session");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
         let (handle, _id) = verify_private_dir_handle(&dir).unwrap();
-        for name in [".session.json.tmp-1-2-0", ".cdp-events.jsonl.tmp-9-9-3", "session.json", ".outro.tmp-1", "notas.txt"] {
+        for name in [".session.json.tmp-1-2-0", ".cdp-events.jsonl.tmp-9-9-3", "session.json", ".other.tmp-1", "notes.txt"] {
             std::fs::write(dir.join(name), "x").unwrap();
         }
-        // A pasta é trocada de lugar (e o nome vira outra coisa): o descritor
-        // continua apontando para a original.
-        let moved = base.join("sessao.moved");
+        // The folder is moved elsewhere (and the name becomes something else): the descriptor
+        // keeps pointing to the original.
+        let moved = base.join("session.moved");
         std::fs::rename(&dir, &moved).unwrap();
         std::fs::create_dir(&dir).unwrap();
-        std::fs::write(dir.join(".session.json.tmp-7-7-7"), "do novo, não é nosso").unwrap();
+        std::fs::write(dir.join(".session.json.tmp-7-7-7"), "from the new one, not ours").unwrap();
         remove_stale_tmp(&handle);
         let list = |p: &Path| {
             let mut v: Vec<String> = std::fs::read_dir(p)
@@ -5072,8 +5072,8 @@ mod tests {
             v.sort();
             v
         };
-        assert_eq!(list(&moved), [".outro.tmp-1", "notas.txt", "session.json"]);
-        assert_eq!(list(&dir), [".session.json.tmp-7-7-7"], "o diretório novo não é tocado");
+        assert_eq!(list(&moved), [".other.tmp-1", "notes.txt", "session.json"]);
+        assert_eq!(list(&dir), [".session.json.tmp-7-7-7"], "the new directory is not touched");
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -5087,7 +5087,7 @@ mod tests {
         let link = base.join("cdp-events.jsonl");
         symlink(&victim, &link).unwrap();
         write_private(&link, b"").unwrap();
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "alvo truncado");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "target truncated");
         assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_file());
         let _ = std::fs::remove_dir_all(base);
     }
@@ -5100,9 +5100,9 @@ mod tests {
         let victim = dir.join("VICTIM.txt");
         std::fs::write(&victim, "ORIGINAL\n").unwrap();
         std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o644)).unwrap();
-        let session_dir = dir.join("sessao");
+        let session_dir = dir.join("session");
         std::fs::create_dir_all(&session_dir).unwrap();
-        // O PoC plantou netlog.json; o core também recusaria os outros dois.
+        // The PoC planted netlog.json; the core would also refuse the other two.
         for name in SESSION_DIR_FILES {
             symlink(&victim, session_dir.join(name)).unwrap();
         }
@@ -5116,19 +5116,19 @@ mod tests {
             CorrelationOptions::default(),
         )
         .unwrap();
-        // Sem a correção, o core recusa ("é um link simbólico; recusado").
+        // Without the fix, the core refuses ("is a symbolic link; refused").
         assert!(store::write_session_dir(&imported.bundle, &session_dir).is_err());
         for name in SESSION_DIR_FILES {
             let _ = std::fs::remove_file(session_dir.join(name));
             symlink(&victim, session_dir.join(name)).unwrap();
         }
-        // A4-B3: `attachments` também pode ser um link para um diretório de fora.
-        let outside_dir = dir.join("DIR-FORA");
+        // A4-B3: `attachments` can also be a link to a directory outside.
+        let outside_dir = dir.join("DIR-OUTSIDE");
         std::fs::create_dir_all(&outside_dir).unwrap();
-        std::fs::write(outside_dir.join("intacto.txt"), "ORIGINAL\n").unwrap();
+        std::fs::write(outside_dir.join("intact.txt"), "ORIGINAL\n").unwrap();
         let _ = std::fs::remove_dir_all(session_dir.join("attachments"));
         symlink(&outside_dir, session_dir.join("attachments")).unwrap();
-        assert!(store::write_session_dir(&imported.bundle, &session_dir).is_err(), "o core recusa attachments link");
+        assert!(store::write_session_dir(&imported.bundle, &session_dir).is_err(), "the core refuses an attachments link");
         for name in SESSION_DIR_FILES {
             let _ = std::fs::remove_file(session_dir.join(name));
             symlink(&victim, session_dir.join(name)).unwrap();
@@ -5137,18 +5137,18 @@ mod tests {
         symlink(&outside_dir, session_dir.join("attachments")).unwrap();
         let handle = std::fs::File::open(&session_dir).unwrap();
         let removed = write_session_fd(&mut imported.bundle, &handle, &dir)
-            .expect("o stop não pode falhar por symlink plantado");
+            .expect("stop must not fail because of a planted symlink");
         assert_eq!(removed.len(), 4, "{removed:?}");
         assert!(removed.contains(&"attachments".to_string()));
-        assert_eq!(std::fs::read_dir(&outside_dir).unwrap().count(), 1, "diretório de fora tocado");
-        assert_eq!(std::fs::read_to_string(outside_dir.join("intacto.txt")).unwrap(), "ORIGINAL\n");
+        assert_eq!(std::fs::read_dir(&outside_dir).unwrap().count(), 1, "outside directory was touched");
+        assert_eq!(std::fs::read_to_string(outside_dir.join("intact.txt")).unwrap(), "ORIGINAL\n");
         let att = std::fs::symlink_metadata(session_dir.join("attachments")).unwrap();
-        assert!(att.file_type().is_dir(), "attachments devia ser diretório de verdade");
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "alvo tocado");
+        assert!(att.file_type().is_dir(), "attachments should be a real directory");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "ORIGINAL\n", "target touched");
         assert_eq!(std::fs::metadata(&victim).unwrap().permissions().mode() & 0o777, 0o644);
         for name in SESSION_DIR_FILES {
             let meta = std::fs::symlink_metadata(session_dir.join(name)).unwrap();
-            assert!(meta.file_type().is_file(), "{name} devia ser arquivo regular");
+            assert!(meta.file_type().is_file(), "{name} should be a regular file");
         }
         assert!(imported
             .bundle
@@ -5168,7 +5168,7 @@ mod tests {
             .as_array()
             .unwrap()
             .len();
-        // Cortes em pontos variados: fim de linha com vírgula e meio de linha.
+        // Cuts at varied points: a line break with a comma and mid-line.
         for fraction in [0.3_f64, 0.55, 0.8] {
             let mut cut = (full.len() as f64 * fraction) as usize;
             for variant in 0..2 {
@@ -5193,7 +5193,7 @@ mod tests {
                 );
                 assert!(
                     imported.is_ok(),
-                    "import do NetLog reparado: {:?}",
+                    "import of the repaired NetLog: {:?}",
                     imported.err()
                 );
             }
@@ -5212,7 +5212,7 @@ mod tests {
                 None,
                 CorrelationOptions::default(),
             )
-            .expect("CDP sem NetLog ainda importa");
+            .expect("CDP without NetLog still imports");
             mark_incomplete(
                 &mut imported.bundle.session,
                 &status,

@@ -604,7 +604,7 @@ mod tests {
 
     fn config(allowed: &[&str], start_url: Option<&str>) -> BrowserCaptureConfig {
         BrowserCaptureConfig {
-            chrome: PathBuf::from("/nao/existe/chrome"),
+            chrome: PathBuf::from("/does/not/exist/chrome"),
             session_dir: std::env::temp_dir().join(format!(
                 "scrapelens-bc-test-{}-{}",
                 std::process::id(),
@@ -624,7 +624,7 @@ mod tests {
         assert_eq!(err.code(), "allowlist_required");
         let err = BrowserCapture::start(config(&["*"], None)).err().expect("error");
         assert_eq!(err.code(), "allowlist_too_broad");
-        let err = BrowserCapture::start(config(&["http://exemplo.com"], None))
+        let err = BrowserCapture::start(config(&["http://example.com"], None))
             .err()
             .expect("error");
         assert_eq!(err.code(), "allowlist_invalid");
@@ -651,7 +651,7 @@ mod tests {
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         for path in [
-            PathBuf::from("/nao/existe/chrome"),
+            PathBuf::from("/does/not/exist/chrome"),
             PathBuf::from("/bin/echo"),
             script.clone(),
         ] {
@@ -700,7 +700,7 @@ mod tests {
         use std::sync::atomic::{AtomicU16, Ordering};
         static PORT: AtomicU16 = AtomicU16::new(0);
         static PORT2: AtomicU16 = AtomicU16::new(0);
-        let site2 = TestSite::start(|_m, _p| Reply::html("segundo servidor"));
+        let site2 = TestSite::start(|_m, _p| Reply::html("second server"));
         PORT2.store(site2.port, Ordering::SeqCst);
         let site = TestSite::start(|_m, path| match path {
             "/" => {
@@ -777,7 +777,7 @@ mod tests {
                 .allowlist
                 .violations
                 .iter()
-                .any(|v| v.url.contains("other-port.png") && v.reason.contains("porta")),
+                .any(|v| v.url.contains("other-port.png") && v.reason.contains("port")),
             "{:?}",
             report.allowlist
         );
@@ -993,14 +993,14 @@ mod tests {
                         body: "{\"itens\":[1,2,3]}".to_string(),
                     },
                     ("unsolved", "/", _) => Reply::html(
-                        "<html><body>Verificando…<script src='https://turnstile.blocked.invalid.test/api.js'></script></body></html>",
+                        "<html><body>Verifying…<script src='https://turnstile.blocked.invalid.test/api.js'></script></body></html>",
                     )
                     .status(403)
                     .header("cf-mitigated", "challenge")
                     .header("cf-ray", "8abc123def456-GRU")
                     .header("Set-Cookie", "cf_chl_rc_ni=1; Path=/"),
                     ("solved", "/", false) => Reply::html(
-                        "<html><body>Verificando…<script>setTimeout(()=>location.replace('/?r=1'),50)</script></body></html>",
+                        "<html><body>Verifying…<script>setTimeout(()=>location.replace('/?r=1'),50)</script></body></html>",
                     )
                     .status(403)
                     .header("cf-mitigated", "challenge")
@@ -1119,7 +1119,7 @@ mod tests {
     fn live_port_gap_is_reported_on_all_paths() {
         use std::sync::atomic::{AtomicU16, Ordering};
         static P2: AtomicU16 = AtomicU16::new(0);
-        let site2 = TestSite::start(|_m, _p| Reply::html("outra porta"));
+        let site2 = TestSite::start(|_m, _p| Reply::html("other port"));
         P2.store(site2.port, Ordering::SeqCst);
         let site = TestSite::start(|_m, path| {
             let p2 = P2.load(Ordering::SeqCst);
@@ -1170,7 +1170,7 @@ mod tests {
             let expected = format!("{scheme}://localhost:{p2}/{path}");
             assert!(urls.contains(&expected), "path {path} was not reported: {urls:?}");
             let v = report.allowlist.violations.iter().find(|v| v.url == expected).unwrap();
-            assert!(v.reason.contains(&format!("porta {p2}")), "{}", v.reason);
+            assert!(v.reason.contains(&format!("port {p2}")), "{}", v.reason);
         }
         // The gap is real and documented: the browser let it through (host allowed).
         for path in ["/redirected-top-level", "/js-location", "/meta-refresh", "/fetch-other-port", "/upper.png"] {
@@ -1564,9 +1564,9 @@ mod tests {
         let result = capture.stop();
         let error = result.expect_err("stop should fail with the folder swapped");
         println!("error: {error}");
-        assert!(error.contains("pasta da sessão foi trocada"), "{error}");
-        assert!(error.contains("agora é um link simbólico"), "{error}");
-        assert!(error.contains("pasta de resgate"), "{error}");
+        assert!(error.contains("The session directory was swapped"), "{error}");
+        assert!(error.contains("now a symbolic link"), "{error}");
+        assert!(error.contains("rescue folder"), "{error}");
         // OUT intact: same 3 names, links not removed, target unchanged.
         let mut names: Vec<String> = std::fs::read_dir(&out)
             .unwrap()
@@ -1593,7 +1593,7 @@ mod tests {
 
     /// Rescue folder named in the stop error.
     fn rescue_dir_from(error: &str) -> PathBuf {
-        let after = error.split("pasta de resgate ").nth(1).expect("error cites the rescue folder");
+        let after = error.split("rescue folder ").nth(1).expect("error cites the rescue folder");
         PathBuf::from(after.split(" (0700").next().unwrap().trim())
     }
 
@@ -1631,7 +1631,7 @@ mod tests {
         std::fs::create_dir(dir.join("session.json")).unwrap();
         let error = capture.stop().expect_err("the core refuses a directory in place of session.json");
         println!("error: {error}");
-        assert!(error.contains("pasta de resgate"), "{error}");
+        assert!(error.contains("rescue folder"), "{error}");
         let rescue = rescue_dir_from(&error);
         assert!(rescue.join("cdp-events.jsonl").is_file());
         assert!(rescue.join("netlog.json").is_file());
@@ -1892,7 +1892,7 @@ mod tests {
         assert!(saw_cookie, "the first request should carry the imported cookie: {:?}", heads.lock().unwrap());
         let _ = stop_tx.send(());
         let outcome = join.join().expect("thread").expect("ended");
-        assert!(outcome.notice.contains("cookie(s) importado(s)"), "{}", outcome.notice);
+        assert!(outcome.notice.contains("cookie(s) imported"), "{}", outcome.notice);
         let events = std::fs::read_to_string(dir.join("cdp-events.jsonl")).unwrap();
         assert!(events.contains("Capture.cookiesImported"), "the audit event is missing");
         assert!(events.contains("\"importedCount\":1"), "{events}");
