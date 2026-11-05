@@ -4,7 +4,27 @@ Status of the package delivered in this round. It serves as reproducible evidenc
 the commands below produce exactly the artifact described, on the same machine and
 under the same conditions.
 
-## macOS — optional full export (2026-11-04, current)
+## macOS — English interface (2026-11-05, current)
+
+Bundle built with the English UI from the clean tree at `4445160` (provisional
+commit; it will be remapped when the history is rewritten, so do not treat it as
+final). Screenshots `01`–`13` and `15` were regenerated in English. The app code
+keeps the optional full export described below.
+
+Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app` (18.14 MiB).
+SHA-256 of `Contents/MacOS/scrapelens` (18,268,880 bytes):
+`9a358d3a7969348e1e5fd3c5803553282425909f9061a7fa9dc26a079121c8f2`.
+Signed with `ScrapeLens Local Signing`; `codesign --verify --deep --strict`
+passed; designated requirement certificate root
+`d0a53befa59a447043abc9e58a3381addbbf1751` (same as the previous build).
+Built with `./app/node_modules/.bin/tauri build --bundles app`. No window was
+opened or activated, and the running ScrapeLens instance was not closed.
+
+Validation: `npm --prefix app test` (seven suites) passed; `npm --prefix app run
+typecheck` passed; `npm --prefix app run build` passed. `cargo test` on this tree:
+60 passed, 0 failed, 8 ignored; `cargo clippy --all-targets -- -D warnings` clean.
+
+## macOS — optional full export (2026-11-04, previous)
 
 App code: `71d9f7c`. The **Export / Sanitize…** dialog keeps the sanitized copy
 by default. The **Include sensitive data** checkbox enables the full capture
