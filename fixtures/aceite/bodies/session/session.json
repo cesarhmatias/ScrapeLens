@@ -19,15 +19,16 @@
     "sourceEvents": 3,
     "sourceEventsUsed": 3,
     "sourceEventsUnknown": 0,
-    "warnings": 0
+    "warnings": 1
    }
   },
   "capture": {
    "mode": "har-import",
-   "notes": "ordem e duplicatas de headers em HAR são não verificadas"
+   "notes": "header order and duplicates in HAR are unverified"
   },
   "labels": [
-   "har-import"
+   "har-import",
+   "synthetic-fixture"
   ]
  },
  "requests": [
@@ -61,7 +62,7 @@
         "method": "request.headers",
         "verification": "unverified",
         "notes": [
-         "HAR: ordem e duplicatas não verificadas"
+         "HAR: order and duplicates not verified"
         ]
        }
       ],
@@ -80,7 +81,7 @@
         "method": "response.headers",
         "verification": "unverified",
         "notes": [
-         "HAR: ordem e duplicatas não verificadas"
+         "HAR: order and duplicates not verified"
         ]
        }
       ],
@@ -100,17 +101,24 @@
        "method": "request.headers",
        "verification": "unverified",
        "notes": [
-        "HAR: ordem e duplicatas não verificadas"
+        "HAR: order and duplicates not verified"
        ]
       }
      },
      "requestBody": {
-      "state": "unavailable",
-      "note": "HAR não fornece postData",
+      "state": "empty",
+      "note": "not applicable: method without body",
       "provenance": {
-       "source": "derived",
-       "method": "unavailable",
-       "verification": "unverified"
+       "source": "har",
+       "event": "log.entries[0].request.headers",
+       "sourceId": "0",
+       "wallTime": "2026-10-26T20:00:00.000Z",
+       "browserVersion": "1",
+       "method": "request.headers",
+       "verification": "unverified",
+       "notes": [
+        "HAR: order and duplicates not verified"
+       ]
       }
      },
      "responseBody": {
@@ -127,7 +135,7 @@
        "method": "response.headers",
        "verification": "unverified",
        "notes": [
-        "HAR: ordem e duplicatas não verificadas"
+        "HAR: order and duplicates not verified"
        ]
       }
      },
@@ -146,7 +154,7 @@
       "method": "log.entries",
       "verification": "unverified",
       "notes": [
-       "HAR importado"
+       "HAR imported"
       ]
      }
     }
@@ -164,7 +172,7 @@
       "method": "request.headers",
       "verification": "unverified",
       "notes": [
-       "HAR: ordem e duplicatas não verificadas"
+       "HAR: order and duplicates not verified"
       ]
      }
     ],
@@ -183,7 +191,7 @@
       "method": "response.headers",
       "verification": "unverified",
       "notes": [
-       "HAR: ordem e duplicatas não verificadas"
+       "HAR: order and duplicates not verified"
       ]
      }
     ],
@@ -203,13 +211,13 @@
      "method": "request.headers",
      "verification": "unverified",
      "notes": [
-      "HAR: ordem e duplicatas não verificadas"
+      "HAR: order and duplicates not verified"
      ]
     }
    },
    "requestBody": {
     "state": "discarded",
-    "note": "corpo descartado pela política de captura de aceite",
+    "note": "body discarded by the acceptance capture policy",
     "provenance": {
      "source": "manual",
      "method": "aceite.fixture",
@@ -251,7 +259,7 @@
     "method": "log.entries",
     "verification": "unverified",
     "notes": [
-     "HAR: sequência transmitida não comprovada"
+     "HAR: transmitted sequence not proven"
     ]
    }
   },
@@ -285,7 +293,7 @@
         "method": "request.headers",
         "verification": "unverified",
         "notes": [
-         "HAR: ordem e duplicatas não verificadas"
+         "HAR: order and duplicates not verified"
         ]
        }
       ],
@@ -304,7 +312,7 @@
         "method": "response.headers",
         "verification": "unverified",
         "notes": [
-         "HAR: ordem e duplicatas não verificadas"
+         "HAR: order and duplicates not verified"
         ]
        }
       ],
@@ -324,17 +332,24 @@
        "method": "request.headers",
        "verification": "unverified",
        "notes": [
-        "HAR: ordem e duplicatas não verificadas"
+        "HAR: order and duplicates not verified"
        ]
       }
      },
      "requestBody": {
-      "state": "unavailable",
-      "note": "HAR não fornece postData",
+      "state": "empty",
+      "note": "not applicable: method without body",
       "provenance": {
-       "source": "derived",
-       "method": "unavailable",
-       "verification": "unverified"
+       "source": "har",
+       "event": "log.entries[1].request.headers",
+       "sourceId": "1",
+       "wallTime": "2026-10-26T20:00:01.000Z",
+       "browserVersion": "1",
+       "method": "request.headers",
+       "verification": "unverified",
+       "notes": [
+        "HAR: order and duplicates not verified"
+       ]
       }
      },
      "responseBody": {
@@ -351,7 +366,7 @@
        "method": "response.headers",
        "verification": "unverified",
        "notes": [
-        "HAR: ordem e duplicatas não verificadas"
+        "HAR: order and duplicates not verified"
        ]
       }
      },
@@ -370,7 +385,7 @@
       "method": "log.entries",
       "verification": "unverified",
       "notes": [
-       "HAR importado"
+       "HAR imported"
       ]
      }
     }
@@ -388,7 +403,7 @@
       "method": "request.headers",
       "verification": "unverified",
       "notes": [
-       "HAR: ordem e duplicatas não verificadas"
+       "HAR: order and duplicates not verified"
       ]
      }
     ],
@@ -407,7 +422,7 @@
       "method": "response.headers",
       "verification": "unverified",
       "notes": [
-       "HAR: ordem e duplicatas não verificadas"
+       "HAR: order and duplicates not verified"
       ]
      }
     ],
@@ -427,7 +442,7 @@
      "method": "request.headers",
      "verification": "unverified",
      "notes": [
-      "HAR: ordem e duplicatas não verificadas"
+      "HAR: order and duplicates not verified"
      ]
     }
    },
@@ -444,7 +459,7 @@
     "attachment": "har-entry-0001.response.bin",
     "bytes": 4,
     "truncatedAt": 4,
-    "note": "limite de 4 bytes da fixture",
+    "note": "4-byte limit of the fixture",
     "contentType": "text/plain",
     "provenance": {
      "source": "manual",
@@ -476,7 +491,7 @@
     "method": "log.entries",
     "verification": "unverified",
     "notes": [
-     "HAR: sequência transmitida não comprovada"
+     "HAR: transmitted sequence not proven"
     ]
    }
   },
@@ -510,7 +525,7 @@
         "method": "request.headers",
         "verification": "unverified",
         "notes": [
-         "HAR: ordem e duplicatas não verificadas"
+         "HAR: order and duplicates not verified"
         ]
        }
       ],
@@ -529,7 +544,7 @@
         "method": "response.headers",
         "verification": "unverified",
         "notes": [
-         "HAR: ordem e duplicatas não verificadas"
+         "HAR: order and duplicates not verified"
         ]
        }
       ],
@@ -549,17 +564,24 @@
        "method": "request.headers",
        "verification": "unverified",
        "notes": [
-        "HAR: ordem e duplicatas não verificadas"
+        "HAR: order and duplicates not verified"
        ]
       }
      },
      "requestBody": {
-      "state": "unavailable",
-      "note": "HAR não fornece postData",
+      "state": "empty",
+      "note": "not applicable: method without body",
       "provenance": {
-       "source": "derived",
-       "method": "unavailable",
-       "verification": "unverified"
+       "source": "har",
+       "event": "log.entries[2].request.headers",
+       "sourceId": "2",
+       "wallTime": "2026-10-26T20:00:02.000Z",
+       "browserVersion": "1",
+       "method": "request.headers",
+       "verification": "unverified",
+       "notes": [
+        "HAR: order and duplicates not verified"
+       ]
       }
      },
      "responseBody": {
@@ -574,7 +596,7 @@
        "method": "response.headers",
        "verification": "unverified",
        "notes": [
-        "HAR: ordem e duplicatas não verificadas"
+        "HAR: order and duplicates not verified"
        ]
       }
      },
@@ -593,7 +615,7 @@
       "method": "log.entries",
       "verification": "unverified",
       "notes": [
-       "HAR importado"
+       "HAR imported"
       ]
      }
     }
@@ -611,7 +633,7 @@
       "method": "request.headers",
       "verification": "unverified",
       "notes": [
-       "HAR: ordem e duplicatas não verificadas"
+       "HAR: order and duplicates not verified"
       ]
      }
     ],
@@ -630,7 +652,7 @@
       "method": "response.headers",
       "verification": "unverified",
       "notes": [
-       "HAR: ordem e duplicatas não verificadas"
+       "HAR: order and duplicates not verified"
       ]
      }
     ],
@@ -650,13 +672,13 @@
      "method": "request.headers",
      "verification": "unverified",
      "notes": [
-      "HAR: ordem e duplicatas não verificadas"
+      "HAR: order and duplicates not verified"
      ]
     }
    },
    "requestBody": {
     "state": "unavailable",
-    "note": "fonte não fornece corpo de requisição",
+    "note": "source does not provide a request body",
     "provenance": {
      "source": "har",
      "method": "aceite.fixture",
@@ -696,9 +718,16 @@
     "method": "log.entries",
     "verification": "unverified",
     "notes": [
-     "HAR: sequência transmitida não comprovada"
+     "HAR: transmitted sequence not proven"
     ]
    }
+  }
+ ],
+ "warnings": [
+  {
+   "code": "har.cookies_absent",
+   "message": "HAR does not contain cookies (DevTools export removes them); cookie origin cannot be evaluated — use live capture (CDP/NetLog)",
+   "severity": "warning"
   }
  ]
 }
