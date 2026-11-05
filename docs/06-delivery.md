@@ -19,18 +19,18 @@ changed in this recovery; no UX proposal was integrated.
 
 ## State preserved and work resumed
 
-At the start, HEAD `1581376`, clean tree. LICENSE, CONTRIBUTING, the commands
-comment and the Origin CDP note were already in `e443076`; they were not redone.
-The old bundle predated the NetLog clock calibration (`f6c6bdd`).
+At the start, HEAD `30d78c6`, clean tree. LICENSE, CONTRIBUTING, the commands
+comment and the Origin CDP note were already in `375d6b5`; they were not redone.
+The old bundle predated the NetLog clock calibration (`4468a81`).
 
 App resumed only the build/validation and contribution commands:
-`febdd2f`, `fbce3e4`, `453d717`. Source build `1581376`, core up to `b5846be`,
-including `98293e2` (sanitization) and `f6c6bdd` (NetLog).
+`bbfc82e`, `5d62880`, `bdf5230`. Source build `30d78c6`, core up to `0adff48`,
+including `ac6a7c8` (sanitization) and `4468a81` (NetLog).
 
 The leader's re-run revealed three failures in criterion 3. Tests showed
 that the fixture declared a wallTime incompatible with the monotonic timestamp;
 it fixed the equation without reducing the ambiguity requirements. Commits
-`87d7b61` and `364bddb`; original failure preserved in
+`00d1ab1` and `0527e56`; original failure preserved in
 `tests/results/acceptance-criterion3-leader-failure.json` and the corresponding report.
 No additional core fix or new product build was needed.
 
@@ -60,7 +60,7 @@ The hash identifies this artifact; it does not guarantee a byte-for-byte reprodu
 | TypeScript and Vite | App: typecheck and build pass |
 | Tauri build | App: exit 0, core recompiled as a crate dependency |
 | Signature/hash/architecture | App + leader: valid codesign, SHA-256 above, arm64 |
-| Acceptance battery | Tests: 282/282, 10/10, commit 77c32a7; promoted to docs/05-acceptance.md |
+| Acceptance battery | Tests: 282/282, 10/10, commit 38c08f0; promoted to docs/05-acceptance.md |
 | New capture in the final bundle | Tests: Start/Stop through the UI, session capture-1793085113332 |
 | New HAR/NetLog | Final bundle UI: HAR 24 and NetLog 32 requests, sources checked |
 | Visual inspection | App: screenshots 22/23; leader inspected screenshot 23; Tests recorded screenshot-app-live.png and screenshot-app-imports.png |
@@ -119,7 +119,7 @@ to automation (empty AX and keys with no effect); historical record in
 `docs/validation/import-picker-blocker.json`. No permission was bypassed.
 After an attempt with a JSON lacking the HAR structure, Tests confirmed that the
 prepared file was valid. The user selected the two exact paths and confirmed
-the import. Tests verified the new sessions before approving (77c32a7):
+the import. Tests verified the new sessions before approving (38c08f0):
 
 - HAR `har-3dbc391c02a985c5-2`: 24 h1/h2 requests, complete, 24 sourceEvents,
   no DEMO and zero headers classified as verified. Method/URL sequence
@@ -140,7 +140,7 @@ were not repeated in that last pass. The bundle hash remained the same.
 ## Delivery of rounds 4 to 7 (2026-10-29)
 
 Package: `src-tauri/target/release/bundle/macos/ScrapeLens.app`, built at
-HEAD 4b16b0e (build commit c5d1f61), ad-hoc signed
+HEAD bc935eb (build commit b2ba81b), ad-hoc signed
 (`codesign --verify --deep --strict` OK), executable SHA-256
 `6e301e70161c314c4475923a91182edd26bcf009ec2a5f3ddd90106b6e91cce9`. Nothing was
 published.
@@ -157,7 +157,7 @@ New features:
   values or PII, no cross-origin redirect, stop at the bad step) and the
   application success verdict × HTTP.
 
-Acceptance: `tests/REPORT-FINAL.md` (4b16b0e). 10/10 criteria with a new live
+Acceptance: `tests/REPORT-FINAL.md` (bc935eb). 10/10 criteria with a new live
 capture (criterion 9), all batteries green, cargo test core 250 and
 src-tauri 42. On the user's 3 real HARs (aggregate): STAMP and delta 100%,
 script with 11 steps in the order of the manual flow, only plate and SESSIONID suffix
@@ -177,7 +177,7 @@ Pending with the user: test of the real `.app` with the native folder picker
 
 ## Delivery of round 8 (2026-10-29)
 
-Package: the same path, built at HEAD dc14ac3, ad-hoc signed, with
+Package: the same path, built at HEAD f548c63, ad-hoc signed, with
 executable SHA-256 `bda06a2db30c4b4315247f78fa728c967b946d7850641f4ab161995983f1e052`.
 Nothing was published.
 

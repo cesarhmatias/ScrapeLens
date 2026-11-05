@@ -133,9 +133,9 @@ network. Preserve `tests/results/app-latest/testserver/app-20261027/h1.jsonl`.
   declared in `warnings`. Preserving the initiator is a candidate for a future
   round.
 - `unobservable`: "no observed origin" lists the earlier responses
-  without an observable body (core af477f0).
+  without an observable body (core 0c0c331).
 - The `unavailable` case of fixture A moved from the response of 1010.10 (producer
-  of STAMP and delta) to that of 1013.13 (Tests 3747e02).
+  of STAMP and delta) to that of 1013.13 (Tests 2128d4d).
 
 ## Review of round 5 (2026-10-28) — decisions
 
@@ -167,8 +167,8 @@ Verdict: rejected until 2 high failures are fixed.
 
 ## Closing (2026-10-28)
 
-Independent re-review: APPROVED (core 7ed4329, tests 9902d4a, app 0377e5b and
-a2e9069; bundle ac7213b2…). Injection closed: `export::comment` is the single
+Independent re-review: APPROVED (core 37e413f, tests 35af662, app eb4953c and
+4b92c6c; bundle ac7213b2…). Injection closed: `export::comment` is the single
 gate, and the probes of header, 307 URL, `transformed`, bidi, zero-width,
 NUL and 5000-character names do not escape the comment. Causality by response
 end, including 2-level redirects and ties. Confidence: strong only

@@ -208,7 +208,7 @@ of `mcp/`; the capture with profile and state root under `XDG_RUNTIME_DIR`; the 
 ### 7.1 App acceptance on the OrbStack VMs (round 14)
 
 Run of the real packaged App, recorded by Tests/App in `tests/results/linux/README.md`
-(artifacts `src-tauri/linux/out/` of commit `e6d5fc6`): two Ubuntu 24.04 VMs, amd64 on
+(artifacts `src-tauri/linux/out/` of commit `23bb4ec`): two Ubuntu 24.04 VMs, amd64 on
 Rosetta with Google Chrome 156.0.8078.79 from the official repository, and native arm64 with **Chromium
 156.0.8078.47 from the snap**. With the `.deb` installed (`ScrapeLens_0.1.0_amd64.deb` and
 `ScrapeLens_0.1.0_arm64.deb`; also the `AppImage` of both architectures), **0 failures** on each

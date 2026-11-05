@@ -117,7 +117,7 @@ Others:
 
 ## Round 9 re-review (2026-10-29)
 
-APPROVED WITH CAVEATS (2f5702b), no critical or high failure. Final adjustments
+APPROVED WITH CAVEATS (5ea75c3), no critical or high failure. Final adjustments
 decided by the leader:
 - M1: a `plan.hash` that does not match now gives `diverges`, reason "plan
   differs from the one generated from this capture", and not only a warning. So as not to
@@ -135,7 +135,7 @@ on loopback, with a warning and the mapping cited in the summary).
 
 ## Round 9 closing (2026-10-29)
 
-APPROVED (reviewer, b9c0c21; verdict in /tmp/rev21/VEREDITO.md). Decisions
+APPROVED (reviewer, 3b97bcc; verdict in /tmp/rev21/VEREDITO.md). Decisions
 since the re-review:
 - `plan.version` (integer), current = `validate::PLAN_VERSION` = 2. The hash is only
   compared with the current version; a missing or lower version warns "plan of
@@ -150,7 +150,7 @@ since the re-review:
   without a hash exempts nothing.
 - Faithful trace from the current generator: equivalent, with no warnings besides the mapped origin.
 Reference bundle: d1136cbbedf32a3a9d73504196be35db1aa8885b4e6f9250a197672d477b7c1f
-(HEAD 7410fa4). Accepted residuals: a frozen sid/SESSIONID only detected at
+(HEAD 5431c5e). Accepted residuals: a frozen sid/SESSIONID only detected at
 execution; an old plan or one without a hash equivalent with a warning; M2; L1.
 
 User manual test (2026-10-29), bundle d1136cbb…: a 7-step walkthrough

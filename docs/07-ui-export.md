@@ -53,7 +53,7 @@ ad-hoc signed bundle and specific hash. Record facts vs untested.
 
 ## Preserved base
 
-Product base 7d25bc7, last acceptance 282/282 (77c32a7). There is a prior modification
+Product base b52b26b, last acceptance 282/282 (38c08f0). There is a prior modification
 in tests/results/app-latest/testserver/app-20261027/h1.jsonl at the start of this
 round: preserve it, do not include it in an export commit without understanding its origin.
 The outputs/ux-review proposal remains isolated. Conventional Commits for each
@@ -65,18 +65,18 @@ Completed. arm64 ad-hoc bundle, SHA-256 of the executable
 `9c04b98b30b3d6451ee53fa5eee589aaba0cd4e5d3185894e39facb0335bdbe5`
 (source and signature in `src-tauri/PACKAGING.md`).
 
-- Implementation (App): `eaf5471`…`2c6765e`; no changes to the core.
-- Independent validation (Tests, `a83d985`/`ffc7fc1`): 14/16 on the first
+- Implementation (App): `a809847`…`b4f594a`; no changes to the core.
+- Independent validation (Tests, `f650cae`/`7f014ee`): 14/16 on the first
   pass. F1/F2 failed: a destination that went through a symbolic link in an ancestor folder
-  was accepted. Fixed in `16015a1`: any link in the destination
+  was accepted. Fixed in `e987fd4`: any link in the destination
   chain is refused, except the system aliases `/var`, `/tmp` and `/etc`
   when they point to `/private/...`. Regressions: 16/16.
 - The native proof revealed that minimal v1 sessions, accepted by the core, froze the
-  UI (`s.attempts.map`). Fixed in `0d4dbab`: the adapter applies the same
+  UI (`s.attempts.map`). Fixed in `b57f945`: the adapter applies the same
   defaults as the core, with its own test.
 - Native proof on bundle `9c04b98b…` (leader, at the user's request; native dialogs
   operated in the foreground), with file verification by Tests
-  (`adc56ab`): open session, save cURL and Python (0600, identical to the preview),
+  (`4838ff3`): open session, save cURL and Python (0600, identical to the preview),
   cancel without writing, copy identical to the preview, sanitize into a new folder
   0700/0600 with no raw events or markers, reopen the sanitized one with a redacted URL,
   origin byte-identical. Report: `tests/results/export/REPORT.md`.

@@ -44,7 +44,7 @@ in `experiments/`. No change in `src-tauri/` or `core/` in this wave.
   never with invented headers.
 - The final design (core/app) is only fixed after the wave 1 table.
 
-## Wave 1 result (Capture, 9a6021d/5d46a8a)
+## Wave 1 result (Capture, c713e0e/5d46a8a)
 
 Chrome 156.0.8078.74, headless and headful, recipe: `Target.setAutoAttach
 {autoAttach, waitForDebuggerOnStart, flatten}` on the page session AND on each
@@ -102,13 +102,13 @@ Interface (App) is left for wave 3: target filter/column and limit warning.
 
 ## User manual test (2026-10-30)
 
-Multi-tab capture on the final bundle 02e6ef30… (HEAD 8cfe828, commit 18cbb01): APPROVED by the user ("aprovado" (approved)).
+Multi-tab capture on the final bundle 02e6ef30… (HEAD b70aa64, commit 7b5fc75): APPROVED by the user ("aprovado" (approved)).
 
 ## Round 10 closing (2026-10-31)
 
-APPROVED WITH LOW CAVEATS (reviewer, HEAD 9f4003b; /tmp/rev24/VEREDITO.md).
+APPROVED WITH LOW CAVEATS (reviewer, HEAD 819b5ee; /tmp/rev24/VEREDITO.md).
 Reference bundle: 7a46fa4c52ca90d2d720edcd1fe6b39da8bf390968bbd667952bb376005d2b7c
-(commit 0d98615). Multi-target acceptance 5/5 (Tests) and 3/3 (reviewer): 16/16 NetLog
+(commit f20bbde). Multi-target acceptance 5/5 (Tests) and 3/3 (reviewer): 16/16 NetLog
 and CDP, 0 setup warnings, SW without copies, link to the SW always "unconfirmed"
 and only to the candidate with the same method/path; 9 self-test mutations are rejected.
 Final decisions:
@@ -119,6 +119,6 @@ Final decisions:
 - Page↔SW link: always `ambiguous`, same method, preference for same
   path; `linked` only with explicit CDP evidence.
 - A file without Target.* events = no target provenance (old sessions).
-Low caveats CLOSED: run_acceptance recomputes the bundle hash on disk (05f586b); cleanup of orphan Chrome/profile at startup (8fd4f6d, b684c1a). Final bundle b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157 (0be3bc0). Original text: run_acceptance does not recompute the
+Low caveats CLOSED: run_acceptance recomputes the bundle hash on disk (09fd1e5); cleanup of orphan Chrome/profile at startup (39f0626, 977e2aa). Final bundle b3e12edcfecd78ec703fa31ba2a53096a21a2e440617b148a8ce34b05c6b5157 (66d500e). Original text: run_acceptance does not recompute the
 bundle hash on disk; orphan Chrome/profile when the parent process is killed by SIGKILL
 (no cleanup at startup).

@@ -8,11 +8,11 @@ developers. Full specification:
 
 - Phase: 9 — local arm64 package rebuilt and validated; final documentation.
 - Export round in the UI (docs/07) completed: F1/F2 (links in ancestors)
-  fixed in 16015a1, tolerant adapter in 0d4dbab, bridge 16/16. Native proof
+  fixed in e987fd4, tolerant adapter in b57f945, bridge 16/16. Native proof
   on bundle 9c04b98b (save/cancel, copy, sanitize and reopen) done by the
-  leader with dialogs in the foreground and verified by Tests (adc56ab).
+  leader with dialogs in the foreground and verified by Tests (4838ff3).
 - Round 4 (docs/08), CDP bodies and payload search: completed and approved in
-  the independent re-review (up to 71eef98; bundle 0e2754f4…). Bodies recorded
+  the independent re-review (up to d47120b; bundle 0e2754f4…). Bodies recorded
   live with explicit state and `transformed`; search over 6 scopes with decoded
   view and exact range; sanitization by value propagation (fail-closed);
   origin labels; truncated NetLog repaired; search with attachments on demand
@@ -21,20 +21,20 @@ developers. Full specification:
   captures: completed and approved in the re-review (bundle ac7213b2…). Next:
   validation on the real DETRAN case (local HARs, no data in the repository)
   and round 6 (priming script and application success × HTTP).
-- Round 6 (docs/10), fidelity to the real DETRAN-PB case: APPROVED (7a11441).
+- Round 6 (docs/10), fidelity to the real DETRAN-PB case: APPROVED (b95b48a).
   The case is identifiable and analyzable in the user's 3 real HARs.
 - Round 7 (docs/11), priming script and application success × HTTP:
-  APPROVED (1bdd8b9); detector polish in 6a85676.
-- Final package: bundle 6e301e70… (c5d1f61), final acceptance green
-  (tests/REPORT-FINAL.md, 4b16b0e), delivery in docs/06-delivery.md.
+  APPROVED (abe9d09); detector polish in 62d1944.
+- Final package: bundle 6e301e70… (b2ba81b), final acceptance green
+  (tests/REPORT-FINAL.md, bc935eb), delivery in docs/06-delivery.md.
   Pending: manual test of the .app with the native picker (user).
 - Round 8 (docs/12), Natural for Ajax adapter outside the core: APPROVED
-  (c07b514, polish in progress). UTF-16 prefixes recalculated in the priming
+  (4f9031c, polish in progress). UTF-16 prefixes recalculated in the priming
   script (proof on detran-sim strict), structured view in the app and internal
   names (XML.delta, XML.p.v_placa) in origins/compare. On the 3 real HARs: 11 steps in the order
   of the manual flow, only the plate and the SESSIONID suffix as parameters, 0 values
   captured in the code; proof on detran-sim in the 4 modes.
-- Automated acceptance: 10/10 criteria (283 checks in 229b623).
+- Automated acceptance: 10/10 criteria (283 checks in bd0dc3a).
 - New capture and HAR/NetLog imports through the UI of the final bundle validated.
   Manual selection by the user and independent check of the persisted files.
 - Closing report: `docs/06-delivery.md`; nothing published.

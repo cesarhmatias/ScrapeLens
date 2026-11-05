@@ -215,7 +215,7 @@ Order divergence in the HAR is expected; what matters is what NetLog says.
 
 ## Multi-target capture (CDP auto-attach × NetLog)
 
-Contract: `docs/14-multi-target-capture.md`. Harness: `experiments/multi_target/`. Page: `testserver` `/multi/` (`4b56b14`, 16 markers via `./scripts/multi-probe.sh`).
+Contract: `docs/14-multi-target-capture.md`. Harness: `experiments/multi_target/`. Page: `testserver` `/multi/` (`7308053`, 16 markers via `./scripts/multi-probe.sh`).
 
 | Item | Value |
 |---|---|
@@ -226,19 +226,19 @@ Contract: `docs/14-multi-target-capture.md`. Harness: `experiments/multi_target/
 
 Minimal proof (only `/multi/`, no popup/blank): `python3 multi_target/run_attach_probe.py` → `results/multi-target-attach-probe/compare.json` (Chrome **156.0.8078.74**, headless **and** headful). With `setAutoAttach` on the page session + recursive in the children: `attachedToTarget` **iframe** and **worker**; `oopif-get/post` on the iframe's `sessionId`; `worker-get/post` on the worker's `sessionId` (`commands.jsonl` + `cdp-events.jsonl` local).
 
-Official run `678f289` (11/16 CDP) used only `setAutoAttach` on the browser root — which explains iframe/worker without attach. Tauri product (`capture.rs`, pipeline `d60c1ae`+): **16/16 CDP** in `check_multi_target` (NetLog 16/16, types, POST, SW page+target). Cause of the historical `blank-1`: resuming (`runIfWaitingForDebugger`) **before** `Network.enable` on the `_blank` document session; with the pipeline inverted, `blank-1` has `requestWillBeSent` on the child session.
+Official run `fa1a5a2` (11/16 CDP) used only `setAutoAttach` on the browser root — which explains iframe/worker without attach. Tauri product (`capture.rs`, pipeline `00a9a33`+): **16/16 CDP** in `check_multi_target` (NetLog 16/16, types, POST, SW page+target). Cause of the historical `blank-1`: resuming (`runIfWaitingForDebugger`) **before** `Network.enable` on the `_blank` document session; with the pipeline inverted, `blank-1` has `requestWillBeSent` on the child session.
 
 Historical causes (~33 s / timeout): (1) recursive autoAttach **without** filtering `browser_ui`; (2) `Runtime.evaluate` in the wait loop; (3) paused target without resume; (4) headless `_blank` + `createTarget`; (5) second `openIframe()` after attach.
 
 ### Table by target type — variant **with** `waitForDebuggerOnStart`
 
-16/16 markers in the server's `multi.jsonl`. CDP (`requestWillBeSent` + `?m=`): **16/16** (Tauri capture Round 10, post-`d60c1ae` pipeline). Legacy diagnosis: `experiments/multi_target/diagnose_gaps.py` → `gap-diagnosis.json` (old runs 11/16). Bodies: POST via `body_text`/`body_b64` in `multi.jsonl`.
+16/16 markers in the server's `multi.jsonl`. CDP (`requestWillBeSent` + `?m=`): **16/16** (Tauri capture Round 10, post-`00a9a33` pipeline). Legacy diagnosis: `experiments/multi_target/diagnose_gaps.py` → `gap-diagnosis.json` (old runs 11/16). Bodies: POST via `body_text`/`body_b64` in `multi.jsonl`.
 
 #### CDP gaps (with wait) — hypothesis tested
 
 | Marker | Verdict | Evidence (official run, Chrome 156.0.8078.74) |
 |---|---|---|
-| `blank-1` (document) | **Closed (Tauri product)** | With the Network→resume pipeline on the child session (`d60c1ae`), `requestWillBeSent` of the document on the `_blank` session; `blank-get/post` on the same session. Old runs (resume before Network) only had `responseReceived` without `requestWillBeSent`. |
+| `blank-1` (document) | **Closed (Tauri product)** | With the Network→resume pipeline on the child session (`00a9a33`), `requestWillBeSent` of the document on the `_blank` session; `blank-get/post` on the same session. Old runs (resume before Network) only had `responseReceived` without `requestWillBeSent`. |
 | `oopif-get-1` / `oopif-post-1` | **Closed (harness)** | Official run: no iframe attach. Recursive proof: `attachedToTarget` type=iframe (`parentSession`=page); `Network.requestWillBeSent` get/post on the **same sessionId** (headless + headful). |
 | `worker-get-1` / `worker-post-1` | **Closed (harness)** | Official run: 0 worker attach. Recursive proof: worker attach; get/post on the worker session after `Network.enable` + `runIfWaitingForDebugger` (headless + headful). |
 | Header order (targets with CDP) | **No new finding** | Same as the general matrix: ExtraInfo does **not** preserve wire order; transmitted order → NetLog / `headersText` (h1). Set of names aligned with the server. |

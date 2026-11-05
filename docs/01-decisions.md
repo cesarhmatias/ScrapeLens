@@ -4,10 +4,10 @@ Source of the facts: `docs/02-fidelity-matrix.md` (evidence in `experiments/resu
 
 ## D1 — Stack (after the fidelity proof)
 
-- UI: React 19 + TypeScript + Vite (already validated in `app/`, commit `c16b15a`).
+- UI: React 19 + TypeScript + Vite (already validated in `app/`, commit `05bdaf1`).
 - Desktop shell: Tauri 2 (original decision kept — no wave 1 result argues against it).
 - Capture: external Chrome launcher + CDP (WebSocket 127.0.0.1) + NetLog (`--log-net-log`). No MITM proxy, no certificates, no disabling QUIC.
-- Reference tests/servers: Rust (commits `9827d6f`, `f0059e5`).
+- Reference tests/servers: Rust (commits `130dbc7`, `f3b049c`).
 - Core language: to be defined by the Core agent between Rust (preference: same runtime as Tauri, zero sidecar) or Go (allowed by the user, but it would require a sidecar in the package). Leader's default: **Rust**, so the packaged binary does not depend on any installation.
 
 ## D2 — Header provenance by protocol (verdict of the matrix)

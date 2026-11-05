@@ -1,6 +1,6 @@
 # ScrapeLens — UX review of the implementation
 
-Date: 27/10/2026 · base inspected: `51e77aa` · recommended theme: light.
+Date: 27/10/2026 · base inspected: `8217c11` · recommended theme: light.
 
 **Recommended direction:** an inspector with a persistent list, quick preview and detail in the same workspace. The source and the limit of the evidence stay close to the headers; comparison starts from the current selection and is organized by category.
 

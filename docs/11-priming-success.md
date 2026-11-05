@@ -96,10 +96,10 @@ controls, protection marker) and `verdict`: `app-ok`,
 
 ## Progress (2026-10-29)
 
-- assess (Capture, c28533b). The decision to add `not-assessed`
+- assess (Capture, c00de3f). The decision to add `not-assessed`
   for responses with no application signal and no expectation on the
   route removes the noise from pages, static resources and /TSPD/.
-- Priming generator (Capture, f858b17). Offline proof on detran-sim: the
+- Priming generator (Capture, 21e7692). Offline proof on detran-sim: the
   13-step chain (6 POSTs) completed 2× with new values, and the negative control
   with the captured values received ERRORMESSAGE.
 - Known limit: Natural for Ajax uses length prefixes. When the extracted
@@ -163,7 +163,7 @@ approved. 2 high failures remain.
 - Script: `S.trust_env = False` by default (no proxy/.netrc from the environment);
   `--usar-proxy-do-ambiente` enables it. Warning when Python is < 3.13
   (HTMLParser with known quadratic cases).
-- Final re-review (732f6b5): the 2 previous high failures were approved;
+- Final re-review (c5b9e4f): the 2 previous high failures were approved;
   1 new high remained. Decisions: (1) the body is classified by its content and
   not only by the Content-Type. Valid JSON under a form content-type gets
   the JSON treatment, and a form field without `=` longer than 40 characters
@@ -173,7 +173,7 @@ approved. 2 high failures remain.
   PII). (3) A Referer to another origin (`--allow-origin`) carries only the origin,
   as in the browser. (4) assess rules: empty names/paths
   are refused.
-- Re-review at e74ecb0: 1 high is missing, JSON as a field VALUE (form or
+- Re-review at c9675d8: 1 high is missing, JSON as a field VALUE (form or
   JSON string). Decision of principle, to stop patching case by case: (a)
   field values that are valid JSON, including JSON inside a JSON string,
   are decomposed recursively (limited depth); (b) a single FINAL
@@ -189,7 +189,7 @@ approved. 2 high failures remain.
 
 ## Closing (2026-10-29)
 
-Final review at 1bdd8b9: APPROVED with caveats. Priming script:
+Final review at abe9d09: APPROVED with caveats. Priming script:
 - no redirect to another origin;
 - exact origin, injection closed and linear extraction;
 - credentials and PII never literal in JSON, named form or opaque field;

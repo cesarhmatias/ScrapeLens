@@ -126,7 +126,7 @@ exported code and no external network.
 - 2026-10-28: `Match.requestId` is the session's logical ID (`cdp-rNNNN`). The
   CDP ID stays in the provenance (`source_id`). The API receives `SessionBundle`,
   because the bodies live in attachments, and returns `SearchResult { matches,
-  skipped_binary, partial, partial_attempts, limit_reached }` (core 0c924a8).
+  skipped_binary, partial, partial_attempts, limit_reached }` (core dc65567).
 - Known risk, non-blocking: `LogicalRequest.url` is the URL of the 1st
   attempt and body/headers are from the last. On a 307, the export combines the
   initial URL with the final body. This is equivalent to a replay that follows
@@ -169,7 +169,7 @@ Reviewer: partial, with 1 high failure. Fixes:
 
 ## Closing (2026-10-28)
 
-Independent re-review up to 71eef98: Part A (core, capture, fixtures)
+Independent re-review up to d47120b: Part A (core, capture, fixtures)
 APPROVED; Part B (app) APPROVED, with a caveat: live app not opened by the
 reviewer. No critical or high failures. Test suite: cargo test core and src-tauri
 (36 ok/3 ignored), tests/export 18/18, run_acceptance 10/10,

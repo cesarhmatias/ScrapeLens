@@ -30,7 +30,7 @@ never fired.
 ## 3. Method
 
 Chrome 156 stable, macOS, NetLog on in all conditions. The launcher
-arguments are those of `capture/src/lib.rs` `chrome_args` in `Open` mode (HEAD `3dda266`),
+arguments are those of `capture/src/lib.rs` `chrome_args` in `Open` mode (HEAD `6db4b52`),
 without `--headless`.
 
 | Cond. | What it is |

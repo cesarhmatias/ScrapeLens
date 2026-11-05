@@ -1,11 +1,11 @@
 # 17 — Independent security review of the MCP (Round 11)
 
-- **HEAD reviewed:** `3c49b4d`, in a clone at `/tmp/rev25/repo`. The original repository was not changed, except for this file.
+- **HEAD reviewed:** `06b2648`, in a clone at `/tmp/rev25/repo`. The original repository was not changed, except for this file.
 - **Scope:**
-  - `mcp/`, from `c6bc508` to `6cca5aa`;
+  - `mcp/`, from `1b20d52` to `968f807`;
   - `capture/src/{allowlist,browser}.rs`, plus `capture/src/{lib,chrome}.rs` when the flow goes through them;
   - `recon/`;
-  - the sanitizer in `core/src/export/sanitize.rs`, commits `85e7c13` and `e37d42d`.
+  - the sanitizer in `core/src/export/sanitize.rs`, commits `1fc25a4` and `1f53b1f`.
 - **Contracts:** `docs/16-mcp-contract.md` and `docs/16b-mcp-browser.md`.
 - **Method:** code reading and executed PoCs.
   - The PoCs run through the real stdio server (`fake_server`), going through `reply()` and `scrub_output`.
@@ -37,7 +37,7 @@ The remaining findings are high, medium or low.
 |---|---|---|---|
 | C1 | Critical | CONFIRMED | `trace_value(value=…)` works as a substring oracle over the original session |
 | A1 | High | CONFIRMED | With `--allow-unconfirmed-capture`, an elicitation that errors or is malformed opens the capture |
-| A2 | High | CONFIRMED | The final scan and the sanitizer only recognize `?name=value`. The `e37d42d` fix is incomplete for fragment, `;jsessionid`, userinfo and `name=` without `?` |
+| A2 | High | CONFIRMED | The final scan and the sanitizer only recognize `?name=value`. The `1f53b1f` fix is incomplete for fragment, `;jsessionid`, userinfo and `name=` without `?` |
 | M1 | Medium | CONFIRMED | Chrome is orphaned if stdin EOF or SIGTERM arrives during `start_capture` |
 | M2 | Medium | CONFIRMED | The browser does not enforce the allowlist port: the tab reaches `localhost:<another port>` through 8 vectors |
 
@@ -78,8 +78,8 @@ The remaining findings are high, medium or low.
   - `X-Original-Url: https://admin:SEGREDO@…` (userinfo);
   - `Refresh: 0; url=…#access_token=…`;
   - `token=…` without `?`, `token%3D…` and base64.
-- **About `e37d42d`:** the fix covers the `startLine` with `?token=`, verified on the request and response lines. The formats above still leak.
-- **Regression test:** the test from `6cca5aa` uses only `?token=MARK`, which is the only format the scan recognizes, and so it detects none of these cases.
+- **About `1f53b1f`:** the fix covers the `startLine` with `?token=`, verified on the request and response lines. The formats above still leak.
+- **Regression test:** the test from `968f807` uses only `?token=MARK`, which is the only format the scan recognizes, and so it detects none of these cases.
 - **Evidence:** `poc-secrets/poc_secrets.out`.
 
 ### Medium
@@ -161,7 +161,7 @@ The remaining findings are high, medium or low.
 
 ## Addendum: late confirmations from the filesystem and CDP front
 
-These results arrived after commit `f7cb0fa`.
+These results arrived after commit `3978346`.
 
 - **M4 became broader (Medium, CONFIRMED):**
   - **Locations:** the same pattern appears in `core/src/store.rs:59-78` (`write_atomic`) and in `capture/src/lib.rs:1903-1917` (`open_private`). Both open a fixed name with create+truncate, without `O_NOFOLLOW`/`O_EXCL`.
@@ -236,9 +236,9 @@ These results arrived after commit `f7cb0fa`.
 
 ## Addendum 2: confirmation of the fixes (Round 11)
 
-- **HEAD:** the review was done in the new clone `/tmp/rev26/repo`, at `eb66afa`, which includes the fixes:
-  - core: `3bcbd20`, `7637bac`, `b0c0596`, `dd6cf7a`, `6840670`, `3939881`, `071d132`;
-  - capture: `485f6a3`, `d3f194f`, `3e6ad05`, `3c7e4af`, `8e0e575`, `eb66afa`.
+- **HEAD:** the review was done in the new clone `/tmp/rev26/repo`, at `d97c0e5`, which includes the fixes:
+  - core: `659b4fd`, `4aa9fdf`, `e08e8c7`, `9ba19d2`, `39097c0`, `ad2aad2`, `004d758`;
+  - capture: `46815c0`, `6562b4c`, `3811f80`, `770e143`, `813c53f`, `d97c0e5`.
 - **Evidence:**
   - reproduction tests and outputs in `/tmp/rev26/poc-secrets`, `/tmp/rev26/poc-fs` and `/tmp/rev26/poc-allow`;
   - partial reports in `/tmp/rev26/{secrets,fs-cdp-chrome,allow-recon}.md`.
@@ -352,9 +352,9 @@ All the earlier findings are fixed or are now reported as the contract foresees.
 
 ## Addendum 3: confirmation of addendum 2 (Round 11)
 
-- **HEAD:** the review was done in the new clone `/tmp/rev27/repo`, at `03ee85c`, which includes the fixes:
-  - core: `5cdac78`, `f4f5c63`, `f276ba8`, `e5e45c1`;
-  - capture: `f437051`, `288b2d3`, `03ee85c`.
+- **HEAD:** the review was done in the new clone `/tmp/rev27/repo`, at `1fd85d2`, which includes the fixes:
+  - core: `cb41619`, `72833c2`, `6be7667`, `5d3f90a`;
+  - capture: `0c77e4f`, `e677b0a`, `1fd85d2`.
 - **Evidence:**
   - reproduction tests and outputs in `/tmp/rev27/poc-secrets` and `/tmp/rev27/poc-cap`;
   - partial reports in `/tmp/rev27/{secrets,cap}.md`.
@@ -362,7 +362,7 @@ All the earlier findings are fixed or are now reported as the contract foresees.
 
 ### Verdict: REJECTED
 
-There are two **confirmed medium** findings, and one of them is a regression introduced by `5cdac78`. There is no high finding. The accepted risks did not weigh on the verdict.
+There are two **confirmed medium** findings, and one of them is a regression introduced by `cb41619`. There is no high finding. The accepted risks did not weigh on the verdict.
 
 ### R1–R14
 
@@ -397,9 +397,9 @@ There are two **confirmed medium** findings, and one of them is a regression int
   - each reimport writes a full copy of the session to disk;
   - `trace_value(cookie)` still exposes `valueLength` without reveal (`tools.rs:1282/1305`).
 
-**A3-M2. Regression from `5cdac78`: a non-sensitive `name=value` without `%` is copied whole (CONFIRMED).**
+**A3-M2. Regression from `cb41619`: a non-sensitive `name=value` without `%` is copied whole (CONFIRMED).**
 - **Location:** `core/src/export/sanitize.rs:952-965`. The `?token=` or `pin=` that sits inside the value is never examined.
-- **Before `5cdac78`** (binary r26): `Refresh: 0;url=/d?pin=%5BREDACTED%5D&…&shotp=%5BREDACTED%5D`.
+- **Before `cb41619`** (binary r26): `Refresh: 0;url=/d?pin=%5BREDACTED%5D&…&shotp=%5BREDACTED%5D`.
 - **Now:** `Refresh: 0;url=/d?pin=1234&page=2&opinion=good&shotp=1&ticket_type=vip`.
 - **Also leaking now:**
   - `X-Note: redirect=https://h/cb?access_token=RAWNEST09x`;
@@ -465,8 +465,8 @@ The exception is **line 222**, which is inexact (see A3-B2).
 
 ## Addendum 4: confirmation of addendum 3 (Round 11)
 
-- **HEAD reviewed:** `61ad875`, in a new clone at `/tmp/rev28/repo`.
-- **Fixes checked:** `419c207`, `d2a0ca6`, `4c5aed0`, `61ad875` and `62afa63`.
+- **HEAD reviewed:** `5dfee46`, in a new clone at `/tmp/rev28/repo`.
+- **Fixes checked:** `423b7ef`, `10f9523`, `324fd35`, `5dfee46` and `f69e842`.
 - **Evidence:**
   - PoCs and outputs in `/tmp/rev28/poc-secrets` and `/tmp/rev28/poc-cap`;
   - partial reports in `/tmp/rev28/{secrets,cap}.md`.
@@ -474,14 +474,14 @@ The exception is **line 222**, which is inexact (see A3-B2).
 
 ### Verdict: REJECTED
 
-There is one **confirmed medium regression** (A4-M1), introduced by `d2a0ca6`. The other items are fixed or were accepted. A3-B5, the `"device":"dev-…-7319"` and the 16b risks were not reevaluated, because they were accepted.
+There is one **confirmed medium regression** (A4-M1), introduced by `10f9523`. The other items are fixed or were accepted. A3-B5, the `"device":"dev-…-7319"` and the 16b risks were not reevaluated, because they were accepted.
 
 ### Addendum 3 items
 
 | Item | State | Evidence |
 |---|---|---|
 | A3-M1 (brute force on `trace_value`) | Fixed | Without reveal, `trace_value(value)` always returns `reveal_required`, including after reimporting; the r27 brute force (10,000 queries, 200 reimports) found nothing. With `reveal=true` without `--allow-reveal`, it returns `reveal_disabled`. Cookie mode no longer carries `valueLength`. |
-| A3-M2 (regression from `5cdac78`) | Fixed in the reported cases | `Refresh: 0;url=/d?pin=%5BREDACTED%5D&page=2` comes out. The X-Note redirect, `next=/cb?token=` in JSON and in free text, `?next=/cb?token=URL1x` and the Location also come out masked. |
+| A3-M2 (regression from `cb41619`) | Fixed in the reported cases | `Refresh: 0;url=/d?pin=%5BREDACTED%5D&page=2` comes out. The X-Note redirect, `next=/cb?token=` in JSON and in free text, `?next=/cb?token=URL1x` and the Location also come out masked. |
 | A3-B1 (double encoding) | Fixed | `%253F`, triple and quadruple encoding, `token+%3D`, `token%20%3D` and `token%2B%3D` come out masked. With 5 levels of encoding it still gets through, because the ceiling is 4 rounds (informational). |
 | A3-B2 (large message on the pipe) | Fixed in pipe mode | Navigate fails in 2.6 s with `frame_too_large`, the session comes out `partial` and the reason is `capture.cdp_transport_closed`. |
 | A3-B3 (symlink at `netlog.json`) | Fixed for the 3 names | The stop finishes with the warning "havia um link simbólico" (there was a symbolic link), writes `netlog.json` as a regular 0600 file from memory, and the victim file stays intact. |
@@ -505,25 +505,25 @@ Growth is linear on the 25 adversarial inputs: with 4× the input, the time is a
 
 #### Medium
 
-**A4-M1. Regression from `d2a0ca6`: a value with mixed encoding leaks (CONFIRMED).**
+**A4-M1. Regression from `10f9523`: a value with mixed encoding leaks (CONFIRMED).**
 - **Location:** `core/src/export/sanitize.rs:1061` and `:1074`.
 - **Cause:**
   - The value now ends at the first raw `=`, so only `%2Fcb%3Ftoken` is decoded, and it has nothing to redact.
   - The new scan restarts in the middle of the word, and `%3F` does not count as a boundary. As a result, `token=` is never recognized.
-- **Before, in core `35a8a62`:** `next=%2Fcb%3Ftoken%3D%255BREDACTED%255D`.
+- **Before, in core `7a00f3b`:** `next=%2Fcb%3Ftoken%3D%255BREDACTED%255D`.
 - **Now:** `next=%2Fcb%3Ftoken=MIX1x`.
 - **Where it leaks end to end:**
   - header `X-Note3`;
   - JSON fields `mix1`/`mix2`, for example `redirect=https%3A%2F%2Fh%2Fcb%3Faccess_token=MIXED02x`.
   - The URL query stays masked.
-- **Evidence:** `/tmp/rev28/poc-secrets/zz_sec28_poc_r28.out` ("MARK MIXED02x: VAZA" (LEAKS)) and the same input run on core `35a8a62`.
+- **Evidence:** `/tmp/rev28/poc-secrets/zz_sec28_poc_r28.out` ("MARK MIXED02x: VAZA" (LEAKS)) and the same input run on core `7a00f3b`.
 
 #### Low
 
 **A4-B1. `trace_value(request_id)` without reveal still returns `"length":N` (CONFIRMED).**
 - **Location:** `mcp/src/tools.rs:1440-1466`, which masks only the `value`; the `length` comes from `core/src/flow.rs:253`.
 - **Examples:** `sid` appears with 4 and `X-Session` with 22.
-- It is the same leak that `419c207` removed from cookie mode.
+- It is the same leak that `423b7ef` removed from cookie mode.
 
 **A4-B2. In port mode (`expose_cdp=true`), the large message loses the reason (CONFIRMED).**
 - **Location:** `abnormal_close_reason` only handles the pipe (`capture/src/transport.rs:132-134`), so `transport_closed` stays `None` (`capture/src/lib.rs:339`).
@@ -541,11 +541,11 @@ Growth is linear on the 25 adversarial inputs: with 4× the input, the time is a
 **A4-B5. The session directory is not rechecked at the stop (CONFIRMED, same user).**
 - **Location:** the directory symlink check only runs at the start (`capture/src/lib.rs:151`).
 - **Scenario:** with `capture-X` swapped for a symlink to another directory, the session is written there with 0600, and the new cleanup deletes a `session.json` symlink outside the session folder.
-- **Mitigating factors:** nothing is written through a link, and writing through the swapped directory was already possible before `62afa63`; what is new is the removal.
+- **Mitigating factors:** nothing is written through a link, and writing through the swapped directory was already possible before `f69e842`; what is new is the removal.
 
 #### Informational
 
-- **A4-I1. `escape_display` (`mcp/src/live.rs:674-676`) does not cover the variation selectors U+E0100–E01EF**, although `61ad875` says it does; the range `0xE0000..=0xE007F` only catches tags.
+- **A4-I1. `escape_display` (`mcp/src/live.rs:674-676`) does not cover the variation selectors U+E0100–E01EF**, although `5dfee46` says it does; the range `0xE0000..=0xE007F` only catches tags.
   - Also passing raw: U+05B4, U+064B, U+0489, U+115F/1160, U+FFA0, U+1680, U+17B4, U+0600, U+070F, U+1D173, U+13430 and U+1BCA0.
   - Suggestion: filter by the Unicode categories Mn/Me/Cf/Zs instead of ranges.
 - **Already existed before:**
@@ -558,10 +558,10 @@ Growth is linear on the 25 adversarial inputs: with 4× the input, the time is a
 
 ## Addendum 5: confirmation of addendum 4 (Round 11)
 
-- **HEAD:** `d8ad643`, in a new clone at `/tmp/rev29/repo`, which includes the fixes:
-  - core: `d12158b`, `d8ad643`, `c441634`;
-  - capture: `23bcba6`, `0997a3b`.
-- **Comparison:** the earlier behavior is that of core `bacdc30`, compiled separately (the `*_bacdc30.out` files). The cached `fake_server` was outdated and was rebuilt before any end-to-end test.
+- **HEAD:** `cc910fd`, in a new clone at `/tmp/rev29/repo`, which includes the fixes:
+  - core: `c47acc6`, `cc910fd`, `52a09a9`;
+  - capture: `1dcf62f`, `7b7b2d7`.
+- **Comparison:** the earlier behavior is that of core `37b8e39`, compiled separately (the `*_bacdc30.out` files). The cached `fake_server` was outdated and was rebuilt before any end-to-end test.
 - **Evidence:**
   - reproduction tests and outputs in `/tmp/rev29/poc-secrets` and `/tmp/rev29/poc-cap`;
   - partial reports in `/tmp/rev29/{secrets,cap}.md`.
@@ -569,7 +569,7 @@ Growth is linear on the 25 adversarial inputs: with 4× the input, the time is a
 ### Verdict: REJECTED
 
 There are two **confirmed medium** findings and no high one:
-- **A5-M1:** a fidelity regression introduced by `d12158b`.
+- **A5-M1:** a fidelity regression introduced by `c47acc6`.
 - **A5-M2:** a partial leak that already existed before these fixes and that no earlier review had found.
 
 All the addendum 4 items are fixed.
@@ -591,7 +591,7 @@ All the addendum 4 items are fixed.
 
 ### Cost of the 8 decoding rounds (release, 4 MB input)
 
-| Input | HEAD | bacdc30 |
+| Input | HEAD | 37b8e39 |
 |---|---|---|
 | matrix `;a=%3Fb%3D` (worst case) | 3.0 s | 204 ms |
 | matrix `;a=b=c` | 2.2 s | 348 ms |
@@ -612,19 +612,19 @@ Severity: Low.
 
 #### Medium
 
-**A5-M1. Regression from `d12158b`: the path segments after a sensitive matrix parameter vanish (CONFIRMED).**
+**A5-M1. Regression from `c47acc6`: the path segments after a sensitive matrix parameter vanish (CONFIRMED).**
 - **Location:** `core/src/export/sanitize.rs:874-875`. `sanitize_matrix` runs `sanitize_text` again over the whole path, and the sensitive value goes up to a terminator or `&` (`:1122`). The slash `/` is neither.
 - **Examples:**
 
   | Input | Output |
   |---|---|
-  | `/a;jsessionid=X/b/c?x=1` | `/a;jsessionid=%5BREDACTED%5D?x=1` (in `bacdc30`, `/b/c` stayed) |
+  | `/a;jsessionid=X/b/c?x=1` | `/a;jsessionid=%5BREDACTED%5D?x=1` (in `37b8e39`, `/b/c` stayed) |
   | `/users;token=abc/profile/123` | loses `/profile/123` |
   | `/a;v=2/session=keep/b` | loses `session=keep` and `/b` |
 
 - **Effect:** nothing leaks, but the URLs the tools return lose segments without any warning. This hurts the fidelity of what is displayed.
 
-**A5-M2. Partial leak of a secret with encoded `+`, space, `&` or `#` inside a nested URL (CONFIRMED; already existed in `bacdc30`).**
+**A5-M2. Partial leak of a secret with encoded `+`, space, `&` or `#` inside a nested URL (CONFIRMED; already existed in `37b8e39`).**
 - **Location:** `sanitize.rs:1216` and `:977`. `percent_decode` turns `+` into a space at each round, and the decoding repeats until it stabilizes. The space then starts to end the value.
 - **Example:** `?redirect_uri=…%3Faccess_token%3DAAA%2BQPLUS2x` comes out as `…%255BREDACTED%255D%20QPLUS2x`.
 - **Reach:**
@@ -673,11 +673,11 @@ Severity: Low.
 
 ## Addendum 6: confirmation of addendum 5 (Round 11)
 
-- **HEAD reviewed:** `d50a19f`, in a new clone at `/tmp/rev30/repo`.
+- **HEAD reviewed:** `8be6a0d`, in a new clone at `/tmp/rev30/repo`.
 - **Fixes checked:**
-  - core: `e6a9edd`, `952921a`, `d50a19f`;
-  - capture: `daa3414`.
-- **Comparison baseline:** core `49f79ef`, compiled separately. The `fake_server` was rebuilt.
+  - core: `60434a9`, `ae580a0`, `8be6a0d`;
+  - capture: `c9a78f3`.
+- **Comparison baseline:** core `5dc52c4`, compiled separately. The `fake_server` was rebuilt.
 - **Evidence:**
   - reproduction tests and outputs in `/tmp/rev30/poc-secrets` (pairs `*_head.out` / `*_49f.out`, `confirm_*.out`, `zz_sec30_*`) and `/tmp/rev30/poc-cap`;
   - partial reports in `/tmp/rev30/{secrets,cap}.md`.
@@ -725,7 +725,7 @@ The announced ceiling of 324 ms does not hold for URL inputs of 4 MB. The probab
 
 #### Medium
 
-**A6-M1. Regression from `e6a9edd`: a `token=X` segment in the path leaks when the path has `;` (CONFIRMED).**
+**A6-M1. Regression from `60434a9`: a `token=X` segment in the path leaks when the path has `;` (CONFIRMED).**
 - **Location:** `core/src/export/sanitize.rs:852-856`. `sanitize_matrix` only examines segments that contain `%`.
 - **End-to-end scenario:**
   - the request URL `https://h.invalid/x;v=1/token=SEGURL3x/next?page=2` comes out in the clear in `list_requests` and `get_request`;
@@ -739,7 +739,7 @@ The announced ceiling of 324 ms does not hold for URL inputs of 4 MB. The probab
   2. then `sanitize_text` (`sanitize.rs:688`) consumes `/b/c?x=1`.
 - **Cause:** the value goes to the end of the group (`scrub.rs:439`), and `is_placeholder` (`scrub.rs:190`) only recognizes the exact placeholder.
 - **Where it appears:** JSON bodies, the request line (`:381`) and headers that are not URLs (`:362`).
-- **Effect:** the displayed URL loses segments without warning, and the idempotence announced in `952921a` no longer holds.
+- **Effect:** the displayed URL loses segments without warning, and the idempotence announced in `ae580a0` no longer holds.
 
 #### Low
 
@@ -790,10 +790,10 @@ The announced ceiling of 324 ms does not hold for URL inputs of 4 MB. The probab
 
 ## Addendum 7: confirmation of addendum 6 (Round 11)
 
-- **HEAD reviewed:** `868127b`, in a new clone at `/tmp/rev31/repo`, with the fixes:
-  - core: `0b94424`, `39826a3` and `868127b`;
-  - capture: `93361b8` and `e6fc955`.
-- **Comparison:** core `d50a19f`, compiled separately in `/tmp/rev31/before`.
+- **HEAD reviewed:** `060ef38`, in a new clone at `/tmp/rev31/repo`, with the fixes:
+  - core: `790d508`, `c55f281` and `060ef38`;
+  - capture: `58db05d` and `2411960`.
+- **Comparison:** core `8be6a0d`, compiled separately in `/tmp/rev31/before`.
 - **Evidence:**
   - reproduction tests in `/tmp/rev31/poc-secrets` and `/tmp/rev31/poc-cap`;
   - reports in `/tmp/rev31/{secrets,cap}.md`.
@@ -866,7 +866,7 @@ For comparison, `d50` had 14,417 leaks on seed 1.
 - **Informational:**
   - **Plan B:** a leftover orphan marker can delete the kept profile, which is the only copy of the events (`lib.rs:939-977`). The setup is artificial.
   - **Rescue folders never cleaned:** one with an mtime in the future (`lib.rs:1017-1023`) and another without a marker after a SIGKILL.
-  - **Lockfile:** `868127b` did not update `capture/Cargo.lock` for rustix, and the offline build rewrites the file.
+  - **Lockfile:** `060ef38` did not update `capture/Cargo.lock` for rustix, and the offline build rewrites the file.
   - **JSON with `\ud800`:** the body is omitted whole, as in `d50`.
 
 ### `fdio.rs`
@@ -889,14 +889,14 @@ It is clean:
 
 ---
 
-## Addendum 8 — Round 12: confirmation of addendum 7 and review of the app (395cf8e)
+## Addendum 8 — Round 12: confirmation of addendum 7 and review of the app (b6bad69)
 
-**Base reviewed.** New clone at `/tmp/rev32/repo`, at commit `737290a`. The comparison is with `a7087f4`, compiled separately in `/tmp/rev32/poc-secrets/before`. The `fake_server` was rebuilt on both commits.
+**Base reviewed.** New clone at `/tmp/rev32/repo`, at commit `84e2471`. The comparison is with `6f681e4`, compiled separately in `/tmp/rev32/poc-secrets/before`. The `fake_server` was rebuilt on both commits.
 
 **Commits reviewed:**
-- core: `3607179`, `16da1c2`, `93cbf1d`, `dfe7ea8` and `c7dab11`;
-- capture: `f6e1cc1`, `611c63d` and `737290a`;
-- app: `395cf8e`.
+- core: `fda31d0`, `76d4e09`, `777cc83`, `4d047f1` and `7687abc`;
+- capture: `fa05344`, `2765cb3` and `84e2471`;
+- app: `b6bad69`.
 
 **Evidence:**
 - `/tmp/rev32/poc-secrets`: `cases-{head,before}.tsv`, `fuzz-*.txt`, `perf*.txt` and `e2e-*.json`;
@@ -914,7 +914,7 @@ There are three **confirmed medium** findings and no high one:
 
 ### Addendum 7 items
 
-| Item | HEAD | a7087f4 | State |
+| Item | HEAD | 6f681e4 | State |
 |---|---|---|---|
 | A7-B1 `token＝FW1x` | masked | leaks | Fixed |
 | A7-B2 `&amp;#61;`, `&amp;#x3D;`, `&amp;equals;` | masked | leaks | Fixed; `&amp;amp;#61;` still leaks (A8-B1) |
@@ -944,19 +944,19 @@ There are three **confirmed medium** findings and no high one:
 
 #### Medium
 
-**A8-M1. Regression from `93cbf1d`: the tail of a secret that contains `/` leaks (CONFIRMED).**
+**A8-M1. Regression from `777cc83`: the tail of a secret that contains `/` leaks (CONFIRMED).**
 
 - **Location:** `core/src/export/scrub.rs:572-580` and `929-941`.
 - **Cause:** the base64 heuristic only accepts the slash if the following segment has 16 or more characters, or contains `+` or `=`.
 
-| Input | HEAD | a7087f4 |
+| Input | HEAD | 6f681e4 |
 |---|---|---|
 | `GET /s;token=Zm9vYmFy/YmF6cXV4 HTTP/1.1` | `…token=%5BREDACTED%5D/YmF6cXV4` | `…token=%5BREDACTED%5D` |
 | `{"p":"/s/token=…/YmF6cXV4"}` | leaks `YmF6cXV4` | masked |
 | `Refresh: 0; url=/a;token=…/YmF6cXV4` | leaks `YmF6cXV4` | masked |
 | `/api/token=/secret1/value2` (text) | leaks the whole value | masked |
 
-- **Also leaking**, and `a7087f4` masked them:
+- **Also leaking**, and `6f681e4` masked them:
   - `?next=%2Fa%3Btoken%3DAbCdEfGh%2FIjKlMnOp`;
   - `/p?x=1/token=abc/def`.
 - **End to end:** confirmed in `get_request`, `get_body` and `search_bodies`.
@@ -965,9 +965,9 @@ There are three **confirmed medium** findings and no high one:
   | | Seed 1 | Seed 2 |
   |---|---|---|
   | Leaks at HEAD | 45.6 thousand | 45.1 thousand |
-  | Leaks at a7087f4 | 17.9 thousand | 17.5 thousand |
+  | Leaks at 6f681e4 | 17.9 thousand | 17.5 thousand |
   | Fidelity losses at HEAD | 10.6 thousand | 10.6 thousand |
-  | Fidelity losses at a7087f4 | 107 thousand | 107 thousand |
+  | Fidelity losses at 6f681e4 | 107 thousand | 107 thousand |
 
   The new rule greatly improved fidelity, but opened leaks:
   - the new ones are in headers, JSON, request lines and encoded redirects;
@@ -978,7 +978,7 @@ There are three **confirmed medium** findings and no high one:
 
 - **Location:** `scrub.rs:930`. The `contains(&b'+')` goes over the whole accumulated value at every `/`.
 
-| Input | HEAD | a7087f4 |
+| Input | HEAD | 6f681e4 |
 |---|---|---|
 | 1 MB of `/a;token=` + (`A`×16 + `/`)… | 1.4 s | 8 ms |
 | 4 MB of the same input | 21 s | 23 ms |
@@ -1007,7 +1007,7 @@ There are three **confirmed medium** findings and no high one:
 
 - **A8-B1. `token&amp;amp;#61;X` and `&amp;amp;amp;#x3d;X` still leak (CONFIRMED).**
   - **Location:** `scrub.rs:1052`. The loop looks for a repeated `&amp;`, but not `&amp;amp;`.
-  - **Context:** `3607179` declared "repeated &amp;" as fixed.
+  - **Context:** `fda31d0` declared "repeated &amp;" as fixed.
 - **A8-B2. `sanitize_url("/s;token＝X/…")` leaks the value (CONFIRMED; already existed).** The browser encodes the `＝`, and the encoded form comes out masked.
 - **A8-B3. The "tests-only" CLI is active in release (PLAUSIBLE).**
   - **Location:** `src-tauri/src/lib.rs:64-77` reads `env::args()` without `cfg(debug_assertions)` or an environment variable.
@@ -1016,7 +1016,7 @@ There are three **confirmed medium** findings and no high one:
 - **A8-B4. TOCTOU on the import file, and a FIFO hangs (CONFIRMED).**
   - **Location:** `cli.rs:90-103` validates the file, but `import_har` (`commands.rs:237-249`) rereads the path with `fs::metadata`, which follows symlinks.
   - **Scenario:** a symlink swapped for a FIFO blocked `fs::read` for more than 3 s, and the command is synchronous.
-  - **Plausible:** a symlink to `/dev/zero` (size 0) passes the 256 MiB ceiling. The interface dialog has the same problem, from before `395cf8e`.
+  - **Plausible:** a symlink to `/dev/zero` (size 0) passes the 256 MiB ceiling. The interface dialog has the same problem, from before `b6bad69`.
 - **A8-B5. Loose URL validation, the same in TS and in Rust (CONFIRMED).**
   - **Location:** `cli.rs:25-43` and `captureUrl.ts:16-28`.
   - **Accepts:** NUL, control characters, DEL, U+200B, `http:///`, `http://@`, backslash and a 2 MB URL.
@@ -1031,7 +1031,7 @@ There are three **confirmed medium** findings and no high one:
   - ⌘⇧H and ⌘⇧N import during a recording and switch the view.
   - ⌘⇧R ignores the disabled button, but the JS and the Rust refuse the second session.
 
-### What is clean in `395cf8e`
+### What is clean in `b6bad69`
 
 - **Start URL:**
   - it only goes to Chrome as CDP JSON, never to the shell;
@@ -1049,11 +1049,11 @@ There are three **confirmed medium** findings and no high one:
 
 ## Addendum 9: confirmation of addendum 8 (Round 12)
 
-Review done in a new clone, at `/tmp/rev33/repo`, at `ce68eb9`. Commits checked:
-- core: `27fb212` and `ce68eb9`;
-- app: `a7e2495`.
+Review done in a new clone, at `/tmp/rev33/repo`, at `782718f`. Commits checked:
+- core: `25a91c0` and `782718f`;
+- app: `7341031`.
 
-The HEAD (H) was compared with `737290a` (P) and `a7087f4` (B).
+The HEAD (H) was compared with `84e2471` (P) and `6f681e4` (B).
 
 Evidence:
 - PoCs and outputs in `/tmp/rev33/poc-secrets`: `cases-*.tsv`, `fuzz-*.txt`, `perf3-*.txt`, `e2e-*.json` and `corp-diff-class.txt`;
@@ -1119,7 +1119,7 @@ They remain equal to P: matrix and non-sensitive segments, query values, JSON, L
   - Location: the 16-layer ceiling at `scrub.rs:1051`.
 - **A9-B3. The secret written by the previous version is not cleaned (CONFIRMED).**
   - Location: `src-tauri/src/prefs.rs:43-57`.
-  - A `preferences.json` from `395cf8e` stays at 0644 until the first write.
+  - A `preferences.json` from `b6bad69` stays at 0644 until the first write.
   - After that, `save_chrome_path` rewrites `user:pw@…?token=SECRET#f` intact, now with 0600.
   - Suggestion: apply `persistable_url` on read and rewrite the file.
 - **A9-B4. The start URL path is written unsanitized (CONFIRMED).**

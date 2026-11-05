@@ -1,6 +1,6 @@
 # Acceptance report — ScrapeLens MVP
 
-Run: 2026-10-27T14:00:22Z · core binary `10f3b76b637b` (2176608 bytes) · commit `da0ac52`
+Run: 2026-10-27T14:00:22Z · core binary `10f3b76b637b` (2176608 bytes) · commit `7956b5e`
 
 Environment: macOS 26.5.2 · arm64 · Python 3.14.8
 
@@ -60,7 +60,7 @@ Evidence:
 
 > The NetLog order/duplicates are preserved, but they do not become the primary view while there is ambiguity.
 
-> Diagnosis of the leader's failure: the fixture declared `wallTime` without the monotonic `timestamp` (`1793046000.0`), and the core of `f6c6bdd` calibrated `time` as microseconds; the NetLog ended up 2 s ahead and the two requests became `unmatched`. Real Chrome satisfies `wallTime = timeTickOffset/1000 + timestamp` (measured deviation < 1 ms), an equation now used in the fixture. It was a fixture defect, not a core one; the original failure is preserved in `tests/results/acceptance-criterion3-leader-failure.json` and `REPORT-criterion3-leader-failure.md`.
+> Diagnosis of the leader's failure: the fixture declared `wallTime` without the monotonic `timestamp` (`1793046000.0`), and the core of `4468a81` calibrated `time` as microseconds; the NetLog ended up 2 s ahead and the two requests became `unmatched`. Real Chrome satisfies `wallTime = timeTickOffset/1000 + timestamp` (measured deviation < 1 ms), an equation now used in the fixture. It was a fixture defect, not a core one; the original failure is preserved in `tests/results/acceptance-criterion3-leader-failure.json` and `REPORT-criterion3-leader-failure.md`.
 
 > New assertions in this round: clock coherence of the fixture (CDP×NetLog) and calibrated unit `milliseconds`. The ambiguity test remains strict: the two requests 20 ms apart are still ambiguous, each with the same 2 candidates and 2 `correlate.ambiguous` warnings.
 
@@ -136,7 +136,7 @@ Evidence:
 
 > The real cycle uses CDP, which does not fetch bodies: all bodies stay `unavailable` with a note. Body capture (Network.getResponseBody) is not yet on the live path.
 
-> In this round the Start session/Stop session cycle was redone on the final bundle (`a7004d4e95e8`, built on 2026-10-27 04:00 UTC−03 with the core up to `b5846be`, including `f6c6bdd`); the live session above is new, not reused.
+> In this round the Start session/Stop session cycle was redone on the final bundle (`a7004d4e95e8`, built on 2026-10-27 04:00 UTC−03 with the core up to `0adff48`, including `4468a81`); the live session above is new, not reused.
 
 > The HAR and NetLog imports were also redone on the final bundle (`har-3dbc391c02a985c5-2` and `netlog-1704043c442dcbd1-2`), now through the UI: the user selected the files manually because the native file panel cannot be reached by a synthetic click in this environment (TCC was granted; the limitation is the picker's). The verification is independent of the user's confirmation: the recorded HAR reproduces the method/URL sequence of `har-derived.json` (24 entries) and the persisted `netlog.json` is byte-identical to `h1h2h3.chrome-netlog.json` (SHA-256). The user imported each file twice; the repeated copies have an identical `session.json` and sit in `har-3dbc391c02a985c5` and `netlog-1704043c442dcbd1`, with no effect on the validation. The isolated NetLog warns `netlog.time_unit_assumed` because, without CDP, the NetLog clock unit cannot be calibrated — the limitation is made explicit in the session.
 

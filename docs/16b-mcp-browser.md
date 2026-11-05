@@ -421,7 +421,7 @@ mcp binary, 8 rounds with the swap fired as soon as `attachments/` appears
 write in the middle: the stop **fails** with a rescue (the files already moved are in the
 original folder, the rest of the data in the rescue); with 2 ms or more the write (now
 a few `renameat`) has already finished and the stop returns OK, with the whole session in the original
-folder, and the swap happens afterwards. Before (daa3414): 3 of 20 rounds wrote
+folder, and the swap happens afterwards. Before (c9a78f3): 3 of 20 rounds wrote
 `session.json` and bodies in OUT and the stop said OK.
 
 **Remaining gap.** Between the `recheck` after the write and the return to the
@@ -434,7 +434,7 @@ he wants) and outside the model.
 `live_planted_symlinks_are_not_followed` (the review PoC: links to
 `netlog.json`, `cdp-bodies.jsonl` and `cdp-events.jsonl`; no target receives data
 or changes mode). The predictable temporary of the core's `write_atomic`, which was the
-second vector of that PoC, was fixed by the Core (commit 3939881).
+second vector of that PoC, was fixed by the Core (commit ad2aad2).
 
 ### 2.5 Debugging port: pipe by default, port only with `expose_cdp`
 

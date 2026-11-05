@@ -83,7 +83,7 @@ exact.
   on that target.
 - The generated Python decoder is as strict as the Rust one (scope left open
   at the end, truncated surrogate pair → error).
-- Re-review at b0ce0f0: the 2 previous highs were approved. New decisions:
+- Re-review at d50d243: the 2 previous highs were approved. New decisions:
   (1) no value with an observed origin (strong or possible) may
   become a literal. If an adapter part has a producer outside the plan, the
   producer enters the plan (same round, in session order, together with the base
@@ -97,7 +97,7 @@ exact.
   The same lists apply on both paths. (4) The wrapper counts the re-execution depth by
   environment variable and refuses when the fallback is itself.
   (5) `flag` enters the generics list.
-- Re-review at 5d2c6e6: hid2, cost, abbreviations and wrapper approved.
+- Re-review at 9094555: hid2, cost, abbreviations and wrapper approved.
   Principle decisions for the adapter parts:
   (1) Producer outside the plan, in any round: with strong evidence, the
   producer rises into the plan (as in the chain); with possible evidence, or a
@@ -116,7 +116,7 @@ exact.
   documento (document). Name false positives (e.g.: conta_corrente) are accepted
   as an error on the safe side: they become a parameter, never leak.
   (4) A producer step that supplies no referenced value leaves the plan.
-- Leader's decision on principle (2), measured by Capture at b4511fb: strict
+- Leader's decision on principle (2), measured by Capture at 22583ff: strict
   by default would turn UI state (`v_filtro_sel`,
   `interceptor_is_active`, `#f12_selected`, `pagePixelHeight/Width`) into
   required parameters on the real HARs, with no security gain. Default:
@@ -132,7 +132,7 @@ exact.
 
 ## Closing (2026-10-29)
 
-Final re-review at c07b514: APPROVED with caveats, no critical or high
+Final re-review at 4f9031c: APPROVED with caveats, no critical or high
 failure. Decision revised by the leader with the reviewer's data: with `is_ui_constant`,
 `--strict-parts` generates on the 3 real HARs exactly the same parameters as
 the intermediate mode. Therefore STRICT becomes the default, and intermediate

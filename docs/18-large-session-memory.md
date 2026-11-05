@@ -194,21 +194,21 @@ front end.
 
 ## 7. Result after the fixes (round 13, wave 1)
 
-Implemented in `core/` and `mcp/` (one commit per item): **P1** (`87bd164`: validation of
+Implemented in `core/` and `mcp/` (one commit per item): **P1** (`b019bce`: validation of
 `netlog.json` and of the CDP lines as a stream, without a DOM, with the same verdict as `Value`, including the
-recursion limit of 128 levels: `IgnoredAny` does not work because it skips it), **P2** (`752230e`:
+recursion limit of 128 levels: `IgnoredAny` does not work because it skips it), **P2** (`fa8493f`:
 `inspect` and `assess` write as a stream with a borrowed struct; output byte-for-byte equal), **P3**
-(`4d82e36`: index by (lowercase method, canonical URL) and by NetLog source id; explicit
-keys also indexed), **P6** (`2550041`: compact `session.json` when the indented JSON passes
-50 MiB) and **P7** (`b438945`: `sanitize_bundle_owned` consumes the bundle and sanitizes in place; CLI
-`sanitize` and the MCP registry use it). **P4** was left for round 16 and is measured in §8 (`ad4f5c1`);
+(`278c58a`: index by (lowercase method, canonical URL) and by NetLog source id; explicit
+keys also indexed), **P6** (`a333416`: compact `session.json` when the indented JSON passes
+50 MiB) and **P7** (`bc25c20`: `sanitize_bundle_owned` consumes the bundle and sanitizes in place; CLI
+`sanitize` and the MCP registry use it). **P4** was left for round 16 and is measured in §8 (`90a2575`);
 **P5** was done by the App and is also measured (`docs/19-app-contract.md`: 1,161 MiB when opening the
 20 thousand session). **P8 was not done.**
 
 **P3 requirement, identical output.** `core/tests/correlation_identity.rs` imports the 29 captures and
 versioned fixtures (HTTP/1.1, h2, h3, contracts, multi-target, `src-tauri/evidence`, adapters) and
 checks the indented `session.json` and the attachments, byte for byte (64-bit FNV-1a + size), against the
-hashes recorded BEFORE the change (commit `aefacc9`); it passes equally after. One more unit test in
+hashes recorded BEFORE the change (commit `dc30c6d`); it passes equally after. One more unit test in
 `correlate.rs` shows that the index never discards a pair that the scan of all pairs would accept,
 and `tests/acceptance/check_multi_target.py` (real multi-target capture) passed.
 
@@ -256,10 +256,10 @@ Reading:
 
 ## 8. Round 16: P4 measured (streaming NetLog parser)
 
-P4 was implemented in `core/` in commit `ad4f5c1`: the NetLog `events` array is read by a
+P4 was implemented in `core/` in commit `90a2575`: the NetLog `events` array is read by a
 `Visitor` that keeps only the fields used, without building the `serde_json::Value` of the whole file.
 The output is identical: `core/tests/correlation_identity.rs` still has the **29/29 hashes** equal
-to those recorded before (reference `aefacc9`), and the NetLog corpus and the Core `check_multi_target`
+to those recorded before (reference `dc30c6d`), and the NetLog corpus and the Core `check_multi_target`
 passed.
 
 Measurement redone in this round to check the Core's numbers: same sessions as §2
