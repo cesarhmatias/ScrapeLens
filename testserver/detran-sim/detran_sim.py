@@ -201,7 +201,7 @@ class H(BaseHTTPRequestHandler):
         with LOCK:
             mode = STATE["mode"]
             if mode == "403":
-                self._rec(p, 403, "modo 403")
+                self._rec(p, 403, "mode 403")
                 return self._send(403, "<html><body><h1>403</h1><p>Request blocked (synthetic protection page)</p></body></html>\n")
             sid, head = form.get("SESSIONID", ""), form.get("SESSIONID", "").split("_")[0]
             s = STATE["sessions"].get(head)
