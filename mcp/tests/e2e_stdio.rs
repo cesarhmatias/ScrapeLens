@@ -39,8 +39,9 @@ fn full_session_over_stdio() {
     let work = tempfile::tempdir().unwrap();
     let sessions = work.path().join("sessions");
     let out = work.path().join("out");
-    let har_a = work.path().join("a.har");
-    let har_b = work.path().join("b.har");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let har_a = sessions.join("a.har");
+    let har_b = sessions.join("b.har");
     std::fs::write(&har_a, flow_har("")).unwrap();
     std::fs::write(&har_b, flow_har("-v2")).unwrap();
 
@@ -186,11 +187,13 @@ fn full_session_over_stdio() {
 #[test]
 fn reveal_works_when_the_server_allows_it() {
     let work = tempfile::tempdir().unwrap();
-    let har = work.path().join("a.har");
+    let sessions = work.path().join("s");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let har = sessions.join("a.har");
     std::fs::write(&har, flow_har("")).unwrap();
     let mut client = Client::start(&[
         "--sessions-dir",
-        work.path().join("s").to_str().unwrap(),
+        sessions.to_str().unwrap(),
         "--allow-reveal",
     ]);
     client.handshake();

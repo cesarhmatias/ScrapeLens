@@ -42,7 +42,12 @@ fn import_and_list_sessions() {
     assert_eq!(session["requests"], 5);
     assert_eq!(session["readOnly"], false);
     // Second import of the same content: idempotent.
-    let path = env.dir.path().join("flow.har");
+    let path = env
+        .ctx
+        .cfg
+        .sessions_dir
+        .join(".import-src")
+        .join("flow.har");
     let again = import_session(&env.ctx, p(json!({"path": path, "name": "flow"}))).unwrap();
     assert_eq!(again["alreadyImported"], true);
     // Same name, different content: refused.
@@ -65,15 +70,16 @@ fn import_formats_and_errors() {
         ("fixtures/acceptance/diff/session", "diffsession", "session"),
         ("experiments/results/h1-page", "h1page", "capture"),
     ] {
+        let staged = env.stage(&repo(path));
         let out = import_session(
             &env.ctx,
-            p(json!({"path": repo(path).to_str().unwrap(), "name": name})),
+            p(json!({"path": staged.to_str().unwrap(), "name": name})),
         )
         .unwrap_or_else(|e| panic!("{path}: {e}"));
         assert_eq!(out["format"], format, "{path}");
         assert!(out["requests"].as_u64().unwrap() > 0, "{path}");
     }
-    let netlog = repo("experiments/results/h1-page/chrome-netlog.json");
+    let netlog = env.stage(&repo("experiments/results/h1-page/chrome-netlog.json"));
     let out = import_session(
         &env.ctx,
         p(json!({"path": netlog.to_str().unwrap(), "name": "netlogonly"})),
@@ -125,12 +131,64 @@ fn import_enforces_size_limit() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = scrapelens_mcp::Config::new(&dir.path().join("s"), None, &[], false, 10).unwrap();
     let ctx = scrapelens_mcp::Ctx::new(cfg);
-    let path = dir.path().join("a.har");
+    let path = dir.path().join("s").join("a.har");
     std::fs::write(&path, flow_har("")).unwrap();
     assert_eq!(
         err_code(import_session(&ctx, p(json!({"path": path})))),
         "too_large"
     );
+}
+
+#[test]
+fn import_refuses_outside_paths_and_symlinks_and_allows_configured_dirs() {
+    let env = Env::new(false);
+    let outside = env.dir.path().join("downloads.har");
+    std::fs::write(&outside, flow_har("")).unwrap();
+    let error =
+        import_session(&env.ctx, p(json!({"path": outside.to_str().unwrap()}))).unwrap_err();
+    assert_eq!(error.code, "outside_allowed_dir");
+    let message = error.to_string();
+    assert!(message.contains("--extra-sessions-dir"), "{message}");
+    let hint = outside.parent().unwrap().canonicalize().unwrap();
+    assert!(message.contains(hint.to_str().unwrap()), "{message}");
+    assert!(!env.ctx.cfg.sessions_dir.join("downloads").exists());
+
+    let inside = env.write("inside.har", &flow_har(""));
+    let imported = import_session(
+        &env.ctx,
+        p(json!({"path": inside.to_str().unwrap(), "name": "inside"})),
+    )
+    .unwrap();
+    assert_eq!(imported["sessionId"], "inside");
+
+    let extra_root = tempfile::tempdir().unwrap();
+    let extra_har = extra_root.path().join("from-extra.har");
+    std::fs::write(&extra_har, flow_har("-v2")).unwrap();
+    let with_extra = Env::with_extra(false, &[extra_root.path().to_path_buf()]);
+    let from_extra = import_session(
+        &with_extra.ctx,
+        p(json!({"path": extra_har.to_str().unwrap(), "name": "from-extra"})),
+    )
+    .unwrap();
+    assert_eq!(from_extra["sessionId"], "from-extra");
+    assert_eq!(from_extra["format"], "har");
+
+    #[cfg(unix)]
+    {
+        let real = env.write("real.har", &flow_har(""));
+        let before = std::fs::read(&real).unwrap();
+        let link = real.with_file_name("link.har");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let linked =
+            import_session(&env.ctx, p(json!({"path": link.to_str().unwrap()}))).unwrap_err();
+        assert_eq!(linked.code, "outside_allowed_dir");
+        assert!(linked.to_string().contains("symbolic link"), "{linked}");
+        assert_eq!(std::fs::read(&real).unwrap(), before);
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
 }
 
 #[test]
@@ -372,7 +430,9 @@ fn reveal_requires_allow_reveal() {
 #[test]
 fn headers_cookies_fixture_keeps_duplicates_and_mixed_case() {
     let env = Env::new(false);
-    let path = repo("fixtures/acceptance/headers-cookies/headers-cookies.har");
+    let path = env.stage(&repo(
+        "fixtures/acceptance/headers-cookies/headers-cookies.har",
+    ));
     import_session(
         &env.ctx,
         p(json!({"path": path.to_str().unwrap(), "name": "hc"})),
@@ -485,7 +545,7 @@ fn get_body_inline_large_binary_and_masking() {
 #[test]
 fn bodies_fixture_reports_truncated_and_empty_states() {
     let env = Env::new(false);
-    let path = repo("fixtures/acceptance/bodies/session");
+    let path = env.stage(&repo("fixtures/acceptance/bodies/session"));
     import_session(
         &env.ctx,
         p(json!({"path": path.to_str().unwrap(), "name": "bodies"})),
@@ -625,7 +685,7 @@ fn diff_requests_keeps_order_and_supports_ignore_and_cross_session() {
 #[test]
 fn diff_fixture_session_has_header_changes() {
     let env = Env::new(false);
-    let path = repo("fixtures/acceptance/diff/session");
+    let path = env.stage(&repo("fixtures/acceptance/diff/session"));
     import_session(
         &env.ctx,
         p(json!({"path": path.to_str().unwrap(), "name": "d"})),
@@ -664,7 +724,7 @@ fn diff_sessions_pairs_requests_and_paginates() {
     .unwrap();
     assert_eq!(open["masked"], false);
     // The repository fixtures also compare.
-    let h = repo("fixtures/acceptance/diff/session");
+    let h = env.stage(&repo("fixtures/acceptance/diff/session"));
     import_session(
         &env.ctx,
         p(json!({"path": h.to_str().unwrap(), "name": "fx"})),
@@ -797,7 +857,7 @@ fn trace_literal_value_and_request_origins() {
 #[test]
 fn repository_secret_fixture_never_leaks_without_reveal() {
     let env = Env::new(false);
-    let har = repo("fixtures/acceptance/sanitize/secret.har");
+    let har = env.stage(&repo("fixtures/acceptance/sanitize/secret.har"));
     import_session(
         &env.ctx,
         p(json!({"path": har.to_str().unwrap(), "name": "sec"})),
@@ -854,8 +914,7 @@ fn repository_secret_fixture_never_leaks_without_reveal() {
 fn masked_request_hides_tokens_in_target_and_initiator_urls() {
     // The core sanitizer does not cover target/initiator; the server masks them.
     let env = Env::new(true);
-    let work = tempfile::tempdir().unwrap();
-    let dir = work.path().join("native");
+    let dir = env.ctx.cfg.sessions_dir.join(".import-src").join("native");
     std::fs::create_dir_all(dir.join("attachments")).unwrap();
     let from = repo("fixtures/acceptance/diff/session");
     let mut session: Value =
@@ -907,8 +966,12 @@ fn masked_request_hides_tokens_in_target_and_initiator_urls() {
 /// Native session with `startedAt` and `requests` out of order (as in a real
 /// capture, where the list is by id and not by time).
 fn shuffled_native(env: &Env) {
-    let work = tempfile::tempdir().unwrap();
-    let dir = work.path().join("shuffled");
+    let dir = env
+        .ctx
+        .cfg
+        .sessions_dir
+        .join(".import-src")
+        .join("shuffled");
     let har = env.write("shuf.har", &flow_har(""));
     let imported = scrapelens_core::import_har(&std::fs::read(har).unwrap()).unwrap();
     let mut session = serde_json::to_value(&imported.bundle.session).unwrap();

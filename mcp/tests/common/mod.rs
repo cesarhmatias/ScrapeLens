@@ -210,10 +210,35 @@ impl Env {
         }
     }
 
+    /// Files the tests import live under `sessions/.import-src/`. The leading
+    /// dot keeps `list_sessions` from treating the staging directory as a session.
+    fn import_src(&self) -> PathBuf {
+        let root = self.ctx.cfg.sessions_dir.join(".import-src");
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
     pub fn write(&self, name: &str, content: &str) -> PathBuf {
-        let path = self.dir.path().join(name);
+        let path = self.import_src().join(name);
         std::fs::write(&path, content).unwrap();
         path
+    }
+
+    /// Copies a repository fixture under `.import-src` so `import_session` can read it.
+    pub fn stage(&self, source: &Path) -> PathBuf {
+        let name = source.file_name().expect("fixture has a name");
+        let mut dest = self.import_src().join(name);
+        if dest.exists() {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            dest = self
+                .import_src()
+                .join(format!("{}-{nanos}", name.to_string_lossy()));
+        }
+        copy_tree(source, &dest);
+        dest
     }
 
     /// Imports the flow HAR and returns the session_id.
@@ -225,6 +250,20 @@ impl Env {
         )
         .unwrap();
         out["sessionId"].as_str().unwrap().to_string()
+    }
+}
+
+fn copy_tree(source: &Path, dest: &Path) {
+    let meta = std::fs::symlink_metadata(source).unwrap();
+    if meta.file_type().is_dir() {
+        std::fs::create_dir_all(dest).unwrap();
+        for entry in std::fs::read_dir(source).unwrap().flatten() {
+            copy_tree(&entry.path(), &dest.join(entry.file_name()));
+        }
+    } else if meta.file_type().is_file() {
+        std::fs::copy(source, dest).unwrap();
+    } else {
+        panic!("refusing to stage a symlink: {}", source.display());
     }
 }
 

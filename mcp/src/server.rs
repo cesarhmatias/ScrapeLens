@@ -136,7 +136,7 @@ impl ScrapeLensServer {
     }
 
     #[tool(
-        description = "Imports a HAR, NetLog, native session or capture directory (CDP+NetLog) into the sessions directory. The only tool that writes (only to --sessions-dir).",
+        description = "Imports a HAR, NetLog, native session or capture directory (CDP+NetLog) into the sessions directory. The source must be inside --sessions-dir or --extra-sessions-dir; a path outside them is refused and the error tells the operator to restart with --extra-sessions-dir. A symlink at the named path is refused. Writes only to --sessions-dir.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,

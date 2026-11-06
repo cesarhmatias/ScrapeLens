@@ -241,9 +241,7 @@ fn find_netlog(dir: &Path) -> Option<PathBuf> {
 }
 
 pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
-    let input = Path::new(&params.path)
-        .canonicalize()
-        .map_err(|error| ToolError::not_found(format!("{}: {error}", params.path)))?;
+    let input = open_import_source(ctx, &params.path)?;
     let requested = params.format.as_deref().unwrap_or("auto");
     if !["auto", "har", "netlog", "session", "capture"].contains(&requested) {
         return Err(ToolError::invalid(format!(
@@ -395,6 +393,43 @@ pub fn import_session(ctx: &Ctx, params: ImportSessionParams) -> ToolResult {
             "attachmentsMissing": imported.report.attachments_missing,
         },
     }))
+}
+
+/// The named path must be a regular file or directory under `--sessions-dir`
+/// or `--extra-sessions-dir`. A symlink at that path is refused even when its
+/// target is inside. Ancestor symlinks (macOS `/var` → `/private/var`) are
+/// resolved by canonicalize and then compared to the already-canonical roots.
+fn open_import_source(ctx: &Ctx, raw_text: &str) -> Result<PathBuf, ToolError> {
+    let raw = Path::new(raw_text);
+    match std::fs::symlink_metadata(raw) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(ToolError::new(
+                "outside_allowed_dir",
+                format!("{} is a symbolic link; refused", raw.display()),
+            ))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ToolError::not_found(format!("{raw_text}: {error}")))
+        }
+        Err(error) => return Err(ToolError::new("io", format!("{raw_text}: {error}"))),
+        Ok(_) => {}
+    }
+    let input = raw
+        .canonicalize()
+        .map_err(|error| ToolError::new("io", format!("{raw_text}: {error}")))?;
+    let mut allowed = std::iter::once(&ctx.cfg.sessions_dir).chain(ctx.cfg.extra_dirs.iter());
+    if !allowed.any(|root| is_within(root, &input)) {
+        let hint = input.parent().unwrap_or(&input);
+        return Err(ToolError::new(
+            "outside_allowed_dir",
+            format!(
+                "{} is outside the configured session directories. Restart the server with --extra-sessions-dir {}",
+                input.display(),
+                hint.display()
+            ),
+        ));
+    }
+    Ok(input)
 }
 
 fn import_failed(error: scrapelens_core::CoreError) -> ToolError {

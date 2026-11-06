@@ -59,10 +59,15 @@ Stdout is the JSON-RPC channel; all logging goes to stderr. Transport: stdio.
   `outside_allowed_dir`. Directories 0700, files 0600, atomic writes.
 - **Session reads**: only `--sessions-dir` and `--extra-sessions-dir`.
   `session_id` parameters are handles, never paths.
-- **Import input reads**: the `path` can be any file/directory
-  the user points to (the server runs with their permissions), but only a regular
-  file or directory; a symlink at the root is resolved, the size limit
-  applies, nothing is executed and the content is treated as untrusted data.
+- **Import input reads**: `path` must be a regular file or directory inside
+  `--sessions-dir` or `--extra-sessions-dir` (canonical, component-wise).
+  v0.1.2 accepted any path the user pointed at; v0.1.3 refuses the rest with
+  `outside_allowed_dir` and tells the operator to restart with
+  `--extra-sessions-dir <parent>`, so a HAR in Downloads is not a dead end.
+  A symlink at the named path is refused even when its target is inside.
+  Ancestor symlinks such as macOS `/var` → `/private/var` are resolved and
+  then accepted. The size limit applies, nothing is executed and the content
+  is treated as untrusted data.
 - Strings coming from sessions (URLs, headers, bodies) are **untrusted data**:
   the server never interprets them as instructions nor uses them as paths.
 
@@ -196,6 +201,9 @@ content (same `meta.id`) it returns `alreadyImported: true` without rewriting; w
 explicit `name` and different content, `exists`.
 Output: `{ sessionId, alreadyImported, format, requests, warnings: [{code,
 message, severity}] (up to 50), report: {sourceEvents, unknown, ...} }`.
+The source `path` must already sit in `--sessions-dir` or `--extra-sessions-dir`.
+Anything else is `outside_allowed_dir`, and the message names the parent to pass
+to `--extra-sessions-dir` on the next start. A symlink at `path` is refused.
 Writes only to `<sessions-dir>/<sessionId>/` via `store::write_session_dir`.
 
 ### 5.3 `list_requests`
