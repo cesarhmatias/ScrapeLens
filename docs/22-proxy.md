@@ -75,4 +75,4 @@ These appear as actionable messages, with no credentials, on both routes:
 - target refused by the proxy;
 - invalid link.
 
-Measurements and experiment scripts are in [`experiments/proxy/`](../experiments/proxy/). The session field is defined in [`core/CONTRACT-V1.md`](../core/CONTRACT-V1.md), and the MCP parameter in [`16-mcp-contract.md`](16-mcp-contract.md).
+Measurements and experiment scripts are in [`experiments/proxy/`](../experiments/proxy/). The acceptance run on the real capture paths (App and MCP-controlled), with its results, is in [`experiments/proxy/acceptance/`](../experiments/proxy/acceptance/). The session field is defined in [`core/CONTRACT-V1.md`](../core/CONTRACT-V1.md), and the MCP parameter in [`16-mcp-contract.md`](16-mcp-contract.md).

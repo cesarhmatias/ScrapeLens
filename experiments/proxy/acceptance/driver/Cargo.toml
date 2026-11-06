@@ -1,0 +1,12 @@
+[package]
+name = "proxy-acceptance-driver"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+scrapelens-capture = { path = "../../../../capture" }
+serde_json = "1"
+
+# Own workspace: the driver is not part of the product workspaces.
+[workspace]
