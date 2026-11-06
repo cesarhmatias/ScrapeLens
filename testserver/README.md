@@ -261,3 +261,67 @@ fetch, and a reload also resolves it.
 `headers` is the ordered list as received (duplicates preserved, never a map);
 the line also goes to the normal `h1.jsonl`/`h2.jsonl`/`h3.jsonl`, with the
 `marker` field. Test: `cargo test multi_target_page_marks_every_request_kind`.
+
+## Local proxies (`proxy`)
+
+Loopback-only test proxies for the proxy-link contract. Synthetic credentials
+only; never a real proxy. Each connection appends one JSON line to the evidence
+file. The proxy writes no credentials anywhere.
+
+| Kind | Default port | Protocol |
+|---|---|---|
+| `http` | 8791 | `CONNECT host:port` and absolute-URI `GET http://…`; optional `Basic` auth |
+| `https` | 8792 | the same HTTP proxy, reached over TLS (fixture certificate, trusted via `fixtures/tls/scrapelens-test-ca.crt.pem`) |
+| `socks5` | 8793 | SOCKS5 `CONNECT`: no auth, or RFC 1929 username/password; domains resolved by the proxy |
+
+```sh
+cd testserver
+# no auth, evidence and tunnel dump
+cargo run -- proxy --kind http --port 8791 --evidence /path/http.jsonl --tunnel-dump /path/tunnel
+# with auth: the value comes from the environment, never from argv
+SCRAPELENS_TESTPROXY_AUTH=user:pass cargo run -- proxy --kind http --port 8791 \
+  --evidence /path/http.jsonl --auth-env SCRAPELENS_TESTPROXY_AUTH
+cargo run -- proxy --kind https --port 8792 --evidence /path/https.jsonl --auth-env SCRAPELENS_TESTPROXY_AUTH
+cargo run -- proxy --kind socks5 --port 8793 --evidence /path/socks5.jsonl --auth-env SCRAPELENS_TESTPROXY_AUTH
+# forced failures
+cargo run -- proxy --kind http --evidence /path/f.jsonl --reject-auth          # 407 for every client
+cargo run -- proxy --kind http --evidence /path/f.jsonl --deny 127.0.0.1:8801  # 403 / SOCKS 02
+cargo run -- proxy --kind http --evidence /path/f.jsonl --drop before-reply     # close, no reply
+cargo run -- proxy --kind http --evidence /path/f.jsonl --drop after-reply      # 200 then close
+```
+
+Clients (curl, independent of the Rust tests):
+
+```sh
+curl -x http://127.0.0.1:8791 --proxy-user user:pass http://127.0.0.1:8801/
+curl --proxy https://127.0.0.1:8792 --proxy-cacert fixtures/tls/scrapelens-test-ca.crt.pem \
+  --proxy-user user:pass -p http://127.0.0.1:8801/
+curl --socks5-hostname 127.0.0.1:8793 --proxy-user user:pass http://localhost:8801/
+```
+
+Tests: `cargo test --test proxy` (24 tests: relay bytes, 407 / SOCKS auth failures,
+deny, drops, HTTPS, absolute-URI, dump, redaction).
+
+Evidence (`scrapelens.testproxy.evidence/1`, one line per connection):
+
+```json
+{"schema":"scrapelens.testproxy.evidence/1","seq":2,"ts_rfc3339":"2026-11-06T01:15:03.120Z",
+ "ts_unix_ms":1793000000000,"conn":"c3","kind":"http","listen":"127.0.0.1:8791",
+ "protocol":"CONNECT","target":"127.0.0.1:8801","target_kind":"host-port",
+ "auth":{"required":true,"presented":true,"method":"basic","ok":true},
+ "result":"relayed","reply_code":200,"bytes_up":86,"bytes_down":196,
+ "sha256_up":"…","sha256_down":"…","duration_ms":41,"notes":[]}
+```
+
+- `target_kind`: `host-port`, `absolute-uri`, `socks-domain`, `socks-ipv4`, `socks-ipv6`.
+- `result`: `relayed`, `auth_failed`, `target_refused`, `dropped_before_reply`,
+  `dropped_after_reply`, `upstream_failed`, `relay_error`, `bad_request`,
+  `no_acceptable_method`, `unsupported`, `client_error`, `io_error`.
+- `reply_code`: HTTP status, or the SOCKS5 reply code for `socks5` (`0` = success).
+- `auth.method`: `none`, `basic`, `socks5-userpass`. The username is never recorded.
+- Absolute-URI requests: `Proxy-Authorization` is removed and `Connection: close`
+  is added; the forwarded head is the first `up` bytes (counted and dumped).
+
+`--tunnel-dump DIR` writes `<conn>.up.bin` and `<conn>.down.bin`: the exact bytes
+that crossed the relay, so they can be compared with what the client sent and what
+the origin answered.

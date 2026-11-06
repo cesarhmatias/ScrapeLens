@@ -6,6 +6,7 @@
 //!         [--h1 ADDR] [--h2 ADDR] [--h3 ADDR] [--no-h3-on-h2-port]
 //!   client-h2 URL [--header NAME:VALUE]... [--cert FILE]
 //!   client-h3 URL [--header NAME:VALUE]... [--cert FILE] [--insecure]
+//!   proxy --kind http|https|socks5 --evidence FILE [--port N] [...]
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use std::thread;
 use scrapelens_testserver::cert::{self, TlsFiles};
 use scrapelens_testserver::evidence::Evidence;
 use scrapelens_testserver::http::Proto;
+use scrapelens_testserver::proxy::{self, Credentials, DropPoint, EvidenceLog, Kind, ProxyConfig};
 use scrapelens_testserver::{
     H1_ADDR, H2_ADDR, H3_ADDR, SCHEMA, h1, h2cli, h2srv, h3cli, h3srv, util,
 };
@@ -42,6 +44,7 @@ fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         "serve" => serve(&args[1..]),
         "client-h2" => client_h2(&args[1..]),
         "client-h3" => client_h3(&args[1..]),
+        "proxy" => proxy_cmd(&args[1..]),
         "help" | "--help" | "-h" => {
             usage();
             Ok(())
@@ -65,6 +68,8 @@ fn usage() {
          \x20 client-h2  URL [--header K:V]...      ordered h2 request (trusts fixtures/tls CA)\n\
          \x20 client-h3  URL [--header K:V]... [--insecure]\n\
          \x20                                      ordered h3 request (trusts fixtures/tls CA)\n\
+         \x20 proxy     --kind http|https|socks5 --evidence FILE [...]\n\
+         \x20                                      loopback test proxy (testserver/README.md)\n\
          \n\
          Endpoints (all protocols): GET /echo-order, GET /setcookie, POST /echo,\n\
          GET /page, GET /redirect?n=N, GET /healthz, GET /multi/ (multi-target probes)\n\
@@ -367,4 +372,90 @@ fn print_client_result(
         Ok(s) => println!("{s}"),
         Err(_) => println!("<{} non-UTF8 bytes>", body.len()),
     }
+}
+
+fn take<'a>(it: &mut std::slice::Iter<'a, String>, flag: &str) -> Result<&'a str, String> {
+    it.next()
+        .map(|s| s.as_str())
+        .ok_or_else(|| format!("{flag} needs a value"))
+}
+
+/// `proxy` command: one loopback test proxy, JSONL evidence per connection.
+fn proxy_cmd(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut kind: Option<Kind> = None;
+    let mut port: Option<u16> = None;
+    let mut evidence: Option<PathBuf> = None;
+    let mut auth_env: Option<String> = None;
+    let mut reject_auth = false;
+    let mut deny: Vec<(String, u16)> = Vec::new();
+    let mut drop = DropPoint::Never;
+    let mut dump: Option<PathBuf> = None;
+    let mut tls_dir = repo_fixtures().join("tls");
+
+    let mut it = args.iter();
+    while let Some(flag) = it.next() {
+        match flag.as_str() {
+            "--kind" => {
+                let v = take(&mut it, flag)?;
+                kind = Some(Kind::parse(v).ok_or("--kind must be http, https or socks5")?);
+            }
+            "--port" => port = Some(take(&mut it, flag)?.parse()?),
+            "--evidence" => evidence = Some(PathBuf::from(take(&mut it, flag)?)),
+            "--auth-env" => auth_env = Some(take(&mut it, flag)?.to_string()),
+            "--reject-auth" => reject_auth = true,
+            "--deny" => {
+                let v = take(&mut it, flag)?;
+                deny.push(proxy::parse_target(v).ok_or("--deny needs host:port")?);
+            }
+            "--drop" => {
+                let v = take(&mut it, flag)?;
+                drop = DropPoint::parse(v).ok_or("--drop must be never, before-reply or after-reply")?;
+            }
+            "--tunnel-dump" => dump = Some(PathBuf::from(take(&mut it, flag)?)),
+            "--tls" => tls_dir = PathBuf::from(take(&mut it, flag)?),
+            other => return Err(format!("unknown proxy option {other:?}").into()),
+        }
+    }
+    let kind = kind.ok_or("--kind http|https|socks5 is required")?;
+    let evidence = evidence.ok_or("--evidence FILE is required")?;
+    let credentials = match auth_env {
+        Some(name) => {
+            // The value is read from the environment so it never appears in argv.
+            let value = std::env::var(&name)
+                .map_err(|_| format!("environment variable {name} is not set"))?;
+            Some(Credentials::parse(&value).map_err(|e| e.to_string())?)
+        }
+        None => None,
+    };
+    let tls = match kind {
+        Kind::Https => Some(proxy::tls_server_config(&cert::ensure(&tls_dir, false)?)?),
+        _ => None,
+    };
+
+    let listener = proxy::bind(port.unwrap_or(kind.default_port()))?;
+    let addr = listener.local_addr()?;
+    let log = Arc::new(EvidenceLog::open(&evidence)?);
+    let mut cfg = ProxyConfig::new(kind, log, addr.to_string());
+    let auth_label = match (&credentials, reject_auth) {
+        (_, true) => "reject",
+        (Some(_), false) => "required",
+        (None, false) => "none",
+    };
+    cfg.credentials = credentials;
+    cfg.reject_auth = reject_auth;
+    cfg.deny = deny;
+    cfg.drop = drop;
+    cfg.tunnel_dump = dump.clone();
+    cfg.tls = tls;
+    println!(
+        "scrapelens-testproxy kind={} listen={} auth={} drop={:?} evidence={} dump={}",
+        kind.as_str(),
+        addr,
+        auth_label,
+        drop,
+        evidence.display(),
+        dump.as_ref().map(|d| d.display().to_string()).unwrap_or_else(|| "off".into()),
+    );
+    proxy::serve(listener, Arc::new(cfg))?;
+    Ok(())
 }

@@ -238,7 +238,22 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
         sync_dir(&attachments_dir)?;
     }
 
-    let json = session_json_bytes(&bundle.session, COMPACT_SESSION_BYTES)?;
+    // A proxied capture gets its remote endpoints and notes made explicit before it is
+    // written; direct captures are written as they are.
+    let json = if bundle
+        .session
+        .session
+        .capture
+        .as_ref()
+        .and_then(|capture| capture.proxy.as_ref())
+        .is_some()
+    {
+        let mut session = bundle.session.clone();
+        crate::model::apply_proxy_facts(&mut session);
+        session_json_bytes(&session, COMPACT_SESSION_BYTES)?
+    } else {
+        session_json_bytes(&bundle.session, COMPACT_SESSION_BYTES)?
+    };
     write_atomic(&dir.join(SESSION_FILE), &json, true)?;
     sync_dir(dir)?;
     Ok(())

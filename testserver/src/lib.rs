@@ -25,6 +25,7 @@ pub mod h2srv;
 pub mod h3cli;
 pub mod h3srv;
 pub mod http;
+pub mod proxy;
 pub mod util;
 
 pub const SCHEMA: &str = "scrapelens.testserver.evidence/1";
