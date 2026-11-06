@@ -15,7 +15,7 @@
 use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -85,6 +85,10 @@ impl ProxyPlan {
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 const ACCEPT_POLL: Duration = Duration::from_millis(10);
+/// Enough for a real Chrome (page, workers, service worker, utility and network service)
+/// without letting a local process open tunnels without bound.
+const MAX_CLIENTS: usize = 512;
+const MAX_FAILURES: usize = 32;
 
 /// Why the relay could not start. Messages carry `scheme://host:port` at most, never
 /// credentials.
@@ -121,7 +125,8 @@ pub struct Relay {
     stop: Arc<AtomicBool>,
     accept: Option<JoinHandle<()>>,
     failures: Arc<Mutex<Vec<String>>>,
-    sockets: Arc<Mutex<Vec<TcpStream>>>,
+    sockets: Arc<Mutex<Vec<(u64, TcpStream)>>>,
+    client_limit: Arc<AtomicUsize>,
 }
 
 impl Relay {
@@ -168,12 +173,16 @@ impl Relay {
         listener.set_nonblocking(true).map_err(|e| RelayError::Listen(e.kind().to_string()))?;
         let port = listener.local_addr().map_err(|e| RelayError::Listen(e.kind().to_string()))?.port();
 
+        let client_limit = Arc::new(AtomicUsize::new(MAX_CLIENTS));
         let shared = Shared {
             link: Arc::new(link.clone()),
             allow,
             tls,
             failures: Arc::new(Mutex::new(Vec::new())),
             sockets: Arc::new(Mutex::new(Vec::new())),
+            next_socket: Arc::new(AtomicU64::new(1)),
+            clients: Arc::new(AtomicUsize::new(0)),
+            client_limit: Arc::clone(&client_limit),
         };
         let stop = Arc::new(AtomicBool::new(false));
         let accept = {
@@ -187,7 +196,18 @@ impl Relay {
             accept: Some(accept),
             failures: shared.failures,
             sockets: shared.sockets,
+            client_limit,
         })
+    }
+
+    /// Test-only ceiling, lower than [`MAX_CLIENTS`], so the cap can be observed
+    /// without hundreds of sockets.
+    fn set_connection_limit(&self, limit: usize) {
+        self.client_limit.store(limit.max(1), Ordering::SeqCst);
+    }
+
+    fn tracked_sockets(&self) -> usize {
+        self.sockets.lock().map(|list| list.len()).unwrap_or(0)
     }
 
     /// The loopback port Chrome must use: `socks5://127.0.0.1:<port>`.
@@ -205,7 +225,7 @@ impl Drop for Relay {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         if let Ok(sockets) = self.sockets.lock() {
-            for socket in sockets.iter() {
+            for (_, socket) in sockets.iter() {
                 let _ = socket.shutdown(Shutdown::Both);
             }
         }
@@ -221,19 +241,71 @@ struct Shared {
     allow: Option<AllowFn>,
     tls: Option<Arc<ClientConfig>>,
     failures: Arc<Mutex<Vec<String>>>,
-    sockets: Arc<Mutex<Vec<TcpStream>>>,
+    sockets: Arc<Mutex<Vec<(u64, TcpStream)>>>,
+    next_socket: Arc<AtomicU64>,
+    clients: Arc<AtomicUsize>,
+    client_limit: Arc<AtomicUsize>,
+}
+
+/// Removes one tracked socket when the handler that owns it returns.
+struct TrackedSocket {
+    shared: Shared,
+    id: u64,
+}
+
+impl Drop for TrackedSocket {
+    fn drop(&mut self) {
+        if let Ok(mut list) = self.shared.sockets.lock() {
+            list.retain(|(id, _)| *id != self.id);
+        }
+    }
+}
+
+/// Releases one client slot when the handler returns, including on panic.
+struct ClientSlot(Shared);
+
+impl Drop for ClientSlot {
+    fn drop(&mut self) {
+        self.0.clients.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Shared {
     fn fail(&self, reason: String) {
-        if let Ok(mut f) = self.failures.lock() {
-            f.push(reason);
+        if let Ok(mut failures) = self.failures.lock() {
+            if failures.len() >= MAX_FAILURES {
+                let extra = failures.len() + 1 - MAX_FAILURES;
+                failures.drain(0..extra);
+            }
+            failures.push(reason);
         }
     }
 
-    fn track(&self, socket: &TcpStream) {
-        if let (Ok(clone), Ok(mut list)) = (socket.try_clone(), self.sockets.lock()) {
-            list.push(clone);
+    fn track(&self, socket: &TcpStream) -> Option<TrackedSocket> {
+        let clone = socket.try_clone().ok()?;
+        let id = self.next_socket.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut list) = self.sockets.lock() {
+            list.push((id, clone));
+        }
+        Some(TrackedSocket { shared: self.clone(), id })
+    }
+
+    fn try_acquire(&self) -> bool {
+        let limit = self.client_limit.load(Ordering::SeqCst).max(1);
+        let mut current = self.clients.load(Ordering::SeqCst);
+        loop {
+            if current >= limit {
+                return false;
+            }
+            match self.clients.compare_exchange(
+                current,
+                current + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return true,
+                Err(seen) => current = seen,
+            }
         }
     }
 }
@@ -243,9 +315,16 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
         match listener.accept() {
             Ok((client, _)) => {
                 let _ = client.set_nonblocking(false);
-                shared.track(&client);
+                if !shared.try_acquire() {
+                    shared.fail("too many connections".to_string());
+                    let _ = client.shutdown(Shutdown::Both);
+                    continue;
+                }
                 let shared = shared.clone();
-                thread::spawn(move || handle_client(client, shared));
+                thread::spawn(move || {
+                    let _slot = ClientSlot(shared.clone());
+                    handle_client(client, shared);
+                });
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => thread::sleep(ACCEPT_POLL),
             Err(_) => thread::sleep(ACCEPT_POLL),
@@ -255,6 +334,7 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
 
 /// One Chrome connection: SOCKS5 (no auth) from Chrome, then the tunnel.
 fn handle_client(mut client: TcpStream, shared: Shared) {
+    let _tracked_client = shared.track(&client);
     let _ = client.set_read_timeout(Some(HANDSHAKE_TIMEOUT));
     let target = match socks_request(&mut client) {
         Ok(target) => target,
@@ -286,13 +366,13 @@ fn handle_client(mut client: TcpStream, shared: Shared) {
     match upstream {
         Upstream::Plain(stream) => {
             let _ = stream.set_read_timeout(None);
-            shared.track(&stream);
+            let _tracked_upstream = shared.track(&stream);
             pipe(client, stream);
         }
         Upstream::Tls(stream) => {
             let stream = *stream;
             let _ = stream.sock.set_read_timeout(None);
-            shared.track(&stream.sock);
+            let _tracked_upstream = shared.track(&stream.sock);
             pipe_tls(client, stream);
         }
     }
@@ -1343,5 +1423,58 @@ mod wire_tests {
             let socks_log = socks_seen.lock().unwrap().clone();
             assert!(socks_log.iter().any(|line| line == socks_line), "{socks_log:?}");
         }
+    }
+
+    #[test]
+    fn finished_tunnels_are_removed_from_the_socket_list() {
+        let echo = echo_server();
+        let (up, _seen) = socks_upstream(USER, PASSWORD);
+        let relay = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}"), None);
+        let (code, tunnel) = chrome_connect(relay.port(), echo);
+        assert_eq!(code, 0);
+        assert!(relay.tracked_sockets() >= 2, "client and upstream stay tracked while open");
+        drop(tunnel);
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while relay.tracked_sockets() != 0 && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(relay.tracked_sockets(), 0);
+    }
+
+    #[test]
+    fn the_failure_list_and_the_connection_count_stay_bounded() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let up = listener.local_addr().unwrap().port();
+        let allow: AllowFn = Arc::new(|_: &str, _: u16| false);
+        let relay = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}"), Some(allow));
+        for _ in 0..MAX_FAILURES + 8 {
+            let _ = chrome_connect(relay.port(), 9);
+        }
+        let failures = relay.failures();
+        assert_eq!(failures.len(), MAX_FAILURES, "{failures:?}");
+        assert!(failures.iter().all(|line| line.contains("not allowed")));
+
+        relay.set_connection_limit(2);
+        let mut held = Vec::new();
+        for _ in 0..2 {
+            held.push(TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap());
+        }
+        thread::sleep(Duration::from_millis(80));
+        let mut extra = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
+        extra.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+        let mut buf = [0u8; 1];
+        let read = extra.read(&mut buf);
+        let closed = match read {
+            Ok(0) => true,
+            Err(ref error) => !matches!(
+                error.kind(),
+                io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+            ),
+            Ok(_) => false,
+        };
+        assert!(closed, "a connection past the cap must be closed, read={read:?}");
+        assert!(relay.failures().iter().any(|line| line == "too many connections"));
+        drop(held);
+        drop(listener);
     }
 }
