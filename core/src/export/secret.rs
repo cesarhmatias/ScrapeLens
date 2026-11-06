@@ -13,9 +13,10 @@ pub(super) const MIN_HIGH_ENTROPY_LEN: usize = 32;
 ///
 /// Measured on synthetic cases only: the random tokens used by T13 sit at
 /// 5.03–5.47 bits/char, while a base64 SPKI public hash sits at 4.87, a UUID
-/// at 3.69 and a SHA-256 hex at 3.67. A repository-fixture sweep at this
-/// threshold flags 0 of 4243 string leaves; at 4.2 it flagged 7 occurrences of
-/// the same public SPKI pin.
+/// at 3.69 and a SHA-256 hex at 3.67. On the d4b00c8 fixture set the sweep flags
+/// 0 of 3640 string leaves (28 JSON files); the same ignored test prints 4243 on
+/// the current tree, which has more fixture files. At 4.2 it flagged 7
+/// occurrences of the same public SPKI pin on the pre-review tree.
 pub(super) const MIN_ENTROPY_BITS: f64 = 4.95;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

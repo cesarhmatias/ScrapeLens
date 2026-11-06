@@ -43,6 +43,49 @@ fn intact(path: &Path) {
 }
 
 #[test]
+fn ancestor_symlinks_are_refused_before_creating_the_session() {
+    let root = tempfile::tempdir().unwrap();
+    let allowed = root.path().join("allowed");
+    let outside = root.path().join("outside");
+    fs::create_dir(&allowed).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::set_permissions(&outside, fs::Permissions::from_mode(0o755)).unwrap();
+
+    // Absolute ancestor symlink: allowed/link -> outside.
+    symlink(&outside, allowed.join("link")).unwrap();
+    let destination = allowed.join("link").join("session");
+    let error = write_session_dir(&bundle(), &destination).unwrap_err();
+    assert!(
+        error.to_string().contains("symbolic link"),
+        "absolute ancestor: {error}"
+    );
+    assert!(!outside.join("session").exists());
+    assert_eq!(
+        fs::read_dir(&outside).unwrap().count(),
+        0,
+        "nothing may be written outside"
+    );
+    assert!(!destination.exists());
+
+    // Relative ancestor symlink: allowed/linkrel -> ../outside.
+    symlink(Path::new("../outside"), allowed.join("linkrel")).unwrap();
+    let destination = allowed.join("linkrel").join("session");
+    let error = write_session_dir(&bundle(), &destination).unwrap_err();
+    assert!(
+        error.to_string().contains("symbolic link"),
+        "relative ancestor: {error}"
+    );
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+    assert!(!destination.exists());
+
+    // The control without a symlink writes normally.
+    let control = root.path().join("control").join("session");
+    write_session_dir(&bundle(), &control).unwrap();
+    assert!(control.join("session.json").is_file());
+    assert!(control.join("attachments").is_dir());
+}
+
+#[test]
 fn symlinked_destinations_are_refused_and_targets_stay_intact() {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path().join("session");

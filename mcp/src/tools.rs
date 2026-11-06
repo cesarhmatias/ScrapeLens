@@ -485,15 +485,6 @@ pub struct ExportSessionParams {
     pub include_sensitive: Option<bool>,
 }
 
-/// macOS system alias at the root (`/var`, `/tmp`, `/etc` → `/private/...`):
-/// the only accepted ancestor symlink, as in the App (`src-tauri/src/export.rs`).
-fn is_system_alias(path: &Path) -> bool {
-    matches!(path.to_str(), Some("/var") | Some("/tmp") | Some("/etc"))
-        && std::fs::read_link(path)
-            .map(|target| target.starts_with("/private") || target.starts_with("private"))
-            .unwrap_or(false)
-}
-
 /// `true` if the path exists (including as a broken symlink).
 fn path_exists(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok()
@@ -605,17 +596,13 @@ fn export_destination(
     };
 
     // No existing component of the requested path may be a symlink (the destination
-    // is created by us; following a link would write outside it).
-    for ancestor in dest.ancestors() {
-        match std::fs::symlink_metadata(ancestor) {
-            Ok(meta) if meta.file_type().is_symlink() && !is_system_alias(ancestor) => {
-                return Err(ToolError::new(
-                    "outside_allowed_dir",
-                    format!("{} is a symbolic link; refused", ancestor.display()),
-                ))
-            }
-            _ => {}
-        }
+    // is created by us; following a link would write outside it). The rule and the
+    // macOS system aliases are shared with the Core store.
+    if let Some(ancestor) = scrapelens_core::store::first_symlink_ancestor(&dest) {
+        return Err(ToolError::new(
+            "outside_allowed_dir",
+            format!("{} is a symbolic link; refused", ancestor.display()),
+        ));
     }
     let parent = dest
         .parent()

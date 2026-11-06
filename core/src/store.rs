@@ -48,30 +48,104 @@ fn set_mode(_path: &Path, _mode: u32) -> Result<()> {
     Ok(())
 }
 
+/// macOS system aliases at the root (`/var`, `/tmp`, `/etc` -> `/private/...`):
+/// the only ancestor symlinks accepted when a path is created or written. The
+/// target must be under `/private`, which is what the system links do.
+pub fn is_system_alias(path: &Path) -> bool {
+    matches!(path.to_str(), Some("/var") | Some("/tmp") | Some("/etc"))
+        && fs::read_link(path)
+            .map(|target| target.starts_with("/private") || target.starts_with("private"))
+            .unwrap_or(false)
+}
+
+/// First ancestor of `path` (including `path`) that is a symlink and is not a
+/// macOS system alias. `None` means the chain is safe to traverse.
+pub fn first_symlink_ancestor(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|ancestor| {
+            fs::symlink_metadata(ancestor)
+                .map(|meta| meta.file_type().is_symlink() && !is_system_alias(ancestor))
+                .unwrap_or(false)
+        })
+        .map(Path::to_path_buf)
+}
+
 /// Creates (if needed) the session directory with permission 0700.
 ///
-/// The destination is never followed through a symlink and must belong to the
-/// current effective user; a file, a symlink or a foreign-owned directory is
-/// refused before any chmod. A missing chain is created with mode 0700 from the
-/// start, so a restrictive umask is not needed.
+/// The whole chain is checked component by component before a component is
+/// created: a symlink ancestor (except a macOS system alias), `..`, a file or a
+/// foreign-owned destination is refused before any chmod or write. Missing
+/// components are created with mode 0700 from the start, one at a time, and
+/// each one is inspected again right after creation.
 pub fn ensure_private_dir(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
-        match fs::symlink_metadata(path) {
-            Ok(meta) => check_private_dir(path, &meta)?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                use std::os::unix::fs::DirBuilderExt;
-                let mut builder = fs::DirBuilder::new();
-                builder.recursive(true).mode(0o700);
-                builder
-                    .create(path)
-                    .map_err(|error| CoreError::io(path, error))?;
-                let meta =
-                    fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
-                check_private_dir(path, &meta)?;
+        use std::os::unix::fs::DirBuilderExt;
+
+        let mut current = PathBuf::new();
+        for component in path.components() {
+            match component {
+                Component::Prefix(_) => {
+                    return Err(CoreError::LimitExceeded {
+                        message: format!("{} has an unsupported prefix; refused", path.display()),
+                    });
+                }
+                Component::RootDir => {
+                    current.push(Path::new("/"));
+                    continue;
+                }
+                Component::CurDir => continue,
+                Component::ParentDir => {
+                    return Err(CoreError::LimitExceeded {
+                        message: format!("{} contains '..'; refused", path.display()),
+                    });
+                }
+                Component::Normal(part) => current.push(part),
             }
-            Err(error) => return Err(CoreError::io(path, error)),
+            match fs::symlink_metadata(&current) {
+                Ok(meta) => {
+                    if meta.file_type().is_symlink() {
+                        if is_system_alias(&current) {
+                            continue;
+                        }
+                        return Err(CoreError::LimitExceeded {
+                            message: format!(
+                                "{} is a symbolic link; refused (ancestor of the destination)",
+                                current.display()
+                            ),
+                        });
+                    }
+                    if !meta.is_dir() {
+                        return Err(CoreError::LimitExceeded {
+                            message: format!(
+                                "{} exists and is not a directory; refused",
+                                current.display()
+                            ),
+                        });
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    fs::DirBuilder::new()
+                        .recursive(false)
+                        .mode(0o700)
+                        .create(&current)
+                        .map_err(|error| CoreError::io(&current, error))?;
+                    let meta = fs::symlink_metadata(&current)
+                        .map_err(|error| CoreError::io(&current, error))?;
+                    if meta.file_type().is_symlink() || !meta.is_dir() {
+                        return Err(CoreError::LimitExceeded {
+                            message: format!(
+                                "{} changed while it was being created; refused",
+                                current.display()
+                            ),
+                        });
+                    }
+                }
+                Err(error) => return Err(CoreError::io(&current, error)),
+            }
         }
+        let meta = fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
+        check_private_dir(path, &meta)?;
     }
     #[cfg(not(unix))]
     {
