@@ -49,12 +49,14 @@ Stdout is the JSON-RPC channel; all logging goes to stderr. Transport: stdio.
 ### Read and write limits
 
 - **Writes** only to: `<sessions-dir>/<session_id>/` (import) and `<out-dir>/`
-  (large bodies and `export_session`) or to the validated absolute `destination` of the
-  export (new/empty, 0700, outside the source session). Every write
-  path is built by the server from validated names
-  (`[A-Za-z0-9._-]`, no `..`, no `/`) and checked after being canonicalized: if it
-  leaves the directory, the call fails with `outside_allowed_dir`. Directories 0700,
-  files 0600, atomic writes.
+  (large bodies and `export_session`). An export destination, including an
+  absolute path, must canonicalize to a subdirectory of `--out-dir`. v0.1.2
+  accepted an absolute path outside that directory; v0.1.3 refuses it
+  (`outside_allowed_dir`). `..`, a symlink and a destination inside a git
+  repository are refused. Every write path is built by the server from
+  validated names (`[A-Za-z0-9._-]`, no `..`, no `/`) and checked after being
+  canonicalized: if it leaves the directory, the call fails with
+  `outside_allowed_dir`. Directories 0700, files 0600, atomic writes.
 - **Session reads**: only `--sessions-dir` and `--extra-sessions-dir`.
   `session_id` parameters are handles, never paths.
 - **Import input reads**: the `path` can be any file/directory
@@ -385,12 +387,18 @@ JSON: it returns only path and counts.
   a full export needed neither confirmation nor a flag.
 - **Destination:** `destination` omitted → `<out-dir>/<session_id>-sanitized` (with
   `-2`, `-3`… if it exists) or `<out-dir>/<session_id>-full` (refuses if it already
-  exists). A simple name without `/` resolves inside `--out-dir`; an absolute path
-  is accepted if it is not the source session nor inside it (nor inside another
-  session/reserved root), if no existing ancestor is a symlink (except the macOS
-  system aliases `/var`, `/tmp`, `/etc` → `/private/...`) and if the
-  directory does not exist or is empty (the parent directory must exist). The
-  destination is created 0700; the files, 0600.
+  exists). A simple name without `/` resolves inside `--out-dir`. An absolute path
+  is accepted only when it canonicalizes to a subdirectory of `--out-dir` (the
+  comparison is component-wise, so `/out` does not contain `/out-evil`). A path
+  that contains `..` is refused even when it would canonicalize back inside.
+  No existing ancestor may be a symlink, except the macOS system aliases
+  `/var`, `/tmp` and `/etc` → `/private/...`. A destination inside a git
+  repository (a `.git` file or directory on the path or any ancestor, not
+  followed) is refused. The directory must not exist or must be empty, and its
+  parent must exist. The destination is created 0700; the files, 0600. This
+  replaces the v0.1.2 rule that accepted an absolute path outside `--out-dir`.
+  The default `--out-dir` needs no extra configuration. If that directory itself
+  sits inside a git repository, the export is refused.
 
 ## 6. Required tests
 
@@ -408,7 +416,8 @@ JSON: it returns only path and counts.
   `include_sensitive:true` preserves headers/cookies/bodies and the files
   `cdp-events.jsonl`/`netlog.json`/`cdp-bodies.jsonl` with 0700/0600, and the returned
   JSON does not contain the values; dangerous destinations (inside the source, another
-  session, reserved root, symlink, non-empty directory) are refused. A full export
+  session, reserved root, symlink, non-empty directory, a path outside
+  `--out-dir`, `..`, and a destination inside a git repository) are refused. A full export
   without elicitation and without `--allow-sensitive-export` errors and creates
   nothing; a refusal creates nothing; the confirmation names the session, the
   destination and the contents and contains no secret value.

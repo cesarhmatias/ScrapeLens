@@ -440,9 +440,9 @@ fn write_import(
 pub struct ExportSessionParams {
     /// Session id (from `list_sessions`).
     pub session_id: String,
-    /// Name inside `--out-dir` (e.g. `my-export`) or absolute path
-    /// of a new/empty directory. Without it: `<session_id>-sanitized` (with
-    /// suffix `-2`, `-3`...) or `<session_id>-full`.
+    /// Name inside `--out-dir` (e.g. `my-export`) or an absolute path that
+    /// canonicalizes to a new/empty directory inside `--out-dir`. Without it:
+    /// `<session_id>-sanitized` (with suffix `-2`, `-3`...) or `<session_id>-full`.
     pub destination: Option<String>,
     /// `false` (default) writes the sanitized session. `true` writes the full
     /// capture, unredacted, only after the user confirms, or when the client
@@ -493,8 +493,8 @@ fn check_empty_destination(path: &Path) -> Result<bool, ToolError> {
     }
 }
 
-/// Resolves and creates the export destination. Returns the canonical path of the
-/// directory (0700) and whether it was just created.
+/// Resolves the export destination inside `--out-dir`. Does not create it.
+/// Returns the canonical path and whether the caller would be creating it.
 fn export_destination(
     ctx: &Ctx,
     source: &Path,
@@ -512,6 +512,15 @@ fn export_destination(
                 ));
             }
             let path = PathBuf::from(text);
+            if path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+            {
+                return Err(ToolError::new(
+                    "outside_allowed_dir",
+                    "destination contains '..'; refused",
+                ));
+            }
             if path.is_absolute() {
                 path
             } else if !text.contains('/') && !text.contains('\\') {
@@ -591,6 +600,28 @@ fn export_destination(
         .map_err(|error| ToolError::new("io", format!("{}: {error}", parent.display())))?;
     let resolved = canonical_parent.join(file_name);
 
+    // Component-wise: `/out` does not contain `/out-evil`.
+    if !is_within(&base, &resolved) {
+        return Err(ToolError::new(
+            "outside_allowed_dir",
+            format!(
+                "{} is outside --out-dir {}; refused",
+                resolved.display(),
+                base.display()
+            ),
+        ));
+    }
+    if let Some(root) = git_worktree_root(&resolved) {
+        return Err(ToolError::new(
+            "outside_allowed_dir",
+            format!(
+                "{} is inside a git repository ({}); refused",
+                resolved.display(),
+                root.display()
+            ),
+        ));
+    }
+
     // Outside the source session, any other session and the reserved roots.
     let source_canonical = source
         .canonicalize()
@@ -625,6 +656,17 @@ fn export_destination(
     // The directory is created only after a sensitive export is authorized.
     // A refusal must leave nothing behind.
     Ok((resolved, !existed))
+}
+
+/// A `.git` file or directory on `path` or any ancestor marks a git work tree.
+/// `symlink_metadata` so a `.git` symlink still counts and is not followed.
+fn git_worktree_root(path: &Path) -> Option<PathBuf> {
+    for ancestor in path.ancestors() {
+        if std::fs::symlink_metadata(ancestor.join(".git")).is_ok() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+    None
 }
 
 fn create_export_dir(path: &Path) -> Result<(), ToolError> {

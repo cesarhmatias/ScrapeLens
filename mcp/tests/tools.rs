@@ -1212,22 +1212,61 @@ fn export_session_refuses_unsafe_destinations() {
         )),
         "invalid_argument"
     );
-    // Existing non-empty directory.
-    let busy = env.dir.path().join("busy");
+    // Outside --out-dir, including a sibling that only shares a prefix.
+    let outside = env.dir.path().join("elsewhere");
+    std::fs::create_dir_all(&outside).unwrap();
+    assert_eq!(
+        err_code(export_session(
+            &env.ctx,
+            p(json!({"session_id": id, "destination": outside.join("x").to_str().unwrap()}))
+        )),
+        "outside_allowed_dir"
+    );
+    assert!(!outside.join("x").exists());
+    let evil = PathBuf::from(format!("{}-evil", env.ctx.cfg.out_dir.display()));
+    std::fs::create_dir_all(&evil).unwrap();
+    assert_eq!(
+        err_code(export_session(
+            &env.ctx,
+            p(json!({"session_id": id, "destination": evil.join("x").to_str().unwrap()}))
+        )),
+        "outside_allowed_dir"
+    );
+    assert!(!evil.join("x").exists());
+    // `..` is refused even when it would land back inside --out-dir.
+    let dotted = env.ctx.cfg.out_dir.join("sub").join("..").join("landed");
+    assert_eq!(
+        err_code(export_session(
+            &env.ctx,
+            p(json!({"session_id": id, "destination": dotted.to_str().unwrap()}))
+        )),
+        "outside_allowed_dir"
+    );
+    assert!(!env.ctx.cfg.out_dir.join("landed").exists());
+    // Existing non-empty directory inside --out-dir.
+    let busy = env.ctx.cfg.out_dir.join("busy");
     std::fs::create_dir_all(&busy).unwrap();
     std::fs::write(busy.join("x"), "1").unwrap();
     assert_eq!(
         err_code(export_session(
             &env.ctx,
-            p(json!({"session_id": id, "destination": busy.to_str().unwrap()}))
+            p(json!({"session_id": id, "destination": "busy"}))
         )),
         "invalid_argument"
     );
-    // Symlinked ancestor.
+    // An absolute path that canonicalizes inside --out-dir is accepted.
+    let inside = env.ctx.cfg.out_dir.join("abs-inside");
+    let out = export_session(
+        &env.ctx,
+        p(json!({"session_id": id, "destination": inside.to_str().unwrap()})),
+    )
+    .unwrap();
+    assert_eq!(out["path"].as_str(), inside.to_str());
+    // Symlinked ancestor, and a symlink whose name is inside --out-dir.
     #[cfg(unix)]
     {
         let link = env.dir.path().join("link");
-        std::os::unix::fs::symlink(&busy, &link).unwrap();
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
         assert_eq!(
             err_code(export_session(
                 &env.ctx,
@@ -1235,7 +1274,51 @@ fn export_session_refuses_unsafe_destinations() {
             )),
             "outside_allowed_dir"
         );
+        let target = env.dir.path().join("link-target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("keep"), "ORIGINAL").unwrap();
+        std::os::unix::fs::symlink(&target, env.ctx.cfg.out_dir.join("via-link")).unwrap();
+        assert_eq!(
+            err_code(export_session(
+                &env.ctx,
+                p(json!({"session_id": id, "destination": "via-link"}))
+            )),
+            "outside_allowed_dir"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("keep")).unwrap(),
+            "ORIGINAL"
+        );
+        assert!(
+            std::fs::symlink_metadata(env.ctx.cfg.out_dir.join("via-link"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
     }
+    // A `.git` file or directory on an ancestor refuses the export.
+    std::fs::write(env.ctx.cfg.out_dir.join(".git"), "gitdir: /nowhere\n").unwrap();
+    let git_error = export_session(
+        &env.ctx,
+        p(json!({"session_id": id, "destination": "in-git"})),
+    )
+    .unwrap_err();
+    assert_eq!(git_error.code, "outside_allowed_dir");
+    assert!(
+        git_error.to_string().contains("git repository"),
+        "{git_error}"
+    );
+    assert!(!env.ctx.cfg.out_dir.join("in-git").exists());
+    std::fs::remove_file(env.ctx.cfg.out_dir.join(".git")).unwrap();
+    std::fs::create_dir(env.ctx.cfg.out_dir.join(".git")).unwrap();
+    assert_eq!(
+        err_code(export_session(
+            &env.ctx,
+            p(json!({"session_id": id, "destination": "in-git-dir"}))
+        )),
+        "outside_allowed_dir"
+    );
+    assert!(!env.ctx.cfg.out_dir.join("in-git-dir").exists());
     // Nonexistent session.
     assert_eq!(
         err_code(export_session(
