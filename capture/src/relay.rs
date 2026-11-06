@@ -375,26 +375,27 @@ impl Shared {
         }
     }
 
-    fn admit(&self, client: &TcpStream) -> Result<(), &'static str> {
+    /// Positive admission is the only way into `handle_client`. A failed check never
+    /// becomes success. An empty cancel is not shown to the user. Neither is a socket
+    /// that no process still holds: that peer cannot read a tunnel. Unread bytes from
+    /// a process that is still there, including after FIN, are a refusal.
+    fn admit(&self, client: &TcpStream) -> Admission {
         let owner = self.owner.load(Ordering::SeqCst);
         let peer_port = match client.peer_addr() {
             Ok(addr) => addr.port(),
-            Err(_) => return Err("the client process could not be confirmed"),
+            Err(_) => {
+                return if quiet_cancel(client) {
+                    Admission::QuietClose
+                } else {
+                    self.peer_refused.fetch_add(1, Ordering::Relaxed);
+                    Admission::Refused("the client process could not be confirmed")
+                };
+            }
         };
         let started = std::time::Instant::now();
-        let mut verdict = peer::admit(peer_port, self.listen_port, owner);
-        // Chrome cancels speculative proxy connects and closes them before the
-        // socket can be attributed. A peer that has already hung up cannot send a
-        // request, so it is not a use of the relay and not a refusal. A peer that
-        // is still open and cannot be attributed is still refused.
-        if verdict.is_err() && peer_hung_up(client) {
-            verdict = Ok(());
-        }
+        let verdict = peer::admit(peer_port, self.listen_port, owner);
         let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.peer_checks.fetch_add(1, Ordering::Relaxed);
-        if verdict.is_err() {
-            self.peer_refused.fetch_add(1, Ordering::Relaxed);
-        }
         let mut current = self.peer_max_nanos.load(Ordering::Relaxed);
         while nanos > current {
             match self.peer_max_nanos.compare_exchange(current, nanos, Ordering::Relaxed, Ordering::Relaxed) {
@@ -402,31 +403,47 @@ impl Shared {
                 Err(seen) => current = seen,
             }
         }
-        verdict
+        match verdict {
+            // The browser already half-closed. Do not dial upstream for a dead request.
+            Ok(()) if peer_sent_fin(client) => Admission::QuietClose,
+            Ok(()) => Admission::Admitted,
+            Err(_) if quiet_cancel(client) => Admission::QuietClose,
+            Err(peer::ALREADY_CLOSED) => Admission::QuietClose,
+            Err(reason) => {
+                self.peer_refused.fetch_add(1, Ordering::Relaxed);
+                Admission::Refused(reason)
+            }
+        }
     }
 }
 
-/// True when the peer has already closed its side, even if unread bytes remain.
-/// A still-open peer that has not written yet is not hung up.
-fn peer_hung_up(stream: &TcpStream) -> bool {
-    if peer_sent_fin(stream) {
-        return true;
-    }
+enum Admission {
+    Admitted,
+    QuietClose,
+    Refused(&'static str),
+}
+
+/// True when the peer has closed and the receive buffer is empty.
+/// FIN with a greeting or CONNECT still buffered is not an empty cancel.
+fn quiet_cancel(stream: &TcpStream) -> bool {
     let previous = stream.read_timeout().ok().flatten();
     if stream.set_read_timeout(Some(Duration::from_millis(5))).is_err() {
         return false;
     }
     let mut buf = [0u8; 1];
-    let hung_up = match stream.peek(&mut buf) {
+    let quiet = match stream.peek(&mut buf) {
         Ok(0) => true,
         Err(error) => matches!(
             error.kind(),
-            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+            io::ErrorKind::ConnectionReset
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::UnexpectedEof
+                | io::ErrorKind::NotConnected
         ),
         Ok(_) => false,
     };
     let _ = stream.set_read_timeout(previous);
-    hung_up
+    quiet
 }
 
 fn peer_sent_fin(stream: &TcpStream) -> bool {
@@ -480,7 +497,17 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
                 let shared = shared.clone();
                 thread::spawn(move || {
                     let _slot = ClientSlot(shared.clone());
-                    handle_client(client, shared);
+                    let _tracked_client = shared.track(&client);
+                    match shared.admit(&client) {
+                        Admission::Admitted => handle_client(client, shared),
+                        Admission::QuietClose => {
+                            let _ = client.shutdown(Shutdown::Both);
+                        }
+                        Admission::Refused(reason) => {
+                            shared.fail(reason.to_string());
+                            let _ = client.shutdown(Shutdown::Both);
+                        }
+                    }
                 });
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => thread::sleep(ACCEPT_POLL),
@@ -489,14 +516,9 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
     }
 }
 
-/// One Chrome connection: SOCKS5 (no auth) from Chrome, then the tunnel.
+/// One admitted Chrome connection: SOCKS5 (no auth) from Chrome, then the tunnel.
+/// The accept thread calls this only after `Admission::Admitted`.
 fn handle_client(mut client: TcpStream, shared: Shared) {
-    let _tracked_client = shared.track(&client);
-    if let Err(reason) = shared.admit(&client) {
-        shared.fail(reason.to_string());
-        let _ = client.shutdown(Shutdown::Both);
-        return;
-    }
     let _ = client.set_read_timeout(Some(HANDSHAKE_TIMEOUT));
     let target = match socks_request(&mut client) {
         Ok(target) => target,
@@ -2015,22 +2037,139 @@ mod wire_tests {
         );
         assert!(stats.checks >= 3, "{stats:?}");
         assert_eq!(stats.refused, 2, "only the two stranger attempts are refused");
-        assert!(stats.max_nanos < 50_000_000, "peer check max {} ns", stats.max_nanos);
+        assert!(stats.max_nanos < 200_000_000, "peer check max {} ns", stats.max_nanos);
+    }
+
+    /// The reviewer's case: a stranger writes the SOCKS request, half-closes, and keeps
+    /// reading. Unread bytes must not turn a failed process check into a tunnel.
+    #[test]
+    fn fin_with_a_pending_request_is_refused_and_an_empty_cancel_is_quiet() {
+        let (up, seen) = http_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("http://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let relay = Relay::start(&link, None).expect("relay starts");
+        let sleeper = std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        struct StopSleep(Option<std::process::Child>);
+        impl Drop for StopSleep {
+            fn drop(&mut self) {
+                if let Some(child) = self.0.as_mut() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        let sleeper = StopSleep(Some(sleeper));
+        relay.set_owner_pid(sleeper.0.as_ref().unwrap().id());
+        let before = seen.lock().unwrap().len();
+
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let mut request = vec![5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1];
+        request.extend_from_slice(&9u16.to_be_bytes());
+        client.write_all(&request).unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        let mut response = [0u8; 12];
+        let read = client.read(&mut response);
+        thread::sleep(Duration::from_millis(150));
+        let log = seen.lock().unwrap().clone();
+        assert!(
+            matches!(read, Ok(0) | Err(_)),
+            "half-closed stranger got a reply: {read:?} {response:?}"
+        );
+        assert!(
+            log[before..].iter().all(|line| line != "auth-ok" && !line.starts_with("LINE ")),
+            "upstream saw the stranger: {log:?}"
+        );
+        let failures = relay.failures();
+        assert!(
+            failures.iter().any(|line| line == "the client process is not the capture browser"),
+            "{failures:?}"
+        );
+        assert!(failures.iter().all(|line| !line.contains(PASSWORD) && !line.contains(USER)));
+        let refused_after_attack = relay.peer_check().refused;
+
+        let mut open = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
+        open.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        open.write_all(&request).unwrap();
+        let mut open_response = [0u8; 12];
+        let open_read = open.read(&mut open_response);
+        thread::sleep(Duration::from_millis(100));
+        let log = seen.lock().unwrap().clone();
+        assert!(matches!(open_read, Ok(0) | Err(_)), "{open_read:?} {open_response:?}");
+        assert!(
+            log.iter().all(|line| line != "auth-ok" && !line.starts_with("LINE ")),
+            "open stranger reached the upstream: {log:?}"
+        );
+        assert!(relay.peer_check().refused > refused_after_attack);
+
+        let failure_count = relay.failures().len();
+        let refused = relay.peer_check().refused;
+        let cancelled = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
+        cancelled.shutdown(Shutdown::Both).unwrap();
+        drop(cancelled);
+        thread::sleep(Duration::from_millis(200));
+        assert_eq!(
+            relay.failures().len(),
+            failure_count,
+            "an empty cancel was reported: {:?}",
+            relay.failures()
+        );
+        assert_eq!(relay.peer_check().refused, refused, "an empty cancel counted as a refusal");
+        let log = seen.lock().unwrap().clone();
+        assert!(log.iter().all(|line| line != "auth-ok"));
     }
 
     #[test]
-    fn a_closed_peer_is_hung_up_and_an_open_peer_is_not() {
+    fn fin_with_unread_bytes_is_not_a_quiet_cancel() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
         let (server, _) = listener.accept().unwrap();
         client.write_all(&[5, 1, 0]).unwrap();
-        assert!(!super::peer_hung_up(&server), "a peer with a pending greeting is still open");
-        client.shutdown(Shutdown::Both).unwrap();
+        assert!(!super::quiet_cancel(&server), "a pending greeting is not an empty cancel");
+        client.shutdown(Shutdown::Write).unwrap();
+        thread::sleep(Duration::from_millis(50));
+        assert!(
+            !super::quiet_cancel(&server),
+            "FIN with an unread greeting is still a request"
+        );
+
+        let empty = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        let (empty_server, _) = listener.accept().unwrap();
+        empty.shutdown(Shutdown::Both).unwrap();
+        drop(empty);
         let started = std::time::Instant::now();
-        while !super::peer_hung_up(&server) && started.elapsed() < Duration::from_secs(1) {
+        while !super::quiet_cancel(&empty_server) && started.elapsed() < Duration::from_secs(1) {
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(super::peer_hung_up(&server), "a peer that closed is hung up");
+        assert!(super::quiet_cancel(&empty_server), "a close with nothing to read is quiet");
+    }
+
+    /// Chrome cancels by closing the socket after writing. The bytes can still be
+    /// buffered here, but no process holds the socket, so the check must not call
+    /// that client a stranger. The relay maps this to a quiet close.
+    #[test]
+    fn a_closed_socket_with_unread_bytes_is_not_a_stranger() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        {
+            let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+            client.write_all(&[5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1, 0, 9]).unwrap();
+        }
+        let server = listener.accept().unwrap().0;
+        let mut pending = [0u8; 1];
+        assert!(server.peek(&mut pending).unwrap() > 0, "the closed client left bytes to read");
+        let sleeper = std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        struct StopSleep(Option<std::process::Child>);
+        impl Drop for StopSleep {
+            fn drop(&mut self) {
+                if let Some(child) = self.0.as_mut() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        let sleeper = StopSleep(Some(sleeper));
+        let verdict = super::peer::admit(server.peer_addr().unwrap().port(), port, sleeper.0.as_ref().unwrap().id());
+        assert_eq!(verdict, Err(super::peer::ALREADY_CLOSED), "{verdict:?}");
     }
 }

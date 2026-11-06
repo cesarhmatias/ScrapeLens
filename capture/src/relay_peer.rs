@@ -4,7 +4,13 @@
 //! connection only when the socket belongs to the capture browser or one of its
 //! descendants. Anything else, including another user of this machine, is refused.
 //! A process of the same user that can already drive that Chrome is outside this check.
-//! If the owner cannot be confirmed, the connection is refused.
+//! If the owner cannot be confirmed, the connection is refused. A socket that no
+//! process still holds cannot read a tunnel; that result is [`ALREADY_CLOSED`].
+
+/// No process still has this socket. The relay closes it without admitting it and
+/// without showing a failure. A client that is still reading keeps the socket and
+/// is refused instead.
+pub(crate) const ALREADY_CLOSED: &str = "the client closed before its process could be checked";
 
 /// `owner` is the browser pid published by the capture. Zero means it is not known yet.
 pub(crate) fn admit(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
@@ -48,6 +54,19 @@ mod linux {
                 }
             }
         }
+        // Not in the browser tree. A FIN_WAIT row can outlive the process that
+        // closed it. Only a process that still has the inode can read a tunnel.
+        if last == NOT_BROWSER {
+            return match inode_once(peer_port, listen_port) {
+                Ok(Some(inode)) => match any_process_has_inode(inode) {
+                    Ok(true) => Err(NOT_BROWSER),
+                    Ok(false) => Err(super::ALREADY_CLOSED),
+                    Err(()) => Err(UNCONFIRMED),
+                },
+                Ok(None) => Err(super::ALREADY_CLOSED),
+                Err(()) => Err(UNCONFIRMED),
+            };
+        }
         Err(last)
     }
 
@@ -80,7 +99,10 @@ mod linux {
     fn find_client_inode(peer_port: u16, listen_port: u16) -> Result<u64, &'static str> {
         match inode_once(peer_port, listen_port) {
             Ok(Some(inode)) => Ok(inode),
-            Ok(None) | Err(()) => Err(UNCONFIRMED),
+            // TIME_WAIT and a socket that has already disappeared have no process.
+            // A client that is still reading stays ESTABLISHED or FIN_WAIT and is listed.
+            Ok(None) => Err(super::ALREADY_CLOSED),
+            Err(()) => Err(UNCONFIRMED),
         }
     }
 
@@ -100,7 +122,9 @@ mod linux {
                 let Some(local) = cols.next() else { continue };
                 let Some(remote) = cols.next() else { continue };
                 let Some(state) = cols.next() else { continue };
-                if state != "01" {
+                // ESTABLISHED, or FIN_WAIT after the client half-closes and keeps reading.
+                // TIME_WAIT has no process and must not count as that client.
+                if !matches!(state, "01" | "04" | "05") {
                     continue;
                 }
                 let Some((local_addr, local_port)) = local.rsplit_once(':') else { continue };
@@ -178,9 +202,29 @@ mod linux {
         Ok(false)
     }
 
+    fn any_process_has_inode(inode: u64) -> Result<bool, ()> {
+        let entries = std::fs::read_dir("/proc").map_err(|_| ())?;
+        let mut incomplete = false;
+        for entry in entries {
+            let entry = entry.map_err(|_| ())?;
+            let Some(pid) = entry.file_name().to_str().and_then(|name| name.parse::<u32>().ok()) else {
+                continue;
+            };
+            match process_has_inode(pid, inode) {
+                Ok(true) => return Ok(true),
+                Ok(false) => {}
+                Err(()) => incomplete = true,
+            }
+        }
+        if incomplete { Err(()) } else { Ok(false) }
+    }
+
     fn descends_from(pid: u32, owner: u32) -> Result<bool, &'static str> {
         if pid == owner {
             return Ok(true);
+        }
+        if pid == 0 || pid == 1 {
+            return Ok(false);
         }
         let mut current = pid;
         for _ in 0..64 {
@@ -188,7 +232,8 @@ mod linux {
             if parent == owner {
                 return Ok(true);
             }
-            if parent == 0 || parent == current {
+            // Init is the root. Reaching it without the owner means this process is outside.
+            if parent == 0 || parent == 1 || parent == current {
                 return Ok(false);
             }
             current = parent;
@@ -232,6 +277,7 @@ mod macos {
 
     #[link(name = "proc")]
     extern "C" {
+        fn proc_listallpids(buffer: *mut c_void, buffersize: i32) -> i32;
         fn proc_listchildpids(ppid: i32, buffer: *mut c_void, buffersize: i32) -> i32;
         fn proc_pidinfo(pid: i32, flavor: i32, arg: u64, buffer: *mut c_void, buffersize: i32) -> i32;
         fn proc_pidfdinfo(pid: i32, fd: i32, flavor: i32, buffer: *mut c_void, buffersize: i32) -> i32;
@@ -251,6 +297,18 @@ mod macos {
                         continue;
                     }
                 }
+            }
+        }
+        // The owner tree does not have this socket. A stranger that is still
+        // reading has it open somewhere else. A Chrome cancel has already dropped
+        // the descriptor, so nobody can read a tunnel reply.
+        if last == NOT_BROWSER {
+            match socket_holder(peer_port, listen_port) {
+                Ok(Some(pid)) => {
+                    return if descends_from(pid, owner)? { Ok(()) } else { Err(NOT_BROWSER) };
+                }
+                Ok(None) => return Err(super::ALREADY_CLOSED),
+                Err(()) => return Err(UNCONFIRMED),
             }
         }
         Err(last)
@@ -279,6 +337,48 @@ mod macos {
             }
         }
         if incomplete { Err(UNCONFIRMED) } else { Err(NOT_BROWSER) }
+    }
+
+    /// `Ok(Some)` is the process that still has the client socket. `Ok(None)` means
+    /// the scan finished and no process has it. `Err` means the scan was incomplete.
+    fn socket_holder(peer_port: u16, listen_port: u16) -> Result<Option<u32>, ()> {
+        let pids = all_pids()?;
+        let mut incomplete = false;
+        for pid in pids {
+            match sockets_match(pid, peer_port, listen_port) {
+                Ok(true) => return Ok(Some(pid)),
+                Ok(false) => {}
+                Err(()) => incomplete = true,
+            }
+        }
+        if incomplete { Err(()) } else { Ok(None) }
+    }
+
+    fn all_pids() -> Result<Vec<u32>, ()> {
+        let mut cap = 256usize;
+        for _ in 0..6 {
+            let mut buf = vec![0i32; cap];
+            // SAFETY: `buf` is writable for `buf.len() * 4` bytes. The call only fills that buffer.
+            let got = unsafe {
+                proc_listallpids(buf.as_mut_ptr().cast::<c_void>(), (buf.len() * 4) as i32)
+            };
+            if got < 0 {
+                return Err(());
+            }
+            let bytes = got as usize;
+            if bytes >= buf.len() * 4 {
+                cap = cap.saturating_mul(2);
+                continue;
+            }
+            let count = bytes / 4;
+            return Ok(buf
+                .into_iter()
+                .take(count)
+                .filter(|pid| *pid > 0)
+                .map(|pid| pid as u32)
+                .collect());
+        }
+        Err(())
     }
 
     fn children(pid: u32) -> Result<Vec<u32>, ()> {
@@ -351,13 +451,18 @@ mod macos {
         if pid == owner {
             return Ok(true);
         }
+        if pid == 0 || pid == 1 {
+            return Ok(false);
+        }
         let mut current = pid;
         for _ in 0..64 {
             let parent = ppid(current).map_err(|_| UNCONFIRMED)?;
             if parent == owner {
                 return Ok(true);
             }
-            if parent == 0 || parent == current {
+            // launchd is pid 1, and its own parent is not readable. Reaching it
+            // without the owner means this process is outside the browser tree.
+            if parent == 0 || parent == 1 || parent == current {
                 return Ok(false);
             }
             current = parent;
