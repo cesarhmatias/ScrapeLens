@@ -1,3 +1,0 @@
-bZVWDrQvkR0ynQKHKqsiga6j0rd2KIqFX6NXGKIjsYw=
-# base64(sha256(SubjectPublicKeyInfo DER)) of the leaf cert scrapelens-test-localhost.crt.pem
-# use: --ignore-certificate-errors-spki-list=bZVWDrQvkR0ynQKHKqsiga6j0rd2KIqFX6NXGKIjsYw=

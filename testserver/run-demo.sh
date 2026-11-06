@@ -10,6 +10,8 @@
 # Defaults: BASE_PORT=8781 (h1 8781, h2 8782, h3 8783), RUN_ID=UTC timestamp.
 # Ports must be free; use another base (e.g. 9781) when 8781-8783 are in use.
 set -euo pipefail
+# Test certificates are generated, not tracked: make them when this checkout has none.
+[ -f ../fixtures/tls/scrapelens-test-localhost.key.pem ] || cargo run -q -- gen-cert
 
 cd "$(dirname "$0")"
 

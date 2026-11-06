@@ -24,13 +24,8 @@ const PASS: &str = "pw-synthetic-7f3a";
 
 static SEQ: AtomicU64 = AtomicU64::new(0);
 
-fn fixtures_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures")
-}
-
 fn tls_files() -> TlsFiles {
-    cert::init_crypto();
-    cert::ensure(&fixtures_dir().join("tls"), false).expect("fixture cert")
+    cert::test_tls()
 }
 
 fn scratch(tag: &str) -> PathBuf {

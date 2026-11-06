@@ -11,6 +11,8 @@
 # Usage: ./scripts/chrome-probe.sh [BASE_PORT] [RUN_ID]
 #   servers are started by this script if they are not already listening.
 set -euo pipefail
+# Test certificates are generated, not tracked: make them when this checkout has none.
+[ -f ../fixtures/tls/scrapelens-test-localhost.key.pem ] || cargo run -q -- gen-cert
 
 cd "$(dirname "$0")/.."
 

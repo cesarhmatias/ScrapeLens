@@ -13,3 +13,8 @@ __pycache__/
 
 .idea/
 src-tauri/linux/out/
+
+# Test certificates (generated, never tracked): regenerate with
+#   cargo run -p scrapelens-testserver -- gen-cert   (or the test suites, in a temp folder)
+fixtures/tls/*
+!fixtures/tls/README.txt

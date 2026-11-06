@@ -21,7 +21,7 @@ origin as h2. Disable it with `--no-h3-on-h2-port`.
 cd testserver
 cargo build                      # Rust 1.98.1; Cargo.lock committed
 cargo test                       # 8 integration tests (h1, h2, h3)
-cargo run -- gen-cert            # only if fixtures/tls/ is missing
+cargo run -- gen-cert            # only if fixtures/tls/ is missing (generated, not tracked)
 cargo run -- serve               # three servers, default ports
 cargo run -- serve --only h1,h2  # subset
 ./run-demo.sh                    # starts up, sends ordered requests, summarizes the evidence
@@ -98,7 +98,9 @@ Main fields:
 
 Synthetic test PKI: CA (`scrapelens-test-ca.crt.pem`) + leaf for
 `localhost`, `127.0.0.1` and `::1`. The leaf pin is in
-`fixtures/tls/spki-sha256-base64.txt`.
+`fixtures/tls/spki-sha256-base64.txt`. The files are **generated and not tracked**:
+run `cargo run -- gen-cert` once (the scripts below do it when the files are missing).
+The test suites generate their own certificates in the system temp folder.
 
 ```sh
 curl --cacert fixtures/tls/scrapelens-test-ca.crt.pem https://127.0.0.1:8782/echo-order

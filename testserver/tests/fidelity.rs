@@ -21,13 +21,8 @@ use scrapelens_testserver::{h1, h2cli, h2srv, h3cli, h3srv};
 
 static SEQ: AtomicU64 = AtomicU64::new(0);
 
-fn fixtures_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures")
-}
-
 fn tls() -> TlsFiles {
-    cert::init_crypto();
-    cert::ensure(&fixtures_dir().join("tls"), false).expect("fixture cert")
+    cert::test_tls()
 }
 
 fn evidence_dir(tag: &str) -> PathBuf {

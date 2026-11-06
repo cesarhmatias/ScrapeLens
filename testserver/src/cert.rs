@@ -87,6 +87,18 @@ pub fn ensure(dir: &Path, force: bool) -> Result<TlsFiles, Box<dyn std::error::E
     })
 }
 
+/// Test-time certificates: generated once per test process in the system temp folder,
+/// never in the repository. Used by the integration tests instead of `fixtures/tls/`.
+pub fn test_tls() -> TlsFiles {
+    static TLS: std::sync::OnceLock<TlsFiles> = std::sync::OnceLock::new();
+    TLS.get_or_init(|| {
+        init_crypto();
+        let dir = std::env::temp_dir().join(format!("scrapelens-testserver-tls-{}", std::process::id()));
+        ensure(&dir, false).expect("test certificate")
+    })
+    .clone()
+}
+
 fn generate(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // --- test CA -----------------------------------------------------------
     let ca_key = KeyPair::generate()?;
