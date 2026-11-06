@@ -730,8 +730,7 @@ fn run_inner(
             session: session_value,
             session_dir: config.session_dir.clone(),
             notice: format!(
-                "Session captured and imported: {} CDP+NetLog event(s) used, {} warning(s).{}{}",
-                requests, warnings, cookie_suffix, proxy_suffix
+                "Session captured and imported: {requests} CDP+NetLog event(s) used, {warnings} warning(s).{cookie_suffix}{proxy_suffix}"
             ),
         },
         report,
@@ -2489,7 +2488,7 @@ impl Cdp {
                 if let Some(map) = value.as_object_mut() {
                     map.insert("sessionId".to_string(), json!(session_id));
                 }
-                let out = format!("{}\n", value);
+                let out = format!("{value}\n");
                 let result = self
                     .bodies_file
                     .write_all(out.as_bytes());
