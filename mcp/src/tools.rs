@@ -2180,8 +2180,43 @@ mod write_private_bytes_tests {
             .is_symlink());
     }
 
+    /// Not root, and not the account that runs the Linux images.
+    const FOREIGN_UID: u32 = 65534;
+
+    fn effective_uid() -> u32 {
+        let output = std::process::Command::new("id")
+            .arg("-u")
+            .output()
+            .expect("id -u");
+        assert!(output.status.success(), "id -u failed");
+        String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse()
+            .expect("numeric uid")
+    }
+
+    fn chown(path: &std::path::Path, uid: u32) {
+        let status = std::process::Command::new("chown")
+            .arg(uid.to_string())
+            .arg(path)
+            .status()
+            .expect("chown");
+        assert!(status.success(), "chown {uid} {} failed", path.display());
+    }
+
     #[test]
     fn a_directory_owned_by_someone_else_is_refused_and_not_written() {
+        // The Linux images run these tests as root, and /usr/bin is owned by
+        // root, so it is not a foreign directory there. A root run builds its
+        // own foreign owner instead of writing under /usr/bin.
+        if effective_uid() == 0 {
+            refuse_directory_and_file_owned_by_another_uid();
+        } else {
+            refuse_system_paths_owned_by_root();
+        }
+    }
+
+    fn refuse_system_paths_owned_by_root() {
         let path = std::path::Path::new("/usr/bin/scrapelens-t05-not-created");
         assert!(!path.exists(), "the probe path must not already exist");
         let error = write_private_bytes(path, b"nope").unwrap_err();
@@ -2202,5 +2237,45 @@ mod write_private_bytes_tests {
         let after = std::fs::symlink_metadata(existing).unwrap();
         assert_eq!(after.len(), before.len());
         assert_eq!(after.permissions().mode(), before.permissions().mode());
+    }
+
+    fn refuse_directory_and_file_owned_by_another_uid() {
+        let root = tempfile::tempdir().unwrap();
+        let foreign_dir = root.path().join("foreign");
+        std::fs::create_dir(&foreign_dir).unwrap();
+        let mode_before = std::fs::symlink_metadata(&foreign_dir)
+            .unwrap()
+            .permissions()
+            .mode();
+        chown(&foreign_dir, FOREIGN_UID);
+        let path = foreign_dir.join("scrapelens-t05-not-created");
+        let error = write_private_bytes(&path, b"nope").unwrap_err();
+        assert!(error.to_string().contains("owned by uid"), "{error}");
+        assert!(
+            !path.exists(),
+            "a foreign directory must not receive the file"
+        );
+        assert_eq!(
+            std::fs::symlink_metadata(&foreign_dir)
+                .unwrap()
+                .permissions()
+                .mode(),
+            mode_before,
+            "a foreign directory must not be chmodded"
+        );
+
+        let owned = root.path().join("owned");
+        std::fs::create_dir(&owned).unwrap();
+        let existing = owned.join("kept");
+        std::fs::write(&existing, b"original").unwrap();
+        std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o644)).unwrap();
+        chown(&existing, FOREIGN_UID);
+        let before = std::fs::symlink_metadata(&existing).unwrap();
+        let error = write_private_bytes(&existing, b"replaced").unwrap_err();
+        assert!(error.to_string().contains("owned by uid"), "{error}");
+        let after = std::fs::symlink_metadata(&existing).unwrap();
+        assert_eq!(after.len(), before.len());
+        assert_eq!(after.permissions().mode(), before.permissions().mode());
+        assert_eq!(std::fs::read(&existing).unwrap(), b"original");
     }
 }
