@@ -24,6 +24,16 @@ against commercial providers.
 4. **The sanitized export has no proxy host or port** (`capture.proxy` keeps `scheme` and
    `authenticated`). The proxy port does not appear anywhere in the sanitized files.
 
+## Accepted decisions (leader, after this run)
+
+- **Unreachable proxy differs between routes, accepted.** The relay route fails the start with an
+  actionable error; the direct route starts the capture and shows the same actionable message as a
+  notice. Both messages are actionable.
+- **Hop-by-hop exclusion in fidelity, accepted, and always reported.** On the H1 direct route the
+  test proxy rewrites `Connection`; it is listed in each fidelity row.
+- **Regression normalization, accepted, and always reported.** The fields listed under
+  "Comparisons" are ignored, and the row says so.
+
 ## Comparisons and how they were made
 
 - **Fidelity** compares what the origin received for the same probe URL, with no proxy, a direct
