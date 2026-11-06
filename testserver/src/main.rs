@@ -391,6 +391,7 @@ fn proxy_cmd(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut drop = DropPoint::Never;
     let mut dump: Option<PathBuf> = None;
     let mut tls_dir = repo_fixtures().join("tls");
+    let mut resolve: Vec<(String, String)> = Vec::new();
 
     let mut it = args.iter();
     while let Some(flag) = it.next() {
@@ -413,6 +414,11 @@ fn proxy_cmd(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             }
             "--tunnel-dump" => dump = Some(PathBuf::from(take(&mut it, flag)?)),
             "--tls" => tls_dir = PathBuf::from(take(&mut it, flag)?),
+            "--resolve" => {
+                let v = take(&mut it, flag)?;
+                let (host, ip) = v.split_once('=').ok_or("--resolve needs HOST=IP")?;
+                resolve.push((host.to_ascii_lowercase(), ip.to_string()));
+            }
             other => return Err(format!("unknown proxy option {other:?}").into()),
         }
     }
@@ -447,6 +453,7 @@ fn proxy_cmd(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     cfg.drop = drop;
     cfg.tunnel_dump = dump.clone();
     cfg.tls = tls;
+    cfg.resolve = resolve;
     println!(
         "scrapelens-testproxy kind={} listen={} auth={} drop={:?} evidence={} dump={}",
         kind.as_str(),

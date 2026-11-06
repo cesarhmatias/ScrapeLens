@@ -209,6 +209,9 @@ pub struct ProxyConfig {
     pub tunnel_dump: Option<PathBuf>,
     /// Server TLS config for `Kind::Https` (see [`tls_server_config`]).
     pub tls: Option<Arc<rustls::ServerConfig>>,
+    /// Synthetic names the proxy resolves itself (`host` -> IP), e.g. `site-a.test`.
+    /// The client never resolves them: they only make sense through this proxy.
+    pub resolve: Vec<(String, String)>,
     pub log: Arc<EvidenceLog>,
 }
 
@@ -223,6 +226,7 @@ impl ProxyConfig {
             drop: DropPoint::Never,
             tunnel_dump: None,
             tls: None,
+            resolve: Vec::new(),
             log,
         }
     }
@@ -238,6 +242,7 @@ impl fmt::Debug for ProxyConfig {
             .field("deny", &self.deny)
             .field("drop", &self.drop)
             .field("tunnel_dump", &self.tunnel_dump)
+            .field("resolve", &self.resolve)
             .field("tls", &self.tls.is_some())
             .finish()
     }
@@ -554,9 +559,15 @@ fn denied(cfg: &ProxyConfig, host: &str, port: u16) -> bool {
         .any(|(h, p)| *p == port && h.eq_ignore_ascii_case(host))
 }
 
-fn connect_upstream(host: &str, port: u16) -> io::Result<TcpStream> {
+fn connect_upstream(cfg: &ProxyConfig, host: &str, port: u16) -> io::Result<TcpStream> {
     let mut last = None;
-    for addr in (host, port).to_socket_addrs()? {
+    let mapped = cfg
+        .resolve
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(host))
+        .map(|(_, ip)| ip.as_str())
+        .unwrap_or(host);
+    for addr in (mapped, port).to_socket_addrs()? {
         match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
             Ok(stream) => {
                 stream.set_nodelay(true)?;
@@ -688,7 +699,7 @@ fn serve_http<C: Read + Write>(client: &mut C, cfg: &ProxyConfig, at: &mut Attem
             http_fail(client, at, "403 Forbidden", 403, "target_refused", "destination refused by proxy");
             return;
         }
-        let mut upstream = match connect_upstream(&host, port) {
+        let mut upstream = match connect_upstream(cfg, &host, port) {
             Ok(stream) => stream,
             Err(e) => {
                 let why = format!("upstream connect: {:?}", e.kind());
@@ -722,7 +733,7 @@ fn serve_http<C: Read + Write>(client: &mut C, cfg: &ProxyConfig, at: &mut Attem
             http_fail(client, at, "403 Forbidden", 403, "target_refused", "destination refused by proxy");
             return;
         }
-        let mut upstream = match connect_upstream(&dest.host, dest.port) {
+        let mut upstream = match connect_upstream(cfg, &dest.host, dest.port) {
             Ok(stream) => stream,
             Err(e) => {
                 let why = format!("upstream connect: {:?}", e.kind());
@@ -866,7 +877,7 @@ fn serve_socks<C: Read + Write>(client: &mut C, cfg: &ProxyConfig, at: &mut Atte
         at.reply_code = Some(0x02);
         return Ok(());
     }
-    let mut upstream = match connect_upstream(&host, port) {
+    let mut upstream = match connect_upstream(cfg, &host, port) {
         Ok(stream) => stream,
         Err(e) => {
             let rep = if e.kind() == io::ErrorKind::ConnectionRefused { 0x05 } else { 0x01 };

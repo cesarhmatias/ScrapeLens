@@ -725,6 +725,39 @@ fn debug_output_and_error_strings_never_show_the_password() {
 }
 
 #[test]
+fn resolve_maps_a_synthetic_name_only_through_the_proxy() {
+    let origin = origin_echo();
+    let proxy = start(Kind::Http, "resolve", |c| {
+        c.resolve = vec![("site-a.test".into(), "127.0.0.1".into())];
+    });
+    // The name does not resolve on this machine; the proxy maps it itself.
+    let mut stream = connect_proxy(proxy.addr);
+    write!(
+        stream,
+        "CONNECT site-a.test:{} HTTP/1.1\r\nHost: site-a.test\r\n\r\n",
+        origin.port()
+    )
+    .unwrap();
+    let head = read_head(&mut stream);
+    assert_eq!(status_code(&head), 200, "{head}");
+    let data = payload(1024);
+    assert_eq!(echo_round_trip(stream, data.clone()), data);
+    let rec = one(&proxy.evidence);
+    assert_eq!(rec["target"], format!("site-a.test:{}", origin.port()));
+    assert_eq!(rec["result"], "relayed");
+}
+
+#[test]
+fn without_resolve_the_same_name_is_an_upstream_failure_not_a_relay() {
+    let proxy = start(Kind::Http, "no-resolve", |_| {});
+    let mut stream = connect_proxy(proxy.addr);
+    write!(stream, "CONNECT site-a.test.invalid:18781 HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+    let head = read_head(&mut stream);
+    assert_eq!(status_code(&head), 502, "{head}");
+    assert_eq!(one(&proxy.evidence)["result"], "upstream_failed");
+}
+
+#[test]
 fn parse_target_accepts_hosts_and_v6_and_rejects_empty_host() {
     assert_eq!(proxy::parse_target("Example.TEST:8080"), Some(("example.test".into(), 8080)));
     assert_eq!(proxy::parse_target("[::1]:443"), Some(("::1".into(), 443)));
