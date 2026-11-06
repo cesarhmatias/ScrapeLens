@@ -26,5 +26,10 @@ rustls-pemfile = "2.2.0"
 # variable are next to `NetworkMode` in `src/lib.rs`.
 test-hooks = []
 
+[dev-dependencies]
+# HTTPS upstream tests mint a synthetic CA in memory. scrapelens-testserver::cert::test_tls()
+# would compile quiche into every capture test; rcgen does not, and it leaves no key in the tree.
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
+
 # Crate independente: sem Tauri, sem janela. O App (src-tauri) e o servidor MCP a consomem.
 [workspace]

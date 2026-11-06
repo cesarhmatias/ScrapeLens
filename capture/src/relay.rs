@@ -1715,23 +1715,65 @@ mod wire_tests {
         (port, seen)
     }
 
-    fn fixture_dir() -> std::path::PathBuf {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/tls")
+    struct GeneratedTls {
+        cert_pem: Vec<u8>,
+        key_pem: Vec<u8>,
+        ca_pem: Vec<u8>,
+    }
+
+    /// Synthetic CA and leaf, once per test process. The leaf is valid for
+    /// 127.0.0.1, which is the proxy address the relay checks. Nothing is read
+    /// from `fixtures/tls` and nothing is written into the repository.
+    fn generated_tls() -> &'static GeneratedTls {
+        use rcgen::{
+            BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
+            KeyUsagePurpose, SanType,
+        };
+        static TLS: std::sync::OnceLock<GeneratedTls> = std::sync::OnceLock::new();
+        TLS.get_or_init(|| {
+            let ca_key = KeyPair::generate().unwrap();
+            let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
+            ca_params
+                .distinguished_name
+                .push(DnType::CommonName, "ScrapeLens local test CA (synthetic)");
+            ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            ca_params.key_usages = vec![
+                KeyUsagePurpose::KeyCertSign,
+                KeyUsagePurpose::CrlSign,
+                KeyUsagePurpose::DigitalSignature,
+            ];
+            ca_params.not_before = rcgen::date_time_ymd(2026, 1, 1);
+            ca_params.not_after = rcgen::date_time_ymd(2036, 1, 1);
+            let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+
+            let leaf_key = KeyPair::generate().unwrap();
+            let mut params = CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+            params.distinguished_name.push(DnType::CommonName, "ScrapeLens local test server");
+            params.subject_alt_names.push(SanType::IpAddress("127.0.0.1".parse().unwrap()));
+            params.subject_alt_names.push(SanType::IpAddress("::1".parse().unwrap()));
+            params.is_ca = IsCa::NoCa;
+            params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+            params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+            params.not_before = rcgen::date_time_ymd(2026, 1, 1);
+            params.not_after = rcgen::date_time_ymd(2036, 1, 1);
+            let leaf = params.signed_by(&leaf_key, &Issuer::from_params(&ca_params, &ca_key)).unwrap();
+            GeneratedTls {
+                cert_pem: leaf.pem().into_bytes(),
+                key_pem: leaf_key.serialize_pem().into_bytes(),
+                ca_pem: ca_cert.pem().into_bytes(),
+            }
+        })
     }
 
     fn fixture_server_config() -> Arc<rustls::ServerConfig> {
         install_ring();
-        let dir = fixture_dir();
-        let certs = rustls_pemfile::certs(&mut std::io::BufReader::new(
-            std::fs::File::open(dir.join("scrapelens-test-localhost.crt.pem")).unwrap(),
-        ))
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-        let key = rustls_pemfile::private_key(&mut std::io::BufReader::new(
-            std::fs::File::open(dir.join("scrapelens-test-localhost.key.pem")).unwrap(),
-        ))
-        .unwrap()
-        .unwrap();
+        let files = generated_tls();
+        let certs = rustls_pemfile::certs(&mut std::io::BufReader::new(files.cert_pem.as_slice()))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let key = rustls_pemfile::private_key(&mut std::io::BufReader::new(files.key_pem.as_slice()))
+            .unwrap()
+            .unwrap();
         Arc::new(
             rustls::ServerConfig::builder()
                 .with_no_client_auth()
@@ -1741,7 +1783,7 @@ mod wire_tests {
     }
 
     fn fixture_ca_pem() -> Vec<u8> {
-        std::fs::read(fixture_dir().join("scrapelens-test-ca.crt.pem")).unwrap()
+        generated_tls().ca_pem.clone()
     }
 
     /// `host:port` or `[ipv6]:port` from a CONNECT request line.
