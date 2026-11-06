@@ -719,6 +719,7 @@ struct RawParams {
     method: Option<String>,
     request_type: Option<String>,
     net_error: Option<i64>,
+    byte_count: Option<i64>,
     location: Option<String>,
     line: Option<String>,
     headers: HeadersOpt,
@@ -748,6 +749,9 @@ impl<'de> Visitor<'de> for ParamsVisitor {
                 "request_type" => params.request_type = map.next_value::<LooseStr>()?.0,
                 "net_error" => {
                     params.net_error = map.next_value::<JsonNum>()?.as_i64();
+                }
+                "byte_count" => {
+                    params.byte_count = map.next_value::<JsonNum>()?.as_i64();
                 }
                 "location" => params.location = map.next_value::<LooseStr>()?.0,
                 "line" => params.line = map.next_value::<LooseStr>()?.0,
@@ -1533,8 +1537,16 @@ impl BuildCtx {
             None => "unknown:0".to_string(),
         };
         let source_id = event.source_id;
-        // Proxy tunnel events (CONNECT) are not the request: they do not count as send evidence.
-        if (name.contains("SEND") || name.contains("BOUND_TO")) && !name.contains("TUNNEL") {
+        // Transmission evidence: a transaction send, a stream bound to the request, or
+        // a positive byte counter. Proxy tunnel events (CONNECT) are not the request.
+        let sent_bytes = event
+            .params
+            .as_ref()
+            .and_then(|params| params.byte_count);
+        let is_send_event = name.contains("SEND")
+            || name.contains("BOUND_TO")
+            || (name.contains("BYTES_SENT") && sent_bytes.is_some_and(|count| count > 0));
+        if is_send_event && !name.contains("TUNNEL") {
             if let Some(source_id) = source_id {
                 self.send_seen.insert(source_id);
             }
@@ -2139,11 +2151,13 @@ fn is_header_event(name: &str) -> bool {
 /// A proxy tunnel request line (`CONNECT host:port HTTP/1.1`). Chrome 156 writes it
 /// under `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` when the transaction lives on the
 /// socket instead of the URL_REQUEST, so it must not create a request builder.
+/// The method token is exact: HTTP methods are case-sensitive, and `connect` or
+/// `CoNnEcT` is application traffic, not the tunnel. Leading whitespace is ignored.
 fn is_connect_request(params: Option<&RawParams>) -> bool {
     params
         .and_then(|params| params.line.as_deref())
         .and_then(|line| line.split_whitespace().next())
-        .is_some_and(|method| method.eq_ignore_ascii_case("CONNECT"))
+        .is_some_and(|method| method == "CONNECT")
 }
 
 fn is_request_headers(name: &str) -> bool {

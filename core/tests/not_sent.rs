@@ -125,6 +125,46 @@ fn parser_gives_no_attempt_when_headers_were_sent_before_cancel() {
 }
 
 #[test]
+fn bytes_sent_is_transmission_evidence_without_headers() {
+    let capture = parse_netlog(&fixture()).unwrap();
+    let request = capture.requests.iter().find(|r| r.source_id == 79).unwrap();
+    assert!(
+        request.attempts.iter().all(|attempt| attempt.not_sent.is_none()),
+        "URL_REQUEST_BYTES_SENT with 123 bytes proves transmission"
+    );
+    let (session, _) = build_netlog_session(&capture);
+    let request = session
+        .requests
+        .iter()
+        .find(|request| request.url == "https://demo.invalid/bytes-sent")
+        .expect("request built from the byte counters");
+    assert!(
+        request.attempts.is_empty(),
+        "bytes sent: no not-sent attempt is synthesized"
+    );
+    assert_eq!(request.network_state, None);
+}
+
+#[test]
+fn zero_byte_counter_is_not_transmission_evidence() {
+    let capture = parse_netlog(&fixture()).unwrap();
+    let request = capture.requests.iter().find(|r| r.source_id == 80).unwrap();
+    let attempt = request
+        .attempts
+        .iter()
+        .find(|attempt| attempt.not_sent.is_some())
+        .expect("a zero counter does not prove transmission");
+    assert_eq!(attempt.not_sent.as_ref().unwrap().source_id, 80);
+    let (session, _) = build_netlog_session(&capture);
+    let request = session
+        .requests
+        .iter()
+        .find(|request| request.url == "https://demo.invalid/zero-bytes")
+        .expect("request built from the zero counter");
+    assert_eq!(request.network_state, Some(NetworkState::NotSent));
+}
+
+#[test]
 fn netlog_only_import_marks_the_not_sent_attempt_and_request() {
     let capture = parse_netlog(&fixture()).unwrap();
     let (session, _) = build_netlog_session(&capture);

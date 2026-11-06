@@ -113,6 +113,57 @@ fn missing_url_request_is_reported_not_silent() {
 }
 
 #[test]
+fn only_the_exact_uppercase_connect_token_is_a_tunnel() {
+    let json = br#"{
+      "constants":{"logEventTypes":{
+        "URL_REQUEST_START_JOB":136,
+        "HTTP_TRANSACTION_SEND_REQUEST_HEADERS":240
+      }},
+      "events":[
+        {"type":136,"phase":1,"time":"100","source":{"id":20,"type":1},
+         "params":{"url":"https://demo.invalid/connect-upper","method":"CONNECT"}},
+        {"type":240,"phase":0,"time":"101","source":{"id":20,"type":1},
+         "params":{"line":"CONNECT demo.invalid:443 HTTP/1.1\r\n","headers":["Host: demo.invalid"]}},
+        {"type":136,"phase":1,"time":"102","source":{"id":21,"type":1},
+         "params":{"url":"https://demo.invalid/connect-lower","method":"connect"}},
+        {"type":240,"phase":0,"time":"103","source":{"id":21,"type":1},
+         "params":{"line":"connect demo.invalid:443 HTTP/1.1\r\n","headers":["Host: demo.invalid"]}},
+        {"type":136,"phase":1,"time":"104","source":{"id":22,"type":1},
+         "params":{"url":"https://demo.invalid/connect-mixed","method":"CoNnEcT"}},
+        {"type":240,"phase":0,"time":"105","source":{"id":22,"type":1},
+         "params":{"line":"CoNnEcT demo.invalid:443 HTTP/1.1\r\n","headers":["Host: demo.invalid"]}},
+        {"type":136,"phase":1,"time":"106","source":{"id":23,"type":1},
+         "params":{"url":"https://demo.invalid/connect-leading-space","method":"CONNECT"}},
+        {"type":240,"phase":0,"time":"107","source":{"id":23,"type":1},
+         "params":{"line":"  CONNECT demo.invalid:443 HTTP/1.1\r\n","headers":["Host: demo.invalid"]}},
+        {"type":136,"phase":1,"time":"108","source":{"id":24,"type":1},
+         "params":{"url":"https://demo.invalid/connectivity","method":"CONNECTIVITY"}},
+        {"type":240,"phase":0,"time":"109","source":{"id":24,"type":1},
+         "params":{"line":"CONNECTIVITY /real HTTP/1.1\r\n","headers":["Host: demo.invalid"]}}
+      ]}"#;
+    let capture = parse_netlog(json).unwrap();
+    for (source_id, has_attempt, label) in [
+        (20, false, "CONNECT"),
+        (21, true, "connect"),
+        (22, true, "CoNnEcT"),
+        (23, false, "leading-space CONNECT"),
+        (24, true, "CONNECTIVITY"),
+    ] {
+        let request = capture
+            .requests
+            .iter()
+            .find(|request| request.source_id == source_id)
+            .unwrap_or_else(|| panic!("no request {source_id}"));
+        assert_eq!(
+            !request.attempts.is_empty(),
+            has_attempt,
+            "{label}: the header event must {} be parsed",
+            if has_attempt { "" } else { "not" }
+        );
+    }
+}
+
+#[test]
 fn redirect_creates_two_attempts_and_a_redirect_entity() {
     let json = br#"{
       "constants":{"logEventTypes":{

@@ -1,10 +1,11 @@
 {
-  "_comment": "SYNTHETIC FIXTURE — .invalid host, no real traffic: one cancelled URL_REQUEST without send (77) and one cancelled after HTTP_TRANSACTION_SEND_REQUEST (78)",
+  "_comment": "SYNTHETIC FIXTURE — .invalid host, no real traffic: one cancelled URL_REQUEST without send (77), one cancelled after HTTP_TRANSACTION_SEND_REQUEST (78), one cancelled after URL_REQUEST_BYTES_SENT with 123 bytes (79) and one with a zero byte counter (80)",
   "constants": {
     "logEventTypes": {
       "URL_REQUEST_START_JOB": 136,
       "CANCELLED": 0,
       "HTTP_TRANSACTION_SEND_REQUEST": 239,
+      "URL_REQUEST_BYTES_SENT": 137,
       "REQUEST_ALIVE": 2
     },
     "logSourceType": {
@@ -73,6 +74,84 @@
       "source": {
         "id": 78,
         "start_time": "5640473074",
+        "type": 1
+      },
+      "params": {}
+    },
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640473077",
+      "source": {
+        "id": 79,
+        "start_time": "5640473077",
+        "type": 1
+      },
+      "params": {
+        "url": "https://demo.invalid/bytes-sent",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 137,
+      "phase": 0,
+      "time": "5640473078",
+      "source": {
+        "id": 79,
+        "start_time": "5640473077",
+        "type": 1
+      },
+      "params": {
+        "byte_count": 123
+      }
+    },
+    {
+      "type": 0,
+      "phase": 0,
+      "time": "5640473079",
+      "source": {
+        "id": 79,
+        "start_time": "5640473077",
+        "type": 1
+      },
+      "params": {}
+    },
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640473080",
+      "source": {
+        "id": 80,
+        "start_time": "5640473080",
+        "type": 1
+      },
+      "params": {
+        "url": "https://demo.invalid/zero-bytes",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 137,
+      "phase": 0,
+      "time": "5640473081",
+      "source": {
+        "id": 80,
+        "start_time": "5640473080",
+        "type": 1
+      },
+      "params": {
+        "byte_count": 0
+      }
+    },
+    {
+      "type": 0,
+      "phase": 0,
+      "time": "5640473082",
+      "source": {
+        "id": 80,
+        "start_time": "5640473080",
         "type": 1
       },
       "params": {}
