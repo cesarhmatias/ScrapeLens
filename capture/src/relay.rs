@@ -147,7 +147,7 @@ pub struct Relay {
     port: u16,
     stop: Arc<AtomicBool>,
     accept: Option<JoinHandle<()>>,
-    failures: Arc<Mutex<Vec<String>>>,
+    failures: Arc<Mutex<Vec<(String, u32)>>>,
     sockets: Arc<Mutex<Vec<(u64, TcpStream)>>>,
     #[cfg(test)]
     client_limit: Arc<AtomicUsize>,
@@ -276,9 +276,13 @@ impl Relay {
         self.port
     }
 
-    /// Reasons the relay refused or lost a connection, in order. No credentials.
+    /// Reasons the relay refused or lost a connection, in order. The same reason is
+    /// one entry; a repeat carries its count. No credentials.
     pub fn failures(&self) -> Vec<String> {
-        self.failures.lock().map(|f| f.clone()).unwrap_or_default()
+        self.failures
+            .lock()
+            .map(|failures| failures.iter().map(|(reason, count)| show_failure(reason, *count)).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -301,7 +305,7 @@ struct Shared {
     link: Arc<ProxyLink>,
     allow: Option<AllowFn>,
     tls: Option<Arc<ClientConfig>>,
-    failures: Arc<Mutex<Vec<String>>>,
+    failures: Arc<Mutex<Vec<(String, u32)>>>,
     sockets: Arc<Mutex<Vec<(u64, TcpStream)>>>,
     next_socket: Arc<AtomicU64>,
     clients: Arc<AtomicUsize>,
@@ -311,6 +315,15 @@ struct Shared {
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
+}
+
+/// One warning per reason. A repeat says how many times, and does not add a second warning.
+fn show_failure(reason: &str, count: u32) -> String {
+    if count <= 1 {
+        reason.to_string()
+    } else {
+        format!("{reason} ({count} times)")
+    }
 }
 
 /// Removes one tracked socket when the handler that owns it returns.
@@ -339,11 +352,15 @@ impl Drop for ClientSlot {
 impl Shared {
     fn fail(&self, reason: String) {
         if let Ok(mut failures) = self.failures.lock() {
+            if let Some((_, count)) = failures.iter_mut().find(|(have, _)| have == &reason) {
+                *count = count.saturating_add(1);
+                return;
+            }
             if failures.len() >= MAX_FAILURES {
                 let extra = failures.len() + 1 - MAX_FAILURES;
                 failures.drain(0..extra);
             }
-            failures.push(reason);
+            failures.push((reason, 1));
         }
     }
 
@@ -1931,12 +1948,18 @@ mod wire_tests {
         let up = listener.local_addr().unwrap().port();
         let allow: AllowFn = Arc::new(|_: &str, _: u16| false);
         let relay = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}"), Some(allow));
-        for _ in 0..MAX_FAILURES + 8 {
-            let _ = chrome_connect(relay.port(), 9);
+        for port in 1..=u16::try_from(MAX_FAILURES + 8).unwrap() {
+            let _ = chrome_connect(relay.port(), port);
         }
         let failures = relay.failures();
         assert_eq!(failures.len(), MAX_FAILURES, "{failures:?}");
         assert!(failures.iter().all(|line| line.contains("not allowed")));
+        assert!(
+            failures.iter().all(|line| !line.ends_with("127.0.0.1:1")),
+            "the oldest distinct reason was kept: {failures:?}"
+        );
+        let newest = format!("127.0.0.1:{}", MAX_FAILURES + 8);
+        assert!(failures.iter().any(|line| line.ends_with(&newest)), "{failures:?}");
 
         relay.set_connection_limit(2);
         let mut held = Vec::new();
@@ -1960,6 +1983,32 @@ mod wire_tests {
         assert!(relay.failures().iter().any(|line| line == "too many connections"));
         drop(held);
         drop(listener);
+    }
+
+    /// The same proxy refusal must not become one session warning per connection.
+    /// A different reason stays, and neither line carries credentials.
+    #[test]
+    fn repeated_relay_failures_collapse_by_reason() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let up = listener.local_addr().unwrap().port();
+        let allow: AllowFn = Arc::new(|_: &str, _: u16| false);
+        let relay = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}"), Some(allow));
+        let _ = chrome_connect(relay.port(), 9);
+        let _ = chrome_connect(relay.port(), 9);
+        let _ = chrome_connect(relay.port(), 10);
+        let failures = relay.failures();
+        assert_eq!(failures.len(), 2, "{failures:?}");
+        assert!(
+            failures.iter().any(|line| line.contains("127.0.0.1:9") && line.contains("(2 times)")),
+            "{failures:?}"
+        );
+        assert!(
+            failures.iter().any(|line| line.ends_with("127.0.0.1:10")),
+            "{failures:?}"
+        );
+        for line in &failures {
+            assert!(!line.contains(PASSWORD) && !line.contains(USER) && !line.contains("wrong-"), "{line}");
+        }
     }
 
     /// Runs only when spawned by `a_stranger_is_refused_and_a_child_of_the_owner_is_admitted`.
