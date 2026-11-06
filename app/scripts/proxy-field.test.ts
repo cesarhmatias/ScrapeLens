@@ -7,6 +7,7 @@ import {
   proxyFieldView,
   proxyHeaderView,
   proxyStartBlock,
+  proxyStatusText,
   type ProxyInfo,
   type ProxyState,
 } from "../src/proxyRules";
@@ -29,6 +30,18 @@ assert.match(proxyStartBlock(reopened, false) ?? "", /password is not kept betwe
 assert.equal(proxyStartBlock(reopened, true), null, "while recording the start guard does not add a second message");
 assert.equal(proxyStartBlock({ saved: active.serverUrl, active, needsLink: false }, false), null);
 assert.equal(proxyStartBlock(empty, false), null, "no proxy: nothing changes");
+
+// Status line: the active proxy is stated in full, with its credential fact and no secret.
+const on = proxyStatusText({ saved: null, active, needsLink: false });
+assert.equal(on.tone, "on");
+assert.equal(on.text, "Using http://proxy.example:8080 · with credentials (kept in memory until the app closes)");
+const onOpen = proxyStatusText({ saved: null, active: { ...active, authenticated: false, serverUrl: "http://proxy.example:3128", port: 3128 }, needsLink: false });
+assert.equal(onOpen.text, "Using http://proxy.example:3128 · no credentials");
+const warn = proxyStatusText(reopened);
+assert.equal(warn.tone, "warn");
+assert.match(warn.text, /^Saved http:\/\/proxy\.example:8080\. Enter the full link again/);
+assert.equal(proxyStatusText(empty).text, "No proxy: the capture connects directly.");
+for (const status of [on, onOpen, warn]) assert.doesNotMatch(status.text, /password=|user:|@/);
 
 // The placeholder is an example, never a real host with credentials.
 assert.match(PROXY_PLACEHOLDER, /^http:\/\/user:password@proxy\.example:8080$/);

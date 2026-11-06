@@ -1,5 +1,5 @@
 import * as React from "react";
-import { PROXY_PLACEHOLDER, proxyFieldView, type ProxyState } from "./proxyRules";
+import { PROXY_PLACEHOLDER, proxyFieldView, proxyStatusText, type ProxyState } from "./proxyRules";
 
 /**
  * The Proxy field next to Start URL and Cookies. The typed text lives only in `draft`
@@ -16,20 +16,35 @@ export function ProxyField({ state, draft, error, disabled, onDraftChange, onApp
   onClear: () => void;
 }): React.ReactElement {
   const view = proxyFieldView(state);
+  const status = proxyStatusText(state);
   const hasDraft = draft.trim().length > 0;
-  const placeholder =
-    view.kind === "empty" ? PROXY_PLACEHOLDER : view.serverUrl;
-  const hint =
-    view.kind === "active"
-      ? view.authenticated
-        ? "Credentials kept in memory until the app closes."
-        : "No credentials. Enter a link to change it."
-      : view.kind === "needs-link"
-        ? "Saved address. Enter the full link again: the password is not kept."
-        : "Optional: HTTP, HTTPS, SOCKS5 or host:port:user:password.";
+  // The input is for a NEW link only: the state is stated on the status line, not in the placeholder.
+  const placeholder = view.kind === "empty" ? PROXY_PLACEHOLDER : "Type a new link to replace it";
   return (
     <div className="proxy-field">
-      <label className="start-url-label" htmlFor="scrapelens-proxy">Proxy</label>
+      <div className="proxy-label-row">
+        <label className="start-url-label" htmlFor="scrapelens-proxy">Proxy</label>
+        {view.kind !== "empty" && (
+          <button
+            type="button"
+            className="proxy-clear"
+            disabled={disabled}
+            onClick={onClear}
+            aria-label="Clear the proxy"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <span
+        id="scrapelens-proxy-status"
+        className={`proxy-status proxy-status-${status.tone}`}
+        data-testid="proxy-status"
+        role="status"
+      >
+        <span className="proxy-dot" aria-hidden="true" />
+        <span className="proxy-status-text">{status.text}</span>
+      </span>
       <div className="proxy-row">
         <input
           id="scrapelens-proxy"
@@ -42,7 +57,7 @@ export function ProxyField({ state, draft, error, disabled, onDraftChange, onApp
           disabled={disabled}
           aria-label="Capture proxy link"
           aria-invalid={!!error}
-          aria-describedby="scrapelens-proxy-hint"
+          aria-describedby="scrapelens-proxy-status scrapelens-proxy-hint"
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && hasDraft) {
@@ -60,20 +75,13 @@ export function ProxyField({ state, draft, error, disabled, onDraftChange, onApp
         >
           Use
         </button>
-        {view.kind !== "empty" && (
-          <button
-            type="button"
-            className="ghost-btn small"
-            disabled={disabled}
-            onClick={onClear}
-            aria-label="Clear the proxy"
-          >
-            Clear
-          </button>
-        )}
       </div>
-      <span id="scrapelens-proxy-hint" className={`proxy-hint${view.kind === "needs-link" ? " proxy-hint-warn" : ""}`}>
-        {error ? <span className="proxy-error">{error}</span> : hint}
+      <span id="scrapelens-proxy-hint" className="proxy-hint">
+        {error ? (
+          <span className="proxy-error">{error}</span>
+        ) : view.kind === "empty" ? (
+          "Optional: HTTP, HTTPS, SOCKS5 or host:port:user:password."
+        ) : null}
       </span>
     </div>
   );

@@ -36,6 +36,29 @@ export function proxyFieldView(state: ProxyState | null): ProxyFieldView {
   return { kind: "empty" };
 }
 
+/**
+ * The status line above the Proxy input: what is in use, stated in full (no placeholder).
+ * Credentials are only mentioned as a fact, never shown.
+ */
+export function proxyStatusText(state: ProxyState | null): { tone: "on" | "warn" | "off"; text: string } {
+  const view = proxyFieldView(state);
+  if (view.kind === "active") {
+    return {
+      tone: "on",
+      text: `Using ${view.serverUrl} · ${
+        view.authenticated ? "with credentials (kept in memory until the app closes)" : "no credentials"
+      }`,
+    };
+  }
+  if (view.kind === "needs-link") {
+    return {
+      tone: "warn",
+      text: `Saved ${view.serverUrl}. Enter the full link again to use it: the password is not kept.`,
+    };
+  }
+  return { tone: "off", text: "No proxy: the capture connects directly." };
+}
+
 /** Why Start is blocked by the proxy, or `null` when it is not. */
 export function proxyStartBlock(state: ProxyState | null, recording: boolean): string | null {
   if (recording || !state) return null;
