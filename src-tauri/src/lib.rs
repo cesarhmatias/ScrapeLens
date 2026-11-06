@@ -8,6 +8,7 @@
 pub mod adapters;
 pub mod capture;
 pub mod chrome;
+pub mod capture_proxy;
 pub mod cli;
 pub mod commands;
 pub mod cookie_import;
@@ -37,6 +38,9 @@ pub struct AppState {
     pub recording: std::sync::atomic::AtomicBool,
     /// Opening/importing/closing in progress: refuses a second one in parallel.
     pub loading: std::sync::atomic::AtomicBool,
+    /// The proxy link the user gave, credentials included. Memory only: never serialized,
+    /// never saved, gone when the app closes.
+    pub proxy: Mutex<Option<scrapelens_capture::proxy::ProxyLink>>,
 }
 
 /// App startup: cleans up Chrome/profile of captures whose owner died (e.g. SIGKILL).
@@ -106,6 +110,9 @@ pub fn run() {
             commands::start_session,
             commands::list_cookie_sources,
             commands::set_capture_cookie_source,
+            commands::get_proxy_state,
+            commands::set_proxy_link,
+            commands::clear_proxy_link,
             commands::stop_session,
             commands::capture_status,
             commands::capture_start_url,

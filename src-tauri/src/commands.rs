@@ -521,6 +521,53 @@ pub fn set_capture_cookie_source(app: AppHandle, source: Option<String>) -> Resu
     Ok(selected)
 }
 
+/// The Proxy field's state. No credentials in it.
+#[tauri::command]
+pub fn get_proxy_state(app: AppHandle, state: State<'_, AppState>) -> Result<crate::capture_proxy::ProxyState, String> {
+    let active = state.proxy.lock().map_err(|_| "proxy state unavailable")?.clone();
+    Ok(crate::capture_proxy::state(prefs::load_capture_proxy(&app), active.as_ref()))
+}
+
+/// Parses the link with the capture's own parser, keeps it in memory and saves only its
+/// server address. The link itself is never returned. Refused while a capture runs.
+#[tauri::command]
+pub fn set_proxy_link(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    link: String,
+) -> Result<crate::capture_proxy::ProxyInfo, String> {
+    ensure_proxy_editable(state.recording.load(std::sync::atomic::Ordering::SeqCst))?;
+    let parsed = parse_and_store(&state.proxy, &link)?;
+    prefs::save_capture_proxy(&app, Some(&parsed.server_url()))?;
+    Ok(crate::capture_proxy::ProxyInfo::of(&parsed))
+}
+
+#[tauri::command]
+pub fn clear_proxy_link(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    ensure_proxy_editable(state.recording.load(std::sync::atomic::Ordering::SeqCst))?;
+    *state.proxy.lock().map_err(|_| "proxy state unavailable")? = None;
+    prefs::save_capture_proxy(&app, None)
+}
+
+fn ensure_proxy_editable(recording: bool) -> Result<(), String> {
+    if recording {
+        Err("Stop the capture before changing the proxy.".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+/// Parses `text` and, when it is valid, replaces the link kept in memory. The error never
+/// contains the input (the parser's messages are fixed).
+fn parse_and_store(
+    slot: &std::sync::Mutex<Option<scrapelens_capture::proxy::ProxyLink>>,
+    text: &str,
+) -> Result<scrapelens_capture::proxy::ProxyLink, String> {
+    let link = scrapelens_capture::proxy::ProxyLink::parse(text).map_err(|error| error.to_string())?;
+    *slot.lock().map_err(|_| "proxy state unavailable")? = Some(link.clone());
+    Ok(link)
+}
+
 /// Starts a real capture with an external Chrome. The command returns as soon as
 /// CDP is ready; the final v1 session is returned by `stop_session`.
 /// `start_url` (optional): a UI field; empty → `about:blank`; only http/https.
@@ -536,6 +583,12 @@ pub fn start_session(
     if state.recording.load(std::sync::atomic::Ordering::SeqCst) {
         return Err("A capture is already in progress or starting. Click Stop before starting another.".to_string());
     }
+    // The saved server is the authority: a saved proxy whose password is not in memory
+    // stops the start here, before Chrome is launched.
+    let proxy = {
+        let active = state.proxy.lock().map_err(|_| "proxy state unavailable")?.clone();
+        crate::capture_proxy::resolve_for_start(prefs::load_capture_proxy(&app).as_deref(), active.as_ref())?
+    };
     let menu_app = app.clone();
     let mut starting = StartingGuard::begin(&state.recording, move |recording| {
         crate::menu::set_recording_menu(&menu_app, recording)
@@ -565,6 +618,10 @@ pub fn start_session(
     let cookie_notice = selected_cookie_source.map(|source| format!(
         " Cookies from {} loaded for the starting URL's site.", source.label
     )).unwrap_or_default();
+    let proxy_notice = proxy
+        .as_ref()
+        .map(|link| format!(" Through the proxy {} (no credentials shown).", link.server_url()))
+        .unwrap_or_default();
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -587,6 +644,10 @@ pub fn start_session(
         network: scrapelens_capture::NetworkMode::from_env(),
         cookie_source: selected_cookie_source.map(|source| source.id.clone()),
         initial_cookies: Vec::new(),
+        proxy,
+        // Test only: loopback targets must really pass through the proxy in the test suites.
+        test_proxy_bypass_loopback: std::env::var("SCRAPELENS_TEST_MODE").as_deref() == Ok("1")
+            && std::env::var("SCRAPELENS_TEST_PROXY_BYPASS_LOOPBACK").as_deref() == Ok("1"),
     };
 
     let status = Arc::new(Mutex::new(CaptureStatus {
@@ -652,7 +713,7 @@ pub fn start_session(
                 chrome_path.display(),
                 start_url_for_notice
             )
-        }) + &cookie_notice),
+        }) + &cookie_notice + &proxy_notice),
         cookie_import: None,
         pending: false,
     })
@@ -2411,6 +2472,56 @@ fn detach_and_reap<T: Send + 'static>(join: thread::JoinHandle<Result<T, String>
         let _ = join.join();
         let _ = fs::remove_dir_all(&dir);
     });
+}
+
+#[cfg(test)]
+mod proxy_command_tests {
+    use super::*;
+    use scrapelens_capture::proxy::ProxyLink;
+    use std::sync::Mutex;
+
+    #[test]
+    fn a_valid_link_is_kept_in_memory_and_only_its_address_is_returned() {
+        let slot: Mutex<Option<ProxyLink>> = Mutex::new(None);
+        let link = parse_and_store(&slot, "http://reader:Hunter2-secret@proxy.example:8080").unwrap();
+        assert_eq!(link.server_url(), "http://proxy.example:8080");
+        let info = serde_json::to_string(&crate::capture_proxy::ProxyInfo::of(&link)).unwrap();
+        assert!(!info.contains("Hunter2"), "{info}");
+        assert!(!info.contains("reader"), "{info}");
+        // The memory copy keeps the credentials for the relay.
+        assert!(slot.lock().unwrap().as_ref().unwrap().authenticated());
+    }
+
+    #[test]
+    fn an_invalid_link_is_refused_and_its_text_is_never_echoed() {
+        let slot: Mutex<Option<ProxyLink>> = Mutex::new(None);
+        for input in [
+            "socks4://reader:Hunter2-secret@proxy.example:1080",
+            "http://reader:Hunter2-secret@proxy.example:99999",
+            "http://reader:Hunter2-secret@proxy.example:8080/path",
+            "http://reader:Hunter2-secret@proxy.example:8080\u{7}",
+        ] {
+            let error = parse_and_store(&slot, input).unwrap_err();
+            assert!(!error.contains("Hunter2"), "{error}");
+            assert!(!error.contains("reader"), "{error}");
+            assert!(!error.contains("proxy.example"), "the input is not repeated: {error}");
+        }
+        assert!(slot.lock().unwrap().is_none(), "a refused link replaces nothing");
+    }
+
+    #[test]
+    fn changing_or_clearing_the_proxy_is_refused_while_recording() {
+        assert!(ensure_proxy_editable(false).is_ok());
+        let err = ensure_proxy_editable(true).unwrap_err();
+        assert!(err.contains("Stop the capture"), "{err}");
+    }
+
+    #[test]
+    fn socks4_gets_its_own_message() {
+        let slot: Mutex<Option<ProxyLink>> = Mutex::new(None);
+        let error = parse_and_store(&slot, "socks4://proxy.example:1080").unwrap_err();
+        assert!(error.contains("socks4 is not supported"), "{error}");
+    }
 }
 
 #[cfg(test)]

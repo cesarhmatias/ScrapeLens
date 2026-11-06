@@ -77,6 +77,8 @@ mod tests {
             network: scrapelens_capture::NetworkMode::LoopbackOnly,
             cookie_source: None,
             initial_cookies: Vec::new(),
+            proxy: None,
+            test_proxy_bypass_loopback: false,
         };
         let status_thread = status.clone();
         let join = thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));
@@ -133,6 +135,8 @@ mod tests {
             network: scrapelens_capture::NetworkMode::LoopbackOnly,
             cookie_source: None,
             initial_cookies: Vec::new(),
+            proxy: None,
+            test_proxy_bypass_loopback: false,
         };
         let status_thread = status.clone();
         let join = thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));

@@ -1,4 +1,6 @@
 import { CookieSourceSelect } from "./CookieSourceSelect";
+import { ProxyField } from "./ProxyField";
+import { proxyHeaderView, proxyStartBlock, type ProxyState } from "./proxyRules";
 import type { CookieSourceDto } from "./bridge";
 import { desktopShortcut } from "./shortcuts";
 import type { ReactElement } from "react";
@@ -1659,6 +1661,9 @@ export default function App() {
   const [cookieSources, setCookieSources] = useState<CookieSourceDto[]>([]);
   const [cookieSource, setCookieSource] = useState("");
   const [cookieSourcesReady, setCookieSourcesReady] = useState(false);
+  const [proxyState, setProxyState] = useState<ProxyState | null>(null);
+  const [proxyDraft, setProxyDraft] = useState("");
+  const [proxyError, setProxyError] = useState<string | null>(null);
   const [startUrlError, setStartUrlError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [exportTarget, setExportTarget] = useState<RequestRecord | null>(null);
@@ -1909,6 +1914,11 @@ export default function App() {
       return;
     }
     if (!cookieSourcesReady || busy || recording) return;
+    const proxyBlock = proxyStartBlock(proxyState, !!recording);
+    if (proxyBlock) {
+      setNotice({ kind: "error", text: "Could not start the capture.", detail: proxyBlock, action: "start" });
+      return;
+    }
     const resolved = resolveCaptureStartUrl(startUrl);
     if (!resolved.ok) {
       setStartUrlError(resolved.error);
@@ -1941,7 +1951,31 @@ export default function App() {
     } finally {
       setBusy(null);
     }
-  }, [desktop, startUrl, cookieSource, cookieSourcesReady, busy, recording]);
+  }, [desktop, startUrl, cookieSource, cookieSourcesReady, busy, recording, proxyState]);
+
+  const applyProxy = useCallback(() => {
+    setBusy("Checking the proxy link…");
+    void bridge.setProxyLink(proxyDraft).then(async () => {
+      // The typed text leaves the field as soon as the backend has it.
+      setProxyDraft("");
+      setProxyError(null);
+      setProxyState(await bridge.getProxyState());
+      setNotice({ kind: "info", text: "Proxy set for the next capture. Credentials, if any, are kept in memory only." });
+    }).catch((error) => {
+      setProxyError(String(error));
+    }).finally(() => setBusy(null));
+  }, [proxyDraft]);
+
+  const clearProxy = useCallback(() => {
+    setBusy("Clearing the proxy…");
+    void bridge.clearProxyLink().then(async () => {
+      setProxyDraft("");
+      setProxyError(null);
+      setProxyState(await bridge.getProxyState());
+    }).catch((error) => {
+      setProxyError(String(error));
+    }).finally(() => setBusy(null));
+  }, []);
 
   const stopCapture = useCallback(async () => {
     setBusy("Stopping Chrome, waiting for NetLog and importing the session…");
@@ -1986,6 +2020,7 @@ export default function App() {
     }).catch((error) => {
       setNotice({ kind: "error", text: "Could not list the cookie sources. The capture will use a clean session.", detail: String(error) });
     }).finally(() => setCookieSourcesReady(true));
+    void bridge.getProxyState().then(setProxyState).catch(() => null);
     void bridge.captureStartUrl().then((url) => {
       setStartUrl(url);
       if (url.trim()) {
@@ -2417,6 +2452,19 @@ export default function App() {
                   {fmtTime(session.createdAt)} · {requestCount} requests ·{" "}
                   {session.capture.mode ?? "mode not reported"}
                 </div>
+                {(() => {
+                  const proxy = proxyHeaderView(session.capture.proxy);
+                  if (!proxy) return null;
+                  return (
+                    <div className="sid-meta proxy-header" data-testid="session-proxy">
+                      <span className="tag">proxy</span>{" "}
+                      <span className="mono">{proxy.address}</span>
+                      {proxy.authenticated ? " · authenticated (password not recorded)" : " · no credentials"}
+                      {" · "}{proxy.routeText}
+                      <span className="proxy-header-note"> {proxy.http3Note}</span>
+                    </div>
+                  );
+                })()}
               </div>
               <div className="session-actions">
                 <label className="start-url-field" htmlFor="scrapelens-start-url">
@@ -2466,11 +2514,23 @@ export default function App() {
                     }).finally(() => setBusy(null));
                   }}
                 />
+                <ProxyField
+                  state={proxyState}
+                  draft={proxyDraft}
+                  error={proxyError}
+                  disabled={!desktop || !!recording || !!busy}
+                  onDraftChange={(value) => {
+                    setProxyDraft(value);
+                    setProxyError(null);
+                  }}
+                  onApply={applyProxy}
+                  onClear={clearProxy}
+                />
                 <button
                   id="scrapelens-start-session"
                   className="btn primary"
                   onClick={() => void startCapture()}
-                  disabled={!desktop || !!recording || !!busy || !!startUrlError || !cookieSourcesReady}
+                  disabled={!desktop || !!recording || !!busy || !!startUrlError || !cookieSourcesReady || !!proxyStartBlock(proxyState, !!recording)}
                   aria-label="Start session"
                   title={
                     desktop
@@ -2547,6 +2607,9 @@ export default function App() {
                 <strong>Recording with external Chrome</strong>
                 <span>
                   session <span className="mono">{recording.sessionId}</span> · {recording.events} CDP event(s)
+                  {proxyState?.active ? (
+                    <span className="mono dim"> · proxy {proxyState.active.serverUrl}</span>
+                  ) : null}
                   {recording.pageUrl ? (
                     <span className="mono dim"> · {recording.pageUrl}</span>
                   ) : null}

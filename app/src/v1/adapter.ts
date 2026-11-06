@@ -638,6 +638,7 @@ export function adaptSession(
         cdpEvents: counts.sourceEvents ?? 0,
         status: raw.session.completeness.state === "complete" ? "closed" : "partial",
         mode: raw.session.capture?.mode,
+        proxy: raw.session.capture?.proxy,
       },
       requests,
       sources: [...sources],
