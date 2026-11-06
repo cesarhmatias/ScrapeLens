@@ -5,6 +5,8 @@
 # installs sqlite3 or libsecret-tools: the App must not need them.
 FROM debian:12
 ARG BROWSER=chromium
+# CAPTURE_CHROME=0 leaves Google Chrome out of a non-Chrome image (checks the "not found" message).
+ARG CAPTURE_CHROME=1
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl gnupg python3 xvfb xauth dbus-x11 xdotool procps \
@@ -32,7 +34,7 @@ RUN set -eux; \
 # The App captures with Google Chrome; cookies may come from another browser (Firefox, Edge).
 # So a non-Chrome image also gets Google Chrome as the capture browser.
 RUN set -eux; \
-    if [ "$BROWSER" != chrome ]; then \
+    if [ "$BROWSER" != chrome ] && [ "$CAPTURE_CHROME" = 1 ]; then \
       arch="$(dpkg --print-architecture)"; \
       curl -fsSL -o /tmp/chrome.deb "https://dl.google.com/linux/direct/google-chrome-stable_current_${arch}.deb"; \
       apt-get update; apt-get install -y --no-install-recommends /tmp/chrome.deb; rm -f /tmp/chrome.deb; \

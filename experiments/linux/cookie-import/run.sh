@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end check of the cookie import on a desktop-like Linux user, with the packaged App.
-# Usage: [BROWSER=chromium|chrome|edge|brave|firefox] [KEYRING=unlocked|locked|absent] \
+# Usage: [BROWSER=chromium|chrome|edge|brave|firefox] [KEYRING=unlocked|locked|absent] [MIXED=1] [CAPTURE_CHROME=0] \
 #        experiments/linux/cookie-import/run.sh <platform> <package-file> <out-dir>
 #   <platform>: linux/arm64 or linux/amd64
 #   <package-file>: a .deb (installed) or an AppImage (run in place)
@@ -9,13 +9,13 @@
 # script; no real browser profile or real cookie is read. The page server is loopback only.
 set -euo pipefail
 platform="$1"; package="$2"; out="$3"
-BROWSER="${BROWSER:-chromium}"; KEYRING="${KEYRING:-unlocked}"
+BROWSER="${BROWSER:-chromium}"; KEYRING="${KEYRING:-unlocked}"; MIXED="${MIXED:-0}"; CAPTURE_CHROME="${CAPTURE_CHROME:-1}"
 here="$(cd "$(dirname "$0")" && pwd)"
 arch="${platform#linux/}"
-image="sl-cookie-import:$arch-$BROWSER"
+image="sl-cookie-import:$arch-$BROWSER"; [ "$CAPTURE_CHROME" = 1 ] || image="$image-nochrome"
 mkdir -p "$out"
-docker build --platform "$platform" --build-arg "BROWSER=$BROWSER" -t "$image" "$here"
-envs=(-e "APP_READY_WAIT=40" -e "BROWSER=$BROWSER" -e "KEYRING=$KEYRING")
+docker build --platform "$platform" --build-arg "BROWSER=$BROWSER" --build-arg "CAPTURE_CHROME=$CAPTURE_CHROME" -t "$image" "$here"
+envs=(-e "APP_READY_WAIT=40" -e "BROWSER=$BROWSER" -e "KEYRING=$KEYRING" -e "MIXED=$MIXED")
 case "$package" in
   *.deb)
     ctx="$(mktemp -d)"; trap 'rm -rf "$ctx"' EXIT

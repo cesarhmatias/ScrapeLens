@@ -5,6 +5,7 @@
 # Usage: e2e-app.sh <launch command...>
 # Env: BROWSER=chromium|chrome|edge|brave|firefox (the browser that made the cookie; the image's browser)
 #      KEYRING=unlocked|locked|absent (Chromium-family only: keyring state when the App starts)
+#      MIXED=1 (Chromium-family only): also write a v10 cookie (basic store) before the v11 one
 set -u
 BROWSER=${BROWSER:-chromium}; KEYRING=${KEYRING:-unlocked}
 export HOME=/home/tester/e2e
@@ -18,7 +19,8 @@ case "$BROWSER" in
   firefox)  BIN=firefox-esr;           PROFILE_ROOT=.mozilla/firefox/sl.e2e; SRC=firefox:sl.e2e ;;
   *) echo "unknown BROWSER: $BROWSER" >&2; exit 2 ;;
 esac
-export BROWSER BIN PROFILE_ROOT KEYRING
+MIXED=${MIXED:-0}
+export BROWSER BIN PROFILE_ROOT KEYRING MIXED
 rm -rf "$HOME"; mkdir -p "$XDG_CONFIG_HOME/app.scrapelens.desktop" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 cd /tmp && rm -f /tmp/srv.log
 python3 /scripts/server.py /tmp/srv.log >/dev/null 2>&1 & sleep 1
@@ -34,7 +36,13 @@ dbus-run-session -- sh -c '
     MOZ_HEADLESS=1 "$BIN" --headless --no-remote --profile "$HOME/$PROFILE_ROOT" http://127.0.0.1:8765/set >/tmp/c.log 2>&1 &
     C=$!; sleep 40; kill -TERM $C; sleep 8
   else
-    "$BIN" --headless=new --no-sandbox --disable-gpu --user-data-dir="$HOME/$PROFILE_ROOT" http://127.0.0.1:8765/set >/tmp/c.log 2>&1 &
+    STORE=""
+    if [ "$MIXED" = 1 ]; then
+      "$BIN" --headless=new --no-sandbox --disable-gpu --password-store=basic --user-data-dir="$HOME/$PROFILE_ROOT" http://127.0.0.1:8765/set10 >/tmp/c10.log 2>&1 &
+      C=$!; sleep 45; kill -TERM $C; sleep 6
+      STORE="--password-store=gnome"
+    fi
+    "$BIN" --headless=new --no-sandbox --disable-gpu $STORE --user-data-dir="$HOME/$PROFILE_ROOT" http://127.0.0.1:8765/set >/tmp/c.log 2>&1 &
     C=$!; sleep 45; kill -TERM $C; sleep 6
   fi
   DB=$(find "$HOME/$PROFILE_ROOT" \( -name Cookies -o -name cookies.sqlite \) -type f | head -1)
