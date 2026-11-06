@@ -56,7 +56,7 @@ Built with **Tauri 2 + React/TypeScript + Rust**, it runs **100% locally**, with
 |---|---|
 | ![Timeline](docs/screenshots/live-timeline.png) | ![Export](docs/screenshots/live-export-sanitize-dialog.png) |
 
-These screenshots are real captures: headless Chrome 156 with a dedicated test profile, against the local ScrapeLens test server (`127.0.0.1:9781`, page `/page`). The `/private/tmp/...` path in them is the temporary session folder of that run.
+These screenshots are real captures: headless Chrome 156 with a dedicated test profile, against the local ScrapeLens test server (`127.0.0.1:9781`, page `/page`). The top-bar screenshot was captured through a local test HTTP proxy (`127.0.0.1:9790`, no credentials) to show the **Proxy** field and the session header. The `/private/tmp/...` path in the export dialog is the temporary session folder of that run.
 
 </details>
 
@@ -111,6 +111,33 @@ open src-tauri/target/release/bundle/macos/ScrapeLens.app
 | `⌘⇧C` / `Ctrl+Shift+C` | Copy the selected request's URL |
 | `↑` / `↓` | Navigate the request list |
 | `Esc` | Close modal / clear selection |
+
+---
+
+## 🌐 Proxy
+
+Optional: one proxy link sends the whole capture through that proxy. Use the **Proxy** field next to *Start URL* and *Cookies*; its status line shows the server in use. In MCP, `start_capture` takes the same `proxy` value.
+
+Accepted links:
+
+| Form | Meaning |
+|---|---|
+| `http://[user:pass@]host[:port]` | HTTP proxy (default port 80) |
+| `https://[user:pass@]host[:port]` | Proxy reached over TLS (default port 443) |
+| `socks5://[user:pass@]host[:port]`, `socks5h://…` | SOCKS5, with remote DNS (default port 1080) |
+| `[user:pass@]host:port` | No scheme: same as `http://` |
+| `host:port:user:pass` | Common provider format: same as `http://user:pass@host:port` |
+
+- **MCP:** prefer `proxy: "env"`, which reads the link from the server's `SCRAPELENS_PROXY_URL` variable, so the password never passes through the model. The variable is ignored unless `"env"` is requested.
+- **App:** the password is kept in memory until the app closes. After a restart, the saved server is shown and the link must be typed again.
+- **Limits:**
+  - No HTTP/3 through a proxy; the session says so.
+  - The password is never saved to disk, and never appears in the session files, exports, or logs.
+  - Exported cURL, Python and priming scripts do not use the proxy, so they can leave from another IP.
+  - Loopback targets are not sent through the proxy.
+  - Validated with local test proxies, not against commercial providers.
+
+Details: [`docs/22-proxy.md`](docs/22-proxy.md).
 
 ---
 

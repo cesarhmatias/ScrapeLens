@@ -8,7 +8,7 @@ No personal profile, cookie or path is in them.
 
 | File | What it shows |
 |---|---|
-| `live-capture-main.png` | Real capture (11 requests, `cdp+netlog`): capture bar, Start URL, cookies selector with “No cookies (clean session)”, filters and request list |
+| `live-capture-main.png` | Real capture (11 requests, `cdp+netlog`) through a local test HTTP proxy (`127.0.0.1:9790`, no credentials): the capture bar with the **Proxy** field active, the Start URL, the cookies selector, and the session header with the proxy, its route and the HTTP/3 note |
 | `live-request-detail-headers.png` | Real `/setcookie` request: raw headers in source order, `verified` state for each part, CDP×NetLog match |
 | `live-compare-requests.png` | Real A/B comparison of two `POST /echo` requests: changed, removed and same header pairs |
 | `live-timeline.png` | Real application timeline: requests in order with the cookies each one consumed and produced |
