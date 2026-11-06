@@ -305,6 +305,11 @@ pub fn resolve_stable_chrome(explicit: Option<&Path>) -> Result<ValidatedChrome,
     Err(last)
 }
 
+/// Family check shared with the App. Does not replace [`validate_chrome`]:
+/// the controlled capture (MCP `binary_path`) still requires stable Chrome.
+/// [`accept_browser`] only names the product and never runs the file.
+pub use crate::browser_family::accept_browser;
+
 /// Refuses a path that is not UTF-8 or has a control character (`\n`, `\r`,
 /// TAB, NUL, DEL, C1). Applies to both the given path and the canonical one.
 fn reject_unsafe_path(path: &Path) -> Result<(), ChromeError> {
