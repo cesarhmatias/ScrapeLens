@@ -124,6 +124,8 @@ pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -
         netlog_json,
         attachments,
     } = bundle;
+    // A proxied session's remote endpoints are the proxy's; make that explicit first.
+    crate::model::apply_proxy_facts(&mut session);
     let mut warnings = Vec::new();
     let mut redactions: BTreeMap<String, usize> = BTreeMap::new();
     let mut omitted_attachments = Vec::new();
@@ -249,6 +251,13 @@ pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -
         capture.browser_binary = None;
         capture.chrome_args = None;
         capture.notes = None;
+        // The proxy keeps its scheme and whether it was authenticated; its address
+        // and route go. `chromeArgs` (which held the address) is already removed.
+        if let Some(proxy) = &mut capture.proxy {
+            proxy.host = None;
+            proxy.port = None;
+            proxy.route = None;
+        }
     }
     let raw_removed = cdp_events_jsonl.is_some() || netlog_json.is_some();
     session.session.labels.push("sanitized".to_string());

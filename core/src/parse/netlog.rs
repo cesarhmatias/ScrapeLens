@@ -1533,7 +1533,8 @@ impl BuildCtx {
             None => "unknown:0".to_string(),
         };
         let source_id = event.source_id;
-        if name.contains("SEND") || name.contains("BOUND_TO") {
+        // Proxy tunnel events (CONNECT) are not the request: they do not count as send evidence.
+        if (name.contains("SEND") || name.contains("BOUND_TO")) && !name.contains("TUNNEL") {
             if let Some(source_id) = source_id {
                 self.send_seen.insert(source_id);
             }
@@ -2289,6 +2290,12 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
         .atoms
         .iter()
         .any(|atom| matches!(atom, Atom::Send(_) | Atom::Recv(_) | Atom::Redirect { .. }));
+    // A URL_REQUEST cancelled or failed before writing any bytes: no attempt is built
+    // from its (empty) events; it gets one below, marked not-sent.
+    let not_sent_candidate = !had_wire_data
+        && builder.is_url_request
+        && !builder.saw_send
+        && (builder.cancelled_at.is_some() || builder.net_error.is_some());
     let mut current = NetlogAttempt {
         url: builder.url.clone(),
         method: builder.method.clone(),
@@ -2384,18 +2391,13 @@ fn build_request(builder: Builder) -> NetlogUrlRequest {
             }
         }
     }
-    if current_has_data || attempts.is_empty() {
+    if (current_has_data || attempts.is_empty()) && !not_sent_candidate {
         flush_attempt(&mut current, &mut attempts);
     }
 
     // A URL_REQUEST that was cancelled or failed before writing any bytes has no
     // attempt above; it gets one, marked not-sent, so the correlator can pair it.
-    if attempts.is_empty()
-        && !had_wire_data
-        && builder.is_url_request
-        && !builder.saw_send
-        && (builder.cancelled_at.is_some() || builder.net_error.is_some())
-    {
+    if not_sent_candidate && attempts.is_empty() {
         attempts.push(NetlogAttempt {
             url: builder.url.clone(),
             method: builder.method.clone(),

@@ -205,11 +205,64 @@ pub enum ProxyRoute {
 pub struct ProxyRecord {
     /// `http`, `https`, `socks5` or `socks5h` (the scheme of the accepted link).
     pub scheme: String,
-    pub host: String,
-    pub port: u16,
+    /// The proxy address. Present in the full export; removed by sanitization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
     /// The link carried a username or password. The values are not recorded.
     pub authenticated: bool,
-    pub route: ProxyRoute,
+    /// How the browser reached the proxy. Removed by sanitization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<ProxyRoute>,
+}
+
+/// Session note for a proxied capture: HTTP/3 is not used through the proxy path.
+pub const PROXY_NO_HTTP3_NOTE: &str = "captured through a proxy: HTTP/3 is not used in this capture (the proxy path does not carry QUIC), so the absence of h3 is not evidence";
+
+/// Provenance note on a connection whose remote endpoint is the proxy.
+pub const PROXY_CONNECTION_NOTE: &str =
+    "remote endpoint is the proxy, not the site: the site address is not observed";
+
+/// Makes a proxied session tell the truth about its remote endpoints: the socket
+/// peer Chrome reports (`remoteIPAddress`, `remotePort`) is the proxy's, so
+/// connections lose `ip` and `port` and say so; the session notes that HTTP/3 is
+/// not used. Idempotent. Sessions without a proxy are not touched.
+pub fn apply_proxy_facts(session: &mut SessionV1) {
+    let proxied = session
+        .session
+        .capture
+        .as_ref()
+        .and_then(|capture| capture.proxy.as_ref())
+        .is_some();
+    if !proxied {
+        return;
+    }
+    for connection in &mut session.connections {
+        if connection.ip.is_some() || connection.port.is_some() {
+            connection.ip = None;
+            connection.port = None;
+        }
+        if !connection
+            .provenance
+            .notes
+            .iter()
+            .any(|note| note == PROXY_CONNECTION_NOTE)
+        {
+            connection
+                .provenance
+                .notes
+                .push(PROXY_CONNECTION_NOTE.to_string());
+        }
+    }
+    if !session
+        .session
+        .notes
+        .iter()
+        .any(|note| note == PROXY_NO_HTTP3_NOTE)
+    {
+        session.session.notes.push(PROXY_NO_HTTP3_NOTE.to_string());
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

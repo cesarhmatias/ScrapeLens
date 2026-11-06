@@ -19,6 +19,6 @@ pub use provenance::{policy, Provenance, Source, Verification};
 pub use session::{
     backfill_browser_version, BrowserInfo, CaptureMeta, Completeness, CompletenessCounts,
     CompletenessState, ProxyRecord, ProxyRoute, SessionBundle, SessionMeta, SessionV1, Warning,
-    WarningSeverity,
+    WarningSeverity, apply_proxy_facts, PROXY_CONNECTION_NOTE, PROXY_NO_HTTP3_NOTE,
     LABEL_CAPTURE_IMPORT, LABEL_LIVE_CAPTURE, LABEL_SYNTHETIC, SCHEMA_VERSION,
 };
