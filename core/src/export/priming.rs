@@ -306,6 +306,8 @@ fn is_sensitive_name(name: &str) -> bool {
         .split(|c: char| !c.is_ascii_alphanumeric())
         .any(|word| SENSITIVE_SHORT_WORDS.contains(&word))
         || has_sensitive_abbreviation(name)
+        || super::sanitize::has_pt_credential_word(name)
+        || super::sanitize::has_pt_pii_word(name)
 }
 
 fn is_plate_at(b: &[u8], i: usize) -> bool {
@@ -2482,6 +2484,7 @@ fn is_pii_name(name: &str) -> bool {
             .split(|c: char| !c.is_ascii_alphanumeric())
             .any(|word| matches!(word, "rg" | "tel" | "fone"))
         || has_sensitive_abbreviation(name)
+        || super::sanitize::has_pt_pii_word(name)
 }
 
 fn contains_pii(text: &str) -> bool {

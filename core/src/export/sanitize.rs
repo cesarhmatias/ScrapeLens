@@ -1077,6 +1077,142 @@ fn sanitized_provenance() -> Provenance {
         .with_note("derived content; original not included".to_string())
 }
 
+/// Portuguese credential names. Whole key segment only, shared with priming so
+/// the generated scripts and the sanitizer do not diverge.
+pub(super) const PT_CREDENTIAL_WORDS: &[&str] = &[
+    "chave",
+    "chaves",
+    "segredo",
+    "segredos",
+    "sessao",
+    "sessoes",
+    "autorizacao",
+    "autorizacoes",
+    "credencial",
+    "credenciais",
+];
+
+/// Portuguese personal-data names. `nome` counts as a key segment, not as a
+/// substring, and not when it qualifies a technical noun (`nome_arquivo`).
+pub(super) const PT_PII_WORDS: &[&str] = &[
+    "nome",
+    "nomes",
+    "sobrenome",
+    "sobrenomes",
+    "rg",
+    "matricula",
+    "matriculas",
+];
+
+/// Segments that make `nome` a file/field/protocol label instead of a person.
+const NOME_TECHNICAL_WORDS: &[&str] = &[
+    "arquivo", "arquivos", "file", "filename", "campo", "campos", "aba", "abas", "tela", "telas",
+    "classe", "classes", "funcao", "funcoes", "metodo", "metodos", "pacote", "pacotes", "modulo",
+    "modulos", "tipo", "tipos", "grupo", "grupos", "tabela", "tabelas", "coluna", "colunas",
+    "script", "scripts", "teste", "testes", "pasta", "pastas", "diretorio", "diretorios",
+    "caminho", "caminhos", "url", "urls", "host", "hosts", "app", "apps", "site", "sites",
+    "produto", "produtos", "servico", "servicos", "empresa", "empresas", "filial", "filiais",
+    "loja", "lojas", "marca", "marcas", "categoria", "categorias", "evento", "eventos", "acao",
+    "acoes", "valor", "valores",
+];
+
+/// Lowercase and fold the Portuguese accents of a field name, so `sessão` and
+/// `sessao` (and `autorização`/`autorizacao`) share one grammar.
+pub(super) fn fold_name(name: &str) -> String {
+    name.to_lowercase()
+        .chars()
+        .map(|ch| match ch {
+            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            'ñ' => 'n',
+            other => other,
+        })
+        .collect()
+}
+
+/// Key segments: non-alphanumeric separators and camelCase boundaries, folded.
+fn name_words(name: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut prev_lower = false;
+    for ch in name.chars() {
+        if !ch.is_alphanumeric() {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+            prev_lower = false;
+            continue;
+        }
+        if ch.is_uppercase() && prev_lower && !current.is_empty() {
+            words.push(std::mem::take(&mut current));
+        }
+        prev_lower = ch.is_lowercase();
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words.into_iter().map(|word| fold_name(&word)).collect()
+}
+
+pub(super) fn compact_name(name: &str) -> String {
+    fold_name(name)
+        .chars()
+        .filter(|ch| ch.is_alphanumeric())
+        .collect()
+}
+
+/// True when a whole key segment is a Portuguese credential name. `chave` does
+/// not match `chaveiro`, and `rg` is checked elsewhere as a whole segment only.
+pub(super) fn has_pt_credential_word(name: &str) -> bool {
+    pt_credential_in(&name_words(name))
+}
+
+/// True when a whole key segment is a Portuguese personal-data name. `nome`
+/// inside `nome_arquivo` is a technical label, not a person.
+pub(super) fn has_pt_pii_word(name: &str) -> bool {
+    pt_pii_in(&name_words(name))
+}
+
+fn pt_credential_in(words: &[String]) -> bool {
+    words
+        .iter()
+        .any(|word| PT_CREDENTIAL_WORDS.contains(&word.as_str()))
+}
+
+fn pt_pii_in(words: &[String]) -> bool {
+    if !words
+        .iter()
+        .any(|word| PT_PII_WORDS.contains(&word.as_str()))
+    {
+        return false;
+    }
+    let person_name = words.iter().any(|word| matches!(word.as_str(), "nome" | "nomes"));
+    if person_name
+        && words
+            .iter()
+            .any(|word| NOME_TECHNICAL_WORDS.contains(&word.as_str()))
+    {
+        return false;
+    }
+    true
+}
+
+/// `codigo_acesso` / `codigoDeAcesso`: adjacent segments, so `codigo_acessorio`
+/// and a plain product `codigo` stay visible.
+fn pt_access_code_in(words: &[String]) -> bool {
+    words
+        .windows(2)
+        .any(|pair| pair[0] == "codigo" && pair[1] == "acesso")
+        || words
+            .windows(3)
+            .any(|triple| triple[0] == "codigo" && triple[1] == "de" && triple[2] == "acesso")
+}
+
 fn is_listed_sensitive_header(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     if matches!(
@@ -1130,11 +1266,15 @@ pub fn is_sensitive_header(name: &str) -> bool {
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric())
         .collect();
+    let words = name_words(&name);
     !name.starts_with(':')
         && (has_secret_word(&compact)
+            || pt_credential_in(&words)
+            || pt_pii_in(&words)
             || compact.contains("jwt")
             || compact.contains("session")
-            || compact.contains("passwd"))
+            || compact.contains("passwd")
+            || pt_access_code_in(&words))
 }
 
 fn is_url_header(name: &str) -> bool {
@@ -1145,11 +1285,10 @@ fn is_url_header(name: &str) -> bool {
 }
 
 pub(super) fn is_sensitive_key(name: &str) -> bool {
-    let name = name.trim().to_ascii_lowercase();
-    let compact: String = name
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
-        .collect();
+    let name = name.trim();
+    let lower = fold_name(name);
+    let compact = compact_name(name);
+    let words = name_words(name);
     const EXACT: &[&str] = &[
         "token",
         "access_token",
@@ -1189,7 +1328,7 @@ pub(super) fn is_sensitive_key(name: &str) -> bool {
         "code",
         "state",
     ];
-    if EXACT.contains(&name.as_str()) {
+    if EXACT.contains(&lower.as_str()) {
         return true;
     }
     compact.contains("token")
@@ -1217,8 +1356,8 @@ pub(super) fn is_sensitive_key(name: &str) -> bool {
         || compact.contains("xsrf")
         || compact.contains("sessionkey")
         || compact == "nonce"
-        || name.ends_with("_nonce")
-        || name.ends_with("-nonce")
+        || lower.ends_with("_nonce")
+        || lower.ends_with("-nonce")
         || compact.ends_with("sessionid")
         || compact == "sid"
         || compact == "jsessionid"
@@ -1232,6 +1371,9 @@ pub(super) fn is_sensitive_key(name: &str) -> bool {
         || compact.ends_with("apikey")
         || compact.ends_with("accesskey")
         || compact.ends_with("secretkey")
+        || pt_credential_in(&words)
+        || pt_pii_in(&words)
+        || pt_access_code_in(&words)
 }
 
 fn is_url_key(name: &str) -> bool {
@@ -2583,6 +2725,155 @@ mod tests {
         assert!(is_sensitive_key("user[email]"));
         assert!(!is_sensitive_key("page"));
         assert!(!is_sensitive_key("monkey"));
+    }
+
+    #[test]
+    fn portuguese_names_are_sensitive_by_key_segment() {
+        for name in [
+            "chave",
+            "chave_api",
+            "chaveApi",
+            "Chave-Api",
+            "segredo",
+            "segredos",
+            "sessao",
+            "sessão",
+            "sessoes",
+            "autorizacao",
+            "autorização",
+            "autorizacoes",
+            "credencial",
+            "credenciais",
+            "nome",
+            "nomeCompleto",
+            "nome_cliente",
+            "sobrenome",
+            "rg",
+            "user_rg",
+            "rg_cliente",
+            "matricula",
+            "codigo_acesso",
+            "codigoDeAcesso",
+        ] {
+            assert!(is_sensitive_key(name), "{name} must be sensitive");
+        }
+        for name in [
+            "chaveiro",
+            "segredinho",
+            "org",
+            "cargo",
+            "target",
+            "renomear",
+            "nomeado",
+            "nome_arquivo",
+            "nomeArquivo",
+            "nome_do_arquivo",
+            "codigo",
+            "codigo_produto",
+            "codigo_acessorio",
+            "page",
+            "monkey",
+        ] {
+            assert!(!is_sensitive_key(name), "{name} must not be sensitive");
+        }
+        for header in [
+            "X-Chave-Api",
+            "X-Sessao",
+            "X-Sessão",
+            "Autorizacao",
+            "Autorização",
+            "X-Nome",
+            "X-Rg",
+            "X-Codigo-Acesso",
+        ] {
+            assert!(is_sensitive_header(header), "{header} must be sensitive");
+        }
+        for header in ["Content-Type", "X-Forwarded-For", "Author", "Origin", ":authority"] {
+            assert!(!is_sensitive_header(header), "{header} must not be sensitive");
+        }
+    }
+
+    #[test]
+    fn portuguese_secrets_do_not_survive_url_headers_form_json_or_cookies() {
+        let mut session = SessionV1::new(SessionMeta::new(
+            "s-pt",
+            "2026-10-26T20:00:00Z",
+            crate::model::BrowserInfo::default(),
+        ));
+        let mut url_request = LogicalRequest::new(
+            "r-url",
+            "https://demo.invalid/x?chave=ZZCHAVE&sessao=ZZSESSAO&nome=ZZNOME&page=2",
+            "GET",
+        );
+        url_request
+            .request_headers
+            .add("X-Chave-Api", "ZZHDRCHAVE", &provenance());
+        url_request
+            .request_headers
+            .add("Autorização", "ZZHDRAUTH", &provenance());
+        url_request
+            .request_headers
+            .add("X-Nome", "ZZHDRNOME", &provenance());
+        url_request.cookie = CookieField::from_header_values(
+            &["sessao=ZZCOOKIE; tema=escuro".to_string()],
+            &provenance(),
+        );
+        let mut form_request = LogicalRequest::new("r-form", "https://demo.invalid/form", "POST");
+        form_request.request_body = Body::captured("form.bin", 48, &provenance())
+            .with_content_type("application/x-www-form-urlencoded");
+        let mut json_request = LogicalRequest::new("r-json", "https://demo.invalid/json", "POST");
+        json_request.request_body = Body::captured("json.bin", 128, &provenance())
+            .with_content_type("application/json");
+        session.requests.extend([url_request, form_request, json_request]);
+        let mut bundle = SessionBundle::new(session);
+        bundle.insert_attachment(
+            "form.bin",
+            b"chave_api=ZZFORM&nome=ZZFORMNOME&codigo_acesso=ZZFORMCOD&page=2".to_vec(),
+        );
+        bundle.insert_attachment(
+            "json.bin",
+            br#"{"segredo":"ZZJSON","credencial":"ZZCRED","nome":"ZZJSONNOME","nome_arquivo":"page.html","codigo_acesso":"ZZCOD","page":2}"#.to_vec(),
+        );
+        let original = serde_json::to_string(&bundle.session).unwrap();
+        assert!(original.contains("ZZCHAVE"), "full session must keep the value");
+        let export = sanitize_bundle(&bundle, &SanitizeOptions::default());
+        assert_eq!(
+            original,
+            serde_json::to_string(&bundle.session).unwrap(),
+            "the full session is not mutated"
+        );
+        let session_json = serde_json::to_string(&export.bundle.session).unwrap();
+        let form = export.bundle.attachments.get(
+            export.bundle.session.requests[1]
+                .request_body
+                .attachment
+                .as_ref()
+                .unwrap(),
+        )
+        .unwrap();
+        let json: Value = serde_json::from_slice(
+            export.bundle.attachments.get(
+                export.bundle.session.requests[2]
+                    .request_body
+                    .attachment
+                    .as_ref()
+                    .unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let all = format!("{session_json}{}", String::from_utf8_lossy(form));
+        for secret in [
+            "ZZCHAVE", "ZZSESSAO", "ZZNOME", "ZZHDRCHAVE", "ZZHDRAUTH", "ZZHDRNOME", "ZZCOOKIE",
+            "ZZFORM", "ZZFORMNOME", "ZZFORMCOD", "ZZJSON", "ZZCRED", "ZZJSONNOME", "ZZCOD",
+        ] {
+            assert!(!all.contains(secret), "{secret} leaked in {all}");
+        }
+        assert!(session_json.contains("page=2"));
+        assert_eq!(json["page"], 2);
+        assert_eq!(json["nome_arquivo"], "page.html", "a technical nome label is not PII");
+        let form_text = String::from_utf8_lossy(form);
+        assert!(form_text.contains("page=2"), "{form_text}");
     }
 
     #[test]
