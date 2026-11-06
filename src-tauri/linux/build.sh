@@ -22,8 +22,13 @@ cp $B/deb/*.deb $B/appimage/*.AppImage "$OUT"/
 cp /src/src-tauri/target/release/scrapelens "$OUT/scrapelens"
 # The smoke needs the test-only command line (`--import-har`), which release builds do not
 # have: build a test-hooks binary from the same source. The shipped binary is the release one.
-step "smoke binary (test-hooks)"
-(cd /src/src-tauri && cargo build --locked --release --features test-hooks >>"$LOG" 2>&1) \
+step "smoke binary (test-hooks, custom-protocol)"
+# Plain `cargo build` does not set `custom-protocol`, so the window would load the dev server
+# (localhost) instead of the bundled frontend, and the import would never write a session.
+# `tauri build` sets it for the release binary; the smoke binary sets it here, after `npm run build`
+# so that `frontendDist` exists to be embedded. The shipped binary above is the release one.
+(cd /src/app && npm run -s build >>"$LOG" 2>&1) \
+  && (cd /src/src-tauri && cargo build --locked --release --features test-hooks,tauri/custom-protocol >>"$LOG" 2>&1) \
   && cp /src/src-tauri/target/release/scrapelens "$OUT/scrapelens-smoke" \
   || { echo "smoke binary FAIL" | tee -a "$LOG"; fail=1; }
 step "smoke (Xvfb, --import-har)"

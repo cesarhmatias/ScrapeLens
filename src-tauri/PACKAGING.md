@@ -408,6 +408,16 @@ docker run --rm --platform linux/$ARCH -v "$PWD/src-tauri/linux/out:/out" scrape
 
 Artifacts in `src-tauri/linux/out/` are kept out of git (`.gitignore`).
 
+### Smoke binary (`test-hooks` with `custom-protocol`)
+
+The smoke step builds `scrapelens-smoke` with `--features test-hooks,tauri/custom-protocol`,
+after `npm run build` so that `frontendDist` exists to be embedded. A plain
+`cargo build --features test-hooks` does not set `custom-protocol`: the window then loads
+`http://localhost:5173` instead of the bundled frontend, and `--import-har` never writes a
+session. The smoke failed that way on 0.1.3 (amd64 and arm64). `tauri build` sets
+`custom-protocol` for the release binary; the shipped `scrapelens` is still that release binary,
+built with no features.
+
 | Artifact (source HEAD `a5a12d1`, clean tree, Linux shortcuts fixed and `capture/` port included) | SHA-256 |
 |---|---|
 | `amd64/ScrapeLens_0.1.0_amd64.deb` | `5d288b32575bd8a12bb65f59178534cf4f34e447fd0ec3e5485ff35115df53ac` |
