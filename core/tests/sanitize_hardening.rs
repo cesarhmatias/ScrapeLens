@@ -43,6 +43,7 @@ const UUID: &str = "123e4567-e89b-12d3-a456-426614174000";
 const BUILD: &str = "2026.10.26-build-42";
 const ETAG: &str = "W/\"abcdef1234567890\"";
 const SRI: &str = "sha384-oqVuAfXRKap7fdgcCY5uykM6R9GqQ8Kuxy9rx7HNQl7fMpW5vV5vV5vV5vV5";
+const SPKI: &str = "bZVWDrQvkR0ynQKHKqsiga6j0rd2KIqFX6NXGKIjsYw=";
 
 fn provenance() -> Provenance {
     Provenance::new(Source::NetLog, "t12", Verification::Verified)
@@ -67,6 +68,7 @@ fn bundle() -> SessionBundle {
         ("Authorization", "Bearer AUTH-SCHEME-CONTROL"),
         ("ETag", ETAG),
         ("X-Sri", SRI),
+        ("X-Spki", SPKI),
     ] {
         request.request_headers.add(name, value, &provenance());
     }
@@ -100,7 +102,7 @@ fn bundle() -> SessionBundle {
                 "\"private_key\":\"{}\",\"ghp\":\"{}\",\"stripe\":\"{}\",",
                 "\"slack\":\"{}\",\"aws\":\"{}\",\"google\":\"{}\",\"entropy\":\"{}\",",
                 "\"page\":{},\"nome_arquivo\":\"{}\",\"sha256\":\"{}\",",
-                "\"uuid\":\"{}\",\"build\":\"{}\"}}"
+                "\"uuid\":\"{}\",\"build\":\"{}\",\"spki\":\"{}\"}}"
             ),
             ACCESS_JSON,
             JWT_JSON,
@@ -118,7 +120,8 @@ fn bundle() -> SessionBundle {
             ARQUIVO,
             SHA256,
             UUID,
-            BUILD
+            BUILD,
+            SPKI
         )
         .into_bytes(),
     );
@@ -168,6 +171,7 @@ fn leak_matrix() -> BTreeMap<&'static str, bool> {
         ("build", BUILD),
         ("etag", "abcdef1234567890"),
         ("sri", SRI),
+        ("spki", SPKI),
     ] {
         matrix.insert(name, text.contains(value));
     }
@@ -178,7 +182,7 @@ fn leak_matrix() -> BTreeMap<&'static str, bool> {
 fn t12_matrix_is_recorded_case_by_case() {
     let matrix = leak_matrix();
     println!("{matrix:#?}");
-    assert_eq!(matrix.len(), 28);
+    assert_eq!(matrix.len(), 29);
     // The snapshot is asserted in T13, after the value-format detector exists.
 }
 
@@ -218,9 +222,23 @@ fn t13_matrix_hides_every_secret_and_keeps_benign_values() {
         "build",
         "etag",
         "sri",
+        "spki",
     ] {
         assert!(matrix[name], "{name} was redacted but is benign");
     }
+}
+
+#[test]
+fn t13_entropy_is_marked_as_entropy() {
+    let export = sanitize_bundle(&bundle(), &SanitizeOptions::default());
+    assert!(
+        export
+            .redactions
+            .keys()
+            .any(|key| key == "secret-format:entropy"),
+        "the entropy value must be marked: {:?}",
+        export.redactions
+    );
 }
 
 #[test]
