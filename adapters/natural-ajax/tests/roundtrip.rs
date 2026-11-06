@@ -85,15 +85,31 @@ fn fixtures_round_trip_exactly() {
 
 #[test]
 fn real_hars_round_trip_exactly_aggregate() {
-    let paths = [
-        "/Users/cesar/Projects/scripts/detran_scraper/detran_paraiba/inputs/sem_captcha.har",
-        "/Users/cesar/Downloads/wsdetran.pb.gov.br.har.txt.har",
-        "/Users/cesar/Downloads/wsdetran.fluxo.captcha.solve.pgEvy4.har.txt.har",
-    ];
+    // Real HARs are not in the repository: pass a path-separated list in
+    // SCRAPELENS_REAL_HARS. Without it the test skips explicitly instead of
+    // silently passing.
+    let Some(raw) = std::env::var_os("SCRAPELENS_REAL_HARS") else {
+        eprintln!(
+            "skipping real_hars_round_trip_exactly_aggregate: set SCRAPELENS_REAL_HARS to a \
+             path-separated list of real HAR files to run it"
+        );
+        return;
+    };
+    let paths: Vec<PathBuf> = std::env::split_paths(&raw)
+        .filter(|path| !path.as_os_str().is_empty())
+        .collect();
+    if paths.is_empty() {
+        eprintln!(
+            "skipping real_hars_round_trip_exactly_aggregate: SCRAPELENS_REAL_HARS is empty"
+        );
+        return;
+    }
+    let total = paths.len();
     let mut tally = Tally::default();
     let mut seen = 0;
-    for path in paths {
-        let Some((requests, responses)) = common::har_xml(Path::new(path)) else {
+    for path in &paths {
+        let Some((requests, responses)) = common::har_xml(path) else {
+            eprintln!("skipping unreadable real HAR: {}", path.display());
             continue;
         };
         seen += 1;
@@ -102,8 +118,12 @@ fn real_hars_round_trip_exactly_aggregate() {
         }
     }
     // Aggregates only, no values.
-    println!("hars reais: {seen}/3, {tally:?}");
+    println!("hars reais: {seen}/{total}, {tally:?}");
     if seen == 0 {
+        eprintln!(
+            "skipping real_hars_round_trip_exactly_aggregate: no readable HAR in \
+             SCRAPELENS_REAL_HARS"
+        );
         return;
     }
     assert_eq!(tally.divergences, 0, "{tally:?}");
