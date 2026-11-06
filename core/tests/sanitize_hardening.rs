@@ -33,6 +33,7 @@ const SLACK: &str = concat!("xoxb-", "123456789012-123456789012-abcdefghijklmnop
 const AWS: &str = "AKIAIOSFODNN7EXAMPLE";
 const GOOGLE: &str = "AIzaSyD-EXAMPLE_1234567890abcdefghijklmno";
 const ENTROPY: &str = "Zx9Qm2Lp7Rv4Tn8Ws3Yb6Hc1Kd5Fg0Jh2Mk9Nq4Pt7Ux3Za8Bc6Vd1Ef5Gh0Ij";
+const PROPAGATED: &str = "Pq7Wm3Nx9Zt4Rv1Yb6Kc2Hd8Fg5Js0La7Ue3Io6Pa9Sd2Fg4Hj1Kl5Zx8Cv0Bn";
 const COOKIE: &str = "cookie_4a9zM2nB7vC1xL5kJ8hG3fD6sA0pQ";
 
 const PAGE: &str = "2";
@@ -56,7 +57,7 @@ fn bundle() -> SessionBundle {
     let mut request = LogicalRequest::new(
         "r1",
         format!(
-            "https://demo.invalid/x?access={ACCESS_URL}&refresh={JWT_QUERY}&__VIEWSTATE={VIEWSTATE_QUERY}&page={PAGE}&sha={SHA256}"
+            "https://demo.invalid/x?access={ACCESS_URL}&refresh={JWT_QUERY}&__VIEWSTATE={VIEWSTATE_QUERY}&extra={PROPAGATED}&page={PAGE}&sha={SHA256}"
         ),
         "POST",
     );
@@ -69,6 +70,11 @@ fn bundle() -> SessionBundle {
     ] {
         request.request_headers.add(name, value, &provenance());
     }
+    request.request_headers.add(
+        "X-Propagated",
+        format!("note with {PROPAGATED} inside"),
+        &provenance(),
+    );
     request.cookie =
         CookieField::from_header_values(&[format!("access={COOKIE}; theme=dark")], &provenance());
     request.request_body = Body::captured("t12.form.bin", 64, &provenance())
@@ -153,6 +159,7 @@ fn leak_matrix() -> BTreeMap<&'static str, bool> {
         ("aws", AWS),
         ("google", GOOGLE),
         ("entropy", ENTROPY),
+        ("propagated-header", PROPAGATED),
         ("cookie", COOKIE),
         ("page", PAGE),
         ("nome-arquivo", ARQUIVO),
@@ -171,7 +178,7 @@ fn leak_matrix() -> BTreeMap<&'static str, bool> {
 fn t12_matrix_is_recorded_case_by_case() {
     let matrix = leak_matrix();
     println!("{matrix:#?}");
-    assert_eq!(matrix.len(), 27);
+    assert_eq!(matrix.len(), 28);
     // The snapshot is asserted in T13, after the value-format detector exists.
 }
 
@@ -198,6 +205,7 @@ fn t13_matrix_hides_every_secret_and_keeps_benign_values() {
         "aws",
         "google",
         "entropy",
+        "propagated-header",
         "cookie",
     ] {
         assert!(!matrix[name], "{name} still leaks in the sanitized export");
