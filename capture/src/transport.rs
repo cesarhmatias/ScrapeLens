@@ -34,10 +34,14 @@ pub enum CdpTransport {
 }
 
 impl CdpTransport {
-    /// `SCRAPELENS_CDP_TRANSPORT=pipe|port` changes the default of the App's regular
-    /// capture (a measurement instrument and a way back).
+    /// `pipe` or `port` when the test hook is enabled. Release builds do not read
+    /// the variable and return `default` (the App's capture passes the pipe).
     pub fn from_env(default: CdpTransport) -> CdpTransport {
-        Self::parse(std::env::var("SCRAPELENS_CDP_TRANSPORT").ok().as_deref(), default)
+        #[cfg(any(test, feature = "test-hooks"))]
+        let value = std::env::var("SCRAPELENS_CDP_TRANSPORT").ok();
+        #[cfg(not(any(test, feature = "test-hooks")))]
+        let value: Option<String> = None;
+        Self::parse(value.as_deref(), default)
     }
 
     fn parse(value: Option<&str>, default: CdpTransport) -> CdpTransport {
@@ -403,6 +407,19 @@ pub(crate) fn make_pipe_ends() -> std::io::Result<PipeEnds> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn from_env_honors_the_test_hook() {
+        // SAFETY: this process is the test binary. The mutex keeps the two hooks
+        // from changing the environment at the same time. The variable is removed
+        // before the test returns.
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap();
+        unsafe { std::env::set_var("SCRAPELENS_CDP_TRANSPORT", "port") };
+        assert_eq!(CdpTransport::from_env(CdpTransport::Pipe), CdpTransport::Port);
+        unsafe { std::env::remove_var("SCRAPELENS_CDP_TRANSPORT") };
+        assert_eq!(CdpTransport::from_env(CdpTransport::Pipe), CdpTransport::Pipe);
+    }
 
     #[test]
     fn transport_choice_parses_the_env_override() {

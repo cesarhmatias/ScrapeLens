@@ -159,9 +159,9 @@ pub struct Relay {
 
 impl Relay {
     /// Starts the relay for `link`. `allow` of `None` means no allowlist: any destination.
-    /// An `https://` link reads `SCRAPELENS_TEST_PROXY_CA` (a PEM path) when it is set, and
-    /// adds that root next to the system trust store. The variable is test-only: it is not
-    /// an MCP or App option, and it never turns certificate checks off.
+    /// An `https://` link reads the test-only CA path when the `test-hooks` feature
+    /// (or `cfg(test)`) is on, and adds that root next to the system trust store.
+    /// It is not an MCP or App option, and it never turns certificate checks off.
     pub fn start(link: &ProxyLink, allow: Option<AllowFn>) -> Result<Relay, RelayError> {
         let extra = if link.scheme() == ProxyScheme::Https {
             test_extra_ca_from_env()?
@@ -732,18 +732,26 @@ fn connect_upstream(link: &ProxyLink) -> io::Result<TcpStream> {
     }
 }
 
-/// `SCRAPELENS_TEST_PROXY_CA` is a PEM file of extra roots for the relay's TLS check.
-/// Unset means system roots only. A set but unreadable file is an error: checks stay on.
+/// Extra roots for the relay's TLS check. Release builds never read the test
+/// hook and use system roots only. A set but unreadable file is an error when
+/// the hook is on: checks stay on.
 fn test_extra_ca_from_env() -> Result<Vec<u8>, RelayError> {
-    match std::env::var("SCRAPELENS_TEST_PROXY_CA") {
-        Err(_) => Ok(Vec::new()),
-        Ok(path) if path.trim().is_empty() => Ok(Vec::new()),
-        Ok(path) => std::fs::read(path.trim()).map_err(|_| {
-            RelayError::TestCa(
-                "the test proxy CA file could not be read (SCRAPELENS_TEST_PROXY_CA). Certificate checks stay on"
-                    .to_string(),
-            )
-        }),
+    #[cfg(any(test, feature = "test-hooks"))]
+    {
+        match std::env::var("SCRAPELENS_TEST_PROXY_CA") {
+            Err(_) => Ok(Vec::new()),
+            Ok(path) if path.trim().is_empty() => Ok(Vec::new()),
+            Ok(path) => std::fs::read(path.trim()).map_err(|_| {
+                RelayError::TestCa(
+                    "the test proxy CA file could not be read. Certificate checks stay on"
+                        .to_string(),
+                )
+            }),
+        }
+    }
+    #[cfg(not(any(test, feature = "test-hooks")))]
+    {
+        Ok(Vec::new())
     }
 }
 
@@ -1326,6 +1334,27 @@ pub(crate) fn base64(input: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_test_ca_hook_is_empty_until_set_and_refuses_a_missing_file() {
+        // SAFETY: test process only. Removed before return.
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("SCRAPELENS_TEST_PROXY_CA") };
+        assert!(test_extra_ca_from_env().unwrap().is_empty());
+        unsafe { std::env::set_var("SCRAPELENS_TEST_PROXY_CA", "   ") };
+        assert!(test_extra_ca_from_env().unwrap().is_empty());
+        unsafe {
+            std::env::set_var(
+                "SCRAPELENS_TEST_PROXY_CA",
+                "/no/such/scrapelens-test-ca.pem",
+            )
+        };
+        let err = test_extra_ca_from_env().unwrap_err();
+        assert!(matches!(err, RelayError::TestCa(_)), "{err}");
+        assert!(!err.to_string().contains("no/such"), "{err}");
+        unsafe { std::env::remove_var("SCRAPELENS_TEST_PROXY_CA") };
+    }
 
     #[test]
     fn base64_matches_the_rfc_vectors() {
@@ -2012,6 +2041,8 @@ mod wire_tests {
     }
 
     /// Runs only when spawned by `a_stranger_is_refused_and_a_child_of_the_owner_is_admitted`.
+    /// The probe name stays in this test only: a release library does not contain it,
+    /// with or without the `test-hooks` feature.
     #[test]
     fn relay_peer_probe() {
         let Ok(port) = std::env::var("SCRAPELENS_RELAY_PEER_PROBE") else {

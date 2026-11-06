@@ -19,5 +19,12 @@ rustls = { version = "0.23.31", default-features = false, features = ["ring", "s
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.2.0"
 
+[features]
+# Off by default, including release builds. `cargo test` still exercises the
+# gated reads (`cfg(test)`). The App turns this on by chaining its own
+# `test-hooks` feature to `scrapelens-capture/test-hooks`. Decisions for each
+# variable are next to `NetworkMode` in `src/lib.rs`.
+test-hooks = []
+
 # Crate independente: sem Tauri, sem janela. O App (src-tauri) e o servidor MCP a consomem.
 [workspace]

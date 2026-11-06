@@ -64,6 +64,29 @@ pub struct CaptureOutcome {
     pub notice: String,
 }
 
+// Test-hook decisions (feature `test-hooks`, off in release). A release build of
+// this crate contains none of the gated names. `SL_LIVE_START_URL`,
+// `SL_LIVE_SESSION_DIR`, `SL_LIVE_STOP_FILE` and `SL_LIVE_HEADED` stay: they are
+// the live-capture harness, not these switches.
+//
+// - `SCRAPELENS_TEST_PROXY_CA` — gate. Read only with `cfg(test)` or `test-hooks`.
+// - `SCRAPELENS_CDP_TRANSPORT` — gate. Same. Release keeps the caller's default
+//   (`run` passes the pipe).
+// - `SCRAPELENS_RELAY_PEER_PROBE` — gate, and stricter than the feature: the name
+//   exists only in the `#[cfg(test)]` probe, so a library built with the feature
+//   still does not contain it.
+// - `SCRAPELENS_CAPTURE_NETWORK` — gate. `from_env` returns open network unless
+//   `cfg(test)` or `test-hooks` is on.
+// - `SCRAPELENS_CAPTURE_URL`, `SCRAPELENS_CAPTURE_HEADLESS`,
+//   `SCRAPELENS_CAPTURE_IGNORE_CERT`, `SCRAPELENS_TEST_MODE`,
+//   `SCRAPELENS_TEST_PROXY_BYPASS_LOOPBACK` — keep, but not in this crate. The App
+//   already reads them only behind its own `test-hooks` feature and passes plain
+//   fields (`headless`, `ignore_cert`, `test_proxy_bypass_loopback`). This crate
+//   does not read those names.
+//
+// The App's `test-hooks` must enable `scrapelens-capture/test-hooks`, or a test
+// build of the App still gets the release behavior of the three gated reads.
+
 /// How the Chrome of the COMMON capture (the App's) sees the network.
 ///
 /// The MCP's controlled capture (`browser::BrowserCapture`) does not use this: it has
@@ -82,11 +105,14 @@ pub enum NetworkMode {
 }
 
 impl NetworkMode {
-    /// `SCRAPELENS_CAPTURE_NETWORK=loopback` turns on loopback-only mode (test suites
-    /// that must not touch the network); any other value, or the variable
-    /// unset, means open network.
+    /// Loopback-only when the test hook is enabled and the variable is `loopback`.
+    /// Release builds do not read it and stay on the open network.
     pub fn from_env() -> NetworkMode {
-        Self::parse(std::env::var("SCRAPELENS_CAPTURE_NETWORK").ok().as_deref())
+        #[cfg(any(test, feature = "test-hooks"))]
+        let value = std::env::var("SCRAPELENS_CAPTURE_NETWORK").ok();
+        #[cfg(not(any(test, feature = "test-hooks")))]
+        let value: Option<String> = None;
+        Self::parse(value.as_deref())
     }
 
     fn parse(value: Option<&str>) -> NetworkMode {
@@ -4168,6 +4194,21 @@ mod tests {
 
     /// The default is open network: the App's capture reaches real sites (before, the App
     /// only captured loopback and `https://google.com.br` gave DNS_PROBE_FINISHED_NXDOMAIN).
+    #[test]
+    fn network_mode_reads_the_test_hook() {
+        // SAFETY: test process only. The variable is removed before return.
+        // Serialized with the transport hook test via a distinct mutex; the two
+        // variables do not overlap.
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap();
+        unsafe { std::env::set_var("SCRAPELENS_CAPTURE_NETWORK", "loopback") };
+        assert_eq!(NetworkMode::from_env(), NetworkMode::LoopbackOnly);
+        unsafe { std::env::set_var("SCRAPELENS_CAPTURE_NETWORK", "open") };
+        assert_eq!(NetworkMode::from_env(), NetworkMode::Open);
+        unsafe { std::env::remove_var("SCRAPELENS_CAPTURE_NETWORK") };
+        assert_eq!(NetworkMode::from_env(), NetworkMode::Open);
+    }
+
     #[test]
     fn network_mode_defaults_to_open() {
         assert_eq!(NetworkMode::default(), NetworkMode::Open);
