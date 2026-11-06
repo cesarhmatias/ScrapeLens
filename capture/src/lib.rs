@@ -297,11 +297,27 @@ fn run_inner(
                 Arc::new(move |host: &str, port: u16| al.permits_destination(host, port))
                     as relay::AllowFn
             });
-            Some(relay::ProxyPlan::prepare(link.clone(), allow).map_err(|e| e.to_string())?)
+            // A refusal is reported through `ready` too: a caller waiting for the start
+            // result must see the reason, not a closed channel.
+            let plan = relay::ProxyPlan::prepare(link.clone(), allow).map_err(|e| {
+                let message = e.to_string();
+                let _ = ready.send(Err(message.clone()));
+                message
+            })?;
+            Some(plan)
         }
         None => None,
     };
     let proxy_arg = proxy_plan.as_ref().map(relay::ProxyPlan::chrome_arg);
+    if proxy_plan.is_some() {
+        // Preferences of the DEDICATED profile only (never system policy): secure DNS off
+        // (its lookups would leave the proxy), and WebRTC kept behind the proxy.
+        write_proxy_profile_prefs(&profile).map_err(|error| {
+            let message = format!("proxy profile preferences: {error}");
+            let _ = ready.send(Err(message.clone()));
+            message
+        })?;
+    }
     let mut pipe_ends = match opts.transport {
         CdpTransport::Pipe => Some(
             transport::make_pipe_ends().map_err(|error| format!("CDP pipe: {error}"))?,
@@ -827,6 +843,13 @@ fn chrome_args(
         args.insert(args.len() - 1, "--remote-debugging-port=0".to_string());
         args.insert(args.len() - 1, "--remote-debugging-address=127.0.0.1".to_string());
     }
+    // Fail closed through a proxy: Chrome resolves nothing itself, so a name that would
+    // leave by a direct route (a lookup, a connection) is refused instead. Loopback stays
+    // local, and the proxy's own address is excluded so that Chrome can reach it.
+    let proxy_rules = match (resolver_rules, proxy_arg) {
+        (None, Some(server)) => Some(fail_closed_rules(server)),
+        _ => None,
+    };
     match (resolver_rules, config.network) {
         // Controlled capture: only the allowlist hosts resolve; no
         // certificate relaxation. Through a proxy, Chrome must still reach the local relay
@@ -839,6 +862,15 @@ fn chrome_args(
                 None => rules.to_string(),
             };
             args.insert(args.len() - 1, format!("--host-resolver-rules={rules}"));
+        }
+        // Common App capture with a proxy: the fail-closed rules above.
+        (None, mode) if proxy_rules.is_some() => {
+            if mode == NetworkMode::LoopbackOnly {
+                args.insert(args.len() - 1, "--allow-insecure-localhost".to_string());
+            }
+            if let Some(rules) = proxy_rules {
+                args.insert(args.len() - 1, format!("--host-resolver-rules={rules}"));
+            }
         }
         // Common App capture: normal network. No DNS rules.
         (None, NetworkMode::Open) => {}
@@ -870,6 +902,48 @@ fn chrome_args(
         args.push("--ignore-certificate-errors".to_string());
     }
     args
+}
+
+/// Writes `Local State` (secure DNS off) and `Default/Preferences` (WebRTC policy) into
+/// the temporary profile. Files are created with `create_new`, so nothing follows a link.
+fn write_proxy_profile_prefs(profile: &Path) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let write_new = |path: &Path, body: &str| -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(path)?;
+        file.write_all(body.as_bytes())
+    };
+    write_new(
+        &profile.join("Local State"),
+        r#"{"dns_over_https":{"mode":"off"}}"#,
+    )?;
+    let default_dir = profile.join("Default");
+    if !default_dir.exists() {
+        std::fs::create_dir(&default_dir)?;
+    }
+    let prefs = default_dir.join("Preferences");
+    if prefs.exists() {
+        return Ok(());
+    }
+    write_new(
+        &prefs,
+        r#"{"webrtc":{"ip_handling_policy":"disable_non_proxied_udp","multiple_routes_enabled":false,"nonproxied_udp_enabled":false}}"#,
+    )
+}
+
+/// The host-resolver rule of a proxied capture without an allowlist. `server` is the
+/// `scheme://host:port` Chrome is given (the relay's address, or the link's own address).
+fn fail_closed_rules(server: &str) -> String {
+    let authority = server.split_once("://").map(|(_, rest)| rest).unwrap_or(server);
+    let host = if let Some(bracketed) = authority.strip_prefix('[') {
+        bracketed.split(']').next().unwrap_or("").to_string()
+    } else {
+        authority.rsplit_once(':').map(|(h, _)| h).unwrap_or(authority).to_string()
+    };
+    let mut rules = String::from("MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost");
+    if !host.is_empty() && host != "127.0.0.1" && host != "localhost" {
+        rules.push_str(&format!(", EXCLUDE {host}"));
+    }
+    rules
 }
 
 fn spawn_chrome(
@@ -3897,6 +3971,39 @@ mod tests {
             test_proxy_bypass_loopback: false,
         };
         chrome_args(&config, Path::new("/x/profile"), Path::new("/x/profile/netlog.json"), rules, pipe, None)
+    }
+
+    #[test]
+    fn a_proxied_capture_without_an_allowlist_fails_closed_for_names() {
+        assert_eq!(
+            fail_closed_rules("socks5://127.0.0.1:40123"),
+            "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"
+        );
+        assert_eq!(
+            fail_closed_rules("http://proxy.example:3128"),
+            "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost, EXCLUDE proxy.example"
+        );
+        assert_eq!(
+            fail_closed_rules("https://[2001:db8::7]:443"),
+            "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost, EXCLUDE 2001:db8::7"
+        );
+        let config = CaptureConfig {
+            chrome: PathBuf::from("/x/chrome"),
+            session_dir: PathBuf::from("/x/session"),
+            start_url: String::new(),
+            headless: true,
+            ignore_cert: false,
+            network: NetworkMode::Open,
+            cookie_source: None,
+            initial_cookies: Vec::new(),
+            proxy: None,
+            test_proxy_bypass_loopback: false,
+        };
+        let direct = chrome_args(&config, Path::new("/x/p"), Path::new("/x/p/n.json"), None, true, Some("http://proxy.example:3128"));
+        assert!(direct.contains(&"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost, EXCLUDE proxy.example".to_string()));
+        assert!(!direct.iter().any(|a| a.contains("proxy-bypass-list")), "the default loopback bypass is kept");
+        let none = chrome_args(&config, Path::new("/x/p"), Path::new("/x/p/n.json"), None, true, None);
+        assert!(!none.iter().any(|a| a.starts_with("--host-resolver-rules")), "no proxy, no rule");
     }
 
     #[test]

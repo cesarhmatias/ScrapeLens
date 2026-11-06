@@ -1,0 +1,588 @@
+[
+  {
+    "name": "http-open-http",
+    "route_log": "ProxyLink { server: \"http://127.0.0.1:18725\", authenticated: false }",
+    "notice": "notice: Session captured and imported: 2753 CDP+NetLog event(s) used, 16 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "http",
+      "host": "127.0.0.1",
+      "port": 18725,
+      "authenticated": false,
+      "route": "direct"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "netlog.request_without_url": 10,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=http://127.0.0.1:18725",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "http-open-https",
+    "route_log": "ProxyLink { server: \"http://127.0.0.1:18725\", authenticated: false }",
+    "notice": "notice: Session captured and imported: 3131 CDP+NetLog event(s) used, 24 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "http",
+      "host": "127.0.0.1",
+      "port": 18725,
+      "authenticated": false,
+      "route": "direct"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "netlog.request_without_url": 18,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=http://127.0.0.1:18725",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "http-relay-http",
+    "route_log": "ProxyLink { server: \"http://127.0.0.1:18721\", authenticated: true }",
+    "notice": "notice: Session captured and imported: 2898 CDP+NetLog event(s) used, 6 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "http",
+      "host": "127.0.0.1",
+      "port": 18721,
+      "authenticated": true,
+      "route": "relay"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=socks5://127.0.0.1:58946",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "http-relay-https",
+    "route_log": "ProxyLink { server: \"http://127.0.0.1:18721\", authenticated: true }",
+    "notice": "notice: Session captured and imported: 3021 CDP+NetLog event(s) used, 6 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "http",
+      "host": "127.0.0.1",
+      "port": 18721,
+      "authenticated": true,
+      "route": "relay"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=socks5://127.0.0.1:64247",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "https-open-http",
+    "route_log": "ProxyLink { server: \"https://127.0.0.1:18726\", authenticated: false }",
+    "notice": "notice: Session captured and imported: 3278 CDP+NetLog event(s) used, 12 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "https",
+      "host": "127.0.0.1",
+      "port": 18726,
+      "authenticated": false,
+      "route": "direct"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "netlog.request_without_url": 6,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=https://127.0.0.1:18726",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "https-open-https",
+    "route_log": "ProxyLink { server: \"https://127.0.0.1:18726\", authenticated: false }",
+    "notice": "notice: Session captured and imported: 3781 CDP+NetLog event(s) used, 24 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "https",
+      "host": "127.0.0.1",
+      "port": 18726,
+      "authenticated": false,
+      "route": "direct"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "netlog.request_without_url": 18,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=https://127.0.0.1:18726",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "https-relay-http",
+    "route_log": "ProxyLink { server: \"https://127.0.0.1:18722\", authenticated: true }",
+    "notice": "",
+    "failure": "",
+    "status": "no session"
+  },
+  {
+    "name": "https-relay-https",
+    "route_log": "ProxyLink { server: \"https://127.0.0.1:18722\", authenticated: true }",
+    "notice": "",
+    "failure": "",
+    "status": "no session"
+  },
+  {
+    "name": "none-http",
+    "route_log": "none",
+    "notice": "notice: Session captured and imported: 4627 CDP+NetLog event(s) used, 6 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": null,
+    "http3_note": false,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 1,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 0,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "none-https",
+    "route_log": "none",
+    "notice": "notice: Session captured and imported: 5475 CDP+NetLog event(s) used, 6 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": null,
+    "http3_note": false,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 1,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 0,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "socks-open-http",
+    "route_log": "ProxyLink { server: \"socks5://127.0.0.1:18724\", authenticated: false }",
+    "notice": "notice: Session captured and imported: 2848 CDP+NetLog event(s) used, 8 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "socks5",
+      "host": "127.0.0.1",
+      "port": 18724,
+      "authenticated": false,
+      "route": "direct"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 2,
+      "cdp.response_extra_without_request": 2,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=socks5://127.0.0.1:18724",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "socks-open-https",
+    "route_log": "ProxyLink { server: \"socks5://127.0.0.1:18724\", authenticated: false }",
+    "notice": "notice: Session captured and imported: 3185 CDP+NetLog event(s) used, 6 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "socks5",
+      "host": "127.0.0.1",
+      "port": 18724,
+      "authenticated": false,
+      "route": "direct"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=socks5://127.0.0.1:18724",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "socks-relay-http",
+    "route_log": "ProxyLink { server: \"socks5://127.0.0.1:18723\", authenticated: true }",
+    "notice": "notice: Session captured and imported: 2896 CDP+NetLog event(s) used, 6 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "socks5",
+      "host": "127.0.0.1",
+      "port": 18723,
+      "authenticated": true,
+      "route": "relay"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "unknown": 1,
+      "h1": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=socks5://127.0.0.1:58054",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  },
+  {
+    "name": "socks-relay-https",
+    "route_log": "ProxyLink { server: \"socks5://127.0.0.1:18723\", authenticated: true }",
+    "notice": "notice: Session captured and imported: 3052 CDP+NetLog event(s) used, 6 warning(s).",
+    "failure": "",
+    "status": "imported",
+    "proxy": {
+      "scheme": "socks5",
+      "host": "127.0.0.1",
+      "port": 18723,
+      "authenticated": true,
+      "route": "relay"
+    },
+    "http3_note": true,
+    "requests": 10,
+    "protocols": {
+      "h1": 10
+    },
+    "attempts": 10,
+    "attempt_states": {
+      "-": 10
+    },
+    "requests_with_netlog": 9,
+    "requests_with_cdp": 10,
+    "connections": 2,
+    "connections_with_ip_or_port": 0,
+    "connection_protocols": {
+      "h1": 1,
+      "unknown": 1
+    },
+    "connection_note": 2,
+    "warning_codes": {
+      "cdp.extra_info_without_request": 1,
+      "cdp.response_extra_without_request": 1,
+      "cdp.unhandled_events": 1,
+      "netlog.time_unit_detected": 1,
+      "correlate.netlog_unmatched": 1,
+      "correlate.unmatched": 1
+    },
+    "chrome_proxy_args": [
+      "--proxy-server=socks5://127.0.0.1:62660",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--proxy-bypass-list=<-loopback>"
+    ],
+    "secret_hits": {
+      "password": [],
+      "base64": []
+    }
+  }
+]

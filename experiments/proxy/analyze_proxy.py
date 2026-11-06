@@ -44,15 +44,25 @@ def wire_full(records: list[dict]) -> dict[str, list[tuple]]:
 
 
 def netlog_hosts(path: pathlib.Path) -> set[str]:
+    """host:port of every URL that Chrome itself put in a request event (params.url).
+    Matching the raw text would also pick up URLs inside response headers (report-to,
+    report-uri), which are not connections."""
     if not path.exists():
         return set()
-    text = path.read_text(errors="replace")
+    data = json.loads(path.read_text(errors="replace"))
     hosts = set()
-    for m in re.finditer(r'"url"\s*:\s*"(https?|wss?)://([^"/\s]+)', text):
-        host = m.group(2)
-        if "@" in host:
+    for e in data.get("events", []):
+        params = e.get("params")
+        url = params.get("url") if isinstance(params, dict) else None
+        if not isinstance(url, str):
             continue
-        hosts.add(host if ":" in host.split("]")[-1] else host + (":443" if m.group(1) in ("https", "wss") else ":80"))
+        m = re.match(r"(https?|wss?)://([^/\s]+)", url)
+        if not m or "@" in m.group(2):
+            continue
+        host = m.group(2)
+        if ":" not in host.split("]")[-1]:
+            host += ":443" if m.group(1) in ("https", "wss") else ":80"
+        hosts.add(host)
     return hosts
 
 

@@ -124,6 +124,15 @@ def run_variant(name: str, out: pathlib.Path) -> dict:
                            "--log", str(proxy_log), "--upstream-kind", rkind,
                            "--upstream", upstream or "", "--map", json.dumps(RESOLVE)], env=env)
             procs.append(relay); wait_ready(relay)
+        if spec["chrome_proxy"] and os.environ.get("PROXY_PREFS", "1") == "1":
+            # Preferences of the dedicated profile (not system policy): secure DNS off,
+            # WebRTC kept behind the proxy.
+            (profile / "Local State").write_text(json.dumps({"dns_over_https": {"mode": "off"}}))
+            (profile / "Default").mkdir(exist_ok=True)
+            (profile / "Default" / "Preferences").write_text(json.dumps({"webrtc": {
+                "ip_handling_policy": "disable_non_proxied_udp",
+                "multiple_routes_enabled": False,
+                "nonproxied_udp_enabled": False}}))
         chrome_args += [a for a in os.environ.get("EXTRA_CHROME_ARGS", "").split() if a]
         if spec["chrome_proxy"]:
             chrome_args.append(f"--proxy-server={spec['chrome_proxy']}")

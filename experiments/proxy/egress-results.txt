@@ -1,0 +1,102 @@
+# Egress counters (Docker, Chrome 157 linux/amd64). Packets are the counters of the rule shown; 'DROP ... dpt:53' etc. are the drops by category.
+# Source: egress-4 (prefs, bare, noproxy, webrtc), egress-5 (socks), egress-6 (rules-direct). The egress-4 socks and rules cases were superseded (port and quoting bugs in the script).
+## egress-4/prefs-https.txt chrome exit: 0 dom bytes: 257 
+--- OUTPUT counters (packets that tried to leave by another route are in the DROP row)
+ 0 0 ACCEPT 0 -- * lo 0.0.0.0/0 0.0.0.0/0 
+ 129 42769 ACCEPT 0 -- * * 0.0.0.0/0 0.0.0.0/0 ctstate RELATED,ESTABLISHED
+ 14 840 ACCEPT 6 -- * * 0.0.0.0/0 0.250.250.254 tcp dpt:18725
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:53
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:53
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:5353
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:443
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 0 -- * * 0.0.0.0/0 0.0.0.0/0 
+## egress-4/bare-https.txt chrome exit: 0 dom bytes: 257 
+--- OUTPUT counters (packets that tried to leave by another route are in the DROP row)
+ 0 0 ACCEPT 0 -- * lo 0.0.0.0/0 0.0.0.0/0 
+ 122 39740 ACCEPT 0 -- * * 0.0.0.0/0 0.0.0.0/0 ctstate RELATED,ESTABLISHED
+ 13 780 ACCEPT 6 -- * * 0.0.0.0/0 0.250.250.254 tcp dpt:18725
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:53
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:53
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:5353
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:443
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 0 -- * * 0.0.0.0/0 0.0.0.0/0 
+## egress-4/noproxy-control.txt chrome exit: 124 dom bytes: 0 
+--- OUTPUT counters (packets that tried to leave by another route are in the DROP row)
+ 0 0 ACCEPT 0 -- * lo 0.0.0.0/0 0.0.0.0/0 
+ 0 0 ACCEPT 0 -- * * 0.0.0.0/0 0.0.0.0/0 ctstate RELATED,ESTABLISHED
+ 0 0 ACCEPT 6 -- * * 0.0.0.0/0 0.250.250.254 tcp dpt:18725
+ 180 11406 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:53
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:53
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:5353
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:443
+ 33 1980 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 0 -- * * 0.0.0.0/0 0.0.0.0/0 
+## egress-4/prefs-webrtc-stun.txt chrome exit: 0 dom bytes: 485 
+--- OUTPUT counters (packets that tried to leave by another route are in the DROP row)
+ 0 0 ACCEPT 0 -- * lo 0.0.0.0/0 0.0.0.0/0 
+ 77 21015 ACCEPT 0 -- * * 0.0.0.0/0 0.0.0.0/0 ctstate RELATED,ESTABLISHED
+ 9 540 ACCEPT 6 -- * * 0.0.0.0/0 0.250.250.254 tcp dpt:18725
+ 0 0 ACCEPT 17 -- * * 0.0.0.0/0 0.250.250.254 udp dpt:3478
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:53
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:53
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:5353
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:443
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 2 80 DROP 0 -- * * 0.0.0.0/0 0.0.0.0/0 
+## egress-4/bare-webrtc-stun.txt chrome exit: 0 dom bytes: 485 
+--- OUTPUT counters (packets that tried to leave by another route are in the DROP row)
+ 0 0 ACCEPT 0 -- * lo 0.0.0.0/0 0.0.0.0/0 
+ 75 20759 ACCEPT 0 -- * * 0.0.0.0/0 0.0.0.0/0 ctstate RELATED,ESTABLISHED
+ 9 540 ACCEPT 6 -- * * 0.0.0.0/0 0.250.250.254 tcp dpt:18725
+ 1 48 ACCEPT 17 -- * * 0.0.0.0/0 0.250.250.254 udp dpt:3478
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:53
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:53
+ 1 157 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:5353
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:443
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 2 80 DROP 0 -- * * 0.0.0.0/0 0.0.0.0/0 
+## egress-5/socks-bare-https.txt chrome exit: 0 dom bytes: 257 
+--- OUTPUT counters (packets that tried to leave by another route are in the DROP row)
+ 0 0 ACCEPT 0 -- * lo 0.0.0.0/0 0.0.0.0/0 
+ 150 41716 ACCEPT 0 -- * * 0.0.0.0/0 0.0.0.0/0 ctstate RELATED,ESTABLISHED
+ 14 840 ACCEPT 6 -- * * 0.0.0.0/0 0.250.250.254 tcp dpt:18724
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:53
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:53
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:5353
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:443
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 0 -- * * 0.0.0.0/0 0.0.0.0/0 
+## egress-5/socks-prefs-https.txt chrome exit: 0 dom bytes: 257 
+--- OUTPUT counters (packets that tried to leave by another route are in the DROP row)
+ 0 0 ACCEPT 0 -- * lo 0.0.0.0/0 0.0.0.0/0 
+ 141 38240 ACCEPT 0 -- * * 0.0.0.0/0 0.0.0.0/0 ctstate RELATED,ESTABLISHED
+ 13 780 ACCEPT 6 -- * * 0.0.0.0/0 0.250.250.254 tcp dpt:18724
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:53
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:53
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:5353
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:443
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 0 -- * * 0.0.0.0/0 0.0.0.0/0 
+## egress-6/rules-direct-http.txt chrome exit: 0 dom bytes: 255 
+--- OUTPUT counters (packets that tried to leave by another route are in the DROP row)
+ 0 0 ACCEPT 0 -- * lo 0.0.0.0/0 0.0.0.0/0 
+ 95 22529 ACCEPT 0 -- * * 0.0.0.0/0 0.0.0.0/0 ctstate RELATED,ESTABLISHED
+ 14 840 ACCEPT 6 -- * * 0.0.0.0/0 0.250.250.254 tcp dpt:18725
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:53
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:53
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 udp dpt:5353
+ 0 0 DROP 17 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 tcp dpt:443
+ 0 0 DROP 6 -- * * 0.0.0.0/0 0.0.0.0/0 
+ 0 0 DROP 0 -- * * 0.0.0.0/0 0.0.0.0/0 
+## stun-probe (bare-webrtc-stun run):        1 datagram(s)
+{"t": 1793941555.22401, "src": "127.0.0.1", "len": 20, "head": "00010000"}

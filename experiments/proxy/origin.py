@@ -10,20 +10,39 @@ from __future__ import annotations
 import argparse
 import json
 import socketserver
+import ssl
 import threading
 
-PAGE = b"""<!doctype html><html><head><title>proxy-exp</title></head><body>
-<iframe src="http://site-b.test:18701/frame"></iframe>
+CROSS = "http://site-b.test:18701"  # set by --cross-origin (real imports use 127.0.0.1)
+
+
+def page() -> bytes:
+    return (f"""<!doctype html><html><head><title>proxy-exp</title></head><body>
+<iframe src="{CROSS}/frame"></iframe>
 <script>
   fetch('/echo?from=page');
   new Worker('/worker.js');
-  window.open('http://site-b.test:18701/popup');
-</script></body></html>"""
+  window.open('{CROSS}/popup');
+</script></body></html>""").encode()
 FRAME = b"<!doctype html><html><body><script>fetch('/echo?from=frame');</script></body></html>"
 POPUP = b"<!doctype html><html><body>popup</body></html>"
 WORKER = b"fetch('/echo?from=worker');"
 WEBRTC = b"""<!doctype html><html><body><script>
 const pc = new RTCPeerConnection({iceServers: []});
+const cands = [];
+pc.createDataChannel('x');
+pc.onicecandidate = (e) => {
+  if (e.candidate) cands.push(e.candidate.candidate);
+  else fetch('/report', {method: 'POST', body: JSON.stringify({cands})});
+};
+pc.createOffer().then((o) => pc.setLocalDescription(o));
+</script></body></html>"""
+
+# Same page with a STUN server taken from ?stun=host:port (the egress test uses a UDP
+# probe outside loopback).
+WEBRTC_STUN = b"""<!doctype html><html><body><script>
+const stun = new URLSearchParams(location.search).get('stun');
+const pc = new RTCPeerConnection({iceServers: stun ? [{urls: 'stun:' + stun}] : []});
 const cands = [];
 pc.createDataChannel('x');
 pc.onicecandidate = (e) => {
@@ -65,7 +84,7 @@ class Handler(socketserver.StreamRequestHandler):
                                 "body": body.decode("latin-1")}) + "\n")
         path = target.split("?", 1)[0]
         if path in ("/", "/page"):
-            status, ctype, out = "200 OK", "text/html", PAGE
+            status, ctype, out = "200 OK", "text/html", page()
         elif path == "/frame":
             status, ctype, out = "200 OK", "text/html", FRAME
         elif path == "/popup":
@@ -74,6 +93,8 @@ class Handler(socketserver.StreamRequestHandler):
             status, ctype, out = "200 OK", "text/javascript", WORKER
         elif path == "/webrtc":
             status, ctype, out = "200 OK", "text/html", WEBRTC
+        elif path == "/webrtc-stun":
+            status, ctype, out = "200 OK", "text/html", WEBRTC_STUN
         elif path == "/setcookie":
             extra = b"Set-Cookie: a=1; Path=/\r\nSet-Cookie: b=2; Path=/\r\nSet-Cookie: a=3; Path=/\r\n"
             self._send("200 OK", "text/plain", b"ok", extra)
@@ -94,6 +115,13 @@ class Handler(socketserver.StreamRequestHandler):
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    tls_context = None
+
+    def get_request(self):
+        sock, addr = super().get_request()
+        if self.tls_context is not None:
+            sock = self.tls_context.wrap_socket(sock, server_side=True)
+        return sock, addr
 
 
 def main() -> None:
@@ -101,8 +129,17 @@ def main() -> None:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=18701)
     ap.add_argument("--log", required=True)
+    ap.add_argument("--cross-origin", default="http://site-b.test:18701")
+    ap.add_argument("--tls-cert", help="serve HTTPS with this certificate (and --tls-key)")
+    ap.add_argument("--tls-key")
     args = ap.parse_args()
+    global CROSS
+    CROSS = args.cross_origin
     srv = Server((args.host, args.port), Handler)
+    if args.tls_cert:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(args.tls_cert, args.tls_key)
+        srv.tls_context = ctx
     srv.log_path = args.log
     print(f"READY {args.port}", flush=True)
     srv.serve_forever()

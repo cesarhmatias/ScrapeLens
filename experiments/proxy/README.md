@@ -50,15 +50,14 @@ Chrome runs with a temporary profile inside `<dir>` and is stopped by the script
 
 ### Not confirmed (decisions needed)
 
-1. **Chrome's own traffic bypasses the proxy.** `dns.google:443` (secure-DNS requests) and
-   `csp.withgoogle.com:443` go direct in every proxied variant. The DoH queries decoded
-   only `www.gstatic.com`; the synthetic target names never went to DoH. Neither
-   `--disable-async-dns` nor `--dns-over-https-mode=off` with `--disable-features=DnsOverHttps`
-   stopped it. A managed Chrome policy is probably needed (not tried).
-2. **WebRTC.** `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` did not remove
-   the host candidates in any variant. The candidates are mDNS names (`*.local`), so no raw
-   IP is in the SDP, and no server-reflexive candidate was gathered (no ICE servers). The
-   UDP socket still exists, so "does not bypass the proxy" is unproven.
+1. **Chrome's own traffic (corrected).** Secure DNS (`dns.google:443`) left directly in the
+   first run. `csp.withgoogle.com` was a false positive of the host extraction (it appeared
+   only inside `report-to` response headers); the extraction now reads `params.url` only.
+   The dedicated profile's `Local State` `dns_over_https.mode = "off"` removes the
+   `dns.google` requests (see the prefs run below).
+2. **WebRTC (resolved by the profile preferences, see below).** The flag alone did not remove
+   the host candidates (mDNS names only). With the profile preferences the candidate list
+   is empty.
 3. **Not tested:** h2 over the tunnel (the origin is HTTP/1.1 only), HTTP/3 (expected
    absent through a proxy: the contract's session note covers it), CDP multi-session
    pairing for iframes/workers (`cdp_capture.mjs` attaches to the page only; coverage here
@@ -76,3 +75,68 @@ iframe, worker, popup), the session carries `capture.proxy` with `authenticated:
 
 The upstream logs `error ConnectionError` twice: those are the two preflight connections
 (the browser start and the capture each check that the proxy is reachable), closed at once.
+
+## Follow-up (leader decisions): profile preferences, egress proof, real imports
+
+Preferences in the dedicated profile only (no system policy): `Local State`
+`dns_over_https.mode = "off"`; `Default/Preferences` `webrtc.ip_handling_policy =
+"disable_non_proxied_udp"`, `webrtc.multiple_routes_enabled = false`,
+`webrtc.nonproxied_udp_enabled = false`. The capture writes them into its temporary profile
+when a proxy is set (`write_proxy_profile_prefs`).
+
+### Egress proof (Docker, Chrome 157 linux/amd64, packet counters)
+
+`docker/egress_check.sh` runs Chrome in a container whose OUTPUT chain drops everything
+except the proxy (and UDP to a probe on the host, outside loopback, in the WebRTC cases).
+The counters of the drop rules show what tried to leave by another route. Each case is
+one headless `--dump-dom` of a synthetic page.
+
+| case | route | what it proves | packets leaving other than the proxy | UDP to the STUN probe |
+|---|---|---|---|---|
+| `prefs-https` | HTTP proxy, prefs + WebRTC flag | HTTPS target | 0 | — |
+| `bare-https` | HTTP proxy, no prefs | control | 0 | — |
+| `socks-prefs-https` | SOCKS5 proxy, prefs | HTTPS target | 0 | — |
+| `socks-bare-https` | SOCKS5 proxy, no prefs | control | 0 | — |
+| `rules-direct-http` | HTTP proxy direct + fail-closed rule | plain HTTP target, loopback and proxy excluded | 0 | — |
+| `prefs-webrtc-stun` | HTTP proxy, prefs + flag | WebRTC with a STUN server outside loopback, UDP allowed by the firewall | 0 | 0 |
+| `bare-webrtc-stun` | HTTP proxy, no prefs | the same page, control | 1 (mDNS multicast) | **1 STUN binding request left directly** (48 bytes) |
+| `noproxy-control` | no proxy | the observer works: a direct page to another host | 180 UDP/53 + 33 TCP | — |
+
+The probe source appears as 127.0.0.1 because of Docker Desktop's NAT, so the packet is
+evidence of an outgoing UDP datagram to the STUN address, not of the source IP.
+`bare-https` and `socks-bare-https` show no DoH in the container; the DoH leak was
+seen on macOS with SOCKS5 and default preferences (run `prefs1`, `dns.google` requests
+in the NetLog) and removed by the preference. Known limit: the container runs Chrome 157
+under emulation; the macOS runs use Chrome 156.
+
+### Real captures through the App path, imported by the current core
+
+`real_matrix.sh` runs `capture/examples/proxy_import.rs` (the common `run()` path,
+`ignore_cert` for the synthetic TLS origin) on 14 routes: none; SOCKS5 and HTTP proxies
+without and with credentials (the relay); HTTPS proxy without credentials (direct); HTTPS
+proxy with credentials (refused). `analyze_real.py` reads `session.json`.
+
+| route | target | route in session | auth | requests / attempts | protocol | connections with ip/port | HTTP/3 note |
+|---|---|---|---|---|---|---|---|
+| none | http / https | — | — | 10 / 10 | h1 | 1 of 2 (direct: kept) | no |
+| socks5 open | http / https | direct | no | 10 / 10 | h1 | 0 of 2 | yes |
+| socks5 + creds | http / https | relay | yes | 10 / 10 | h1 | 0 of 2 | yes |
+| http open | http / https | direct | no | 10 / 10 | h1 | 0 of 2 | yes |
+| http + creds | http / https | relay | yes | 10 / 10 | h1 | 0 of 2 | yes |
+| https open | http / https | direct | no | 10 / 10 | h1 | 0 of 2 | yes |
+| https + creds | http / https | refused at start | yes | — | — | — | — (message: "an https:// proxy cannot be used with credentials or an allowlist yet…"; exit 3; the password does not appear) |
+
+All sessions: `networkState` absent (every request was sent), 9 of 10 requests paired with
+NetLog in every route (the same as direct), no `secret` in any file of any capture.
+Divergences from the contract (for core):
+- **Protocol.** The proxied HTTPS requests report `h1`, from CDP ("structure from CDP;
+  checked by information only"). The contract says the protocol inside a tunnel is
+  `unknown` unless the NetLog shows it. The NetLog here does not show the protocol inside the tunnel.
+- **`netlog.request_without_url`.** The HTTP proxy direct route (absolute-URI requests)
+  gives 10 warnings per capture: "URL_REQUEST … has no URL in URL_REQUEST_START_JOB; not
+  imported". The requests still come from CDP.
+
+### Fixtures
+
+The synthetic fixtures of core (`core/tests/fixtures/netlog-proxy.json`) were not compared
+line by line; the real captures above are the reference for the divergences listed.
