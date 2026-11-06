@@ -49,11 +49,70 @@ fn set_mode(_path: &Path, _mode: u32) -> Result<()> {
 }
 
 /// Creates (if needed) the session directory with permission 0700.
+///
+/// The destination is never followed through a symlink and must belong to the
+/// current effective user; a file, a symlink or a foreign-owned directory is
+/// refused before any chmod. A missing chain is created with mode 0700 from the
+/// start, so a restrictive umask is not needed.
 pub fn ensure_private_dir(path: &Path) -> Result<()> {
-    if !path.exists() {
-        fs::create_dir_all(path).map_err(|error| CoreError::io(path, error))?;
+    #[cfg(unix)]
+    {
+        match fs::symlink_metadata(path) {
+            Ok(meta) => check_private_dir(path, &meta)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                use std::os::unix::fs::DirBuilderExt;
+                let mut builder = fs::DirBuilder::new();
+                builder.recursive(true).mode(0o700);
+                builder
+                    .create(path)
+                    .map_err(|error| CoreError::io(path, error))?;
+                let meta = fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
+                check_private_dir(path, &meta)?;
+            }
+            Err(error) => return Err(CoreError::io(path, error)),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if !path.exists() {
+            fs::create_dir_all(path).map_err(|error| CoreError::io(path, error))?;
+        }
     }
     set_mode(path, 0o700)
+}
+
+#[cfg(unix)]
+fn effective_uid() -> u32 {
+    rustix::process::geteuid().as_raw()
+}
+
+#[cfg(unix)]
+fn check_private_dir(path: &Path, meta: &fs::Metadata) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    if meta.file_type().is_symlink() {
+        return Err(CoreError::LimitExceeded {
+            message: format!("{} is a symbolic link; refused", path.display()),
+        });
+    }
+    if !meta.is_dir() {
+        return Err(CoreError::LimitExceeded {
+            message: format!("{} exists and is not a directory; refused", path.display()),
+        });
+    }
+    check_private_owner(path, meta.uid(), effective_uid())
+}
+
+#[cfg(unix)]
+fn check_private_owner(path: &Path, owner: u32, expected: u32) -> Result<()> {
+    if owner == expected {
+        return Ok(());
+    }
+    Err(CoreError::LimitExceeded {
+        message: format!(
+            "{} is owned by uid {owner}, not {expected}; refused",
+            path.display()
+        ),
+    })
 }
 
 /// Refuses a symlink (and anything that is not a regular file) at the destination.
@@ -398,6 +457,58 @@ mod tests {
         }
         assert!(validate_attachment_name("req-1.request.bin").is_ok());
         assert!(validate_attachment_name("a b.bin").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_private_dir_creates_nested_0700_and_refuses_a_symlink() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("a").join("session");
+        ensure_private_dir(&dir).unwrap();
+        assert_eq!(
+            fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let link = root.path().join("link");
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        let error = ensure_private_dir(&link).unwrap_err();
+        assert!(
+            error.to_string().contains("symbolic link"),
+            "{error}"
+        );
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+
+        let file = root.path().join("file");
+        fs::write(&file, b"x").unwrap();
+        let error = ensure_private_dir(&file).unwrap_err();
+        assert!(error.to_string().contains("not a directory"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_private_dir_fixes_permissions_and_refuses_a_foreign_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("session");
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        ensure_private_dir(&dir).unwrap();
+        assert_eq!(
+            fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        // The owner check is exercised with the real metadata and a different
+        // expected uid: no chmod of a foreign directory is attempted.
+        use std::os::unix::fs::MetadataExt;
+        let meta = fs::symlink_metadata(&dir).unwrap();
+        let error = check_private_owner(&dir, meta.uid(), meta.uid().wrapping_add(1)).unwrap_err();
+        assert!(error.to_string().contains("owned by uid"), "{error}");
     }
 
     #[cfg(unix)]
