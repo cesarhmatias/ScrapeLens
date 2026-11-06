@@ -1105,6 +1105,54 @@ pub(super) const PT_PII_WORDS: &[&str] = &[
     "matriculas",
 ];
 
+/// Portuguese signature names, a credential/PII on its own. Shared with the
+/// plan-label exclusion below so `assinaturaPlano` is not a person's signature.
+pub(super) const PT_SIGNATURE_WORDS: &[&str] = &["assinatura", "assinaturas"];
+
+/// Qualifiers that turn `assinatura` into a subscription label rather than a
+/// signature (`assinaturaPlano`, `assinaturaMensal`). Whole-segment rule, like
+/// `nome_arquivo`: the segment is real, but the field is not personal data.
+const ASSINATURA_TECHNICAL_WORDS: &[&str] = &[
+    "plano",
+    "planos",
+    "plan",
+    "plans",
+    "mensal",
+    "mensalidade",
+    "mensalidades",
+    "anual",
+    "anualidade",
+    "trimestral",
+    "semestral",
+    "subscription",
+    "subscriptions",
+    "assinante",
+    "assinantes",
+    "renovacao",
+    "renovacoes",
+    "tipo",
+    "tipos",
+    "status",
+    "valor",
+    "valores",
+    "preco",
+    "precos",
+    "pagamento",
+    "pagamentos",
+    "fatura",
+    "faturas",
+    "cobranca",
+    "cobrancas",
+    "nivel",
+    "niveis",
+    "pacote",
+    "pacotes",
+    "produto",
+    "produtos",
+    "servico",
+    "servicos",
+];
+
 /// Segments that make `nome` a file/field/protocol label instead of a person.
 const NOME_TECHNICAL_WORDS: &[&str] = &[
     "arquivo", "arquivos", "file", "filename", "campo", "campos", "aba", "abas", "tela", "telas",
@@ -1214,6 +1262,18 @@ fn pt_pii_in(words: &[String]) -> bool {
     true
 }
 
+fn pt_signature_in(words: &[String]) -> bool {
+    if !words
+        .iter()
+        .any(|word| PT_SIGNATURE_WORDS.contains(&word.as_str()))
+    {
+        return false;
+    }
+    !words
+        .iter()
+        .any(|word| ASSINATURA_TECHNICAL_WORDS.contains(&word.as_str()))
+}
+
 /// `codigo_acesso` / `codigoDeAcesso`: adjacent segments, so `codigo_acessorio`
 /// and a plain product `codigo` stay visible.
 fn pt_access_code_in(words: &[String]) -> bool {
@@ -1283,6 +1343,7 @@ pub fn is_sensitive_header(name: &str) -> bool {
         && (has_secret_word(&compact)
             || pt_credential_in(&words)
             || pt_pii_in(&words)
+            || pt_signature_in(&words)
             || short_word_in(&words)
             || compact.contains("jwt")
             || compact.contains("session")
@@ -1386,6 +1447,7 @@ pub(super) fn is_sensitive_key(name: &str) -> bool {
         || compact.ends_with("secretkey")
         || pt_credential_in(&words)
         || pt_pii_in(&words)
+        || pt_signature_in(&words)
         || short_word_in(&words)
         || pt_access_code_in(&words)
 }
@@ -2771,6 +2833,10 @@ mod tests {
             "matricula",
             "codigo_acesso",
             "codigoDeAcesso",
+            "assinatura",
+            "assinaturas",
+            "assinaturaDigital",
+            "assinaturaEletronica",
         ] {
             assert!(is_sensitive_key(name), "{name} must be sensitive");
         }
@@ -2789,6 +2855,10 @@ mod tests {
             "codigo",
             "codigo_produto",
             "codigo_acessorio",
+            "assinaturaPlano",
+            "assinatura_plano",
+            "planoAssinatura",
+            "assinaturaMensal",
             "page",
             "monkey",
         ] {
@@ -2807,6 +2877,9 @@ mod tests {
             "X-Rg",
             "X-Codigo-Acesso",
             "X-Tel",
+            "X-Assinatura",
+            "XAssinatura",
+            "X-Assinatura-Digital",
         ] {
             assert!(is_sensitive_header(header), "{header} must be sensitive");
         }
@@ -2815,6 +2888,8 @@ mod tests {
             "X-Forwarded-For",
             "X-Cargo",
             "X-Org",
+            "X-Assinatura-Plano",
+            "X-Assinatura-Mensal",
             "Author",
             "Origin",
             ":authority",
@@ -2832,7 +2907,7 @@ mod tests {
         ));
         let mut url_request = LogicalRequest::new(
             "r-url",
-            "https://demo.invalid/x?chave=ZZCHAVE&sessao=ZZSESSAO&nome=ZZNOME&page=2",
+            "https://demo.invalid/x?chave=ZZCHAVE&sessao=ZZSESSAO&nome=ZZNOME&assinatura=ZZASSINA&page=2",
             "GET",
         );
         url_request
@@ -2862,7 +2937,7 @@ mod tests {
         );
         bundle.insert_attachment(
             "json.bin",
-            br#"{"segredo":"ZZJSON","credencial":"ZZCRED","nome":"ZZJSONNOME","nome_arquivo":"page.html","codigo_acesso":"ZZCOD","page":2}"#.to_vec(),
+            br#"{"segredo":"ZZJSON","credencial":"ZZCRED","nome":"ZZJSONNOME","nome_arquivo":"page.html","assinatura":"ZZJSONASSINA","assinaturaPlano":"premium","codigo_acesso":"ZZCOD","page":2}"#.to_vec(),
         );
         let original = serde_json::to_string(&bundle.session).unwrap();
         assert!(original.contains("ZZCHAVE"), "full session must keep the value");
@@ -2896,12 +2971,17 @@ mod tests {
         for secret in [
             "ZZCHAVE", "ZZSESSAO", "ZZNOME", "ZZHDRCHAVE", "ZZHDRAUTH", "ZZHDRNOME", "ZZCOOKIE",
             "ZZFORM", "ZZFORMNOME", "ZZFORMCOD", "ZZJSON", "ZZCRED", "ZZJSONNOME", "ZZCOD",
+            "ZZASSINA", "ZZJSONASSINA",
         ] {
             assert!(!all.contains(secret), "{secret} leaked in {all}");
         }
         assert!(session_json.contains("page=2"));
         assert_eq!(json["page"], 2);
         assert_eq!(json["nome_arquivo"], "page.html", "a technical nome label is not PII");
+        assert_eq!(
+            json["assinaturaPlano"], "premium",
+            "a subscription plan label is not a signature"
+        );
         let form_text = String::from_utf8_lossy(form);
         assert_eq!(
             form_text,
@@ -2910,11 +2990,17 @@ mod tests {
         assert_eq!(json["segredo"], "[REDACTED]");
         assert_eq!(json["credencial"], "[REDACTED]");
         assert_eq!(json["nome"], "[REDACTED]");
+        assert_eq!(json["assinatura"], "[REDACTED]");
         assert_eq!(json["codigo_acesso"], "[REDACTED]");
         let sanitized_url = &export.bundle.session.requests[0];
         assert!(sanitized_url.url.contains("chave=%5BREDACTED%5D"), "{}", sanitized_url.url);
         assert!(sanitized_url.url.contains("sessao=%5BREDACTED%5D"), "{}", sanitized_url.url);
         assert!(sanitized_url.url.contains("nome=%5BREDACTED%5D"), "{}", sanitized_url.url);
+        assert!(
+            sanitized_url.url.contains("assinatura=%5BREDACTED%5D"),
+            "{}",
+            sanitized_url.url
+        );
         assert_eq!(
             sanitized_url.request_headers.first_value("x-chave-api"),
             Some("[REDACTED]")
