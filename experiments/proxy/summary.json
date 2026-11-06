@@ -1,0 +1,98 @@
+{
+  "direct": {
+    "origin_requests": 12,
+    "wire_identical_to_direct": true,
+    "wire_diff_request_lines": [],
+    "netlog_hosts": 10,
+    "proxy_ok_connects": 0,
+    "netlog_hosts_not_seen_by_proxy": [],
+    "webrtc_candidates": {
+      "host": 2
+    },
+    "site_hosts_via_proxy": []
+  },
+  "socks-open": {
+    "origin_requests": 12,
+    "wire_identical_to_direct": true,
+    "wire_diff_request_lines": [],
+    "netlog_hosts": 10,
+    "proxy_ok_connects": 8,
+    "netlog_hosts_not_seen_by_proxy": [
+      "csp.withgoogle.com:443",
+      "dns.google:443"
+    ],
+    "webrtc_candidates": {
+      "host": 2
+    },
+    "site_hosts_via_proxy": [
+      "site-a.test:18701",
+      "site-b.test:18701"
+    ]
+  },
+  "relay-open": {
+    "origin_requests": 12,
+    "wire_identical_to_direct": true,
+    "wire_diff_request_lines": [],
+    "netlog_hosts": 10,
+    "proxy_ok_connects": 8,
+    "netlog_hosts_not_seen_by_proxy": [
+      "csp.withgoogle.com:443",
+      "dns.google:443"
+    ],
+    "webrtc_candidates": {
+      "host": 2
+    },
+    "site_hosts_via_proxy": [
+      "site-a.test:18701",
+      "site-b.test:18701"
+    ]
+  },
+  "relay-socks-auth": {
+    "origin_requests": 12,
+    "wire_identical_to_direct": true,
+    "wire_diff_request_lines": [],
+    "netlog_hosts": 10,
+    "proxy_ok_connects": 8,
+    "netlog_hosts_not_seen_by_proxy": [
+      "csp.withgoogle.com:443",
+      "dns.google:443"
+    ],
+    "webrtc_candidates": {
+      "host": 2
+    },
+    "site_hosts_via_proxy": [
+      "site-a.test:18701",
+      "site-b.test:18701"
+    ]
+  },
+  "relay-http-auth": {
+    "origin_requests": 12,
+    "wire_identical_to_direct": true,
+    "wire_diff_request_lines": [],
+    "netlog_hosts": 10,
+    "proxy_ok_connects": 8,
+    "netlog_hosts_not_seen_by_proxy": [
+      "csp.withgoogle.com:443",
+      "dns.google:443"
+    ],
+    "webrtc_candidates": {
+      "host": 2
+    },
+    "site_hosts_via_proxy": [
+      "site-a.test:18701",
+      "site-b.test:18701"
+    ]
+  },
+  "secret_hits": {
+    "direct:password": 0,
+    "direct:base64_user_pass": 0,
+    "socks-open:password": 0,
+    "socks-open:base64_user_pass": 0,
+    "relay-open:password": 0,
+    "relay-open:base64_user_pass": 0,
+    "relay-socks-auth:password": 0,
+    "relay-socks-auth:base64_user_pass": 0,
+    "relay-http-auth:password": 0,
+    "relay-http-auth:base64_user_pass": 0
+  }
+}
