@@ -1506,7 +1506,7 @@ kbd {
 .proxy-error { color: var(--err); }
 .proxy-header { margin-top: 2px; line-height: 1.5; }
 .proxy-header .tag { font-size: 9.5px; }
-.proxy-header-note { color: var(--fg-muted); font-family: inherit; }
+.proxy-header-note { display: block; margin-top: 2px; color: var(--fg-muted); font-family: inherit; }
 
 .export-sensitive-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-bottom: 12px; }
 .export-sensitive-option input { margin-top: 3px; flex-shrink: 0; }

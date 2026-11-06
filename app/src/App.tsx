@@ -2461,7 +2461,7 @@ export default function App() {
                       <span className="mono">{proxy.address}</span>
                       {proxy.authenticated ? " · authenticated (password not recorded)" : " · no credentials"}
                       {" · "}{proxy.routeText}
-                      <span className="proxy-header-note"> {proxy.http3Note}</span>
+                      <span className="proxy-header-note" data-testid="session-proxy-note">{proxy.http3Note}</span>
                     </div>
                   );
                 })()}

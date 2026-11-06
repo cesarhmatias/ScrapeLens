@@ -59,6 +59,9 @@ assert.equal(full.address, "socks5://10.0.0.5:1080");
 assert.equal(full.authenticated, true);
 assert.match(full.routeText, /local relay/);
 assert.match(full.http3Note, /HTTP\/3 is not used through a proxy/);
+// The route and the note are separate values: the header renders the note on its own line.
+assert.doesNotMatch(full.routeText, /HTTP\/3|not evidence/, "the route text does not carry the note");
+assert.notEqual(full.routeText, full.http3Note);
 
 // Sanitized export: scheme and authentication only.
 const sanitized = proxyHeaderView({ scheme: "http", authenticated: false });
