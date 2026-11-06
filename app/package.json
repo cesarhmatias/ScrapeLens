@@ -1,7 +1,7 @@
 {
   "name": "scrapelens-ui-slice",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "UI slice of ScrapeLens with a synthetic session (demo) — preview before the fidelity gate",
   "type": "module",
   "scripts": {
