@@ -1,7 +1,8 @@
 //! Which programs the App accepts as its Chrome: Google Chrome (stable, Beta, Dev, Canary and
-//! Chrome for Testing), Chromium, Brave, Microsoft Edge and Arc. Anything else is refused: a shell, a launcher script, a directory,
-//! an arbitrary file. The check only reads: the bundle's `Info.plist` (through the system
-//! `plutil`) on macOS, and the file header and name on Linux. It never runs the file.
+//! Chrome for Testing), Chromium, Brave, Microsoft Edge and Arc. Anything else is refused: a
+//! shell, a script in a user folder, a directory, an arbitrary file. The check only reads: the
+//! bundle's `Info.plist` (through the system `plutil`) on macOS, and the file header, name,
+//! owner and mode on Linux. It never runs the file.
 //!
 //! The capture crate's own check (`validate_chrome`) is stricter and stays for the
 //! controlled capture; this check decides what the App may start.
@@ -38,6 +39,45 @@ pub const LINUX_BINARY_NAMES: &[&str] = &[
     "microsoft-edge",
 ];
 
+/// Names of the launcher scripts that packages install (checked after symlinks are resolved).
+/// A launcher is accepted only when it sits in one of `LINUX_LAUNCHER_DIRS`, is owned by root and
+/// is not writable by group or others. The same name in a user folder is refused.
+#[cfg(target_os = "linux")]
+pub const LINUX_LAUNCHER_NAMES: &[&str] = &[
+    "google-chrome",
+    "google-chrome-stable",
+    "google-chrome-beta",
+    "google-chrome-unstable",
+    "chromium",
+    "chromium-browser",
+    "brave-browser",
+    "brave-browser-stable",
+    "brave",
+    "msedge",
+    "microsoft-edge",
+    "microsoft-edge-stable",
+    // Fedora: /usr/bin/chromium-browser -> /usr/lib64/chromium-browser/chromium-browser.sh
+    "chromium-browser.sh",
+];
+
+/// System directories in which a launcher script may sit (the directory of the resolved file).
+#[cfg(target_os = "linux")]
+pub const LINUX_LAUNCHER_DIRS: &[&str] = &[
+    "/usr/bin",
+    "/usr/local/bin",
+    "/usr/lib/chromium",
+    "/usr/lib/chromium-browser",
+    "/usr/lib64/chromium",
+    "/usr/lib64/chromium-browser",
+    "/opt/google/chrome",
+    "/opt/google/chrome-beta",
+    "/opt/google/chrome-unstable",
+    "/opt/brave.com/brave",
+    "/opt/microsoft/msedge",
+    "/snap/bin",
+    "/var/lib/flatpak/exports/bin",
+];
+
 #[cfg(target_os = "linux")]
 const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
 
@@ -59,10 +99,15 @@ pub fn accept(path: &Path) -> Result<PathBuf, String> {
     }
 }
 
+/// The first candidate, in order, that the App accepts. Used when a detected path is refused.
+pub fn first_accepted(candidates: &[String]) -> Option<PathBuf> {
+    candidates.iter().find_map(|candidate| accept(Path::new(candidate)).ok())
+}
+
 #[cfg(target_os = "macos")]
 const MAC_HINT: &str = "Choose Google Chrome.app, Chromium.app, Brave.app, Microsoft Edge.app or Arc.app. Other files, shells and scripts are not accepted.";
 #[cfg(target_os = "linux")]
-const LINUX_HINT: &str = "Choose the browser executable, for example /opt/google/chrome/chrome or /usr/lib/chromium/chromium. Launcher scripts, shells and other programs are not accepted.";
+const LINUX_HINT: &str = "Choose the browser executable, for example /opt/google/chrome/chrome or /usr/lib/chromium/chromium. Launcher scripts in a user folder, shells and other programs are not accepted.";
 
 #[cfg(target_os = "macos")]
 fn accept_mac(path: &Path) -> Result<PathBuf, String> {
@@ -130,30 +175,79 @@ fn plist_text(plist: &Path) -> Result<std::collections::HashMap<String, String>,
     Ok(keys)
 }
 
+/// Owner and permission bits of a file or directory.
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Debug)]
+struct Owned {
+    uid: u32,
+    mode: u32,
+}
+
+#[cfg(target_os = "linux")]
+fn owned(meta: &std::fs::Metadata) -> Owned {
+    use std::os::unix::fs::MetadataExt;
+    Owned { uid: meta.uid(), mode: meta.mode() & 0o7777 }
+}
+
+/// Decides whether a launcher script is a system one. `resolved` is the canonical path; `file`
+/// and `dir` are the owner and mode of that file and of its directory. Pure, so the tests can
+/// use fabricated owners (the test runner is not root).
+#[cfg(target_os = "linux")]
+fn trusted_launcher(resolved: &Path, file: Owned, dir: Owned) -> Result<(), String> {
+    let Some(parent) = resolved.parent() else {
+        return Err("it has no directory".to_string());
+    };
+    if !LINUX_LAUNCHER_DIRS.iter().any(|system| Path::new(system) == parent) {
+        return Err(format!("{} is not a system directory for browsers", parent.display()));
+    }
+    if file.uid != 0 || dir.uid != 0 {
+        return Err("the launcher or its directory is not owned by root".to_string());
+    }
+    if file.mode & 0o022 != 0 || dir.mode & 0o022 != 0 {
+        return Err("the launcher or its directory is writable by group or others".to_string());
+    }
+    if file.mode & 0o111 == 0 {
+        return Err("the launcher is not executable".to_string());
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 fn accept_linux(path: &Path) -> Result<PathBuf, String> {
     let meta = std::fs::metadata(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+    // Only a regular file: a FIFO or a device would block the open below.
     if !meta.is_file() {
         return Err(format!("not a browser executable: {}. {LINUX_HINT}", path.display()));
     }
     // Follow symlinks to the file that would run, and judge that file.
     let target = std::fs::canonicalize(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
     let name = target.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-    if !LINUX_BINARY_NAMES.contains(&name) {
+    let mut head = Vec::new();
+    std::fs::File::open(&target)
+        .and_then(|file| file.take(4).read_to_end(&mut head))
+        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+    if head.starts_with(&ELF_MAGIC) {
+        // A binary is accepted by its name, wherever it lives (portable builds included).
+        if LINUX_BINARY_NAMES.contains(&name) {
+            return Ok(path.to_path_buf());
+        }
         return Err(format!("{} is not a supported browser. {LINUX_HINT}", path.display()));
     }
-    let mut head = [0u8; 4];
-    let read = std::fs::File::open(&target)
-        .and_then(|mut file| file.read(&mut head))
-        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
-    if read < 4 || head != ELF_MAGIC {
-        // Launcher scripts (`google-chrome`, `chromium`) and other non-binaries end up here.
-        return Err(format!(
-            "{} is a launcher or script, not the browser binary. {LINUX_HINT}",
-            path.display()
-        ));
+    // Not a binary: only a system launcher of a known browser is accepted, and it is not run.
+    if head.starts_with(b"#!") && LINUX_LAUNCHER_NAMES.contains(&name) {
+        let Some(dir) = target.parent() else {
+            return Err(format!("{} is not a supported browser. {LINUX_HINT}", path.display()));
+        };
+        let dir_meta = std::fs::metadata(dir).map_err(|error| format!("cannot read {}: {error}", dir.display()))?;
+        let file_meta = std::fs::metadata(&target).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+        trusted_launcher(&target, owned(&file_meta), owned(&dir_meta))
+            .map_err(|why| format!("{} is a launcher that is not trusted: {why}. {LINUX_HINT}", path.display()))?;
+        return Ok(path.to_path_buf());
     }
-    Ok(path.to_path_buf())
+    Err(format!(
+        "{} is a launcher or script, not the browser binary. {LINUX_HINT}",
+        path.display()
+    ))
 }
 
 #[cfg(test)]
@@ -186,6 +280,10 @@ mod tests {
         let arbitrary = dir.join("chrome");
         fs::write(&arbitrary, b"not a program at all").unwrap();
         assert!(accept(&arbitrary).is_err());
+        // A launcher name in a user folder is refused, whatever its content.
+        let launcher = dir.join("google-chrome");
+        fs::write(&launcher, "#!/bin/sh\nexec /bin/true\n").unwrap();
+        assert!(accept(&launcher).is_err());
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -217,13 +315,60 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
+    fn root_owned(mode: u32) -> Owned {
+        Owned { uid: 0, mode }
+    }
+
+    #[cfg(target_os = "linux")]
     #[test]
-    fn every_accepted_linux_name_is_a_browser_name() {
-        for name in LINUX_BINARY_NAMES {
-            assert!(!name.is_empty() && !name.contains('/'));
+    fn a_root_owned_launcher_in_a_system_directory_is_trusted() {
+        let launchers = [
+            ("/usr/bin/google-chrome", "/usr/bin"),
+            ("/usr/bin/chromium-browser", "/usr/bin"),
+            ("/opt/google/chrome/google-chrome", "/opt/google/chrome"),
+            ("/usr/lib64/chromium-browser/chromium-browser", "/usr/lib64/chromium-browser"),
+            ("/usr/lib64/chromium-browser/chromium-browser.sh", "/usr/lib64/chromium-browser"),
+        ];
+        for (file, dir) in launchers {
+            let is_known_dir = LINUX_LAUNCHER_DIRS.contains(&dir);
+            let result = trusted_launcher(Path::new(file), root_owned(0o755), root_owned(0o755));
+            assert_eq!(result.is_ok(), is_known_dir, "{file}: {result:?}");
         }
-        assert!(!LINUX_BINARY_NAMES.contains(&"sh"));
-        assert!(!LINUX_BINARY_NAMES.contains(&"bash"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_launcher_that_is_not_root_owned_or_writable_is_refused() {
+        let file = Path::new("/usr/bin/google-chrome");
+        let user = Owned { uid: 1000, mode: 0o755 };
+        assert!(trusted_launcher(file, user, root_owned(0o755)).is_err(), "file owner");
+        assert!(trusted_launcher(file, root_owned(0o755), user).is_err(), "directory owner");
+        assert!(trusted_launcher(file, root_owned(0o775), root_owned(0o755)).is_err(), "group write");
+        assert!(trusted_launcher(file, root_owned(0o757), root_owned(0o755)).is_err(), "other write");
+        assert!(trusted_launcher(file, root_owned(0o755), root_owned(0o777)).is_err(), "directory other write");
+        assert!(trusted_launcher(file, root_owned(0o644), root_owned(0o755)).is_err(), "not executable");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_launcher_outside_the_system_directories_is_refused() {
+        let home = Path::new("/home/user/bin/google-chrome");
+        assert!(trusted_launcher(home, root_owned(0o755), root_owned(0o755)).is_err());
+        let tmp = Path::new("/tmp/google-chrome");
+        assert!(trusted_launcher(tmp, root_owned(0o755), root_owned(0o755)).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_system_directories_are_absolute_and_the_names_are_plain() {
+        for dir in LINUX_LAUNCHER_DIRS {
+            assert!(Path::new(dir).is_absolute(), "{dir}");
+        }
+        for name in LINUX_BINARY_NAMES.iter().chain(LINUX_LAUNCHER_NAMES) {
+            assert!(!name.is_empty() && !name.contains('/'), "{name}");
+        }
+        assert!(!LINUX_LAUNCHER_NAMES.contains(&"sh"));
+        assert!(!LINUX_LAUNCHER_NAMES.contains(&"bash"));
     }
 
     #[cfg(target_os = "macos")]
@@ -272,6 +417,16 @@ mod tests {
         assert!(accept(&wrong).is_err());
         // Bare system programs are not bundles.
         assert!(accept(Path::new("/bin/sh")).is_err());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn first_accepted_skips_refused_candidates() {
+        let dir = scratch("first");
+        let bad = dir.join("chromium");
+        fs::write(&bad, "#!/bin/sh\n").unwrap();
+        let candidates = vec![bad.display().to_string(), "/nonexistent/chrome".to_string()];
+        assert!(first_accepted(&candidates).is_none());
         fs::remove_dir_all(&dir).ok();
     }
 }

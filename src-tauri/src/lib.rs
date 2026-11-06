@@ -32,6 +32,8 @@ use cli_test::CliAction;
 #[derive(Default)]
 pub struct AppState {
     pub chrome_path: Mutex<Option<PathBuf>>,
+    /// Why a saved browser preference was not used at startup (shown in the Chrome status).
+    pub chrome_notice: Mutex<Option<String>>,
     pub last_session_dir: Mutex<Option<PathBuf>>,
     pub capture: Mutex<Option<capture::CaptureSession>>,
     /// Test CLI action (`--import-har` / `--import-netlog` / `--open-capture`), consumed once.
@@ -77,9 +79,17 @@ pub fn run() {
             menu::install(app.handle())?;
             let state = app.state::<AppState>();
             // A saved browser is used only if it still passes the browser check (an old or
-            // edited preference may point at a shell or a script); otherwise detection runs.
-            if let Some(path) = prefs::load_chrome_path(app.handle()).and_then(|p| browser_check::accept(&p).ok()) {
-                *state.chrome_path.lock().expect("chrome_path lock") = Some(path);
+            // edited preference may point at a shell or a script). A refused one is not fatal:
+            // detection runs, and the window shows why.
+            if let Some(saved) = prefs::load_chrome_path(app.handle()) {
+                match browser_check::accept(&saved) {
+                    Ok(path) => *state.chrome_path.lock().expect("chrome_path lock") = Some(path),
+                    Err(why) => {
+                        eprintln!("saved browser not used: {why}");
+                        *state.chrome_notice.lock().expect("chrome_notice lock") =
+                            Some(format!("The saved browser was not used: {why}"));
+                    }
+                }
             }
             // Test-only command line: release builds read no arguments and no test variable.
             #[cfg(feature = "test-hooks")]

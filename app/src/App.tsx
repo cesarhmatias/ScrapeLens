@@ -2708,6 +2708,16 @@ export default function App() {
               </div>
             )}
 
+            {desktop && chrome?.notice && (
+              <div className="notice notice-warn" data-testid="chrome-notice">
+                <span className="notice-icon">!</span>
+                <span>{chrome.notice}</span>
+                <button className="ghost-btn small" onClick={() => void chooseChrome()}>
+                  Select Chrome…
+                </button>
+              </div>
+            )}
+
             <div className="toolbar">
               <div className="search">
                 <span className="search-icon">⌕</span>

@@ -72,6 +72,8 @@ export interface ChromeInfo {
   path?: string;
   source?: "detected" | "manual" | "none";
   candidates: string[];
+  /** Why a saved browser preference was not used at startup (only from detectChrome). */
+  notice?: string | null;
 }
 
 export interface WarningDto {
