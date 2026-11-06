@@ -662,6 +662,31 @@ fn run_inner(
             report_warnings.push(message);
         }
     }
+    // Proxy failures (relay, or Chrome's ERR_PROXY_* / ERR_TUNNEL_* on the direct route)
+    // are a session warning and part of the notice, not a generic page failure.
+    let mut proxy_reasons = proxy_plan.as_ref().map(relay::ProxyPlan::failures).unwrap_or_default();
+    if let Some(plan) = proxy_plan.as_ref() {
+        if plan.route() == relay::ProxyRoute::Direct {
+            let server = plan.link().server_url();
+            let events = std::str::from_utf8(&cdp_bytes).unwrap_or("");
+            for reason in relay::proxy_failures_from_cdp(events) {
+                let qualified = if reason.contains("://") {
+                    reason
+                } else {
+                    reason.replacen("the proxy", &format!("the proxy {server}"), 1)
+                };
+                if !proxy_reasons.iter().any(|have| have == &qualified) {
+                    proxy_reasons.push(qualified);
+                }
+            }
+        }
+    }
+    for reason in &proxy_reasons {
+        imported.bundle.session.add_warning(
+            scrapelens_core::model::Warning::error("capture.proxy_failure", reason.clone()),
+        );
+        report_warnings.push(reason.clone());
+    }
     // A3-B3/A6-B5: the session is written into a staging directory of OURS (inside the
     // 0700 profile) and moved into the session directory with `renameat` relative to the
     // descriptor opened at the start: a symlink planted under the name is replaced without
@@ -695,11 +720,10 @@ fn run_inner(
         waited_ms: shutdown.waited_ms,
         warnings: report_warnings,
     };
-    let proxy_suffix = match proxy_plan.as_ref().map(relay::ProxyPlan::failures) {
-        Some(failures) if !failures.is_empty() => {
-            format!("; proxy: {}", failures.join("; "))
-        }
-        _ => String::new(),
+    let proxy_suffix = if proxy_reasons.is_empty() {
+        String::new()
+    } else {
+        format!("; proxy: {}", proxy_reasons.join("; "))
     };
     Ok((
         CaptureOutcome {
@@ -3559,7 +3583,10 @@ impl BodyCollector {
                     .get("errorText")
                     .and_then(Value::as_str)
                     .unwrap_or("loadingFailed");
-                let mut reason = format!("loadingFailed: {text}");
+                // A proxy failure is the proxy's message, not a generic page error.
+                let mut reason = relay::chrome_proxy_failure(text)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("loadingFailed: {text}"));
                 if params.get("canceled").and_then(Value::as_bool) == Some(true) {
                     reason.push_str(" (cancelado)");
                 }
@@ -4855,6 +4882,15 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("ERR_CONNECTION_REFUSED"));
+        c.on_event(
+            "Network.requestWillBeSent",
+            &will_be_sent("7.4", "GET", json!({}), false),
+        );
+        c.on_event("Network.loadingFailed", &json!({ "requestId": "7.4", "timestamp": 1.0, "errorText": "net::ERR_PROXY_CONNECTION_FAILED" }));
+        let proxy_rows = lines(&mut c);
+        let proxy_reason = proxy_rows.last().unwrap()["reason"].as_str().unwrap();
+        assert!(proxy_reason.contains("could not be reached"), "{proxy_reason}");
+        assert!(!proxy_reason.contains("loadingFailed"), "{proxy_reason}");
         assert!(rows[1]["reason"].as_str().unwrap().contains("SSE"));
         assert!(rows[2]["reason"].as_str().unwrap().contains("WebSocket"));
     }

@@ -72,7 +72,7 @@ pub enum StartError {
     Allowlist(AllowlistError),
     /// The browser is not Google's stable Chrome (`chrome::validate_chrome`).
     BrowserInvalid(ChromeError),
-    /// The proxy could not be used (unreachable, https with credentials, local relay).
+    /// The proxy could not be used (unreachable, certificate rejected, local relay).
     /// The message carries no credentials.
     Proxy(crate::relay::RelayError),
     StartUrlNotAllowed(UrlDenied),
@@ -468,7 +468,11 @@ impl Cdp {
             }
         })?;
         let text = |key: &str| result.get(key).and_then(Value::as_str).map(str::to_string);
-        let error_text = text("errorText");
+        // Chrome's proxy errors become the same sentence the relay uses, so a direct-route
+        // failure is not reported as a generic page error.
+        let error_text = text("errorText").map(|raw| {
+            crate::relay::chrome_proxy_failure(&raw).map(str::to_string).unwrap_or(raw)
+        });
         let mut loaded = false;
         if error_text.is_none() && wait_load {
             let deadline = started + budget;
