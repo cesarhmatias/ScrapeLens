@@ -9,8 +9,8 @@ publish = false
 
 [features]
 # Test-only switches (environment variables read by the App, command-line test actions).
-# Off in release builds. Chains to the capture crate once it declares its own feature.
-test-hooks = []
+# Off in release builds. Chains to the capture crate's own feature (its test variables).
+test-hooks = ["scrapelens-capture/test-hooks"]
 
 [lib]
 name = "scrapelens_lib"
