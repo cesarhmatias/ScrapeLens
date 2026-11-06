@@ -6,17 +6,18 @@ under the same conditions.
 
 ## macOS — release 0.1.2 (2026-11-06, current)
 
-Version commit `fd091d1` (provisional; it will be remapped when the history is
-rewritten). The bundle is built from a clean tree at that commit, with the product
+Build commit `097dcfa` (provisional; it will be remapped when the history is
+rewritten). It keeps the 0.1.2 version and includes the relay fix that reports each
+failure reason once. The bundle is built from a clean tree at that commit, with the product
 version 0.1.2 (`tauri.conf.json`, `src-tauri/Cargo.toml`, `app/package.json`).
 
 Bundle: `src-tauri/target/release/bundle/macos/ScrapeLens.app` (version 0.1.2).
-SHA-256 of `Contents/MacOS/scrapelens` (20,069,168 bytes):
-`1c161a470f2c54d55e9829d085883aceea7a2a2a7271c9617ef8af2de0e3ce46`.
+SHA-256 of `Contents/MacOS/scrapelens` (20,071,824 bytes):
+`f85b082553c95badb390fc6b09ea384874a794300785255e3100e97b2b2c5bfb`.
 Release archive, outside the repository and not in `/tmp`:
 `~/OpenBot/Agents/agent-466e334c-b464-4294-a274-2a5e33a666b9/sl-release-0.1.2/macos/ScrapeLens-0.1.2-macos-arm64.zip`
-(6,953,441 bytes, `ditto -c -k --keepParent`), SHA-256
-`5ba2806889d9bb6f52d56b955b7b7dc41675ea5d7f1ff7c2a68ec428ecbb7cf0`. Extracted to a
+(6,949,072 bytes, `ditto -c -k --keepParent`), SHA-256
+`47414621779553b3b44376b850bc650fd8ef52acc627e1448ff20907ca9ed00f`. Extracted to a
 temporary folder, the app passes `codesign --verify --deep --strict` and keeps the
 same executable hash.
 Signed with `ScrapeLens Local Signing`; designated requirement certificate root
