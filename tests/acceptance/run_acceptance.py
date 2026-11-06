@@ -1203,6 +1203,10 @@ def item_11(ctx: dict) -> tuple[list[dict], list[str], list[str]]:
         return entry
 
     run_cmd("cargo test mcp", ["cargo", "test", "--offline"], ROOT / "mcp")
+    # capture's relay tests read the test leaf key from fixtures/tls, which is generated, not tracked.
+    gen = subprocess.run(["cargo", "run", "-q", "--offline", "--", "gen-cert"], cwd=ROOT / "testserver",
+                         capture_output=True, text=True)
+    rows.append({"ok": gen.returncode == 0, "label": f"MCP test certificates generated (gen-cert rc={gen.returncode})"})
     run_cmd("cargo test capture", ["cargo", "test", "--offline"], ROOT / "capture")
     run_cmd("cargo test recon", ["cargo", "test", "--offline"], ROOT / "recon")
     run_cmd("live mcp e2e_live", ["cargo", "test", "--offline", "--test", "e2e_live", "--", "--ignored"],
