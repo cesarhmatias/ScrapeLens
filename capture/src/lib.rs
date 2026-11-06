@@ -29,7 +29,6 @@ use scrapelens_core::{correlate::CorrelationOptions, import_capture_labeled, sto
 
 pub mod allowlist;
 pub mod browser;
-pub mod browser_family;
 pub mod chrome;
 pub mod cookies;
 mod fdio;
