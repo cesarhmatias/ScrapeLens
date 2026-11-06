@@ -619,23 +619,174 @@ fn export_destination(
     Ok((resolved, !existed))
 }
 
-/// Writes a raw artifact with 0600, refusing a symlink at the destination.
+/// Writes a raw artifact with 0600. Uses [`ensure_private_dir`] on the parent
+/// (symlink, non-directory and foreign owner refused before any chmod) and the
+/// same exclusive create as `store::write_atomic`: a new 0600 file, never a
+/// follow of a symlink. An existing symlink is refused and left in place. An
+/// existing file owned by someone else is refused and not truncated.
 fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
-    if std::fs::symlink_metadata(path)
-        .map(|meta| meta.file_type().is_symlink())
-        .unwrap_or(false)
-    {
-        return Err(ToolError::new(
-            "outside_allowed_dir",
-            format!("{} is a symbolic link; refused", path.display()),
-        ));
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| ToolError::invalid("destination has no parent directory"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| ToolError::invalid("destination has no final name"))?;
+    ensure_private_dir(parent).map_err(private_dir_error)?;
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(ToolError::new(
+                "io",
+                format!("{}: {error}", path.display()),
+            ))
+        }
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(ToolError::new(
+                "outside_allowed_dir",
+                format!("{} is a symbolic link; refused", path.display()),
+            ))
+        }
+        Ok(meta) if !meta.is_file() => {
+            return Err(ToolError::new(
+                "invalid_argument",
+                format!("{} exists and is not a regular file; refused", path.display()),
+            ))
+        }
+        Ok(meta) => refuse_foreign_owner(path, parent, &meta)?,
     }
-    std::fs::write(path, bytes)
-        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = parent.join(format!(
+        ".{file_name}.tmp-{}-{nanos}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let write = (|| -> Result<(), ToolError> {
+        let mut file = open_new_private(&tmp)?;
+        file.write_all(bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|error| ToolError::new("io", format!("{}: {error}", tmp.display())))?;
+        set_mode_0600(&tmp)?;
+        // The name may have become a symlink or a foreign file since the check.
+        match std::fs::symlink_metadata(path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(ToolError::new(
+                    "io",
+                    format!("{}: {error}", path.display()),
+                ))
+            }
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return Err(ToolError::new(
+                    "outside_allowed_dir",
+                    format!("{} is a symbolic link; refused", path.display()),
+                ))
+            }
+            Ok(meta) if !meta.is_file() => {
+                return Err(ToolError::new(
+                    "invalid_argument",
+                    format!("{} exists and is not a regular file; refused", path.display()),
+                ))
+            }
+            Ok(meta) => refuse_foreign_owner(path, parent, &meta)?,
+        }
+        std::fs::rename(&tmp, path)
+            .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
+        confirm_private_file(path, parent)
+    })();
+    if write.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    write
+}
+
+fn private_dir_error(error: scrapelens_core::CoreError) -> ToolError {
+    let message = error.to_string();
+    let code = if message.contains("symbolic link") || message.contains("owned by uid") {
+        "outside_allowed_dir"
+    } else {
+        "io"
+    };
+    ToolError::new(code, message)
+}
+
+/// A file we do not own must not be replaced, even when the directory is writable.
+fn refuse_foreign_owner(path: &Path, parent: &Path, meta: &std::fs::Metadata) -> Result<(), ToolError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let parent_uid = std::fs::symlink_metadata(parent)
+            .map_err(|error| ToolError::new("io", format!("{}: {error}", parent.display())))?
+            .uid();
+        if meta.uid() != parent_uid {
+            return Err(ToolError::new(
+                "outside_allowed_dir",
+                format!(
+                    "{} is owned by uid {}, not {}; refused",
+                    path.display(),
+                    meta.uid(),
+                    parent_uid
+                ),
+            ));
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, parent, meta);
+    }
+    Ok(())
+}
+
+fn open_new_private(path: &Path) -> Result<std::fs::File, ToolError> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    options
+        .open(path)
+        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))
+}
+
+fn set_mode_0600(path: &Path) -> Result<(), ToolError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
+    }
+    Ok(())
+}
+
+fn confirm_private_file(path: &Path, parent: &Path) -> Result<(), ToolError> {
+    let meta = std::fs::symlink_metadata(path)
+        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
+    if meta.file_type().is_symlink() || !meta.is_file() {
+        return Err(ToolError::new(
+            "outside_allowed_dir",
+            format!("{} is not a regular private file; refused", path.display()),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o777 != 0o600 {
+            return Err(ToolError::new(
+                "io",
+                format!("{} is not mode 0600; refused", path.display()),
+            ));
+        }
+        refuse_foreign_owner(path, parent, &meta)?;
     }
     Ok(())
 }
@@ -1849,4 +2000,64 @@ pub fn scrub_output(value: &mut Value) {
         value,
         &scrapelens_core::export::sanitize::SanitizeOptions::default(),
     );
+}
+
+#[cfg(all(test, unix))]
+mod write_private_bytes_tests {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+
+    use super::write_private_bytes;
+
+    #[test]
+    fn a_new_file_is_mode_0600_and_a_symlink_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("out");
+        std::fs::create_dir(&dir).unwrap();
+        let dest = dir.join("cdp-events.jsonl");
+        write_private_bytes(&dest, b"{\"ok\":true}\n").unwrap();
+        let meta = std::fs::symlink_metadata(&dest).unwrap();
+        assert!(meta.file_type().is_file());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"{\"ok\":true}\n");
+
+        let outside = root.path().join("outside.txt");
+        std::fs::write(&outside, "ORIGINAL\n").unwrap();
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let link = dir.join("netlog.json");
+        symlink(&outside, &link).unwrap();
+        let error = write_private_bytes(&link, b"nope").unwrap_err();
+        assert!(
+            error.to_string().contains("symbolic link"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "ORIGINAL\n");
+        assert_eq!(
+            std::fs::metadata(&outside).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+    }
+
+    #[test]
+    fn a_directory_owned_by_someone_else_is_refused_and_not_written() {
+        let path = std::path::Path::new("/usr/bin/scrapelens-t05-not-created");
+        assert!(!path.exists(), "the probe path must not already exist");
+        let error = write_private_bytes(path, b"nope").unwrap_err();
+        assert!(
+            error.to_string().contains("owned by uid"),
+            "{error}"
+        );
+        assert!(!path.exists(), "a foreign directory must not receive the file");
+
+        let existing = std::path::Path::new("/bin/ls");
+        let before = std::fs::symlink_metadata(existing).unwrap();
+        let error = write_private_bytes(existing, b"nope").unwrap_err();
+        assert!(
+            error.to_string().contains("owned by uid") || error.to_string().contains("symbolic link"),
+            "{error}"
+        );
+        let after = std::fs::symlink_metadata(existing).unwrap();
+        assert_eq!(after.len(), before.len());
+        assert_eq!(after.permissions().mode(), before.permissions().mode());
+    }
 }

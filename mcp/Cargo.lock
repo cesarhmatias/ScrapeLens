@@ -903,6 +903,7 @@ name = "scrapelens-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "rustix",
  "serde",
  "serde_json",
  "thiserror",
@@ -913,6 +914,7 @@ name = "scrapelens-mcp"
 version = "0.1.0"
 dependencies = [
  "icu_properties",
+ "libc",
  "rmcp",
  "schemars",
  "scrapelens-capture",
