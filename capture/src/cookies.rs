@@ -1125,21 +1125,47 @@ fn linux_v11_keys(product: &ChromiumProduct) -> Vec<Result<Vec<u8>, String>> {
             "v11 cookie of {}: the keyring lookup failed; try again",
             product.browser
         ))],
-        Bounded::Done(results) if results.iter().all(Option::is_none) => {
-            linux_v11_keys_with(Path::new("secret-tool"), product)
-        }
-        Bounded::Done(results) => results
-            .into_iter()
-            .map(|result| match result {
-                None => Err(format!(
-                    "v11 cookie of {}: the keyring is not available; try again",
-                    product.browser
-                )),
-                Some(Ok(password)) => browser_key_from_password(product, password),
-                Some(Err(why)) => Err(keyring_error(product.browser, &why)),
+        Bounded::Done(results) => {
+            // One deadline for every secret-tool name. The closure runs only when
+            // libsecret is absent for all of them.
+            let until = std::time::Instant::now() + KEYRING_DEADLINE;
+            linux_v11_keys_from(product, results, |application| {
+                secret_tool_password(Path::new("secret-tool"), product.browser, application, until)
             })
-            .collect(),
+        }
     }
+}
+
+/// Turns finished keyring lookups into candidate keys. `library` has one entry per
+/// keyring name: `None` means libsecret is not installed. When every entry is `None`,
+/// `secret_tool` supplies the password or the reason. Tests pass those results in,
+/// so a machine keyring cannot change the message.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn linux_v11_keys_from(
+    product: &ChromiumProduct,
+    library: Vec<Option<Result<Vec<u8>, String>>>,
+    mut secret_tool: impl FnMut(&str) -> Result<Vec<u8>, String>,
+) -> Vec<Result<Vec<u8>, String>> {
+    if library.iter().all(Option::is_none) {
+        return linux_secret_applications(product)
+            .into_iter()
+            .map(|application| {
+                secret_tool(application).and_then(|password| browser_key_from_password(product, password))
+            })
+            .collect();
+    }
+    library
+        .into_iter()
+        .map(|result| match result {
+            None => Err(format!(
+                "v11 cookie of {}: the keyring is not available; try again",
+                product.browser
+            )),
+            Some(Ok(password)) => browser_key_from_password(product, password),
+            Some(Err(why)) => Err(keyring_error(product.browser, &why)),
+        })
+        .collect()
 }
 
 /// Maps a keyring error text to the message the user acts on: a locked keyring asks for
@@ -1172,6 +1198,20 @@ fn browser_key_from_password(product: &ChromiumProduct, password: Vec<u8>) -> Re
     Ok(pbkdf2_sha1(&password, b"saltysalt", 1, 16))
 }
 
+/// A failure to start `secret-tool`. `NotFound` names the package to install; anything
+/// else keeps the operating-system text.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn secret_tool_command_error(browser: &str, error: &std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        format!(
+            "v11 cookie of {browser}: the secret-tool command is not installed; install it (Debian/Ubuntu package `libsecret-tools`)"
+        )
+    } else {
+        format!("v11 cookie of {browser}: secret-tool could not run: {error}")
+    }
+}
+
 /// The `secret-tool` command for one keyring name, bounded by `until`. A locked keyring makes
 /// it wait for the prompt: past the deadline the process is killed and the locked message is
 /// returned.
@@ -1195,15 +1235,7 @@ fn secret_tool_password(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                format!(
-                    "v11 cookie of {browser}: the secret-tool command is not installed; install it (Debian/Ubuntu package `libsecret-tools`)"
-                )
-            } else {
-                format!("v11 cookie of {browser}: secret-tool could not run: {error}")
-            }
-        })?;
+        .map_err(|error| secret_tool_command_error(browser, &error))?;
     loop {
         match child.try_wait() {
             Ok(Some(_)) => break,
@@ -1236,21 +1268,6 @@ fn secret_tool_password(
         password.pop();
     }
     Ok(password)
-}
-
-/// The `secret-tool` path, used only when libsecret cannot be loaded: every keyring name, under
-/// one shared deadline.
-#[cfg(any(target_os = "linux", test))]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn linux_v11_keys_with(secret_tool: &Path, product: &ChromiumProduct) -> Vec<Result<Vec<u8>, String>> {
-    let until = std::time::Instant::now() + KEYRING_DEADLINE;
-    linux_secret_applications(product)
-        .into_iter()
-        .map(|application| {
-            secret_tool_password(secret_tool, product.browser, application, until)
-                .and_then(|password| browser_key_from_password(product, password))
-        })
-        .collect()
 }
 
 /// The error for a key that does not decrypt a value. A wrong key never yields a value.
@@ -2168,17 +2185,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn missing_secret_tool_says_which_package_to_install() {
+        // Injected lookups: libsecret is absent, and starting secret-tool fails with
+        // NotFound. No process is spawned, and a keyring on the machine cannot answer.
         let product = CHROMIUM_PRODUCTS.iter().find(|p| p.slug == "chromium").unwrap();
-        let error = linux_v11_keys_with(Path::new("/nonexistent/scrapelens-secret-tool"), product)
-            .into_iter()
-            .next()
-            .unwrap()
-            .unwrap_err();
+        let missing = std::io::Error::new(std::io::ErrorKind::NotFound, "injected missing command");
+        let names = linux_secret_applications(product);
+        let error = linux_v11_keys_from(product, vec![None; names.len()], |_| {
+            Err(secret_tool_command_error(product.browser, &missing))
+        })
+        .into_iter()
+        .next()
+        .unwrap()
+        .unwrap_err();
         assert!(error.contains("libsecret-tools"), "{error}");
         assert!(error.contains("Chromium"), "{error}");
+        assert!(!error.contains("no entry found"), "{error}");
     }
 
     fn hex(text: &str) -> Vec<u8> {
@@ -2720,9 +2743,13 @@ mod tests {
 
     #[test]
     fn sqlite_roundtrip_reads_chromium_and_firefox_tables() {
-        // Builds the fixtures with the `sqlite3` command. Without it the test must fail,
-        // not pass with nothing checked: install `sqlite3`, or run only the fixture test.
-        assert!(sqlite3_available(), "the sqlite3 command is needed to build this test's databases");
+        // Builds the fixtures with the `sqlite3` command. A minimal image has no such
+        // binary; the committed-fixture test covers reading there. Skip, and say why,
+        // instead of failing the suite.
+        if !sqlite3_available() {
+            eprintln!("skipped: the sqlite3 command is not installed; install the sqlite3 package to build this test's databases");
+            return;
+        }
         let dir = crate::private_base_dir().join(format!(
             "scrapelens-cookies-test-{}-{}",
             std::process::id(),
