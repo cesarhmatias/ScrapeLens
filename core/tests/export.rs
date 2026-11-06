@@ -138,10 +138,39 @@ fn python_maps_authority_to_host_for_http11() {
 fn python_string_and_bytes_escaping() {
     use scrapelens_core::export::python::{python_bytes, python_str};
     assert_eq!(python_str("a\"b\\c\n"), "\"a\\\"b\\\\c\\n\"");
+    assert_eq!(python_str("\u{202e}"), "\"\\u202e\"");
+    assert_eq!(python_str("café"), "\"caf\\xe9\"");
+    assert_eq!(python_str("日本"), "\"\\u65e5\\u672c\"");
+    assert_eq!(python_str("\u{1f600}"), "\"\\U0001f600\"");
+    assert_eq!(python_str("\u{7f}"), "\"\\x7f\"");
+    assert!(
+        !python_str("\u{202e}").contains('\u{202e}'),
+        "invisible code point must not stay raw"
+    );
     assert_eq!(
         python_bytes(&[0, 1, b'a', b'\n', b'"']),
         "b\"\\x00\\x01a\\n\\\"\""
     );
+}
+
+#[test]
+fn python_script_with_invisible_unicode_stays_valid() {
+    let mut request = request();
+    request
+        .request_headers
+        .add("X-Note", "a\u{202e}b", &provenance());
+    let output = to_python(&request, None, &ExportOptions::default()).unwrap();
+    assert!(!output.text.contains('\u{202e}'), "U+202E must be escaped");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("export.py");
+    std::fs::write(&path, &output.text).unwrap();
+    let status = std::process::Command::new("python3")
+        .arg("-m")
+        .arg("py_compile")
+        .arg(&path)
+        .status()
+        .expect("python3 available");
+    assert!(status.success(), "generated Python does not parse");
 }
 
 #[test]

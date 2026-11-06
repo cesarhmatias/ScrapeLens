@@ -227,7 +227,9 @@ impl ParsedUrl {
     }
 }
 
-/// Python string literal with valid escapes; the file is UTF-8.
+/// Python string literal with valid escapes; the file is UTF-8 but every
+/// non-ASCII character is escaped, so a right-to-left override or any other
+/// invisible code point cannot change how the generated source is read.
 pub fn python_str(value: &str) -> String {
     let mut out = String::from("\"");
     for ch in value.chars() {
@@ -237,14 +239,10 @@ pub fn python_str(value: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            ch if ch.is_control() => {
-                if (ch as u32) <= 0xff {
-                    out.push_str(&format!("\\x{:02x}", ch as u32));
-                } else {
-                    out.push_str(&format!("\\u{:04x}", ch as u32));
-                }
-            }
-            ch => out.push(ch),
+            ' '..='~' => out.push(ch),
+            ch if (ch as u32) <= 0xff => out.push_str(&format!("\\x{:02x}", ch as u32)),
+            ch if (ch as u32) <= 0xffff => out.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch => out.push_str(&format!("\\U{:08x}", ch as u32)),
         }
     }
     out.push('"');
