@@ -8,6 +8,8 @@ export PATH=/home/tester/.cargo/bin:$PATH
 cd /work
 if [ ! -d /work/scrapelens ] || [ "${SL_FRESH:-1}" = "1" ]; then rm -rf /work/scrapelens; cp -a /src /work/scrapelens; fi
 cd /work/scrapelens
+# capture's relay tests read the test leaf key from fixtures/tls, which is generated, not tracked.
+[ -f fixtures/tls/scrapelens-test-localhost.key.pem ] || (cd testserver && cargo run -q -- gen-cert) || echo "gen-cert failed: capture relay tests will fail" >&2
 stages=("$@"); [ ${#stages[@]} -eq 0 ] && stages=(info clippy unit live recon)
 cargo_in() { local crate="$1"; shift; (cd "$crate" && CARGO_TARGET_DIR="/cache/target-$crate" "$@"); }
 for stage in "${stages[@]}"; do
