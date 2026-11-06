@@ -32,7 +32,7 @@ Principles:
 
 ```
 scrapelens-mcp --sessions-dir <dir> [--out-dir <dir>] [--extra-sessions-dir <dir>]...
-               [--allow-reveal] [--max-import-bytes <n>]
+               [--allow-reveal] [--allow-sensitive-export] [--max-import-bytes <n>]
 ```
 
 | Option | Meaning |
@@ -41,6 +41,7 @@ scrapelens-mcp --sessions-dir <dir> [--out-dir <dir>] [--extra-sessions-dir <dir
 | `--out-dir` | Where the large body files go. Default: `<sessions-dir>/.mcp-out` (0700). |
 | `--extra-sessions-dir` | Zero or more. Directories with **read-only** sessions (e.g.: fixtures). They never receive writes. |
 | `--allow-reveal` | Without this option `reveal=true` is refused (`reveal_disabled`). |
+| `--allow-sensitive-export` | Lets `export_session` with `include_sensitive:true` proceed when the client does not support elicitation. A client that can ask still must confirm; a refusal writes nothing. Breaking change from v0.1.2, which wrote the full capture with no confirmation and no flag. |
 | `--max-import-bytes` | Limit per input file of `import_session` (default 512 MiB). |
 
 Stdout is the JSON-RPC channel; all logging goes to stderr. Transport: stdio.
@@ -69,9 +70,14 @@ Stdout is the JSON-RPC channel; all logging goes to stderr. Transport: stdio.
 values. `reveal=true` requires `--allow-reveal` on the server.
 **Leader decision (round 11):** the lock is double — a per-call parameter
 *and* `--allow-reveal` when starting the server; the agent cannot reveal on its own.
-**Explicit exception (round 17):** `export_session` with `include_sensitive:true`
-writes the values to the local 0700/0600 directory at the user's request, but the response JSON
-returns no value at all (see §5.10).
+**Explicit exception (round 17, tightened in v0.1.3):** `export_session` with
+`include_sensitive:true` writes the values to the local 0700/0600 directory, but the
+response JSON returns no value at all (see §5.10). It does not require `--allow-reveal`.
+It does require a confirmation that names the session, the destination and the contents.
+A refusal, cancellation or malformed answer writes nothing, even with
+`--allow-sensitive-export`. Only a client that does not declare elicitation can skip
+the question, and only when the server was started with `--allow-sensitive-export`.
+v0.1.2 wrote the full capture with neither confirmation nor that flag.
 
 With `reveal=false`:
 
@@ -366,8 +372,17 @@ JSON: it returns only path and counts.
   redaction** and copies the raw artifacts that exist at the source
   (`cdp-events.jsonl`, `netlog.json`, `cdp-bodies.jsonl`), refusing symlinks and
   applying 0600. Output without `report` and with `totalRedactions: 0`. It does not require
-  `--allow-reveal`: it is a local, explicit action, requested by the user of the LLM;
-  the secrets stay in the 0700/0600 directory, never on stdout.
+  `--allow-reveal`. Before anything is created, the server asks (MCP elicitation,
+  `confirmo` checkbox, 5 min) and the message names the session, the destination
+  and the contents (full capture plus those raw artifact names). It never includes
+  a secret value. Accept writes the directory. Refusal, cancellation, a JSON-RPC
+  error, a malformed answer, a timeout or a dropped connection returns
+  `confirmation_denied` and writes nothing, even when `--allow-sensitive-export`
+  is set. An invalid destination fails before the question. A client that does
+  not declare elicitation gets `confirmation_unavailable` and nothing is written,
+  unless the server was started with `--allow-sensitive-export`. The secrets stay
+  in the 0700/0600 directory, never on stdout. This replaces the v0.1.2 rule that
+  a full export needed neither confirmation nor a flag.
 - **Destination:** `destination` omitted → `<out-dir>/<session_id>-sanitized` (with
   `-2`, `-3`… if it exists) or `<out-dir>/<session_id>-full` (refuses if it already
   exists). A simple name without `/` resolves inside `--out-dir`; an absolute path
@@ -393,7 +408,10 @@ JSON: it returns only path and counts.
   `include_sensitive:true` preserves headers/cookies/bodies and the files
   `cdp-events.jsonl`/`netlog.json`/`cdp-bodies.jsonl` with 0700/0600, and the returned
   JSON does not contain the values; dangerous destinations (inside the source, another
-  session, reserved root, symlink, non-empty directory) are refused.
+  session, reserved root, symlink, non-empty directory) are refused. A full export
+  without elicitation and without `--allow-sensitive-export` errors and creates
+  nothing; a refusal creates nothing; the confirmation names the session, the
+  destination and the contents and contains no secret value.
 
 ## 6b. Browser and site profile (round 11, wave 2)
 

@@ -38,7 +38,7 @@ async fn termination() {
 pub async fn run(config: Config, backend: Arc<dyn CaptureBackend>) -> i32 {
     // stdout is the JSON-RPC channel: all diagnostics go to stderr.
     eprintln!(
-        "scrapelens-mcp: sessions in {} (reveal {}, capture without confirmation {})",
+        "scrapelens-mcp: sessions in {} (reveal {}, capture without confirmation {}, sensitive export without confirmation {})",
         config.sessions_dir.display(),
         if config.allow_reveal {
             "allowed"
@@ -46,6 +46,11 @@ pub async fn run(config: Config, backend: Arc<dyn CaptureBackend>) -> i32 {
             "disabled"
         },
         if config.allow_unconfirmed_capture {
+            "allowed"
+        } else {
+            "disabled"
+        },
+        if config.allow_sensitive_export {
             "allowed"
         } else {
             "disabled"

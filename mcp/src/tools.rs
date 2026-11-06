@@ -436,7 +436,7 @@ fn write_import(
 // export_session
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ExportSessionParams {
     /// Session id (from `list_sessions`).
     pub session_id: String,
@@ -444,8 +444,9 @@ pub struct ExportSessionParams {
     /// of a new/empty directory. Without it: `<session_id>-sanitized` (with
     /// suffix `-2`, `-3`...) or `<session_id>-full`.
     pub destination: Option<String>,
-    /// `false` (default) writes the sanitized session. `true` writes the full capture
-    /// with the sensitive data unredacted, in a 0700 directory.
+    /// `false` (default) writes the sanitized session. `true` writes the full
+    /// capture, unredacted, only after the user confirms, or when the client
+    /// cannot ask and the server was started with `--allow-sensitive-export`.
     pub include_sensitive: Option<bool>,
 }
 
@@ -454,9 +455,7 @@ pub struct ExportSessionParams {
 fn is_system_alias(path: &Path) -> bool {
     matches!(path.to_str(), Some("/var") | Some("/tmp") | Some("/etc"))
         && std::fs::read_link(path)
-            .map(|target| {
-                target.starts_with("/private") || target.starts_with("private")
-            })
+            .map(|target| target.starts_with("/private") || target.starts_with("private"))
             .unwrap_or(false)
 }
 
@@ -472,7 +471,10 @@ fn check_empty_destination(path: &Path) -> Result<bool, ToolError> {
         Err(error) => Err(ToolError::new("io", format!("{}: {error}", path.display()))),
         Ok(meta) if !meta.is_dir() => Err(ToolError::new(
             "invalid_argument",
-            format!("the destination exists and is not a directory: {}", path.display()),
+            format!(
+                "the destination exists and is not a directory: {}",
+                path.display()
+            ),
         )),
         Ok(_) => {
             let mut entries = std::fs::read_dir(path)
@@ -505,7 +507,9 @@ fn export_destination(
     let dest = match requested {
         Some(text) => {
             if text.chars().any(char::is_control) {
-                return Err(ToolError::invalid("destination contains a control character"));
+                return Err(ToolError::invalid(
+                    "destination contains a control character",
+                ));
             }
             let path = PathBuf::from(text);
             if path.is_absolute() {
@@ -526,7 +530,11 @@ fn export_destination(
         None => {
             let stem = format!(
                 "{session_id}-{}",
-                if include_sensitive { "full" } else { "sanitized" }
+                if include_sensitive {
+                    "full"
+                } else {
+                    "sanitized"
+                }
             );
             if include_sensitive {
                 let candidate = base.join(&stem);
@@ -614,9 +622,51 @@ fn export_destination(
     }
 
     let existed = check_empty_destination(&resolved)?;
-    ensure_private_dir(&resolved)
-        .map_err(|error| ToolError::new("io", format!("{}: {error}", resolved.display())))?;
+    // The directory is created only after a sensitive export is authorized.
+    // A refusal must leave nothing behind.
     Ok((resolved, !existed))
+}
+
+fn create_export_dir(path: &Path) -> Result<(), ToolError> {
+    ensure_private_dir(path)
+        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
+    Ok(())
+}
+
+/// Text shown before a full export. Names the session, the destination and the
+/// contents, and never a secret value.
+pub fn sensitive_export_prompt(session_id: &str, destination: &Path) -> String {
+    format!(
+        "Export session {session_id} with the sensitive data left unredacted.\n\
+         Destination: {}\n\
+         Contents: the full capture without redaction (requests, headers, cookies and bodies) \
+         and, when the source has them, the raw artifacts cdp-events.jsonl, netlog.json and \
+         cdp-bodies.jsonl.\n\
+         Tick to write these files. A refusal writes nothing.",
+        destination.display()
+    )
+}
+
+/// Resolves a sensitive export and returns the confirmation text. Does not
+/// create the destination: an invalid path fails here, before the user is asked.
+pub fn preview_sensitive_export(
+    ctx: &Ctx,
+    params: &ExportSessionParams,
+) -> Result<String, ToolError> {
+    if !params.include_sensitive.unwrap_or(false) {
+        return Err(ToolError::invalid(
+            "a sensitive-export confirmation is only for include_sensitive=true",
+        ));
+    }
+    let entry = ctx.open(&params.session_id)?;
+    let (dest, _) = export_destination(
+        ctx,
+        &entry.dir,
+        &params.session_id,
+        params.destination.as_deref(),
+        true,
+    )?;
+    Ok(sensitive_export_prompt(&params.session_id, &dest))
 }
 
 /// Writes a raw artifact with 0600. Uses [`ensure_private_dir`] on the parent
@@ -639,12 +689,7 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
     ensure_private_dir(parent).map_err(private_dir_error)?;
     match std::fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(ToolError::new(
-                "io",
-                format!("{}: {error}", path.display()),
-            ))
-        }
+        Err(error) => return Err(ToolError::new("io", format!("{}: {error}", path.display()))),
         Ok(meta) if meta.file_type().is_symlink() => {
             return Err(ToolError::new(
                 "outside_allowed_dir",
@@ -654,7 +699,10 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
         Ok(meta) if !meta.is_file() => {
             return Err(ToolError::new(
                 "invalid_argument",
-                format!("{} exists and is not a regular file; refused", path.display()),
+                format!(
+                    "{} exists and is not a regular file; refused",
+                    path.display()
+                ),
             ))
         }
         Ok(meta) => refuse_foreign_owner(path, parent, &meta)?,
@@ -678,12 +726,7 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
         // The name may have become a symlink or a foreign file since the check.
         match std::fs::symlink_metadata(path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(ToolError::new(
-                    "io",
-                    format!("{}: {error}", path.display()),
-                ))
-            }
+            Err(error) => return Err(ToolError::new("io", format!("{}: {error}", path.display()))),
             Ok(meta) if meta.file_type().is_symlink() => {
                 return Err(ToolError::new(
                     "outside_allowed_dir",
@@ -693,7 +736,10 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
             Ok(meta) if !meta.is_file() => {
                 return Err(ToolError::new(
                     "invalid_argument",
-                    format!("{} exists and is not a regular file; refused", path.display()),
+                    format!(
+                        "{} exists and is not a regular file; refused",
+                        path.display()
+                    ),
                 ))
             }
             Ok(meta) => refuse_foreign_owner(path, parent, &meta)?,
@@ -719,7 +765,11 @@ fn private_dir_error(error: scrapelens_core::CoreError) -> ToolError {
 }
 
 /// A file we do not own must not be replaced, even when the directory is writable.
-fn refuse_foreign_owner(path: &Path, parent: &Path, meta: &std::fs::Metadata) -> Result<(), ToolError> {
+fn refuse_foreign_owner(
+    path: &Path,
+    parent: &Path,
+    meta: &std::fs::Metadata,
+) -> Result<(), ToolError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -798,12 +848,7 @@ fn copy_raw_artifact(source: &Path, dest: &Path, name: &str) -> Result<bool, Too
     let meta = match std::fs::symlink_metadata(&path) {
         Ok(meta) => meta,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => {
-            return Err(ToolError::new(
-                "io",
-                format!("{}: {error}", path.display()),
-            ))
-        }
+        Err(error) => return Err(ToolError::new("io", format!("{}: {error}", path.display()))),
     };
     if !meta.file_type().is_file() {
         return Ok(false);
@@ -815,6 +860,16 @@ fn copy_raw_artifact(source: &Path, dest: &Path, name: &str) -> Result<bool, Too
 }
 
 pub fn export_session(ctx: &Ctx, params: ExportSessionParams) -> ToolResult {
+    export_session_inner(ctx, params, false)
+}
+
+/// Writes a sensitive export after the server has confirmed it: the user
+/// accepted, or elicitation is unavailable and `--allow-sensitive-export` is set.
+pub fn export_session_authorized(ctx: &Ctx, params: ExportSessionParams) -> ToolResult {
+    export_session_inner(ctx, params, true)
+}
+
+fn export_session_inner(ctx: &Ctx, params: ExportSessionParams, authorized: bool) -> ToolResult {
     let include_sensitive = params.include_sensitive.unwrap_or(false);
     let entry = ctx.open(&params.session_id)?;
     let imported = scrapelens_core::import_session_dir(&entry.dir).map_err(|error| {
@@ -831,6 +886,13 @@ pub fn export_session(ctx: &Ctx, params: ExportSessionParams) -> ToolResult {
         params.destination.as_deref(),
         include_sensitive,
     )?;
+    if include_sensitive && !authorized && !ctx.cfg.allow_sensitive_export {
+        return Err(ToolError::new(
+            "confirmation_unavailable",
+            "include_sensitive requires confirmation or starting the server with --allow-sensitive-export. Nothing was written.",
+        ));
+    }
+    create_export_dir(&dest)?;
 
     let outcome = (|| -> ToolResult {
         if include_sensitive {
@@ -1142,9 +1204,9 @@ pub fn get_body(ctx: &Ctx, params: GetBodyParams) -> ToolResult {
             }
             return finish(out, view);
         };
-        let (bytes, cut) = view
-            .read_attachment(name, BODY_READ_LIMIT)
-            .ok_or_else(|| ToolError::new("io", format!("attachment {name} unavailable in session")))?;
+        let (bytes, cut) = view.read_attachment(name, BODY_READ_LIMIT).ok_or_else(|| {
+            ToolError::new("io", format!("attachment {name} unavailable in session"))
+        })?;
         let total = body.bytes.unwrap_or(bytes.len() as u64);
         let offset = params.offset.unwrap_or(0);
         if offset > bytes.len() as u64 {
@@ -1920,7 +1982,8 @@ fn trace_request(
                     for key in ["evidences", "partialComposition"] {
                         if let Some(list) = map.get_mut(key).and_then(Value::as_array_mut) {
                             for entry in list.iter_mut().filter_map(Value::as_object_mut) {
-                                for field in ["consumedOffset", "consumedLength", "start", "length"] {
+                                for field in ["consumedOffset", "consumedLength", "start", "length"]
+                                {
                                     entry.remove(field);
                                 }
                             }
@@ -1958,9 +2021,11 @@ pub struct SiteProfileParams {
 pub fn site_profile(ctx: &Ctx, params: SiteProfileParams) -> ToolResult {
     let entry = ctx.open(&params.session_id)?;
     if let Some(id) = &params.target_request_id {
-        entry.lazy.session.find_request(id).ok_or_else(|| {
-            ToolError::not_found(format!("request {id:?} not found in session"))
-        })?;
+        entry
+            .lazy
+            .session
+            .find_request(id)
+            .ok_or_else(|| ToolError::not_found(format!("request {id:?} not found in session")))?;
     }
     let options = scrapelens_recon::ProfileOptions {
         target_request_id: params.target_request_id.clone(),
@@ -2026,16 +2091,16 @@ mod write_private_bytes_tests {
         let link = dir.join("netlog.json");
         symlink(&outside, &link).unwrap();
         let error = write_private_bytes(&link, b"nope").unwrap_err();
-        assert!(
-            error.to_string().contains("symbolic link"),
-            "{error}"
-        );
+        assert!(error.to_string().contains("symbolic link"), "{error}");
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "ORIGINAL\n");
         assert_eq!(
             std::fs::metadata(&outside).unwrap().permissions().mode() & 0o777,
             0o644
         );
-        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]
@@ -2043,17 +2108,18 @@ mod write_private_bytes_tests {
         let path = std::path::Path::new("/usr/bin/scrapelens-t05-not-created");
         assert!(!path.exists(), "the probe path must not already exist");
         let error = write_private_bytes(path, b"nope").unwrap_err();
+        assert!(error.to_string().contains("owned by uid"), "{error}");
         assert!(
-            error.to_string().contains("owned by uid"),
-            "{error}"
+            !path.exists(),
+            "a foreign directory must not receive the file"
         );
-        assert!(!path.exists(), "a foreign directory must not receive the file");
 
         let existing = std::path::Path::new("/bin/ls");
         let before = std::fs::symlink_metadata(existing).unwrap();
         let error = write_private_bytes(existing, b"nope").unwrap_err();
         assert!(
-            error.to_string().contains("owned by uid") || error.to_string().contains("symbolic link"),
+            error.to_string().contains("owned by uid")
+                || error.to_string().contains("symbolic link"),
             "{error}"
         );
         let after = std::fs::symlink_metadata(existing).unwrap();

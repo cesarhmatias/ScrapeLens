@@ -228,6 +228,123 @@ fn reveal_works_when_the_server_allows_it() {
 }
 
 #[test]
+fn sensitive_export_confirms_or_needs_the_flag_and_a_refusal_writes_nothing() {
+    let work = tempfile::tempdir().unwrap();
+    let sessions = work.path().join("sessions");
+    let out = work.path().join("out");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let har = sessions.join("a.har");
+    std::fs::write(&har, flow_har("")).unwrap();
+    let args = [
+        "--sessions-dir",
+        sessions.to_str().unwrap(),
+        "--out-dir",
+        out.to_str().unwrap(),
+    ];
+
+    let mut client = C::start(&program(), &args, Elicit::Decline);
+    client.handshake();
+    let (is_error, imported) = client.tool("import_session", json!({"path": har, "name": "a"}));
+    assert!(!is_error, "{imported}");
+    let (is_error, bad) = client.tool(
+        "export_session",
+        json!({"session_id": "a", "destination": "a/b", "include_sensitive": true}),
+    );
+    assert!(is_error);
+    assert_eq!(bad["error"]["code"], "invalid_argument");
+    assert!(
+        client.elicitations.is_empty(),
+        "an invalid destination must not ask: {:?}",
+        client.elicitations
+    );
+    let (is_error, denied) = client.tool(
+        "export_session",
+        json!({"session_id": "a", "destination": "full-denied", "include_sensitive": true}),
+    );
+    assert!(is_error, "{denied}");
+    assert_eq!(denied["error"]["code"], "confirmation_denied");
+    assert!(denied["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Nothing was written"));
+    assert_eq!(client.elicitations.len(), 1);
+    let prompt = &client.elicitations[0];
+    assert!(prompt.contains("session a"), "{prompt}");
+    assert!(prompt.contains("full-denied"), "{prompt}");
+    assert!(
+        prompt.contains("full capture") && prompt.contains("cdp-events.jsonl"),
+        "{prompt}"
+    );
+    assert_no_secrets(&json!(prompt), "sensitive export confirmation");
+    assert!(!out.join("full-denied").exists());
+    client.finish();
+
+    let mut client = C::start(&program(), &args, Elicit::Unsupported);
+    client.handshake();
+    let (is_error, missing) = client.tool(
+        "export_session",
+        json!({"session_id": "a", "destination": "full-no-flag", "include_sensitive": true}),
+    );
+    assert!(is_error, "{missing}");
+    assert_eq!(missing["error"]["code"], "confirmation_unavailable");
+    assert!(missing["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("--allow-sensitive-export"));
+    assert!(client.elicitations.is_empty());
+    assert!(!out.join("full-no-flag").exists());
+    client.finish();
+
+    let mut flagged = args.to_vec();
+    flagged.push("--allow-sensitive-export");
+    let mut client = C::start(&program(), &flagged, Elicit::Decline);
+    client.handshake();
+    let (is_error, denied) = client.tool(
+        "export_session",
+        json!({"session_id": "a", "destination": "full-flag-denied", "include_sensitive": true}),
+    );
+    assert!(is_error, "{denied}");
+    assert_eq!(denied["error"]["code"], "confirmation_denied");
+    assert!(!out.join("full-flag-denied").exists());
+    client.finish();
+
+    let mut client = C::start(&program(), &flagged, Elicit::Unsupported);
+    client.handshake();
+    let (is_error, written) = client.tool(
+        "export_session",
+        json!({"session_id": "a", "destination": "full-flag", "include_sensitive": true}),
+    );
+    assert!(!is_error, "{written}");
+    assert_eq!(written["includeSensitive"], true);
+    assert!(client.elicitations.is_empty());
+    assert!(out.join("full-flag").join("session.json").is_file());
+    assert_no_secrets(&written, "sensitive export json");
+    client.finish();
+
+    let mut client = C::start(&program(), &args, Elicit::Accept);
+    client.handshake();
+    let (is_error, written) = client.tool(
+        "export_session",
+        json!({"session_id": "a", "destination": "full-accepted", "include_sensitive": true}),
+    );
+    assert!(!is_error, "{written}");
+    assert_eq!(written["includeSensitive"], true);
+    assert!(client.elicitations[0].contains("full-accepted"));
+    assert!(out.join("full-accepted").join("session.json").is_file());
+    let (_, sanitized) = client.tool(
+        "export_session",
+        json!({"session_id": "a", "destination": "still-sanitized"}),
+    );
+    assert_eq!(sanitized["includeSensitive"], false);
+    assert_eq!(
+        client.elicitations.len(),
+        1,
+        "a sanitized export does not ask"
+    );
+    client.finish();
+}
+
+#[test]
 fn server_refuses_to_start_without_sessions_dir() {
     let output = Command::new(env!("CARGO_BIN_EXE_scrapelens-mcp"))
         .output()

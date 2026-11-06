@@ -19,6 +19,8 @@ pub struct Config {
     pub allow_reveal: bool,
     /// Accepts `start_capture` without elicitation when the client does not support it.
     pub allow_unconfirmed_capture: bool,
+    /// Accepts `include_sensitive` without elicitation when the client does not support it.
+    pub allow_sensitive_export: bool,
     pub max_import_bytes: u64,
 }
 
@@ -55,6 +57,7 @@ impl Config {
             extra_dirs: extras,
             allow_reveal,
             allow_unconfirmed_capture: false,
+            allow_sensitive_export: false,
             max_import_bytes,
         })
     }

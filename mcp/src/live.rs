@@ -225,6 +225,36 @@ pub fn decide(
     }
 }
 
+/// Same policy as [`decide`], for a full export. A refusal writes nothing, even
+/// when `--allow-sensitive-export` is set. That flag applies only when the
+/// client cannot ask.
+pub fn decide_sensitive_export(
+    confirmation: &Confirmation,
+    allow_sensitive_export: bool,
+) -> Result<&'static str, ToolError> {
+    match confirmation {
+        Confirmation::Accepted => Ok("elicited"),
+        Confirmation::Declined(why) => Err(ToolError::new(
+            "confirmation_denied",
+            format!("the user did not confirm: {why}. Nothing was written."),
+        )),
+        Confirmation::Cancelled => Err(ToolError::new(
+            "confirmation_denied",
+            "the confirmation was cancelled or expired. Nothing was written.",
+        )),
+        Confirmation::Unavailable(why) if allow_sensitive_export => {
+            let _ = why;
+            Ok("unconfirmed-flag")
+        }
+        Confirmation::Unavailable(why) => Err(ToolError::new(
+            "confirmation_unavailable",
+            format!(
+                "the MCP client does not allow asking for confirmation ({why}); include_sensitive is refused by default. Nothing was written. The operator can start the server with --allow-sensitive-export."
+            ),
+        )),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // mapa de capturas
 // ---------------------------------------------------------------------------
@@ -428,7 +458,9 @@ impl Manager {
                         // In another thread: stopping waits for Chrome to exit.
                         std::thread::spawn(move || {
                             if let Err(error) = cap.stop() {
-                                eprintln!("scrapelens-mcp: while stopping an abandoned capture: {error}");
+                                eprintln!(
+                                    "scrapelens-mcp: while stopping an abandoned capture: {error}"
+                                );
                             }
                         });
                     }
@@ -570,9 +602,9 @@ impl Manager {
         }
         let running = self.running(&params.capture_id)?;
         let guard = running.cap.lock().unwrap_or_else(|e| e.into_inner());
-        let cap = guard
-            .as_ref()
-            .ok_or_else(|| ToolError::new("capture_stopped", "the capture has already been stopped"))?;
+        let cap = guard.as_ref().ok_or_else(|| {
+            ToolError::new("capture_stopped", "the capture has already been stopped")
+        })?;
         let result = cap
             .navigate(&params.url, wait_load, Duration::from_millis(timeout_ms))
             .map_err(|e| ToolError::new(e.code(), e.to_string()))?;
@@ -587,9 +619,9 @@ impl Manager {
     pub fn status(&self, capture_id: &str) -> Result<Value, ToolError> {
         let running = self.running(capture_id)?;
         let guard = running.cap.lock().unwrap_or_else(|e| e.into_inner());
-        let cap = guard
-            .as_ref()
-            .ok_or_else(|| ToolError::new("capture_stopped", "the capture has already been stopped"))?;
+        let cap = guard.as_ref().ok_or_else(|| {
+            ToolError::new("capture_stopped", "the capture has already been stopped")
+        })?;
         let mut object = match serde_json::to_value(cap.status()) {
             Ok(Value::Object(map)) => map,
             _ => Map::new(),
@@ -615,7 +647,9 @@ impl Manager {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take()
-            .ok_or_else(|| ToolError::new("capture_stopped", "the capture has already been stopped"))?;
+            .ok_or_else(|| {
+                ToolError::new("capture_stopped", "the capture has already been stopped")
+            })?;
         let report = cap.stop().map_err(|e| {
             ToolError::new("stop_failed", format!("failed to stop the capture: {e}"))
         })?;

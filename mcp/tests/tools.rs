@@ -843,7 +843,10 @@ fn repository_secret_fixture_never_leaks_without_reveal() {
     }
     for output in &outputs {
         let t = text(output);
-        assert!(!t.contains("SECRET-"), "secret leaked from the fixture: {t}");
+        assert!(
+            !t.contains("SECRET-"),
+            "secret leaked from the fixture: {t}"
+        );
     }
 }
 
@@ -1003,7 +1006,9 @@ fn export_session_is_sanitized_by_default_and_omits_raw_artifacts() {
     let src = env.dir.path().join("sessions").join(&id);
     std::fs::write(
         src.join("cdp-events.jsonl"),
-        format!("{{\"method\":\"Network.requestWillBeSent\",\"params\":{{\"cookie\":\"{SID}\"}}}}\n"),
+        format!(
+            "{{\"method\":\"Network.requestWillBeSent\",\"params\":{{\"cookie\":\"{SID}\"}}}}\n"
+        ),
     )
     .unwrap();
     std::fs::write(
@@ -1016,32 +1021,40 @@ fn export_session_is_sanitized_by_default_and_omits_raw_artifacts() {
     assert_eq!(out["includeSensitive"], false);
     assert!(out["totalRedactions"].as_u64().unwrap() > 0);
     let dir = PathBuf::from(out["path"].as_str().unwrap());
-    assert_eq!(
-        dir.file_name().unwrap().to_str().unwrap(),
-        "flow-sanitized"
-    );
+    assert_eq!(dir.file_name().unwrap().to_str().unwrap(), "flow-sanitized");
     assert_eq!(mode_of(&dir), 0o700);
     assert_eq!(mode_of(&dir.join("session.json")), 0o600);
     let session = std::fs::read_to_string(dir.join("session.json")).unwrap();
     for secret in MASKED_SECRETS {
-        assert!(!session.contains(secret), "secret {secret} in the exported session.json");
+        assert!(
+            !session.contains(secret),
+            "secret {secret} in the exported session.json"
+        );
     }
-    assert!(!dir.join("cdp-events.jsonl").exists(), "raw artifact must not go into the sanitized export");
+    assert!(
+        !dir.join("cdp-events.jsonl").exists(),
+        "raw artifact must not go into the sanitized export"
+    );
     assert!(!dir.join("netlog.json").exists());
     assert_eq!(out["rawArtifactsWritten"], json!([]));
     // A second export with the same name gets a suffix.
     let out2 = export_session(&env.ctx, p(json!({"session_id": id}))).unwrap();
-    assert!(out2["path"].as_str().unwrap().ends_with("flow-sanitized-2"), "{out2}");
+    assert!(
+        out2["path"].as_str().unwrap().ends_with("flow-sanitized-2"),
+        "{out2}"
+    );
 }
 
 #[test]
 fn export_session_include_sensitive_keeps_secrets_raw_artifacts_and_private_modes() {
-    let env = Env::new(false);
+    let mut env = Env::new(false);
     let id = env.import_flow("flow", "");
     let src = env.dir.path().join("sessions").join(&id);
     std::fs::write(
         src.join("cdp-events.jsonl"),
-        format!("{{\"method\":\"Network.requestWillBeSent\",\"params\":{{\"cookie\":\"{SID}\"}}}}\n"),
+        format!(
+            "{{\"method\":\"Network.requestWillBeSent\",\"params\":{{\"cookie\":\"{SID}\"}}}}\n"
+        ),
     )
     .unwrap();
     std::fs::write(
@@ -1051,6 +1064,7 @@ fn export_session_include_sensitive_keeps_secrets_raw_artifacts_and_private_mode
     .unwrap();
     std::fs::write(src.join("cdp-bodies.jsonl"), format!("{PASSWORD}\n")).unwrap();
 
+    env.ctx.cfg.allow_sensitive_export = true;
     let out = export_session(
         &env.ctx,
         p(json!({"session_id": id, "destination": "my-export", "include_sensitive": true})),
@@ -1083,8 +1097,97 @@ fn export_session_include_sensitive_keeps_secrets_raw_artifacts_and_private_mode
     // The tool's JSON never carries the values.
     let text = out.to_string();
     for secret in [SID, TOKEN, PASSWORD] {
-        assert!(!text.contains(secret), "{secret} in the export_session JSON");
+        assert!(
+            !text.contains(secret),
+            "{secret} in the export_session JSON"
+        );
     }
+}
+
+#[test]
+fn sensitive_export_without_confirmation_or_the_flag_writes_nothing() {
+    let env = Env::new(false);
+    let id = env.import_flow("flow", "");
+    let dest = env.ctx.cfg.out_dir.join("no-flag");
+    let error = export_session(
+        &env.ctx,
+        p(json!({"session_id": id, "destination": "no-flag", "include_sensitive": true})),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "confirmation_unavailable");
+    assert!(
+        error.to_string().contains("--allow-sensitive-export"),
+        "{error}"
+    );
+    assert!(error.to_string().contains("Nothing was written"), "{error}");
+    assert!(
+        !dest.exists(),
+        "a refused sensitive export must not create the directory"
+    );
+
+    let prompt = preview_sensitive_export(
+        &env.ctx,
+        &p(json!({"session_id": id, "destination": "no-flag", "include_sensitive": true})),
+    )
+    .unwrap();
+    assert!(
+        prompt.contains(&id),
+        "confirmation must name the session: {prompt}"
+    );
+    assert!(
+        prompt.contains("no-flag"),
+        "confirmation must name the destination: {prompt}"
+    );
+    assert!(
+        prompt.contains("full capture") && prompt.contains("cdp-events.jsonl"),
+        "confirmation must name the contents: {prompt}"
+    );
+    for secret in [SID, TOKEN, PASSWORD] {
+        assert!(!prompt.contains(secret), "{secret} in the confirmation");
+    }
+    assert!(!dest.exists(), "preview must not create the destination");
+
+    // An invalid destination fails before any confirmation text is produced.
+    let bad = preview_sensitive_export(
+        &env.ctx,
+        &p(json!({"session_id": id, "destination": "a/b", "include_sensitive": true})),
+    )
+    .unwrap_err();
+    assert_eq!(bad.code, "invalid_argument");
+
+    use scrapelens_mcp::live::{decide_sensitive_export, Confirmation};
+    assert_eq!(
+        decide_sensitive_export(&Confirmation::Accepted, false).unwrap(),
+        "elicited"
+    );
+    let declined =
+        decide_sensitive_export(&Confirmation::Declined("the user declined".into()), true)
+            .unwrap_err();
+    assert_eq!(declined.code, "confirmation_denied");
+    assert!(declined.to_string().contains("Nothing was written"));
+    assert_eq!(
+        decide_sensitive_export(&Confirmation::Cancelled, true)
+            .unwrap_err()
+            .code,
+        "confirmation_denied"
+    );
+    let unavailable = decide_sensitive_export(
+        &Confirmation::Unavailable("the client did not declare the elicitation capability".into()),
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(unavailable.code, "confirmation_unavailable");
+    assert!(unavailable.to_string().contains("--allow-sensitive-export"));
+    assert_eq!(
+        decide_sensitive_export(
+            &Confirmation::Unavailable(
+                "the client did not declare the elicitation capability".into()
+            ),
+            true,
+        )
+        .unwrap(),
+        "unconfirmed-flag"
+    );
 }
 
 #[test]
