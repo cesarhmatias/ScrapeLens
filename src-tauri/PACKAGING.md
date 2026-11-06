@@ -4,7 +4,37 @@ Status of the package delivered in this round. It serves as reproducible evidenc
 the commands below produce exactly the artifact described, on the same machine and
 under the same conditions.
 
-## macOS — release 0.1.2 (2026-11-06, current)
+## macOS — release 0.1.3 (2026-11-06, current)
+
+Version commit `ac35fbd` (`chore(release): bump ScrapeLens to 0.1.3`, on `main` over `41caac4`).
+The bundle is built from a clean export of that commit (`git archive`), with the product
+version 0.1.3 (`tauri.conf.json`, `src-tauri/Cargo.toml`, `app/package.json`). The `test-hooks`
+feature is off (default features).
+
+Bundle: `ScrapeLens.app` (version 0.1.3) under `sl-release-0.1.3/target/release/bundle/macos/`
+(outside the repository).
+SHA-256 of `Contents/MacOS/scrapelens` (20,090,880 bytes):
+`b3fa3b6e5cddadff33765327f837d5a1cf8674fe55a9457daf56cdc8a054dff1`.
+Release archive: `~/OpenBot/Agents/agent-466e334c-b464-4294-a274-2a5e33a666b9/sl-release-0.1.3/macos/ScrapeLens-0.1.3-macos-arm64.zip`
+(6,964,803 bytes, `ditto -c -k --keepParent`), SHA-256
+`03d21fd7ffb87eeac95c81491cdc6b7dba210bc9364ccb383730b53fd11ffa1f`. Extracted to a
+temporary folder (then removed), the app passes `codesign --verify --deep --strict` and keeps the
+same executable hash. The bundle passes the same check.
+Signed with `ScrapeLens Local Signing`; designated requirement certificate root
+`d0a53befa59a447043abc9e58a3381addbbf1751`.
+Built with `./app/node_modules/.bin/tauri build --bundles app`. No window was opened
+or activated, and no running ScrapeLens instance was present.
+`strings` on the executable finds none of the nine test variables (`SCRAPELENS_TEST_PROXY_CA`,
+`SCRAPELENS_CDP_TRANSPORT`, `SCRAPELENS_CAPTURE_NETWORK`, `SCRAPELENS_TEST_MODE`,
+`SCRAPELENS_CAPTURE_IGNORE_CERT`, `SCRAPELENS_TEST_PROXY_BYPASS_LOOPBACK`,
+`SCRAPELENS_RELAY_PEER_PROBE`, `SCRAPELENS_CAPTURE_URL`, `SCRAPELENS_CAPTURE_HEADLESS`)
+nor `--import-har` or `--open-capture`.
+Validation: `cargo test --locked` 84 passed, 0 failed, 8 ignored; `cargo clippy --locked
+--all-targets -- -D warnings` clean; `npm test`, typecheck and build passed.
+Linux packages for 0.1.3 are not built here; the README now names them, and they are the
+Testes step.
+
+## macOS — release 0.1.2 (2026-11-06, superseded by 0.1.3)
 
 Build commit `097dcfa` (provisional; it will be remapped when the history is
 rewritten). It keeps the 0.1.2 version and includes the relay fix that reports each
