@@ -54,20 +54,28 @@ mod linux {
                 }
             }
         }
-        // Not in the browser tree. A FIN_WAIT row can outlive the process that
-        // closed it. Only a process that still has the inode can read a tunnel.
-        if last == NOT_BROWSER {
-            return match inode_once(peer_port, listen_port) {
-                Ok(Some(inode)) => match any_process_has_inode(inode) {
-                    Ok(true) => Err(NOT_BROWSER),
-                    Ok(false) => Err(super::ALREADY_CLOSED),
-                    Err(()) => Err(UNCONFIRMED),
-                },
-                Ok(None) => Err(super::ALREADY_CLOSED),
-                Err(()) => Err(UNCONFIRMED),
-            };
+        // The browser tree missed this socket. A row that is gone, or that no
+        // process of the socket's uid still holds, cannot read a tunnel. An
+        // unreadable process of another uid is not that holder. A same-uid
+        // process that still has it stays refused, and is not admitted here.
+        if last == NOT_BROWSER || last == UNCONFIRMED {
+            let held = if last == NOT_BROWSER { NOT_BROWSER } else { UNCONFIRMED };
+            return released_or(peer_port, listen_port, held);
         }
         Err(last)
+    }
+
+    /// `held` is the refusal when a process of the socket uid still has the inode.
+    fn released_or(peer_port: u16, listen_port: u16, held: &'static str) -> Result<(), &'static str> {
+        match client_once(peer_port, listen_port) {
+            Ok(None) => Err(super::ALREADY_CLOSED),
+            Err(()) => Err(UNCONFIRMED),
+            Ok(Some(client)) => match uid_holds_inode(client.inode, client.uid) {
+                Ok(false) => Err(super::ALREADY_CLOSED),
+                Ok(true) => Err(held),
+                Err(()) => Err(UNCONFIRMED),
+            },
+        }
     }
 
     fn admit_once(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
@@ -97,8 +105,8 @@ mod linux {
     }
 
     fn find_client_inode(peer_port: u16, listen_port: u16) -> Result<u64, &'static str> {
-        match inode_once(peer_port, listen_port) {
-            Ok(Some(inode)) => Ok(inode),
+        match client_once(peer_port, listen_port) {
+            Ok(Some(client)) => Ok(client.inode),
             // TIME_WAIT and a socket that has already disappeared have no process.
             // A client that is still reading stays ESTABLISHED or FIN_WAIT and is listed.
             Ok(None) => Err(super::ALREADY_CLOSED),
@@ -108,8 +116,8 @@ mod linux {
 
     /// The client socket is the established row whose local port is the ephemeral port
     /// and whose remote port is the relay. `/proc/net/tcp` addresses are little-endian.
-    fn inode_once(peer_port: u16, listen_port: u16) -> Result<Option<u64>, ()> {
-        let mut found = None;
+    fn client_once(peer_port: u16, listen_port: u16) -> Result<Option<ClientSocket>, ()> {
+        let mut found: Option<ClientSocket> = None;
         for path in ["/proc/net/tcp", "/proc/net/tcp6"] {
             let text = match std::fs::read_to_string(path) {
                 Ok(text) => text,
@@ -139,19 +147,28 @@ mod linux {
                 }
                 // tx_queue:rx_queue, tr:tm, retrnsmt, uid, timeout, inode.
                 // A torn or shifting snapshot can repeat one socket. The same inode is
-                // one match. Two inodes on one port pair means the table moved.
-                let Some(inode) = cols.nth(5) else { continue };
+                // one match. Two inodes, or two uids, on one port pair means the table moved.
+                let Some(uid) = cols.nth(3) else { continue };
+                let Ok(uid) = uid.parse::<u32>() else { continue };
+                let Some(inode) = cols.nth(1) else { continue };
                 let Ok(inode) = inode.parse::<u64>() else { continue };
+                let row = ClientSocket { inode, uid };
                 if let Some(previous) = found {
-                    if previous != inode {
+                    if previous.inode != inode || previous.uid != uid {
                         return Err(());
                     }
                     continue;
                 }
-                found = Some(inode);
+                found = Some(row);
             }
         }
         Ok(found)
+    }
+
+    #[derive(Clone, Copy)]
+    struct ClientSocket {
+        inode: u64,
+        uid: u32,
     }
 
     fn is_loopback(addr: &str) -> bool {
@@ -202,7 +219,11 @@ mod linux {
         Ok(false)
     }
 
-    fn any_process_has_inode(inode: u64) -> Result<bool, ()> {
+    /// `Ok(true)` when a process of `uid` has the inode. `Ok(false)` when every
+    /// process of that uid was readable and none has it. Another uid is ignored,
+    /// including one whose descriptor table cannot be read. `Err` when a process
+    /// of this uid, or a process whose uid cannot be read, was skipped.
+    fn uid_holds_inode(inode: u64, uid: u32) -> Result<bool, ()> {
         let entries = std::fs::read_dir("/proc").map_err(|_| ())?;
         let mut incomplete = false;
         for entry in entries {
@@ -210,6 +231,14 @@ mod linux {
             let Some(pid) = entry.file_name().to_str().and_then(|name| name.parse::<u32>().ok()) else {
                 continue;
             };
+            match process_uid(pid) {
+                Ok(Some(process)) if process == uid => {}
+                Ok(_) => continue,
+                Err(()) => {
+                    incomplete = true;
+                    continue;
+                }
+            }
             match process_has_inode(pid, inode) {
                 Ok(true) => return Ok(true),
                 Ok(false) => {}
@@ -217,6 +246,22 @@ mod linux {
             }
         }
         if incomplete { Err(()) } else { Ok(false) }
+    }
+
+    /// `Ok(None)` is a pid that has already exited. An unreadable status hides
+    /// the uid, so the caller keeps the check fail-closed.
+    fn process_uid(pid: u32) -> Result<Option<u32>, ()> {
+        let text = match std::fs::read_to_string(format!("/proc/{pid}/status")) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err(()),
+        };
+        for line in text.lines() {
+            let Some(rest) = line.strip_prefix("Uid:") else { continue };
+            let Some(uid) = rest.split_whitespace().next() else { return Err(()) };
+            return uid.parse().map(Some).map_err(|_| ());
+        }
+        Err(())
     }
 
     fn descends_from(pid: u32, owner: u32) -> Result<bool, &'static str> {
@@ -249,6 +294,61 @@ mod linux {
             }
         }
         Err(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::net::{TcpListener, TcpStream};
+        use std::process::Command;
+        use std::thread;
+        use std::time::Duration;
+
+        use super::super::ALREADY_CLOSED;
+        use super::{admit, client_once, released_or, uid_holds_inode, NOT_BROWSER, UNCONFIRMED};
+
+        #[test]
+        fn the_socket_uid_scan_sees_a_live_descriptor_and_not_a_closed_one() {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let accepted = listener.accept().unwrap();
+            let peer = client.local_addr().unwrap().port();
+            let row = client_once(peer, port).unwrap().expect("client row");
+            assert_eq!(uid_holds_inode(row.inode, row.uid), Ok(true));
+            drop(client);
+            drop(accepted);
+            thread::sleep(Duration::from_millis(50));
+            assert_eq!(uid_holds_inode(row.inode, row.uid), Ok(false));
+        }
+
+        #[test]
+        fn a_dropped_socket_is_quiet_and_a_live_one_stays_refused() {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let (accepted, _) = listener.accept().unwrap();
+            let peer = client.local_addr().unwrap().port();
+            assert_eq!(released_or(peer, port, UNCONFIRMED), Err(UNCONFIRMED));
+            assert_eq!(released_or(peer, port, NOT_BROWSER), Err(NOT_BROWSER));
+
+            drop(client);
+            drop(accepted);
+            thread::sleep(Duration::from_millis(50));
+            assert_eq!(released_or(peer, port, UNCONFIRMED), Err(ALREADY_CLOSED));
+            assert_eq!(released_or(peer, port, NOT_BROWSER), Err(ALREADY_CLOSED));
+
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let _accepted = listener.accept().unwrap();
+            let peer = client.local_addr().unwrap().port();
+            let mut sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+            let verdict = admit(peer, port, sleeper.id());
+            let _ = sleeper.kill();
+            let _ = sleeper.wait();
+            assert_eq!(verdict, Err(NOT_BROWSER), "{verdict:?}");
+            drop(client);
+        }
     }
 }
 
@@ -310,6 +410,15 @@ mod macos {
                 Ok(None) => return Err(super::ALREADY_CLOSED),
                 Err(()) => return Err(UNCONFIRMED),
             }
+        }
+        // The owner tree could not be read fully. A finished scan that finds
+        // nobody still holding the socket is a cancel, not a user-facing failure.
+        // A process that still has it stays unconfirmed: this does not admit it.
+        if last == UNCONFIRMED {
+            return match socket_holder(peer_port, listen_port) {
+                Ok(None) => Err(super::ALREADY_CLOSED),
+                Ok(Some(_)) | Err(()) => Err(UNCONFIRMED),
+            };
         }
         Err(last)
     }
