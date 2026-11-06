@@ -6,6 +6,7 @@
 //! browser demo mode and arrives labeled as `synthetic: true`.
 
 pub mod adapters;
+pub mod browser_check;
 pub mod capture;
 pub mod chrome;
 pub mod capture_proxy;
@@ -75,7 +76,9 @@ pub fn run() {
         .setup(|app| {
             menu::install(app.handle())?;
             let state = app.state::<AppState>();
-            if let Some(path) = prefs::load_chrome_path(app.handle()) {
+            // A saved browser is used only if it still passes the browser check (an old or
+            // edited preference may point at a shell or a script); otherwise detection runs.
+            if let Some(path) = prefs::load_chrome_path(app.handle()).and_then(|p| browser_check::accept(&p).ok()) {
                 *state.chrome_path.lock().expect("chrome_path lock") = Some(path);
             }
             // Test-only command line: release builds read no arguments and no test variable.

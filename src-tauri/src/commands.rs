@@ -866,6 +866,8 @@ pub fn set_chrome_path(
             resolved.display()
         ));
     }
+    // Only a Chromium-based browser is accepted (see `browser_check`); nothing is run.
+    let resolved = crate::browser_check::accept(&resolved)?;
     prefs::save_chrome_path(&app, &resolved)?;
     *state.chrome_path.lock().expect("chrome_path lock") = Some(resolved.clone());
     Ok(ChromeInfo {
