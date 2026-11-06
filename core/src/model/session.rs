@@ -182,6 +182,34 @@ pub struct CaptureMeta {
     pub chrome_args: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    /// Proxy the capture went through. Absent for direct captures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<ProxyRecord>,
+}
+
+/// How the browser reached the proxy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProxyRoute {
+    /// Chrome was given the proxy directly (`--proxy-server`, no credentials).
+    Direct,
+    /// Chrome talked to a local relay on loopback, which added the upstream
+    /// authentication and the allowlist.
+    Relay,
+}
+
+/// The proxy of a capture. Holds no credentials, ever: the password is never
+/// stored in a session, in any export, or in any output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyRecord {
+    /// `http`, `https`, `socks5` or `socks5h` (the scheme of the accepted link).
+    pub scheme: String,
+    pub host: String,
+    pub port: u16,
+    /// The link carried a username or password. The values are not recorded.
+    pub authenticated: bool,
+    pub route: ProxyRoute,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

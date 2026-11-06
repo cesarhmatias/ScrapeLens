@@ -187,6 +187,41 @@ sourceId?, streamId?, view }`. It keeps the block from each source (CDP Blink,
 CDP ExtraInfo, NetLog transactional, NetLog session) even after the primary
 view moves from one source to another.
 
+## Capture proxy (optional, additive; `schemaVersion` stays 1)
+
+`capture.proxy` is present only when the capture went through a proxy. Sessions
+without it are unchanged.
+
+```json
+"capture": {
+  "proxy": { "scheme": "http", "host": "proxy.example", "port": 8080,
+             "authenticated": true, "route": "relay" }
+}
+```
+
+- `scheme`: `http | https | socks5 | socks5h`, as in the accepted link.
+- `host`, `port`: the proxy address. Kept in the full export only.
+- `authenticated`: the link carried credentials. The values are never recorded.
+- `route`: `direct` (Chrome was given `--proxy-server`) or `relay` (a loopback
+  relay added the upstream authentication and the allowlist).
+
+No credential, username or password appears in any session field, export or
+output. Captures with a proxy add a session note that HTTP/3 is not used in that
+capture: the proxy path does not carry QUIC, so an absence of h3 is not evidence.
+
+Sanitized export: keeps `scheme` and `authenticated`; removes `host` and `port`;
+`chromeArgs` and `browserBinary` are removed as for every capture. The sanitizer
+always redacts `Proxy-Authorization` and `Proxy-Authenticate` header values, and
+credentials embedded in any URL.
+
+NetLog through a proxy: an HTTPS target is reached through `CONNECT`. The tunnel
+events (`HTTP_TRANSACTION_SEND_TUNNEL_HEADERS`,
+`HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS`) are not requests and are not
+parsed as attempts. They do not affect `networkState`. The protocol of the
+request is the one of the application request inside the tunnel, when the
+NetLog shows it; without that proof it stays `unknown`. A plain `http://` target
+is sent with an absolute-URI request line; the URL comes from the URL_REQUEST.
+
 ## Body
 
 ```json

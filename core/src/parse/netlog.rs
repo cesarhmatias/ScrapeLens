@@ -2654,6 +2654,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
         browser_binary: None,
         chrome_args: None,
         notes: Some("imported without CDP; association between sources was not attempted".to_string()),
+        proxy: None,
     });
     meta.labels.push("netlog-import".to_string());
     meta.completeness = Completeness::partial(
