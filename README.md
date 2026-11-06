@@ -23,7 +23,7 @@
 
 ---
 
-**ScrapeLens** captures traffic from Chromium browsers (Chrome, Brave, Arc, Edge, CloakBrowser) by combining **Chrome DevTools Protocol (CDP)** over a pipe with a streaming **NetLog**, or imports existing **HAR** and **NetLog** files. Unlike conventional tools that normalize headers into dictionaries, ScrapeLens preserves the **exact sequence reported by the source**, duplicate headers, original capitalization, HTTP/2 and HTTP/3 pseudo-headers (`:method`, `:path`, `:authority`, `:scheme`), redirect chains, network attempts and **explicit per-field provenance**.
+**ScrapeLens** captures traffic from Chromium browsers (Chrome, Chromium, Brave, Arc, Edge) by combining **Chrome DevTools Protocol (CDP)** over a pipe with a streaming **NetLog**, or imports existing **HAR** and **NetLog** files. Unlike conventional tools that normalize headers into dictionaries, ScrapeLens preserves the **exact sequence reported by the source**, duplicate headers, original capitalization, HTTP/2 and HTTP/3 pseudo-headers (`:method`, `:path`, `:authority`, `:scheme`), redirect chains, network attempts and **explicit per-field provenance**.
 
 Built with **Tauri 2 + React/TypeScript + Rust**, it runs **100% locally**, with no external sidecars, no cloud and **no telemetry**.
 
@@ -183,7 +183,7 @@ Example configuration (`mcpServers`):
 | **Analysis & Diff** | `trace_value` | Traces where a cookie, header or dynamic value first appeared (`firstSetter`) and where it was consumed. |
 | | `diff_requests` | Compares two requests of the same session (URL, query, headers, cookies and body fields). |
 | | `diff_sessions` | Pairs and compares equivalent requests across two distinct sessions. |
-| **Live Capture** | `start_capture` | Starts a controlled capture in a Chromium/CloakBrowser browser with a host scope and user confirmation via MCP elicitation (supports `cookie_source` to import cookies). |
+| **Live Capture** | `start_capture` | Starts a controlled capture in a Chromium-based browser with a host scope and user confirmation via MCP elicitation (supports `cookie_source` to import cookies). |
 | | `navigate` | Navigates the monitored tab to a new URL within the authorized hosts. |
 | | `capture_status` | Queries event, request and warning counts of the active capture. |
 | | `stop_capture` | Ends the capture, persists the correlated session (`CDP + NetLog`) and returns the `sessionId`. |

@@ -1,5 +1,5 @@
-//! Which programs the App accepts as its Chrome: Google Chrome (stable), Chromium, Brave,
-//! Microsoft Edge and Arc. Anything else is refused: a shell, a launcher script, a directory,
+//! Which programs the App accepts as its Chrome: Google Chrome (stable, Beta, Dev, Canary and
+//! Chrome for Testing), Chromium, Brave, Microsoft Edge and Arc. Anything else is refused: a shell, a launcher script, a directory,
 //! an arbitrary file. The check only reads: the bundle's `Info.plist` (through the system
 //! `plutil`) on macOS, and the file header and name on Linux. It never runs the file.
 //!
@@ -17,6 +17,10 @@ use std::io::Read;
 /// macOS bundle identifiers of the accepted browsers.
 pub const MAC_BUNDLE_IDS: &[&str] = &[
     "com.google.Chrome",          // Google Chrome (stable)
+    "com.google.Chrome.beta",     // Google Chrome Beta (not checked on a Mac with it installed)
+    "com.google.Chrome.dev",      // Google Chrome Dev (not checked on a Mac with it installed)
+    "com.google.Chrome.canary",   // Google Chrome Canary (not checked on a Mac with it installed)
+    "com.google.chrome.for.testing", // Chrome for Testing (from a forum report, not checked locally)
     "org.chromium.Chromium",      // Chromium
     "com.brave.Browser",          // Brave
     "com.microsoft.edgemac",      // Microsoft Edge
@@ -248,6 +252,10 @@ mod tests {
         let dir = scratch("mac");
         for (name, id) in [
             ("Google Chrome", "com.google.Chrome"),
+            ("Google Chrome Beta", "com.google.Chrome.beta"),
+            ("Google Chrome Dev", "com.google.Chrome.dev"),
+            ("Google Chrome Canary", "com.google.Chrome.canary"),
+            ("Google Chrome for Testing", "com.google.chrome.for.testing"),
             ("Chromium", "org.chromium.Chromium"),
             ("Brave Browser", "com.brave.Browser"),
             ("Microsoft Edge", "com.microsoft.edgemac"),
