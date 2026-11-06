@@ -15,7 +15,7 @@
 use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -24,6 +24,9 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 use crate::proxy::{ProxyLink, ProxyScheme};
+
+#[path = "relay_peer.rs"]
+mod peer;
 
 /// Decides whether a destination (host, port) may be reached through the relay.
 pub type AllowFn = Arc<dyn Fn(&str, u16) -> bool + Send + Sync>;
@@ -80,6 +83,26 @@ impl ProxyPlan {
     pub fn failures(&self) -> Vec<String> {
         self.relay.as_ref().map(Relay::failures).unwrap_or_default()
     }
+
+    /// Publishes the browser pid. Until this runs, the relay refuses every connection.
+    /// Called after the browser is stopped and before it is continued, so nothing connects first.
+    pub fn set_chrome_pid(&self, pid: u32) {
+        if let Some(relay) = &self.relay {
+            relay.set_owner_pid(pid);
+        }
+    }
+
+    pub(crate) fn peer_check(&self) -> PeerCheck {
+        self.relay.as_ref().map(Relay::peer_check).unwrap_or_default()
+    }
+}
+
+/// How long the process check took, and how many connections it refused.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct PeerCheck {
+    pub checks: u64,
+    pub refused: u64,
+    pub max_nanos: u64,
 }
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -126,7 +149,12 @@ pub struct Relay {
     accept: Option<JoinHandle<()>>,
     failures: Arc<Mutex<Vec<String>>>,
     sockets: Arc<Mutex<Vec<(u64, TcpStream)>>>,
+    #[cfg(test)]
     client_limit: Arc<AtomicUsize>,
+    owner: Arc<AtomicU32>,
+    peer_checks: Arc<AtomicU64>,
+    peer_refused: Arc<AtomicU64>,
+    peer_max_nanos: Arc<AtomicU64>,
 }
 
 impl Relay {
@@ -174,6 +202,10 @@ impl Relay {
         let port = listener.local_addr().map_err(|e| RelayError::Listen(e.kind().to_string()))?.port();
 
         let client_limit = Arc::new(AtomicUsize::new(MAX_CLIENTS));
+        let owner = Arc::new(AtomicU32::new(0));
+        let peer_checks = Arc::new(AtomicU64::new(0));
+        let peer_refused = Arc::new(AtomicU64::new(0));
+        let peer_max_nanos = Arc::new(AtomicU64::new(0));
         let shared = Shared {
             link: Arc::new(link.clone()),
             allow,
@@ -183,7 +215,14 @@ impl Relay {
             next_socket: Arc::new(AtomicU64::new(1)),
             clients: Arc::new(AtomicUsize::new(0)),
             client_limit: Arc::clone(&client_limit),
+            owner: Arc::clone(&owner),
+            listen_port: port,
+            peer_checks: Arc::clone(&peer_checks),
+            peer_refused: Arc::clone(&peer_refused),
+            peer_max_nanos: Arc::clone(&peer_max_nanos),
         };
+        #[cfg(not(test))]
+        drop(client_limit);
         let stop = Arc::new(AtomicBool::new(false));
         let accept = {
             let stop = Arc::clone(&stop);
@@ -196,16 +235,38 @@ impl Relay {
             accept: Some(accept),
             failures: shared.failures,
             sockets: shared.sockets,
+            #[cfg(test)]
             client_limit,
+            owner,
+            peer_checks,
+            peer_refused,
+            peer_max_nanos,
         })
+    }
+
+    /// The only process, with its descendants, allowed to open a tunnel.
+    /// Until this is called the relay refuses every connection and does not dial upstream.
+    /// A capture passes the Chrome pid. Tests pass the process that stands in for it.
+    pub fn set_owner_pid(&self, pid: u32) {
+        self.owner.store(pid, Ordering::SeqCst);
+    }
+
+    pub(crate) fn peer_check(&self) -> PeerCheck {
+        PeerCheck {
+            checks: self.peer_checks.load(Ordering::Relaxed),
+            refused: self.peer_refused.load(Ordering::Relaxed),
+            max_nanos: self.peer_max_nanos.load(Ordering::Relaxed),
+        }
     }
 
     /// Test-only ceiling, lower than [`MAX_CLIENTS`], so the cap can be observed
     /// without hundreds of sockets.
+    #[cfg(test)]
     fn set_connection_limit(&self, limit: usize) {
         self.client_limit.store(limit.max(1), Ordering::SeqCst);
     }
 
+    #[cfg(test)]
     fn tracked_sockets(&self) -> usize {
         self.sockets.lock().map(|list| list.len()).unwrap_or(0)
     }
@@ -245,6 +306,11 @@ struct Shared {
     next_socket: Arc<AtomicU64>,
     clients: Arc<AtomicUsize>,
     client_limit: Arc<AtomicUsize>,
+    owner: Arc<AtomicU32>,
+    listen_port: u16,
+    peer_checks: Arc<AtomicU64>,
+    peer_refused: Arc<AtomicU64>,
+    peer_max_nanos: Arc<AtomicU64>,
 }
 
 /// Removes one tracked socket when the handler that owns it returns.
@@ -308,6 +374,97 @@ impl Shared {
             }
         }
     }
+
+    fn admit(&self, client: &TcpStream) -> Result<(), &'static str> {
+        let owner = self.owner.load(Ordering::SeqCst);
+        let peer_port = match client.peer_addr() {
+            Ok(addr) => addr.port(),
+            Err(_) => return Err("the client process could not be confirmed"),
+        };
+        let started = std::time::Instant::now();
+        let mut verdict = peer::admit(peer_port, self.listen_port, owner);
+        // Chrome cancels speculative proxy connects and closes them before the
+        // socket can be attributed. A peer that has already hung up cannot send a
+        // request, so it is not a use of the relay and not a refusal. A peer that
+        // is still open and cannot be attributed is still refused.
+        if verdict.is_err() && peer_hung_up(client) {
+            verdict = Ok(());
+        }
+        let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        self.peer_checks.fetch_add(1, Ordering::Relaxed);
+        if verdict.is_err() {
+            self.peer_refused.fetch_add(1, Ordering::Relaxed);
+        }
+        let mut current = self.peer_max_nanos.load(Ordering::Relaxed);
+        while nanos > current {
+            match self.peer_max_nanos.compare_exchange(current, nanos, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => break,
+                Err(seen) => current = seen,
+            }
+        }
+        verdict
+    }
+}
+
+/// True when the peer has already closed its side, even if unread bytes remain.
+/// A still-open peer that has not written yet is not hung up.
+fn peer_hung_up(stream: &TcpStream) -> bool {
+    if peer_sent_fin(stream) {
+        return true;
+    }
+    let previous = stream.read_timeout().ok().flatten();
+    if stream.set_read_timeout(Some(Duration::from_millis(5))).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 1];
+    let hung_up = match stream.peek(&mut buf) {
+        Ok(0) => true,
+        Err(error) => matches!(
+            error.kind(),
+            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+        ),
+        Ok(_) => false,
+    };
+    let _ = stream.set_read_timeout(previous);
+    hung_up
+}
+
+fn peer_sent_fin(stream: &TcpStream) -> bool {
+    use std::os::fd::AsRawFd;
+    let mut buf = [0u8; 256];
+    let mut len = buf.len() as libc::socklen_t;
+    #[cfg(target_os = "macos")]
+    let name = libc::TCP_CONNECTION_INFO;
+    #[cfg(target_os = "linux")]
+    let name = libc::TCP_INFO;
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = (stream, &mut buf, &mut len);
+        return false;
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        // SAFETY: `buf` is writable for `len` bytes. The call only writes the TCP info.
+        let rc = unsafe {
+            libc::getsockopt(
+                stream.as_raw_fd(),
+                libc::IPPROTO_TCP,
+                name,
+                buf.as_mut_ptr().cast(),
+                &mut len,
+            )
+        };
+        if rc != 0 || len == 0 {
+            return false;
+        }
+        // `tcpi_state` is the first byte. macOS uses the BSD `TCPS_*` numbers
+        // (CLOSE_WAIT is 5). Linux uses its own (CLOSE_WAIT is 8).
+        let state = buf[0];
+        #[cfg(target_os = "macos")]
+        return matches!(state, 0 | 5 | 7 | 8 | 10);
+        #[cfg(target_os = "linux")]
+        return matches!(state, 6 | 7 | 8 | 9 | 11);
+    }
 }
 
 fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
@@ -335,6 +492,11 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
 /// One Chrome connection: SOCKS5 (no auth) from Chrome, then the tunnel.
 fn handle_client(mut client: TcpStream, shared: Shared) {
     let _tracked_client = shared.track(&client);
+    if let Err(reason) = shared.admit(&client) {
+        shared.fail(reason.to_string());
+        let _ = client.shutdown(Shutdown::Both);
+        return;
+    }
     let _ = client.set_read_timeout(Some(HANDSHAKE_TIMEOUT));
     let target = match socks_request(&mut client) {
         Ok(target) => target,
@@ -347,7 +509,7 @@ fn handle_client(mut client: TcpStream, shared: Shared) {
                 "destination not allowed by the capture allowlist: {}",
                 target.authority()
             ));
-            let _ = client.write_all(&[5, 2, 0, 1, 0, 0, 0, 0, 0, 0]);
+            let _ = write_all_retry(&mut client, &[5, 2, 0, 1, 0, 0, 0, 0, 0, 0]);
             return;
         }
     }
@@ -355,24 +517,30 @@ fn handle_client(mut client: TcpStream, shared: Shared) {
         Ok(stream) => stream,
         Err((reply, reason)) => {
             shared.fail(reason);
-            let _ = client.write_all(&[5, reply, 0, 1, 0, 0, 0, 0, 0, 0]);
+            let _ = write_all_retry(&mut client, &[5, reply, 0, 1, 0, 0, 0, 0, 0, 0]);
             return;
         }
     };
-    if client.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).is_err() {
-        return;
-    }
+    // Both ends are tracked before the success reply, so a caller that has
+    // read the reply can rely on stop() shutting the upstream down too.
     let _ = client.set_read_timeout(None);
+    let reply = [5, 0, 0, 1, 0, 0, 0, 0, 0, 0];
     match upstream {
         Upstream::Plain(stream) => {
             let _ = stream.set_read_timeout(None);
             let _tracked_upstream = shared.track(&stream);
+            if write_all_retry(&mut client, &reply).is_err() {
+                return;
+            }
             pipe(client, stream);
         }
         Upstream::Tls(stream) => {
             let stream = *stream;
             let _ = stream.sock.set_read_timeout(None);
             let _tracked_upstream = shared.track(&stream.sock);
+            if write_all_retry(&mut client, &reply).is_err() {
+                return;
+            }
             pipe_tls(client, stream);
         }
     }
@@ -416,49 +584,49 @@ impl Destination {
 }
 
 /// Reads the SOCKS5 greeting and CONNECT request from Chrome. Only no-auth and CONNECT.
-fn socks_request(client: &mut TcpStream) -> io::Result<Destination> {
+fn socks_request(client: &mut (impl Read + Write)) -> io::Result<Destination> {
     let mut head = [0u8; 2];
-    client.read_exact(&mut head)?;
+    read_exact_retry(client, &mut head)?;
     if head[0] != 5 {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "not SOCKS5"));
     }
     let mut methods = vec![0u8; head[1] as usize];
-    client.read_exact(&mut methods)?;
+    read_exact_retry(client, &mut methods)?;
     if !methods.contains(&0) {
-        client.write_all(&[5, 0xff])?;
+        write_all_retry(client, &[5, 0xff])?;
         return Err(io::Error::new(io::ErrorKind::InvalidData, "no supported method"));
     }
-    client.write_all(&[5, 0])?;
+    write_all_retry(client, &[5, 0])?;
     let mut req = [0u8; 4];
-    client.read_exact(&mut req)?;
+    read_exact_retry(client, &mut req)?;
     if req[1] != 1 {
-        client.write_all(&[5, 7, 0, 1, 0, 0, 0, 0, 0, 0])?;
+        write_all_retry(client, &[5, 7, 0, 1, 0, 0, 0, 0, 0, 0])?;
         return Err(io::Error::new(io::ErrorKind::InvalidData, "only CONNECT"));
     }
     let host = match req[3] {
         1 => {
             let mut octets = [0u8; 4];
-            client.read_exact(&mut octets)?;
+            read_exact_retry(client, &mut octets)?;
             HostAddr::V4(octets)
         }
         3 => {
             let mut len = [0u8; 1];
-            client.read_exact(&mut len)?;
+            read_exact_retry(client, &mut len)?;
             let mut name = vec![0u8; len[0] as usize];
-            client.read_exact(&mut name)?;
+            read_exact_retry(client, &mut name)?;
             let name = String::from_utf8(name)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "name"))?;
             HostAddr::Name(name)
         }
         4 => {
             let mut octets = [0u8; 16];
-            client.read_exact(&mut octets)?;
+            read_exact_retry(client, &mut octets)?;
             HostAddr::V6(octets)
         }
         _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "address type")),
     };
     let mut port = [0u8; 2];
-    client.read_exact(&mut port)?;
+    read_exact_retry(client, &mut port)?;
     Ok(Destination { host, port: u16::from_be_bytes(port) })
 }
 
@@ -516,7 +684,13 @@ fn connect_upstream(link: &ProxyLink) -> io::Result<TcpStream> {
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address"))?;
-    TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)
+    // A signal (a child stopping, or the emulator returning EINTR) is not a dead proxy.
+    loop {
+        match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
+            Err(error) if interrupted(&error) => continue,
+            other => return other,
+        }
+    }
 }
 
 /// `SCRAPELENS_TEST_PROXY_CA` is a PEM file of extra roots for the relay's TLS check.
@@ -609,6 +783,9 @@ fn tls_connect(link: &ProxyLink, config: &Arc<ClientConfig>) -> Result<StreamOwn
     })?;
     while conn.is_handshaking() {
         if let Err(error) = conn.complete_io(&mut sock) {
+            if interrupted(&error) {
+                continue;
+            }
             if error.kind() == io::ErrorKind::TimedOut || error.kind() == io::ErrorKind::ConnectionRefused {
                 return Err(DialFail::Unreachable);
             }
@@ -715,8 +892,7 @@ fn http_connect(
         request.push_str(&format!("Proxy-Authorization: Basic {token}\r\n"));
     }
     request.push_str("\r\n");
-    stream
-        .write_all(request.as_bytes())
+    write_all_retry(stream, request.as_bytes())
         .map_err(|_| (5, format!("the proxy {server} closed the connection")))?;
     let head = read_head(stream).map_err(|_| (5, format!("the proxy {server} closed the connection")))?;
     let status = head
@@ -739,11 +915,9 @@ fn socks5_connect(
 ) -> Result<(), (u8, String)> {
     let io_err = |_: io::Error| (5u8, format!("the proxy {server} closed the connection"));
     let with_auth = link.user().is_some() || link.password().is_some();
-    stream
-        .write_all(if with_auth { &[5, 1, 2] } else { &[5, 1, 0] })
-        .map_err(io_err)?;
+    write_all_retry(stream, if with_auth { &[5, 1, 2] } else { &[5, 1, 0] }).map_err(io_err)?;
     let mut choice = [0u8; 2];
-    stream.read_exact(&mut choice).map_err(io_err)?;
+    read_exact_retry(stream, &mut choice).map_err(io_err)?;
     match choice[1] {
         0 => {}
         2 => {
@@ -756,9 +930,9 @@ fn socks5_connect(
             auth.extend_from_slice(&user);
             auth.push(password.len() as u8);
             auth.extend_from_slice(&password);
-            stream.write_all(&auth).map_err(io_err)?;
+            write_all_retry(stream, &auth).map_err(io_err)?;
             let mut status = [0u8; 2];
-            stream.read_exact(&mut status).map_err(io_err)?;
+            read_exact_retry(stream, &mut status).map_err(io_err)?;
             if status[1] != 0 {
                 return Err((2, format!("the proxy {server} refused the credentials (SOCKS5 auth)")));
             }
@@ -786,22 +960,22 @@ fn socks5_connect(
         }
     }
     request.extend_from_slice(&dest.port.to_be_bytes());
-    stream.write_all(&request).map_err(io_err)?;
+    write_all_retry(stream, &request).map_err(io_err)?;
     let mut head = [0u8; 4];
-    stream.read_exact(&mut head).map_err(io_err)?;
+    read_exact_retry(stream, &mut head).map_err(io_err)?;
     // Consume the bound address so the tunnel starts at the application's first byte.
     let rest = match head[3] {
         1 => 4 + 2,
         4 => 16 + 2,
         3 => {
             let mut len = [0u8; 1];
-            stream.read_exact(&mut len).map_err(io_err)?;
+            read_exact_retry(stream, &mut len).map_err(io_err)?;
             len[0] as usize + 2
         }
         _ => return Err((1, format!("the proxy {server} sent an unknown reply"))),
     };
     let mut bound = vec![0u8; rest];
-    stream.read_exact(&mut bound).map_err(io_err)?;
+    read_exact_retry(stream, &mut bound).map_err(io_err)?;
     let authority = dest.authority();
     match head[1] {
         0 => Ok(()),
@@ -820,8 +994,10 @@ fn read_head(stream: &mut impl Read) -> io::Result<String> {
         if head.len() > 8192 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "head too large"));
         }
-        if stream.read(&mut byte)? == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof"));
+        match read_retry(stream, &mut byte) {
+            Ok(0) => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof")),
+            Ok(_) => {}
+            Err(error) => return Err(error),
         }
         head.push(byte[0]);
     }
@@ -845,14 +1021,14 @@ where
     let mut tls_open = true;
     while client_open || tls_open {
         if client_open {
-            match client.read(&mut buf) {
+            match read_retry(&mut client, &mut buf) {
                 Ok(0) => {
                     client_open = false;
                     tls.conn.send_close_notify();
                     let _ = tls.flush();
                 }
                 Ok(n) => {
-                    if tls.write_all(&buf[..n]).is_err() {
+                    if write_all_retry(&mut tls, &buf[..n]).is_err() {
                         break;
                     }
                 }
@@ -861,13 +1037,13 @@ where
             }
         }
         if tls_open {
-            match tls.read(&mut buf) {
+            match read_retry(&mut tls, &mut buf) {
                 Ok(0) => {
                     tls_open = false;
                     let _ = client.shutdown(Shutdown::Write);
                 }
                 Ok(n) => {
-                    if client.write_all(&buf[..n]).is_err() {
+                    if write_all_retry(&mut client, &buf[..n]).is_err() {
                         break;
                     }
                 }
@@ -882,16 +1058,66 @@ fn timed_out(error: &io::Error) -> bool {
     matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock)
 }
 
+/// `EINTR` is a signal, not a closed socket. qemu-user also returns it spuriously.
+fn interrupted(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::Interrupted
+}
+
+fn read_retry(stream: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
+    loop {
+        match stream.read(buf) {
+            Err(error) if interrupted(&error) => continue,
+            other => return other,
+        }
+    }
+}
+
+fn read_exact_retry(stream: &mut impl Read, mut buf: &mut [u8]) -> io::Result<()> {
+    while !buf.is_empty() {
+        match read_retry(stream, buf)? {
+            0 => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof")),
+            n => buf = &mut buf[n..],
+        }
+    }
+    Ok(())
+}
+
+fn write_all_retry(stream: &mut impl Write, mut buf: &[u8]) -> io::Result<()> {
+    while !buf.is_empty() {
+        match stream.write(buf) {
+            Ok(0) => return Err(io::Error::new(io::ErrorKind::WriteZero, "write zero")),
+            Ok(n) => buf = &buf[n..],
+            Err(error) if interrupted(&error) => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+fn copy_retry(reader: &mut impl Read, writer: &mut impl Write) -> io::Result<u64> {
+    let mut buf = [0u8; 16384];
+    let mut total = 0u64;
+    loop {
+        match read_retry(reader, &mut buf)? {
+            0 => return Ok(total),
+            n => {
+                write_all_retry(writer, &buf[..n])?;
+                total += n as u64;
+            }
+        }
+    }
+}
+
 fn pipe(client: TcpStream, upstream: TcpStream) {
     let (Ok(mut client_r), Ok(mut upstream_r)) = (client.try_clone(), upstream.try_clone()) else {
         return;
     };
     let (mut client_w, mut upstream_w) = (client, upstream);
     let forward = thread::spawn(move || {
-        let _ = io::copy(&mut client_r, &mut upstream_w);
+        let _ = copy_retry(&mut client_r, &mut upstream_w);
         let _ = upstream_w.shutdown(Shutdown::Write);
     });
-    let _ = io::copy(&mut upstream_r, &mut client_w);
+    let _ = copy_retry(&mut upstream_r, &mut client_w);
     let _ = client_w.shutdown(Shutdown::Write);
     let _ = forward.join();
 }
@@ -1106,7 +1332,12 @@ mod wire_tests {
                     let mut c = conn;
                     let head = match read_head(&mut c) {
                         Ok(h) => h,
-                        Err(_) => return,
+                        // The relay's reachability check connects and drops. That is not a failure.
+                        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return,
+                        Err(error) => {
+                            log.lock().unwrap().push(format!("read-head-err {}", error.kind()));
+                            return;
+                        }
                     };
                     let auth_ok = head.lines().any(|l| l.eq_ignore_ascii_case(&format!("Proxy-Authorization: {expected}")));
                     if !auth_ok {
@@ -1114,21 +1345,24 @@ mod wire_tests {
                         let _ = c.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n");
                         return;
                     }
-                    log.lock().unwrap().push("auth-ok".to_string());
                     let target_line = head.lines().next().unwrap_or("").split(' ').nth(1).unwrap_or("").to_string();
                     let host_header = head
                         .lines()
                         .find(|line| line.to_ascii_lowercase().starts_with("host:"))
                         .unwrap_or("")
                         .to_string();
-                    log.lock().unwrap().push(format!("LINE {target_line}"));
-                    log.lock().unwrap().push(format!("HOST {host_header}"));
+                    // One critical section so a reader cannot observe auth without the request line.
+                    log.lock().unwrap().extend([
+                        "auth-ok".to_string(),
+                        format!("LINE {target_line}"),
+                        format!("HOST {host_header}"),
+                    ]);
                     let Some((h, p)) = split_connect_authority(&target_line) else {
                         return;
                     };
                     match TcpStream::connect((h.as_str(), p)) {
                         Ok(target) => {
-                            let _ = c.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n");
+                            let _ = write_all_retry(&mut c, b"HTTP/1.1 200 Connection established\r\n\r\n");
                             pipe(c, target);
                         }
                         Err(_) => {
@@ -1181,7 +1415,7 @@ mod wire_tests {
                     let Some((h, target_port)) = split_connect_authority(&target_line) else { return };
                     match TcpStream::connect((h.as_str(), target_port)) {
                         Ok(target) => {
-                            let _ = tls.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n");
+                            let _ = write_all_retry(&mut tls, b"HTTP/1.1 200 Connection established\r\n\r\n");
                             pipe_tls(target, tls);
                         }
                         Err(_) => {
@@ -1242,9 +1476,11 @@ mod wire_tests {
     fn chrome_request(relay_port: u16, atyp: u8, addr: &[u8], port: u16) -> io::Result<(u8, TcpStream)> {
         let mut c = TcpStream::connect((Ipv4Addr::LOCALHOST, relay_port))?;
         c.set_read_timeout(Some(Duration::from_secs(10)))?;
-        c.write_all(&[5, 1, 0])?;
+        if write_all_retry(&mut c, &[5, 1, 0]).is_err() {
+            return Ok((0xfe, c));
+        }
         let mut choice = [0u8; 2];
-        if c.read_exact(&mut choice).is_err() {
+        if read_exact_retry(&mut c, &mut choice).is_err() {
             return Ok((0xfe, c));
         }
         if choice != [5, 0] {
@@ -1256,9 +1492,11 @@ mod wire_tests {
         }
         req.extend_from_slice(addr);
         req.extend_from_slice(&port.to_be_bytes());
-        c.write_all(&req)?;
+        if write_all_retry(&mut c, &req).is_err() {
+            return Ok((0xfe, c));
+        }
         let mut reply = [0u8; 10];
-        if c.read_exact(&mut reply).is_err() {
+        if read_exact_retry(&mut c, &mut reply).is_err() {
             return Ok((0xfe, c));
         }
         Ok((reply[1], c))
@@ -1266,7 +1504,10 @@ mod wire_tests {
 
     fn start(link: &str, allow: Option<AllowFn>) -> Relay {
         let link = ProxyLink::parse(link).unwrap();
-        Relay::start(&link, allow).expect("relay starts")
+        let relay = Relay::start(&link, allow).expect("relay starts");
+        // The suite stands in for Chrome: this process, and a child it spawns, may connect.
+        relay.set_owner_pid(std::process::id());
+        relay
     }
 
     #[test]
@@ -1306,6 +1547,7 @@ mod wire_tests {
         let (up, seen) = https_upstream(USER, PASSWORD);
         let link = ProxyLink::parse(&format!("https://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
         let relay = Relay::start_with_extra_ca(&link, None, &fixture_ca_pem()).expect("trusted");
+        relay.set_owner_pid(std::process::id());
         let (code, mut tunnel) = chrome_connect(relay.port(), echo);
         assert_eq!(code, 0);
         tunnel.write_all(b"ping").unwrap();
@@ -1322,7 +1564,7 @@ mod wire_tests {
         let (up, seen) = http_upstream(USER, PASSWORD);
         let relay = start(&format!("http://{USER}:{PASSWORD}@127.0.0.1:{up}"), None);
         let (code, mut tunnel) = chrome_connect(relay.port(), echo);
-        assert_eq!(code, 0);
+        assert_eq!(code, 0, "{:?}", relay.failures());
         tunnel.write_all(b"ping").unwrap();
         let mut back = [0u8; 4];
         tunnel.read_exact(&mut back).unwrap();
@@ -1337,7 +1579,7 @@ mod wire_tests {
         let allow: AllowFn = Arc::new(|host: &str, _port: u16| host == "allowed.example");
         let relay = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}"), Some(allow));
         let (code, _tunnel) = chrome_connect(relay.port(), echo);
-        assert_eq!(code, 2, "not allowed");
+        assert_eq!(code, 2, "not allowed; failures={:?}", relay.failures());
         let log = seen.lock().unwrap().clone();
         assert!(log.iter().all(|l| !l.starts_with("CONNECT")), "upstream saw {log:?}");
         assert!(relay.failures().iter().any(|f| f.contains("not allowed") && f.contains("127.0.0.1")));
@@ -1432,7 +1674,8 @@ mod wire_tests {
         let relay = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}"), None);
         let (code, tunnel) = chrome_connect(relay.port(), echo);
         assert_eq!(code, 0);
-        assert!(relay.tracked_sockets() >= 2, "client and upstream stay tracked while open");
+        let tracked = relay.tracked_sockets();
+        assert!(tracked >= 2, "client and upstream stay tracked while open, saw {tracked}");
         drop(tunnel);
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         while relay.tracked_sockets() != 0 && std::time::Instant::now() < deadline {
@@ -1476,5 +1719,99 @@ mod wire_tests {
         assert!(relay.failures().iter().any(|line| line == "too many connections"));
         drop(held);
         drop(listener);
+    }
+
+    /// Runs only when spawned by `a_stranger_is_refused_and_a_child_of_the_owner_is_admitted`.
+    #[test]
+    fn relay_peer_probe() {
+        let Ok(port) = std::env::var("SCRAPELENS_RELAY_PEER_PROBE") else {
+            return;
+        };
+        let port: u16 = port.parse().expect("port");
+        let (code, _socket) = chrome_request(port, 1, &[127, 0, 0, 1], 9).unwrap();
+        assert_ne!(code, 0xfe, "the relay closed the connection");
+        assert_ne!(code, 0xff, "the relay rejected the greeting");
+    }
+
+    #[test]
+    fn a_stranger_is_refused_and_a_child_of_the_owner_is_admitted() {
+        let (up, seen) = socks_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let relay = Relay::start(&link, None).unwrap();
+
+        let (code, _) = chrome_request(relay.port(), 1, &[127, 0, 0, 1], 9).unwrap();
+        assert_eq!(code, 0xfe, "no browser pid yet");
+        assert!(relay.failures().iter().any(|line| line == "the capture browser is not running yet"));
+        assert!(
+            seen.lock().unwrap().iter().all(|line| !line.starts_with("ATYP") && line != "auth-ok"),
+            "upstream was dialed: {:?}",
+            seen.lock().unwrap()
+        );
+
+        let sleeper = std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        struct StopSleep(Option<std::process::Child>);
+        impl Drop for StopSleep {
+            fn drop(&mut self) {
+                if let Some(child) = self.0.as_mut() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        let sleeper = StopSleep(Some(sleeper));
+        relay.set_owner_pid(sleeper.0.as_ref().unwrap().id());
+        let (code, _) = chrome_request(relay.port(), 1, &[127, 0, 0, 1], 9).unwrap();
+        assert_eq!(code, 0xfe, "the test process is not in the sleeper's tree");
+        assert!(relay.failures().iter().any(|line| line == "the client process is not the capture browser"));
+        assert!(
+            seen.lock().unwrap().iter().all(|line| !line.starts_with("ATYP") && line != "auth-ok"),
+            "upstream was dialed for a stranger: {:?}",
+            seen.lock().unwrap()
+        );
+        drop(sleeper);
+
+        relay.set_owner_pid(std::process::id());
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "relay::wire_tests::relay_peer_probe", "--test-threads", "1"])
+            .env("SCRAPELENS_RELAY_PEER_PROBE", relay.port().to_string())
+            .output()
+            .unwrap();
+        assert!(
+            child.status.success(),
+            "status {:?} stderr {}",
+            child.status,
+            String::from_utf8_lossy(&child.stderr)
+        );
+        let log = seen.lock().unwrap().clone();
+        assert!(
+            log.iter().any(|line| line.starts_with("ATYP 1") || line == "auth-ok"),
+            "the child was not admitted: {log:?}"
+        );
+        let stats = relay.peer_check();
+        eprintln!(
+            "peer checks={} refused={} max_us={}",
+            stats.checks,
+            stats.refused,
+            stats.max_nanos / 1000
+        );
+        assert!(stats.checks >= 3, "{stats:?}");
+        assert_eq!(stats.refused, 2, "only the two stranger attempts are refused");
+        assert!(stats.max_nanos < 50_000_000, "peer check max {} ns", stats.max_nanos);
+    }
+
+    #[test]
+    fn a_closed_peer_is_hung_up_and_an_open_peer_is_not() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        client.write_all(&[5, 1, 0]).unwrap();
+        assert!(!super::peer_hung_up(&server), "a peer with a pending greeting is still open");
+        client.shutdown(Shutdown::Both).unwrap();
+        let started = std::time::Instant::now();
+        while !super::peer_hung_up(&server) && started.elapsed() < Duration::from_secs(1) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(super::peer_hung_up(&server), "a peer that closed is hung up");
     }
 }

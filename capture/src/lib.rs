@@ -332,7 +332,36 @@ fn run_inner(
         pipe_ends.is_some(),
         proxy_arg.as_deref(),
     );
-    let mut chrome = ChromeProcess::new(spawn_chrome(config, &launch_args, pipe_ends.as_ref())?);
+    // The relay refuses every client until it knows this pid. The child stops in the
+    // shell, before Chrome runs, so the pid is published with no window where a
+    // connection could arrive first. `exec` keeps the pid.
+    let hold_for_relay = proxy_plan.as_ref().is_some_and(|plan| plan.route() == relay::ProxyRoute::Relay);
+    let mut chrome = ChromeProcess::new(spawn_chrome(config, &launch_args, pipe_ends.as_ref(), hold_for_relay)?);
+    if hold_for_relay {
+        let pid = chrome.child_mut().id();
+        if !wait_until_stopped(pid) {
+            let _ = chrome.child_mut().kill();
+            let _ = chrome.child_mut().wait();
+            chrome.disarm();
+            let _ = std::fs::remove_dir_all(&profile);
+            let message = "the capture browser did not pause so the relay could record its process".to_string();
+            let _ = ready.send(Err(message.clone()));
+            return Err(message);
+        }
+        if let Some(plan) = proxy_plan.as_ref() {
+            plan.set_chrome_pid(pid);
+        }
+        // SAFETY: `pid` is the stopped child. SIGCONT is the resume paired with its SIGSTOP.
+        if unsafe { libc::kill(pid as libc::pid_t, libc::SIGCONT) } != 0 {
+            let _ = chrome.child_mut().kill();
+            let _ = chrome.child_mut().wait();
+            chrome.disarm();
+            let _ = std::fs::remove_dir_all(&profile);
+            let message = "the capture browser could not be resumed after the relay recorded its process".to_string();
+            let _ = ready.send(Err(message.clone()));
+            return Err(message);
+        }
+    }
     // Marker to clean up orphans if this process dies by SIGKILL; the Drop
     // removes it on any normal exit (success, error or panic).
     let marker = OrphanMarker::create(
@@ -587,6 +616,17 @@ fn run_inner(
         automation_note.push_str(
             "; browser: Chromium (alternative to stable Google Chrome, which does not exist for this system/architecture)",
         );
+    }
+    if let Some(plan) = proxy_plan.as_ref() {
+        let peer = plan.peer_check();
+        if peer.checks > 0 {
+            automation_note.push_str(&format!(
+                "; relay peer check: {} connections, max {} us, refused {}",
+                peer.checks,
+                peer.max_nanos.div_ceil(1_000),
+                peer.refused
+            ));
+        }
     }
     // `capture.proxy`: the scheme, the authentication flag and (full export only) the
     // address and route. The credentials are never part of it.
@@ -973,8 +1013,20 @@ fn spawn_chrome(
     config: &CaptureConfig,
     args: &[String],
     pipe: Option<&transport::PipeEnds>,
+    hold_for_relay: bool,
 ) -> Result<Child, String> {
-    let mut command = Command::new(&config.chrome);
+    // A SIGSTOP inside `pre_exec` never returns, so `Command::spawn` would wait forever.
+    // The shell stops after spawn has returned; `exec` then keeps this pid for Chrome.
+    let mut command = if hold_for_relay {
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg("kill -STOP $$; exec \"$0\" \"$@\"")
+            .arg(&config.chrome);
+        command
+    } else {
+        Command::new(&config.chrome)
+    };
     command
         .args(args)
         .stdout(Stdio::null())
@@ -1016,6 +1068,26 @@ fn spawn_chrome(
                 config.chrome.display()
             )
         })
+}
+
+/// Waits until `pid` is stopped, without reaping it. A later `Child::wait` still works.
+fn wait_until_stopped(pid: u32) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let mut status = 0;
+        // SAFETY: `status` is a writable int. WUNTRACED reports a stop and does not reap it.
+        let rc = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WUNTRACED | libc::WNOHANG) };
+        if rc == pid as libc::pid_t && libc::WIFSTOPPED(status) {
+            return true;
+        }
+        if rc < 0 || (rc == pid as libc::pid_t && (libc::WIFEXITED(status) || libc::WIFSIGNALED(status))) {
+            return false;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
 }
 
 /// Ceiling on the descriptor sweep in the child: covers any practical limit
