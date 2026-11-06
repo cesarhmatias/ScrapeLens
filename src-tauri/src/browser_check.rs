@@ -74,8 +74,6 @@ pub const LINUX_LAUNCHER_DIRS: &[&str] = &[
     "/opt/google/chrome-unstable",
     "/opt/brave.com/brave",
     "/opt/microsoft/msedge",
-    "/snap/bin",
-    "/var/lib/flatpak/exports/bin",
 ];
 
 #[cfg(target_os = "linux")]
@@ -189,31 +187,57 @@ fn owned(meta: &std::fs::Metadata) -> Owned {
     Owned { uid: meta.uid(), mode: meta.mode() & 0o7777 }
 }
 
-/// Decides whether a launcher script is a system one. `resolved` is the canonical path; `file`
-/// and `dir` are the owner and mode of that file and of its directory. Pure, so the tests can
-/// use fabricated owners (the test runner is not root).
+/// Decides whether a launcher script is a system one. `resolved` is the canonical path, `file`
+/// its owner and mode, and `dirs` the directories above it, from its own directory up to `/`,
+/// each with its owner and mode. Every one of them must belong to root and must not be writable
+/// by group or others (the same rule the capture crate applies). Pure, so the tests can use
+/// fabricated owners (the test runner is not root).
 #[cfg(target_os = "linux")]
-fn trusted_launcher(resolved: &Path, file: Owned, dir: Owned) -> Result<(), String> {
+fn trusted_launcher(resolved: &Path, file: Owned, dirs: &[(&Path, Owned)]) -> Result<(), String> {
     let Some(parent) = resolved.parent() else {
         return Err("it has no directory".to_string());
     };
     if !LINUX_LAUNCHER_DIRS.iter().any(|system| Path::new(system) == parent) {
         return Err(format!("{} is not a system directory for browsers", parent.display()));
     }
-    if file.uid != 0 || dir.uid != 0 {
-        return Err("the launcher or its directory is not owned by root".to_string());
+    if file.uid != 0 {
+        return Err("the launcher is not owned by root".to_string());
     }
-    if file.mode & 0o022 != 0 || dir.mode & 0o022 != 0 {
-        return Err("the launcher or its directory is writable by group or others".to_string());
+    if file.mode & 0o022 != 0 {
+        return Err("the launcher is writable by group or others".to_string());
     }
     if file.mode & 0o111 == 0 {
         return Err("the launcher is not executable".to_string());
+    }
+    for (dir, owner) in dirs {
+        if owner.uid != 0 {
+            return Err(format!("the directory {} is not owned by root", dir.display()));
+        }
+        if owner.mode & 0o022 != 0 {
+            return Err(format!("the directory {} is writable by group or others", dir.display()));
+        }
     }
     Ok(())
 }
 
 #[cfg(target_os = "linux")]
+fn is_wrapper_path(path: &Path) -> bool {
+    path.starts_with("/snap") || path.starts_with("/var/lib/flatpak")
+}
+
+#[cfg(target_os = "linux")]
+fn wrapper_error(path: &Path) -> String {
+    format!(
+        "{} is a Snap or Flatpak wrapper. Snap and Flatpak browsers are not accepted yet: choose a browser installed from a .deb or .rpm package, or its real executable.",
+        path.display()
+    )
+}
+
+#[cfg(target_os = "linux")]
 fn accept_linux(path: &Path) -> Result<PathBuf, String> {
+    if is_wrapper_path(path) {
+        return Err(wrapper_error(path));
+    }
     let meta = std::fs::metadata(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
     // Only a regular file: a FIFO or a device would block the open below.
     if !meta.is_file() {
@@ -222,6 +246,9 @@ fn accept_linux(path: &Path) -> Result<PathBuf, String> {
     // Follow symlinks to the file that would run, and judge that file.
     let target = std::fs::canonicalize(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
     let name = target.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    if is_wrapper_path(&target) || name == "snap" || name == "flatpak" {
+        return Err(wrapper_error(path));
+    }
     let mut head = Vec::new();
     std::fs::File::open(&target)
         .and_then(|file| file.take(4).read_to_end(&mut head))
@@ -238,9 +265,14 @@ fn accept_linux(path: &Path) -> Result<PathBuf, String> {
         let Some(dir) = target.parent() else {
             return Err(format!("{} is not a supported browser. {LINUX_HINT}", path.display()));
         };
-        let dir_meta = std::fs::metadata(dir).map_err(|error| format!("cannot read {}: {error}", dir.display()))?;
         let file_meta = std::fs::metadata(&target).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
-        trusted_launcher(&target, owned(&file_meta), owned(&dir_meta))
+        let mut dirs = Vec::new();
+        for ancestor in dir.ancestors() {
+            let owner = std::fs::metadata(ancestor)
+                .map_err(|error| format!("cannot read {}: {error}", ancestor.display()))?;
+            dirs.push((ancestor, owned(&owner)));
+        }
+        trusted_launcher(&target, owned(&file_meta), &dirs)
             .map_err(|why| format!("{} is a launcher that is not trusted: {why}. {LINUX_HINT}", path.display()))?;
         return Ok(path.to_path_buf());
     }
@@ -319,6 +351,16 @@ mod tests {
         Owned { uid: 0, mode }
     }
 
+    /// Owners of `/usr/bin`, `/usr` and `/`, all root-owned unless a test changes them.
+    #[cfg(target_os = "linux")]
+    fn root_chain(mode: u32) -> Vec<(&'static Path, Owned)> {
+        vec![
+            (Path::new("/usr/bin"), root_owned(mode)),
+            (Path::new("/usr"), root_owned(0o755)),
+            (Path::new("/"), root_owned(0o755)),
+        ]
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn a_root_owned_launcher_in_a_system_directory_is_trusted() {
@@ -326,12 +368,12 @@ mod tests {
             ("/usr/bin/google-chrome", "/usr/bin"),
             ("/usr/bin/chromium-browser", "/usr/bin"),
             ("/opt/google/chrome/google-chrome", "/opt/google/chrome"),
-            ("/usr/lib64/chromium-browser/chromium-browser", "/usr/lib64/chromium-browser"),
             ("/usr/lib64/chromium-browser/chromium-browser.sh", "/usr/lib64/chromium-browser"),
         ];
         for (file, dir) in launchers {
             let is_known_dir = LINUX_LAUNCHER_DIRS.contains(&dir);
-            let result = trusted_launcher(Path::new(file), root_owned(0o755), root_owned(0o755));
+            let chain = [(Path::new(dir), root_owned(0o755)), (Path::new("/"), root_owned(0o755))];
+            let result = trusted_launcher(Path::new(file), root_owned(0o755), &chain);
             assert_eq!(result.is_ok(), is_known_dir, "{file}: {result:?}");
         }
     }
@@ -341,21 +383,61 @@ mod tests {
     fn a_launcher_that_is_not_root_owned_or_writable_is_refused() {
         let file = Path::new("/usr/bin/google-chrome");
         let user = Owned { uid: 1000, mode: 0o755 };
-        assert!(trusted_launcher(file, user, root_owned(0o755)).is_err(), "file owner");
-        assert!(trusted_launcher(file, root_owned(0o755), user).is_err(), "directory owner");
-        assert!(trusted_launcher(file, root_owned(0o775), root_owned(0o755)).is_err(), "group write");
-        assert!(trusted_launcher(file, root_owned(0o757), root_owned(0o755)).is_err(), "other write");
-        assert!(trusted_launcher(file, root_owned(0o755), root_owned(0o777)).is_err(), "directory other write");
-        assert!(trusted_launcher(file, root_owned(0o644), root_owned(0o755)).is_err(), "not executable");
+        assert!(trusted_launcher(file, user, &root_chain(0o755)).is_err(), "file owner");
+        assert!(trusted_launcher(file, root_owned(0o775), &root_chain(0o755)).is_err(), "group write");
+        assert!(trusted_launcher(file, root_owned(0o757), &root_chain(0o755)).is_err(), "other write");
+        assert!(trusted_launcher(file, root_owned(0o644), &root_chain(0o755)).is_err(), "not executable");
+        assert!(trusted_launcher(file, root_owned(0o755), &root_chain(0o777)).is_err(), "directory other write");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_ancestor_that_is_not_root_owned_or_writable_is_refused() {
+        let file = Path::new("/opt/google/chrome/google-chrome");
+        let user_ancestor = [
+            (Path::new("/opt/google/chrome"), root_owned(0o755)),
+            (Path::new("/opt/google"), Owned { uid: 1000, mode: 0o755 }),
+            (Path::new("/opt"), root_owned(0o755)),
+            (Path::new("/"), root_owned(0o755)),
+        ];
+        assert!(trusted_launcher(file, root_owned(0o755), &user_ancestor).is_err(), "ancestor owner");
+        let group_ancestor = [
+            (Path::new("/opt/google/chrome"), root_owned(0o755)),
+            (Path::new("/opt/google"), root_owned(0o775)),
+            (Path::new("/"), root_owned(0o755)),
+        ];
+        assert!(trusted_launcher(file, root_owned(0o755), &group_ancestor).is_err(), "ancestor group write");
+        let root_ok = [
+            (Path::new("/opt/google/chrome"), root_owned(0o755)),
+            (Path::new("/opt/google"), root_owned(0o755)),
+            (Path::new("/"), root_owned(0o755)),
+        ];
+        assert!(trusted_launcher(file, root_owned(0o755), &root_ok).is_ok());
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn a_launcher_outside_the_system_directories_is_refused() {
         let home = Path::new("/home/user/bin/google-chrome");
-        assert!(trusted_launcher(home, root_owned(0o755), root_owned(0o755)).is_err());
+        assert!(trusted_launcher(home, root_owned(0o755), &root_chain(0o755)).is_err());
         let tmp = Path::new("/tmp/google-chrome");
-        assert!(trusted_launcher(tmp, root_owned(0o755), root_owned(0o755)).is_err());
+        assert!(trusted_launcher(tmp, root_owned(0o755), &root_chain(0o755)).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn snap_and_flatpak_wrappers_are_refused_with_their_own_message() {
+        for path in ["/snap/bin/chromium", "/var/lib/flatpak/exports/bin/com.google.Chrome"] {
+            let err = accept(Path::new(path)).unwrap_err();
+            assert!(err.contains("Snap or Flatpak"), "{path}: {err}");
+        }
+        // A copy of a shell named like the snap wrapper: the name is judged after resolution.
+        let dir = scratch("snapname");
+        let copy = dir.join("snap");
+        fs::copy("/bin/sh", &copy).unwrap();
+        let err = accept(&copy).unwrap_err();
+        assert!(err.contains("Snap or Flatpak"), "{err}");
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[cfg(target_os = "linux")]
@@ -364,6 +446,7 @@ mod tests {
         for dir in LINUX_LAUNCHER_DIRS {
             assert!(Path::new(dir).is_absolute(), "{dir}");
         }
+        assert!(!LINUX_LAUNCHER_DIRS.iter().any(|d| d.starts_with("/snap") || d.contains("flatpak")));
         for name in LINUX_BINARY_NAMES.iter().chain(LINUX_LAUNCHER_NAMES) {
             assert!(!name.is_empty() && !name.contains('/'), "{name}");
         }
