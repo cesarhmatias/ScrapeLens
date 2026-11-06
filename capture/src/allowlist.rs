@@ -272,6 +272,12 @@ impl Allowlist {
         }
     }
 
+    /// A destination the proxy relay is asked to reach (host and port, no URL). Every
+    /// connection counts, including subresources of declared third parties.
+    pub fn permits_destination(&self, host: &str, port: u16) -> bool {
+        matches!(self.decide_any(&host.to_ascii_lowercase(), port), Decision::Allowed)
+    }
+
     /// Host (any port) in `allowed_hosts` or `third_party_hosts`.
     pub fn host_allowed(&self, host: &str) -> bool {
         let host = host.to_ascii_lowercase();

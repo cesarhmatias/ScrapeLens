@@ -108,6 +108,7 @@ fn main() {
         allowed_hosts: vec![format!("localhost:{port}")],
         third_party_hosts: Vec::new(),
         expose_cdp: false,
+        proxy: None,
     })
     .expect("start");
     let started = Instant::now();

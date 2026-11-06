@@ -32,6 +32,8 @@ pub mod browser;
 pub mod chrome;
 pub mod cookies;
 mod fdio;
+pub mod proxy;
+pub mod relay;
 pub mod transport;
 
 pub use cookies::{
@@ -110,6 +112,11 @@ pub struct CaptureConfig {
     /// Cookies already resolved by the caller. When not empty, it takes precedence over
     /// `cookie_source` (useful for tests and for the MCP).
     pub initial_cookies: Vec<ImportedCookie>,
+    /// The proxy link the user gave, if any. Its credentials stay in the relay.
+    pub proxy: Option<proxy::ProxyLink>,
+    /// TEST ONLY: adds `--proxy-bypass-list=<-loopback>` so that loopback targets really
+    /// pass through the proxy. Production keeps Chrome's default loopback bypass.
+    pub test_proxy_bypass_loopback: bool,
 }
 
 pub fn run(
@@ -282,6 +289,19 @@ fn run_inner(
         .map_err(|error| format!("cdp-bodies.jsonl: {error}"))?;
 
     let resolver_rules = opts.allowlist.as_ref().map(allowlist::Allowlist::resolver_rules);
+    // The proxy is prepared before Chrome starts, so a refused or unreachable proxy fails
+    // the capture with its own message. The relay, if any, stops when this scope ends.
+    let proxy_plan = match &config.proxy {
+        Some(link) => {
+            let allow: Option<relay::AllowFn> = opts.allowlist.clone().map(|al| {
+                Arc::new(move |host: &str, port: u16| al.permits_destination(host, port))
+                    as relay::AllowFn
+            });
+            Some(relay::ProxyPlan::prepare(link.clone(), allow).map_err(|e| e.to_string())?)
+        }
+        None => None,
+    };
+    let proxy_arg = proxy_plan.as_ref().map(relay::ProxyPlan::chrome_arg);
     let mut pipe_ends = match opts.transport {
         CdpTransport::Pipe => Some(
             transport::make_pipe_ends().map_err(|error| format!("CDP pipe: {error}"))?,
@@ -294,6 +314,7 @@ fn run_inner(
         &netlog_path,
         resolver_rules.as_deref(),
         pipe_ends.is_some(),
+        proxy_arg.as_deref(),
     );
     let mut chrome = ChromeProcess::new(spawn_chrome(config, &launch_args, pipe_ends.as_ref())?);
     // Marker to clean up orphans if this process dies by SIGKILL; the Drop
@@ -642,13 +663,19 @@ fn run_inner(
         waited_ms: shutdown.waited_ms,
         warnings: report_warnings,
     };
+    let proxy_suffix = match proxy_plan.as_ref().map(relay::ProxyPlan::failures) {
+        Some(failures) if !failures.is_empty() => {
+            format!("; proxy: {}", failures.join("; "))
+        }
+        _ => String::new(),
+    };
     Ok((
         CaptureOutcome {
             session: session_value,
             session_dir: config.session_dir.clone(),
             notice: format!(
-                "Session captured and imported: {} CDP+NetLog event(s) used, {} warning(s).{}",
-                requests, warnings, cookie_suffix
+                "Session captured and imported: {} CDP+NetLog event(s) used, {} warning(s).{}{}",
+                requests, warnings, cookie_suffix, proxy_suffix
             ),
         },
         report,
@@ -742,6 +769,7 @@ fn chrome_args(
     netlog: &Path,
     resolver_rules: Option<&str>,
     use_pipe: bool,
+    proxy_arg: Option<&str>,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         format!("--user-data-dir={}", profile.display()),
@@ -797,6 +825,15 @@ fn chrome_args(
                 "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"
                     .to_string(),
             );
+        }
+    }
+    if let Some(server) = proxy_arg {
+        // The value never carries credentials: the relay's address, or the link without
+        // them (direct route). WebRTC must not open UDP outside the proxy.
+        args.push(format!("--proxy-server={server}"));
+        args.push("--force-webrtc-ip-handling-policy=disable_non_proxied_udp".to_string());
+        if config.test_proxy_bypass_loopback {
+            args.push("--proxy-bypass-list=<-loopback>".to_string());
         }
     }
     if config.headless {
@@ -3829,8 +3866,42 @@ mod tests {
             network,
             cookie_source: None,
             initial_cookies: Vec::new(),
+            proxy: None,
+            test_proxy_bypass_loopback: false,
         };
-        chrome_args(&config, Path::new("/x/profile"), Path::new("/x/profile/netlog.json"), rules, pipe)
+        chrome_args(&config, Path::new("/x/profile"), Path::new("/x/profile/netlog.json"), rules, pipe, None)
+    }
+
+    #[test]
+    fn proxy_arguments_never_carry_credentials_and_keep_webrtc_behind_the_proxy() {
+        let base = |bypass: bool, proxy: Option<&str>| {
+            let config = CaptureConfig {
+                chrome: PathBuf::from("/x/chrome"),
+                session_dir: PathBuf::from("/x/session"),
+                start_url: String::new(),
+                headless: true,
+                ignore_cert: false,
+                network: NetworkMode::Open,
+                cookie_source: None,
+                initial_cookies: Vec::new(),
+                proxy: None,
+                test_proxy_bypass_loopback: bypass,
+            };
+            chrome_args(&config, Path::new("/x/p"), Path::new("/x/p/n.json"), None, true, proxy)
+        };
+        let with_relay = base(false, Some("socks5://127.0.0.1:40123"));
+        assert!(with_relay.contains(&"--proxy-server=socks5://127.0.0.1:40123".to_string()));
+        assert!(with_relay.contains(&"--force-webrtc-ip-handling-policy=disable_non_proxied_udp".to_string()));
+        assert!(!with_relay.iter().any(|a| a.contains("proxy-bypass-list")), "production keeps the loopback bypass");
+        let with_bypass = base(true, Some("socks5://127.0.0.1:40123"));
+        assert!(with_bypass.contains(&"--proxy-bypass-list=<-loopback>".to_string()));
+        let none = base(true, None);
+        assert!(!none.iter().any(|a| a.starts_with("--proxy-server") || a.contains("webrtc")), "no proxy, no change");
+        for args in [&with_relay, &with_bypass, &none] {
+            for a in args {
+                assert!(!a.contains("Pw-") && !a.contains("exp-user"), "{a}");
+            }
+        }
     }
 
     fn has(args: &[String], flag: &str) -> bool {
@@ -4084,6 +4155,8 @@ mod tests {
             network: NetworkMode::default(),
             cookie_source: None,
             initial_cookies: Vec::new(),
+            proxy: None,
+            test_proxy_bypass_loopback: false,
         };
         let status = Arc::new(Mutex::new(CaptureStatus::default()));
         let error = run(config, status, stop_rx, ready_tx).unwrap_err();

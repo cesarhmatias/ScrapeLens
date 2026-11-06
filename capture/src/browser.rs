@@ -62,6 +62,9 @@ pub struct BrowserCaptureConfig {
     pub allowed_hosts: Vec<String>,
     pub third_party_hosts: Vec<String>,
     pub expose_cdp: bool,
+    /// Optional proxy. With the allowlist it always goes through the relay, which checks
+    /// every destination before it leaves.
+    pub proxy: Option<crate::proxy::ProxyLink>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +72,9 @@ pub enum StartError {
     Allowlist(AllowlistError),
     /// The browser is not Google's stable Chrome (`chrome::validate_chrome`).
     BrowserInvalid(ChromeError),
+    /// The proxy could not be used (unreachable, https with credentials, local relay).
+    /// The message carries no credentials.
+    Proxy(crate::relay::RelayError),
     StartUrlNotAllowed(UrlDenied),
     SessionDir(String),
     BrowserStart(String),
@@ -79,6 +85,7 @@ impl StartError {
         match self {
             StartError::Allowlist(e) => e.code(),
             StartError::BrowserInvalid(e) => e.code(),
+            StartError::Proxy(_) => "proxy_unavailable",
             StartError::StartUrlNotAllowed(_) => "start_url_not_allowed",
             StartError::SessionDir(_) => "session_dir",
             StartError::BrowserStart(_) => "browser_start_failed",
@@ -94,6 +101,7 @@ impl std::fmt::Display for StartError {
             StartError::StartUrlNotAllowed(e) => write!(f, "start_url: {e}"),
             StartError::SessionDir(e) => write!(f, "session directory: {e}"),
             StartError::BrowserStart(e) => write!(f, "{e}"),
+            StartError::Proxy(e) => write!(f, "{e}"),
         }
     }
 }
@@ -234,6 +242,14 @@ impl BrowserCapture {
         // Only Google's stable Chrome, read from the bundle and its signature,
         // without running anything. The validated path (symlinks resolved) is the one that runs.
         let validated = validate_chrome(&config.chrome).map_err(StartError::BrowserInvalid)?;
+        // Preflight: an unusable proxy is refused here, before any browser starts. The
+        // capture prepares its own relay again when it starts (the first one is dropped).
+        if let Some(link) = &config.proxy {
+            let al = allowlist.clone();
+            let allow: crate::relay::AllowFn =
+                Arc::new(move |host: &str, port: u16| al.permits_destination(host, port));
+            crate::relay::ProxyPlan::prepare(link.clone(), Some(allow)).map_err(StartError::Proxy)?;
+        }
         let capture_config = CaptureConfig {
             chrome: validated.binary.clone(),
             session_dir: config.session_dir.clone(),
@@ -246,6 +262,8 @@ impl BrowserCapture {
             network: crate::NetworkMode::LoopbackOnly,
             cookie_source: None,
             initial_cookies: Vec::new(),
+            proxy: config.proxy.clone(),
+            test_proxy_bypass_loopback: false,
         };
         let status = Arc::new(Mutex::new(CaptureStatus {
             recording: true,
@@ -615,6 +633,7 @@ mod tests {
             allowed_hosts: allowed.iter().map(|s| s.to_string()).collect(),
             third_party_hosts: Vec::new(),
             expose_cdp: false,
+            proxy: None,
         }
     }
 
@@ -686,6 +705,7 @@ mod tests {
             allowed_hosts: allowed,
             third_party_hosts: Vec::new(),
             expose_cdp,
+            proxy: None,
         }
     }
 
@@ -1676,6 +1696,8 @@ mod tests {
             network: mode,
             cookie_source: None,
             initial_cookies: Vec::new(),
+            proxy: None,
+            test_proxy_bypass_loopback: false,
         };
         let status = Arc::new(Mutex::new(CaptureStatus::default()));
         let (stop_tx, stop_rx) = channel();
@@ -1779,6 +1801,8 @@ mod tests {
                 network: crate::NetworkMode::LoopbackOnly,
                 cookie_source: None,
                 initial_cookies: Vec::new(),
+                proxy: None,
+                test_proxy_bypass_loopback: false,
             };
             let status = Arc::new(Mutex::new(CaptureStatus::default()));
             let (stop_tx, stop_rx) = channel();
@@ -1873,6 +1897,8 @@ mod tests {
             network: crate::NetworkMode::LoopbackOnly,
             cookie_source: None,
             initial_cookies: vec![cookie],
+            proxy: None,
+            test_proxy_bypass_loopback: false,
         };
         let status = Arc::new(Mutex::new(CaptureStatus::default()));
         let (stop_tx, stop_rx) = channel();

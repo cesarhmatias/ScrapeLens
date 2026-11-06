@@ -127,6 +127,11 @@ pub struct StartCaptureParams {
     pub headless: Option<bool>,
     /// Passes the loopback CDP address to the agent (default false).
     pub expose_cdp: Option<bool>,
+    /// Optional proxy: `http://`, `https://`, `socks5://`, `socks5h://`, `host:port`, or
+    /// `host:port:user:pass`. `"env"` reads the link from the server's
+    /// `SCRAPELENS_PROXY_URL`, so a password never passes through the model. Recommended
+    /// whenever the proxy has credentials. The confirmation shows only the address.
+    pub proxy: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -164,6 +169,31 @@ pub enum Confirmation {
     Cancelled,
     /// The client does not support (or failed to perform) the elicitation.
     Unavailable(String),
+}
+
+/// Resolves the `proxy` parameter. Only `"env"` reads the server's environment, and only
+/// when asked. A refusal never includes the link: the link is where the password is.
+pub fn resolve_proxy(
+    requested: Option<&str>,
+) -> Result<Option<scrapelens_capture::proxy::ProxyLink>, ToolError> {
+    use scrapelens_capture::proxy::ProxyLink;
+    let requested = match requested.map(str::trim).filter(|v| !v.is_empty()) {
+        None => return Ok(None),
+        Some(value) => value,
+    };
+    let raw = if requested == "env" {
+        std::env::var("SCRAPELENS_PROXY_URL").map_err(|_| {
+            ToolError::new(
+                "proxy_env_missing",
+                "proxy \"env\" was requested, but SCRAPELENS_PROXY_URL is not set on the server",
+            )
+        })?
+    } else {
+        requested.to_string()
+    };
+    ProxyLink::parse(&raw)
+        .map(Some)
+        .map_err(|e| ToolError::new("proxy_invalid", e.to_string()))
 }
 
 /// Applies the policy: without explicit acceptance nothing opens; without
@@ -282,6 +312,7 @@ impl Manager {
         let chrome = self.backend.resolve_chrome(params.binary_path.as_deref())?;
         let headless = params.headless.unwrap_or(false);
         let expose_cdp = params.expose_cdp.unwrap_or(false);
+        let proxy = resolve_proxy(params.proxy.as_deref())?;
 
         let mut slots = self.lock();
         if self.shutting_down.load(Ordering::SeqCst) {
@@ -327,7 +358,8 @@ impl Manager {
              Start URL: {}\n\
              CDP handed to the agent (browser control): {}\n\
              Mode: {}\n\
-             Chrome binary: {}\n\n\
+             Chrome binary: {}\n\
+             Proxy: {}\n\n\
              WARNING about ports: the browser enforces the HOST on all ports; the PORT is only enforced when the agent uses navigate. Approving a host with a port (e.g. localhost:8080) approves, for the page, that host on ANY port (local Redis, admin panels, other services). List only hosts for which this is acceptable.\n\n\
              {}\n\n\
              Tick \"confirmo\" to authorize. Without it nothing is opened.",
@@ -350,6 +382,14 @@ impl Manager {
                 "with a window"
             },
             escape_display(&chrome.display().to_string()),
+            match &proxy {
+                Some(link) => format!(
+                    "{} (credentials: {})",
+                    escape_display(&link.server_url()),
+                    if link.authenticated() { "yes, not shown" } else { "no" }
+                ),
+                None => "none".to_string(),
+            },
             SENSITIVE_NOTICE
         );
         Ok(Prepared {
@@ -363,6 +403,7 @@ impl Manager {
                 allowed_hosts: params.allowed_hosts,
                 third_party_hosts: third,
                 expose_cdp,
+                proxy,
             },
             message,
         })

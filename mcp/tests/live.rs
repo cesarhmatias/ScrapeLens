@@ -221,3 +221,65 @@ fn confirmation_text_lists_what_the_user_is_authorizing() {
         "nothing created before confirmation"
     );
 }
+
+/// The proxy parameter: `"env"` reads the server's variable only when asked; the password
+/// reaches neither the confirmation, the config's Debug output, nor a tool error.
+#[test]
+fn proxy_env_is_read_only_when_requested_and_never_shown() {
+    const PASSWORD: &str = "Pw-Mcp-5";
+    const USER: &str = "exp-user";
+    let env = Env::new(false);
+    let backend = Arc::new(Counting::default());
+    let manager = Manager::new(Arc::new(Backend(backend.clone())));
+
+    // Not requested: the variable is never applied, even when it is set.
+    std::env::set_var(
+        "SCRAPELENS_PROXY_URL",
+        format!("http://{USER}:{PASSWORD}@127.0.0.1:3128"),
+    );
+    let plain = manager
+        .prepare(&env.ctx, params(json!({"allowed_hosts": ["site.invalid.test"]})))
+        .unwrap();
+    assert!(plain.config.proxy.is_none());
+    assert!(plain.message.contains("Proxy: none"));
+    manager.release(&plain.capture_id);
+
+    // Requested with "env": the address is shown, the credentials are not.
+    let via_env = manager
+        .prepare(
+            &env.ctx,
+            params(json!({"allowed_hosts": ["site.invalid.test"], "proxy": "env"})),
+        )
+        .unwrap();
+    let link = via_env.config.proxy.clone().expect("proxy applied");
+    assert!(link.authenticated());
+    assert!(via_env.message.contains("Proxy: http://127.0.0.1:3128 (credentials: yes, not shown)"));
+    // Base64 of "exp-user:Pw-Mcp-5", written out: the relay encoder is crate-private.
+    let base64 = "ZXhwLXVzZXI6UHctTWNwLTU=";
+    for shown in [
+        via_env.message.clone(),
+        format!("{:?}", via_env.config),
+        format!("{:?}", link),
+    ] {
+        assert!(!shown.contains(PASSWORD) && !shown.contains(USER) && !shown.contains(&base64), "{shown}");
+    }
+    manager.release(&via_env.capture_id);
+
+    // A refused link: a stable code, and the link is not echoed.
+    let bad = format!("ftp://{USER}:{PASSWORD}@127.0.0.1:3128");
+    let err = manager
+        .prepare(&env.ctx, params(json!({"allowed_hosts": ["site.invalid.test"], "proxy": bad})))
+        .err()
+        .expect("refused");
+    assert_eq!(err.code, "proxy_invalid");
+    assert!(!err.message.contains(PASSWORD) && !err.message.contains(USER), "{}", err.message);
+
+    // "env" with the variable missing: a clear error, nothing opened.
+    std::env::remove_var("SCRAPELENS_PROXY_URL");
+    let missing = manager
+        .prepare(&env.ctx, params(json!({"allowed_hosts": ["site.invalid.test"], "proxy": "env"})))
+        .err()
+        .expect("refused");
+    assert_eq!(missing.code, "proxy_env_missing");
+    assert_eq!(backend.starts.load(Ordering::SeqCst), 0);
+}
