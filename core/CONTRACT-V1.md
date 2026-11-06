@@ -223,10 +223,14 @@ parsed as attempts. Chrome 156 can also log the `CONNECT` request line under
 `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` on the socket source (not on a
 `URL_REQUEST`); a request line whose method is `CONNECT` is the tunnel and is
 ignored the same way, not reported as a request without URL. They do not affect
-`networkState`. The protocol of the application request inside the tunnel is
-taken when the NetLog shows it; without that proof it stays `unknown`. A plain
-`http://` target is sent with an absolute-URI request line; the URL comes from
-the URL_REQUEST.
+`networkState`. The protocol value is the one CDP reports for the application
+request inside the tunnel (`Network.responseReceived.response.protocol`), with
+CDP provenance and `unverified` ("structure from CDP; checked by information
+only"); the NetLog fills it only when CDP leaves it `unknown`. The NetLog events
+of the inner request (`HTTP_TRANSACTION_*`, `HTTP2_SESSION_*`) are header
+evidence with their own state (h1 verified; h2/h3 partial); they never make the
+protocol field itself `verified`. A plain `http://` target is sent with
+an absolute-URI request line; the URL comes from the URL_REQUEST.
 
 ## Body
 
