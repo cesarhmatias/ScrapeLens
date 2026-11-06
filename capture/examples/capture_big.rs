@@ -33,7 +33,7 @@ fn body_for(i: usize) -> String {
             k % 2 == 0
         ));
     }
-    format!("{{\"request\":{i},\"items\":[{}null]}}", items)
+    format!("{{\"request\":{i},\"items\":[{items}null]}}")
 }
 
 fn serve(stream: TcpStream, hits: Arc<AtomicUsize>, n: usize) {

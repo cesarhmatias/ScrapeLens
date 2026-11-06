@@ -13,6 +13,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tungstenite = "0.28"
 libc = "0.2"
+# TLS to an https:// proxy on the relay path. ring only (no aws-lc). Certificate
+# checks use the system trust store; nothing disables them.
+rustls = { version = "0.23.31", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.1"
+rustls-pemfile = "2.2.0"
 
 # Crate independente: sem Tauri, sem janela. O App (src-tauri) e o servidor MCP a consomem.
 [workspace]

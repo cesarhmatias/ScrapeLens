@@ -128,15 +128,69 @@ proxy with credentials (refused). `analyze_real.py` reads `session.json`.
 
 All sessions: `networkState` absent (every request was sent), 9 of 10 requests paired with
 NetLog in every route (the same as direct), no `secret` in any file of any capture.
-Divergences from the contract (for core):
-- **Protocol.** The proxied HTTPS requests report `h1`, from CDP ("structure from CDP;
-  checked by information only"). The contract says the protocol inside a tunnel is
-  `unknown` unless the NetLog shows it. The NetLog here does not show the protocol inside the tunnel.
+The `https + creds` row is the first round, before the relay spoke TLS. The follow-up
+below replaces that refusal.
+
+Divergences from the contract (for core), first round, origin was HTTP/1.1:
+- **Protocol.** Those proxied HTTPS requests report `h1`, from CDP. That matches the
+  origin: the follow-up against an HTTP/2 origin reports `h2` from both CDP and NetLog.
 - **`netlog.request_without_url`.** The HTTP proxy direct route (absolute-URI requests)
   gives 10 warnings per capture: "URL_REQUEST … has no URL in URL_REQUEST_START_JOB; not
-  imported". The requests still come from CDP.
+  imported". The requests still come from CDP. The follow-up shows the same warning on
+  the direct route for an HTTP/2 target (CONNECT), and not on the relay route.
 
 ### Fixtures
 
 The synthetic fixtures of core (`core/tests/fixtures/netlog-proxy.json`) were not compared
 line by line; the real captures above are the reference for the divergences listed.
+
+### Follow-up (https credentials, HTTP/2, multi-target, direct-route failure)
+
+`followup.sh` plus `analyze_followup.py`. Chrome is the capture's dedicated profile.
+The HTTP/2 listener is `testserver serve --only h1,h2 --no-h3-on-h2-port` (h1
+`127.0.0.1:18781`, h2 `127.0.0.1:18782`). Proxies: open HTTP `18791`, HTTP with
+credentials `18792`, HTTPS with credentials `18793` (fixture CA via
+`SCRAPELENS_TEST_PROXY_CA`; checks stay on). Every run exited 0. A scan of the
+password and of the Base64 of `user:pass` in every output file was 0 hits.
+
+| run | proxy | target | session proxy | imported requests | CDP `response.protocol` | match |
+|---|---|---|---|---|---|---|
+| `direct-http-page` | HTTP open, direct | `http://127.0.0.1:18781/page` | http direct, not authenticated | 11, all `h1` | `http/1.1` ×11 | 9 matched, 2 `ambiguous` (`/echo-order?concurrent=1`) |
+| `direct-h2` | HTTP open, direct | `https://127.0.0.1:18782/page` | http direct, not authenticated | 11, all `h2` | `h2` ×11 | 9 matched, 2 `ambiguous` (same URL) |
+| `relay-h2` | HTTP + credentials, relay | the same h2 page | http relay, authenticated, port 18792 | 11, all `h2` | `h2` ×11 | 11 matched |
+| `direct-multi` | HTTP open, direct | `http://127.0.0.1:18781/multi/` | http direct | 22, all `h1` | `http/1.1` ×21 | 20 matched, 2 unmatched |
+| `relay-multi` | HTTP + credentials, relay | the same `/multi/` | http relay, authenticated | 22, all `h1` | `http/1.1` ×21 | 20 matched, 2 unmatched (the same two) |
+| `https-relay` | `https://` + credentials | `http://127.0.0.1:18781/healthz` | https relay, authenticated, port 18793 | 2, both `h1` | `http/1.1` ×2 | 2 matched |
+| `direct-down` | `http://127.0.0.1:1`, direct | healthz | http direct, port 1 | 6, protocol `unknown` | — | 3 matched, 3 unmatched `data:image/png` (Chrome error page) |
+
+HTTP/2. NetLog event names on `direct-h2` and `relay-h2` include `HTTP2_SESSION`,
+`HTTP2_SESSION_INITIALIZED`, `HTTP2_SESSION_SEND_HEADERS`, `HTTP2_SESSION_RECV_HEADERS`
+and `HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS` (18 on each run). CDP and NetLog
+both say h2 when the origin is h2, through an HTTP proxy, direct and relay. The
+first-round `h1` was the origin protocol. The raw NetLog of an h1 page also contains
+`HTTP2_SESSION` events; those are not the imported page requests (those stay `h1` /
+`http/1.1`).
+
+`netlog.request_without_url`: 10 on `direct-http-page`, 11 on `direct-h2`, 9 on
+`direct-multi`, and none on `relay-h2`, `relay-multi` or `https-relay`. It is the
+direct HTTP-proxy route, for absolute-URI requests and for CONNECT, not only the
+absolute-URI case. The two `ambiguous` rows on the direct page runs are both
+`/echo-order?concurrent=1`. The relay pairs that h2 page 11/11.
+
+Multi-target. All 16 markers (`main`, `popup`, `blank`, `oopif`, `worker`, `sw-own`,
+`sw-intercept`, each GET and POST where the page sends both) have CDP and NetLog on
+both routes. The two unmatched requests are the same on both routes: one empty URL,
+and `GET /multi/sw-fetch?m=sw-intercept-1`. Both routes also warn
+`cdp.service_worker_ambiguous` (1), `cdp.extra_info_without_request` (2) and
+`cdp.response_extra_without_request` (2). The proxy does not add a pairing gap.
+The relay drops `netlog.request_without_url`, which the direct route still has (9).
+
+Direct-route failure. `direct-down` notice ends with
+`; proxy: the proxy http://127.0.0.1:1 could not be reached: check the host name, the port and the network, then try again`.
+Warning `capture.proxy_failure` (1) carries that sentence. The three unmatched
+documents are Chrome's `data:image/png` error-page images, not a generic
+`loadingFailed: net::ERR_*` reason.
+
+The direct HTTP-proxy captures Core asked for (`direct-http-page` and `direct-h2`:
+`session.json`, `netlog.json`, `cdp-events.jsonl`, `cdp-bodies.jsonl`) are handed
+off outside the repo. They are not committed.

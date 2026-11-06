@@ -413,12 +413,20 @@ Five tools connect `scrapelens-capture` (`capture/`) and `scrapelens-recon`
   through the model. The variable is applied only when `"env"` is requested.
   The confirmation shows `scheme://host:port` and whether the link is authenticated,
   never the credentials. Refusals: `proxy_invalid` (the message never echoes the link),
-  `proxy_env_missing`, and `proxy_unavailable` (the proxy cannot be reached, or https
-  with credentials/allowlist; the message gives the next step).
+  `proxy_env_missing`, and `proxy_unavailable` (the proxy cannot be reached, or its TLS
+  certificate is not trusted; the message gives the next step and never a credential).
   Route: no credentials and no allowlist → Chrome gets `--proxy-server=scheme://host:port`
   directly. Credentials, or any allowlist (always, for `start_capture`) → Chrome talks to
   a local relay on `127.0.0.1` (random port, no auth); the relay adds the credentials and
   refuses, before contacting the upstream, any host:port the allowlist does not permit.
+  An `https://` proxy on that path is TLS to the proxy (rustls, system trust store, checks
+  always on). A certificate failure is `proxy_unavailable` with that reason. The test-only
+  environment variable `SCRAPELENS_TEST_PROXY_CA` (a PEM path) adds one extra root for the
+  fixture CA; it is not an MCP parameter and it does not disable checks.
+  On the direct route, Chrome's `ERR_PROXY_CONNECTION_FAILED`, `ERR_TUNNEL_CONNECTION_FAILED`,
+  `ERR_PROXY_AUTH_REQUESTED` and the related proxy errors become the same `; proxy: <reason>`
+  notice as the relay, a `capture.proxy_failure` warning, and the request reason. They are
+  not left as a generic page failure.
   With a proxy, WebRTC is kept behind it (`disable_non_proxied_udp`); a proxied capture
   has no HTTP/3 (the session says so). Session: `capture.proxy` (`scheme`,
   `authenticated`, and in the full export `host`, `port`, `route`); no credential is

@@ -3,8 +3,10 @@
 //! Chrome gets `socks5://127.0.0.1:<random port>` with no authentication. For each
 //! connection the relay checks the destination against the allowlist (before anything
 //! reaches the upstream), then opens a tunnel through the upstream proxy, adding its
-//! credentials: SOCKS5 user/pass, or HTTP `CONNECT` with `Proxy-Authorization`. The
-//! relay copies bytes; it never parses or changes the application's request.
+//! credentials: SOCKS5 user/pass, or HTTP `CONNECT` with `Proxy-Authorization`. An
+//! `https://` proxy is reached over TLS first (system trust store, plus a test-only extra
+//! CA); the `CONNECT` then goes inside that TLS session. The relay copies bytes; it never
+//! parses or changes the application's request.
 //!
 //! The password lives in this process only. Failures are recorded as text with no
 //! credentials, for the capture to report. The relay stops when it is dropped, including
@@ -14,9 +16,12 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+use rustls::pki_types::ServerName;
+use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 use crate::proxy::{ProxyLink, ProxyScheme};
 
@@ -81,16 +86,18 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 const ACCEPT_POLL: Duration = Duration::from_millis(10);
 
-/// Why the relay could not start. Messages carry `scheme://host:port` at most.
+/// Why the relay could not start. Messages carry `scheme://host:port` at most, never
+/// credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelayError {
     /// The upstream proxy could not be reached (DNS failure, refused, timeout).
     UpstreamUnreachable { server: String },
-    /// An `https://` proxy on the relay path needs TLS to the proxy, which the relay does
-    /// not have. Without credentials or an allowlist, Chrome reaches it directly instead.
-    HttpsUpstreamUnsupported,
+    /// TLS to an `https://` proxy failed. The message is already complete.
+    Tls { message: String },
     /// The local listener could not be opened.
     Listen(String),
+    /// The test-only extra CA could not be used. Certificate checks stay on.
+    TestCa(String),
 }
 
 impl fmt::Display for RelayError {
@@ -100,9 +107,7 @@ impl fmt::Display for RelayError {
                 f,
                 "the proxy {server} could not be reached: check the host name, the port and the network, then try again"
             ),
-            RelayError::HttpsUpstreamUnsupported => f.write_str(
-                "an https:// proxy cannot be used with credentials or an allowlist yet: use http:// or socks5:// for that, or a link without credentials",
-            ),
+            RelayError::Tls { message } | RelayError::TestCa(message) => f.write_str(message),
             RelayError::Listen(detail) => write!(f, "the local proxy relay could not start: {detail}"),
         }
     }
@@ -121,20 +126,43 @@ pub struct Relay {
 
 impl Relay {
     /// Starts the relay for `link`. `allow` of `None` means no allowlist: any destination.
+    /// An `https://` link reads `SCRAPELENS_TEST_PROXY_CA` (a PEM path) when it is set, and
+    /// adds that root next to the system trust store. The variable is test-only: it is not
+    /// an MCP or App option, and it never turns certificate checks off.
     pub fn start(link: &ProxyLink, allow: Option<AllowFn>) -> Result<Relay, RelayError> {
-        if link.scheme() == ProxyScheme::Https {
-            return Err(RelayError::HttpsUpstreamUnsupported);
-        }
+        let extra = if link.scheme() == ProxyScheme::Https {
+            test_extra_ca_from_env()?
+        } else {
+            Vec::new()
+        };
+        Self::start_with_extra_ca(link, allow, &extra)
+    }
+
+    /// Same as [`Relay::start`], with the extra test CA passed in (PEM bytes, or empty).
+    pub(crate) fn start_with_extra_ca(
+        link: &ProxyLink,
+        allow: Option<AllowFn>,
+        extra_pem: &[u8],
+    ) -> Result<Relay, RelayError> {
         let server = link.server_url();
-        // Preflight: an unreachable upstream is reported now, not as a page timeout later.
-        let upstream = (link.host(), link.port())
-            .to_socket_addrs()
-            .ok()
-            .and_then(|mut addrs| addrs.next())
-            .and_then(|addr| TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).ok());
-        if upstream.is_none() {
-            return Err(RelayError::UpstreamUnreachable { server });
-        }
+        // Preflight: an unreachable upstream, or a certificate the system does not trust,
+        // is reported now, not as a page timeout later.
+        let tls = if link.scheme() == ProxyScheme::Https {
+            let config = build_tls_config(extra_pem, &server)?;
+            match tls_connect(link, &config) {
+                Ok(_) => Some(config),
+                Err(DialFail::Unreachable) => {
+                    return Err(RelayError::UpstreamUnreachable { server });
+                }
+                Err(DialFail::Tls(message)) => return Err(RelayError::Tls { message }),
+            }
+        } else {
+            let upstream = connect_upstream(link).ok();
+            if upstream.is_none() {
+                return Err(RelayError::UpstreamUnreachable { server });
+            }
+            None
+        };
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .map_err(|e| RelayError::Listen(e.kind().to_string()))?;
         listener.set_nonblocking(true).map_err(|e| RelayError::Listen(e.kind().to_string()))?;
@@ -143,6 +171,7 @@ impl Relay {
         let shared = Shared {
             link: Arc::new(link.clone()),
             allow,
+            tls,
             failures: Arc::new(Mutex::new(Vec::new())),
             sockets: Arc::new(Mutex::new(Vec::new())),
         };
@@ -190,6 +219,7 @@ impl Drop for Relay {
 struct Shared {
     link: Arc<ProxyLink>,
     allow: Option<AllowFn>,
+    tls: Option<Arc<ClientConfig>>,
     failures: Arc<Mutex<Vec<String>>>,
     sockets: Arc<Mutex<Vec<TcpStream>>>,
 }
@@ -238,7 +268,7 @@ fn handle_client(mut client: TcpStream, shared: Shared) {
             return;
         }
     }
-    let upstream = match dial_through(&shared.link, &host, port) {
+    let upstream = match dial_through(&shared.link, shared.tls.as_ref(), &host, port) {
         Ok(stream) => stream,
         Err((reply, reason)) => {
             shared.fail(reason);
@@ -250,8 +280,19 @@ fn handle_client(mut client: TcpStream, shared: Shared) {
         return;
     }
     let _ = client.set_read_timeout(None);
-    let _ = upstream.set_read_timeout(None);
-    pipe(client, upstream);
+    match upstream {
+        Upstream::Plain(stream) => {
+            let _ = stream.set_read_timeout(None);
+            shared.track(&stream);
+            pipe(client, stream);
+        }
+        Upstream::Tls(stream) => {
+            let stream = *stream;
+            let _ = stream.sock.set_read_timeout(None);
+            shared.track(&stream.sock);
+            pipe_tls(client, stream);
+        }
+    }
 }
 
 /// Reads the SOCKS5 greeting and CONNECT request from Chrome. Only no-auth and CONNECT.
@@ -299,20 +340,54 @@ fn socks_request(client: &mut TcpStream) -> io::Result<(String, u16)> {
     Ok((host, u16::from_be_bytes(port)))
 }
 
+/// The tunnel to the upstream proxy, after authentication. Plain TCP, or TLS for `https://`.
+enum Upstream {
+    Plain(TcpStream),
+    Tls(Box<StreamOwned<ClientConnection, TcpStream>>),
+}
+
+enum DialFail {
+    Unreachable,
+    Tls(String),
+}
+
 /// Opens the tunnel to `host:port` through the upstream proxy. The error is the SOCKS5
 /// reply code for Chrome and a reason without credentials.
-fn dial_through(link: &ProxyLink, host: &str, port: u16) -> Result<TcpStream, (u8, String)> {
+fn dial_through(
+    link: &ProxyLink,
+    tls: Option<&Arc<ClientConfig>>,
+    host: &str,
+    port: u16,
+) -> Result<Upstream, (u8, String)> {
     let server = link.server_url();
-    let mut stream = connect_upstream(link).map_err(|_| {
-        (5, format!("the proxy {server} could not be reached"))
-    })?;
-    stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).ok();
     match link.scheme() {
-        ProxyScheme::Http => http_connect(&mut stream, link, host, port, &server),
-        ProxyScheme::Socks5 | ProxyScheme::Socks5h => socks5_connect(&mut stream, link, host, port, &server),
-        ProxyScheme::Https => return Err((1, format!("the proxy {server} needs TLS, which the relay does not have"))),
-    }?;
-    Ok(stream)
+        ProxyScheme::Https => {
+            let config = tls.ok_or_else(|| {
+                (1, format!("the proxy {server} needs TLS, and the relay has no certificate config"))
+            })?;
+            let mut stream = match tls_connect(link, config) {
+                Ok(stream) => stream,
+                Err(DialFail::Unreachable) => {
+                    return Err((5, format!("the proxy {server} could not be reached")));
+                }
+                Err(DialFail::Tls(message)) => return Err((1, message)),
+            };
+            http_connect(&mut stream, link, host, port, &server)?;
+            Ok(Upstream::Tls(Box::new(stream)))
+        }
+        ProxyScheme::Http | ProxyScheme::Socks5 | ProxyScheme::Socks5h => {
+            let mut stream = connect_upstream(link).map_err(|_| {
+                (5u8, format!("the proxy {server} could not be reached"))
+            })?;
+            stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).ok();
+            stream.set_write_timeout(Some(HANDSHAKE_TIMEOUT)).ok();
+            match link.scheme() {
+                ProxyScheme::Http => http_connect(&mut stream, link, host, port, &server)?,
+                _ => socks5_connect(&mut stream, link, host, port, &server)?,
+            }
+            Ok(Upstream::Plain(stream))
+        }
+    }
 }
 
 fn connect_upstream(link: &ProxyLink) -> io::Result<TcpStream> {
@@ -323,8 +398,191 @@ fn connect_upstream(link: &ProxyLink) -> io::Result<TcpStream> {
     TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)
 }
 
+/// `SCRAPELENS_TEST_PROXY_CA` is a PEM file of extra roots for the relay's TLS check.
+/// Unset means system roots only. A set but unreadable file is an error: checks stay on.
+fn test_extra_ca_from_env() -> Result<Vec<u8>, RelayError> {
+    match std::env::var("SCRAPELENS_TEST_PROXY_CA") {
+        Err(_) => Ok(Vec::new()),
+        Ok(path) if path.trim().is_empty() => Ok(Vec::new()),
+        Ok(path) => std::fs::read(path.trim()).map_err(|_| {
+            RelayError::TestCa(
+                "the test proxy CA file could not be read (SCRAPELENS_TEST_PROXY_CA). Certificate checks stay on"
+                    .to_string(),
+            )
+        }),
+    }
+}
+
+fn install_ring() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
+/// System trust store, plus `extra_pem` when a test passed a CA. Never an empty store
+/// and never a verifier that skips checks.
+fn build_tls_config(extra_pem: &[u8], server: &str) -> Result<Arc<ClientConfig>, RelayError> {
+    install_ring();
+    let mut roots = RootCertStore::empty();
+    let native = rustls_native_certs::load_native_certs();
+    for cert in native.certs {
+        let _ = roots.add(cert);
+    }
+    if !extra_pem.is_empty() {
+        let mut reader = std::io::Cursor::new(extra_pem);
+        let certs = rustls_pemfile::certs(&mut reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| {
+                RelayError::TestCa(
+                    "the test proxy CA is not a valid PEM certificate. Certificate checks stay on"
+                        .to_string(),
+                )
+            })?;
+        if certs.is_empty() {
+            return Err(RelayError::TestCa(
+                "the test proxy CA PEM contained no certificate. Certificate checks stay on".to_string(),
+            ));
+        }
+        for cert in certs {
+            roots.add(cert).map_err(|_| {
+                RelayError::TestCa(
+                    "the test proxy CA could not be added. Certificate checks stay on".to_string(),
+                )
+            })?;
+        }
+    }
+    if roots.is_empty() {
+        return Err(RelayError::Tls {
+            message: format!(
+                "the proxy {server} cannot be checked: no system trust roots were found. Install the system CA bundle, then try again"
+            ),
+        });
+    }
+    let config = ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Ok(Arc::new(config))
+}
+
+fn server_name(host: &str) -> Result<ServerName<'static>, ()> {
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        Ok(ServerName::IpAddress(ip.into()))
+    } else {
+        ServerName::try_from(host.to_string()).map_err(|_| ())
+    }
+}
+
+fn tls_connect(link: &ProxyLink, config: &Arc<ClientConfig>) -> Result<StreamOwned<ClientConnection, TcpStream>, DialFail> {
+    let server = link.server_url();
+    let mut sock = connect_upstream(link).map_err(|_| DialFail::Unreachable)?;
+    sock.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).ok();
+    sock.set_write_timeout(Some(HANDSHAKE_TIMEOUT)).ok();
+    let name = server_name(link.host()).map_err(|_| {
+        DialFail::Tls(format!(
+            "the proxy {server} host is not a DNS name or an IP address, so its certificate cannot be checked"
+        ))
+    })?;
+    let mut conn = ClientConnection::new(Arc::clone(config), name).map_err(|error| {
+        DialFail::Tls(tls_message(&server, &error))
+    })?;
+    while conn.is_handshaking() {
+        if let Err(error) = conn.complete_io(&mut sock) {
+            if error.kind() == io::ErrorKind::TimedOut || error.kind() == io::ErrorKind::ConnectionRefused {
+                return Err(DialFail::Unreachable);
+            }
+            return Err(DialFail::Tls(tls_message(&server, &error)));
+        }
+    }
+    Ok(StreamOwned::new(conn, sock))
+}
+
+/// A certificate or handshake failure. The text is rustls's own, trimmed, and it does
+/// not contain the proxy credentials (those never enter the TLS stack).
+fn tls_message(server: &str, error: &dyn fmt::Display) -> String {
+    let detail: String = error.to_string().chars().take(180).collect();
+    let lower = detail.to_ascii_lowercase();
+    if lower.contains("certificate") || lower.contains("cert") || lower.contains("unknownissuer") || lower.contains("invalid peer") {
+        format!(
+            "the proxy {server} presented a certificate the system does not trust ({detail}). Install the proxy CA in the system trust store, or check the host name"
+        )
+    } else {
+        format!("the proxy {server} could not complete TLS ({detail}). Check the host name and the port")
+    }
+}
+
+/// Chrome's `net::ERR_*` proxy failures, as the same kind of sentence the relay records.
+/// `None` when the text is an ordinary page or network failure.
+pub(crate) fn chrome_proxy_failure(error_text: &str) -> Option<&'static str> {
+    const MAP: &[(&str, &str)] = &[
+        (
+            "ERR_PROXY_CONNECTION_FAILED",
+            "the proxy could not be reached: check the host name, the port and the network, then try again",
+        ),
+        (
+            "ERR_MANDATORY_PROXY_CONFIGURATION_FAILED",
+            "the proxy could not be reached: check the host name, the port and the network, then try again",
+        ),
+        (
+            "ERR_SOCKS_CONNECTION_FAILED",
+            "the proxy could not be reached: check the host name, the port and the network, then try again",
+        ),
+        (
+            "ERR_PROXY_AUTH_REQUESTED",
+            "the proxy refused the credentials (it asked for authentication). Give a link with the username and password, or check them",
+        ),
+        (
+            "ERR_PROXY_AUTH_UNSUPPORTED",
+            "the proxy asked for an authentication this capture cannot answer on the direct route. Give a link with the username and password so the local relay can authenticate",
+        ),
+        (
+            "ERR_TUNNEL_CONNECTION_FAILED",
+            "the proxy could not open the tunnel to the target. Check that the proxy allows that destination",
+        ),
+        (
+            "ERR_SOCKS_CONNECTION_HOST_UNREACHABLE",
+            "the proxy could not reach the target host",
+        ),
+        (
+            "ERR_PROXY_CERTIFICATE_INVALID",
+            "the proxy presented a certificate the system does not trust. Install the proxy CA in the system trust store, or check the host name",
+        ),
+        (
+            "ERR_HTTPS_PROXY_TUNNEL_RESPONSE_REDIRECT",
+            "the proxy answered the tunnel with a redirect instead of opening it",
+        ),
+        (
+            "ERR_NO_SUPPORTED_PROXIES",
+            "the proxy could not be used for this request",
+        ),
+    ];
+    MAP.iter().find(|(code, _)| error_text.contains(code)).map(|(_, message)| *message)
+}
+
+/// Distinct proxy failures found in a CDP JSONL (`Network.loadingFailed`).
+pub(crate) fn proxy_failures_from_cdp(events: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in events.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("method").and_then(|m| m.as_str()) != Some("Network.loadingFailed") {
+            continue;
+        }
+        let Some(text) = value.pointer("/params/errorText").and_then(|t| t.as_str()) else {
+            continue;
+        };
+        if let Some(message) = chrome_proxy_failure(text) {
+            if !out.iter().any(|have| have == message) {
+                out.push(message.to_string());
+            }
+        }
+    }
+    out
+}
+
 fn http_connect(
-    stream: &mut TcpStream,
+    stream: &mut (impl Read + Write),
     link: &ProxyLink,
     host: &str,
     port: u16,
@@ -353,7 +611,7 @@ fn http_connect(
 }
 
 fn socks5_connect(
-    stream: &mut TcpStream,
+    stream: &mut (impl Read + Write),
     link: &ProxyLink,
     host: &str,
     port: u16,
@@ -420,7 +678,7 @@ fn socks5_connect(
 
 /// Reads an HTTP response head (up to the blank line), one byte at a time so that no
 /// tunnel byte is consumed.
-fn read_head(stream: &mut TcpStream) -> io::Result<String> {
+fn read_head(stream: &mut impl Read) -> io::Result<String> {
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
@@ -433,6 +691,60 @@ fn read_head(stream: &mut TcpStream) -> io::Result<String> {
         head.push(byte[0]);
     }
     Ok(String::from_utf8_lossy(&head).into_owned())
+}
+
+/// Copies bytes both ways across a TLS session. One thread: a `rustls` connection cannot
+/// be split, and a short read timeout wakes the loop so neither direction stalls the other.
+fn pipe_tls<C, D>(mut client: TcpStream, mut tls: StreamOwned<C, TcpStream>)
+where
+    C: std::ops::DerefMut + std::ops::Deref<Target = rustls::ConnectionCommon<D>>,
+    D: rustls::SideData,
+{
+    let tick = Some(Duration::from_millis(50));
+    let _ = client.set_read_timeout(tick);
+    let _ = client.set_write_timeout(None);
+    let _ = tls.sock.set_read_timeout(tick);
+    let _ = tls.sock.set_write_timeout(None);
+    let mut buf = [0u8; 16384];
+    let mut client_open = true;
+    let mut tls_open = true;
+    while client_open || tls_open {
+        if client_open {
+            match client.read(&mut buf) {
+                Ok(0) => {
+                    client_open = false;
+                    tls.conn.send_close_notify();
+                    let _ = tls.flush();
+                }
+                Ok(n) => {
+                    if tls.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+                Err(e) if timed_out(&e) => {}
+                Err(_) => break,
+            }
+        }
+        if tls_open {
+            match tls.read(&mut buf) {
+                Ok(0) => {
+                    tls_open = false;
+                    let _ = client.shutdown(Shutdown::Write);
+                }
+                Ok(n) => {
+                    if client.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+                Err(e) if timed_out(&e) => {}
+                Err(_) => break,
+            }
+        }
+    }
+}
+
+fn timed_out(error: &io::Error) -> bool {
+    matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock)
 }
 
 fn pipe(client: TcpStream, upstream: TcpStream) {
@@ -489,11 +801,36 @@ mod tests {
     }
 
     #[test]
-    fn an_https_upstream_is_refused_on_the_relay_path_until_tls_exists() {
-        let link = ProxyLink::parse("https://exp-user:Pw-Relay-9@127.0.0.1:443").unwrap();
-        assert_eq!(Relay::start(&link, None).err(), Some(RelayError::HttpsUpstreamUnsupported));
-        let no_creds = ProxyLink::parse("https://127.0.0.1:443").unwrap();
-        assert_eq!(Relay::start(&no_creds, None).err(), Some(RelayError::HttpsUpstreamUnsupported));
+    fn an_unreachable_https_upstream_is_reported_without_credentials() {
+        let link = ProxyLink::parse("https://exp-user:Pw-Relay-9@127.0.0.1:1").unwrap();
+        let err = Relay::start_with_extra_ca(&link, None, b"").err().expect("refused");
+        let shown = format!("{err:?} {err}");
+        assert!(matches!(err, RelayError::UpstreamUnreachable { .. }), "{shown}");
+        assert!(!shown.contains("exp-user") && !shown.contains("Pw-Relay-9"), "{shown}");
+    }
+
+    #[test]
+    fn chrome_proxy_errors_become_the_relay_sentences_and_page_errors_do_not() {
+        assert!(chrome_proxy_failure("net::ERR_PROXY_CONNECTION_FAILED")
+            .unwrap()
+            .contains("could not be reached"));
+        assert!(chrome_proxy_failure("net::ERR_TUNNEL_CONNECTION_FAILED")
+            .unwrap()
+            .contains("tunnel"));
+        assert!(chrome_proxy_failure("net::ERR_PROXY_AUTH_REQUESTED")
+            .unwrap()
+            .contains("credentials"));
+        assert!(chrome_proxy_failure("net::ERR_CONNECTION_REFUSED").is_none());
+        let events = concat!(
+            r#"{"method":"Network.loadingFailed","params":{"errorText":"net::ERR_PROXY_CONNECTION_FAILED"}}"#,
+            "\n",
+            r#"{"method":"Network.loadingFailed","params":{"errorText":"net::ERR_PROXY_CONNECTION_FAILED"}}"#,
+            "\n",
+            r#"{"method":"Network.loadingFailed","params":{"errorText":"net::ERR_TIMED_OUT"}}"#,
+            "\n",
+        );
+        let found = proxy_failures_from_cdp(events);
+        assert_eq!(found.len(), 1, "{found:?}");
     }
 }
 
@@ -631,6 +968,83 @@ mod wire_tests {
         (port, seen)
     }
 
+    /// HTTPS proxy: the fixture leaf (127.0.0.1) over TLS, then the same CONNECT as `http_upstream`.
+    fn https_upstream(user: &'static str, password: &'static str) -> (u16, Seen) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen: Seen = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&seen);
+        let expected = format!("Basic {}", base64(format!("{user}:{password}").as_bytes()));
+        let tls_config = fixture_server_config();
+        thread::spawn(move || {
+            for conn in listener.incoming().flatten() {
+                let log = Arc::clone(&log);
+                let expected = expected.clone();
+                let tls_config = Arc::clone(&tls_config);
+                thread::spawn(move || {
+                    let Ok(server) = rustls::ServerConnection::new(tls_config) else {
+                        return;
+                    };
+                    let mut tls = rustls::StreamOwned::new(server, conn);
+                    let head = match read_head(&mut tls) {
+                        Ok(h) => h,
+                        Err(_) => return,
+                    };
+                    let auth_ok = head.lines().any(|l| l.eq_ignore_ascii_case(&format!("Proxy-Authorization: {expected}")));
+                    if !auth_ok {
+                        log.lock().unwrap().push("auth-refused".to_string());
+                        let _ = tls.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n");
+                        return;
+                    }
+                    log.lock().unwrap().push("auth-ok".to_string());
+                    let target_line = head.lines().next().unwrap_or("").split(' ').nth(1).unwrap_or("").to_string();
+                    log.lock().unwrap().push(format!("CONNECT {target_line}"));
+                    let Some((h, p)) = target_line.rsplit_once(':') else { return };
+                    let Ok(target_port) = p.parse::<u16>() else { return };
+                    match TcpStream::connect((h, target_port)) {
+                        Ok(target) => {
+                            let _ = tls.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n");
+                            pipe_tls(target, tls);
+                        }
+                        Err(_) => {
+                            let _ = tls.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n");
+                        }
+                    }
+                });
+            }
+        });
+        (port, seen)
+    }
+
+    fn fixture_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/tls")
+    }
+
+    fn fixture_server_config() -> Arc<rustls::ServerConfig> {
+        install_ring();
+        let dir = fixture_dir();
+        let certs = rustls_pemfile::certs(&mut std::io::BufReader::new(
+            std::fs::File::open(dir.join("scrapelens-test-localhost.crt.pem")).unwrap(),
+        ))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+        let key = rustls_pemfile::private_key(&mut std::io::BufReader::new(
+            std::fs::File::open(dir.join("scrapelens-test-localhost.key.pem")).unwrap(),
+        ))
+        .unwrap()
+        .unwrap();
+        Arc::new(
+            rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(certs, key)
+                .unwrap(),
+        )
+    }
+
+    fn fixture_ca_pem() -> Vec<u8> {
+        std::fs::read(fixture_dir().join("scrapelens-test-ca.crt.pem")).unwrap()
+    }
+
     /// A SOCKS5 client (Chrome's side): returns the reply code and the connected socket.
     fn chrome_connect(relay_port: u16, target_port: u16) -> (u8, TcpStream) {
         let mut c = TcpStream::connect((Ipv4Addr::LOCALHOST, relay_port)).unwrap();
@@ -667,6 +1081,36 @@ mod wire_tests {
         assert_eq!(log[0], "auth-ok");
         assert_eq!(log[1], format!("CONNECT 127.0.0.1:{echo}"));
         assert!(relay.failures().is_empty());
+    }
+
+    #[test]
+    fn https_upstream_without_the_test_ca_is_refused_and_shows_no_secret() {
+        let (up, _seen) = https_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("https://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let err = match Relay::start_with_extra_ca(&link, None, b"") {
+            Err(err) => err,
+            Ok(_) => panic!("a fixture certificate must not be trusted without the test CA"),
+        };
+        let shown = format!("{err} {err:?}");
+        assert!(matches!(err, RelayError::Tls { .. }), "{shown}");
+        assert!(shown.contains("certificate") || shown.contains("trust"), "{shown}");
+        assert!(!shown.contains(PASSWORD) && !shown.contains(USER), "{shown}");
+    }
+
+    #[test]
+    fn https_upstream_with_the_test_ca_tunnels_bytes_and_checks_the_certificate() {
+        let echo = echo_server();
+        let (up, seen) = https_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("https://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let relay = Relay::start_with_extra_ca(&link, None, &fixture_ca_pem()).expect("trusted");
+        let (code, mut tunnel) = chrome_connect(relay.port(), echo);
+        assert_eq!(code, 0);
+        tunnel.write_all(b"ping").unwrap();
+        let mut back = [0u8; 4];
+        tunnel.read_exact(&mut back).unwrap();
+        assert_eq!(&back, b"ping");
+        assert_eq!(seen.lock().unwrap()[0], "auth-ok");
+        assert!(relay.failures().is_empty(), "{:?}", relay.failures());
     }
 
     #[test]
