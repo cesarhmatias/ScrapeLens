@@ -134,10 +134,13 @@ below replaces that refusal.
 Divergences from the contract (for core), first round, origin was HTTP/1.1:
 - **Protocol.** Those proxied HTTPS requests report `h1`, from CDP. That matches the
   origin: the follow-up against an HTTP/2 origin reports `h2` from both CDP and NetLog.
-- **`netlog.request_without_url`.** The HTTP proxy direct route (absolute-URI requests)
-  gives 10 warnings per capture: "URL_REQUEST … has no URL in URL_REQUEST_START_JOB; not
-  imported". The requests still come from CDP. The follow-up shows the same warning on
-  the direct route for an HTTP/2 target (CONNECT), and not on the relay route.
+- **`netlog.request_without_url`.** The first-round importer, before `0768d74`,
+  reported 10 warnings per HTTP-proxy direct capture: "URL_REQUEST … has no URL in
+  URL_REQUEST_START_JOB; not imported". The requests still came from CDP. That same
+  importer reported the warning on the follow-up direct route and not on the relay.
+  Reparsing those raw netlogs with `parse_netlog` after `0768d74` emits none. Core
+  skips CONNECT headers logged on the socket source, so the warning is gone on the
+  direct route as well.
 
 ### Fixtures
 
@@ -171,11 +174,13 @@ first-round `h1` was the origin protocol. The raw NetLog of an h1 page also cont
 `HTTP2_SESSION` events; those are not the imported page requests (those stay `h1` /
 `http/1.1`).
 
-`netlog.request_without_url`: 10 on `direct-http-page`, 11 on `direct-h2`, 9 on
-`direct-multi`, and none on `relay-h2`, `relay-multi` or `https-relay`. It is the
-direct HTTP-proxy route, for absolute-URI requests and for CONNECT, not only the
-absolute-URI case. The two `ambiguous` rows on the direct page runs are both
-`/echo-order?concurrent=1`. The relay pairs that h2 page 11/11.
+`netlog.request_without_url` in the session files written at capture time, before
+`0768d74`: 10 on `direct-http-page`, 11 on `direct-h2`, 9 on `direct-multi`, and
+none on `relay-h2`, `relay-multi` or `https-relay`. Reparsing each saved `netlog.json`
+with current `parse_netlog` emits 0 of that warning on every run, direct and relay.
+The only NetLog warning left on each file is `netlog.time_unit_assumed` (1). The
+two `ambiguous` rows on the direct page runs are both `/echo-order?concurrent=1`.
+The relay pairs that h2 page 11/11.
 
 Multi-target. All 16 markers (`main`, `popup`, `blank`, `oopif`, `worker`, `sw-own`,
 `sw-intercept`, each GET and POST where the page sends both) have CDP and NetLog on
@@ -183,7 +188,8 @@ both routes. The two unmatched requests are the same on both routes: one empty U
 and `GET /multi/sw-fetch?m=sw-intercept-1`. Both routes also warn
 `cdp.service_worker_ambiguous` (1), `cdp.extra_info_without_request` (2) and
 `cdp.response_extra_without_request` (2). The proxy does not add a pairing gap.
-The relay drops `netlog.request_without_url`, which the direct route still has (9).
+The 9 `netlog.request_without_url` warnings on the direct-multi session file are
+from that pre-`0768d74` import. The reparse of its netlog emits 0, the same as the relay.
 
 Direct-route failure. `direct-down` notice ends with
 `; proxy: the proxy http://127.0.0.1:1 could not be reached: check the host name, the port and the network, then try again`.
