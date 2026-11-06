@@ -237,7 +237,13 @@ export interface SessionRecord {
   endedAt?: string;
   chromeVersion?: string;
   completeness: { state: "complete" | "partial"; reasons: string[] };
-  capture: { cdpEvents: number; netlogBytes?: number; status: "closed" | "partial" | "open"; mode?: string };
+  capture: {
+    cdpEvents: number;
+    netlogBytes?: number;
+    status: "closed" | "partial" | "open";
+    mode?: string;
+    proxy?: { scheme: string; host?: string; port?: number; authenticated: boolean; route?: "direct" | "relay" };
+  };
   requests: RequestRecord[];
   sources: SourceId[];
   warnings: WarningView[];

@@ -1622,6 +1622,12 @@ impl BuildCtx {
             }
             _ => {
                 if is_header_event(&name) {
+                    // Chrome logs the proxy CONNECT as
+                    // `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` on the socket source, not
+                    // on a URL_REQUEST. It is the tunnel, never an application request.
+                    if is_connect_request(event.params.as_ref()) {
+                        return;
+                    }
                     let Some(source_id) = source_id else { return };
                     let role = if is_request_headers(&name) {
                         HeaderRole::Request
@@ -2128,6 +2134,16 @@ fn is_header_event(name: &str) -> bool {
                 | "HTTP2_SESSION_RECV_HEADERS"
                 | "QUIC_CHROMIUM_CLIENT_STREAM_READ_RESPONSE_HEADERS"
         )
+}
+
+/// A proxy tunnel request line (`CONNECT host:port HTTP/1.1`). Chrome 156 writes it
+/// under `HTTP_TRANSACTION_SEND_REQUEST_HEADERS` when the transaction lives on the
+/// socket instead of the URL_REQUEST, so it must not create a request builder.
+fn is_connect_request(params: Option<&RawParams>) -> bool {
+    params
+        .and_then(|params| params.line.as_deref())
+        .and_then(|line| line.split_whitespace().next())
+        .is_some_and(|method| method.eq_ignore_ascii_case("CONNECT"))
 }
 
 fn is_request_headers(name: &str) -> bool {

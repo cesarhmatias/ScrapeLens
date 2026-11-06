@@ -1436,6 +1436,78 @@ kbd {
 .cookie-source-select:focus-visible { outline: 2px solid var(--fg-muted); outline-offset: 2px; }
 .cookie-source-hint { font-size: 10px; color: var(--fg-muted); }
 
+/* Proxy field (next to Start URL and Cookies). Wraps with the bar; never wider than its column. */
+.proxy-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  max-width: 300px;
+}
+.proxy-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.proxy-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel);
+  color: var(--fg);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+.proxy-input:disabled { opacity: 0.5; }
+.proxy-input[aria-invalid="true"] { border-color: var(--err); }
+.proxy-label-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.proxy-clear {
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 10px;
+  text-decoration: underline;
+  padding: 0;
+  cursor: pointer;
+}
+.proxy-clear:disabled { opacity: 0.5; cursor: default; }
+.proxy-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  border-radius: 6px;
+  padding: 4px 7px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel);
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.proxy-status-text { min-width: 0; }
+.proxy-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+}
+.proxy-status-on { border-color: var(--ok, #2f855a); }
+.proxy-status-on .proxy-dot { background: var(--ok, #2f855a); box-shadow: 0 0 0 3px rgba(47, 133, 90, 0.18); }
+.proxy-status-warn { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+.proxy-status-warn .proxy-dot { background: var(--warn); }
+.proxy-status-off { color: var(--fg-muted); }
+.proxy-hint { font-size: 10px; color: var(--fg-muted); line-height: 1.35; min-height: 0; }
+.proxy-hint-warn { color: var(--warn, var(--fg-muted)); }
+.proxy-error { color: var(--err); }
+.proxy-header { margin-top: 2px; line-height: 1.5; }
+.proxy-header .tag { font-size: 9.5px; }
+.proxy-header-note { color: var(--fg-muted); font-family: inherit; }
+
 .export-sensitive-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-bottom: 12px; }
 .export-sensitive-option input { margin-top: 3px; flex-shrink: 0; }
 .export-destination { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }

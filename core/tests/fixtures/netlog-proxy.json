@@ -1,5 +1,5 @@
 {
-  "_comment": "SYNTHETIC FIXTURE — proxied NetLog: sources 301 (http absolute-URI), 302 (https CONNECT + h1), 303 (https CONNECT + h2), 304 (SOCKS5, origin-form), 305 (tunnel refused, net_error -111). .invalid hosts, no real traffic.",
+  "_comment": "SYNTHETIC FIXTURE — proxied NetLog: sources 301 (http absolute-URI), 302 (https CONNECT + h1), 303 (https CONNECT + h2), 304 (SOCKS5, origin-form), 305 (tunnel refused, net_error -111), 306 (CONNECT request headers on a SOCKET source, as Chrome 156 logs them). .invalid hosts, no real traffic.",
   "constants": {
     "logEventTypes": {
       "URL_REQUEST_START_JOB": 136,
@@ -13,7 +13,8 @@
     },
     "logSourceType": {
       "NONE": 0,
-      "URL_REQUEST": 1
+      "URL_REQUEST": 1,
+      "SOCKET": 10
     },
     "timeTickOffset": 1787407332877
   },
@@ -381,6 +382,24 @@
       },
       "params": {
         "net_error": -111
+      }
+    },
+    {
+      "type": 302,
+      "phase": 0,
+      "time": "5640480025",
+      "source": {
+        "id": 306,
+        "start_time": "5640480025",
+        "type": 10
+      },
+      "params": {
+        "line": "CONNECT demo.invalid:443 HTTP/1.1",
+        "headers": [
+          "Host: demo.invalid:443",
+          "Proxy-Connection: keep-alive",
+          "User-Agent: synthetic"
+        ]
       }
     }
   ]

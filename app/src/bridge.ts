@@ -19,6 +19,7 @@ import type { AssessResult, VerdictKind } from "./assess";
 import type { ComparePage, CompareSummary, FieldDiff, PrimingChain, ValueOrigins } from "./flow";
 import type { CookieImportReport } from "./cookieImport";
 import { chromePickerOptions } from "./listView";
+import type { ProxyInfo, ProxyState } from "./proxyRules";
 
 export interface SessionPayload {
   session: SessionV1;
@@ -340,6 +341,22 @@ export const bridge = {
   async setCaptureCookieSource(source: string | null): Promise<string | null> {
     if (!isTauri()) return null;
     return invoke("set_capture_cookie_source", { source });
+  },
+
+  /** Proxy field state: the saved server, the link kept in memory, no credentials. */
+  async getProxyState(): Promise<ProxyState | null> {
+    if (!isTauri()) return null;
+    const raw = await invoke<{ saved: string | null; active: ProxyInfo | null; needsLink: boolean }>("get_proxy_state");
+    return { saved: raw.saved, active: raw.active, needsLink: raw.needsLink };
+  },
+
+  /** Sends the typed link once; the backend keeps it in memory and returns the address only. */
+  async setProxyLink(link: string): Promise<ProxyInfo> {
+    return invoke("set_proxy_link", { link });
+  },
+
+  async clearProxyLink(): Promise<void> {
+    await invoke("clear_proxy_link");
   },
 
   async stopSession(): Promise<SessionPayload | null> {

@@ -267,6 +267,8 @@ export interface SessionMeta {
     headless?: boolean;
     chromeArgs?: string[];
     notes?: string;
+    /** Present only for sessions captured through a proxy. No credentials. */
+    proxy?: { scheme: string; host?: string; port?: number; authenticated: boolean; route?: "direct" | "relay" };
   };
   labels: string[];
   notes?: string[];

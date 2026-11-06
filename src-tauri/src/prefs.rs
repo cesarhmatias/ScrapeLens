@@ -17,6 +17,10 @@ struct Preferences {
     capture_start_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     capture_cookie_source: Option<String>,
+    /// Proxy server only, as `scheme://host:port`. Credentials are never written here:
+    /// they stay in memory until the app closes (see `capture_proxy`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capture_proxy: Option<String>,
 }
 
 fn config_file(app: &AppHandle) -> Option<PathBuf> {
@@ -56,7 +60,42 @@ fn normalize(preferences: &mut Preferences) -> bool {
     preferences.capture_start_url = before
         .as_deref()
         .and_then(|value| crate::cli::persistable_url(value).ok());
-    preferences.capture_start_url != before
+    let before_proxy = preferences.capture_proxy.clone();
+    // Whatever is on disk is reduced to the server address: a password never survives a rewrite.
+    preferences.capture_proxy = before_proxy
+        .as_deref()
+        .and_then(|value| scrapelens_capture::proxy::ProxyLink::parse(value).ok())
+        .map(|link| link.server_url());
+    preferences.capture_start_url != before || preferences.capture_proxy != before_proxy
+}
+
+/// The saved proxy server (`scheme://host:port`), without credentials.
+pub fn load_capture_proxy(app: &AppHandle) -> Option<String> {
+    config_file(app).and_then(|file| load_capture_proxy_at(&file))
+}
+
+pub fn save_capture_proxy(app: &AppHandle, server: Option<&str>) -> Result<(), String> {
+    let file = config_file(app).ok_or("no app configuration directory")?;
+    save_capture_proxy_at(file, server)
+}
+
+/// Writes the proxy server to `file`. Any userinfo in `server` is dropped before writing.
+pub(crate) fn save_capture_proxy_at(file: PathBuf, server: Option<&str>) -> Result<(), String> {
+    let mut preferences = read_and_scrub(&file);
+    preferences.capture_proxy = match server.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => Some(
+            scrapelens_capture::proxy::ProxyLink::parse(value)
+                .map_err(|error| error.to_string())?
+                .server_url(),
+        ),
+        None => None,
+    };
+    write_prefs(file, &preferences)
+}
+
+/// Reads the saved proxy server from `file` (scrubbed on the way).
+pub(crate) fn load_capture_proxy_at(file: &Path) -> Option<String> {
+    read_and_scrub(file).capture_proxy.filter(|value| !value.is_empty())
 }
 
 pub fn load_chrome_path(app: &AppHandle) -> Option<PathBuf> {
@@ -296,5 +335,47 @@ mod tests {
         let text = fs::read_to_string(&file).unwrap();
         assert!(!text.contains("J2") && !text.contains("S2"), "{text}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn proxy_is_saved_as_server_address_only() {
+        let dir = base();
+        let file = dir.join("preferences.json");
+        save_capture_proxy_at(file.clone(), Some("http://reader:TopSecret-9@proxy.example:8080")).unwrap();
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(text.contains("http://proxy.example:8080"), "{text}");
+        assert!(!text.contains("TopSecret-9"), "the password must never reach the preferences file");
+        assert!(!text.contains("reader"), "the username must never reach the preferences file");
+        assert_eq!(load_capture_proxy_at(&file).as_deref(), Some("http://proxy.example:8080"));
+        save_capture_proxy_at(file.clone(), None).unwrap();
+        assert_eq!(load_capture_proxy_at(&file), None);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_legacy_file_with_credentials_is_scrubbed_on_read() {
+        let dir = base();
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("preferences.json");
+        fs::write(
+            &file,
+            r#"{"captureProxy":"socks5://reader:LegacySecret-7@10.0.0.5:1080"}"#,
+        )
+        .unwrap();
+        assert_eq!(load_capture_proxy_at(&file).as_deref(), Some("socks5://10.0.0.5:1080"));
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(!text.contains("LegacySecret-7"), "rewritten without the password: {text}");
+        assert!(!text.contains("reader"), "rewritten without the username: {text}");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_invalid_saved_proxy_is_dropped() {
+        let dir = base();
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("preferences.json");
+        fs::write(&file, r#"{"captureProxy":"socks4://old.example:1080"}"#).unwrap();
+        assert_eq!(load_capture_proxy_at(&file), None);
+        fs::remove_dir_all(&dir).ok();
     }
 }
