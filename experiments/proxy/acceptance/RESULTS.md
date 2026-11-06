@@ -197,3 +197,27 @@ on this release (not requested for this round).
   path is called directly, after the same checks).
 - The HTTPS relay case in the Docker observer (see above).
 - `netlog.request_without_url` was not triggered in these captures.
+
+## 0.1.2 final: packages from 097dcfa
+
+Packages rebuilt from `097dcfa` (the relay deduplication) with the build, test and smoke of the release
+(`cargo test` 82 passed, 0 failed, 8 ignored, clippy, the front tests, tsc and the smoke `requests=1`,
+`fail=0` on both architectures). Checksums: `sl-release-0.1.2/SHA256SUMS.txt`.
+
+| Check | Case | Result | Evidence |
+|---|---|---|---|
+| Wrong password, `.deb` amd64 | refusal on screen | passou: shown once, "refused the credentials (HTTP 407) (29 times)" | `linux-097dcfa/amd64-deb-wrong/04-stopped.png`; the notice was repeated 28 times before the fix |
+| Right password, `.deb` amd64 | `capture.proxy`, refused 0, secrets | passou (refused 0 of 10; 0 hits in 25 files) | `linux-097dcfa/amd64-deb-ok` |
+| Right password, AppImage amd64 | same | passou (refused 0 of 10; 0 hits in 23 files) | `linux-097dcfa/amd64-appimage-ok` |
+| Right password, `.deb` arm64 | same | passou (refused 0 of 10; 0 hits in 23 files) | `linux-097dcfa/arm64-deb-ok` |
+| Right password, AppImage arm64 | same | passou (refused 0 of 11; 0 hits in 25 files) | `linux-097dcfa/arm64-appimage-ok` |
+| HTTPS relay, egress observer, `.deb` arm64 | 0 packets outside the proxy | passou: every DROP counter 0; 10 packets to the proxy; loopback accepted (exception); refused 0 | `linux-097dcfa/arm64-deb-egress-https/egress-iptables.txt` |
+| Cookie, Chrome amd64 `.deb` | import and `Cookie` on first `/` | passou (importedCount 1; `sid` on `/`) | `cookie-097dcfa/chrome-amd64-deb/` |
+
+Notes:
+- The egress observer runs the App as `tester` after the host applies the rules as root; an earlier try
+  kept a root wrapper process alive, and the peer check refused one connection (`could not be confirmed`,
+  because a root process's `/proc` cannot be read). The harness was changed; the product was not.
+- The HTTPS case uses the arm64 `.deb` (native in the container, faster). The amd64 observer of
+  `egress_check.sh` covers the HTTP and SOCKS5 cases.
+- Earlier packages (`fd091d1`) are in `sl-release-0.1.2/superseded-fd091d1/`.

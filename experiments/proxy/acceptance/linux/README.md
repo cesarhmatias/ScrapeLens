@@ -8,11 +8,20 @@ on this machine (`testserver/`), with synthetic credentials and `--resolve site-
 | File | What it is |
 |---|---|
 | `run-app-proxy.sh` | Host side: starts the origin and the test proxy, builds the image for the package, runs the container |
-| `in-container.sh` | Container side: launches the App under Xvfb and drives it with xdotool |
+| `in-container.sh` | Container side: launches the App under Xvfb (as `tester`) and drives it with xdotool |
+| `egress-rules.sh` | Egress observer rules, applied by the host as root before the App starts |
 
 ```sh
 # arch: amd64 or arm64; mode: ok (right password) or wrong (refused)
 sh run-app-proxy.sh amd64 /path/ScrapeLens_0.1.2_amd64.deb /durable/folder/amd64-deb-ok ok
+
+# HTTPS proxy with the relay (TLSDIR: a test CA and a leaf for host.docker.internal; the container
+# trusts the CA as a system CA, because the App checks the proxy certificate against the system store)
+PROXY_KIND=https TLSDIR=/durable/tls sh run-app-proxy.sh arm64 /path/ScrapeLens_0.1.2_arm64.deb /durable/out ok
+
+# egress observer: the container may send only to the proxy and to loopback; the host applies the rules
+# as root (egress-rules.sh, docker exec) before the App starts and reads the DROP counters after it.
+EGRESS=1 PROXY_KIND=https TLSDIR=/durable/tls sh run-app-proxy.sh arm64 /path/ScrapeLens_0.1.2_arm64.deb /durable/out ok
 ```
 
 Requirements: Docker, the image `sl-cookie-import:<arch>-chrome` (see `experiments/linux/cookie-import/`),

@@ -4,6 +4,11 @@
 # SX SY (Start session), TX TY (Stop), EX EY (Export / Sanitize…), OUT (folder for results).
 # Usage: in-container.sh <launch command...>
 set -u
+# Egress observer (EGRESS=1): the host applies the rules (egress-rules.sh) before the App starts,
+# then reads the counters after the App has finished; this script waits for both signals.
+if [ "${EGRESS:-0}" = 1 ]; then
+  i=0; while [ ! -f "$OUT/egress-rules-applied" ] && [ $i -lt 180 ]; do sleep 1; i=$((i+1)); done
+fi
 export HOME=/home/tester/app
 export XDG_CONFIG_HOME=$HOME/.config XDG_DATA_HOME=$HOME/.local/share XDG_CACHE_HOME=$HOME/.cache
 export SCRAPELENS_TEST_MODE=0 APPIMAGE_EXTRACT_AND_RUN=1 NO_AT_BRIDGE=1 GDK_BACKEND=x11
@@ -12,7 +17,7 @@ cat > "$XDG_CONFIG_HOME/app.scrapelens.desktop/preferences.json" <<JSON
 {"captureStartUrl": "$START_URL"}
 JSON
 chmod 600 "$XDG_CONFIG_HOME/app.scrapelens.desktop/preferences.json"
-export PROXY_LINK START_URL OUT
+export PROXY_LINK START_URL OUT EGRESS PROXY_HOST PROXY_PORT
 dbus-run-session -- sh -c '
   echo | gnome-keyring-daemon --unlock --components=secrets >/dev/null
   export XDG_CURRENT_DESKTOP=GNOME
@@ -38,4 +43,8 @@ dbus-run-session -- sh -c '
   cp -r "$XDG_CONFIG_HOME/app.scrapelens.desktop" "$OUT/app-config" 2>/dev/null
 ' sh "$@"
 cp /tmp/app.log "$OUT/app.log" 2>/dev/null; cp /tmp/xvfb.log "$OUT/xvfb.log" 2>/dev/null
+if [ "${EGRESS:-0}" = 1 ]; then
+  touch "$OUT/app-finished"
+  i=0; while [ ! -f "$OUT/counters-read" ] && [ $i -lt 180 ]; do sleep 1; i=$((i+1)); done
+fi
 echo "in-container done"
