@@ -181,6 +181,28 @@ fn tunnel_events_never_create_requests_and_networkstate_follows_the_application_
 }
 
 #[test]
+fn connect_headers_on_a_socket_source_are_tunnel_not_a_request_without_url() {
+    let capture = parse_netlog(&fixture()).unwrap();
+    assert_eq!(capture.requests.len(), 5, "the socket CONNECT adds no request");
+    assert!(
+        capture
+            .warnings
+            .iter()
+            .all(|warning| warning.code != "netlog.request_without_url"),
+        "the tunnel is not a request lost for lack of URL: {:?}",
+        capture
+            .warnings
+            .iter()
+            .map(|warning| warning.code.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert!(capture
+        .requests
+        .iter()
+        .all(|request| request.attempts.iter().all(|attempt| attempt.method != "CONNECT")));
+}
+
+#[test]
 fn proxied_requests_pair_with_cdp_and_take_the_inner_protocol() {
     let capture = parse_netlog(&fixture()).unwrap();
     let urls = [

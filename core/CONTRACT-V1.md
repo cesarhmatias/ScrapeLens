@@ -219,10 +219,14 @@ credentials embedded in any URL.
 NetLog through a proxy: an HTTPS target is reached through `CONNECT`. The tunnel
 events (`HTTP_TRANSACTION_SEND_TUNNEL_HEADERS`,
 `HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS`) are not requests and are not
-parsed as attempts. They do not affect `networkState`. The protocol of the
-request is the one of the application request inside the tunnel, when the
-NetLog shows it; without that proof it stays `unknown`. A plain `http://` target
-is sent with an absolute-URI request line; the URL comes from the URL_REQUEST.
+parsed as attempts. Chrome 156 can also log the `CONNECT` request line under
+`HTTP_TRANSACTION_SEND_REQUEST_HEADERS` on the socket source (not on a
+`URL_REQUEST`); a request line whose method is `CONNECT` is the tunnel and is
+ignored the same way, not reported as a request without URL. They do not affect
+`networkState`. The protocol of the application request inside the tunnel is
+taken when the NetLog shows it; without that proof it stays `unknown`. A plain
+`http://` target is sent with an absolute-URI request line; the URL comes from
+the URL_REQUEST.
 
 ## Body
 
