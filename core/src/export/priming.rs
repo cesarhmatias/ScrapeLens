@@ -738,8 +738,7 @@ fn adapter_field_expr(
                         Some(label) => {
                             gen.notes
                                 .push(format!("{full}: user data; required parameter"));
-                            gen.params
-                                .get(label, &part.value, true, "user data", false)
+                            gen.params.get(label, &part.value, true, "user data", false)
                         }
                         None if sensitive_part && !part.value.is_empty() => {
                             gen.notes.push(format!(
@@ -949,6 +948,9 @@ fn body_is_json(bytes: &[u8]) -> bool {
 /// JWT, ULID/KSUID, ISO date/timestamp and mixed alphanumeric: they look like a
 /// dynamic value even when short.
 fn looks_dynamic_token(value: &str) -> bool {
+    if super::secret::detect_secret(value).is_some() {
+        return true;
+    }
     let b = value.as_bytes();
     if value.starts_with("eyJ") {
         return true;
@@ -1031,6 +1033,9 @@ fn looks_identifier_value(value: &str) -> bool {
 
 /// Header value that looks like a credential/identifier, whatever the name.
 fn looks_secret_value(value: &str) -> bool {
+    if super::secret::detect_secret(value).is_some() {
+        return true;
+    }
     if value.starts_with("eyJ") {
         return true;
     }
@@ -1132,7 +1137,10 @@ fn sanitize_name(raw: &str) -> String {
         name = format!("param_{name}");
     }
     name.truncate(40);
-    if matches!(name.as_str(), "confirm" | "confirmar" | "base_url" | "help" | "h") {
+    if matches!(
+        name.as_str(),
+        "confirm" | "confirmar" | "base_url" | "help" | "h"
+    ) {
         name = format!("p_{name}");
     }
     name
@@ -3141,10 +3149,8 @@ fn to_python_with(
                 match producer {
                     Some((r, _, _)) => format!("referer_for(R[{}].url, url)", lit(&r.id)),
                     None => {
-                        gen.notes.push(
-                            "header referer omitted (no matching earlier step)"
-                                .to_string(),
-                        );
+                        gen.notes
+                            .push("header referer omitted (no matching earlier step)".to_string());
                         continue;
                     }
                 }

@@ -22,9 +22,11 @@ const JWT_JSON: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqc29uIiw
 const VIEWSTATE_QUERY: &str = "/wEPDwUKMTIzNDU2Nzg5MGRkYQ9kFgICAw9kFgICAQ8PFgIeBFRleHQFB3F1ZXJ5";
 const VIEWSTATE_FORM: &str = "/wEPDwUKMTIzNDU2Nzg5MGRkYQ9kFgICAw9kFgICAQ8PFgIeBFRleHQFBmZvcm0";
 const VIEWSTATE_JSON: &str = "/wEPDwUKMTIzNDU2Nzg5MGRkYQ9kFgICAw9kFgICAQ8PFgIeBFRleHQFBGpzb24";
-const EVENTVALIDATION_FORM: &str = "7f3a9Q2mN8vB4xR6tY1uP0sD5gH2jK9wZ3pL5nM7qR9sT1uV3xY5zA7bC9dE1fG3";
+const EVENTVALIDATION_FORM: &str =
+    "7f3a9Q2mN8vB4xR6tY1uP0sD5gH2jK9wZ3pL5nM7qR9sT1uV3xY5zA7bC9dE1fG3";
 const EVENTVALIDATION_JSON: &str = "8g4b0R3nO9wC5yS7uZ2vQ6tA8dF1hJ4kL6mN0pQ2rS4tU6vW8xY0zA2bC4dE6f";
-const PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQEFAASC-----END PRIVATE KEY-----";
+const PRIVATE_KEY: &str =
+    "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQEFAASC-----END PRIVATE KEY-----";
 const GHP: &str = "ghp_1234567890abcdefghijklmnopqrstuvwxyz";
 const STRIPE: &str = concat!("sk_live_", "51H8xyzABCDEFGHIJKLMNOPQRSTUV");
 const SLACK: &str = concat!("xoxb-", "123456789012-123456789012-abcdefghijklmnopqrstuvwx");
@@ -53,7 +55,7 @@ fn bundle() -> SessionBundle {
     ));
     let mut request = LogicalRequest::new(
         "r1",
-        &format!(
+        format!(
             "https://demo.invalid/x?access={ACCESS_URL}&refresh={JWT_QUERY}&__VIEWSTATE={VIEWSTATE_QUERY}&page={PAGE}&sha={SHA256}"
         ),
         "POST",
@@ -71,8 +73,8 @@ fn bundle() -> SessionBundle {
         CookieField::from_header_values(&[format!("access={COOKIE}; theme=dark")], &provenance());
     request.request_body = Body::captured("t12.form.bin", 64, &provenance())
         .with_content_type("application/x-www-form-urlencoded");
-    request.response_body = Body::captured("t12.json.bin", 512, &provenance())
-        .with_content_type("application/json");
+    request.response_body =
+        Body::captured("t12.json.bin", 512, &provenance()).with_content_type("application/json");
     session.requests.push(request);
 
     let mut bundle = SessionBundle::new(session);
@@ -157,7 +159,7 @@ fn leak_matrix() -> BTreeMap<&'static str, bool> {
         ("sha256", SHA256),
         ("uuid", UUID),
         ("build", BUILD),
-        ("etag", ETAG),
+        ("etag", "abcdef1234567890"),
         ("sri", SRI),
     ] {
         matrix.insert(name, text.contains(value));
@@ -174,11 +176,66 @@ fn t12_matrix_is_recorded_case_by_case() {
 }
 
 #[test]
+fn t13_matrix_hides_every_secret_and_keeps_benign_values() {
+    let matrix = leak_matrix();
+    for name in [
+        "access-url",
+        "access-header",
+        "access-form",
+        "access-json",
+        "refresh-form",
+        "jwt-query",
+        "jwt-json",
+        "viewstate-query",
+        "viewstate-form",
+        "viewstate-json",
+        "eventvalidation-form",
+        "eventvalidation-json",
+        "private-key",
+        "ghp",
+        "stripe",
+        "slack",
+        "aws",
+        "google",
+        "entropy",
+        "cookie",
+    ] {
+        assert!(!matrix[name], "{name} still leaks in the sanitized export");
+    }
+    for name in [
+        "page",
+        "nome-arquivo",
+        "sha256",
+        "uuid",
+        "build",
+        "etag",
+        "sri",
+    ] {
+        assert!(matrix[name], "{name} was redacted but is benign");
+    }
+}
+
+#[test]
+fn t13_mcp_view_uses_the_same_sanitizer_and_hides_the_values() {
+    // `mcp/src/registry.rs` builds the masked view with
+    // `sanitize_bundle_owned`; this is that entry point.
+    let export = scrapelens_core::export::sanitize::sanitize_bundle_owned(
+        bundle(),
+        &SanitizeOptions::default(),
+    );
+    let text = serde_json::to_string(&export.bundle.session).unwrap();
+    for value in [ACCESS_JSON, JWT_JSON, VIEWSTATE_JSON, PRIVATE_KEY] {
+        assert!(!text.contains(value), "MCP masked view leaks {value}");
+    }
+}
+
+#[test]
 fn t12_mcp_string_mask_uses_the_same_core_rule() {
     // `scrub_output` calls `sanitize_text` on each string value of the MCP
-    // response. This is the same entry point; T12 only records what it does
-    // with and without the name context.
+    // response. This is the same entry point.
     let options = SanitizeOptions::default();
+    assert!(!sanitize_text(&format!("access={ACCESS_URL}"), &options).contains(ACCESS_URL));
+    assert!(!sanitize_text(ACCESS_URL, &options).contains(ACCESS_URL));
     println!(
         "masked-with-name={}",
         sanitize_text(&format!("access={ACCESS_URL}"), &options)

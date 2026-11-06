@@ -60,6 +60,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use super::sanitize::{is_business_key, is_sensitive_key, url_placeholder, SanitizeOptions};
+use super::secret::detect_secret;
 
 /// Decoding levels examined (0 = the text as received).
 const MAX_LEVELS: usize = 8;
@@ -121,6 +122,11 @@ pub(super) struct Scrubber<'a> {
 
 /// Applies the rules to the text. `None` when nothing changed.
 pub(super) fn scrub(text: &str, options: &SanitizeOptions) -> Option<String> {
+    // A whole string that is a credential by its format (JWT, cloud token,
+    // high entropy) has no name context; redact it as one value.
+    if detect_secret(text.trim()).is_some() {
+        return Some(options.placeholder.clone());
+    }
     Scrubber::new(options).run(text)
 }
 

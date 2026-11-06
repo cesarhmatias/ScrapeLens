@@ -27,6 +27,7 @@ use crate::model::{
 use crate::store;
 
 use super::priming::SENSITIVE_SHORT_WORDS;
+use super::secret::{detect_secret, SecretKind};
 
 #[derive(Debug, Clone)]
 pub struct SanitizeOptions {
@@ -368,11 +369,22 @@ fn sanitize_header_view(
         // `Bearer ...`, `Basic ...` etc. Redacts the scheme + credential.
         if let Some(redacted) = redact_auth_scheme(&entry.value, options) {
             entry.value = redacted;
-            entry.provenance.notes.push(
-                "value with authentication scheme redacted (prefix heuristic)".to_string(),
-            );
+            entry
+                .provenance
+                .notes
+                .push("value with authentication scheme redacted (prefix heuristic)".to_string());
             *redactions
                 .entry("header:auth-scheme".to_string())
+                .or_default() += 1;
+            continue;
+        }
+        if let Some(kind) = detected_secret(&entry.value) {
+            entry.value = options.placeholder.clone();
+            entry.provenance.notes.push(format!(
+                "value redacted by the {kind} format in the sanitized export"
+            ));
+            *redactions
+                .entry(format!("secret-format:{kind}"))
                 .or_default() += 1;
             continue;
         }
@@ -418,8 +430,9 @@ fn sanitize_header_view(
     }
     if view.raw_block.is_some() {
         view.raw_block = None;
-        view.notes
-            .push("rawBlock removed during sanitization (it contained the original headers)".to_string());
+        view.notes.push(
+            "rawBlock removed during sanitization (it contained the original headers)".to_string(),
+        );
     }
 }
 
@@ -463,7 +476,8 @@ fn sanitize_set_cookie(
     if let Some(parsed) = &mut record.parsed {
         parsed.value = options.placeholder.clone();
         for (name, value) in &mut parsed.extensions {
-            if is_sensitive_key(name) || is_sensitive_header(name) {
+            if is_sensitive_key(name) || is_sensitive_header(name) || detect_secret(value).is_some()
+            {
                 *value = options.placeholder.clone();
             }
         }
@@ -520,7 +534,9 @@ fn sanitize_body(
                     provenance: sanitized_provenance(),
                 }
             }
-            None => Body::discarded("sanitization: attachment omitted because it cannot be sanitized"),
+            None => {
+                Body::discarded("sanitization: attachment omitted because it cannot be sanitized")
+            }
         };
     }
 
@@ -711,6 +727,11 @@ fn sanitize_json(
             }
         }
         Value::String(text) => {
+            if let Some(kind) = detected_secret(text) {
+                *text = options.placeholder.clone();
+                *counts.entry(format!("secret-format:{kind}")).or_default() += 1;
+                return;
+            }
             if text.len() >= 12 {
                 *text = redact_business_text(text, &options.placeholder);
             }
@@ -746,6 +767,8 @@ fn sanitize_form(text: &str, options: &SanitizeOptions) -> String {
                     format!("{name}={}", options.placeholder)
                 } else if is_business_key(&decoded, &fields) {
                     business_count(BusinessKind::of(&decoded).label());
+                    format!("{name}={}", options.placeholder)
+                } else if detect_secret(&percent_decode(value)).is_some() {
                     format!("{name}={}", options.placeholder)
                 } else if let Some(nested) = sanitize_nested_value(value, options, 0) {
                     format!("{name}={nested}")
@@ -994,9 +1017,12 @@ fn sanitize_query(query: &str, options: &SanitizeOptions) -> String {
     query
         .split('&')
         .map(|pair| {
-            if let Some((name, _value)) = pair.split_once('=') {
+            if let Some((name, value)) = pair.split_once('=') {
                 let decoded = percent_decode(name);
                 if is_sensitive_key(&decoded) || is_business_key(&decoded, &fields) {
+                    return format!("{name}={placeholder}");
+                }
+                if detect_secret(&percent_decode(value)).is_some() {
                     return format!("{name}={placeholder}");
                 }
             }
@@ -1155,14 +1181,72 @@ const ASSINATURA_TECHNICAL_WORDS: &[&str] = &[
 
 /// Segments that make `nome` a file/field/protocol label instead of a person.
 const NOME_TECHNICAL_WORDS: &[&str] = &[
-    "arquivo", "arquivos", "file", "filename", "campo", "campos", "aba", "abas", "tela", "telas",
-    "classe", "classes", "funcao", "funcoes", "metodo", "metodos", "pacote", "pacotes", "modulo",
-    "modulos", "tipo", "tipos", "grupo", "grupos", "tabela", "tabelas", "coluna", "colunas",
-    "script", "scripts", "teste", "testes", "pasta", "pastas", "diretorio", "diretorios",
-    "caminho", "caminhos", "url", "urls", "host", "hosts", "app", "apps", "site", "sites",
-    "produto", "produtos", "servico", "servicos", "empresa", "empresas", "filial", "filiais",
-    "loja", "lojas", "marca", "marcas", "categoria", "categorias", "evento", "eventos", "acao",
-    "acoes", "valor", "valores",
+    "arquivo",
+    "arquivos",
+    "file",
+    "filename",
+    "campo",
+    "campos",
+    "aba",
+    "abas",
+    "tela",
+    "telas",
+    "classe",
+    "classes",
+    "funcao",
+    "funcoes",
+    "metodo",
+    "metodos",
+    "pacote",
+    "pacotes",
+    "modulo",
+    "modulos",
+    "tipo",
+    "tipos",
+    "grupo",
+    "grupos",
+    "tabela",
+    "tabelas",
+    "coluna",
+    "colunas",
+    "script",
+    "scripts",
+    "teste",
+    "testes",
+    "pasta",
+    "pastas",
+    "diretorio",
+    "diretorios",
+    "caminho",
+    "caminhos",
+    "url",
+    "urls",
+    "host",
+    "hosts",
+    "app",
+    "apps",
+    "site",
+    "sites",
+    "produto",
+    "produtos",
+    "servico",
+    "servicos",
+    "empresa",
+    "empresas",
+    "filial",
+    "filiais",
+    "loja",
+    "lojas",
+    "marca",
+    "marcas",
+    "categoria",
+    "categorias",
+    "evento",
+    "eventos",
+    "acao",
+    "acoes",
+    "valor",
+    "valores",
 ];
 
 /// Lowercase and fold the Portuguese accents of a field name, so `sessão` and
@@ -1251,7 +1335,9 @@ fn pt_pii_in(words: &[String]) -> bool {
     {
         return false;
     }
-    let person_name = words.iter().any(|word| matches!(word.as_str(), "nome" | "nomes"));
+    let person_name = words
+        .iter()
+        .any(|word| matches!(word.as_str(), "nome" | "nomes"));
     if person_name
         && words
             .iter()
@@ -1348,6 +1434,9 @@ pub fn is_sensitive_header(name: &str) -> bool {
             || compact.contains("jwt")
             || compact.contains("session")
             || compact.contains("passwd")
+            || compact.contains("viewstate")
+            || compact.contains("eventvalidation")
+            || compact.contains("privatekey")
             || pt_access_code_in(&words))
 }
 
@@ -1356,6 +1445,10 @@ fn is_url_header(name: &str) -> bool {
         name,
         "location" | "referer" | "origin" | "content-location" | "link"
     )
+}
+
+fn detected_secret(value: &str) -> Option<&'static str> {
+    detect_secret(value).map(SecretKind::label)
 }
 
 pub(super) fn is_sensitive_key(name: &str) -> bool {
@@ -1401,6 +1494,9 @@ pub(super) fn is_sensitive_key(name: &str) -> bool {
         "ssn",
         "code",
         "state",
+        "__viewstate",
+        "__eventvalidation",
+        "private_key",
     ];
     if EXACT.contains(&lower.as_str()) {
         return true;
@@ -1419,6 +1515,9 @@ pub(super) fn is_sensitive_key(name: &str) -> bool {
         || compact.contains("passcode")
         || compact.contains("senha")
         || compact.contains("samlresponse")
+        || compact.contains("viewstate")
+        || compact.contains("eventvalidation")
+        || compact.contains("privatekey")
         || compact.contains("jwt")
         || matches!(
             compact.as_str(),
@@ -1786,6 +1885,9 @@ fn is_propagating_key(name: &str) -> bool {
         || compact.contains("session")
         || compact.contains("csrf")
         || compact.contains("xsrf")
+        || compact.contains("viewstate")
+        || compact.contains("eventvalidation")
+        || compact.contains("privatekey")
         || compact.ends_with("nonce")
 }
 
@@ -1893,6 +1995,11 @@ fn collect_query(query: &str, out: &mut Vec<SensitiveValue>) {
                     origin: "urlQuery",
                     value: percent_decode(value),
                 });
+            } else if detect_secret(&percent_decode(value)).is_some() {
+                out.push(SensitiveValue {
+                    origin: "urlQueryFormat",
+                    value: percent_decode(value),
+                });
             }
         }
     }
@@ -1958,6 +2065,12 @@ fn collect_json(value: &Value, out: &mut Vec<SensitiveValue>) {
                         value: text.clone(),
                     }),
                     Value::String(text) => {
+                        if detect_secret(text).is_some() {
+                            out.push(SensitiveValue {
+                                origin: "bodyJsonFormat",
+                                value: text.clone(),
+                            });
+                        }
                         for found in find_business_values(text) {
                             out.push(SensitiveValue {
                                 origin: "business",
@@ -2131,6 +2244,11 @@ fn collect_body_bytes(bytes: &[u8], content_type: Option<&str>, out: &mut Vec<Se
                         origin: "bodyForm",
                         value: percent_decode(value),
                     });
+                } else if detect_secret(&percent_decode(value)).is_some() {
+                    out.push(SensitiveValue {
+                        origin: "bodyFormFormat",
+                        value: percent_decode(value),
+                    });
                 } else {
                     for found in find_business_values(&percent_decode(value)) {
                         out.push(SensitiveValue {
@@ -2161,6 +2279,11 @@ fn collect_sensitive_values(bundle: &SessionBundle) -> Vec<SensitiveValue> {
                 });
             } else if is_url_header(&lower) || entry.name == ":path" {
                 collect_url(&entry.value, out);
+            } else if detect_secret(&entry.value).is_some() {
+                out.push(SensitiveValue {
+                    origin: "headerFormat",
+                    value: entry.value.trim().to_string(),
+                });
             }
         }
     };
@@ -2804,6 +2927,15 @@ mod tests {
     }
 
     #[test]
+    fn dbg_access() {
+        println!(
+            "key access={} header X-Access={}",
+            is_sensitive_key("access"),
+            is_sensitive_header("X-Access")
+        );
+    }
+
+    #[test]
     fn portuguese_names_are_sensitive_by_key_segment() {
         for name in [
             "chave",
@@ -2894,7 +3026,10 @@ mod tests {
             "Origin",
             ":authority",
         ] {
-            assert!(!is_sensitive_header(header), "{header} must not be sensitive");
+            assert!(
+                !is_sensitive_header(header),
+                "{header} must not be sensitive"
+            );
         }
     }
 
@@ -2927,9 +3062,11 @@ mod tests {
         form_request.request_body = Body::captured("form.bin", 48, &provenance())
             .with_content_type("application/x-www-form-urlencoded");
         let mut json_request = LogicalRequest::new("r-json", "https://demo.invalid/json", "POST");
-        json_request.request_body = Body::captured("json.bin", 128, &provenance())
-            .with_content_type("application/json");
-        session.requests.extend([url_request, form_request, json_request]);
+        json_request.request_body =
+            Body::captured("json.bin", 128, &provenance()).with_content_type("application/json");
+        session
+            .requests
+            .extend([url_request, form_request, json_request]);
         let mut bundle = SessionBundle::new(session);
         bundle.insert_attachment(
             "form.bin",
@@ -2940,7 +3077,10 @@ mod tests {
             br#"{"segredo":"ZZJSON","credencial":"ZZCRED","nome":"ZZJSONNOME","nome_arquivo":"page.html","assinatura":"ZZJSONASSINA","assinaturaPlano":"premium","codigo_acesso":"ZZCOD","page":2}"#.to_vec(),
         );
         let original = serde_json::to_string(&bundle.session).unwrap();
-        assert!(original.contains("ZZCHAVE"), "full session must keep the value");
+        assert!(
+            original.contains("ZZCHAVE"),
+            "full session must keep the value"
+        );
         let export = sanitize_bundle(&bundle, &SanitizeOptions::default());
         assert_eq!(
             original,
@@ -2948,36 +3088,58 @@ mod tests {
             "the full session is not mutated"
         );
         let session_json = serde_json::to_string(&export.bundle.session).unwrap();
-        let form = export.bundle.attachments.get(
-            export.bundle.session.requests[1]
-                .request_body
-                .attachment
-                .as_ref()
-                .unwrap(),
-        )
-        .unwrap();
-        let json: Value = serde_json::from_slice(
-            export.bundle.attachments.get(
-                export.bundle.session.requests[2]
+        let form = export
+            .bundle
+            .attachments
+            .get(
+                export.bundle.session.requests[1]
                     .request_body
                     .attachment
                     .as_ref()
                     .unwrap(),
             )
-            .unwrap(),
+            .unwrap();
+        let json: Value = serde_json::from_slice(
+            export
+                .bundle
+                .attachments
+                .get(
+                    export.bundle.session.requests[2]
+                        .request_body
+                        .attachment
+                        .as_ref()
+                        .unwrap(),
+                )
+                .unwrap(),
         )
         .unwrap();
         let all = format!("{session_json}{}", String::from_utf8_lossy(form));
         for secret in [
-            "ZZCHAVE", "ZZSESSAO", "ZZNOME", "ZZHDRCHAVE", "ZZHDRAUTH", "ZZHDRNOME", "ZZCOOKIE",
-            "ZZFORM", "ZZFORMNOME", "ZZFORMCOD", "ZZJSON", "ZZCRED", "ZZJSONNOME", "ZZCOD",
-            "ZZASSINA", "ZZJSONASSINA",
+            "ZZCHAVE",
+            "ZZSESSAO",
+            "ZZNOME",
+            "ZZHDRCHAVE",
+            "ZZHDRAUTH",
+            "ZZHDRNOME",
+            "ZZCOOKIE",
+            "ZZFORM",
+            "ZZFORMNOME",
+            "ZZFORMCOD",
+            "ZZJSON",
+            "ZZCRED",
+            "ZZJSONNOME",
+            "ZZCOD",
+            "ZZASSINA",
+            "ZZJSONASSINA",
         ] {
             assert!(!all.contains(secret), "{secret} leaked in {all}");
         }
         assert!(session_json.contains("page=2"));
         assert_eq!(json["page"], 2);
-        assert_eq!(json["nome_arquivo"], "page.html", "a technical nome label is not PII");
+        assert_eq!(
+            json["nome_arquivo"], "page.html",
+            "a technical nome label is not PII"
+        );
         assert_eq!(
             json["assinaturaPlano"], "premium",
             "a subscription plan label is not a signature"
@@ -2993,9 +3155,21 @@ mod tests {
         assert_eq!(json["assinatura"], "[REDACTED]");
         assert_eq!(json["codigo_acesso"], "[REDACTED]");
         let sanitized_url = &export.bundle.session.requests[0];
-        assert!(sanitized_url.url.contains("chave=%5BREDACTED%5D"), "{}", sanitized_url.url);
-        assert!(sanitized_url.url.contains("sessao=%5BREDACTED%5D"), "{}", sanitized_url.url);
-        assert!(sanitized_url.url.contains("nome=%5BREDACTED%5D"), "{}", sanitized_url.url);
+        assert!(
+            sanitized_url.url.contains("chave=%5BREDACTED%5D"),
+            "{}",
+            sanitized_url.url
+        );
+        assert!(
+            sanitized_url.url.contains("sessao=%5BREDACTED%5D"),
+            "{}",
+            sanitized_url.url
+        );
+        assert!(
+            sanitized_url.url.contains("nome=%5BREDACTED%5D"),
+            "{}",
+            sanitized_url.url
+        );
         assert!(
             sanitized_url.url.contains("assinatura=%5BREDACTED%5D"),
             "{}",

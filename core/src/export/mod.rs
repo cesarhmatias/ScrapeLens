@@ -7,6 +7,7 @@ pub mod priming;
 pub mod python;
 pub mod sanitize;
 mod scrub;
+mod secret;
 
 use serde::{Deserialize, Serialize};
 
@@ -326,9 +327,7 @@ pub fn resolve_body<'a>(
                 crate::model::BodyState::Truncated => {
                     "body truncated in the capture; only the available excerpt exported".to_string()
                 }
-                crate::model::BodyState::Captured => {
-                    "captured body exported as bytes".to_string()
-                }
+                crate::model::BodyState::Captured => "captured body exported as bytes".to_string(),
                 _ => format!(
                     "body exported from the provided bytes (state {:?})",
                     request.request_body.state
