@@ -20,17 +20,23 @@ cd /src && ./app/node_modules/.bin/tauri build --bundles deb,appimage >>"$LOG" 2
 B=/src/src-tauri/target/release/bundle
 cp $B/deb/*.deb $B/appimage/*.AppImage "$OUT"/
 cp /src/src-tauri/target/release/scrapelens "$OUT/scrapelens"
+# The smoke needs the test-only command line (`--import-har`), which release builds do not
+# have: build a test-hooks binary from the same source. The shipped binary is the release one.
+step "smoke binary (test-hooks)"
+(cd /src/src-tauri && cargo build --locked --release --features test-hooks >>"$LOG" 2>&1) \
+  && cp /src/src-tauri/target/release/scrapelens "$OUT/scrapelens-smoke" \
+  || { echo "smoke binary FAIL" | tee -a "$LOG"; fail=1; }
 step "smoke (Xvfb, --import-har)"
 export HOME=/tmp/smokehome; rm -rf "$HOME"; mkdir -p "$HOME"
 export SCRAPELENS_TEST_MODE=1 XDG_DATA_HOME=$HOME/.local/share XDG_CONFIG_HOME=$HOME/.config
 HAR=/src/fixtures/acceptance/headers-cookies/headers-cookies.har
-xvfb-run -a -s "-screen 0 1440x920x24" dbus-run-session -- "$OUT/scrapelens" --import-har "$HAR" >"$OUT/smoke.log" 2>&1 &
+xvfb-run -a -s "-screen 0 1440x920x24" dbus-run-session -- "$OUT/scrapelens-smoke" --import-har "$HAR" >"$OUT/smoke.log" 2>&1 &
 pid=$!; ok=0
 for i in $(seq 1 60); do
   f=$(find "$XDG_DATA_HOME" -name session.json -path "*sessions*" 2>/dev/null | head -1)
   [ -n "$f" ] && { ok=1; break; }; sleep 1
 done
-pkill -TERM -f "$OUT/scrapelens" ; sleep 2; kill $pid 2>/dev/null; wait $pid 2>/dev/null
+pkill -TERM -f "$OUT/scrapelens-smoke" ; sleep 2; kill $pid 2>/dev/null; wait $pid 2>/dev/null
 if [ $ok = 1 ]; then
   n=$(python3 -c "import json,sys;print(len(json.load(open(sys.argv[1]))['requests']))" "$f" 2>/dev/null || grep -o '"requests"' "$f" | wc -l)
   echo "smoke ok: $f requests=$n" | tee -a "$LOG"

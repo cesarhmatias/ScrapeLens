@@ -10,6 +10,8 @@ pub mod capture;
 pub mod chrome;
 pub mod capture_proxy;
 pub mod cli;
+#[cfg(feature = "test-hooks")]
+pub mod cli_test;
 pub mod commands;
 pub mod cookie_import;
 pub mod export;
@@ -23,7 +25,8 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
-use cli::CliAction;
+#[cfg(feature = "test-hooks")]
+use cli_test::CliAction;
 
 #[derive(Default)]
 pub struct AppState {
@@ -31,8 +34,10 @@ pub struct AppState {
     pub last_session_dir: Mutex<Option<PathBuf>>,
     pub capture: Mutex<Option<capture::CaptureSession>>,
     /// Test CLI action (`--import-har` / `--import-netlog` / `--open-capture`), consumed once.
+    #[cfg(feature = "test-hooks")]
     pub pending_cli: Mutex<Option<CliAction>>,
     /// Error or warning from the test CLI for the window to show (consumed once).
+    #[cfg(feature = "test-hooks")]
     pub cli_message: Mutex<Option<(String, String)>>,
     /// Recording in progress; read by the menu without blocking (A9-B8).
     pub recording: std::sync::atomic::AtomicBool,
@@ -73,20 +78,24 @@ pub fn run() {
             if let Some(path) = prefs::load_chrome_path(app.handle()) {
                 *state.chrome_path.lock().expect("chrome_path lock") = Some(path);
             }
-            let args = std::env::args().collect::<Vec<_>>();
-            let test_mode = std::env::var("SCRAPELENS_TEST_MODE").ok();
-            match cli::cli_outcome(&args, test_mode.as_deref()) {
-                cli::CliOutcome::None => {}
-                cli::CliOutcome::Action(action) => {
-                    *state.pending_cli.lock().expect("pending_cli lock") = Some(action);
-                }
-                cli::CliOutcome::Ignored(warning) => {
-                    eprintln!("scrapelens: {warning}");
-                    *state.cli_message.lock().expect("cli_message lock") = Some(("warning".into(), warning));
-                }
-                cli::CliOutcome::Error(error) => {
-                    eprintln!("scrapelens: invalid CLI argument: {error}");
-                    *state.cli_message.lock().expect("cli_message lock") = Some(("error".into(), error));
+            // Test-only command line: release builds read no arguments and no test variable.
+            #[cfg(feature = "test-hooks")]
+            {
+                let args = std::env::args().collect::<Vec<_>>();
+                let test_mode = std::env::var("SCRAPELENS_TEST_MODE").ok();
+                match cli_test::cli_outcome(&args, test_mode.as_deref()) {
+                    cli_test::CliOutcome::None => {}
+                    cli_test::CliOutcome::Action(action) => {
+                        *state.pending_cli.lock().expect("pending_cli lock") = Some(action);
+                    }
+                    cli_test::CliOutcome::Ignored(warning) => {
+                        eprintln!("scrapelens: {warning}");
+                        *state.cli_message.lock().expect("cli_message lock") = Some(("warning".into(), warning));
+                    }
+                    cli_test::CliOutcome::Error(error) => {
+                        eprintln!("scrapelens: invalid CLI argument: {error}");
+                        *state.cli_message.lock().expect("cli_message lock") = Some(("error".into(), error));
+                    }
                 }
             }
             // leftovers from execution validations (crash/kill): the trace keeps session data

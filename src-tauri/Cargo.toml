@@ -7,6 +7,11 @@ rust-version = "1.80"
 license = "MIT"
 publish = false
 
+[features]
+# Test-only switches (environment variables read by the App, command-line test actions).
+# Off in release builds. Chains to the capture crate once it declares its own feature.
+test-hooks = []
+
 [lib]
 name = "scrapelens_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

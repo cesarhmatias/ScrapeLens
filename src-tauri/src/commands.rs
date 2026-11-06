@@ -19,7 +19,9 @@ use scrapelens_core::{store, ImportedSession};
 
 use crate::capture::{self, CaptureConfig, CaptureSession, CaptureStatus};
 use crate::chrome::{self, ChromeInfo};
-use crate::cli::{self, CliAction};
+use crate::cli;
+#[cfg(feature = "test-hooks")]
+use crate::cli_test::CliAction;
 use crate::prefs;
 use crate::AppState;
 
@@ -203,14 +205,17 @@ pub async fn list_requests(
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
         let page = crate::listing::list_page(&lazy.session, offset, limit, &filter.unwrap_or_default());
-        // Test mode only: proves, without reading the screen, that the list came through the paginated contract.
-        if std::env::var("SCRAPELENS_TEST_MODE").as_deref() == Ok("1") {
-            eprintln!(
-                "scrapelens: list_requests offset={offset} items={} matched={} total={}",
-                page.items.len(),
-                page.matched,
-                page.total
-            );
+        // Test-hooks builds only: proves, without reading the screen, that the list came through the paginated contract.
+        #[cfg(feature = "test-hooks")]
+        {
+            if std::env::var("SCRAPELENS_TEST_MODE").as_deref() == Ok("1") {
+                eprintln!(
+                    "scrapelens: list_requests offset={offset} items={} matched={} total={}",
+                    page.items.len(),
+                    page.matched,
+                    page.total
+                );
+            }
         }
         Ok(page)
     })
@@ -427,9 +432,18 @@ pub async fn import_netlog(app: AppHandle, path: String) -> Result<SessionPayloa
 /// Starting URL suggested in the UI: the saved preference, otherwise `SCRAPELENS_CAPTURE_URL`.
 #[tauri::command]
 pub fn capture_start_url(app: AppHandle) -> String {
-    prefs::load_capture_start_url(&app).unwrap_or_else(|| {
-        std::env::var("SCRAPELENS_CAPTURE_URL").unwrap_or_default()
-    })
+    prefs::load_capture_start_url(&app).unwrap_or_else(test_capture_url)
+}
+
+/// Test-hooks builds may suggest a start URL from the environment; release builds never do.
+#[cfg(feature = "test-hooks")]
+fn test_capture_url() -> String {
+    std::env::var("SCRAPELENS_CAPTURE_URL").unwrap_or_default()
+}
+
+#[cfg(not(feature = "test-hooks"))]
+fn test_capture_url() -> String {
+    String::new()
 }
 
 /// Persists the starting URL (empty clears the preference). Only `http`/`https` when not empty.
@@ -454,7 +468,15 @@ pub struct CliActionPayload {
 }
 
 /// Consumes the test CLI action, or the CLI error/warning (at most once per process).
-/// An action only exists with `SCRAPELENS_TEST_MODE=1`.
+/// Release builds have no command-line test actions: this returns nothing.
+#[cfg(not(feature = "test-hooks"))]
+#[tauri::command]
+pub fn take_cli_action(_state: State<'_, AppState>) -> Option<CliActionPayload> {
+    None
+}
+
+/// An action only exists with `SCRAPELENS_TEST_MODE=1` (test-hooks builds).
+#[cfg(feature = "test-hooks")]
 #[tauri::command]
 pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
     if let Some((kind, message)) = state.cli_message.lock().ok()?.take() {
@@ -568,6 +590,40 @@ fn parse_and_store(
     Ok(link)
 }
 
+/// Switches that only the test suites use. Without `test-hooks` (release builds) they
+/// are off and no test variable is read: normal headless setting, certificate checks on,
+/// open network, and loopback through the proxy like any other host.
+struct CaptureTestSwitches {
+    headless: bool,
+    ignore_cert: bool,
+    network: scrapelens_capture::NetworkMode,
+    proxy_bypass_loopback: bool,
+}
+
+#[cfg(feature = "test-hooks")]
+fn capture_test_switches() -> CaptureTestSwitches {
+    CaptureTestSwitches {
+        headless: std::env::var("SCRAPELENS_CAPTURE_HEADLESS").as_deref() == Ok("1"),
+        ignore_cert: std::env::var("SCRAPELENS_CAPTURE_IGNORE_CERT").as_deref() == Ok("1"),
+        // Normal network by default; the test suites enable loopback-only with
+        // `SCRAPELENS_CAPTURE_NETWORK=loopback`.
+        network: scrapelens_capture::NetworkMode::from_env(),
+        // Loopback targets must really pass through the proxy in the test suites.
+        proxy_bypass_loopback: std::env::var("SCRAPELENS_TEST_MODE").as_deref() == Ok("1")
+            && std::env::var("SCRAPELENS_TEST_PROXY_BYPASS_LOOPBACK").as_deref() == Ok("1"),
+    }
+}
+
+#[cfg(not(feature = "test-hooks"))]
+fn capture_test_switches() -> CaptureTestSwitches {
+    CaptureTestSwitches {
+        headless: false,
+        ignore_cert: false,
+        network: scrapelens_capture::NetworkMode::Open,
+        proxy_bypass_loopback: false,
+    }
+}
+
 /// Starts a real capture with an external Chrome. The command returns as soon as
 /// CDP is ready; the final v1 session is returned by `stop_session`.
 /// `start_url` (optional): a UI field; empty → `about:blank`; only http/https.
@@ -633,21 +689,18 @@ pub fn start_session(
     store::ensure_private_dir(&dir).map_err(|error| format!("session directory: {error}"))?;
 
     let start_url_for_notice = resolved_url.clone();
+    let switches = capture_test_switches();
     let config = CaptureConfig {
         chrome: chrome_path.clone(),
         session_dir: dir.clone(),
         start_url: resolved_url,
-        headless: std::env::var("SCRAPELENS_CAPTURE_HEADLESS").as_deref() == Ok("1"),
-        ignore_cert: std::env::var("SCRAPELENS_CAPTURE_IGNORE_CERT").as_deref() == Ok("1"),
-        // Normal network by default; the test suites enable loopback-only with
-        // `SCRAPELENS_CAPTURE_NETWORK=loopback`.
-        network: scrapelens_capture::NetworkMode::from_env(),
+        headless: switches.headless,
+        ignore_cert: switches.ignore_cert,
+        network: switches.network,
         cookie_source: selected_cookie_source.map(|source| source.id.clone()),
         initial_cookies: Vec::new(),
         proxy,
-        // Test only: loopback targets must really pass through the proxy in the test suites.
-        test_proxy_bypass_loopback: std::env::var("SCRAPELENS_TEST_MODE").as_deref() == Ok("1")
-            && std::env::var("SCRAPELENS_TEST_PROXY_BYPASS_LOOPBACK").as_deref() == Ok("1"),
+        test_proxy_bypass_loopback: switches.proxy_bypass_loopback,
     };
 
     let status = Arc::new(Mutex::new(CaptureStatus {
@@ -2472,6 +2525,29 @@ fn detach_and_reap<T: Send + 'static>(join: thread::JoinHandle<Result<T, String>
         let _ = join.join();
         let _ = fs::remove_dir_all(&dir);
     });
+}
+
+#[cfg(all(test, not(feature = "test-hooks")))]
+mod test_switch_tests {
+    use super::*;
+
+    /// Release builds (no `test-hooks`) start captures with the normal settings, whatever
+    /// the environment says: nothing here reads a test variable.
+    #[cfg(not(feature = "test-hooks"))]
+    #[test]
+    fn release_capture_switches_are_the_normal_settings() {
+        let switches = capture_test_switches();
+        assert!(!switches.headless);
+        assert!(!switches.ignore_cert);
+        assert!(!switches.proxy_bypass_loopback);
+        assert_eq!(switches.network, scrapelens_capture::NetworkMode::Open);
+    }
+
+    #[cfg(not(feature = "test-hooks"))]
+    #[test]
+    fn release_has_no_test_start_url_suggestion() {
+        assert_eq!(test_capture_url(), "");
+    }
 }
 
 #[cfg(test)]
