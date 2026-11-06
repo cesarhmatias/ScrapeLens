@@ -19,13 +19,14 @@
     "test:cookie-import": "tsx --tsconfig tsconfig.json scripts/cookie-import.test.ts",
     "test:platform-copy": "tsx --tsconfig tsconfig.json scripts/platform-copy.test.ts",
     "test:proxy-field": "tsx --tsconfig tsconfig.json scripts/proxy-field.test.ts",
+    "test:export-proxy-notice": "tsx --tsconfig tsconfig.json scripts/export-proxy-notice.test.tsx",
     "shots": "node scripts/shoot.mjs",
     "perf": "node scripts/perf.mjs",
     "gen:demo": "node scripts/gen-demo-v1.mjs",
     "desktop:dev": "cd .. && ./app/node_modules/.bin/tauri dev",
     "desktop:build": "cd .. && ./app/node_modules/.bin/tauri build --bundles app",
     "test:export": "tsx --tsconfig tsconfig.json src/Export.test.tsx",
-    "test": "npm run test:export && npm run test:cookie-source && npm run test:shortcuts && npm run test:adapter && npm run test:capture-url && npm run test:paged && npm run test:list-view && npm run test:not-sent && npm run test:cookie-import && npm run test:platform-copy && npm run test:proxy-field"
+    "test": "npm run test:export && npm run test:cookie-source && npm run test:shortcuts && npm run test:adapter && npm run test:capture-url && npm run test:paged && npm run test:list-view && npm run test:not-sent && npm run test:cookie-import && npm run test:platform-copy && npm run test:proxy-field && npm run test:export-proxy-notice"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

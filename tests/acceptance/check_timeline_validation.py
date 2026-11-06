@@ -2,7 +2,7 @@
 """Round 9 (docs/13-timeline-validation.md): application timeline and validation of the script execution.
 
   python3 tests/acceptance/check_timeline_validation.py [--core BIN] [--wrapper natural-core] [--python PY_COM_REQUESTS]
-         [--port 8793] [HAR_REAL ...]
+         [--port 8793] [HAR_REAL ...]   (or SL_REAL_HARS=a.har:b.har; without it the real-HAR part is skipped)
 
 (1) `natural-core timeline <session> --adapter natural-ajax` on the real-shape (1 and 2 rounds): application events in the
     order of the manual flow (init, init, on_interceptor, init, cmd_filtro, cmd_consultar_placa; per round), labels
@@ -39,9 +39,10 @@ OUT = ROOT / "tests" / "results" / "priming" / "timeline-validation.json"
 FIX = ROOT / "fixtures" / "detran-pb-real-shape"
 EVENTS = ["init", "init", "on_interceptor", "init", "cmd_filtro", "cmd_consultar_placa"]   # manual flow up to the 1st query
 FIXTURE_ROUND = EVENTS + ["cmd_nova", "cmd_consultar_placa"]                                   # the fixture has a 2nd query
-REAL = ["/Users/cesar/Projects/scripts/detran_scraper/detran_paraiba/inputs/sem_captcha.har",
-        "/Users/cesar/Downloads/wsdetran.pb.gov.br.har.txt.har",
-        "/Users/cesar/Downloads/wsdetran.fluxo.captcha.solve.pgEvy4.har.txt.har"]
+# Real HARs are personal: never a default path. Set SL_REAL_HARS to a list of
+# files separated by os.pathsep; when it is unset the real-HAR part is skipped
+# explicitly (reported as skipped, not as passed).
+REAL = [h for h in os.environ.get("SL_REAL_HARS", "").split(os.pathsep) if h]
 DYNAMIC_OK = re.compile(r"^XML(\.|$)|STAMP|SESSIONID|delta|processId|content-length|host|date|server|url|origin|referer|port", re.I)
 PLACA = "BRA2E19"
 FAILS: list[str] = []
@@ -555,7 +556,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--core"); ap.add_argument("--python"); ap.add_argument("--port", type=int, default=8793)
     ap.add_argument("--wrapper", default=str(ROOT / "adapters/natural-ajax/target/release/natural-core"))
-    ap.add_argument("hars", nargs="*", default=[h for h in REAL if Path(h).exists()])
+    ap.add_argument("hars", nargs="*", default=[h for h in REAL if Path(h).exists()],
+                    help="real HARs (default: SL_REAL_HARS); skipped when none is given")
     a = ap.parse_args()
     core, py, wrapper = cb.core_bin(a.core), a.python or ps.default_python(), a.wrapper
     if not Path(wrapper).exists():
@@ -582,7 +584,8 @@ def main():
                       f"{name}: events {agg['sequencia_eventos']} != manual flow {FIXTURE_ROUND * n_round}")
         INFO["timeline_real"] = {}
         if not a.hars:
-            check(False, "no real HAR found for the timeline aggregate")
+            INFO["timeline_real"]["skipped"] = "SL_REAL_HARS not set: real-HAR aggregate not run"
+            print("SKIP real-HAR aggregate: set SL_REAL_HARS to run it")
         for i, h in enumerate(a.hars, 1):
             s = tmp / f"tl-real{i}"; sh([core, "import-har", h, "--out", s])
             agg = timeline_agg(wrapper, s, f"real HAR #{i}")

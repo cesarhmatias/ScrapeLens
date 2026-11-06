@@ -8,6 +8,8 @@ import {
   proxyHeaderView,
   proxyStartBlock,
   proxyStatusText,
+  scriptProxyNotice,
+  sessionExportProxyNotice,
   type ProxyInfo,
   type ProxyState,
 } from "../src/proxyRules";
@@ -70,5 +72,16 @@ const direct = proxyHeaderView({ scheme: "http", host: "::1", port: 3128, authen
 assert.ok(direct);
 assert.equal(direct.address, "http://[::1]:3128");
 assert.match(direct.routeText, /direct to the proxy/);
+
+// Export notice: only for a session with capture.proxy; no host, no credential in the text.
+assert.equal(scriptProxyNotice(undefined), null, "a session without proxy: export unchanged");
+assert.equal(sessionExportProxyNotice(null), null);
+const script = scriptProxyNotice({ scheme: "http", host: "proxy.example", port: 8080, authenticated: true, route: "relay" });
+assert.ok(script && /does not use it/.test(script));
+const sessionNote = sessionExportProxyNotice({ scheme: "socks5", authenticated: false });
+assert.ok(sessionNote && /cURL, Python, priming/.test(sessionNote));
+for (const text of [script, sessionNote]) {
+  assert.doesNotMatch(text ?? "", /proxy\.example|10\.0\.|@|8080/);
+}
 
 console.log("proxy-field ok");

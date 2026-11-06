@@ -6,10 +6,10 @@ ScrapeLens: **identify and analyze this case with the tool, without Wireshark
 and without reading HAR by hand.**
 
 Local sources (do NOT copy raw into the repository; they contain cookies,
-SESSIONID and third-party plates):
-- `/Users/cesar/Projects/scripts/detran_scraper/detran_paraiba/inputs/sem_captcha.har`
-- `/Users/cesar/Downloads/wsdetran.pb.gov.br.har.txt.har`
-- `/Users/cesar/Downloads/wsdetran.fluxo.captcha.solve.pgEvy4.har.txt.har`
+SESSIONID and third-party plates). They are kept outside the repository and
+are given to the checks through `SL_REAL_HARS` (see `tests/acceptance/check_timeline_validation.py`):
+- the case's "without captcha" HAR (`sem_captcha`);
+- the HAR of the plate query (`fluxo`) and the HAR of the captcha solve (`captcha.solve`).
 
 ## Lessons from the case → product requirements
 

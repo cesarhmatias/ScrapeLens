@@ -1372,7 +1372,7 @@ def render(report: dict) -> str:
     lines.append("## How to reproduce")
     lines.append("")
     lines.append("```sh")
-    lines.append("cd /Users/cesar/Projects/scrapelens")
+    lines.append('cd "$(git rev-parse --show-toplevel)"   # the repository root')
     lines.append("python3 tests/acceptance/run_acceptance.py --build-fixtures")
     lines.append("python3 tests/acceptance/run_acceptance.py")
     lines.append("tests/capture/run-cycle.sh")

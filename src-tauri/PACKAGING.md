@@ -196,7 +196,7 @@ rerunning the same command completed with exit code 0. Log of the successful att
 
 | Item | Value |
 |---|---|
-| Repository | `/Users/cesar/Projects/scrapelens` |
+| Repository | the ScrapeLens repository root (path not recorded here) |
 | App commit at build time | `4a0882c` (clean HEAD; round 13 wave 1 + P5 paginated + addendum 9; `4a0882c` only adds the `list_requests` log to stderr under `SCRAPELENS_TEST_MODE=1`, used as evidence) + local identity `ScrapeLens Local Signing` |
 | Export commits included | `a809847` (Tauri shell), `46b60d1` (UI), `12bbb90`/`d042181` (formatting), `02390ef` (preview adjustment) |
 | Round contract | `f3484a9` (`docs/07-ui-export.md`); multi-target `docs/14-multi-target-capture.md` + UI `37cba69` |
