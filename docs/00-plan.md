@@ -2,7 +2,7 @@
 
 Open-source macOS app for inspecting HTTP sessions, aimed at scraping
 developers. Full specification:
-`/Users/cesar/Documents/Codex/2026-10-26/meu-x20/outputs/ScrapeLens-especificacao.txt`
+the specification file `ScrapeLens-especificacao.txt` (kept outside the repository)
 
 ## Status
 
@@ -38,7 +38,7 @@ developers. Full specification:
 - New capture and HAR/NetLog imports through the UI of the final bundle validated.
   Manual selection by the user and independent check of the persisted files.
 - Closing report: `docs/06-delivery.md`; nothing published.
-- Repository created at `/Users/cesar/Projects/scrapelens`.
+- Repository created at the repository root.
 
 ## Models in use
 

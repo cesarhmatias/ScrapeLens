@@ -11,4 +11,4 @@ The production interface was preserved. The prototype uses fictitious data only.
 
 Recommended order: fidelity/origin → discovery of imported APIs → list/detail and keyboard → comparison → code integration. Persistence and refinements come later.
 
-Copy for Obsidian: `/Users/cesar/Notas/scrapelens/ux-review/`. The content keeps the relative paths of images and documents.
+Copy for Obsidian: the vault folder `scrapelens/ux-review/` (outside the repository). The content keeps the relative paths of images and documents.

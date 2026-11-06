@@ -225,7 +225,7 @@ Evidence: `tests/results/linux/README.md`, `tests/results/linux/{amd64,arm64}/` 
 | Arbitrary wrapper became the browser | `linux_real_binary` restricted to `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser` | `53cb76d` |
 | Documentation misaligned | `docs/21-linux.md`/`docs/16b` aligned; item 9 of the acceptance via the test CLI and rounds 13/14 in the final report | `99083d8`, `b8f9fe2` |
 
-Independent review in `/Users/cesar/OpenBot/Shared/scrapelens-revisao-r15-r16.md`: the five items were checked; the FIFO/device test was done with the function extracted on macOS, so it proves the POSIX behavior of the open, **not** an integrated run of the Linux branch (the new Linux tests are `cfg`-gated).
+Independent review in the shared review file `scrapelens-revisao-r15-r16.md` (outside the repository): the five items were checked; the FIFO/device test was done with the function extracted on macOS, so it proves the POSIX behavior of the open, **not** an integrated run of the Linux branch (the new Linux tests are `cfg`-gated).
 
 ## Round 16 — P4 (streaming NetLog parser) and quality closing
 

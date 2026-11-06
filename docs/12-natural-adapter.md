@@ -7,11 +7,10 @@ extracted at runtime, but does not recompute the length prefixes of the
 Natural for Ajax protocol. When the new value has a different size (delta,
 SESSIONID, plate), the real server may reject the request. The
 specification says to keep protocol decoders out of the core, as an
-extension. The user already has the grammar implemented by hand in
-`/Users/cesar/Projects/scripts/detran_scraper/detran_paraiba/consultar_patio.py`
-(`serialize`, `decode_stream`, `jslen`: lengths in UTF-16 units).
-Use that file only as a read-only reference for the grammar, without copying
-data.
+extension. The user already has the grammar implemented by hand in a personal script,
+kept outside the repository (`serialize`, `decode_stream`, `jslen`: lengths in
+UTF-16 units). Use that file only as a read-only reference for the grammar,
+without copying data.
 
 ## Architecture
 
