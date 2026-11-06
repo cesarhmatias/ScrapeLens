@@ -1,0 +1,387 @@
+{
+  "_comment": "SYNTHETIC FIXTURE — proxied NetLog: sources 301 (http absolute-URI), 302 (https CONNECT + h1), 303 (https CONNECT + h2), 304 (SOCKS5, origin-form), 305 (tunnel refused, net_error -111). .invalid hosts, no real traffic.",
+  "constants": {
+    "logEventTypes": {
+      "URL_REQUEST_START_JOB": 136,
+      "HTTP_TRANSACTION_SEND_TUNNEL_HEADERS": 300,
+      "HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS": 301,
+      "HTTP_TRANSACTION_SEND_REQUEST_HEADERS": 302,
+      "HTTP_TRANSACTION_READ_RESPONSE_HEADERS": 303,
+      "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS": 304,
+      "SOCKS_CONNECT": 305,
+      "REQUEST_ALIVE": 2
+    },
+    "logSourceType": {
+      "NONE": 0,
+      "URL_REQUEST": 1
+    },
+    "timeTickOffset": 1787407332877
+  },
+  "events": [
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640480001",
+      "source": {
+        "id": 301,
+        "start_time": "5640480001",
+        "type": 1
+      },
+      "params": {
+        "url": "http://demo.invalid/a",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 302,
+      "phase": 0,
+      "time": "5640480002",
+      "source": {
+        "id": 301,
+        "start_time": "5640480002",
+        "type": 1
+      },
+      "params": {
+        "line": "GET http://demo.invalid/a HTTP/1.1",
+        "headers": [
+          "Host: demo.invalid",
+          "Accept: */*",
+          "User-Agent: synthetic"
+        ]
+      }
+    },
+    {
+      "type": 303,
+      "phase": 0,
+      "time": "5640480003",
+      "source": {
+        "id": 301,
+        "start_time": "5640480003",
+        "type": 1
+      },
+      "params": {
+        "headers": [
+          "HTTP/1.1 200 OK",
+          "content-type: text/plain"
+        ]
+      }
+    },
+    {
+      "type": 136,
+      "phase": 2,
+      "time": "5640480004",
+      "source": {
+        "id": 301,
+        "start_time": "5640480004",
+        "type": 1
+      },
+      "params": {
+        "net_error": 0
+      }
+    },
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640480005",
+      "source": {
+        "id": 302,
+        "start_time": "5640480005",
+        "type": 1
+      },
+      "params": {
+        "url": "https://demo.invalid/b",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 300,
+      "phase": 0,
+      "time": "5640480006",
+      "source": {
+        "id": 302,
+        "start_time": "5640480006",
+        "type": 1
+      },
+      "params": {
+        "line": "CONNECT demo.invalid:443 HTTP/1.1",
+        "headers": [
+          "Host: demo.invalid:443"
+        ]
+      }
+    },
+    {
+      "type": 301,
+      "phase": 0,
+      "time": "5640480007",
+      "source": {
+        "id": 302,
+        "start_time": "5640480007",
+        "type": 1
+      },
+      "params": {
+        "headers": [
+          "HTTP/1.1 200 Connection established"
+        ]
+      }
+    },
+    {
+      "type": 302,
+      "phase": 0,
+      "time": "5640480008",
+      "source": {
+        "id": 302,
+        "start_time": "5640480008",
+        "type": 1
+      },
+      "params": {
+        "line": "GET /b HTTP/1.1",
+        "headers": [
+          "Host: demo.invalid",
+          "Accept: */*",
+          "User-Agent: synthetic"
+        ]
+      }
+    },
+    {
+      "type": 303,
+      "phase": 0,
+      "time": "5640480009",
+      "source": {
+        "id": 302,
+        "start_time": "5640480009",
+        "type": 1
+      },
+      "params": {
+        "headers": [
+          "HTTP/1.1 200 OK",
+          "content-type: text/plain"
+        ]
+      }
+    },
+    {
+      "type": 136,
+      "phase": 2,
+      "time": "5640480010",
+      "source": {
+        "id": 302,
+        "start_time": "5640480010",
+        "type": 1
+      },
+      "params": {
+        "net_error": 0
+      }
+    },
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640480011",
+      "source": {
+        "id": 303,
+        "start_time": "5640480011",
+        "type": 1
+      },
+      "params": {
+        "url": "https://demo.invalid/c",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 300,
+      "phase": 0,
+      "time": "5640480012",
+      "source": {
+        "id": 303,
+        "start_time": "5640480012",
+        "type": 1
+      },
+      "params": {
+        "line": "CONNECT demo.invalid:443 HTTP/1.1",
+        "headers": [
+          "Host: demo.invalid:443"
+        ]
+      }
+    },
+    {
+      "type": 301,
+      "phase": 0,
+      "time": "5640480013",
+      "source": {
+        "id": 303,
+        "start_time": "5640480013",
+        "type": 1
+      },
+      "params": {
+        "headers": [
+          "HTTP/1.1 200 Connection established"
+        ]
+      }
+    },
+    {
+      "type": 304,
+      "phase": 0,
+      "time": "5640480014",
+      "source": {
+        "id": 303,
+        "start_time": "5640480014",
+        "type": 1
+      },
+      "params": {
+        "headers": [
+          ":method: GET",
+          ":authority: demo.invalid",
+          ":scheme: https",
+          ":path: /c"
+        ]
+      }
+    },
+    {
+      "type": 136,
+      "phase": 2,
+      "time": "5640480015",
+      "source": {
+        "id": 303,
+        "start_time": "5640480015",
+        "type": 1
+      },
+      "params": {
+        "net_error": 0
+      }
+    },
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640480016",
+      "source": {
+        "id": 304,
+        "start_time": "5640480016",
+        "type": 1
+      },
+      "params": {
+        "url": "https://demo.invalid/d",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 305,
+      "phase": 0,
+      "time": "5640480017",
+      "source": {
+        "id": 304,
+        "start_time": "5640480017",
+        "type": 1
+      },
+      "params": {
+        "host": "demo.invalid:443"
+      }
+    },
+    {
+      "type": 302,
+      "phase": 0,
+      "time": "5640480018",
+      "source": {
+        "id": 304,
+        "start_time": "5640480018",
+        "type": 1
+      },
+      "params": {
+        "line": "GET /d HTTP/1.1",
+        "headers": [
+          "Host: demo.invalid",
+          "Accept: */*",
+          "User-Agent: synthetic"
+        ]
+      }
+    },
+    {
+      "type": 303,
+      "phase": 0,
+      "time": "5640480019",
+      "source": {
+        "id": 304,
+        "start_time": "5640480019",
+        "type": 1
+      },
+      "params": {
+        "headers": [
+          "HTTP/1.1 200 OK"
+        ]
+      }
+    },
+    {
+      "type": 136,
+      "phase": 2,
+      "time": "5640480020",
+      "source": {
+        "id": 304,
+        "start_time": "5640480020",
+        "type": 1
+      },
+      "params": {
+        "net_error": 0
+      }
+    },
+    {
+      "type": 136,
+      "phase": 1,
+      "time": "5640480021",
+      "source": {
+        "id": 305,
+        "start_time": "5640480021",
+        "type": 1
+      },
+      "params": {
+        "url": "https://demo.invalid/e",
+        "method": "GET",
+        "request_type": "main"
+      }
+    },
+    {
+      "type": 300,
+      "phase": 0,
+      "time": "5640480022",
+      "source": {
+        "id": 305,
+        "start_time": "5640480022",
+        "type": 1
+      },
+      "params": {
+        "line": "CONNECT demo.invalid:443 HTTP/1.1",
+        "headers": [
+          "Host: demo.invalid:443"
+        ]
+      }
+    },
+    {
+      "type": 301,
+      "phase": 0,
+      "time": "5640480023",
+      "source": {
+        "id": 305,
+        "start_time": "5640480023",
+        "type": 1
+      },
+      "params": {
+        "headers": [
+          "HTTP/1.1 403 Forbidden"
+        ]
+      }
+    },
+    {
+      "type": 136,
+      "phase": 2,
+      "time": "5640480024",
+      "source": {
+        "id": 305,
+        "start_time": "5640480024",
+        "type": 1
+      },
+      "params": {
+        "net_error": -111
+      }
+    }
+  ]
+}

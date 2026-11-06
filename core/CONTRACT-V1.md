@@ -200,16 +200,18 @@ without it are unchanged.
 ```
 
 - `scheme`: `http | https | socks5 | socks5h`, as in the accepted link.
-- `host`, `port`: the proxy address. Kept in the full export only.
+- `host`, `port`: the proxy address. Kept in the full export only (absent from
+  sanitized sessions).
 - `authenticated`: the link carried credentials. The values are never recorded.
 - `route`: `direct` (Chrome was given `--proxy-server`) or `relay` (a loopback
-  relay added the upstream authentication and the allowlist).
+  relay added the upstream authentication and the allowlist). Absent from
+  sanitized sessions.
 
 No credential, username or password appears in any session field, export or
 output. Captures with a proxy add a session note that HTTP/3 is not used in that
 capture: the proxy path does not carry QUIC, so an absence of h3 is not evidence.
 
-Sanitized export: keeps `scheme` and `authenticated`; removes `host` and `port`;
+Sanitized export: keeps `scheme` and `authenticated`; removes `host`, `port` and `route`;
 `chromeArgs` and `browserBinary` are removed as for every capture. The sanitizer
 always redacts `Proxy-Authorization` and `Proxy-Authenticate` header values, and
 credentials embedded in any URL.
